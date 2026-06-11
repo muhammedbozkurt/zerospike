@@ -1,0 +1,102 @@
+{
+  "expo": {
+    "name": "zerospike",
+    "slug": "zerospike",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "zerospike",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#04161d"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.greeneyeapp.zerospike",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "Zerospike, gıda barkodlarını taramak ve öğün fotoğrafı eklemek için kameranızı kullanır.",
+        "NSPhotoLibraryUsageDescription": "Zerospike, öğün günlüğünüze fotoğraf eklemek için galerinize erişir.",
+        "NSHealthShareUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'ten okuyarak günlüğünüze otomatik kaydeder.",
+        "NSHealthUpdateUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'e yazabilir.",
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "package": "com.greeneyeapp.zerospike",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.health.READ_BLOOD_GLUCOSE",
+        "android.permission.health.WRITE_BLOOD_GLUCOSE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-localization",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Zerospike, gıda barkodlarını taramak ve öğün fotoğrafı eklemek için kameranızı kullanır."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Zerospike, öğün günlüğünüze fotoğraf eklemek için galerinize erişir."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#22d3ee"
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'ten okuyarak günlüğünüze otomatik kaydeder.",
+          "NSHealthUpdateUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'e yazabilir.",
+          "background": false
+        }
+      ],
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0"
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
