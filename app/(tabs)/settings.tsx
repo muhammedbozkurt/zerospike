@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,7 +11,7 @@ import { updateProfile, deleteProfile } from "../../lib/db/profiles";
 import { clearAllLogs } from "../../lib/db/index";
 import { loadDemoData } from "../../lib/db/demo";
 import { exportLogsCsv } from "../../lib/services/export";
-import { setProOverride } from "../../lib/services/purchases";
+import { setProOverride, presentCodeRedemption } from "../../lib/services/purchases";
 import { scheduleBasalReminder } from "../../lib/services/notifications";
 import type { Lang } from "../../lib/db/types";
 import { SectionLabel } from "../../components/ui";
@@ -21,9 +21,7 @@ import { LanguagePicker } from "../../components/LanguagePicker";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DisclaimerBanner } from "../../components/Disclaimer";
 import { useFeedback } from "../../components/Feedback";
-
-const PRIVACY_URL = "https://greeneyeapp.com/legal/zerospike-privacy";
-const TERMS_URL = "https://greeneyeapp.com/legal/zerospike-terms";
+import { privacyUrl, termsUrl } from "../../lib/legal";
 
 function Row({
   icon,
@@ -132,6 +130,15 @@ export default function SettingsScreen() {
 
   async function onToggleSimPro(value: boolean) {
     await setProOverride(value);
+    await refreshPro();
+  }
+
+  async function onRedeemCode() {
+    if (Platform.OS === "android") {
+      Linking.openURL("https://play.google.com/redeem");
+      return;
+    }
+    await presentCodeRedemption();
     await refreshPro();
   }
 
@@ -331,6 +338,13 @@ export default function SettingsScreen() {
             onPress={() => router.push("/paywall")}
           />
         )}
+        {!isProUser ? (
+          <Row
+            icon="pricetag-outline"
+            label={t("settings.redeemCode")}
+            onPress={onRedeemCode}
+          />
+        ) : null}
         <Row
           icon="document-text-outline"
           label={t("settings.exportCsv")}
@@ -370,12 +384,12 @@ export default function SettingsScreen() {
         <Row
           icon="shield-checkmark-outline"
           label={t("settings.privacy")}
-          onPress={() => Linking.openURL(PRIVACY_URL)}
+          onPress={() => Linking.openURL(privacyUrl())}
         />
         <Row
           icon="reader-outline"
           label={t("settings.terms")}
-          onPress={() => Linking.openURL(TERMS_URL)}
+          onPress={() => Linking.openURL(termsUrl())}
         />
         <View className="my-3">
           <DisclaimerBanner full />

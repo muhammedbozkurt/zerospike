@@ -46,7 +46,7 @@ export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
   lifetime: {
     id: "lifetime",
     productId: "zerospike_lifetime", // App Store / Play product ID (permanent)
-    priceUSD: "$39.99",
+    priceUSD: "$59.99", // global = monthly × 12 ($4.99 × 12)
     priceTRY: "₺1.299,99",
   },
 };
@@ -123,8 +123,11 @@ export async function purchasePro(plan: PlanId = "monthly"): Promise<boolean> {
     const offerings = await Purchases.getOfferings();
     const pkgs = offerings?.current?.availablePackages ?? [];
     const targetId = PRO_PRODUCTS[plan].productId;
+    // On Android a subscription product id carries its base plan, e.g.
+    // "zerospike_pro:monthly", so match by the part before ":" too.
+    const baseId = (id?: string) => (id ?? "").split(":")[0];
     const pkg =
-      pkgs.find((p: any) => p.product?.identifier === targetId) ??
+      pkgs.find((p: any) => baseId(p.product?.identifier) === targetId) ??
       pkgs.find((p: any) =>
         plan === "lifetime"
           ? p.packageType === "LIFETIME"
@@ -163,7 +166,8 @@ export async function getOfferingPrices(): Promise<Partial<Record<PlanId, string
     const pkgs = offerings?.current?.availablePackages ?? [];
     const out: Partial<Record<PlanId, string>> = {};
     for (const p of pkgs) {
-      const id = p.product?.identifier;
+      // Android subscription ids carry a base plan ("zerospike_pro:monthly").
+      const id = (p.product?.identifier ?? "").split(":")[0];
       const price = p.product?.priceString;
       if (id === PRO_PRODUCTS.monthly.productId) out.monthly = price;
       if (id === PRO_PRODUCTS.lifetime.productId) out.lifetime = price;
@@ -171,6 +175,21 @@ export async function getOfferingPrices(): Promise<Partial<Record<PlanId, string
     return out;
   } catch {
     return {};
+  }
+}
+
+/**
+ * Presents the App Store offer/promo code redemption sheet (iOS 14+). Lets a
+ * user redeem a code you generated in App Store Connect from inside the app.
+ * No-op on Android (use the Play "redeem code" flow there).
+ */
+export async function presentCodeRedemption(): Promise<void> {
+  if (DEBUG_MOCK_PURCHASES || Platform.OS !== "ios") return;
+  try {
+    await ensureConfigured();
+    await rc().presentCodeRedemptionSheet();
+  } catch {
+    // sheet unavailable — ignore
   }
 }
 

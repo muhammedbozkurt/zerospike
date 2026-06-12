@@ -187,6 +187,7 @@ const es: TranslationSchema = {
     proActive: "Pro activo",
     goPro: "Mejorar a Pro",
     exportCsv: "Exportar como CSV",
+    redeemCode: "Canjear código",
     multiProfile: "Gestión multiperfil (familia)",
     dataSection: "Gestión de datos",
     clearLogs: "Borrar todos los registros",

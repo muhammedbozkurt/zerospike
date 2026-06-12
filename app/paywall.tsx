@@ -14,11 +14,9 @@ import {
   PlanId,
 } from "../lib/services/purchases";
 import { FREE_LOG_LIMIT, FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
+import { privacyUrl, termsUrl } from "../lib/legal";
 import { Button } from "../components/ui";
 import { useFeedback } from "../components/Feedback";
-
-const PRIVACY_URL = "https://greeneyeapp.com/legal/zerospike-privacy";
-const TERMS_URL = "https://greeneyeapp.com/legal/zerospike-terms";
 
 function Feature({ text }: { text: string }) {
   return (
@@ -224,12 +222,12 @@ export default function PaywallScreen() {
           {t("paywall.legalNote")}
         </Text>
         <View className="flex-row justify-center gap-6">
-          <Pressable onPress={() => Linking.openURL(PRIVACY_URL)}>
+          <Pressable onPress={() => Linking.openURL(privacyUrl())}>
             <Text className="text-zinc-500 text-xs underline">
               {t("settings.privacy")}
             </Text>
           </Pressable>
-          <Pressable onPress={() => Linking.openURL(TERMS_URL)}>
+          <Pressable onPress={() => Linking.openURL(termsUrl())}>
             <Text className="text-zinc-500 text-xs underline">
               {t("settings.terms")}
             </Text>

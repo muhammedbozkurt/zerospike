@@ -13,11 +13,13 @@
       "resizeMode": "cover",
       "backgroundColor": "#04161d"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
-      "buildNumber": "1",
+      "buildNumber": "5",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -26,12 +28,14 @@
         "NSPhotoLibraryUsageDescription": "Zerospike, öğün günlüğünüze fotoğraf eklemek için galerinize erişir.",
         "NSHealthShareUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'ten okuyarak günlüğünüze otomatik kaydeder.",
         "NSHealthUpdateUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'e yazabilir.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 1,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
@@ -41,7 +45,8 @@
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.health.READ_BLOOD_GLUCOSE",
-        "android.permission.health.WRITE_BLOOD_GLUCOSE"
+        "android.permission.health.WRITE_BLOOD_GLUCOSE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
@@ -96,6 +101,9 @@
     "extra": {
       "router": {
         "origin": false
+      },
+      "eas": {
+        "projectId": "c52316bd-99ee-4ae9-8254-2a3542585ffb"
       }
     }
   }

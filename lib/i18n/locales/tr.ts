@@ -185,6 +185,7 @@ const tr = {
     proActive: "Pro etkin",
     goPro: "Pro'ya Yükseltin",
     exportCsv: "CSV Olarak Dışa Aktar",
+    redeemCode: "Kod Kullan",
     multiProfile: "Çoklu profil (aile) yönetimi",
     dataSection: "Veri Yönetimi",
     clearLogs: "Tüm kayıtları temizle",
