@@ -22,6 +22,7 @@ import { getFood } from "../lib/db/foods";
 import { addMealLog } from "../lib/db/logs";
 import { canAddLog } from "../lib/guardrails";
 import { estimateInsulin, activeMealSlot } from "../lib/insulin";
+import { schedulePostMealReminder } from "../lib/services/notifications";
 import type { Food, MealSlot } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { Button, Segmented } from "../components/ui";
@@ -130,6 +131,8 @@ export default function CalculatorScreen() {
       photo_uri_local: photo,
       personal_note: note.trim() || null,
     });
+    // Logging a meal schedules the 2-hour post-meal glucose check reminder.
+    await schedulePostMealReminder();
     bumpData();
     router.back();
   }
@@ -270,6 +273,16 @@ export default function CalculatorScreen() {
           <Text className="text-brand/60 text-xs mt-2">
             {t("calculator.overrideHint")}
           </Text>
+          <Pressable
+            onPress={() => router.push("/sources")}
+            hitSlop={8}
+            className="flex-row items-center mt-3"
+          >
+            <Ionicons name="information-circle-outline" size={14} color="#22d3ee" />
+            <Text className="text-brand text-xs underline ml-1">
+              {t("sources.calcLink")}
+            </Text>
+          </Pressable>
         </View>
 
         {/* Manual dose override */}

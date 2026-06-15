@@ -391,6 +391,11 @@ export default function SettingsScreen() {
           label={t("settings.terms")}
           onPress={() => Linking.openURL(termsUrl())}
         />
+        <Row
+          icon="medkit-outline"
+          label={t("sources.link")}
+          onPress={() => router.push("/sources")}
+        />
         <View className="my-3">
           <DisclaimerBanner full />
         </View>

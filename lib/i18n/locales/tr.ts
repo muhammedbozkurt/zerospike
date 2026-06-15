@@ -28,6 +28,18 @@ const tr = {
     accept: "Okudum ve anladım",
     short: "zerospike bir tıbbi cihaz değildir. Lütfen tedavi kararlarınız için doktorunuza danışınız.",
   },
+  sources: {
+    title: "Tıbbi Kaynaklar",
+    link: "Tıbbi bilgi ve kaynaklar",
+    calcLink: "Bu nasıl hesaplanıyor? Kaynakları gör",
+    intro:
+      "zerospike'taki karbonhidrat sayımı ve insülin tahmini yöntemleri, aşağıdaki kuruluşların kamuya açık standart klinik rehberliğine dayanır. zerospike bir tıbbi cihaz değil, eğitim amaçlı bir günlüktür — dozları her zaman doktorunuzla teyit edin.",
+    methodTitle: "Tahminler nasıl hesaplanır",
+    method:
+      "• Öğün dozu = karbonhidrat ÷ insülin-karbonhidrat oranınız\n• Düzeltme dozu = (anlık şeker − hedef) ÷ insülin duyarlılık faktörünüz (ISF)\n• Tokluk (postprandiyal) şekeri yemekten 2 saat sonra ölçülür\n\nBu oranlar kişiseldir ve doktorunuz tarafından belirlenmelidir.",
+    listTitle: "Kaynaklar",
+    openHint: "Tarayıcınızda açılır",
+  },
   onboarding: {
     welcome: "zerospike'a Hoş Geldiniz",
     subtitle: "Size en doğru tahminleri sunabilmemiz için lütfen kişisel hedeflerinizi belirleyiniz.",
@@ -72,6 +84,13 @@ const tr = {
     importNow: "Şimdi içe aktar",
     imported: "Health'ten {{n}} ölçüm içe aktarıldı",
     importedNone: "İçe aktarılacak yeni ölçüm bulunamadı",
+    cgmOnTapToSync: "Açık · şimdi eşitlemek için dokun",
+    syncing: "Eşitleniyor…",
+    healthUpToDate: "Zaten güncel — yeni ölçüm yok",
+    healthNoData: "Health'te kan şekeri ölçümü bulunamadı",
+    healthDenied: "Health erişimi verilmedi. Health ayarlarından Kan Şekeri'ni etkinleştirin.",
+    healthUnavailable: "Bu cihazda Health verisi kullanılamıyor",
+    healthError: "Health'ten okunamadı. Lütfen tekrar deneyin.",
     dailyCarbs: "Bugünkü karbonhidrat",
     dailyCarbsOf: "{{current}} / {{target}} g",
   },

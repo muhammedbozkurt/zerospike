@@ -30,6 +30,18 @@ const es: TranslationSchema = {
     accept: "He leído y comprendido",
     short: "zerospike no es un dispositivo médico. Por favor, consulte a su médico para cualquier decisión de tratamiento.",
   },
+  sources: {
+    title: "Fuentes Médicas",
+    link: "Información y fuentes médicas",
+    calcLink: "¿Cómo se calcula esto? Ver fuentes",
+    intro:
+      "Los métodos de conteo de carbohidratos y estimación de insulina de zerospike siguen las guías clínicas estándar y de acceso público de las organizaciones que se indican a continuación. zerospike es un diario educativo, no un dispositivo médico: confirme siempre las dosis con su médico.",
+    methodTitle: "Cómo se calculan las estimaciones",
+    method:
+      "• Dosis de comida = carbohidratos ÷ su relación insulina-carbohidratos\n• Dosis de corrección = (glucosa actual − objetivo) ÷ su factor de sensibilidad a la insulina (ISF)\n• La glucosa posprandial se mide 2 horas después de comer\n\nEstas relaciones son personales y debe establecerlas su médico.",
+    listTitle: "Referencias",
+    openHint: "Se abre en tu navegador",
+  },
   onboarding: {
     welcome: "Bienvenido/a a zerospike",
     subtitle: "Para ofrecerle estimaciones precisas, por favor configure sus objetivos personales.",
@@ -74,6 +86,13 @@ const es: TranslationSchema = {
     importNow: "Importar ahora",
     imported: "Se importaron {{n}} mediciones de Health",
     importedNone: "No hay mediciones nuevas para importar",
+    cgmOnTapToSync: "Activado · toca para sincronizar",
+    syncing: "Sincronizando…",
+    healthUpToDate: "Ya está al día — sin mediciones nuevas",
+    healthNoData: "No se encontraron mediciones de glucosa en Health",
+    healthDenied: "Sin acceso a Health. Activa Glucosa en sangre en los ajustes de Health.",
+    healthUnavailable: "Los datos de Health no están disponibles en este dispositivo",
+    healthError: "No se pudo leer de Health. Inténtalo de nuevo.",
     dailyCarbs: "Carbohidratos de hoy",
     dailyCarbsOf: "{{current}} / {{target}} g",
   },

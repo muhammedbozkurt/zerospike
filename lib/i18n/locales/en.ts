@@ -30,6 +30,18 @@ const en: TranslationSchema = {
     accept: "I have read and understood",
     short: "zerospike is not a medical device. Please consult your physician for any treatment decisions.",
   },
+  sources: {
+    title: "Medical Sources",
+    link: "Medical information & sources",
+    calcLink: "How is this calculated? View sources",
+    intro:
+      "The carbohydrate counting and insulin estimation methods in zerospike follow standard, publicly available clinical guidance from the organizations below. zerospike is an educational logbook, not a medical device — always confirm doses with your healthcare provider.",
+    methodTitle: "How the estimates are calculated",
+    method:
+      "• Meal dose = carbohydrates ÷ your insulin-to-carbohydrate ratio\n• Correction dose = (current glucose − target) ÷ your insulin sensitivity factor (ISF)\n• Post-meal (postprandial) glucose is measured 2 hours after eating\n\nThese ratios are personal and must be set by your physician.",
+    listTitle: "References",
+    openHint: "Opens in your browser",
+  },
   onboarding: {
     welcome: "Welcome to zerospike",
     subtitle: "So we can provide accurate estimates, please set your personal targets.",
@@ -74,6 +86,13 @@ const en: TranslationSchema = {
     importNow: "Import now",
     imported: "Imported {{n}} readings from Health",
     importedNone: "No new readings to import",
+    cgmOnTapToSync: "On · tap to sync now",
+    syncing: "Syncing…",
+    healthUpToDate: "Already up to date — no new readings",
+    healthNoData: "No glucose readings found in Health",
+    healthDenied: "Health access not granted. Enable Blood Glucose in Health settings.",
+    healthUnavailable: "Health data isn't available on this device",
+    healthError: "Couldn't read from Health. Please try again.",
     dailyCarbs: "Today's carbs",
     dailyCarbsOf: "{{current}} / {{target}} g",
   },

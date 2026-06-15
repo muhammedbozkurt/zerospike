@@ -30,6 +30,18 @@ const de: TranslationSchema = {
     accept: "Ich habe es gelesen und verstanden",
     short: "zerospike ist kein Medizinprodukt. Bitte wenden Sie sich bei Behandlungsentscheidungen an Ihre Ärztin oder Ihren Arzt.",
   },
+  sources: {
+    title: "Medizinische Quellen",
+    link: "Medizinische Informationen & Quellen",
+    calcLink: "Wie wird das berechnet? Quellen ansehen",
+    intro:
+      "Die Methoden zur Kohlenhydratzählung und Insulinschätzung in zerospike folgen den öffentlich verfügbaren klinischen Standardleitlinien der unten genannten Organisationen. zerospike ist ein Tagebuch zu Bildungszwecken, kein Medizinprodukt — bestätigen Sie Dosierungen stets mit Ihrer Ärztin oder Ihrem Arzt.",
+    methodTitle: "So werden die Schätzungen berechnet",
+    method:
+      "• Mahlzeitendosis = Kohlenhydrate ÷ Ihr Insulin-Kohlenhydrat-Verhältnis\n• Korrekturdosis = (aktueller Glukosewert − Ziel) ÷ Ihr Insulinsensitivitätsfaktor (ISF)\n• Der postprandiale Glukosewert wird 2 Stunden nach dem Essen gemessen\n\nDiese Faktoren sind individuell und müssen von Ihrer Ärztin oder Ihrem Arzt festgelegt werden.",
+    listTitle: "Quellen",
+    openHint: "Wird im Browser geöffnet",
+  },
   onboarding: {
     welcome: "Willkommen bei zerospike",
     subtitle: "Damit wir genaue Schätzungen liefern können, legen Sie bitte Ihre persönlichen Zielwerte fest.",
@@ -74,6 +86,13 @@ const de: TranslationSchema = {
     importNow: "Jetzt importieren",
     imported: "{{n}} Messungen aus Health importiert",
     importedNone: "Keine neuen Messungen zum Importieren",
+    cgmOnTapToSync: "Ein · zum Synchronisieren tippen",
+    syncing: "Wird synchronisiert…",
+    healthUpToDate: "Bereits aktuell — keine neuen Messungen",
+    healthNoData: "Keine Glukosewerte in Health gefunden",
+    healthDenied: "Kein Health-Zugriff. Aktiviere Blutzucker in den Health-Einstellungen.",
+    healthUnavailable: "Auf diesem Gerät sind keine Health-Daten verfügbar",
+    healthError: "Lesen aus Health fehlgeschlagen. Bitte erneut versuchen.",
     dailyCarbs: "Kohlenhydrate heute",
     dailyCarbsOf: "{{current}} / {{target}} g",
   },

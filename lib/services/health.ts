@@ -20,10 +20,25 @@ import type { PeriodTag } from "../db/types";
  */
 export const DEBUG_MOCK_HEALTH = __DEV__;
 
+/** How far back a sync scans the health store (days). */
+const SYNC_WINDOW_DAYS = 90;
+/** Hard cap on samples pulled per sync (newest first). */
+const SYNC_MAX_SAMPLES = 300;
+
 export interface GlucoseSample {
   value: number; // mg/dL
   date: string; // ISO timestamp
   period_tag: PeriodTag;
+}
+
+/** Outcome of a sync so the UI can tell the user exactly what happened. */
+export type SyncStatus = "ok" | "unavailable" | "denied" | "error";
+export interface SyncResult {
+  status: SyncStatus;
+  /** newly inserted rows */
+  inserted: number;
+  /** samples read from the health store (0 → nothing there / no permission) */
+  read: number;
 }
 
 function pickTagForHour(hour: number): PeriodTag {
@@ -65,16 +80,18 @@ export async function requestHealthPermissions(): Promise<boolean> {
     if (Platform.OS === "ios") {
       const HealthKit = require("@kingstinct/react-native-healthkit").default;
       const { HKQuantityTypeIdentifier } = require("@kingstinct/react-native-healthkit");
+      // iOS never reveals whether *read* access was granted (privacy), so a
+      // resolved call is the best signal we can get here.
       await HealthKit.requestAuthorization([HKQuantityTypeIdentifier.bloodGlucose], []);
       return true;
     }
     if (Platform.OS === "android") {
-      const { initialize, requestPermission } = require("react-native-health-connect");
-      await initialize();
-      const granted = await requestPermission([
-        { accessType: "read", recordType: "BloodGlucose" },
-      ]);
-      return Array.isArray(granted) ? granted.length > 0 : Boolean(granted);
+      const HC = require("react-native-health-connect");
+      await HC.initialize();
+      await HC.requestPermission([{ accessType: "read", recordType: "BloodGlucose" }]);
+      // Trust the explicit grant list rather than requestPermission's return,
+      // whose shape has varied across versions.
+      return await androidHasReadPermission(HC);
     }
   } catch {
     return false;
@@ -82,14 +99,33 @@ export async function requestHealthPermissions(): Promise<boolean> {
   return false;
 }
 
+/** True only if Health Connect currently holds BloodGlucose *read* access. */
+async function androidHasReadPermission(HC: any): Promise<boolean> {
+  try {
+    const granted = await HC.getGrantedPermissions();
+    return (
+      Array.isArray(granted) &&
+      granted.some(
+        (p: any) => p?.recordType === "BloodGlucose" && p?.accessType === "read"
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-function readMockGlucose(count: number): GlucoseSample[] {
+function readMockGlucose(): GlucoseSample[] {
   const now = Date.now();
   const samples: GlucoseSample[] = [];
   let baseline = 95 + Math.round(Math.random() * 20);
+  // ~8 readings/day over the window, timestamps snapped to the half hour so
+  // repeat syncs dedupe cleanly (matching real-store behaviour).
+  const count = 24;
   for (let i = count - 1; i >= 0; i--) {
-    const ts = new Date(now - i * 30 * 60 * 1000);
+    const raw = now - i * 3 * 60 * 60 * 1000;
+    const ts = new Date(Math.round(raw / (30 * 60 * 1000)) * 30 * 60 * 1000);
     baseline += Math.round((Math.random() - 0.45) * 18);
     baseline = Math.max(70, Math.min(220, baseline));
     samples.push({
@@ -101,12 +137,13 @@ function readMockGlucose(count: number): GlucoseSample[] {
   return samples;
 }
 
-async function readRealGlucoseIOS(count: number): Promise<GlucoseSample[]> {
+async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
   const HealthKit = require("@kingstinct/react-native-healthkit").default;
   const { HKQuantityTypeIdentifier } = require("@kingstinct/react-native-healthkit");
+  const from = new Date(Date.now() - SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const samples = await HealthKit.queryQuantitySamples(
     HKQuantityTypeIdentifier.bloodGlucose,
-    { limit: count, ascending: false, unit: "mg/dL" }
+    { from, limit: SYNC_MAX_SAMPLES, ascending: false, unit: "mg/dL" }
   );
   return (samples ?? []).map((s: any) => {
     const when = new Date(s.endDate ?? s.startDate);
@@ -118,26 +155,26 @@ async function readRealGlucoseIOS(count: number): Promise<GlucoseSample[]> {
   });
 }
 
-async function readRealGlucoseAndroid(count: number): Promise<GlucoseSample[]> {
-  const { initialize, readRecords } = require("react-native-health-connect");
-  await initialize();
+async function readRealGlucoseAndroid(): Promise<GlucoseSample[]> {
+  const HC = require("react-native-health-connect");
+  await HC.initialize();
   const end = new Date();
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
-  const res = await readRecords("BloodGlucose", {
+  const start = new Date(end.getTime() - SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const res = await HC.readRecords("BloodGlucose", {
     timeRangeFilter: {
       operator: "between",
       startTime: start.toISOString(),
       endTime: end.toISOString(),
     },
     ascendingOrder: false,
-    pageSize: count,
+    pageSize: SYNC_MAX_SAMPLES,
   });
-  const records = res?.records ?? res ?? [];
+  const records = res?.records ?? (Array.isArray(res) ? res : []);
   return records.map((r: any) => {
     const mgdl =
       r.level?.inMilligramsPerDeciliter ??
       toMgdl(Number(r.level?.inMillimolesPerLiter ?? 0));
-    const when = new Date(r.time);
+    const when = new Date(r.time ?? r.startTime);
     return {
       value: Math.round(mgdl),
       date: when.toISOString(),
@@ -146,11 +183,12 @@ async function readRealGlucoseAndroid(count: number): Promise<GlucoseSample[]> {
   });
 }
 
-export async function readRecentGlucose(count = 6): Promise<GlucoseSample[]> {
-  if (DEBUG_MOCK_HEALTH) return readMockGlucose(count);
+/** Reads recent glucose from the platform health store (or the dev mock). */
+export async function readRecentGlucose(): Promise<GlucoseSample[]> {
+  if (DEBUG_MOCK_HEALTH) return readMockGlucose();
   try {
-    if (Platform.OS === "ios") return await readRealGlucoseIOS(count);
-    if (Platform.OS === "android") return await readRealGlucoseAndroid(count);
+    if (Platform.OS === "ios") return await readRealGlucoseIOS();
+    if (Platform.OS === "android") return await readRealGlucoseAndroid();
   } catch {
     return [];
   }
@@ -162,13 +200,34 @@ export async function readRecentGlucose(count = 6): Promise<GlucoseSample[]> {
 /**
  * Pulls recent glucose readings from the platform health store (or the mock in
  * dev) into the profile's local log, skipping anything already imported.
- * Returns the number of newly inserted rows.
+ *
+ * Returns a {@link SyncResult} so the caller can give precise feedback:
+ *  - `unavailable` → no Health/Health Connect on this device
+ *  - `denied`      → permission not granted (Android; iOS can't report this)
+ *  - `error`       → the native read threw
+ *  - `ok`          → read `read` samples, inserted `inserted` new ones
  */
-export async function importHealthGlucose(profileId: string): Promise<number> {
-  const granted = await requestHealthPermissions();
-  if (!granted) return 0;
+export async function importHealthGlucose(profileId: string): Promise<SyncResult> {
+  // 1) Is there a health store at all?
+  if (!(await isHealthAvailable())) {
+    return { status: "unavailable", inserted: 0, read: 0 };
+  }
 
-  const samples = await readRecentGlucose();
+  // 2) Permission. iOS can't reveal read access, so we can only fail closed
+  //    on Android, where the grant list is authoritative.
+  const granted = await requestHealthPermissions();
+  if (!granted) {
+    return { status: "denied", inserted: 0, read: 0 };
+  }
+
+  // 3) Read + import, never letting a native error reach the UI.
+  let samples: GlucoseSample[];
+  try {
+    samples = await readRecentGlucose();
+  } catch {
+    return { status: "error", inserted: 0, read: 0 };
+  }
+
   let inserted = 0;
   for (const s of samples) {
     if (!Number.isFinite(s.value) || s.value <= 0) continue;
@@ -182,5 +241,5 @@ export async function importHealthGlucose(profileId: string): Promise<number> {
     });
     inserted++;
   }
-  return inserted;
+  return { status: "ok", inserted, read: samples.length };
 }

@@ -30,6 +30,18 @@ const fr: TranslationSchema = {
     accept: "J'ai lu et compris",
     short: "zerospike n'est pas un dispositif médical. Veuillez consulter votre médecin pour toute décision de traitement.",
   },
+  sources: {
+    title: "Sources Médicales",
+    link: "Informations et sources médicales",
+    calcLink: "Comment est-ce calculé ? Voir les sources",
+    intro:
+      "Les méthodes de comptage des glucides et d'estimation de l'insuline de zerospike suivent les recommandations cliniques standard et publiquement accessibles des organisations ci-dessous. zerospike est un journal éducatif, pas un dispositif médical — confirmez toujours les doses avec votre médecin.",
+    methodTitle: "Comment les estimations sont calculées",
+    method:
+      "• Dose de repas = glucides ÷ votre ratio insuline-glucides\n• Dose de correction = (glycémie actuelle − cible) ÷ votre facteur de sensibilité à l'insuline (ISF)\n• La glycémie postprandiale est mesurée 2 heures après le repas\n\nCes ratios sont personnels et doivent être définis par votre médecin.",
+    listTitle: "Références",
+    openHint: "S'ouvre dans votre navigateur",
+  },
   onboarding: {
     welcome: "Bienvenue sur zerospike",
     subtitle: "Afin de vous fournir des estimations précises, veuillez définir vos objectifs personnels.",
@@ -74,6 +86,13 @@ const fr: TranslationSchema = {
     importNow: "Importer maintenant",
     imported: "{{n}} mesures importées depuis Health",
     importedNone: "Aucune nouvelle mesure à importer",
+    cgmOnTapToSync: "Activé · touchez pour synchroniser",
+    syncing: "Synchronisation…",
+    healthUpToDate: "Déjà à jour — aucune nouvelle mesure",
+    healthNoData: "Aucune mesure de glycémie trouvée dans Health",
+    healthDenied: "Accès à Health refusé. Activez la glycémie dans les réglages Health.",
+    healthUnavailable: "Les données Health ne sont pas disponibles sur cet appareil",
+    healthError: "Lecture depuis Health impossible. Veuillez réessayer.",
     dailyCarbs: "Glucides aujourd'hui",
     dailyCarbsOf: "{{current}} / {{target}} g",
   },

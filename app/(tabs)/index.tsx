@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, Switch, Text, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -11,7 +12,9 @@ import { addSugarLog, deleteSugarLog, deleteMealLog } from "../../lib/db/logs";
 import type { PeriodTag } from "../../lib/db/types";
 import { canAddLog } from "../../lib/guardrails";
 import { schedulePostMealReminder } from "../../lib/services/notifications";
-import { importHealthGlucose } from "../../lib/services/health";
+import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
+
+const CGM_KEY = "zerospike.cgmSync";
 import { JournalItem } from "../../components/JournalItem";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
@@ -29,6 +32,7 @@ export default function DashboardScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
   const [cgmOn, setCgmOn] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
@@ -38,6 +42,47 @@ export default function DashboardScreen() {
   useEffect(() => {
     load();
   }, [load, dataVersion]);
+
+  // Restore the persisted sync preference, and silently re-sync on open so new
+  // Health readings keep flowing in without re-toggling the switch.
+  useEffect(() => {
+    (async () => {
+      const saved = (await AsyncStorage.getItem(CGM_KEY)) === "true";
+      setCgmOn(saved);
+      if (saved && activeProfile) runSync(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile?.id]);
+
+  function describeSync(res: SyncResult): { msg: string; tone: "success" | "info" } {
+    if (res.status === "unavailable")
+      return { msg: t("dashboard.healthUnavailable"), tone: "info" };
+    if (res.status === "denied")
+      return { msg: t("dashboard.healthDenied"), tone: "info" };
+    if (res.status === "error")
+      return { msg: t("dashboard.healthError"), tone: "info" };
+    if (res.inserted > 0)
+      return { msg: t("dashboard.imported", { n: res.inserted }), tone: "success" };
+    if (res.read > 0)
+      return { msg: t("dashboard.healthUpToDate"), tone: "info" };
+    return { msg: t("dashboard.healthNoData"), tone: "info" };
+  }
+
+  // Pulls from Health. `announce` shows a toast (off for the silent open-sync).
+  async function runSync(announce: boolean) {
+    if (!activeProfile || syncing) return;
+    setSyncing(true);
+    try {
+      const res = await importHealthGlucose(activeProfile.id);
+      if (res.inserted > 0) bumpData();
+      if (announce) {
+        const { msg, tone } = describeSync(res);
+        toast(msg, tone);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const todayCarbs = entries
     .filter(
@@ -75,16 +120,8 @@ export default function DashboardScreen() {
 
   async function toggleCgm(next: boolean) {
     setCgmOn(next);
-    if (next && activeProfile) {
-      const count = await importHealthGlucose(activeProfile.id);
-      bumpData();
-      toast(
-        count > 0
-          ? t("dashboard.imported", { n: count })
-          : t("dashboard.importedNone"),
-        count > 0 ? "success" : "info"
-      );
-    }
+    await AsyncStorage.setItem(CGM_KEY, next ? "true" : "false");
+    if (next) await runSync(true);
   }
 
   async function confirmDelete(entry: JournalEntry) {
@@ -138,8 +175,12 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* CGM / Sensor toggle */}
-      <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center">
+      {/* CGM / Sensor toggle — tap the row (while on) to sync again */}
+      <Pressable
+        onPress={() => cgmOn && runSync(true)}
+        disabled={!cgmOn || syncing}
+        className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
+      >
         <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
           <Ionicons name="hardware-chip-outline" size={20} color="#22d3ee" />
         </View>
@@ -148,16 +189,28 @@ export default function DashboardScreen() {
             {t("dashboard.cgmTitle")}
           </Text>
           <Text className="text-zinc-500 text-xs">
-            {cgmOn ? t("dashboard.cgmOn") : t("dashboard.cgmSubtitle")}
+            {syncing
+              ? t("dashboard.syncing")
+              : cgmOn
+                ? t("dashboard.cgmOnTapToSync")
+                : t("dashboard.cgmSubtitle")}
           </Text>
         </View>
+        {cgmOn && !syncing ? (
+          <Ionicons
+            name="refresh"
+            size={18}
+            color="#52525b"
+            style={{ marginRight: 10 }}
+          />
+        ) : null}
         <Switch
           value={cgmOn}
           onValueChange={toggleCgm}
           trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
           thumbColor="#fafafa"
         />
-      </View>
+      </Pressable>
 
       <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
         {t("dashboard.history")}
