@@ -19,18 +19,15 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
-      "buildNumber": "6",
+      "buildNumber": "9",
       "config": {
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "NSCameraUsageDescription": "Zerospike, gıda barkodlarını taramak ve öğün fotoğrafı eklemek için kameranızı kullanır.",
-        "NSPhotoLibraryUsageDescription": "Zerospike, öğün günlüğünüze fotoğraf eklemek için galerinize erişir.",
-        "NSHealthShareUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'ten okuyarak günlüğünüze otomatik kaydeder.",
-        "NSHealthUpdateUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'e yazabilir.",
-        "UIBackgroundModes": [
-          "remote-notification"
-        ]
+        "NSCameraUsageDescription": "zerospike uses your camera to scan food barcodes and add meal photos.",
+        "NSPhotoLibraryUsageDescription": "zerospike accesses your photo library to add photos to your meal journal.",
+        "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically.",
+        "NSHealthUpdateUsageDescription": "zerospike can write your blood glucose readings to Apple Health."
       }
     },
     "android": {
@@ -45,8 +42,7 @@
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.health.READ_BLOOD_GLUCOSE",
-        "android.permission.health.WRITE_BLOOD_GLUCOSE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.health.WRITE_BLOOD_GLUCOSE"
       ]
     },
     "plugins": [
@@ -55,13 +51,14 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Zerospike, gıda barkodlarını taramak ve öğün fotoğrafı eklemek için kameranızı kullanır."
+          "cameraPermission": "zerospike uses your camera to scan food barcodes and add meal photos.",
+          "recordAudioAndroid": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Zerospike, öğün günlüğünüze fotoğraf eklemek için galerinize erişir."
+          "photosPermission": "zerospike accesses your photo library to add photos to your meal journal."
         }
       ],
       [
@@ -74,8 +71,8 @@
       [
         "@kingstinct/react-native-healthkit",
         {
-          "NSHealthShareUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'ten okuyarak günlüğünüze otomatik kaydeder.",
-          "NSHealthUpdateUsageDescription": "Zerospike, kan şekeri ölçümlerinizi Apple Health'e yazabilir.",
+          "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically.",
+          "NSHealthUpdateUsageDescription": "zerospike can write your blood glucose readings to Apple Health.",
           "background": false
         }
       ],

@@ -258,17 +258,23 @@ export default function CalculatorScreen() {
           ) : null}
 
           <View className="h-px bg-brand/20 my-3" />
-          <View className="flex-row justify-between items-baseline">
-            <Text className="text-zinc-300 font-semibold">
+          <View className="flex-row justify-between items-center">
+            <Text className="text-zinc-300 font-semibold flex-1 pr-3">
               {t("calculator.totalDose")}
             </Text>
-            <Text className="text-brand text-3xl font-bold">
-              {num(estimate.totalDose)}
+            <View className="flex-row items-baseline">
+              {/* Explicit lineHeight so the bold 30px glyphs aren't clipped at the top */}
+              <Text
+                className="text-brand font-bold"
+                style={{ fontSize: 30, lineHeight: 40 }}
+              >
+                {num(estimate.totalDose)}
+              </Text>
               <Text className="text-brand text-base font-medium">
                 {" "}
                 {t("common.units")}
               </Text>
-            </Text>
+            </View>
           </View>
           <Text className="text-brand/60 text-xs mt-2">
             {t("calculator.overrideHint")}
