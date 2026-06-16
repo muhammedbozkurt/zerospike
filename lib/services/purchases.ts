@@ -27,7 +27,7 @@ const ENTITLEMENT_ID = "pro";
 const PRO_KEY = "zerospike.isPro";
 const PLAN_KEY = "zerospike.proPlan";
 
-export type PlanId = "monthly" | "lifetime";
+export type PlanId = "monthly" | "annual" | "lifetime";
 
 export interface ProProduct {
   id: PlanId;
@@ -39,15 +39,21 @@ export interface ProProduct {
 export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
   monthly: {
     id: "monthly",
-    productId: "zerospike_pro", // App Store / Play product ID (permanent)
+    productId: "zerospike_pro", // $rc_monthly (Android base plan zerospike_pro:monthly)
     priceUSD: "$4.99",
     priceTRY: "₺149,99",
   },
+  annual: {
+    id: "annual",
+    productId: "zerospike_pro_annual", // $rc_annual (Android base plan :annualv2)
+    priceUSD: "$29.99",
+    priceTRY: "₺899,99",
+  },
   lifetime: {
     id: "lifetime",
-    productId: "zerospike_lifetime", // App Store / Play product ID (permanent)
-    priceUSD: "$59.99", // global = monthly × 12 ($4.99 × 12)
-    priceTRY: "₺1.299,99",
+    productId: "zerospike_lifetime", // $rc_lifetime (non-consumable)
+    priceUSD: "$79.99",
+    priceTRY: "₺1.799,99",
   },
 };
 
@@ -98,13 +104,14 @@ export async function getPlan(): Promise<PlanId | null> {
       await ensureConfigured();
       const info = await rc().getCustomerInfo();
       const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
-      if (ent?.productIdentifier === PRO_PRODUCTS.lifetime.productId)
-        return "lifetime";
-      if (ent?.productIdentifier === PRO_PRODUCTS.monthly.productId)
-        return "monthly";
+      // Android subscription ids carry a base plan, e.g. "zerospike_pro:monthly".
+      const id = (ent?.productIdentifier ?? "").split(":")[0];
+      if (id === PRO_PRODUCTS.lifetime.productId) return "lifetime";
+      if (id === PRO_PRODUCTS.annual.productId) return "annual";
+      if (id === PRO_PRODUCTS.monthly.productId) return "monthly";
     }
     const v = await AsyncStorage.getItem(PLAN_KEY);
-    return v === "monthly" || v === "lifetime" ? v : null;
+    return v === "monthly" || v === "annual" || v === "lifetime" ? v : null;
   } catch {
     return null;
   }
@@ -126,13 +133,11 @@ export async function purchasePro(plan: PlanId = "monthly"): Promise<boolean> {
     // On Android a subscription product id carries its base plan, e.g.
     // "zerospike_pro:monthly", so match by the part before ":" too.
     const baseId = (id?: string) => (id ?? "").split(":")[0];
+    const wantType =
+      plan === "lifetime" ? "LIFETIME" : plan === "annual" ? "ANNUAL" : "MONTHLY";
     const pkg =
       pkgs.find((p: any) => baseId(p.product?.identifier) === targetId) ??
-      pkgs.find((p: any) =>
-        plan === "lifetime"
-          ? p.packageType === "LIFETIME"
-          : p.packageType === "MONTHLY"
-      );
+      pkgs.find((p: any) => p.packageType === wantType);
     if (!pkg) return false;
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
@@ -170,6 +175,7 @@ export async function getOfferingPrices(): Promise<Partial<Record<PlanId, string
       const id = (p.product?.identifier ?? "").split(":")[0];
       const price = p.product?.priceString;
       if (id === PRO_PRODUCTS.monthly.productId) out.monthly = price;
+      if (id === PRO_PRODUCTS.annual.productId) out.annual = price;
       if (id === PRO_PRODUCTS.lifetime.productId) out.lifetime = price;
     }
     return out;

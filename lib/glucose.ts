@@ -1,4 +1,32 @@
-import type { PeriodTag, UserProfile } from "./db/types";
+import type { GlucoseUnit, PeriodTag, UserProfile } from "./db/types";
+
+/* ── Units ─────────────────────────────────────────────────────────────────
+ * Everything is stored in mg/dL. These helpers convert only at the display /
+ * input boundary so the classification + insulin math never changes.        */
+const MGDL_PER_MMOL = 18.0182;
+
+export function glucoseUnitLabel(unit: GlucoseUnit): string {
+  return unit === "mmol" ? "mmol/L" : "mg/dL";
+}
+
+/** mg/dL → the profile's unit as a display string (mmol shows 1 decimal). */
+export function formatGlucose(mgdl: number, unit: GlucoseUnit): string {
+  return unit === "mmol"
+    ? (mgdl / MGDL_PER_MMOL).toFixed(1)
+    : String(Math.round(mgdl));
+}
+
+/** mg/dL → editable number in the profile's unit (mmol rounded to 1 decimal). */
+export function glucoseToDisplay(mgdl: number, unit: GlucoseUnit): number {
+  return unit === "mmol"
+    ? Math.round((mgdl / MGDL_PER_MMOL) * 10) / 10
+    : Math.round(mgdl);
+}
+
+/** A value entered in the profile's unit → canonical mg/dL for storage. */
+export function glucoseFromDisplay(value: number, unit: GlucoseUnit): number {
+  return unit === "mmol" ? Math.round(value * MGDL_PER_MMOL) : Math.round(value);
+}
 
 export type GlucoseStatus = "normal" | "elevated" | "high";
 

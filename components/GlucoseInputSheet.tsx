@@ -10,7 +10,8 @@ import {
 } from "react-native";
 import { useTranslation } from "react-i18next";
 
-import type { PeriodTag } from "../lib/db/types";
+import type { GlucoseUnit, PeriodTag } from "../lib/db/types";
+import { glucoseFromDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { Button, Segmented } from "./ui";
 
 const PERIODS: PeriodTag[] = [
@@ -24,6 +25,8 @@ const PERIODS: PeriodTag[] = [
 interface Props {
   visible: boolean;
   initialPeriod?: PeriodTag;
+  unit?: GlucoseUnit;
+  /** value is in mg/dL (already converted from the display unit). */
   onClose: () => void;
   onSubmit: (value: number, period: PeriodTag) => void;
 }
@@ -31,12 +34,17 @@ interface Props {
 export function GlucoseInputSheet({
   visible,
   initialPeriod = "fasting",
+  unit = "mgdl",
   onClose,
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [period, setPeriod] = useState<PeriodTag>(initialPeriod);
+
+  const mmol = unit === "mmol";
+  const minD = mmol ? 0.5 : 1;
+  const maxD = mmol ? 50 : 900;
 
   useEffect(() => {
     if (visible) {
@@ -45,15 +53,22 @@ export function GlucoseInputSheet({
     }
   }, [visible, initialPeriod]);
 
+  function onType(s: string) {
+    const clean = mmol
+      ? s.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1")
+      : s.replace(/[^0-9]/g, "");
+    setValue(clean);
+  }
+
   function submit() {
-    const num = parseInt(value, 10);
-    if (!Number.isFinite(num) || num <= 0 || num > 900) return;
-    onSubmit(num, period);
+    const num = parseFloat(value);
+    if (!Number.isFinite(num) || num < minD || num > maxD) return;
+    onSubmit(glucoseFromDisplay(num, unit), period);
   }
 
   const valid = (() => {
-    const n = parseInt(value, 10);
-    return Number.isFinite(n) && n > 0 && n <= 900;
+    const n = parseFloat(value);
+    return Number.isFinite(n) && n >= minD && n <= maxD;
   })();
 
   return (
@@ -87,16 +102,16 @@ export function GlucoseInputSheet({
             <View className="flex-row items-end justify-center mb-6">
               <TextInput
                 value={value}
-                onChangeText={(s) => setValue(s.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
+                onChangeText={onType}
+                keyboardType={mmol ? "decimal-pad" : "number-pad"}
                 autoFocus
-                placeholder="110"
+                placeholder={mmol ? "6.1" : "110"}
                 placeholderTextColor="#3f3f46"
                 className="text-6xl font-bold text-zinc-50 text-center min-w-[120px]"
-                maxLength={3}
+                maxLength={mmol ? 4 : 3}
               />
               <Text className="text-zinc-500 text-lg mb-3 ml-2">
-                {t("common.mgdl")}
+                {glucoseUnitLabel(unit)}
               </Text>
             </View>
 

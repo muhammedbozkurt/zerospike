@@ -17,7 +17,13 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { updateProfile } from "../lib/db/profiles";
 import { scheduleBasalReminder } from "../lib/services/notifications";
-import { Button } from "../components/ui";
+import type { GlucoseUnit } from "../lib/db/types";
+import {
+  glucoseToDisplay,
+  glucoseFromDisplay,
+  glucoseUnitLabel,
+} from "../lib/glucose";
+import { Button, Segmented } from "../components/ui";
 import { FormCard, InputRow, ActionRow, AcceptCheck } from "../components/form";
 import { InlineTimePicker } from "../components/InlineTimePicker";
 import { Logo } from "../components/Logo";
@@ -73,7 +79,15 @@ export default function OnboardingScreen() {
     String(activeProfile?.carb_ratio_dinner ?? 12)
   );
   const [isf, setIsf] = useState(
-    String(activeProfile?.insulin_sensitivity_factor ?? 40)
+    String(
+      glucoseToDisplay(
+        activeProfile?.insulin_sensitivity_factor ?? 40,
+        activeProfile?.glucose_unit ?? "mgdl"
+      )
+    )
+  );
+  const [unit, setUnit] = useState<GlucoseUnit>(
+    activeProfile?.glucose_unit ?? "mgdl"
   );
   const [basalTime, setBasalTime] = useState("22:00");
   const [showTime, setShowTime] = useState(false);
@@ -85,17 +99,39 @@ export default function OnboardingScreen() {
     return Number.isFinite(x) && x > 0 ? x : fallback;
   }
 
+  // Switching unit converts the currently-shown target values to the new unit.
+  function changeUnit(next: GlucoseUnit) {
+    if (next === unit) return;
+    const fMgdl = glucoseFromDisplay(n(fasting, glucoseToDisplay(100, unit)), unit);
+    const pMgdl = glucoseFromDisplay(n(postmeal, glucoseToDisplay(140, unit)), unit);
+    const iMgdl = glucoseFromDisplay(n(isf, glucoseToDisplay(40, unit)), unit);
+    setFasting(String(glucoseToDisplay(fMgdl, next)));
+    setPostmeal(String(glucoseToDisplay(pMgdl, next)));
+    setIsf(String(glucoseToDisplay(iMgdl, next)));
+    setUnit(next);
+  }
+
   async function finish() {
     if (!activeProfile || !accepted) return;
     setSaving(true);
     await updateProfile(activeProfile.id, {
       name: name.trim() || t("profiles.defaultName"),
-      target_fasting_max: Math.round(n(fasting, 100)),
-      target_postmeal_max: Math.round(n(postmeal, 140)),
+      target_fasting_max: glucoseFromDisplay(
+        n(fasting, glucoseToDisplay(100, unit)),
+        unit
+      ),
+      target_postmeal_max: glucoseFromDisplay(
+        n(postmeal, glucoseToDisplay(140, unit)),
+        unit
+      ),
       carb_ratio_breakfast: n(crBreakfast, 10),
       carb_ratio_lunch: n(crLunch, 12),
       carb_ratio_dinner: n(crDinner, 12),
-      insulin_sensitivity_factor: n(isf, 40),
+      insulin_sensitivity_factor: glucoseFromDisplay(
+        n(isf, glucoseToDisplay(40, unit)),
+        unit
+      ),
+      glucose_unit: unit,
     });
     await scheduleBasalReminder(basalTime);
     bumpData();
@@ -207,6 +243,20 @@ export default function OnboardingScreen() {
           />
         </FormCard>
 
+        {/* Glucose unit */}
+        <FormCard icon="options-outline" title={t("settings.glucoseUnit")}>
+          <View className="px-4 py-3.5">
+            <Segmented
+              options={[
+                { value: "mgdl", label: "mg/dL" },
+                { value: "mmol", label: "mmol/L" },
+              ]}
+              value={unit}
+              onChange={changeUnit}
+            />
+          </View>
+        </FormCard>
+
         {/* Targets */}
         <FormCard icon="speedometer-outline" title={t("onboarding.secTargets")}>
           <InputRow
@@ -214,18 +264,18 @@ export default function OnboardingScreen() {
             label={t("period.fasting")}
             value={fasting}
             onChangeText={setFasting}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
           />
           <InputRow
             icon="time-outline"
             label={t("period.post_meal_2h")}
             value={postmeal}
             onChangeText={setPostmeal}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
             last
           />
         </FormCard>
@@ -267,9 +317,9 @@ export default function OnboardingScreen() {
             hint={t("settings.isfHint")}
             value={isf}
             onChangeText={setIsf}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
           />
           <ActionRow
             icon="alarm-outline"

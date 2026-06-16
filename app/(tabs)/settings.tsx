@@ -13,8 +13,13 @@ import { loadDemoData } from "../../lib/db/demo";
 import { exportLogsCsv } from "../../lib/services/export";
 import { setProOverride, presentCodeRedemption } from "../../lib/services/purchases";
 import { scheduleBasalReminder } from "../../lib/services/notifications";
-import type { Lang } from "../../lib/db/types";
-import { SectionLabel } from "../../components/ui";
+import type { Lang, GlucoseUnit } from "../../lib/db/types";
+import {
+  glucoseToDisplay,
+  glucoseFromDisplay,
+  glucoseUnitLabel,
+} from "../../lib/glucose";
+import { SectionLabel, Segmented } from "../../components/ui";
 import { FormCard, InputRow, ActionRow } from "../../components/form";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { LanguagePicker } from "../../components/LanguagePicker";
@@ -86,17 +91,21 @@ export default function SettingsScreen() {
   const [showTime, setShowTime] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
+
   useEffect(() => {
     if (!activeProfile) return;
+    const u = activeProfile.glucose_unit ?? "mgdl";
     setName(activeProfile.name);
-    setIsf(String(activeProfile.insulin_sensitivity_factor));
+    setIsf(String(glucoseToDisplay(activeProfile.insulin_sensitivity_factor, u)));
     setCrB(String(activeProfile.carb_ratio_breakfast));
     setCrL(String(activeProfile.carb_ratio_lunch));
     setCrD(String(activeProfile.carb_ratio_dinner));
-    setFasting(String(activeProfile.target_fasting_max));
-    setPostmeal(String(activeProfile.target_postmeal_max));
+    // Targets are stored in mg/dL — show them in the profile's unit.
+    setFasting(String(glucoseToDisplay(activeProfile.target_fasting_max, u)));
+    setPostmeal(String(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
     setDailyCarb(String(activeProfile.daily_carb_target_g));
-  }, [activeProfile?.id]);
+  }, [activeProfile?.id, activeProfile?.glucose_unit]);
 
   function n(v: string, fallback: number): number {
     const x = parseFloat(v.replace(",", "."));
@@ -214,6 +223,20 @@ export default function SettingsScreen() {
           />
         </FormCard>
 
+        {/* Glucose unit */}
+        <FormCard icon="options-outline" title={t("settings.glucoseUnit")}>
+          <View className="px-4 py-3.5">
+            <Segmented
+              options={[
+                { value: "mgdl", label: "mg/dL" },
+                { value: "mmol", label: "mmol/L" },
+              ]}
+              value={unit}
+              onChange={(u: GlucoseUnit) => persist({ glucose_unit: u })}
+            />
+          </View>
+        </FormCard>
+
         {/* Targets */}
         <FormCard icon="speedometer-outline" title={t("onboarding.secTargets")}>
           <InputRow
@@ -221,11 +244,16 @@ export default function SettingsScreen() {
             label={t("period.fasting")}
             value={fasting}
             onChangeText={setFasting}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
             onEndEditing={() =>
-              persist({ target_fasting_max: Math.round(n(fasting, 100)) })
+              persist({
+                target_fasting_max: glucoseFromDisplay(
+                  n(fasting, glucoseToDisplay(100, unit)),
+                  unit
+                ),
+              })
             }
           />
           <InputRow
@@ -233,11 +261,16 @@ export default function SettingsScreen() {
             label={t("period.post_meal_2h")}
             value={postmeal}
             onChangeText={setPostmeal}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
             onEndEditing={() =>
-              persist({ target_postmeal_max: Math.round(n(postmeal, 140)) })
+              persist({
+                target_postmeal_max: glucoseFromDisplay(
+                  n(postmeal, glucoseToDisplay(140, unit)),
+                  unit
+                ),
+              })
             }
           />
           <InputRow
@@ -294,11 +327,16 @@ export default function SettingsScreen() {
             hint={t("settings.isfHint")}
             value={isf}
             onChangeText={setIsf}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
             onEndEditing={() =>
-              persist({ insulin_sensitivity_factor: n(isf, 40) })
+              persist({
+                insulin_sensitivity_factor: glucoseFromDisplay(
+                  n(isf, glucoseToDisplay(40, unit)),
+                  unit
+                ),
+              })
             }
           />
           <ActionRow

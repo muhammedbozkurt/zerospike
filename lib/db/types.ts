@@ -10,6 +10,10 @@ export type PeriodTag =
   | "bedtime"
   | "manual";
 
+/** Blood-glucose display unit. Storage is always mg/dL; this only affects how
+ *  values are shown and entered. */
+export type GlucoseUnit = "mgdl" | "mmol";
+
 export interface UserProfile {
   id: string; // UUID
   name: string;
@@ -20,6 +24,7 @@ export interface UserProfile {
   target_fasting_max: number; // default 100
   target_postmeal_max: number; // default 140
   daily_carb_target_g: number;
+  glucose_unit: GlucoseUnit; // display/entry unit (storage stays mg/dL)
   created_at: string;
 }
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, Switch, Text, View } from "react-native";
+import { FlatList, Platform, Pressable, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +15,8 @@ import { schedulePostMealReminder } from "../../lib/services/notifications";
 import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
 
 const CGM_KEY = "zerospike.cgmSync";
+// Name the health source explicitly in the UI (App Review guideline 2.5.1).
+const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
 import { JournalItem } from "../../components/JournalItem";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
@@ -182,11 +184,11 @@ export default function DashboardScreen() {
         className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
       >
         <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-          <Ionicons name="hardware-chip-outline" size={20} color="#22d3ee" />
+          <Ionicons name="pulse-outline" size={20} color="#22d3ee" />
         </View>
         <View className="flex-1">
           <Text className="text-zinc-100 font-semibold">
-            {t("dashboard.cgmTitle")}
+            {HEALTH_NAME}
           </Text>
           <Text className="text-zinc-500 text-xs">
             {syncing
@@ -210,6 +212,21 @@ export default function DashboardScreen() {
           trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
           thumbColor="#fafafa"
         />
+      </Pressable>
+
+      {/* Insights (Pro) entry */}
+      <Pressable
+        onPress={() => router.push("/insights")}
+        className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
+      >
+        <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
+          <Ionicons name="stats-chart" size={20} color="#22d3ee" />
+        </View>
+        <View className="flex-1">
+          <Text className="text-zinc-100 font-semibold">{t("insights.title")}</Text>
+          <Text className="text-zinc-500 text-xs">{t("insights.cardSub")}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="#52525b" />
       </Pressable>
 
       <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
@@ -243,32 +260,40 @@ export default function DashboardScreen() {
         }
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingBottom: 180,
+          paddingBottom: 110,
         }}
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Fast loggers — bottom half, one-handed reach */}
+      {/* Fast loggers — bottom, one-handed reach */}
       <View
-        className="absolute left-0 right-0 bottom-0 px-4 pt-3 bg-black border-t border-zinc-900"
-        style={{ paddingBottom: insets.bottom + 12 }}
+        className="absolute left-0 right-0 bottom-0 px-4 pt-2 bg-black border-t border-zinc-900"
+        style={{ paddingBottom: 10 }}
       >
         <View className="flex-row gap-3">
           <Pressable
             onPress={() => openLogger("fasting")}
-            className="flex-1 rounded-2xl bg-zinc-900 border border-zinc-800 active:bg-zinc-800 p-4 items-center"
+            className="flex-1 flex-row items-center justify-center rounded-2xl bg-zinc-900 border border-zinc-800 active:bg-zinc-800 py-3 px-2"
           >
-            <Ionicons name="sunny-outline" size={22} color="#22d3ee" />
-            <Text className="text-zinc-100 font-semibold mt-1.5 text-center">
+            <Ionicons name="sunny-outline" size={18} color="#22d3ee" />
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              className="text-zinc-100 font-semibold ml-2 text-sm"
+            >
               {t("dashboard.quickFasting")}
             </Text>
           </Pressable>
           <Pressable
             onPress={() => openLogger("post_meal_2h")}
-            className="flex-1 rounded-2xl bg-zinc-900 border border-zinc-800 active:bg-zinc-800 p-4 items-center"
+            className="flex-1 flex-row items-center justify-center rounded-2xl bg-zinc-900 border border-zinc-800 active:bg-zinc-800 py-3 px-2"
           >
-            <Ionicons name="time-outline" size={22} color="#f59e0b" />
-            <Text className="text-zinc-100 font-semibold mt-1.5 text-center">
+            <Ionicons name="time-outline" size={18} color="#f59e0b" />
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              className="text-zinc-100 font-semibold ml-2 text-sm"
+            >
               {t("dashboard.quickPostMeal")}
             </Text>
           </Pressable>
@@ -278,6 +303,7 @@ export default function DashboardScreen() {
       <GlucoseInputSheet
         visible={sheetOpen}
         initialPeriod={initialPeriod}
+        unit={activeProfile?.glucose_unit ?? "mgdl"}
         onClose={() => setSheetOpen(false)}
         onSubmit={submitGlucose}
       />

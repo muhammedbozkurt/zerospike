@@ -91,7 +91,7 @@ export default function PaywallScreen() {
   const { refreshPro, lang } = useApp();
   const { toast } = useFeedback();
   const [busy, setBusy] = useState(false);
-  const [plan, setPlan] = useState<PlanId>("lifetime");
+  const [plan, setPlan] = useState<PlanId>("annual");
   const [prices, setPrices] = useState<Partial<Record<PlanId, string>>>({});
 
   // Real localized store prices (no-op/empty in mock mode → static fallback).
@@ -147,7 +147,11 @@ export default function PaywallScreen() {
   }
 
   const ctaPeriod =
-    plan === "monthly" ? t("paywall.perMonth") : ` ${t("paywall.perOnce")}`;
+    plan === "monthly"
+      ? t("paywall.perMonth")
+      : plan === "annual"
+        ? t("paywall.perYear")
+        : ` ${t("paywall.perOnce")}`;
 
   return (
     <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
@@ -189,21 +193,29 @@ export default function PaywallScreen() {
 
         {/* Plans */}
         <PlanCard
-          selected={plan === "lifetime"}
-          onSelect={() => setPlan("lifetime")}
-          name={t("paywall.planLifetime")}
-          desc={t("paywall.lifetimeDesc")}
-          price={price("lifetime")}
-          period={t("paywall.perOnce")}
-          best={t("paywall.bestValue")}
-        />
-        <PlanCard
           selected={plan === "monthly"}
           onSelect={() => setPlan("monthly")}
           name={t("paywall.planMonthly")}
           desc={t("paywall.monthlyDesc")}
           price={price("monthly")}
           period={t("paywall.perMonth")}
+        />
+        <PlanCard
+          selected={plan === "annual"}
+          onSelect={() => setPlan("annual")}
+          name={t("paywall.planAnnual")}
+          desc={t("paywall.annualDesc")}
+          price={price("annual")}
+          period={t("paywall.perYear")}
+          best={t("paywall.bestValue")}
+        />
+        <PlanCard
+          selected={plan === "lifetime"}
+          onSelect={() => setPlan("lifetime")}
+          name={t("paywall.planLifetime")}
+          desc={t("paywall.lifetimeDesc")}
+          price={price("lifetime")}
+          period={t("paywall.perOnce")}
         />
 
         <View className="h-2" />

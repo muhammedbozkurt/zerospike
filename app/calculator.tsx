@@ -22,6 +22,7 @@ import { getFood } from "../lib/db/foods";
 import { addMealLog } from "../lib/db/logs";
 import { canAddLog } from "../lib/guardrails";
 import { estimateInsulin, activeMealSlot } from "../lib/insulin";
+import { glucoseFromDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { schedulePostMealReminder } from "../lib/services/notifications";
 import type { Food, MealSlot } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
@@ -59,14 +60,16 @@ export default function CalculatorScreen() {
     })();
   }, [foodId]);
 
+  const unit = activeProfile?.glucose_unit ?? "mgdl";
+
   const estimate = useMemo(() => {
     if (!food || !activeProfile) return null;
-    const g = parseInt(glucose, 10);
+    const g = parseFloat(glucose);
     return estimateInsulin(food, portion, activeProfile, {
       slot,
-      currentGlucose: Number.isFinite(g) ? g : null,
+      currentGlucose: Number.isFinite(g) ? glucoseFromDisplay(g, unit) : null,
     });
-  }, [food, activeProfile, portion, slot, glucose]);
+  }, [food, activeProfile, portion, slot, glucose, unit]);
 
   // Keep the manual dose synced to the estimate until the user edits it.
   useEffect(() => {
@@ -211,15 +214,21 @@ export default function CalculatorScreen() {
         {/* Optional current glucose for correction */}
         <View className="mt-4">
           <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-            {t("calculator.currentGlucose")}
+            {t("calculator.currentGlucose")} ({glucoseUnitLabel(unit)})
           </Text>
           <TextInput
             value={glucose}
-            onChangeText={(s) => setGlucose(s.replace(/[^0-9]/g, ""))}
-            keyboardType="number-pad"
+            onChangeText={(s) =>
+              setGlucose(
+                unit === "mmol"
+                  ? s.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1")
+                  : s.replace(/[^0-9]/g, "")
+              )
+            }
+            keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
             placeholder="—"
             placeholderTextColor="#52525b"
-            maxLength={3}
+            maxLength={unit === "mmol" ? 4 : 3}
             className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
           />
         </View>

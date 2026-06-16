@@ -9,7 +9,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -57,6 +57,17 @@ export async function initDatabase(): Promise<void> {
     await seedFoods(db);
   }
 
+  // v2 → v3: per-profile glucose display unit (mg/dL default).
+  if (currentVersion >= 1 && currentVersion < 3) {
+    try {
+      await db.execAsync(
+        "ALTER TABLE user_profiles ADD COLUMN glucose_unit TEXT NOT NULL DEFAULT 'mgdl';"
+      );
+    } catch {
+      // column already exists — ignore
+    }
+  }
+
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
 }
 
@@ -72,6 +83,7 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       target_fasting_max INTEGER NOT NULL DEFAULT 100,
       target_postmeal_max INTEGER NOT NULL DEFAULT 140,
       daily_carb_target_g INTEGER NOT NULL DEFAULT 200,
+      glucose_unit TEXT NOT NULL DEFAULT 'mgdl',
       created_at TEXT NOT NULL
     );
 

@@ -9,6 +9,8 @@ import {
   classifyGlucose,
   STATUS_COLOR,
   GlucoseStatus,
+  formatGlucose,
+  glucoseUnitLabel,
 } from "../lib/glucose";
 import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
@@ -57,9 +59,11 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
             </Text>
             <View className="flex-row items-baseline">
               <Text className="text-2xl font-bold" style={{ color }}>
-                {entry.glucose_level_mgdl}
+                {formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)}
               </Text>
-              <Text className="text-zinc-500 text-xs ml-1">{t("common.mgdl")}</Text>
+              <Text className="text-zinc-500 text-xs ml-1">
+                {glucoseUnitLabel(profile.glucose_unit)}
+              </Text>
             </View>
           </View>
           <Text className="text-zinc-500 text-xs">
