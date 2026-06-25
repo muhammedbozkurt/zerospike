@@ -16,6 +16,7 @@ import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
 
 const STATUS_BORDER_COLOR: Record<GlucoseStatus, string> = {
+  low: "#3b82f6",
   normal: "#10b981",
   elevated: "#f59e0b",
   high: "#f43f5e",
@@ -83,6 +84,18 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
               <Text className="text-zinc-500 text-xs ml-1">
                 {glucoseUnitLabel(profile.glucose_unit)}
               </Text>
+              {status === "low" ? (
+                // A hypo must read as a LOW, never like a high — distinct
+                // label + cold color so it is never mistaken for hyperglycemia.
+                <View
+                  className="ml-2 rounded-full px-1.5 py-0.5"
+                  style={{ backgroundColor: `${color}22` }}
+                >
+                  <Text className="text-[10px] font-bold" style={{ color }}>
+                    {t("journal.lowBadge")}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <TagBadges tags={entry.tags} />
           </View>

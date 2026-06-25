@@ -1,5 +1,11 @@
-import type { Injection, InjectionSite, MealLog, SugarLog } from "./db/types";
-import { INJECTION_SITES } from "./db/types";
+import type {
+  Injection,
+  InjectionSite,
+  LogTag,
+  MealLog,
+  SugarLog,
+} from "./db/types";
+import { INJECTION_SITES, LOG_TAGS } from "./db/types";
 
 /**
  * Pro "Insights" — a read-only, descriptive summary of the user's own logged
@@ -201,4 +207,86 @@ export function computeInsights(
     mostUsedSiteCount,
     siteDistribution,
   };
+}
+
+/* ── Actionable patterns ──────────────────────────────────────────────────
+ * Purely DESCRIPTIVE observations about the user's own readings — never causal
+ * claims, never advice. Each requires a minimum sample so a single outlier
+ * can't manufacture a "pattern". The UI renders each from its typed key. */
+
+/** A reading bucket needs at least this many points to be reported. */
+export const PATTERN_MIN_READINGS = 4;
+/** A bucket's mean must beat the overall mean by this (mg/dL) to be flagged. */
+export const PATTERN_DIFF_MGDL = 15;
+/** Glucose CV at/above this (%) is the standard "high variability" marker. */
+export const PATTERN_CV_HIGH = 36;
+
+export type InsightPattern =
+  | { kind: "tag_higher"; tag: LogTag; avg: number; baseline: number; n: number }
+  | { kind: "dawn"; morningAvg: number; baseline: number; n: number }
+  | { kind: "high_variability"; cv: number };
+
+/**
+ * Derives descriptive patterns from a profile's recent readings:
+ *  - tag_higher:      readings carrying a context tag (sport/stress/…) average
+ *                     notably higher than the overall mean
+ *  - dawn:            morning readings (06:00–12:00) average notably higher
+ *  - high_variability: coefficient of variation ≥ 36 %
+ * Returns at most a few, strongest-first. Empty when there isn't enough data.
+ */
+export function derivePatterns(
+  sugar: SugarLog[],
+  windowDays = INSIGHTS_WINDOW_DAYS
+): InsightPattern[] {
+  const since = Date.now() - windowDays * 86_400_000;
+  const within = (iso: string) => {
+    const t = new Date(iso).getTime();
+    return !Number.isNaN(t) && t >= since;
+  };
+  const readings = sugar.filter((x) => within(x.logged_at));
+  const levels = readings.map((x) => x.glucose_level_mgdl);
+  const baseline = mean(levels);
+  if (baseline == null || levels.length < PATTERN_MIN_READINGS) return [];
+
+  const out: InsightPattern[] = [];
+
+  // Tag correlations — only tags with enough tagged readings and a clear lift.
+  const tagFindings: { tag: LogTag; avg: number; n: number }[] = [];
+  for (const tag of LOG_TAGS) {
+    if (tag === "other") continue; // catch-all tag → not a meaningful correlation
+    const vals = readings
+      .filter((x) => x.tags.includes(tag))
+      .map((x) => x.glucose_level_mgdl);
+    const avg = mean(vals);
+    if (avg != null && vals.length >= PATTERN_MIN_READINGS && avg - baseline >= PATTERN_DIFF_MGDL) {
+      tagFindings.push({ tag, avg: Math.round(avg), n: vals.length });
+    }
+  }
+  tagFindings
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, 2)
+    .forEach((f) =>
+      out.push({ kind: "tag_higher", tag: f.tag, avg: f.avg, baseline: Math.round(baseline), n: f.n })
+    );
+
+  // Dawn phenomenon — morning slice (06:00–12:00) clearly above the mean.
+  const morning = readings
+    .filter((x) => {
+      const h = new Date(x.logged_at).getHours();
+      return h >= 6 && h < 12;
+    })
+    .map((x) => x.glucose_level_mgdl);
+  const morningAvg = mean(morning);
+  if (morningAvg != null && morning.length >= PATTERN_MIN_READINGS && morningAvg - baseline >= PATTERN_DIFF_MGDL) {
+    out.push({ kind: "dawn", morningAvg: Math.round(morningAvg), baseline: Math.round(baseline), n: morning.length });
+  }
+
+  // High variability (CV ≥ 36 %).
+  const sd = stdev(levels);
+  if (sd != null && baseline > 0) {
+    const cv = (sd / baseline) * 100;
+    if (cv >= PATTERN_CV_HIGH) out.push({ kind: "high_variability", cv: Math.round(cv) });
+  }
+
+  return out;
 }

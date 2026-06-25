@@ -47,10 +47,10 @@ export default function OnboardingScreen() {
   const [page, setPage] = useState(0);
 
   const slides = [
-    { logo: true, icon: "leaf-outline", title: t("onboarding.s1Title"), body: t("onboarding.s1Body") },
-    { logo: false, icon: "pulse-outline", title: t("onboarding.s2Title"), body: t("onboarding.s2Body") },
-    { logo: false, icon: "people-outline", title: t("onboarding.s3Title"), body: t("onboarding.s3Body") },
-    { logo: false, icon: "medkit-outline", title: t("onboarding.s4Title"), body: t("onboarding.s4Body") },
+    { logo: true, icon: "leaf-outline", title: t("onboarding.s1Title"), body: t("onboarding.s1Body"), demo: false },
+    { logo: false, icon: "pulse-outline", title: t("onboarding.s2Title"), body: t("onboarding.s2Body"), demo: true },
+    { logo: false, icon: "people-outline", title: t("onboarding.s3Title"), body: t("onboarding.s3Body"), demo: false },
+    { logo: false, icon: "medkit-outline", title: t("onboarding.s4Title"), body: t("onboarding.s4Body"), demo: false },
   ] as const;
   const lastSlide = page === slides.length - 1;
 
@@ -186,6 +186,44 @@ export default function OnboardingScreen() {
               <Text className="text-zinc-400 mt-3 text-center text-base leading-6">
                 {s.body}
               </Text>
+
+              {/* Visual demo of the core loop: carbs → editable estimated dose */}
+              {s.demo ? (
+                <View className="w-full rounded-2xl bg-brand/10 border border-brand/30 p-4 mt-8">
+                  <Text className="text-brand text-[11px] font-semibold uppercase tracking-wider">
+                    {t("calculator.estimatedDose")}
+                  </Text>
+                  <View className="flex-row justify-between mt-2.5">
+                    <Text className="text-zinc-400 text-sm">
+                      {t("calculator.estCarbs")}
+                    </Text>
+                    <Text className="text-zinc-100 font-medium">
+                      24 {t("common.grams")}
+                    </Text>
+                  </View>
+                  <View className="h-px bg-brand/20 my-2.5" />
+                  <View className="flex-row justify-between items-center">
+                    <Text className="text-zinc-300 font-semibold">
+                      {t("calculator.totalDose")}
+                    </Text>
+                    <View className="flex-row items-baseline">
+                      <Text
+                        className="text-brand font-bold"
+                        style={{ fontSize: 24, lineHeight: 30 }}
+                      >
+                        2.5
+                      </Text>
+                      <Text className="text-brand text-sm font-medium">
+                        {" "}
+                        {t("common.units")}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text className="text-brand/60 text-[11px] mt-2 text-center">
+                    {t("calculator.overrideHint")}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ))}
         </ScrollView>

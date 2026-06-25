@@ -20,5 +20,7 @@ export function termsUrl(): string {
 }
 
 export function supportUrl(): string {
-  return `${BASE}${prefix()}/zerospike-support`;
+  // Support lives at /<app>/support (TR) and /en/<app>/support (others),
+  // matching the sibling apps — not under /legal/.
+  return `${BASE}${currentLang() === "tr" ? "" : "/en"}/zerospike/support`;
 }

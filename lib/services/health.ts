@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { addSugarLog, sugarLogExistsAt } from "../db/logs";
 import type { PeriodTag } from "../db/types";
+import { pickMgdl, snapIso } from "./healthMath";
 
 /**
  * Apple Health (HealthKit) / Android Health Connect bridge.
@@ -45,11 +46,6 @@ function pickTagForHour(hour: number): PeriodTag {
   if (hour < 9) return "fasting";
   if (hour >= 22 || hour < 1) return "bedtime";
   return "manual";
-}
-
-/** mmol/L readings (typically < 30) are converted to mg/dL. */
-function toMgdl(value: number): number {
-  return value > 0 && value < 30 ? value * 18 : value;
 }
 
 // ── Availability & permissions ─────────────────────────────────────────────
@@ -147,9 +143,13 @@ async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
   );
   return (samples ?? []).map((s: any) => {
     const when = new Date(s.endDate ?? s.startDate);
+    // The query above requests unit "mg/dL", so s.quantity is ALREADY mg/dL —
+    // it must NOT pass through any mmol heuristic (that inverted true sub-30
+    // hypos into fake highs). snapIso collapses ms-drift re-reads on dedup.
+    const mgdl = pickMgdl({ mgdl: Number(s.quantity) });
     return {
-      value: Math.round(toMgdl(Number(s.quantity))),
-      date: when.toISOString(),
+      value: mgdl == null ? 0 : Math.round(mgdl),
+      date: snapIso(when.toISOString()),
       period_tag: pickTagForHour(when.getHours()),
     };
   });
@@ -171,13 +171,16 @@ async function readRealGlucoseAndroid(): Promise<GlucoseSample[]> {
   });
   const records = res?.records ?? (Array.isArray(res) ? res : []);
   return records.map((r: any) => {
-    const mgdl =
-      r.level?.inMilligramsPerDeciliter ??
-      toMgdl(Number(r.level?.inMillimolesPerLiter ?? 0));
+    // Health Connect exposes both unit fields explicitly — prefer mg/dL, and
+    // convert ONLY the explicit mmol field (no magnitude guessing).
+    const mgdl = pickMgdl({
+      mgdl: r.level?.inMilligramsPerDeciliter ?? null,
+      mmol: r.level?.inMillimolesPerLiter ?? null,
+    });
     const when = new Date(r.time ?? r.startTime);
     return {
-      value: Math.round(mgdl),
-      date: when.toISOString(),
+      value: mgdl == null ? 0 : Math.round(mgdl),
+      date: snapIso(when.toISOString()),
       period_tag: pickTagForHour(when.getHours()),
     };
   });
@@ -231,7 +234,7 @@ export async function importHealthGlucose(profileId: string): Promise<SyncResult
   let inserted = 0;
   for (const s of samples) {
     if (!Number.isFinite(s.value) || s.value <= 0) continue;
-    if (await sugarLogExistsAt(profileId, s.date, "health")) continue;
+    if (await sugarLogExistsAt(profileId, s.date, "health", s.value)) continue;
     await addSugarLog({
       profile_id: profileId,
       glucose_level_mgdl: s.value,

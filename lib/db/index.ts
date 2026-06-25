@@ -25,7 +25,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 /**
  * Initializes the database on first launch. Idempotent and safe to call on
  * every start. Creates all tables, an FTS5 search index (+ sync triggers),
- * seeds 563 foods once, and ensures a default profile exists.
+ * seeds 562 foods once, and ensures a default profile exists.
  */
 export async function initDatabase(): Promise<void> {
   const db = await getDb();

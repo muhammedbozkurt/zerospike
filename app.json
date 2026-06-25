@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
@@ -19,20 +19,19 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
-      "buildNumber": "13",
+      "buildNumber": "14",
       "config": {
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
         "NSCameraUsageDescription": "zerospike uses your camera to scan food barcodes and add meal photos.",
         "NSPhotoLibraryUsageDescription": "zerospike accesses your photo library to add photos to your meal journal.",
-        "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically.",
-        "NSHealthUpdateUsageDescription": "zerospike can write your blood glucose readings to Apple Health."
+        "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically."
       }
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 13,
+      "versionCode": 14,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
@@ -41,8 +40,7 @@
         "android.permission.CAMERA",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.health.READ_BLOOD_GLUCOSE",
-        "android.permission.health.WRITE_BLOOD_GLUCOSE"
+        "android.permission.health.READ_BLOOD_GLUCOSE"
       ]
     },
     "plugins": [
@@ -72,7 +70,6 @@
         "@kingstinct/react-native-healthkit",
         {
           "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically.",
-          "NSHealthUpdateUsageDescription": "zerospike can write your blood glucose readings to Apple Health.",
           "background": false
         }
       ],

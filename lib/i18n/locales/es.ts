@@ -32,6 +32,10 @@ const es: TranslationSchema = {
     methodTitle: "Cómo se calculan las estimaciones",
     method:
       "• Dosis de comida = carbohidratos ÷ su relación insulina-carbohidratos\n• Dosis de corrección = (glucosa actual − objetivo) ÷ su factor de sensibilidad a la insulina (ISF)\n• La glucosa posprandial se mide 2 horas después de comer\n\nEstas relaciones son personales y debe establecerlas su médico.",
+    methodNote:
+      "Las estimaciones se redondean a la resolución de 0,5 unidades de su pluma y son intencionadamente conservadoras: revíselas y ajústelas siempre antes de usarlas. La dosis de corrección se basa en su objetivo posprandial.",
+    iobNote:
+      "La insulina activa (IOB) se estima a partir de sus dosis de bolo registradas con una caída lineal simple de ~4 horas, y solo reduce una estimación de corrección, nunca la dosis de la comida. Es una estimación, no una indicación.",
     listTitle: "Referencias",
     openHint: "Se abre en tu navegador",
   },
@@ -80,6 +84,17 @@ const es: TranslationSchema = {
     injectionsToday: "{{n}} inyecciones hoy",
     pensActive: "{{n}} bolígrafos",
     thisWeek: "Esta semana",
+    activeInsulin: "Insulina activa",
+    activeInsulinSub: "Estimado de dosis recientes — evita acumular",
+    feedbackOnTarget: "Control 2h: {{value}} {{unit}} — en tu rango objetivo.",
+    feedbackElevated: "Control 2h: {{value}} {{unit}} — algo por encima de tu objetivo.",
+    feedbackHigh: "Control 2h: {{value}} {{unit}} — por encima de tu rango objetivo.",
+    feedbackLow: "Control 2h: {{value}} {{unit}} — por debajo de tu rango.",
+    sampleCta: "Ver con datos de ejemplo",
+    sampleActive: "Estás viendo datos de ejemplo",
+    sampleClear: "Borrar",
+    sampleClearConfirm:
+      "Esto borra TODOS los datos de este perfil (los de ejemplo y lo que hayas añadido) para empezar de cero. ¿Continuar?",
   },
   period: {
     fasting: "En ayunas",
@@ -111,6 +126,7 @@ const es: TranslationSchema = {
     addFood: "Guardar alimento",
     custom: "Personal",
     deleteFood: "¿Seguro que desea eliminar este alimento personalizado?",
+    recent: "Comidas recientes",
   },
   scan: {
     requesting: "Solicitando permiso de cámara…",
@@ -142,11 +158,20 @@ const es: TranslationSchema = {
     personalNote: "Nota personal",
     notePlaceholder: "p. ej. Comí esto, mi glucosa subió un poco",
     logMeal: "Registrar comida",
+    warnHighDose:
+      "Esta estimación es inusualmente alta. Verifique su ratio de carbohidratos y la porción antes de usarla.",
+    warnRatio:
+      "Su ratio de carbohidratos parece estar fuera del rango habitual. Revíselo en Ajustes.",
+    warnIsf:
+      "Su factor de corrección parece estar fuera del rango habitual. Revíselo en Ajustes.",
+    activeInsulin: "Insulina activa (IOB)",
+    iobReduction: "Reducido por insulina activa",
   },
   journal: {
     carbsLabel: "{{carbs}} g de carbohidratos",
     doseLabel: "{{dose}} unidades",
     deleteEntry: "¿Seguro que desea eliminar este registro?",
+    lowBadge: "BAJO",
   },
   profiles: {
     defaultName: "Mi perfil",
@@ -269,7 +294,9 @@ const es: TranslationSchema = {
     colType: "Tipo",
     colGlucose: "Glucosa (mg/dL)",
     colCarbs: "Carbohidratos (g)",
-    colInsulin: "Insulina recomendada (unidades)",
+    colInsulin: "Insulina estimada (unidades)",
+    disclaimer:
+      "zerospike es un diario, no un dispositivo médico. Los valores de insulina son estimaciones editables a partir de sus propios ajustes. Confirme todas las dosis con su médico.",
     colFood: "Alimento",
     colNote: "Nota",
     typeGlucose: "Glucosa",
@@ -287,6 +314,9 @@ const es: TranslationSchema = {
     dateRange: "Rango de fechas",
     generated: "Generado",
     created: "Informe PDF creado",
+    agpTitle: "Perfil de glucosa por hora del día (AGP)",
+    agpCaption:
+      "Mediana (línea) y rango 25–75 % por hora, agrupado en el período. Banda verde = {{low}}–{{high}}.",
   },
   tags: {
     label: "Etiquetas",
@@ -349,6 +379,13 @@ const es: TranslationSchema = {
     morning: "Mañana",
     afternoon: "Tarde",
     evening: "Noche",
+    patternsTitle: "Patrones",
+    patternTagHigher:
+      "Las lecturas que marcaste como \"{{tag}}\" promediaron {{avg}} {{unit}} frente a {{baseline}} en general ({{n}} lecturas).",
+    patternDawn:
+      "Las mañanas tienden a ser más altas: {{morningAvg}} {{unit}} frente a {{baseline}} en general.",
+    patternHighVariability:
+      "Tus lecturas varían mucho (CV {{cv}} %). Niveles más estables son más fáciles de manejar.",
   },
   injectionGuide: {
     screenTitle: "Cómo inyectar",

@@ -78,6 +78,12 @@ export default function SourcesScreen() {
             {t("sources.methodTitle")}
           </Text>
           <Text className="text-zinc-400 leading-6">{t("sources.method")}</Text>
+          <Text className="text-zinc-500 leading-5 text-xs mt-3">
+            {t("sources.methodNote")}
+          </Text>
+          <Text className="text-zinc-500 leading-5 text-xs mt-2">
+            {t("sources.iobNote")}
+          </Text>
         </View>
 
         {/* References list */}

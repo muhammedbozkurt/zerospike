@@ -21,7 +21,13 @@ import { useApp } from "../lib/store/AppContext";
 import { getFood } from "../lib/db/foods";
 import { addMealLog } from "../lib/db/logs";
 import { canAddLog } from "../lib/guardrails";
-import { estimateInsulin, activeMealSlot } from "../lib/insulin";
+import {
+  estimateInsulin,
+  activeMealSlot,
+  type InsulinWarning,
+} from "../lib/insulin";
+import { activeInsulin } from "../lib/iob";
+import { getInjections } from "../lib/db/injections";
 import { glucoseFromDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { schedulePostMealReminder } from "../lib/services/notifications";
 import type { Food, LogTag, MealSlot } from "../lib/db/types";
@@ -34,12 +40,22 @@ import { hapticSuccess, hapticWarning } from "../lib/haptics";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
+/** Maps an estimate warning to its calculator i18n key. */
+const WARN_KEY: Record<InsulinWarning, string> = {
+  high_dose: "warnHighDose",
+  carb_ratio_out_of_range: "warnRatio",
+  isf_out_of_range: "warnIsf",
+};
+
 export default function CalculatorScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { foodId } = useLocalSearchParams<{ foodId?: string }>();
-  const { activeProfile, isProUser, lang, bumpData } = useApp();
+  const { foodId, portion: portionParam } = useLocalSearchParams<{
+    foodId?: string;
+    portion?: string;
+  }>();
+  const { activeProfile, isProUser, lang, bumpData, dataVersion } = useApp();
   const { actionSheet } = useFeedback();
 
   const [food, setFood] = useState<Food | null>(null);
@@ -51,6 +67,7 @@ export default function CalculatorScreen() {
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [tags, setTags] = useState<LogTag[]>([]);
+  const [iob, setIob] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -58,10 +75,22 @@ export default function CalculatorScreen() {
       const f = await getFood(foodId);
       if (f) {
         setFood(f);
-        setPortion(f.portion_size_g || 100);
+        // Prefill the portion from a one-tap "recent meal" re-log, else default.
+        const p = Number(portionParam);
+        setPortion(Number.isFinite(p) && p > 0 ? p : f.portion_size_g || 100);
       }
     })();
-  }, [foodId]);
+  }, [foodId, portionParam]);
+
+  // Active insulin (IOB) from recent bolus doses — used to trim the correction
+  // so a fresh dose doesn't stack on top of insulin that is still working.
+  useEffect(() => {
+    (async () => {
+      if (!activeProfile) return;
+      const injections = await getInjections(activeProfile.id, 100);
+      setIob(activeInsulin(injections));
+    })();
+  }, [activeProfile, dataVersion]);
 
   const unit = activeProfile?.glucose_unit ?? "mgdl";
 
@@ -71,8 +100,9 @@ export default function CalculatorScreen() {
     return estimateInsulin(food, portion, activeProfile, {
       slot,
       currentGlucose: Number.isFinite(g) ? glucoseFromDisplay(g, unit) : null,
+      currentIOB: iob,
     });
-  }, [food, activeProfile, portion, slot, glucose, unit]);
+  }, [food, activeProfile, portion, slot, glucose, unit, iob]);
 
   // Keep the manual dose synced to the estimate until the user edits it.
   useEffect(() => {
@@ -271,6 +301,26 @@ export default function CalculatorScreen() {
               </Text>
             </View>
           ) : null}
+          {iob > 0 ? (
+            <View className="flex-row justify-between mt-1.5">
+              <Text className="text-zinc-400 text-sm">
+                {t("calculator.activeInsulin")}
+              </Text>
+              <Text className="text-zinc-100 font-medium">
+                {num(iob)} {t("common.units")}
+              </Text>
+            </View>
+          ) : null}
+          {estimate.iobReduction > 0 ? (
+            <View className="flex-row justify-between mt-1.5">
+              <Text className="text-emerald-300/90 text-sm">
+                {t("calculator.iobReduction")}
+              </Text>
+              <Text className="text-emerald-300 font-medium">
+                −{num(estimate.iobReduction)} {t("common.units")}
+              </Text>
+            </View>
+          ) : null}
 
           <View className="h-px bg-brand/20 my-3" />
           <View className="flex-row justify-between items-center">
@@ -283,7 +333,10 @@ export default function CalculatorScreen() {
                 className="text-brand font-bold"
                 style={{ fontSize: 30, lineHeight: 40 }}
               >
-                {num(estimate.totalDose)}
+                {estimate.totalDose === 0 &&
+                (estimate.mealDose > 0 || estimate.correctionDose > 0)
+                  ? "< 0.5"
+                  : num(estimate.totalDose)}
               </Text>
               <Text className="text-brand text-base font-medium">
                 {" "}
@@ -305,6 +358,23 @@ export default function CalculatorScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {/* Plausibility warnings — non-blocking; the dose stays editable */}
+        {estimate.warnings.length > 0 ? (
+          <View className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 mb-4">
+            {estimate.warnings.map((w, i) => (
+              <View
+                key={w}
+                className={`flex-row items-start ${i > 0 ? "mt-2" : ""}`}
+              >
+                <Ionicons name="warning-outline" size={15} color="#fb7185" />
+                <Text className="text-rose-200/90 text-xs leading-4 ml-2.5 flex-1">
+                  {t(`calculator.${WARN_KEY[w]}`)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {/* Manual dose override */}
         <Text className="text-sm font-medium text-zinc-400 mb-1.5">

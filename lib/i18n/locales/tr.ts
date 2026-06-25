@@ -30,6 +30,10 @@ const tr = {
     methodTitle: "Tahminler nasıl hesaplanır",
     method:
       "• Öğün dozu = karbonhidrat ÷ insülin-karbonhidrat oranınız\n• Düzeltme dozu = (anlık şeker − hedef) ÷ insülin duyarlılık faktörünüz (ISF)\n• Tokluk (postprandiyal) şekeri yemekten 2 saat sonra ölçülür\n\nBu oranlar kişiseldir ve doktorunuz tarafından belirlenmelidir.",
+    methodNote:
+      "Tahminler kaleminizin 0,5 ünitelik çözünürlüğüne yuvarlanır ve bilinçli olarak temkinlidir; kullanmadan önce her zaman gözden geçirip düzenleyin. Düzeltme dozu öğün sonrası hedefinizi temel alır.",
+    iobNote:
+      "Aktif insülin (IOB), kaydettiğiniz bolus dozlarından ~4 saatlik basit doğrusal azalmayla tahmin edilir ve yalnızca düzeltme tahminini düşürür — öğün dozunu asla. Bu bir tahmindir, talimat değildir.",
     listTitle: "Kaynaklar",
     openHint: "Tarayıcınızda açılır",
   },
@@ -78,6 +82,17 @@ const tr = {
     injectionsToday: "Bugün {{n}} enjeksiyon",
     pensActive: "{{n}} kalem",
     thisWeek: "Bu hafta",
+    activeInsulin: "Aktif insülin",
+    activeInsulinSub: "Son dozlardan tahmini — üst üste doz vermekten kaçının",
+    feedbackOnTarget: "2. saat: {{value}} {{unit}} — hedef aralığında.",
+    feedbackElevated: "2. saat: {{value}} {{unit}} — hedefinin biraz üzerinde.",
+    feedbackHigh: "2. saat: {{value}} {{unit}} — hedef aralığının üzerinde.",
+    feedbackLow: "2. saat: {{value}} {{unit}} — aralığının altında.",
+    sampleCta: "Örnek veriyle önizle",
+    sampleActive: "Örnek verileri görüntülüyorsun",
+    sampleClear: "Temizle",
+    sampleClearConfirm:
+      "Bu, bu profildeki TÜM verileri (örnek veriler ve eklediğin her şey) siler ve sıfırdan başlatır. Devam edilsin mi?",
   },
   period: {
     fasting: "Açlık",
@@ -109,6 +124,7 @@ const tr = {
     addFood: "Yemeği Kaydet",
     custom: "Özel",
     deleteFood: "Bu özel yemeği silmek istediğinize emin misiniz?",
+    recent: "Son öğünler",
   },
   scan: {
     requesting: "Kamera izni isteniyor…",
@@ -140,11 +156,20 @@ const tr = {
     personalNote: "Kişisel not",
     notePlaceholder: "örn. Bunu yedim, şekerim biraz yükseldi",
     logMeal: "Öğünü Kaydet",
+    warnHighDose:
+      "Bu tahmin olağandışı derecede yüksek. Kullanmadan önce karbonhidrat oranınızı ve porsiyonu kontrol edin.",
+    warnRatio:
+      "Karbonhidrat oranınız olağan aralığın dışında görünüyor. Ayarlar'dan gözden geçirin.",
+    warnIsf:
+      "Düzeltme faktörünüz olağan aralığın dışında görünüyor. Ayarlar'dan gözden geçirin.",
+    activeInsulin: "Aktif insülin (IOB)",
+    iobReduction: "Aktif insülin için düşüldü",
   },
   journal: {
     carbsLabel: "{{carbs}} g karbonhidrat",
     doseLabel: "{{dose}} ünite",
     deleteEntry: "Bu kaydı silmek istediğinize emin misiniz?",
+    lowBadge: "DÜŞÜK",
   },
   profiles: {
     defaultName: "Kendi Profilim",
@@ -267,7 +292,9 @@ const tr = {
     colType: "Tür",
     colGlucose: "Kan Şekeri (mg/dL)",
     colCarbs: "Karbonhidrat (g)",
-    colInsulin: "Önerilen İnsülin (ünite)",
+    colInsulin: "Tahmini İnsülin (ünite)",
+    disclaimer:
+      "zerospike bir günlüktür, tıbbi cihaz değildir. İnsülin değerleri kendi ayarlarınıza dayalı, düzenlenebilir tahminlerdir. Tüm dozları hekiminize danışarak doğrulayın.",
     colFood: "Yemek",
     colNote: "Not",
     typeGlucose: "Kan Şekeri",
@@ -285,6 +312,9 @@ const tr = {
     dateRange: "Tarih aralığı",
     generated: "Oluşturulma",
     created: "PDF raporu oluşturuldu",
+    agpTitle: "Saate göre glukoz profili (AGP)",
+    agpCaption:
+      "Saate göre medyan (çizgi) ve %25–75 aralığı, dönem boyunca birleştirildi. Yeşil bant = {{low}}–{{high}}.",
   },
   tags: {
     label: "Etiketler",
@@ -347,6 +377,13 @@ const tr = {
     morning: "Sabah",
     afternoon: "Öğle",
     evening: "Akşam",
+    patternsTitle: "Örüntüler",
+    patternTagHigher:
+      "\"{{tag}}\" etiketli ölçümlerin ortalama {{avg}} {{unit}}, genel ortalaman {{baseline}} ({{n}} ölçüm).",
+    patternDawn:
+      "Sabahlar daha yüksek seyrediyor — {{morningAvg}} {{unit}}, genel {{baseline}}.",
+    patternHighVariability:
+      "Ölçümlerin oldukça değişken (CV %{{cv}}). Daha kararlı seyri yönetmek daha kolaydır.",
   },
   injectionGuide: {
     screenTitle: "Nasıl enjekte edilir",

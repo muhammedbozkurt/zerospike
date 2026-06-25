@@ -28,6 +28,9 @@ GoogleService-Info.plist
 # Metro
 .metro-health-check*
 
+# Standalone test-harness build output (scripts/*.test.ts → .tmp)
+.tmp*
+
 # macOS
 .DS_Store
 

@@ -32,6 +32,10 @@ const en: TranslationSchema = {
     methodTitle: "How the estimates are calculated",
     method:
       "• Meal dose = carbohydrates ÷ your insulin-to-carbohydrate ratio\n• Correction dose = (current glucose − target) ÷ your insulin sensitivity factor (ISF)\n• Post-meal (postprandial) glucose is measured 2 hours after eating\n\nThese ratios are personal and must be set by your physician.",
+    methodNote:
+      "Estimates round to your pen's 0.5-unit resolution and are intentionally conservative — always review and edit before use. The correction dose is based on your post-meal target.",
+    iobNote:
+      "Active insulin (IOB) is estimated from your logged bolus doses using a simple linear decay over ~4 hours, and only ever lowers a correction estimate — never the meal dose. It is an estimate, not a directive.",
     listTitle: "References",
     openHint: "Opens in your browser",
   },
@@ -80,6 +84,17 @@ const en: TranslationSchema = {
     injectionsToday: "{{n}} injections today",
     pensActive: "{{n}} pens",
     thisWeek: "This week",
+    activeInsulin: "Active insulin",
+    activeInsulinSub: "Estimated from recent doses — avoid stacking",
+    feedbackOnTarget: "2h check: {{value}} {{unit}} — in your target range.",
+    feedbackElevated: "2h check: {{value}} {{unit}} — a bit above your target.",
+    feedbackHigh: "2h check: {{value}} {{unit}} — above your target range.",
+    feedbackLow: "2h check: {{value}} {{unit}} — below your range.",
+    sampleCta: "Preview with sample data",
+    sampleActive: "You're viewing sample data",
+    sampleClear: "Clear",
+    sampleClearConfirm:
+      "This clears ALL data in this profile (sample data plus anything you've added) so you can start fresh. Continue?",
   },
   period: {
     fasting: "Fasting",
@@ -111,6 +126,7 @@ const en: TranslationSchema = {
     addFood: "Save Food",
     custom: "Custom",
     deleteFood: "Are you sure you want to delete this custom food?",
+    recent: "Recent meals",
   },
   scan: {
     requesting: "Requesting camera permission…",
@@ -142,11 +158,20 @@ const en: TranslationSchema = {
     personalNote: "Personal note",
     notePlaceholder: "e.g. Ate this, my glucose rose a little",
     logMeal: "Log Meal",
+    warnHighDose:
+      "This estimate is unusually high. Double-check your carb ratio and portion before using it.",
+    warnRatio:
+      "Your carb ratio looks outside the usual range. Review it in Settings.",
+    warnIsf:
+      "Your correction factor looks outside the usual range. Review it in Settings.",
+    activeInsulin: "Active insulin (IOB)",
+    iobReduction: "Reduced for active insulin",
   },
   journal: {
     carbsLabel: "{{carbs}} g carbs",
     doseLabel: "{{dose}} units",
     deleteEntry: "Are you sure you want to delete this entry?",
+    lowBadge: "LOW",
   },
   profiles: {
     defaultName: "My Profile",
@@ -269,7 +294,9 @@ const en: TranslationSchema = {
     colType: "Type",
     colGlucose: "Blood Glucose (mg/dL)",
     colCarbs: "Carbs (g)",
-    colInsulin: "Recommended Insulin (units)",
+    colInsulin: "Estimated Insulin (units)",
+    disclaimer:
+      "zerospike is a logbook, not a medical device. Insulin values are editable estimates from your own settings. Confirm all doses with your physician.",
     colFood: "Food",
     colNote: "Note",
     typeGlucose: "Blood Glucose",
@@ -287,6 +314,9 @@ const en: TranslationSchema = {
     dateRange: "Date range",
     generated: "Generated",
     created: "PDF report created",
+    agpTitle: "Glucose profile by time of day (AGP)",
+    agpCaption:
+      "Median (line) and 25–75% range by hour, pooled over the period. Green band = {{low}}–{{high}}.",
   },
   tags: {
     label: "Tags",
@@ -349,6 +379,13 @@ const en: TranslationSchema = {
     morning: "Morning",
     afternoon: "Afternoon",
     evening: "Evening",
+    patternsTitle: "Patterns",
+    patternTagHigher:
+      "Readings you tagged \"{{tag}}\" averaged {{avg}} {{unit}} vs {{baseline}} overall ({{n}} readings).",
+    patternDawn:
+      "Mornings tend to run higher — {{morningAvg}} {{unit}} vs {{baseline}} overall.",
+    patternHighVariability:
+      "Your readings vary a lot (CV {{cv}}%). Steadier levels are easier to manage.",
   },
   injectionGuide: {
     screenTitle: "How to inject",

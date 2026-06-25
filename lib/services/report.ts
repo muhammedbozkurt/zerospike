@@ -5,6 +5,7 @@ import { getJournal } from "../db/journal";
 import { listSugarLogs, listMealLogs } from "../db/logs";
 import { getInjections } from "../db/injections";
 import { computeInsights } from "../insights";
+import { computeAgp, AGP_MIN_READINGS, type Agp } from "../agp";
 import { formatGlucose, glucoseUnitLabel } from "../glucose";
 import { num } from "../format";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
@@ -50,10 +51,71 @@ function periodLabel(tag: PeriodTag): string {
   return i18n.t(`period.${tag}`);
 }
 
+/**
+ * Renders the AGP (Ambulatory Glucose Profile) as an inline SVG: a green target
+ * band (70–180), the median curve, and the 25–75 % inter-quartile band by hour
+ * of day. Returns "" when there isn't enough data to be meaningful.
+ */
+function buildAgpSvg(agp: Agp, unit: GlucoseUnit): string {
+  if (agp.totalReadings < AGP_MIN_READINGS || agp.bands.length === 0) return "";
+  const W = 540;
+  const H = 210;
+  const padL = 34;
+  const padR = 8;
+  const padT = 8;
+  const padB = 22;
+  const gMin = 40;
+  const gMax = 320;
+  const x = (h: number) => padL + (h / 24) * (W - padL - padR);
+  const y = (g: number) => {
+    const c = Math.max(gMin, Math.min(gMax, g));
+    return padT + (1 - (c - gMin) / (gMax - gMin)) * (H - padT - padB);
+  };
+  const f1 = (n: number) => n.toFixed(1);
+  const bands = agp.bands;
+
+  const yTicks = [70, 180, 300]
+    .map(
+      (g) =>
+        `<line x1="${padL}" y1="${f1(y(g))}" x2="${W - padR}" y2="${f1(y(g))}" stroke="#eee"/>` +
+        `<text x="${padL - 4}" y="${f1(y(g) + 3)}" font-size="9" fill="#777" text-anchor="end">${esc(formatGlucose(g, unit))}</text>`
+    )
+    .join("");
+  const xTicks = [0, 6, 12, 18, 24]
+    .map(
+      (h) =>
+        `<text x="${f1(x(h))}" y="${H - 6}" font-size="9" fill="#777" text-anchor="middle">${h}:00</text>`
+    )
+    .join("");
+
+  const iqrTop = bands.map((b) => `${f1(x(b.hour))},${f1(y(b.p75))}`);
+  const iqrBot = bands
+    .slice()
+    .reverse()
+    .map((b) => `${f1(x(b.hour))},${f1(y(b.p25))}`);
+  const iqr = [...iqrTop, ...iqrBot].join(" ");
+  const median = bands.map((b) => `${f1(x(b.hour))},${f1(y(b.p50))}`).join(" ");
+  const dots = bands
+    .map((b) => `<circle cx="${f1(x(b.hour))}" cy="${f1(y(b.p50))}" r="2" fill="#0891b2"/>`)
+    .join("");
+
+  return (
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect x="${padL}" y="${f1(y(180))}" width="${f1(W - padL - padR)}" height="${f1(y(70) - y(180))}" fill="#10b981" fill-opacity="0.1"/>` +
+    yTicks +
+    (bands.length > 1 ? `<polygon points="${iqr}" fill="#22d3ee" fill-opacity="0.18"/>` : "") +
+    (bands.length > 1 ? `<polyline points="${median}" fill="none" stroke="#0891b2" stroke-width="2"/>` : "") +
+    dots +
+    xTicks +
+    `</svg>`
+  );
+}
+
 function buildHtml(
   profile: UserProfile,
   windowDays: number,
   insights: ReturnType<typeof computeInsights>,
+  agpSvg: string,
   glucose: { date: string; time: string; value: string; period: string }[],
   injections: { date: string; time: string; site: string; dose: string; pen: string }[],
   meals: { date: string; time: string; food: string; carbs: string; dose: string }[]
@@ -154,6 +216,7 @@ function buildHtml(
   td.k { color: #555; width: 55%; }
   td.v { font-weight: 600; text-align: right; }
   .foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid #ddd; color: #777; font-size: 10px; line-height: 1.5; }
+  .cap { color: #777; font-size: 10px; margin: 4px 0 2px; }
 </style>
 </head>
 <body>
@@ -169,11 +232,17 @@ function buildHtml(
   <h2>${t("report.summary")}</h2>
   ${summaryTable}
 
+  ${agpSvg ? `<h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(70, unit)), high: esc(formatGlucose(180, unit)) })}</div>` : ""}
+
   ${glucoseSection}
   ${injectionSection}
   ${mealSection}
 
-  <div class="foot">${t("insights.disclaimer")}</div>
+  <div class="foot">
+    ${t("disclaimer.body")}<br/>
+    ${insights.gmi != null ? `${t("insights.gmiNote")}<br/>` : ""}
+    ${t("insights.disclaimer")}
+  </div>
 </body>
 </html>`;
 }
@@ -195,6 +264,7 @@ export async function exportLogsPdf(
   ]);
 
   const insights = computeInsights(sugar, mealsRaw, inj, windowDays);
+  const agpSvg = buildAgpSvg(computeAgp(sugar, windowDays), unit);
 
   // Tables are built from the journal feed (resolved names) within the window,
   // oldest-first for natural reading order.
@@ -243,7 +313,7 @@ export async function exportLogsPdf(
       };
     });
 
-  const html = buildHtml(profile, windowDays, insights, glucose, injections, meals);
+  const html = buildHtml(profile, windowDays, insights, agpSvg, glucose, injections, meals);
 
   const { uri } = await Print.printToFileAsync({ html });
 

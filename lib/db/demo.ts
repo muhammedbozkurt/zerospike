@@ -15,16 +15,26 @@ import type { LogTag, PeriodTag } from "./types";
  * it clears this profile's logs and pens first so re-running never duplicates.
  * All values are fictional but plausible. No Math.random, for reproducibility.
  */
+/**
+ * Wipes ALL of a profile's logs and pens (sugar/meal/injection + insulin_pens).
+ * Used both as the idempotent reset before re-seeding the demo and to fully
+ * revert the first-run "sample data" preview so the user starts clean.
+ */
+export async function clearProfileData(profileId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM injection_logs WHERE profile_id = ?;", [profileId]);
+  await db.runAsync("DELETE FROM meal_logs WHERE profile_id = ?;", [profileId]);
+  await db.runAsync("DELETE FROM sugar_logs WHERE profile_id = ?;", [profileId]);
+  await db.runAsync("DELETE FROM insulin_pens WHERE profile_id = ?;", [profileId]);
+}
+
 export async function loadDemoData(profileId: string): Promise<void> {
   const db = await getDb();
   const now = Date.now();
   const DAY = 24 * 60 * 60 * 1000;
 
   // Idempotent reset for this profile (pens included).
-  await db.runAsync("DELETE FROM injection_logs WHERE profile_id = ?;", [profileId]);
-  await db.runAsync("DELETE FROM meal_logs WHERE profile_id = ?;", [profileId]);
-  await db.runAsync("DELETE FROM sugar_logs WHERE profile_id = ?;", [profileId]);
-  await db.runAsync("DELETE FROM insulin_pens WHERE profile_id = ?;", [profileId]);
+  await clearProfileData(profileId);
 
   const DAYS = 21;
   const TAGS: LogTag[] = ["sport", "illness", "stress", "travel", "alcohol"];

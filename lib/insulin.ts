@@ -28,6 +28,23 @@ export function carbRatioForSlot(
   }
 }
 
+/**
+ * Plausibility guardrails. These NEVER change the math or block logging — they
+ * only flag an estimate so the UI can warn the user to double-check (the dose
+ * stays fully editable). Catching a "carb ratio 1 instead of 10" typo before it
+ * becomes a 10× over-estimate is exactly the input-validation safety net that
+ * most dosing apps lack. Bounds are generous so only clear errors trip them.
+ */
+export const PLAUSIBLE_CARB_RATIO = { min: 1, max: 50 } as const; // g per unit
+export const PLAUSIBLE_ISF = { min: 5, max: 200 } as const; // mg/dL per unit
+/** A single mealtime estimate at/above this many units is unusual → warn. */
+export const HIGH_DOSE_WARNING_UNITS = 25;
+
+export type InsulinWarning =
+  | "high_dose"
+  | "carb_ratio_out_of_range"
+  | "isf_out_of_range";
+
 export interface InsulinEstimate {
   slot: MealSlot;
   carbRatio: number;
@@ -39,6 +56,10 @@ export interface InsulinEstimate {
   correctionDose: number;
   /** mealDose + correctionDose, rounded to nearest 0.5 (pen resolution) */
   totalDose: number;
+  /** units the correction was reduced by active insulin (IOB), if any */
+  iobReduction: number;
+  /** non-blocking plausibility flags for the UI (empty when the estimate looks sane) */
+  warnings: InsulinWarning[];
 }
 
 export interface EstimateOptions {
@@ -46,6 +67,12 @@ export interface EstimateOptions {
   currentGlucose?: number | null;
   /** target the correction aims for (defaults to postmeal target) */
   targetGlucose?: number | null;
+  /**
+   * Active insulin (IOB) already working from recent bolus doses. When given,
+   * it is subtracted from the CORRECTION component only (never the meal dose),
+   * clamped at 0 — so it can only LOWER the estimate, preventing stacking.
+   */
+  currentIOB?: number | null;
   /** override the auto-detected slot */
   slot?: MealSlot;
   now?: Date;
@@ -74,15 +101,20 @@ export function estimateInsulin(
   options: EstimateOptions = {}
 ): InsulinEstimate {
   const slot = options.slot ?? activeMealSlot(options.now ?? new Date());
-  const carbRatio = Math.max(carbRatioForSlot(profile, slot), 0.1);
+  const rawRatio = carbRatioForSlot(profile, slot);
+  // Defensive floor against a non-positive stored ratio (would divide by ~0);
+  // an out-of-range ratio is surfaced via warnings below, not silently trusted.
+  const carbRatio = Math.max(rawRatio, 0.1);
   const carbs = (food.carb_100g * portionGrams) / 100;
   const mealDose = carbs / carbRatio;
 
   let correctionDose = 0;
+  let isfApplied: number | null = null;
   if (
     options.currentGlucose != null &&
     profile.insulin_sensitivity_factor > 0
   ) {
+    isfApplied = profile.insulin_sensitivity_factor;
     const target = options.targetGlucose ?? profile.target_postmeal_max;
     const delta = options.currentGlucose - target;
     if (delta > 0) {
@@ -90,13 +122,43 @@ export function estimateInsulin(
     }
   }
 
+  // Subtract active insulin from the CORRECTION only (never the meal carbs),
+  // clamped at 0. This can only reduce the estimate — the safe, anti-stacking
+  // direction. The dose stays editable.
+  let iobReduction = 0;
+  if (options.currentIOB != null && options.currentIOB > 0 && correctionDose > 0) {
+    iobReduction = Math.min(correctionDose, options.currentIOB);
+    correctionDose = correctionDose - iobReduction;
+  }
+
   const total = Math.max(0, mealDose + correctionDose);
+  const totalDose = Math.round(total * 2) / 2;
+
+  const warnings: InsulinWarning[] = [];
+  if (
+    rawRatio < PLAUSIBLE_CARB_RATIO.min ||
+    rawRatio > PLAUSIBLE_CARB_RATIO.max
+  ) {
+    warnings.push("carb_ratio_out_of_range");
+  }
+  if (
+    isfApplied != null &&
+    (isfApplied < PLAUSIBLE_ISF.min || isfApplied > PLAUSIBLE_ISF.max)
+  ) {
+    warnings.push("isf_out_of_range");
+  }
+  if (totalDose >= HIGH_DOSE_WARNING_UNITS) {
+    warnings.push("high_dose");
+  }
+
   return {
     slot,
     carbRatio,
     carbs: Math.round(carbs * 10) / 10,
     mealDose: Math.round(mealDose * 100) / 100,
     correctionDose: Math.round(correctionDose * 100) / 100,
-    totalDose: Math.round(total * 2) / 2,
+    totalDose,
+    iobReduction: Math.round(iobReduction * 100) / 100,
+    warnings,
   };
 }

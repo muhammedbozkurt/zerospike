@@ -11,7 +11,9 @@ import {
   listFavoriteFoods,
   toggleFavorite as dbToggleFav,
 } from "../../lib/db/favorites";
+import { getRecentMeals, type RecentMeal } from "../../lib/db/logs";
 import type { Food } from "../../lib/db/types";
+import { foodName } from "../../lib/db/types";
 import { CATEGORIES, CATEGORY_ICON, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
 import { useFeedback } from "../../components/Feedback";
@@ -31,6 +33,7 @@ export default function FoodScreen() {
   const [favs, setFavs] = useState<Food[]>([]);
   const [searchResults, setSearchResults] = useState<Food[]>([]);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  const [recent, setRecent] = useState<RecentMeal[]>([]);
 
   const loadAll = useCallback(async () => setAll(await listAllFoods()), []);
   const loadFavorites = useCallback(async () => {
@@ -38,6 +41,10 @@ export default function FoodScreen() {
     const list = await listFavoriteFoods(activeProfile.id);
     setFavs(list);
     setFavIds(new Set(list.map((f) => f.id)));
+  }, [activeProfile]);
+  const loadRecent = useCallback(async () => {
+    if (!activeProfile) return;
+    setRecent(await getRecentMeals(activeProfile.id, 8));
   }, [activeProfile]);
 
   useEffect(() => {
@@ -47,7 +54,8 @@ export default function FoodScreen() {
   useFocusEffect(
     useCallback(() => {
       loadFavorites();
-    }, [loadFavorites])
+      loadRecent();
+    }, [loadFavorites, loadRecent])
   );
 
   useEffect(() => {
@@ -169,6 +177,36 @@ export default function FoodScreen() {
       <Text className="text-zinc-50 text-2xl font-bold mb-3">{t("food.title")}</Text>
       {SearchBar}
       {Actions}
+
+      {mode === "grid" && recent.length > 0 ? (
+        <View className="mb-4">
+          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+            {t("food.recent")}
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {recent.map((r) => (
+              <Pressable
+                key={r.food.id}
+                onPress={() =>
+                  router.push({
+                    pathname: "/calculator",
+                    params: { foodId: r.food.id, portion: String(r.portion_g) },
+                  })
+                }
+                className="flex-row items-center rounded-full bg-zinc-900 border border-zinc-800 px-3 py-2 active:bg-zinc-800"
+              >
+                <Ionicons name="time-outline" size={14} color="#22d3ee" />
+                <Text className="text-zinc-200 text-sm ml-1.5" numberOfLines={1}>
+                  {foodName(r.food, lang)}
+                </Text>
+                <Text className="text-zinc-500 text-xs ml-1.5">
+                  {Math.round(r.portion_g)}g
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {mode === "grid" ? (
         <View className="flex-row flex-wrap justify-between mt-1">

@@ -429,6 +429,14 @@ export default function InjectionScreen() {
             <Ionicons name="chevron-forward" size={18} color="#52525b" />
           </Pressable>
         </View>
+
+        {/* Medical disclaimer — logged doses are the user's own records, not advice */}
+        <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-5">
+          <Ionicons name="medical-outline" size={15} color="#f59e0b" />
+          <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
+            {t("disclaimer.short")}
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );

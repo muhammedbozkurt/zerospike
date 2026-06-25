@@ -10,6 +10,7 @@ import { useApp } from "../../lib/store/AppContext";
 import { updateProfile, deleteProfile } from "../../lib/db/profiles";
 import { clearAllLogs } from "../../lib/db/index";
 import { loadDemoData } from "../../lib/db/demo";
+import { markSampleActive, clearSampleFlag } from "../../lib/sampleData";
 import { exportLogsCsv } from "../../lib/services/export";
 import { exportLogsPdf } from "../../lib/services/report";
 import { INSIGHTS_WINDOWS } from "../../lib/insights";
@@ -219,6 +220,7 @@ export default function SettingsScreen() {
   async function onLoadDemo() {
     if (!activeProfile) return;
     await loadDemoData(activeProfile.id);
+    await markSampleActive(activeProfile.id);
     bumpData();
     toast(t("settings.demoLoaded"), "success");
   }
@@ -232,6 +234,7 @@ export default function SettingsScreen() {
     });
     if (!ok) return;
     await clearAllLogs();
+    if (activeProfile) await clearSampleFlag(activeProfile.id);
     bumpData();
     toast(t("settings.saved"), "success");
   }

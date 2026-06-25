@@ -32,6 +32,10 @@ const fr: TranslationSchema = {
     methodTitle: "Comment les estimations sont calculées",
     method:
       "• Dose de repas = glucides ÷ votre ratio insuline-glucides\n• Dose de correction = (glycémie actuelle − cible) ÷ votre facteur de sensibilité à l'insuline (ISF)\n• La glycémie postprandiale est mesurée 2 heures après le repas\n\nCes ratios sont personnels et doivent être définis par votre médecin.",
+    methodNote:
+      "Les estimations sont arrondies à la résolution de 0,5 unité de votre stylo et sont volontairement prudentes — vérifiez-les et ajustez-les toujours avant utilisation. La dose de correction est basée sur votre cible post-repas.",
+    iobNote:
+      "L'insuline active (IOB) est estimée à partir de vos doses de bolus enregistrées via une décroissance linéaire simple sur ~4 heures, et ne réduit qu'une estimation de correction — jamais la dose du repas. C'est une estimation, pas une directive.",
     listTitle: "Références",
     openHint: "S'ouvre dans votre navigateur",
   },
@@ -80,6 +84,17 @@ const fr: TranslationSchema = {
     injectionsToday: "{{n}} injections aujourd'hui",
     pensActive: "{{n}} stylos",
     thisWeek: "Cette semaine",
+    activeInsulin: "Insuline active",
+    activeInsulinSub: "Estimé d'après les doses récentes — évitez le cumul",
+    feedbackOnTarget: "Contrôle 2h : {{value}} {{unit}} — dans votre cible.",
+    feedbackElevated: "Contrôle 2h : {{value}} {{unit}} — un peu au-dessus de votre cible.",
+    feedbackHigh: "Contrôle 2h : {{value}} {{unit}} — au-dessus de votre plage cible.",
+    feedbackLow: "Contrôle 2h : {{value}} {{unit}} — sous votre plage.",
+    sampleCta: "Aperçu avec données d'exemple",
+    sampleActive: "Vous consultez des données d'exemple",
+    sampleClear: "Effacer",
+    sampleClearConfirm:
+      "Cela efface TOUTES les données de ce profil (exemple et tout ce que vous avez ajouté) pour repartir de zéro. Continuer ?",
   },
   period: {
     fasting: "À jeun",
@@ -111,6 +126,7 @@ const fr: TranslationSchema = {
     addFood: "Enregistrer l'aliment",
     custom: "Perso.",
     deleteFood: "Voulez-vous vraiment supprimer cet aliment personnalisé ?",
+    recent: "Repas récents",
   },
   scan: {
     requesting: "Demande d'autorisation de la caméra…",
@@ -142,11 +158,20 @@ const fr: TranslationSchema = {
     personalNote: "Note personnelle",
     notePlaceholder: "p. ex. J'ai mangé ceci, ma glycémie a un peu monté",
     logMeal: "Enregistrer le repas",
+    warnHighDose:
+      "Cette estimation est anormalement élevée. Vérifiez votre ratio glucidique et la portion avant de l'utiliser.",
+    warnRatio:
+      "Votre ratio glucidique semble hors de la plage habituelle. Vérifiez-le dans les Réglages.",
+    warnIsf:
+      "Votre facteur de correction semble hors de la plage habituelle. Vérifiez-le dans les Réglages.",
+    activeInsulin: "Insuline active (IOB)",
+    iobReduction: "Réduit pour insuline active",
   },
   journal: {
     carbsLabel: "{{carbs}} g de glucides",
     doseLabel: "{{dose}} unités",
     deleteEntry: "Voulez-vous vraiment supprimer cette entrée ?",
+    lowBadge: "BAS",
   },
   profiles: {
     defaultName: "Mon profil",
@@ -269,7 +294,9 @@ const fr: TranslationSchema = {
     colType: "Type",
     colGlucose: "Glycémie (mg/dL)",
     colCarbs: "Glucides (g)",
-    colInsulin: "Insuline recommandée (unités)",
+    colInsulin: "Insuline estimée (unités)",
+    disclaimer:
+      "zerospike est un journal, pas un dispositif médical. Les valeurs d'insuline sont des estimations modifiables issues de vos propres réglages. Confirmez toutes les doses avec votre médecin.",
     colFood: "Aliment",
     colNote: "Note",
     typeGlucose: "Glycémie",
@@ -287,6 +314,9 @@ const fr: TranslationSchema = {
     dateRange: "Période",
     generated: "Généré",
     created: "Rapport PDF créé",
+    agpTitle: "Profil glycémique par heure (AGP)",
+    agpCaption:
+      "Médiane (ligne) et plage 25–75 % par heure, regroupées sur la période. Bande verte = {{low}}–{{high}}.",
   },
   tags: {
     label: "Étiquettes",
@@ -349,6 +379,13 @@ const fr: TranslationSchema = {
     morning: "Matin",
     afternoon: "Après-midi",
     evening: "Soir",
+    patternsTitle: "Tendances",
+    patternTagHigher:
+      "Les relevés étiquetés \"{{tag}}\" ont une moyenne de {{avg}} {{unit}} contre {{baseline}} au total ({{n}} relevés).",
+    patternDawn:
+      "Les matins sont plutôt plus élevés — {{morningAvg}} {{unit}} contre {{baseline}} au total.",
+    patternHighVariability:
+      "Vos relevés varient beaucoup (CV {{cv}} %). Des niveaux plus stables sont plus faciles à gérer.",
   },
   injectionGuide: {
     screenTitle: "Comment injecter",

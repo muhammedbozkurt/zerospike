@@ -1,7 +1,7 @@
 import type { Category } from "./categories";
 
 /**
- * Seed data — 230+ globally diverse foods grouped into categories, each with
+ * Seed data — 562 globally diverse foods grouped into categories, each with
  * names in TR / EN / DE / ES / FR. Glycemic load is computed at insert time as
  * round(GI * carb_100g / 100), so we only store carb & GI here.
  *

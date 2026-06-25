@@ -18,9 +18,11 @@ import type { Injection, MealLog, SugarLog } from "../lib/db/types";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
 import {
   computeInsights,
+  derivePatterns,
   INSIGHTS_WINDOW_DAYS,
   INSIGHTS_WINDOWS,
   type DayKind,
+  type InsightPattern,
 } from "../lib/insights";
 import { Button, Segmented } from "../components/ui";
 import { num } from "../lib/format";
@@ -125,6 +127,33 @@ export default function InsightsScreen() {
 
   const round = (n: number | null) => (n == null ? "—" : String(Math.round(n)));
   const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}`);
+
+  // Descriptive patterns from the user's own readings (never causal/advice).
+  const patterns = useMemo(
+    () => derivePatterns(sugar, windowDays),
+    [sugar, windowDays]
+  );
+  const patternText = (p: InsightPattern): string => {
+    const u = glucoseUnitLabel(unit);
+    switch (p.kind) {
+      case "tag_higher":
+        return t("insights.patternTagHigher", {
+          tag: t(`tags.${p.tag}`),
+          avg: fmtG(p.avg),
+          baseline: fmtG(p.baseline),
+          unit: u,
+          n: p.n,
+        });
+      case "dawn":
+        return t("insights.patternDawn", {
+          morningAvg: fmtG(p.morningAvg),
+          baseline: fmtG(p.baseline),
+          unit: u,
+        });
+      case "high_variability":
+        return t("insights.patternHighVariability", { cv: p.cv });
+    }
+  };
 
   const Header = (
     <View className="flex-row items-center px-4 py-2">
@@ -318,6 +347,24 @@ export default function InsightsScreen() {
                   <Text className="text-zinc-600 text-[11px] mt-4 px-1.5 leading-4">
                     {t("insights.gmiNote")}
                   </Text>
+                </>
+              ) : null}
+
+              {/* ── Patterns (descriptive observations) ───────────────────── */}
+              {patterns.length > 0 ? (
+                <>
+                  <SectionTitle>{t("insights.patternsTitle")}</SectionTitle>
+                  {patterns.map((p, i) => (
+                    <View
+                      key={`${p.kind}-${i}`}
+                      className="flex-row items-start rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 mb-2"
+                    >
+                      <Ionicons name="bulb-outline" size={16} color={BRAND} />
+                      <Text className="text-zinc-300 text-sm leading-5 ml-2.5 flex-1">
+                        {patternText(p)}
+                      </Text>
+                    </View>
+                  ))}
                 </>
               ) : null}
 

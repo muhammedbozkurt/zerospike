@@ -7,9 +7,12 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
-import { getJournal, JournalEntry } from "../../lib/db/journal";
+import { getJournal, JournalEntry, InjectionEntry } from "../../lib/db/journal";
+import { activeInsulin } from "../../lib/iob";
 import { addSugarLog, deleteSugarLog, deleteMealLog } from "../../lib/db/logs";
 import { listPens, deleteInjection } from "../../lib/db/injections";
+import { loadDemoData, clearProfileData } from "../../lib/db/demo";
+import { markSampleActive, clearSampleFlag, isSampleActive } from "../../lib/sampleData";
 import type { InsulinPen, LogTag, PeriodTag } from "../../lib/db/types";
 import { canAddLog } from "../../lib/guardrails";
 import { schedulePostMealReminder } from "../../lib/services/notifications";
@@ -23,7 +26,7 @@ import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
 import { formatDateKey, num } from "../../lib/format";
-import { formatGlucose } from "../../lib/glucose";
+import { formatGlucose, glucoseUnitLabel, classifyGlucose } from "../../lib/glucose";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 
 function WeekStat({ value, label }: { value: string; label: string }) {
@@ -53,6 +56,8 @@ export default function DashboardScreen() {
   const [cgmOn, setCgmOn] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [activePens, setActivePens] = useState<InsulinPen[]>([]);
+  const [sampleActive, setSampleActive] = useState(false);
+  const [loadingSample, setLoadingSample] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
@@ -62,6 +67,7 @@ export default function DashboardScreen() {
     ]);
     setEntries(feed);
     setActivePens(pens);
+    setSampleActive(await isSampleActive(activeProfile.id));
   }, [activeProfile, lang]);
 
   useEffect(() => {
@@ -159,6 +165,11 @@ export default function DashboardScreen() {
   ).length;
   const hasWeekData = weekReadings > 0 || weekInjections > 0;
 
+  // Active insulin still working from recent bolus doses (stacking awareness).
+  const iob = activeInsulin(
+    entries.filter((e): e is InjectionEntry => e.kind === "injection")
+  );
+
   async function openLogger(period: PeriodTag) {
     if (!activeProfile) return;
     const allowed = await canAddLog(activeProfile.id, isProUser);
@@ -185,6 +196,26 @@ export default function DashboardScreen() {
     if (period === "fasting" || period === "pre_meal") {
       await schedulePostMealReminder();
     }
+    // Reflective feedback for a 2-hour post-meal reading: a descriptive note
+    // comparing the user's own reading to their own target (never advice).
+    if (period === "post_meal_2h") {
+      const status = classifyGlucose(value, "post_meal_2h", activeProfile);
+      const key =
+        status === "normal"
+          ? "feedbackOnTarget"
+          : status === "low"
+            ? "feedbackLow"
+            : status === "elevated"
+              ? "feedbackElevated"
+              : "feedbackHigh";
+      toast(
+        t(`dashboard.${key}`, {
+          value: formatGlucose(value, unit),
+          unit: glucoseUnitLabel(unit),
+        }),
+        status === "normal" ? "success" : "info"
+      );
+    }
     bumpData();
   }
 
@@ -192,6 +223,36 @@ export default function DashboardScreen() {
     setCgmOn(next);
     await AsyncStorage.setItem(CGM_KEY, next ? "true" : "false");
     if (next) await runSync(true);
+  }
+
+  // First-run preview: fill an empty profile with realistic sample data so a
+  // new user instantly sees a populated dashboard, Insights and AGP. Fully
+  // reversible (clears all logs + pens) and only offered on an empty profile.
+  async function loadSample() {
+    if (!activeProfile || loadingSample) return;
+    setLoadingSample(true);
+    try {
+      await loadDemoData(activeProfile.id);
+      await markSampleActive(activeProfile.id);
+      hapticSuccess();
+      bumpData();
+    } finally {
+      setLoadingSample(false);
+    }
+  }
+
+  async function clearSample() {
+    if (!activeProfile) return;
+    const ok = await confirm({
+      message: t("dashboard.sampleClearConfirm"),
+      confirmLabel: t("dashboard.sampleClear"),
+      destructive: true,
+    });
+    if (!ok) return;
+    await clearProfileData(activeProfile.id);
+    await clearSampleFlag(activeProfile.id);
+    hapticWarning();
+    bumpData();
   }
 
   async function confirmDelete(entry: JournalEntry) {
@@ -220,6 +281,22 @@ export default function DashboardScreen() {
         <ProfileSwitcher />
       </View>
 
+      {/* Sample-data preview banner (tap to clear and start fresh) */}
+      {sampleActive ? (
+        <Pressable
+          onPress={clearSample}
+          className="rounded-2xl border border-brand/30 bg-brand/10 p-3.5 mb-3 flex-row items-center active:opacity-80"
+        >
+          <Ionicons name="flask-outline" size={18} color="#22d3ee" />
+          <Text className="text-brand text-sm font-medium flex-1 ml-2.5">
+            {t("dashboard.sampleActive")}
+          </Text>
+          <Text className="text-brand text-xs underline">
+            {t("dashboard.sampleClear")}
+          </Text>
+        </Pressable>
+      ) : null}
+
       {/* Daily carbohydrate progress */}
       <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-3">
         <View className="flex-row items-center justify-between mb-2">
@@ -246,6 +323,26 @@ export default function DashboardScreen() {
           />
         </View>
       </View>
+
+      {/* Active insulin (IOB) — only when something is still working */}
+      {iob > 0 ? (
+        <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-3 flex-row items-center">
+          <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
+            <Ionicons name="hourglass-outline" size={20} color="#22d3ee" />
+          </View>
+          <View className="flex-1">
+            <Text className="text-zinc-100 font-semibold">
+              {t("dashboard.activeInsulin")}
+            </Text>
+            <Text className="text-zinc-500 text-xs">
+              {t("dashboard.activeInsulinSub")}
+            </Text>
+          </View>
+          <Text className="text-brand text-lg font-bold">
+            {num(iob)} {t("common.units")}
+          </Text>
+        </View>
+      ) : null}
 
       {/* CGM / Sensor toggle — tap the row (while on) to sync again */}
       <Pressable
@@ -384,6 +481,16 @@ export default function DashboardScreen() {
         data={entries}
         keyExtractor={(e) => `${e.kind}-${e.id}`}
         ListHeaderComponent={Header}
+        ListFooterComponent={
+          entries.length > 0 ? (
+            <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-3">
+              <Ionicons name="medical-outline" size={15} color="#f59e0b" />
+              <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
+                {t("disclaimer.short")}
+              </Text>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) =>
           activeProfile ? (
             <JournalItem
@@ -399,6 +506,19 @@ export default function DashboardScreen() {
             <Text className="text-zinc-600 text-center mt-3 px-8">
               {t("dashboard.empty")}
             </Text>
+            {!sampleActive ? (
+              <Pressable
+                onPress={loadSample}
+                disabled={loadingSample}
+                className="flex-row items-center mt-5 rounded-2xl bg-brand active:bg-brandDark px-5 py-3"
+                style={{ opacity: loadingSample ? 0.6 : 1 }}
+              >
+                <Ionicons name="flask-outline" size={18} color="#000" />
+                <Text className="text-black font-semibold ml-2">
+                  {t("dashboard.sampleCta")}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         }
         contentContainerStyle={{

@@ -137,6 +137,11 @@ export async function exportLogsCsv(
     }
   }
 
+  // Trailing medical disclaimer so the doctor-facing export is never read as
+  // prescriptive (blank separator row keeps it clear of the data table).
+  rows.push("");
+  rows.push(csvEscape(i18n.t("export.disclaimer")));
+
   // UTF-8 BOM so Excel renders Turkish characters correctly.
   const content = "﻿" + rows.join("\r\n");
 

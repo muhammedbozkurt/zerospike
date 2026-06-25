@@ -33,6 +33,7 @@ export interface ProProduct {
   id: PlanId;
   productId: string; // store product identifier
   priceUSD: string;
+  priceEUR: string; // de / fr / es storefronts
   priceTRY: string;
 }
 
@@ -41,25 +42,31 @@ export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
     id: "monthly",
     productId: "zerospike_pro", // $rc_monthly (Android base plan zerospike_pro:monthly)
     priceUSD: "$4.99",
+    priceEUR: "€4,99",
     priceTRY: "₺149,99",
   },
   annual: {
     id: "annual",
     productId: "zerospike_pro_annual", // $rc_annual (Android base plan :annualv2)
     priceUSD: "$29.99",
-    priceTRY: "₺899,99",
+    priceEUR: "€29,99",
+    priceTRY: "₺499,99",
   },
   lifetime: {
     id: "lifetime",
     productId: "zerospike_lifetime", // $rc_lifetime (non-consumable)
     priceUSD: "$59.99",
+    priceEUR: "€54,99",
     priceTRY: "₺1.299,99",
   },
 };
 
 /** Static fallback price (real localized price overrides via getOfferingPrices). */
 export function priceFor(plan: PlanId, lang: Lang): string {
-  return lang === "tr" ? PRO_PRODUCTS[plan].priceTRY : PRO_PRODUCTS[plan].priceUSD;
+  const p = PRO_PRODUCTS[plan];
+  if (lang === "tr") return p.priceTRY;
+  if (lang === "de" || lang === "fr" || lang === "es") return p.priceEUR;
+  return p.priceUSD;
 }
 
 // ── Real SDK plumbing (lazy) ───────────────────────────────────────────────

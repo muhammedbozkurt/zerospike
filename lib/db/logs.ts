@@ -1,6 +1,6 @@
 import { getDb } from "./index";
 import { uuid } from "../uuid";
-import type { MealLog, PeriodTag, SugarLog } from "./types";
+import type { Food, MealLog, PeriodTag, SugarLog } from "./types";
 import { parseTags, serializeTags } from "./types";
 
 // Raw rows carry `tags` as the stored JSON string; mappers parse it to LogTag[].
@@ -69,16 +69,23 @@ export async function deleteSugarLog(id: string): Promise<void> {
   await db.runAsync("DELETE FROM sugar_logs WHERE id = ?;", [id]);
 }
 
-/** Avoids duplicating the same Health/CGM sample on re-import. */
+/**
+ * Avoids duplicating the same Health/CGM sample on re-import — but is
+ * value-aware: two readings at the same (snapped) timestamp with DIFFERENT
+ * values are kept (e.g. a 42 mg/dL confirming fingerstick is not dropped as a
+ * "duplicate" of a 95 mg/dL CGM sample). The caller snaps `loggedAt` to a fixed
+ * grain (see lib/services/healthMath.ts) so ms-drift re-reads still collapse.
+ */
 export async function sugarLogExistsAt(
   profileId: string,
   loggedAt: string,
-  source: string
+  source: string,
+  glucoseMgdl: number
 ): Promise<boolean> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM sugar_logs WHERE profile_id = ? AND logged_at = ? AND source = ?;",
-    [profileId, loggedAt, source]
+    "SELECT COUNT(*) AS c FROM sugar_logs WHERE profile_id = ? AND logged_at = ? AND source = ? AND glucose_level_mgdl = ?;",
+    [profileId, loggedAt, source, Math.round(glucoseMgdl)]
   );
   return (row?.c ?? 0) > 0;
 }
@@ -146,6 +153,39 @@ export async function listMealLogs(
 export async function deleteMealLog(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM meal_logs WHERE id = ?;", [id]);
+}
+
+/** A previously-logged food + the portion used the last time, for one-tap re-log. */
+export interface RecentMeal {
+  food: Food;
+  portion_g: number;
+}
+
+/**
+ * Distinct seeded/custom foods the profile logged most recently, with the
+ * portion from the latest time — powers the food tab's one-tap "recent meals".
+ * Custom-name-only meals (no food_id) are skipped since they can't be reopened
+ * in the calculator. SQLite returns the bare columns from the MAX(logged_at)
+ * row, so portion_g is the most recent one for each food.
+ */
+export async function getRecentMeals(
+  profileId: string,
+  limit = 8
+): Promise<RecentMeal[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Food & { _portion: number }>(
+    `SELECT f.*, m.portion_g AS _portion, MAX(m.logged_at) AS _lastAt
+       FROM meal_logs m JOIN foods f ON f.id = m.food_id
+      WHERE m.profile_id = ? AND m.food_id IS NOT NULL
+      GROUP BY m.food_id
+      ORDER BY _lastAt DESC
+      LIMIT ?;`,
+    [profileId, limit]
+  );
+  return rows.map((r) => {
+    const { _portion, ...food } = r as Food & { _portion: number; _lastAt?: string };
+    return { food: food as Food, portion_g: _portion };
+  });
 }
 
 // ── Combined count (used for the free-tier guardrail) ──────────────────────
