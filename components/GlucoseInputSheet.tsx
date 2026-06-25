@@ -10,9 +10,10 @@ import {
 } from "react-native";
 import { useTranslation } from "react-i18next";
 
-import type { GlucoseUnit, PeriodTag } from "../lib/db/types";
+import type { GlucoseUnit, LogTag, PeriodTag } from "../lib/db/types";
 import { glucoseFromDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { Button, Segmented } from "./ui";
+import { TagPicker } from "./TagPicker";
 
 const PERIODS: PeriodTag[] = [
   "fasting",
@@ -28,7 +29,7 @@ interface Props {
   unit?: GlucoseUnit;
   /** value is in mg/dL (already converted from the display unit). */
   onClose: () => void;
-  onSubmit: (value: number, period: PeriodTag) => void;
+  onSubmit: (value: number, period: PeriodTag, tags: LogTag[]) => void;
 }
 
 export function GlucoseInputSheet({
@@ -41,6 +42,7 @@ export function GlucoseInputSheet({
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [period, setPeriod] = useState<PeriodTag>(initialPeriod);
+  const [tags, setTags] = useState<LogTag[]>([]);
 
   const mmol = unit === "mmol";
   const minD = mmol ? 0.5 : 1;
@@ -50,6 +52,7 @@ export function GlucoseInputSheet({
     if (visible) {
       setValue("");
       setPeriod(initialPeriod);
+      setTags([]);
     }
   }, [visible, initialPeriod]);
 
@@ -63,7 +66,7 @@ export function GlucoseInputSheet({
   function submit() {
     const num = parseFloat(value);
     if (!Number.isFinite(num) || num < minD || num > maxD) return;
-    onSubmit(glucoseFromDisplay(num, unit), period);
+    onSubmit(glucoseFromDisplay(num, unit), period, tags);
   }
 
   const valid = (() => {
@@ -114,6 +117,8 @@ export function GlucoseInputSheet({
                 {glucoseUnitLabel(unit)}
               </Text>
             </View>
+
+            <TagPicker value={tags} onChange={setTags} className="mb-5" />
 
             <Button
               label={t("common.save")}

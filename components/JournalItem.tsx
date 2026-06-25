@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import type { JournalEntry } from "../lib/db/journal";
-import type { UserProfile } from "../lib/db/types";
+import type { LogTag, UserProfile } from "../lib/db/types";
 import {
   classifyGlucose,
   STATUS_COLOR,
@@ -20,6 +20,25 @@ const STATUS_BORDER_COLOR: Record<GlucoseStatus, string> = {
   elevated: "#f59e0b",
   high: "#f43f5e",
 };
+
+function TagBadges({ tags }: { tags: LogTag[] }) {
+  const { t } = useTranslation();
+  if (tags.length === 0) return null;
+  return (
+    <View className="flex-row flex-wrap mt-1">
+      {tags.map((tag) => (
+        <View
+          key={tag}
+          className="rounded-full bg-brand/10 border border-brand/20 px-1.5 py-0.5 mr-1 mb-0.5"
+        >
+          <Text className="text-brand text-[10px] font-medium">
+            {t(`tags.${tag}`)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 interface Props {
   entry: JournalEntry;
@@ -65,10 +84,49 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
                 {glucoseUnitLabel(profile.glucose_unit)}
               </Text>
             </View>
+            <TagBadges tags={entry.tags} />
           </View>
           <Text className="text-zinc-500 text-xs">
             {formatTime(entry.logged_at)}
           </Text>
+        </View>
+      </Pressable>
+    );
+  }
+
+  if (entry.kind === "injection") {
+    const meta = [
+      entry.dose_units != null
+        ? `${num(entry.dose_units)} ${t("common.units")}`
+        : null,
+      entry.pen_name,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <Pressable
+        onPress={() => onPress?.(entry)}
+        onLongPress={() => onLongPress?.(entry)}
+        className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 mb-2.5 overflow-hidden"
+        style={{ borderLeftWidth: 4, borderLeftColor: "#22d3ee" }}
+      >
+        <View className="p-3.5 flex-1 flex-row items-center">
+          <View className="w-10 h-10 rounded-full items-center justify-center mr-3 bg-brand/10">
+            <Ionicons name="medkit-outline" size={20} color="#22d3ee" />
+          </View>
+          <View className="flex-1">
+            <Text className="text-zinc-100 font-semibold" numberOfLines={1}>
+              {t(`injectionSite.${entry.site}`)}
+            </Text>
+            {meta ? <Text className="text-zinc-400 text-xs">{meta}</Text> : null}
+            {entry.note ? (
+              <Text className="text-zinc-500 text-xs italic mt-0.5" numberOfLines={1}>
+                {`“${entry.note}”`}
+              </Text>
+            ) : null}
+            <TagBadges tags={entry.tags} />
+          </View>
+          <Text className="text-zinc-500 text-xs">{formatTime(entry.logged_at)}</Text>
         </View>
       </Pressable>
     );
@@ -109,6 +167,7 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
               “{entry.personal_note}”
             </Text>
           ) : null}
+          <TagBadges tags={entry.tags} />
         </View>
         <Text className="text-zinc-500 text-xs">
           {formatTime(entry.logged_at)}

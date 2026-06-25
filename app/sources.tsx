@@ -28,7 +28,7 @@ const REFERENCES: { label: string; org: string; url: string }[] = [
     url: "https://diabetes.org/food-nutrition/understanding-carbs",
   },
   {
-    org: "NIDDK — National Institutes of Health (NIH)",
+    org: "NIDDK, National Institutes of Health (NIH)",
     label: "Managing diabetes (insulin & carbohydrates)",
     url: "https://www.niddk.nih.gov/health-information/diabetes/overview/managing-diabetes",
   },
@@ -38,9 +38,14 @@ const REFERENCES: { label: string; org: string; url: string }[] = [
     url: "https://www.cdc.gov/diabetes/healthy-eating/index.html",
   },
   {
-    org: "MedlinePlus — National Library of Medicine (NIH)",
+    org: "MedlinePlus, National Library of Medicine (NIH)",
     label: "Diabetes medicines & insulin",
     url: "https://medlineplus.gov/diabetesmedicines.html",
+  },
+  {
+    org: "Diabetes Care (ADA), Bergenstal et al. 2018",
+    label: "Glucose Management Indicator (GMI)",
+    url: "https://diabetesjournals.org/care/article/41/11/2275/36593/Glucose-Management-Indicator-GMI-A-New-Term-for",
   },
 ];
 

@@ -9,7 +9,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -25,7 +25,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 /**
  * Initializes the database on first launch. Idempotent and safe to call on
  * every start. Creates all tables, an FTS5 search index (+ sync triggers),
- * seeds 160+ foods once, and ensures a default profile exists.
+ * seeds 563 foods once, and ensures a default profile exists.
  */
 export async function initDatabase(): Promise<void> {
   const db = await getDb();
@@ -65,6 +65,24 @@ export async function initDatabase(): Promise<void> {
       );
     } catch {
       // column already exists — ignore
+    }
+  }
+
+  // v3 → v4: insulin pens + injection-site logging (preserves existing data).
+  if (currentVersion >= 1 && currentVersion < 4) {
+    await createInjectionSchema(db);
+  }
+
+  // v4 → v5: optional context tags on each log table.
+  if (currentVersion >= 1 && currentVersion < 5) {
+    for (const table of ["sugar_logs", "meal_logs", "injection_logs"]) {
+      try {
+        await db.execAsync(
+          `ALTER TABLE ${table} ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';`
+        );
+      } catch {
+        // column already exists — ignore
+      }
     }
   }
 
@@ -115,6 +133,7 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
         CHECK (period_tag IN ('fasting','pre_meal','post_meal_2h','bedtime','manual')),
       source TEXT NOT NULL DEFAULT 'manual',
       logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
     );
 
@@ -130,6 +149,7 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       photo_uri_local TEXT,
       personal_note TEXT,
       logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
       FOREIGN KEY (sugar_log_id) REFERENCES sugar_logs (id) ON DELETE SET NULL,
       FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL
@@ -175,6 +195,51 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       VALUES (new.id, new.name_tr, new.name_en, new.name_de, new.name_es, new.name_fr,
               new.aliases_json, COALESCE(new.brand_name, ''));
     END;
+  `);
+
+  // Insulin pens + injection-site logging (shared with the v3 → v4 migration).
+  await createInjectionSchema(db);
+}
+
+/**
+ * Creates the insulin-pen and injection-site logging tables (schema v4).
+ * Idempotent (IF NOT EXISTS) so it is safe both on a fresh install and as the
+ * v3 → v4 migration step. Existing rows are untouched.
+ */
+async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS insulin_pens (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      insulin_type TEXT NOT NULL CHECK (insulin_type IN ('basal','bolus')),
+      total_units REAL NOT NULL,
+      remaining_units REAL NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS injection_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      site TEXT NOT NULL
+        CHECK (site IN ('abdomen_left','abdomen_right','thigh_left','thigh_right',
+                        'arm_left','arm_right','buttock_left','buttock_right')),
+      dose_units REAL,
+      pen_id TEXT,
+      insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+      meal_log_id TEXT,
+      note TEXT,
+      logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
+      FOREIGN KEY (pen_id) REFERENCES insulin_pens (id) ON DELETE SET NULL,
+      FOREIGN KEY (meal_log_id) REFERENCES meal_logs (id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pens_profile ON insulin_pens (profile_id, is_active);
   `);
 }
 
@@ -240,9 +305,14 @@ async function seedFoods(db: SQLite.SQLiteDatabase): Promise<void> {
   });
 }
 
-/** Dev helper — clears all logs for every profile (keeps seeded foods). */
+/**
+ * Clears all user-entered logs for every profile (keeps the seeded foods, the
+ * profiles, and the user's insulin pens — pens are configuration, managed
+ * separately in the pen UI, not wiped by a log reset).
+ */
 export async function clearAllLogs(): Promise<void> {
   const db = await getDb();
+  await db.execAsync("DELETE FROM injection_logs;");
   await db.execAsync("DELETE FROM meal_logs;");
   await db.execAsync("DELETE FROM sugar_logs;");
 }

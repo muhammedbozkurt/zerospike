@@ -52,8 +52,8 @@ export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
   lifetime: {
     id: "lifetime",
     productId: "zerospike_lifetime", // $rc_lifetime (non-consumable)
-    priceUSD: "$79.99",
-    priceTRY: "₺1.799,99",
+    priceUSD: "$59.99",
+    priceTRY: "₺1.299,99",
   },
 };
 

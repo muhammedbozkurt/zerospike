@@ -24,11 +24,13 @@ import { canAddLog } from "../lib/guardrails";
 import { estimateInsulin, activeMealSlot } from "../lib/insulin";
 import { glucoseFromDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { schedulePostMealReminder } from "../lib/services/notifications";
-import type { Food, MealSlot } from "../lib/db/types";
+import type { Food, LogTag, MealSlot } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { Button, Segmented } from "../components/ui";
+import { TagPicker } from "../components/TagPicker";
 import { useFeedback } from "../components/Feedback";
 import { num } from "../lib/format";
+import { hapticSuccess, hapticWarning } from "../lib/haptics";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
@@ -48,6 +50,7 @@ export default function CalculatorScreen() {
   const [doseTouched, setDoseTouched] = useState(false);
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
+  const [tags, setTags] = useState<LogTag[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -120,6 +123,7 @@ export default function CalculatorScreen() {
     if (!food || !activeProfile || !estimate) return;
     const allowed = await canAddLog(activeProfile.id, isProUser);
     if (!allowed) {
+      hapticWarning();
       router.replace({ pathname: "/paywall", params: { reason: "logs" } });
       return;
     }
@@ -133,7 +137,9 @@ export default function CalculatorScreen() {
       insulin_dose_units: dose,
       photo_uri_local: photo,
       personal_note: note.trim() || null,
+      tags,
     });
+    hapticSuccess();
     // Logging a meal schedules the 2-hour post-meal glucose check reminder.
     await schedulePostMealReminder();
     bumpData();
@@ -345,9 +351,11 @@ export default function CalculatorScreen() {
           placeholder={t("calculator.notePlaceholder")}
           placeholderTextColor="#52525b"
           multiline
-          className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mb-6 min-h-[72px]"
+          className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mb-4 min-h-[72px]"
           textAlignVertical="top"
         />
+
+        <TagPicker value={tags} onChange={setTags} className="mb-6" />
 
         {/* Medical disclaimer at the decision point */}
         <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mb-4">

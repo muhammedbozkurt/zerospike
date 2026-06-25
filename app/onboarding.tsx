@@ -16,7 +16,11 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { updateProfile } from "../lib/db/profiles";
-import { scheduleBasalReminder } from "../lib/services/notifications";
+import { applyNotificationPrefs } from "../lib/services/notifications";
+import {
+  DEFAULT_PREFS,
+  setNotificationPrefs,
+} from "../lib/services/notificationPrefs";
 import type { GlucoseUnit } from "../lib/db/types";
 import {
   glucoseToDisplay,
@@ -46,6 +50,7 @@ export default function OnboardingScreen() {
     { logo: true, icon: "leaf-outline", title: t("onboarding.s1Title"), body: t("onboarding.s1Body") },
     { logo: false, icon: "pulse-outline", title: t("onboarding.s2Title"), body: t("onboarding.s2Body") },
     { logo: false, icon: "people-outline", title: t("onboarding.s3Title"), body: t("onboarding.s3Body") },
+    { logo: false, icon: "medkit-outline", title: t("onboarding.s4Title"), body: t("onboarding.s4Body") },
   ] as const;
   const lastSlide = page === slides.length - 1;
 
@@ -133,7 +138,9 @@ export default function OnboardingScreen() {
       ),
       glucose_unit: unit,
     });
-    await scheduleBasalReminder(basalTime);
+    // Seed notification prefs with the chosen basal time, then schedule.
+    await setNotificationPrefs({ ...DEFAULT_PREFS, basalTime });
+    await applyNotificationPrefs();
     bumpData();
     await completeOnboarding();
   }

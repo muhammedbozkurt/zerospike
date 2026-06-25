@@ -11,20 +11,35 @@ import {
   restore,
   priceFor,
   getOfferingPrices,
+  PRO_PRODUCTS,
   PlanId,
 } from "../lib/services/purchases";
 import { FREE_LOG_LIMIT, FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { Button } from "../components/ui";
 import { useFeedback } from "../components/Feedback";
+import { hapticSelect, hapticSuccess } from "../lib/haptics";
 
-function Feature({ text }: { text: string }) {
+/** Annual savings vs paying monthly for a year (locale-independent USD ratio). */
+function annualSavingsPct(): number {
+  const n = (s: string) => parseFloat(s.replace(/[^0-9.]/g, "")) || 0;
+  const m = n(PRO_PRODUCTS.monthly.priceUSD);
+  const a = n(PRO_PRODUCTS.annual.priceUSD);
+  return m > 0 && a > 0 ? Math.round((1 - a / (m * 12)) * 100) : 0;
+}
+
+function FeatureGroup({ title, items }: { title: string; items: string[] }) {
   return (
-    <View className="flex-row items-center mb-3">
-      <View className="w-6 h-6 rounded-full bg-brand/15 items-center justify-center mr-3">
-        <Ionicons name="checkmark" size={15} color="#22d3ee" />
-      </View>
-      <Text className="text-zinc-200 flex-1">{text}</Text>
+    <View className="mb-4">
+      <Text className="text-brand text-xs font-bold uppercase tracking-wider mb-2">
+        {title}
+      </Text>
+      {items.map((text, i) => (
+        <View key={i} className="flex-row items-center mb-2">
+          <Ionicons name="checkmark-circle" size={16} color="#22d3ee" />
+          <Text className="text-zinc-200 flex-1 ml-2.5 text-[13px]">{text}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -36,7 +51,8 @@ function PlanCard({
   desc,
   price,
   period,
-  best,
+  badge,
+  save,
 }: {
   selected: boolean;
   onSelect: () => void;
@@ -44,7 +60,8 @@ function PlanCard({
   desc: string;
   price: string;
   period: string;
-  best?: string;
+  badge?: string;
+  save?: string;
 }) {
   return (
     <Pressable
@@ -62,11 +79,16 @@ function PlanCard({
       </View>
 
       <View className="flex-1">
-        <View className="flex-row items-center">
-          <Text className="text-zinc-50 font-bold text-base">{name}</Text>
-          {best ? (
-            <View className="ml-2 rounded-full bg-brand px-2 py-0.5">
-              <Text className="text-black text-[10px] font-bold">{best}</Text>
+        <View className="flex-row items-center flex-wrap">
+          <Text className="text-zinc-50 font-bold text-base mr-2">{name}</Text>
+          {badge ? (
+            <View className="rounded-full bg-brand px-2 py-0.5 mr-2">
+              <Text className="text-black text-[10px] font-bold">{badge}</Text>
+            </View>
+          ) : null}
+          {save ? (
+            <View className="rounded-full bg-emerald-500/15 px-2 py-0.5">
+              <Text className="text-emerald-400 text-[10px] font-bold">{save}</Text>
             </View>
           ) : null}
         </View>
@@ -102,6 +124,12 @@ export default function PaywallScreen() {
   }, []);
 
   const price = (p: PlanId) => prices[p] ?? priceFor(p, lang);
+  const savePct = annualSavingsPct();
+
+  function selectPlan(p: PlanId) {
+    hapticSelect();
+    setPlan(p);
+  }
 
   const limit =
     reason === "logs"
@@ -119,6 +147,16 @@ export default function PaywallScreen() {
           title: t("paywall.limitTitleProfiles"),
           body: t("paywall.limitBodyProfiles"),
         }
+      : reason === "rotation"
+      ? {
+          title: t("paywall.limitTitleRotation"),
+          body: t("paywall.limitBodyRotation"),
+        }
+      : reason === "pens"
+      ? {
+          title: t("paywall.limitTitlePens"),
+          body: t("paywall.limitBodyPens"),
+        }
       : null;
 
   async function buy() {
@@ -127,6 +165,7 @@ export default function PaywallScreen() {
     await refreshPro();
     setBusy(false);
     if (ok) {
+      hapticSuccess();
       toast(t("paywall.activated"), "success");
       router.back();
     }
@@ -139,6 +178,7 @@ export default function PaywallScreen() {
     await refreshPro();
     setBusy(false);
     if (ok) {
+      hapticSuccess();
       toast(t("paywall.restored"), "success");
       router.back();
     } else {
@@ -184,17 +224,34 @@ export default function PaywallScreen() {
           </View>
         ) : null}
 
+        {/* Grouped benefits */}
         <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mb-6">
-          <Feature text={t("paywall.featureUnlimited")} />
-          <Feature text={t("paywall.featureFamily")} />
-          <Feature text={t("paywall.featureExport")} />
-          <Feature text={t("paywall.featureFavorites")} />
+          <FeatureGroup
+            title={t("paywall.groupTracking")}
+            items={[
+              t("paywall.featureUnlimited"),
+              t("paywall.featureFavorites"),
+              t("paywall.featureFamily"),
+            ]}
+          />
+          <FeatureGroup
+            title={t("paywall.groupInjection")}
+            items={[t("paywall.featureInjection"), t("paywall.featurePens")]}
+          />
+          <FeatureGroup
+            title={t("paywall.groupInsights")}
+            items={[
+              t("paywall.featureInsights"),
+              t("paywall.featurePdf"),
+              t("paywall.featureExport"),
+            ]}
+          />
         </View>
 
         {/* Plans */}
         <PlanCard
           selected={plan === "monthly"}
-          onSelect={() => setPlan("monthly")}
+          onSelect={() => selectPlan("monthly")}
           name={t("paywall.planMonthly")}
           desc={t("paywall.monthlyDesc")}
           price={price("monthly")}
@@ -202,16 +259,17 @@ export default function PaywallScreen() {
         />
         <PlanCard
           selected={plan === "annual"}
-          onSelect={() => setPlan("annual")}
+          onSelect={() => selectPlan("annual")}
           name={t("paywall.planAnnual")}
           desc={t("paywall.annualDesc")}
           price={price("annual")}
           period={t("paywall.perYear")}
-          best={t("paywall.bestValue")}
+          badge={t("paywall.mostPopular")}
+          save={savePct > 0 ? t("paywall.savePercent", { percent: savePct }) : undefined}
         />
         <PlanCard
           selected={plan === "lifetime"}
-          onSelect={() => setPlan("lifetime")}
+          onSelect={() => selectPlan("lifetime")}
           name={t("paywall.planLifetime")}
           desc={t("paywall.lifetimeDesc")}
           price={price("lifetime")}
@@ -226,11 +284,19 @@ export default function PaywallScreen() {
           onPress={buy}
         />
 
-        <Pressable onPress={onRestore} className="py-4 items-center">
+        {/* Secure payment */}
+        <View className="flex-row items-center justify-center mt-3">
+          <Ionicons name="lock-closed" size={12} color="#52525b" />
+          <Text className="text-zinc-500 text-xs ml-1.5 text-center">
+            {t("paywall.securePayment")}
+          </Text>
+        </View>
+
+        <Pressable onPress={onRestore} className="py-3 items-center">
           <Text className="text-zinc-400 font-medium">{t("paywall.restore")}</Text>
         </Pressable>
 
-        <Text className="text-zinc-600 text-xs text-center px-4 mb-3">
+        <Text className="text-zinc-600 text-[11px] text-center px-2 leading-4 mb-3">
           {t("paywall.legalNote")}
         </Text>
         <View className="flex-row justify-center gap-6">

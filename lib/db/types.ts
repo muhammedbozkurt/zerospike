@@ -14,6 +14,48 @@ export type PeriodTag =
  *  values are shown and entered. */
 export type GlucoseUnit = "mgdl" | "mmol";
 
+/** Optional context labels attachable to any log (schema v5). Stored as a JSON
+ *  array of these keys; labels are resolved from i18n (`tags.<key>`). */
+export type LogTag =
+  | "sport"
+  | "illness"
+  | "stress"
+  | "travel"
+  | "alcohol"
+  | "other";
+
+/** Canonical order (chip display + serialization). */
+export const LOG_TAGS: LogTag[] = [
+  "sport",
+  "illness",
+  "stress",
+  "travel",
+  "alcohol",
+  "other",
+];
+
+/** Safe parse of a stored tags JSON string → known tags only, canonical order. */
+export function parseTags(json: string | null | undefined): LogTag[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    const set = new Set(arr.filter((x) => (LOG_TAGS as string[]).includes(x)));
+    return LOG_TAGS.filter((tag) => set.has(tag));
+  } catch {
+    return [];
+  }
+}
+
+/** Serializes tags → JSON string, dropping unknowns/dupes, canonical order. */
+export function serializeTags(
+  tags: readonly string[] | null | undefined
+): string {
+  if (!tags || tags.length === 0) return "[]";
+  const set = new Set(tags.filter((x) => (LOG_TAGS as string[]).includes(x)));
+  return JSON.stringify(LOG_TAGS.filter((tag) => set.has(tag)));
+}
+
 export interface UserProfile {
   id: string; // UUID
   name: string;
@@ -55,6 +97,7 @@ export interface SugarLog {
   period_tag: PeriodTag;
   source: string; // 'manual' | 'health'
   logged_at: string;
+  tags: LogTag[];
 }
 
 export interface MealLog {
@@ -69,6 +112,7 @@ export interface MealLog {
   photo_uri_local: string | null;
   personal_note: string | null;
   logged_at: string;
+  tags: LogTag[];
 }
 
 export interface Favorite {
@@ -101,4 +145,56 @@ export function parseAliases(food: Food): string[] {
   } catch {
     return [];
   }
+}
+
+/* ── Insulin pens & injection-site logging (schema v4) ────────────────────── */
+
+/** Basal (long-acting) vs bolus (mealtime) insulin. */
+export type InsulinType = "basal" | "bolus";
+
+/** Injection sites: four body regions, each split left/right. */
+export type InjectionSite =
+  | "abdomen_left"
+  | "abdomen_right"
+  | "thigh_left"
+  | "thigh_right"
+  | "arm_left"
+  | "arm_right"
+  | "buttock_left"
+  | "buttock_right";
+
+/** Canonical site order (drives the body map, rotation and recommendation). */
+export const INJECTION_SITES: InjectionSite[] = [
+  "abdomen_left",
+  "abdomen_right",
+  "thigh_left",
+  "thigh_right",
+  "arm_left",
+  "arm_right",
+  "buttock_left",
+  "buttock_right",
+];
+
+export interface InsulinPen {
+  id: string; // UUID
+  profile_id: string;
+  name: string;
+  insulin_type: InsulinType;
+  total_units: number; // capacity, e.g. 300
+  remaining_units: number; // decremented as injections are logged
+  is_active: number; // 0 | 1
+  created_at: string;
+}
+
+export interface Injection {
+  id: string; // UUID
+  profile_id: string;
+  site: InjectionSite;
+  dose_units: number | null;
+  pen_id: string | null; // FK → insulin_pens (SET NULL on pen delete)
+  insulin_type: InsulinType | null;
+  meal_log_id: string | null; // FK → meal_logs (SET NULL on meal delete)
+  note: string | null;
+  logged_at: string;
+  tags: LogTag[];
 }

@@ -11,8 +11,18 @@ import { updateProfile, deleteProfile } from "../../lib/db/profiles";
 import { clearAllLogs } from "../../lib/db/index";
 import { loadDemoData } from "../../lib/db/demo";
 import { exportLogsCsv } from "../../lib/services/export";
+import { exportLogsPdf } from "../../lib/services/report";
+import { INSIGHTS_WINDOWS } from "../../lib/insights";
 import { setProOverride, presentCodeRedemption } from "../../lib/services/purchases";
-import { scheduleBasalReminder } from "../../lib/services/notifications";
+import {
+  applyNotificationPrefs,
+  hasNotificationPermission,
+} from "../../lib/services/notifications";
+import {
+  getNotificationPrefs,
+  setNotificationPrefs,
+  type NotificationPrefs,
+} from "../../lib/services/notificationPrefs";
 import type { Lang, GlucoseUnit } from "../../lib/db/types";
 import {
   glucoseToDisplay,
@@ -20,7 +30,7 @@ import {
   glucoseUnitLabel,
 } from "../../lib/glucose";
 import { SectionLabel, Segmented } from "../../components/ui";
-import { FormCard, InputRow, ActionRow } from "../../components/form";
+import { FormCard, InputRow } from "../../components/form";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { LanguagePicker } from "../../components/LanguagePicker";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
@@ -66,7 +76,7 @@ export default function SettingsScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { toast, confirm } = useFeedback();
+  const { toast, confirm, actionSheet } = useFeedback();
   const {
     activeProfile,
     profiles,
@@ -87,9 +97,11 @@ export default function SettingsScreen() {
   const [fasting, setFasting] = useState("");
   const [postmeal, setPostmeal] = useState("");
   const [dailyCarb, setDailyCarb] = useState("");
-  const [basalTime, setBasalTime] = useState("22:00");
-  const [showTime, setShowTime] = useState(false);
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  const [openPicker, setOpenPicker] = useState<"basal" | "glucose" | null>(null);
+  const [notifDenied, setNotifDenied] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
@@ -106,6 +118,26 @@ export default function SettingsScreen() {
     setPostmeal(String(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
     setDailyCarb(String(activeProfile.daily_carb_target_g));
   }, [activeProfile?.id, activeProfile?.glucose_unit]);
+
+  // Load notification preferences + current permission state.
+  useEffect(() => {
+    (async () => {
+      const p = await getNotificationPrefs();
+      setPrefs(p);
+      const granted = await hasNotificationPermission();
+      setNotifDenied(p.enabled && !granted);
+    })();
+  }, []);
+
+  async function updatePrefs(patch: Partial<NotificationPrefs>) {
+    const base = prefs ?? (await getNotificationPrefs());
+    const next = { ...base, ...patch };
+    setPrefs(next);
+    await setNotificationPrefs(next);
+    await applyNotificationPrefs(next);
+    const granted = await hasNotificationPermission();
+    setNotifDenied(next.enabled && !granted);
+  }
 
   function n(v: string, fallback: number): number {
     const x = parseFloat(v.replace(",", "."));
@@ -135,6 +167,39 @@ export default function SettingsScreen() {
         "error"
       );
     }
+  }
+
+  async function runPdf(days: number) {
+    if (!activeProfile) return;
+    setExportingPdf(true);
+    const res = await exportLogsPdf(activeProfile, days);
+    setExportingPdf(false);
+    if (res.ok) {
+      toast(t("report.created"), "success");
+    } else {
+      toast(
+        res.reason === "noData"
+          ? t("export.noData")
+          : t("export.sharingUnavailable"),
+        "error"
+      );
+    }
+  }
+
+  function onExportPdf() {
+    if (!activeProfile) return;
+    if (!isProUser) {
+      router.push("/paywall");
+      return;
+    }
+    actionSheet({
+      title: t("settings.exportPdf"),
+      actions: INSIGHTS_WINDOWS.map((d) => ({
+        label: t("insights.windowDays", { n: d }),
+        icon: "calendar-outline" as const,
+        onPress: () => runPdf(d),
+      })),
+    });
   }
 
   async function onToggleSimPro(value: boolean) {
@@ -192,8 +257,8 @@ export default function SettingsScreen() {
 
   async function onChangeLang(next: Lang) {
     await setLanguage(next);
-    // Refresh the basal reminder so its text matches the new language.
-    await scheduleBasalReminder(basalTime);
+    // Reschedule so reminder text matches the new language.
+    await applyNotificationPrefs();
   }
 
   const version =
@@ -283,6 +348,24 @@ export default function SettingsScreen() {
             onEndEditing={() =>
               persist({ daily_carb_target_g: Math.round(n(dailyCarb, 200)) })
             }
+          />
+          <InputRow
+            icon="pulse-outline"
+            label={t("settings.isf")}
+            hint={t("settings.isfHint")}
+            value={isf}
+            onChangeText={setIsf}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
+            onEndEditing={() =>
+              persist({
+                insulin_sensitivity_factor: glucoseFromDisplay(
+                  n(isf, glucoseToDisplay(40, unit)),
+                  unit
+                ),
+              })
+            }
             last
           />
         </FormCard>
@@ -319,47 +402,182 @@ export default function SettingsScreen() {
           />
         </FormCard>
 
-        {/* Insulin & reminder */}
-        <FormCard icon="pulse-outline" title={t("onboarding.secReminder")}>
-          <InputRow
-            icon="pulse-outline"
-            label={t("settings.isf")}
-            hint={t("settings.isfHint")}
-            value={isf}
-            onChangeText={setIsf}
-            keyboardType="decimal-pad"
-            suffix={glucoseUnitLabel(unit)}
-            maxLength={5}
-            onEndEditing={() =>
-              persist({
-                insulin_sensitivity_factor: glucoseFromDisplay(
-                  n(isf, glucoseToDisplay(40, unit)),
-                  unit
-                ),
-              })
-            }
-          />
-          <ActionRow
-            icon="alarm-outline"
-            label={t("settings.basalTime")}
-            value={basalTime}
-            onPress={() => setShowTime((s) => !s)}
-            last
-          />
-        </FormCard>
-        <InlineTimePicker
-          visible={showTime}
-          value={basalTime}
-          onChange={(v) => {
-            setBasalTime(v);
-            scheduleBasalReminder(v);
-          }}
-          onClose={() => setShowTime(false)}
-        />
+        {/* Notifications */}
+        <SectionLabel>{t("settings.notificationsSection")}</SectionLabel>
+        {prefs ? (
+          <>
+            <Row
+              icon="notifications-outline"
+              label={t("settings.notificationsAll")}
+              right={
+                <Switch
+                  value={prefs.enabled}
+                  onValueChange={(v) => updatePrefs({ enabled: v })}
+                  trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                  thumbColor="#fafafa"
+                />
+              }
+            />
+
+            {prefs.enabled && notifDenied ? (
+              <Pressable
+                onPress={() => Linking.openSettings()}
+                className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 mb-2"
+              >
+                <Text className="text-amber-200/90 text-sm leading-5">
+                  {t("notifications.permissionDenied")}
+                </Text>
+                <Text className="text-brand text-xs font-semibold mt-1">
+                  {t("settings.openSystemSettings")}
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {prefs.enabled ? (
+              <>
+                {/* Night insulin */}
+                <Row
+                  icon="moon-outline"
+                  label={t("settings.reminderBasal")}
+                  right={
+                    <Switch
+                      value={prefs.basal}
+                      onValueChange={(v) => updatePrefs({ basal: v })}
+                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      thumbColor="#fafafa"
+                    />
+                  }
+                />
+                {prefs.basal ? (
+                  <>
+                    <Row
+                      icon="alarm-outline"
+                      label={t("settings.reminderTime")}
+                      value={prefs.basalTime}
+                      onPress={() =>
+                        setOpenPicker((p) => (p === "basal" ? null : "basal"))
+                      }
+                    />
+                    <InlineTimePicker
+                      visible={openPicker === "basal"}
+                      value={prefs.basalTime}
+                      onChange={(v) => updatePrefs({ basalTime: v })}
+                      onClose={() => setOpenPicker(null)}
+                    />
+                  </>
+                ) : null}
+
+                {/* Glucose check */}
+                <Row
+                  icon="water-outline"
+                  label={t("settings.reminderGlucose")}
+                  right={
+                    <Switch
+                      value={prefs.glucose}
+                      onValueChange={(v) => updatePrefs({ glucose: v })}
+                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      thumbColor="#fafafa"
+                    />
+                  }
+                />
+                {prefs.glucose ? (
+                  <>
+                    <Row
+                      icon="alarm-outline"
+                      label={t("settings.reminderTime")}
+                      value={prefs.glucoseTime}
+                      onPress={() =>
+                        setOpenPicker((p) => (p === "glucose" ? null : "glucose"))
+                      }
+                    />
+                    <InlineTimePicker
+                      visible={openPicker === "glucose"}
+                      value={prefs.glucoseTime}
+                      onChange={(v) => updatePrefs({ glucoseTime: v })}
+                      onClose={() => setOpenPicker(null)}
+                    />
+                  </>
+                ) : null}
+
+                {/* Post-meal check */}
+                <Row
+                  icon="time-outline"
+                  label={t("settings.reminderPostMeal")}
+                  right={
+                    <Switch
+                      value={prefs.postMeal}
+                      onValueChange={(v) => updatePrefs({ postMeal: v })}
+                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      thumbColor="#fafafa"
+                    />
+                  }
+                />
+                {prefs.postMeal ? (
+                  <View className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 mb-2">
+                    <Text className="text-zinc-400 text-xs mb-2">
+                      {t("settings.postMealDelay")}
+                    </Text>
+                    <Segmented
+                      options={[1, 2, 3].map((h) => ({
+                        value: String(h),
+                        label: t("settings.hours", { n: h }),
+                      }))}
+                      value={String(prefs.postMealHours)}
+                      onChange={(v) =>
+                        updatePrefs({ postMealHours: Number(v) as 1 | 2 | 3 })
+                      }
+                    />
+                  </View>
+                ) : null}
+
+                {/* Low pen alert */}
+                <Row
+                  icon="albums-outline"
+                  label={t("settings.reminderPenLow")}
+                  right={
+                    <Switch
+                      value={prefs.penLow}
+                      onValueChange={(v) => updatePrefs({ penLow: v })}
+                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      thumbColor="#fafafa"
+                    />
+                  }
+                />
+
+                {/* Weekly summary */}
+                <Row
+                  icon="calendar-outline"
+                  label={t("settings.reminderWeekly")}
+                  right={
+                    <Switch
+                      value={prefs.weekly}
+                      onValueChange={(v) => updatePrefs({ weekly: v })}
+                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      thumbColor="#fafafa"
+                    />
+                  }
+                />
+              </>
+            ) : null}
+          </>
+        ) : null}
 
         {/* Language */}
         <SectionLabel>{t("settings.language")}</SectionLabel>
         <LanguagePicker value={lang} onChange={onChangeLang} />
+
+        {/* Injection */}
+        <SectionLabel>{t("injection.title")}</SectionLabel>
+        <Row
+          icon="albums-outline"
+          label={t("pen.title")}
+          onPress={() => router.push("/pens")}
+        />
+        <Row
+          icon="medkit-outline"
+          label={t("injection.guideLink")}
+          onPress={() => router.push("/injection-guide")}
+        />
 
         {/* Pro */}
         <SectionLabel>{t("settings.proSection")}</SectionLabel>
@@ -389,6 +607,18 @@ export default function SettingsScreen() {
           onPress={onExport}
           right={
             exporting ? (
+              <Ionicons name="hourglass-outline" size={18} color="#52525b" />
+            ) : !isProUser ? (
+              <Ionicons name="lock-closed" size={16} color="#52525b" />
+            ) : undefined
+          }
+        />
+        <Row
+          icon="newspaper-outline"
+          label={t("settings.exportPdf")}
+          onPress={onExportPdf}
+          right={
+            exportingPdf ? (
               <Ionicons name="hourglass-outline" size={18} color="#52525b" />
             ) : !isProUser ? (
               <Ionicons name="lock-closed" size={16} color="#52525b" />

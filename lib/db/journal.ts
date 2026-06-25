@@ -1,6 +1,12 @@
 import { getDb } from "./index";
-import type { Lang, PeriodTag } from "./types";
-import { foodName } from "./types";
+import type {
+  InjectionSite,
+  InsulinType,
+  Lang,
+  LogTag,
+  PeriodTag,
+} from "./types";
+import { foodName, parseTags } from "./types";
 import type { Food } from "./types";
 
 export interface GlucoseEntry {
@@ -10,6 +16,7 @@ export interface GlucoseEntry {
   glucose_level_mgdl: number;
   period_tag: PeriodTag;
   source: string;
+  tags: LogTag[];
 }
 
 export interface MealEntry {
@@ -23,9 +30,22 @@ export interface MealEntry {
   insulin_dose_units: number;
   photo_uri_local: string | null;
   personal_note: string | null;
+  tags: LogTag[];
 }
 
-export type JournalEntry = GlucoseEntry | MealEntry;
+export interface InjectionEntry {
+  kind: "injection";
+  id: string;
+  logged_at: string;
+  site: InjectionSite;
+  dose_units: number | null;
+  insulin_type: InsulinType | null;
+  pen_name: string | null;
+  note: string | null;
+  tags: LogTag[];
+}
+
+export type JournalEntry = GlucoseEntry | MealEntry | InjectionEntry;
 
 interface MealRow {
   id: string;
@@ -37,6 +57,7 @@ interface MealRow {
   insulin_dose_units: number;
   photo_uri_local: string | null;
   personal_note: string | null;
+  tags: string | null;
   // joined food name columns (nullable)
   name_tr: string | null;
   name_en: string | null;
@@ -56,22 +77,69 @@ export async function getJournal(
 ): Promise<JournalEntry[]> {
   const db = await getDb();
 
-  const glucose = await db.getAllAsync<GlucoseEntry>(
-    `SELECT 'glucose' AS kind, id, logged_at, glucose_level_mgdl, period_tag, source
+  const glucoseRows = await db.getAllAsync<{
+    id: string;
+    logged_at: string;
+    glucose_level_mgdl: number;
+    period_tag: PeriodTag;
+    source: string;
+    tags: string | null;
+  }>(
+    `SELECT id, logged_at, glucose_level_mgdl, period_tag, source, tags
        FROM sugar_logs WHERE profile_id = ? ORDER BY logged_at DESC LIMIT ?;`,
     [profileId, limit]
   );
 
+  const glucose: GlucoseEntry[] = glucoseRows.map((r) => ({
+    kind: "glucose",
+    id: r.id,
+    logged_at: r.logged_at,
+    glucose_level_mgdl: r.glucose_level_mgdl,
+    period_tag: r.period_tag,
+    source: r.source,
+    tags: parseTags(r.tags),
+  }));
+
   const mealRows = await db.getAllAsync<MealRow>(
     `SELECT m.id, m.logged_at, m.food_id, m.custom_food_name, m.portion_g,
             m.calculated_carbs_g, m.insulin_dose_units, m.photo_uri_local,
-            m.personal_note,
+            m.personal_note, m.tags,
             f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr
        FROM meal_logs m
        LEFT JOIN foods f ON f.id = m.food_id
      WHERE m.profile_id = ? ORDER BY m.logged_at DESC LIMIT ?;`,
     [profileId, limit]
   );
+
+  const injectionRows = await db.getAllAsync<{
+    id: string;
+    logged_at: string;
+    site: InjectionSite;
+    dose_units: number | null;
+    insulin_type: InsulinType | null;
+    note: string | null;
+    pen_name: string | null;
+    tags: string | null;
+  }>(
+    `SELECT i.id, i.logged_at, i.site, i.dose_units, i.insulin_type, i.note,
+            i.tags, p.name AS pen_name
+       FROM injection_logs i
+       LEFT JOIN insulin_pens p ON p.id = i.pen_id
+     WHERE i.profile_id = ? ORDER BY i.logged_at DESC LIMIT ?;`,
+    [profileId, limit]
+  );
+
+  const injections: InjectionEntry[] = injectionRows.map((r) => ({
+    kind: "injection",
+    id: r.id,
+    logged_at: r.logged_at,
+    site: r.site,
+    dose_units: r.dose_units,
+    insulin_type: r.insulin_type,
+    pen_name: r.pen_name,
+    note: r.note,
+    tags: parseTags(r.tags),
+  }));
 
   const meals: MealEntry[] = mealRows.map((r) => {
     let display = r.custom_food_name ?? "";
@@ -98,10 +166,11 @@ export async function getJournal(
       insulin_dose_units: r.insulin_dose_units,
       photo_uri_local: r.photo_uri_local,
       personal_note: r.personal_note,
+      tags: parseTags(r.tags),
     };
   });
 
-  return [...glucose.map((g) => ({ ...g, kind: "glucose" as const })), ...meals].sort(
-    (a, b) => (a.logged_at < b.logged_at ? 1 : -1)
+  return [...glucose, ...meals, ...injections].sort((a, b) =>
+    a.logged_at < b.logged_at ? 1 : -1
   );
 }

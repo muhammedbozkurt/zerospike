@@ -9,6 +9,8 @@ import {
   ViewProps,
 } from "react-native";
 
+import { hapticSelect } from "../lib/haptics";
+
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 type ButtonSize = "lg" | "md" | "sm";
 
@@ -161,7 +163,10 @@ export function Segmented<T extends string>({
         return (
           <Pressable
             key={opt.value}
-            onPress={() => onChange(opt.value)}
+            onPress={() => {
+              if (!active) hapticSelect();
+              onChange(opt.value);
+            }}
             className={`rounded-full px-3.5 py-2 border ${
               active
                 ? "bg-brand border-brand"

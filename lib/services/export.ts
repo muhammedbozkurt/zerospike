@@ -3,7 +3,8 @@ import * as Sharing from "expo-sharing";
 import i18n from "../i18n";
 import { getJournal } from "../db/journal";
 import { currentLang } from "../i18n";
-import type { PeriodTag } from "../db/types";
+import type { InsulinType, LogTag, PeriodTag } from "../db/types";
+import { num } from "../format";
 
 export type ExportResult =
   | { ok: true; uri: string; count: number }
@@ -34,6 +35,16 @@ function periodLabel(tag: PeriodTag): string {
   return i18n.t(`period.${tag}`);
 }
 
+function insulinTypeLabel(type: InsulinType | null): string {
+  if (type === "basal") return i18n.t("insights.basal");
+  if (type === "bolus") return i18n.t("insights.bolus");
+  return "";
+}
+
+function tagsLabel(tags: LogTag[]): string {
+  return tags.map((tag) => i18n.t(`tags.${tag}`)).join(", ");
+}
+
 /**
  * Generates a real, fully-offline CSV of a profile's complete journal
  * (glucose + meal logs) and opens the native share sheet (WhatsApp, Email…).
@@ -54,7 +65,10 @@ export async function exportLogsCsv(
     i18n.t("export.colCarbs"),
     i18n.t("export.colInsulin"),
     i18n.t("export.colFood"),
+    i18n.t("export.colSite"),
+    i18n.t("export.colPen"),
     i18n.t("export.colNote"),
+    i18n.t("export.colTags"),
   ];
 
   const rows: string[] = [headers.map(csvEscape).join(",")];
@@ -73,11 +87,14 @@ export async function exportLogsCsv(
           "",
           "",
           "",
+          "",
+          "",
+          tagsLabel(e.tags),
         ]
           .map(csvEscape)
           .join(",")
       );
-    } else {
+    } else if (e.kind === "meal") {
       rows.push(
         [
           date,
@@ -87,7 +104,32 @@ export async function exportLogsCsv(
           Math.round(e.calculated_carbs_g * 10) / 10,
           e.insulin_dose_units,
           e.display_name,
+          "",
+          "",
           e.personal_note ?? "",
+          tagsLabel(e.tags),
+        ]
+          .map(csvEscape)
+          .join(",")
+      );
+    } else {
+      // injection
+      const typeLabel = insulinTypeLabel(e.insulin_type);
+      rows.push(
+        [
+          date,
+          time,
+          typeLabel
+            ? `${i18n.t("export.typeInjection")} · ${typeLabel}`
+            : i18n.t("export.typeInjection"),
+          "",
+          "",
+          e.dose_units != null ? num(e.dose_units) : "",
+          "",
+          i18n.t(`injectionSite.${e.site}`),
+          e.pen_name ?? "",
+          e.note ?? "",
+          tagsLabel(e.tags),
         ]
           .map(csvEscape)
           .join(",")
