@@ -31,11 +31,11 @@ const de: TranslationSchema = {
       "Die Methoden zur Kohlenhydratzählung und Insulinschätzung in zerospike folgen den öffentlich verfügbaren klinischen Standardleitlinien der unten genannten Organisationen. zerospike ist ein Tagebuch zu Bildungszwecken, kein Medizinprodukt. Bestätigen Sie Dosierungen stets mit Ihrer Ärztin oder Ihrem Arzt.",
     methodTitle: "So werden die Schätzungen berechnet",
     method:
-      "• Mahlzeitendosis = Kohlenhydrate ÷ Ihr Insulin-Kohlenhydrat-Verhältnis\n• Korrekturdosis = (aktueller Glukosewert − Ziel) ÷ Ihr Insulinsensitivitätsfaktor (ISF)\n• Der postprandiale Glukosewert wird 2 Stunden nach dem Essen gemessen\n\nDiese Faktoren sind individuell und müssen von Ihrer Ärztin oder Ihrem Arzt festgelegt werden.",
+      "• Mahlzeitendosis = Kohlenhydrate ÷ Ihr Insulin-Kohlenhydrat-Verhältnis\n• Korrekturdosis = (aktueller Glukosewert - Ziel) ÷ Ihr Insulinsensitivitätsfaktor (ISF)\n• Der postprandiale Glukosewert wird 2 Stunden nach dem Essen gemessen\n\nDiese Faktoren sind individuell und müssen von Ihrer Ärztin oder Ihrem Arzt festgelegt werden.",
     methodNote:
-      "Schätzungen werden auf die 0,5-Einheiten-Auflösung Ihres Pens gerundet und sind bewusst konservativ — vor der Verwendung immer prüfen und anpassen. Die Korrekturdosis basiert auf Ihrem Ziel nach dem Essen.",
+      "Schätzungen werden auf die 0,5-Einheiten-Auflösung Ihres Pens gerundet und sind bewusst konservativ. Vor der Verwendung immer prüfen und anpassen. Die Korrekturdosis basiert auf Ihrem Ziel nach dem Essen.",
     iobNote:
-      "Aktives Insulin (IOB) wird aus Ihren erfassten Bolusdosen mit einem einfachen linearen Abfall über ~4 Stunden geschätzt und senkt nur eine Korrekturschätzung — nie die Mahlzeitendosis. Es ist eine Schätzung, keine Anweisung.",
+      "Aktives Insulin (IOB) wird aus Ihren erfassten Bolusdosen mit einem einfachen linearen Abfall über ~4 Stunden geschätzt und senkt nur eine Korrekturschätzung, nie die Mahlzeitendosis. Es ist eine Schätzung, keine Anweisung.",
     listTitle: "Quellen",
     openHint: "Wird im Browser geöffnet",
   },
@@ -85,11 +85,11 @@ const de: TranslationSchema = {
     pensActive: "{{n}} Pens",
     thisWeek: "Diese Woche",
     activeInsulin: "Aktives Insulin",
-    activeInsulinSub: "Geschätzt aus letzten Dosen — kein Stacking",
-    feedbackOnTarget: "2-Std-Check: {{value}} {{unit}} — im Zielbereich.",
-    feedbackElevated: "2-Std-Check: {{value}} {{unit}} — etwas über Ihrem Ziel.",
-    feedbackHigh: "2-Std-Check: {{value}} {{unit}} — über Ihrem Zielbereich.",
-    feedbackLow: "2-Std-Check: {{value}} {{unit}} — unter Ihrem Bereich.",
+    activeInsulinSub: "Geschätzt aus letzten Dosen, kein Stacking",
+    feedbackOnTarget: "2-Std-Check: {{value}} {{unit}}, im Zielbereich.",
+    feedbackElevated: "2-Std-Check: {{value}} {{unit}}, etwas über Ihrem Ziel.",
+    feedbackHigh: "2-Std-Check: {{value}} {{unit}}, über Ihrem Zielbereich.",
+    feedbackLow: "2-Std-Check: {{value}} {{unit}}, unter Ihrem Bereich.",
     sampleCta: "Mit Beispieldaten ansehen",
     sampleActive: "Sie sehen Beispieldaten",
     sampleClear: "Löschen",
@@ -261,6 +261,7 @@ const de: TranslationSchema = {
     activated: "zerospike Pro aktiviert",
     restored: "Ihre Käufe wurden wiederhergestellt",
     nothingToRestore: "Keine Käufe zum Wiederherstellen gefunden",
+    restoreFailed: "Käufe konnten nicht wiederhergestellt werden. Bitte prüfe deine Verbindung und versuche es erneut.",
     legalNote: "Monats- und Jahrespläne sind automatisch verlängernde Abonnements. Die Zahlung wird bei Bestätigung deinem Apple-ID- oder Google-Konto belastet. Das Abonnement verlängert sich automatisch, sofern es nicht mindestens 24 Stunden vor Ablauf des Zeitraums gekündigt wird; die Verlängerung wird innerhalb von 24 Stunden vor Ablauf belastet. Du kannst es jederzeit in deinen Kontoeinstellungen verwalten oder kündigen. Lebenslang ist ein einmaliger Kauf und verlängert sich nicht. Deine Daten bleiben auf deinem Gerät.",
     planMonthly: "Monatlich",
     planAnnual: "Jährlich",
@@ -316,7 +317,7 @@ const de: TranslationSchema = {
     created: "PDF-Bericht erstellt",
     agpTitle: "Glukoseprofil nach Tageszeit (AGP)",
     agpCaption:
-      "Median (Linie) und 25–75 %-Bereich je Stunde, über den Zeitraum gepoolt. Grünes Band = {{low}}–{{high}}.",
+      "Median (Linie) und 25-75 %-Bereich je Stunde, über den Zeitraum gepoolt. Grünes Band = {{low}}-{{high}}.",
   },
   tags: {
     label: "Tags",
@@ -383,7 +384,7 @@ const de: TranslationSchema = {
     patternTagHigher:
       "Mit \"{{tag}}\" markierte Werte lagen im Schnitt bei {{avg}} {{unit}} statt {{baseline}} insgesamt ({{n}} Werte).",
     patternDawn:
-      "Morgens sind die Werte tendenziell höher — {{morningAvg}} {{unit}} statt {{baseline}} insgesamt.",
+      "Morgens sind die Werte tendenziell höher: {{morningAvg}} {{unit}} statt {{baseline}} insgesamt.",
     patternHighVariability:
       "Ihre Werte schwanken stark (VK {{cv}} %). Stabilere Werte sind leichter zu handhaben.",
   },

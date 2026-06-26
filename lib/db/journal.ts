@@ -160,7 +160,7 @@ export async function getJournal(
       id: r.id,
       logged_at: r.logged_at,
       food_id: r.food_id,
-      display_name: display || "—",
+      display_name: display || "-",
       portion_g: r.portion_g,
       calculated_carbs_g: r.calculated_carbs_g,
       insulin_dose_units: r.insulin_dose_units,

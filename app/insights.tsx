@@ -80,7 +80,7 @@ export default function InsightsScreen() {
   const { activeProfile, isProUser } = useApp();
   const unit = activeProfile?.glucose_unit ?? "mgdl";
   const fmtG = (mgdl: number | null) =>
-    mgdl == null ? "—" : formatGlucose(mgdl, unit);
+    mgdl == null ? "-" : formatGlucose(mgdl, unit);
 
   // Optional ?window=7|14|30 (e.g. from the dashboard "This week" card).
   const { window: windowParam } = useLocalSearchParams<{ window?: string }>();
@@ -125,8 +125,8 @@ export default function InsightsScreen() {
     [sugar, meals, injections, windowDays]
   );
 
-  const round = (n: number | null) => (n == null ? "—" : String(Math.round(n)));
-  const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}`);
+  const round = (n: number | null) => (n == null ? "-" : String(Math.round(n)));
+  const pct = (n: number | null) => (n == null ? "-" : `${Math.round(n)}`);
 
   // Descriptive patterns from the user's own readings (never causal/advice).
   const patterns = useMemo(
@@ -292,7 +292,7 @@ export default function InsightsScreen() {
                       </View>
                     </View>
                     <Text className="text-zinc-600 text-[11px] mt-3">
-                      {t("insights.inRange")} = {formatGlucose(70, unit)}–
+                      {t("insights.inRange")} = {formatGlucose(70, unit)}-
                       {formatGlucose(180, unit)} {glucoseUnitLabel(unit)}
                     </Text>
                   </View>
@@ -316,13 +316,13 @@ export default function InsightsScreen() {
                     />
                     <Tile
                       label={t("insights.cv")}
-                      value={data.glucoseCV == null ? "—" : String(Math.round(data.glucoseCV))}
+                      value={data.glucoseCV == null ? "-" : String(Math.round(data.glucoseCV))}
                       unit="%"
                     />
                     <Tile label={t("insights.lows")} value={String(data.hypoCount)} color={ROSE} />
                     <Tile
                       label={t("insights.gmi")}
-                      value={data.gmi == null ? "—" : data.gmi.toFixed(1)}
+                      value={data.gmi == null ? "-" : data.gmi.toFixed(1)}
                       unit="%"
                       color={BRAND}
                     />
@@ -383,7 +383,7 @@ export default function InsightsScreen() {
                     />
                     <Tile
                       label={t("insights.avgDose")}
-                      value={data.avgDailyDose == null ? "—" : num(Math.round(data.avgDailyDose * 10) / 10)}
+                      value={data.avgDailyDose == null ? "-" : num(Math.round(data.avgDailyDose * 10) / 10)}
                       unit={t("common.units")}
                     />
                   </View>

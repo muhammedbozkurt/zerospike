@@ -262,7 +262,7 @@ export default function CalculatorScreen() {
               )
             }
             keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
-            placeholder="—"
+            placeholder="-"
             placeholderTextColor="#52525b"
             maxLength={unit === "mmol" ? 4 : 3}
             className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
@@ -317,7 +317,7 @@ export default function CalculatorScreen() {
                 {t("calculator.iobReduction")}
               </Text>
               <Text className="text-emerald-300 font-medium">
-                −{num(estimate.iobReduction)} {t("common.units")}
+                -{num(estimate.iobReduction)} {t("common.units")}
               </Text>
             </View>
           ) : null}

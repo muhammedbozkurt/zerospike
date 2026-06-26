@@ -61,7 +61,7 @@ export function ProfileSwitcher() {
       >
         <Ionicons name="person-circle-outline" size={18} color="#a1a1aa" />
         <Text className="text-zinc-200 font-medium text-sm mx-1.5" numberOfLines={1}>
-          {activeProfile?.name ?? "—"}
+          {activeProfile?.name ?? "-"}
         </Text>
         <Ionicons name="chevron-down" size={14} color="#71717a" />
       </Pressable>

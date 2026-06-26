@@ -398,11 +398,11 @@ export default function DashboardScreen() {
           <View className="flex-row justify-between">
             <WeekStat value={String(weekReadings)} label={t("insights.readings")} />
             <WeekStat
-              value={weekAvg == null ? "—" : formatGlucose(weekAvg, unit)}
+              value={weekAvg == null ? "-" : formatGlucose(weekAvg, unit)}
               label={t("insights.avgGlucose")}
             />
             <WeekStat
-              value={weekTIR == null ? "—" : `${weekTIR}%`}
+              value={weekTIR == null ? "-" : `${weekTIR}%`}
               label={t("insights.timeInRange")}
             />
             <WeekStat

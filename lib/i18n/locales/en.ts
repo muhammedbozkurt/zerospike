@@ -31,11 +31,11 @@ const en: TranslationSchema = {
       "The carbohydrate counting and insulin estimation methods in zerospike follow standard, publicly available clinical guidance from the organizations below. zerospike is an educational logbook, not a medical device. Always confirm doses with your healthcare provider.",
     methodTitle: "How the estimates are calculated",
     method:
-      "• Meal dose = carbohydrates ÷ your insulin-to-carbohydrate ratio\n• Correction dose = (current glucose − target) ÷ your insulin sensitivity factor (ISF)\n• Post-meal (postprandial) glucose is measured 2 hours after eating\n\nThese ratios are personal and must be set by your physician.",
+      "• Meal dose = carbohydrates ÷ your insulin-to-carbohydrate ratio\n• Correction dose = (current glucose - target) ÷ your insulin sensitivity factor (ISF)\n• Post-meal (postprandial) glucose is measured 2 hours after eating\n\nThese ratios are personal and must be set by your physician.",
     methodNote:
-      "Estimates round to your pen's 0.5-unit resolution and are intentionally conservative — always review and edit before use. The correction dose is based on your post-meal target.",
+      "Estimates round to your pen's 0.5-unit resolution and are intentionally conservative. Always review and edit before use. The correction dose is based on your post-meal target.",
     iobNote:
-      "Active insulin (IOB) is estimated from your logged bolus doses using a simple linear decay over ~4 hours, and only ever lowers a correction estimate — never the meal dose. It is an estimate, not a directive.",
+      "Active insulin (IOB) is estimated from your logged bolus doses using a simple linear decay over ~4 hours, and only ever lowers a correction estimate, never the meal dose. It is an estimate, not a directive.",
     listTitle: "References",
     openHint: "Opens in your browser",
   },
@@ -85,11 +85,11 @@ const en: TranslationSchema = {
     pensActive: "{{n}} pens",
     thisWeek: "This week",
     activeInsulin: "Active insulin",
-    activeInsulinSub: "Estimated from recent doses — avoid stacking",
-    feedbackOnTarget: "2h check: {{value}} {{unit}} — in your target range.",
-    feedbackElevated: "2h check: {{value}} {{unit}} — a bit above your target.",
-    feedbackHigh: "2h check: {{value}} {{unit}} — above your target range.",
-    feedbackLow: "2h check: {{value}} {{unit}} — below your range.",
+    activeInsulinSub: "Estimated from recent doses, avoid stacking",
+    feedbackOnTarget: "2h check: {{value}} {{unit}}, in your target range.",
+    feedbackElevated: "2h check: {{value}} {{unit}}, a bit above your target.",
+    feedbackHigh: "2h check: {{value}} {{unit}}, above your target range.",
+    feedbackLow: "2h check: {{value}} {{unit}}, below your range.",
     sampleCta: "Preview with sample data",
     sampleActive: "You're viewing sample data",
     sampleClear: "Clear",
@@ -261,6 +261,7 @@ const en: TranslationSchema = {
     activated: "zerospike Pro activated",
     restored: "Your purchases have been restored",
     nothingToRestore: "No purchases found to restore",
+    restoreFailed: "Couldn't restore purchases. Please check your connection and try again.",
     legalNote: "Monthly and annual plans are auto-renewing subscriptions. Payment is charged to your Apple ID or Google account at confirmation. The subscription renews automatically unless cancelled at least 24 hours before the end of the period; your account is charged within 24 hours before the period ends. Manage or cancel anytime in your account settings. Lifetime is a one-time purchase and does not renew. Your data stays on your device.",
     planMonthly: "Monthly",
     planAnnual: "Annual",
@@ -316,7 +317,7 @@ const en: TranslationSchema = {
     created: "PDF report created",
     agpTitle: "Glucose profile by time of day (AGP)",
     agpCaption:
-      "Median (line) and 25–75% range by hour, pooled over the period. Green band = {{low}}–{{high}}.",
+      "Median (line) and 25-75% range by hour, pooled over the period. Green band = {{low}}-{{high}}.",
   },
   tags: {
     label: "Tags",
@@ -383,7 +384,7 @@ const en: TranslationSchema = {
     patternTagHigher:
       "Readings you tagged \"{{tag}}\" averaged {{avg}} {{unit}} vs {{baseline}} overall ({{n}} readings).",
     patternDawn:
-      "Mornings tend to run higher — {{morningAvg}} {{unit}} vs {{baseline}} overall.",
+      "Mornings tend to run higher: {{morningAvg}} {{unit}} vs {{baseline}} overall.",
     patternHighVariability:
       "Your readings vary a lot (CV {{cv}}%). Steadier levels are easier to manage.",
   },

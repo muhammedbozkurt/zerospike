@@ -31,11 +31,11 @@ const fr: TranslationSchema = {
       "Les méthodes de comptage des glucides et d'estimation de l'insuline de zerospike suivent les recommandations cliniques standard et publiquement accessibles des organisations ci-dessous. zerospike est un journal éducatif, pas un dispositif médical. Confirmez toujours les doses avec votre médecin.",
     methodTitle: "Comment les estimations sont calculées",
     method:
-      "• Dose de repas = glucides ÷ votre ratio insuline-glucides\n• Dose de correction = (glycémie actuelle − cible) ÷ votre facteur de sensibilité à l'insuline (ISF)\n• La glycémie postprandiale est mesurée 2 heures après le repas\n\nCes ratios sont personnels et doivent être définis par votre médecin.",
+      "• Dose de repas = glucides ÷ votre ratio insuline-glucides\n• Dose de correction = (glycémie actuelle - cible) ÷ votre facteur de sensibilité à l'insuline (ISF)\n• La glycémie postprandiale est mesurée 2 heures après le repas\n\nCes ratios sont personnels et doivent être définis par votre médecin.",
     methodNote:
-      "Les estimations sont arrondies à la résolution de 0,5 unité de votre stylo et sont volontairement prudentes — vérifiez-les et ajustez-les toujours avant utilisation. La dose de correction est basée sur votre cible post-repas.",
+      "Les estimations sont arrondies à la résolution de 0,5 unité de votre stylo et sont volontairement prudentes. Vérifiez-les et ajustez-les toujours avant utilisation. La dose de correction est basée sur votre cible post-repas.",
     iobNote:
-      "L'insuline active (IOB) est estimée à partir de vos doses de bolus enregistrées via une décroissance linéaire simple sur ~4 heures, et ne réduit qu'une estimation de correction — jamais la dose du repas. C'est une estimation, pas une directive.",
+      "L'insuline active (IOB) est estimée à partir de vos doses de bolus enregistrées via une décroissance linéaire simple sur ~4 heures, et ne réduit qu'une estimation de correction, jamais la dose du repas. C'est une estimation, pas une directive.",
     listTitle: "Références",
     openHint: "S'ouvre dans votre navigateur",
   },
@@ -85,11 +85,11 @@ const fr: TranslationSchema = {
     pensActive: "{{n}} stylos",
     thisWeek: "Cette semaine",
     activeInsulin: "Insuline active",
-    activeInsulinSub: "Estimé d'après les doses récentes — évitez le cumul",
-    feedbackOnTarget: "Contrôle 2h : {{value}} {{unit}} — dans votre cible.",
-    feedbackElevated: "Contrôle 2h : {{value}} {{unit}} — un peu au-dessus de votre cible.",
-    feedbackHigh: "Contrôle 2h : {{value}} {{unit}} — au-dessus de votre plage cible.",
-    feedbackLow: "Contrôle 2h : {{value}} {{unit}} — sous votre plage.",
+    activeInsulinSub: "Estimé d'après les doses récentes, évitez le cumul",
+    feedbackOnTarget: "Contrôle 2h : {{value}} {{unit}}, dans votre cible.",
+    feedbackElevated: "Contrôle 2h : {{value}} {{unit}}, un peu au-dessus de votre cible.",
+    feedbackHigh: "Contrôle 2h : {{value}} {{unit}}, au-dessus de votre plage cible.",
+    feedbackLow: "Contrôle 2h : {{value}} {{unit}}, sous votre plage.",
     sampleCta: "Aperçu avec données d'exemple",
     sampleActive: "Vous consultez des données d'exemple",
     sampleClear: "Effacer",
@@ -261,6 +261,7 @@ const fr: TranslationSchema = {
     activated: "zerospike Pro activé",
     restored: "Vos achats ont été restaurés",
     nothingToRestore: "Aucun achat à restaurer",
+    restoreFailed: "Impossible de restaurer les achats. Vérifiez votre connexion et réessayez.",
     legalNote: "Les forfaits mensuel et annuel sont des abonnements à renouvellement automatique. Le paiement est débité de ton compte Apple ID ou Google à la confirmation. L'abonnement se renouvelle automatiquement sauf s'il est annulé au moins 24 heures avant la fin de la période ; le renouvellement est débité dans les 24 heures précédant la fin de la période. Tu peux le gérer ou l'annuler à tout moment dans les réglages de ton compte. À vie est un achat unique et ne se renouvelle pas. Tes données restent sur ton appareil.",
     planMonthly: "Mensuel",
     planAnnual: "Annuel",
@@ -316,7 +317,7 @@ const fr: TranslationSchema = {
     created: "Rapport PDF créé",
     agpTitle: "Profil glycémique par heure (AGP)",
     agpCaption:
-      "Médiane (ligne) et plage 25–75 % par heure, regroupées sur la période. Bande verte = {{low}}–{{high}}.",
+      "Médiane (ligne) et plage 25-75 % par heure, regroupées sur la période. Bande verte = {{low}}-{{high}}.",
   },
   tags: {
     label: "Étiquettes",
@@ -383,7 +384,7 @@ const fr: TranslationSchema = {
     patternTagHigher:
       "Les relevés étiquetés \"{{tag}}\" ont une moyenne de {{avg}} {{unit}} contre {{baseline}} au total ({{n}} relevés).",
     patternDawn:
-      "Les matins sont plutôt plus élevés — {{morningAvg}} {{unit}} contre {{baseline}} au total.",
+      "Les matins sont plutôt plus élevés : {{morningAvg}} {{unit}} contre {{baseline}} au total.",
     patternHighVariability:
       "Vos relevés varient beaucoup (CV {{cv}} %). Des niveaux plus stables sont plus faciles à gérer.",
   },

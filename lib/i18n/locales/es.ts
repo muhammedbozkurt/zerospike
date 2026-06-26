@@ -31,7 +31,7 @@ const es: TranslationSchema = {
       "Los métodos de conteo de carbohidratos y estimación de insulina de zerospike siguen las guías clínicas estándar y de acceso público de las organizaciones que se indican a continuación. zerospike es un diario educativo, no un dispositivo médico: confirme siempre las dosis con su médico.",
     methodTitle: "Cómo se calculan las estimaciones",
     method:
-      "• Dosis de comida = carbohidratos ÷ su relación insulina-carbohidratos\n• Dosis de corrección = (glucosa actual − objetivo) ÷ su factor de sensibilidad a la insulina (ISF)\n• La glucosa posprandial se mide 2 horas después de comer\n\nEstas relaciones son personales y debe establecerlas su médico.",
+      "• Dosis de comida = carbohidratos ÷ su relación insulina-carbohidratos\n• Dosis de corrección = (glucosa actual - objetivo) ÷ su factor de sensibilidad a la insulina (ISF)\n• La glucosa posprandial se mide 2 horas después de comer\n\nEstas relaciones son personales y debe establecerlas su médico.",
     methodNote:
       "Las estimaciones se redondean a la resolución de 0,5 unidades de su pluma y son intencionadamente conservadoras: revíselas y ajústelas siempre antes de usarlas. La dosis de corrección se basa en su objetivo posprandial.",
     iobNote:
@@ -85,11 +85,11 @@ const es: TranslationSchema = {
     pensActive: "{{n}} bolígrafos",
     thisWeek: "Esta semana",
     activeInsulin: "Insulina activa",
-    activeInsulinSub: "Estimado de dosis recientes — evita acumular",
-    feedbackOnTarget: "Control 2h: {{value}} {{unit}} — en tu rango objetivo.",
-    feedbackElevated: "Control 2h: {{value}} {{unit}} — algo por encima de tu objetivo.",
-    feedbackHigh: "Control 2h: {{value}} {{unit}} — por encima de tu rango objetivo.",
-    feedbackLow: "Control 2h: {{value}} {{unit}} — por debajo de tu rango.",
+    activeInsulinSub: "Estimado de dosis recientes, evita acumular",
+    feedbackOnTarget: "Control 2h: {{value}} {{unit}}, en tu rango objetivo.",
+    feedbackElevated: "Control 2h: {{value}} {{unit}}, algo por encima de tu objetivo.",
+    feedbackHigh: "Control 2h: {{value}} {{unit}}, por encima de tu rango objetivo.",
+    feedbackLow: "Control 2h: {{value}} {{unit}}, por debajo de tu rango.",
     sampleCta: "Ver con datos de ejemplo",
     sampleActive: "Estás viendo datos de ejemplo",
     sampleClear: "Borrar",
@@ -261,6 +261,7 @@ const es: TranslationSchema = {
     activated: "zerospike Pro activado",
     restored: "Sus compras han sido restauradas",
     nothingToRestore: "No se encontraron compras para restaurar",
+    restoreFailed: "No se pudieron restaurar las compras. Comprueba tu conexión e inténtalo de nuevo.",
     legalNote: "Los planes mensual y anual son suscripciones de renovación automática. El pago se cargará a tu cuenta de Apple ID o Google al confirmar. La suscripción se renueva automáticamente a menos que se cancele al menos 24 horas antes del final del período; el cargo de renovación se realiza dentro de las 24 horas previas al final del período. Puedes gestionarla o cancelarla en cualquier momento en los ajustes de tu cuenta. De por vida es una compra única y no se renueva. Tus datos permanecen en tu dispositivo.",
     planMonthly: "Mensual",
     planAnnual: "Anual",
@@ -316,7 +317,7 @@ const es: TranslationSchema = {
     created: "Informe PDF creado",
     agpTitle: "Perfil de glucosa por hora del día (AGP)",
     agpCaption:
-      "Mediana (línea) y rango 25–75 % por hora, agrupado en el período. Banda verde = {{low}}–{{high}}.",
+      "Mediana (línea) y rango 25-75 % por hora, agrupado en el período. Banda verde = {{low}}-{{high}}.",
   },
   tags: {
     label: "Etiquetas",

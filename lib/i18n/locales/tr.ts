@@ -29,11 +29,11 @@ const tr = {
       "zerospike'taki karbonhidrat sayımı ve insülin tahmini yöntemleri, aşağıdaki kuruluşların kamuya açık standart klinik rehberliğine dayanır. zerospike bir tıbbi cihaz değil, eğitim amaçlı bir günlüktür. Dozları her zaman doktorunuzla teyit edin.",
     methodTitle: "Tahminler nasıl hesaplanır",
     method:
-      "• Öğün dozu = karbonhidrat ÷ insülin-karbonhidrat oranınız\n• Düzeltme dozu = (anlık şeker − hedef) ÷ insülin duyarlılık faktörünüz (ISF)\n• Tokluk (postprandiyal) şekeri yemekten 2 saat sonra ölçülür\n\nBu oranlar kişiseldir ve doktorunuz tarafından belirlenmelidir.",
+      "• Öğün dozu = karbonhidrat ÷ insülin-karbonhidrat oranınız\n• Düzeltme dozu = (anlık şeker - hedef) ÷ insülin duyarlılık faktörünüz (ISF)\n• Tokluk (postprandiyal) şekeri yemekten 2 saat sonra ölçülür\n\nBu oranlar kişiseldir ve doktorunuz tarafından belirlenmelidir.",
     methodNote:
       "Tahminler kaleminizin 0,5 ünitelik çözünürlüğüne yuvarlanır ve bilinçli olarak temkinlidir; kullanmadan önce her zaman gözden geçirip düzenleyin. Düzeltme dozu öğün sonrası hedefinizi temel alır.",
     iobNote:
-      "Aktif insülin (IOB), kaydettiğiniz bolus dozlarından ~4 saatlik basit doğrusal azalmayla tahmin edilir ve yalnızca düzeltme tahminini düşürür — öğün dozunu asla. Bu bir tahmindir, talimat değildir.",
+      "Aktif insülin (IOB), kaydettiğiniz bolus dozlarından ~4 saatlik basit doğrusal azalmayla tahmin edilir ve yalnızca düzeltme tahminini düşürür, öğün dozunu asla. Bu bir tahmindir, talimat değildir.",
     listTitle: "Kaynaklar",
     openHint: "Tarayıcınızda açılır",
   },
@@ -83,11 +83,11 @@ const tr = {
     pensActive: "{{n}} kalem",
     thisWeek: "Bu hafta",
     activeInsulin: "Aktif insülin",
-    activeInsulinSub: "Son dozlardan tahmini — üst üste doz vermekten kaçının",
-    feedbackOnTarget: "2. saat: {{value}} {{unit}} — hedef aralığında.",
-    feedbackElevated: "2. saat: {{value}} {{unit}} — hedefinin biraz üzerinde.",
-    feedbackHigh: "2. saat: {{value}} {{unit}} — hedef aralığının üzerinde.",
-    feedbackLow: "2. saat: {{value}} {{unit}} — aralığının altında.",
+    activeInsulinSub: "Son dozlardan tahmini, üst üste doz vermekten kaçının",
+    feedbackOnTarget: "2. saat: {{value}} {{unit}}, hedef aralığında.",
+    feedbackElevated: "2. saat: {{value}} {{unit}}, hedefinin biraz üzerinde.",
+    feedbackHigh: "2. saat: {{value}} {{unit}}, hedef aralığının üzerinde.",
+    feedbackLow: "2. saat: {{value}} {{unit}}, aralığının altında.",
     sampleCta: "Örnek veriyle önizle",
     sampleActive: "Örnek verileri görüntülüyorsun",
     sampleClear: "Temizle",
@@ -259,6 +259,7 @@ const tr = {
     activated: "zerospike Pro etkinleştirildi",
     restored: "Satın alımlarınız geri yüklendi",
     nothingToRestore: "Geri yüklenecek satın alım bulunamadı",
+    restoreFailed: "Satın alımlar geri yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.",
     legalNote: "Aylık ve yıllık planlar otomatik yenilenen aboneliklerdir. Ödeme, onay anında Apple ID veya Google hesabınıza tahsil edilir. Abonelik, dönem bitiminden en az 24 saat önce iptal edilmezse otomatik yenilenir; yenileme ücreti dönem bitiminden önceki 24 saat içinde hesabınıza yansır. Hesap ayarlarınızdan istediğiniz zaman yönetebilir veya iptal edebilirsiniz. Lifetime tek seferlik bir satın almadır ve yenilenmez. Verileriniz cihazınızda kalır.",
     planMonthly: "Aylık",
     planAnnual: "Yıllık",
@@ -314,7 +315,7 @@ const tr = {
     created: "PDF raporu oluşturuldu",
     agpTitle: "Saate göre glukoz profili (AGP)",
     agpCaption:
-      "Saate göre medyan (çizgi) ve %25–75 aralığı, dönem boyunca birleştirildi. Yeşil bant = {{low}}–{{high}}.",
+      "Saate göre medyan (çizgi) ve %25-75 aralığı, dönem boyunca birleştirildi. Yeşil bant = {{low}}-{{high}}.",
   },
   tags: {
     label: "Etiketler",
@@ -381,7 +382,7 @@ const tr = {
     patternTagHigher:
       "\"{{tag}}\" etiketli ölçümlerin ortalama {{avg}} {{unit}}, genel ortalaman {{baseline}} ({{n}} ölçüm).",
     patternDawn:
-      "Sabahlar daha yüksek seyrediyor — {{morningAvg}} {{unit}}, genel {{baseline}}.",
+      "Sabahlar daha yüksek seyrediyor: {{morningAvg}} {{unit}}, genel {{baseline}}.",
     patternHighVariability:
       "Ölçümlerin oldukça değişken (CV %{{cv}}). Daha kararlı seyri yönetmek daha kolaydır.",
   },

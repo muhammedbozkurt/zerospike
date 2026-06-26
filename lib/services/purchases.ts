@@ -156,16 +156,39 @@ export async function purchasePro(plan: PlanId = "monthly"): Promise<boolean> {
   }
 }
 
-export async function restore(): Promise<boolean> {
+export type RestoreResult = "restored" | "none" | "error";
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
+/**
+ * Restores prior purchases. Distinguishes a successful restore, an account with
+ * nothing to restore, and a real failure (offline, store error, or a hang) so
+ * the UI can give honest feedback instead of silently looking stuck.
+ */
+export async function restore(): Promise<RestoreResult> {
   if (DEBUG_MOCK_PURCHASES) {
-    return (await AsyncStorage.getItem(PRO_KEY)) === "true";
+    return (await AsyncStorage.getItem(PRO_KEY)) === "true" ? "restored" : "none";
   }
   try {
     await ensureConfigured();
-    const info = await rc().restorePurchases();
-    return Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
+    const info: any = await withTimeout(rc().restorePurchases(), 20000);
+    return info?.entitlements?.active?.[ENTITLEMENT_ID] ? "restored" : "none";
   } catch {
-    return false;
+    return "error";
   }
 }
 

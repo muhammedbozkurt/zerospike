@@ -193,7 +193,7 @@ export default function InjectionScreen() {
             </View>
             <Text className="text-zinc-500 text-xs">{t("injection.recommendedSite")}</Text>
             <Text className="text-zinc-50 text-xl font-bold mt-0.5">
-              {recommended ? t(`injectionSite.${recommended}`) : "—"}
+              {recommended ? t(`injectionSite.${recommended}`) : "-"}
             </Text>
             <Text className="text-amber-200/70 text-[11px] leading-4 mt-2">
               {t("injection.rotationDisclaimer")}
@@ -294,7 +294,7 @@ export default function InjectionScreen() {
                 setDose(s.replace(/[^0-9.,]/g, "").replace(/(\..*)\./g, "$1"))
               }
               keyboardType="decimal-pad"
-              placeholder="—"
+              placeholder="-"
               placeholderTextColor="#52525b"
               maxLength={5}
               className="flex-1 rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"

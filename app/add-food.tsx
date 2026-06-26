@@ -102,14 +102,14 @@ export default function AddFoodScreen() {
           label={t("food.name")}
           value={name}
           onChangeText={setName}
-          placeholder="—"
+          placeholder="-"
           autoFocus
         />
         <Field
           label={t("food.brand")}
           value={brand}
           onChangeText={setBrand}
-          placeholder="—"
+          placeholder="-"
         />
         <Field
           label={t("food.carbs")}
@@ -136,7 +136,7 @@ export default function AddFoodScreen() {
           label={t("food.notes")}
           value={notes}
           onChangeText={setNotes}
-          placeholder="—"
+          placeholder="-"
         />
 
         <View className="h-2" />

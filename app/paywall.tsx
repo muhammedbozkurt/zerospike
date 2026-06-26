@@ -160,29 +160,39 @@ export default function PaywallScreen() {
       : null;
 
   async function buy() {
+    if (busy) return;
     setBusy(true);
-    const ok = await purchasePro(plan);
-    await refreshPro();
-    setBusy(false);
-    if (ok) {
-      hapticSuccess();
-      toast(t("paywall.activated"), "success");
-      router.back();
+    try {
+      const ok = await purchasePro(plan);
+      await refreshPro();
+      if (ok) {
+        hapticSuccess();
+        toast(t("paywall.activated"), "success");
+        router.back();
+      }
+      // cancelled or failed → stay on the paywall, no message
+    } finally {
+      setBusy(false);
     }
-    // cancelled or failed → stay on the paywall, no message
   }
 
   async function onRestore() {
+    if (busy) return;
     setBusy(true);
-    const ok = await restore();
-    await refreshPro();
-    setBusy(false);
-    if (ok) {
-      hapticSuccess();
-      toast(t("paywall.restored"), "success");
-      router.back();
-    } else {
-      toast(t("paywall.nothingToRestore"), "info");
+    try {
+      const result = await restore();
+      await refreshPro();
+      if (result === "restored") {
+        hapticSuccess();
+        toast(t("paywall.restored"), "success");
+        router.back();
+      } else if (result === "none") {
+        toast(t("paywall.nothingToRestore"), "info");
+      } else {
+        toast(t("paywall.restoreFailed"), "error");
+      }
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -292,8 +302,10 @@ export default function PaywallScreen() {
           </Text>
         </View>
 
-        <Pressable onPress={onRestore} className="py-3 items-center">
-          <Text className="text-zinc-400 font-medium">{t("paywall.restore")}</Text>
+        <Pressable onPress={onRestore} disabled={busy} className="py-3 items-center">
+          <Text className={`font-medium ${busy ? "text-zinc-600" : "text-zinc-400"}`}>
+            {t("paywall.restore")}
+          </Text>
         </Pressable>
 
         <Text className="text-zinc-600 text-[11px] text-center px-2 leading-4 mb-3">
