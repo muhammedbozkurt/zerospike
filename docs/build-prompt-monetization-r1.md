@@ -133,6 +133,10 @@ cihaz sinifina sokar.
   onboarding-sonu paywall dismiss'i ilk tetik, uygulama ici dismiss'te 7 gun sonra bir kez
   re-arm, toplam 2 gosterim. Winback: entitlement kaybinda bir kez.
 - Lifetime fallback fiyatlari 79.99 / uygun EUR / uygun TL olarak guncellenir.
+- RC kurulumu CANLI (2026-07-08): downsell paketi zerospike_pro_annual_offer (iOS) /
+  zerospike_pro_annual_offer:annual-offer (Google, ayri urun/base plan). hasRealDiscount:
+  efektif ilk-yil fiyati = introPrice varsa o, yoksa paket fiyati; default annual
+  (zerospike_pro_annual) fiyatiyla ayni para biriminde karsilastir.
 
 ### 1.3 Yerellestirilmis fiyat gosterimi (TR/USD bulgusu, tum app'lerde ortak)
 - Kullanici raporu: TR vitrininde fiyatlar USD gorunuyor, odeme sayfasi TL dogru. Gosterilen
