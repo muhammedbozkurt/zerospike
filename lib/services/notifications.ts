@@ -20,7 +20,8 @@ const PEN_LOW_FLAG_KEY = "zerospike.penLowNotified";
 // Foreground presentation: show banners while the app is open.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -99,7 +100,11 @@ export async function scheduleBasalReminder(time: string): Promise<void> {
       body: i18n.t("notifications.basalBody"),
       ...androidChannel,
     },
-    trigger: { hour, minute, repeats: true },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
   });
 }
 
@@ -122,7 +127,11 @@ export async function scheduleGlucoseReminder(time: string): Promise<void> {
       body: i18n.t("notifications.glucoseBody"),
       ...androidChannel,
     },
-    trigger: { hour, minute, repeats: true },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
   });
 }
 
@@ -145,7 +154,12 @@ export async function scheduleWeeklySummary(): Promise<void> {
       body: i18n.t("notifications.weeklyBody"),
       ...androidChannel,
     },
-    trigger: { weekday: 1, hour: 20, minute: 0, repeats: true },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: 1,
+      hour: 20,
+      minute: 0,
+    },
   });
 }
 
@@ -213,7 +227,11 @@ export async function schedulePostMealReminder(): Promise<string | null> {
       body: i18n.t("notifications.postmealBody"),
       ...androidChannel,
     },
-    trigger: { seconds: prefs.postMealHours * 60 * 60 },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: prefs.postMealHours * 60 * 60,
+      repeats: false,
+    },
   });
 }
 

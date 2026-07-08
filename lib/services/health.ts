@@ -56,8 +56,8 @@ export async function isHealthAvailable(): Promise<boolean> {
   }
   try {
     if (Platform.OS === "ios") {
-      const HealthKit = require("@kingstinct/react-native-healthkit").default;
-      return await HealthKit.isHealthDataAvailable();
+      const HK = require("@kingstinct/react-native-healthkit");
+      return await HK.isHealthDataAvailable();
     }
     if (Platform.OS === "android") {
       const { getSdkStatus, SdkAvailabilityStatus } = require("react-native-health-connect");
@@ -74,11 +74,14 @@ export async function requestHealthPermissions(): Promise<boolean> {
   if (DEBUG_MOCK_HEALTH) return isHealthAvailable();
   try {
     if (Platform.OS === "ios") {
-      const HealthKit = require("@kingstinct/react-native-healthkit").default;
-      const { HKQuantityTypeIdentifier } = require("@kingstinct/react-native-healthkit");
+      const HK = require("@kingstinct/react-native-healthkit");
       // iOS never reveals whether *read* access was granted (privacy), so a
-      // resolved call is the best signal we can get here.
-      await HealthKit.requestAuthorization([HKQuantityTypeIdentifier.bloodGlucose], []);
+      // resolved call is the best signal we can get here. v14 takes a single
+      // { toShare, toRead } object with string-literal identifiers.
+      await HK.requestAuthorization({
+        toShare: [],
+        toRead: ["HKQuantityTypeIdentifierBloodGlucose"],
+      });
       return true;
     }
     if (Platform.OS === "android") {
@@ -134,12 +137,18 @@ function readMockGlucose(): GlucoseSample[] {
 }
 
 async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
-  const HealthKit = require("@kingstinct/react-native-healthkit").default;
-  const { HKQuantityTypeIdentifier } = require("@kingstinct/react-native-healthkit");
+  const HK = require("@kingstinct/react-native-healthkit");
   const from = new Date(Date.now() - SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const samples = await HealthKit.queryQuantitySamples(
-    HKQuantityTypeIdentifier.bloodGlucose,
-    { from, limit: SYNC_MAX_SAMPLES, ascending: false, unit: "mg/dL" }
+  // v14 (Nitro) moved the date range into filter.date and made the identifier a
+  // string literal (the HKQuantityTypeIdentifier enum was removed).
+  const samples = await HK.queryQuantitySamples(
+    "HKQuantityTypeIdentifierBloodGlucose",
+    {
+      limit: SYNC_MAX_SAMPLES,
+      ascending: false,
+      unit: "mg/dL",
+      filter: { date: { startDate: from } },
+    }
   );
   return (samples ?? []).map((s: any) => {
     const when = new Date(s.endDate ?? s.startDate);
