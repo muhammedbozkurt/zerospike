@@ -342,6 +342,13 @@ export default function CalculatorScreen() {
           <Text className="text-brand/60 text-xs mt-2">
             {t("calculator.overrideHint")}
           </Text>
+          {/* Regulation: a non-advice disclaimer accompanies every dose display. */}
+          <View className="flex-row items-start mt-2">
+            <Ionicons name="medical-outline" size={13} color="#f59e0b" />
+            <Text className="text-amber-200/80 text-[11px] leading-4 ml-1.5 flex-1">
+              {t("calculator.calcNotAdvice")}
+            </Text>
+          </View>
           <Pressable
             onPress={() => router.push("/sources")}
             hitSlop={8}
