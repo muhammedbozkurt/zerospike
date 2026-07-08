@@ -20,6 +20,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "buildNumber": "16",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -32,6 +33,7 @@
     "android": {
       "package": "com.greeneyeapp.zerospike",
       "versionCode": 16,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
@@ -87,7 +89,10 @@
             "deploymentTarget": "16.4"
           }
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/analytics",
+      "@react-native-firebase/crashlytics"
     ],
     "experiments": {
       "typedRoutes": true

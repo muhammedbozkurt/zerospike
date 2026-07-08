@@ -87,8 +87,10 @@ cihaz sinifina sokar.
 
 ### 0.2 Firebase Analytics + Crashlytics
 - @react-native-firebase/app + analytics + crashlytics (npx expo install, config plugin'ler).
-  google-services dosyalari HUMAN TODO (asagida); dosyalar gelene kadar dev'de calisan bir
-  no-op sarmalayici yaz (lib/analytics/), event cagrilarini koda simdiden dose.
+  google-services.json + GoogleService-Info.plist repo kokunde HAZIR (2026-07-08 kondu,
+  paket/bundle id'ler dogrulandi: com.greeneyeapp.zerospike, proje zerospike-fb4ce);
+  config plugin'lere dogrudan bagla. Yine de ince bir sarmalayici (lib/analytics/) yaz ki
+  event isimleri tek dosyada dursun.
 - Cekirdek event seti (Firebase rezerve isimlerinden kacin, Faunade'nin isimlendirme deseni
   ornek): app_open_custom yerine mevcutlari kullan; ozel event'ler: onboarding_step (step),
   onboarding_done, log_added (kind: glucose|meal|insulin, source: manual|health),
@@ -234,8 +236,7 @@ cihaz sinifina sokar.
 
 ## HUMAN TODO (kullanici yapacak)
 
-- Firebase projesi ac (zerospike icin), google-services.json + GoogleService-Info.plist'i
-  repoya/EAS'a ekle (Faz 0.2 bunlar olmadan no-op calisir).
+- [YAPILDI 2026-07-08] Firebase projesi + google-services dosyalari (repo kokunde, dogrulandi).
 - RevenueCat: yearly'ye 7 gun trial intro offer, 'downsell' offering'i (indirimli ilk yil
   yearly), lifetime 79.99 fiyat degisikligi (App Store Connect + Play), TR vitrini fiyat
   noktalarinin TL tanimli oldugunun kontrolu.
@@ -268,3 +269,44 @@ cihaz sinifina sokar.
 - Regulasyon taramasi: yasak dil listesi uzerinden locale dosyalarinda grep (hipoglisemi
   uyarisi, bayil, tehlike, onerilen doz vb. 5 dilde karsiliklari).
 - Cihaz/his testleri en sonda toplu QA listesiyle.
+
+## FAZ ILERLEME (asistan gunlugu)
+
+- FAZ 0.1 (SDK 51 -> 57) TAMAM: expo 57, react 19.2, react-native 0.86, reanimated 4.5
+  (+ worklets 0.10), screens 4.25, safe-area 5.7, purchases 10.4, healthkit 14 (nitro),
+  @expo/vector-icons 15, TS 6, @types/react 19. Dort SDK-51 patch'i kaldirildi (API-35 +
+  iOS switch + isSimulator + removeLast; hepsi SDK 57'de upstream). SDK 57 API kirilmalari
+  gecirildi: expo-notifications tipli trigger'lar (DAILY/WEEKLY/TIME_INTERVAL) + banner/list
+  davranisi, expo-file-system /legacy (documentDirectory/cacheDirectory), HealthKit v14 nitro
+  (string identifier + toShare/toRead + filter.date). babel: manuel reanimated plugin kaldirildi
+  (preset-expo 57 worklets plugin'i otomatik ekliyor). ios deploymentTarget 16.4. Dogrulama:
+  tsc temiz, expo config plugin'leri cozuluyor, iOS+Android tam JS bundle export'u basarili.
+- FAZ 0.2 (Firebase + analytics) TAMAM: lib/analytics/ facade (tipli logEvent/logCrash, sink
+  deseni, dev'de her event console'a). Firebase GERCEKTEN kuruldu (google-services repo'da):
+  @react-native-firebase/app+analytics+crashlytics 25.1, config plugin'ler + googleServicesFile
+  yollari app.json'da, lib/analytics/firebaseSink.ts sink'i baglar, app/_layout.tsx bootstrap'te
+  initAnalyticsSink() (prod'da baglanir, dev'de console). `promise@8.3.0` direct dep eklendi
+  (crashlytics'in promise/setimmediate/rejection-tracking resolve'u icin, RN 0.86 hoisting).
+  Dose edilen event'ler: log_added (glucose/meal/insulin, manual+health), paywall_view/
+  dismiss/tier_selected, purchase_completed, insights_view. Kalan event'ler ilgili fazlarda
+  dose edilecek (onboarding_*, tokluk_timer_started, sos_*, downsell_*, winback, trial_started,
+  report_generated, review_prompted, offerings_fallback_shown).
+
+## CIHAZ QA CHECKLIST (toplu, en sonda calistirilacak)
+
+Asistan cihazda test edemez; her faz kendi kalemlerini buraya ekler, kullanici en sonda topluca
+kosar.
+
+### Faz 0
+- [ ] `npx expo prebuild --clean` iki platformda hatasiz (android/ + ios/ yeniden urer).
+- [ ] iOS pod install Firebase pod'lariyla derleniyor. Hata "Firebase needs use_frameworks"
+      derse: app.json expo-build-properties ios'a `"useFrameworks": "static"` ekle ve nitro
+      (healthkit) + reanimated 4 pod'larinin hala derlendigini dogrula.
+- [ ] Uygulama iki platformda aciliyor; log / olcum / bildirim / satin alma smoke akisi calisiyor.
+- [ ] HealthKit v14 (nitro) iOS'ta: Health izni istegi geliyor, glukoz okuma import ediyor
+      (v8 -> v14 API rewrite cihazda dogrulanmali).
+- [ ] Bildirimler gercek zamanli tetikleniyor: basal/glucose (DAILY), haftalik (WEEKLY),
+      tokluk (TIME_INTERVAL).
+- [ ] Firebase Analytics DebugView'de event'ler akiyor; Crashlytics'e test crash dusuyor
+      (release/dev-client build gerekir, __DEV__ sink'i baglamiyor).
+- [ ] iOS deploymentTarget 16.4: App Store Connect minimum OS ve hedef cihaz kitlesi kontrol.

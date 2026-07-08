@@ -16,6 +16,7 @@ import {
 } from "../lib/services/purchases";
 import { FREE_LOG_LIMIT, FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { privacyUrl, termsUrl } from "../lib/legal";
+import { logEvent } from "../lib/analytics";
 import { Button } from "../components/ui";
 import { useFeedback } from "../components/Feedback";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
@@ -123,12 +124,22 @@ export default function PaywallScreen() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    logEvent("paywall_view", { source: reason ?? "direct", trial_eligible: false });
+  }, [reason]);
+
   const price = (p: PlanId) => prices[p] ?? priceFor(p, lang);
   const savePct = annualSavingsPct();
 
   function selectPlan(p: PlanId) {
     hapticSelect();
+    logEvent("paywall_tier_selected", { tier: p });
     setPlan(p);
+  }
+
+  function dismiss() {
+    logEvent("paywall_dismiss", { source: reason ?? "direct" });
+    router.back();
   }
 
   const limit =
@@ -166,6 +177,7 @@ export default function PaywallScreen() {
       const ok = await purchasePro(plan);
       await refreshPro();
       if (ok) {
+        logEvent("purchase_completed", { tier: plan });
         hapticSuccess();
         toast(t("paywall.activated"), "success");
         router.back();
@@ -206,7 +218,7 @@ export default function PaywallScreen() {
   return (
     <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
       <View className="flex-row justify-end px-4 py-2">
-        <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
+        <Pressable onPress={dismiss} hitSlop={10} className="p-1">
           <Ionicons name="close" size={26} color="#71717a" />
         </Pressable>
       </View>

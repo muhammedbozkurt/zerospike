@@ -29,6 +29,7 @@ import {
   type SiteUsage,
 } from "../../lib/db/injections";
 import { maybeNotifyPenLow } from "../../lib/services/notifications";
+import { logEvent } from "../../lib/analytics";
 import { relativeDay, formatTime, num } from "../../lib/format";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 
@@ -124,6 +125,7 @@ export default function InjectionScreen() {
         note: note.trim() || null,
         tags,
       });
+      logEvent("log_added", { kind: "insulin", source: "manual" });
       hapticSuccess();
       toast(t("injection.saved"), "success");
       // After the pen's balance dropped, alert once if it just went low.

@@ -17,6 +17,7 @@ import type { InsulinPen, LogTag, PeriodTag } from "../../lib/db/types";
 import { canAddLog } from "../../lib/guardrails";
 import { schedulePostMealReminder } from "../../lib/services/notifications";
 import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
+import { logEvent } from "../../lib/analytics";
 
 const CGM_KEY = "zerospike.cgmSync";
 // Name the health source explicitly in the UI (App Review guideline 2.5.1).
@@ -105,7 +106,11 @@ export default function DashboardScreen() {
     setSyncing(true);
     try {
       const res = await importHealthGlucose(activeProfile.id);
-      if (res.inserted > 0) bumpData();
+      if (res.inserted > 0) {
+        // One event per sync (not per row) to keep health-import volume sane.
+        logEvent("log_added", { kind: "glucose", source: "health" });
+        bumpData();
+      }
       if (announce) {
         const { msg, tone } = describeSync(res);
         toast(msg, tone);
@@ -191,6 +196,7 @@ export default function DashboardScreen() {
       period_tag: period,
       tags,
     });
+    logEvent("log_added", { kind: "glucose", source: "manual" });
     hapticSuccess();
     // Per spec: a fasting/pre-meal reading schedules the 2-hour post-meal nudge.
     if (period === "fasting" || period === "pre_meal") {

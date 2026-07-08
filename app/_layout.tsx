@@ -8,10 +8,15 @@ import * as SplashScreen from "expo-splash-screen";
 
 import { AppProvider, useApp } from "../lib/store/AppContext";
 import { FeedbackProvider } from "../components/Feedback";
+import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 
 // Keep the single native splash visible until the app is ready, then fade it
 // out — no intermediate blank/spinner screen (which looked like a 2nd splash).
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// Attach Firebase (Analytics + Crashlytics) as the analytics sink once, before
+// any screen renders. No-op in dev; every event still mirrors to the console.
+initAnalyticsSink();
 
 function RootNavigator() {
   const { ready, onboarded } = useApp();

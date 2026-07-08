@@ -21,6 +21,7 @@ import { useApp } from "../lib/store/AppContext";
 import { getFood } from "../lib/db/foods";
 import { addMealLog } from "../lib/db/logs";
 import { canAddLog } from "../lib/guardrails";
+import { logEvent } from "../lib/analytics";
 import {
   estimateInsulin,
   activeMealSlot,
@@ -169,6 +170,7 @@ export default function CalculatorScreen() {
       personal_note: note.trim() || null,
       tags,
     });
+    logEvent("log_added", { kind: "meal", source: "manual" });
     hapticSuccess();
     // Logging a meal schedules the 2-hour post-meal glucose check reminder.
     await schedulePostMealReminder();

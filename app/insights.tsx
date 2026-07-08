@@ -25,6 +25,7 @@ import {
   type InsightPattern,
 } from "../lib/insights";
 import { Button, Segmented } from "../components/ui";
+import { logEvent } from "../lib/analytics";
 import { num } from "../lib/format";
 
 const GREEN = "#10b981";
@@ -92,6 +93,11 @@ export default function InsightsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [windowDays, setWindowDays] = useState<number>(initialWindow);
+
+  useEffect(() => {
+    logEvent("insights_view", { window: windowDays });
+  }, [windowDays]);
+
   const [sugar, setSugar] = useState<SugarLog[]>([]);
   const [meals, setMeals] = useState<MealLog[]>([]);
   const [injections, setInjections] = useState<Injection[]>([]);
