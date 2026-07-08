@@ -132,7 +132,7 @@ export default function PaywallScreen() {
   }>();
   const context: DownsellTrigger =
     ctxParam === "onboarding" ? "onboarding" : "inapp";
-  const { refreshPro } = useApp();
+  const { refreshPro, completeOnboarding } = useApp();
   const { toast } = useFeedback();
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<PlanId>("annual");
@@ -183,6 +183,19 @@ export default function PaywallScreen() {
     setPlan(p);
   }
 
+  // Leaves the paywall. During onboarding it completes onboarding first so the
+  // app does not bounce back to the quiz.
+  async function exit() {
+    if (context === "onboarding") {
+      await completeOnboarding();
+      router.replace("/(tabs)");
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  }
+
   async function dismiss() {
     logEvent("paywall_dismiss", { source: reason ?? "direct" });
     // Dismissing the paywall is the downsell trigger: first time always, then a
@@ -193,8 +206,7 @@ export default function PaywallScreen() {
       router.replace({ pathname: "/downsell", params: { trigger: context } });
       return;
     }
-    if (router.canGoBack()) router.back();
-    else router.replace("/(tabs)");
+    await exit();
   }
 
   const limit =
@@ -227,8 +239,7 @@ export default function PaywallScreen() {
         }
         hapticSuccess();
         toast(t("paywall.activated"), "success");
-        if (router.canGoBack()) router.back();
-        else router.replace("/(tabs)");
+        await exit();
       }
       // cancelled or failed → stay on the paywall, no message
     } finally {
@@ -245,8 +256,7 @@ export default function PaywallScreen() {
       if (result === "restored") {
         hapticSuccess();
         toast(t("paywall.restored"), "success");
-        if (router.canGoBack()) router.back();
-        else router.replace("/(tabs)");
+        await exit();
       } else if (result === "none") {
         toast(t("paywall.nothingToRestore"), "info");
       } else {

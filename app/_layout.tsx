@@ -49,8 +49,13 @@ function RootNavigator() {
 
   useEffect(() => {
     if (!ready) return;
-    const inOnboarding = segments[0] === "onboarding";
-    if (!onboarded && !inOnboarding) {
+    const root = segments[0];
+    const inOnboarding = root === "onboarding";
+    // The onboarding flow hands off to the soft paywall (and its downsell) before
+    // completing, so those routes are allowed while still not onboarded.
+    const inOnboardingPaywall =
+      root === "paywall" || root === "downsell" || root === "winback";
+    if (!onboarded && !inOnboarding && !inOnboardingPaywall) {
       router.replace("/onboarding");
     } else if (onboarded && inOnboarding) {
       router.replace("/");

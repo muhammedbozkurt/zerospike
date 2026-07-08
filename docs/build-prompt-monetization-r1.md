@@ -313,6 +313,17 @@ cihaz sinifina sokar.
   Release'te offerings cekilemezse statik fallback ASLA render edilmez: yukleniyor/tekrar-dene
   durumu + offerings_fallback_shown(reason). Dead static-price yollari (priceFor,
   getOfferingPrices) silindi; grep ($, USD, TL, toFixed) temiz (yalniza dev-mock priceUSD).
+- FAZ 2 (onboarding -> quiz) TAMAM: app/onboarding.tsx tek ekranli step-machine'e
+  cevrildi (progress bar + geri). 3 deger slide'i -> her ekranda TEK soru (profil adi,
+  birim, diyabet tipi [opsiyonel, AsyncStorage'da, yalniza ton], aclik/tokluk hedefi,
+  karb orani, ISF, basal saati) -> zorunlu disclaimer onayi -> demo Insights/AGP
+  onizlemesi (in-memory demo veri + gercek computeAgp + SVG mini-AGP). Karb orani ve
+  ISF'te "Emin degilim" makul varsayilanla devam ettirir (yeni tani bloklanmaz).
+  Onizleme CTA'si profili kaydeder + onboarding_done, sonra soft paywall'a
+  (context=onboarding) yonlendirir; paywall dismiss -> downsell -> dashboard.
+  onboarding_step her adimda dose edildi. Onboarding tamamlama paywall/downsell cikisinda
+  yapilir (mid-flow bounce yok); _layout gating paywall/downsell/winback'e onboarding
+  sirasinda izin verir. Bildirim izni basal-saati kaydinda contextual kalir. 5 locale.
 
 ## CIHAZ QA CHECKLIST (toplu, en sonda calistirilacak)
 
@@ -348,3 +359,12 @@ kosar.
 - [ ] Entitlement kaybinda winback bir kez aciliyor (yalniza gercek indirim varsa).
 - [ ] TR vitrininde fiyatlar TL gorunuyor (USD degil); offerings cekilemezse fiyat yerine
       "tekrar dene" cikiyor, sahte fiyat YOK. (Kullanici raporundaki TR/USD bulgusu.)
+
+### Faz 2
+- [ ] Yeni kullanici akisi bastan sona calisir: deger slide'lari -> her adimda tek soru ->
+      disclaimer -> demo Insights onizlemesi -> soft paywall -> (kapatinca) downsell -> dashboard.
+- [ ] Karb orani / ISF "Emin degilim" ile atlanabiliyor, akis bloklanmiyor; secilen
+      birim (mg/dL / mmol/L) hedef + ISF ekranlarina dogru yansiyor.
+- [ ] Onboarding'i bitiren kullanici uygulamayi kapatip acinca onboarding'i BIR DAHA gormuyor.
+- [ ] Demo AGP onizlemesi cihazda dogru render oluyor (SVG), "ornek veri" ibaresi net.
+- [ ] Birim degisimi degerleri dogru ceviriyor; basal-saati adiminda bildirim izni contextual isteniyor.

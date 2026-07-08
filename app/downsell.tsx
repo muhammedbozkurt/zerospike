@@ -23,7 +23,7 @@ export default function DownsellScreen() {
   const router = useRouter();
   const { trigger: triggerParam } = useLocalSearchParams<{ trigger?: string }>();
   const trigger = triggerParam ?? "onboarding";
-  const { refreshPro } = useApp();
+  const { refreshPro, completeOnboarding } = useApp();
   const { toast } = useFeedback();
   const [offer, setOffer] = useState<DownsellOffer | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +51,9 @@ export default function DownsellScreen() {
     if (offer) logEvent("downsell_view", { trigger });
   }, [offer, trigger]);
 
-  function goHome() {
+  // Reached from the onboarding paywall, so complete onboarding on the way out.
+  async function goHome() {
+    if (trigger === "onboarding") await completeOnboarding();
     router.replace("/(tabs)");
   }
 
