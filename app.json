@@ -32,7 +32,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 21,
+      "versionCode": 22,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
