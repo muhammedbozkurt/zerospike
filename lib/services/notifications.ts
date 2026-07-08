@@ -11,6 +11,11 @@ import {
 const BASAL_ID = "zerospike-basal-reminder";
 const GLUCOSE_ID = "zerospike-glucose-reminder";
 const WEEKLY_ID = "zerospike-weekly-summary";
+const TRIAL_ID = "zerospike-trial-ending";
+// One fixed id for the post-meal check, so the meal-log auto reminder and the
+// "I started eating" button can never stack two notifications at the same time
+// (re-scheduling with the same id replaces the pending one).
+const POSTMEAL_ID = "zerospike-postmeal-reminder";
 
 /** Mirrors the in-app low-pen banner threshold. */
 const PEN_LOW_THRESHOLD = 20;
@@ -20,7 +25,8 @@ const PEN_LOW_FLAG_KEY = "zerospike.penLowNotified";
 // Foreground presentation: show banners while the app is open.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -99,7 +105,11 @@ export async function scheduleBasalReminder(time: string): Promise<void> {
       body: i18n.t("notifications.basalBody"),
       ...androidChannel,
     },
-    trigger: { hour, minute, repeats: true },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
   });
 }
 
@@ -122,7 +132,11 @@ export async function scheduleGlucoseReminder(time: string): Promise<void> {
       body: i18n.t("notifications.glucoseBody"),
       ...androidChannel,
     },
-    trigger: { hour, minute, repeats: true },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
   });
 }
 
@@ -134,10 +148,14 @@ export async function cancelGlucoseReminder(): Promise<void> {
   }
 }
 
-/** Weekly summary nudge, fixed to Sunday 20:00 (weekday 1 in expo-notifications). */
-export async function scheduleWeeklySummary(): Promise<void> {
+/** Weekly summary nudge at the user's chosen day + time (weekday: 1 = Sunday). */
+export async function scheduleWeeklySummary(
+  weekday: number,
+  time: string
+): Promise<void> {
   await ensureAndroidChannel();
   await cancelWeeklySummary();
+  const { hour, minute } = parseHHMM(time);
   await Notifications.scheduleNotificationAsync({
     identifier: WEEKLY_ID,
     content: {
@@ -145,7 +163,12 @@ export async function scheduleWeeklySummary(): Promise<void> {
       body: i18n.t("notifications.weeklyBody"),
       ...androidChannel,
     },
-    trigger: { weekday: 1, hour: 20, minute: 0, repeats: true },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: Math.min(7, Math.max(1, Math.round(weekday))),
+      hour,
+      minute,
+    },
   });
 }
 
@@ -189,32 +212,122 @@ export async function applyNotificationPrefs(
   if (p.glucose) await scheduleGlucoseReminder(p.glucoseTime);
   else await cancelGlucoseReminder();
 
-  if (p.weekly) await scheduleWeeklySummary();
+  if (p.weekly) await scheduleWeeklySummary(p.weeklyDay, p.weeklyTime);
   else await cancelWeeklySummary();
+}
+
+// ── Trial-ending reminder ──────────────────────────────────────────────────
+
+/**
+ * Local reminder scheduled `leadDays` before a free trial converts, so a user
+ * can cancel in time and is never surprised by a charge. One-off.
+ */
+export async function scheduleTrialEndingReminder(trialDays: number): Promise<void> {
+  const leadDays = 2;
+  const fireInDays = trialDays - leadDays;
+  if (fireInDays <= 0) return;
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+  await ensureAndroidChannel();
+  await Notifications.scheduleNotificationAsync({
+    identifier: TRIAL_ID,
+    content: {
+      title: i18n.t("notifications.trialTitle"),
+      body: i18n.t("notifications.trialBody"),
+      ...androidChannel,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: fireInDays * 24 * 60 * 60,
+      repeats: false,
+    },
+  });
 }
 
 // ── Event-driven: post-meal check ──────────────────────────────────────────
 
-/**
- * Schedules the one-off post-meal reminder, fired whenever a fasting reading or
- * a meal is logged. Honors the saved preference (enabled + delay), and no-ops
- * if disabled or permission is denied.
- */
-export async function schedulePostMealReminder(): Promise<string | null> {
-  const prefs = await getNotificationPrefs();
-  if (!prefs.enabled || !prefs.postMeal) return null;
-
-  const granted = await requestNotificationPermission();
-  if (!granted) return null;
-
-  return Notifications.scheduleNotificationAsync({
+/** Schedules the single post-meal reminder `minutes` from now, replacing any
+ *  pending one (same fixed id) so two can never fire close together. */
+async function schedulePostMealAt(minutes: number): Promise<void> {
+  await ensureAndroidChannel();
+  try {
+    await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+  } catch {
+    // nothing pending
+  }
+  await Notifications.scheduleNotificationAsync({
+    identifier: POSTMEAL_ID,
     content: {
       title: i18n.t("notifications.postmealTitle"),
       body: i18n.t("notifications.postmealBody"),
       ...androidChannel,
     },
-    trigger: { seconds: prefs.postMealHours * 60 * 60 },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: Math.max(60, Math.round(minutes * 60)),
+      repeats: false,
+    },
   });
+}
+
+/**
+ * Auto post-meal reminder, fired whenever a fasting reading or a meal is logged.
+ * Honors the saved preference (enabled + postMeal toggle), and no-ops if
+ * disabled or permission is denied.
+ */
+export async function schedulePostMealReminder(): Promise<void> {
+  const prefs = await getNotificationPrefs();
+  if (!prefs.enabled || !prefs.postMeal) return;
+  if (!(await requestNotificationPermission())) return;
+  await schedulePostMealAt(prefs.postMealMinutes);
+}
+
+/**
+ * "I started eating" timer: an explicit user action, so it schedules the
+ * post-meal check regardless of the auto-reminder toggle (still needs the master
+ * switch on + permission). Shares POSTMEAL_ID, so pressing again just renews it.
+ * Returns the minutes it was scheduled for, or null when notifications are off
+ * or permission is denied.
+ */
+export async function startPostMealTimer(): Promise<number | null> {
+  const prefs = await getNotificationPrefs();
+  if (!prefs.enabled) return null;
+  if (!(await requestNotificationPermission())) return null;
+  await schedulePostMealAt(prefs.postMealMinutes);
+  return prefs.postMealMinutes;
+}
+
+// ── User-initiated: re-measure follow-up after a low reading ────────────────
+
+const LOWFOLLOW_ID = "zerospike-low-followup";
+
+/**
+ * Schedules a neutral 15-minute re-measure reminder. Offered (never automatic)
+ * after the user logs a reading below their own threshold. Copy is descriptive,
+ * with no diagnosis or alarm wording. Returns false if permission is denied.
+ */
+export async function scheduleLowFollowup(): Promise<boolean> {
+  if (!(await requestNotificationPermission())) return false;
+  await ensureAndroidChannel();
+  try {
+    await Notifications.cancelScheduledNotificationAsync(LOWFOLLOW_ID);
+  } catch {
+    // nothing pending
+  }
+  await Notifications.scheduleNotificationAsync({
+    identifier: LOWFOLLOW_ID,
+    content: {
+      title: i18n.t("notifications.lowFollowTitle"),
+      body: i18n.t("notifications.lowFollowBody"),
+      ...androidChannel,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 15 * 60,
+      repeats: false,
+    },
+  });
+  return true;
 }
 
 // ── Event-driven: low-pen alert ────────────────────────────────────────────

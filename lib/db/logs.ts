@@ -9,12 +9,6 @@ const mapSugar = (r: SugarRow): SugarLog => ({ ...r, tags: parseTags(r.tags) });
 type MealRow = Omit<MealLog, "tags"> & { tags: string | null };
 const mapMeal = (r: MealRow): MealLog => ({ ...r, tags: parseTags(r.tags) });
 
-/**
- * Free-tier total log cap. Counts BOTH glucose and meal logs combined, matching
- * the product rule "5 glucose/meal logs".
- */
-export const FREE_LOG_LIMIT = 5;
-
 // ── Sugar logs ───────────────────────────────────────────────────────────
 
 export interface NewSugarLogInput {
@@ -188,17 +182,3 @@ export async function getRecentMeals(
   });
 }
 
-// ── Combined count (used for the free-tier guardrail) ──────────────────────
-
-export async function countAllLogs(profileId: string): Promise<number> {
-  const db = await getDb();
-  const a = await db.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM sugar_logs WHERE profile_id = ?;",
-    [profileId]
-  );
-  const b = await db.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM meal_logs WHERE profile_id = ?;",
-    [profileId]
-  );
-  return (a?.c ?? 0) + (b?.c ?? 0);
-}

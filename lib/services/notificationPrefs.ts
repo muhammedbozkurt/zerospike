@@ -16,10 +16,18 @@ export interface NotificationPrefs {
   glucose: boolean;
   glucoseTime: string; // "HH:MM"
   postMeal: boolean;
-  postMealHours: 1 | 2 | 3;
+  /** Post-meal check delay in minutes (drives both the auto reminder and the
+   *  "I started eating" timer). */
+  postMealMinutes: 90 | 120 | 150;
   penLow: boolean;
-  /** Weekly summary nudge (Sunday 20:00). */
+  /** Weekly summary nudge, at a user-chosen day + time. */
   weekly: boolean;
+  weeklyDay: number; // expo-notifications weekday: 1 = Sunday ... 7 = Saturday
+  weeklyTime: string; // "HH:MM"
+  /** After the user logs a reading below their own threshold, offer a neutral
+   *  15-minute re-measure reminder. User-set threshold, stored in mg/dL. */
+  lowFollowup: boolean;
+  lowThresholdMgdl: number;
 }
 
 export const DEFAULT_PREFS: NotificationPrefs = {
@@ -29,9 +37,13 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   glucose: false,
   glucoseTime: "08:00",
   postMeal: true,
-  postMealHours: 2,
+  postMealMinutes: 120,
   penLow: true,
   weekly: false,
+  weeklyDay: 1,
+  weeklyTime: "20:00",
+  lowFollowup: true,
+  lowThresholdMgdl: 70,
 };
 
 const KEY = "zerospike.notifPrefs";

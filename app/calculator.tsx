@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -20,7 +20,8 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { getFood } from "../lib/db/foods";
 import { addMealLog } from "../lib/db/logs";
-import { canAddLog } from "../lib/guardrails";
+import { logEvent } from "../lib/analytics";
+import { noteLogAndMaybeReview } from "../lib/services/review";
 import {
   estimateInsulin,
   activeMealSlot,
@@ -36,7 +37,7 @@ import { Button, Segmented } from "../components/ui";
 import { TagPicker } from "../components/TagPicker";
 import { useFeedback } from "../components/Feedback";
 import { num } from "../lib/format";
-import { hapticSuccess, hapticWarning } from "../lib/haptics";
+import { hapticSuccess } from "../lib/haptics";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
@@ -55,7 +56,7 @@ export default function CalculatorScreen() {
     foodId?: string;
     portion?: string;
   }>();
-  const { activeProfile, isProUser, lang, bumpData, dataVersion } = useApp();
+  const { activeProfile, lang, bumpData, dataVersion } = useApp();
   const { actionSheet } = useFeedback();
 
   const [food, setFood] = useState<Food | null>(null);
@@ -151,12 +152,6 @@ export default function CalculatorScreen() {
 
   async function logMeal() {
     if (!food || !activeProfile || !estimate) return;
-    const allowed = await canAddLog(activeProfile.id, isProUser);
-    if (!allowed) {
-      hapticWarning();
-      router.replace({ pathname: "/paywall", params: { reason: "logs" } });
-      return;
-    }
     const dose = parseFloat(doseText.replace(",", ".")) || estimate.totalDose;
     await addMealLog({
       profile_id: activeProfile.id,
@@ -169,6 +164,8 @@ export default function CalculatorScreen() {
       personal_note: note.trim() || null,
       tags,
     });
+    logEvent("log_added", { kind: "meal", source: "manual" });
+    void noteLogAndMaybeReview();
     hapticSuccess();
     // Logging a meal schedules the 2-hour post-meal glucose check reminder.
     await schedulePostMealReminder();
@@ -347,6 +344,13 @@ export default function CalculatorScreen() {
           <Text className="text-brand/60 text-xs mt-2">
             {t("calculator.overrideHint")}
           </Text>
+          {/* Regulation: a non-advice disclaimer accompanies every dose display. */}
+          <View className="flex-row items-start mt-2">
+            <Ionicons name="medical-outline" size={13} color="#f59e0b" />
+            <Text className="text-amber-200/80 text-[11px] leading-4 ml-1.5 flex-1">
+              {t("calculator.calcNotAdvice")}
+            </Text>
+          </View>
           <Pressable
             onPress={() => router.push("/sources")}
             hitSlop={8}

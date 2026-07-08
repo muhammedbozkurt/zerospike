@@ -3,28 +3,38 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { listSugarLogs, listMealLogs } from "../lib/db/logs";
 import { getInjections } from "../lib/db/injections";
+import { readHealthSummary, type HealthSummary } from "../lib/services/health";
 import type { Injection, MealLog, SugarLog } from "../lib/db/types";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
 import {
   computeInsights,
   derivePatterns,
+  trendVsPrevious,
+  windowPercentiles,
+  weeklyDigest,
+  FREE_INSIGHTS_WINDOW,
   INSIGHTS_WINDOW_DAYS,
   INSIGHTS_WINDOWS,
   type DayKind,
   type InsightPattern,
+  type WeeklySentence,
 } from "../lib/insights";
-import { Button, Segmented } from "../components/ui";
+import { maybeReviewOnWeeklyView } from "../lib/services/review";
+import { Button } from "../components/ui";
+import { logEvent } from "../lib/analytics";
 import { num } from "../lib/format";
 
 const GREEN = "#10b981";
@@ -37,11 +47,13 @@ function Tile({
   value,
   unit,
   color = "#fafafa",
+  sub,
 }: {
   label: string;
   value: string;
   unit?: string;
   color?: string;
+  sub?: string;
 }) {
   return (
     <View className="w-1/2 p-1.5">
@@ -53,6 +65,7 @@ function Tile({
           </Text>
           {unit ? <Text className="text-zinc-500 text-xs ml-1">{unit}</Text> : null}
         </View>
+        {sub ? <Text className="text-zinc-500 text-[11px] mt-1">{sub}</Text> : null}
       </View>
     </View>
   );
@@ -88,10 +101,17 @@ export default function InsightsScreen() {
     Number(windowParam)
   )
     ? Number(windowParam)
-    : INSIGHTS_WINDOW_DAYS;
+    : isProUser
+      ? INSIGHTS_WINDOW_DAYS
+      : FREE_INSIGHTS_WINDOW;
 
   const [loading, setLoading] = useState(true);
   const [windowDays, setWindowDays] = useState<number>(initialWindow);
+
+  useEffect(() => {
+    logEvent("insights_view", { window: windowDays });
+  }, [windowDays]);
+
   const [sugar, setSugar] = useState<SugarLog[]>([]);
   const [meals, setMeals] = useState<MealLog[]>([]);
   const [injections, setInjections] = useState<Injection[]>([]);
@@ -99,7 +119,7 @@ export default function InsightsScreen() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!isProUser || !activeProfile) {
+      if (!activeProfile) {
         setLoading(false);
         return;
       }
@@ -155,6 +175,69 @@ export default function InsightsScreen() {
     }
   };
 
+  // Trend vs the previous equal-length window, and the window percentile summary.
+  const trend = useMemo(
+    () => trendVsPrevious(sugar, windowDays),
+    [sugar, windowDays]
+  );
+  const pctile = useMemo(
+    () => windowPercentiles(sugar, windowDays),
+    [sugar, windowDays]
+  );
+  // Free users see only the 7-day basic summary fully; 30/90 render as a blurred
+  // preview behind a lock (curiosity gap, not an empty screen).
+  const locked = !isProUser && windowDays !== FREE_INSIGHTS_WINDOW;
+  const premium = isProUser || locked;
+
+  // Pro "from Health" summary: activity minutes + insulin delivery (read-only).
+  const [health, setHealth] = useState<HealthSummary | null>(null);
+  useEffect(() => {
+    if (!isProUser) return;
+    let alive = true;
+    readHealthSummary(windowDays)
+      .then((h) => alive && setHealth(h))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [isProUser, windowDays]);
+
+  // Weekly digest (Pro): rule-based, descriptive sentences comparing this week
+  // to last. Viewing it is one of the review-prompt triggers.
+  const digest = useMemo(() => weeklyDigest(sugar), [sugar]);
+  useEffect(() => {
+    if (isProUser && !loading && digest.length > 0) void maybeReviewOnWeeklyView();
+  }, [isProUser, loading, digest.length]);
+  const weeklyText = (s: WeeklySentence): string => {
+    const u = glucoseUnitLabel(unit);
+    switch (s.kind) {
+      case "tir":
+        return s.delta >= 0
+          ? t("insights.weeklyTirUp", { tir: s.tir, points: Math.abs(s.delta) })
+          : t("insights.weeklyTirDown", { tir: s.tir, points: Math.abs(s.delta) });
+      case "avg":
+        return s.avgDelta >= 0
+          ? t("insights.weeklyAvgUp", { n: fmtG(Math.abs(s.avgDelta)), unit: u })
+          : t("insights.weeklyAvgDown", { n: fmtG(Math.abs(s.avgDelta)), unit: u });
+      case "morning_evening":
+        return s.higher === "morning"
+          ? t("insights.weeklyMorningHigher", { diff: fmtG(s.diff), unit: u })
+          : t("insights.weeklyEveningHigher", { diff: fmtG(s.diff), unit: u });
+    }
+  };
+  const avgTrend =
+    trend.avgDelta != null
+      ? `${trend.avgDelta >= 0 ? "▲" : "▼"} ${fmtG(
+          Math.abs(Math.round(trend.avgDelta))
+        )} ${t("insights.vsPrevious")}`
+      : undefined;
+  const tirTrend =
+    trend.tirDelta != null
+      ? `${trend.tirDelta >= 0 ? "▲" : "▼"} ${Math.abs(
+          Math.round(trend.tirDelta)
+        )}% ${t("insights.vsPrevious")}`
+      : undefined;
+
   const Header = (
     <View className="flex-row items-center px-4 py-2">
       <Pressable onPress={() => router.back()} hitSlop={10} className="p-1 mr-2">
@@ -163,33 +246,6 @@ export default function InsightsScreen() {
       <Text className="text-zinc-50 text-xl font-bold">{t("insights.title")}</Text>
     </View>
   );
-
-  // ── Pro gate ──────────────────────────────────────────────────────────────
-  if (!isProUser) {
-    return (
-      <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
-        {Header}
-        <View className="flex-1 items-center justify-center px-8">
-          <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-4">
-            <Ionicons name="stats-chart" size={28} color={BRAND} />
-          </View>
-          <Text className="text-zinc-50 text-xl font-bold text-center">
-            {t("insights.lockedTitle")}
-          </Text>
-          <Text className="text-zinc-400 text-center mt-2 mb-6">
-            {t("insights.lockedBody")}
-          </Text>
-          <View className="w-full">
-            <Button
-              label={t("paywall.cta")}
-              size="lg"
-              onPress={() => router.push("/paywall")}
-            />
-          </View>
-        </View>
-      </View>
-    );
-  }
 
   const isEmpty =
     data.readings === 0 && data.injectionCount === 0 && data.meals === 0;
@@ -210,16 +266,58 @@ export default function InsightsScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Window selector */}
-          <Segmented
-            options={INSIGHTS_WINDOWS.map((d) => ({
-              value: String(d),
-              label: t("insights.windowDays", { n: d }),
-            }))}
-            value={String(windowDays)}
-            onChange={(v) => setWindowDays(Number(v))}
-            className="mb-3"
-          />
+          {/* Weekly digest (Pro): 2-3 descriptive sentences, this week vs last */}
+          {isProUser && digest.length > 0 ? (
+            <View className="rounded-2xl bg-zinc-900 border border-brand/30 p-4 mb-3">
+              <View className="flex-row items-center mb-2">
+                <Ionicons name="calendar-outline" size={16} color={BRAND} />
+                <Text className="text-brand text-xs font-bold uppercase tracking-wider ml-2">
+                  {t("insights.weeklyTitle")}
+                </Text>
+              </View>
+              {digest.map((s, i) => (
+                <View key={i} className="flex-row items-start mb-1.5">
+                  <Text className="text-zinc-500 mr-2">•</Text>
+                  <Text className="text-zinc-200 text-sm leading-5 flex-1">
+                    {weeklyText(s)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {/* Window selector (30 / 90 are Pro; free previews them blurred) */}
+          <View className="flex-row gap-2 mb-3">
+            {INSIGHTS_WINDOWS.map((d) => {
+              const active = windowDays === d;
+              const isLocked = !isProUser && d !== FREE_INSIGHTS_WINDOW;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => setWindowDays(d)}
+                  className={`flex-1 flex-row items-center justify-center rounded-xl border py-2.5 ${
+                    active ? "border-brand bg-brand/10" : "border-zinc-800 bg-zinc-900"
+                  }`}
+                >
+                  <Text
+                    className={
+                      active ? "text-brand font-semibold" : "text-zinc-300"
+                    }
+                  >
+                    {t("insights.windowDays", { n: d })}
+                  </Text>
+                  {isLocked ? (
+                    <Ionicons
+                      name="lock-closed"
+                      size={12}
+                      color="#71717a"
+                      style={{ marginLeft: 4 }}
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
 
           {/* Descriptive disclaimer */}
           <View className="flex-row items-start rounded-2xl border border-zinc-800 bg-zinc-900 p-3.5 mb-2">
@@ -237,7 +335,8 @@ export default function InsightsScreen() {
               </Text>
             </View>
           ) : (
-            <>
+            <View>
+              <View pointerEvents={locked ? "none" : "auto"}>
               {/* ── Glucose ───────────────────────────────────────────────── */}
               {data.readings > 0 ? (
                 <>
@@ -247,12 +346,14 @@ export default function InsightsScreen() {
                       value={fmtG(data.avgGlucose)}
                       unit={glucoseUnitLabel(unit)}
                       color={BRAND}
+                      sub={premium ? avgTrend : undefined}
                     />
                     <Tile
                       label={t("insights.timeInRange")}
                       value={pct(data.inRangePct)}
                       unit="%"
                       color={GREEN}
+                      sub={premium ? tirTrend : undefined}
                     />
                     <Tile
                       label={t("insights.readings")}
@@ -297,6 +398,44 @@ export default function InsightsScreen() {
                     </Text>
                   </View>
 
+                  {/* Percentile band summary (AGP numeric) — Pro */}
+                  {premium && pctile ? (
+                    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
+                      <Text className="text-zinc-300 font-semibold mb-1">
+                        {t("insights.percentileTitle")}
+                      </Text>
+                      <Text className="text-zinc-500 text-xs mb-3">
+                        {t("insights.percentileSub")}
+                      </Text>
+                      <View className="flex-row justify-between">
+                        {(
+                          [
+                            ["p05", pctile.p05],
+                            ["p25", pctile.p25],
+                            ["median", pctile.p50],
+                            ["p75", pctile.p75],
+                            ["p95", pctile.p95],
+                          ] as const
+                        ).map(([k, v]) => (
+                          <View key={k} className="items-center flex-1">
+                            <Text
+                              className={`text-base font-bold ${
+                                k === "median" ? "text-brand" : "text-zinc-100"
+                              }`}
+                            >
+                              {fmtG(v)}
+                            </Text>
+                            <Text className="text-zinc-500 text-[10px] mt-0.5">
+                              {t(`insights.${k}`)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {premium ? (
+                    <>
                   {/* Period + variability + lows */}
                   <View className="flex-row flex-wrap -m-1.5 mt-1.5">
                     <Tile
@@ -347,11 +486,13 @@ export default function InsightsScreen() {
                   <Text className="text-zinc-600 text-[11px] mt-4 px-1.5 leading-4">
                     {t("insights.gmiNote")}
                   </Text>
+                    </>
+                  ) : null}
                 </>
               ) : null}
 
               {/* ── Patterns (descriptive observations) ───────────────────── */}
-              {patterns.length > 0 ? (
+              {premium && patterns.length > 0 ? (
                 <>
                   <SectionTitle>{t("insights.patternsTitle")}</SectionTitle>
                   {patterns.map((p, i) => (
@@ -368,7 +509,9 @@ export default function InsightsScreen() {
                 </>
               ) : null}
 
-              {/* ── Injections ────────────────────────────────────────────── */}
+              {/* ── Injections (Pro) ──────────────────────────────────────── */}
+              {premium ? (
+                <>
               <SectionTitle>{t("injection.title")}</SectionTitle>
               {data.injectionCount === 0 ? (
                 <Text className="text-zinc-600 text-sm px-1.5 py-2">
@@ -459,6 +602,43 @@ export default function InsightsScreen() {
                   ) : null}
                 </>
               )}
+                </>
+              ) : null}
+
+              {/* ── From Apple Health / Health Connect (Pro, read-only) ─────── */}
+              {premium &&
+              health &&
+              (health.activeMinutes != null || health.insulin != null) ? (
+                <>
+                  <SectionTitle>{t("insights.healthTitle")}</SectionTitle>
+                  <View className="flex-row flex-wrap -m-1.5">
+                    {health.activeMinutes != null ? (
+                      <Tile
+                        label={t("insights.activeMinutes")}
+                        value={String(health.activeMinutes)}
+                        unit={t("insights.minShort")}
+                      />
+                    ) : null}
+                    {health.insulin != null ? (
+                      <>
+                        <Tile
+                          label={t("insights.healthBasal")}
+                          value={num(health.insulin.basalUnits)}
+                          unit={t("common.units")}
+                        />
+                        <Tile
+                          label={t("insights.healthBolus")}
+                          value={num(health.insulin.bolusUnits)}
+                          unit={t("common.units")}
+                        />
+                      </>
+                    ) : null}
+                  </View>
+                  <Text className="text-zinc-600 text-[11px] mt-1 px-1.5 leading-4">
+                    {t("insights.healthNote")}
+                  </Text>
+                </>
+              ) : null}
 
               {/* Sources link */}
               <Pressable
@@ -470,7 +650,49 @@ export default function InsightsScreen() {
                   {t("sources.calcLink")}
                 </Text>
               </Pressable>
-            </>
+
+              {/* Free 7-day: nudge to Pro for the longer windows */}
+              {!premium ? (
+                <Pressable
+                  onPress={() => router.push("/paywall")}
+                  className="rounded-2xl border border-brand/30 bg-brand/10 p-4 mt-4 flex-row items-center active:opacity-80"
+                >
+                  <Ionicons name="sparkles" size={18} color={BRAND} />
+                  <Text className="text-brand text-sm font-medium flex-1 ml-2.5">
+                    {t("insights.freeUpsell")}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={BRAND} />
+                </Pressable>
+              ) : null}
+              </View>
+
+              {/* Locked (free 30/90): blurred preview + unlock card */}
+              {locked ? (
+                <BlurView
+                  intensity={24}
+                  tint="dark"
+                  style={StyleSheet.absoluteFill}
+                  className="items-center justify-center overflow-hidden rounded-2xl"
+                >
+                  <View className="items-center px-8">
+                    <View className="w-14 h-14 rounded-3xl bg-brand/20 items-center justify-center mb-3">
+                      <Ionicons name="lock-closed" size={24} color={BRAND} />
+                    </View>
+                    <Text className="text-zinc-50 text-lg font-bold text-center">
+                      {t("insights.lockedTitle")}
+                    </Text>
+                    <Text className="text-zinc-300 text-center mt-2 mb-5">
+                      {t("insights.lockedBody")}
+                    </Text>
+                    <Button
+                      label={t("paywall.cta")}
+                      size="lg"
+                      onPress={() => router.push("/paywall")}
+                    />
+                  </View>
+                </BlurView>
+              ) : null}
+            </View>
           )}
         </ScrollView>
       )}

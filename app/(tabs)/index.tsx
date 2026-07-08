@@ -14,11 +14,20 @@ import { listPens, deleteInjection } from "../../lib/db/injections";
 import { loadDemoData, clearProfileData } from "../../lib/db/demo";
 import { markSampleActive, clearSampleFlag, isSampleActive } from "../../lib/sampleData";
 import type { InsulinPen, LogTag, PeriodTag } from "../../lib/db/types";
-import { canAddLog } from "../../lib/guardrails";
-import { schedulePostMealReminder } from "../../lib/services/notifications";
+import {
+  schedulePostMealReminder,
+  startPostMealTimer,
+  scheduleLowFollowup,
+} from "../../lib/services/notifications";
+import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
+import { consecutiveLogDays } from "../../lib/insights";
+import { noteLogAndMaybeReview } from "../../lib/services/review";
+import { logEvent } from "../../lib/analytics";
 
 const CGM_KEY = "zerospike.cgmSync";
+// Shown once to an existing free user who had auto-sync on before it became Pro.
+const HEALTH_PRO_NOTICE_KEY = "zerospike.healthProNoticeShown";
 // Name the health source explicitly in the UI (App Review guideline 2.5.1).
 const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
 import { JournalItem } from "../../components/JournalItem";
@@ -48,7 +57,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
-  const { toast, confirm } = useFeedback();
+  const { toast, confirm, actionSheet } = useFeedback();
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -75,15 +84,32 @@ export default function DashboardScreen() {
   }, [load, dataVersion]);
 
   // Restore the persisted sync preference, and silently re-sync on open so new
-  // Health readings keep flowing in without re-toggling the switch.
+  // Health readings keep flowing in without re-toggling the switch. Auto-sync is
+  // Pro-only now: a free user who had it on keeps their imported data but stops
+  // auto-importing, and is told once.
   useEffect(() => {
     (async () => {
       const saved = (await AsyncStorage.getItem(CGM_KEY)) === "true";
-      setCgmOn(saved);
-      if (saved && activeProfile) runSync(false);
+      if (isProUser) {
+        setCgmOn(saved);
+        if (saved && activeProfile) runSync(false);
+      } else {
+        setCgmOn(false);
+        if (saved) await maybeShowHealthProNotice();
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProfile?.id]);
+  }, [activeProfile?.id, isProUser]);
+
+  async function maybeShowHealthProNotice() {
+    try {
+      if ((await AsyncStorage.getItem(HEALTH_PRO_NOTICE_KEY)) === "true") return;
+      await AsyncStorage.setItem(HEALTH_PRO_NOTICE_KEY, "true");
+      toast(t("dashboard.healthNowPro"), "info");
+    } catch {
+      // best-effort notice
+    }
+  }
 
   function describeSync(res: SyncResult): { msg: string; tone: "success" | "info" } {
     if (res.status === "unavailable")
@@ -100,12 +126,17 @@ export default function DashboardScreen() {
   }
 
   // Pulls from Health. `announce` shows a toast (off for the silent open-sync).
+  // Auto-sync is a Pro feature, so this is the import-path gate as well.
   async function runSync(announce: boolean) {
-    if (!activeProfile || syncing) return;
+    if (!activeProfile || syncing || !isProUser) return;
     setSyncing(true);
     try {
       const res = await importHealthGlucose(activeProfile.id);
-      if (res.inserted > 0) bumpData();
+      if (res.inserted > 0) {
+        // One event per sync (not per row) to keep health-import volume sane.
+        logEvent("log_added", { kind: "glucose", source: "health" });
+        bumpData();
+      }
       if (announce) {
         const { msg, tone } = describeSync(res);
         toast(msg, tone);
@@ -128,6 +159,8 @@ export default function DashboardScreen() {
     (e) => e.kind === "injection" && formatDateKey(e.logged_at) === todayKey
   ).length;
   const anyInjections = entries.some((e) => e.kind === "injection");
+  // Encouraging consistency count ("X days in a row"), never a streak to protect.
+  const logStreak = consecutiveLogDays(entries.map((e) => e.logged_at));
   const lowPen = activePens.some((p) => p.remaining_units < 20);
   const minRemaining = activePens.length
     ? Math.min(...activePens.map((p) => p.remaining_units))
@@ -170,16 +203,24 @@ export default function DashboardScreen() {
     entries.filter((e): e is InjectionEntry => e.kind === "injection")
   );
 
-  async function openLogger(period: PeriodTag) {
+  // Manual logging is unlimited on both tiers now, so there is no gate here.
+  function openLogger(period: PeriodTag) {
     if (!activeProfile) return;
-    const allowed = await canAddLog(activeProfile.id, isProUser);
-    if (!allowed) {
-      hapticWarning();
-      router.push({ pathname: "/paywall", params: { reason: "logs" } });
-      return;
-    }
     setInitialPeriod(period);
     setSheetOpen(true);
+  }
+
+  // "I started eating": arms the post-meal check timer (dedupes with the meal-log
+  // auto reminder via a shared notification id).
+  async function startedEating() {
+    const minutes = await startPostMealTimer();
+    if (minutes != null) {
+      logEvent("tokluk_timer_started");
+      hapticSuccess();
+      toast(t("dashboard.toklukSet", { n: minutes }), "success");
+    } else {
+      toast(t("dashboard.toklukNeedsPerm"), "info");
+    }
   }
 
   async function submitGlucose(value: number, period: PeriodTag, tags: LogTag[]) {
@@ -191,6 +232,8 @@ export default function DashboardScreen() {
       period_tag: period,
       tags,
     });
+    logEvent("log_added", { kind: "glucose", source: "manual" });
+    void noteLogAndMaybeReview();
     hapticSuccess();
     // Per spec: a fasting/pre-meal reading schedules the 2-hour post-meal nudge.
     if (period === "fasting" || period === "pre_meal") {
@@ -217,6 +260,39 @@ export default function DashboardScreen() {
       );
     }
     bumpData();
+    void maybeOfferLowFollowup(value);
+  }
+
+  // Neutral, user-thresholded follow-up: after the user LOGS a low reading, offer
+  // (never force) a 15-minute re-measure reminder and a shortcut to reach an
+  // emergency contact. No diagnosis, no automatic alert.
+  async function maybeOfferLowFollowup(mgdl: number) {
+    const prefs = await getNotificationPrefs();
+    if (!prefs.lowFollowup || mgdl >= prefs.lowThresholdMgdl) return;
+    actionSheet({
+      title: t("dashboard.lowFollowTitle", {
+        value: formatGlucose(mgdl, unit),
+        unit: glucoseUnitLabel(unit),
+      }),
+      actions: [
+        {
+          label: t("dashboard.lowFollowRemind"),
+          icon: "alarm-outline",
+          onPress: async () => {
+            const ok = await scheduleLowFollowup();
+            toast(
+              ok ? t("dashboard.lowFollowSet") : t("dashboard.toklukNeedsPerm"),
+              ok ? "success" : "info"
+            );
+          },
+        },
+        {
+          label: t("dashboard.lowFollowSos"),
+          icon: "medical-outline",
+          onPress: () => router.push("/sos"),
+        },
+      ],
+    });
   }
 
   async function toggleCgm(next: boolean) {
@@ -277,8 +353,26 @@ export default function DashboardScreen() {
           <Text className="text-zinc-50 text-2xl font-bold">
             {t("dashboard.title")}
           </Text>
+          {logStreak >= 2 ? (
+            <View className="flex-row items-center mt-1 self-start rounded-full bg-brand/10 px-2.5 py-0.5">
+              <Ionicons name="checkmark-circle-outline" size={12} color="#22d3ee" />
+              <Text className="text-brand text-[11px] font-medium ml-1">
+                {t("dashboard.consistency", { n: logStreak })}
+              </Text>
+            </View>
+          ) : null}
         </View>
-        <ProfileSwitcher />
+        <View className="flex-row items-center">
+          <Pressable
+            onPress={() => router.push("/sos")}
+            hitSlop={8}
+            className="w-9 h-9 rounded-full bg-rose-500/15 items-center justify-center mr-3"
+            accessibilityLabel={t("sos.title")}
+          >
+            <Ionicons name="medical-outline" size={18} color="#fb7185" />
+          </Pressable>
+          <ProfileSwitcher />
+        </View>
       </View>
 
       {/* Sample-data preview banner (tap to clear and start fresh) */}
@@ -344,10 +438,17 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
-      {/* CGM / Sensor toggle — tap the row (while on) to sync again */}
+      {/* Health auto-sync — Pro toggles it, free sees a Pro badge → paywall */}
       <Pressable
-        onPress={() => cgmOn && runSync(true)}
-        disabled={!cgmOn || syncing}
+        onPress={() => {
+          if (!isProUser) {
+            hapticWarning();
+            router.push({ pathname: "/paywall", params: { reason: "health" } });
+            return;
+          }
+          if (cgmOn) runSync(true);
+        }}
+        disabled={isProUser && (!cgmOn || syncing)}
         className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
       >
         <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
@@ -358,27 +459,37 @@ export default function DashboardScreen() {
             {HEALTH_NAME}
           </Text>
           <Text className="text-zinc-500 text-xs">
-            {syncing
-              ? t("dashboard.syncing")
-              : cgmOn
-                ? t("dashboard.cgmOnTapToSync")
-                : t("dashboard.cgmSubtitle")}
+            {!isProUser
+              ? t("dashboard.cgmProHint")
+              : syncing
+                ? t("dashboard.syncing")
+                : cgmOn
+                  ? t("dashboard.cgmOnTapToSync")
+                  : t("dashboard.cgmSubtitle")}
           </Text>
         </View>
-        {cgmOn && !syncing ? (
-          <Ionicons
-            name="refresh"
-            size={18}
-            color="#52525b"
-            style={{ marginRight: 10 }}
-          />
-        ) : null}
-        <Switch
-          value={cgmOn}
-          onValueChange={toggleCgm}
-          trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
-          thumbColor="#fafafa"
-        />
+        {isProUser ? (
+          <>
+            {cgmOn && !syncing ? (
+              <Ionicons
+                name="refresh"
+                size={18}
+                color="#52525b"
+                style={{ marginRight: 10 }}
+              />
+            ) : null}
+            <Switch
+              value={cgmOn}
+              onValueChange={toggleCgm}
+              trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+              thumbColor="#fafafa"
+            />
+          </>
+        ) : (
+          <View className="rounded-full bg-brand px-2 py-0.5">
+            <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
+          </View>
+        )}
       </Pressable>
 
       {/* This week summary (free) */}
@@ -533,6 +644,17 @@ export default function DashboardScreen() {
         className="absolute left-0 right-0 bottom-0 px-4 pt-2 bg-black border-t border-zinc-900"
         style={{ paddingBottom: 10 }}
       >
+        {/* "I started eating" — arms the post-meal reading timer (free) */}
+        <Pressable
+          onPress={startedEating}
+          className="flex-row items-center justify-center rounded-2xl bg-brand active:bg-brandDark py-3 mb-2.5"
+        >
+          <Ionicons name="restaurant-outline" size={18} color="#000" />
+          <Text className="text-black font-bold ml-2 text-[15px]">
+            {t("dashboard.startedEating")}
+          </Text>
+        </Pressable>
+
         <View className="flex-row gap-3">
           <Pressable
             onPress={() => openLogger("fasting")}

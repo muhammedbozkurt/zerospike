@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
@@ -19,7 +19,8 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
-      "buildNumber": "16",
+      "buildNumber": "17",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -31,7 +32,8 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 16,
+      "versionCode": 17,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
@@ -40,7 +42,8 @@
         "android.permission.CAMERA",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.health.READ_BLOOD_GLUCOSE"
+        "android.permission.health.READ_BLOOD_GLUCOSE",
+        "android.permission.health.READ_EXERCISE"
       ]
     },
     "plugins": [
@@ -75,6 +78,18 @@
       ],
       "react-native-health-connect",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "zerospike lets you pick an emergency contact from your contacts for the SOS screen."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
@@ -84,10 +99,14 @@
             "buildToolsVersion": "35.0.0"
           },
           "ios": {
-            "deploymentTarget": "15.1"
+            "deploymentTarget": "16.4",
+            "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/analytics",
+      "@react-native-firebase/crashlytics"
     ],
     "experiments": {
       "typedRoutes": true

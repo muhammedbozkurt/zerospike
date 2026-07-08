@@ -56,8 +56,8 @@ export async function isHealthAvailable(): Promise<boolean> {
   }
   try {
     if (Platform.OS === "ios") {
-      const HealthKit = require("@kingstinct/react-native-healthkit").default;
-      return await HealthKit.isHealthDataAvailable();
+      const HK = require("@kingstinct/react-native-healthkit");
+      return await HK.isHealthDataAvailable();
     }
     if (Platform.OS === "android") {
       const { getSdkStatus, SdkAvailabilityStatus } = require("react-native-health-connect");
@@ -74,17 +74,28 @@ export async function requestHealthPermissions(): Promise<boolean> {
   if (DEBUG_MOCK_HEALTH) return isHealthAvailable();
   try {
     if (Platform.OS === "ios") {
-      const HealthKit = require("@kingstinct/react-native-healthkit").default;
-      const { HKQuantityTypeIdentifier } = require("@kingstinct/react-native-healthkit");
+      const HK = require("@kingstinct/react-native-healthkit");
       // iOS never reveals whether *read* access was granted (privacy), so a
-      // resolved call is the best signal we can get here.
-      await HealthKit.requestAuthorization([HKQuantityTypeIdentifier.bloodGlucose], []);
+      // resolved call is the best signal we can get here. v14 takes a single
+      // { toShare, toRead } object with string-literal identifiers. We also
+      // request insulin delivery + exercise time for the Pro Health summary.
+      await HK.requestAuthorization({
+        toShare: [],
+        toRead: [
+          "HKQuantityTypeIdentifierBloodGlucose",
+          "HKQuantityTypeIdentifierInsulinDelivery",
+          "HKQuantityTypeIdentifierAppleExerciseTime",
+        ],
+      });
       return true;
     }
     if (Platform.OS === "android") {
       const HC = require("react-native-health-connect");
       await HC.initialize();
-      await HC.requestPermission([{ accessType: "read", recordType: "BloodGlucose" }]);
+      await HC.requestPermission([
+        { accessType: "read", recordType: "BloodGlucose" },
+        { accessType: "read", recordType: "ExerciseSession" },
+      ]);
       // Trust the explicit grant list rather than requestPermission's return,
       // whose shape has varied across versions.
       return await androidHasReadPermission(HC);
@@ -134,12 +145,18 @@ function readMockGlucose(): GlucoseSample[] {
 }
 
 async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
-  const HealthKit = require("@kingstinct/react-native-healthkit").default;
-  const { HKQuantityTypeIdentifier } = require("@kingstinct/react-native-healthkit");
+  const HK = require("@kingstinct/react-native-healthkit");
   const from = new Date(Date.now() - SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const samples = await HealthKit.queryQuantitySamples(
-    HKQuantityTypeIdentifier.bloodGlucose,
-    { from, limit: SYNC_MAX_SAMPLES, ascending: false, unit: "mg/dL" }
+  // v14 (Nitro) moved the date range into filter.date and made the identifier a
+  // string literal (the HKQuantityTypeIdentifier enum was removed).
+  const samples = await HK.queryQuantitySamples(
+    "HKQuantityTypeIdentifierBloodGlucose",
+    {
+      limit: SYNC_MAX_SAMPLES,
+      ascending: false,
+      unit: "mg/dL",
+      filter: { date: { startDate: from } },
+    }
   );
   return (samples ?? []).map((s: any) => {
     const when = new Date(s.endDate ?? s.startDate);
@@ -245,4 +262,106 @@ export async function importHealthGlucose(profileId: string): Promise<SyncResult
     inserted++;
   }
   return { status: "ok", inserted, read: samples.length };
+}
+
+// ── Pro: activity + insulin delivery summary (read-only, descriptive) ────────
+
+export interface HealthSummary {
+  /** Total exercise/active minutes over the window (null if unavailable). */
+  activeMinutes: number | null;
+  /** Insulin delivery split from the health store (iOS/DIY Loop only). */
+  insulin: { basalUnits: number; bolusUnits: number; count: number } | null;
+}
+
+function mockHealthSummary(windowDays: number): HealthSummary {
+  const scale = windowDays / 7;
+  return {
+    activeMinutes: Math.round(150 * scale),
+    insulin:
+      Platform.OS === "ios"
+        ? {
+            basalUnits: Math.round(18 * 7 * scale),
+            bolusUnits: Math.round(12 * 7 * scale),
+            count: Math.round(28 * scale),
+          }
+        : null,
+  };
+}
+
+async function readInsulinIOS(windowDays: number): Promise<HealthSummary["insulin"]> {
+  const HK = require("@kingstinct/react-native-healthkit");
+  const from = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+  const samples = await HK.queryQuantitySamples(
+    "HKQuantityTypeIdentifierInsulinDelivery",
+    { limit: 2000, ascending: false, unit: "IU", filter: { date: { startDate: from } } }
+  );
+  let basal = 0;
+  let bolus = 0;
+  let count = 0;
+  for (const s of samples ?? []) {
+    const units = Number(s.quantity) || 0;
+    // HKInsulinDeliveryReason metadata: 1 = basal, 2 = bolus.
+    const reason = s?.metadata?.HKInsulinDeliveryReason;
+    if (reason === 2) bolus += units;
+    else basal += units;
+    count++;
+  }
+  return { basalUnits: Math.round(basal), bolusUnits: Math.round(bolus), count };
+}
+
+async function readExerciseMinutesIOS(windowDays: number): Promise<number> {
+  const HK = require("@kingstinct/react-native-healthkit");
+  const from = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+  const samples = await HK.queryQuantitySamples(
+    "HKQuantityTypeIdentifierAppleExerciseTime",
+    { limit: 3000, ascending: false, unit: "min", filter: { date: { startDate: from } } }
+  );
+  let mins = 0;
+  for (const s of samples ?? []) mins += Number(s.quantity) || 0;
+  return Math.round(mins);
+}
+
+async function readExerciseMinutesAndroid(windowDays: number): Promise<number | null> {
+  const HC = require("react-native-health-connect");
+  await HC.initialize();
+  const end = new Date();
+  const start = new Date(end.getTime() - windowDays * 24 * 60 * 60 * 1000);
+  const res = await HC.readRecords("ExerciseSession", {
+    timeRangeFilter: {
+      operator: "between",
+      startTime: start.toISOString(),
+      endTime: end.toISOString(),
+    },
+  });
+  const records = res?.records ?? (Array.isArray(res) ? res : []);
+  if (records.length === 0) return null;
+  let mins = 0;
+  for (const r of records) {
+    const s = new Date(r.startTime).getTime();
+    const e = new Date(r.endTime).getTime();
+    if (!Number.isNaN(s) && !Number.isNaN(e) && e > s) mins += (e - s) / 60000;
+  }
+  return Math.round(mins);
+}
+
+/**
+ * Reads a descriptive Health summary for the Pro "activity vs glucose" view:
+ * exercise minutes (both platforms) and insulin delivery split (iOS; DIY Loop
+ * users). Read-only: nothing is written to the local log, so it never touches
+ * the injection-site rotation model. Returns all-null on error / no access.
+ */
+export async function readHealthSummary(windowDays: number): Promise<HealthSummary> {
+  if (DEBUG_MOCK_HEALTH) return mockHealthSummary(windowDays);
+  const out: HealthSummary = { activeMinutes: null, insulin: null };
+  try {
+    if (Platform.OS === "ios") {
+      out.insulin = await readInsulinIOS(windowDays);
+      out.activeMinutes = await readExerciseMinutesIOS(windowDays);
+    } else if (Platform.OS === "android") {
+      out.activeMinutes = await readExerciseMinutesAndroid(windowDays);
+    }
+  } catch {
+    // leave whatever was read; never throw to the UI
+  }
+  return out;
 }

@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { Lang } from "../db/types";
+import { logEvent } from "../analytics";
 
 /**
  * RevenueCat purchases layer.
@@ -55,19 +55,11 @@ export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
   lifetime: {
     id: "lifetime",
     productId: "zerospike_lifetime", // $rc_lifetime (non-consumable)
-    priceUSD: "$59.99",
-    priceEUR: "€54,99",
-    priceTRY: "₺1.299,99",
+    priceUSD: "$79.99",
+    priceEUR: "€79,99",
+    priceTRY: "₺2.399,99",
   },
 };
-
-/** Static fallback price (real localized price overrides via getOfferingPrices). */
-export function priceFor(plan: PlanId, lang: Lang): string {
-  const p = PRO_PRODUCTS[plan];
-  if (lang === "tr") return p.priceTRY;
-  if (lang === "de" || lang === "fr" || lang === "es") return p.priceEUR;
-  return p.priceUSD;
-}
 
 // ── Real SDK plumbing (lazy) ───────────────────────────────────────────────
 
@@ -192,28 +184,6 @@ export async function restore(): Promise<RestoreResult> {
   }
 }
 
-/** Real localized prices for the paywall (empty in mock → static fallback). */
-export async function getOfferingPrices(): Promise<Partial<Record<PlanId, string>>> {
-  if (DEBUG_MOCK_PURCHASES) return {};
-  try {
-    await ensureConfigured();
-    const offerings = await rc().getOfferings();
-    const pkgs = offerings?.current?.availablePackages ?? [];
-    const out: Partial<Record<PlanId, string>> = {};
-    for (const p of pkgs) {
-      // Android subscription ids carry a base plan ("zerospike_pro:monthly").
-      const id = (p.product?.identifier ?? "").split(":")[0];
-      const price = p.product?.priceString;
-      if (id === PRO_PRODUCTS.monthly.productId) out.monthly = price;
-      if (id === PRO_PRODUCTS.annual.productId) out.annual = price;
-      if (id === PRO_PRODUCTS.lifetime.productId) out.lifetime = price;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
 /**
  * Presents the App Store offer/promo code redemption sheet (iOS 14+). Lets a
  * user redeem a code you generated in App Store Connect from inside the app.
@@ -233,4 +203,205 @@ export async function presentCodeRedemption(): Promise<void> {
 export async function setProOverride(value: boolean): Promise<void> {
   await AsyncStorage.setItem(PRO_KEY, value ? "true" : "false");
   if (!value) await AsyncStorage.removeItem(PLAN_KEY);
+}
+
+// ── Rich offerings: real prices + trial + fallback status ───────────────────
+
+export interface PlanMeta {
+  /** Localized store price string (e.g. "₺499,99"). */
+  priceString: string;
+  /** Raw numeric price for derived math (savings %, per-month). */
+  price: number;
+  currencyCode: string;
+  /** True when the plan carries a real free trial (intro price 0). */
+  hasFreeTrial: boolean;
+  /** A paid intro price (not a free trial), if any. */
+  introPriceString: string | null;
+  introPrice: number | null;
+}
+export type OfferingPlans = Partial<Record<PlanId, PlanMeta>>;
+export interface OfferingsResult {
+  status: "ready" | "unavailable";
+  isDevFallback: boolean;
+  plans: OfferingPlans;
+}
+
+function planFromPackageType(t?: string): PlanId | null {
+  if (t === "MONTHLY") return "monthly";
+  if (t === "ANNUAL") return "annual";
+  if (t === "LIFETIME") return "lifetime";
+  return null;
+}
+
+function mapRcPackage(
+  p: any
+): { plan: PlanId; meta: PlanMeta; pkg: any } | null {
+  const prod = p?.product;
+  if (!prod) return null;
+  // Android subscription ids carry a base plan ("zerospike_pro:monthly").
+  const baseId = (prod.identifier ?? "").split(":")[0];
+  const plan: PlanId | null =
+    baseId === PRO_PRODUCTS.monthly.productId
+      ? "monthly"
+      : baseId === PRO_PRODUCTS.annual.productId
+        ? "annual"
+        : baseId === PRO_PRODUCTS.lifetime.productId
+          ? "lifetime"
+          : planFromPackageType(p.packageType);
+  if (!plan) return null;
+  const intro = prod.introPrice;
+  const isFreeTrial = intro != null && Number(intro.price) === 0;
+  return {
+    plan,
+    pkg: p,
+    meta: {
+      priceString: String(prod.priceString ?? ""),
+      price: Number(prod.price ?? 0),
+      currencyCode: String(prod.currencyCode ?? ""),
+      hasFreeTrial: isFreeTrial,
+      introPriceString: intro && !isFreeTrial ? String(intro.priceString) : null,
+      introPrice: intro && !isFreeTrial ? Number(intro.price) : null,
+    },
+  };
+}
+
+// Dev-only placeholder plans (hardcoded USD, annual carries the intended 7-day
+// trial). NEVER rendered in release: when the real offering can't load,
+// loadOfferings returns status 'unavailable' so the paywall shows a retry state.
+function devFallbackPlans(): OfferingPlans {
+  return {
+    monthly: { priceString: PRO_PRODUCTS.monthly.priceUSD, price: 4.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null },
+    annual: { priceString: PRO_PRODUCTS.annual.priceUSD, price: 29.99, currencyCode: "USD", hasFreeTrial: true, introPriceString: null, introPrice: null },
+    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 79.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null },
+  };
+}
+
+/**
+ * Loads the current offering as display-ready plan metadata. In release, when
+ * the offering cannot be fetched or mapped, returns status 'unavailable' (never
+ * a hardcoded fallback) and fires offerings_fallback_shown so the paywall can
+ * show a retry state instead of fake prices.
+ */
+export async function loadOfferings(): Promise<OfferingsResult> {
+  if (DEBUG_MOCK_PURCHASES) {
+    return { status: "ready", isDevFallback: true, plans: devFallbackPlans() };
+  }
+  let reason = "fetch_error";
+  try {
+    await ensureConfigured();
+    const offerings = await rc().getOfferings();
+    const pkgs = offerings?.current?.availablePackages ?? [];
+    reason = pkgs.length === 0 ? "empty_offering" : "no_mappable_packages";
+    const plans: OfferingPlans = {};
+    for (const p of pkgs) {
+      const m = mapRcPackage(p);
+      if (m) plans[m.plan] = m.meta;
+    }
+    if (Object.keys(plans).length > 0) {
+      return { status: "ready", isDevFallback: false, plans };
+    }
+  } catch {
+    reason = "fetch_error";
+  }
+  logEvent("offerings_fallback_shown", { reason });
+  return { status: "unavailable", isDevFallback: false, plans: {} };
+}
+
+// ── Downsell / winback discounted offering ───────────────────────────────────
+
+const DOWNSELL_OFFERING_ID = "downsell";
+
+export interface DownsellOffer {
+  hasRealDiscount: boolean;
+  discountedPriceString: string | null;
+  standardPriceString: string | null;
+  savingsPercent: number;
+}
+
+const NO_DOWNSELL: DownsellOffer = {
+  hasRealDiscount: false,
+  discountedPriceString: null,
+  standardPriceString: null,
+  savingsPercent: 0,
+};
+
+function findAnnual(pkgs: any[]): PlanMeta | undefined {
+  for (const p of pkgs ?? []) {
+    const m = mapRcPackage(p);
+    if (m && m.plan === "annual") return m.meta;
+  }
+  return undefined;
+}
+
+// Same-currency, genuinely-lower check. Keeps every discount surface from ever
+// faking a saving that is not real.
+function realDiscount(standard?: PlanMeta, discounted?: PlanMeta): boolean {
+  if (!standard || !discounted) return false;
+  if (standard.currencyCode !== discounted.currencyCode) return false;
+  const d = discounted.introPrice ?? discounted.price;
+  return d < standard.price;
+}
+
+function savingsPct(standard?: PlanMeta, discounted?: PlanMeta): number {
+  if (!standard || !discounted || standard.price <= 0) return 0;
+  const d = discounted.introPrice ?? discounted.price;
+  return Math.round((1 - d / standard.price) * 100);
+}
+
+/**
+ * Reads the dedicated 'downsell' RevenueCat offering's annual package and
+ * reports a discount only when it is (same currency) genuinely cheaper than the
+ * standard annual. In dev there is no real offering, so it returns no discount
+ * and the screen shows its honest "no offer" fallback.
+ */
+export async function getDownsellOffer(): Promise<DownsellOffer> {
+  if (DEBUG_MOCK_PURCHASES) return NO_DOWNSELL;
+  try {
+    await ensureConfigured();
+    const offerings = await rc().getOfferings();
+    const standard = findAnnual(offerings?.current?.availablePackages ?? []);
+    const discounted = findAnnual(
+      offerings?.all?.[DOWNSELL_OFFERING_ID]?.availablePackages ?? []
+    );
+    if (!realDiscount(standard, discounted)) return NO_DOWNSELL;
+    return {
+      hasRealDiscount: true,
+      discountedPriceString: discounted!.introPriceString ?? discounted!.priceString,
+      standardPriceString: standard!.priceString,
+      savingsPercent: savingsPct(standard, discounted),
+    };
+  } catch {
+    return NO_DOWNSELL;
+  }
+}
+
+/** One-shot check for the winback trigger: only open if a real discount exists. */
+export async function winbackHasRealDiscount(): Promise<boolean> {
+  return (await getDownsellOffer()).hasRealDiscount;
+}
+
+/** Purchases the discounted annual from the 'downsell' offering. */
+export async function purchaseDownsell(): Promise<boolean> {
+  if (DEBUG_MOCK_PURCHASES) {
+    await AsyncStorage.setItem(PRO_KEY, "true");
+    await AsyncStorage.setItem(PLAN_KEY, "annual");
+    return true;
+  }
+  try {
+    await ensureConfigured();
+    const Purchases = rc();
+    const offerings = await Purchases.getOfferings();
+    const pkgs = offerings?.all?.[DOWNSELL_OFFERING_ID]?.availablePackages ?? [];
+    const target = (pkgs as any[]).find((p) => {
+      const m = mapRcPackage(p);
+      return m?.plan === "annual";
+    });
+    if (!target) return false;
+    const { customerInfo } = await Purchases.purchasePackage(target);
+    const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
+    if (ok) await AsyncStorage.setItem(PLAN_KEY, "annual");
+    return ok;
+  } catch {
+    return false;
+  }
 }
