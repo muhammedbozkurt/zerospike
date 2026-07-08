@@ -88,6 +88,8 @@ export default function DashboardScreen() {
   // Pro-only now: a free user who had it on keeps their imported data but stops
   // auto-importing, and is told once.
   useEffect(() => {
+    // Health/CGM sync is iOS-only (Health Connect was removed for Play policy).
+    if (Platform.OS !== "ios") return;
     (async () => {
       const saved = (await AsyncStorage.getItem(CGM_KEY)) === "true";
       if (isProUser) {
@@ -438,7 +440,9 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
-      {/* Health auto-sync — Pro toggles it, free sees a Pro badge → paywall */}
+      {/* Health auto-sync (iOS only; Health Connect removed for Play policy).
+          Pro toggles it, free sees a Pro badge that opens the paywall. */}
+      {Platform.OS === "ios" ? (
       <Pressable
         onPress={() => {
           if (!isProUser) {
@@ -491,6 +495,7 @@ export default function DashboardScreen() {
           </View>
         )}
       </Pressable>
+      ) : null}
 
       {/* This week summary (free) */}
       <Pressable

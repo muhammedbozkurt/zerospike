@@ -380,6 +380,14 @@ cihaz sinifina sokar.
   modules, @kingstinct/react-native-healthkit@14, react-native-purchases@10, @expo/vector-
   icons, expo-location, expo-sms, expo-contacts, expo-blur, expo-store-review.
 
+- EK (Play politikasi, R1 sonrasi): Android'den Health Connect TAMAMEN cikarildi
+  (react-native-health-connect paketi + config plugin + android.permission.health.*
+  izinleri kaldirildi; health.ts tum Android dallari silindi, iOS-only). Health/CGM
+  senkron + aktivite ozeti Platform.OS === 'ios' kapisinda: Android'de dashboard satiri,
+  paywall bullet'i ve Insights "Health" karti hic gorunmez. iOS HealthKit AYNEN. versionCode
+  20 -> 21. DOGRULANDI: `expo prebuild --platform android --clean` sonrasi AndroidManifest'te
+  hicbir health izni yok (Play saglik-izin beyani tetiklenmez); Android bundle export temiz.
+
 ## CIHAZ QA CHECKLIST (toplu, en sonda calistirilacak)
 
 Asistan cihazda test edemez; her faz kendi kalemlerini buraya ekler, kullanici en sonda topluca

@@ -10,14 +10,15 @@ import { pickMgdl, snapIso } from "./healthMath";
  * simulated during development (no device or CGM required), while a production
  * build reads real `BloodGlucose` samples from the platform health store.
  *
- * The native modules are lazy-`require`d ONLY in real mode, so Expo Go,
+ * The native module is lazy-`require`d ONLY in real mode, so Expo Go,
  * development and JS bundling never load native code.
  *
- *   iOS     → @kingstinct/react-native-healthkit  (HKQuantityType bloodGlucose)
- *   Android → react-native-health-connect          (BloodGlucose records)
+ *   iOS only → @kingstinct/react-native-healthkit  (HKQuantityType bloodGlucose)
  *
- * Flip to real by shipping a production build (DEBUG_MOCK_HEALTH is __DEV__),
- * or set the constant to `false` to test the real path on a dev build.
+ * Android Health Connect was removed for the Google Play health-permission
+ * policy, so the whole Health/CGM feature is iOS-only. Flip to real by shipping
+ * a production build (DEBUG_MOCK_HEALTH is __DEV__), or set the constant to
+ * `false` to test the real path on a dev build.
  */
 export const DEBUG_MOCK_HEALTH = __DEV__;
 
@@ -51,18 +52,11 @@ function pickTagForHour(hour: number): PeriodTag {
 // ── Availability & permissions ─────────────────────────────────────────────
 
 export async function isHealthAvailable(): Promise<boolean> {
-  if (DEBUG_MOCK_HEALTH) {
-    return Platform.OS === "ios" || Platform.OS === "android";
-  }
+  if (DEBUG_MOCK_HEALTH) return Platform.OS === "ios";
   try {
     if (Platform.OS === "ios") {
       const HK = require("@kingstinct/react-native-healthkit");
       return await HK.isHealthDataAvailable();
-    }
-    if (Platform.OS === "android") {
-      const { getSdkStatus, SdkAvailabilityStatus } = require("react-native-health-connect");
-      const status = await getSdkStatus();
-      return status === SdkAvailabilityStatus.SDK_AVAILABLE;
     }
   } catch {
     return false;
@@ -89,36 +83,10 @@ export async function requestHealthPermissions(): Promise<boolean> {
       });
       return true;
     }
-    if (Platform.OS === "android") {
-      const HC = require("react-native-health-connect");
-      await HC.initialize();
-      await HC.requestPermission([
-        { accessType: "read", recordType: "BloodGlucose" },
-        { accessType: "read", recordType: "ExerciseSession" },
-      ]);
-      // Trust the explicit grant list rather than requestPermission's return,
-      // whose shape has varied across versions.
-      return await androidHasReadPermission(HC);
-    }
   } catch {
     return false;
   }
   return false;
-}
-
-/** True only if Health Connect currently holds BloodGlucose *read* access. */
-async function androidHasReadPermission(HC: any): Promise<boolean> {
-  try {
-    const granted = await HC.getGrantedPermissions();
-    return (
-      Array.isArray(granted) &&
-      granted.some(
-        (p: any) => p?.recordType === "BloodGlucose" && p?.accessType === "read"
-      )
-    );
-  } catch {
-    return false;
-  }
 }
 
 // ── Reads ──────────────────────────────────────────────────────────────────
@@ -172,43 +140,11 @@ async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
   });
 }
 
-async function readRealGlucoseAndroid(): Promise<GlucoseSample[]> {
-  const HC = require("react-native-health-connect");
-  await HC.initialize();
-  const end = new Date();
-  const start = new Date(end.getTime() - SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const res = await HC.readRecords("BloodGlucose", {
-    timeRangeFilter: {
-      operator: "between",
-      startTime: start.toISOString(),
-      endTime: end.toISOString(),
-    },
-    ascendingOrder: false,
-    pageSize: SYNC_MAX_SAMPLES,
-  });
-  const records = res?.records ?? (Array.isArray(res) ? res : []);
-  return records.map((r: any) => {
-    // Health Connect exposes both unit fields explicitly — prefer mg/dL, and
-    // convert ONLY the explicit mmol field (no magnitude guessing).
-    const mgdl = pickMgdl({
-      mgdl: r.level?.inMilligramsPerDeciliter ?? null,
-      mmol: r.level?.inMillimolesPerLiter ?? null,
-    });
-    const when = new Date(r.time ?? r.startTime);
-    return {
-      value: mgdl == null ? 0 : Math.round(mgdl),
-      date: snapIso(when.toISOString()),
-      period_tag: pickTagForHour(when.getHours()),
-    };
-  });
-}
-
 /** Reads recent glucose from the platform health store (or the dev mock). */
 export async function readRecentGlucose(): Promise<GlucoseSample[]> {
   if (DEBUG_MOCK_HEALTH) return readMockGlucose();
   try {
     if (Platform.OS === "ios") return await readRealGlucoseIOS();
-    if (Platform.OS === "android") return await readRealGlucoseAndroid();
   } catch {
     return [];
   }
@@ -274,17 +210,16 @@ export interface HealthSummary {
 }
 
 function mockHealthSummary(windowDays: number): HealthSummary {
+  // iOS-only feature, so Android returns nothing even in the dev mock.
+  if (Platform.OS !== "ios") return { activeMinutes: null, insulin: null };
   const scale = windowDays / 7;
   return {
     activeMinutes: Math.round(150 * scale),
-    insulin:
-      Platform.OS === "ios"
-        ? {
-            basalUnits: Math.round(18 * 7 * scale),
-            bolusUnits: Math.round(12 * 7 * scale),
-            count: Math.round(28 * scale),
-          }
-        : null,
+    insulin: {
+      basalUnits: Math.round(18 * 7 * scale),
+      bolusUnits: Math.round(12 * 7 * scale),
+      count: Math.round(28 * scale),
+    },
   };
 }
 
@@ -321,45 +256,20 @@ async function readExerciseMinutesIOS(windowDays: number): Promise<number> {
   return Math.round(mins);
 }
 
-async function readExerciseMinutesAndroid(windowDays: number): Promise<number | null> {
-  const HC = require("react-native-health-connect");
-  await HC.initialize();
-  const end = new Date();
-  const start = new Date(end.getTime() - windowDays * 24 * 60 * 60 * 1000);
-  const res = await HC.readRecords("ExerciseSession", {
-    timeRangeFilter: {
-      operator: "between",
-      startTime: start.toISOString(),
-      endTime: end.toISOString(),
-    },
-  });
-  const records = res?.records ?? (Array.isArray(res) ? res : []);
-  if (records.length === 0) return null;
-  let mins = 0;
-  for (const r of records) {
-    const s = new Date(r.startTime).getTime();
-    const e = new Date(r.endTime).getTime();
-    if (!Number.isNaN(s) && !Number.isNaN(e) && e > s) mins += (e - s) / 60000;
-  }
-  return Math.round(mins);
-}
-
 /**
  * Reads a descriptive Health summary for the Pro "activity vs glucose" view:
- * exercise minutes (both platforms) and insulin delivery split (iOS; DIY Loop
+ * exercise minutes + insulin delivery split (iOS/HealthKit only; DIY Loop
  * users). Read-only: nothing is written to the local log, so it never touches
- * the injection-site rotation model. Returns all-null on error / no access.
+ * the injection-site rotation model. Returns all-null on error / no access, and
+ * always all-null off iOS (Health Connect was removed).
  */
 export async function readHealthSummary(windowDays: number): Promise<HealthSummary> {
   if (DEBUG_MOCK_HEALTH) return mockHealthSummary(windowDays);
   const out: HealthSummary = { activeMinutes: null, insulin: null };
+  if (Platform.OS !== "ios") return out;
   try {
-    if (Platform.OS === "ios") {
-      out.insulin = await readInsulinIOS(windowDays);
-      out.activeMinutes = await readExerciseMinutesIOS(windowDays);
-    } else if (Platform.OS === "android") {
-      out.activeMinutes = await readExerciseMinutesAndroid(windowDays);
-    }
+    out.insulin = await readInsulinIOS(windowDays);
+    out.activeMinutes = await readExerciseMinutesIOS(windowDays);
   } catch {
     // leave whatever was read; never throw to the UI
   }

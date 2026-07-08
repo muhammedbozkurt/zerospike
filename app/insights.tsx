@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -192,7 +193,8 @@ export default function InsightsScreen() {
   // Pro "from Health" summary: activity minutes + insulin delivery (read-only).
   const [health, setHealth] = useState<HealthSummary | null>(null);
   useEffect(() => {
-    if (!isProUser) return;
+    // iOS-only (Health Connect removed for Play policy).
+    if (!isProUser || Platform.OS !== "ios") return;
     let alive = true;
     readHealthSummary(windowDays)
       .then((h) => alive && setHealth(h))

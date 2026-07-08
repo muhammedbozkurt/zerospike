@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -317,7 +317,8 @@ export default function PaywallScreen() {
           <FeatureGroup
             title={t("paywall.groupTracking")}
             items={[
-              t("paywall.featureHealthSync"),
+              // Health sync is iOS-only (Health Connect removed for Play policy).
+              ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
               t("paywall.featureCustomFoods"),
               t("paywall.featureFamily"),
             ]}
