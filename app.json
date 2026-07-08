@@ -99,7 +99,8 @@
             "buildToolsVersion": "35.0.0"
           },
           "ios": {
-            "deploymentTarget": "16.4"
+            "deploymentTarget": "16.4",
+            "useFrameworks": "static"
           }
         }
       ],
