@@ -14,7 +14,7 @@ import {
   PRO_PRODUCTS,
   PlanId,
 } from "../lib/services/purchases";
-import { FREE_LOG_LIMIT, FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
+import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { Button } from "../components/ui";
@@ -143,10 +143,10 @@ export default function PaywallScreen() {
   }
 
   const limit =
-    reason === "logs"
+    reason === "health"
       ? {
-          title: t("paywall.limitTitleLogs"),
-          body: t("paywall.limitBodyLogs", { limit: FREE_LOG_LIMIT }),
+          title: t("paywall.limitTitleHealth"),
+          body: t("paywall.limitBodyHealth"),
         }
       : reason === "foods"
       ? {
@@ -251,8 +251,8 @@ export default function PaywallScreen() {
           <FeatureGroup
             title={t("paywall.groupTracking")}
             items={[
-              t("paywall.featureUnlimited"),
-              t("paywall.featureFavorites"),
+              t("paywall.featureHealthSync"),
+              t("paywall.featureCustomFoods"),
               t("paywall.featureFamily"),
             ]}
           />

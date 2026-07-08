@@ -3,7 +3,7 @@ import { uuid } from "../uuid";
 import type { Food } from "./types";
 
 /** Free-tier custom-food cap. */
-export const FREE_CUSTOM_FOOD_LIMIT = 3;
+export const FREE_CUSTOM_FOOD_LIMIT = 10;
 
 /**
  * Builds an FTS5 prefix MATCH query from raw user input. Each token becomes a

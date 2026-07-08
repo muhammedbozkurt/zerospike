@@ -20,7 +20,6 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { getFood } from "../lib/db/foods";
 import { addMealLog } from "../lib/db/logs";
-import { canAddLog } from "../lib/guardrails";
 import { logEvent } from "../lib/analytics";
 import {
   estimateInsulin,
@@ -37,7 +36,7 @@ import { Button, Segmented } from "../components/ui";
 import { TagPicker } from "../components/TagPicker";
 import { useFeedback } from "../components/Feedback";
 import { num } from "../lib/format";
-import { hapticSuccess, hapticWarning } from "../lib/haptics";
+import { hapticSuccess } from "../lib/haptics";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
@@ -56,7 +55,7 @@ export default function CalculatorScreen() {
     foodId?: string;
     portion?: string;
   }>();
-  const { activeProfile, isProUser, lang, bumpData, dataVersion } = useApp();
+  const { activeProfile, lang, bumpData, dataVersion } = useApp();
   const { actionSheet } = useFeedback();
 
   const [food, setFood] = useState<Food | null>(null);
@@ -152,12 +151,6 @@ export default function CalculatorScreen() {
 
   async function logMeal() {
     if (!food || !activeProfile || !estimate) return;
-    const allowed = await canAddLog(activeProfile.id, isProUser);
-    if (!allowed) {
-      hapticWarning();
-      router.replace({ pathname: "/paywall", params: { reason: "logs" } });
-      return;
-    }
     const dose = parseFloat(doseText.replace(",", ".")) || estimate.totalDose;
     await addMealLog({
       profile_id: activeProfile.id,
