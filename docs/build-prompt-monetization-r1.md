@@ -324,6 +324,28 @@ cihaz sinifina sokar.
   onboarding_step her adimda dose edildi. Onboarding tamamlama paywall/downsell cikisinda
   yapilir (mid-flow bounce yok); _layout gating paywall/downsell/winback'e onboarding
   sirasinda izin verir. Bildirim izni basal-saati kaydinda contextual kalir. 5 locale.
+- FAZ 3.0 (doz dili) TAMAM: calculator doz karti "Estimated Dose Recommendation" ->
+  "Girdigin oranlara gore hesap"; ogun/duzeltme satirlari seffaf formul (karb / oran,
+  hedef ustu / ISF); "Hesaplanan toplam". Her doz gosteriminde notr disclaimer ("Tibbi
+  tavsiye degildir; dozuna saglik ekibinle karar ver."). 5 locale; app-ici "onerilen doz"
+  dili kalmadi. (Store metadata doz dili taramasi HUMAN TODO'da.)
+- FAZ 3.1 (tokluk timer) TAMAM: dashboard'da belirgin "Yemege basladim" butonu ->
+  startPostMealTimer. Meal-log oto-hatirlatici ve buton TEK sabit id (POSTMEAL_ID)
+  paylasir: ayni saate iki bildirim imkansiz, tekrar basinca sayac yenilenir. Sure
+  Ayarlar'dan 90/120/150 dk (postMealHours -> postMealMinutes). tokluk_timer_started dose.
+- FAZ 3.2 (kullanici saati) TAMAM: haftalik ozete gun (1-7 cip) + saat secimi eklendi
+  (weeklyDay/weeklyTime); scheduleWeeklySummary artik parametrik. notifications.ts tek
+  koordinasyon noktasi. 5 locale (kisa gun adlari).
+- FAZ 3.3 (dusuk deger takibi) TAMAM: kullanici KENDI esigi altinda MANUEL log'lanan
+  olcumde notr actionSheet ("Son olcumun X."), "15 dk sonra hatirlat" (scheduleLowFollowup,
+  notr kopya) + "acil kisiye ulas" (/sos). Ayarlar'da esik (60-80 mg/dL, birim-duyarli)
+  + toggle. Health oto-importi tetiklemez (yalniza kullanici eylemi). 5 locale.
+- FAZ 3.4 (SOS) TAMAM: expo-location + expo-sms + expo-contacts kuruldu (config plugin'ler
+  + izin metinleri). lib/services/emergency.ts (kisiler AsyncStorage). app/sos.tsx: 112'yi
+  ac (dialer), acil kisiye ara (tel:), mesaj (expo-sms composer + konum harita linki,
+  konumsuz da acilir), WhatsApp (wa.me). app/emergency-contacts.tsx editor (+ rehberden
+  secim). Dashboard header SOS kisayolu + Settings bolumu. Kopya durust: "otomatik
+  arar/gonderir" IDDIASI YOK. sos_opened + sos_action(call|sms|contact) dose. 5 locale.
 
 ## CIHAZ QA CHECKLIST (toplu, en sonda calistirilacak)
 
@@ -368,3 +390,15 @@ kosar.
 - [ ] Onboarding'i bitiren kullanici uygulamayi kapatip acinca onboarding'i BIR DAHA gormuyor.
 - [ ] Demo AGP onizlemesi cihazda dogru render oluyor (SVG), "ornek veri" ibaresi net.
 - [ ] Birim degisimi degerleri dogru ceviriyor; basal-saati adiminda bildirim izni contextual isteniyor.
+
+### Faz 3
+- [ ] Doz kartinda "onerilen" dili yok; formul + notr disclaimer her gosterimde gorunuyor.
+- [ ] "Yemege basladim" + meal log ayni pencerede AYNI saate cift bildirim kurmuyor (dedupe);
+      tekrar basinca sayac yenileniyor; sure 90/120/150 dk secilebiliyor.
+- [ ] Haftalik ozet secilen gun+saatte tetikleniyor.
+- [ ] Kendi esigin altinda MANUEL olcum log'layinca notr actionSheet cikiyor; "15 dk hatirlat"
+      bildirim kuruyor; "acil kisiye ulas" SOS'u aciyor. Health oto-import bunu tetiklemiyor.
+- [ ] SOS: 112 dialer aciliyor; acil kisiye tel: + mesaj composer (KONUM IZNI REDDINDE de
+      konumsuz metinle aciliyor) + WhatsApp deep link. Otomatik gonderim/arama YOK.
+- [ ] expo-location/sms/contacts prebuild sonrasi native derleniyor; izin metinleri App
+      Store/Play'de dogru gorunuyor (NSLocationWhenInUse, NSContacts).

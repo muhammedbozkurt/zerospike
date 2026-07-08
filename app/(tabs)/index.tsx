@@ -14,7 +14,12 @@ import { listPens, deleteInjection } from "../../lib/db/injections";
 import { loadDemoData, clearProfileData } from "../../lib/db/demo";
 import { markSampleActive, clearSampleFlag, isSampleActive } from "../../lib/sampleData";
 import type { InsulinPen, LogTag, PeriodTag } from "../../lib/db/types";
-import { schedulePostMealReminder } from "../../lib/services/notifications";
+import {
+  schedulePostMealReminder,
+  startPostMealTimer,
+  scheduleLowFollowup,
+} from "../../lib/services/notifications";
+import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
 import { logEvent } from "../../lib/analytics";
 
@@ -50,7 +55,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
-  const { toast, confirm } = useFeedback();
+  const { toast, confirm, actionSheet } = useFeedback();
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -201,6 +206,19 @@ export default function DashboardScreen() {
     setSheetOpen(true);
   }
 
+  // "I started eating": arms the post-meal check timer (dedupes with the meal-log
+  // auto reminder via a shared notification id).
+  async function startedEating() {
+    const minutes = await startPostMealTimer();
+    if (minutes != null) {
+      logEvent("tokluk_timer_started");
+      hapticSuccess();
+      toast(t("dashboard.toklukSet", { n: minutes }), "success");
+    } else {
+      toast(t("dashboard.toklukNeedsPerm"), "info");
+    }
+  }
+
   async function submitGlucose(value: number, period: PeriodTag, tags: LogTag[]) {
     if (!activeProfile) return;
     setSheetOpen(false);
@@ -237,6 +255,39 @@ export default function DashboardScreen() {
       );
     }
     bumpData();
+    void maybeOfferLowFollowup(value);
+  }
+
+  // Neutral, user-thresholded follow-up: after the user LOGS a low reading, offer
+  // (never force) a 15-minute re-measure reminder and a shortcut to reach an
+  // emergency contact. No diagnosis, no automatic alert.
+  async function maybeOfferLowFollowup(mgdl: number) {
+    const prefs = await getNotificationPrefs();
+    if (!prefs.lowFollowup || mgdl >= prefs.lowThresholdMgdl) return;
+    actionSheet({
+      title: t("dashboard.lowFollowTitle", {
+        value: formatGlucose(mgdl, unit),
+        unit: glucoseUnitLabel(unit),
+      }),
+      actions: [
+        {
+          label: t("dashboard.lowFollowRemind"),
+          icon: "alarm-outline",
+          onPress: async () => {
+            const ok = await scheduleLowFollowup();
+            toast(
+              ok ? t("dashboard.lowFollowSet") : t("dashboard.toklukNeedsPerm"),
+              ok ? "success" : "info"
+            );
+          },
+        },
+        {
+          label: t("dashboard.lowFollowSos"),
+          icon: "medical-outline",
+          onPress: () => router.push("/sos"),
+        },
+      ],
+    });
   }
 
   async function toggleCgm(next: boolean) {
@@ -298,7 +349,17 @@ export default function DashboardScreen() {
             {t("dashboard.title")}
           </Text>
         </View>
-        <ProfileSwitcher />
+        <View className="flex-row items-center">
+          <Pressable
+            onPress={() => router.push("/sos")}
+            hitSlop={8}
+            className="w-9 h-9 rounded-full bg-rose-500/15 items-center justify-center mr-3"
+            accessibilityLabel={t("sos.title")}
+          >
+            <Ionicons name="medical-outline" size={18} color="#fb7185" />
+          </Pressable>
+          <ProfileSwitcher />
+        </View>
       </View>
 
       {/* Sample-data preview banner (tap to clear and start fresh) */}
@@ -570,6 +631,17 @@ export default function DashboardScreen() {
         className="absolute left-0 right-0 bottom-0 px-4 pt-2 bg-black border-t border-zinc-900"
         style={{ paddingBottom: 10 }}
       >
+        {/* "I started eating" — arms the post-meal reading timer (free) */}
+        <Pressable
+          onPress={startedEating}
+          className="flex-row items-center justify-center rounded-2xl bg-brand active:bg-brandDark py-3 mb-2.5"
+        >
+          <Ionicons name="restaurant-outline" size={18} color="#000" />
+          <Text className="text-black font-bold ml-2 text-[15px]">
+            {t("dashboard.startedEating")}
+          </Text>
+        </Pressable>
+
         <View className="flex-row gap-3">
           <Pressable
             onPress={() => openLogger("fasting")}

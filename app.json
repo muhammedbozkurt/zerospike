@@ -77,6 +77,18 @@
       ],
       "react-native-health-connect",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "zerospike lets you pick an emergency contact from your contacts for the SOS screen."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

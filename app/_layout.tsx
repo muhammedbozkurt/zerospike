@@ -92,6 +92,14 @@ function RootNavigator() {
         options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen
+        name="sos"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="emergency-contacts"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
         name="calculator"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />

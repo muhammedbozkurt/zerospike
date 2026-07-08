@@ -99,7 +99,9 @@ export default function SettingsScreen() {
   const [postmeal, setPostmeal] = useState("");
   const [dailyCarb, setDailyCarb] = useState("");
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
-  const [openPicker, setOpenPicker] = useState<"basal" | "glucose" | null>(null);
+  const [openPicker, setOpenPicker] = useState<
+    "basal" | "glucose" | "weekly" | null
+  >(null);
   const [notifDenied, setNotifDenied] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -521,13 +523,15 @@ export default function SettingsScreen() {
                       {t("settings.postMealDelay")}
                     </Text>
                     <Segmented
-                      options={[1, 2, 3].map((h) => ({
-                        value: String(h),
-                        label: t("settings.hours", { n: h }),
+                      options={[90, 120, 150].map((m) => ({
+                        value: String(m),
+                        label: t("settings.minutes", { n: m }),
                       }))}
-                      value={String(prefs.postMealHours)}
+                      value={String(prefs.postMealMinutes)}
                       onChange={(v) =>
-                        updatePrefs({ postMealHours: Number(v) as 1 | 2 | 3 })
+                        updatePrefs({
+                          postMealMinutes: Number(v) as 90 | 120 | 150,
+                        })
                       }
                     />
                   </View>
@@ -560,6 +564,82 @@ export default function SettingsScreen() {
                     />
                   }
                 />
+                {prefs.weekly ? (
+                  <>
+                    <View className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 mb-2">
+                      <Text className="text-zinc-400 text-xs mb-2">
+                        {t("settings.reminderDay")}
+                      </Text>
+                      <View className="flex-row justify-between">
+                        {[1, 2, 3, 4, 5, 6, 7].map((d) => {
+                          const on = prefs.weeklyDay === d;
+                          return (
+                            <Pressable
+                              key={d}
+                              onPress={() => updatePrefs({ weeklyDay: d })}
+                              className={`w-9 h-9 rounded-full items-center justify-center ${
+                                on ? "bg-brand" : "bg-zinc-800"
+                              }`}
+                            >
+                              <Text
+                                className={`text-xs font-semibold ${
+                                  on ? "text-black" : "text-zinc-300"
+                                }`}
+                              >
+                                {t(`settings.weekdayShort_${d}`)}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                    <Row
+                      icon="alarm-outline"
+                      label={t("settings.reminderTime")}
+                      value={prefs.weeklyTime}
+                      onPress={() =>
+                        setOpenPicker((p) => (p === "weekly" ? null : "weekly"))
+                      }
+                    />
+                    <InlineTimePicker
+                      visible={openPicker === "weekly"}
+                      value={prefs.weeklyTime}
+                      onChange={(v) => updatePrefs({ weeklyTime: v })}
+                      onClose={() => setOpenPicker(null)}
+                    />
+                  </>
+                ) : null}
+
+                {/* Low reading follow-up (neutral, user-thresholded) */}
+                <Row
+                  icon="pulse-outline"
+                  label={t("settings.reminderLowFollow")}
+                  right={
+                    <Switch
+                      value={prefs.lowFollowup}
+                      onValueChange={(v) => updatePrefs({ lowFollowup: v })}
+                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      thumbColor="#fafafa"
+                    />
+                  }
+                />
+                {prefs.lowFollowup ? (
+                  <View className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 mb-2">
+                    <Text className="text-zinc-400 text-xs mb-2">
+                      {t("settings.lowThreshold")} ({glucoseUnitLabel(unit)})
+                    </Text>
+                    <Segmented
+                      options={[60, 65, 70, 75, 80].map((mgdl) => ({
+                        value: String(mgdl),
+                        label: String(glucoseToDisplay(mgdl, unit)),
+                      }))}
+                      value={String(prefs.lowThresholdMgdl)}
+                      onChange={(v) =>
+                        updatePrefs({ lowThresholdMgdl: Number(v) })
+                      }
+                    />
+                  </View>
+                ) : null}
               </>
             ) : null}
           </>
@@ -580,6 +660,19 @@ export default function SettingsScreen() {
           icon="medkit-outline"
           label={t("injection.guideLink")}
           onPress={() => router.push("/injection-guide")}
+        />
+
+        {/* Emergency / SOS */}
+        <SectionLabel>{t("sos.title")}</SectionLabel>
+        <Row
+          icon="people-outline"
+          label={t("emergency.title")}
+          onPress={() => router.push("/emergency-contacts")}
+        />
+        <Row
+          icon="medical-outline"
+          label={t("sos.openScreen")}
+          onPress={() => router.push("/sos")}
         />
 
         {/* Pro */}
