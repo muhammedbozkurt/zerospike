@@ -31,7 +31,7 @@ async function promptOnce(): Promise<void> {
     logEvent("review_prompted");
     await StoreReview.requestReview();
   } catch {
-    // review unavailable — never block a user flow
+    // review unavailable; never block a user flow
   }
 }
 

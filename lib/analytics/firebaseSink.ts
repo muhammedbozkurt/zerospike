@@ -22,6 +22,6 @@ export function initAnalyticsSink(): void {
       crashlytics().recordError(e);
     });
   } catch {
-    // native module missing (e.g. Expo Go) — stay on the no-op facade
+    // native module missing (e.g. Expo Go); stay on the no-op facade
   }
 }

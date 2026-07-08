@@ -367,6 +367,15 @@ cihaz sinifina sokar.
   yazmak rotasyon modelini bozar ve dogrulanamaz bir migration ister. Bunun yerine read-only
   ozet gosterilir. Tam gunluk-grafik aktivite-band overlay'i + insulin log'a yazma R2/cihaz-QA.
 
+- TUM FAZLAR (0-4) TAMAM. Her faz sonunda `npx tsc --noEmit` temiz; final: iki platform tam
+  JS bundle export'u basarili, `npm run typecheck` temiz, i18n parite tsc ile GARANTILI
+  (locale'ler tr.ts TranslationSchema'sina tiplenmis; eksik/fazla anahtar tsc'yi kirar),
+  regulasyon grep'i (5 dil) TEMIZ, yeni dosyalarda em dash yok. Her faz ayri commit.
+- Bu turda eklenen native paketler (prebuild + cihaz derlemesi gerektirir): @react-native-
+  firebase/app+analytics+crashlytics, promise, react-native-worklets, react-native-nitro-
+  modules, @kingstinct/react-native-healthkit@14, react-native-purchases@10, @expo/vector-
+  icons, expo-location, expo-sms, expo-contacts, expo-blur, expo-store-review.
+
 ## CIHAZ QA CHECKLIST (toplu, en sonda calistirilacak)
 
 Asistan cihazda test edemez; her faz kendi kalemlerini buraya ekler, kullanici en sonda topluca
