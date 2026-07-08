@@ -279,6 +279,78 @@ export function windowPercentiles(
   };
 }
 
+/**
+ * Rule-based weekly digest: 2-3 neutral, descriptive sentences comparing this
+ * week to last (never causal, never advice). The UI renders each from its key.
+ * Empty when there isn't enough data for any sentence to be meaningful.
+ */
+export type WeeklySentence =
+  | { kind: "tir"; tir: number; delta: number }
+  | { kind: "avg"; avgDelta: number } // mg/dL vs last week
+  | { kind: "morning_evening"; diff: number; higher: "morning" | "evening" };
+
+export function weeklyDigest(sugar: SugarLog[]): WeeklySentence[] {
+  const week = computeInsights(sugar, [], [], 7);
+  const trend = trendVsPrevious(sugar, 7);
+  const out: WeeklySentence[] = [];
+  if (
+    week.inRangePct != null &&
+    trend.tirDelta != null &&
+    Math.abs(trend.tirDelta) >= 1
+  ) {
+    out.push({
+      kind: "tir",
+      tir: Math.round(week.inRangePct),
+      delta: Math.round(trend.tirDelta),
+    });
+  }
+  const mo = week.hourly.morning;
+  const ev = week.hourly.evening;
+  if (mo != null && ev != null && Math.abs(mo - ev) >= 10) {
+    out.push({
+      kind: "morning_evening",
+      diff: Math.round(Math.abs(mo - ev)),
+      higher: mo > ev ? "morning" : "evening",
+    });
+  }
+  if (trend.avgDelta != null && Math.abs(trend.avgDelta) >= 5) {
+    out.push({ kind: "avg", avgDelta: Math.round(trend.avgDelta) });
+  }
+  return out.slice(0, 3);
+}
+
+/**
+ * Consecutive local days ending today or yesterday that have at least one log.
+ * Framed as encouragement ("X days in a row"), not a streak to protect: it
+ * survives a single missed day boundary and never blames a gap.
+ */
+export function consecutiveLogDays(logDates: string[]): number {
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  const key = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const days = new Set(
+    logDates
+      .map((iso) => {
+        const d = new Date(iso);
+        return Number.isNaN(d.getTime()) ? "" : key(d);
+      })
+      .filter(Boolean)
+  );
+  if (days.size === 0) return 0;
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  if (!days.has(key(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!days.has(key(cursor))) return 0;
+  }
+  let count = 0;
+  while (days.has(key(cursor))) {
+    count++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return count;
+}
+
 /* ── Actionable patterns ──────────────────────────────────────────────────
  * Purely DESCRIPTIVE observations about the user's own readings — never causal
  * claims, never advice. Each requires a minimum sample so a single outlier

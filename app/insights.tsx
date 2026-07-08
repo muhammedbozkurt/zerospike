@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { listSugarLogs, listMealLogs } from "../lib/db/logs";
 import { getInjections } from "../lib/db/injections";
+import { readHealthSummary, type HealthSummary } from "../lib/services/health";
 import type { Injection, MealLog, SugarLog } from "../lib/db/types";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
 import {
@@ -23,12 +24,15 @@ import {
   derivePatterns,
   trendVsPrevious,
   windowPercentiles,
+  weeklyDigest,
   FREE_INSIGHTS_WINDOW,
   INSIGHTS_WINDOW_DAYS,
   INSIGHTS_WINDOWS,
   type DayKind,
   type InsightPattern,
+  type WeeklySentence,
 } from "../lib/insights";
+import { maybeReviewOnWeeklyView } from "../lib/services/review";
 import { Button } from "../components/ui";
 import { logEvent } from "../lib/analytics";
 import { num } from "../lib/format";
@@ -184,6 +188,43 @@ export default function InsightsScreen() {
   // preview behind a lock (curiosity gap, not an empty screen).
   const locked = !isProUser && windowDays !== FREE_INSIGHTS_WINDOW;
   const premium = isProUser || locked;
+
+  // Pro "from Health" summary: activity minutes + insulin delivery (read-only).
+  const [health, setHealth] = useState<HealthSummary | null>(null);
+  useEffect(() => {
+    if (!isProUser) return;
+    let alive = true;
+    readHealthSummary(windowDays)
+      .then((h) => alive && setHealth(h))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [isProUser, windowDays]);
+
+  // Weekly digest (Pro): rule-based, descriptive sentences comparing this week
+  // to last. Viewing it is one of the review-prompt triggers.
+  const digest = useMemo(() => weeklyDigest(sugar), [sugar]);
+  useEffect(() => {
+    if (isProUser && !loading && digest.length > 0) void maybeReviewOnWeeklyView();
+  }, [isProUser, loading, digest.length]);
+  const weeklyText = (s: WeeklySentence): string => {
+    const u = glucoseUnitLabel(unit);
+    switch (s.kind) {
+      case "tir":
+        return s.delta >= 0
+          ? t("insights.weeklyTirUp", { tir: s.tir, points: Math.abs(s.delta) })
+          : t("insights.weeklyTirDown", { tir: s.tir, points: Math.abs(s.delta) });
+      case "avg":
+        return s.avgDelta >= 0
+          ? t("insights.weeklyAvgUp", { n: fmtG(Math.abs(s.avgDelta)), unit: u })
+          : t("insights.weeklyAvgDown", { n: fmtG(Math.abs(s.avgDelta)), unit: u });
+      case "morning_evening":
+        return s.higher === "morning"
+          ? t("insights.weeklyMorningHigher", { diff: fmtG(s.diff), unit: u })
+          : t("insights.weeklyEveningHigher", { diff: fmtG(s.diff), unit: u });
+    }
+  };
   const avgTrend =
     trend.avgDelta != null
       ? `${trend.avgDelta >= 0 ? "▲" : "▼"} ${fmtG(
@@ -225,6 +266,26 @@ export default function InsightsScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
+          {/* Weekly digest (Pro): 2-3 descriptive sentences, this week vs last */}
+          {isProUser && digest.length > 0 ? (
+            <View className="rounded-2xl bg-zinc-900 border border-brand/30 p-4 mb-3">
+              <View className="flex-row items-center mb-2">
+                <Ionicons name="calendar-outline" size={16} color={BRAND} />
+                <Text className="text-brand text-xs font-bold uppercase tracking-wider ml-2">
+                  {t("insights.weeklyTitle")}
+                </Text>
+              </View>
+              {digest.map((s, i) => (
+                <View key={i} className="flex-row items-start mb-1.5">
+                  <Text className="text-zinc-500 mr-2">•</Text>
+                  <Text className="text-zinc-200 text-sm leading-5 flex-1">
+                    {weeklyText(s)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           {/* Window selector (30 / 90 are Pro; free previews them blurred) */}
           <View className="flex-row gap-2 mb-3">
             {INSIGHTS_WINDOWS.map((d) => {
@@ -541,6 +602,41 @@ export default function InsightsScreen() {
                   ) : null}
                 </>
               )}
+                </>
+              ) : null}
+
+              {/* ── From Apple Health / Health Connect (Pro, read-only) ─────── */}
+              {premium &&
+              health &&
+              (health.activeMinutes != null || health.insulin != null) ? (
+                <>
+                  <SectionTitle>{t("insights.healthTitle")}</SectionTitle>
+                  <View className="flex-row flex-wrap -m-1.5">
+                    {health.activeMinutes != null ? (
+                      <Tile
+                        label={t("insights.activeMinutes")}
+                        value={String(health.activeMinutes)}
+                        unit={t("insights.minShort")}
+                      />
+                    ) : null}
+                    {health.insulin != null ? (
+                      <>
+                        <Tile
+                          label={t("insights.healthBasal")}
+                          value={num(health.insulin.basalUnits)}
+                          unit={t("common.units")}
+                        />
+                        <Tile
+                          label={t("insights.healthBolus")}
+                          value={num(health.insulin.bolusUnits)}
+                          unit={t("common.units")}
+                        />
+                      </>
+                    ) : null}
+                  </View>
+                  <Text className="text-zinc-600 text-[11px] mt-1 px-1.5 leading-4">
+                    {t("insights.healthNote")}
+                  </Text>
                 </>
               ) : null}
 

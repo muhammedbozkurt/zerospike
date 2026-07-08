@@ -21,6 +21,8 @@ import {
 } from "../../lib/services/notifications";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
+import { consecutiveLogDays } from "../../lib/insights";
+import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { logEvent } from "../../lib/analytics";
 
 const CGM_KEY = "zerospike.cgmSync";
@@ -157,6 +159,8 @@ export default function DashboardScreen() {
     (e) => e.kind === "injection" && formatDateKey(e.logged_at) === todayKey
   ).length;
   const anyInjections = entries.some((e) => e.kind === "injection");
+  // Encouraging consistency count ("X days in a row"), never a streak to protect.
+  const logStreak = consecutiveLogDays(entries.map((e) => e.logged_at));
   const lowPen = activePens.some((p) => p.remaining_units < 20);
   const minRemaining = activePens.length
     ? Math.min(...activePens.map((p) => p.remaining_units))
@@ -229,6 +233,7 @@ export default function DashboardScreen() {
       tags,
     });
     logEvent("log_added", { kind: "glucose", source: "manual" });
+    void noteLogAndMaybeReview();
     hapticSuccess();
     // Per spec: a fasting/pre-meal reading schedules the 2-hour post-meal nudge.
     if (period === "fasting" || period === "pre_meal") {
@@ -348,6 +353,14 @@ export default function DashboardScreen() {
           <Text className="text-zinc-50 text-2xl font-bold">
             {t("dashboard.title")}
           </Text>
+          {logStreak >= 2 ? (
+            <View className="flex-row items-center mt-1 self-start rounded-full bg-brand/10 px-2.5 py-0.5">
+              <Ionicons name="checkmark-circle-outline" size={12} color="#22d3ee" />
+              <Text className="text-brand text-[11px] font-medium ml-1">
+                {t("dashboard.consistency", { n: logStreak })}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <View className="flex-row items-center">
           <Pressable

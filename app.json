@@ -42,7 +42,8 @@
         "android.permission.CAMERA",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.health.READ_BLOOD_GLUCOSE"
+        "android.permission.health.READ_BLOOD_GLUCOSE",
+        "android.permission.health.READ_EXERCISE"
       ]
     },
     "plugins": [

@@ -8,6 +8,7 @@ import { computeInsights } from "../insights";
 import { computeAgp, AGP_MIN_READINGS, type Agp } from "../agp";
 import { formatGlucose, glucoseUnitLabel } from "../glucose";
 import { num } from "../format";
+import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
 import type { ExportResult } from "./export";
 
@@ -224,6 +225,7 @@ function buildHtml(
     <h1>${t("export.title")}</h1>
     <div class="meta">
       <div><b>${t("report.profile")}:</b> ${esc(profile.name)}</div>
+      <div><b>${t("settings.glucoseUnit")}:</b> ${esc(u)}</div>
       <div><b>${t("report.dateRange")}:</b> ${fmtDay(start)} - ${fmtDay(now)} (${t("insights.windowDays", { n: windowDays })})</div>
       <div><b>${t("report.generated")}:</b> ${fmtDay(now)} ${two(now.getHours())}:${two(now.getMinutes())}</div>
     </div>
@@ -323,9 +325,10 @@ export async function exportLogsPdf(
 
   await Sharing.shareAsync(uri, {
     mimeType: "application/pdf",
-    dialogTitle: i18n.t("export.title"),
+    dialogTitle: i18n.t("report.shareTitle"),
     UTI: "com.adobe.pdf",
   });
 
+  logEvent("report_generated", { window: windowDays });
   return { ok: true, uri, count: inWindow.length };
 }

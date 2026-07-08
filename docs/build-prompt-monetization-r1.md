@@ -346,6 +346,26 @@ cihaz sinifina sokar.
   konumsuz da acilir), WhatsApp (wa.me). app/emergency-contacts.tsx editor (+ rehberden
   secim). Dashboard header SOS kisayolu + Settings bolumu. Kopya durust: "otomatik
   arar/gonderir" IDDIASI YOK. sos_opened + sos_action(call|sms|contact) dose. 5 locale.
+- FAZ 4.1 (90 gunluk trendler) TAMAM: Insights pencereleri 7 (free) / 30 / 90 (Pro).
+  trendVsPrevious (avg + TIR onceki pencereye kiyas oku), windowPercentiles
+  (P5/P25/medyan/P75/P95 = AGP band sayisal ozeti). Free: 7 gun temel (avg + TIR + bar) +
+  upsell; 30/90 GERCEK blurlu onizleme (expo-blur) + kilit karti. GMI mevcut disclaimer'iyla.
+- FAZ 4.2 (doktor PDF) TAMAM: zaten kapsamli olan report.ts'e report_generated event'i,
+  baslikta birim satiri ve "Doktorunla paylas" paylasim basligi eklendi. Pencere 7/30/90,
+  Pro-gated (onExportPdf). AGP SVG + ozet + tablolar + tarif edici footer zaten vardi.
+- FAZ 4.3 (haftalik oruntu + tutarlilik + review) TAMAM: Insights ustunde haftalik digest
+  karti (Pro): kural tabanli 2-3 notr cumle (TIR bu hafta vs gecen, sabah/aksam farki, avg).
+  Dashboard'da tutarlilik rozeti ("ust uste X gun", seri baskisi yok, kacirilan gun suclanmaz).
+  expo-store-review: 10. log VEYA ilk haftalik digest goruntulemesinde omur boyu bir kez;
+  review_prompted dose. 5 locale.
+- FAZ 4.4 (Health genisletmesi) TAMAM (kapsam karari asagida): health.ts readHealthSummary
+  (iOS insulin delivery basal/bolus split + AppleExerciseTime dk; Android ExerciseSession dk).
+  iOS auth insulin+exercise'i de ister; Android READ_EXERCISE izni eklendi. Insights'ta Pro
+  "Apple Sağlık / Health Connect'ten" karti: aktif dakika + insulin (iOS) READ-ONLY, tarif
+  edici ("aktivite vs glukoz" gorunumu). KAPSAM KARARI: HealthKit insulin'i injection_logs'a
+  OTOMATIK YAZMAK yapilmadi cunku site NOT NULL + CHECK, HealthKit'te injection site yok;
+  yazmak rotasyon modelini bozar ve dogrulanamaz bir migration ister. Bunun yerine read-only
+  ozet gosterilir. Tam gunluk-grafik aktivite-band overlay'i + insulin log'a yazma R2/cihaz-QA.
 
 ## CIHAZ QA CHECKLIST (toplu, en sonda calistirilacak)
 
@@ -402,3 +422,15 @@ kosar.
       konumsuz metinle aciliyor) + WhatsApp deep link. Otomatik gonderim/arama YOK.
 - [ ] expo-location/sms/contacts prebuild sonrasi native derleniyor; izin metinleri App
       Store/Play'de dogru gorunuyor (NSLocationWhenInUse, NSContacts).
+
+### Faz 4
+- [ ] Insights 7/30/90: Pro tam gorur; free 7'de temel (avg+TIR), 30/90'da blurlu onizleme
+      + kilit karti (expo-blur cihazda dogru render). Trend oklari + percentil karti Pro'da.
+- [ ] Doktor PDF (Pro): 7/30/90 secilir, baslikta profil+birim+tarih, AGP grafigi render,
+      "Doktorunla paylas" paylasim sheet'i acilir. report_generated event dusuyor.
+- [ ] Haftalik digest karti (Pro) mantikli cumleler uretiyor; tutarlilik rozeti dogru sayiyor.
+- [ ] Store review prompt 10. log VEYA ilk digest goruntulemesinde BIR KEZ cikiyor (dev-client/
+      release; hasAction destegi). review_prompted dusuyor.
+- [ ] HealthKit insulin delivery + AppleExerciseTime okuma iOS'ta calisiyor (Pro Insights
+      "Health" karti gercek degerlerle doluyor); Android'de ExerciseSession dakika + READ_EXERCISE
+      izni. Read-only, log degismiyor. (v14 nitro API cihazda dogrulanmali.)
