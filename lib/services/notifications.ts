@@ -11,6 +11,7 @@ import {
 const BASAL_ID = "zerospike-basal-reminder";
 const GLUCOSE_ID = "zerospike-glucose-reminder";
 const WEEKLY_ID = "zerospike-weekly-summary";
+const TRIAL_ID = "zerospike-trial-ending";
 
 /** Mirrors the in-app low-pen banner threshold. */
 const PEN_LOW_THRESHOLD = 20;
@@ -205,6 +206,34 @@ export async function applyNotificationPrefs(
 
   if (p.weekly) await scheduleWeeklySummary();
   else await cancelWeeklySummary();
+}
+
+// ── Trial-ending reminder ──────────────────────────────────────────────────
+
+/**
+ * Local reminder scheduled `leadDays` before a free trial converts, so a user
+ * can cancel in time and is never surprised by a charge. One-off.
+ */
+export async function scheduleTrialEndingReminder(trialDays: number): Promise<void> {
+  const leadDays = 2;
+  const fireInDays = trialDays - leadDays;
+  if (fireInDays <= 0) return;
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+  await ensureAndroidChannel();
+  await Notifications.scheduleNotificationAsync({
+    identifier: TRIAL_ID,
+    content: {
+      title: i18n.t("notifications.trialTitle"),
+      body: i18n.t("notifications.trialBody"),
+      ...androidChannel,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: fireInDays * 24 * 60 * 60,
+      repeats: false,
+    },
+  });
 }
 
 // ── Event-driven: post-meal check ──────────────────────────────────────────

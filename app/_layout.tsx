@@ -1,5 +1,5 @@
 import "../global.css";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -9,6 +9,8 @@ import * as SplashScreen from "expo-splash-screen";
 import { AppProvider, useApp } from "../lib/store/AppContext";
 import { FeedbackProvider } from "../components/Feedback";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
+import { winbackHasRealDiscount } from "../lib/services/purchases";
+import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
 
 // Keep the single native splash visible until the app is ready, then fade it
 // out — no intermediate blank/spinner screen (which looked like a 2nd splash).
@@ -19,13 +21,31 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 initAnalyticsSink();
 
 function RootNavigator() {
-  const { ready, onboarded } = useApp();
+  const { ready, onboarded, isProUser } = useApp();
   const segments = useSegments();
   const router = useRouter();
+  const prevProRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
+
+  // One-time winback: when the Pro entitlement is lost, offer the discounted
+  // annual once (only if a real discount is configured).
+  useEffect(() => {
+    if (!ready) return;
+    const prev = prevProRef.current;
+    prevProRef.current = isProUser;
+    if (prev === true && isProUser === false) {
+      (async () => {
+        if (await winbackAlreadyShown()) return;
+        if (await winbackHasRealDiscount()) {
+          await markWinbackShown();
+          router.push("/winback");
+        }
+      })();
+    }
+  }, [ready, isProUser, router]);
 
   useEffect(() => {
     if (!ready) return;
@@ -52,6 +72,14 @@ function RootNavigator() {
       <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
       <Stack.Screen
         name="paywall"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="downsell"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="winback"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen

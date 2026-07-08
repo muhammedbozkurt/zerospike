@@ -291,6 +291,28 @@ cihaz sinifina sokar.
   dismiss/tier_selected, purchase_completed, insights_view. Kalan event'ler ilgili fazlarda
   dose edilecek (onboarding_*, tokluk_timer_started, sos_*, downsell_*, winback, trial_started,
   report_generated, review_prompted, offerings_fallback_shown).
+- FAZ 1.1 (Free/Pro cit) TAMAM: 5-log cap tamamen kaldirildi (guardrails/logs +
+  index/calculator call site'lari), manuel log iki tarafta sinirsiz. Ozel yiyecek 3->10.
+  Health auto-sync Pro'ya tasindi: dashboard toggle free'de paywall(reason:health)
+  acar, runSync + sessiz acilis-senkronu + tap-senkron isPro ile gated, satirda Pro
+  rozeti; mevcut free kullanici verisini korur + tek seferlik bilgi (import yolu gated).
+  Paywall: yanlis "sinirsiz favori" + sinirsiz-log bullet'lari kaldirildi, health sync /
+  sinirsiz ozel yiyecek / 30-90g insights value prop eklendi. 5 locale.
+- FAZ 1.2 (trial + downsell + winback) TAMAM: Statura kaskadi portu.
+  lib/services/downsell.ts (count/lastShownAt/lastTrigger state, canShowDownsell,
+  2 gosterim cap + 7 gun re-arm, winback-shown flag). purchases.ts: loadOfferings
+  (gercek fiyat + trial algisi + fallback status), getDownsellOffer/purchaseDownsell/
+  winbackHasRealDiscount (hasRealDiscount = ayni para birimi + gercekten dusuk).
+  app/downsell.tsx + app/winback.tsx (gercek indirim yoksa durust fallback / redirect).
+  Paywall dismiss -> downsell kaskadi; entitlement kaybinda _layout winback'i bir kez acar.
+  Trial-farkindalikli CTA + trial bitmeden 2 gun once yerel hatirlatma
+  (scheduleTrialEndingReminder). Lifetime fallback 79.99 / EUR79,99 / TL2.399,99.
+  Event: downsell_view/accept/dismiss, winback_view, trial_started dose edildi. 5 locale.
+- FAZ 1.3 (yerel fiyat) TAMAM: tum fiyatlar product.priceString'den; turetilmis degerler
+  (yillik ayda X, tasarruf %, ustu cizili) product.price + currencyCode + Intl.NumberFormat.
+  Release'te offerings cekilemezse statik fallback ASLA render edilmez: yukleniyor/tekrar-dene
+  durumu + offerings_fallback_shown(reason). Dead static-price yollari (priceFor,
+  getOfferingPrices) silindi; grep ($, USD, TL, toFixed) temiz (yalniza dev-mock priceUSD).
 
 ## CIHAZ QA CHECKLIST (toplu, en sonda calistirilacak)
 
@@ -310,3 +332,19 @@ kosar.
 - [ ] Firebase Analytics DebugView'de event'ler akiyor; Crashlytics'e test crash dusuyor
       (release/dev-client build gerekir, __DEV__ sink'i baglamiyor).
 - [ ] iOS deploymentTarget 16.4: App Store Connect minimum OS ve hedef cihaz kitlesi kontrol.
+
+### Faz 1
+- [ ] Free kullanici hicbir yerde log eklerken bloklanmiyor (dashboard hizli log,
+      calculator meal, injection) - sinirsiz.
+- [ ] Free'de Health satiri Pro rozetiyle gorunuyor, dokununca paywall(health) aciliyor;
+      Pro'da toggle + tap-senkron calisiyor. Eski free (senkron aciksa): veri silinmiyor,
+      tek seferlik "artik Pro" bilgisi cikiyor.
+- [ ] Ozel yiyecek 11.'de paywall(foods) aciliyor (limit 10).
+- [ ] RevenueCat: yearly'de trial CTA gorunuyor ("7 gunluk ucretsiz deneme"), satin alinca
+      2 gun once trial-bitis hatirlatmasi kuruluyor; App Store/Play trial dogru.
+- [ ] Paywall kapatinca downsell aciliyor (ilk sefer). RC'de 'downsell' offering'i +
+      GERCEK indirim varsa indirimli kart, yoksa durust "su an teklif yok" fallback.
+      Ayni kullanici omur boyu en fazla 2 downsell (7 gun re-arm) goruyor.
+- [ ] Entitlement kaybinda winback bir kez aciliyor (yalniza gercek indirim varsa).
+- [ ] TR vitrininde fiyatlar TL gorunuyor (USD degil); offerings cekilemezse fiyat yerine
+      "tekrar dene" cikiyor, sahte fiyat YOK. (Kullanici raporundaki TR/USD bulgusu.)
