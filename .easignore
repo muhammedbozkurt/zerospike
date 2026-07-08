@@ -29,10 +29,12 @@ expo-env.d.ts
 *.p8
 *.p12
 *.mobileprovision
-google-services.json
-GoogleService-Info.plist
 .env
 .env*.local
+
+# Firebase config: kept out of git (.gitignore) but MUST reach EAS Build, since
+# the config plugin copies googleServicesFile during prebuild. Intentionally
+# NOT listed here (client-side config, not a secret).
 
 # VCS / editor / OS noise
 .git
