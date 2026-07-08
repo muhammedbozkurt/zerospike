@@ -3,11 +3,13 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
@@ -19,12 +21,15 @@ import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
 import {
   computeInsights,
   derivePatterns,
+  trendVsPrevious,
+  windowPercentiles,
+  FREE_INSIGHTS_WINDOW,
   INSIGHTS_WINDOW_DAYS,
   INSIGHTS_WINDOWS,
   type DayKind,
   type InsightPattern,
 } from "../lib/insights";
-import { Button, Segmented } from "../components/ui";
+import { Button } from "../components/ui";
 import { logEvent } from "../lib/analytics";
 import { num } from "../lib/format";
 
@@ -38,11 +43,13 @@ function Tile({
   value,
   unit,
   color = "#fafafa",
+  sub,
 }: {
   label: string;
   value: string;
   unit?: string;
   color?: string;
+  sub?: string;
 }) {
   return (
     <View className="w-1/2 p-1.5">
@@ -54,6 +61,7 @@ function Tile({
           </Text>
           {unit ? <Text className="text-zinc-500 text-xs ml-1">{unit}</Text> : null}
         </View>
+        {sub ? <Text className="text-zinc-500 text-[11px] mt-1">{sub}</Text> : null}
       </View>
     </View>
   );
@@ -89,7 +97,9 @@ export default function InsightsScreen() {
     Number(windowParam)
   )
     ? Number(windowParam)
-    : INSIGHTS_WINDOW_DAYS;
+    : isProUser
+      ? INSIGHTS_WINDOW_DAYS
+      : FREE_INSIGHTS_WINDOW;
 
   const [loading, setLoading] = useState(true);
   const [windowDays, setWindowDays] = useState<number>(initialWindow);
@@ -105,7 +115,7 @@ export default function InsightsScreen() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!isProUser || !activeProfile) {
+      if (!activeProfile) {
         setLoading(false);
         return;
       }
@@ -161,6 +171,32 @@ export default function InsightsScreen() {
     }
   };
 
+  // Trend vs the previous equal-length window, and the window percentile summary.
+  const trend = useMemo(
+    () => trendVsPrevious(sugar, windowDays),
+    [sugar, windowDays]
+  );
+  const pctile = useMemo(
+    () => windowPercentiles(sugar, windowDays),
+    [sugar, windowDays]
+  );
+  // Free users see only the 7-day basic summary fully; 30/90 render as a blurred
+  // preview behind a lock (curiosity gap, not an empty screen).
+  const locked = !isProUser && windowDays !== FREE_INSIGHTS_WINDOW;
+  const premium = isProUser || locked;
+  const avgTrend =
+    trend.avgDelta != null
+      ? `${trend.avgDelta >= 0 ? "▲" : "▼"} ${fmtG(
+          Math.abs(Math.round(trend.avgDelta))
+        )} ${t("insights.vsPrevious")}`
+      : undefined;
+  const tirTrend =
+    trend.tirDelta != null
+      ? `${trend.tirDelta >= 0 ? "▲" : "▼"} ${Math.abs(
+          Math.round(trend.tirDelta)
+        )}% ${t("insights.vsPrevious")}`
+      : undefined;
+
   const Header = (
     <View className="flex-row items-center px-4 py-2">
       <Pressable onPress={() => router.back()} hitSlop={10} className="p-1 mr-2">
@@ -169,33 +205,6 @@ export default function InsightsScreen() {
       <Text className="text-zinc-50 text-xl font-bold">{t("insights.title")}</Text>
     </View>
   );
-
-  // ── Pro gate ──────────────────────────────────────────────────────────────
-  if (!isProUser) {
-    return (
-      <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
-        {Header}
-        <View className="flex-1 items-center justify-center px-8">
-          <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-4">
-            <Ionicons name="stats-chart" size={28} color={BRAND} />
-          </View>
-          <Text className="text-zinc-50 text-xl font-bold text-center">
-            {t("insights.lockedTitle")}
-          </Text>
-          <Text className="text-zinc-400 text-center mt-2 mb-6">
-            {t("insights.lockedBody")}
-          </Text>
-          <View className="w-full">
-            <Button
-              label={t("paywall.cta")}
-              size="lg"
-              onPress={() => router.push("/paywall")}
-            />
-          </View>
-        </View>
-      </View>
-    );
-  }
 
   const isEmpty =
     data.readings === 0 && data.injectionCount === 0 && data.meals === 0;
@@ -216,16 +225,38 @@ export default function InsightsScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Window selector */}
-          <Segmented
-            options={INSIGHTS_WINDOWS.map((d) => ({
-              value: String(d),
-              label: t("insights.windowDays", { n: d }),
-            }))}
-            value={String(windowDays)}
-            onChange={(v) => setWindowDays(Number(v))}
-            className="mb-3"
-          />
+          {/* Window selector (30 / 90 are Pro; free previews them blurred) */}
+          <View className="flex-row gap-2 mb-3">
+            {INSIGHTS_WINDOWS.map((d) => {
+              const active = windowDays === d;
+              const isLocked = !isProUser && d !== FREE_INSIGHTS_WINDOW;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => setWindowDays(d)}
+                  className={`flex-1 flex-row items-center justify-center rounded-xl border py-2.5 ${
+                    active ? "border-brand bg-brand/10" : "border-zinc-800 bg-zinc-900"
+                  }`}
+                >
+                  <Text
+                    className={
+                      active ? "text-brand font-semibold" : "text-zinc-300"
+                    }
+                  >
+                    {t("insights.windowDays", { n: d })}
+                  </Text>
+                  {isLocked ? (
+                    <Ionicons
+                      name="lock-closed"
+                      size={12}
+                      color="#71717a"
+                      style={{ marginLeft: 4 }}
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
 
           {/* Descriptive disclaimer */}
           <View className="flex-row items-start rounded-2xl border border-zinc-800 bg-zinc-900 p-3.5 mb-2">
@@ -243,7 +274,8 @@ export default function InsightsScreen() {
               </Text>
             </View>
           ) : (
-            <>
+            <View>
+              <View pointerEvents={locked ? "none" : "auto"}>
               {/* ── Glucose ───────────────────────────────────────────────── */}
               {data.readings > 0 ? (
                 <>
@@ -253,12 +285,14 @@ export default function InsightsScreen() {
                       value={fmtG(data.avgGlucose)}
                       unit={glucoseUnitLabel(unit)}
                       color={BRAND}
+                      sub={premium ? avgTrend : undefined}
                     />
                     <Tile
                       label={t("insights.timeInRange")}
                       value={pct(data.inRangePct)}
                       unit="%"
                       color={GREEN}
+                      sub={premium ? tirTrend : undefined}
                     />
                     <Tile
                       label={t("insights.readings")}
@@ -303,6 +337,44 @@ export default function InsightsScreen() {
                     </Text>
                   </View>
 
+                  {/* Percentile band summary (AGP numeric) — Pro */}
+                  {premium && pctile ? (
+                    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
+                      <Text className="text-zinc-300 font-semibold mb-1">
+                        {t("insights.percentileTitle")}
+                      </Text>
+                      <Text className="text-zinc-500 text-xs mb-3">
+                        {t("insights.percentileSub")}
+                      </Text>
+                      <View className="flex-row justify-between">
+                        {(
+                          [
+                            ["p05", pctile.p05],
+                            ["p25", pctile.p25],
+                            ["median", pctile.p50],
+                            ["p75", pctile.p75],
+                            ["p95", pctile.p95],
+                          ] as const
+                        ).map(([k, v]) => (
+                          <View key={k} className="items-center flex-1">
+                            <Text
+                              className={`text-base font-bold ${
+                                k === "median" ? "text-brand" : "text-zinc-100"
+                              }`}
+                            >
+                              {fmtG(v)}
+                            </Text>
+                            <Text className="text-zinc-500 text-[10px] mt-0.5">
+                              {t(`insights.${k}`)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {premium ? (
+                    <>
                   {/* Period + variability + lows */}
                   <View className="flex-row flex-wrap -m-1.5 mt-1.5">
                     <Tile
@@ -353,11 +425,13 @@ export default function InsightsScreen() {
                   <Text className="text-zinc-600 text-[11px] mt-4 px-1.5 leading-4">
                     {t("insights.gmiNote")}
                   </Text>
+                    </>
+                  ) : null}
                 </>
               ) : null}
 
               {/* ── Patterns (descriptive observations) ───────────────────── */}
-              {patterns.length > 0 ? (
+              {premium && patterns.length > 0 ? (
                 <>
                   <SectionTitle>{t("insights.patternsTitle")}</SectionTitle>
                   {patterns.map((p, i) => (
@@ -374,7 +448,9 @@ export default function InsightsScreen() {
                 </>
               ) : null}
 
-              {/* ── Injections ────────────────────────────────────────────── */}
+              {/* ── Injections (Pro) ──────────────────────────────────────── */}
+              {premium ? (
+                <>
               <SectionTitle>{t("injection.title")}</SectionTitle>
               {data.injectionCount === 0 ? (
                 <Text className="text-zinc-600 text-sm px-1.5 py-2">
@@ -465,6 +541,8 @@ export default function InsightsScreen() {
                   ) : null}
                 </>
               )}
+                </>
+              ) : null}
 
               {/* Sources link */}
               <Pressable
@@ -476,7 +554,49 @@ export default function InsightsScreen() {
                   {t("sources.calcLink")}
                 </Text>
               </Pressable>
-            </>
+
+              {/* Free 7-day: nudge to Pro for the longer windows */}
+              {!premium ? (
+                <Pressable
+                  onPress={() => router.push("/paywall")}
+                  className="rounded-2xl border border-brand/30 bg-brand/10 p-4 mt-4 flex-row items-center active:opacity-80"
+                >
+                  <Ionicons name="sparkles" size={18} color={BRAND} />
+                  <Text className="text-brand text-sm font-medium flex-1 ml-2.5">
+                    {t("insights.freeUpsell")}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={BRAND} />
+                </Pressable>
+              ) : null}
+              </View>
+
+              {/* Locked (free 30/90): blurred preview + unlock card */}
+              {locked ? (
+                <BlurView
+                  intensity={24}
+                  tint="dark"
+                  style={StyleSheet.absoluteFill}
+                  className="items-center justify-center overflow-hidden rounded-2xl"
+                >
+                  <View className="items-center px-8">
+                    <View className="w-14 h-14 rounded-3xl bg-brand/20 items-center justify-center mb-3">
+                      <Ionicons name="lock-closed" size={24} color={BRAND} />
+                    </View>
+                    <Text className="text-zinc-50 text-lg font-bold text-center">
+                      {t("insights.lockedTitle")}
+                    </Text>
+                    <Text className="text-zinc-300 text-center mt-2 mb-5">
+                      {t("insights.lockedBody")}
+                    </Text>
+                    <Button
+                      label={t("paywall.cta")}
+                      size="lg"
+                      onPress={() => router.push("/paywall")}
+                    />
+                  </View>
+                </BlurView>
+              ) : null}
+            </View>
           )}
         </ScrollView>
       )}

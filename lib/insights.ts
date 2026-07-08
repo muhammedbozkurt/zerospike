@@ -6,6 +6,7 @@ import type {
   SugarLog,
 } from "./db/types";
 import { INJECTION_SITES, LOG_TAGS } from "./db/types";
+import { percentile } from "./agp";
 
 /**
  * Pro "Insights" — a read-only, descriptive summary of the user's own logged
@@ -60,9 +61,12 @@ export interface Insights {
 
 export const TIR_LOW = 70;
 export const TIR_HIGH = 180;
-export const INSIGHTS_WINDOW_DAYS = 14;
-/** Selectable windows for the Insights screen. */
-export const INSIGHTS_WINDOWS = [7, 14, 30] as const;
+/** Default (Pro) window; free tier is limited to the 7-day basic summary. */
+export const INSIGHTS_WINDOW_DAYS = 30;
+/** Selectable windows for the Insights screen: 7 (free) / 30 / 90 (Pro). */
+export const INSIGHTS_WINDOWS = [7, 30, 90] as const;
+/** The only window a free user sees fully. */
+export const FREE_INSIGHTS_WINDOW = 7;
 
 function mean(ns: number[]): number | null {
   return ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : null;
@@ -206,6 +210,72 @@ export function computeInsights(
     mostUsedSite,
     mostUsedSiteCount,
     siteDistribution,
+  };
+}
+
+/**
+ * Compares the current window's mean glucose and TIR to the previous window of
+ * equal length, so the UI can show a descriptive trend arrow. Null deltas when
+ * either window lacks readings.
+ */
+export function trendVsPrevious(
+  sugar: SugarLog[],
+  windowDays: number
+): { avgDelta: number | null; tirDelta: number | null } {
+  const now = Date.now();
+  const span = windowDays * 86_400_000;
+  const bucket = (lo: number, hi: number) =>
+    sugar
+      .filter((x) => {
+        const t = new Date(x.logged_at).getTime();
+        return !Number.isNaN(t) && t >= lo && t < hi;
+      })
+      .map((x) => x.glucose_level_mgdl);
+  const cur = bucket(now - span, now + 1);
+  const prev = bucket(now - 2 * span, now - span);
+  const avgOf = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+  const tirOf = (a: number[]) =>
+    a.length ? (a.filter((v) => v >= TIR_LOW && v <= TIR_HIGH).length / a.length) * 100 : null;
+  const curAvg = avgOf(cur);
+  const prevAvg = avgOf(prev);
+  const curTir = tirOf(cur);
+  const prevTir = tirOf(prev);
+  return {
+    avgDelta: curAvg != null && prevAvg != null ? curAvg - prevAvg : null,
+    tirDelta: curTir != null && prevTir != null ? curTir - prevTir : null,
+  };
+}
+
+export interface WindowPercentiles {
+  p05: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p95: number;
+  n: number;
+}
+
+/** Overall glucose percentiles across the window (the AGP band numeric summary). */
+export function windowPercentiles(
+  sugar: SugarLog[],
+  windowDays: number
+): WindowPercentiles | null {
+  const since = Date.now() - windowDays * 86_400_000;
+  const vals = sugar
+    .filter((x) => {
+      const t = new Date(x.logged_at).getTime();
+      return !Number.isNaN(t) && t >= since;
+    })
+    .map((x) => x.glucose_level_mgdl)
+    .sort((a, b) => a - b);
+  if (vals.length < 5) return null;
+  return {
+    p05: Math.round(percentile(vals, 5)),
+    p25: Math.round(percentile(vals, 25)),
+    p50: Math.round(percentile(vals, 50)),
+    p75: Math.round(percentile(vals, 75)),
+    p95: Math.round(percentile(vals, 95)),
+    n: vals.length,
   };
 }
 

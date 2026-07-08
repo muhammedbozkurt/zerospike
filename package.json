@@ -22,6 +22,7 @@
     "@react-native-firebase/app": "^25.1.0",
     "@react-native-firebase/crashlytics": "^25.1.0",
     "expo": "^57.0.0",
+    "expo-blur": "~57.0.0",
     "expo-build-properties": "~57.0.3",
     "expo-camera": "~57.0.1",
     "expo-constants": "~57.0.3",
