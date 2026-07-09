@@ -55,6 +55,9 @@ team.
 
 Pro: monthly, yearly (7-day free trial) or one-time lifetime.
 
+Privacy Policy: https://greeneyeapp.com/en/legal/zerospike-privacy
+Terms of Use (EULA): https://greeneyeapp.com/en/legal/zerospike-terms
+
 What's New:
 A big step forward:
 - Unlimited manual logging for everyone (the free limit is gone)
@@ -110,6 +113,9 @@ zerospike bir günlüktür, tıbbi tavsiye değildir. Tedavi kararlarını her z
 ekibinle birlikte ver.
 
 Pro: aylık, yıllık (7 gün ücretsiz deneme) veya tek seferlik ömür boyu.
+
+Gizlilik Politikası: https://greeneyeapp.com/legal/zerospike-privacy
+Kullanım Koşulları (EULA): https://greeneyeapp.com/legal/zerospike-terms
 
 What's New:
 Büyük bir adım:
@@ -167,6 +173,9 @@ deinem Behandlungsteam.
 
 Pro: monatlich, jährlich (7 Tage gratis) oder einmalig.
 
+Datenschutzerklärung: https://greeneyeapp.com/de/legal/zerospike-privacy
+Nutzungsbedingungen (EULA): https://greeneyeapp.com/de/legal/zerospike-terms
+
 What's New:
 Ein großer Schritt:
 - Unbegrenztes manuelles Protokollieren für alle (das Gratis-Limit ist weg)
@@ -222,6 +231,9 @@ zerospike es un diario, no consejo médico. Decide siempre el tratamiento con tu
 salud.
 
 Pro: mensual, anual (7 días gratis) o pago único.
+
+Política de privacidad: https://greeneyeapp.com/es/legal/zerospike-privacy
+Términos de uso (EULA): https://greeneyeapp.com/es/legal/zerospike-terms
 
 What's New:
 Un gran paso:
@@ -279,6 +291,9 @@ zerospike est un carnet, pas un avis médical. Décidez toujours du traitement a
 équipe de soins.
 
 Pro: mensuel, annuel (7 jours gratuits) ou achat unique.
+
+Politique de confidentialité: https://greeneyeapp.com/fr/legal/zerospike-privacy
+Conditions d'utilisation (EULA): https://greeneyeapp.com/fr/legal/zerospike-terms
 
 What's New:
 Un grand pas en avant:
