@@ -375,6 +375,8 @@ const tr = {
     limitTitleHealth: "Otomatik senkron bir Pro özelliğidir",
     limitBodyHealth: "Ücretsiz planda kayıtlar elle girilir. Ölçümlerini Apple Sağlık / Health Connect'ten otomatik almak için Pro'ya geç. Mevcut ölçümlerin her zaman kalır.",
     activated: "zerospike Pro etkinleştirildi",
+    alreadyOwned: "Bu paket zaten sende, Pro etkinleştirildi.",
+    purchaseError: "Satın alma tamamlanamadı. Lütfen tekrar deneyin.",
     restored: "Satın alımlarınız geri yüklendi",
     nothingToRestore: "Geri yüklenecek satın alım bulunamadı",
     restoreFailed: "Satın alımlar geri yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.",

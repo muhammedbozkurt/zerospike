@@ -377,6 +377,8 @@ const de: TranslationSchema = {
     limitTitleHealth: "Automatische Synchronisation ist eine Pro-Funktion",
     limitBodyHealth: "Im kostenlosen Plan wird manuell erfasst. Mit Pro importierst du deine Werte automatisch aus Apple Health / Health Connect. Deine vorhandenen Werte bleiben immer erhalten.",
     activated: "zerospike Pro aktiviert",
+    alreadyOwned: "Dieses Paket besitzt du bereits. Pro wurde aktiviert.",
+    purchaseError: "Der Kauf konnte nicht abgeschlossen werden. Bitte versuche es erneut.",
     restored: "Ihre Käufe wurden wiederhergestellt",
     nothingToRestore: "Keine Käufe zum Wiederherstellen gefunden",
     restoreFailed: "Käufe konnten nicht wiederhergestellt werden. Bitte prüfe deine Verbindung und versuche es erneut.",

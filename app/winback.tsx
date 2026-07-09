@@ -11,6 +11,7 @@ import {
   purchaseDownsell,
   type DownsellOffer,
 } from "../lib/services/purchases";
+import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { Button } from "../components/ui";
@@ -67,14 +68,18 @@ export default function WinbackScreen() {
     if (busy || !offer?.hasRealDiscount) return;
     setBusy(true);
     try {
-      const ok = await purchaseDownsell();
+      const res = await purchaseDownsell();
       await refreshPro();
-      if (ok) {
+      const feedback = purchaseToastFor(res);
+      if (res.ok) {
         logEvent("downsell_accept", { trigger: "winback" });
         logEvent("purchase_completed", { tier: "annual" });
         hapticSuccess();
-        toast(t("paywall.activated"), "success");
+        if (feedback) toast(t(feedback.key), feedback.kind);
         close();
+      } else if (feedback) {
+        // Real store error: an honest message instead of a silent stay.
+        toast(t(feedback.key), feedback.kind);
       }
     } finally {
       setBusy(false);

@@ -377,6 +377,8 @@ const en: TranslationSchema = {
     limitTitleHealth: "Automatic sync is a Pro feature",
     limitBodyHealth: "The free plan logs manually. Upgrade to auto-import your readings from Apple Health / Health Connect. Your existing readings always stay.",
     activated: "zerospike Pro activated",
+    alreadyOwned: "This plan is already yours. Pro has been activated.",
+    purchaseError: "The purchase could not be completed. Please try again.",
     restored: "Your purchases have been restored",
     nothingToRestore: "No purchases found to restore",
     restoreFailed: "Couldn't restore purchases. Please check your connection and try again.",

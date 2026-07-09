@@ -27,6 +27,13 @@ const ENTITLEMENT_ID = "pro";
 const PRO_KEY = "zerospike.isPro";
 const PLAN_KEY = "zerospike.proPlan";
 
+// react-native-purchases 10.x PURCHASES_ERROR_CODE values (string enum). Compared
+// by value so we never statically import the native module (keeps dev / Expo Go
+// / bundling from loading native code, matching the lazy require() elsewhere).
+const RC_ERR_CANCELLED = "1";
+const RC_ERR_ALREADY_PURCHASED = "6";
+const RC_ERR_ALREADY_IN_USE = "7";
+
 export type PlanId = "monthly" | "annual" | "lifetime";
 
 export interface ProProduct {
@@ -116,13 +123,84 @@ export async function getPlan(): Promise<PlanId | null> {
   }
 }
 
-/** Purchase a plan. Returns true if Pro is now active (false on cancel/error). */
-/** Outcome of a purchase attempt: `ok` = Pro active; `cancelled` = the user
- *  dismissed the native sheet (distinct from a store error), so the caller can
- *  route a cancel into the downsell without treating an error the same way. */
+/** Why a purchase attempt did not activate Pro. */
+export type PurchaseErrorClass = "cancelled" | "alreadyOwned" | "storeError";
+
+/**
+ * Outcome of a purchase attempt.
+ * - `ok`        Pro is active (either the purchase went through, or it was
+ *               recovered without a restart — see `recovered`).
+ * - `cancelled` the user dismissed the native sheet (distinct from a store
+ *               error), so the caller can route a cancel into the downsell.
+ * - `recovered` Pro became active via already-owned recovery, so the UI can
+ *               tell the user "this is already yours" instead of "purchased".
+ * - `error`     failure classification when `!ok` (null on success).
+ */
 export interface PurchaseOutcome {
   ok: boolean;
   cancelled: boolean;
+  recovered: boolean;
+  error: PurchaseErrorClass | null;
+}
+
+const OK_OUTCOME: PurchaseOutcome = {
+  ok: true,
+  cancelled: false,
+  recovered: false,
+  error: null,
+};
+
+/**
+ * After a failed purchase, tries to activate Pro without a restart: first checks
+ * whether the entitlement is in fact already active (the store can report
+ * "already purchased" for something the user genuinely owns), then, for an
+ * already-owned error, runs a restore. Store-read only; never throws.
+ */
+async function recoverEntitlement(alreadyOwned: boolean): Promise<boolean> {
+  try {
+    await ensureConfigured();
+    const info = await rc().getCustomerInfo();
+    if (info?.entitlements?.active?.[ENTITLEMENT_ID]) return true;
+  } catch {
+    // fall through to the restore attempt
+  }
+  if (alreadyOwned) {
+    try {
+      const info: any = await withTimeout(rc().restorePurchases(), 20000);
+      return Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Shared catch handler for a purchase attempt: classifies the error and, for a
+ * non-cancel failure, tries to recover the entitlement (already-owned or a
+ * purchase that actually went through). Used by both purchasePro and
+ * purchaseDownsell so neither can end up silently stuck.
+ */
+async function classifyAndRecover(
+  e: any,
+  plan: PlanId
+): Promise<PurchaseOutcome> {
+  const code = e?.code;
+  if (Boolean(e?.userCancelled) || code === RC_ERR_CANCELLED) {
+    return { ok: false, cancelled: true, recovered: false, error: "cancelled" };
+  }
+  const alreadyOwned =
+    code === RC_ERR_ALREADY_PURCHASED || code === RC_ERR_ALREADY_IN_USE;
+  if (await recoverEntitlement(alreadyOwned)) {
+    await AsyncStorage.setItem(PLAN_KEY, plan).catch(() => {});
+    return { ok: true, cancelled: false, recovered: true, error: null };
+  }
+  return {
+    ok: false,
+    cancelled: false,
+    recovered: false,
+    error: alreadyOwned ? "alreadyOwned" : "storeError",
+  };
 }
 
 export async function purchasePro(
@@ -131,7 +209,7 @@ export async function purchasePro(
   if (DEBUG_MOCK_PURCHASES) {
     await AsyncStorage.setItem(PRO_KEY, "true");
     await AsyncStorage.setItem(PLAN_KEY, plan);
-    return { ok: true, cancelled: false };
+    return OK_OUTCOME;
   }
   try {
     await ensureConfigured();
@@ -147,15 +225,20 @@ export async function purchasePro(
     const pkg =
       pkgs.find((p: any) => baseId(p.product?.identifier) === targetId) ??
       pkgs.find((p: any) => p.packageType === wantType);
-    if (!pkg) return { ok: false, cancelled: false };
+    if (!pkg) {
+      return { ok: false, cancelled: false, recovered: false, error: "storeError" };
+    }
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) await AsyncStorage.setItem(PLAN_KEY, plan);
-    return { ok, cancelled: false };
+    return {
+      ok,
+      cancelled: false,
+      recovered: false,
+      error: ok ? null : "storeError",
+    };
   } catch (e: any) {
-    // RevenueCat sets userCancelled on a dismissed sheet; anything else is a
-    // real store error.
-    return { ok: false, cancelled: Boolean(e?.userCancelled) };
+    return classifyAndRecover(e, plan);
   }
 }
 
@@ -392,11 +475,11 @@ export async function winbackHasRealDiscount(): Promise<boolean> {
 }
 
 /** Purchases the discounted annual from the 'downsell' offering. */
-export async function purchaseDownsell(): Promise<boolean> {
+export async function purchaseDownsell(): Promise<PurchaseOutcome> {
   if (DEBUG_MOCK_PURCHASES) {
     await AsyncStorage.setItem(PRO_KEY, "true");
     await AsyncStorage.setItem(PLAN_KEY, "annual");
-    return true;
+    return OK_OUTCOME;
   }
   try {
     await ensureConfigured();
@@ -407,12 +490,19 @@ export async function purchaseDownsell(): Promise<boolean> {
       const m = mapRcPackage(p);
       return m?.plan === "annual";
     });
-    if (!target) return false;
+    if (!target) {
+      return { ok: false, cancelled: false, recovered: false, error: "storeError" };
+    }
     const { customerInfo } = await Purchases.purchasePackage(target);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) await AsyncStorage.setItem(PLAN_KEY, "annual");
-    return ok;
-  } catch {
-    return false;
+    return {
+      ok,
+      cancelled: false,
+      recovered: false,
+      error: ok ? null : "storeError",
+    };
+  } catch (e: any) {
+    return classifyAndRecover(e, "annual");
   }
 }

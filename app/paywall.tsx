@@ -19,6 +19,7 @@ import {
   recordDownsellShown,
   type DownsellTrigger,
 } from "../lib/services/downsell";
+import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { scheduleTrialEndingReminder } from "../lib/services/notifications";
 import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { privacyUrl, termsUrl } from "../lib/legal";
@@ -221,6 +222,7 @@ export default function PaywallScreen() {
     try {
       const res = await purchasePro(plan);
       await refreshPro();
+      const feedback = purchaseToastFor(res);
       if (res.ok) {
         logEvent("purchase_completed", { tier: plan });
         if (plan === "annual" && annualTrial) {
@@ -228,13 +230,16 @@ export default function PaywallScreen() {
           scheduleTrialEndingReminder(TRIAL_DAYS).catch(() => {});
         }
         hapticSuccess();
-        toast(t("paywall.activated"), "success");
+        // Success, or an already-owned recovery ("this is already yours").
+        if (feedback) toast(t(feedback.key), feedback.kind);
         await exit();
       } else if (res.cancelled) {
         // A cancelled purchase is a downsell trigger too (same lifetime cap).
         await triggerDownsell();
+      } else if (feedback) {
+        // Real store error: an honest message instead of a silent stay.
+        toast(t(feedback.key), feedback.kind);
       }
-      // real store error: stay on the paywall, no message
     } finally {
       setBusy(false);
     }
