@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
 } from "react-native";
@@ -12,11 +11,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Animated, { FadeInDown } from "react-native-reanimated";
-import Svg, { Path, Line } from "react-native-svg";
 
 import { useApp } from "../lib/store/AppContext";
-import { updateProfile } from "../lib/db/profiles";
+import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
 import {
   applyNotificationPrefs,
   requestNotificationPermission,
@@ -25,163 +22,78 @@ import {
   DEFAULT_PREFS,
   setNotificationPrefs,
 } from "../lib/services/notificationPrefs";
-import type { GlucoseUnit, SugarLog } from "../lib/db/types";
+import type { GlucoseUnit } from "../lib/db/types";
 import {
   glucoseToDisplay,
   glucoseFromDisplay,
   glucoseUnitLabel,
-  formatGlucose,
 } from "../lib/glucose";
-import { computeAgp } from "../lib/agp";
 import { logEvent } from "../lib/analytics";
+import { hapticSelect } from "../lib/haptics";
 import { Button, Segmented } from "../components/ui";
 import { InputRow, AcceptCheck } from "../components/form";
 import { InlineTimePicker } from "../components/InlineTimePicker";
-import { Logo } from "../components/Logo";
 import { DisclaimerBanner } from "../components/Disclaimer";
+import { LanguageChip } from "../components/onboarding/LanguageChip";
+import { Welcome } from "../components/onboarding/Welcome";
+import { QuizStep } from "../components/onboarding/QuizStep";
+import { Reveal } from "../components/onboarding/Reveal";
+import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
 
 const DIABETES_KEY = "zerospike.diabetesContext";
+const INSULIN_KEY = "zerospike.insulinContext";
 
 // Sensible defaults used by the "I'm not sure" path (never blocks a new user).
 const DEFAULT_CARB_RATIO = 10;
 const DEFAULT_ISF_MGDL = 40;
 
-type StepId =
-  | "value1"
-  | "value2"
-  | "value3"
-  | "name"
-  | "unit"
-  | "diabetes"
-  | "fasting"
-  | "postmeal"
-  | "carbRatio"
-  | "isf"
-  | "basal"
-  | "disclaimer"
-  | "preview";
-
-const STEPS: StepId[] = [
-  "value1",
-  "value2",
-  "value3",
-  "name",
-  "unit",
-  "diabetes",
-  "fasting",
-  "postmeal",
-  "carbRatio",
-  "isf",
-  "basal",
-  "disclaimer",
-  "preview",
-];
-
 const DIABETES_OPTIONS = ["type1", "type2", "gestational", "prediabetes", "other"] as const;
 type DiabetesOption = (typeof DIABETES_OPTIONS)[number];
 
-// ── Demo Insights preview (uses the real AGP infra on in-memory data) ────────
+const INSULIN_OPTIONS = ["basal", "bolus", "both", "none"] as const;
+type InsulinOption = (typeof INSULIN_OPTIONS)[number];
 
-// A plausible 14-day glucose curve so the preview looks like real Insights.
-// Math.sin/Math.random are fine in app runtime (only workflow scripts forbid them).
-function demoSugar(): SugarLog[] {
-  const out: Partial<SugarLog>[] = [];
-  const now = Date.now();
-  for (let day = 0; day < 14; day++) {
-    for (let h = 0; h < 24; h++) {
-      let base = 112 + 18 * Math.sin(((h - 3) / 24) * 2 * Math.PI);
-      if (h === 8 || h === 13 || h === 19) base += 46;
-      if (h === 9 || h === 14 || h === 20) base += 28;
-      const noise = Math.sin(day * 2.3 + h * 1.1) * 22;
-      const v = Math.max(60, Math.min(255, Math.round(base + noise)));
-      const d = new Date(now - day * 86_400_000);
-      d.setHours(h, 0, 0, 0);
-      out.push({ glucose_level_mgdl: v, logged_at: d.toISOString() });
-    }
-  }
-  return out as SugarLog[];
-}
+type Phase = "welcome" | "quiz" | "reveal";
+type StepId =
+  | "name"
+  | "unit"
+  | "diabetes"
+  | "insulin"
+  | "targets"
+  | "carbRatio"
+  | "isf"
+  | "basal"
+  | "notify"
+  | "disclaimer";
 
-function AgpPreview({ unit }: { unit: GlucoseUnit }) {
-  const { t } = useTranslation();
-  const { bands, avg, tir } = useMemo(() => {
-    const readings = demoSugar();
-    const agp = computeAgp(readings, 14);
-    const vals = readings.map((r) => r.glucose_level_mgdl);
-    const mean = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-    const inRange = vals.filter((v) => v >= 70 && v <= 180).length;
-    return {
-      bands: agp.bands,
-      avg: mean,
-      tir: Math.round((inRange / vals.length) * 100),
-    };
-  }, []);
-
-  const W = 300;
-  const H = 120;
-  const GMIN = 40;
-  const GMAX = 260;
-  const x = (h: number) => (h / 23) * W;
-  const y = (g: number) => H - ((g - GMIN) / (GMAX - GMIN)) * H;
-
-  const line = (key: "p25" | "p50" | "p75") =>
-    bands
-      .map((b, i) => `${i === 0 ? "M" : "L"} ${x(b.hour).toFixed(1)} ${y(b[key]).toFixed(1)}`)
-      .join(" ");
-  const bandArea = () => {
-    if (bands.length === 0) return "";
-    const top = bands.map((b) => `L ${x(b.hour).toFixed(1)} ${y(b.p75).toFixed(1)}`).join(" ");
-    const bottom = [...bands]
-      .reverse()
-      .map((b) => `L ${x(b.hour).toFixed(1)} ${y(b.p25).toFixed(1)}`)
-      .join(" ");
-    const start = `M ${x(bands[0].hour).toFixed(1)} ${y(bands[0].p75).toFixed(1)}`;
-    return `${start} ${top} ${bottom} Z`;
-  };
-
+/** Full-width single-select row with a leading radio dot (statura-style). */
+function OptionRow({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4">
-      <Text className="text-brand text-[11px] font-semibold uppercase tracking-wider mb-3">
-        {t("onboarding.previewTag")}
-      </Text>
-
-      {/* Stat tiles */}
-      <View className="flex-row justify-between mb-4">
-        <View className="items-center flex-1">
-          <Text className="text-zinc-50 text-xl font-bold">
-            {formatGlucose(avg, unit)}
-          </Text>
-          <Text className="text-zinc-500 text-[10px] mt-0.5">
-            {glucoseUnitLabel(unit)}
-          </Text>
-          <Text className="text-zinc-500 text-[10px]">{t("insights.avgGlucose")}</Text>
-        </View>
-        <View className="items-center flex-1">
-          <Text className="text-emerald-400 text-xl font-bold">{tir}%</Text>
-          <Text className="text-zinc-500 text-[10px] mt-3.5">
-            {t("insights.timeInRange")}
-          </Text>
-        </View>
-        <View className="items-center flex-1">
-          <Text className="text-zinc-50 text-xl font-bold">14</Text>
-          <Text className="text-zinc-500 text-[10px] mt-3.5">
-            {t("insights.days")}
-          </Text>
-        </View>
+    <Pressable
+      onPress={onPress}
+      className={`flex-row items-center rounded-2xl border px-4 py-3.5 mb-2.5 ${
+        selected ? "border-brand bg-brand/10" : "border-zinc-800 bg-zinc-900"
+      }`}
+    >
+      <View
+        className={`w-5 h-5 rounded-full border-2 items-center justify-center mr-3 ${
+          selected ? "border-brand" : "border-zinc-600"
+        }`}
+      >
+        {selected ? <View className="w-2.5 h-2.5 rounded-full bg-brand" /> : null}
       </View>
-
-      {/* Mini AGP band */}
-      <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
-        <Line x1={0} y1={y(180)} x2={W} y2={y(180)} stroke="#3f3f46" strokeWidth={1} strokeDasharray="4 4" />
-        <Line x1={0} y1={y(70)} x2={W} y2={y(70)} stroke="#3f3f46" strokeWidth={1} strokeDasharray="4 4" />
-        <Path d={bandArea()} fill="#22d3ee" fillOpacity={0.15} />
-        <Path d={line("p50")} stroke="#22d3ee" strokeWidth={2} fill="none" />
-      </Svg>
-
-      <Text className="text-zinc-500 text-[11px] mt-2 text-center">
-        {t("onboarding.previewCaption")}
+      <Text className={`flex-1 ${selected ? "text-brand font-medium" : "text-zinc-200"}`}>
+        {label}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -189,10 +101,10 @@ export default function OnboardingScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { activeProfile, bumpData } = useApp();
+  const { activeProfile, bumpData, completeOnboarding } = useApp();
 
+  const [phase, setPhase] = useState<Phase>("welcome");
   const [stepIdx, setStepIdx] = useState(0);
-  const step = STEPS[stepIdx];
 
   const [name, setName] = useState(
     activeProfile?.name ?? t("profiles.defaultName")
@@ -201,6 +113,7 @@ export default function OnboardingScreen() {
     activeProfile?.glucose_unit ?? "mgdl"
   );
   const [diabetes, setDiabetes] = useState<DiabetesOption | null>(null);
+  const [insulin, setInsulin] = useState<InsulinOption | null>(null);
   const [fasting, setFasting] = useState(
     String(glucoseToDisplay(activeProfile?.target_fasting_max ?? 100, unit))
   );
@@ -218,6 +131,31 @@ export default function OnboardingScreen() {
   const [accepted, setAccepted] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const hasInsulin =
+    insulin === "basal" || insulin === "bolus" || insulin === "both";
+
+  // Branching flow: the carb-ratio / ISF / basal-time trio is only for insulin
+  // users. Everyone gets the notification + disclaimer tail.
+  const steps = useMemo<StepId[]>(() => {
+    const base: StepId[] = ["name", "unit", "diabetes", "insulin", "targets"];
+    const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
+    return [...base, ...branch, "notify", "disclaimer"];
+  }, [hasInsulin]);
+
+  const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
+  const step = steps[stepIdxClamped];
+
+  const advancingRef = useRef(false);
+  useEffect(() => {
+    advancingRef.current = false;
+  }, [stepIdxClamped, phase]);
+
+  // Preserve the original analytics events. Log the current quiz step, or the
+  // welcome / reveal phase name.
+  useEffect(() => {
+    logEvent("onboarding_step", { step: phase === "quiz" ? step : phase });
+  }, [phase, step]);
+
   function num(v: string, fallback: number): number {
     const x = parseFloat(v.replace(",", "."));
     return Number.isFinite(x) && x > 0 ? x : fallback;
@@ -234,56 +172,117 @@ export default function OnboardingScreen() {
     setUnit(next);
   }
 
-  function goTo(idx: number) {
-    const clamped = Math.max(0, Math.min(STEPS.length - 1, idx));
-    setStepIdx(clamped);
-    logEvent("onboarding_step", { step: STEPS[clamped] });
-  }
-  const next = () => goTo(stepIdx + 1);
-  const back = () => goTo(stepIdx - 1);
-  const skipIntro = () => goTo(STEPS.indexOf("name"));
+  const next = () => setStepIdx((i) => Math.min(steps.length - 1, i + 1));
+  const back = () => setStepIdx((i) => Math.max(0, i - 1));
 
-  // Leaving the basal step: the on-screen rationale has been shown, so trigger
-  // the OS notification prompt here (contextual), then advance.
-  async function nextFromBasal() {
+  // Single-select steps apply the answer then auto-advance (guarded so a fast
+  // double-tap cannot skip two steps).
+  function selectAndAdvance(apply: () => void) {
+    hapticSelect();
+    apply();
+    if (advancingRef.current) return;
+    advancingRef.current = true;
+    setTimeout(next, 160);
+  }
+
+  // Leaving the notification step: the on-screen rationale has been shown, so
+  // fire the OS prompt here (contextual), then advance.
+  async function nextFromNotify() {
     await requestNotificationPermission().catch(() => {});
     next();
   }
 
-  // Save the profile, then hand off to the soft paywall. Onboarding is marked
-  // complete downstream (paywall/downsell) so the app never bounces mid-flow.
-  async function finishToPaywall() {
+  const fastingMgdl = glucoseFromDisplay(num(fasting, glucoseToDisplay(100, unit)), unit);
+  const postmealMgdl = glucoseFromDisplay(num(postmeal, glucoseToDisplay(140, unit)), unit);
+
+  // Save the profile + reminder plan, mark onboarding complete (so a kill on the
+  // upcoming paywall never re-runs the quiz), then show the reveal.
+  async function finishToReveal() {
     if (!activeProfile || saving) return;
     setSaving(true);
     try {
-      await updateProfile(activeProfile.id, {
+      const patch: ProfileUpdate = {
         name: name.trim() || t("profiles.defaultName"),
-        target_fasting_max: glucoseFromDisplay(num(fasting, glucoseToDisplay(100, unit)), unit),
-        target_postmeal_max: glucoseFromDisplay(num(postmeal, glucoseToDisplay(140, unit)), unit),
-        carb_ratio_breakfast: num(carbRatio, DEFAULT_CARB_RATIO),
-        carb_ratio_lunch: num(carbRatio, DEFAULT_CARB_RATIO),
-        carb_ratio_dinner: num(carbRatio, DEFAULT_CARB_RATIO),
-        insulin_sensitivity_factor: glucoseFromDisplay(
+        target_fasting_max: fastingMgdl,
+        target_postmeal_max: postmealMgdl,
+        glucose_unit: unit,
+      };
+      // Insulin math is only relevant to insulin users; leave the profile's
+      // defaults untouched otherwise.
+      if (hasInsulin) {
+        const cr = num(carbRatio, DEFAULT_CARB_RATIO);
+        patch.carb_ratio_breakfast = cr;
+        patch.carb_ratio_lunch = cr;
+        patch.carb_ratio_dinner = cr;
+        patch.insulin_sensitivity_factor = glucoseFromDisplay(
           num(isf, glucoseToDisplay(DEFAULT_ISF_MGDL, unit)),
           unit
-        ),
-        glucose_unit: unit,
-      });
-      if (diabetes) {
-        await AsyncStorage.setItem(DIABETES_KEY, diabetes).catch(() => {});
+        );
       }
-      // Contextual notification permission at basal-time setup (unchanged).
-      await setNotificationPrefs({ ...DEFAULT_PREFS, basalTime });
+      await updateProfile(activeProfile.id, patch);
+
+      // Context flags are for text tone / visibility only, never calculations.
+      if (diabetes) await AsyncStorage.setItem(DIABETES_KEY, diabetes).catch(() => {});
+      await AsyncStorage.setItem(INSULIN_KEY, insulin ?? "none").catch(() => {});
+
+      // Reminder relevance follows insulin use (basal + pen-low only apply to
+      // insulin users); post-meal tracking stays on for everyone.
+      await setNotificationPrefs({
+        ...DEFAULT_PREFS,
+        basal: hasInsulin,
+        basalTime,
+        penLow: hasInsulin,
+      });
       await applyNotificationPrefs();
+
       bumpData();
+      await completeOnboarding();
       logEvent("onboarding_done", {});
-      router.replace({ pathname: "/paywall", params: { context: "onboarding" } });
+      setPhase("reveal");
     } finally {
       setSaving(false);
     }
   }
 
-  const progress = (stepIdx + 1) / STEPS.length;
+  function goToPaywall() {
+    router.replace({ pathname: "/paywall", params: { context: "onboarding" } });
+  }
+
+  // Optional subtitle per step (the title is derived from the step id).
+  function hintFor(s: StepId): string | undefined {
+    switch (s) {
+      case "name":
+        return t("onboarding.qNameHint");
+      case "unit":
+        return t("onboarding.qUnitHint");
+      case "diabetes":
+        return t("onboarding.qDiabetesHint");
+      case "insulin":
+        return t("onboarding.qInsulinHint");
+      case "targets":
+        return t("onboarding.qTargetsHint");
+      case "carbRatio":
+        return t("onboarding.qCarbRatioHint");
+      case "isf":
+        return t("onboarding.qIsfHint");
+      case "basal":
+        return t("onboarding.qBasalHint");
+      case "notify":
+        return t("onboarding.qNotifyHint");
+      case "disclaimer":
+        return undefined;
+    }
+  }
+
+  const optDelay = (i: number) => ENTRANCE_STAGGER_MS * 2 + i * 50;
+  const progress = (stepIdxClamped + 1) / steps.length;
+
+  const onBack =
+    phase !== "quiz"
+      ? undefined
+      : stepIdxClamped === 0
+        ? () => setPhase("welcome")
+        : back;
 
   return (
     <KeyboardAvoidingView
@@ -291,90 +290,64 @@ export default function OnboardingScreen() {
       className="flex-1 bg-black"
       style={{ paddingTop: insets.top }}
     >
-      {/* Progress + optional skip on the value slides */}
-      <View className="px-6 pt-2 pb-1 flex-row items-center">
-        {stepIdx > 0 ? (
-          <Pressable onPress={back} hitSlop={10} className="pr-3 py-1">
-            <Ionicons name="chevron-back" size={22} color="#71717a" />
+      {/* Shared header: back (quiz only) + always-present language chip */}
+      <View className="px-6 pt-2 pb-2 flex-row items-center justify-between">
+        {onBack ? (
+          <Pressable onPress={onBack} hitSlop={10} className="pr-3 py-1">
+            <Ionicons name="chevron-back" size={24} color="#a1a1aa" />
           </Pressable>
         ) : (
-          <View className="w-8" />
+          <View className="w-6" />
         )}
-        <View className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-          <View
-            className="h-full rounded-full bg-brand"
-            style={{ width: `${Math.round(progress * 100)}%` }}
-          />
-        </View>
-        {stepIdx < 3 ? (
-          <Pressable onPress={skipIntro} hitSlop={10} className="pl-3 py-1">
-            <Text className="text-zinc-500 text-sm font-medium">
-              {t("onboarding.skip")}
-            </Text>
-          </Pressable>
-        ) : (
-          <View className="w-8" />
-        )}
+        <LanguageChip />
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 24, flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <View
+        className="flex-1 px-6"
+        style={{ paddingBottom: insets.bottom + 16 }}
       >
-        {/* key={step} replays the entrance on every step change (polish). */}
-        <Animated.View
-          key={step}
-          entering={FadeInDown.duration(260)}
-          className="flex-1 justify-center"
-        >
-          {/* ── Value slides ─────────────────────────────────────────── */}
-          {step === "value1" || step === "value2" || step === "value3" ? (
-            <View className="items-center">
-              <View className="w-24 h-24 rounded-3xl bg-brand/10 border border-brand/20 items-center justify-center mb-8">
-                {step === "value1" ? (
-                  <Logo size={60} />
-                ) : (
-                  <Ionicons
-                    name={step === "value2" ? "pulse-outline" : "people-outline"}
-                    size={56}
-                    color="#22d3ee"
-                  />
-                )}
-              </View>
-              <Text className="text-zinc-50 text-center text-2xl font-extrabold">
-                {t(`onboarding.${step}Title`)}
-              </Text>
-              <Text className="text-zinc-400 mt-3 text-center text-base leading-6">
-                {t(`onboarding.${step}Body`)}
-              </Text>
-              {step === "value2" ? (
-                <View className="w-full rounded-2xl bg-brand/10 border border-brand/30 p-4 mt-8">
-                  <Text className="text-brand text-[11px] font-semibold uppercase tracking-wider">
-                    {t("calculator.estimatedDose")}
-                  </Text>
-                  <View className="flex-row justify-between items-center mt-2.5">
-                    <Text className="text-zinc-300 font-semibold">
-                      {t("calculator.totalDose")}
-                    </Text>
-                    <View className="flex-row items-baseline">
-                      <Text className="text-brand font-bold" style={{ fontSize: 24, lineHeight: 30 }}>
-                        2.5
-                      </Text>
-                      <Text className="text-brand text-sm font-medium"> {t("common.units")}</Text>
-                    </View>
-                  </View>
-                  <Text className="text-brand/60 text-[11px] mt-2 text-center">
-                    {t("calculator.overrideHint")}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
+        {phase === "welcome" ? (
+          <Welcome
+            onStart={() => {
+              setStepIdx(0);
+              setPhase("quiz");
+            }}
+          />
+        ) : null}
 
-          {/* ── Questions ────────────────────────────────────────────── */}
-          {step === "name" ? (
-            <QuestionShell title={t("onboarding.qName")} hint={t("onboarding.qNameHint")}>
+        {phase === "reveal" ? (
+          <Reveal
+            unit={unit}
+            fastingMgdl={fastingMgdl}
+            postmealMgdl={postmealMgdl}
+            hasInsulin={hasInsulin}
+            basalTime={basalTime}
+            onContinue={goToPaywall}
+          />
+        ) : null}
+
+        {phase === "quiz" ? (
+          <QuizStep
+            key={step}
+            progress={progress}
+            title={t(`onboarding.q${step[0].toUpperCase()}${step.slice(1)}`)}
+            hint={hintFor(step)}
+            footer={renderFooter()}
+          >
+            {renderContent()}
+          </QuizStep>
+        ) : null}
+      </View>
+    </KeyboardAvoidingView>
+  );
+
+  // ── Per-step content ───────────────────────────────────────────────────────
+  function renderContent() {
+    switch (step) {
+      case "name":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
               <InputRow
                 icon="text-outline"
                 label={t("onboarding.profileName")}
@@ -383,67 +356,80 @@ export default function OnboardingScreen() {
                 placeholder={t("onboarding.profileNamePlaceholder")}
                 last
               />
-            </QuestionShell>
-          ) : null}
+            </View>
+          </FadeSlideIn>
+        );
 
-          {step === "unit" ? (
-            <QuestionShell title={t("onboarding.qUnit")} hint={t("onboarding.qUnitHint")}>
-              <View className="px-1 py-2">
-                <Segmented
-                  options={[
-                    { value: "mgdl", label: "mg/dL" },
-                    { value: "mmol", label: "mmol/L" },
-                  ]}
-                  value={unit}
-                  onChange={changeUnit}
+      case "unit":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <Segmented
+              options={[
+                { value: "mgdl", label: "mg/dL" },
+                { value: "mmol", label: "mmol/L" },
+              ]}
+              value={unit}
+              onChange={changeUnit}
+            />
+          </FadeSlideIn>
+        );
+
+      case "diabetes":
+        return (
+          <View className="flex-row flex-wrap gap-2.5">
+            {DIABETES_OPTIONS.map((opt, i) => {
+              const on = diabetes === opt;
+              return (
+                <FadeSlideIn key={opt} delay={optDelay(i)}>
+                  <Pressable
+                    onPress={() => selectAndAdvance(() => setDiabetes(opt))}
+                    className={`rounded-xl border px-3.5 py-2.5 ${
+                      on ? "border-brand bg-brand/10" : "border-zinc-700 bg-zinc-900"
+                    }`}
+                  >
+                    <Text className={on ? "text-brand font-medium" : "text-zinc-300"}>
+                      {t(`onboarding.diabetes_${opt}`)}
+                    </Text>
+                  </Pressable>
+                </FadeSlideIn>
+              );
+            })}
+          </View>
+        );
+
+      case "insulin":
+        return (
+          <View>
+            {INSULIN_OPTIONS.map((opt, i) => (
+              <FadeSlideIn key={opt} delay={optDelay(i)}>
+                <OptionRow
+                  label={t(`onboarding.insulin_${opt}`)}
+                  selected={insulin === opt}
+                  onPress={() => selectAndAdvance(() => setInsulin(opt))}
                 />
-              </View>
-            </QuestionShell>
-          ) : null}
+              </FadeSlideIn>
+            ))}
+          </View>
+        );
 
-          {step === "diabetes" ? (
-            <QuestionShell title={t("onboarding.qDiabetes")} hint={t("onboarding.qDiabetesHint")}>
-              <View className="flex-row flex-wrap gap-2 mt-1">
-                {DIABETES_OPTIONS.map((opt) => {
-                  const on = diabetes === opt;
-                  return (
-                    <Pressable
-                      key={opt}
-                      onPress={() => setDiabetes(on ? null : opt)}
-                      className={`rounded-xl border px-3.5 py-2.5 ${
-                        on ? "border-brand bg-brand/10" : "border-zinc-700 bg-zinc-900"
-                      }`}
-                    >
-                      <Text className={on ? "text-brand font-medium" : "text-zinc-300"}>
-                        {t(`onboarding.diabetes_${opt}`)}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </QuestionShell>
-          ) : null}
-
-          {step === "fasting" ? (
-            <QuestionShell title={t("onboarding.qFasting")} hint={t("onboarding.qFastingHint")}>
+      case "targets":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
               <InputRow
                 icon="sunny-outline"
                 label={t("period.fasting")}
+                hint={t("onboarding.qFastingHint")}
                 value={fasting}
                 onChangeText={setFasting}
                 keyboardType="decimal-pad"
                 suffix={glucoseUnitLabel(unit)}
                 maxLength={5}
-                last
               />
-            </QuestionShell>
-          ) : null}
-
-          {step === "postmeal" ? (
-            <QuestionShell title={t("onboarding.qPostmeal")} hint={t("onboarding.qPostmealHint")}>
               <InputRow
                 icon="time-outline"
                 label={t("period.post_meal_2h")}
+                hint={t("onboarding.qPostmealHint")}
                 value={postmeal}
                 onChangeText={setPostmeal}
                 keyboardType="decimal-pad"
@@ -451,11 +437,14 @@ export default function OnboardingScreen() {
                 maxLength={5}
                 last
               />
-            </QuestionShell>
-          ) : null}
+            </View>
+          </FadeSlideIn>
+        );
 
-          {step === "carbRatio" ? (
-            <QuestionShell title={t("onboarding.qCarbRatio")} hint={t("onboarding.qCarbRatioHint")}>
+      case "carbRatio":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
               <InputRow
                 icon="restaurant-outline"
                 label={t("settings.carbRatios")}
@@ -466,11 +455,14 @@ export default function OnboardingScreen() {
                 maxLength={4}
                 last
               />
-            </QuestionShell>
-          ) : null}
+            </View>
+          </FadeSlideIn>
+        );
 
-          {step === "isf" ? (
-            <QuestionShell title={t("onboarding.qIsf")} hint={t("onboarding.qIsfHint")}>
+      case "isf":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
               <InputRow
                 icon="pulse-outline"
                 label={t("settings.isf")}
@@ -481,135 +473,103 @@ export default function OnboardingScreen() {
                 maxLength={5}
                 last
               />
-            </QuestionShell>
-          ) : null}
+            </View>
+          </FadeSlideIn>
+        );
 
-          {step === "basal" ? (
-            <QuestionShell title={t("onboarding.qBasal")} hint={t("onboarding.qBasalHint")}>
-              <Pressable
-                onPress={() => setShowTime((s) => !s)}
-                className="flex-row items-center justify-between rounded-xl bg-zinc-900 border border-zinc-800 px-4 py-3.5"
-              >
-                <View className="flex-row items-center">
-                  <Ionicons name="alarm-outline" size={18} color="#22d3ee" />
-                  <Text className="text-zinc-200 ml-2.5">{t("onboarding.basalTime")}</Text>
-                </View>
-                <Text className="text-zinc-50 font-semibold">{basalTime}</Text>
-              </Pressable>
-              <InlineTimePicker
-                visible={showTime}
-                value={basalTime}
-                onChange={setBasalTime}
-                onClose={() => setShowTime(false)}
-              />
-              {/* Rationale shown before the OS notification prompt (which fires
-                  on Continue). Descriptive, no alarm language. */}
-              <View className="flex-row items-start rounded-xl border border-zinc-800 bg-zinc-900 p-3.5 mt-4">
-                <Ionicons name="notifications-outline" size={16} color="#71717a" />
-                <Text className="text-zinc-400 text-xs leading-5 ml-2.5 flex-1">
-                  {t("onboarding.notifRationale")}
-                </Text>
+      case "basal":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <Pressable
+              onPress={() => setShowTime((s) => !s)}
+              className="flex-row items-center justify-between rounded-xl bg-zinc-900 border border-zinc-800 px-4 py-3.5"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="moon-outline" size={18} color="#22d3ee" />
+                <Text className="text-zinc-200 ml-2.5">{t("onboarding.basalTime")}</Text>
               </View>
-            </QuestionShell>
-          ) : null}
+              <Text className="text-zinc-50 font-semibold">{basalTime}</Text>
+            </Pressable>
+            <InlineTimePicker
+              visible={showTime}
+              value={basalTime}
+              onChange={setBasalTime}
+              onClose={() => setShowTime(false)}
+            />
+          </FadeSlideIn>
+        );
 
-          {/* ── Disclaimer ───────────────────────────────────────────── */}
-          {step === "disclaimer" ? (
-            <View>
-              <Text className="text-zinc-50 text-2xl font-bold mb-1">
-                {t("onboarding.qDisclaimer")}
+      case "notify":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <View className="flex-row items-start rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+              <Ionicons name="notifications-outline" size={18} color="#22d3ee" />
+              <Text className="text-zinc-300 text-sm leading-6 ml-3 flex-1">
+                {t("onboarding.notifRationale")}
               </Text>
-              <View className="mt-3 mb-4">
-                <DisclaimerBanner full />
-              </View>
+            </View>
+          </FadeSlideIn>
+        );
+
+      case "disclaimer":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <DisclaimerBanner full />
+            <View className="mt-4">
               <AcceptCheck
                 checked={accepted}
                 onToggle={() => setAccepted((a) => !a)}
                 label={t("disclaimer.accept")}
               />
             </View>
-          ) : null}
+          </FadeSlideIn>
+        );
+    }
+  }
 
-          {/* ── Demo preview ─────────────────────────────────────────── */}
-          {step === "preview" ? (
-            <View>
-              <Text className="text-zinc-50 text-2xl font-bold">
-                {t("onboarding.previewTitle")}
-              </Text>
-              <Text className="text-zinc-400 mt-2 mb-5 leading-5">
-                {t("onboarding.previewSubtitle")}
-              </Text>
-              <AgpPreview unit={unit} />
-            </View>
-          ) : null}
-        </Animated.View>
+  // ── Per-step footer ────────────────────────────────────────────────────────
+  function renderFooter(): React.ReactNode {
+    // Single-select steps auto-advance and have no footer.
+    if (step === "insulin") return null;
 
-        {/* ── Footer actions ──────────────────────────────────────────── */}
-        <View className="mt-8">
-          {step === "carbRatio" || step === "isf" ? (
-            <Pressable
-              onPress={() => {
-                if (step === "carbRatio") setCarbRatio(String(DEFAULT_CARB_RATIO));
-                else setIsf(String(glucoseToDisplay(DEFAULT_ISF_MGDL, unit)));
-                next();
-              }}
-              className="py-2.5 items-center"
-            >
-              <Text className="text-zinc-400 font-medium">{t("onboarding.notSure")}</Text>
-            </Pressable>
-          ) : null}
+    if (step === "notify") {
+      return (
+        <Button label={t("onboarding.notifyCta")} size="lg" onPress={nextFromNotify} />
+      );
+    }
 
-          {step === "preview" ? (
-            <Button
-              label={t("onboarding.seePlans")}
-              size="lg"
-              loading={saving}
-              onPress={finishToPaywall}
-            />
-          ) : step === "disclaimer" ? (
-            <Button
-              label={t("onboarding.continue")}
-              size="lg"
-              disabled={!accepted}
-              onPress={next}
-            />
-          ) : step === "basal" ? (
-            <Button
-              label={t("onboarding.continue")}
-              size="lg"
-              onPress={nextFromBasal}
-            />
-          ) : (
-            <Button
-              label={stepIdx < 3 ? t("onboarding.next") : t("onboarding.continue")}
-              size="lg"
-              onPress={next}
-            />
-          )}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
+    if (step === "disclaimer") {
+      return (
+        <Button
+          label={t("onboarding.continue")}
+          size="lg"
+          disabled={!accepted}
+          loading={saving}
+          onPress={finishToReveal}
+        />
+      );
+    }
 
-function QuestionShell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View>
-      <Text className="text-zinc-50 text-2xl font-bold">{title}</Text>
-      {hint ? (
-        <Text className="text-zinc-400 mt-2 mb-5 leading-5">{hint}</Text>
-      ) : (
-        <View className="mb-5" />
-      )}
-      {children}
-    </View>
-  );
+    const notSure =
+      step === "carbRatio" || step === "isf" ? (
+        <Pressable
+          onPress={() => {
+            if (step === "carbRatio") setCarbRatio(String(DEFAULT_CARB_RATIO));
+            else setIsf(String(glucoseToDisplay(DEFAULT_ISF_MGDL, unit)));
+            next();
+          }}
+          className="py-2.5 items-center"
+        >
+          <Text className="text-zinc-400 font-medium">{t("onboarding.notSure")}</Text>
+        </Pressable>
+      ) : null;
+
+    const label = step === "diabetes" ? t("onboarding.continue") : t("onboarding.next");
+    return (
+      <View>
+        <Button label={label} size="lg" onPress={next} />
+        {notSure}
+      </View>
+    );
+  }
 }

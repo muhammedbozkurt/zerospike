@@ -26,6 +26,14 @@ function RootNavigator() {
   const segments = useSegments();
   const router = useRouter();
   const prevProRef = useRef<boolean | null>(null);
+  // Distinguishes a genuine re-entry (an already-onboarded user reaching
+  // /onboarding) from the in-place completion (the flag flips to true while the
+  // reveal is showing, just before the paywall). prevOnboardedRef starts null so
+  // the first settled render is only a baseline, never counted as a completion;
+  // completedRef then latches once we see a false→true flip in-session and stays
+  // latched across any spurious effect re-runs so the reveal is never bounced.
+  const prevOnboardedRef = useRef<boolean | null>(null);
+  const completedRef = useRef(false);
 
   // One-time winback: when the Pro entitlement is lost, offer the discounted
   // annual once (only if a real discount is configured).
@@ -55,11 +63,18 @@ function RootNavigator() {
     // completing, so those routes are allowed while still not onboarded.
     const inOnboardingPaywall =
       root === "paywall" || root === "downsell" || root === "winback";
+    // Latch "completed this session" on the false→true flip (the reveal calling
+    // completeOnboarding). The first settled render only sets the baseline.
+    const prev = prevOnboardedRef.current;
+    prevOnboardedRef.current = onboarded;
+    if (prev === false && onboarded === true) completedRef.current = true;
     if (!onboarded && !inOnboarding && !inOnboardingPaywall) {
       router.replace("/onboarding");
       return; // splash stays up through the redirect (no dashboard flash)
     }
-    if (onboarded && inOnboarding) {
+    // Block an already-onboarded user from re-entering /onboarding, but leave the
+    // active reveal alone (it completed in-place this session, before the paywall).
+    if (onboarded && inOnboarding && !completedRef.current) {
       router.replace("/");
       return; // splash stays up until the app screen is active
     }
