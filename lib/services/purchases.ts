@@ -117,11 +117,21 @@ export async function getPlan(): Promise<PlanId | null> {
 }
 
 /** Purchase a plan. Returns true if Pro is now active (false on cancel/error). */
-export async function purchasePro(plan: PlanId = "monthly"): Promise<boolean> {
+/** Outcome of a purchase attempt: `ok` = Pro active; `cancelled` = the user
+ *  dismissed the native sheet (distinct from a store error), so the caller can
+ *  route a cancel into the downsell without treating an error the same way. */
+export interface PurchaseOutcome {
+  ok: boolean;
+  cancelled: boolean;
+}
+
+export async function purchasePro(
+  plan: PlanId = "monthly"
+): Promise<PurchaseOutcome> {
   if (DEBUG_MOCK_PURCHASES) {
     await AsyncStorage.setItem(PRO_KEY, "true");
     await AsyncStorage.setItem(PLAN_KEY, plan);
-    return true;
+    return { ok: true, cancelled: false };
   }
   try {
     await ensureConfigured();
@@ -137,14 +147,15 @@ export async function purchasePro(plan: PlanId = "monthly"): Promise<boolean> {
     const pkg =
       pkgs.find((p: any) => baseId(p.product?.identifier) === targetId) ??
       pkgs.find((p: any) => p.packageType === wantType);
-    if (!pkg) return false;
+    if (!pkg) return { ok: false, cancelled: false };
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) await AsyncStorage.setItem(PLAN_KEY, plan);
-    return ok;
-  } catch {
-    // user cancelled or store error
-    return false;
+    return { ok, cancelled: false };
+  } catch (e: any) {
+    // RevenueCat sets userCancelled on a dismissed sheet; anything else is a
+    // real store error.
+    return { ok: false, cancelled: Boolean(e?.userCancelled) };
   }
 }
 

@@ -46,7 +46,11 @@ export default function WinbackScreen() {
   }, []);
 
   useEffect(() => {
-    if (offer?.hasRealDiscount) logEvent("winback_view");
+    if (!offer) return;
+    if (offer.hasRealDiscount) logEvent("winback_view");
+    // No real discount: the winback is skipped (redirects away). Log it so a
+    // missing sandbox intro price is not mistaken for a broken winback.
+    else logEvent("downsell_skipped_no_discount", { trigger: "winback" });
   }, [offer]);
 
   function close() {

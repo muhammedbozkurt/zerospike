@@ -19,6 +19,7 @@ export type AnalyticsEventName =
   | "downsell_view"
   | "downsell_accept"
   | "downsell_dismiss"
+  | "downsell_skipped_no_discount"
   | "winback_view"
   | "trial_started"
   | "purchase_completed"

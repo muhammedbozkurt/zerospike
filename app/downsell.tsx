@@ -48,7 +48,13 @@ export default function DownsellScreen() {
   }, []);
 
   useEffect(() => {
-    if (offer) logEvent("downsell_view", { trigger });
+    if (!offer) return;
+    logEvent("downsell_view", { trigger });
+    // Distinguishes "no real discount configured" (e.g. sandbox missing an intro
+    // price) from a bug: the honest fallback is shown, not the discount card.
+    if (!offer.hasRealDiscount) {
+      logEvent("downsell_skipped_no_discount", { trigger });
+    }
   }, [offer, trigger]);
 
   // Reached from the onboarding paywall, so complete onboarding on the way out.

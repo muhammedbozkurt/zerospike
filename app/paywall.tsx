@@ -196,10 +196,10 @@ export default function PaywallScreen() {
     }
   }
 
-  async function dismiss() {
-    logEvent("paywall_dismiss", { source: reason ?? "direct" });
-    // Dismissing the paywall is the downsell trigger: first time always, then a
-    // single 7-day re-armed retry, capped at 2 lifetime shows.
+  // Downsell trigger, shared by an explicit dismiss and a cancelled purchase:
+  // first time always, then a single 7-day re-armed retry, capped at 2 lifetime
+  // shows. Falls back to exit when the cap is reached.
+  async function triggerDownsell() {
     const state = await getDownsellState();
     if (canShowDownsell(state, Date.now())) {
       await recordDownsellShown(context, Date.now());
@@ -207,6 +207,11 @@ export default function PaywallScreen() {
       return;
     }
     await exit();
+  }
+
+  async function dismiss() {
+    logEvent("paywall_dismiss", { source: reason ?? "direct" });
+    await triggerDownsell();
   }
 
   const limit =
@@ -229,9 +234,9 @@ export default function PaywallScreen() {
     if (busy) return;
     setBusy(true);
     try {
-      const ok = await purchasePro(plan);
+      const res = await purchasePro(plan);
       await refreshPro();
-      if (ok) {
+      if (res.ok) {
         logEvent("purchase_completed", { tier: plan });
         if (plan === "annual" && annualTrial) {
           logEvent("trial_started", { tier: "annual" });
@@ -240,8 +245,11 @@ export default function PaywallScreen() {
         hapticSuccess();
         toast(t("paywall.activated"), "success");
         await exit();
+      } else if (res.cancelled) {
+        // A cancelled purchase is a downsell trigger too (same lifetime cap).
+        await triggerDownsell();
       }
-      // cancelled or failed → stay on the paywall, no message
+      // real store error: stay on the paywall, no message
     } finally {
       setBusy(false);
     }
