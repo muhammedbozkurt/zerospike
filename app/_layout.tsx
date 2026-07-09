@@ -12,8 +12,9 @@ import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
 
-// Keep the single native splash visible until the app is ready, then fade it
-// out — no intermediate blank/spinner screen (which looked like a 2nd splash).
+// Keep the single native splash visible until the app is ready AND routing has
+// settled on the correct screen (see RootNavigator), so there is no dashboard
+// flash before onboarding and no intermediate blank/spinner screen.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Attach Firebase (Analytics + Crashlytics) as the analytics sink once, before
@@ -25,10 +26,6 @@ function RootNavigator() {
   const segments = useSegments();
   const router = useRouter();
   const prevProRef = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    if (ready) SplashScreen.hideAsync().catch(() => {});
-  }, [ready]);
 
   // One-time winback: when the Pro entitlement is lost, offer the discounted
   // annual once (only if a real discount is configured).
@@ -47,6 +44,9 @@ function RootNavigator() {
     }
   }, [ready, isProUser, router]);
 
+  // Route gate AND splash control in one place: keep the native splash up until
+  // routing has settled on the correct screen, so a fresh (not-onboarded) launch
+  // never reveals the dashboard for even one frame before redirecting.
   useEffect(() => {
     if (!ready) return;
     const root = segments[0];
@@ -57,9 +57,14 @@ function RootNavigator() {
       root === "paywall" || root === "downsell" || root === "winback";
     if (!onboarded && !inOnboarding && !inOnboardingPaywall) {
       router.replace("/onboarding");
-    } else if (onboarded && inOnboarding) {
-      router.replace("/");
+      return; // splash stays up through the redirect (no dashboard flash)
     }
+    if (onboarded && inOnboarding) {
+      router.replace("/");
+      return; // splash stays up until the app screen is active
+    }
+    // Settled on the correct screen: safe to reveal.
+    SplashScreen.hideAsync().catch(() => {});
   }, [ready, onboarded, segments, router]);
 
   // While loading, render nothing so the native splash stays on screen.
