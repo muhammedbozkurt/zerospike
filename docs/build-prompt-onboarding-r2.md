@@ -365,3 +365,96 @@ Degisen:
       tokluk/ISF alanlari mmol etiketiyle ve mmol degerleriyle aciliyor; kaydedince
       settings ve dashboard hedefleri dogru okunuyor (mg/dL kolonuna mmol yazilmiyor).
 - [ ] 5 dilde karb orani alan son eki dogal (TR "g/Ü", EN/ES/FR "g/U", DE "g/E").
+
+## FAZ 7 (R2.2, 2026-07-09, TestFlight bulgulari): acil durum kisileri
+
+Uc cihaz bulgusu, hub teshisleri koydu:
+
+1) REHBER ACILMIYOR (izin verilmis olmasina ragmen). Kok neden: app/emergency-contacts.tsx:70
+   `Contacts.presentContactPickerAsync()` NATIVE picker'i root view controller'dan sunmaya
+   calisir; bu ekran `presentation: "modal"` (app/_layout.tsx:119) ve cogunlukla sos
+   modalinin USTUNE acilir (sos.tsx:148 push). iOS'ta zaten sunulmus modal yigininin
+   uzerine root'tan ikinci bir native modal sunulamayinca picker sessizce acilmiyor.
+   Fix: native picker'i BIRAK; `Contacts.getContactsAsync({ fields: [Name, PhoneNumbers] })`
+   ile uygulama ICI aranabilir kisi listesi goster (ayni ekranin icinde bir gorunum
+   durumu olarak; ic ice RN Modal KULLANMA). Arama kutusu + isim/numara satirlari;
+   birden fazla numarasi olan kiside numaralari alt satirlar olarak listele, dokunulan
+   numara eklenir. Izin reddi/limited (iOS 18) durumlarinda mevcut pickDenied toast'i +
+   Ayarlar'a yonlendirme linki. Bos rehberde bos-durum metni. (Not: getContactsAsync
+   limited erisimde izin verilen alt kumeyi doner, bu yeterli.)
+2) TELEFON DOGRULAMA + VARSAYILAN ULKE KODU YOK. Su an normalizePhone yalniz rakam
+   suzuyor (lib/services/emergency.ts:41-45) ve tek kontrol `uzunluk >= 3`
+   (emergency-contacts.tsx:48). Fix (libphonenumber EKLEME, pragmatik kal):
+   - Cihaz bolgesinden varsayilan arama kodu: expo-localization getLocales()[0]
+     .regionCode -> kucuk bir harita (TR +90, DE +49, FR +33, ES +34, US/CA +1, GB +44,
+     NL +31, IT +39, AT +43, CH +41, BE +32... makul bir set; bulunamazsa bos).
+     Telefon alani BOSKEN placeholder yerine gercek deger olarak "+90 " on-dolu gelir,
+     kullanici silebilir/degistirebilir.
+   - normalizePhoneWithRegion saf fonksiyonu: bosluk/tire/parantez suz; "00" ile
+     basliyorsa "+" yap; "+" yoksa varsayilan kodu one ekle ve yerel bastaki tek "0"i
+     dusur (05xx -> +905xx); sonuc "+" + 8-15 rakam degilse GECERSIZ.
+   - Gecersizde inline hata satiri (toast yerine, alanin altinda; 5 dil). Rehberden
+     secilen numaralar da ayni normalizasyondan gecer.
+   - Saf fonksiyonlar lib/services/emergency.ts'te kalsin (typecheck kapisi yeter).
+3) MANUEL EKLENEN KISI YANSIMIYOR. Kok neden: app/sos.tsx:67-69 kisileri yalniz
+   mount'ta okuyor (useEffect []); sos'tan emergency-contacts'a gidip donunce liste
+   bayat kaliyor. Fix: sos.tsx (ve kisi listesi okuyan baska yuzey varsa) expo-router
+   useFocusEffect ile odakta yeniden okusun.
+- i18n: yeni anahtarlar once tr.ts, 5 dil, notr dil (SOS cercevesi degismiyor: otomatik
+  arama/SMS yok, composer + dialer deseni aynen kalir).
+- Kapi: `npm run typecheck`.
+- Commit: `fix(emergency): in-app contact picker + phone normalization with region code + focus refresh`
+- QA checklist'e ekle: sos -> kisi ekle -> "Rehberden sec" uygulama ici listeyi aciyor
+  ve secilen kisi ekleniyor (iOS'ta modal yigininda da); telefon alani bolgeye gore
+  "+90 " on-dolu; "05xx..." girisi "+905xx..." olarak kaydediliyor; gecersiz numara
+  inline hata veriyor; kisi ekleyip sos'a dononce liste ANINDA guncel (refresh
+  gerekmiyor); limited/izin-reddi durumlari makul mesaj veriyor.
+
+---
+
+## Bitis raporu (R2.2, uygulandi 2026-07-09)
+
+FAZ 7 main dalinda tek commit ile uygulandi. `npm run typecheck` (tsc + i18n-check)
+yesil. i18n sema anahtari: 530 -> 534 (emergency +6 yeni, -2 ulasilamaz olan).
+Em dash locales'te sifir. SOS cercevesi degismedi (otomatik arama/SMS yok).
+
+Commit: `fix(emergency): in-app contact picker + phone normalization with region code + focus refresh`
+
+### Kok neden duzeltmesi (dokumandan sapma, kasitli)
+
+Dokuman `Contacts.getContactsAsync(...)` onerdi ve rehberin acilmamasini iOS modal
+yigini ile acikladi. Kodda dogrulanan asil kok neden daha guclu: expo-contacts v57'de
+paket girisinden re-export edilen legacy `presentContactPickerAsync` (ve
+`getContactsAsync`) KOSULSUZ throw eden deprecated shim'ler
+(node_modules/expo-contacts/src/legacyWarnings.ts:202). Mevcut try/catch bunu
+"pickFailed" toast'ina cevirdigi icin rehber hic acilmiyordu. Bu yuzden SDK 57 sinif
+API'si kullanildi: `Contact.getAllDetails([FULL_NAME, PHONES])`. Modal yigini sorunu da
+zaten ortadan kalkiyor cunku native picker hic sunulmuyor.
+
+### Degisen dosyalar (R2.2)
+
+- lib/services/emergency.ts (saf: defaultCallingCode + normalizePhoneWithRegion,
+  bolge kodu haritasi)
+- app/emergency-contacts.tsx (uygulama ici aranabilir rehber listesi bir gorunum
+  durumu olarak; ic ice Modal yok; inline hata satirlari; bolge kodu on-dolu)
+- app/sos.tsx (useFocusEffect ile odakta kisi listesi tazeleme)
+- lib/i18n/locales/{tr,en,de,es,fr}.ts
+
+### Cihaz QA checklist (R2.2, kullanici tarafindan)
+
+- [ ] SOS -> "Acil kişi ekle" -> "Rehberden seç": uygulama ICI liste aciliyor
+      (iOS'ta SOS modalinin ustunde de calisiyor, native picker sunulmuyor).
+- [ ] Listede arama kutusu isimle ve numarayla suzuyor; birden fazla numarasi olan
+      kisinin numaralari ayri satirlar; dokunulan numara ekleniyor.
+- [ ] Rehber izni reddedilince pickDenied bilgisi + "Ayarları aç" linki cikiyor;
+      iOS 18 "sinirli erisim"te izin verilen alt kume listeleniyor.
+- [ ] Bos rehberde bos-durum metni gorunuyor.
+- [ ] Telefon alani cihaz bolgesine gore "+90 " (TR) on-dolu ve duzenlenebilir.
+- [ ] "05321234567" girisi "+905321234567" olarak kaydediliyor; "00 90..." ve
+      "+90 532 ..." da ayni sonuca normalize oluyor.
+- [ ] Gecersiz numara (orn. "123") alanin ALTINDA inline hata veriyor (toast degil);
+      isim bos ise isim alaninin altinda inline hata.
+- [ ] Kisi ekleyip SOS'a dononce liste ANINDA guncel (uygulamayi yeniden acmak
+      gerekmiyor).
+- [ ] SOS davranisi degismedi: uygulama kendiliginden arama yapmiyor/mesaj gondermiyor;
+      her islem dialer/composer aciyor.
