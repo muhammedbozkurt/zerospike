@@ -458,3 +458,103 @@ zaten ortadan kalkiyor cunku native picker hic sunulmuyor.
       gerekmiyor).
 - [ ] SOS davranisi degismedi: uygulama kendiliginden arama yapmiyor/mesaj gondermiyor;
       her islem dialer/composer aciyor.
+
+## FAZ 8 (R2.3, 2026-07-10, TestFlight bulgulari): picker isimleri + acil numara + secim kartlari
+
+1) REHBER LISTESINDE ISIMLER GORUNMUYOR (numara ustune numara). Teshis (hub):
+   fullName'i BOS olan kisiler (yalniz-numara kayitlari, sirket/WhatsApp kayitlari)
+   `sort(localeCompare)` ile listenin BASINA siraliyor (bos string harflerden once
+   gelir, emergency-contacts.tsx:139); kullanicinin gordugu ilk ekranlar tamamen
+   isimsiz kayitlar, baslik fallback'i da numara bastigi icin "title da numara, value
+   da numara" gorunuyor. Isimle arama yapinca isimli kayitlar one cikiyor (aramanin
+   "calismasi" bundan). Ayrica fallback isim alanlari hic istenmemis. Fix:
+   - PICKER_FIELDS'e ContactField.COMPANY ve ContactField.NICKNAME ekle (enum
+     dogrulandi: build/types/Contact.props.d.ts:8,13,19).
+   - displayName = fullName || nickname || company; hicbiri yoksa i18n "İsimsiz kişi"
+     etiketi (5 dil) + numara alt satirda zaten var.
+   - Siralama: isimli kayitlar alfabetik ONCE, isimsizler listenin SONUNDA.
+   - Arama displayName + numara uzerinden calismaya devam eder.
+2) ACIL NUMARA LOKALIZASYONU: app/sos.tsx:20 `EMERGENCY_NUMBER = "112"` sabit; 112 her
+   ulkede acil degil. Fix:
+   - lib/services/emergency.ts'e saf `emergencyNumberForRegion(regionCode)`: ambulans
+     odakli harita: US/CA/MX 911, GB 999, AU 000, NZ 111, JP 119, KR 119, CN 120,
+     BR 192, IN 112; varsayilan 112 (TR + AB). Bolge expo-localization'dan.
+   - TR METIN TUZAGI: mevcut anahtar `sos.call112: "{{number}}'yi ara"` ek uyumunu
+     bozar (911'i, 999'u, 000'i...). Metni ek gerektirmeyen kaliba cevir (ornek TR:
+     "Acil numarayı ara: {{number}}"); 5 dilde gozden gecir. Anahtar adini
+     sos.callEmergency yap (call112 kalirsa yaniltici). Locale'lerde sabit "112" gecen
+     TUM metinleri tara ve {{number}} interpolasyonuna cevir (settings/sos aciklamalari
+     dahil; en.ts/tr.ts disinda 3 dilde de).
+   - Notr dil ve dialer deseni aynen korunur (otomatik arama YOK).
+3) ONBOARDING SECIM BILESENLERI CUCE KALIYOR (koca ekranda minicik secim alani).
+   Teshis: quiz adimlari uygulamanin kompakt Segmented kontrolunu kullaniyor
+   (app/onboarding.tsx:366). Fix: statura quiz secenek karti desenine gec:
+   - components/onboarding/OptionCard: tam genislik dikey secenek kartlari (min ~60px
+     yukseklik, ikon + etiket, secili durumda marka cerceve/dolgu, dokunma hedefi
+     >=44pt), secenek basina stagger, tek-secimde 150ms oto-ilerleme korunur.
+   - Segmented kullanan TUM quiz adimlarina uygula (birim, diyabet tipi, insulin
+     sorusu); sayi/saat girisli adimlarda input ve dokunma hedefleri buyutulur.
+     Uygulama ICI ekranlardaki Segmented kullanimlari degismez (yalniz onboarding).
+- Kapi: `npm run typecheck`.
+- Commit'ler: `fix(emergency): named-first picker + localized emergency number`
+  ve `feat(onboarding): full-width option cards for quiz steps`
+- QA checklist'e ekle: rehber listesinde isimli kisiler isimleriyle ve alfabetik
+  basta, isimsizler "İsimsiz kişi" etiketiyle sonda; ABD bolgeli cihazda SOS butonu
+  911 gosteriyor/ariyor, TR'de 112; TR metninde ek uyumu bozuk gorunmuyor; onboarding
+  secimleri tam genislik kartlar, secili durum belirgin, oto-ilerleme calisiyor.
+
+---
+
+## Bitis raporu (R2.3, uygulandi 2026-07-10)
+
+FAZ 8 main dalinda iki commit ile uygulandi. `npm run typecheck` (tsc + i18n-check)
+yesil. i18n sema anahtari: 534 -> 535 (emergency.unnamedContact +1; sos.call112 ->
+sos.callEmergency yeniden adlandirma). Em dash locales'te sifir. SOS cercevesi
+degismedi (otomatik arama/SMS yok, yalnizca dialer aciliyor).
+
+Commitler:
+- `fix(emergency): named-first picker + localized emergency number`
+- `feat(onboarding): full-width option cards for quiz steps`
+
+### Degisen dosyalar (R2.3)
+
+Yeni:
+- components/onboarding/OptionCard.tsx (tam genislik secenek karti, min 60px)
+
+Degisen:
+- lib/services/emergency.ts (saf `emergencyNumberForRegion`)
+- app/emergency-contacts.tsx (PICKER_FIELDS + NICKNAME + COMPANY; displayName
+  fallback zinciri; isimliler alfabetik once, isimsizler sonda)
+- app/sos.tsx (bolgeye gore acil numara; call112 -> callEmergency)
+- app/onboarding.tsx (birim / diyabet tipi / insulin adimlari OptionCard'a gecti;
+  yerel OptionRow ve Segmented kullanimi kaldirildi; oto-ilerleme 150ms)
+- components/form.tsx (InputRow'a ek `large` prop; varsayilan davranis degismedi)
+- lib/i18n/locales/{tr,en,de,es,fr}.ts
+
+### Kasitli iki sapma
+
+1) Birim adimi oto-ilerlemiyor. Doküman "tek-secimde 150ms oto-ilerleme KORUNUR"
+   diyor; birim adimi bugune kadar oto-ilerlemiyordu (on-secili varsayilani var ve
+   secim arkadaki degerleri donusturuyor). Gorsel olarak OptionCard'a gecti, davranis
+   korundu: sec + "İleri". Diyabet ve insulin adimlari 150ms ile oto-ilerliyor.
+2) Diyabet tipi kartlarinda ikon yok. OptionCard'in ikonu opsiyonel: anlam tasidigi
+   yerde (birim, insulin) ikon tile'i, diyabet tipinde ise radyo noktasi kullaniliyor.
+   Tip 1 / Tip 2 / gebelik icin ikon secmek yuklu tibbi imge uretecekti; kart yine tam
+   genislik ve buyuk dokunma hedefi (asil sikayet giderildi).
+
+### Cihaz QA checklist (R2.3, kullanici tarafindan)
+
+- [ ] Rehber listesi: isimli kisiler ISIMLERIYLE ve alfabetik sirayla BASTA;
+      isimsiz (yalniz-numara / sirket / WhatsApp) kayitlar "İsimsiz kişi" etiketiyle
+      listenin SONUNDA. Numara ustune numara gorunumu yok.
+- [ ] Yalniz sirket adi veya takma adi olan kayitlar bu isimlerle gorunuyor.
+- [ ] Arama hem isimle hem numarayla suzuyor.
+- [ ] Cihaz bolgesi ABD iken SOS butonu "911", TR/AB'de "112", GB "999", AU "000"
+      gosteriyor ve dokununca dialer o numarayla aciliyor (uygulama kendisi aramiyor).
+- [ ] TR metni ek uyumunu bozmuyor: "Acil numarayı ara: 911" (eski "911'yi ara" degil).
+- [ ] Onboarding birim / diyabet tipi / insulin adimlari tam genislik kartlar; secili
+      kart marka cercevesi + dolgu + tik ile belirgin; dokunma hedefi rahat.
+- [ ] Diyabet ve insulin adimlarinda secince oto-ilerliyor (150ms); birim adiminda
+      secip "İleri" ile gecmek gerekiyor (davranis bilerek korundu).
+- [ ] Isim / hedef / karb orani / ISF alanlari ve bazal saat satiri buyudu; uygulama
+      ICI ekranlardaki (ayarlar, hesaplayici, kalemler) Segmented ve alanlar DEGISMEDI.
