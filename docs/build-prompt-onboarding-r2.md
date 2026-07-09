@@ -253,3 +253,115 @@ Degisen:
       metni "/ Health Connect" olmadan gorunuyor.
 - [ ] Kalem seviyesi hatirlaticisi ve az-kalan metni tarafsiz ("Kalem seviyesi hatırlatıcısı",
       "Yaklaşık {{n}} ünite kaldı").
+
+## FAZ 5 (R2.1, 2026-07-09): "Yemeğe başladım" butonu sayaçli ve tek atimlik olsun
+
+Kullanici istegi + hub teshisi: buton (app/(tabs)/index.tsx:654, startedEating :217)
+her zaman aktif; startPostMealTimer POSTMEAL_ID'yi paylastigi icin tekrar basmak
+bildirimi COGALTMIYOR ama zamanlayiciyi bastan kuruyor (90. dakikada tekrar basan
+kullanici hatirlaticiyi 2 saat daha erteliyor) ve toast her basista tekrarlaniyor.
+Hicbir gorsel durum geri bildirimi yok.
+
+Spec:
+
+- ONEMLI CAKISMA (dogrulandi): ayni POSTMEAL_ID'yi otomatik yollar da kuruyor: acllik/
+  yemek oncesi olcum kaydi (index.tsx:242 schedulePostMealReminder) ve yemek kaydi
+  (calculator.tsx:171). Sayacin gercek bildirimle uyusmasi icin kalicilik SERVIS
+  katmaninda merkezilestirilir: schedulePostMealAt (notifications.ts:251) basarili her
+  kurulumda AsyncStorage `zerospike.postMealTimerEnd` = Date.now() + minutes*60000
+  yazar; notifications.ts'ten getPostMealTimerEnd() ve cancelPostMealTimer() export
+  edilir. Boylece otomatik kurulumlar da butonu sayac moduna gecirir. Izin yoksa/kurulum
+  olmadiysa yazilmaz (mevcut toast davranisi kalir).
+- Buton durumu: now < timerEnd iken buton DEVRE DISI (dimmed gorunum, onPress pasif,
+  accessibilityState disabled) ve uzerinde canli geri sayim gosterir. Format: kalan
+  > 1 dk ise "{{m}} dk" hassasiyeti, son dakikada saniye ("{{s}} sn"). Metin notr:
+  ornek TR "Tokluk hatırlatıcısı: 118 dk" (alarm/uyari kelimesi YOK). Tik araligi
+  ekran aciktayken 30 sn yeterli (son dakikada 1 sn); AppState/focus donusunde yeniden
+  hesapla. Sure dolunca anahtari temizle, buton normale doner.
+- Erken tamamlanma: zamanlayici aktifken kullanici post_meal_2h etiketli bir olcum
+  kaydederse amaci gerceklesmistir: zamanlanmis bildirimi iptal et
+  (Notifications.cancelScheduledNotificationAsync ile POSTMEAL_ID; notifications.ts'e
+  bir cancelPostMealTimer() export'u ekle) + timerEnd'i temizle. Kayit akisinin
+  gectigi ortak noktayi bul (logger kaydi period_tag post_meal_2h ise tetikle).
+- Relaunch: dashboard mount'unda timerEnd'i oku, gelecekteyse geri sayimla basla.
+- Ayarlardan postMealDelay degisirse aktif sayaca DOKUNMA (eski sureyle biter).
+- Kalan-sure formatlayicisini saf fonksiyon olarak yaz (lib/ altinda), i18n disinda
+  mantik icermesin.
+- i18n: yeni anahtarlar once tr.ts semasina, sonra 4 dile; notr dil; TR diakritikleri.
+- Kapi: `npm run typecheck`.
+- Commit: `feat(dashboard): post-meal timer button disables + live countdown while armed`
+- QA checklist'e ekle: butona basinca devre disi kaliyor + geri sayim akiyor; uygulamayi
+  kapat/ac geri sayim suruyor; sure dolunca buton normale donuyor; aktifken post_meal_2h
+  olcumu kaydedince sayac kapaniyor ve bildirim gelmiyor; tekrar tekrar basilamiyor;
+  acllik olcumu veya yemek kaydi sonrasi da buton sayac moduna geciyor.
+
+## FAZ 6 (R2.1, 2026-07-09): profile-setup birim donusum bugi + g/ü lokalizasyonu
+
+- BUG (hub koda karsi dogruladi, mmol kullanicilarinda VERI BOZAR): app/profile-setup.tsx
+  save() (:60-76) girilen degerleri DONUSTURMEDEN updateProfile'a yaziyor ve :126/:135/
+  :185 suffix'i common.mgdl'ye sabitliyor. mmol/L kullanan bir hanede yeni aile profili
+  kurulurken alanlar mg/dL etiketiyle gorunur ve mmol olcekli sayilar mg/dL kolonlarina
+  yazilir; hedefler + ISF bozulur, o profilin tum siniflandirma/insight/rapor ciktilari
+  etkilenir. Fix: settings.tsx:337-390 desenini birebir uygula: aktif profilin birimini
+  al, degerleri glucoseToDisplay ile goster, glucoseFromDisplay ile kaydet, suffix'i
+  birim etiketiyle bas. Varsayilanlar da birime cevrilir (orn. 100 mg/dL -> 5.6 mmol).
+- "g/ü" hardcoded TR kisaltmasi 7 yerde her dile sizio: profile-setup.tsx:156/164/172,
+  onboarding.tsx:454 (yeni akis da tasimis), settings.tsx:403/412/421. Yeni i18n
+  anahtari ekle (orn. common.carbRatioUnit) ve dil basina dogal kisaltmayi kullan
+  (EN "g/U", TR "g/Ü", DE orn. "g/E", FR/ES uygun karsilik; sen belirle) ve 7 kullanim
+  yerine uygula.
+- Kapi: `npm run typecheck`.
+- Commit: `fix(profiles): convert glucose fields by active unit + localize carb-ratio suffix`
+- QA checklist'e ekle: mmol profilinde profile-setup alanlari mmol etiketiyle acilir,
+  kaydedilen degerler settings'te ve dashboard hedeflerinde dogru okunur; 5 dilde karb
+  orani alan son eki dogal gorunur.
+
+---
+
+## Bitis raporu (R2.1, uygulandi 2026-07-09)
+
+FAZ 5 ve FAZ 6 main dalinda, faz basina bir commit ile uygulandi. Her fazda
+`npm run typecheck` (tsc + i18n-check) yesil. i18n sema anahtari: 527 -> 530
+(FAZ 5 +2: postMealCountdownMin/Sec; FAZ 6 +1: common.carbRatioUnit). Em dash
+locales'te sifir; regulasyon dili taramasi temiz (sayac metni "Tokluk
+hatırlatıcısı", alarm/uyari yok).
+
+Commitler:
+- `feat(dashboard): post-meal timer button disables + live countdown while armed`
+- `fix(profiles): convert glucose fields by active unit + localize carb-ratio suffix`
+
+### Degisen dosyalar (R2.1)
+
+Yeni:
+- lib/postMealTimer.ts (saf formatlayici: kalan ms -> {seconds, value})
+
+Degisen:
+- lib/services/notifications.ts (schedulePostMealAt zerospike.postMealTimerEnd
+  yazar; getPostMealTimerEnd + cancelPostMealTimer export)
+- app/(tabs)/index.tsx (buton sayac modu: disabled + canli geri sayim, tick 30s/1s,
+  AppState + dataVersion tazeleme, post_meal_2h kaydinda erken tamamlanma)
+- app/profile-setup.tsx (birim donusumu: glucoseToDisplay/glucoseFromDisplay,
+  glucoseUnitLabel suffix, decimal-pad + maxLength 5)
+- app/(tabs)/settings.tsx, app/onboarding.tsx (g/ü -> t("common.carbRatioUnit"))
+- lib/i18n/locales/{tr,en,de,es,fr}.ts
+
+### Cihaz QA checklist (R2.1, kullanici tarafindan)
+
+- [ ] "Yemeğe başladım" butonuna basinca buton devre disi kaliyor ve uzerinde
+      canli geri sayim akiyor ("Tokluk hatırlatıcısı: {{m}} dk", son dakikada "sn").
+- [ ] Aktifken butona TEKRAR basilamiyor (disabled); toast tekrarlanmiyor.
+- [ ] Uygulamayi kapat/ac: geri sayim kaldigi yerden suruyor; arka plandan donunce
+      guncelleniyor.
+- [ ] Sure dolunca buton normale donuyor ("Yemeğe başladım").
+- [ ] Sayac aktifken bir post_meal_2h (tokluk) olcumu kaydedince sayac hemen
+      kapaniyor ve o bildirim GELMIYOR (erken tamamlanma).
+- [ ] Acllik/yemek oncesi olcum kaydi VEYA calculator'da yemek kaydi sonrasi da
+      buton sayac moduna geciyor (otomatik yollar da sayaci kuruyor).
+- [ ] Bildirim izni kapaliyken butona basinca sayac kurulmuyor; mevcut "bildirimleri
+      ac" bilgisi cikiyor.
+- [ ] Ayarlardan tokluk gecikmesini degistirmek aktif sayaci ETKILEMIYOR (eski
+      sureyle bitiyor).
+- [ ] mmol/L kullanan bir profille yeni aile profili kur (profile-setup): açlık/
+      tokluk/ISF alanlari mmol etiketiyle ve mmol degerleriyle aciliyor; kaydedince
+      settings ve dashboard hedefleri dogru okunuyor (mg/dL kolonuna mmol yazilmiyor).
+- [ ] 5 dilde karb orani alan son eki dogal (TR "g/Ü", EN/ES/FR "g/U", DE "g/E").
