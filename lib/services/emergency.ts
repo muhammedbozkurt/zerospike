@@ -43,3 +43,88 @@ export function normalizePhone(raw: string): string {
   const plus = trimmed.startsWith("+") ? "+" : "";
   return plus + trimmed.replace(/[^0-9]/g, "");
 }
+
+/**
+ * Region → international calling code. A pragmatic set covering the app's
+ * markets and the common diaspora destinations; anything unlisted simply yields
+ * no default, and the user types the "+" prefix themselves.
+ */
+const CALLING_CODES: Record<string, string> = {
+  TR: "+90",
+  DE: "+49",
+  FR: "+33",
+  ES: "+34",
+  US: "+1",
+  CA: "+1",
+  GB: "+44",
+  NL: "+31",
+  IT: "+39",
+  AT: "+43",
+  CH: "+41",
+  BE: "+32",
+  SE: "+46",
+  NO: "+47",
+  DK: "+45",
+  FI: "+358",
+  PL: "+48",
+  PT: "+351",
+  IE: "+353",
+  GR: "+30",
+  CZ: "+420",
+  RO: "+40",
+  RU: "+7",
+  UA: "+380",
+  AZ: "+994",
+  AU: "+61",
+  NZ: "+64",
+  JP: "+81",
+  KR: "+82",
+  CN: "+86",
+  IN: "+91",
+  BR: "+55",
+  MX: "+52",
+  AR: "+54",
+  AE: "+971",
+  SA: "+966",
+  QA: "+974",
+  KW: "+965",
+  EG: "+20",
+  ZA: "+27",
+  IL: "+972",
+};
+
+/** The device region's calling code (e.g. "TR" → "+90"), or "" when unknown. */
+export function defaultCallingCode(regionCode?: string | null): string {
+  if (!regionCode) return "";
+  return CALLING_CODES[regionCode.toUpperCase()] ?? "";
+}
+
+/**
+ * Normalizes a typed or contact-book number to E.164, using the device region's
+ * calling code when the number is written in local form. Deliberately simple
+ * (no libphonenumber): strip separators, turn a leading "00" into "+", and for a
+ * bare local number prepend the default code while dropping the single national
+ * trunk "0" (05xx… → +905xx…). Returns null when the result is not a plausible
+ * "+" followed by 8-15 digits, so the caller can show an inline error.
+ */
+export function normalizePhoneWithRegion(
+  raw: string,
+  callingCode: string
+): string | null {
+  const cleaned = raw.replace(/[\s\-().]/g, "");
+  if (!cleaned) return null;
+
+  let e164: string;
+  if (cleaned.startsWith("+")) {
+    e164 = cleaned;
+  } else if (cleaned.startsWith("00")) {
+    e164 = `+${cleaned.slice(2)}`;
+  } else {
+    const code = callingCode.trim();
+    // No known region and no explicit "+": we cannot qualify the number.
+    if (!/^\+\d{1,4}$/.test(code)) return null;
+    e164 = code + cleaned.replace(/^0/, "");
+  }
+
+  return /^\+\d{8,15}$/.test(e164) ? e164 : null;
+}

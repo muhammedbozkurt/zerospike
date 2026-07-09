@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import * as SMS from "expo-sms";
 import * as Location from "expo-location";
@@ -66,8 +66,21 @@ export default function SosScreen() {
 
   useEffect(() => {
     logEvent("sos_opened");
-    getEmergencyContacts().then(setContacts);
   }, []);
+
+  // Re-read on focus, not just on mount: adding a contact and coming back from
+  // /emergency-contacts must show it immediately, with no manual refresh.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      getEmergencyContacts().then((list) => {
+        if (alive) setContacts(list);
+      });
+      return () => {
+        alive = false;
+      };
+    }, [])
+  );
 
   async function buildMessage(): Promise<string> {
     const loc = await tryLocationLink();
