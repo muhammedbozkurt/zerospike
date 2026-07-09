@@ -15,6 +15,7 @@ import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { Button } from "../components/ui";
 import { useFeedback } from "../components/Feedback";
+import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSuccess } from "../lib/haptics";
 
 export default function DownsellScreen() {
@@ -94,6 +95,13 @@ export default function DownsellScreen() {
       className="flex-1 bg-zinc-950"
       style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }}
     >
+      {/* Onboarding-sourced downsell carries the language chip too. */}
+      {trigger === "onboarding" ? (
+        <View className="flex-row justify-end px-6 pb-2">
+          <LanguageChip />
+        </View>
+      ) : null}
+
       <View className="flex-1 px-6 justify-center">
         {loading ? (
           <Text className="text-zinc-500 text-center">{t("common.loading")}</Text>

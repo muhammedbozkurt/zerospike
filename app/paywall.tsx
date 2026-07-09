@@ -25,6 +25,7 @@ import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { Button } from "../components/ui";
 import { useFeedback } from "../components/Feedback";
+import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 
 /** Default free-trial length for the annual plan (RC intro offer). */
@@ -40,22 +41,6 @@ function fmtMoney(amount: number, currencyCode: string): string {
   } catch {
     return String(Math.round(amount * 100) / 100);
   }
-}
-
-function FeatureGroup({ title, items }: { title: string; items: string[] }) {
-  return (
-    <View className="mb-4">
-      <Text className="text-brand text-xs font-bold uppercase tracking-wider mb-2">
-        {title}
-      </Text>
-      {items.map((text, i) => (
-        <View key={i} className="flex-row items-center mb-2">
-          <Ionicons name="checkmark-circle" size={16} color="#22d3ee" />
-          <Text className="text-zinc-200 flex-1 ml-2.5 text-[13px]">{text}</Text>
-        </View>
-      ))}
-    </View>
-  );
 }
 
 function PlanCard({
@@ -291,10 +276,21 @@ export default function PaywallScreen() {
 
   return (
     <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
-      <View className="flex-row justify-end px-4 py-2">
-        <Pressable onPress={dismiss} hitSlop={10} className="p-1">
-          <Ionicons name="close" size={26} color="#71717a" />
+      <View className="flex-row items-center justify-between px-4 py-2">
+        {/* Visible free exit: same dismiss path (downsell chain) as the X. */}
+        <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1">
+          <Text className="text-zinc-400 font-medium">{t("paywall.notNow")}</Text>
         </Pressable>
+        <View className="flex-row items-center">
+          {context === "onboarding" ? (
+            <View className="mr-2">
+              <LanguageChip />
+            </View>
+          ) : null}
+          <Pressable onPress={dismiss} hitSlop={10} className="p-1">
+            <Ionicons name="close" size={26} color="#71717a" />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -320,29 +316,27 @@ export default function PaywallScreen() {
           </View>
         ) : null}
 
-        {/* Grouped benefits */}
+        {/* Benefits: a single, focused list (at most 4 rows). Health sync is
+            iOS-only (Health Connect removed for Play policy), so on Android it
+            drops off and an injection benefit fills the slot. */}
         <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mb-6">
-          <FeatureGroup
-            title={t("paywall.groupTracking")}
-            items={[
-              // Health sync is iOS-only (Health Connect removed for Play policy).
-              ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
-              t("paywall.featureCustomFoods"),
-              t("paywall.featureFamily"),
-            ]}
-          />
-          <FeatureGroup
-            title={t("paywall.groupInjection")}
-            items={[t("paywall.featureInjection"), t("paywall.featurePens")]}
-          />
-          <FeatureGroup
-            title={t("paywall.groupInsights")}
-            items={[
-              t("paywall.featureInsights"),
-              t("paywall.featurePdf"),
-              t("paywall.featureExport"),
-            ]}
-          />
+          {[
+            ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
+            t("paywall.featureInsights"),
+            t("paywall.featureFamily"),
+            t("paywall.featurePdf"),
+            t("paywall.featureInjection"),
+          ]
+            .slice(0, 4)
+            .map((text, i, arr) => (
+              <View
+                key={i}
+                className={`flex-row items-center ${i < arr.length - 1 ? "mb-3" : ""}`}
+              >
+                <Ionicons name="checkmark-circle" size={18} color="#22d3ee" />
+                <Text className="text-zinc-200 flex-1 ml-3 text-[14px]">{text}</Text>
+              </View>
+            ))}
         </View>
 
         {loading ? (

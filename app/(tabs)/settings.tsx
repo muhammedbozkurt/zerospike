@@ -14,7 +14,7 @@ import { markSampleActive, clearSampleFlag } from "../../lib/sampleData";
 import { exportLogsCsv } from "../../lib/services/export";
 import { exportLogsPdf } from "../../lib/services/report";
 import { INSIGHTS_WINDOWS } from "../../lib/insights";
-import { setProOverride, presentCodeRedemption } from "../../lib/services/purchases";
+import { setProOverride, presentCodeRedemption, restore } from "../../lib/services/purchases";
 import {
   applyNotificationPrefs,
   hasNotificationPermission,
@@ -105,6 +105,7 @@ export default function SettingsScreen() {
   const [notifDenied, setNotifDenied] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
@@ -217,6 +218,22 @@ export default function SettingsScreen() {
     }
     await presentCodeRedemption();
     await refreshPro();
+  }
+
+  // Restore prior purchases. Same service + toast keys as the paywall so the
+  // feedback is identical wherever a user restores from.
+  async function onRestore() {
+    if (restoring) return;
+    setRestoring(true);
+    try {
+      const result = await restore();
+      await refreshPro();
+      if (result === "restored") toast(t("paywall.restored"), "success");
+      else if (result === "none") toast(t("paywall.nothingToRestore"), "info");
+      else toast(t("paywall.restoreFailed"), "error");
+    } finally {
+      setRestoring(false);
+    }
   }
 
   async function onLoadDemo() {
@@ -697,6 +714,16 @@ export default function SettingsScreen() {
             onPress={onRedeemCode}
           />
         ) : null}
+        <Row
+          icon="refresh-outline"
+          label={t("settings.restorePurchases")}
+          onPress={onRestore}
+          right={
+            restoring ? (
+              <Ionicons name="hourglass-outline" size={18} color="#52525b" />
+            ) : undefined
+          }
+        />
         <Row
           icon="document-text-outline"
           label={t("settings.exportCsv")}
