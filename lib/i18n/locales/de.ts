@@ -314,7 +314,7 @@ const de: TranslationSchema = {
   sos: {
     title: "SOS",
     subtitle: "Das hilft dir, schnell Hilfe zu erreichen. Es ruft oder sendet nie von selbst; zum Senden tippst immer du.",
-    call112: "{{number}} anrufen",
+    callEmergency: "Notruf wählen: {{number}}",
     callContact: "Anrufen",
     messageContact: "Nachricht senden",
     whatsappContact: "WhatsApp",
@@ -334,6 +334,7 @@ const de: TranslationSchema = {
     add: "Hinzufügen",
     pickFromContacts: "Aus Kontakten wählen",
     searchPlaceholder: "Kontakte suchen",
+    unnamedContact: "Kontakt ohne Namen",
     noDeviceContacts: "Es wurden keine Kontakte mit Telefonnummer gefunden.",
     noResults: "Keine Ergebnisse gefunden.",
     permissionHint: "Der Kontaktzugriff ist deaktiviert. Erlaube ihn in den Einstellungen, um deine Kontakte hier zu sehen.",

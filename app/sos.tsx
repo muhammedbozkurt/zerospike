@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -6,18 +6,16 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import * as SMS from "expo-sms";
 import * as Location from "expo-location";
+import { getLocales } from "expo-localization";
 
 import {
   getEmergencyContacts,
   normalizePhone,
+  emergencyNumberForRegion,
   type EmergencyContact,
 } from "../lib/services/emergency";
 import { logEvent } from "../lib/analytics";
 import { hapticSelect } from "../lib/haptics";
-
-// EU / Turkey single emergency number. The app can only OPEN the dialer; it can
-// never place a call on its own (no platform allows that).
-const EMERGENCY_NUMBER = "112";
 
 /** Tries to build a maps link from the current location; null if unavailable. */
 async function tryLocationLink(): Promise<string | null> {
@@ -63,6 +61,16 @@ export default function SosScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+
+  // 112 is not the emergency number everywhere, so follow the device region.
+  // The app can only OPEN the dialer; it never places a call on its own.
+  const emergencyNumber = useMemo(() => {
+    try {
+      return emergencyNumberForRegion(getLocales()[0]?.regionCode);
+    } catch {
+      return "112";
+    }
+  }, []);
 
   useEffect(() => {
     logEvent("sos_opened");
@@ -122,10 +130,10 @@ export default function SosScreen() {
     Linking.openURL(`tel:${normalizePhone(phone)}`).catch(() => {});
   }
 
-  function call112() {
+  function callEmergency() {
     hapticSelect();
     logEvent("sos_action", { method: "call" });
-    Linking.openURL(`tel:${EMERGENCY_NUMBER}`).catch(() => {});
+    Linking.openURL(`tel:${emergencyNumber}`).catch(() => {});
   }
 
   return (
@@ -147,9 +155,9 @@ export default function SosScreen() {
         {/* Emergency number is always available */}
         <ActionButton
           icon="call"
-          label={t("sos.call112", { number: EMERGENCY_NUMBER })}
+          label={t("sos.callEmergency", { number: emergencyNumber })}
           color="#dc2626"
-          onPress={call112}
+          onPress={callEmergency}
         />
 
         {contacts.length === 0 ? (

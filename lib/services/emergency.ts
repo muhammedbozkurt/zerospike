@@ -100,6 +100,31 @@ export function defaultCallingCode(regionCode?: string | null): string {
 }
 
 /**
+ * Region → the number to reach an ambulance. 112 is the default (Turkey and the
+ * EU) but it is not the emergency number everywhere, so a US device must offer
+ * 911. The app can only ever OPEN the dialer with this number prefilled.
+ */
+const EMERGENCY_NUMBERS: Record<string, string> = {
+  US: "911",
+  CA: "911",
+  MX: "911",
+  GB: "999",
+  AU: "000",
+  NZ: "111",
+  JP: "119",
+  KR: "119",
+  CN: "120",
+  BR: "192",
+  IN: "112",
+};
+
+/** The emergency number for a region, falling back to 112. */
+export function emergencyNumberForRegion(regionCode?: string | null): string {
+  if (!regionCode) return "112";
+  return EMERGENCY_NUMBERS[regionCode.toUpperCase()] ?? "112";
+}
+
+/**
  * Normalizes a typed or contact-book number to E.164, using the device region's
  * calling code when the number is written in local form. Deliberately simple
  * (no libphonenumber): strip separators, turn a leading "00" into "+", and for a

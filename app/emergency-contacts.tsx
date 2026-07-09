@@ -44,7 +44,14 @@ interface DeviceContact {
 // getContactsAsync / presentContactPickerAsync throw at runtime, so this uses
 // the class API. The native picker is avoided on purpose: this screen is a modal
 // and iOS cannot present a second native modal from the root over that stack.
-const PICKER_FIELDS = [ContactField.FULL_NAME, ContactField.PHONES] as const;
+// Nickname and company back up fullName: number-only, business and messenger
+// entries have no full name, and would otherwise render as "number over number".
+const PICKER_FIELDS = [
+  ContactField.FULL_NAME,
+  ContactField.NICKNAME,
+  ContactField.COMPANY,
+  ContactField.PHONES,
+] as const;
 
 function digitsOnly(value: string): string {
   return value.replace(/[^0-9]/g, "");
@@ -130,13 +137,20 @@ export default function EmergencyContactsScreen() {
       const list: DeviceContact[] = rows
         .map((row) => ({
           id: row.id,
-          name: (row.fullName ?? "").trim(),
+          name: (row.fullName || row.nickname || row.company || "").trim(),
           numbers: (row.phones ?? [])
             .map((p) => (p.number ?? "").trim())
             .filter((n) => n.length > 0),
         }))
         .filter((c) => c.numbers.length > 0)
-        .sort((a, b) => a.name.localeCompare(b.name));
+        // Named contacts alphabetically first; the nameless ones (which sort
+        // ahead of every letter as "") go to the end where they belong.
+        .sort((a, b) => {
+          const aNamed = a.name.length > 0;
+          const bNamed = b.name.length > 0;
+          if (aNamed !== bNamed) return aNamed ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
       setDeviceContacts(list);
     } catch {
       setPickerOpen(false);
@@ -246,7 +260,7 @@ export default function EmergencyContactsScreen() {
               renderItem={({ item }) => (
                 <View className="mb-2.5">
                   <Text className="text-zinc-400 text-xs font-semibold px-1 mb-1">
-                    {item.name || item.numbers[0]}
+                    {item.name || t("emergency.unnamedContact")}
                   </Text>
                   {item.numbers.map((number) => (
                     <Pressable

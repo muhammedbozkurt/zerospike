@@ -312,7 +312,7 @@ const tr = {
   sos: {
     title: "SOS",
     subtitle: "Yardıma hızlı ulaşmanı kolaylaştırır. Kendi başına asla aramaz ya da göndermez; göndermek için sen dokunursun.",
-    call112: "{{number}}'yi ara",
+    callEmergency: "Acil numarayı ara: {{number}}",
     callContact: "Ara",
     messageContact: "Mesaj gönder",
     whatsappContact: "WhatsApp",
@@ -332,6 +332,7 @@ const tr = {
     add: "Ekle",
     pickFromContacts: "Rehberden seç",
     searchPlaceholder: "Kişi ara",
+    unnamedContact: "İsimsiz kişi",
     noDeviceContacts: "Rehberinde telefon numarası olan kişi bulunamadı.",
     noResults: "Sonuç bulunamadı.",
     permissionHint: "Rehber erişimi kapalı. Kişilerini burada görebilmek için Ayarlar'dan izin ver.",
