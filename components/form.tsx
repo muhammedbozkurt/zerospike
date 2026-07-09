@@ -51,6 +51,8 @@ interface InputRowProps extends Omit<TextInputProps, "style"> {
   hint?: string;
   suffix?: string;
   last?: boolean;
+  /** Roomier row + value, for the full-screen onboarding steps. */
+  large?: boolean;
 }
 
 /** A single label + right-aligned input row, with a divider unless `last`. */
@@ -60,16 +62,24 @@ export function InputRow({
   hint,
   suffix,
   last,
+  large,
   ...input
 }: InputRowProps) {
   return (
     <View>
-      <View className="flex-row items-center px-4 py-3">
+      <View className={`flex-row items-center px-4 ${large ? "py-4" : "py-3"}`}>
         {icon ? (
-          <Ionicons name={icon} size={18} color="#71717a" style={{ marginRight: 12 }} />
+          <Ionicons
+            name={icon}
+            size={large ? 20 : 18}
+            color="#71717a"
+            style={{ marginRight: 12 }}
+          />
         ) : null}
         <View className="flex-1 pr-3">
-          <Text className="text-[15px] text-zinc-100">{label}</Text>
+          <Text className={`${large ? "text-base" : "text-[15px]"} text-zinc-100`}>
+            {label}
+          </Text>
           {hint ? (
             <Text className="text-xs text-zinc-500 mt-0.5">{hint}</Text>
           ) : null}
@@ -77,7 +87,9 @@ export function InputRow({
         <View className="flex-row items-center">
           <TextInput
             placeholderTextColor="#52525b"
-            className="text-right text-[16px] font-semibold text-zinc-50 min-w-[56px] max-w-[150px] py-1"
+            className={`text-right ${
+              large ? "text-[19px]" : "text-[16px]"
+            } font-semibold text-zinc-50 min-w-[56px] max-w-[150px] py-1`}
             {...input}
           />
           {suffix ? (

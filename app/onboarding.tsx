@@ -30,13 +30,14 @@ import {
 } from "../lib/glucose";
 import { logEvent } from "../lib/analytics";
 import { hapticSelect } from "../lib/haptics";
-import { Button, Segmented } from "../components/ui";
+import { Button } from "../components/ui";
 import { InputRow, AcceptCheck } from "../components/form";
 import { InlineTimePicker } from "../components/InlineTimePicker";
 import { DisclaimerBanner } from "../components/Disclaimer";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { Welcome } from "../components/onboarding/Welcome";
 import { QuizStep } from "../components/onboarding/QuizStep";
+import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
 
@@ -53,6 +54,23 @@ type DiabetesOption = (typeof DIABETES_OPTIONS)[number];
 const INSULIN_OPTIONS = ["basal", "bolus", "both", "none"] as const;
 type InsulinOption = (typeof INSULIN_OPTIONS)[number];
 
+type IconName = keyof typeof Ionicons.glyphMap;
+
+const UNIT_ICONS: Record<GlucoseUnit, IconName> = {
+  mgdl: "speedometer-outline",
+  mmol: "flask-outline",
+};
+
+const INSULIN_ICONS: Record<InsulinOption, IconName> = {
+  basal: "moon-outline",
+  bolus: "restaurant-outline",
+  both: "swap-horizontal-outline",
+  none: "remove-circle-outline",
+};
+
+/** Single-select steps settle, then advance. */
+const AUTO_ADVANCE_MS = 150;
+
 type Phase = "welcome" | "quiz" | "reveal";
 type StepId =
   | "name"
@@ -65,37 +83,6 @@ type StepId =
   | "basal"
   | "notify"
   | "disclaimer";
-
-/** Full-width single-select row with a leading radio dot (statura-style). */
-function OptionRow({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`flex-row items-center rounded-2xl border px-4 py-3.5 mb-2.5 ${
-        selected ? "border-brand bg-brand/10" : "border-zinc-800 bg-zinc-900"
-      }`}
-    >
-      <View
-        className={`w-5 h-5 rounded-full border-2 items-center justify-center mr-3 ${
-          selected ? "border-brand" : "border-zinc-600"
-        }`}
-      >
-        {selected ? <View className="w-2.5 h-2.5 rounded-full bg-brand" /> : null}
-      </View>
-      <Text className={`flex-1 ${selected ? "text-brand font-medium" : "text-zinc-200"}`}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
 
 export default function OnboardingScreen() {
   const { t } = useTranslation();
@@ -182,7 +169,7 @@ export default function OnboardingScreen() {
     apply();
     if (advancingRef.current) return;
     advancingRef.current = true;
-    setTimeout(next, 160);
+    setTimeout(next, AUTO_ADVANCE_MS);
   }
 
   // Leaving the notification step: the on-screen rationale has been shown, so
@@ -354,46 +341,46 @@ export default function OnboardingScreen() {
                 value={name}
                 onChangeText={setName}
                 placeholder={t("onboarding.profileNamePlaceholder")}
+                large
                 last
               />
             </View>
           </FadeSlideIn>
         );
 
+      // Unit has a pre-selected default and converts the values behind it, so it
+      // stays a select-then-continue step (no auto-advance), as before.
       case "unit":
         return (
-          <FadeSlideIn delay={optDelay(0)}>
-            <Segmented
-              options={[
-                { value: "mgdl", label: "mg/dL" },
-                { value: "mmol", label: "mmol/L" },
-              ]}
-              value={unit}
-              onChange={changeUnit}
-            />
-          </FadeSlideIn>
+          <View>
+            {(["mgdl", "mmol"] as const).map((opt, i) => (
+              <FadeSlideIn key={opt} delay={optDelay(i)}>
+                <OptionCard
+                  icon={UNIT_ICONS[opt]}
+                  label={glucoseUnitLabel(opt)}
+                  selected={unit === opt}
+                  onPress={() => {
+                    hapticSelect();
+                    changeUnit(opt);
+                  }}
+                />
+              </FadeSlideIn>
+            ))}
+          </View>
         );
 
       case "diabetes":
         return (
-          <View className="flex-row flex-wrap gap-2.5">
-            {DIABETES_OPTIONS.map((opt, i) => {
-              const on = diabetes === opt;
-              return (
-                <FadeSlideIn key={opt} delay={optDelay(i)}>
-                  <Pressable
-                    onPress={() => selectAndAdvance(() => setDiabetes(opt))}
-                    className={`rounded-xl border px-3.5 py-2.5 ${
-                      on ? "border-brand bg-brand/10" : "border-zinc-700 bg-zinc-900"
-                    }`}
-                  >
-                    <Text className={on ? "text-brand font-medium" : "text-zinc-300"}>
-                      {t(`onboarding.diabetes_${opt}`)}
-                    </Text>
-                  </Pressable>
-                </FadeSlideIn>
-              );
-            })}
+          <View>
+            {DIABETES_OPTIONS.map((opt, i) => (
+              <FadeSlideIn key={opt} delay={optDelay(i)}>
+                <OptionCard
+                  label={t(`onboarding.diabetes_${opt}`)}
+                  selected={diabetes === opt}
+                  onPress={() => selectAndAdvance(() => setDiabetes(opt))}
+                />
+              </FadeSlideIn>
+            ))}
           </View>
         );
 
@@ -402,7 +389,8 @@ export default function OnboardingScreen() {
           <View>
             {INSULIN_OPTIONS.map((opt, i) => (
               <FadeSlideIn key={opt} delay={optDelay(i)}>
-                <OptionRow
+                <OptionCard
+                  icon={INSULIN_ICONS[opt]}
                   label={t(`onboarding.insulin_${opt}`)}
                   selected={insulin === opt}
                   onPress={() => selectAndAdvance(() => setInsulin(opt))}
@@ -425,6 +413,7 @@ export default function OnboardingScreen() {
                 keyboardType="decimal-pad"
                 suffix={glucoseUnitLabel(unit)}
                 maxLength={5}
+                large
               />
               <InputRow
                 icon="time-outline"
@@ -435,6 +424,7 @@ export default function OnboardingScreen() {
                 keyboardType="decimal-pad"
                 suffix={glucoseUnitLabel(unit)}
                 maxLength={5}
+                large
                 last
               />
             </View>
@@ -453,6 +443,7 @@ export default function OnboardingScreen() {
                 keyboardType="decimal-pad"
                 suffix={t("common.carbRatioUnit")}
                 maxLength={4}
+                large
                 last
               />
             </View>
@@ -471,6 +462,7 @@ export default function OnboardingScreen() {
                 keyboardType="decimal-pad"
                 suffix={glucoseUnitLabel(unit)}
                 maxLength={5}
+                large
                 last
               />
             </View>
@@ -482,13 +474,16 @@ export default function OnboardingScreen() {
           <FadeSlideIn delay={optDelay(0)}>
             <Pressable
               onPress={() => setShowTime((s) => !s)}
-              className="flex-row items-center justify-between rounded-xl bg-zinc-900 border border-zinc-800 px-4 py-3.5"
+              style={{ minHeight: 60 }}
+              className="flex-row items-center justify-between rounded-2xl bg-zinc-900 border border-zinc-800 px-4 active:bg-zinc-800"
             >
               <View className="flex-row items-center">
-                <Ionicons name="moon-outline" size={18} color="#22d3ee" />
-                <Text className="text-zinc-200 ml-2.5">{t("onboarding.basalTime")}</Text>
+                <Ionicons name="moon-outline" size={20} color="#22d3ee" />
+                <Text className="text-zinc-200 text-base ml-3">
+                  {t("onboarding.basalTime")}
+                </Text>
               </View>
-              <Text className="text-zinc-50 font-semibold">{basalTime}</Text>
+              <Text className="text-zinc-50 text-lg font-semibold">{basalTime}</Text>
             </Pressable>
             <InlineTimePicker
               visible={showTime}
@@ -558,7 +553,8 @@ export default function OnboardingScreen() {
             else setIsf(String(glucoseToDisplay(DEFAULT_ISF_MGDL, unit)));
             next();
           }}
-          className="py-2.5 items-center"
+          hitSlop={8}
+          className="py-3.5 items-center"
         >
           <Text className="text-zinc-400 font-medium">{t("onboarding.notSure")}</Text>
         </Pressable>
