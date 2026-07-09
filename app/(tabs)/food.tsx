@@ -35,7 +35,7 @@ export default function FoodScreen() {
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [recent, setRecent] = useState<RecentMeal[]>([]);
 
-  const loadAll = useCallback(async () => setAll(await listAllFoods()), []);
+  const loadAll = useCallback(async () => setAll(await listAllFoods(lang)), [lang]);
   const loadFavorites = useCallback(async () => {
     if (!activeProfile) return;
     const list = await listFavoriteFoods(activeProfile.id);
@@ -62,13 +62,13 @@ export default function FoodScreen() {
     let active = true;
     (async () => {
       if (!query.trim()) return setSearchResults([]);
-      const found = await searchFoods(query);
+      const found = await searchFoods(query, lang);
       if (active) setSearchResults(found);
     })();
     return () => {
       active = false;
     };
-  }, [query, dataVersion]);
+  }, [query, dataVersion, lang]);
 
   const customFoods = useMemo(() => all.filter((f) => f.is_custom === 1), [all]);
   const byCat = useMemo(() => {

@@ -459,6 +459,11 @@ kosar.
 ### R1.1
 - [ ] (A) Barkod kamera-izin ekraninda "Devam" butonu 5 dilde dogru metinle (ham anahtar
       yok); profil kurulumunda basal-saati satiri etiketli. `npm run i18n:check` CI'da yesil.
+- [ ] (B) TR'deyken yemek listesi/aramasi Turkce adlar + Turkce alfabetik (orn. "e" ->
+      Ekmek/Elma once); FR'deyken Fransizca; TR ilk ekranda gunluk TR yemekleri one geliyor.
+      Custom yemek her dilde aranabiliyor. Kategori adlari cevirili.
+      (Not: seed 562 satir denetlendi, 5 dil GERCEKTEN dolu; Baguette/Quiche/Doner gibi
+      diller-arasi ayni yazilanlar mesru loanword, kopya-hatasi degil.)
 
 ## R1.1 EK GOREVLER (2026-07-09, kullanici cihaz bulgulari)
 
