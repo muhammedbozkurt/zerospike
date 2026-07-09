@@ -8,6 +8,7 @@ const tr = {
     units: "ünite",
     mgdl: "mg/dL",
     grams: "g",
+    carbRatioUnit: "g/Ü",
     pro: "Pro",
     confirm: "Onayla",
     continue: "Devam",

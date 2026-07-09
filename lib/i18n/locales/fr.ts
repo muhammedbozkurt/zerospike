@@ -10,6 +10,7 @@ const fr: TranslationSchema = {
     units: "unités",
     mgdl: "mg/dL",
     grams: "g",
+    carbRatioUnit: "g/U",
     pro: "Pro",
     confirm: "Confirmer",
     continue: "Continuer",

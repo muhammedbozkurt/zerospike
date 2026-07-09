@@ -400,7 +400,7 @@ export default function SettingsScreen() {
             value={crB}
             onChangeText={setCrB}
             keyboardType="decimal-pad"
-            suffix="g/ü"
+            suffix={t("common.carbRatioUnit")}
             onEndEditing={() => persist({ carb_ratio_breakfast: n(crB, 10) })}
           />
           <InputRow
@@ -409,7 +409,7 @@ export default function SettingsScreen() {
             value={crL}
             onChangeText={setCrL}
             keyboardType="decimal-pad"
-            suffix="g/ü"
+            suffix={t("common.carbRatioUnit")}
             onEndEditing={() => persist({ carb_ratio_lunch: n(crL, 12) })}
           />
           <InputRow
@@ -418,7 +418,7 @@ export default function SettingsScreen() {
             value={crD}
             onChangeText={setCrD}
             keyboardType="decimal-pad"
-            suffix="g/ü"
+            suffix={t("common.carbRatioUnit")}
             onEndEditing={() => persist({ carb_ratio_dinner: n(crD, 12) })}
             last
           />

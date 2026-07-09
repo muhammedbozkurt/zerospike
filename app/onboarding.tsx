@@ -451,7 +451,7 @@ export default function OnboardingScreen() {
                 value={carbRatio}
                 onChangeText={setCarbRatio}
                 keyboardType="decimal-pad"
-                suffix="g/ü"
+                suffix={t("common.carbRatioUnit")}
                 maxLength={4}
                 last
               />

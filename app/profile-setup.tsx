@@ -15,6 +15,11 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { updateProfile } from "../lib/db/profiles";
 import { scheduleBasalReminder } from "../lib/services/notifications";
+import {
+  glucoseToDisplay,
+  glucoseFromDisplay,
+  glucoseUnitLabel,
+} from "../lib/glucose";
 import { Button } from "../components/ui";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { InlineTimePicker } from "../components/InlineTimePicker";
@@ -29,13 +34,17 @@ export default function ProfileSetupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, bumpData } = useApp();
+  // Glucose fields (targets, ISF) are stored in mg/dL but shown/entered in this
+  // profile's unit, so a mmol household never sees mg/dL labels or writes mmol
+  // numbers into mg/dL columns.
+  const unit = activeProfile?.glucose_unit ?? "mgdl";
 
   const [name, setName] = useState(activeProfile?.name ?? "Profil");
   const [fasting, setFasting] = useState(
-    String(activeProfile?.target_fasting_max ?? 100)
+    String(glucoseToDisplay(activeProfile?.target_fasting_max ?? 100, unit))
   );
   const [postmeal, setPostmeal] = useState(
-    String(activeProfile?.target_postmeal_max ?? 140)
+    String(glucoseToDisplay(activeProfile?.target_postmeal_max ?? 140, unit))
   );
   const [crB, setCrB] = useState(
     String(activeProfile?.carb_ratio_breakfast ?? 10)
@@ -43,7 +52,7 @@ export default function ProfileSetupScreen() {
   const [crL, setCrL] = useState(String(activeProfile?.carb_ratio_lunch ?? 12));
   const [crD, setCrD] = useState(String(activeProfile?.carb_ratio_dinner ?? 12));
   const [isf, setIsf] = useState(
-    String(activeProfile?.insulin_sensitivity_factor ?? 40)
+    String(glucoseToDisplay(activeProfile?.insulin_sensitivity_factor ?? 40, unit))
   );
   const [dailyCarb, setDailyCarb] = useState(
     String(activeProfile?.daily_carb_target_g ?? 200)
@@ -62,12 +71,21 @@ export default function ProfileSetupScreen() {
     setSaving(true);
     await updateProfile(activeProfile.id, {
       name: name.trim() || "Profil",
-      target_fasting_max: Math.round(n(fasting, 100)),
-      target_postmeal_max: Math.round(n(postmeal, 140)),
+      target_fasting_max: glucoseFromDisplay(
+        n(fasting, glucoseToDisplay(100, unit)),
+        unit
+      ),
+      target_postmeal_max: glucoseFromDisplay(
+        n(postmeal, glucoseToDisplay(140, unit)),
+        unit
+      ),
       carb_ratio_breakfast: n(crB, 10),
       carb_ratio_lunch: n(crL, 12),
       carb_ratio_dinner: n(crD, 12),
-      insulin_sensitivity_factor: n(isf, 40),
+      insulin_sensitivity_factor: glucoseFromDisplay(
+        n(isf, glucoseToDisplay(40, unit)),
+        unit
+      ),
       daily_carb_target_g: Math.round(n(dailyCarb, 200)),
     });
     await scheduleBasalReminder(basalTime);
@@ -122,18 +140,18 @@ export default function ProfileSetupScreen() {
             label={t("period.fasting")}
             value={fasting}
             onChangeText={setFasting}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
           />
           <InputRow
             icon="time-outline"
             label={t("period.post_meal_2h")}
             value={postmeal}
             onChangeText={setPostmeal}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
           />
           <InputRow
             icon="pie-chart-outline"
@@ -153,7 +171,7 @@ export default function ProfileSetupScreen() {
             value={crB}
             onChangeText={setCrB}
             keyboardType="decimal-pad"
-            suffix="g/ü"
+            suffix={t("common.carbRatioUnit")}
           />
           <InputRow
             icon="partly-sunny-outline"
@@ -161,7 +179,7 @@ export default function ProfileSetupScreen() {
             value={crL}
             onChangeText={setCrL}
             keyboardType="decimal-pad"
-            suffix="g/ü"
+            suffix={t("common.carbRatioUnit")}
           />
           <InputRow
             icon="moon-outline"
@@ -169,7 +187,7 @@ export default function ProfileSetupScreen() {
             value={crD}
             onChangeText={setCrD}
             keyboardType="decimal-pad"
-            suffix="g/ü"
+            suffix={t("common.carbRatioUnit")}
             last
           />
         </FormCard>
@@ -181,9 +199,9 @@ export default function ProfileSetupScreen() {
             hint={t("settings.isfHint")}
             value={isf}
             onChangeText={setIsf}
-            keyboardType="number-pad"
-            suffix={t("common.mgdl")}
-            maxLength={3}
+            keyboardType="decimal-pad"
+            suffix={glucoseUnitLabel(unit)}
+            maxLength={5}
           />
           <ActionRow
             icon="alarm-outline"
