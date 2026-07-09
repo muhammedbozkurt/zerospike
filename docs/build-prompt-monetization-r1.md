@@ -464,6 +464,18 @@ kosar.
       Custom yemek her dilde aranabiliyor. Kategori adlari cevirili.
       (Not: seed 562 satir denetlendi, 5 dil GERCEKTEN dolu; Baguette/Quiche/Doner gibi
       diller-arasi ayni yazilanlar mesru loanword, kopya-hatasi degil.)
+- [ ] (C) Barkod akisi: kamera izni yok/reddi/BASLATILAMADI (mount error) durumlarinin hepsi
+      duzgun ekranla + cikis yolu ile anlatiliyor; bulunamayan barkodda "yeni kaydet / tekrar
+      tara"; ayni barkod pes pese tekrar sormuyor (dedupe). Ozel yemek: karb (100 g'da) +
+      porsiyon (g) birimleri etiketlerde, dogru klavye; kaydedince toast + listede aninda
+      gorunuyor. Iki akis da 5 dilde ham anahtarsiz.
+
+R1.1-C bulgu ozeti (asistan denetimi): (1) common.continue ham anahtari kamera-izin ekraninda
+gorunuyordu -> A'da eklendi + audit script'iyle mekaniklestirildi. (2) Kamera mount hatasinda
+siyah ekranda kaliniyordu -> onMountError + hata ekrani (tekrar dene / kapat) eklendi.
+(3) Bulunamayan barkod reddedilince ayni kod aninda yeniden soruluyordu -> lastCode dedupe
+guard'i eklendi. (4) Ozel yemek kaydinda geri bildirim yoktu -> basari toast'i eklendi.
+Birim/klavye/anlik-liste zaten dogruydu (foodName + bumpData).
 
 ## R1.1 EK GOREVLER (2026-07-09, kullanici cihaz bulgulari)
 

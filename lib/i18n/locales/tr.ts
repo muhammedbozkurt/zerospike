@@ -167,6 +167,7 @@ const tr = {
     portionSize: "Tipik porsiyon (g)",
     notes: "Notlar (opsiyonel)",
     addFood: "Yemeği Kaydet",
+    saved: "Yemek kaydedildi",
     custom: "Özel",
     deleteFood: "Bu özel yemeği silmek istediğinize emin misiniz?",
     recent: "Son öğünler",
@@ -177,6 +178,8 @@ const tr = {
     permissionIntro:
       "zerospike, yiyecek barkodlarını taramak için kameranı kullanır. İzin vermek için devam et.",
     openSettings: "Ayarları aç",
+    cameraError: "Kamera başlatılamadı. Onu kullanan diğer uygulamaları kapatıp tekrar dene.",
+    retry: "Tekrar dene",
     hint: "Barkodu çerçevenin içine hizalayınız",
     notFoundTitle: "Ürün bulunamadı",
     notFoundBody: "Bu barkod ({{code}}) veritabanında kayıtlı değil. Yeni bir özel yemek olarak kaydetmek ister misiniz?",

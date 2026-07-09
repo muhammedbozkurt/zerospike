@@ -169,6 +169,7 @@ const es: TranslationSchema = {
     portionSize: "Porción típica (g)",
     notes: "Notas (opcional)",
     addFood: "Guardar alimento",
+    saved: "Alimento guardado",
     custom: "Personal",
     deleteFood: "¿Seguro que desea eliminar este alimento personalizado?",
     recent: "Comidas recientes",
@@ -179,6 +180,8 @@ const es: TranslationSchema = {
     permissionIntro:
       "zerospike usa la cámara para escanear códigos de barras de alimentos. Continúa para permitir el acceso.",
     openSettings: "Abrir Ajustes",
+    cameraError: "No se pudo iniciar la cámara. Cierra otras apps que la usen e inténtalo de nuevo.",
+    retry: "Reintentar",
     hint: "Alinee el código dentro del marco",
     notFoundTitle: "Producto no encontrado",
     notFoundBody: "Este código ({{code}}) no está en la base de datos. ¿Desea guardarlo como un nuevo alimento personalizado?",

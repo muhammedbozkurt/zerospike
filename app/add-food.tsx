@@ -16,6 +16,7 @@ import { useApp } from "../lib/store/AppContext";
 import { addCustomFood } from "../lib/db/foods";
 import { canAddCustomFood } from "../lib/guardrails";
 import { Button, Field } from "../components/ui";
+import { useFeedback } from "../components/Feedback";
 
 export default function AddFoodScreen() {
   const { t } = useTranslation();
@@ -23,6 +24,7 @@ export default function AddFoodScreen() {
   const router = useRouter();
   const { barcode } = useLocalSearchParams<{ barcode?: string }>();
   const { isProUser, bumpData } = useApp();
+  const { toast } = useFeedback();
 
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
@@ -56,6 +58,7 @@ export default function AddFoodScreen() {
       custom_notes: notes.trim() || null,
     });
     bumpData();
+    toast(t("food.saved"), "success");
     router.back();
   }
 

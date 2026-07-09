@@ -169,6 +169,7 @@ const de: TranslationSchema = {
     portionSize: "Typische Portion (g)",
     notes: "Notizen (optional)",
     addFood: "Lebensmittel speichern",
+    saved: "Lebensmittel gespeichert",
     custom: "Eigen",
     deleteFood: "Möchten Sie dieses eigene Lebensmittel wirklich löschen?",
     recent: "Zuletzt gegessen",
@@ -179,6 +180,8 @@ const de: TranslationSchema = {
     permissionIntro:
       "zerospike nutzt die Kamera, um Lebensmittel-Barcodes zu scannen. Weiter, um den Zugriff zu erlauben.",
     openSettings: "Einstellungen öffnen",
+    cameraError: "Die Kamera konnte nicht gestartet werden. Schließe andere Apps, die sie nutzen, und versuche es erneut.",
+    retry: "Erneut versuchen",
     hint: "Richten Sie den Barcode im Rahmen aus",
     notFoundTitle: "Produkt nicht gefunden",
     notFoundBody: "Dieser Barcode ({{code}}) ist nicht in der Datenbank. Möchten Sie ihn als neues eigenes Lebensmittel speichern?",

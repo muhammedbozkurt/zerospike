@@ -17,10 +17,13 @@ export default function ScanScreen() {
   const { confirm } = useFeedback();
   const [permission, requestPermission] = useCameraPermissions();
   const [locked, setLocked] = useState(false);
+  const [cameraError, setCameraError] = useState(false);
   const lastCode = useRef<string | null>(null);
 
   async function handleScanned(data: string) {
-    if (locked) return;
+    // Ignore while a lookup is in flight, and skip the SAME code the user just
+    // declined so a barcode sitting in frame does not re-prompt in a loop.
+    if (locked || data === lastCode.current) return;
     setLocked(true);
     lastCode.current = data;
 
@@ -40,7 +43,8 @@ export default function ScanScreen() {
     if (saveNew) {
       router.replace({ pathname: "/add-food", params: { barcode: data } });
     } else {
-      lastCode.current = null;
+      // Keep lastCode so the same barcode is not re-scanned immediately; a
+      // different product scans normally.
       setLocked(false);
     }
   }
@@ -116,11 +120,33 @@ export default function ScanScreen() {
     );
   }
 
+  // Camera hardware/mount failure: never leave a black screen with no way out.
+  if (cameraError) {
+    return (
+      <View className="flex-1 bg-black items-center justify-center px-8">
+        <Ionicons name="alert-circle-outline" size={48} color="#3f3f46" />
+        <Text className="text-zinc-300 text-center my-4">
+          {t("scan.cameraError")}
+        </Text>
+        <View className="w-full">
+          <Button label={t("scan.retry")} onPress={() => setCameraError(false)} />
+          <View className="h-3" />
+          <Button
+            label={t("common.close")}
+            variant="secondary"
+            onPress={() => router.back()}
+          />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-black">
       <CameraView
         style={{ flex: 1 }}
         facing="back"
+        onMountError={() => setCameraError(true)}
         barcodeScannerSettings={{
           barcodeTypes: [
             "ean13",

@@ -169,6 +169,7 @@ const en: TranslationSchema = {
     portionSize: "Typical portion (g)",
     notes: "Notes (optional)",
     addFood: "Save Food",
+    saved: "Food saved",
     custom: "Custom",
     deleteFood: "Are you sure you want to delete this custom food?",
     recent: "Recent meals",
@@ -179,6 +180,8 @@ const en: TranslationSchema = {
     permissionIntro:
       "zerospike uses your camera to scan food barcodes. Continue to enable it.",
     openSettings: "Open Settings",
+    cameraError: "The camera could not start. Close other apps using it, then try again.",
+    retry: "Try again",
     hint: "Align the barcode within the frame",
     notFoundTitle: "Product not found",
     notFoundBody: "This barcode ({{code}}) is not in the database. Would you like to save it as a new custom food?",
