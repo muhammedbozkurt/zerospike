@@ -73,6 +73,7 @@ const es: TranslationSchema = {
     qIsfHint: "Cuánto baja 1 unidad tu glucosa. ¿No lo sabes? Continúa con un valor común.",
     qBasal: "Recordatorio de insulina nocturna",
     qBasalHint: "Podemos recordártelo a tu hora habitual. Tú lo controlas en cualquier momento.",
+    notifRationale: "Para enviar estos recordatorios, zerospike necesita permiso para mostrar notificaciones. Puedes desactivarlo cuando quieras en Ajustes.",
     qDisclaimer: "Una cosa antes de empezar",
     notSure: "No estoy seguro",
     previewTitle: "Así se verán tus Insights",

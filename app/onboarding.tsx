@@ -16,7 +16,10 @@ import Svg, { Path, Line } from "react-native-svg";
 
 import { useApp } from "../lib/store/AppContext";
 import { updateProfile } from "../lib/db/profiles";
-import { applyNotificationPrefs } from "../lib/services/notifications";
+import {
+  applyNotificationPrefs,
+  requestNotificationPermission,
+} from "../lib/services/notifications";
 import {
   DEFAULT_PREFS,
   setNotificationPrefs,
@@ -238,6 +241,13 @@ export default function OnboardingScreen() {
   const next = () => goTo(stepIdx + 1);
   const back = () => goTo(stepIdx - 1);
   const skipIntro = () => goTo(STEPS.indexOf("name"));
+
+  // Leaving the basal step: the on-screen rationale has been shown, so trigger
+  // the OS notification prompt here (contextual), then advance.
+  async function nextFromBasal() {
+    await requestNotificationPermission().catch(() => {});
+    next();
+  }
 
   // Save the profile, then hand off to the soft paywall. Onboarding is marked
   // complete downstream (paywall/downsell) so the app never bounces mid-flow.
@@ -486,6 +496,14 @@ export default function OnboardingScreen() {
                 onChange={setBasalTime}
                 onClose={() => setShowTime(false)}
               />
+              {/* Rationale shown before the OS notification prompt (which fires
+                  on Continue). Descriptive, no alarm language. */}
+              <View className="flex-row items-start rounded-xl border border-zinc-800 bg-zinc-900 p-3.5 mt-4">
+                <Ionicons name="notifications-outline" size={16} color="#71717a" />
+                <Text className="text-zinc-400 text-xs leading-5 ml-2.5 flex-1">
+                  {t("onboarding.notifRationale")}
+                </Text>
+              </View>
             </QuestionShell>
           ) : null}
 
@@ -548,6 +566,12 @@ export default function OnboardingScreen() {
               size="lg"
               disabled={!accepted}
               onPress={next}
+            />
+          ) : step === "basal" ? (
+            <Button
+              label={t("onboarding.continue")}
+              size="lg"
+              onPress={nextFromBasal}
             />
           ) : (
             <Button

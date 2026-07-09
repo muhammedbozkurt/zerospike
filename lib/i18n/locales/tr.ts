@@ -71,6 +71,7 @@ const tr = {
     qIsfHint: "1 ünitenin glukozunu ne kadar düşürdüğü. Emin değil misin? Yaygın bir değerle devam et.",
     qBasal: "Gece insülini hatırlatması",
     qBasalHint: "Her zamanki saatinde hatırlatabiliriz. Kontrol her zaman sende.",
+    notifRationale: "Bu hatırlatıcıları gönderebilmek için zerospike'ın bildirim gösterme izni gerekiyor. İstediğin an Ayarlar'dan kapatabilirsin.",
     qDisclaimer: "Başlamadan önce bir şey",
     notSure: "Emin değilim",
     previewTitle: "Insights'ın böyle görünecek",
