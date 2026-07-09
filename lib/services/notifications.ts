@@ -16,6 +16,11 @@ const TRIAL_ID = "zerospike-trial-ending";
 // "I started eating" button can never stack two notifications at the same time
 // (re-scheduling with the same id replaces the pending one).
 const POSTMEAL_ID = "zerospike-postmeal-reminder";
+// End time (epoch ms) of the pending post-meal reminder, persisted so the
+// dashboard button can disable itself and show a live countdown. Written by the
+// service on every successful schedule (button OR the automatic paths) so the
+// countdown always matches the real notification.
+const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
 
 /** Mirrors the in-app low-pen banner threshold. */
 const PEN_LOW_THRESHOLD = 20;
@@ -255,6 +260,7 @@ async function schedulePostMealAt(minutes: number): Promise<void> {
   } catch {
     // nothing pending
   }
+  const seconds = Math.max(60, Math.round(minutes * 60));
   await Notifications.scheduleNotificationAsync({
     identifier: POSTMEAL_ID,
     content: {
@@ -264,10 +270,59 @@ async function schedulePostMealAt(minutes: number): Promise<void> {
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: Math.max(60, Math.round(minutes * 60)),
+      seconds,
       repeats: false,
     },
   });
+  // Persist the end time so the dashboard button can count down and disable
+  // itself. Only reached once permission is granted (callers gate on it), so it
+  // never writes without a real pending notification.
+  try {
+    await AsyncStorage.setItem(
+      POSTMEAL_TIMER_END_KEY,
+      String(Date.now() + seconds * 1000)
+    );
+  } catch {
+    // best-effort persistence
+  }
+}
+
+/**
+ * The active post-meal timer's end (epoch ms), or null when none is pending or
+ * it has already elapsed. A stale (elapsed) key is cleaned up on read, so the
+ * button falls back to its normal state on its own.
+ */
+export async function getPostMealTimerEnd(): Promise<number | null> {
+  try {
+    const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
+    if (!raw) return null;
+    const end = parseInt(raw, 10);
+    if (!Number.isFinite(end)) return null;
+    if (end <= Date.now()) {
+      await AsyncStorage.removeItem(POSTMEAL_TIMER_END_KEY).catch(() => {});
+      return null;
+    }
+    return end;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cancels a pending post-meal reminder and clears its timer. Used for early
+ * completion: once the user logs their 2-hour reading the nudge is unnecessary.
+ */
+export async function cancelPostMealTimer(): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+  } catch {
+    // nothing pending
+  }
+  try {
+    await AsyncStorage.removeItem(POSTMEAL_TIMER_END_KEY);
+  } catch {
+    // best-effort
+  }
 }
 
 /**

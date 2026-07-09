@@ -114,6 +114,8 @@ const fr: TranslationSchema = {
     startedEating: "J'ai commencé à manger",
     toklukSet: "Minuteur réglé. Dans {{n}} min, nous te rappellerons ta mesure après le repas.",
     toklukNeedsPerm: "Active les notifications pour utiliser le minuteur de repas.",
+    postMealCountdownMin: "Rappel après le repas : {{m}} min",
+    postMealCountdownSec: "Rappel après le repas : {{s}} s",
     lowFollowTitle: "Ta dernière mesure était {{value}} {{unit}}.",
     lowFollowRemind: "Me rappeler de remesurer dans 15 minutes",
     lowFollowSet: "Rappel réglé dans 15 minutes.",

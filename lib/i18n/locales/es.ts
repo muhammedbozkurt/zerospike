@@ -114,6 +114,8 @@ const es: TranslationSchema = {
     startedEating: "Empecé a comer",
     toklukSet: "Temporizador activado. En {{n}} min te recordaremos tu medición tras la comida.",
     toklukNeedsPerm: "Activa las notificaciones para usar el temporizador de comida.",
+    postMealCountdownMin: "Recordatorio tras la comida: {{m}} min",
+    postMealCountdownSec: "Recordatorio tras la comida: {{s}} s",
     lowFollowTitle: "Tu última medición fue {{value}} {{unit}}.",
     lowFollowRemind: "Recordarme medir de nuevo en 15 minutos",
     lowFollowSet: "Recordatorio activado para dentro de 15 minutos.",

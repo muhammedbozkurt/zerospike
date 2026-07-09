@@ -112,6 +112,8 @@ const tr = {
     startedEating: "Yemeğe başladım",
     toklukSet: "Sayaç kuruldu. {{n}} dk sonra tokluk ölçümü için hatırlatacağız.",
     toklukNeedsPerm: "Yemek sayacını kullanmak için bildirimleri aç.",
+    postMealCountdownMin: "Tokluk hatırlatıcısı: {{m}} dk",
+    postMealCountdownSec: "Tokluk hatırlatıcısı: {{s}} sn",
     lowFollowTitle: "Son ölçümün {{value}} {{unit}}.",
     lowFollowRemind: "15 dakika sonra tekrar ölçmemi hatırlat",
     lowFollowSet: "15 dakika sonrası için hatırlatma kuruldu.",

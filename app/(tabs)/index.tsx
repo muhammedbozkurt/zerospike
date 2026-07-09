@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FlatList, Platform, Pressable, Switch, Text, View } from "react-native";
+import { AppState, FlatList, Platform, Pressable, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,7 +18,10 @@ import {
   schedulePostMealReminder,
   startPostMealTimer,
   scheduleLowFollowup,
+  getPostMealTimerEnd,
+  cancelPostMealTimer,
 } from "../../lib/services/notifications";
+import { formatPostMealRemaining } from "../../lib/postMealTimer";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
 import { consecutiveLogDays } from "../../lib/insights";
@@ -67,6 +70,15 @@ export default function DashboardScreen() {
   const [activePens, setActivePens] = useState<InsulinPen[]>([]);
   const [sampleActive, setSampleActive] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
+  // Post-meal reminder countdown: end time (epoch ms) of the pending nudge, and
+  // a tick that drives the live label. Armed by the button OR the automatic
+  // schedule paths (both persist the end time in the service).
+  const [postMealEnd, setPostMealEnd] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  const refreshPostMealTimer = useCallback(async () => {
+    setPostMealEnd(await getPostMealTimerEnd());
+  }, []);
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
@@ -82,6 +94,42 @@ export default function DashboardScreen() {
   useEffect(() => {
     load();
   }, [load, dataVersion]);
+
+  // Re-read the persisted post-meal timer whenever the feed changes (a log on
+  // this screen or a meal logged elsewhere both bump dataVersion).
+  useEffect(() => {
+    refreshPostMealTimer();
+  }, [refreshPostMealTimer, dataVersion]);
+
+  // Drive the countdown label while armed: 30 s cadence far out, 1 s in the last
+  // minute; clears itself (button returns to normal) when the time is reached.
+  useEffect(() => {
+    if (postMealEnd == null) return;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const remaining = postMealEnd - Date.now();
+      if (remaining <= 0) {
+        setPostMealEnd(null);
+        return;
+      }
+      setNowTick(Date.now());
+      timeoutId = setTimeout(tick, remaining <= 60_000 ? 1_000 : 30_000);
+    };
+    tick();
+    return () => clearTimeout(timeoutId);
+  }, [postMealEnd]);
+
+  // Coming back to the foreground: re-read the timer (it may have elapsed while
+  // backgrounded) and refresh the tick immediately.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refreshPostMealTimer();
+        setNowTick(Date.now());
+      }
+    });
+    return () => sub.remove();
+  }, [refreshPostMealTimer]);
 
   // Restore the persisted sync preference, and silently re-sync on open so new
   // Health readings keep flowing in without re-toggling the switch. Auto-sync is
@@ -205,6 +253,13 @@ export default function DashboardScreen() {
     entries.filter((e): e is InjectionEntry => e.kind === "injection")
   );
 
+  // Post-meal button: while a reminder is pending it is disabled and shows a
+  // live countdown (recomputed from nowTick), otherwise it is the normal CTA.
+  const postMealArmed = postMealEnd != null && postMealEnd > nowTick;
+  const postMealCountdown = postMealArmed
+    ? formatPostMealRemaining(postMealEnd - nowTick)
+    : null;
+
   // Manual logging is unlimited on both tiers now, so there is no gate here.
   function openLogger(period: PeriodTag) {
     if (!activeProfile) return;
@@ -220,6 +275,7 @@ export default function DashboardScreen() {
       logEvent("tokluk_timer_started");
       hapticSuccess();
       toast(t("dashboard.toklukSet", { n: minutes }), "success");
+      await refreshPostMealTimer();
     } else {
       toast(t("dashboard.toklukNeedsPerm"), "info");
     }
@@ -237,13 +293,19 @@ export default function DashboardScreen() {
     logEvent("log_added", { kind: "glucose", source: "manual" });
     void noteLogAndMaybeReview();
     hapticSuccess();
-    // Per spec: a fasting/pre-meal reading schedules the 2-hour post-meal nudge.
+    // Per spec: a fasting/pre-meal reading schedules the 2-hour post-meal nudge,
+    // which also arms the countdown button.
     if (period === "fasting" || period === "pre_meal") {
       await schedulePostMealReminder();
+      await refreshPostMealTimer();
     }
     // Reflective feedback for a 2-hour post-meal reading: a descriptive note
     // comparing the user's own reading to their own target (never advice).
     if (period === "post_meal_2h") {
+      // Early completion: the 2-hour reading is logged, so the pending nudge is
+      // no longer needed. Cancel it and clear the countdown.
+      await cancelPostMealTimer();
+      setPostMealEnd(null);
       const status = classifyGlucose(value, "post_meal_2h", activeProfile);
       const key =
         status === "normal"
@@ -649,14 +711,31 @@ export default function DashboardScreen() {
         className="absolute left-0 right-0 bottom-0 px-4 pt-2 bg-black border-t border-zinc-900"
         style={{ paddingBottom: 10 }}
       >
-        {/* "I started eating" — arms the post-meal reading timer (free) */}
+        {/* "I started eating" arms the post-meal reading timer (free). While
+            armed it is disabled and counts down, so it can't be re-pressed. */}
         <Pressable
-          onPress={startedEating}
-          className="flex-row items-center justify-center rounded-2xl bg-brand active:bg-brandDark py-3 mb-2.5"
+          onPress={postMealArmed ? undefined : startedEating}
+          disabled={postMealArmed}
+          accessibilityState={{ disabled: postMealArmed }}
+          className={`flex-row items-center justify-center rounded-2xl py-3 mb-2.5 ${
+            postMealArmed ? "bg-zinc-800" : "bg-brand active:bg-brandDark"
+          }`}
         >
-          <Ionicons name="restaurant-outline" size={18} color="#000" />
-          <Text className="text-black font-bold ml-2 text-[15px]">
-            {t("dashboard.startedEating")}
+          <Ionicons
+            name={postMealArmed ? "time-outline" : "restaurant-outline"}
+            size={18}
+            color={postMealArmed ? "#71717a" : "#000"}
+          />
+          <Text
+            className={`font-bold ml-2 text-[15px] ${
+              postMealArmed ? "text-zinc-400" : "text-black"
+            }`}
+          >
+            {postMealCountdown
+              ? postMealCountdown.seconds
+                ? t("dashboard.postMealCountdownSec", { s: postMealCountdown.value })
+                : t("dashboard.postMealCountdownMin", { m: postMealCountdown.value })
+              : t("dashboard.startedEating")}
           </Text>
         </Pressable>
 
