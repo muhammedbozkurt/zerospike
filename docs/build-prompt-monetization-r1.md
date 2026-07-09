@@ -477,6 +477,16 @@ siyah ekranda kaliniyordu -> onMountError + hata ekrani (tekrar dene / kapat) ek
 guard'i eklendi. (4) Ozel yemek kaydinda geri bildirim yoktu -> basari toast'i eklendi.
 Birim/klavye/anlik-liste zaten dogruydu (foodName + bumpData).
 
+### R1.2
+- [ ] (1) Temiz kurulumda acilista ana ekran BIR KARE bile gorunmuyor; splash
+      onboarding'e yonlenme cozulene kadar kalkmiyor. Onboarded kullanicida gecikme yok.
+- [ ] (2) Paywall'da satin almayi NATIVE sheet'te iptal edince downsell aciliyor (kapatma
+      ile ayni; omur boyu 2 gosterim cap'i korunuyor). Gercek store hatasinda paywall'da
+      kaliniyor. RC'de gercek indirim yoksa downsell_skipped_no_discount event'i dusuyor.
+- [ ] (3) Onboarding basal adiminda OS bildirim prompt'undan ONCE neden-anlatan metin
+      gorunuyor; prompt "Devam"da geliyor (tarif edici dil, regulasyon uyumlu).
+- [ ] (4) Onboarding adim gecislerinde kademeli giris animasyonu (FadeInDown) akici.
+
 ## R1.1 EK GOREVLER (2026-07-09, kullanici cihaz bulgulari)
 
 ### R1.1-A: common.continue eksik + i18n parite guvencesi
@@ -515,3 +525,25 @@ Birim/klavye/anlik-liste zaten dogruydu (foodName + bumpData).
   ozel yemegin listede aninda gorunmesi, ayni barkodun tekrar taranmasi durumu.
 - Kabul: iki akis 5 dilde ham anahtarsiz, hata durumlari sozlu ve cikissiz degil; bulgular
   ve duzeltmeler ozet halinde raporlanir.
+
+## R1.2: Onboarding + paywall standardi (2026-07-09 kullanici cihaz testi)
+
+ORTAK STANDART (kardes uygulamalarla ayni): tek akis; Statura kalitesinde ortali +
+kademeli giris animasyonlu ekranlar; downsell tetikleri = modal kapatma + "simdi degil" +
+NATIVE SATIN ALMA IPTALI; izinlerden once neden-anlatan ekran, sonra OS prompt'u;
+downsell_skipped_no_discount event'i (sandbox intro-fiyat eksikligini bug'dan ayirmak icin).
+
+ZEROSPIKE OZEL BULGULAR:
+- BUG: acilista ONCE ana ekran gorunup SONRA onboarding basliyor (flash). Kok: onboarded
+  flag'i yuklenene kadar dashboard render ediliyor; gate cozulene kadar splash/bos ekran
+  goster, dashboard'i hic mount etme. Kabul: temiz kurulumda ana ekran bir kare bile
+  gorunmez.
+- Downsell: paywall KAPATILINCA yonlendirme calisiyor ama SATIN ALMA IPTALINDE calismiyor;
+  userCancelled yolunu da ayni downsell tetigine bagla (tek gosterim cap'i korunur).
+- Bildirim izni: onboarding'de basal saati kurulumunda OS prompt'u dogrudan geliyorsa
+  once standarttaki neden-anlatan adimi ekle ("Hatirlaticilar icin bildirim gerekiyor"
+  tonunda, tarif edici dil; regulasyon kurallari gecerli), sonra prompt.
+- Onboarding gorsel citasi: adim gecislerine kademeli animasyon (mevcut step-machine'e
+  polish; redesign degil).
+- Kabul: temiz kurulum akisi: (flash yok) -> onboarding -> demo onizleme -> paywall ->
+  iptal/kapatma -> downsell -> uygulama; her adim analytics'te izlenebilir.

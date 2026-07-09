@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import Svg, { Path, Line } from "react-native-svg";
 
 import { useApp } from "../lib/store/AppContext";
@@ -321,7 +322,12 @@ export default function OnboardingScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View className="flex-1 justify-center">
+        {/* key={step} replays the entrance on every step change (polish). */}
+        <Animated.View
+          key={step}
+          entering={FadeInDown.duration(260)}
+          className="flex-1 justify-center"
+        >
           {/* ── Value slides ─────────────────────────────────────────── */}
           {step === "value1" || step === "value2" || step === "value3" ? (
             <View className="items-center">
@@ -536,7 +542,7 @@ export default function OnboardingScreen() {
               <AgpPreview unit={unit} />
             </View>
           ) : null}
-        </View>
+        </Animated.View>
 
         {/* ── Footer actions ──────────────────────────────────────────── */}
         <View className="mt-8">
