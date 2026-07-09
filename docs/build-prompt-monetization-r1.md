@@ -455,3 +455,46 @@ kosar.
 - [ ] HealthKit insulin delivery + AppleExerciseTime okuma iOS'ta calisiyor (Pro Insights
       "Health" karti gercek degerlerle doluyor); Android'de ExerciseSession dakika + READ_EXERCISE
       izni. Read-only, log degismiyor. (v14 nitro API cihazda dogrulanmali.)
+
+### R1.1
+- [ ] (A) Barkod kamera-izin ekraninda "Devam" butonu 5 dilde dogru metinle (ham anahtar
+      yok); profil kurulumunda basal-saati satiri etiketli. `npm run i18n:check` CI'da yesil.
+
+## R1.1 EK GOREVLER (2026-07-09, kullanici cihaz bulgulari)
+
+### R1.1-A: common.continue eksik + i18n parite guvencesi
+- Kullanici barkod/ozel yemek akisinda ham anahtar gordu: common.continue bazi/tum locale
+  dosyalarinda tanimsiz. Anahtari 5 dilde dogal ceviriyle ekle.
+- KOK NEDENI DE COZ: locale'ler TranslationSchema'ya tipliydi ama bu kacmis. Neden kacti
+  (schema'da optional alan mi, dinamik t() cagrisi mi, schema disi namespace mi)? Parite
+  guvencesini mekaniklestir: eksik anahtar tsc'de VEYA bir testte patlasin; t('...') ile
+  kullanilan tum anahtarlarin locale'lerde varligini tarayan kucuk bir denetim scripti ekle
+  ve tum dilleri simdiden temizle.
+
+### R1.1-B: Yemek veritabani lokalizasyonu (TR kullanici Fransiz yemegi gormesin)
+- Mevcut durum: foods tablosunda 5 dil ad kolonu (name_tr..name_fr) + FTS var AMA listeleme,
+  arama ve grup sorgularinin UCU DE name_tr'ye gore siralaniyor (lib/db/foods.ts:34,:61,:72)
+  ve gosterim adinin aktif dile gore secilip secilmedigi belirsiz.
+- Yapilacaklar:
+  1) Gosterim adi HER YERDE aktif UI diline gore (name_{lang}; bos ise en -> tr fallback).
+  2) ORDER BY aktif dilin kolonuna gore (uc sorguda da); COLLATE davranisini TR karakterlerle
+     dogrula.
+  3) Arama siralamasi: aktif dilde PREFIX eslesmesi one gelsin (orn. TR kullanici "e" yazinca
+     once ekmek/elma, sonra diger dillerdeki eslesmeler); FTS/LIKE fallback ikisinde de.
+  4) Seed verisi denetimi: 560+ satirda 5 dil kolonu GERCEKTEN dolu mu, yoksa tek dilden
+     kopya mi? Eksik/kopya dilleri gercek cevirilerle tamamla (yemek adlari kisa; seed
+     dosyasinda toplu duzeltme). Kategori adlarinin lokalizasyonunu da kontrol et.
+  5) Bolgesel oncelik: aktif dile gore yerel mutfak one cikacak sekilde basit bir siralama
+     sinyali ekle (orn. locale_hint kolonu veya kategori bazli oncelik; agir cozum kurma,
+     "TR kullanicinin ilk ekraninda TR'ye yabanci yemekler dolusmasin" hedefini karsila).
+- Kabul: uygulama TR'deyken liste/arama Turkce adlarla ve Turkce alfabetik; FR'deyken
+  Fransizca; custom yemekler her dilde aranabilir kalir (mevcut tum-kolonlara-yazma davranisi
+  korunur).
+
+### R1.1-C: Barkod tarama + ozel yemek akislarinin uctan uca denetimi
+- Iki akisi bastan sona incele ve buldugunu duzelt: i18n eksikleri (R1.1-A turevleri),
+  barkod bulunamadi/izin reddi/kamera hatasi durumlarinin kullaniciya duzgun anlatilmasi,
+  karb/porsiyon alanlarinin birim ve klavye davranislari, kaydet sonrasi odak/navigasyon,
+  ozel yemegin listede aninda gorunmesi, ayni barkodun tekrar taranmasi durumu.
+- Kabul: iki akis 5 dilde ham anahtarsiz, hata durumlari sozlu ve cikissiz degil; bulgular
+  ve duzeltmeler ozet halinde raporlanir.

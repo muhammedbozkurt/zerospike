@@ -9,7 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "prebuild": "expo prebuild --clean",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && node scripts/i18n-check.js",
+    "i18n:check": "node scripts/i18n-check.js",
     "postinstall": "patch-package"
   },
   "dependencies": {
