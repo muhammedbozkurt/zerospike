@@ -1,12 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -25,6 +18,7 @@ import {
 } from "../lib/db/injections";
 import { num } from "../lib/format";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
+import { keyboardAwareScrollProps } from "../lib/keyboard";
 
 const LOW_PEN_THRESHOLD = 20;
 
@@ -91,11 +85,7 @@ export default function PensScreen() {
 
   return (
     <View className="flex-1 bg-zinc-950">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-        style={{ paddingTop: insets.top }}
-      >
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
           <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
@@ -107,8 +97,8 @@ export default function PensScreen() {
         </View>
 
         <ScrollView
+          {...keyboardAwareScrollProps}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {/* Pen list */}
@@ -212,7 +202,7 @@ export default function PensScreen() {
             </Pressable>
           )}
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
       <FeedbackHost />
     </View>
   );

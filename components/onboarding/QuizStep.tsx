@@ -31,6 +31,9 @@ export function QuizStep({
         />
       </View>
 
+      {/* No automaticallyAdjustKeyboardInsets here: the footer is pinned outside
+          this ScrollView, so onboarding lifts the whole screen with a
+          KeyboardAvoidingView instead. Doing both would compensate twice. */}
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 16 }}
         keyboardShouldPersistTaps="handled"

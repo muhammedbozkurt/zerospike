@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../../lib/store/AppContext";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
+import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import { Button } from "../../components/ui";
 import { TagPicker } from "../../components/TagPicker";
 import { INJECTION_SITES } from "../../lib/db/types";
@@ -172,8 +173,8 @@ export default function InjectionScreen() {
       </View>
 
       <ScrollView
+        {...keyboardAwareScrollProps}
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Low-pen banner (any active pen under threshold) */}

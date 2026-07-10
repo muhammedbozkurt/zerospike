@@ -17,6 +17,7 @@ import { foodName } from "../../lib/db/types";
 import { CATEGORIES, CATEGORY_ICON, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
 import { useFeedback } from "../../components/Feedback";
+import { keyboardAwareScrollProps } from "../../lib/keyboard";
 
 type Selection = Category | "favorites" | "custom";
 
@@ -251,9 +252,9 @@ export default function FoodScreen() {
   return (
     <View className="flex-1 bg-black" style={{ paddingTop: insets.top }}>
       <FlatList
+        {...keyboardAwareScrollProps}
         data={listData}
         keyExtractor={(f) => f.id}
-        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={Header}
         renderItem={({ item }) => (
           <View className="px-4">

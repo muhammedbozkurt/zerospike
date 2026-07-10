@@ -1,12 +1,5 @@
 import React, { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -23,6 +16,7 @@ import {
 import { Button } from "../components/ui";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { InlineTimePicker } from "../components/InlineTimePicker";
+import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { FeedbackHost } from "../components/Feedback";
 
 /**
@@ -96,11 +90,7 @@ export default function ProfileSetupScreen() {
 
   return (
     <View className="flex-1 bg-zinc-950">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-        style={{ paddingTop: insets.top }}
-      >
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
           <View className="flex-1">
             <Text className="text-zinc-50 text-lg font-bold">
@@ -114,8 +104,8 @@ export default function ProfileSetupScreen() {
         </View>
 
         <ScrollView
+          {...keyboardAwareScrollProps}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28 }}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View className="rounded-2xl bg-brand/10 border border-brand/25 p-3.5 mb-4 flex-row items-center">
@@ -228,7 +218,7 @@ export default function ProfileSetupScreen() {
             onPress={save}
           />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
       <FeedbackHost />
     </View>
   );

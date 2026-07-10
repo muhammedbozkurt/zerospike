@@ -1,12 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -17,6 +10,7 @@ import { addCustomFood } from "../lib/db/foods";
 import { canAddCustomFood } from "../lib/guardrails";
 import { Button, Field } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { keyboardAwareScrollProps } from "../lib/keyboard";
 
 export default function AddFoodScreen() {
   const { t } = useTranslation();
@@ -64,11 +58,7 @@ export default function AddFoodScreen() {
 
   return (
     <View className="flex-1 bg-zinc-950">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-        style={{ paddingTop: insets.top }}
-      >
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
           <Text className="text-zinc-50 text-lg font-bold flex-1">
             {t("food.addCustom")}
@@ -79,8 +69,8 @@ export default function AddFoodScreen() {
         </View>
 
         <ScrollView
+          {...keyboardAwareScrollProps}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {!allowed ? (
@@ -151,7 +141,7 @@ export default function AddFoodScreen() {
             onPress={save}
           />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
       <FeedbackHost />
     </View>
   );

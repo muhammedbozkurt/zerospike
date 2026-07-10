@@ -7,6 +7,7 @@ import {
   PanResponder,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -110,14 +111,20 @@ export function GlucoseInputSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      {/* A bottom sheet has nothing to scroll into view, so it lifts as a whole.
+          This is the case KeyboardAvoidingView is for; the scroll-container
+          screens use automaticallyAdjustKeyboardInsets instead (lib/keyboard.ts). */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
         <Pressable className="flex-1 bg-black/70 justify-end" onPress={onClose}>
-          <Animated.View style={{ transform: [{ translateY }] }}>
+          {/* Capped at the lifted container's height: on a small phone the sheet
+              is taller than what the keyboard leaves, and Save would otherwise
+              be pushed off the top with no way to reach it. */}
+          <Animated.View style={{ transform: [{ translateY }], maxHeight: "100%" }}>
             <Pressable
-              className="rounded-t-3xl bg-zinc-950 border-t border-x border-zinc-800 px-5 pt-3 pb-8"
+              className="rounded-t-3xl bg-zinc-950 border-t border-x border-zinc-800 px-5 pt-3"
               onPress={(e) => e.stopPropagation()}
             >
               <View {...pan.panHandlers}>
@@ -134,40 +141,50 @@ export function GlucoseInputSheet({
                 </View>
               </View>
 
-              <Text className="text-sm font-medium text-zinc-400 mb-2">
-                {t("dashboard.selectPeriod")}
-              </Text>
-              <Segmented
-                options={PERIODS.map((p) => ({ value: p, label: t(`period.${p}`) }))}
-                value={period}
-                onChange={setPeriod}
-                className="mb-5"
-              />
-
-              <View className="flex-row items-end justify-center mb-6">
-                <TextInput
-                  value={value}
-                  onChangeText={onType}
-                  keyboardType={mmol ? "decimal-pad" : "number-pad"}
-                  autoFocus
-                  placeholder={mmol ? "6.1" : "110"}
-                  placeholderTextColor="#3f3f46"
-                  className="text-6xl font-bold text-zinc-50 text-center min-w-[120px]"
-                  maxLength={mmol ? 4 : 3}
-                />
-                <Text className="text-zinc-500 text-lg mb-3 ml-2">
-                  {glucoseUnitLabel(unit)}
+              {/* flexShrink lets the body give way when space is tight, and then
+                  scroll. bounces={false} keeps it from fighting the drag handle. */}
+              <ScrollView
+                style={{ flexShrink: 1 }}
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 32 }}
+              >
+                <Text className="text-sm font-medium text-zinc-400 mb-2">
+                  {t("dashboard.selectPeriod")}
                 </Text>
-              </View>
+                <Segmented
+                  options={PERIODS.map((p) => ({ value: p, label: t(`period.${p}`) }))}
+                  value={period}
+                  onChange={setPeriod}
+                  className="mb-5"
+                />
 
-              <TagPicker value={tags} onChange={setTags} className="mb-5" />
+                <View className="flex-row items-end justify-center mb-6">
+                  <TextInput
+                    value={value}
+                    onChangeText={onType}
+                    keyboardType={mmol ? "decimal-pad" : "number-pad"}
+                    autoFocus
+                    placeholder={mmol ? "6.1" : "110"}
+                    placeholderTextColor="#3f3f46"
+                    className="text-6xl font-bold text-zinc-50 text-center min-w-[120px]"
+                    maxLength={mmol ? 4 : 3}
+                  />
+                  <Text className="text-zinc-500 text-lg mb-3 ml-2">
+                    {glucoseUnitLabel(unit)}
+                  </Text>
+                </View>
 
-              <Button
-                label={t("common.save")}
-                size="lg"
-                disabled={!valid}
-                onPress={submit}
-              />
+                <TagPicker value={tags} onChange={setTags} className="mb-5" />
+
+                <Button
+                  label={t("common.save")}
+                  size="lg"
+                  disabled={!valid}
+                  onPress={submit}
+                />
+              </ScrollView>
             </Pressable>
           </Animated.View>
         </Pressable>

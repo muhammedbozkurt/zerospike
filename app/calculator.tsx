@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -38,6 +36,7 @@ import { Button, Segmented } from "../components/ui";
 import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { num } from "../lib/format";
+import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { hapticSuccess } from "../lib/haptics";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
@@ -184,11 +183,7 @@ export default function CalculatorScreen() {
 
   return (
     <View className="flex-1 bg-zinc-950">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-        style={{ paddingTop: insets.top }}
-      >
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
           <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
@@ -200,8 +195,8 @@ export default function CalculatorScreen() {
         </View>
 
         <ScrollView
+          {...keyboardAwareScrollProps}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {/* Food summary */}
@@ -457,7 +452,7 @@ export default function CalculatorScreen() {
 
           <Button label={t("calculator.logMeal")} size="lg" onPress={logMeal} />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
       <FeedbackHost />
     </View>
   );

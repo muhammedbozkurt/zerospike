@@ -2,9 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -35,6 +33,7 @@ import {
 import { Button } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
+import { keyboardAwareScrollProps } from "../lib/keyboard";
 
 /** A phone-bearing address-book entry, flattened for the in-app list. */
 interface DeviceContact {
@@ -251,11 +250,7 @@ export default function EmergencyContactsScreen() {
 
   return (
     <View className="flex-1 bg-zinc-950">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-        style={{ paddingTop: insets.top }}
-      >
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-2">
           {pickerOpen ? (
             <Pressable onPress={() => setPickerOpen(false)} hitSlop={10} className="p-1">
@@ -336,9 +331,9 @@ export default function EmergencyContactsScreen() {
               </Text>
             ) : (
               <FlatList
+                {...keyboardAwareScrollProps}
                 data={filtered}
                 keyExtractor={(c) => c.id}
-                keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
                 ListEmptyComponent={
@@ -412,8 +407,8 @@ export default function EmergencyContactsScreen() {
           </View>
         ) : (
           <ScrollView
+            {...keyboardAwareScrollProps}
             contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
-            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             <Text className="text-zinc-400 leading-5 mb-5">
@@ -483,7 +478,7 @@ export default function EmergencyContactsScreen() {
             </View>
           </ScrollView>
         )}
-      </KeyboardAvoidingView>
+      </View>
       <FeedbackHost />
     </View>
   );
