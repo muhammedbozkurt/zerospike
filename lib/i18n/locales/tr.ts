@@ -345,6 +345,11 @@ const tr = {
     invalidPhone: "Geçerli bir telefon numarası gir. Örnek: +90 532 123 45 67",
     pickDenied: "Rehber izni verilmedi.",
     pickFailed: "Rehber açılamadı.",
+    selectedCount: "{{n}} seçildi",
+    alreadyAdded: "Ekli",
+    addedSummary: "{{n}} kişi eklendi",
+    addedWithInvalid: "{{added}} kişi eklendi, {{invalid}} numara geçersiz",
+    invalidNumbers: "{{n}} numara geçersiz",
   },
   paywall: {
     title: "zerospike Pro",

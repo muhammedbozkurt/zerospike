@@ -347,6 +347,11 @@ const es: TranslationSchema = {
     invalidPhone: "Escribe un número de teléfono válido. Ejemplo: +34 612 345 678",
     pickDenied: "No se concedió el permiso de contactos.",
     pickFailed: "No se pudieron abrir los contactos.",
+    selectedCount: "{{n}} seleccionados",
+    alreadyAdded: "Añadido",
+    addedSummary: "{{n}} contactos añadidos",
+    addedWithInvalid: "{{added}} contactos añadidos, {{invalid}} números no válidos",
+    invalidNumbers: "{{n}} números no válidos",
   },
   paywall: {
     title: "zerospike Pro",

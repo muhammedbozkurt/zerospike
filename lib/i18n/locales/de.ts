@@ -347,6 +347,11 @@ const de: TranslationSchema = {
     invalidPhone: "Gib eine gültige Telefonnummer ein. Beispiel: +49 151 23456789",
     pickDenied: "Kontaktberechtigung wurde nicht erteilt.",
     pickFailed: "Kontakte konnten nicht geöffnet werden.",
+    selectedCount: "{{n}} ausgewählt",
+    alreadyAdded: "Hinzugefügt",
+    addedSummary: "{{n}} Kontakte hinzugefügt",
+    addedWithInvalid: "{{added}} Kontakte hinzugefügt, {{invalid}} Nummern ungültig",
+    invalidNumbers: "{{n}} Nummern ungültig",
   },
   paywall: {
     title: "zerospike Pro",

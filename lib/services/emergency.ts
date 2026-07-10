@@ -153,3 +153,70 @@ export function normalizePhoneWithRegion(
 
   return /^\+\d{8,15}$/.test(e164) ? e164 : null;
 }
+
+/**
+ * The comparison key for a phone number, used to tell two contacts apart.
+ *
+ * Contacts saved today are already E.164, but versions before region-aware
+ * normalization stored whatever the user typed ("0532 111 22 33"). Qualifying a
+ * stored number through the same path as a freshly picked one means a legacy
+ * row still matches the address-book entry it came from, instead of being
+ * offered again as a new contact.
+ */
+export function contactPhoneKey(phone: string, callingCode: string): string {
+  return normalizePhoneWithRegion(phone, callingCode) ?? normalizePhone(phone);
+}
+
+/** A number the user ticked in the address-book picker. */
+export interface ContactCandidate {
+  name: string;
+  number: string;
+}
+
+export interface AdditionPlan {
+  /** Ready to append, in the order they were picked. */
+  add: EmergencyContact[];
+  /** Picked numbers that could not be qualified to E.164. */
+  invalid: ContactCandidate[];
+  /** Picked numbers already stored, or repeated within the same batch. */
+  duplicates: number;
+}
+
+/**
+ * Works out what a batch of picked numbers actually adds.
+ *
+ * Two numbers are the same contact when they qualify to the same E.164 string,
+ * so "0532 123 45 67" and "+90 532 123 45 67" are stored once, whether the
+ * clash is with an existing contact or with another number in the same batch.
+ * A number that cannot be qualified is reported rather than silently dropped.
+ *
+ * Pure: no storage, no navigation. The caller persists `add` and reports the
+ * counts.
+ */
+export function planContactAdditions(
+  existing: EmergencyContact[],
+  candidates: ContactCandidate[],
+  callingCode: string
+): AdditionPlan {
+  const seen = new Set(existing.map((c) => contactPhoneKey(c.phone, callingCode)));
+  const add: EmergencyContact[] = [];
+  const invalid: ContactCandidate[] = [];
+  let duplicates = 0;
+
+  for (const candidate of candidates) {
+    const e164 = normalizePhoneWithRegion(candidate.number, callingCode);
+    if (!e164) {
+      invalid.push(candidate);
+      continue;
+    }
+    if (seen.has(e164)) {
+      duplicates++;
+      continue;
+    }
+    seen.add(e164);
+    // A number-only address-book entry has no name; show the number instead.
+    add.push({ name: candidate.name.trim() || candidate.number, phone: e164 });
+  }
+
+  return { add, invalid, duplicates };
+}

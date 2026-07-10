@@ -347,6 +347,11 @@ const en: TranslationSchema = {
     invalidPhone: "Enter a valid phone number. Example: +44 7700 900123",
     pickDenied: "Contacts permission was not granted.",
     pickFailed: "Could not open contacts.",
+    selectedCount: "{{n}} selected",
+    alreadyAdded: "Added",
+    addedSummary: "{{n}} contacts added",
+    addedWithInvalid: "{{added}} contacts added, {{invalid}} numbers invalid",
+    invalidNumbers: "{{n}} numbers invalid",
   },
   paywall: {
     title: "zerospike Pro",
