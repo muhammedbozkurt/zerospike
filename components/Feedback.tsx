@@ -20,7 +20,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { activeHostId, popHost, pushHost } from "../lib/feedbackHost";
+import {
+  activeHostId,
+  popHost,
+  pushHost,
+  shouldStackButtons,
+} from "../lib/feedback";
 
 type ToastKind = "success" | "info" | "error";
 
@@ -349,6 +354,36 @@ function ConfirmOverlay({
   const dismiss = useCallback(() => onClose(false), [onClose]);
   useBackHandler(dismiss);
 
+  const confirmLabel = opts.confirmLabel ?? t("common.confirm");
+  const cancelLabel = opts.cancelLabel ?? t("common.cancel");
+  const stacked = shouldStackButtons(confirmLabel, cancelLabel);
+
+  // Stacked, the primary action leads and each button owns the full width.
+  // Side by side, cancel sits left of the primary and they share the row.
+  const width = stacked ? "w-full" : "flex-1";
+
+  const cancelButton = (
+    <Pressable
+      onPress={dismiss}
+      className={`${width} rounded-2xl bg-zinc-800 active:bg-zinc-700 py-3.5 px-3`}
+    >
+      <DialogLabel className="text-zinc-100 font-semibold">{cancelLabel}</DialogLabel>
+    </Pressable>
+  );
+
+  const confirmButton = (
+    <Pressable
+      onPress={() => onClose(true)}
+      className={`${width} rounded-2xl py-3.5 px-3 ${
+        opts.destructive
+          ? "bg-rose-500 active:bg-rose-600"
+          : "bg-brand active:bg-brandDark"
+      }`}
+    >
+      <DialogLabel className="text-black font-semibold">{confirmLabel}</DialogLabel>
+    </Pressable>
+  );
+
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
       <Pressable className="flex-1 bg-black/70 justify-center px-8" onPress={dismiss}>
@@ -394,32 +429,44 @@ function ConfirmOverlay({
               {opts.message}
             </Text>
 
-            <View className="flex-row gap-3">
-              <Pressable
-                onPress={dismiss}
-                className="flex-1 rounded-2xl bg-zinc-800 active:bg-zinc-700 py-3.5 items-center"
-              >
-                <Text className="text-zinc-100 font-semibold">
-                  {opts.cancelLabel ?? t("common.cancel")}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => onClose(true)}
-                className={`flex-1 rounded-2xl py-3.5 items-center ${
-                  opts.destructive
-                    ? "bg-rose-500 active:bg-rose-600"
-                    : "bg-brand active:bg-brandDark"
-                }`}
-              >
-                <Text className="text-black font-semibold">
-                  {opts.confirmLabel ?? t("common.confirm")}
-                </Text>
-              </Pressable>
-            </View>
+            {stacked ? (
+              <View className="gap-2.5">
+                {confirmButton}
+                {cancelButton}
+              </View>
+            ) : (
+              <View className="flex-row gap-3">
+                {cancelButton}
+                {confirmButton}
+              </View>
+            )}
           </Pressable>
         </Animated.View>
       </Pressable>
     </Animated.View>
+  );
+}
+
+/**
+ * A button label that shrinks rather than wrapping or clipping. The full width
+ * bounds the text so adjustsFontSizeToFit has something to shrink against.
+ */
+function DialogLabel({
+  className,
+  children,
+}: {
+  className: string;
+  children: string;
+}) {
+  return (
+    <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.85}
+      className={`w-full text-center ${className}`}
+    >
+      {children}
+    </Text>
   );
 }
 
@@ -478,8 +525,14 @@ function SheetOverlay({
                     color={a.destructive ? "#f43f5e" : "#22d3ee"}
                   />
                 ) : null}
+                {/* A sheet option is one tappable line. The longest of these
+                    ("In 15 Minuten ans erneute Messen erinnern") shrinks to fit
+                    rather than wrapping under the icon. */}
                 <Text
-                  className={`ml-3 font-medium text-base ${
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                  className={`flex-1 ${a.icon ? "ml-3" : ""} font-medium text-base ${
                     a.destructive ? "text-rose-400" : "text-zinc-100"
                   }`}
                 >
@@ -489,9 +542,11 @@ function SheetOverlay({
             ))}
             <Pressable
               onPress={onClose}
-              className="rounded-2xl bg-zinc-800 active:bg-zinc-700 px-4 py-3.5 mt-1 items-center"
+              className="rounded-2xl bg-zinc-800 active:bg-zinc-700 px-4 py-3.5 mt-1"
             >
-              <Text className="text-zinc-300 font-semibold">{t("common.cancel")}</Text>
+              <DialogLabel className="text-zinc-300 font-semibold">
+                {t("common.cancel")}
+              </DialogLabel>
             </Pressable>
           </Pressable>
         </Animated.View>
