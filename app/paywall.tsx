@@ -25,7 +25,7 @@ import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { Button } from "../components/ui";
-import { useFeedback } from "../components/Feedback";
+import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 
@@ -280,165 +280,168 @@ export default function PaywallScreen() {
   const unavailable = offer?.status === "unavailable";
 
   return (
-    <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
-      <View className="flex-row items-center justify-between px-4 py-2">
-        {/* Visible free exit: same dismiss path (downsell chain) as the X. */}
-        <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1">
-          <Text className="text-zinc-400 font-medium">{t("paywall.notNow")}</Text>
-        </Pressable>
-        <View className="flex-row items-center">
-          {context === "onboarding" ? (
-            <View className="mr-2">
-              <LanguageChip />
+    <View className="flex-1 bg-zinc-950">
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
+        <View className="flex-row items-center justify-between px-4 py-2">
+          {/* Visible free exit: same dismiss path (downsell chain) as the X. */}
+          <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1">
+            <Text className="text-zinc-400 font-medium">{t("paywall.notNow")}</Text>
+          </Pressable>
+          <View className="flex-row items-center">
+            {context === "onboarding" ? (
+              <View className="mr-2">
+                <LanguageChip />
+              </View>
+            ) : null}
+            <Pressable onPress={dismiss} hitSlop={10} className="p-1">
+              <Ionicons name="close" size={26} color="#71717a" />
+            </Pressable>
+          </View>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="items-center mb-6">
+            <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-4">
+              <Ionicons name="sparkles" size={28} color="#22d3ee" />
+            </View>
+            <Text className="text-zinc-50 text-3xl font-bold">
+              {t("paywall.title")}
+            </Text>
+            <Text className="text-zinc-400 text-center mt-2 px-2">
+              {t("paywall.subtitle")}
+            </Text>
+          </View>
+
+          {limit ? (
+            <View className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 mb-6">
+              <Text className="text-amber-300 font-semibold mb-1">{limit.title}</Text>
+              <Text className="text-amber-200/80 text-sm leading-5">{limit.body}</Text>
             </View>
           ) : null}
-          <Pressable onPress={dismiss} hitSlop={10} className="p-1">
-            <Ionicons name="close" size={26} color="#71717a" />
-          </Pressable>
-        </View>
-      </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="items-center mb-6">
-          <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-4">
-            <Ionicons name="sparkles" size={28} color="#22d3ee" />
+          {/* Benefits: a single, focused list (at most 4 rows). Health sync is
+              iOS-only (Health Connect removed for Play policy), so on Android it
+              drops off and an injection benefit fills the slot. */}
+          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mb-6">
+            {[
+              ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
+              t("paywall.featureInsights"),
+              t("paywall.featureFamily"),
+              t("paywall.featurePdf"),
+              t("paywall.featureInjection"),
+            ]
+              .slice(0, 4)
+              .map((text, i, arr) => (
+                <View
+                  key={i}
+                  className={`flex-row items-center ${i < arr.length - 1 ? "mb-3" : ""}`}
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#22d3ee" />
+                  <Text className="text-zinc-200 flex-1 ml-3 text-[14px]">{text}</Text>
+                </View>
+              ))}
           </View>
-          <Text className="text-zinc-50 text-3xl font-bold">
-            {t("paywall.title")}
-          </Text>
-          <Text className="text-zinc-400 text-center mt-2 px-2">
-            {t("paywall.subtitle")}
-          </Text>
-        </View>
 
-        {limit ? (
-          <View className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 mb-6">
-            <Text className="text-amber-300 font-semibold mb-1">{limit.title}</Text>
-            <Text className="text-amber-200/80 text-sm leading-5">{limit.body}</Text>
-          </View>
-        ) : null}
-
-        {/* Benefits: a single, focused list (at most 4 rows). Health sync is
-            iOS-only (Health Connect removed for Play policy), so on Android it
-            drops off and an injection benefit fills the slot. */}
-        <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mb-6">
-          {[
-            ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
-            t("paywall.featureInsights"),
-            t("paywall.featureFamily"),
-            t("paywall.featurePdf"),
-            t("paywall.featureInjection"),
-          ]
-            .slice(0, 4)
-            .map((text, i, arr) => (
-              <View
-                key={i}
-                className={`flex-row items-center ${i < arr.length - 1 ? "mb-3" : ""}`}
-              >
-                <Ionicons name="checkmark-circle" size={18} color="#22d3ee" />
-                <Text className="text-zinc-200 flex-1 ml-3 text-[14px]">{text}</Text>
-              </View>
-            ))}
-        </View>
-
-        {loading ? (
-          <View className="items-center py-8">
-            <Text className="text-zinc-500">{t("common.loading")}</Text>
-          </View>
-        ) : unavailable ? (
-          // Release-only: prices could not be loaded. Never show fake prices —
-          // offer a retry instead.
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 items-center">
-            <Ionicons name="cloud-offline-outline" size={28} color="#71717a" />
-            <Text className="text-zinc-300 text-center mt-3 mb-4">
-              {t("paywall.pricesUnavailable")}
-            </Text>
-            <Button
-              label={t("paywall.retry")}
-              onPress={() => setReloadToken((n) => n + 1)}
-            />
-          </View>
-        ) : (
-          <>
-            {/* Plans */}
-            <PlanCard
-              selected={plan === "monthly"}
-              onSelect={() => selectPlan("monthly")}
-              name={t("paywall.planMonthly")}
-              desc={t("paywall.monthlyDesc")}
-              price={priceStr("monthly")}
-              period={t("paywall.perMonth")}
-            />
-            <PlanCard
-              selected={plan === "annual"}
-              onSelect={() => selectPlan("annual")}
-              name={t("paywall.planAnnual")}
-              desc={
-                annualTrial ? t("paywall.annualTrialDesc") : t("paywall.annualDesc")
-              }
-              foot={
-                annualPerMonth
-                  ? t("paywall.perMonthApprox", { price: annualPerMonth })
-                  : undefined
-              }
-              price={priceStr("annual")}
-              period={t("paywall.perYear")}
-              badge={t("paywall.mostPopular")}
-              save={savePct > 0 ? t("paywall.savePercent", { percent: savePct }) : undefined}
-            />
-            <PlanCard
-              selected={plan === "lifetime"}
-              onSelect={() => selectPlan("lifetime")}
-              name={t("paywall.planLifetime")}
-              desc={t("paywall.lifetimeDesc")}
-              price={priceStr("lifetime")}
-              period={t("paywall.perOnce")}
-            />
-
-            <View className="h-2" />
-            <Button label={ctaLabel} size="lg" loading={busy} onPress={buy} />
-
-            {ctaTrial ? (
-              <Text className="text-zinc-400 text-xs text-center mt-2 px-2 leading-4">
-                {t("paywall.trialNote")}
-              </Text>
-            ) : null}
-
-            {/* Secure payment */}
-            <View className="flex-row items-center justify-center mt-3">
-              <Ionicons name="lock-closed" size={12} color="#52525b" />
-              <Text className="text-zinc-500 text-xs ml-1.5 text-center">
-                {t("paywall.securePayment")}
-              </Text>
+          {loading ? (
+            <View className="items-center py-8">
+              <Text className="text-zinc-500">{t("common.loading")}</Text>
             </View>
+          ) : unavailable ? (
+            // Release-only: prices could not be loaded. Never show fake prices;
+            // offer a retry instead.
+            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 items-center">
+              <Ionicons name="cloud-offline-outline" size={28} color="#71717a" />
+              <Text className="text-zinc-300 text-center mt-3 mb-4">
+                {t("paywall.pricesUnavailable")}
+              </Text>
+              <Button
+                label={t("paywall.retry")}
+                onPress={() => setReloadToken((n) => n + 1)}
+              />
+            </View>
+          ) : (
+            <>
+              {/* Plans */}
+              <PlanCard
+                selected={plan === "monthly"}
+                onSelect={() => selectPlan("monthly")}
+                name={t("paywall.planMonthly")}
+                desc={t("paywall.monthlyDesc")}
+                price={priceStr("monthly")}
+                period={t("paywall.perMonth")}
+              />
+              <PlanCard
+                selected={plan === "annual"}
+                onSelect={() => selectPlan("annual")}
+                name={t("paywall.planAnnual")}
+                desc={
+                  annualTrial ? t("paywall.annualTrialDesc") : t("paywall.annualDesc")
+                }
+                foot={
+                  annualPerMonth
+                    ? t("paywall.perMonthApprox", { price: annualPerMonth })
+                    : undefined
+                }
+                price={priceStr("annual")}
+                period={t("paywall.perYear")}
+                badge={t("paywall.mostPopular")}
+                save={savePct > 0 ? t("paywall.savePercent", { percent: savePct }) : undefined}
+              />
+              <PlanCard
+                selected={plan === "lifetime"}
+                onSelect={() => selectPlan("lifetime")}
+                name={t("paywall.planLifetime")}
+                desc={t("paywall.lifetimeDesc")}
+                price={priceStr("lifetime")}
+                period={t("paywall.perOnce")}
+              />
 
-            <Pressable onPress={onRestore} disabled={busy} className="py-3 items-center">
-              <Text className={`font-medium ${busy ? "text-zinc-600" : "text-zinc-400"}`}>
-                {t("paywall.restore")}
+              <View className="h-2" />
+              <Button label={ctaLabel} size="lg" loading={busy} onPress={buy} />
+
+              {ctaTrial ? (
+                <Text className="text-zinc-400 text-xs text-center mt-2 px-2 leading-4">
+                  {t("paywall.trialNote")}
+                </Text>
+              ) : null}
+
+              {/* Secure payment */}
+              <View className="flex-row items-center justify-center mt-3">
+                <Ionicons name="lock-closed" size={12} color="#52525b" />
+                <Text className="text-zinc-500 text-xs ml-1.5 text-center">
+                  {t("paywall.securePayment")}
+                </Text>
+              </View>
+
+              <Pressable onPress={onRestore} disabled={busy} className="py-3 items-center">
+                <Text className={`font-medium ${busy ? "text-zinc-600" : "text-zinc-400"}`}>
+                  {t("paywall.restore")}
+                </Text>
+              </Pressable>
+            </>
+          )}
+
+          <Text className="text-zinc-600 text-[11px] text-center px-2 leading-4 mb-3 mt-2">
+            {t("paywall.legalNote")}
+          </Text>
+          <View className="flex-row justify-center gap-6">
+            <Pressable onPress={() => Linking.openURL(privacyUrl())}>
+              <Text className="text-zinc-500 text-xs underline">
+                {t("settings.privacy")}
               </Text>
             </Pressable>
-          </>
-        )}
-
-        <Text className="text-zinc-600 text-[11px] text-center px-2 leading-4 mb-3 mt-2">
-          {t("paywall.legalNote")}
-        </Text>
-        <View className="flex-row justify-center gap-6">
-          <Pressable onPress={() => Linking.openURL(privacyUrl())}>
-            <Text className="text-zinc-500 text-xs underline">
-              {t("settings.privacy")}
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => Linking.openURL(termsUrl())}>
-            <Text className="text-zinc-500 text-xs underline">
-              {t("settings.terms")}
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+            <Pressable onPress={() => Linking.openURL(termsUrl())}>
+              <Text className="text-zinc-500 text-xs underline">
+                {t("settings.terms")}
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </View>
+      <FeedbackHost />
     </View>
   );
 }

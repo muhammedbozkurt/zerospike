@@ -16,6 +16,7 @@ import {
 } from "../lib/services/emergency";
 import { logEvent } from "../lib/analytics";
 import { hapticSelect } from "../lib/haptics";
+import { FeedbackHost } from "../components/Feedback";
 
 /** Tries to build a maps link from the current location; null if unavailable. */
 async function tryLocationLink(): Promise<string | null> {
@@ -137,75 +138,78 @@ export default function SosScreen() {
   }
 
   return (
-    <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
-      <View className="flex-row items-center justify-between px-4 py-2">
-        <Text className="text-zinc-50 text-xl font-bold">{t("sos.title")}</Text>
-        <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-          <Ionicons name="close" size={26} color="#71717a" />
-        </Pressable>
-      </View>
+    <View className="flex-1 bg-zinc-950">
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
+        <View className="flex-row items-center justify-between px-4 py-2">
+          <Text className="text-zinc-50 text-xl font-bold">{t("sos.title")}</Text>
+          <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
+            <Ionicons name="close" size={26} color="#71717a" />
+          </Pressable>
+        </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Honest framing: no auto-send, no auto-call. */}
-        <Text className="text-zinc-400 leading-5 mb-5">{t("sos.subtitle")}</Text>
+        <ScrollView
+          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Honest framing: no auto-send, no auto-call. */}
+          <Text className="text-zinc-400 leading-5 mb-5">{t("sos.subtitle")}</Text>
 
-        {/* Emergency number is always available */}
-        <ActionButton
-          icon="call"
-          label={t("sos.callEmergency", { number: emergencyNumber })}
-          color="#dc2626"
-          onPress={callEmergency}
-        />
+          {/* Emergency number is always available */}
+          <ActionButton
+            icon="call"
+            label={t("sos.callEmergency", { number: emergencyNumber })}
+            color="#dc2626"
+            onPress={callEmergency}
+          />
 
-        {contacts.length === 0 ? (
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mt-2">
-            <Text className="text-zinc-300 text-center mb-4">
-              {t("sos.noContacts")}
-            </Text>
-            <Pressable
-              onPress={() => router.push("/emergency-contacts")}
-              className="rounded-xl bg-brand active:bg-brandDark py-3 items-center"
-            >
-              <Text className="text-black font-semibold">{t("sos.addContact")}</Text>
-            </Pressable>
-          </View>
-        ) : (
-          contacts.map((c, i) => (
-            <View
-              key={`${c.phone}-${i}`}
-              className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-4"
-            >
-              <Text className="text-zinc-50 font-bold text-base">{c.name}</Text>
-              <Text className="text-zinc-500 text-sm mb-3">{c.phone}</Text>
-              <ActionButton
-                icon="call"
-                label={t("sos.callContact")}
-                color="#16a34a"
-                onPress={() => callNumber(c.phone)}
-              />
-              <ActionButton
-                icon="chatbubble-ellipses"
-                label={t("sos.messageContact")}
-                color="#2563eb"
-                onPress={() => messageContact(c.phone)}
-              />
-              <ActionButton
-                icon="logo-whatsapp"
-                label={t("sos.whatsappContact")}
-                color="#059669"
-                onPress={() => whatsappContact(c.phone)}
-              />
+          {contacts.length === 0 ? (
+            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mt-2">
+              <Text className="text-zinc-300 text-center mb-4">
+                {t("sos.noContacts")}
+              </Text>
+              <Pressable
+                onPress={() => router.push("/emergency-contacts")}
+                className="rounded-xl bg-brand active:bg-brandDark py-3 items-center"
+              >
+                <Text className="text-black font-semibold">{t("sos.addContact")}</Text>
+              </Pressable>
             </View>
-          ))
-        )}
+          ) : (
+            contacts.map((c, i) => (
+              <View
+                key={`${c.phone}-${i}`}
+                className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-4"
+              >
+                <Text className="text-zinc-50 font-bold text-base">{c.name}</Text>
+                <Text className="text-zinc-500 text-sm mb-3">{c.phone}</Text>
+                <ActionButton
+                  icon="call"
+                  label={t("sos.callContact")}
+                  color="#16a34a"
+                  onPress={() => callNumber(c.phone)}
+                />
+                <ActionButton
+                  icon="chatbubble-ellipses"
+                  label={t("sos.messageContact")}
+                  color="#2563eb"
+                  onPress={() => messageContact(c.phone)}
+                />
+                <ActionButton
+                  icon="logo-whatsapp"
+                  label={t("sos.whatsappContact")}
+                  color="#059669"
+                  onPress={() => whatsappContact(c.phone)}
+                />
+              </View>
+            ))
+          )}
 
-        <Text className="text-zinc-600 text-[11px] text-center leading-4 mt-6 px-2">
-          {t("sos.disclaimer")}
-        </Text>
-      </ScrollView>
+          <Text className="text-zinc-600 text-[11px] text-center leading-4 mt-6 px-2">
+            {t("sos.disclaimer")}
+          </Text>
+        </ScrollView>
+      </View>
+      <FeedbackHost />
     </View>
   );
 }

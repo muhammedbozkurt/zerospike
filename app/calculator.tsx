@@ -35,7 +35,7 @@ import type { Food, LogTag, MealSlot } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { Button, Segmented } from "../components/ui";
 import { TagPicker } from "../components/TagPicker";
-import { useFeedback } from "../components/Feedback";
+import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { num } from "../lib/format";
 import { hapticSuccess } from "../lib/haptics";
 
@@ -83,7 +83,7 @@ export default function CalculatorScreen() {
     })();
   }, [foodId, portionParam]);
 
-  // Active insulin (IOB) from recent bolus doses — used to trim the correction
+  // Active insulin (IOB) from recent bolus doses, used to trim the correction
   // so a fresh dose doesn't stack on top of insulin that is still working.
   useEffect(() => {
     (async () => {
@@ -182,265 +182,268 @@ export default function CalculatorScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-zinc-950"
-      style={{ paddingTop: insets.top }}
-    >
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
-        <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
-          {t("calculator.title")}
-        </Text>
-        <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-          <Ionicons name="close" size={24} color="#a1a1aa" />
-        </Pressable>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <View className="flex-1 bg-zinc-950">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        className="flex-1"
+        style={{ paddingTop: insets.top }}
       >
-        {/* Food summary */}
-        <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
-          <Text className="text-zinc-50 text-xl font-bold">
-            {foodName(food, lang)}
+        {/* Header */}
+        <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
+          <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
+            {t("calculator.title")}
           </Text>
-          <Text className="text-zinc-400 text-sm mt-0.5">
-            {num(food.carb_100g)} {t("common.grams")}/100g · {t("food.gi")}{" "}
-            {food.glycemic_index} · {t("food.gl")} {food.glycemic_load}
-          </Text>
-        </View>
-
-        {/* Active meal slot */}
-        <Text className="text-sm font-medium text-zinc-400 mb-2">
-          {t("calculator.activeSlot")}
-        </Text>
-        <Segmented
-          options={SLOTS.map((s) => ({ value: s, label: t(`slot.${s}`) }))}
-          value={slot}
-          onChange={setSlot}
-          className="mb-5"
-        />
-
-        {/* Portion slider */}
-        <View className="flex-row items-center justify-between mb-1">
-          <Text className="text-sm font-medium text-zinc-400">
-            {t("calculator.portion")}
-          </Text>
-          <Text className="text-zinc-50 font-bold text-lg">
-            {Math.round(portion)} {t("common.grams")}
-          </Text>
-        </View>
-        <Slider
-          minimumValue={0}
-          maximumValue={500}
-          step={5}
-          value={portion}
-          onValueChange={setPortion}
-          minimumTrackTintColor="#22d3ee"
-          maximumTrackTintColor="#3f3f46"
-          thumbTintColor="#22d3ee"
-        />
-
-        {/* Optional current glucose for correction */}
-        <View className="mt-4">
-          <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-            {t("calculator.currentGlucose")} ({glucoseUnitLabel(unit)})
-          </Text>
-          <TextInput
-            value={glucose}
-            onChangeText={(s) =>
-              setGlucose(
-                unit === "mmol"
-                  ? s.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1")
-                  : s.replace(/[^0-9]/g, "")
-              )
-            }
-            keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
-            placeholder="-"
-            placeholderTextColor="#52525b"
-            maxLength={unit === "mmol" ? 4 : 3}
-            className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
-          />
-        </View>
-
-        {/* Estimated dose card */}
-        <View className="rounded-2xl bg-brand/10 border border-brand/30 p-4 my-5">
-          <Text className="text-brand text-xs font-semibold uppercase tracking-wider">
-            {t("calculator.estimatedDose")}
-          </Text>
-
-          <View className="flex-row justify-between mt-3">
-            <Text className="text-zinc-400 text-sm">
-              {t("calculator.estCarbs")}
-            </Text>
-            <Text className="text-zinc-100 font-medium">
-              {num(estimate.carbs)} {t("common.grams")}
-            </Text>
-          </View>
-          <View className="flex-row justify-between mt-1.5">
-            <Text className="text-zinc-400 text-sm">
-              {t("calculator.mealDose")}
-            </Text>
-            <Text className="text-zinc-100 font-medium">
-              {num(estimate.mealDose)} {t("common.units")}
-            </Text>
-          </View>
-          {estimate.correctionDose > 0 ? (
-            <View className="flex-row justify-between mt-1.5">
-              <Text className="text-zinc-400 text-sm">
-                {t("calculator.correctionDose")}
-              </Text>
-              <Text className="text-zinc-100 font-medium">
-                {num(estimate.correctionDose)} {t("common.units")}
-              </Text>
-            </View>
-          ) : null}
-          {iob > 0 ? (
-            <View className="flex-row justify-between mt-1.5">
-              <Text className="text-zinc-400 text-sm">
-                {t("calculator.activeInsulin")}
-              </Text>
-              <Text className="text-zinc-100 font-medium">
-                {num(iob)} {t("common.units")}
-              </Text>
-            </View>
-          ) : null}
-          {estimate.iobReduction > 0 ? (
-            <View className="flex-row justify-between mt-1.5">
-              <Text className="text-emerald-300/90 text-sm">
-                {t("calculator.iobReduction")}
-              </Text>
-              <Text className="text-emerald-300 font-medium">
-                -{num(estimate.iobReduction)} {t("common.units")}
-              </Text>
-            </View>
-          ) : null}
-
-          <View className="h-px bg-brand/20 my-3" />
-          <View className="flex-row justify-between items-center">
-            <Text className="text-zinc-300 font-semibold flex-1 pr-3">
-              {t("calculator.totalDose")}
-            </Text>
-            <View className="flex-row items-baseline">
-              {/* Explicit lineHeight so the bold 30px glyphs aren't clipped at the top */}
-              <Text
-                className="text-brand font-bold"
-                style={{ fontSize: 30, lineHeight: 40 }}
-              >
-                {estimate.totalDose === 0 &&
-                (estimate.mealDose > 0 || estimate.correctionDose > 0)
-                  ? "< 0.5"
-                  : num(estimate.totalDose)}
-              </Text>
-              <Text className="text-brand text-base font-medium">
-                {" "}
-                {t("common.units")}
-              </Text>
-            </View>
-          </View>
-          <Text className="text-brand/60 text-xs mt-2">
-            {t("calculator.overrideHint")}
-          </Text>
-          {/* Regulation: a non-advice disclaimer accompanies every dose display. */}
-          <View className="flex-row items-start mt-2">
-            <Ionicons name="medical-outline" size={13} color="#f59e0b" />
-            <Text className="text-amber-200/80 text-[11px] leading-4 ml-1.5 flex-1">
-              {t("calculator.calcNotAdvice")}
-            </Text>
-          </View>
-          <Pressable
-            onPress={() => router.push("/sources")}
-            hitSlop={8}
-            className="flex-row items-center mt-3"
-          >
-            <Ionicons name="information-circle-outline" size={14} color="#22d3ee" />
-            <Text className="text-brand text-xs underline ml-1">
-              {t("sources.calcLink")}
-            </Text>
+          <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
+            <Ionicons name="close" size={24} color="#a1a1aa" />
           </Pressable>
         </View>
 
-        {/* Plausibility warnings — non-blocking; the dose stays editable */}
-        {estimate.warnings.length > 0 ? (
-          <View className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 mb-4">
-            {estimate.warnings.map((w, i) => (
-              <View
-                key={w}
-                className={`flex-row items-start ${i > 0 ? "mt-2" : ""}`}
-              >
-                <Ionicons name="warning-outline" size={15} color="#fb7185" />
-                <Text className="text-rose-200/90 text-xs leading-4 ml-2.5 flex-1">
-                  {t(`calculator.${WARN_KEY[w]}`)}
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Food summary */}
+          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
+            <Text className="text-zinc-50 text-xl font-bold">
+              {foodName(food, lang)}
+            </Text>
+            <Text className="text-zinc-400 text-sm mt-0.5">
+              {num(food.carb_100g)} {t("common.grams")}/100g · {t("food.gi")}{" "}
+              {food.glycemic_index} · {t("food.gl")} {food.glycemic_load}
+            </Text>
+          </View>
+
+          {/* Active meal slot */}
+          <Text className="text-sm font-medium text-zinc-400 mb-2">
+            {t("calculator.activeSlot")}
+          </Text>
+          <Segmented
+            options={SLOTS.map((s) => ({ value: s, label: t(`slot.${s}`) }))}
+            value={slot}
+            onChange={setSlot}
+            className="mb-5"
+          />
+
+          {/* Portion slider */}
+          <View className="flex-row items-center justify-between mb-1">
+            <Text className="text-sm font-medium text-zinc-400">
+              {t("calculator.portion")}
+            </Text>
+            <Text className="text-zinc-50 font-bold text-lg">
+              {Math.round(portion)} {t("common.grams")}
+            </Text>
+          </View>
+          <Slider
+            minimumValue={0}
+            maximumValue={500}
+            step={5}
+            value={portion}
+            onValueChange={setPortion}
+            minimumTrackTintColor="#22d3ee"
+            maximumTrackTintColor="#3f3f46"
+            thumbTintColor="#22d3ee"
+          />
+
+          {/* Optional current glucose for correction */}
+          <View className="mt-4">
+            <Text className="text-sm font-medium text-zinc-400 mb-1.5">
+              {t("calculator.currentGlucose")} ({glucoseUnitLabel(unit)})
+            </Text>
+            <TextInput
+              value={glucose}
+              onChangeText={(s) =>
+                setGlucose(
+                  unit === "mmol"
+                    ? s.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1")
+                    : s.replace(/[^0-9]/g, "")
+                )
+              }
+              keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
+              placeholder="-"
+              placeholderTextColor="#52525b"
+              maxLength={unit === "mmol" ? 4 : 3}
+              className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
+            />
+          </View>
+
+          {/* Estimated dose card */}
+          <View className="rounded-2xl bg-brand/10 border border-brand/30 p-4 my-5">
+            <Text className="text-brand text-xs font-semibold uppercase tracking-wider">
+              {t("calculator.estimatedDose")}
+            </Text>
+
+            <View className="flex-row justify-between mt-3">
+              <Text className="text-zinc-400 text-sm">
+                {t("calculator.estCarbs")}
+              </Text>
+              <Text className="text-zinc-100 font-medium">
+                {num(estimate.carbs)} {t("common.grams")}
+              </Text>
+            </View>
+            <View className="flex-row justify-between mt-1.5">
+              <Text className="text-zinc-400 text-sm">
+                {t("calculator.mealDose")}
+              </Text>
+              <Text className="text-zinc-100 font-medium">
+                {num(estimate.mealDose)} {t("common.units")}
+              </Text>
+            </View>
+            {estimate.correctionDose > 0 ? (
+              <View className="flex-row justify-between mt-1.5">
+                <Text className="text-zinc-400 text-sm">
+                  {t("calculator.correctionDose")}
+                </Text>
+                <Text className="text-zinc-100 font-medium">
+                  {num(estimate.correctionDose)} {t("common.units")}
                 </Text>
               </View>
-            ))}
-          </View>
-        ) : null}
+            ) : null}
+            {iob > 0 ? (
+              <View className="flex-row justify-between mt-1.5">
+                <Text className="text-zinc-400 text-sm">
+                  {t("calculator.activeInsulin")}
+                </Text>
+                <Text className="text-zinc-100 font-medium">
+                  {num(iob)} {t("common.units")}
+                </Text>
+              </View>
+            ) : null}
+            {estimate.iobReduction > 0 ? (
+              <View className="flex-row justify-between mt-1.5">
+                <Text className="text-emerald-300/90 text-sm">
+                  {t("calculator.iobReduction")}
+                </Text>
+                <Text className="text-emerald-300 font-medium">
+                  -{num(estimate.iobReduction)} {t("common.units")}
+                </Text>
+              </View>
+            ) : null}
 
-        {/* Manual dose override */}
-        <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-          {t("calculator.manualDose")}
-        </Text>
-        <TextInput
-          value={doseText}
-          onChangeText={(s) => {
-            setDoseTouched(true);
-            setDoseText(s.replace(/[^0-9.,]/g, ""));
-          }}
-          keyboardType="decimal-pad"
-          className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mb-4"
-        />
-
-        {/* Photo */}
-        {photo ? (
-          <View className="mb-4">
-            <Image source={{ uri: photo }} className="w-full h-44 rounded-2xl" />
+            <View className="h-px bg-brand/20 my-3" />
+            <View className="flex-row justify-between items-center">
+              <Text className="text-zinc-300 font-semibold flex-1 pr-3">
+                {t("calculator.totalDose")}
+              </Text>
+              <View className="flex-row items-baseline">
+                {/* Explicit lineHeight so the bold 30px glyphs aren't clipped at the top */}
+                <Text
+                  className="text-brand font-bold"
+                  style={{ fontSize: 30, lineHeight: 40 }}
+                >
+                  {estimate.totalDose === 0 &&
+                  (estimate.mealDose > 0 || estimate.correctionDose > 0)
+                    ? "< 0.5"
+                    : num(estimate.totalDose)}
+                </Text>
+                <Text className="text-brand text-base font-medium">
+                  {" "}
+                  {t("common.units")}
+                </Text>
+              </View>
+            </View>
+            <Text className="text-brand/60 text-xs mt-2">
+              {t("calculator.overrideHint")}
+            </Text>
+            {/* Regulation: a non-advice disclaimer accompanies every dose display. */}
+            <View className="flex-row items-start mt-2">
+              <Ionicons name="medical-outline" size={13} color="#f59e0b" />
+              <Text className="text-amber-200/80 text-[11px] leading-4 ml-1.5 flex-1">
+                {t("calculator.calcNotAdvice")}
+              </Text>
+            </View>
             <Pressable
-              onPress={() => setPhoto(null)}
-              className="absolute top-2 right-2 bg-black/70 rounded-full p-1.5"
+              onPress={() => router.push("/sources")}
+              hitSlop={8}
+              className="flex-row items-center mt-3"
             >
-              <Ionicons name="trash-outline" size={16} color="#fda4af" />
+              <Ionicons name="information-circle-outline" size={14} color="#22d3ee" />
+              <Text className="text-brand text-xs underline ml-1">
+                {t("sources.calcLink")}
+              </Text>
             </Pressable>
           </View>
-        ) : (
-          <Pressable
-            onPress={choosePhoto}
-            className="flex-row items-center justify-center rounded-2xl border border-dashed border-zinc-700 py-4 mb-4"
-          >
-            <Ionicons name="camera-outline" size={18} color="#a1a1aa" />
-            <Text className="text-zinc-400 ml-2">{t("calculator.addPhoto")}</Text>
-          </Pressable>
-        )}
 
-        {/* Personal note */}
-        <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-          {t("calculator.personalNote")}
-        </Text>
-        <TextInput
-          value={note}
-          onChangeText={setNote}
-          placeholder={t("calculator.notePlaceholder")}
-          placeholderTextColor="#52525b"
-          multiline
-          className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mb-4 min-h-[72px]"
-          textAlignVertical="top"
-        />
+          {/* Plausibility warnings: non-blocking; the dose stays editable */}
+          {estimate.warnings.length > 0 ? (
+            <View className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 mb-4">
+              {estimate.warnings.map((w, i) => (
+                <View
+                  key={w}
+                  className={`flex-row items-start ${i > 0 ? "mt-2" : ""}`}
+                >
+                  <Ionicons name="warning-outline" size={15} color="#fb7185" />
+                  <Text className="text-rose-200/90 text-xs leading-4 ml-2.5 flex-1">
+                    {t(`calculator.${WARN_KEY[w]}`)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
-        <TagPicker value={tags} onChange={setTags} className="mb-6" />
-
-        {/* Medical disclaimer at the decision point */}
-        <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mb-4">
-          <Ionicons name="medical-outline" size={15} color="#f59e0b" />
-          <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
-            {t("disclaimer.short")}
+          {/* Manual dose override */}
+          <Text className="text-sm font-medium text-zinc-400 mb-1.5">
+            {t("calculator.manualDose")}
           </Text>
-        </View>
+          <TextInput
+            value={doseText}
+            onChangeText={(s) => {
+              setDoseTouched(true);
+              setDoseText(s.replace(/[^0-9.,]/g, ""));
+            }}
+            keyboardType="decimal-pad"
+            className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mb-4"
+          />
 
-        <Button label={t("calculator.logMeal")} size="lg" onPress={logMeal} />
-      </ScrollView>
-    </KeyboardAvoidingView>
+          {/* Photo */}
+          {photo ? (
+            <View className="mb-4">
+              <Image source={{ uri: photo }} className="w-full h-44 rounded-2xl" />
+              <Pressable
+                onPress={() => setPhoto(null)}
+                className="absolute top-2 right-2 bg-black/70 rounded-full p-1.5"
+              >
+                <Ionicons name="trash-outline" size={16} color="#fda4af" />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={choosePhoto}
+              className="flex-row items-center justify-center rounded-2xl border border-dashed border-zinc-700 py-4 mb-4"
+            >
+              <Ionicons name="camera-outline" size={18} color="#a1a1aa" />
+              <Text className="text-zinc-400 ml-2">{t("calculator.addPhoto")}</Text>
+            </Pressable>
+          )}
+
+          {/* Personal note */}
+          <Text className="text-sm font-medium text-zinc-400 mb-1.5">
+            {t("calculator.personalNote")}
+          </Text>
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            placeholder={t("calculator.notePlaceholder")}
+            placeholderTextColor="#52525b"
+            multiline
+            className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mb-4 min-h-[72px]"
+            textAlignVertical="top"
+          />
+
+          <TagPicker value={tags} onChange={setTags} className="mb-6" />
+
+          {/* Medical disclaimer at the decision point */}
+          <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mb-4">
+            <Ionicons name="medical-outline" size={15} color="#f59e0b" />
+            <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
+              {t("disclaimer.short")}
+            </Text>
+          </View>
+
+          <Button label={t("calculator.logMeal")} size="lg" onPress={logMeal} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <FeedbackHost />
+    </View>
   );
 }

@@ -7,7 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as SplashScreen from "expo-splash-screen";
 
 import { AppProvider, useApp } from "../lib/store/AppContext";
-import { FeedbackProvider } from "../components/Feedback";
+import { FeedbackProvider, FeedbackHost } from "../components/Feedback";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
@@ -155,6 +155,10 @@ export default function RootLayout() {
           <FeedbackProvider>
             <StatusBar style="light" />
             <RootNavigator />
+            {/* Serves the tabs and every non-modal route. Modal routes present a
+                separate view controller this cannot reach, so each mounts its
+                own host and takes over while it is on screen. */}
+            <FeedbackHost />
           </FeedbackProvider>
         </AppProvider>
       </SafeAreaProvider>

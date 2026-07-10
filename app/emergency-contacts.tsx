@@ -30,7 +30,7 @@ import {
   type EmergencyContact,
 } from "../lib/services/emergency";
 import { Button } from "../components/ui";
-import { useFeedback } from "../components/Feedback";
+import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
 
 /** A phone-bearing address-book entry, flattened for the in-app list. */
@@ -189,167 +189,170 @@ export default function EmergencyContactsScreen() {
   }, [deviceContacts, query]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-zinc-950"
-      style={{ paddingTop: insets.top }}
-    >
-      <View className="flex-row items-center justify-between px-4 py-2">
-        {pickerOpen ? (
-          <Pressable onPress={() => setPickerOpen(false)} hitSlop={10} className="p-1">
-            <Ionicons name="chevron-back" size={24} color="#a1a1aa" />
+    <View className="flex-1 bg-zinc-950">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        className="flex-1"
+        style={{ paddingTop: insets.top }}
+      >
+        <View className="flex-row items-center justify-between px-4 py-2">
+          {pickerOpen ? (
+            <Pressable onPress={() => setPickerOpen(false)} hitSlop={10} className="p-1">
+              <Ionicons name="chevron-back" size={24} color="#a1a1aa" />
+            </Pressable>
+          ) : null}
+          <Text className="text-zinc-50 text-xl font-bold flex-1 ml-1">
+            {pickerOpen ? t("emergency.pickFromContacts") : t("emergency.title")}
+          </Text>
+          <Pressable
+            onPress={() => (pickerOpen ? setPickerOpen(false) : router.back())}
+            hitSlop={10}
+            className="p-1"
+          >
+            <Ionicons name="close" size={26} color="#71717a" />
           </Pressable>
-        ) : null}
-        <Text className="text-zinc-50 text-xl font-bold flex-1 ml-1">
-          {pickerOpen ? t("emergency.pickFromContacts") : t("emergency.title")}
-        </Text>
-        <Pressable
-          onPress={() => (pickerOpen ? setPickerOpen(false) : router.back())}
-          hitSlop={10}
-          className="p-1"
-        >
-          <Ionicons name="close" size={26} color="#71717a" />
-        </Pressable>
-      </View>
+        </View>
 
-      {pickerOpen ? (
-        <View className="flex-1 px-5">
-          <View className="flex-row items-center rounded-xl bg-zinc-800/80 border border-zinc-700 px-3 mb-3">
-            <Ionicons name="search" size={16} color="#71717a" />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder={t("emergency.searchPlaceholder")}
-              placeholderTextColor="#52525b"
-              autoCorrect={false}
-              className="flex-1 px-2 py-3 text-zinc-50"
-            />
-          </View>
-
-          {pickerLoading ? (
-            <View className="items-center py-10">
-              <ActivityIndicator color="#22d3ee" />
-            </View>
-          ) : pickerDenied ? (
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 items-center">
-              <Ionicons name="lock-closed-outline" size={26} color="#71717a" />
-              <Text className="text-zinc-300 text-center mt-3 mb-4 leading-5">
-                {t("emergency.permissionHint")}
-              </Text>
-              <Button
-                label={t("settings.openSystemSettings")}
-                onPress={() => Linking.openSettings().catch(() => {})}
+        {pickerOpen ? (
+          <View className="flex-1 px-5">
+            <View className="flex-row items-center rounded-xl bg-zinc-800/80 border border-zinc-700 px-3 mb-3">
+              <Ionicons name="search" size={16} color="#71717a" />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder={t("emergency.searchPlaceholder")}
+                placeholderTextColor="#52525b"
+                autoCorrect={false}
+                className="flex-1 px-2 py-3 text-zinc-50"
               />
             </View>
-          ) : deviceContacts.length === 0 ? (
-            <Text className="text-zinc-500 text-center py-10 px-6 leading-5">
-              {t("emergency.noDeviceContacts")}
-            </Text>
-          ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(c) => c.id}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-              ListEmptyComponent={
-                <Text className="text-zinc-500 text-center py-10">
-                  {t("emergency.noResults")}
-                </Text>
-              }
-              renderItem={({ item }) => (
-                <View className="mb-2.5">
-                  <Text className="text-zinc-400 text-xs font-semibold px-1 mb-1">
-                    {item.name || t("emergency.unnamedContact")}
-                  </Text>
-                  {item.numbers.map((number) => (
-                    <Pressable
-                      key={`${item.id}-${number}`}
-                      onPress={() => pickNumber(item.name, number)}
-                      className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 mb-1.5 active:bg-zinc-800"
-                    >
-                      <Text className="text-zinc-100 flex-1">{number}</Text>
-                      <Ionicons name="add-circle-outline" size={20} color="#22d3ee" />
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            />
-          )}
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Text className="text-zinc-400 leading-5 mb-5">
-            {t("emergency.subtitle")}
-          </Text>
 
-          {contacts.map((c, i) => (
-            <View
-              key={`${c.phone}-${i}`}
-              className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 mb-2.5"
-            >
-              <View className="flex-1">
-                <Text className="text-zinc-50 font-semibold">{c.name}</Text>
-                <Text className="text-zinc-500 text-sm">{c.phone}</Text>
+            {pickerLoading ? (
+              <View className="items-center py-10">
+                <ActivityIndicator color="#22d3ee" />
               </View>
-              <Pressable onPress={() => remove(i)} hitSlop={8} className="p-1">
-                <Ionicons name="trash-outline" size={20} color="#fb7185" />
+            ) : pickerDenied ? (
+              <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 items-center">
+                <Ionicons name="lock-closed-outline" size={26} color="#71717a" />
+                <Text className="text-zinc-300 text-center mt-3 mb-4 leading-5">
+                  {t("emergency.permissionHint")}
+                </Text>
+                <Button
+                  label={t("settings.openSystemSettings")}
+                  onPress={() => Linking.openSettings().catch(() => {})}
+                />
+              </View>
+            ) : deviceContacts.length === 0 ? (
+              <Text className="text-zinc-500 text-center py-10 px-6 leading-5">
+                {t("emergency.noDeviceContacts")}
+              </Text>
+            ) : (
+              <FlatList
+                data={filtered}
+                keyExtractor={(c) => c.id}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+                ListEmptyComponent={
+                  <Text className="text-zinc-500 text-center py-10">
+                    {t("emergency.noResults")}
+                  </Text>
+                }
+                renderItem={({ item }) => (
+                  <View className="mb-2.5">
+                    <Text className="text-zinc-400 text-xs font-semibold px-1 mb-1">
+                      {item.name || t("emergency.unnamedContact")}
+                    </Text>
+                    {item.numbers.map((number) => (
+                      <Pressable
+                        key={`${item.id}-${number}`}
+                        onPress={() => pickNumber(item.name, number)}
+                        className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 mb-1.5 active:bg-zinc-800"
+                      >
+                        <Text className="text-zinc-100 flex-1">{number}</Text>
+                        <Ionicons name="add-circle-outline" size={20} color="#22d3ee" />
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              />
+            )}
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Text className="text-zinc-400 leading-5 mb-5">
+              {t("emergency.subtitle")}
+            </Text>
+
+            {contacts.map((c, i) => (
+              <View
+                key={`${c.phone}-${i}`}
+                className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 mb-2.5"
+              >
+                <View className="flex-1">
+                  <Text className="text-zinc-50 font-semibold">{c.name}</Text>
+                  <Text className="text-zinc-500 text-sm">{c.phone}</Text>
+                </View>
+                <Pressable onPress={() => remove(i)} hitSlop={8} className="p-1">
+                  <Ionicons name="trash-outline" size={20} color="#fb7185" />
+                </Pressable>
+              </View>
+            ))}
+
+            {/* Add form */}
+            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-2">
+              <Text className="text-zinc-300 font-semibold mb-3">
+                {t("emergency.addTitle")}
+              </Text>
+              <TextInput
+                value={name}
+                onChangeText={(v) => {
+                  setName(v);
+                  if (nameError) setNameError(null);
+                }}
+                placeholder={t("emergency.namePlaceholder")}
+                placeholderTextColor="#52525b"
+                className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
+              />
+              {nameError ? (
+                <Text className="text-rose-400 text-xs mt-1.5 ml-1">{nameError}</Text>
+              ) : null}
+
+              <TextInput
+                value={phone}
+                onChangeText={(v) => {
+                  setPhone(v);
+                  if (phoneError) setPhoneError(null);
+                }}
+                placeholder={t("emergency.phonePlaceholder")}
+                placeholderTextColor="#52525b"
+                keyboardType="phone-pad"
+                className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mt-2.5"
+              />
+              {phoneError ? (
+                <Text className="text-rose-400 text-xs mt-1.5 ml-1">{phoneError}</Text>
+              ) : null}
+
+              <View className="h-3" />
+              <Button label={t("emergency.add")} onPress={addTyped} />
+              <Pressable
+                onPress={openPicker}
+                className="flex-row items-center justify-center py-3 mt-1"
+              >
+                <Ionicons name="people-outline" size={18} color="#22d3ee" />
+                <Text className="text-brand font-medium ml-2">
+                  {t("emergency.pickFromContacts")}
+                </Text>
               </Pressable>
             </View>
-          ))}
-
-          {/* Add form */}
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-2">
-            <Text className="text-zinc-300 font-semibold mb-3">
-              {t("emergency.addTitle")}
-            </Text>
-            <TextInput
-              value={name}
-              onChangeText={(v) => {
-                setName(v);
-                if (nameError) setNameError(null);
-              }}
-              placeholder={t("emergency.namePlaceholder")}
-              placeholderTextColor="#52525b"
-              className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
-            />
-            {nameError ? (
-              <Text className="text-rose-400 text-xs mt-1.5 ml-1">{nameError}</Text>
-            ) : null}
-
-            <TextInput
-              value={phone}
-              onChangeText={(v) => {
-                setPhone(v);
-                if (phoneError) setPhoneError(null);
-              }}
-              placeholder={t("emergency.phonePlaceholder")}
-              placeholderTextColor="#52525b"
-              keyboardType="phone-pad"
-              className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mt-2.5"
-            />
-            {phoneError ? (
-              <Text className="text-rose-400 text-xs mt-1.5 ml-1">{phoneError}</Text>
-            ) : null}
-
-            <View className="h-3" />
-            <Button label={t("emergency.add")} onPress={addTyped} />
-            <Pressable
-              onPress={openPicker}
-              className="flex-row items-center justify-center py-3 mt-1"
-            >
-              <Ionicons name="people-outline" size={18} color="#22d3ee" />
-              <Text className="text-brand font-medium ml-2">
-                {t("emergency.pickFromContacts")}
-              </Text>
-            </Pressable>
-          </View>
-        </ScrollView>
-      )}
-    </KeyboardAvoidingView>
+          </ScrollView>
+        )}
+      </KeyboardAvoidingView>
+      <FeedbackHost />
+    </View>
   );
 }

@@ -5,6 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
+import { FeedbackHost } from "../components/Feedback";
+
 /**
  * Medical information sources (App Store Guideline 1.4.1).
  *
@@ -55,62 +57,65 @@ export default function SourcesScreen() {
   const router = useRouter();
 
   return (
-    <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
-        <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
-          {t("sources.title")}
-        </Text>
-        <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-          <Ionicons name="close" size={24} color="#a1a1aa" />
-        </Pressable>
+    <View className="flex-1 bg-zinc-950">
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
+        {/* Header */}
+        <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
+          <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
+            {t("sources.title")}
+          </Text>
+          <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
+            <Ionicons name="close" size={24} color="#a1a1aa" />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text className="text-zinc-300 leading-6 mb-6">{t("sources.intro")}</Text>
+
+          {/* Formula explanation */}
+          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-6">
+            <Text className="text-zinc-100 font-semibold mb-2">
+              {t("sources.methodTitle")}
+            </Text>
+            <Text className="text-zinc-400 leading-6">{t("sources.method")}</Text>
+            <Text className="text-zinc-500 leading-5 text-xs mt-3">
+              {t("sources.methodNote")}
+            </Text>
+            <Text className="text-zinc-500 leading-5 text-xs mt-2">
+              {t("sources.iobNote")}
+            </Text>
+          </View>
+
+          {/* References list */}
+          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+            {t("sources.listTitle")}
+          </Text>
+          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+            {REFERENCES.map((ref, i) => (
+              <Pressable
+                key={ref.url}
+                onPress={() => Linking.openURL(ref.url)}
+                className={`flex-row items-center p-4 active:bg-zinc-800 ${
+                  i > 0 ? "border-t border-zinc-800" : ""
+                }`}
+              >
+                <View className="flex-1 pr-3">
+                  <Text className="text-zinc-100 font-medium">{ref.label}</Text>
+                  <Text className="text-zinc-500 text-xs mt-0.5">{ref.org}</Text>
+                </View>
+                <Ionicons name="open-outline" size={18} color="#52525b" />
+              </Pressable>
+            ))}
+          </View>
+          <Text className="text-zinc-600 text-xs mt-2 px-1">
+            {t("sources.openHint")}
+          </Text>
+        </ScrollView>
       </View>
-
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text className="text-zinc-300 leading-6 mb-6">{t("sources.intro")}</Text>
-
-        {/* Formula explanation */}
-        <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-6">
-          <Text className="text-zinc-100 font-semibold mb-2">
-            {t("sources.methodTitle")}
-          </Text>
-          <Text className="text-zinc-400 leading-6">{t("sources.method")}</Text>
-          <Text className="text-zinc-500 leading-5 text-xs mt-3">
-            {t("sources.methodNote")}
-          </Text>
-          <Text className="text-zinc-500 leading-5 text-xs mt-2">
-            {t("sources.iobNote")}
-          </Text>
-        </View>
-
-        {/* References list */}
-        <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
-          {t("sources.listTitle")}
-        </Text>
-        <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
-          {REFERENCES.map((ref, i) => (
-            <Pressable
-              key={ref.url}
-              onPress={() => Linking.openURL(ref.url)}
-              className={`flex-row items-center p-4 active:bg-zinc-800 ${
-                i > 0 ? "border-t border-zinc-800" : ""
-              }`}
-            >
-              <View className="flex-1 pr-3">
-                <Text className="text-zinc-100 font-medium">{ref.label}</Text>
-                <Text className="text-zinc-500 text-xs mt-0.5">{ref.org}</Text>
-              </View>
-              <Ionicons name="open-outline" size={18} color="#52525b" />
-            </Pressable>
-          ))}
-        </View>
-        <Text className="text-zinc-600 text-xs mt-2 px-1">
-          {t("sources.openHint")}
-        </Text>
-      </ScrollView>
+      <FeedbackHost />
     </View>
   );
 }

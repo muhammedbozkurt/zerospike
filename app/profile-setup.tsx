@@ -23,6 +23,7 @@ import {
 import { Button } from "../components/ui";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { InlineTimePicker } from "../components/InlineTimePicker";
+import { FeedbackHost } from "../components/Feedback";
 
 /**
  * Configure a (usually freshly-created) profile's personal targets. Reuses the
@@ -94,138 +95,141 @@ export default function ProfileSetupScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-zinc-950"
-      style={{ paddingTop: insets.top }}
-    >
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
-        <View className="flex-1">
-          <Text className="text-zinc-50 text-lg font-bold">
-            {t("profiles.add")}
-          </Text>
-          <Text className="text-zinc-500 text-xs">{name}</Text>
-        </View>
-        <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-          <Ionicons name="close" size={24} color="#a1a1aa" />
-        </Pressable>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <View className="flex-1 bg-zinc-950">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        className="flex-1"
+        style={{ paddingTop: insets.top }}
       >
-        <View className="rounded-2xl bg-brand/10 border border-brand/25 p-3.5 mb-4 flex-row items-center">
-          <Ionicons name="information-circle-outline" size={18} color="#22d3ee" />
-          <Text className="text-zinc-300 text-xs ml-2.5 flex-1 leading-4">
-            {t("profiles.setupHint")}
-          </Text>
+        <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
+          <View className="flex-1">
+            <Text className="text-zinc-50 text-lg font-bold">
+              {t("profiles.add")}
+            </Text>
+            <Text className="text-zinc-500 text-xs">{name}</Text>
+          </View>
+          <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
+            <Ionicons name="close" size={24} color="#a1a1aa" />
+          </Pressable>
         </View>
 
-        <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
-          <InputRow
-            icon="text-outline"
-            label={t("onboarding.profileName")}
-            value={name}
-            onChangeText={setName}
-            placeholder={t("profiles.newNamePlaceholder")}
-            last
-          />
-        </FormCard>
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="rounded-2xl bg-brand/10 border border-brand/25 p-3.5 mb-4 flex-row items-center">
+            <Ionicons name="information-circle-outline" size={18} color="#22d3ee" />
+            <Text className="text-zinc-300 text-xs ml-2.5 flex-1 leading-4">
+              {t("profiles.setupHint")}
+            </Text>
+          </View>
 
-        <FormCard icon="speedometer-outline" title={t("onboarding.secTargets")}>
-          <InputRow
-            icon="sunny-outline"
-            label={t("period.fasting")}
-            value={fasting}
-            onChangeText={setFasting}
-            keyboardType="decimal-pad"
-            suffix={glucoseUnitLabel(unit)}
-            maxLength={5}
-          />
-          <InputRow
-            icon="time-outline"
-            label={t("period.post_meal_2h")}
-            value={postmeal}
-            onChangeText={setPostmeal}
-            keyboardType="decimal-pad"
-            suffix={glucoseUnitLabel(unit)}
-            maxLength={5}
-          />
-          <InputRow
-            icon="pie-chart-outline"
-            label={t("settings.dailyCarbTarget")}
-            value={dailyCarb}
-            onChangeText={setDailyCarb}
-            keyboardType="number-pad"
-            suffix={t("common.grams")}
-            last
-          />
-        </FormCard>
+          <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
+            <InputRow
+              icon="text-outline"
+              label={t("onboarding.profileName")}
+              value={name}
+              onChangeText={setName}
+              placeholder={t("profiles.newNamePlaceholder")}
+              last
+            />
+          </FormCard>
 
-        <FormCard icon="restaurant-outline" title={t("settings.carbRatios")}>
-          <InputRow
-            icon="cafe-outline"
-            label={t("slot.breakfast")}
-            value={crB}
-            onChangeText={setCrB}
-            keyboardType="decimal-pad"
-            suffix={t("common.carbRatioUnit")}
-          />
-          <InputRow
-            icon="partly-sunny-outline"
-            label={t("slot.lunch")}
-            value={crL}
-            onChangeText={setCrL}
-            keyboardType="decimal-pad"
-            suffix={t("common.carbRatioUnit")}
-          />
-          <InputRow
-            icon="moon-outline"
-            label={t("slot.dinner")}
-            value={crD}
-            onChangeText={setCrD}
-            keyboardType="decimal-pad"
-            suffix={t("common.carbRatioUnit")}
-            last
-          />
-        </FormCard>
+          <FormCard icon="speedometer-outline" title={t("onboarding.secTargets")}>
+            <InputRow
+              icon="sunny-outline"
+              label={t("period.fasting")}
+              value={fasting}
+              onChangeText={setFasting}
+              keyboardType="decimal-pad"
+              suffix={glucoseUnitLabel(unit)}
+              maxLength={5}
+            />
+            <InputRow
+              icon="time-outline"
+              label={t("period.post_meal_2h")}
+              value={postmeal}
+              onChangeText={setPostmeal}
+              keyboardType="decimal-pad"
+              suffix={glucoseUnitLabel(unit)}
+              maxLength={5}
+            />
+            <InputRow
+              icon="pie-chart-outline"
+              label={t("settings.dailyCarbTarget")}
+              value={dailyCarb}
+              onChangeText={setDailyCarb}
+              keyboardType="number-pad"
+              suffix={t("common.grams")}
+              last
+            />
+          </FormCard>
 
-        <FormCard icon="pulse-outline" title={t("onboarding.secReminder")}>
-          <InputRow
-            icon="pulse-outline"
-            label={t("settings.isf")}
-            hint={t("settings.isfHint")}
-            value={isf}
-            onChangeText={setIsf}
-            keyboardType="decimal-pad"
-            suffix={glucoseUnitLabel(unit)}
-            maxLength={5}
-          />
-          <ActionRow
-            icon="alarm-outline"
-            label={t("settings.basalTime")}
+          <FormCard icon="restaurant-outline" title={t("settings.carbRatios")}>
+            <InputRow
+              icon="cafe-outline"
+              label={t("slot.breakfast")}
+              value={crB}
+              onChangeText={setCrB}
+              keyboardType="decimal-pad"
+              suffix={t("common.carbRatioUnit")}
+            />
+            <InputRow
+              icon="partly-sunny-outline"
+              label={t("slot.lunch")}
+              value={crL}
+              onChangeText={setCrL}
+              keyboardType="decimal-pad"
+              suffix={t("common.carbRatioUnit")}
+            />
+            <InputRow
+              icon="moon-outline"
+              label={t("slot.dinner")}
+              value={crD}
+              onChangeText={setCrD}
+              keyboardType="decimal-pad"
+              suffix={t("common.carbRatioUnit")}
+              last
+            />
+          </FormCard>
+
+          <FormCard icon="pulse-outline" title={t("onboarding.secReminder")}>
+            <InputRow
+              icon="pulse-outline"
+              label={t("settings.isf")}
+              hint={t("settings.isfHint")}
+              value={isf}
+              onChangeText={setIsf}
+              keyboardType="decimal-pad"
+              suffix={glucoseUnitLabel(unit)}
+              maxLength={5}
+            />
+            <ActionRow
+              icon="alarm-outline"
+              label={t("settings.basalTime")}
+              value={basalTime}
+              onPress={() => setShowTime((s) => !s)}
+              last
+            />
+          </FormCard>
+          <InlineTimePicker
+            visible={showTime}
             value={basalTime}
-            onPress={() => setShowTime((s) => !s)}
-            last
+            onChange={setBasalTime}
+            onClose={() => setShowTime(false)}
           />
-        </FormCard>
-        <InlineTimePicker
-          visible={showTime}
-          value={basalTime}
-          onChange={setBasalTime}
-          onClose={() => setShowTime(false)}
-        />
 
-        <View className="h-2" />
-        <Button
-          label={t("common.save")}
-          size="lg"
-          loading={saving}
-          onPress={save}
-        />
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <View className="h-2" />
+          <Button
+            label={t("common.save")}
+            size="lg"
+            loading={saving}
+            onPress={save}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <FeedbackHost />
+    </View>
   );
 }

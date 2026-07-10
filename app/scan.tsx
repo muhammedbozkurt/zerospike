@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { getFoodByBarcode } from "../lib/db/foods";
 import { Button } from "../components/ui";
-import { useFeedback } from "../components/Feedback";
+import { FeedbackHost, useFeedback } from "../components/Feedback";
 
 export default function ScanScreen() {
   const { t } = useTranslation();
@@ -72,99 +72,110 @@ export default function ScanScreen() {
     </Pressable>
   );
 
-  // Permission still loading
-  if (!permission) {
-    return (
-      <View className="flex-1 bg-black items-center justify-center">
-        <Text className="text-zinc-400">{t("scan.requesting")}</Text>
-      </View>
-    );
-  }
-
-  // Not yet asked: show a short rationale whose only action proceeds to the
-  // system permission prompt. No exit button and no "grant"-style wording, per
-  // App Review guideline 5.1.1(iv).
-  if (!permission.granted && permission.status === "undetermined") {
-    return (
-      <View className="flex-1 bg-black items-center justify-center px-8">
-        <Ionicons name="camera-outline" size={48} color="#3f3f46" />
-        <Text className="text-zinc-300 text-center my-4">
-          {t("scan.permissionIntro")}
-        </Text>
-        <View className="w-full">
-          <Button label={t("common.continue")} onPress={requestPermission} />
+  function renderContent() {
+    // Permission still loading
+    if (!permission) {
+      return (
+        <View className="flex-1 items-center justify-center">
+          <Text className="text-zinc-400">{t("scan.requesting")}</Text>
         </View>
-      </View>
-    );
-  }
+      );
+    }
 
-  // Previously denied: this is AFTER the system prompt, so navigation is fine —
-  // guide the user to Settings to enable the camera.
-  if (!permission.granted) {
-    return (
-      <View className="flex-1 bg-black items-center justify-center px-8">
-        <Ionicons name="camera-outline" size={48} color="#3f3f46" />
-        <Text className="text-zinc-300 text-center my-4">
-          {t("scan.permissionDenied")}
-        </Text>
-        <View className="w-full">
-          <Button label={t("scan.openSettings")} onPress={() => Linking.openSettings()} />
-          <View className="h-3" />
-          <Button
-            label={t("common.close")}
-            variant="secondary"
-            onPress={() => router.back()}
-          />
+    // Not yet asked: show a short rationale whose only action proceeds to the
+    // system permission prompt. No exit button and no "grant"-style wording, per
+    // App Review guideline 5.1.1(iv).
+    if (!permission.granted && permission.status === "undetermined") {
+      return (
+        <View className="flex-1 items-center justify-center px-8">
+          <Ionicons name="camera-outline" size={48} color="#3f3f46" />
+          <Text className="text-zinc-300 text-center my-4">
+            {t("scan.permissionIntro")}
+          </Text>
+          <View className="w-full">
+            <Button label={t("common.continue")} onPress={requestPermission} />
+          </View>
         </View>
-      </View>
-    );
-  }
+      );
+    }
 
-  // Camera hardware/mount failure: never leave a black screen with no way out.
-  if (cameraError) {
-    return (
-      <View className="flex-1 bg-black items-center justify-center px-8">
-        <Ionicons name="alert-circle-outline" size={48} color="#3f3f46" />
-        <Text className="text-zinc-300 text-center my-4">
-          {t("scan.cameraError")}
-        </Text>
-        <View className="w-full">
-          <Button label={t("scan.retry")} onPress={() => setCameraError(false)} />
-          <View className="h-3" />
-          <Button
-            label={t("common.close")}
-            variant="secondary"
-            onPress={() => router.back()}
-          />
+    // Previously denied: this is AFTER the system prompt, so navigation is fine;
+    // guide the user to Settings to enable the camera.
+    if (!permission.granted) {
+      return (
+        <View className="flex-1 items-center justify-center px-8">
+          <Ionicons name="camera-outline" size={48} color="#3f3f46" />
+          <Text className="text-zinc-300 text-center my-4">
+            {t("scan.permissionDenied")}
+          </Text>
+          <View className="w-full">
+            <Button label={t("scan.openSettings")} onPress={() => Linking.openSettings()} />
+            <View className="h-3" />
+            <Button
+              label={t("common.close")}
+              variant="secondary"
+              onPress={() => router.back()}
+            />
+          </View>
         </View>
+      );
+    }
+
+    // Camera hardware/mount failure: never leave a black screen with no way out.
+    if (cameraError) {
+      return (
+        <View className="flex-1 items-center justify-center px-8">
+          <Ionicons name="alert-circle-outline" size={48} color="#3f3f46" />
+          <Text className="text-zinc-300 text-center my-4">
+            {t("scan.cameraError")}
+          </Text>
+          <View className="w-full">
+            <Button label={t("scan.retry")} onPress={() => setCameraError(false)} />
+            <View className="h-3" />
+            <Button
+              label={t("common.close")}
+              variant="secondary"
+              onPress={() => router.back()}
+            />
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View className="flex-1">
+        <CameraView
+          style={{ flex: 1 }}
+          facing="back"
+          onMountError={() => setCameraError(true)}
+          barcodeScannerSettings={{
+            barcodeTypes: [
+              "ean13",
+              "ean8",
+              "upc_a",
+              "upc_e",
+              "code128",
+              "code39",
+              "qr",
+              "itf14",
+            ],
+          }}
+          onBarcodeScanned={
+            locked ? undefined : ({ data }) => handleScanned(data)
+          }
+        />
+        {Frame}
+        {CloseButton}
       </View>
     );
   }
 
+  // The host stays mounted across every branch so the "not found" dialog is
+  // drawn over the camera, inside this screen's own view controller.
   return (
     <View className="flex-1 bg-black">
-      <CameraView
-        style={{ flex: 1 }}
-        facing="back"
-        onMountError={() => setCameraError(true)}
-        barcodeScannerSettings={{
-          barcodeTypes: [
-            "ean13",
-            "ean8",
-            "upc_a",
-            "upc_e",
-            "code128",
-            "code39",
-            "qr",
-            "itf14",
-          ],
-        }}
-        onBarcodeScanned={
-          locked ? undefined : ({ data }) => handleScanned(data)
-        }
-      />
-      {Frame}
-      {CloseButton}
+      {renderContent()}
+      <FeedbackHost />
     </View>
   );
 }
