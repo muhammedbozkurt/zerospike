@@ -174,9 +174,14 @@ export default function CalculatorScreen() {
   }
 
   if (!food || !estimate) {
+    // The host lives on every branch, so anything this screen ever says lands
+    // inside its own view controller rather than behind it.
     return (
-      <View className="flex-1 bg-black items-center justify-center">
-        <Text className="text-zinc-500">{t("common.loading")}</Text>
+      <View className="flex-1 bg-black">
+        <View className="flex-1 items-center justify-center">
+          <Text className="text-zinc-500">{t("common.loading")}</Text>
+        </View>
+        <FeedbackHost />
       </View>
     );
   }

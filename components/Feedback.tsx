@@ -267,7 +267,16 @@ export function FeedbackHost() {
 function FeedbackOverlays() {
   const internal = useContext(FeedbackInternalContext);
   if (!internal) return null;
-  const { toastMsg, toastKind, toastAnim, confirmOpts, closeConfirm, sheet } = internal;
+  const {
+    toastMsg,
+    toastKind,
+    toastAnim,
+    confirmOpts,
+    closeConfirm,
+    sheet,
+    closeSheet,
+    runSheetAction,
+  } = internal;
   const ts = TOAST_STYLE[toastKind];
 
   return (
@@ -280,11 +289,7 @@ function FeedbackOverlays() {
       ) : null}
 
       {sheet ? (
-        <SheetOverlay
-          sheet={sheet}
-          onClose={internal.closeSheet}
-          onRun={internal.runSheetAction}
-        />
+        <SheetOverlay sheet={sheet} onClose={closeSheet} onRun={runSheetAction} />
       ) : null}
 
       {/* Toast rides above the dialogs, and survives the screen that fired it. */}

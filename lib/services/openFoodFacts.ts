@@ -22,13 +22,7 @@ const FIELDS = "product_name,brands,nutriments,serving_quantity";
 
 const TIMEOUT_MS = 5000;
 
-export {
-  OFF_ATTRIBUTION,
-  OFF_SOURCE,
-  foodSourceLabel,
-  isProductBarcode,
-  type OffProduct,
-} from "./offParse";
+export { OFF_SOURCE, foodSourceLabel, type OffProduct } from "./offParse";
 
 export type OffLookup =
   | { kind: "found"; product: OffProduct }
