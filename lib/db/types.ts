@@ -87,6 +87,9 @@ export interface Food {
   brand_name: string | null;
   custom_notes: string | null;
   is_custom: number; // 0 | 1
+  /** null for the seeded catalog and for the user's own foods; 'off' for a
+   *  barcode result cached from Open Food Facts. */
+  source: string | null;
   created_at: string;
 }
 

@@ -31,6 +31,7 @@ import { activeInsulin } from "../lib/iob";
 import { getInjections } from "../lib/db/injections";
 import { glucoseFromDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { schedulePostMealReminder } from "../lib/services/notifications";
+import { foodSourceLabel } from "../lib/services/openFoodFacts";
 import type { Food, LogTag, MealSlot } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { Button, Segmented } from "../components/ui";
@@ -209,9 +210,23 @@ export default function CalculatorScreen() {
               {foodName(food, lang)}
             </Text>
             <Text className="text-zinc-400 text-sm mt-0.5">
-              {num(food.carb_100g)} {t("common.grams")}/100g · {t("food.gi")}{" "}
-              {food.glycemic_index} · {t("food.gl")} {food.glycemic_load}
+              {num(food.carb_100g)} {t("common.grams")}/100g
+              {/* A barcode result carries no glycemic index; showing "GI 0" would
+                  read as a measured zero rather than "not stated". */}
+              {food.glycemic_index > 0
+                ? ` · ${t("food.gi")} ${food.glycemic_index} · ${t("food.gl")} ${food.glycemic_load}`
+                : ""}
             </Text>
+            {food.source ? (
+              <View className="mt-2.5 pt-2.5 border-t border-zinc-800">
+                <Text className="text-zinc-500 text-xs">
+                  {t("food.dataSource", { source: foodSourceLabel(food.source) })}
+                </Text>
+                <Text className="text-zinc-500 text-xs mt-0.5 leading-4">
+                  {t("food.estimatedValues")}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Active meal slot */}

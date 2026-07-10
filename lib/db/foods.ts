@@ -155,6 +155,63 @@ export async function countCustomFoods(): Promise<number> {
   return row?.c ?? 0;
 }
 
+/**
+ * Stores a barcode result fetched from Open Food Facts so the next scan of the
+ * same product resolves offline.
+ *
+ * The row is NOT marked custom: it is catalog data the user did not author, so
+ * it must not eat into the free tier's custom-food allowance. `source` records
+ * where it came from, which the calculator shows as attribution.
+ *
+ * Open Food Facts carries no glycemic index. Rather than guess one, GI and GL
+ * stay at zero for the user to fill in; neither feeds the dose estimate.
+ * Returns the existing row if this barcode was already cached.
+ */
+export async function cacheBarcodeFood(input: {
+  barcode: string;
+  name: string;
+  brand: string | null;
+  carb_100g: number;
+  portion_size_g: number;
+  source: string;
+}): Promise<Food> {
+  const existing = await getFoodByBarcode(input.barcode);
+  if (existing) return existing;
+
+  const db = await getDb();
+  const id = uuid();
+  const now = new Date().toISOString();
+  const name = input.name.trim();
+  const aliases = JSON.stringify([name.toLowerCase()]);
+
+  await db.runAsync(
+    `INSERT INTO foods
+      (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
+       barcode, carb_100g, glycemic_index, glycemic_load, portion_size_g,
+       brand_name, custom_notes, is_custom, source, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, 0, ?, ?);`,
+    [
+      id,
+      name,
+      name,
+      name,
+      name,
+      name,
+      aliases,
+      input.barcode.trim(),
+      input.carb_100g,
+      input.portion_size_g,
+      input.brand?.trim() || null,
+      input.source,
+      now,
+    ]
+  );
+
+  const created = await getFood(id);
+  if (!created) throw new Error("Failed to cache barcode food");
+  return created;
+}
+
 export interface NewFoodInput {
   name: string; // entered in user's language; copied across columns + aliases
   carb_100g: number;

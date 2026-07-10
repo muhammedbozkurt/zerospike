@@ -9,7 +9,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -44,6 +44,20 @@ export async function initDatabase(): Promise<void> {
     await seedFoods(db);
   }
 
+  // v5 → v6: where a food row came from. NULL for the seeded catalog and for
+  // the user's own foods; 'off' for a barcode result cached from Open Food
+  // Facts so the next scan of that product works offline.
+  //
+  // Runs ahead of the older steps below on purpose: seedFoods() reads this
+  // column, and the v1 → v2 step re-seeds.
+  if (currentVersion >= 1 && currentVersion < 6) {
+    try {
+      await db.execAsync("ALTER TABLE foods ADD COLUMN source TEXT;");
+    } catch {
+      // column already exists, ignore
+    }
+  }
+
   // v1 → v2: add the category column and re-seed foods with categories.
   if (currentVersion >= 1 && currentVersion < 2) {
     try {
@@ -51,7 +65,7 @@ export async function initDatabase(): Promise<void> {
         "ALTER TABLE foods ADD COLUMN category TEXT NOT NULL DEFAULT 'other';"
       );
     } catch {
-      // column already exists — ignore
+      // column already exists, ignore
     }
     await db.execAsync("DELETE FROM foods WHERE is_custom = 0;");
     await seedFoods(db);
@@ -64,7 +78,7 @@ export async function initDatabase(): Promise<void> {
         "ALTER TABLE user_profiles ADD COLUMN glucose_unit TEXT NOT NULL DEFAULT 'mgdl';"
       );
     } catch {
-      // column already exists — ignore
+      // column already exists, ignore
     }
   }
 
@@ -81,7 +95,7 @@ export async function initDatabase(): Promise<void> {
           `ALTER TABLE ${table} ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';`
         );
       } catch {
-        // column already exists — ignore
+        // column already exists, ignore
       }
     }
   }
@@ -122,6 +136,7 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       brand_name TEXT,
       custom_notes TEXT,
       is_custom INTEGER NOT NULL DEFAULT 0,
+      source TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -266,10 +281,10 @@ function buildAliases(names: string[]): string {
 }
 
 async function seedFoods(db: SQLite.SQLiteDatabase): Promise<void> {
-  // Count only seeded (non-custom) rows so a re-seed after migration works
-  // even when the user already has custom foods.
+  // Count only seeded rows so a re-seed after migration works even when the
+  // user already has custom foods or cached barcode results (source IS NOT NULL).
   const existing = await db.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM foods WHERE is_custom = 0;"
+    "SELECT COUNT(*) AS c FROM foods WHERE is_custom = 0 AND source IS NULL;"
   );
   if ((existing?.c ?? 0) > 0) return;
 
@@ -307,7 +322,7 @@ async function seedFoods(db: SQLite.SQLiteDatabase): Promise<void> {
 
 /**
  * Clears all user-entered logs for every profile (keeps the seeded foods, the
- * profiles, and the user's insulin pens — pens are configuration, managed
+ * profiles, and the user's insulin pens; pens are configuration, managed
  * separately in the pen UI, not wiped by a log reset).
  */
 export async function clearAllLogs(): Promise<void> {
