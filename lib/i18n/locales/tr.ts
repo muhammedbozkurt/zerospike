@@ -323,6 +323,7 @@ const tr = {
     whatsappContact: "WhatsApp",
     noContacts: "Buradan tek dokunuşla ulaşabilmen için bir acil kişi ekle.",
     addContact: "Acil kişi ekle",
+    manageContacts: "Kişi ekle / düzenle",
     disclaimer: "zerospike kendi başına arama yapamaz veya mesaj gönderemez. Her işlem telefonunun arama ya da mesaj uygulamasını açar, göndermeyi sen yaparsın.",
     openScreen: "SOS ekranını aç",
     messageWithLocation: "Yardıma ihtiyacım var. Konumum: {{location}}",

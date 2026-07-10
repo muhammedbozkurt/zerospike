@@ -325,6 +325,7 @@ const fr: TranslationSchema = {
     whatsappContact: "WhatsApp",
     noContacts: "Ajoute un contact d'urgence pour le joindre d'ici en un seul toucher.",
     addContact: "Ajouter un contact d'urgence",
+    manageContacts: "Ajouter ou modifier des contacts",
     disclaimer: "zerospike ne peut pas appeler ni envoyer de messages tout seul. Chaque action ouvre l'app téléphone ou messages pour que tu envoies.",
     openScreen: "Ouvrir l'écran SOS",
     messageWithLocation: "J'ai besoin d'aide. Ma position : {{location}}",

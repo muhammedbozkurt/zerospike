@@ -175,33 +175,53 @@ export default function SosScreen() {
               </Pressable>
             </View>
           ) : (
-            contacts.map((c, i) => (
-              <View
-                key={`${c.phone}-${i}`}
-                className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-4"
+            <>
+              {contacts.map((c, i) => (
+                <View
+                  key={`${c.phone}-${i}`}
+                  className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-4"
+                >
+                  <Text className="text-zinc-50 font-bold text-base">{c.name}</Text>
+                  <Text className="text-zinc-500 text-sm mb-3">{c.phone}</Text>
+                  <ActionButton
+                    icon="call"
+                    label={t("sos.callContact")}
+                    color="#16a34a"
+                    onPress={() => callNumber(c.phone)}
+                  />
+                  <ActionButton
+                    icon="chatbubble-ellipses"
+                    label={t("sos.messageContact")}
+                    color="#2563eb"
+                    onPress={() => messageContact(c.phone)}
+                  />
+                  <ActionButton
+                    icon="logo-whatsapp"
+                    label={t("sos.whatsappContact")}
+                    color="#059669"
+                    onPress={() => whatsappContact(c.phone)}
+                  />
+                </View>
+              ))}
+
+              {/* Once a contact exists the big empty-state card is gone, and with
+                  it the only way to reach the contacts screen. A second contact
+                  has to be reachable from here. The list refreshes on focus. */}
+              <Pressable
+                onPress={() => router.push("/emergency-contacts")}
+                className="flex-row items-center justify-center rounded-2xl border border-zinc-800 py-3.5 mt-4 active:bg-zinc-900"
               >
-                <Text className="text-zinc-50 font-bold text-base">{c.name}</Text>
-                <Text className="text-zinc-500 text-sm mb-3">{c.phone}</Text>
-                <ActionButton
-                  icon="call"
-                  label={t("sos.callContact")}
-                  color="#16a34a"
-                  onPress={() => callNumber(c.phone)}
-                />
-                <ActionButton
-                  icon="chatbubble-ellipses"
-                  label={t("sos.messageContact")}
-                  color="#2563eb"
-                  onPress={() => messageContact(c.phone)}
-                />
-                <ActionButton
-                  icon="logo-whatsapp"
-                  label={t("sos.whatsappContact")}
-                  color="#059669"
-                  onPress={() => whatsappContact(c.phone)}
-                />
-              </View>
-            ))
+                <Ionicons name="person-add-outline" size={17} color="#22d3ee" />
+                <Text
+                  className="text-brand font-medium ml-2"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {t("sos.manageContacts")}
+                </Text>
+              </Pressable>
+            </>
           )}
 
           <Text className="text-zinc-600 text-[11px] text-center leading-4 mt-6 px-2">
