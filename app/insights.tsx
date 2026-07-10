@@ -20,8 +20,10 @@ import { getInjections } from "../lib/db/injections";
 import { readHealthSummary, type HealthSummary } from "../lib/services/health";
 import type { Injection, MealLog, SugarLog } from "../lib/db/types";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
+import { AGP_MIN_READINGS, computeAgp } from "../lib/agp";
 import {
   computeInsights,
+  dailyAverages,
   derivePatterns,
   trendVsPrevious,
   windowPercentiles,
@@ -35,13 +37,21 @@ import {
 } from "../lib/insights";
 import { maybeReviewOnWeeklyView } from "../lib/services/review";
 import { Button } from "../components/ui";
+import { ChartCard } from "../components/charts/ChartCard";
+import { DailyProfileChart } from "../components/charts/DailyProfileChart";
+import { HourlyChart } from "../components/charts/HourlyChart";
+import { TimeInRangeBar } from "../components/charts/TimeInRangeBar";
+import { TrendChart } from "../components/charts/TrendChart";
+import { CHART, CHART_HEIGHT } from "../components/charts/theme";
 import { logEvent } from "../lib/analytics";
 import { num } from "../lib/format";
 
 const GREEN = "#10b981";
-const ROSE = "#f43f5e";
 const AMBER = "#f59e0b";
 const BRAND = "#22d3ee";
+
+/** Two points make a line; one is just a dot. */
+const TREND_MIN_DAYS = 2;
 
 function Tile({
   label,
@@ -227,6 +237,65 @@ export default function InsightsScreen() {
           : t("insights.weeklyEveningHigher", { diff: fmtG(s.diff), unit: u });
     }
   };
+  // ── Chart data. All memoized: a 90-day window is a few thousand readings and
+  // the window selector re-renders the whole screen. ────────────────────────
+  const agp = useMemo(() => computeAgp(sugar, windowDays), [sugar, windowDays]);
+  const trendDays = useMemo(
+    () => dailyAverages(sugar, windowDays),
+    [sugar, windowDays]
+  );
+
+  const u = glucoseUnitLabel(unit);
+
+  const dailyCaption = useMemo(() => {
+    if (agp.bands.length === 0) return "";
+    // The window's own median, not the median of the hourly medians.
+    return t("insights.chartDailyCaption", {
+      readings: agp.totalReadings,
+      hours: agp.bands.length,
+      median: fmtG(pctile?.p50 ?? null),
+      unit: u,
+    });
+  }, [agp, pctile, t, unit]);
+
+  const trendCaption = useMemo(() => {
+    if (trendDays.length === 0) return "";
+    const avgs = trendDays.map((d) => d.avg);
+    return t("insights.chartTrendCaption", {
+      days: trendDays.length,
+      min: fmtG(Math.round(Math.min(...avgs))),
+      max: fmtG(Math.round(Math.max(...avgs))),
+      unit: u,
+    });
+  }, [trendDays, t, unit]);
+
+  const hourlyBars = SLICES.map((slice) => ({
+    label: t(`insights.${slice}`),
+    value: data.hourly[slice],
+  }));
+  const hourlyCaption = t("insights.chartHourlyCaption", {
+    summary: `${hourlyBars
+      .map((b) => `${b.label} ${b.value == null ? "-" : fmtG(b.value)}`)
+      .join(", ")} ${u}`,
+  });
+  const hourlyEmpty = hourlyBars.every((b) => b.value == null);
+
+  // The window's first day, for the trend chart's left axis label.
+  const windowStartLabel = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - (windowDays - 1));
+    const two = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${two(d.getDate())}.${two(d.getMonth() + 1)}`;
+  }, [windowDays]);
+
+  // Neutral delta chip: the signed difference, and nothing about what it means.
+  const avgDeltaChip =
+    trend.avgDelta == null
+      ? null
+      : Math.round(trend.avgDelta) === 0
+        ? t("insights.chartNoChange")
+        : `${trend.avgDelta > 0 ? "+" : "-"}${fmtG(Math.abs(Math.round(trend.avgDelta)))} ${u}`;
+
   const avgTrend =
     trend.avgDelta != null
       ? `${trend.avgDelta >= 0 ? "▲" : "▼"} ${fmtG(
@@ -369,38 +438,92 @@ export default function InsightsScreen() {
                     <Text className="text-zinc-300 font-semibold mb-3">
                       {t("insights.timeInRange")}
                     </Text>
-                    <View className="h-3 rounded-full overflow-hidden flex-row bg-zinc-800">
-                      <Seg pct={data.lowPct ?? 0} color={ROSE} />
-                      <Seg pct={data.inRangePct ?? 0} color={GREEN} />
-                      <Seg pct={data.highPct ?? 0} color={AMBER} />
-                    </View>
-                    <View className="flex-row justify-between mt-3">
-                      <View className="flex-row items-center">
-                        <View className="w-2.5 h-2.5 rounded-full mr-1.5" style={{ backgroundColor: ROSE }} />
-                        <Text className="text-zinc-400 text-xs">
-                          {t("insights.low")} {pct(data.lowPct)}%
-                        </Text>
-                      </View>
-                      <View className="flex-row items-center">
-                        <View className="w-2.5 h-2.5 rounded-full mr-1.5" style={{ backgroundColor: GREEN }} />
-                        <Text className="text-zinc-400 text-xs">
-                          {t("insights.inRange")} {pct(data.inRangePct)}%
-                        </Text>
-                      </View>
-                      <View className="flex-row items-center">
-                        <View className="w-2.5 h-2.5 rounded-full mr-1.5" style={{ backgroundColor: AMBER }} />
-                        <Text className="text-zinc-400 text-xs">
-                          {t("insights.high")} {pct(data.highPct)}%
-                        </Text>
-                      </View>
-                    </View>
+                    <TimeInRangeBar
+                      lowPct={data.lowPct ?? 0}
+                      inRangePct={data.inRangePct ?? 0}
+                      highPct={data.highPct ?? 0}
+                      labels={{
+                        low: t("insights.low"),
+                        inRange: t("insights.inRange"),
+                        high: t("insights.high"),
+                      }}
+                    />
                     <Text className="text-zinc-600 text-[11px] mt-3">
                       {t("insights.inRange")} = {formatGlucose(70, unit)}-
-                      {formatGlucose(180, unit)} {glucoseUnitLabel(unit)}
+                      {formatGlucose(180, unit)} {u}
                     </Text>
                   </View>
 
-                  {/* Percentile band summary (AGP numeric) — Pro */}
+                  {/* Daily profile (AGP): median + IQR by hour of day (Pro) */}
+                  {premium ? (
+                    <ChartCard
+                      title={t("insights.chartDailyTitle")}
+                      subtitle={t("insights.chartDailySub")}
+                      legend={[
+                        { label: t("insights.chartMedianLegend"), color: CHART.line },
+                        { label: t("insights.chartIqrLegend"), color: CHART.band, faded: true },
+                        { label: t("insights.chartTargetLegend"), color: CHART.target, faded: true },
+                      ]}
+                      caption={dailyCaption}
+                      emptyNote={
+                        agp.totalReadings < AGP_MIN_READINGS
+                          ? t("insights.chartNeedMore")
+                          : undefined
+                      }
+                      height={CHART_HEIGHT.dailyProfile}
+                    >
+                      {(w) => (
+                        <DailyProfileChart
+                          agp={agp}
+                          unit={unit}
+                          width={w}
+                          height={CHART_HEIGHT.dailyProfile}
+                        />
+                      )}
+                    </ChartCard>
+                  ) : null}
+
+                  {/* Daily average over the window, with a neutral delta chip (Pro) */}
+                  {premium ? (
+                    <ChartCard
+                      title={t("insights.chartTrendTitle")}
+                      subtitle={t("insights.chartTrendSub")}
+                      accessory={
+                        avgDeltaChip ? (
+                          <View className="rounded-full bg-zinc-800 px-2.5 py-1">
+                            <Text className="text-zinc-300 text-[11px] font-semibold">
+                              {avgDeltaChip}
+                            </Text>
+                          </View>
+                        ) : null
+                      }
+                      caption={
+                        avgDeltaChip
+                          ? `${trendCaption} ${avgDeltaChip} ${t("insights.chartDeltaLabel")}.`
+                          : trendCaption
+                      }
+                      emptyNote={
+                        trendDays.length < TREND_MIN_DAYS
+                          ? t("insights.chartNeedMore")
+                          : undefined
+                      }
+                      height={CHART_HEIGHT.trend}
+                    >
+                      {(w) => (
+                        <TrendChart
+                          days={trendDays}
+                          windowDays={windowDays}
+                          unit={unit}
+                          width={w}
+                          height={CHART_HEIGHT.trend}
+                          startLabel={windowStartLabel}
+                          endLabel={t("common.today")}
+                        />
+                      )}
+                    </ChartCard>
+                  ) : null}
+
+                  {/* Percentile band summary (AGP numeric), Pro */}
                   {premium && pctile ? (
                     <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
                       <Text className="text-zinc-300 font-semibold mb-1">
@@ -460,7 +583,13 @@ export default function InsightsScreen() {
                       value={data.glucoseCV == null ? "-" : String(Math.round(data.glucoseCV))}
                       unit="%"
                     />
-                    <Tile label={t("insights.lows")} value={String(data.hypoCount)} color={ROSE} />
+                    {/* Blue, not rose: a hypo is never shown in the colour this
+                        app reserves for a high (see lib/glucose.ts). */}
+                    <Tile
+                      label={t("insights.lows")}
+                      value={String(data.hypoCount)}
+                      color={CHART.low}
+                    />
                     <Tile
                       label={t("insights.gmi")}
                       value={data.gmi == null ? "-" : data.gmi.toFixed(1)}
@@ -473,17 +602,21 @@ export default function InsightsScreen() {
                   </Text>
 
                   {/* Average by time of day */}
-                  <SectionTitle>{t("insights.hourlyTitle")}</SectionTitle>
-                  <View className="flex-row flex-wrap -m-1.5">
-                    {SLICES.map((slice) => (
-                      <Tile
-                        key={slice}
-                        label={t(`insights.${slice}`)}
-                        value={fmtG(data.hourly[slice])}
-                        unit={glucoseUnitLabel(unit)}
+                  <ChartCard
+                    title={t("insights.hourlyTitle")}
+                    caption={hourlyCaption}
+                    emptyNote={hourlyEmpty ? t("insights.chartNeedMore") : undefined}
+                    height={CHART_HEIGHT.hourly}
+                  >
+                    {(w) => (
+                      <HourlyChart
+                        bars={hourlyBars}
+                        unit={unit}
+                        width={w}
+                        height={CHART_HEIGHT.hourly}
                       />
-                    ))}
-                  </View>
+                    )}
+                  </ChartCard>
 
                   <Text className="text-zinc-600 text-[11px] mt-4 px-1.5 leading-4">
                     {t("insights.gmiNote")}

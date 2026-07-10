@@ -246,6 +246,72 @@ export function trendVsPrevious(
   };
 }
 
+export interface DailyAverage {
+  /** Local calendar day, YYYY-MM-DD. */
+  day: string;
+  /** Whole days since the first day of the window, so gaps stay visible. */
+  offset: number;
+  avg: number;
+  n: number;
+}
+
+/** Local midnight of the day an instant falls in. */
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+/** Local calendar day key. Never derived from toISOString(), which is UTC and
+ *  would name the previous day for a local midnight east of Greenwich. */
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/**
+ * Mean glucose per calendar day across the window, oldest first. Days with no
+ * reading are omitted rather than plotted as zero, and `offset` keeps the
+ * remaining points on a real time axis so gaps stay visible.
+ *
+ * Buckets are calendar days, not fixed 24-hour blocks, so a clock change inside
+ * the window never shifts a reading into the neighbouring day.
+ */
+export function dailyAverages(
+  sugar: SugarLog[],
+  windowDays: number
+): DailyAverage[] {
+  const firstDate = startOfDay(new Date());
+  firstDate.setDate(firstDate.getDate() - (windowDays - 1));
+  const first = firstDate.getTime();
+
+  const buckets = new Map<number, number[]>();
+  for (const x of sugar) {
+    const d = new Date(x.logged_at);
+    if (Number.isNaN(d.getTime())) continue;
+    // Round, because a day spanning a clock change is 23 or 25 hours long.
+    const offset = Math.round((startOfDay(d).getTime() - first) / 86_400_000);
+    if (offset < 0 || offset > windowDays - 1) continue;
+    const bucket = buckets.get(offset);
+    if (bucket) bucket.push(x.glucose_level_mgdl);
+    else buckets.set(offset, [x.glucose_level_mgdl]);
+  }
+
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([offset, values]) => {
+      const d = new Date(firstDate);
+      d.setDate(d.getDate() + offset);
+      return {
+        day: dayKey(d),
+        offset,
+        avg: values.reduce((a, b) => a + b, 0) / values.length,
+        n: values.length,
+      };
+    });
+}
+
 export interface WindowPercentiles {
   p05: number;
   p25: number;
