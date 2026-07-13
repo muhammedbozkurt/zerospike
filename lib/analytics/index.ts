@@ -13,6 +13,7 @@ export type AnalyticsEventName =
   | "onboarding_step"
   | "onboarding_done"
   | "log_added"
+  | "log_edited"
   | "paywall_view"
   | "paywall_dismiss"
   | "paywall_tier_selected"

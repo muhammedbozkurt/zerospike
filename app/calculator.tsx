@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { getFood } from "../lib/db/foods";
-import { addMealLog } from "../lib/db/logs";
+import { addMealLog, getMealLog, updateMealLog } from "../lib/db/logs";
 import { logEvent } from "../lib/analytics";
 import { noteLogAndMaybeReview } from "../lib/services/review";
 import {
@@ -35,7 +35,8 @@ import { foodName } from "../lib/db/types";
 import { Button, Segmented } from "../components/ui";
 import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
-import { num } from "../lib/format";
+import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
+import { formatTime, num, relativeDay } from "../lib/format";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { hapticSuccess } from "../lib/haptics";
 
@@ -52,9 +53,10 @@ export default function CalculatorScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { foodId, portion: portionParam } = useLocalSearchParams<{
+  const { foodId, portion: portionParam, mealLogId } = useLocalSearchParams<{
     foodId?: string;
     portion?: string;
+    mealLogId?: string;
   }>();
   const { activeProfile, lang, bumpData, dataVersion } = useApp();
   const { actionSheet } = useFeedback();
@@ -69,6 +71,11 @@ export default function CalculatorScreen() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [tags, setTags] = useState<LogTag[]>([]);
   const [iob, setIob] = useState(0);
+  // null keeps the "log it as of now" default; a Date is an explicit user pick.
+  const [loggedAt, setLoggedAt] = useState<Date | null>(null);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
+
+  const isEdit = typeof mealLogId === "string" && mealLogId.length > 0;
 
   useEffect(() => {
     (async () => {
@@ -82,6 +89,27 @@ export default function CalculatorScreen() {
       }
     })();
   }, [foodId, portionParam]);
+
+  // Edit mode: prefill every field from the stored log. doseTouched is set so
+  // the estimate effect never overwrites the dose the user actually applied.
+  useEffect(() => {
+    (async () => {
+      if (!isEdit || !mealLogId) return;
+      const log = await getMealLog(mealLogId);
+      if (!log) return;
+      if (log.food_id) {
+        const f = await getFood(log.food_id);
+        if (f) setFood(f);
+      }
+      setPortion(log.portion_g);
+      setDoseText(num(log.insulin_dose_units));
+      setDoseTouched(true);
+      setNote(log.personal_note ?? "");
+      setPhoto(log.photo_uri_local);
+      setTags(log.tags);
+      setLoggedAt(new Date(log.logged_at));
+    })();
+  }, [isEdit, mealLogId]);
 
   // Active insulin (IOB) from recent bolus doses, used to trim the correction
   // so a fresh dose doesn't stack on top of insulin that is still working.
@@ -153,6 +181,25 @@ export default function CalculatorScreen() {
   async function logMeal() {
     if (!food || !activeProfile || !estimate) return;
     const dose = parseFloat(doseText.replace(",", ".")) || estimate.totalDose;
+
+    if (isEdit && mealLogId) {
+      // Correcting an existing record: no post-meal reminder, no review nudge.
+      await updateMealLog(mealLogId, {
+        portion_g: portion,
+        calculated_carbs_g: estimate.carbs,
+        insulin_dose_units: dose,
+        photo_uri_local: photo,
+        personal_note: note.trim() || null,
+        tags,
+        ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
+      });
+      logEvent("log_edited", { kind: "meal" });
+      hapticSuccess();
+      bumpData();
+      router.back();
+      return;
+    }
+
     await addMealLog({
       profile_id: activeProfile.id,
       food_id: food.id,
@@ -163,6 +210,7 @@ export default function CalculatorScreen() {
       photo_uri_local: photo,
       personal_note: note.trim() || null,
       tags,
+      logged_at: loggedAt ? loggedAt.toISOString() : undefined,
     });
     logEvent("log_added", { kind: "meal", source: "manual" });
     void noteLogAndMaybeReview();
@@ -192,7 +240,7 @@ export default function CalculatorScreen() {
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
           <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
-            {t("calculator.title")}
+            {isEdit ? t("calculator.editTitle") : t("calculator.title")}
           </Text>
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
             <Ionicons name="close" size={24} color="#a1a1aa" />
@@ -238,6 +286,33 @@ export default function CalculatorScreen() {
             value={slot}
             onChange={setSlot}
             className="mb-5"
+          />
+
+          {/* When the meal was eaten (date + time, never in the future) */}
+          <Text className="text-sm font-medium text-zinc-400 mb-1.5">
+            {t("calculator.loggedTime")}
+          </Text>
+          <Pressable
+            onPress={() => setTimePickerOpen((v) => !v)}
+            className="flex-row items-center rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 mb-4"
+          >
+            <Ionicons name="time-outline" size={16} color="#a1a1aa" />
+            <Text className="text-zinc-50 ml-2">
+              {relativeDay((loggedAt ?? new Date()).toISOString(), {
+                today: t("common.today"),
+                yesterday: t("common.yesterday"),
+              })}
+              {" · "}
+              {formatTime((loggedAt ?? new Date()).toISOString())}
+            </Text>
+          </Pressable>
+          <InlineDateTimePicker
+            visible={timePickerOpen}
+            value={loggedAt ?? new Date()}
+            max={new Date()}
+            locale={lang}
+            onChange={setLoggedAt}
+            onClose={() => setTimePickerOpen(false)}
           />
 
           {/* Portion slider */}
@@ -455,7 +530,11 @@ export default function CalculatorScreen() {
             </Text>
           </View>
 
-          <Button label={t("calculator.logMeal")} size="lg" onPress={logMeal} />
+          <Button
+            label={isEdit ? t("calculator.saveChanges") : t("calculator.logMeal")}
+            size="lg"
+            onPress={logMeal}
+          />
         </ScrollView>
       </View>
       <FeedbackHost />

@@ -227,6 +227,9 @@ const de: TranslationSchema = {
       "Ihr Korrekturfaktor liegt außerhalb des üblichen Bereichs. Bitte in den Einstellungen prüfen.",
     activeInsulin: "Aktives Insulin (IOB)",
     iobReduction: "Wegen aktivem Insulin reduziert",
+    editTitle: "Eintrag bearbeiten",
+    saveChanges: "Änderungen speichern",
+    loggedTime: "Datum und Uhrzeit des Eintrags",
   },
   journal: {
     carbsLabel: "{{carbs}} g KH",

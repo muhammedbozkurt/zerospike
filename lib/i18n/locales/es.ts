@@ -227,6 +227,9 @@ const es: TranslationSchema = {
       "Su factor de corrección parece estar fuera del rango habitual. Revíselo en Ajustes.",
     activeInsulin: "Insulina activa (IOB)",
     iobReduction: "Reducido por insulina activa",
+    editTitle: "Editar registro",
+    saveChanges: "Guardar cambios",
+    loggedTime: "Fecha y hora del registro",
   },
   journal: {
     carbsLabel: "{{carbs}} g de carbohidratos",

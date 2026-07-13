@@ -225,6 +225,9 @@ const tr = {
       "Düzeltme faktörünüz olağan aralığın dışında görünüyor. Ayarlar'dan gözden geçirin.",
     activeInsulin: "Aktif insülin (IOB)",
     iobReduction: "Aktif insülin için düşüldü",
+    editTitle: "Kaydı Düzenle",
+    saveChanges: "Değişiklikleri Kaydet",
+    loggedTime: "Kayıt tarihi ve saati",
   },
   journal: {
     carbsLabel: "{{carbs}} g karbonhidrat",
