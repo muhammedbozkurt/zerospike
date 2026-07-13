@@ -7,9 +7,14 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
-import { getJournal, JournalEntry, InjectionEntry } from "../../lib/db/journal";
+import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry } from "../../lib/db/journal";
 import { activeInsulin } from "../../lib/iob";
-import { addSugarLog, deleteSugarLog, deleteMealLog } from "../../lib/db/logs";
+import {
+  addSugarLog,
+  updateSugarLog,
+  deleteSugarLog,
+  deleteMealLog,
+} from "../../lib/db/logs";
 import { listPens, deleteInjection } from "../../lib/db/injections";
 import { loadDemoData, clearProfileData } from "../../lib/db/demo";
 import { markSampleActive, clearSampleFlag, isSampleActive } from "../../lib/sampleData";
@@ -64,6 +69,7 @@ export default function DashboardScreen() {
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editGlucose, setEditGlucose] = useState<GlucoseEntry | null>(null);
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
   const [cgmOn, setCgmOn] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -281,31 +287,58 @@ export default function DashboardScreen() {
     }
   }
 
-  async function submitGlucose(value: number, period: PeriodTag, tags: LogTag[]) {
+  async function submitGlucose(
+    value: number,
+    period: PeriodTag,
+    tags: LogTag[],
+    loggedAt: Date | null
+  ) {
     if (!activeProfile) return;
     setSheetOpen(false);
+
+    if (editGlucose) {
+      // Correcting an existing reading: no reminders, no review nudge.
+      await updateSugarLog(editGlucose.id, {
+        glucose_level_mgdl: value,
+        period_tag: period,
+        tags,
+        ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
+      });
+      setEditGlucose(null);
+      logEvent("log_edited", { kind: "glucose" });
+      hapticSuccess();
+      bumpData();
+      return;
+    }
+
+    // loggedAt is null when the user left the time untouched ("now"); a
+    // backdated reading must not arm/cancel today's timers or nudges.
+    const isNow = loggedAt == null;
     await addSugarLog({
       profile_id: activeProfile.id,
       glucose_level_mgdl: value,
       period_tag: period,
       tags,
+      logged_at: loggedAt ? loggedAt.toISOString() : undefined,
     });
     logEvent("log_added", { kind: "glucose", source: "manual" });
     void noteLogAndMaybeReview();
     hapticSuccess();
     // Per spec: a fasting/pre-meal reading schedules the 2-hour post-meal nudge,
     // which also arms the countdown button.
-    if (period === "fasting" || period === "pre_meal") {
+    if (isNow && (period === "fasting" || period === "pre_meal")) {
       await schedulePostMealReminder();
       await refreshPostMealTimer();
     }
     // Reflective feedback for a 2-hour post-meal reading: a descriptive note
     // comparing the user's own reading to their own target (never advice).
     if (period === "post_meal_2h") {
-      // Early completion: the 2-hour reading is logged, so the pending nudge is
-      // no longer needed. Cancel it and clear the countdown.
-      await cancelPostMealTimer();
-      setPostMealEnd(null);
+      if (isNow) {
+        // Early completion: the 2-hour reading is logged, so the pending nudge
+        // is no longer needed. Cancel it and clear the countdown.
+        await cancelPostMealTimer();
+        setPostMealEnd(null);
+      }
       const status = classifyGlucose(value, "post_meal_2h", activeProfile);
       const key =
         status === "normal"
@@ -324,7 +357,7 @@ export default function DashboardScreen() {
       );
     }
     bumpData();
-    void maybeOfferLowFollowup(value);
+    if (isNow) void maybeOfferLowFollowup(value);
   }
 
   // Neutral, user-thresholded follow-up: after the user LOGS a low reading, offer
@@ -773,7 +806,11 @@ export default function DashboardScreen() {
         visible={sheetOpen}
         initialPeriod={initialPeriod}
         unit={activeProfile?.glucose_unit ?? "mgdl"}
-        onClose={() => setSheetOpen(false)}
+        edit={editGlucose}
+        onClose={() => {
+          setSheetOpen(false);
+          setEditGlucose(null);
+        }}
         onSubmit={submitGlucose}
       />
     </View>

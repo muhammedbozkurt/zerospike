@@ -16,9 +16,11 @@ import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { GlucoseUnit, LogTag, PeriodTag } from "../lib/db/types";
-import { glucoseFromDisplay, glucoseUnitLabel } from "../lib/glucose";
+import { glucoseFromDisplay, glucoseToDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { Button, Segmented } from "./ui";
 import { TagPicker } from "./TagPicker";
+import { InlineDateTimePicker } from "./InlineDateTimePicker";
+import { formatTime, relativeDay } from "../lib/format";
 
 const PERIODS: PeriodTag[] = [
   "fasting",
@@ -28,26 +30,48 @@ const PERIODS: PeriodTag[] = [
   "manual",
 ];
 
+/** The stored reading being corrected (structurally matches SugarLog and the
+ *  journal's GlucoseEntry, so either can be passed straight in). */
+export interface GlucoseEditTarget {
+  id: string;
+  glucose_level_mgdl: number;
+  period_tag: PeriodTag;
+  logged_at: string;
+  tags: LogTag[];
+}
+
 interface Props {
   visible: boolean;
   initialPeriod?: PeriodTag;
   unit?: GlucoseUnit;
-  /** value is in mg/dL (already converted from the display unit). */
+  /** When set, the sheet opens prefilled to correct this existing reading. */
+  edit?: GlucoseEditTarget | null;
+  /** value is in mg/dL (already converted from the display unit).
+   *  loggedAt is null when the user left the time untouched ("now"). */
   onClose: () => void;
-  onSubmit: (value: number, period: PeriodTag, tags: LogTag[]) => void;
+  onSubmit: (
+    value: number,
+    period: PeriodTag,
+    tags: LogTag[],
+    loggedAt: Date | null
+  ) => void;
 }
 
 export function GlucoseInputSheet({
   visible,
   initialPeriod = "fasting",
   unit = "mgdl",
+  edit = null,
   onClose,
   onSubmit,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [value, setValue] = useState("");
   const [period, setPeriod] = useState<PeriodTag>(initialPeriod);
   const [tags, setTags] = useState<LogTag[]>([]);
+  // null keeps the "log it as of now" default; a Date is an explicit pick.
+  const [loggedAt, setLoggedAt] = useState<Date | null>(null);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const translateY = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -58,12 +82,22 @@ export function GlucoseInputSheet({
 
   useEffect(() => {
     if (visible) {
-      setValue("");
-      setPeriod(initialPeriod);
-      setTags([]);
+      if (edit) {
+        setValue(String(glucoseToDisplay(edit.glucose_level_mgdl, unit)));
+        setPeriod(edit.period_tag);
+        setTags(edit.tags);
+        setLoggedAt(new Date(edit.logged_at));
+      } else {
+        setValue("");
+        setPeriod(initialPeriod);
+        setTags([]);
+        setLoggedAt(null);
+      }
+      setTimePickerOpen(false);
       translateY.setValue(0);
     }
-  }, [visible, initialPeriod]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialPeriod, edit?.id]);
 
   const pan = useRef(
     PanResponder.create({
@@ -101,7 +135,7 @@ export function GlucoseInputSheet({
   function submit() {
     const num = parseFloat(value);
     if (!Number.isFinite(num) || num < minD || num > maxD) return;
-    onSubmit(glucoseFromDisplay(num, unit), period, tags);
+    onSubmit(glucoseFromDisplay(num, unit), period, tags, loggedAt);
   }
 
   const valid = (() => {
@@ -133,7 +167,7 @@ export function GlucoseInputSheet({
                 </View>
                 <View className="flex-row items-center justify-between mb-4">
                   <Text className="text-zinc-50 text-xl font-bold">
-                    {t("dashboard.logGlucose")}
+                    {edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}
                   </Text>
                   <Pressable onPress={onClose} hitSlop={12} className="p-1">
                     <Ionicons name="close" size={24} color="#71717a" />
@@ -175,6 +209,36 @@ export function GlucoseInputSheet({
                     {glucoseUnitLabel(unit)}
                   </Text>
                 </View>
+
+                {/* When the reading was taken (date + time, never in the future) */}
+                <Text className="text-sm font-medium text-zinc-400 mb-1.5">
+                  {t("calculator.loggedTime")}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setTimePickerOpen((v) => !v);
+                  }}
+                  className="flex-row items-center rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 mb-5"
+                >
+                  <Ionicons name="time-outline" size={16} color="#a1a1aa" />
+                  <Text className="text-zinc-50 ml-2">
+                    {relativeDay((loggedAt ?? new Date()).toISOString(), {
+                      today: t("common.today"),
+                      yesterday: t("common.yesterday"),
+                    })}
+                    {" · "}
+                    {formatTime((loggedAt ?? new Date()).toISOString())}
+                  </Text>
+                </Pressable>
+                <InlineDateTimePicker
+                  visible={timePickerOpen}
+                  value={loggedAt ?? new Date()}
+                  max={new Date()}
+                  locale={i18n.language}
+                  onChange={setLoggedAt}
+                  onClose={() => setTimePickerOpen(false)}
+                />
 
                 <TagPicker value={tags} onChange={setTags} className="mb-5" />
 

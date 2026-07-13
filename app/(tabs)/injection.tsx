@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
+import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { useFeedback } from "../../components/Feedback";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import { Button } from "../../components/ui";
@@ -73,6 +74,7 @@ export default function InjectionScreen() {
   const [note, setNote] = useState("");
   const [tags, setTags] = useState<LogTag[]>([]);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<Injection | null>(null);
 
   const dateLabels = { today: t("common.today"), yesterday: t("common.yesterday") };
 
@@ -385,6 +387,7 @@ export default function InjectionScreen() {
           history.map((inj) => (
             <Pressable
               key={inj.id}
+              onPress={() => setEditing(inj)}
               onLongPress={() => onDelete(inj.id)}
               className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 mb-2 flex-row items-center active:bg-zinc-800"
             >
@@ -443,6 +446,17 @@ export default function InjectionScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      <InjectionEditSheet
+        visible={editing != null}
+        injection={editing}
+        pens={activePens}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          bumpData();
+        }}
+      />
     </View>
   );
 }
