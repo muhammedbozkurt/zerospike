@@ -547,3 +547,14 @@ Yapilacak:
 - Kabul: hicbir sey yapmadan bekle, slaytlar metinleriyle kendiliginden ilerliyor.
 - Kapi: `npm run typecheck`.
 - Commit: `fix(onboarding): opt out of cssInterop so the carousel ref attaches`
+
+### 11.8 IPTAL (hub, 2026-07-10): bu repo ETKILENMIYOR
+
+Hub yanlis genelleme yapti. Bug SURUME BAGLI: css-interop 0.1.x'te
+`native-interop.js:171` spread'i `{ ...props, ...handlers, ref }` oldugu icin sondaki
+`ref: undefined` gercek `props.ref`i eziyor. 0.2.5+'ta spread `{ ref, ...props, ...handlers }`
+olarak duzeltilmis. Bu repo css-interop 0.2.6 kullaniyor (nativewind 4.2.6), yani ref
+BAGLANIR. Yalniz gram (0.1.22) etkilenmisti.
+
+11.8'i UYGULAMA. `cssInterop={false}` burada gereksiz olurdu ve o elemanda `className`i
+sessizce devre disi birakirdi. Bir sey yapman gerekmiyor.
