@@ -26,7 +26,7 @@ export default function FoodScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, lang, dataVersion, bumpData } = useApp();
-  const { confirm } = useFeedback();
+  const { confirm, actionSheet } = useFeedback();
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
@@ -114,6 +114,31 @@ export default function FoodScreen() {
     if (!ok) return;
     await deleteFood(food.id);
     bumpData();
+  }
+
+  // Long press on a custom food = edit/delete menu; seeded catalog and cached
+  // barcode rows are not the user's to edit, so they get no menu at all.
+  function onCustomLongPress(food: Food) {
+    if (!food.is_custom) return;
+    actionSheet({
+      title: foodName(food, lang),
+      actions: [
+        {
+          label: t("common.edit"),
+          icon: "create-outline",
+          onPress: () =>
+            router.push({ pathname: "/add-food", params: { foodId: food.id } }),
+        },
+        {
+          label: t("common.delete"),
+          icon: "trash-outline",
+          destructive: true,
+          onPress: () => {
+            void onDeleteCustom(food);
+          },
+        },
+      ],
+    });
   }
 
   function titleFor(sel: Selection): string {
@@ -266,7 +291,7 @@ export default function FoodScreen() {
                 router.push({ pathname: "/calculator", params: { foodId: f.id } })
               }
               onToggleFavorite={onToggleFav}
-              onLongPress={onDeleteCustom}
+              onLongPress={onCustomLongPress}
             />
           </View>
         )}

@@ -166,6 +166,7 @@ const fr: TranslationSchema = {
     searchPlaceholder: "Rechercher un aliment…",
     scan: "Scanner le code-barres",
     addCustom: "Ajouter un aliment personnalisé",
+    editCustom: "Modifier l'aliment personnalisé",
     favorites: "Favoris",
     noResults: "Aucun résultat trouvé",
     noFavorites: "Vous n'avez pas encore ajouté d'aliments favoris.",

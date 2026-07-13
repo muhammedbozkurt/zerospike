@@ -164,6 +164,7 @@ const tr = {
     searchPlaceholder: "Yemek arayın…",
     scan: "Barkod Tara",
     addCustom: "Özel Yemek Ekle",
+    editCustom: "Özel Yemeği Düzenle",
     favorites: "Favoriler",
     noResults: "Sonuç bulunamadı",
     noFavorites: "Henüz favori yemek eklemediniz.",

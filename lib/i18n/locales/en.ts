@@ -166,6 +166,7 @@ const en: TranslationSchema = {
     searchPlaceholder: "Search foods…",
     scan: "Scan Barcode",
     addCustom: "Add Custom Food",
+    editCustom: "Edit Custom Food",
     favorites: "Favorites",
     noResults: "No results found",
     noFavorites: "You have not added any favorite foods yet.",

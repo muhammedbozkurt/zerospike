@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -161,6 +162,19 @@ export default function OnboardingScreen() {
 
   const next = () => setStepIdx((i) => Math.min(steps.length - 1, i + 1));
   const back = () => setStepIdx((i) => Math.max(0, i - 1));
+
+  // Android hardware back mirrors the in-UI arrow during the quiz: step 0
+  // returns to the welcome phase, later steps go back one step. Welcome and
+  // reveal keep the system default.
+  useEffect(() => {
+    if (Platform.OS !== "android" || phase !== "quiz") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (stepIdxClamped === 0) setPhase("welcome");
+      else back();
+      return true;
+    });
+    return () => sub.remove();
+  }, [phase, stepIdxClamped]);
 
   // Single-select steps apply the answer then auto-advance (guarded so a fast
   // double-tap cannot skip two steps).

@@ -166,6 +166,7 @@ const de: TranslationSchema = {
     searchPlaceholder: "Lebensmittel suchen…",
     scan: "Barcode scannen",
     addCustom: "Eigenes Lebensmittel",
+    editCustom: "Eigenes Lebensmittel bearbeiten",
     favorites: "Favoriten",
     noResults: "Keine Ergebnisse gefunden",
     noFavorites: "Sie haben noch keine Favoriten hinzugefügt.",
