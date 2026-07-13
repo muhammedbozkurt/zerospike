@@ -5,6 +5,7 @@ const es: TranslationSchema = {
     save: "Guardar",
     cancel: "Cancelar",
     delete: "Eliminar",
+    edit: "Editar",
     close: "Cerrar",
     done: "Listo",
     units: "unidades",
@@ -236,6 +237,7 @@ const es: TranslationSchema = {
     doseLabel: "{{dose}} unidades",
     deleteEntry: "¿Seguro que desea eliminar este registro?",
     lowBadge: "BAJO",
+    editHint: "Consejo: Toca un registro para editarlo.",
   },
   profiles: {
     defaultName: "Mi perfil",

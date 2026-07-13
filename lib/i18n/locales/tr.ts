@@ -3,6 +3,7 @@ const tr = {
     save: "Kaydet",
     cancel: "İptal",
     delete: "Sil",
+    edit: "Düzenle",
     close: "Kapat",
     done: "Tamamla",
     units: "ünite",
@@ -234,6 +235,7 @@ const tr = {
     doseLabel: "{{dose}} ünite",
     deleteEntry: "Bu kaydı silmek istediğinize emin misiniz?",
     lowBadge: "DÜŞÜK",
+    editHint: "İpucu: Bir kayda dokunarak düzenleyebilirsiniz.",
   },
   profiles: {
     defaultName: "Kendi Profilim",

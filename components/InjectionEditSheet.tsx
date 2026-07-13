@@ -14,7 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { InsulinPen } from "../lib/db/types";
-import { updateInjection, getPen } from "../lib/db/injections";
+import { updateInjection, getPen, type InjectionUpdate } from "../lib/db/injections";
 import { maybeNotifyPenLow } from "../lib/services/notifications";
 import { logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
@@ -74,19 +74,25 @@ export function InjectionEditSheet({
     if (!injection || saving) return;
     setSaving(true);
     try {
-      const pen = penId ? pens.find((p) => p.id === penId) ?? null : null;
       const doseNum = parseFloat(dose.replace(",", "."));
-      await updateInjection(injection.id, {
+      const patch: InjectionUpdate = {
         dose_units: Number.isFinite(doseNum) && doseNum > 0 ? doseNum : null,
-        pen_id: pen ? pen.id : null,
-        insulin_type: pen ? pen.insulin_type : null,
         logged_at: loggedAt.toISOString(),
-      });
+      };
+      // Touch the pen link only when the user actually changed it: the picker
+      // lists active pens, so an untouched link to an archived pen must survive
+      // (writing it back as null would wrongly refund that pen's stock).
+      if (penId !== injection.pen_id) {
+        const pen = penId ? pens.find((p) => p.id === penId) ?? null : null;
+        patch.pen_id = pen ? pen.id : null;
+        patch.insulin_type = pen ? pen.insulin_type : null;
+      }
+      await updateInjection(injection.id, patch);
       logEvent("log_edited", { kind: "insulin" });
       hapticSuccess();
       // The balance may have just crossed the low threshold; same nudge as create.
-      if (pen) {
-        const fresh = await getPen(pen.id);
+      if (penId) {
+        const fresh = await getPen(penId);
         if (fresh) {
           await maybeNotifyPenLow({
             id: fresh.id,

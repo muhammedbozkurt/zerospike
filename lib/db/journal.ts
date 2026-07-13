@@ -40,6 +40,7 @@ export interface InjectionEntry {
   site: InjectionSite;
   dose_units: number | null;
   insulin_type: InsulinType | null;
+  pen_id: string | null;
   pen_name: string | null;
   note: string | null;
   tags: LogTag[];
@@ -118,11 +119,12 @@ export async function getJournal(
     dose_units: number | null;
     insulin_type: InsulinType | null;
     note: string | null;
+    pen_id: string | null;
     pen_name: string | null;
     tags: string | null;
   }>(
     `SELECT i.id, i.logged_at, i.site, i.dose_units, i.insulin_type, i.note,
-            i.tags, p.name AS pen_name
+            i.tags, i.pen_id, p.name AS pen_name
        FROM injection_logs i
        LEFT JOIN insulin_pens p ON p.id = i.pen_id
      WHERE i.profile_id = ? ORDER BY i.logged_at DESC LIMIT ?;`,
@@ -136,6 +138,7 @@ export async function getJournal(
     site: r.site,
     dose_units: r.dose_units,
     insulin_type: r.insulin_type,
+    pen_id: r.pen_id,
     pen_name: r.pen_name,
     note: r.note,
     tags: parseTags(r.tags),

@@ -36,10 +36,13 @@ import { logEvent } from "../../lib/analytics";
 const CGM_KEY = "zerospike.cgmSync";
 // Shown once to an existing free user who had auto-sync on before it became Pro.
 const HEALTH_PRO_NOTICE_KEY = "zerospike.healthProNoticeShown";
+// One-time discoverability hint: journal rows can be tapped to edit.
+const EDIT_HINT_KEY = "zerospike.editHintDismissed";
 // Name the health source explicitly in the UI (App Review guideline 2.5.1).
 const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
 import { JournalItem } from "../../components/JournalItem";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
+import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
 import { formatDateKey, num } from "../../lib/format";
@@ -70,6 +73,8 @@ export default function DashboardScreen() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editGlucose, setEditGlucose] = useState<GlucoseEntry | null>(null);
+  const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
+  const [showEditHint, setShowEditHint] = useState(false);
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
   const [cgmOn, setCgmOn] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -100,6 +105,27 @@ export default function DashboardScreen() {
   useEffect(() => {
     load();
   }, [load, dataVersion]);
+
+  // Tap-to-edit is invisible until you know it: show a dismissible one-time
+  // hint above the journal until the user closes it.
+  useEffect(() => {
+    (async () => {
+      try {
+        setShowEditHint((await AsyncStorage.getItem(EDIT_HINT_KEY)) !== "true");
+      } catch {
+        // best-effort hint
+      }
+    })();
+  }, []);
+
+  async function dismissEditHint() {
+    setShowEditHint(false);
+    try {
+      await AsyncStorage.setItem(EDIT_HINT_KEY, "true");
+    } catch {
+      // best-effort hint
+    }
+  }
 
   // Re-read the persisted post-meal timer whenever the feed changes (a log on
   // this screen or a meal logged elsewhere both bump dataVersion).
@@ -442,6 +468,39 @@ export default function DashboardScreen() {
     bumpData();
   }
 
+  // Tap = correct the entry, each kind through its own edit flow.
+  function openEdit(entry: JournalEntry) {
+    if (entry.kind === "meal") {
+      router.push({ pathname: "/calculator", params: { mealLogId: entry.id } });
+    } else if (entry.kind === "glucose") {
+      setEditGlucose(entry);
+      setSheetOpen(true);
+    } else {
+      setEditInjection(entry);
+    }
+  }
+
+  // Long press = edit/delete menu (the built-in cancel row closes it).
+  function onEntryLongPress(entry: JournalEntry) {
+    actionSheet({
+      actions: [
+        {
+          label: t("common.edit"),
+          icon: "create-outline",
+          onPress: () => openEdit(entry),
+        },
+        {
+          label: t("common.delete"),
+          icon: "trash-outline",
+          destructive: true,
+          onPress: () => {
+            void confirmDelete(entry);
+          },
+        },
+      ],
+    });
+  }
+
   const Header = (
     <View className="pb-2">
       <View className="flex-row items-center justify-between mb-5">
@@ -683,6 +742,23 @@ export default function DashboardScreen() {
       <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
         {t("dashboard.history")}
       </Text>
+
+      {/* One-time tap-to-edit discoverability hint */}
+      {showEditHint && entries.length > 0 ? (
+        <View className="flex-row items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 mb-2">
+          <Ionicons name="create-outline" size={14} color="#22d3ee" />
+          <Text className="text-zinc-400 text-xs ml-2 flex-1">
+            {t("journal.editHint")}
+          </Text>
+          <Pressable
+            onPress={dismissEditHint}
+            hitSlop={10}
+            accessibilityLabel={t("common.close")}
+          >
+            <Ionicons name="close" size={16} color="#71717a" />
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -707,7 +783,8 @@ export default function DashboardScreen() {
             <JournalItem
               entry={item}
               profile={activeProfile}
-              onLongPress={confirmDelete}
+              onPress={openEdit}
+              onLongPress={onEntryLongPress}
             />
           ) : null
         }
@@ -812,6 +889,17 @@ export default function DashboardScreen() {
           setEditGlucose(null);
         }}
         onSubmit={submitGlucose}
+      />
+
+      <InjectionEditSheet
+        visible={editInjection != null}
+        injection={editInjection}
+        pens={activePens}
+        onClose={() => setEditInjection(null)}
+        onSaved={() => {
+          setEditInjection(null);
+          bumpData();
+        }}
       />
     </View>
   );

@@ -61,7 +61,7 @@ export default function InjectionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
-  const { toast, confirm } = useFeedback();
+  const { toast, confirm, actionSheet } = useFeedback();
 
   const [usage, setUsage] = useState<SiteUsage[]>([]);
   const [recommended, setRecommended] = useState<InjectionSite | null>(null);
@@ -165,6 +165,27 @@ export default function InjectionScreen() {
     hapticWarning();
     await deleteInjection(id);
     bumpData();
+  }
+
+  // Long press = edit/delete menu (the built-in cancel row closes it).
+  function onRowLongPress(inj: Injection) {
+    actionSheet({
+      actions: [
+        {
+          label: t("common.edit"),
+          icon: "create-outline",
+          onPress: () => setEditing(inj),
+        },
+        {
+          label: t("common.delete"),
+          icon: "trash-outline",
+          destructive: true,
+          onPress: () => {
+            void onDelete(inj.id);
+          },
+        },
+      ],
+    });
   }
 
   return (
@@ -388,7 +409,7 @@ export default function InjectionScreen() {
             <Pressable
               key={inj.id}
               onPress={() => setEditing(inj)}
-              onLongPress={() => onDelete(inj.id)}
+              onLongPress={() => onRowLongPress(inj)}
               className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 mb-2 flex-row items-center active:bg-zinc-800"
             >
               <View className="w-9 h-9 rounded-full bg-brand/10 items-center justify-center mr-3">
