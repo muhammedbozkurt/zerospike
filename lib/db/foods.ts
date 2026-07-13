@@ -264,6 +264,79 @@ export async function addCustomFood(input: NewFoodInput): Promise<Food> {
   return created;
 }
 
+export type FoodUpdate = Partial<NewFoodInput>;
+
+/**
+ * Updates a custom food (is_custom = 1 only; seeded catalog rows and cached
+ * barcode results stay read-only). A new name is written to every language
+ * column and the aliases, mirroring addCustomFood; glycemic_load is recomputed
+ * whenever carbs or GI change. The foods_au trigger keeps FTS in sync.
+ * Returns the fresh row, or null if the id is missing or not custom.
+ */
+export async function updateFood(
+  id: string,
+  patch: FoodUpdate
+): Promise<Food | null> {
+  const db = await getDb();
+  const existing = await db.getFirstAsync<Food>(
+    "SELECT * FROM foods WHERE id = ? AND is_custom = 1;",
+    [id]
+  );
+  if (!existing) return null;
+
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  const name = patch.name?.trim();
+  if (name) {
+    for (const col of ["name_tr", "name_en", "name_de", "name_es", "name_fr"]) {
+      fields.push(`${col} = ?`);
+      values.push(name);
+    }
+    fields.push("aliases_json = ?");
+    values.push(JSON.stringify([name.toLowerCase()]));
+  }
+  if (patch.carb_100g !== undefined) {
+    fields.push("carb_100g = ?");
+    values.push(patch.carb_100g);
+  }
+  if (patch.glycemic_index !== undefined) {
+    fields.push("glycemic_index = ?");
+    values.push(patch.glycemic_index);
+  }
+  if (patch.carb_100g !== undefined || patch.glycemic_index !== undefined) {
+    const carb = patch.carb_100g ?? existing.carb_100g;
+    const gi = patch.glycemic_index ?? existing.glycemic_index;
+    fields.push("glycemic_load = ?");
+    values.push(Math.round((gi * carb) / 100));
+  }
+  if (patch.portion_size_g !== undefined) {
+    fields.push("portion_size_g = ?");
+    values.push(patch.portion_size_g);
+  }
+  if (patch.brand_name !== undefined) {
+    fields.push("brand_name = ?");
+    values.push(patch.brand_name?.trim() || null);
+  }
+  if (patch.barcode !== undefined) {
+    fields.push("barcode = ?");
+    values.push(patch.barcode?.trim() || null);
+  }
+  if (patch.custom_notes !== undefined) {
+    fields.push("custom_notes = ?");
+    values.push(patch.custom_notes?.trim() || null);
+  }
+
+  if (fields.length > 0) {
+    values.push(id);
+    await db.runAsync(
+      `UPDATE foods SET ${fields.join(", ")} WHERE id = ? AND is_custom = 1;`,
+      values
+    );
+  }
+  return getFood(id);
+}
+
 export async function deleteFood(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM foods WHERE id = ? AND is_custom = 1;", [id]);

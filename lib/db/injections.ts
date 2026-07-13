@@ -185,6 +185,102 @@ export async function getInjections(
   return rows.map(mapInjection);
 }
 
+export type InjectionUpdate = Partial<
+  Pick<
+    Injection,
+    "site" | "dose_units" | "pen_id" | "insulin_type" | "note" | "logged_at" | "tags"
+  >
+>;
+
+/**
+ * Partial update of an injection, keeping pen stock consistent in the same
+ * transaction: a dose change on the same pen moves only the delta; a pen change
+ * refunds the old pen in full and deducts the full new dose from the new pen.
+ * Clamps mirror logInjection/deleteInjection (never below 0, never above total).
+ * Returns the fresh row, or null if the id is gone.
+ */
+export async function updateInjection(
+  id: string,
+  patch: InjectionUpdate
+): Promise<Injection | null> {
+  const db = await getDb();
+  const existing = await db.getFirstAsync<{
+    pen_id: string | null;
+    dose_units: number | null;
+  }>("SELECT pen_id, dose_units FROM injection_logs WHERE id = ?;", [id]);
+  if (!existing) return null;
+
+  const oldPen = existing.pen_id;
+  const oldDose = existing.dose_units ?? 0;
+  const newPen = patch.pen_id !== undefined ? patch.pen_id : oldPen;
+  const newDose = patch.dose_units !== undefined ? patch.dose_units ?? 0 : oldDose;
+
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (key === "tags") {
+      fields.push("tags = ?");
+      values.push(serializeTags(value as string[]));
+    } else {
+      fields.push(`${key} = ?`);
+      values.push(value as string | number | null);
+    }
+  }
+
+  await db.withTransactionAsync(async () => {
+    if (fields.length > 0) {
+      await db.runAsync(
+        `UPDATE injection_logs SET ${fields.join(", ")} WHERE id = ?;`,
+        [...values, id]
+      );
+    }
+    if (oldPen === newPen) {
+      if (oldPen && newDose !== oldDose) {
+        const delta = newDose - oldDose;
+        if (delta > 0) {
+          await db.runAsync(
+            `UPDATE insulin_pens
+               SET remaining_units = MAX(0, remaining_units - ?)
+             WHERE id = ?;`,
+            [delta, oldPen]
+          );
+        } else {
+          await db.runAsync(
+            `UPDATE insulin_pens
+               SET remaining_units = MIN(total_units, remaining_units + ?)
+             WHERE id = ?;`,
+            [-delta, oldPen]
+          );
+        }
+      }
+    } else {
+      if (oldPen && oldDose > 0) {
+        await db.runAsync(
+          `UPDATE insulin_pens
+             SET remaining_units = MIN(total_units, remaining_units + ?)
+           WHERE id = ?;`,
+          [oldDose, oldPen]
+        );
+      }
+      if (newPen && newDose > 0) {
+        await db.runAsync(
+          `UPDATE insulin_pens
+             SET remaining_units = MAX(0, remaining_units - ?)
+           WHERE id = ?;`,
+          [newDose, newPen]
+        );
+      }
+    }
+  });
+
+  const row = await db.getFirstAsync<InjectionRow>(
+    "SELECT * FROM injection_logs WHERE id = ?;",
+    [id]
+  );
+  return row ? mapInjection(row) : null;
+}
+
 /**
  * Deletes an injection. If it was tied to a pen with a positive dose, those
  * units are returned to the pen (capped at the pen's total) in one transaction.

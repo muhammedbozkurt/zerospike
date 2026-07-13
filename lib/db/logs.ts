@@ -63,6 +63,57 @@ export async function deleteSugarLog(id: string): Promise<void> {
   await db.runAsync("DELETE FROM sugar_logs WHERE id = ?;", [id]);
 }
 
+export type SugarLogUpdate = Partial<
+  Pick<SugarLog, "glucose_level_mgdl" | "period_tag" | "logged_at" | "tags">
+>;
+
+/** Partial update of a sugar log. Returns the fresh row, or null if the id is gone. */
+export async function updateSugarLog(
+  id: string,
+  patch: SugarLogUpdate
+): Promise<SugarLog | null> {
+  const db = await getDb();
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+  if (patch.glucose_level_mgdl !== undefined) {
+    fields.push("glucose_level_mgdl = ?");
+    values.push(Math.round(patch.glucose_level_mgdl));
+  }
+  if (patch.period_tag !== undefined) {
+    fields.push("period_tag = ?");
+    values.push(patch.period_tag);
+  }
+  if (patch.logged_at !== undefined) {
+    fields.push("logged_at = ?");
+    values.push(patch.logged_at);
+  }
+  if (patch.tags !== undefined) {
+    fields.push("tags = ?");
+    values.push(serializeTags(patch.tags));
+  }
+  if (fields.length > 0) {
+    values.push(id);
+    await db.runAsync(
+      `UPDATE sugar_logs SET ${fields.join(", ")} WHERE id = ?;`,
+      values
+    );
+  }
+  const row = await db.getFirstAsync<SugarRow>(
+    "SELECT * FROM sugar_logs WHERE id = ?;",
+    [id]
+  );
+  return row ? mapSugar(row) : null;
+}
+
+export async function getSugarLog(id: string): Promise<SugarLog | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<SugarRow>(
+    "SELECT * FROM sugar_logs WHERE id = ?;",
+    [id]
+  );
+  return row ? mapSugar(row) : null;
+}
+
 /**
  * Avoids duplicating the same Health/CGM sample on re-import — but is
  * value-aware: two readings at the same (snapped) timestamp with DIFFERENT
@@ -147,6 +198,62 @@ export async function listMealLogs(
 export async function deleteMealLog(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM meal_logs WHERE id = ?;", [id]);
+}
+
+export type MealLogUpdate = Partial<
+  Pick<
+    MealLog,
+    | "food_id"
+    | "custom_food_name"
+    | "portion_g"
+    | "calculated_carbs_g"
+    | "insulin_dose_units"
+    | "photo_uri_local"
+    | "personal_note"
+    | "logged_at"
+    | "tags"
+  >
+>;
+
+/** Partial update of a meal log. Returns the fresh row, or null if the id is gone. */
+export async function updateMealLog(
+  id: string,
+  patch: MealLogUpdate
+): Promise<MealLog | null> {
+  const db = await getDb();
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (key === "tags") {
+      fields.push("tags = ?");
+      values.push(serializeTags(value as string[]));
+    } else {
+      fields.push(`${key} = ?`);
+      values.push(value as string | number | null);
+    }
+  }
+  if (fields.length > 0) {
+    values.push(id);
+    await db.runAsync(
+      `UPDATE meal_logs SET ${fields.join(", ")} WHERE id = ?;`,
+      values
+    );
+  }
+  const row = await db.getFirstAsync<MealRow>(
+    "SELECT * FROM meal_logs WHERE id = ?;",
+    [id]
+  );
+  return row ? mapMeal(row) : null;
+}
+
+export async function getMealLog(id: string): Promise<MealLog | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<MealRow>(
+    "SELECT * FROM meal_logs WHERE id = ?;",
+    [id]
+  );
+  return row ? mapMeal(row) : null;
 }
 
 /** A previously-logged food + the portion used the last time, for one-tap re-log. */
