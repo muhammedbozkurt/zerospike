@@ -1,0 +1,5 @@
+{
+  "NSCameraUsageDescription": "zerospike usa tu cámara para escanear códigos de barras de alimentos y añadir fotos de comidas.",
+  "NSPhotoLibraryUsageDescription": "zerospike accede a tu fototeca para añadir fotos a tu diario de comidas.",
+  "NSHealthShareUsageDescription": "zerospike lee tus valores de glucosa de Apple Salud para registrarlos automáticamente."
+}

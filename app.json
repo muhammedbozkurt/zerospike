@@ -7,6 +7,12 @@
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
     "userInterfaceStyle": "dark",
+    "locales": {
+      "tr": "./ios-locales/tr.json",
+      "de": "./ios-locales/de.json",
+      "fr": "./ios-locales/fr.json",
+      "es": "./ios-locales/es.json"
+    },
     "backgroundColor": "#000000",
     "splash": {
       "image": "./assets/splash.png",
