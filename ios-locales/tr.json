@@ -1,5 +1,7 @@
 {
-  "NSCameraUsageDescription": "zerospike, kameranı yiyecek barkodlarını taramak ve öğün fotoğrafları eklemek için kullanır.",
-  "NSPhotoLibraryUsageDescription": "zerospike, öğün günlüğüne fotoğraf eklemek için fotoğraf arşivine erişir.",
-  "NSHealthShareUsageDescription": "zerospike, kan şekeri ölçümlerini otomatik kaydetmek için Apple Sağlık'tan okur."
+  "ios": {
+    "NSCameraUsageDescription": "zerospike, kameranı yiyecek barkodlarını taramak ve öğün fotoğrafları eklemek için kullanır.",
+    "NSPhotoLibraryUsageDescription": "zerospike, öğün günlüğüne fotoğraf eklemek için fotoğraf arşivine erişir.",
+    "NSHealthShareUsageDescription": "zerospike, kan şekeri ölçümlerini otomatik kaydetmek için Apple Sağlık'tan okur."
+  }
 }
