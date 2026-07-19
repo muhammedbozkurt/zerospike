@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
@@ -26,7 +26,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "32",
+      "buildNumber": "33",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
@@ -35,12 +35,18 @@
         "NSCameraUsageDescription": "zerospike uses your camera to scan food barcodes and add meal photos.",
         "NSPhotoLibraryUsageDescription": "zerospike accesses your photo library to add photos to your meal journal.",
         "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically.",
-        "CFBundleLocalizations": ["en", "tr", "de", "fr", "es"]
+        "CFBundleLocalizations": [
+          "en",
+          "tr",
+          "de",
+          "fr",
+          "es"
+        ]
       }
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 33,
+      "versionCode": 34,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
