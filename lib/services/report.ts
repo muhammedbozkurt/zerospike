@@ -114,7 +114,7 @@ function buildHtml(
   insights: ReturnType<typeof computeInsights>,
   agpSvg: string,
   glucose: { date: string; time: string; value: string; period: string }[],
-  injections: { date: string; time: string; site: string; dose: string; pen: string }[],
+  injections: { date: string; time: string; site: string; dose: string }[],
   meals: { date: string; time: string; food: string; carbs: string; dose: string }[]
 ): string {
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
@@ -126,7 +126,7 @@ function buildHtml(
 
   const t = (k: string, o?: Record<string, unknown>) => esc(i18n.t(k, o));
 
-  // Summary rows (label, value) — labels and values reuse existing i18n.
+  // Summary rows (label, value) - labels and values reuse existing i18n.
   const summaryRows: [string, string][] = [
     [t("insights.avgGlucose"), fmtG(insights.avgGlucose)],
     [t("insights.timeInRange"), insights.inRangePct == null ? "-" : `${Math.round(insights.inRangePct)} %`],
@@ -174,11 +174,11 @@ function buildHtml(
 
   const injectionSection = section(
     t("injection.title"),
-    `<tr><th>${t("export.colDate")}</th><th>${t("export.colTime")}</th><th>${t("export.colSite")}</th><th>${t("export.colInsulin")}</th><th>${t("export.colPen")}</th></tr>`,
+    `<tr><th>${t("export.colDate")}</th><th>${t("export.colTime")}</th><th>${t("export.colSite")}</th><th>${t("export.colInsulin")}</th></tr>`,
     injections
       .map(
         (r) =>
-          `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td>${esc(r.site)}</td><td>${esc(r.dose)}</td><td>${esc(r.pen)}</td></tr>`
+          `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td>${esc(r.site)}</td><td>${esc(r.dose)}</td></tr>`
       )
       .join("")
   );
@@ -293,7 +293,6 @@ export async function exportLogsPdf(
         site: i18n.t(`injectionSite.${x.site}`),
         dose:
           x.dose_units != null ? `${num(x.dose_units)} ${i18n.t("common.units")}` : "",
-        pen: x.pen_name ?? "",
       };
     });
 

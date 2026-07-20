@@ -150,7 +150,11 @@ export function parseAliases(food: Food): string[] {
   }
 }
 
-/* ── Insulin pens & injection-site logging (schema v4) ────────────────────── */
+/* ── Injection-site logging ────────────────────────────────────────────────
+ *
+ * Injections are logged directly against an insulin type + optional dose (no
+ * pen/stock tracking; that feature was removed in R5). `pen_id` remains a
+ * dormant nullable column on migrated installs and is never read or written. */
 
 /** Basal (long-acting) vs bolus (mealtime) insulin. */
 export type InsulinType = "basal" | "bolus";
@@ -178,23 +182,11 @@ export const INJECTION_SITES: InjectionSite[] = [
   "buttock_right",
 ];
 
-export interface InsulinPen {
-  id: string; // UUID
-  profile_id: string;
-  name: string;
-  insulin_type: InsulinType;
-  total_units: number; // capacity, e.g. 300
-  remaining_units: number; // decremented as injections are logged
-  is_active: number; // 0 | 1
-  created_at: string;
-}
-
 export interface Injection {
   id: string; // UUID
   profile_id: string;
   site: InjectionSite;
   dose_units: number | null;
-  pen_id: string | null; // FK → insulin_pens (SET NULL on pen delete)
   insulin_type: InsulinType | null;
   meal_log_id: string | null; // FK → meal_logs (SET NULL on meal delete)
   note: string | null;

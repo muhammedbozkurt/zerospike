@@ -66,7 +66,6 @@ export async function exportLogsCsv(
     i18n.t("export.colInsulin"),
     i18n.t("export.colFood"),
     i18n.t("export.colSite"),
-    i18n.t("export.colPen"),
     i18n.t("export.colNote"),
     i18n.t("export.colTags"),
   ];
@@ -88,7 +87,6 @@ export async function exportLogsCsv(
           "",
           "",
           "",
-          "",
           tagsLabel(e.tags),
         ]
           .map(csvEscape)
@@ -104,7 +102,6 @@ export async function exportLogsCsv(
           Math.round(e.calculated_carbs_g * 10) / 10,
           e.insulin_dose_units,
           e.display_name,
-          "",
           "",
           e.personal_note ?? "",
           tagsLabel(e.tags),
@@ -127,7 +124,6 @@ export async function exportLogsCsv(
           e.dose_units != null ? num(e.dose_units) : "",
           "",
           i18n.t(`injectionSite.${e.site}`),
-          e.pen_name ?? "",
           e.note ?? "",
           tagsLabel(e.tags),
         ]

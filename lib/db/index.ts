@@ -9,7 +9,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -97,6 +97,20 @@ export async function initDatabase(): Promise<void> {
       } catch {
         // column already exists, ignore
       }
+    }
+  }
+
+  // v6 → v7: the insulin-pen (stock-tracking) feature was removed in R5. Drop
+  // the table. Foreign keys are ON, so the FK's ON DELETE SET NULL nulls every
+  // injection_logs.pen_id first - no injection row is deleted (data preserved).
+  // The now-dormant injection_logs.pen_id column is left in place (never read
+  // or written again); its dangling FK is inert because we only ever write
+  // NULL there, and SQLite never checks a NULL foreign key.
+  if (currentVersion >= 1 && currentVersion < 7) {
+    try {
+      await db.execAsync("DROP TABLE IF EXISTS insulin_pens;");
+    } catch {
+      // best-effort; the app no longer references this table either way
     }
   }
 
@@ -212,29 +226,22 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
     END;
   `);
 
-  // Insulin pens + injection-site logging (shared with the v3 → v4 migration).
+  // Injection-site logging (shared with the v3 → v4 migration).
   await createInjectionSchema(db);
 }
 
 /**
- * Creates the insulin-pen and injection-site logging tables (schema v4).
- * Idempotent (IF NOT EXISTS) so it is safe both on a fresh install and as the
- * v3 → v4 migration step. Existing rows are untouched.
+ * Creates the injection-site logging table. Idempotent (IF NOT EXISTS) so it is
+ * safe both on a fresh install and as the v3 → v4 migration step. Existing rows
+ * are untouched.
+ *
+ * Note: the insulin-pen (stock-tracking) feature was removed in R5, so fresh
+ * installs get no insulin_pens table and no pen_id column. Installs created
+ * before R5 keep a dormant pen_id column (dropped-table FK, never read/written);
+ * see the v6 → v7 migration in initDatabase.
  */
 async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS insulin_pens (
-      id TEXT PRIMARY KEY NOT NULL,
-      profile_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      insulin_type TEXT NOT NULL CHECK (insulin_type IN ('basal','bolus')),
-      total_units REAL NOT NULL,
-      remaining_units REAL NOT NULL,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
-    );
-
     CREATE TABLE IF NOT EXISTS injection_logs (
       id TEXT PRIMARY KEY NOT NULL,
       profile_id TEXT NOT NULL,
@@ -242,19 +249,16 @@ async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
         CHECK (site IN ('abdomen_left','abdomen_right','thigh_left','thigh_right',
                         'arm_left','arm_right','buttock_left','buttock_right')),
       dose_units REAL,
-      pen_id TEXT,
       insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
       meal_log_id TEXT,
       note TEXT,
       logged_at TEXT NOT NULL,
       tags TEXT NOT NULL DEFAULT '[]',
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
-      FOREIGN KEY (pen_id) REFERENCES insulin_pens (id) ON DELETE SET NULL,
       FOREIGN KEY (meal_log_id) REFERENCES meal_logs (id) ON DELETE SET NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_pens_profile ON insulin_pens (profile_id, is_active);
   `);
 }
 
@@ -321,9 +325,8 @@ async function seedFoods(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 /**
- * Clears all user-entered logs for every profile (keeps the seeded foods, the
- * profiles, and the user's insulin pens; pens are configuration, managed
- * separately in the pen UI, not wiped by a log reset).
+ * Clears all user-entered logs for every profile (keeps the seeded foods and
+ * the profiles).
  */
 export async function clearAllLogs(): Promise<void> {
   const db = await getDb();

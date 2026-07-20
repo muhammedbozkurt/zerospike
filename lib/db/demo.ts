@@ -1,31 +1,30 @@
 import { getDb } from "./index";
 import { addSugarLog, addMealLog } from "./logs";
-import { createPen, logInjection, updatePen } from "./injections";
+import { logInjection } from "./injections";
 import { INJECTION_SITES } from "./types";
 import type { LogTag, PeriodTag } from "./types";
 
 /**
  * Loads a rich, realistic demo dataset for marketing screenshots: ~21 days of
- * glucose readings, meals, injections (site-rotated, basal + bolus), two pens
- * (one running low), and scattered context tags — so the dashboard weekly card,
- * Insights metrics, the injection tab (history + rotation + distribution), the
- * low-pen warning and journal tag badges all look populated.
+ * glucose readings, meals, injections (site-rotated, basal + bolus), and
+ * scattered context tags - so the dashboard weekly card, Insights metrics, the
+ * injection tab (history + rotation + distribution) and journal tag badges all
+ * look populated.
  *
  * Dev-only (Settings → Developer), bypasses free-tier limits, and is idempotent:
- * it clears this profile's logs and pens first so re-running never duplicates.
- * All values are fictional but plausible. No Math.random, for reproducibility.
+ * it clears this profile's logs first so re-running never duplicates. All values
+ * are fictional but plausible. No Math.random, for reproducibility.
  */
 /**
- * Wipes ALL of a profile's logs and pens (sugar/meal/injection + insulin_pens).
- * Used both as the idempotent reset before re-seeding the demo and to fully
- * revert the first-run "sample data" preview so the user starts clean.
+ * Wipes ALL of a profile's logs (sugar/meal/injection). Used both as the
+ * idempotent reset before re-seeding the demo and to fully revert the first-run
+ * "sample data" preview so the user starts clean.
  */
 export async function clearProfileData(profileId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM injection_logs WHERE profile_id = ?;", [profileId]);
   await db.runAsync("DELETE FROM meal_logs WHERE profile_id = ?;", [profileId]);
   await db.runAsync("DELETE FROM sugar_logs WHERE profile_id = ?;", [profileId]);
-  await db.runAsync("DELETE FROM insulin_pens WHERE profile_id = ?;", [profileId]);
 }
 
 export async function loadDemoData(profileId: string): Promise<void> {
@@ -33,7 +32,7 @@ export async function loadDemoData(profileId: string): Promise<void> {
   const now = Date.now();
   const DAY = 24 * 60 * 60 * 1000;
 
-  // Idempotent reset for this profile (pens included).
+  // Idempotent reset for this profile.
   await clearProfileData(profileId);
 
   const DAYS = 21;
@@ -46,10 +45,6 @@ export async function loadDemoData(profileId: string): Promise<void> {
     d.setHours(hour, minute, 0, 0);
     return d.getTime() > now ? null : d.toISOString();
   };
-
-  // ── Pens (2 active) ─────────────────────────────────────────────────────
-  const basalPen = await createPen(profileId, "Basal", "basal", 300);
-  const bolusPen = await createPen(profileId, "Bolus", "bolus", 300);
 
   // Sites rotate across all eight so distribution + recommendation look real.
   let siteIdx = 0;
@@ -130,7 +125,6 @@ export async function loadDemoData(profileId: string): Promise<void> {
           profile_id: profileId,
           site: nextSite(),
           dose_units: dose,
-          pen_id: bolusPen.id,
           insulin_type: "bolus",
           meal_log_id: meal.id,
           logged_at: injWhen,
@@ -148,14 +142,8 @@ export async function loadDemoData(profileId: string): Promise<void> {
       profile_id: profileId,
       site: nextSite(),
       dose_units: 18 + (day % 4), // 18..21 units
-      pen_id: basalPen.id,
       insulin_type: "basal",
       logged_at: when,
     });
   }
-
-  // Override pen balances to a clean demo state (injections decremented them):
-  // basal mid-level, bolus under 20 so the low-pen warning + dashboard mark show.
-  await updatePen(basalPen.id, { remaining_units: 168 });
-  await updatePen(bolusPen.id, { remaining_units: 14 });
 }
