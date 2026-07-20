@@ -1,6 +1,11 @@
 import "../global.css";
 import React, { useEffect, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
+
+// TEMP (redesign screenshots only): when set, the app boots straight to this
+// route so the simulator can capture a screen without taps. MUST be null for
+// shipping - reverted at the end of each redesign phase. Do not commit non-null.
+const DEV_SCREENSHOT_ROUTE: string | null = null;
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -55,8 +60,16 @@ function RootNavigator() {
   // Route gate AND splash control in one place: keep the native splash up until
   // routing has settled on the correct screen, so a fresh (not-onboarded) launch
   // never reveals the dashboard for even one frame before redirecting.
+  // TEMP redesign hook: force a target route for screenshots, bypass the gate.
+  useEffect(() => {
+    if (!ready || !DEV_SCREENSHOT_ROUTE) return;
+    SplashScreen.hideAsync().catch(() => {});
+    router.replace(DEV_SCREENSHOT_ROUTE as never);
+  }, [ready, router]);
+
   useEffect(() => {
     if (!ready) return;
+    if (DEV_SCREENSHOT_ROUTE) return; // screenshot mode owns routing
     const root = segments[0];
     const inOnboarding = root === "onboarding";
     // The onboarding flow hands off to the soft paywall (and its downsell) before
