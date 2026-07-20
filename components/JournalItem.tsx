@@ -85,7 +85,7 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
                 {glucoseUnitLabel(profile.glucose_unit)}
               </Text>
               {status === "low" ? (
-                // A hypo must read as a LOW, never like a high — distinct
+                // A hypo must read as a LOW, never like a high - distinct
                 // label + cold color so it is never mistaken for hyperglycemia.
                 <View
                   className="ml-2 rounded-full px-1.5 py-0.5"
@@ -108,11 +108,17 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
   }
 
   if (entry.kind === "injection") {
+    const typeLabel =
+      entry.insulin_type === "basal"
+        ? t("injection.typeBasal")
+        : entry.insulin_type === "bolus"
+          ? t("injection.typeBolus")
+          : null;
     const meta = [
       entry.dose_units != null
         ? `${num(entry.dose_units)} ${t("common.units")}`
         : null,
-      entry.pen_name,
+      typeLabel,
     ]
       .filter(Boolean)
       .join(" · ");

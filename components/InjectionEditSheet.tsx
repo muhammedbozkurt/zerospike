@@ -13,9 +13,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
-import type { InsulinPen } from "../lib/db/types";
-import { updateInjection, getPen, type InjectionUpdate } from "../lib/db/injections";
-import { maybeNotifyPenLow } from "../lib/services/notifications";
+import type { InsulinType } from "../lib/db/types";
+import { updateInjection, type InjectionUpdate } from "../lib/db/injections";
 import { logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import { Button } from "./ui";
@@ -26,14 +25,12 @@ import { formatTime, num, relativeDay } from "../lib/format";
 export interface InjectionEditTarget {
   id: string;
   dose_units: number | null;
-  pen_id: string | null;
+  insulin_type: InsulinType | null;
   logged_at: string;
 }
 
 /**
- * Bottom sheet for correcting an injection's dose, time and pen. Pen stock
- * accounting (delta on the same pen, full refund/deduct on a pen change) lives
- * in updateInjection; this sheet only collects the new values.
+ * Bottom sheet for correcting an injection's dose, insulin type and time.
  *
  * Rendered from tab screens (injection tab, dashboard journal), which are not
  * modal routes, so a plain RN Modal is fine here (gotcha 22 applies to the
@@ -42,20 +39,17 @@ export interface InjectionEditTarget {
 export function InjectionEditSheet({
   visible,
   injection,
-  pens,
   onClose,
   onSaved,
 }: {
   visible: boolean;
   injection: InjectionEditTarget | null;
-  /** Active pens offered in the picker. */
-  pens: InsulinPen[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [dose, setDose] = useState("");
-  const [penId, setPenId] = useState<string | null>(null);
+  const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [loggedAt, setLoggedAt] = useState<Date>(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,7 +57,7 @@ export function InjectionEditSheet({
   useEffect(() => {
     if (visible && injection) {
       setDose(injection.dose_units != null ? num(injection.dose_units) : "");
-      setPenId(injection.pen_id);
+      setInsulinType(injection.insulin_type ?? "bolus");
       setLoggedAt(new Date(injection.logged_at));
       setTimePickerOpen(false);
     }
@@ -77,30 +71,12 @@ export function InjectionEditSheet({
       const doseNum = parseFloat(dose.replace(",", "."));
       const patch: InjectionUpdate = {
         dose_units: Number.isFinite(doseNum) && doseNum > 0 ? doseNum : null,
+        insulin_type: insulinType,
         logged_at: loggedAt.toISOString(),
       };
-      // Touch the pen link only when the user actually changed it: the picker
-      // lists active pens, so an untouched link to an archived pen must survive
-      // (writing it back as null would wrongly refund that pen's stock).
-      if (penId !== injection.pen_id) {
-        const pen = penId ? pens.find((p) => p.id === penId) ?? null : null;
-        patch.pen_id = pen ? pen.id : null;
-        patch.insulin_type = pen ? pen.insulin_type : null;
-      }
       await updateInjection(injection.id, patch);
       logEvent("log_edited", { kind: "insulin" });
       hapticSuccess();
-      // The balance may have just crossed the low threshold; same nudge as create.
-      if (penId) {
-        const fresh = await getPen(penId);
-        if (fresh) {
-          await maybeNotifyPenLow({
-            id: fresh.id,
-            name: fresh.name,
-            remaining_units: fresh.remaining_units,
-          });
-        }
-      }
       onSaved();
     } finally {
       setSaving(false);
@@ -157,43 +133,30 @@ export function InjectionEditSheet({
                 <Text className="text-zinc-500 ml-2">{t("common.units")}</Text>
               </View>
 
-              {/* Pen picker */}
+              {/* Insulin type */}
               <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-                {t("injection.selectPen")}
+                {t("injection.insulinType")}
               </Text>
-              <View className="flex-row flex-wrap gap-2 mb-4">
-                <Pressable
-                  onPress={() => {
-                    hapticSelect();
-                    setPenId(null);
-                  }}
-                  className={`rounded-xl border px-3 py-2 ${
-                    penId === null
-                      ? "border-brand bg-brand/10"
-                      : "border-zinc-700 bg-zinc-800/60"
-                  }`}
-                >
-                  <Text className={penId === null ? "text-brand font-medium" : "text-zinc-300"}>
-                    {t("injection.noPen")}
-                  </Text>
-                </Pressable>
-                {pens.map((p) => (
+              <View className="flex-row gap-2 mb-4">
+                {(["basal", "bolus"] as const).map((type) => (
                   <Pressable
-                    key={p.id}
+                    key={type}
                     onPress={() => {
                       hapticSelect();
-                      setPenId(p.id);
+                      setInsulinType(type);
                     }}
-                    className={`rounded-xl border px-3 py-2 ${
-                      penId === p.id
+                    className={`flex-1 rounded-xl border px-3 py-2.5 items-center ${
+                      insulinType === type
                         ? "border-brand bg-brand/10"
                         : "border-zinc-700 bg-zinc-800/60"
                     }`}
                   >
                     <Text
-                      className={penId === p.id ? "text-brand font-medium" : "text-zinc-300"}
+                      className={
+                        insulinType === type ? "text-brand font-medium" : "text-zinc-300"
+                      }
                     >
-                      {p.name}
+                      {type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
                     </Text>
                   </Pressable>
                 ))}

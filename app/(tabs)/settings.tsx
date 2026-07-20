@@ -117,7 +117,7 @@ export default function SettingsScreen() {
     setCrB(String(activeProfile.carb_ratio_breakfast));
     setCrL(String(activeProfile.carb_ratio_lunch));
     setCrD(String(activeProfile.carb_ratio_dinner));
-    // Targets are stored in mg/dL — show them in the profile's unit.
+    // Targets are stored in mg/dL - show them in the profile's unit.
     setFasting(String(glucoseToDisplay(activeProfile.target_fasting_max, u)));
     setPostmeal(String(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
     setDailyCarb(String(activeProfile.daily_carb_target_g));
@@ -554,20 +554,6 @@ export default function SettingsScreen() {
                   </View>
                 ) : null}
 
-                {/* Low pen alert */}
-                <Row
-                  icon="albums-outline"
-                  label={t("settings.reminderPenLow")}
-                  right={
-                    <Switch
-                      value={prefs.penLow}
-                      onValueChange={(v) => updatePrefs({ penLow: v })}
-                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
-                      thumbColor="#fafafa"
-                    />
-                  }
-                />
-
                 {/* Weekly summary */}
                 <Row
                   icon="calendar-outline"
@@ -668,11 +654,6 @@ export default function SettingsScreen() {
 
         {/* Injection */}
         <SectionLabel>{t("injection.title")}</SectionLabel>
-        <Row
-          icon="albums-outline"
-          label={t("pen.title")}
-          onPress={() => router.push("/pens")}
-        />
         <Row
           icon="medkit-outline"
           label={t("injection.guideLink")}
@@ -791,7 +772,7 @@ export default function SettingsScreen() {
           <DisclaimerBanner full />
         </View>
 
-        {/* Developer — dev builds only; hidden in production */}
+        {/* Developer - dev builds only; hidden in production */}
         {__DEV__ ? (
           <>
             <SectionLabel>{t("settings.developerSection")}</SectionLabel>

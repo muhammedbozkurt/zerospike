@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -18,43 +18,23 @@ import { useFeedback } from "../../components/Feedback";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import { Button } from "../../components/ui";
 import { TagPicker } from "../../components/TagPicker";
-import { INJECTION_SITES } from "../../lib/db/types";
-import type { InjectionSite, Injection, InsulinPen, LogTag } from "../../lib/db/types";
+import { InjectionBodyMap } from "../../components/InjectionBodyMap";
+import type { InjectionSite, Injection, InsulinType, LogTag } from "../../lib/db/types";
 import {
   getSiteUsageHistory,
   recommendNextSite,
   getInjections,
   logInjection,
   deleteInjection,
-  listPens,
-  getPen,
   type SiteUsage,
 } from "../../lib/db/injections";
-import { maybeNotifyPenLow } from "../../lib/services/notifications";
 import { logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { relativeDay, formatTime, num } from "../../lib/format";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 
-const LOW_PEN_THRESHOLD = 20;
-const USAGE_WINDOW_DAYS = 90;
-
-/** Whole days between an ISO date and today, or null if no date. */
-function daysSince(iso: string | null): number | null {
-  if (!iso) return null;
-  const startOf = (x: Date) =>
-    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  return Math.round((startOf(new Date()) - startOf(new Date(iso))) / 86_400_000);
-}
-
-/** Visual-only rotation heat: recently used → warm, long-rested → cool. */
-function heatBorder(days: number | null, selected: boolean): string {
-  if (selected) return "border-brand bg-brand/10";
-  if (days == null) return "border-zinc-800";
-  if (days <= 2) return "border-rose-500/40";
-  if (days >= 7) return "border-emerald-500/30";
-  return "border-zinc-700";
-}
+// Heat-map / rotation usage window (days). The prompt's "last 30 days" heat map.
+const USAGE_WINDOW_DAYS = 30;
 
 export default function InjectionScreen() {
   const { t } = useTranslation();
@@ -65,67 +45,51 @@ export default function InjectionScreen() {
 
   const [usage, setUsage] = useState<SiteUsage[]>([]);
   const [recommended, setRecommended] = useState<InjectionSite | null>(null);
-  const [pens, setPens] = useState<InsulinPen[]>([]);
   const [history, setHistory] = useState<Injection[]>([]);
 
   const [selectedSite, setSelectedSite] = useState<InjectionSite | null>(null);
   const [dose, setDose] = useState("");
-  const [selectedPenId, setSelectedPenId] = useState<string | null>(null);
+  const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [note, setNote] = useState("");
   const [tags, setTags] = useState<LogTag[]>([]);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Injection | null>(null);
 
+  // Seed the type picker once from the most recent injection (last-used default).
+  const typeSeeded = useRef(false);
+
   const dateLabels = { today: t("common.today"), yesterday: t("common.yesterday") };
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
-    const [u, rec, penList, hist] = await Promise.all([
+    const [u, rec, hist] = await Promise.all([
       getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS),
       recommendNextSite(activeProfile.id),
-      listPens(activeProfile.id),
       getInjections(activeProfile.id, 100),
     ]);
     setUsage(u);
     setRecommended(rec);
-    setPens(penList);
     setHistory(hist);
+    if (!typeSeeded.current && hist[0]?.insulin_type) {
+      setInsulinType(hist[0].insulin_type);
+      typeSeeded.current = true;
+    }
   }, [activeProfile]);
 
   useEffect(() => {
     load();
   }, [load, dataVersion]);
 
-  const usageBySite = useMemo(() => {
-    const m = new Map<InjectionSite, SiteUsage>();
-    usage.forEach((u) => m.set(u.site, u));
-    return m;
-  }, [usage]);
-
-  const activePens = useMemo(() => pens.filter((p) => p.is_active === 1), [pens]);
-  const lowPen = useMemo(
-    () => activePens.some((p) => p.remaining_units < LOW_PEN_THRESHOLD),
-    [activePens]
-  );
-  const penName = useCallback(
-    (id: string | null) => (id ? pens.find((p) => p.id === id)?.name ?? null : null),
-    [pens]
-  );
-
   async function save() {
     if (!activeProfile || !selectedSite || saving) return;
     setSaving(true);
     try {
-      const pen = selectedPenId
-        ? activePens.find((p) => p.id === selectedPenId) ?? null
-        : null;
       const doseNum = parseFloat(dose.replace(",", "."));
       await logInjection({
         profile_id: activeProfile.id,
         site: selectedSite,
         dose_units: Number.isFinite(doseNum) && doseNum > 0 ? doseNum : null,
-        pen_id: pen ? pen.id : null,
-        insulin_type: pen ? pen.insulin_type : null,
+        insulin_type: insulinType,
         note: note.trim() || null,
         tags,
       });
@@ -133,20 +97,8 @@ export default function InjectionScreen() {
       void noteLogAndMaybeReview();
       hapticSuccess();
       toast(t("injection.saved"), "success");
-      // After the pen's balance dropped, alert once if it just went low.
-      if (pen) {
-        const fresh = await getPen(pen.id);
-        if (fresh) {
-          await maybeNotifyPenLow({
-            id: fresh.id,
-            name: fresh.name,
-            remaining_units: fresh.remaining_units,
-          });
-        }
-      }
       setSelectedSite(null);
       setDose("");
-      setSelectedPenId(null);
       setNote("");
       setTags([]);
       bumpData();
@@ -200,16 +152,6 @@ export default function InjectionScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Low-pen banner (any active pen under threshold) */}
-        {lowPen ? (
-          <View className="flex-row items-center rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 mb-4">
-            <Ionicons name="warning-outline" size={16} color="#f59e0b" />
-            <Text className="text-amber-200/90 text-sm ml-2.5 flex-1">
-              {t("injection.lowPenBanner")}
-            </Text>
-          </View>
-        ) : null}
-
         {/* Rotation card (Pro) */}
         {isProUser ? (
           <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
@@ -266,47 +208,17 @@ export default function InjectionScreen() {
           </Pressable>
         )}
 
-        {/* Site picker grid (2 columns) */}
+        {/* Site heat map (tap a region to select it for the log) */}
         <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
           {t("injection.selectSite")}
         </Text>
-        <View className="flex-row flex-wrap justify-between">
-          {INJECTION_SITES.map((site) => {
-            const u = usageBySite.get(site);
-            const d = daysSince(u?.lastUsedAt ?? null);
-            const selected = selectedSite === site;
-            return (
-              <Pressable
-                key={site}
-                onPress={() => {
-                  hapticSelect();
-                  setSelectedSite(site);
-                }}
-                className={`w-[48%] rounded-2xl border p-3.5 mb-3 active:opacity-80 ${heatBorder(
-                  d,
-                  selected
-                )} ${selected ? "" : "bg-zinc-900"}`}
-              >
-                <View className="flex-row items-start justify-between">
-                  <Text className="text-zinc-100 font-semibold flex-1 pr-1" numberOfLines={2}>
-                    {t(`injectionSite.${site}`)}
-                  </Text>
-                  {u && u.count > 0 ? (
-                    <View className="rounded-full bg-zinc-800 px-1.5 py-0.5 ml-1">
-                      <Text className="text-zinc-400 text-[10px] font-semibold">
-                        {u.count}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text className="text-zinc-500 text-[11px] mt-1.5">
-                  {u?.lastUsedAt
-                    ? `${t("injection.lastUsed")} · ${relativeDay(u.lastUsedAt, dateLabels)}`
-                    : t("injection.neverUsed")}
-                </Text>
-              </Pressable>
-            );
-          })}
+        <View className="mb-4">
+          <InjectionBodyMap
+            usage={usage}
+            selected={selectedSite}
+            onSelect={setSelectedSite}
+            windowDays={USAGE_WINDOW_DAYS}
+          />
         </View>
 
         {/* Log form */}
@@ -330,45 +242,30 @@ export default function InjectionScreen() {
             <Text className="text-zinc-500 ml-2">{t("common.units")}</Text>
           </View>
 
-          {/* Pen picker */}
+          {/* Insulin type */}
           <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-            {t("injection.selectPen")}
+            {t("injection.insulinType")}
           </Text>
-          <View className="flex-row flex-wrap gap-2 mb-4">
-            <Pressable
-              onPress={() => {
-                hapticSelect();
-                setSelectedPenId(null);
-              }}
-              className={`rounded-xl border px-3 py-2 ${
-                selectedPenId === null
-                  ? "border-brand bg-brand/10"
-                  : "border-zinc-700 bg-zinc-800/60"
-              }`}
-            >
-              <Text
-                className={selectedPenId === null ? "text-brand font-medium" : "text-zinc-300"}
-              >
-                {t("injection.noPen")}
-              </Text>
-            </Pressable>
-            {activePens.map((p) => (
+          <View className="flex-row gap-2 mb-4">
+            {(["basal", "bolus"] as const).map((type) => (
               <Pressable
-                key={p.id}
+                key={type}
                 onPress={() => {
                   hapticSelect();
-                  setSelectedPenId(p.id);
+                  setInsulinType(type);
                 }}
-                className={`rounded-xl border px-3 py-2 ${
-                  selectedPenId === p.id
+                className={`flex-1 rounded-xl border px-3 py-2.5 items-center ${
+                  insulinType === type
                     ? "border-brand bg-brand/10"
                     : "border-zinc-700 bg-zinc-800/60"
                 }`}
               >
                 <Text
-                  className={selectedPenId === p.id ? "text-brand font-medium" : "text-zinc-300"}
+                  className={
+                    insulinType === type ? "text-brand font-medium" : "text-zinc-300"
+                  }
                 >
-                  {p.name}
+                  {type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
                 </Text>
               </Pressable>
             ))}
@@ -421,7 +318,13 @@ export default function InjectionScreen() {
                 </Text>
                 <Text className="text-zinc-500 text-xs mt-0.5">
                   {relativeDay(inj.logged_at, dateLabels)} · {formatTime(inj.logged_at)}
-                  {penName(inj.pen_id) ? ` · ${penName(inj.pen_id)}` : ""}
+                  {inj.insulin_type
+                    ? ` · ${
+                        inj.insulin_type === "basal"
+                          ? t("injection.typeBasal")
+                          : t("injection.typeBolus")
+                      }`
+                    : ""}
                 </Text>
               </View>
               {inj.dose_units != null ? (
@@ -436,16 +339,6 @@ export default function InjectionScreen() {
         {/* Bottom links */}
         <View className="mt-4 gap-2">
           <Pressable
-            onPress={() => router.push("/pens")}
-            className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 flex-row items-center active:bg-zinc-800"
-          >
-            <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-              <Ionicons name="albums-outline" size={20} color="#22d3ee" />
-            </View>
-            <Text className="text-zinc-100 font-semibold flex-1">{t("pen.title")}</Text>
-            <Ionicons name="chevron-forward" size={18} color="#52525b" />
-          </Pressable>
-          <Pressable
             onPress={() => router.push("/injection-guide")}
             className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 flex-row items-center active:bg-zinc-800"
           >
@@ -459,7 +352,7 @@ export default function InjectionScreen() {
           </Pressable>
         </View>
 
-        {/* Medical disclaimer — logged doses are the user's own records, not advice */}
+        {/* Medical disclaimer - logged doses are the user's own records, not advice */}
         <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-5">
           <Ionicons name="medical-outline" size={15} color="#f59e0b" />
           <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
@@ -471,7 +364,6 @@ export default function InjectionScreen() {
       <InjectionEditSheet
         visible={editing != null}
         injection={editing}
-        pens={activePens}
         onClose={() => setEditing(null)}
         onSaved={() => {
           setEditing(null);

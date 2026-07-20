@@ -226,13 +226,12 @@ export default function OnboardingScreen() {
       if (diabetes) await AsyncStorage.setItem(DIABETES_KEY, diabetes).catch(() => {});
       await AsyncStorage.setItem(INSULIN_KEY, insulin ?? "none").catch(() => {});
 
-      // Reminder relevance follows insulin use (basal + pen-low only apply to
-      // insulin users); post-meal tracking stays on for everyone.
+      // Reminder relevance follows insulin use (the basal reminder only applies
+      // to insulin users); post-meal tracking stays on for everyone.
       await setNotificationPrefs({
         ...DEFAULT_PREFS,
         basal: hasInsulin,
         basalTime,
-        penLow: hasInsulin,
       });
       await applyNotificationPrefs();
 

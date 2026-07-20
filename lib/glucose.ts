@@ -1,10 +1,11 @@
 import type { GlucoseUnit, PeriodTag, UserProfile } from "./db/types";
+import { GLUCOSE_COLORS } from "./theme/tokens";
 
 /* ── Units ─────────────────────────────────────────────────────────────────
  * Everything is stored in mg/dL. These helpers convert only at the display /
  * input boundary so the classification + insulin math never changes.
  *
- * MGDL_PER_MMOL is the single canonical factor for the whole app — display,
+ * MGDL_PER_MMOL is the single canonical factor for the whole app - display,
  * input, AND the health-store import (see lib/services/health.ts). Never use a
  * rounded `18`; one constant keeps every entry path agreeing to the mg/dL. */
 export const MGDL_PER_MMOL = 18.0182;
@@ -45,14 +46,12 @@ export function mmolToMgdl(mmol: number): number {
 
 export type GlucoseStatus = "low" | "normal" | "elevated" | "high";
 
-/** Diagnostic palette (matches tailwind.config). `low` is a cold blue, kept
- *  deliberately far from the rose `high` so a hypo is never read as a high. */
-export const STATUS_COLOR: Record<GlucoseStatus, string> = {
-  low: "#3b82f6", // blue — hypoglycemia (treat with fast carbs, NOT insulin)
-  normal: "#10b981", // emerald
-  elevated: "#f59e0b", // amber
-  high: "#f43f5e", // rose
-};
+/** Diagnostic palette - the single glucose color language (lib/theme/tokens.ts,
+ *  mirrored in tailwind.config). low=red, normal=green, elevated=amber,
+ *  high=orange. Color is never the sole cue: a value + period label always
+ *  accompany it, so a reading stays legible in greyscale and for color-vision
+ *  differences. */
+export const STATUS_COLOR: Record<GlucoseStatus, string> = GLUCOSE_COLORS;
 
 export const STATUS_BORDER: Record<GlucoseStatus, string> = {
   low: "border-l-low",
@@ -89,7 +88,7 @@ function maxFor(
 
 /**
  * Classifies a reading against the user's personal targets.
- * - low:      hypoglycemia (< 70 mg/dL, ADA level-1) — its own state so it is
+ * - low:      hypoglycemia (< 70 mg/dL, ADA level-1) - its own state so it is
  *             never shown like a high; a hypo is treated with carbs, not insulin
  * - normal:   at/under target (and not hypo)
  * - elevated: up to ~25% above target

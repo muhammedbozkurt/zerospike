@@ -15,10 +15,10 @@ import {
   deleteSugarLog,
   deleteMealLog,
 } from "../../lib/db/logs";
-import { listPens, deleteInjection } from "../../lib/db/injections";
+import { deleteInjection } from "../../lib/db/injections";
 import { loadDemoData, clearProfileData } from "../../lib/db/demo";
 import { markSampleActive, clearSampleFlag, isSampleActive } from "../../lib/sampleData";
-import type { InsulinPen, LogTag, PeriodTag } from "../../lib/db/types";
+import type { LogTag, PeriodTag } from "../../lib/db/types";
 import {
   schedulePostMealReminder,
   startPostMealTimer,
@@ -28,6 +28,7 @@ import {
 } from "../../lib/services/notifications";
 import { formatPostMealRemaining } from "../../lib/postMealTimer";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
+import { syncLiveData } from "../../lib/services/liveData";
 import { importHealthGlucose, type SyncResult } from "../../lib/services/health";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
@@ -45,23 +46,23 @@ import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
+import { StatCard } from "../../components/StatCard";
+import { Sparkline } from "../../components/Sparkline";
+import { SegmentedStat } from "../../components/ui";
+import { EmptyState } from "../../components/EmptyState";
+import Animated from "react-native-reanimated";
+import { listEntering } from "../../lib/theme/motion";
+import { COLORS } from "../../lib/theme/tokens";
 import { formatDateKey, num } from "../../lib/format";
-import { formatGlucose, glucoseUnitLabel, classifyGlucose } from "../../lib/glucose";
+import {
+  formatGlucose,
+  glucoseUnitLabel,
+  glucoseToDisplay,
+  classifyGlucose,
+  STATUS_COLOR,
+} from "../../lib/glucose";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 
-function WeekStat({ value, label }: { value: string; label: string }) {
-  return (
-    <View className="items-center flex-1">
-      <Text className="text-zinc-50 text-lg font-bold">{value}</Text>
-      <Text
-        className="text-zinc-500 text-[10px] mt-0.5 text-center"
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
 
 export default function DashboardScreen() {
   const { t } = useTranslation();
@@ -78,7 +79,6 @@ export default function DashboardScreen() {
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
   const [cgmOn, setCgmOn] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [activePens, setActivePens] = useState<InsulinPen[]>([]);
   const [sampleActive, setSampleActive] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   // Post-meal reminder countdown: end time (epoch ms) of the pending nudge, and
@@ -93,13 +93,12 @@ export default function DashboardScreen() {
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
-    const [feed, pens] = await Promise.all([
-      getJournal(activeProfile.id, lang, 300),
-      listPens(activeProfile.id, true),
-    ]);
+    const feed = await getJournal(activeProfile.id, lang, 300);
     setEntries(feed);
-    setActivePens(pens);
     setSampleActive(await isSampleActive(activeProfile.id));
+    // Refresh the shared live-surface snapshot (next reminder + last glucose)
+    // so the notification/Live Activity/widget/watch layer reads current data.
+    void syncLiveData(activeProfile.id, activeProfile.glucose_unit ?? "mgdl");
   }, [activeProfile, lang]);
 
   useEffect(() => {
@@ -243,10 +242,6 @@ export default function DashboardScreen() {
   const anyInjections = entries.some((e) => e.kind === "injection");
   // Encouraging consistency count ("X days in a row"), never a streak to protect.
   const logStreak = consecutiveLogDays(entries.map((e) => e.logged_at));
-  const lowPen = activePens.some((p) => p.remaining_units < 20);
-  const minRemaining = activePens.length
-    ? Math.min(...activePens.map((p) => p.remaining_units))
-    : 0;
 
   // ── This-week summary (derived from the already-loaded feed) ──────────────
   const unit = activeProfile?.glucose_unit ?? "mgdl";
@@ -279,6 +274,25 @@ export default function DashboardScreen() {
     (e) => e.kind === "injection" && new Date(e.logged_at).getTime() >= weekAgo
   ).length;
   const hasWeekData = weekReadings > 0 || weekInjections > 0;
+
+  // Weekly-average accent (single glucose color language) + a chronological
+  // sparkline of the week's readings for the summary tile.
+  const weekSparkline = weekGlucose
+    .slice()
+    .reverse()
+    .map((e) => (e.kind === "glucose" ? e.glucose_level_mgdl : 0));
+  const avgColor =
+    weekAvg != null && activeProfile
+      ? STATUS_COLOR[classifyGlucose(weekAvg, "manual", activeProfile)]
+      : COLORS.textPrimary;
+  const tirColor =
+    weekTIR == null
+      ? COLORS.textPrimary
+      : weekTIR >= 70
+        ? STATUS_COLOR.normal
+        : weekTIR >= 50
+          ? STATUS_COLOR.elevated
+          : STATUS_COLOR.high;
 
   // Active insulin still working from recent bolus doses (stacking awareness).
   const iob = activeInsulin(
@@ -574,7 +588,7 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* Active insulin (IOB) — only when something is still working */}
+      {/* Active insulin (IOB) - only when something is still working */}
       {iob > 0 ? (
         <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-3 flex-row items-center">
           <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
@@ -652,38 +666,57 @@ export default function DashboardScreen() {
       ) : null}
 
       {/* This week summary (free) */}
-      <Pressable
-        onPress={() =>
-          router.push({ pathname: "/insights", params: { window: "7" } })
-        }
-        className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 active:bg-zinc-800"
-      >
-        <View className="flex-row items-center justify-between mb-3">
-          <Text className="text-zinc-100 font-semibold">
+      <View className="mb-4">
+        <Pressable
+          onPress={() =>
+            router.push({ pathname: "/insights", params: { window: "7" } })
+          }
+          className="flex-row items-center justify-between mb-2.5 active:opacity-70"
+        >
+          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
             {t("dashboard.thisWeek")}
           </Text>
-          <Ionicons name="chevron-forward" size={18} color="#52525b" />
-        </View>
+          <Ionicons name="chevron-forward" size={16} color={COLORS.textFaint} />
+        </Pressable>
         {hasWeekData ? (
-          <View className="flex-row justify-between">
-            <WeekStat value={String(weekReadings)} label={t("insights.readings")} />
-            <WeekStat
-              value={weekAvg == null ? "-" : formatGlucose(weekAvg, unit)}
-              label={t("insights.avgGlucose")}
+          <>
+            <View className="flex-row gap-3 mb-3">
+              <StatCard
+                className="flex-1"
+                label={t("insights.avgGlucose")}
+                value={weekAvg == null ? 0 : glucoseToDisplay(weekAvg, unit)}
+                decimals={unit === "mmol" ? 1 : 0}
+                display={weekAvg == null ? "-" : undefined}
+                suffix={glucoseUnitLabel(unit)}
+                accent={avgColor}
+                sparkline={
+                  weekSparkline.length > 1 ? (
+                    <Sparkline data={weekSparkline} color={avgColor} width={120} height={30} />
+                  ) : undefined
+                }
+              />
+              <StatCard
+                className="flex-1"
+                label={t("insights.timeInRange")}
+                value={weekTIR ?? 0}
+                display={weekTIR == null ? "-" : undefined}
+                suffix="%"
+                accent={tirColor}
+                footnote={t("insights.readings") + ": " + weekReadings}
+              />
+            </View>
+            <SegmentedStat
+              items={[
+                { label: t("insights.readings"), value: String(weekReadings) },
+                { label: t("insights.injectionsCount"), value: String(weekInjections) },
+                { label: t("dashboard.streakDays"), value: String(logStreak) },
+              ]}
             />
-            <WeekStat
-              value={weekTIR == null ? "-" : `${weekTIR}%`}
-              label={t("insights.timeInRange")}
-            />
-            <WeekStat
-              value={String(weekInjections)}
-              label={t("insights.injectionsCount")}
-            />
-          </View>
+          </>
         ) : (
-          <Text className="text-zinc-500 text-xs">{t("insights.empty")}</Text>
+          <EmptyState compact icon="calendar-outline" title={t("insights.empty")} />
         )}
-      </Pressable>
+      </View>
 
       {/* Insights (Pro) entry */}
       <Pressable
@@ -711,31 +744,11 @@ export default function DashboardScreen() {
         <View className="flex-1">
           <Text className="text-zinc-100 font-semibold">{t("injection.title")}</Text>
           <Text className="text-zinc-500 text-xs">
-            {anyInjections || activePens.length > 0
+            {anyInjections
               ? t("dashboard.injectionsToday", { n: todayInjections })
               : t("injection.empty")}
           </Text>
         </View>
-        {activePens.length > 0 ? (
-          <View className="items-end mr-2">
-            <Text className="text-zinc-300 text-xs font-semibold">
-              {t("dashboard.pensActive", { n: activePens.length })}
-            </Text>
-            <View className="flex-row items-center mt-0.5">
-              {lowPen ? (
-                <Ionicons
-                  name="warning-outline"
-                  size={12}
-                  color="#f59e0b"
-                  style={{ marginRight: 3 }}
-                />
-              ) : null}
-              <Text className={`text-xs ${lowPen ? "text-amber-400" : "text-zinc-500"}`}>
-                {num(minRemaining)} {t("common.units")}
-              </Text>
-            </View>
-          </View>
-        ) : null}
         <Ionicons name="chevron-forward" size={18} color="#52525b" />
       </Pressable>
 
@@ -778,14 +791,16 @@ export default function DashboardScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item }) =>
+        renderItem={({ item, index }) =>
           activeProfile ? (
-            <JournalItem
-              entry={item}
-              profile={activeProfile}
-              onPress={openEdit}
-              onLongPress={onEntryLongPress}
-            />
+            <Animated.View entering={listEntering.delay(Math.min(index, 8) * 40)}>
+              <JournalItem
+                entry={item}
+                profile={activeProfile}
+                onPress={openEdit}
+                onLongPress={onEntryLongPress}
+              />
+            </Animated.View>
           ) : null
         }
         ListEmptyComponent={
@@ -816,7 +831,7 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Fast loggers — bottom, one-handed reach */}
+      {/* Fast loggers - bottom, one-handed reach */}
       <View
         className="absolute left-0 right-0 bottom-0 px-4 pt-2 bg-black border-t border-zinc-900"
         style={{ paddingBottom: 10 }}
@@ -894,7 +909,6 @@ export default function DashboardScreen() {
       <InjectionEditSheet
         visible={editInjection != null}
         injection={editInjection}
-        pens={activePens}
         onClose={() => setEditInjection(null)}
         onSaved={() => {
           setEditInjection(null);
