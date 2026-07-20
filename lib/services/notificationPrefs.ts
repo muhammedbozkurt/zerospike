@@ -4,9 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * Global notification preferences (device-level, not per-profile).
  *
  * Reminder schedules follow the device owner's daily routine, so they are
- * shared across profiles. The pen-low alert is the exception: it is triggered
- * per injection against the *active* profile's pen, so no per-profile flag is
- * needed here.
+ * shared across profiles.
  */
 export interface NotificationPrefs {
   /** Master switch: when false, no reminder is scheduled. */
@@ -19,7 +17,6 @@ export interface NotificationPrefs {
   /** Post-meal check delay in minutes (drives both the auto reminder and the
    *  "I started eating" timer). */
   postMealMinutes: 90 | 120 | 150;
-  penLow: boolean;
   /** Weekly summary nudge, at a user-chosen day + time. */
   weekly: boolean;
   weeklyDay: number; // expo-notifications weekday: 1 = Sunday ... 7 = Saturday
@@ -38,7 +35,6 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   glucoseTime: "08:00",
   postMeal: true,
   postMealMinutes: 120,
-  penLow: true,
   weekly: false,
   weeklyDay: 1,
   weeklyTime: "20:00",

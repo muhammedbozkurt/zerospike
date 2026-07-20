@@ -139,10 +139,6 @@ function RootNavigator() {
         name="injection-guide"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
-      <Stack.Screen
-        name="pens"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
     </Stack>
   );
 }

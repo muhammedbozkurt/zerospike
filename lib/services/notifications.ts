@@ -22,11 +22,6 @@ const POSTMEAL_ID = "zerospike-postmeal-reminder";
 // countdown always matches the real notification.
 const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
 
-/** Mirrors the in-app low-pen banner threshold. */
-const PEN_LOW_THRESHOLD = 20;
-/** Ids of pens we've already alerted at low level (avoids per-injection spam). */
-const PEN_LOW_FLAG_KEY = "zerospike.penLowNotified";
-
 // Foreground presentation: show banners while the app is open.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -55,9 +50,23 @@ async function ensureAndroidChannel(): Promise<void> {
 const androidChannel =
   Platform.OS === "android" ? { channelId: "reminders" } : {};
 
+// iOS Time-Sensitive interruption level: a time-based reminder breaks through
+// Focus / silent and surfaces prominently, while staying a NEUTRAL reminder.
+// This is NOT a critical alert (no com.apple.developer.usernotifications.critical
+// entitlement - that carries medical-device risk and is deliberately avoided).
+// Time-Sensitive needs the com.apple.developer.usernotifications.time-sensitive
+// entitlement to break Focus; without it iOS silently downgrades to 'active', so
+// adding this field is always safe. See docs/native-live-surfaces.md.
+const IOS_TIME_SENSITIVE =
+  Platform.OS === "ios" ? { interruptionLevel: "timeSensitive" as const } : {};
+
+/** Content extras for a time-based reminder (Android high-importance channel +
+ *  iOS Time-Sensitive). Used by the actionable reminders, not the weekly nudge. */
+const reminderExtras = { ...androidChannel, ...IOS_TIME_SENSITIVE };
+
 /**
  * Requests notification permission gracefully. Returns true if granted.
- * Never throws — a denied permission simply disables reminders.
+ * Never throws - a denied permission simply disables reminders.
  */
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
@@ -108,7 +117,7 @@ export async function scheduleBasalReminder(time: string): Promise<void> {
     content: {
       title: i18n.t("notifications.basalTitle"),
       body: i18n.t("notifications.basalBody"),
-      ...androidChannel,
+      ...reminderExtras,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -122,7 +131,7 @@ export async function cancelBasalReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(BASAL_ID);
   } catch {
-    // not scheduled — ignore
+    // not scheduled - ignore
   }
 }
 
@@ -135,7 +144,7 @@ export async function scheduleGlucoseReminder(time: string): Promise<void> {
     content: {
       title: i18n.t("notifications.glucoseTitle"),
       body: i18n.t("notifications.glucoseBody"),
-      ...androidChannel,
+      ...reminderExtras,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -149,7 +158,7 @@ export async function cancelGlucoseReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(GLUCOSE_ID);
   } catch {
-    // not scheduled — ignore
+    // not scheduled - ignore
   }
 }
 
@@ -181,7 +190,7 @@ export async function cancelWeeklySummary(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(WEEKLY_ID);
   } catch {
-    // not scheduled — ignore
+    // not scheduled - ignore
   }
 }
 
@@ -266,7 +275,7 @@ async function schedulePostMealAt(minutes: number): Promise<void> {
     content: {
       title: i18n.t("notifications.postmealTitle"),
       body: i18n.t("notifications.postmealBody"),
-      ...androidChannel,
+      ...reminderExtras,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -374,7 +383,7 @@ export async function scheduleLowFollowup(): Promise<boolean> {
     content: {
       title: i18n.t("notifications.lowFollowTitle"),
       body: i18n.t("notifications.lowFollowBody"),
-      ...androidChannel,
+      ...reminderExtras,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -385,64 +394,3 @@ export async function scheduleLowFollowup(): Promise<boolean> {
   return true;
 }
 
-// ── Event-driven: low-pen alert ────────────────────────────────────────────
-
-async function getLowFlags(): Promise<string[]> {
-  try {
-    const raw = await AsyncStorage.getItem(PEN_LOW_FLAG_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
-}
-
-async function setLowFlags(ids: string[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(PEN_LOW_FLAG_KEY, JSON.stringify(ids));
-  } catch {
-    // best-effort
-  }
-}
-
-/**
- * Notifies once when a pen first drops below the low threshold. The pen is
- * flagged so repeat injections don't re-alert; the flag clears when the pen is
- * back above the threshold (e.g. replaced), so a later drop alerts again.
- * Call after an injection has decremented the pen.
- */
-export async function maybeNotifyPenLow(pen: {
-  id: string;
-  name: string;
-  remaining_units: number;
-}): Promise<void> {
-  const flags = await getLowFlags();
-  const isLow = pen.remaining_units < PEN_LOW_THRESHOLD;
-  const flagged = flags.includes(pen.id);
-
-  if (isLow && !flagged) {
-    const prefs = await getNotificationPrefs();
-    if (prefs.enabled && prefs.penLow) {
-      const granted = await requestNotificationPermission();
-      if (granted) {
-        await Notifications.scheduleNotificationAsync({
-          identifier: `zerospike-pen-low-${pen.id}`,
-          content: {
-            title: i18n.t("notifications.penLowTitle"),
-            body: i18n.t("notifications.penLowBody", {
-              name: pen.name,
-              n: Math.round(pen.remaining_units),
-            }),
-            ...androidChannel,
-          },
-          trigger: null, // immediate
-        });
-      }
-    }
-    // Flag regardless of send, so the in-app banner (not a notification) covers
-    // the disabled case without re-checking on every future injection.
-    await setLowFlags([...flags, pen.id]);
-  } else if (!isLow && flagged) {
-    await setLowFlags(flags.filter((x) => x !== pen.id));
-  }
-}
