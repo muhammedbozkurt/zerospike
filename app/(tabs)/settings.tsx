@@ -58,17 +58,21 @@ function Row({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-2"
+      className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 active:opacity-80"
     >
-      <Ionicons name={icon} size={19} color={danger ? "#fb7185" : "#a1a1aa"} />
+      <View
+        className={`w-9 h-9 rounded-xl items-center justify-center ${danger ? "bg-rose-500/15" : "bg-brand/12"}`}
+      >
+        <Ionicons name={icon} size={18} color={danger ? "#fb7185" : "#2ee6ff"} />
+      </View>
       <Text
-        className={`flex-1 ml-3 font-medium ${danger ? "text-rose-400" : "text-zinc-100"}`}
+        className={`flex-1 ml-3 text-[15px] font-semibold ${danger ? "text-rose-400" : "text-ink"}`}
       >
         {label}
       </Text>
-      {value ? <Text className="text-zinc-500 mr-1">{value}</Text> : null}
+      {value ? <Text className="text-mut text-[13px] mr-1 font-medium">{value}</Text> : null}
       {right ?? (onPress ? (
-        <Ionicons name="chevron-forward" size={18} color="#52525b" />
+        <Ionicons name="chevron-forward" size={18} color="#52586a" />
       ) : null)}
     </Pressable>
   );
@@ -291,7 +295,7 @@ export default function SettingsScreen() {
     <View className="flex-1" style={{ paddingTop: insets.top }}>
       <AppBackgroundFill />
       <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
-        <Text className="text-zinc-50 text-2xl font-bold">{t("settings.title")}</Text>
+        <Text className="text-ink text-2xl font-bold">{t("settings.title")}</Text>
         <ProfileSwitcher />
       </View>
 
@@ -538,7 +542,7 @@ export default function SettingsScreen() {
                 />
                 {prefs.postMeal ? (
                   <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
-                    <Text className="text-zinc-400 text-xs mb-2">
+                    <Text className="text-mut text-xs mb-2">
                       {t("settings.postMealDelay")}
                     </Text>
                     <Segmented
@@ -572,7 +576,7 @@ export default function SettingsScreen() {
                 {prefs.weekly ? (
                   <>
                     <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
-                      <Text className="text-zinc-400 text-xs mb-2">
+                      <Text className="text-mut text-xs mb-2">
                         {t("settings.reminderDay")}
                       </Text>
                       <View className="flex-row justify-between">
@@ -583,12 +587,12 @@ export default function SettingsScreen() {
                               key={d}
                               onPress={() => updatePrefs({ weeklyDay: d })}
                               className={`w-9 h-9 rounded-full items-center justify-center ${
-                                on ? "bg-brand" : "bg-zinc-800"
+                                on ? "bg-brand" : "bg-glass"
                               }`}
                             >
                               <Text
                                 className={`text-xs font-semibold ${
-                                  on ? "text-black" : "text-zinc-300"
+                                  on ? "text-black" : "text-ink"
                                 }`}
                               >
                                 {t(`settings.weekdayShort_${d}`)}
@@ -630,7 +634,7 @@ export default function SettingsScreen() {
                 />
                 {prefs.lowFollowup ? (
                   <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
-                    <Text className="text-zinc-400 text-xs mb-2">
+                    <Text className="text-mut text-xs mb-2">
                       {t("settings.lowThreshold")} ({glucoseUnitLabel(unit)})
                     </Text>
                     <Segmented
@@ -789,7 +793,7 @@ export default function SettingsScreen() {
             <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
               <View className="flex-row items-center">
                 <Ionicons name="construct-outline" size={19} color="#a1a1aa" />
-                <Text className="flex-1 ml-3 font-medium text-zinc-100">
+                <Text className="flex-1 ml-3 font-medium text-ink">
                   {t("settings.simulatePro")}
                 </Text>
                 <Switch
@@ -799,7 +803,7 @@ export default function SettingsScreen() {
                   thumbColor="#fafafa"
                 />
               </View>
-              <Text className="text-zinc-500 text-xs mt-2">
+              <Text className="text-mut text-xs mt-2">
                 {t("settings.simulateProHint")}
               </Text>
             </View>
