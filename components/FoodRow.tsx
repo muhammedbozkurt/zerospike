@@ -37,7 +37,7 @@ export function FoodRow({
     <Pressable
       onPress={() => onPress?.(food)}
       onLongPress={() => onLongPress?.(food)}
-      className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 mb-2.5"
+      className="flex-row items-center rounded-2xl bg-glass border border-hair px-4 py-3 mb-2.5"
     >
       <View className="flex-1 pr-2">
         <View className="flex-row items-center">

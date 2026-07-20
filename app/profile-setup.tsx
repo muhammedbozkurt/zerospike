@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -89,7 +90,8 @@ export default function ProfileSetupScreen() {
   }
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
           <View className="flex-1">
@@ -109,7 +111,7 @@ export default function ProfileSetupScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View className="rounded-2xl bg-brand/10 border border-brand/25 p-3.5 mb-4 flex-row items-center">
-            <Ionicons name="information-circle-outline" size={18} color="#22d3ee" />
+            <Ionicons name="information-circle-outline" size={18} color="#2ee6ff" />
             <Text className="text-zinc-300 text-xs ml-2.5 flex-1 leading-4">
               {t("profiles.setupHint")}
             </Text>

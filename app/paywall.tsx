@@ -3,6 +3,8 @@ import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
+import { THEME, glow } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -68,8 +70,9 @@ function PlanCard({
   return (
     <Pressable
       onPress={onSelect}
+      style={selected ? glow(THEME.accent, 24, 0.45) : undefined}
       className={`rounded-2xl border p-4 flex-row items-center mb-3 ${
-        selected ? "border-brand bg-brand/10" : "border-zinc-800 bg-zinc-900"
+        selected ? "border-brand bg-brand/10" : "border-hair bg-glass"
       }`}
     >
       <View
@@ -278,7 +281,8 @@ export default function PaywallScreen() {
   const unavailable = offer?.status === "unavailable";
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-2">
           {/* Visible free exit: same dismiss path (downsell chain) as the X. */}
@@ -302,8 +306,8 @@ export default function PaywallScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View className="items-center mb-6">
-            <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-4">
-              <Ionicons name="sparkles" size={28} color="#22d3ee" />
+            <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-4" style={glow(THEME.accent, 34, 0.5)}>
+              <Ionicons name="sparkles" size={28} color="#2ee6ff" />
             </View>
             <Text className="text-zinc-50 text-3xl font-bold">
               {t("paywall.title")}
@@ -323,7 +327,7 @@ export default function PaywallScreen() {
           {/* Benefits: a single, focused list (at most 4 rows). Health sync is
               iOS-only (Health Connect removed for Play policy), so on Android it
               drops off and an injection benefit fills the slot. */}
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mb-6">
+          <View className="rounded-2xl bg-glass border border-hair p-5 mb-6">
             {[
               ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
               t("paywall.featureInsights"),
@@ -337,7 +341,7 @@ export default function PaywallScreen() {
                   key={i}
                   className={`flex-row items-center ${i < arr.length - 1 ? "mb-3" : ""}`}
                 >
-                  <Ionicons name="checkmark-circle" size={18} color="#22d3ee" />
+                  <Ionicons name="checkmark-circle" size={18} color="#2ee6ff" />
                   <Text className="text-zinc-200 flex-1 ml-3 text-[14px]">{text}</Text>
                 </View>
               ))}
@@ -350,7 +354,7 @@ export default function PaywallScreen() {
           ) : unavailable ? (
             // Release-only: prices could not be loaded. Never show fake prices;
             // offer a retry instead.
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 items-center">
+            <View className="rounded-2xl bg-glass border border-hair p-5 items-center">
               <Ionicons name="cloud-offline-outline" size={28} color="#71717a" />
               <Text className="text-zinc-300 text-center mt-3 mb-4">
                 {t("paywall.pricesUnavailable")}

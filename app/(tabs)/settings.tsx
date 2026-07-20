@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { AppBackgroundFill } from "../../components/rich";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -57,7 +58,7 @@ function Row({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 mb-2"
+      className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-2"
     >
       <Ionicons name={icon} size={19} color={danger ? "#fb7185" : "#a1a1aa"} />
       <Text
@@ -287,7 +288,8 @@ export default function SettingsScreen() {
     Constants.expoConfig?.version ?? "1.0.0";
 
   return (
-    <View className="flex-1 bg-black" style={{ paddingTop: insets.top }}>
+    <View className="flex-1" style={{ paddingTop: insets.top }}>
+      <AppBackgroundFill />
       <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
         <Text className="text-zinc-50 text-2xl font-bold">{t("settings.title")}</Text>
         <ProfileSwitcher />
@@ -435,7 +437,7 @@ export default function SettingsScreen() {
                 <Switch
                   value={prefs.enabled}
                   onValueChange={(v) => updatePrefs({ enabled: v })}
-                  trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                  trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
                   thumbColor="#fafafa"
                 />
               }
@@ -465,7 +467,7 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.basal}
                       onValueChange={(v) => updatePrefs({ basal: v })}
-                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
                       thumbColor="#fafafa"
                     />
                   }
@@ -497,7 +499,7 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.glucose}
                       onValueChange={(v) => updatePrefs({ glucose: v })}
-                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
                       thumbColor="#fafafa"
                     />
                   }
@@ -529,13 +531,13 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.postMeal}
                       onValueChange={(v) => updatePrefs({ postMeal: v })}
-                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
                       thumbColor="#fafafa"
                     />
                   }
                 />
                 {prefs.postMeal ? (
-                  <View className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 mb-2">
+                  <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
                     <Text className="text-zinc-400 text-xs mb-2">
                       {t("settings.postMealDelay")}
                     </Text>
@@ -562,14 +564,14 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.weekly}
                       onValueChange={(v) => updatePrefs({ weekly: v })}
-                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
                       thumbColor="#fafafa"
                     />
                   }
                 />
                 {prefs.weekly ? (
                   <>
-                    <View className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 mb-2">
+                    <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
                       <Text className="text-zinc-400 text-xs mb-2">
                         {t("settings.reminderDay")}
                       </Text>
@@ -621,13 +623,13 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.lowFollowup}
                       onValueChange={(v) => updatePrefs({ lowFollowup: v })}
-                      trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
                       thumbColor="#fafafa"
                     />
                   }
                 />
                 {prefs.lowFollowup ? (
-                  <View className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3 mb-2">
+                  <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
                     <Text className="text-zinc-400 text-xs mb-2">
                       {t("settings.lowThreshold")} ({glucoseUnitLabel(unit)})
                     </Text>
@@ -651,6 +653,14 @@ export default function SettingsScreen() {
         {/* Language */}
         <SectionLabel>{t("settings.language")}</SectionLabel>
         <LanguagePicker value={lang} onChange={onChangeLang} />
+
+        {/* Spike AI */}
+        <SectionLabel>{t("spike.title")}</SectionLabel>
+        <Row
+          icon="sparkles-outline"
+          label={t("spike.settingsRow")}
+          onPress={() => router.push("/spike")}
+        />
 
         {/* Injection */}
         <SectionLabel>{t("injection.title")}</SectionLabel>
@@ -679,7 +689,7 @@ export default function SettingsScreen() {
           <Row
             icon="checkmark-circle"
             label={t("settings.proActive")}
-            right={<Ionicons name="sparkles" size={18} color="#22d3ee" />}
+            right={<Ionicons name="sparkles" size={18} color="#2ee6ff" />}
           />
         ) : (
           <Row
@@ -776,7 +786,7 @@ export default function SettingsScreen() {
         {__DEV__ ? (
           <>
             <SectionLabel>{t("settings.developerSection")}</SectionLabel>
-            <View className="bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 mb-1">
+            <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
               <View className="flex-row items-center">
                 <Ionicons name="construct-outline" size={19} color="#a1a1aa" />
                 <Text className="flex-1 ml-3 font-medium text-zinc-100">
@@ -785,7 +795,7 @@ export default function SettingsScreen() {
                 <Switch
                   value={isProUser}
                   onValueChange={onToggleSimPro}
-                  trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
+                  trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
                   thumbColor="#fafafa"
                 />
               </View>

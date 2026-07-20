@@ -10,6 +10,7 @@ import { cacheBarcodeFood, getFoodByBarcode } from "../lib/db/foods";
 import { lookupBarcode, OFF_SOURCE } from "../lib/services/openFoodFacts";
 import { Button } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { THEME, glow } from "../lib/theme/tokens";
 
 export default function ScanScreen() {
   const { t } = useTranslation();
@@ -90,7 +91,34 @@ export default function ScanScreen() {
       className="absolute left-0 right-0 top-0 bottom-0 items-center justify-center"
       pointerEvents="box-none"
     >
-      <View className="w-64 h-44 rounded-3xl border-2 border-brand/80" />
+      <View
+        className="w-64 h-44 rounded-3xl items-center justify-center"
+        style={[
+          { borderWidth: 2, borderColor: THEME.accent, backgroundColor: "rgba(46,230,255,0.06)" },
+          glow(THEME.accent, 40, 0.7),
+        ]}
+      >
+        <View
+          className="rounded-2xl"
+          style={{
+            position: "absolute",
+            left: 14,
+            right: 14,
+            top: 14,
+            bottom: 14,
+            borderWidth: 1,
+            borderColor: "rgba(46,230,255,0.5)",
+            borderStyle: "dashed",
+          }}
+        />
+        {/* glowing scan line */}
+        <View
+          style={[
+            { position: "absolute", left: 18, right: 18, height: 2, backgroundColor: THEME.accent },
+            glow(THEME.accent, 14, 0.9),
+          ]}
+        />
+      </View>
       <Text className="text-zinc-200 mt-5 px-10 text-center">
         {t("scan.hint")}
       </Text>
@@ -219,7 +247,7 @@ export default function ScanScreen() {
           style={{ bottom: insets.bottom + 48 }}
         >
           <View className="flex-row items-center rounded-full bg-zinc-900/95 border border-zinc-800 px-4 py-2.5">
-            <ActivityIndicator size="small" color="#22d3ee" />
+            <ActivityIndicator size="small" color="#2ee6ff" />
             <Text className="text-zinc-200 text-sm ml-2.5">{t("scan.searching")}</Text>
           </View>
         </View>

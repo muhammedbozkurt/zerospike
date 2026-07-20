@@ -19,6 +19,7 @@ import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import { Button } from "../../components/ui";
 import { TagPicker } from "../../components/TagPicker";
 import { InjectionBodyMap } from "../../components/InjectionBodyMap";
+import { AppBackground } from "../../components/rich";
 import type { InjectionSite, Injection, InsulinType, LogTag } from "../../lib/db/types";
 import {
   getSiteUsageHistory,
@@ -141,7 +142,7 @@ export default function InjectionScreen() {
   }
 
   return (
-    <View className="flex-1 bg-black" style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: insets.top }}>
       <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
         <Text className="text-zinc-50 text-2xl font-bold">{t("injection.title")}</Text>
         <ProfileSwitcher />
@@ -152,11 +153,24 @@ export default function InjectionScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Site heat map hero (mockup B03) - tap a region to select it */}
+        <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
+          {t("injection.selectSite")}
+        </Text>
+        <View className="mb-4">
+          <InjectionBodyMap
+            usage={usage}
+            selected={selectedSite}
+            onSelect={setSelectedSite}
+            windowDays={USAGE_WINDOW_DAYS}
+          />
+        </View>
+
         {/* Rotation card (Pro) */}
         {isProUser ? (
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
+          <View className="rounded-2xl bg-glass border border-hair p-4 mb-4">
             <View className="flex-row items-center mb-2">
-              <Ionicons name="sync-outline" size={18} color="#22d3ee" />
+              <Ionicons name="sync-outline" size={18} color="#2ee6ff" />
               <Text className="text-zinc-300 font-semibold ml-2">
                 {t("injection.rotationTitle")}
               </Text>
@@ -176,7 +190,7 @@ export default function InjectionScreen() {
                 }}
                 className="flex-row items-center justify-center rounded-xl bg-brand/15 active:bg-brand/25 py-2.5 mt-3"
               >
-                <Ionicons name="arrow-down-outline" size={16} color="#22d3ee" />
+                <Ionicons name="arrow-down-outline" size={16} color="#2ee6ff" />
                 <Text className="text-brand font-semibold ml-2 text-sm">
                   {t("injection.useThisSite")}
                 </Text>
@@ -189,7 +203,7 @@ export default function InjectionScreen() {
               hapticWarning();
               router.push({ pathname: "/paywall", params: { reason: "rotation" } });
             }}
-            className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
+            className="rounded-2xl bg-glass border border-hair p-4 mb-4 flex-row items-center active:bg-zinc-800"
           >
             <View className="w-10 h-10 rounded-full bg-zinc-800 items-center justify-center mr-3">
               <Ionicons name="lock-closed" size={18} color="#71717a" />
@@ -208,21 +222,8 @@ export default function InjectionScreen() {
           </Pressable>
         )}
 
-        {/* Site heat map (tap a region to select it for the log) */}
-        <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
-          {t("injection.selectSite")}
-        </Text>
-        <View className="mb-4">
-          <InjectionBodyMap
-            usage={usage}
-            selected={selectedSite}
-            onSelect={setSelectedSite}
-            windowDays={USAGE_WINDOW_DAYS}
-          />
-        </View>
-
         {/* Log form */}
-        <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-1 mb-4">
+        <View className="rounded-2xl bg-glass border border-hair p-4 mt-1 mb-4">
           {/* Dose (optional) */}
           <Text className="text-sm font-medium text-zinc-400 mb-1.5">
             {t("injection.dose")}
@@ -307,10 +308,10 @@ export default function InjectionScreen() {
               key={inj.id}
               onPress={() => setEditing(inj)}
               onLongPress={() => onRowLongPress(inj)}
-              className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 mb-2 flex-row items-center active:bg-zinc-800"
+              className="rounded-2xl bg-glass border border-hair p-3.5 mb-2 flex-row items-center active:bg-zinc-800"
             >
               <View className="w-9 h-9 rounded-full bg-brand/10 items-center justify-center mr-3">
-                <Ionicons name="medkit-outline" size={16} color="#22d3ee" />
+                <Ionicons name="medkit-outline" size={16} color="#2ee6ff" />
               </View>
               <View className="flex-1">
                 <Text className="text-zinc-100 font-semibold">
@@ -340,10 +341,10 @@ export default function InjectionScreen() {
         <View className="mt-4 gap-2">
           <Pressable
             onPress={() => router.push("/injection-guide")}
-            className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 flex-row items-center active:bg-zinc-800"
+            className="rounded-2xl bg-glass border border-hair p-4 flex-row items-center active:bg-zinc-800"
           >
             <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-              <Ionicons name="medkit-outline" size={20} color="#22d3ee" />
+              <Ionicons name="medkit-outline" size={20} color="#2ee6ff" />
             </View>
             <Text className="text-zinc-100 font-semibold flex-1">
               {t("injection.guideLink")}
@@ -370,6 +371,6 @@ export default function InjectionScreen() {
           bumpData();
         }}
       />
-    </View>
+    </AppBackground>
   );
 }

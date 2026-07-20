@@ -30,6 +30,7 @@ export type AnalyticsEventName =
   | "report_generated"
   | "insights_view"
   | "review_prompted"
+  | "spike_opened"
   | "offerings_fallback_shown";
 
 export type AnalyticsParams = Record<

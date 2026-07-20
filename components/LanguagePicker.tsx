@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { Lang } from "../lib/db/types";
 import { LANG_LABELS, SUPPORTED_LANGS } from "../lib/i18n";
 
-/** Small uppercase language-code badge (no flag emojis — those render as "?"
+/** Small uppercase language-code badge (no flag emojis - those render as "?"
  *  on devices without regional-indicator glyph support). */
 function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
   return (
@@ -46,7 +46,7 @@ export function LanguagePicker({
     <View className="mb-4">
       <Pressable
         onPress={() => setOpen(true)}
-        className="flex-row items-center bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3"
+        className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3"
       >
         <Ionicons name="language-outline" size={19} color="#a1a1aa" />
         <Text className="flex-1 ml-3 font-medium text-zinc-100">
@@ -67,7 +67,7 @@ export function LanguagePicker({
           onPress={() => setOpen(false)}
         >
           <Pressable
-            className="rounded-3xl bg-zinc-900 border border-zinc-800 p-4"
+            className="rounded-3xl bg-glass border border-hair p-4"
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-zinc-50 text-lg font-bold mb-3 px-1">
@@ -94,7 +94,7 @@ export function LanguagePicker({
                     {LANG_LABELS[l]}
                   </Text>
                   {active ? (
-                    <Ionicons name="checkmark-circle" size={20} color="#22d3ee" />
+                    <Ionicons name="checkmark-circle" size={20} color="#2ee6ff" />
                   ) : null}
                 </Pressable>
               );

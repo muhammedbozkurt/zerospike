@@ -61,7 +61,7 @@ export function StatCard({
   const glowColor = glow === true ? THEME.accent : typeof glow === "string" ? glow : undefined;
   return (
     <View
-      className={glass ? `rounded-2xl p-4 ${className}` : `rounded-2xl bg-zinc-900 border border-zinc-800 p-4 ${className}`}
+      className={glass ? `rounded-2xl p-4 ${className}` : `rounded-2xl bg-glass border border-hair p-4 ${className}`}
       style={[
         glass
           ? { backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }

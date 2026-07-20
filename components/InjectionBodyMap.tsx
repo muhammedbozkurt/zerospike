@@ -1,11 +1,20 @@
 import React, { useMemo } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import Svg, { Circle, Ellipse, G, Rect, Text as SvgText } from "react-native-svg";
+import Svg, {
+  Circle,
+  Defs,
+  Ellipse,
+  G,
+  RadialGradient,
+  Rect,
+  Stop,
+  Text as SvgText,
+} from "react-native-svg";
 
 import type { InjectionSite } from "../lib/db/types";
 import type { SiteUsage } from "../lib/db/injections";
-import { COLORS } from "../lib/theme/tokens";
+import { COLORS, GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
 import { hapticSelect } from "../lib/haptics";
 
 /**
@@ -42,7 +51,7 @@ const REGIONS: Region[] = [
 /** Brand cyan at an intensity-scaled opacity (usage heat, not a glucose color). */
 function heatFill(intensity: number): string {
   const a = 0.1 + Math.min(1, Math.max(0, intensity)) * 0.72;
-  return `rgba(34,211,238,${a.toFixed(2)})`;
+  return `rgba(46,230,255,${a.toFixed(2)})`;
 }
 
 export function InjectionBodyMap({
@@ -58,7 +67,7 @@ export function InjectionBodyMap({
 }) {
   const { t } = useTranslation();
 
-  const { countBySite, maxCount, leastUsed, total } = useMemo(() => {
+  const { countBySite, maxCount, leastUsed, mostUsedRegion, total } = useMemo(() => {
     const map = new Map<InjectionSite, number>();
     usage.forEach((u) => map.set(u.site, u.count));
     const counts = REGIONS.map((r) => map.get(r.site) ?? 0);
@@ -67,14 +76,20 @@ export function InjectionBodyMap({
     // Least-used = the lowest count, earliest in canonical order on a tie.
     let least: InjectionSite = REGIONS[0].site;
     let leastN = Infinity;
+    let most: Region = REGIONS[0];
+    let mostN = -1;
     for (const r of REGIONS) {
       const c = map.get(r.site) ?? 0;
       if (c < leastN) {
         leastN = c;
         least = r.site;
       }
+      if (c > mostN) {
+        mostN = c;
+        most = r;
+      }
     }
-    return { countBySite: map, maxCount: max, leastUsed: least, total: sum };
+    return { countBySite: map, maxCount: max, leastUsed: least, mostUsedRegion: most, total: sum };
   }, [usage]);
 
   const bodyFill = COLORS.surfaceAlt;
@@ -86,16 +101,30 @@ export function InjectionBodyMap({
   }
 
   return (
-    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4">
+    <View
+      className="rounded-2xl bg-glass border border-hair p-4"
+      style={total > 0 ? glow(THEME.accent, 24, 0.3) : undefined}
+    >
       <View className="flex-row items-center justify-between mb-1">
-        <Text className="text-zinc-300 font-semibold">{t("injection.bodyMapTitle")}</Text>
-        <Text className="text-zinc-500 text-xs">
+        <Text className="text-ink font-semibold">{t("injection.bodyMapTitle")}</Text>
+        <Text className="text-mut text-xs">
           {t("injection.usageWindow", { n: windowDays })}
         </Text>
       </View>
 
       <View className="items-center py-1">
         <Svg width={190} height={342} viewBox="0 0 200 360">
+          <Defs>
+            {/* Warm hot-spot radial for the most-used region (mockup). */}
+            <RadialGradient id="hotspot">
+              <Stop offset="0" stopColor={GLUCOSE_RICH.veryHigh} stopOpacity={0.55} />
+              <Stop offset="1" stopColor={GLUCOSE_RICH.veryHigh} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          {/* Soft warm glow under the hottest site */}
+          {total > 0 ? (
+            <Circle cx={mostUsedRegion.cx} cy={mostUsedRegion.cy} r={34} fill="url(#hotspot)" />
+          ) : null}
           {/* Base silhouette (muted) */}
           <G>
             <Circle cx={100} cy={38} r={24} fill={bodyFill} stroke={bodyStroke} strokeWidth={1.5} />

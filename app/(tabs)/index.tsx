@@ -52,8 +52,16 @@ import { SegmentedStat } from "../../components/ui";
 import { EmptyState } from "../../components/EmptyState";
 import Animated from "react-native-reanimated";
 import { listEntering } from "../../lib/theme/motion";
-import { COLORS } from "../../lib/theme/tokens";
-import { formatDateKey, num } from "../../lib/format";
+import { COLORS, GLUCOSE_RICH, THEME, TABULAR } from "../../lib/theme/tokens";
+import {
+  AppBackground,
+  GlassCard,
+  GlucoseRing,
+  GlucoseChip,
+  GradientCTA,
+  IconTile,
+} from "../../components/rich";
+import { formatDateKey, formatTime, num } from "../../lib/format";
 import {
   formatGlucose,
   glucoseUnitLabel,
@@ -242,6 +250,23 @@ export default function DashboardScreen() {
   const anyInjections = entries.some((e) => e.kind === "injection");
   // Encouraging consistency count ("X days in a row"), never a streak to protect.
   const logStreak = consecutiveLogDays(entries.map((e) => e.logged_at));
+
+  // Hero ring: the most recent glucose reading in its status color (Midnight
+  // Monitor). Decorative sweep only - the value + period label carry the reading.
+  const lastGlucose = entries.find(
+    (e): e is GlucoseEntry => e.kind === "glucose"
+  );
+  const RICH_BY_STATUS = {
+    low: GLUCOSE_RICH.low,
+    normal: GLUCOSE_RICH.target,
+    elevated: GLUCOSE_RICH.high,
+    high: GLUCOSE_RICH.veryHigh,
+  } as const;
+  const lastStatus =
+    lastGlucose && activeProfile
+      ? classifyGlucose(lastGlucose.glucose_level_mgdl, lastGlucose.period_tag, activeProfile)
+      : null;
+  const lastColor = lastStatus ? RICH_BY_STATUS[lastStatus] : THEME.accent;
 
   // ── This-week summary (derived from the already-loaded feed) ──────────────
   const unit = activeProfile?.glucose_unit ?? "mgdl";
@@ -517,29 +542,24 @@ export default function DashboardScreen() {
 
   const Header = (
     <View className="pb-2">
-      <View className="flex-row items-center justify-between mb-5">
-        <View>
-          <Text className="text-zinc-500 text-sm">{t("dashboard.greeting")}</Text>
-          <Text className="text-zinc-50 text-2xl font-bold">
-            {t("dashboard.title")}
-          </Text>
-          {logStreak >= 2 ? (
-            <View className="flex-row items-center mt-1 self-start rounded-full bg-brand/10 px-2.5 py-0.5">
-              <Ionicons name="checkmark-circle-outline" size={12} color="#22d3ee" />
-              <Text className="text-brand text-[11px] font-medium ml-1">
-                {t("dashboard.consistency", { n: logStreak })}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-        <View className="flex-row items-center">
+      <View className="flex-row items-center justify-between mb-4">
+        <Text style={{ color: THEME.ink, fontSize: 24, fontWeight: "800" }}>
+          {t("common.today")}
+        </Text>
+        <View className="flex-row items-center" style={{ gap: 10 }}>
+          <Pressable
+            onPress={() => router.push("/spike")}
+            hitSlop={8}
+            accessibilityLabel={t("spike.title")}
+          >
+            <IconTile icon="sparkles" size={32} radius={10} />
+          </Pressable>
           <Pressable
             onPress={() => router.push("/sos")}
             hitSlop={8}
-            className="w-9 h-9 rounded-full bg-rose-500/15 items-center justify-center mr-3"
             accessibilityLabel={t("sos.title")}
           >
-            <Ionicons name="medical-outline" size={18} color="#fb7185" />
+            <IconTile icon="medical" size={32} radius={10} tint="#ff7a8a" />
           </Pressable>
           <ProfileSwitcher />
         </View>
@@ -551,7 +571,7 @@ export default function DashboardScreen() {
           onPress={clearSample}
           className="rounded-2xl border border-brand/30 bg-brand/10 p-3.5 mb-3 flex-row items-center active:opacity-80"
         >
-          <Ionicons name="flask-outline" size={18} color="#22d3ee" />
+          <Ionicons name="flask-outline" size={18} color="#2ee6ff" />
           <Text className="text-brand text-sm font-medium flex-1 ml-2.5">
             {t("dashboard.sampleActive")}
           </Text>
@@ -561,205 +581,93 @@ export default function DashboardScreen() {
         </Pressable>
       ) : null}
 
-      {/* Daily carbohydrate progress */}
-      <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-3">
-        <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-zinc-400 text-sm">{t("dashboard.dailyCarbs")}</Text>
-          <Text className="text-zinc-200 text-sm font-semibold">
-            {t("dashboard.dailyCarbsOf", {
-              current: Math.round(todayCarbs),
-              target: activeProfile?.daily_carb_target_g ?? 0,
-            })}
-          </Text>
-        </View>
-        <View className="h-2 rounded-full bg-zinc-800 overflow-hidden">
-          <View
-            className="h-2 rounded-full bg-brand"
-            style={{
-              width: `${Math.min(
-                100,
-                activeProfile
-                  ? (todayCarbs / Math.max(1, activeProfile.daily_carb_target_g)) *
-                      100
-                  : 0
-              )}%`,
-            }}
-          />
-        </View>
-      </View>
-
-      {/* Active insulin (IOB) - only when something is still working */}
-      {iob > 0 ? (
-        <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-3 flex-row items-center">
-          <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-            <Ionicons name="hourglass-outline" size={20} color="#22d3ee" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-zinc-100 font-semibold">
-              {t("dashboard.activeInsulin")}
+      {/* Hero: most recent reading as the signature glucose ring */}
+      {lastGlucose ? (
+        <GlassCard glow={lastColor} style={{ paddingVertical: 14, marginBottom: 12 }}>
+          <View className="flex-row items-center justify-between px-1 mb-1">
+            <Text
+              style={{
+                color: THEME.muted,
+                fontSize: 9,
+                letterSpacing: 1.3,
+                textTransform: "uppercase",
+                fontWeight: "800",
+              }}
+            >
+              {t("dashboard.lastReading")}
             </Text>
-            <Text className="text-zinc-500 text-xs">
-              {t("dashboard.activeInsulinSub")}
-            </Text>
-          </View>
-          <Text className="text-brand text-lg font-bold">
-            {num(iob)} {t("common.units")}
-          </Text>
-        </View>
-      ) : null}
-
-      {/* Health auto-sync (iOS only; Health Connect removed for Play policy).
-          Pro toggles it, free sees a Pro badge that opens the paywall. */}
-      {Platform.OS === "ios" ? (
-      <Pressable
-        onPress={() => {
-          if (!isProUser) {
-            hapticWarning();
-            router.push({ pathname: "/paywall", params: { reason: "health" } });
-            return;
-          }
-          if (cgmOn) runSync(true);
-        }}
-        disabled={isProUser && (!cgmOn || syncing)}
-        className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
-      >
-        <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-          <Ionicons name="pulse-outline" size={20} color="#22d3ee" />
-        </View>
-        <View className="flex-1">
-          <Text className="text-zinc-100 font-semibold">
-            {HEALTH_NAME}
-          </Text>
-          <Text className="text-zinc-500 text-xs">
-            {!isProUser
-              ? t("dashboard.cgmProHint")
-              : syncing
-                ? t("dashboard.syncing")
-                : cgmOn
-                  ? t("dashboard.cgmOnTapToSync")
-                  : t("dashboard.cgmSubtitle")}
-          </Text>
-        </View>
-        {isProUser ? (
-          <>
-            {cgmOn && !syncing ? (
-              <Ionicons
-                name="refresh"
-                size={18}
-                color="#52525b"
-                style={{ marginRight: 10 }}
-              />
-            ) : null}
-            <Switch
-              value={cgmOn}
-              onValueChange={toggleCgm}
-              trackColor={{ true: "#22d3ee", false: "#3f3f46" }}
-              thumbColor="#fafafa"
-            />
-          </>
-        ) : (
-          <View className="rounded-full bg-brand px-2 py-0.5">
-            <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
-          </View>
-        )}
-      </Pressable>
-      ) : null}
-
-      {/* This week summary (free) */}
-      <View className="mb-4">
-        <Pressable
-          onPress={() =>
-            router.push({ pathname: "/insights", params: { window: "7" } })
-          }
-          className="flex-row items-center justify-between mb-2.5 active:opacity-70"
-        >
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-            {t("dashboard.thisWeek")}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={COLORS.textFaint} />
-        </Pressable>
-        {hasWeekData ? (
-          <>
-            <View className="flex-row gap-3 mb-3">
-              <StatCard
-                className="flex-1"
-                label={t("insights.avgGlucose")}
-                value={weekAvg == null ? 0 : glucoseToDisplay(weekAvg, unit)}
-                decimals={unit === "mmol" ? 1 : 0}
-                display={weekAvg == null ? "-" : undefined}
-                suffix={glucoseUnitLabel(unit)}
-                accent={avgColor}
-                sparkline={
-                  weekSparkline.length > 1 ? (
-                    <Sparkline data={weekSparkline} color={avgColor} width={120} height={30} />
-                  ) : undefined
+            {lastStatus ? (
+              <GlucoseChip
+                status={lastStatus}
+                label={
+                  lastStatus === "normal"
+                    ? t("insights.inRange")
+                    : lastStatus === "low"
+                      ? t("insights.low")
+                      : t("insights.high")
                 }
               />
-              <StatCard
-                className="flex-1"
-                label={t("insights.timeInRange")}
-                value={weekTIR ?? 0}
-                display={weekTIR == null ? "-" : undefined}
-                suffix="%"
-                accent={tirColor}
-                footnote={t("insights.readings") + ": " + weekReadings}
-              />
-            </View>
-            <SegmentedStat
-              items={[
-                { label: t("insights.readings"), value: String(weekReadings) },
-                { label: t("insights.injectionsCount"), value: String(weekInjections) },
-                { label: t("dashboard.streakDays"), value: String(logStreak) },
-              ]}
+            ) : null}
+          </View>
+          <View className="items-center">
+            <GlucoseRing
+              value={lastGlucose.glucose_level_mgdl}
+              display={formatGlucose(lastGlucose.glucose_level_mgdl, unit)}
+              caption={`${glucoseUnitLabel(unit)} · ${formatTime(lastGlucose.logged_at)}`}
+              color={lastColor}
+              size={152}
             />
-          </>
-        ) : (
-          <EmptyState compact icon="calendar-outline" title={t("insights.empty")} />
-        )}
-      </View>
+          </View>
+        </GlassCard>
+      ) : null}
 
-      {/* Insights (Pro) entry */}
-      <Pressable
-        onPress={() => router.push("/insights")}
-        className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
-      >
-        <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-          <Ionicons name="stats-chart" size={20} color="#22d3ee" />
-        </View>
-        <View className="flex-1">
-          <Text className="text-zinc-100 font-semibold">{t("insights.title")}</Text>
-          <Text className="text-zinc-500 text-xs">{t("insights.cardSub")}</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color="#52525b" />
-      </Pressable>
+      {/* Active post-meal timer card (mockup B03: accent card + time) */}
+      <GlassCard accent style={{ marginBottom: 12, paddingVertical: 12 }}>
+        <Pressable
+          onPress={postMealArmed ? undefined : startedEating}
+          disabled={postMealArmed}
+          accessibilityState={{ disabled: postMealArmed }}
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              <Ionicons
+                name={postMealArmed ? "time" : "restaurant-outline"}
+                size={18}
+                color={THEME.accent}
+              />
+              <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>
+                {t("dashboard.quickPostMeal")}
+              </Text>
+            </View>
+            <Text style={[TABULAR, { color: THEME.accent, fontSize: 18, fontWeight: "800" }]}>
+              {postMealCountdown
+                ? postMealCountdown.seconds
+                  ? t("dashboard.postMealCountdownSec", { s: postMealCountdown.value })
+                  : t("dashboard.postMealCountdownMin", { m: postMealCountdown.value })
+                : t("dashboard.startedEating")}
+            </Text>
+          </View>
+        </Pressable>
+      </GlassCard>
 
-      {/* Injection summary */}
-      <Pressable
-        onPress={() => router.push("/injection")}
-        className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4 flex-row items-center active:bg-zinc-800"
-      >
-        <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-          <Ionicons name="medkit-outline" size={20} color="#22d3ee" />
-        </View>
-        <View className="flex-1">
-          <Text className="text-zinc-100 font-semibold">{t("injection.title")}</Text>
-          <Text className="text-zinc-500 text-xs">
-            {anyInjections
-              ? t("dashboard.injectionsToday", { n: todayInjections })
-              : t("injection.empty")}
+      {/* Active insulin (IOB): a compact contextual line, only when working */}
+      {iob > 0 ? (
+        <View className="flex-row items-center justify-center mb-3" style={{ gap: 6 }}>
+          <Ionicons name="hourglass-outline" size={12} color={THEME.accent} />
+          <Text style={{ color: THEME.muted, fontSize: 11 }}>
+            {t("dashboard.activeInsulin")}: {num(iob)} {t("common.units")}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#52525b" />
-      </Pressable>
+      ) : null}
 
-      <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+      <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
         {t("dashboard.history")}
       </Text>
 
       {/* One-time tap-to-edit discoverability hint */}
       {showEditHint && entries.length > 0 ? (
         <View className="flex-row items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 mb-2">
-          <Ionicons name="create-outline" size={14} color="#22d3ee" />
+          <Ionicons name="create-outline" size={14} color="#2ee6ff" />
           <Text className="text-zinc-400 text-xs ml-2 flex-1">
             {t("journal.editHint")}
           </Text>
@@ -776,20 +684,76 @@ export default function DashboardScreen() {
   );
 
   return (
-    <View className="flex-1 bg-black" style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: insets.top }}>
       <FlatList
         data={entries}
         keyExtractor={(e) => `${e.kind}-${e.id}`}
         ListHeaderComponent={Header}
         ListFooterComponent={
-          entries.length > 0 ? (
-            <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-3">
-              <Ionicons name="medical-outline" size={15} color="#f59e0b" />
-              <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
-                {t("disclaimer.short")}
-              </Text>
-            </View>
-          ) : null
+          <View className="mt-3" style={{ gap: 8 }}>
+            {/* Secondary utilities, demoted below the mockup's core composition */}
+            <Pressable
+              onPress={() => router.push("/insights")}
+              className="rounded-2xl bg-glass border border-hair p-3.5 flex-row items-center active:opacity-80"
+            >
+              <IconTile icon="stats-chart" size={30} radius={10} style={{ marginRight: 12 }} />
+              <View className="flex-1">
+                <Text style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}>{t("insights.title")}</Text>
+                <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("insights.cardSub")}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#52525b" />
+            </Pressable>
+
+            {Platform.OS === "ios" ? (
+              <Pressable
+                onPress={() => {
+                  if (!isProUser) {
+                    hapticWarning();
+                    router.push({ pathname: "/paywall", params: { reason: "health" } });
+                    return;
+                  }
+                  if (cgmOn) runSync(true);
+                }}
+                disabled={isProUser && (!cgmOn || syncing)}
+                className="rounded-2xl bg-glass border border-hair p-3.5 flex-row items-center active:opacity-80"
+              >
+                <IconTile icon="pulse" size={30} radius={10} style={{ marginRight: 12 }} />
+                <View className="flex-1">
+                  <Text style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}>{HEALTH_NAME}</Text>
+                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                    {!isProUser
+                      ? t("dashboard.cgmProHint")
+                      : syncing
+                        ? t("dashboard.syncing")
+                        : cgmOn
+                          ? t("dashboard.cgmOnTapToSync")
+                          : t("dashboard.cgmSubtitle")}
+                  </Text>
+                </View>
+                {isProUser ? (
+                  <Switch
+                    value={cgmOn}
+                    onValueChange={toggleCgm}
+                    trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
+                    thumbColor="#fafafa"
+                  />
+                ) : (
+                  <View className="rounded-full bg-brand px-2 py-0.5">
+                    <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
+                  </View>
+                )}
+              </Pressable>
+            ) : null}
+
+            {entries.length > 0 ? (
+              <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3">
+                <Ionicons name="medical-outline" size={15} color="#f59e0b" />
+                <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
+                  {t("disclaimer.short")}
+                </Text>
+              </View>
+            ) : null}
+          </View>
         }
         renderItem={({ item, index }) =>
           activeProfile ? (
@@ -831,67 +795,15 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Fast loggers - bottom, one-handed reach */}
+      {/* Bottom CTA (mockup B03: single "add record") */}
       <View
-        className="absolute left-0 right-0 bottom-0 px-4 pt-2 bg-black border-t border-zinc-900"
-        style={{ paddingBottom: 10 }}
+        className="absolute left-0 right-0 bottom-0 px-4 pt-2"
+        style={{ paddingBottom: 10, backgroundColor: "rgba(8,14,20,0.82)", borderTopWidth: 1, borderTopColor: THEME.border }}
       >
-        {/* "I started eating" arms the post-meal reading timer (free). While
-            armed it is disabled and counts down, so it can't be re-pressed. */}
-        <Pressable
-          onPress={postMealArmed ? undefined : startedEating}
-          disabled={postMealArmed}
-          accessibilityState={{ disabled: postMealArmed }}
-          className={`flex-row items-center justify-center rounded-2xl py-3 mb-2.5 ${
-            postMealArmed ? "bg-zinc-800" : "bg-brand active:bg-brandDark"
-          }`}
-        >
-          <Ionicons
-            name={postMealArmed ? "time-outline" : "restaurant-outline"}
-            size={18}
-            color={postMealArmed ? "#71717a" : "#000"}
-          />
-          <Text
-            className={`font-bold ml-2 text-[15px] ${
-              postMealArmed ? "text-zinc-400" : "text-black"
-            }`}
-          >
-            {postMealCountdown
-              ? postMealCountdown.seconds
-                ? t("dashboard.postMealCountdownSec", { s: postMealCountdown.value })
-                : t("dashboard.postMealCountdownMin", { m: postMealCountdown.value })
-              : t("dashboard.startedEating")}
-          </Text>
-        </Pressable>
-
-        <View className="flex-row gap-3">
-          <Pressable
-            onPress={() => openLogger("fasting")}
-            className="flex-1 flex-row items-center justify-center rounded-2xl bg-zinc-900 border border-zinc-800 active:bg-zinc-800 py-3 px-2"
-          >
-            <Ionicons name="sunny-outline" size={18} color="#22d3ee" />
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              className="text-zinc-100 font-semibold ml-2 text-sm"
-            >
-              {t("dashboard.quickFasting")}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => openLogger("post_meal_2h")}
-            className="flex-1 flex-row items-center justify-center rounded-2xl bg-zinc-900 border border-zinc-800 active:bg-zinc-800 py-3 px-2"
-          >
-            <Ionicons name="time-outline" size={18} color="#f59e0b" />
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              className="text-zinc-100 font-semibold ml-2 text-sm"
-            >
-              {t("dashboard.quickPostMeal")}
-            </Text>
-          </Pressable>
-        </View>
+        <GradientCTA
+          label={`＋ ${t("dashboard.addRecord")}`}
+          onPress={() => openLogger("fasting")}
+        />
       </View>
 
       <GlucoseInputSheet
@@ -915,6 +827,6 @@ export default function DashboardScreen() {
           bumpData();
         }}
       />
-    </View>
+    </AppBackground>
   );
 }

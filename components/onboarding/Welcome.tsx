@@ -18,6 +18,7 @@ import Animated, {
 import { Button } from "../ui";
 import { Logo } from "../Logo";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "./motion";
+import { THEME, glow } from "../../lib/theme/tokens";
 
 const AUTO_ADVANCE_MS = 3500;
 
@@ -94,7 +95,17 @@ export function Welcome({ onStart }: { onStart: () => void }) {
   return (
     <View className="flex-1">
       <FadeSlideIn style={{ alignItems: "center", marginTop: 8 }}>
-        <View className="w-20 h-20 rounded-3xl bg-brand/10 border border-brand/20 items-center justify-center">
+        <View
+          className="w-20 h-20 rounded-3xl items-center justify-center"
+          style={[
+            {
+              backgroundColor: "rgba(46,230,255,0.12)",
+              borderWidth: 1,
+              borderColor: "rgba(46,230,255,0.28)",
+            },
+            glow(THEME.accent, 40, 0.6),
+          ]}
+        >
           <Logo size={52} />
         </View>
       </FadeSlideIn>
@@ -120,7 +131,7 @@ export function Welcome({ onStart }: { onStart: () => void }) {
               >
                 <FadeSlideIn style={{ alignItems: "center" }}>
                   <View className="w-24 h-24 rounded-full bg-brand/10 items-center justify-center mb-8">
-                    <Ionicons name={slide.icon} size={44} color="#22d3ee" />
+                    <Ionicons name={slide.icon} size={44} color="#2ee6ff" />
                   </View>
                   <Text className="text-zinc-50 text-center text-2xl font-extrabold">
                     {t(`onboarding.${slide.key}Title`)}

@@ -39,6 +39,8 @@ import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { hapticSuccess } from "../lib/haptics";
+import { AppBackground, withAlpha } from "../components/rich";
+import { THEME, glow } from "../lib/theme/tokens";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
@@ -225,17 +227,17 @@ export default function CalculatorScreen() {
     // The host lives on every branch, so anything this screen ever says lands
     // inside its own view controller rather than behind it.
     return (
-      <View className="flex-1 bg-black">
+      <AppBackground>
         <View className="flex-1 items-center justify-center">
           <Text className="text-zinc-500">{t("common.loading")}</Text>
         </View>
         <FeedbackHost />
-      </View>
+      </AppBackground>
     );
   }
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <AppBackground>
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
@@ -253,7 +255,7 @@ export default function CalculatorScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Food summary */}
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
+          <View className="rounded-2xl bg-glass border border-hair p-4 mb-4">
             <Text className="text-zinc-50 text-xl font-bold">
               {foodName(food, lang)}
             </Text>
@@ -330,9 +332,9 @@ export default function CalculatorScreen() {
             step={5}
             value={portion}
             onValueChange={setPortion}
-            minimumTrackTintColor="#22d3ee"
+            minimumTrackTintColor="#2ee6ff"
             maximumTrackTintColor="#3f3f46"
-            thumbTintColor="#22d3ee"
+            thumbTintColor="#2ee6ff"
           />
 
           {/* Optional current glucose for correction */}
@@ -357,8 +359,11 @@ export default function CalculatorScreen() {
             />
           </View>
 
-          {/* Estimated dose card */}
-          <View className="rounded-2xl bg-brand/10 border border-brand/30 p-4 my-5">
+          {/* Estimated dose card - the glowing "calculated" hero */}
+          <View
+            className="rounded-2xl border border-brand/30 p-4 my-5"
+            style={[{ backgroundColor: withAlpha(THEME.accent, 0.1) }, glow(THEME.accent, 26, 0.4)]}
+          >
             <Text className="text-brand text-xs font-semibold uppercase tracking-wider">
               {t("calculator.estimatedDose")}
             </Text>
@@ -419,7 +424,7 @@ export default function CalculatorScreen() {
                 {/* Explicit lineHeight so the bold 30px glyphs aren't clipped at the top */}
                 <Text
                   className="text-brand font-bold"
-                  style={{ fontSize: 30, lineHeight: 40 }}
+                  style={{ fontSize: 34, lineHeight: 42, textShadowColor: "rgba(46,230,255,0.6)", textShadowRadius: 18 }}
                 >
                   {estimate.totalDose === 0 &&
                   (estimate.mealDose > 0 || estimate.correctionDose > 0)
@@ -447,7 +452,7 @@ export default function CalculatorScreen() {
               hitSlop={8}
               className="flex-row items-center mt-3"
             >
-              <Ionicons name="information-circle-outline" size={14} color="#22d3ee" />
+              <Ionicons name="information-circle-outline" size={14} color="#2ee6ff" />
               <Text className="text-brand text-xs underline ml-1">
                 {t("sources.calcLink")}
               </Text>
@@ -538,6 +543,6 @@ export default function CalculatorScreen() {
         </ScrollView>
       </View>
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

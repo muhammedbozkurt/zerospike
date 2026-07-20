@@ -31,7 +31,7 @@ export function EmptyState({
   return (
     <FadeSlideIn>
       <View className={`items-center ${compact ? "py-8" : "py-14"} px-6`}>
-        <View className="w-16 h-16 rounded-full bg-zinc-900 border border-zinc-800 items-center justify-center mb-4">
+        <View className="w-16 h-16 rounded-full bg-glass border border-hair items-center justify-center mb-4">
           <Ionicons name={icon} size={28} color={COLORS.textFaint} />
         </View>
         <Text className="text-zinc-200 text-base font-semibold text-center">{title}</Text>

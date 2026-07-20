@@ -3,10 +3,12 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 
 import { INJECTION_STEPS } from "../lib/data/injectionGuide";
 import { FeedbackHost } from "../components/Feedback";
+import { THEME, glow } from "../lib/theme/tokens";
 
 /**
  * General injection-technique guide (free, available to everyone).
@@ -22,7 +24,8 @@ export default function InjectionGuideScreen() {
   const router = useRouter();
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
@@ -38,6 +41,19 @@ export default function InjectionGuideScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
           showsVerticalScrollIndicator={false}
         >
+          {/* Glowing hero visual */}
+          <View className="items-center mb-5">
+            <View
+              className="w-20 h-20 rounded-3xl items-center justify-center"
+              style={[
+                { backgroundColor: "rgba(46,230,255,0.12)", borderWidth: 1, borderColor: "rgba(46,230,255,0.28)" },
+                glow(THEME.accent, 40, 0.55),
+              ]}
+            >
+              <Ionicons name="medkit" size={40} color={THEME.accent} />
+            </View>
+          </View>
+
           {/* Prominent medical disclaimer */}
           <View className="flex-row items-start rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 mb-5">
             <Ionicons name="medical-outline" size={18} color="#f59e0b" />
@@ -55,13 +71,13 @@ export default function InjectionGuideScreen() {
           {INJECTION_STEPS.map((step, i) => (
             <View
               key={step.titleKey}
-              className="flex-row rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-3"
+              className="flex-row rounded-2xl bg-glass border border-hair p-4 mb-3"
             >
               <View className="w-9 h-9 rounded-full bg-brand/10 items-center justify-center mr-3">
                 <Ionicons
                   name={step.icon as keyof typeof Ionicons.glyphMap}
                   size={18}
-                  color="#22d3ee"
+                  color="#2ee6ff"
                 />
               </View>
               <View className="flex-1">

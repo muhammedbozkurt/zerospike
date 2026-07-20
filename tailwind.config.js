@@ -21,6 +21,11 @@ module.exports = {
         normal: "#22e39a", // mint - in range (target)
         elevated: "#ffb43c", // amber - above target
         high: "#ff7a3c", // orange - well above target
+        // Midnight Monitor glass surfaces (translucent over the app wash).
+        glass: "rgba(255,255,255,0.05)",
+        hair: "rgba(255,255,255,0.10)",
+        ink: "#eaf6fa",
+        mut: "#89a3b0",
       },
     },
   },

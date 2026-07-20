@@ -10,21 +10,21 @@ import { STATUS_COLOR } from "../../lib/glucose";
  * relies on colour alone: every series carries a text label.
  */
 export const CHART = {
-  /** Median curve and single-series lines. */
-  line: "#22d3ee",
-  lineDeep: "#0891b2",
+  /** Median curve and single-series lines. Midnight Monitor cyan. */
+  line: "#2ee6ff",
+  lineDeep: "#12c6e0",
   /** Inter-quartile ribbon. */
-  band: "#22d3ee",
+  band: "#2ee6ff",
   /** The 70-180 target band. */
-  target: "#10b981",
+  target: STATUS_COLOR.normal, // mint
 
-  low: STATUS_COLOR.low, // #3b82f6, cold blue
-  inRange: STATUS_COLOR.normal, // #10b981, emerald
-  high: STATUS_COLOR.elevated, // #f59e0b, amber
+  low: STATUS_COLOR.low, // rose
+  inRange: STATUS_COLOR.normal, // mint
+  high: STATUS_COLOR.elevated, // amber
 
-  grid: "#27272a", // zinc-800
-  axis: "#71717a", // zinc-500
-  bar: "#22d3ee",
+  grid: "rgba(255,255,255,0.08)",
+  axis: "#89a3b0",
+  bar: "#2ee6ff",
   barMuted: "#3f3f46", // zinc-700
 } as const;
 

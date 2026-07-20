@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -101,7 +102,8 @@ export default function AddFoodScreen() {
   }
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
           <Text className="text-zinc-50 text-lg font-bold flex-1">
@@ -130,8 +132,8 @@ export default function AddFoodScreen() {
           ) : null}
 
           {barcode || loadedBarcode ? (
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 mb-4 flex-row items-center">
-              <Ionicons name="barcode-outline" size={18} color="#22d3ee" />
+            <View className="rounded-2xl bg-glass border border-hair p-3.5 mb-4 flex-row items-center">
+              <Ionicons name="barcode-outline" size={18} color="#2ee6ff" />
               <Text className="text-zinc-300 ml-3 font-mono">
                 {barcode ?? loadedBarcode}
               </Text>

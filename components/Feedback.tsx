@@ -89,7 +89,7 @@ const TOAST_STYLE: Record<
   { icon: keyof typeof Ionicons.glyphMap; color: string; border: string }
 > = {
   success: { icon: "checkmark-circle", color: "#10b981", border: "border-emerald-500/40" },
-  info: { icon: "information-circle", color: "#22d3ee", border: "border-brand/40" },
+  info: { icon: "information-circle", color: "#2ee6ff", border: "border-brand/40" },
   error: { icon: "alert-circle", color: "#f43f5e", border: "border-rose-500/40" },
 };
 
@@ -405,7 +405,7 @@ function ConfirmOverlay({
           }}
         >
           <Pressable
-            className="rounded-3xl bg-zinc-900 border border-zinc-800 p-5"
+            className="rounded-3xl bg-glass border border-hair p-5"
             onPress={(e) => e.stopPropagation()}
           >
             <View className="items-center mb-3">
@@ -420,7 +420,7 @@ function ConfirmOverlay({
                     (opts.destructive ? "trash-outline" : "help-circle-outline")
                   }
                   size={24}
-                  color={opts.destructive ? "#f43f5e" : "#22d3ee"}
+                  color={opts.destructive ? "#f43f5e" : "#2ee6ff"}
                 />
               </View>
             </View>
@@ -521,13 +521,13 @@ function SheetOverlay({
               <Pressable
                 key={i}
                 onPress={() => onRun(a)}
-                className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3.5 mb-2 active:bg-zinc-800"
+                className="flex-row items-center rounded-2xl bg-glass border border-hair px-4 py-3.5 mb-2 active:bg-zinc-800"
               >
                 {a.icon ? (
                   <Ionicons
                     name={a.icon}
                     size={20}
-                    color={a.destructive ? "#f43f5e" : "#22d3ee"}
+                    color={a.destructive ? "#f43f5e" : "#2ee6ff"}
                   />
                 ) : null}
                 {/* A sheet option is one tappable line. The longest of these

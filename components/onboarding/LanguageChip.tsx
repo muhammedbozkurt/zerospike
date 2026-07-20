@@ -94,7 +94,7 @@ export function LanguageChip() {
                     {LANG_LABELS[l]}
                   </Text>
                   {active ? (
-                    <Ionicons name="checkmark-circle" size={20} color="#22d3ee" />
+                    <Ionicons name="checkmark-circle" size={20} color="#2ee6ff" />
                   ) : null}
                 </Pressable>
               );

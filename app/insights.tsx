@@ -45,10 +45,12 @@ import { TrendChart } from "../components/charts/TrendChart";
 import { CHART, CHART_HEIGHT } from "../components/charts/theme";
 import { logEvent } from "../lib/analytics";
 import { num } from "../lib/format";
+import { AppBackground, TIRDonut, tirSegments } from "../components/rich";
+import { GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
 
-const GREEN = "#10b981";
-const AMBER = "#f59e0b";
-const BRAND = "#22d3ee";
+const GREEN = GLUCOSE_RICH.target;
+const AMBER = GLUCOSE_RICH.high;
+const BRAND = THEME.accent;
 
 /** Two points make a line; one is just a dot. */
 const TREND_MIN_DAYS = 2;
@@ -68,8 +70,8 @@ function Tile({
 }) {
   return (
     <View className="w-1/2 p-1.5">
-      <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4">
-        <Text className="text-zinc-500 text-xs">{label}</Text>
+      <View className="rounded-2xl bg-glass border border-hair p-4">
+        <Text className="text-mut text-xs">{label}</Text>
         <View className="flex-row items-baseline mt-1">
           <Text className="text-2xl font-bold" style={{ color }}>
             {value}
@@ -326,7 +328,7 @@ export default function InsightsScreen() {
     .sort((a, b) => b.count - a.count);
 
   return (
-    <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: insets.top }}>
       {Header}
       {loading ? (
         <View className="flex-1 items-center justify-center">
@@ -411,6 +413,40 @@ export default function InsightsScreen() {
               {/* ── Glucose ───────────────────────────────────────────────── */}
               {data.readings > 0 ? (
                 <>
+                  {/* Hero: time-in-range donut (Midnight Monitor signature) */}
+                  <View
+                    className="rounded-2xl bg-glass border border-hair p-4 mb-1 flex-row items-center"
+                    style={glow(GLUCOSE_RICH.target, 26, 0.3)}
+                  >
+                    <TIRDonut
+                      segments={tirSegments({
+                        low: data.lowPct ?? 0,
+                        target: data.inRangePct ?? 0,
+                        high: data.highPct ?? 0,
+                      })}
+                      centerValue={pct(data.inRangePct)}
+                      centerSuffix="%"
+                      size={104}
+                    />
+                    <View style={{ flex: 1, marginLeft: 16, gap: 6 }}>
+                      {[
+                        [t("insights.low"), GLUCOSE_RICH.low, data.lowPct],
+                        [t("insights.inRange"), GLUCOSE_RICH.target, data.inRangePct],
+                        [t("insights.high"), GLUCOSE_RICH.high, data.highPct],
+                      ].map(([name, color, value]) => (
+                        <View key={name as string} className="flex-row items-center">
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color as string }} />
+                          <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700", flex: 1, marginLeft: 8 }}>
+                            {name as string}
+                          </Text>
+                          <Text style={{ color: THEME.muted, fontSize: 12 }}>
+                            {value == null ? "-" : `${Math.round(value as number)}%`}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+
                   <View className="flex-row flex-wrap -m-1.5">
                     <Tile
                       label={t("insights.avgGlucose")}
@@ -434,7 +470,7 @@ export default function InsightsScreen() {
                   </View>
 
                   {/* Time in range bar */}
-                  <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
+                  <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
                     <Text className="text-zinc-300 font-semibold mb-3">
                       {t("insights.timeInRange")}
                     </Text>
@@ -525,7 +561,7 @@ export default function InsightsScreen() {
 
                   {/* Percentile band summary (AGP numeric), Pro */}
                   {premium && pctile ? (
-                    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
+                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
                       <Text className="text-zinc-300 font-semibold mb-1">
                         {t("insights.percentileTitle")}
                       </Text>
@@ -633,7 +669,7 @@ export default function InsightsScreen() {
                   {patterns.map((p, i) => (
                     <View
                       key={`${p.kind}-${i}`}
-                      className="flex-row items-start rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 mb-2"
+                      className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mb-2"
                     >
                       <Ionicons name="bulb-outline" size={16} color={BRAND} />
                       <Text className="text-zinc-300 text-sm leading-5 ml-2.5 flex-1">
@@ -668,7 +704,7 @@ export default function InsightsScreen() {
 
                   {/* Basal / Bolus split */}
                   {data.basalPct != null ? (
-                    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
+                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
                       <Text className="text-zinc-300 font-semibold mb-3">
                         {t("insights.basalBolus")}
                       </Text>
@@ -695,7 +731,7 @@ export default function InsightsScreen() {
 
                   {/* Most-used site */}
                   {data.mostUsedSite ? (
-                    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3 flex-row items-center">
+                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3 flex-row items-center">
                       <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
                         <Ionicons name="body-outline" size={20} color={BRAND} />
                       </View>
@@ -713,7 +749,7 @@ export default function InsightsScreen() {
 
                   {/* Site distribution */}
                   {usedSites.length > 0 ? (
-                    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
+                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
                       <Text className="text-zinc-300 font-semibold mb-3">
                         {t("insights.siteDistribution")}
                       </Text>
@@ -831,6 +867,6 @@ export default function InsightsScreen() {
           )}
         </ScrollView>
       )}
-    </View>
+    </AppBackground>
   );
 }

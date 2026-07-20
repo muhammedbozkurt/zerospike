@@ -21,7 +21,9 @@ import type { ExportResult } from "./export";
  * metrics with their existing disclaimers. No interpretation or advice.
  */
 
-const BRAND = "#22d3ee";
+// Print-legible accent on white paper (the Midnight neon cyan washes out on a
+// light background). Matches the mockup's light-report accent.
+const BRAND = "#0ea5b7";
 
 function two(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;

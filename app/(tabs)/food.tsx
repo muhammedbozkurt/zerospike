@@ -18,6 +18,8 @@ import { CATEGORIES, CATEGORY_ICON, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
 import { useFeedback } from "../../components/Feedback";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
+import { AppBackground, IconTile } from "../../components/rich";
+import { THEME } from "../../lib/theme/tokens";
 
 type Selection = Category | "favorites" | "custom";
 
@@ -162,7 +164,7 @@ export default function FoodScreen() {
   ];
 
   const SearchBar = (
-    <View className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-3.5 mb-3">
+    <View className="flex-row items-center rounded-2xl bg-glass border border-hair px-3.5 mb-3">
       <Ionicons name="search" size={18} color="#71717a" />
       <TextInput
         value={query}
@@ -219,9 +221,9 @@ export default function FoodScreen() {
                     params: { foodId: r.food.id, portion: String(r.portion_g) },
                   })
                 }
-                className="flex-row items-center rounded-full bg-zinc-900 border border-zinc-800 px-3 py-2 active:bg-zinc-800"
+                className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-2 active:bg-zinc-800"
               >
-                <Ionicons name="time-outline" size={14} color="#22d3ee" />
+                <Ionicons name="time-outline" size={14} color="#2ee6ff" />
                 <Text className="text-zinc-200 text-sm ml-1.5" numberOfLines={1}>
                   {foodName(r.food, lang)}
                 </Text>
@@ -240,19 +242,20 @@ export default function FoodScreen() {
             <Pressable
               key={tile.sel}
               onPress={() => setSelected(tile.sel)}
-              className="w-[48%] rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-3 active:bg-zinc-800"
+              className="w-[48%] rounded-2xl bg-glass border border-hair p-4 mb-3 active:opacity-80"
             >
-              <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mb-2.5">
-                <Ionicons
-                  name={iconFor(tile.sel)}
-                  size={20}
-                  color={tile.sel === "favorites" ? "#f59e0b" : "#22d3ee"}
-                />
-              </View>
-              <Text className="text-zinc-100 font-semibold" numberOfLines={1}>
+              <IconTile
+                icon={iconFor(tile.sel)}
+                hero
+                size={40}
+                radius={12}
+                tint={tile.sel === "favorites" ? "#ffb43c" : THEME.accent}
+                style={{ marginBottom: 10 }}
+              />
+              <Text className="text-ink font-semibold" numberOfLines={1}>
                 {titleFor(tile.sel)}
               </Text>
-              <Text className="text-zinc-500 text-xs mt-0.5">{tile.count}</Text>
+              <Text className="text-mut text-xs mt-0.5">{tile.count}</Text>
             </Pressable>
           ))}
         </View>
@@ -263,8 +266,8 @@ export default function FoodScreen() {
           onPress={() => setSelected(null)}
           className="flex-row items-center mb-3 mt-1"
         >
-          <Ionicons name="chevron-back" size={20} color="#22d3ee" />
-          <Ionicons name={iconFor(selected)} size={16} color="#22d3ee" style={{ marginLeft: 2 }} />
+          <Ionicons name="chevron-back" size={20} color="#2ee6ff" />
+          <Ionicons name={iconFor(selected)} size={16} color="#2ee6ff" style={{ marginLeft: 2 }} />
           <Text className="text-zinc-100 font-bold text-base ml-2">
             {titleFor(selected)}
           </Text>
@@ -275,7 +278,7 @@ export default function FoodScreen() {
   );
 
   return (
-    <View className="flex-1 bg-black" style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: insets.top }}>
       <FlatList
         {...keyboardAwareScrollProps}
         data={listData}
@@ -314,6 +317,6 @@ export default function FoodScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         showsVerticalScrollIndicator={false}
       />
-    </View>
+    </AppBackground>
   );
 }

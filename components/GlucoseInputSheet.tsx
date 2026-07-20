@@ -16,11 +16,14 @@ import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { GlucoseUnit, LogTag, PeriodTag } from "../lib/db/types";
+import type { GlucoseStatus } from "../lib/glucose";
 import { glucoseFromDisplay, glucoseToDisplay, glucoseUnitLabel } from "../lib/glucose";
 import { Button, Segmented } from "./ui";
 import { TagPicker } from "./TagPicker";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, relativeDay } from "../lib/format";
+import { GLUCOSE_RICH, THEME } from "../lib/theme/tokens";
+import { GlucoseChip } from "./rich/GlucoseChip";
 
 const PERIODS: PeriodTag[] = [
   "fasting",
@@ -143,6 +146,28 @@ export function GlucoseInputSheet({
     return Number.isFinite(n) && n >= minD && n <= maxD;
   })();
 
+  // Live status color for the big number (neutral: color + the number itself).
+  // Simple in/out-of-range banding on mg/dL; the full per-period classification
+  // happens on save. Never the sole cue - the numeral is always shown.
+  const mgdlNow = valid ? glucoseFromDisplay(parseFloat(value), unit) : null;
+  const liveStatus: GlucoseStatus | null =
+    mgdlNow == null
+      ? null
+      : mgdlNow < 70
+        ? "low"
+        : mgdlNow <= 180
+          ? "normal"
+          : mgdlNow <= 250
+            ? "elevated"
+            : "high";
+  const RICH: Record<GlucoseStatus, string> = {
+    low: GLUCOSE_RICH.low,
+    normal: GLUCOSE_RICH.target,
+    elevated: GLUCOSE_RICH.high,
+    high: GLUCOSE_RICH.veryHigh,
+  };
+  const numColor = liveStatus ? RICH[liveStatus] : THEME.ink;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       {/* A bottom sheet has nothing to scroll into view, so it lifts as a whole.
@@ -194,7 +219,7 @@ export function GlucoseInputSheet({
                   className="mb-5"
                 />
 
-                <View className="flex-row items-end justify-center mb-6">
+                <View className="flex-row items-end justify-center mb-2">
                   <TextInput
                     value={value}
                     onChangeText={onType}
@@ -202,12 +227,31 @@ export function GlucoseInputSheet({
                     autoFocus
                     placeholder={mmol ? "6.1" : "110"}
                     placeholderTextColor="#3f3f46"
-                    className="text-6xl font-bold text-zinc-50 text-center min-w-[120px]"
+                    className="text-6xl font-bold text-center min-w-[120px]"
+                    style={{
+                      color: numColor,
+                      textShadowColor: valid ? `${numColor}99` : "transparent",
+                      textShadowRadius: 22,
+                    }}
                     maxLength={mmol ? 4 : 3}
                   />
                   <Text className="text-zinc-500 text-lg mb-3 ml-2">
                     {glucoseUnitLabel(unit)}
                   </Text>
+                </View>
+                <View className="items-center mb-6" style={{ minHeight: 24 }}>
+                  {liveStatus ? (
+                    <GlucoseChip
+                      status={liveStatus}
+                      label={
+                        liveStatus === "normal"
+                          ? t("insights.inRange")
+                          : liveStatus === "low"
+                            ? t("insights.low")
+                            : t("insights.high")
+                      }
+                    />
+                  ) : null}
                 </View>
 
                 {/* When the reading was taken (date + time, never in the future) */}

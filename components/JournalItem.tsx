@@ -7,20 +7,59 @@ import type { JournalEntry } from "../lib/db/journal";
 import type { LogTag, UserProfile } from "../lib/db/types";
 import {
   classifyGlucose,
-  STATUS_COLOR,
   GlucoseStatus,
   formatGlucose,
   glucoseUnitLabel,
 } from "../lib/glucose";
 import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
+import { GLUCOSE_RICH, THEME, TABULAR, glow } from "../lib/theme/tokens";
+import { GlucoseChip } from "./rich/GlucoseChip";
+import { IconTile } from "./rich/IconTile";
+import { withAlpha } from "./rich/GlassCard";
 
-const STATUS_BORDER_COLOR: Record<GlucoseStatus, string> = {
-  low: "#3b82f6",
-  normal: "#10b981",
-  elevated: "#f59e0b",
-  high: "#f43f5e",
+/** Rich status color (Midnight Monitor), keyed by classification. */
+const STATUS_RICH: Record<GlucoseStatus, string> = {
+  low: GLUCOSE_RICH.low,
+  normal: GLUCOSE_RICH.target,
+  elevated: GLUCOSE_RICH.high,
+  high: GLUCOSE_RICH.veryHigh,
 };
+
+/** The shared glass "lrow": translucent fill, light border, left accent bar. */
+function Row({
+  children,
+  accent,
+  onPress,
+  onLongPress,
+}: {
+  children: React.ReactNode;
+  accent: string;
+  onPress?: () => void;
+  onLongPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        borderRadius: 13,
+        borderWidth: 1,
+        borderColor: THEME.border,
+        borderLeftWidth: 3,
+        borderLeftColor: accent,
+        backgroundColor: THEME.glass,
+        paddingVertical: 9,
+        paddingHorizontal: 10,
+        marginBottom: 9,
+      }}
+    >
+      {children}
+    </Pressable>
+  );
+}
 
 function TagBadges({ tags }: { tags: LogTag[] }) {
   const { t } = useTranslation();
@@ -30,9 +69,18 @@ function TagBadges({ tags }: { tags: LogTag[] }) {
       {tags.map((tag) => (
         <View
           key={tag}
-          className="rounded-full bg-brand/10 border border-brand/20 px-1.5 py-0.5 mr-1 mb-0.5"
+          style={{
+            borderRadius: 999,
+            backgroundColor: withAlpha(THEME.accent, 0.12),
+            borderWidth: 1,
+            borderColor: withAlpha(THEME.accent, 0.22),
+            paddingHorizontal: 6,
+            paddingVertical: 1,
+            marginRight: 4,
+            marginBottom: 2,
+          }}
         >
-          <Text className="text-brand text-[10px] font-medium">
+          <Text style={{ color: THEME.accent, fontSize: 10, fontWeight: "600" }}>
             {t(`tags.${tag}`)}
           </Text>
         </View>
@@ -57,53 +105,31 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
       entry.period_tag,
       profile
     );
-    const color = STATUS_COLOR[status];
+    const color = STATUS_RICH[status];
     return (
-      <Pressable
-        onPress={() => onPress?.(entry)}
-        onLongPress={() => onLongPress?.(entry)}
-        className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 mb-2.5 overflow-hidden"
-        style={{ borderLeftWidth: 4, borderLeftColor: STATUS_BORDER_COLOR[status] }}
-      >
-        <View className="p-3.5 flex-1 flex-row items-center">
-          <View
-            className="w-10 h-10 rounded-full items-center justify-center mr-3"
-            style={{ backgroundColor: `${color}22` }}
-          >
-            <Ionicons name="water-outline" size={20} color={color} />
-          </View>
-          <View className="flex-1">
-            <Text className="text-zinc-400 text-xs">
-              {t(`period.${entry.period_tag}`)}
-              {entry.source === "health" ? " · CGM" : ""}
-            </Text>
-            <View className="flex-row items-baseline">
-              <Text className="text-2xl font-bold" style={{ color }}>
-                {formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)}
-              </Text>
-              <Text className="text-zinc-500 text-xs ml-1">
-                {glucoseUnitLabel(profile.glucose_unit)}
-              </Text>
-              {status === "low" ? (
-                // A hypo must read as a LOW, never like a high - distinct
-                // label + cold color so it is never mistaken for hyperglycemia.
-                <View
-                  className="ml-2 rounded-full px-1.5 py-0.5"
-                  style={{ backgroundColor: `${color}22` }}
-                >
-                  <Text className="text-[10px] font-bold" style={{ color }}>
-                    {t("journal.lowBadge")}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-            <TagBadges tags={entry.tags} />
-          </View>
-          <Text className="text-zinc-500 text-xs">
-            {formatTime(entry.logged_at)}
+      <Row accent={color} onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
+        {/* value chip carries the reading in its status color (never color alone) */}
+        <GlucoseChip
+          value={formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)}
+          status={status}
+          dot={false}
+          style={{ marginRight: 10 }}
+        />
+        <View className="flex-1">
+          <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}>
+            <Ionicons name="water" size={11} color={color} />{" "}
+            {t(`period.${entry.period_tag}`)}
+            {entry.source === "health" ? " · CGM" : ""}
           </Text>
+          {status === "low" ? (
+            <Text style={{ color, fontSize: 10, fontWeight: "800", marginTop: 1 }}>
+              {t("journal.lowBadge")}
+            </Text>
+          ) : null}
+          <TagBadges tags={entry.tags} />
         </View>
-      </Pressable>
+        <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+      </Row>
     );
   }
 
@@ -114,84 +140,71 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
         : entry.insulin_type === "bolus"
           ? t("injection.typeBolus")
           : null;
-    const meta = [
-      entry.dose_units != null
-        ? `${num(entry.dose_units)} ${t("common.units")}`
-        : null,
-      typeLabel,
-    ]
-      .filter(Boolean)
-      .join(" · ");
     return (
-      <Pressable
-        onPress={() => onPress?.(entry)}
-        onLongPress={() => onLongPress?.(entry)}
-        className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 mb-2.5 overflow-hidden"
-        style={{ borderLeftWidth: 4, borderLeftColor: "#22d3ee" }}
-      >
-        <View className="p-3.5 flex-1 flex-row items-center">
-          <View className="w-10 h-10 rounded-full items-center justify-center mr-3 bg-brand/10">
-            <Ionicons name="medkit-outline" size={20} color="#22d3ee" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-zinc-100 font-semibold" numberOfLines={1}>
-              {t(`injectionSite.${entry.site}`)}
+      <Row accent={THEME.accent} onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
+        <IconTile icon="medical" size={30} radius={10} style={{ marginRight: 10 }} />
+        {entry.dose_units != null ? (
+          <View
+            style={[
+              {
+                borderRadius: 9,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                marginRight: 8,
+                backgroundColor: withAlpha(THEME.accent, 0.16),
+              },
+              glow(THEME.accent, 10, 0.35),
+            ]}
+          >
+            <Text style={[TABULAR, { color: THEME.accent, fontSize: 11, fontWeight: "800" }]}>
+              {num(entry.dose_units)} {t("common.units")}
             </Text>
-            {meta ? <Text className="text-zinc-400 text-xs">{meta}</Text> : null}
-            {entry.note ? (
-              <Text className="text-zinc-500 text-xs italic mt-0.5" numberOfLines={1}>
-                {`“${entry.note}”`}
-              </Text>
-            ) : null}
-            <TagBadges tags={entry.tags} />
           </View>
-          <Text className="text-zinc-500 text-xs">{formatTime(entry.logged_at)}</Text>
+        ) : null}
+        <View className="flex-1">
+          <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }} numberOfLines={1}>
+            {t(`injectionSite.${entry.site}`)}
+            {typeLabel ? ` · ${typeLabel}` : ""}
+          </Text>
+          {entry.note ? (
+            <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={1}>
+              {`“${entry.note}”`}
+            </Text>
+          ) : null}
+          <TagBadges tags={entry.tags} />
         </View>
-      </Pressable>
+        <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+      </Row>
     );
   }
 
   // meal entry
   return (
-    <Pressable
-      onPress={() => onPress?.(entry)}
-      onLongPress={() => onLongPress?.(entry)}
-      className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 mb-2.5 overflow-hidden"
-      style={{ borderLeftWidth: 4, borderLeftColor: "#64748b" }}
-    >
-      <View className="p-3.5 flex-1 flex-row items-center">
-        {entry.photo_uri_local ? (
-          <Image
-            source={{ uri: entry.photo_uri_local }}
-            className="w-10 h-10 rounded-lg mr-3"
-          />
-        ) : (
-          <View className="w-10 h-10 rounded-full items-center justify-center mr-3 bg-slate-500/15">
-            <Ionicons name="restaurant-outline" size={20} color="#94a3b8" />
-          </View>
-        )}
-        <View className="flex-1">
-          <Text className="text-zinc-100 font-semibold" numberOfLines={1}>
-            {entry.display_name}
-          </Text>
-          <Text className="text-zinc-400 text-xs">
-            {Math.round(entry.portion_g)} {t("common.grams")} ·{" "}
-            {t("journal.carbsLabel", {
-              carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
-            })}{" "}
-            · {t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })}
-          </Text>
-          {entry.personal_note ? (
-            <Text className="text-zinc-500 text-xs italic mt-0.5" numberOfLines={1}>
-              “{entry.personal_note}”
-            </Text>
-          ) : null}
-          <TagBadges tags={entry.tags} />
-        </View>
-        <Text className="text-zinc-500 text-xs">
-          {formatTime(entry.logged_at)}
+    <Row accent="#64748b" onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
+      {entry.photo_uri_local ? (
+        <Image source={{ uri: entry.photo_uri_local }} style={{ width: 30, height: 30, borderRadius: 10, marginRight: 10 }} />
+      ) : (
+        <IconTile icon="restaurant" size={30} radius={10} tint="#94a3b8" style={{ marginRight: 10 }} />
+      )}
+      <View className="flex-1">
+        <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }} numberOfLines={1}>
+          {entry.display_name}
         </Text>
+        <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 1 }}>
+          {Math.round(entry.portion_g)} {t("common.grams")} ·{" "}
+          {t("journal.carbsLabel", {
+            carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
+          })}{" "}
+          · {t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })}
+        </Text>
+        {entry.personal_note ? (
+          <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={1}>
+            “{entry.personal_note}”
+          </Text>
+        ) : null}
+        <TagBadges tags={entry.tags} />
       </View>
-    </Pressable>
+      <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+    </Row>
   );
 }

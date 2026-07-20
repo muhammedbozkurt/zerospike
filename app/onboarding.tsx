@@ -41,6 +41,7 @@ import { QuizStep } from "../components/onboarding/QuizStep";
 import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
+import { AppBackground } from "../components/rich";
 
 const DIABETES_KEY = "zerospike.diabetesContext";
 const INSULIN_KEY = "zerospike.insulinContext";
@@ -285,10 +286,10 @@ export default function OnboardingScreen() {
         : back;
 
   return (
+    <AppBackground style={{ paddingTop: insets.top }}>
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-black"
-      style={{ paddingTop: insets.top }}
+      className="flex-1"
     >
       {/* Shared header: back (quiz only) + always-present language chip */}
       <View className="px-6 pt-2 pb-2 flex-row items-center justify-between">
@@ -339,6 +340,7 @@ export default function OnboardingScreen() {
         ) : null}
       </View>
     </KeyboardAvoidingView>
+    </AppBackground>
   );
 
   // ── Per-step content ───────────────────────────────────────────────────────
@@ -347,7 +349,7 @@ export default function OnboardingScreen() {
       case "name":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+            <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
               <InputRow
                 icon="text-outline"
                 label={t("onboarding.profileName")}
@@ -416,7 +418,7 @@ export default function OnboardingScreen() {
       case "targets":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+            <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
               <InputRow
                 icon="sunny-outline"
                 label={t("period.fasting")}
@@ -447,7 +449,7 @@ export default function OnboardingScreen() {
       case "carbRatio":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+            <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
               <InputRow
                 icon="restaurant-outline"
                 label={t("settings.carbRatios")}
@@ -466,7 +468,7 @@ export default function OnboardingScreen() {
       case "isf":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+            <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
               <InputRow
                 icon="pulse-outline"
                 label={t("settings.isf")}
@@ -488,10 +490,10 @@ export default function OnboardingScreen() {
             <Pressable
               onPress={() => setShowTime((s) => !s)}
               style={{ minHeight: 60 }}
-              className="flex-row items-center justify-between rounded-2xl bg-zinc-900 border border-zinc-800 px-4 active:bg-zinc-800"
+              className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 active:bg-zinc-800"
             >
               <View className="flex-row items-center">
-                <Ionicons name="moon-outline" size={20} color="#22d3ee" />
+                <Ionicons name="moon-outline" size={20} color="#2ee6ff" />
                 <Text className="text-zinc-200 text-base ml-3">
                   {t("onboarding.basalTime")}
                 </Text>
@@ -511,7 +513,7 @@ export default function OnboardingScreen() {
         return (
           <FadeSlideIn delay={optDelay(0)}>
             <View className="flex-row items-start rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-              <Ionicons name="notifications-outline" size={18} color="#22d3ee" />
+              <Ionicons name="notifications-outline" size={18} color="#2ee6ff" />
               <Text className="text-zinc-300 text-sm leading-6 ml-3 flex-1">
                 {t("onboarding.notifRationale")}
               </Text>

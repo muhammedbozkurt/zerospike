@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 import {
   Contact,
@@ -249,7 +250,8 @@ export default function EmergencyContactsScreen() {
   }, [deviceContacts, query]);
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-2">
           {pickerOpen ? (
@@ -312,10 +314,10 @@ export default function EmergencyContactsScreen() {
 
             {pickerLoading ? (
               <View className="items-center py-10">
-                <ActivityIndicator color="#22d3ee" />
+                <ActivityIndicator color="#2ee6ff" />
               </View>
             ) : pickerDenied ? (
-              <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 items-center">
+              <View className="rounded-2xl bg-glass border border-hair p-5 items-center">
                 <Ionicons name="lock-closed-outline" size={26} color="#71717a" />
                 <Text className="text-zinc-300 text-center mt-3 mb-4 leading-5">
                   {t("emergency.permissionHint")}
@@ -418,7 +420,7 @@ export default function EmergencyContactsScreen() {
             {contacts.map((c, i) => (
               <View
                 key={`${c.phone}-${i}`}
-                className="flex-row items-center rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 mb-2.5"
+                className="flex-row items-center rounded-2xl bg-glass border border-hair px-4 py-3 mb-2.5"
               >
                 <View className="flex-1">
                   <Text className="text-zinc-50 font-semibold">{c.name}</Text>
@@ -431,7 +433,7 @@ export default function EmergencyContactsScreen() {
             ))}
 
             {/* Add form */}
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-2">
+            <View className="rounded-2xl bg-glass border border-hair p-4 mt-2">
               <Text className="text-zinc-300 font-semibold mb-3">
                 {t("emergency.addTitle")}
               </Text>
@@ -470,7 +472,7 @@ export default function EmergencyContactsScreen() {
                 onPress={openPicker}
                 className="flex-row items-center justify-center py-3 mt-1"
               >
-                <Ionicons name="people-outline" size={18} color="#22d3ee" />
+                <Ionicons name="people-outline" size={18} color="#2ee6ff" />
                 <Text className="text-brand font-medium ml-2">
                   {t("emergency.pickFromContacts")}
                 </Text>

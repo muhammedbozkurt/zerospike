@@ -3,6 +3,8 @@ import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
+import { glow } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 import * as SMS from "expo-sms";
 import * as Location from "expo-location";
@@ -138,7 +140,8 @@ export default function SosScreen() {
   }
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-4 py-2">
           <Text className="text-zinc-50 text-xl font-bold">{t("sos.title")}</Text>
@@ -151,8 +154,21 @@ export default function SosScreen() {
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
+          {/* Radial-glow emergency emblem (mockup hero) */}
+          <View className="items-center mb-4">
+            <View
+              className="w-16 h-16 rounded-full items-center justify-center"
+              style={[
+                { backgroundColor: "rgba(255,84,104,0.16)", borderWidth: 1, borderColor: "rgba(255,84,104,0.3)" },
+                glow("#ff5468", 34, 0.6),
+              ]}
+            >
+              <Ionicons name="medical" size={30} color="#ff7a8a" />
+            </View>
+          </View>
+
           {/* Honest framing: no auto-send, no auto-call. */}
-          <Text className="text-zinc-400 leading-5 mb-5">{t("sos.subtitle")}</Text>
+          <Text className="text-zinc-400 leading-5 mb-5 text-center">{t("sos.subtitle")}</Text>
 
           {/* Emergency number is always available */}
           <ActionButton
@@ -163,7 +179,7 @@ export default function SosScreen() {
           />
 
           {contacts.length === 0 ? (
-            <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mt-2">
+            <View className="rounded-2xl bg-glass border border-hair p-5 mt-2">
               <Text className="text-zinc-300 text-center mb-4">
                 {t("sos.noContacts")}
               </Text>
@@ -179,7 +195,7 @@ export default function SosScreen() {
               {contacts.map((c, i) => (
                 <View
                   key={`${c.phone}-${i}`}
-                  className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-4"
+                  className="rounded-2xl bg-glass border border-hair p-4 mt-4"
                 >
                   <Text className="text-zinc-50 font-bold text-base">{c.name}</Text>
                   <Text className="text-zinc-500 text-sm mb-3">{c.phone}</Text>
@@ -211,7 +227,7 @@ export default function SosScreen() {
                 onPress={() => router.push("/emergency-contacts")}
                 className="flex-row items-center justify-center rounded-2xl border border-zinc-800 py-3.5 mt-4 active:bg-zinc-900"
               >
-                <Ionicons name="person-add-outline" size={17} color="#22d3ee" />
+                <Ionicons name="person-add-outline" size={17} color="#2ee6ff" />
                 <Text
                   className="text-brand font-medium ml-2"
                   numberOfLines={1}

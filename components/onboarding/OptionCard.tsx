@@ -2,6 +2,8 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
+import { THEME, glow } from "../../lib/theme/tokens";
+
 type IconName = keyof typeof Ionicons.glyphMap;
 
 /**
@@ -30,11 +32,11 @@ export function OptionCard({
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={label}
-      style={{ minHeight: 60 }}
+      style={[{ minHeight: 60 }, selected ? glow(THEME.accent, 22, 0.4) : undefined]}
       className={`flex-row items-center rounded-2xl border px-4 mb-3 ${
         selected
           ? "border-brand bg-brand/10"
-          : "border-zinc-800 bg-zinc-900 active:bg-zinc-800"
+          : "border-hair bg-glass active:opacity-80"
       }`}
     >
       {icon ? (
@@ -43,7 +45,7 @@ export function OptionCard({
             selected ? "bg-brand/20" : "bg-zinc-800"
           }`}
         >
-          <Ionicons name={icon} size={20} color={selected ? "#22d3ee" : "#a1a1aa"} />
+          <Ionicons name={icon} size={20} color={selected ? "#2ee6ff" : "#a1a1aa"} />
         </View>
       ) : (
         <View
@@ -64,7 +66,7 @@ export function OptionCard({
       </Text>
 
       {selected ? (
-        <Ionicons name="checkmark-circle" size={20} color="#22d3ee" />
+        <Ionicons name="checkmark-circle" size={20} color="#2ee6ff" />
       ) : null}
     </Pressable>
   );

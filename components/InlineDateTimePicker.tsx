@@ -88,7 +88,7 @@ export function InlineDateTimePicker({
   }
 
   return (
-    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 mb-4 overflow-hidden">
+    <View className="rounded-2xl bg-glass border border-hair mb-4 overflow-hidden">
       <View className="flex-row items-center justify-end px-3 py-2 border-b border-zinc-800">
         <Pressable
           onPress={onClose}

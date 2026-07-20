@@ -6,6 +6,9 @@ import { Stack, useRouter, useSegments } from "expo-router";
 // route so the simulator can capture a screen without taps. MUST be null for
 // shipping - reverted at the end of each redesign phase. Do not commit non-null.
 const DEV_SCREENSHOT_ROUTE: string | null = null;
+// TEMP: seed demo data + mark onboarded on boot, so core screens render with
+// realistic content for before/after screenshots. MUST be false for shipping.
+const DEV_SEED = false;
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -27,9 +30,23 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 initAnalyticsSink();
 
 function RootNavigator() {
-  const { ready, onboarded, isProUser } = useApp();
+  const { ready, onboarded, isProUser, activeProfile, completeOnboarding, bumpData } = useApp();
   const segments = useSegments();
   const router = useRouter();
+
+  // TEMP redesign seed: fill the active profile with demo data + onboard, once.
+  useEffect(() => {
+    if (!DEV_SEED || !ready || !activeProfile) return;
+    (async () => {
+      const { loadDemoData } = await import("../lib/db/demo");
+      const { markSampleActive } = await import("../lib/sampleData");
+      await loadDemoData(activeProfile.id);
+      await markSampleActive(activeProfile.id);
+      await completeOnboarding();
+      bumpData();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, activeProfile?.id]);
   const prevProRef = useRef<boolean | null>(null);
   // Distinguishes a genuine re-entry (an already-onboarded user reaching
   // /onboarding) from the in-place completion (the flag flips to true while the
@@ -152,6 +169,11 @@ function RootNavigator() {
         name="injection-guide"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
+      <Stack.Screen
+        name="spike"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen name="design-gallery" />
     </Stack>
   );
 }

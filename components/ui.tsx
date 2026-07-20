@@ -92,7 +92,7 @@ export function Card({
 }: ViewProps & { className?: string }) {
   return (
     <View
-      className={`rounded-2xl bg-zinc-900 border border-zinc-800 p-4 ${className}`}
+      className={`rounded-2xl bg-glass border border-hair p-4 ${className}`}
       {...rest}
     >
       {children}
@@ -250,7 +250,7 @@ export function IconRow({
   );
 
   const className =
-    "rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 flex-row items-center mb-2";
+    "rounded-2xl bg-glass border border-hair p-3.5 flex-row items-center mb-2";
   if (!onPress) return <View className={className}>{body}</View>;
   return (
     <Pressable onPress={onPress} className={`${className} active:bg-zinc-800`}>
@@ -279,7 +279,7 @@ export function SegmentedStat({
 }) {
   return (
     <View
-      className={`flex-row rounded-2xl bg-zinc-900 border border-zinc-800 py-3 ${className}`}
+      className={`flex-row rounded-2xl bg-glass border border-hair py-3 ${className}`}
     >
       {items.map((item, i) => (
         <View

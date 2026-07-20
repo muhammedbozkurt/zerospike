@@ -3,6 +3,7 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 
 import { FeedbackHost } from "../components/Feedback";
@@ -57,7 +58,8 @@ export default function SourcesScreen() {
   const router = useRouter();
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
@@ -76,7 +78,7 @@ export default function SourcesScreen() {
           <Text className="text-zinc-300 leading-6 mb-6">{t("sources.intro")}</Text>
 
           {/* Formula explanation */}
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-6">
+          <View className="rounded-2xl bg-glass border border-hair p-4 mb-6">
             <Text className="text-zinc-100 font-semibold mb-2">
               {t("sources.methodTitle")}
             </Text>
@@ -93,7 +95,7 @@ export default function SourcesScreen() {
           <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
             {t("sources.listTitle")}
           </Text>
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+          <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
             {REFERENCES.map((ref, i) => (
               <Pressable
                 key={ref.url}

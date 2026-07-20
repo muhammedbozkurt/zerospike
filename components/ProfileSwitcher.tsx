@@ -65,7 +65,7 @@ export function ProfileSwitcher() {
     <>
       <Pressable
         onPress={() => setOpen(true)}
-        className="flex-row items-center rounded-full bg-zinc-900 border border-zinc-800 px-3 py-1.5"
+        className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-1.5"
       >
         <Ionicons name="person-circle-outline" size={18} color="#a1a1aa" />
         <Text className="text-zinc-200 font-medium text-sm mx-1.5" numberOfLines={1}>
@@ -86,7 +86,7 @@ export function ProfileSwitcher() {
             onPress={() => setOpen(false)}
           >
             <Pressable
-              className="rounded-3xl bg-zinc-900 border border-zinc-800 p-5"
+              className="rounded-3xl bg-glass border border-hair p-5"
               onPress={(e) => e.stopPropagation()}
             >
               <Text className="text-zinc-50 text-lg font-bold mb-3">
@@ -108,7 +108,7 @@ export function ProfileSwitcher() {
                     <Ionicons
                       name={active ? "person" : "person-outline"}
                       size={18}
-                      color={active ? "#22d3ee" : "#a1a1aa"}
+                      color={active ? "#2ee6ff" : "#a1a1aa"}
                     />
                     <Text
                       className={`flex-1 ml-3 font-medium ${
@@ -118,7 +118,7 @@ export function ProfileSwitcher() {
                       {p.name}
                     </Text>
                     {active ? (
-                      <Ionicons name="checkmark-circle" size={18} color="#22d3ee" />
+                      <Ionicons name="checkmark-circle" size={18} color="#2ee6ff" />
                     ) : null}
                   </Pressable>
                 );

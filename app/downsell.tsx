@@ -3,6 +3,7 @@ import { Linking, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -96,7 +97,8 @@ export default function DownsellScreen() {
   const discount = offer?.hasRealDiscount ?? false;
 
   return (
-    <View className="flex-1 bg-zinc-950">
+    <View className="flex-1">
+      <AppBackgroundFill />
       <View
         className="flex-1"
         style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }}
@@ -114,7 +116,7 @@ export default function DownsellScreen() {
           ) : (
             <>
               <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-5 self-start">
-                <Ionicons name="gift-outline" size={28} color="#22d3ee" />
+                <Ionicons name="gift-outline" size={28} color="#2ee6ff" />
               </View>
               <Text className="text-zinc-50 text-3xl font-bold">
                 {t("downsell.title")}

@@ -30,7 +30,7 @@ export function FormCard({
         <View className="flex-row items-center mb-2 ml-1">
           {icon ? (
             <View className="w-6 h-6 rounded-lg bg-brand/15 items-center justify-center mr-2">
-              <Ionicons name={icon} size={13} color="#22d3ee" />
+              <Ionicons name={icon} size={13} color="#2ee6ff" />
             </View>
           ) : null}
           <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
@@ -38,7 +38,7 @@ export function FormCard({
           </Text>
         </View>
       ) : null}
-      <View className="rounded-2xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+      <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
         {children}
       </View>
     </View>

@@ -2,9 +2,10 @@ import React, { useMemo } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import Svg, { Path, Line } from "react-native-svg";
+import Svg, { Path, Line, Rect } from "react-native-svg";
 
 import { Button } from "../ui";
+import { GLUCOSE_RICH, THEME, glow } from "../../lib/theme/tokens";
 import { FadeSlideIn, useCountUp } from "./motion";
 import { computeAgp } from "../../lib/agp";
 import {
@@ -81,7 +82,7 @@ function AgpPreview({ unit }: { unit: GlucoseUnit }) {
   };
 
   return (
-    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4">
+    <View className="rounded-2xl bg-glass border border-hair p-4">
       <View className="flex-row items-center justify-between mb-3">
         <Text className="text-brand text-[11px] font-semibold uppercase tracking-wider">
           {t("onboarding.previewTag")}
@@ -115,12 +116,16 @@ function AgpPreview({ unit }: { unit: GlucoseUnit }) {
         </View>
       </View>
 
-      <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
-        <Line x1={0} y1={y(180)} x2={W} y2={y(180)} stroke="#3f3f46" strokeWidth={1} strokeDasharray="4 4" />
-        <Line x1={0} y1={y(70)} x2={W} y2={y(70)} stroke="#3f3f46" strokeWidth={1} strokeDasharray="4 4" />
-        <Path d={bandArea()} fill="#22d3ee" fillOpacity={0.15} />
-        <Path d={line("p50")} stroke="#22d3ee" strokeWidth={2} fill="none" />
-      </Svg>
+      <View style={glow(THEME.accent, 10, 0.4)}>
+        <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
+          {/* Green target band (70-180) behind the curve */}
+          <Rect x={0} y={y(180)} width={W} height={y(70) - y(180)} fill={GLUCOSE_RICH.target} opacity={0.1} />
+          <Line x1={0} y1={y(180)} x2={W} y2={y(180)} stroke="rgba(255,255,255,0.14)" strokeWidth={1} strokeDasharray="4 4" />
+          <Line x1={0} y1={y(70)} x2={W} y2={y(70)} stroke="rgba(255,255,255,0.14)" strokeWidth={1} strokeDasharray="4 4" />
+          <Path d={bandArea()} fill="#2ee6ff" fillOpacity={0.18} />
+          <Path d={line("p50")} stroke="#2ee6ff" strokeWidth={2.5} fill="none" />
+        </Svg>
+      </View>
 
       <Text className="text-zinc-500 text-[11px] mt-2 text-center">
         {t("onboarding.previewCaption")}
@@ -158,9 +163,9 @@ function TargetValue({
 function PlanRow({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
   return (
     <View className="flex-row items-center py-1.5">
-      <Ionicons name={icon} size={16} color="#22d3ee" />
+      <Ionicons name={icon} size={16} color="#2ee6ff" />
       <Text className="text-zinc-200 text-[13px] ml-3 flex-1">{label}</Text>
-      <Ionicons name="checkmark-circle" size={16} color="#22d3ee" />
+      <Ionicons name="checkmark-circle" size={16} color="#2ee6ff" />
     </View>
   );
 }
@@ -207,7 +212,7 @@ export function Reveal({
         </FadeSlideIn>
 
         <FadeSlideIn delay={D_TARGETS}>
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mb-4">
+          <View className="rounded-2xl bg-glass border border-hair p-4 mb-4">
             <Text className="text-zinc-500 text-[11px] font-semibold uppercase tracking-wider mb-3">
               {t("onboarding.revealTargetsTitle")}
             </Text>
@@ -235,7 +240,7 @@ export function Reveal({
         </FadeSlideIn>
 
         <FadeSlideIn delay={D_PLAN}>
-          <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4">
+          <View className="rounded-2xl bg-glass border border-hair p-4">
             <Text className="text-zinc-500 text-[11px] font-semibold uppercase tracking-wider mb-1">
               {t("onboarding.revealPlanTitle")}
             </Text>

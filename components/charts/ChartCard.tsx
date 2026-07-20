@@ -49,7 +49,7 @@ export function ChartCard({
   const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
 
   return (
-    <View className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 mt-3">
+    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
       <View className="flex-row items-start">
         <Text className="text-zinc-300 font-semibold flex-1 pr-2">{title}</Text>
         {accessory}
