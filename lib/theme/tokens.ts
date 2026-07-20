@@ -24,26 +24,27 @@ import type { GlucoseStatus } from "../glucose";
  * so the mapping stays legible for color-vision differences and greyscale print.
  * Shades are chosen to also separate by lightness. */
 export const GLUCOSE_COLORS: Record<GlucoseStatus, string> = {
-  low: "#ef4444", // red-500    - hypoglycemia (< 70 mg/dL)
-  normal: "#10b981", // emerald-500 - in range (target)
-  elevated: "#f59e0b", // amber-500  - above target
-  high: "#f97316", // orange-500 - well above target
+  low: "#ff5468", // rose      - hypoglycemia (< 70 mg/dL). R5: low stays red.
+  normal: "#22e39a", // mint      - in range (target)
+  elevated: "#ffb43c", // amber     - above target
+  high: "#ff7a3c", // orange    - well above target
 };
 
 /** Soft translucent fills of the glucose colors, for pills/banners/backgrounds. */
 export const GLUCOSE_TINT: Record<GlucoseStatus, string> = {
-  low: "rgba(239,68,68,0.14)",
-  normal: "rgba(16,185,129,0.14)",
-  elevated: "rgba(245,158,11,0.14)",
-  high: "rgba(249,115,22,0.14)",
+  low: "rgba(255,84,104,0.16)",
+  normal: "rgba(34,227,154,0.16)",
+  elevated: "rgba(255,180,60,0.16)",
+  high: "rgba(255,122,60,0.16)",
 };
 
 /* ── Core palette ──────────────────────────────────────────────────────────*/
 export const COLORS = {
-  /** Brand accent - cyan/ice, deliberately distinct from the diagnostic green. */
-  brand: "#22d3ee",
-  brandDark: "#0891b2",
-  brandTint: "rgba(34,211,238,0.12)",
+  /** Brand accent - cyan/ice, deliberately distinct from the diagnostic green.
+   *  Aligned to the Midnight Monitor accent (#2ee6ff). */
+  brand: "#2ee6ff",
+  brandDark: "#12c6e0",
+  brandTint: "rgba(46,230,255,0.12)",
 
   // Neutral surface scale (zinc), centralized so screens stop hard-coding hexes.
   bg: "#000000",
@@ -124,3 +125,61 @@ export const TABULAR = { fontVariant: ["tabular-nums" as const] };
 
 /** Minimum touch target (accessibility): 44pt per Apple HIG / WCAG. */
 export const HIT_TARGET = 44;
+
+/* ── Midnight Monitor rich theme ───────────────────────────────────────────
+ *
+ * The approved visual spec (docs/design/redesign-mockup.html, direction
+ * "B - Midnight Monitor"). One layered dark surface, a cyan accent, and the
+ * glucose color language re-stated so the raw-value places (SVG rings, gradient
+ * charts, glow shadows, the app background) all read from ONE source.
+ *
+ * These are additive to COLORS/GLUCOSE_COLORS above (which stay the tailwind-
+ * mirrored source). Screens use THEME for the raw values NativeWind cannot
+ * express: multi-stop gradients, colored glow, glass fills. */
+export const THEME = {
+  /** Layered background: two radial washes over a vertical linear. Drawn as an
+   *  absolute-fill SVG by <AppBackground> so every screen shares the same wash. */
+  bg: {
+    g1: "#080e14", // darkest (bottom of the linear)
+    g2: "#0f2029", // top of the linear
+    gg: "#123141", // the top-left radial glow
+    glowCyan: "rgba(46,230,255,0.12)", // bottom-right cyan radial
+  },
+  ink: "#eaf6fa", // primary text on the wash
+  muted: "#89a3b0", // secondary text
+  accent: "#2ee6ff", // cyan - brand + highlight
+  accentSoft: "#7ff4ff", // light stop for the cyan CTA gradient
+  accentDeep: "#12c6e0", // deep stop for chips / native tiles
+  violet: "#7c5cff", // conic avatar mid-stop
+  /** Glass card surface. */
+  glass: "rgba(255,255,255,0.05)",
+  glassHi: "rgba(255,255,255,0.015)", // second stop of the 160deg card gradient
+  glassInset: "rgba(255,255,255,0.06)", // top inset highlight line
+  border: "rgba(255,255,255,0.10)",
+  track: "rgba(255,255,255,0.08)", // ring / progress track
+} as const;
+
+/**
+ * The glucose color language on the rich surfaces, keyed by the four mockup
+ * states. Mirrors GLUCOSE_COLORS (low/normal/elevated/high) but named the way
+ * the mockup labels them (low / target / high / very-high). Color is never the
+ * sole signal - a value + label always sits beside it.
+ */
+export const GLUCOSE_RICH = {
+  low: "#ff5468", // hypo (R5: low stays red)
+  target: "#22e39a", // in range
+  high: "#ffb43c", // above target
+  veryHigh: "#ff7a3c", // well above target
+} as const;
+
+/** Colored glow shadow (iOS shadow* / Android elevation) matched to a hue. Hero
+ *  cards and rings use this so the surface "lights up" in its own color. */
+export function glow(color: string, radius = 24, opacity = 0.5) {
+  return {
+    shadowColor: color,
+    shadowOpacity: opacity,
+    shadowRadius: radius,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  } as const;
+}

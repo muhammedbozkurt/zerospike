@@ -2,7 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import Svg, { Path, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 
-import { COLORS } from "../lib/theme/tokens";
+import { COLORS, glow } from "../lib/theme/tokens";
 
 interface SparklineProps {
   data: number[];
@@ -14,6 +14,9 @@ interface SparklineProps {
   /** Mark the most recent point. */
   showLast?: boolean;
   strokeWidth?: number;
+  /** Midnight Monitor glow: a color-matched shadow behind the line (default off,
+   *  so existing tiles are unchanged; the rich surfaces opt in). */
+  glow?: boolean;
 }
 
 /**
@@ -29,6 +32,7 @@ export function Sparkline({
   fill = true,
   showLast = true,
   strokeWidth = 2,
+  glow: glowProp = false,
 }: SparklineProps) {
   const pad = strokeWidth + 1;
   const w = width;
@@ -56,6 +60,7 @@ export function Sparkline({
   const gid = `spark-${Math.round(w)}-${Math.round(h)}`;
 
   return (
+    <View style={glowProp ? glow(color, 6, 0.6) : undefined}>
     <Svg width={w} height={h}>
       {fill ? (
         <Defs>
@@ -76,5 +81,6 @@ export function Sparkline({
       />
       {showLast ? <Circle cx={last.x} cy={last.y} r={strokeWidth + 0.5} fill={color} /> : null}
     </Svg>
+    </View>
   );
 }

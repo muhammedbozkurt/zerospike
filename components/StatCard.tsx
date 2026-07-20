@@ -4,7 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AnimatedNumber } from "./AnimatedNumber";
-import { COLORS, TABULAR } from "../lib/theme/tokens";
+import { COLORS, TABULAR, THEME, glow as glowShadow } from "../lib/theme/tokens";
 
 interface StatCardProps {
   /** Small caption above/below the value. */
@@ -26,6 +26,11 @@ interface StatCardProps {
   sparkline?: React.ReactNode;
   /** Optional secondary line (context, e.g. "from 42 readings"). */
   footnote?: string;
+  /** Midnight Monitor glass surface (translucent fill + light border) instead
+   *  of the solid zinc card. Off by default so existing tiles are unchanged. */
+  glass?: boolean;
+  /** Color-matched glow (only meaningful with `glass`); `true` uses the accent. */
+  glow?: boolean | string;
   style?: StyleProp<ViewStyle>;
   className?: string;
 }
@@ -47,14 +52,23 @@ export function StatCard({
   icon,
   sparkline,
   footnote,
+  glass = false,
+  glow = false,
   style,
   className = "",
 }: StatCardProps) {
-  const valueColor = accent ?? COLORS.textPrimary;
+  const valueColor = accent ?? (glass ? THEME.ink : COLORS.textPrimary);
+  const glowColor = glow === true ? THEME.accent : typeof glow === "string" ? glow : undefined;
   return (
     <View
-      className={`rounded-2xl bg-zinc-900 border border-zinc-800 p-4 ${className}`}
-      style={style}
+      className={glass ? `rounded-2xl p-4 ${className}` : `rounded-2xl bg-zinc-900 border border-zinc-800 p-4 ${className}`}
+      style={[
+        glass
+          ? { backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }
+          : undefined,
+        glass && glowColor ? glowShadow(glowColor, 26, 0.4) : undefined,
+        style,
+      ]}
     >
       <View className="flex-row items-center mb-1">
         {icon ? (
