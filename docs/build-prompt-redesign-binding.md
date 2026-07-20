@@ -47,8 +47,16 @@ IMZA GORSELLER (bunlar olmadan "zengin" sayilmaz):
 - GOLGELI VUCUT HARITASI: silüet + sicak-nokta radyal gradyan.
 - Ilerleme cubuklari neon (gradyan + glow), plakali ikonlar, quiz buyuk ikon kartlari.
 
-## FAZLAR (mockup bolumleriyle esli; her faz kapi + cihaz-testi grubu)
-FAZ 1 - Token + imza-bilesen (mockup B01/B10): renk/gradyan/glow token'lari lib/theme'e;
+## KAPSAM: HER EKRAN, TEK PUSHTA (duraksama YOK)
+Faz 1 (token + imza-bilesen) BITTI ve commit'li; ama bunlar yalniz KUTUPHANE + dev-galeri.
+GERCEK EKRANLAR HALA ESKI TASARIMDA. Kullanici TUM ekranlarin yeni tasarimi kullanmasini
+istiyor. Kalan TUM ekranlari (Faz 2-9) ARDI ARDINA, DURMADAN donustur; arada onay BEKLEME.
+Ekran hala eski gorunuyorsa, gerekirse gorunum kodunu SIFIRDAN yaz. Hicbirini "zaten
+iyiydi/tokenlar var" diye ATLAMA. Ozellikle: dashboard, injection isi haritasi, insights,
+ONBOARDING (karsilama+quiz+reveal), kayit akislari, Spike sohbet: bunlar mockup'a cekilecek.
+Her ekran imza-gorseli (halka/donut/gradyan/golgeli-harita) kullanmali; duz kart+sayi YETMEZ.
+Bitince TEK rapor; hub tumunu bir kerede dogrular. FAZLAR (sira, ama durmadan):
+FAZ 1 - Token + imza-bilesen (mockup B01/B10) [BITTI]: renk/gradyan/glow token'lari lib/theme'e;
   GlucoseRing (SVG arc gauge), TIRDonut, GradientAreaChart, glow'lu Card, neon ProgressBar,
   konik Avatar, IconTile. Mevcut StatCard/Sparkline/AnimatedNumber bunlarla zenginlesir.
 FAZ 2 - Cekirdek sekmeler (B03): dashboard (merkez GlucoseRing + aktif zamanlayici karti +
