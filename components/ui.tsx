@@ -8,8 +8,10 @@ import {
   View,
   ViewProps,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 import { hapticSelect } from "../lib/haptics";
+import { COLORS, TABULAR } from "../lib/theme/tokens";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 type ButtonSize = "lg" | "md" | "sm";
@@ -189,4 +191,119 @@ export function Segmented<T extends string>({
 
 export function Divider() {
   return <View className="h-px bg-zinc-800 my-1" />;
+}
+
+interface IconRowProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  sublabel?: string;
+  /** Right-hand value string (rendered with tabular figures). */
+  value?: string;
+  /** Custom right node (overrides `value`). */
+  right?: React.ReactNode;
+  onPress?: () => void;
+  /** Tint for the leading icon circle (default brand). */
+  tint?: string;
+  destructive?: boolean;
+}
+
+/**
+ * A tinted-icon list row: leading icon in a soft circle, label (+ optional
+ * sublabel), and either a value, a custom right node, or a chevron when
+ * tappable. The app's standard row for settings-style lists and summaries.
+ */
+export function IconRow({
+  icon,
+  label,
+  sublabel,
+  value,
+  right,
+  onPress,
+  tint = COLORS.brand,
+  destructive = false,
+}: IconRowProps) {
+  const body = (
+    <>
+      <View
+        className="w-10 h-10 rounded-full items-center justify-center mr-3"
+        style={{ backgroundColor: destructive ? "rgba(244,63,94,0.12)" : COLORS.brandTint }}
+      >
+        <Ionicons name={icon} size={20} color={destructive ? "#fb7185" : tint} />
+      </View>
+      <View className="flex-1">
+        <Text className={`font-semibold ${destructive ? "text-rose-400" : "text-zinc-100"}`}>
+          {label}
+        </Text>
+        {sublabel ? <Text className="text-zinc-500 text-xs mt-0.5">{sublabel}</Text> : null}
+      </View>
+      {right ? (
+        right
+      ) : value ? (
+        <Text style={TABULAR} className="text-zinc-300 font-semibold mr-1">
+          {value}
+        </Text>
+      ) : null}
+      {onPress ? (
+        <Ionicons name="chevron-forward" size={18} color={COLORS.textFaint} />
+      ) : null}
+    </>
+  );
+
+  const className =
+    "rounded-2xl bg-zinc-900 border border-zinc-800 p-3.5 flex-row items-center mb-2";
+  if (!onPress) return <View className={className}>{body}</View>;
+  return (
+    <Pressable onPress={onPress} className={`${className} active:bg-zinc-800`}>
+      {body}
+    </Pressable>
+  );
+}
+
+export interface SegmentedStatItem {
+  label: string;
+  value: string;
+  accent?: string;
+}
+
+/**
+ * A compact horizontal strip of 2–4 mini stats (label + value) separated by
+ * hairline dividers - the "N-up" summary used on the dashboard and mirrored in
+ * the doctor report. One row, one card, one visual language.
+ */
+export function SegmentedStat({
+  items,
+  className = "",
+}: {
+  items: SegmentedStatItem[];
+  className?: string;
+}) {
+  return (
+    <View
+      className={`flex-row rounded-2xl bg-zinc-900 border border-zinc-800 py-3 ${className}`}
+    >
+      {items.map((item, i) => (
+        <View
+          key={item.label}
+          className="flex-1 items-center px-1"
+          style={
+            i > 0 ? { borderLeftWidth: 1, borderLeftColor: COLORS.border } : undefined
+          }
+        >
+          <Text
+            style={[{ color: item.accent ?? COLORS.textPrimary }, TABULAR]}
+            className="text-lg font-extrabold"
+            numberOfLines={1}
+          >
+            {item.value}
+          </Text>
+          <Text
+            className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 mt-0.5 text-center"
+            numberOfLines={1}
+          >
+            {item.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
 }

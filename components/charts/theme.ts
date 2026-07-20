@@ -3,13 +3,11 @@ import { STATUS_COLOR } from "../../lib/glucose";
 /**
  * One palette for every chart on the Insights screen.
  *
- * The three time-in-range colours come straight from the app's diagnostic
- * palette (lib/glucose.ts), where a hypo is deliberately a cold blue rather
- * than a red: red-vs-green is the pair most commonly confused, and a hypo read
- * as a high is the most dangerous confusion this app can cause. Blue / emerald
- * / amber also separate by lightness, so they survive a greyscale print and the
- * common forms of colour blindness. No chart relies on colour alone: every
- * series carries a text label.
+ * The time-in-range colours come straight from the single glucose color
+ * language (lib/theme/tokens.ts, via lib/glucose.ts STATUS_COLOR): low=red,
+ * in-range=emerald, high=amber. The shades separate by lightness too, so they
+ * survive a greyscale print and the common forms of colour blindness. No chart
+ * relies on colour alone: every series carries a text label.
  */
 export const CHART = {
   /** Median curve and single-series lines. */
