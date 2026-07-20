@@ -1,0 +1,546 @@
+<title>zerospike Redesign Pitch</title>
+<style>
+  :root{
+    --page-bg:#eef2f5; --panel:#ffffff; --ink:#0f1c24; --muted:#5f7480;
+    --hair:rgba(15,40,55,.10); --accent:#0e9bb0; --shadow:0 18px 46px -22px rgba(15,50,70,.45);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --page-bg:#070a0e; --panel:#0f1620; --ink:#e9f2f6; --muted:#8ba0ad;
+      --hair:rgba(255,255,255,.09); --accent:#2ee6ff; --shadow:0 26px 64px -26px rgba(0,0,0,.9); }
+  }
+  :root[data-theme="light"]{ --page-bg:#eef2f5; --panel:#ffffff; --ink:#0f1c24; --muted:#5f7480; --hair:rgba(15,40,55,.10); --accent:#0e9bb0; --shadow:0 18px 46px -22px rgba(15,50,70,.45); }
+  :root[data-theme="dark"]{ --page-bg:#070a0e; --panel:#0f1620; --ink:#e9f2f6; --muted:#8ba0ad; --hair:rgba(255,255,255,.09); --accent:#2ee6ff; --shadow:0 26px 64px -26px rgba(0,0,0,.9); }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page-bg);color:var(--ink);font-family:-apple-system,system-ui,"Segoe UI",sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  .num{font-variant-numeric:tabular-nums}
+  .wrap{max-width:1180px;margin:0 auto;padding:clamp(20px,5vw,64px) clamp(16px,4vw,40px)}
+  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:clamp(34px,6vw,58px);line-height:1.03;margin:.3em 0 .2em;text-wrap:balance;font-weight:800;letter-spacing:-.02em}
+  .lede{font-size:clamp(16px,2vw,19px);color:var(--muted);max-width:62ch;margin:0}
+  .note{margin-top:22px;padding:16px 18px;border-radius:14px;background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent) 24%,transparent);font-size:14.5px}
+  .note b{color:var(--accent)}
+  header.top{margin-bottom:48px}
+  h2.sec{font-size:clamp(22px,3.4vw,32px);margin:64px 0 6px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h2.sec .n{font-size:13px;color:var(--accent);font-weight:800;letter-spacing:.1em}
+  .sec-sub{color:var(--muted);margin:0 0 26px;max-width:66ch;font-size:15px}
+  hr.rule{border:0;height:1px;background:var(--hair);margin:56px 0 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:30px 26px}
+  .cell{display:flex;flex-direction:column;gap:10px}
+  .cap{font-size:13px;color:var(--muted)}
+  .cap b{color:var(--ink);font-weight:700;display:block;font-size:14.5px}
+
+  /* device */
+  .phone{position:relative;aspect-ratio:296/620;border-radius:34px;padding:9px;background:linear-gradient(160deg,#20303a,#080d12);box-shadow:var(--shadow);border:1px solid rgba(255,255,255,.07)}
+  .scr{--g1:#080e14;--g2:#0f2029;--gg:#123141;--ink:#eaf6fa;--mut:#89a3b0;--acc:#2ee6ff;
+    --lo:#ff5468;--tg:#22e39a;--hi:#ffb43c;--vh:#ff7a3c;
+    --glass:rgba(255,255,255,.05);--brd:rgba(255,255,255,.10);
+    position:relative;height:100%;border-radius:26px;overflow:hidden;
+    background:radial-gradient(130% 60% at 15% -5%,var(--gg),transparent 55%),radial-gradient(120% 70% at 100% 105%,rgba(46,230,255,.12),transparent 50%),linear-gradient(180deg,var(--g2),var(--g1));
+    color:var(--ink);display:flex;flex-direction:column;padding:13px 12px;gap:8px}
+  .scr.light{--g1:#e7eff4;--g2:#ffffff;--gg:#d6ebf2;--ink:#0f1c24;--mut:#5f7480;--acc:#0ea5b7;--glass:rgba(15,50,70,.045);--brd:rgba(15,50,70,.10)}
+  .scr.warm{--g1:#f6ece0;--g2:#fffdfa;--gg:#f7e4d6;--ink:#3a322c;--mut:#8a7d70;--acc:#e8785c;--tg:#3faf78;--glass:rgba(120,90,60,.06);--brd:rgba(120,90,60,.14)}
+  .notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:60px;height:5px;border-radius:3px;background:rgba(255,255,255,.22);z-index:5}
+  .sb{display:flex;justify-content:space-between;font-size:9px;color:var(--mut);font-weight:700;padding:1px 4px 0}
+  .row{display:flex;align-items:center;gap:7px}.spread{display:flex;align-items:center;justify-content:space-between}.grow{flex:1}
+  .center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .glass{background:var(--glass);border:1px solid var(--brd);border-radius:14px}
+  .card{background:linear-gradient(160deg,var(--glass),rgba(255,255,255,.015));border:1px solid var(--brd);border-radius:16px;padding:11px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+  .glow{box-shadow:0 10px 30px -12px color-mix(in srgb,var(--acc) 60%,transparent),inset 0 1px 0 rgba(255,255,255,.08)}
+  .ico{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:var(--glass);border:1px solid var(--brd);font-size:14px}
+  .avatar{width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font-size:12px;background:conic-gradient(from 200deg,var(--acc),#7c5cff,var(--acc));color:#03181c;font-weight:800;box-shadow:0 0 12px -2px var(--acc)}
+  .h1s{font-size:19px;font-weight:800;letter-spacing:-.01em}.h2s{font-size:14px;font-weight:800}.mut{color:var(--mut)}
+  .fs9{font-size:9px}.fs10{font-size:10px}.fs11{font-size:11px}.fs12{font-size:12px}
+  .lbl{font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--mut);font-weight:800}
+  .big{font-size:30px;font-weight:800;letter-spacing:-.01em;line-height:1}
+  .gc{border-radius:9px;padding:3px 8px;font-weight:800;font-size:11px;display:inline-flex;gap:4px;align-items:center}
+  .gc.lo{background:color-mix(in srgb,var(--lo) 22%,transparent);color:var(--lo);box-shadow:0 0 12px -4px var(--lo)}
+  .gc.tg{background:color-mix(in srgb,var(--tg) 22%,transparent);color:var(--tg);box-shadow:0 0 12px -4px var(--tg)}
+  .gc.hi{background:color-mix(in srgb,var(--hi) 22%,transparent);color:var(--hi);box-shadow:0 0 12px -4px var(--hi)}
+  .gc.vh{background:color-mix(in srgb,var(--vh) 24%,transparent);color:var(--vh);box-shadow:0 0 12px -4px var(--vh)}
+  .dotL{width:8px;height:8px;border-radius:99px;display:inline-block}
+  .cta{border-radius:14px;padding:12px;text-align:center;font-weight:800;font-size:14px;color:#00232b;background:linear-gradient(180deg,#7ff4ff,var(--acc));box-shadow:0 10px 24px -10px color-mix(in srgb,var(--acc) 85%,transparent)}
+  .cta.sub{background:var(--glass);border:1px solid var(--brd);color:var(--ink);box-shadow:none}
+  .lrow{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:13px;background:linear-gradient(160deg,var(--glass),rgba(255,255,255,.01));border:1px solid var(--brd)}
+  .toggle{width:34px;height:20px;border-radius:99px;position:relative;flex:none}.toggle .k{width:16px;height:16px;border-radius:99px;background:#fff;position:absolute;top:2px}
+  .on{background:var(--tg);box-shadow:0 0 10px -2px var(--tg)}.on .k{right:2px}.off{background:rgba(140,140,140,.35)}.off .k{left:2px}
+  .tag{position:absolute;top:12px;left:12px;z-index:6;font-size:9.5px;font-weight:800;letter-spacing:.06em;background:var(--accent);color:#04222a;padding:4px 9px;border-radius:999px;text-transform:uppercase;box-shadow:0 0 16px -3px var(--accent)}
+  .rec{background:linear-gradient(180deg,#5ff0ff,#12c6e0)}
+  .sw{display:flex;gap:5px;margin-top:3px}.sw i{width:15px;height:15px;border-radius:5px;border:1px solid rgba(0,0,0,.12);display:block}
+  .theme-toggle{position:fixed;top:14px;right:14px;z-index:40;background:var(--panel);border:1px solid var(--hair);color:var(--ink);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:10px 0 0;font-size:12.5px;color:var(--muted)}.legend b{color:var(--ink)}
+  .foot{margin-top:40px;color:var(--muted);font-size:14px}
+  .watch{width:118px;aspect-ratio:1/1.18;border-radius:30px;background:linear-gradient(160deg,#232c34,#080c10);padding:8px;box-shadow:var(--shadow);margin:0 auto}
+  .watch .wscr{height:100%;border-radius:22px;background:radial-gradient(circle at 50% 30%,#123141,#05090c);color:#eaf6fa;display:flex;flex-direction:column;padding:9px;gap:3px}
+  .hero-food{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:18px;background:radial-gradient(circle at 35% 30%,rgba(46,230,255,.22),rgba(46,230,255,.05));border:1px solid var(--brd)}
+</style>
+
+<button class="theme-toggle" onclick="var r=document.documentElement,d=(r.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));r.setAttribute('data-theme',d==='dark'?'light':'dark')">◐ Tema</button>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">zerospike · Görsel Yeniden Tasarım Pitch'i · v2 (zenginleştirildi)</div>
+    <h1>Verini görselleştir.</h1>
+    <p class="lede">İlk versiyon fazla sadeydi. Bu sürüm çok daha görsel: parlayan glukoz halkası, gradyan grafikler, ışıltılı veri kartları, gölgeli vücut haritası. Premium CGM-panel hissi. Sayılar örnek.</p>
+    <div class="note"><b>Onay öncesi</b> tasarım pitch'i (zengin görsel sürüm). Bir yön seç; kilitlediğin görünüm yapım session'ının kıstası olur. Şeker renkleri her yerde: <span class="gc lo" style="--lo:#ff5468">düşük</span> <span class="gc tg" style="--tg:#22e39a">hedef</span> <span class="gc hi" style="--hi:#ffb43c">yüksek</span> <span class="gc vh" style="--vh:#ff7a3c">çok yüksek</span> · renk tek işaret değil, sayı+etiket hep yanında.</div>
+  </header>
+
+  <!-- ===== DIRECTIONS ===== -->
+  <h2 class="sec"><span class="n">01</span> Genel yön · üçünden birini seç</h2>
+  <p class="sec-sub">Aynı ana ekran üç görsel dilde. Merkezde parlayan glukoz halkası. Önerim işaretli.</p>
+  <div class="grid">
+    <!-- A light rich -->
+    <div class="cell"><div class="phone" style="background:linear-gradient(160deg,#dfe8ec,#c7d4da)"><div class="notch"></div><div class="scr light">
+      <div class="sb"><span>9:41</span><span>▮▮▮ 100%</span></div>
+      <div class="spread"><div class="h1s">Bugün</div><div class="avatar">MB</div></div>
+      <div class="card center glow" style="gap:2px;padding:12px 8px">
+        <svg width="120" height="76" viewBox="0 0 120 76"><defs><linearGradient id="ga" x1="0" x2="1"><stop offset="0" stop-color="#22c55e"/><stop offset="1" stop-color="#0ea5b7"/></linearGradient></defs>
+          <path d="M14,70 A46,46 0 1 1 106,70" fill="none" stroke="rgba(15,50,70,.12)" stroke-width="9" stroke-linecap="round"/>
+          <path d="M14,70 A46,46 0 0 1 78,15" fill="none" stroke="url(#ga)" stroke-width="9" stroke-linecap="round"/></svg>
+        <div style="margin-top:-40px"><div class="big num" style="color:#10b981">118</div><div class="fs9 mut">mg/dL</div></div>
+        <div class="gc tg" style="--tg:#10b981;margin-top:2px">● Hedefte</div></div>
+      <div class="grow"></div><div class="cta">＋ Kayıt ekle</div>
+    </div></div><div class="cap"><b>A · Clinical Calm</b>Aydınlık, ferah; en yüksek okunurluk. Açık tema.<div class="sw"><i style="background:#fff"></i><i style="background:#0ea5b7"></i><i style="background:#10b981"></i><i style="background:#0f1c24"></i></div></div></div>
+
+    <!-- B midnight rich RECOMMENDED -->
+    <div class="cell"><div class="phone"><span class="tag rec">Önerilen</span><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮ 100%</span></div>
+      <div class="spread"><div class="h1s">Bugün</div><div class="avatar">MB</div></div>
+      <div class="card center glow" style="gap:2px;padding:12px 8px">
+        <svg width="120" height="76" viewBox="0 0 120 76"><defs><linearGradient id="gb" x1="0" x2="1"><stop offset="0" stop-color="#22e39a"/><stop offset="1" stop-color="#2ee6ff"/></linearGradient></defs>
+          <path d="M14,70 A46,46 0 1 1 106,70" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9" stroke-linecap="round"/>
+          <path d="M14,70 A46,46 0 0 1 78,15" fill="none" stroke="url(#gb)" stroke-width="9" stroke-linecap="round" style="filter:drop-shadow(0 0 6px rgba(46,230,255,.6))"/></svg>
+        <div style="margin-top:-40px"><div class="big num" style="color:#22e39a">118</div><div class="fs9 mut">mg/dL</div></div>
+        <div class="gc tg">● Hedefte</div></div>
+      <div class="grow"></div><div class="cta">＋ Kayıt ekle</div>
+    </div></div><div class="cap"><b>B · Midnight Monitor</b>Derin gece + parıltı, premium veri-panel. Marka + gece dostu.<div class="sw"><i style="background:#080e14"></i><i style="background:#2ee6ff"></i><i style="background:#22e39a"></i><i style="background:#ffb43c"></i></div></div></div>
+
+    <!-- C warm rich -->
+    <div class="cell"><div class="phone" style="background:linear-gradient(160deg,#e9ddd0,#d8c7b6)"><div class="notch"></div><div class="scr warm">
+      <div class="sb"><span>9:41</span><span>▮▮▮ 100%</span></div>
+      <div class="spread"><div class="h1s">Bugün</div><div class="avatar" style="background:conic-gradient(from 200deg,#e8785c,#f0a35c,#e8785c)">MB</div></div>
+      <div class="card center glow" style="gap:2px;padding:12px 8px">
+        <svg width="120" height="76" viewBox="0 0 120 76"><defs><linearGradient id="gc" x1="0" x2="1"><stop offset="0" stop-color="#3faf78"/><stop offset="1" stop-color="#e8785c"/></linearGradient></defs>
+          <path d="M14,70 A46,46 0 1 1 106,70" fill="none" stroke="rgba(120,90,60,.14)" stroke-width="9" stroke-linecap="round"/>
+          <path d="M14,70 A46,46 0 0 1 78,15" fill="none" stroke="url(#gc)" stroke-width="9" stroke-linecap="round"/></svg>
+        <div style="margin-top:-40px"><div class="big num" style="color:#3faf78">118</div><div class="fs9 mut">mg/dL</div></div>
+        <div class="gc tg" style="--tg:#3faf78">● Hedefte</div></div>
+      <div class="grow"></div><div class="cta">＋ Kayıt ekle</div>
+    </div></div><div class="cap"><b>C · Warm Companion</b>Sıcak, samimi "günlük arkadaş" tonu.<div class="sw"><i style="background:#fffdfa"></i><i style="background:#e8785c"></i><i style="background:#3faf78"></i><i style="background:#3a322c"></i></div></div></div>
+  </div>
+
+  <div class="note" style="margin-top:26px">Önerim <b>B · Midnight Monitor</b>: koyu zemin veri görselini en zengin gösterir (parıltı, gradyan halka, ışıltılı grafik), markanı korur, gece ölçümünde göz yormaz. Aşağıdaki tüm ekranlar bu yönde, bol görselle.</div>
+
+  <div class="legend">
+    <span><span class="dotL" style="background:#ff5468"></span> <b>Düşük</b></span>
+    <span><span class="dotL" style="background:#22e39a"></span> <b>Hedef</b></span>
+    <span><span class="dotL" style="background:#ffb43c"></span> <b>Yüksek</b></span>
+    <span><span class="dotL" style="background:#ff7a3c"></span> <b>Çok yüksek</b></span>
+    <span><span class="dotL" style="background:#2ee6ff"></span> <b>Vurgu · cyan</b></span>
+  </div>
+
+  <!-- ===== ONBOARDING ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">02</span> Onboarding</h2>
+  <p class="sec-sub">Karşılama, quiz (tip, hedef), ve tatmin eden zengin veri önizlemesi. Görselle karşılar, boş formla değil.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr center" style="justify-content:center;gap:14px">
+      <div class="spread" style="position:absolute;top:14px;left:12px;right:12px"><div></div><div class="glass fs10" style="padding:4px 9px">🌐 TR</div></div>
+      <div style="width:88px;height:88px;border-radius:26px;background:radial-gradient(circle at 40% 30%,rgba(46,230,255,.3),rgba(46,230,255,.05));display:grid;place-items:center;box-shadow:0 0 40px -8px var(--acc)">
+        <svg width="52" height="30" viewBox="0 0 52 30"><path d="M2,15 C10,15 12,6 18,6 C24,6 26,24 32,24 C38,24 40,15 50,15" fill="none" stroke="var(--acc)" stroke-width="3" stroke-linecap="round" style="filter:drop-shadow(0 0 5px var(--acc))"/></svg></div>
+      <div class="h1s">zerospike</div>
+      <div class="fs11 mut" style="max-width:24ch">Şekerini düz tut. Her şeyi saniyeler içinde kaydet.</div>
+      <div class="cta" style="width:100%">Haydi başlayalım</div><div class="fs9 mut">Zaten hesabım var</div>
+    </div></div><div class="cap"><b>Karşılama</b>Parlayan "düz çizgi" marka amblemi (spike yok); tek net CTA.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="row" style="gap:4px"><div style="height:5px;border-radius:9px;background:var(--acc);flex:1;box-shadow:0 0 8px var(--acc)"></div><div style="height:5px;border-radius:9px;background:var(--brd);flex:1"></div><div style="height:5px;border-radius:9px;background:var(--brd);flex:1"></div></div>
+      <div class="h1s" style="margin-top:10px">Diyabet tipin?</div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:6px" class="grow">
+        <div class="card glow" style="border-color:var(--acc);background:linear-gradient(160deg,color-mix(in srgb,var(--acc) 16%,transparent),transparent)"><div class="spread"><div class="row"><div class="hero-food">💉</div><div><div class="h2s">Tip 1</div><div class="fs9 mut">İnsülin bağımlı</div></div></div><span style="color:var(--acc);font-size:16px">◉</span></div></div>
+        <div class="lrow"><div class="hero-food">🥗</div><div class="grow"><div class="h2s fs12">Tip 2</div><div class="fs9 mut">Diyet / hap / insülin</div></div><span class="mut">○</span></div>
+        <div class="lrow"><div class="hero-food">🤰</div><div class="grow"><div class="h2s fs12">Gebelik (GDM)</div></div><span class="mut">○</span></div>
+        <div class="lrow"><div class="hero-food">📈</div><div class="grow"><div class="h2s fs12">Prediyabet</div></div><span class="mut">○</span></div>
+      </div>
+      <div class="cta">Devam</div>
+    </div></div><div class="cap"><b>Quiz · tip</b>İkonlu büyük kartlar, parlayan seçim, ilerleme çubuğu.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="row" style="gap:4px"><div style="height:5px;border-radius:9px;background:var(--acc);flex:1;box-shadow:0 0 8px var(--acc)"></div><div style="height:5px;border-radius:9px;background:var(--acc);flex:1;box-shadow:0 0 8px var(--acc)"></div><div style="height:5px;border-radius:9px;background:var(--brd);flex:1"></div></div>
+      <div class="h1s" style="margin-top:10px">Hedef aralığın</div>
+      <div class="card glow" style="margin-top:6px"><div class="lbl">Hedef bandı</div>
+        <div style="margin-top:10px;position:relative;height:40px">
+          <svg viewBox="0 0 100 40" preserveAspectRatio="none" style="width:100%;height:100%"><rect x="18" y="8" width="60" height="24" rx="6" fill="rgba(34,227,154,.18)"/><line x1="18" y1="0" x2="18" y2="40" stroke="#22e39a" stroke-width="1.5"/><line x1="78" y1="0" x2="78" y2="40" stroke="#22e39a" stroke-width="1.5"/></svg>
+          <span class="gc tg" style="position:absolute;left:4%;top:8px">70</span><span class="gc tg" style="position:absolute;right:4%;top:8px">180</span></div></div>
+      <div class="card"><div class="lbl">Glukoz birimi</div><div class="row" style="gap:6px;margin-top:6px"><div class="cta" style="flex:1;padding:9px">mg/dL</div><div class="cta sub" style="flex:1;padding:9px">mmol/L</div></div></div>
+      <div class="grow"></div><div class="cta">Devam</div>
+    </div></div><div class="cap"><b>Quiz · hedef</b>Görsel hedef bandı + segmented birim.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr center" style="justify-content:center;gap:11px">
+      <div class="lbl">Senin için hazır</div><div class="h1s">İşte günlüğün</div>
+      <div class="card glow" style="width:100%"><div class="spread"><div class="lbl">Bu hafta olacak</div><span class="gc tg">Hedefte %78</span></div>
+        <div style="height:64px;margin-top:8px;position:relative">
+          <svg viewBox="0 0 100 64" preserveAspectRatio="none" style="width:100%;height:100%"><defs><linearGradient id="area1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="rgba(46,230,255,.4)"/><stop offset="1" stop-color="rgba(46,230,255,0)"/></linearGradient></defs>
+          <rect x="0" y="22" width="100" height="20" fill="rgba(34,227,154,.12)"/>
+          <path d="M0,40 C15,30 30,44 45,32 S75,26 100,34 V64 H0 Z" fill="url(#area1)"/>
+          <path d="M0,40 C15,30 30,44 45,32 S75,26 100,34" fill="none" stroke="#2ee6ff" stroke-width="2" style="filter:drop-shadow(0 0 4px #2ee6ff)"/></svg></div></div>
+      <div class="fs10 mut">Doktora hazır PDF · haftalık örüntü · widget</div>
+      <div class="cta" style="width:100%">Başla</div>
+    </div></div><div class="cap"><b>Reveal · zengin önizleme</b>Gradyan alan grafiği + hedef bandı; "elde edeceğin" ışıltıyla.</div></div>
+
+  </div>
+
+  <!-- ===== CORE ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">03</span> Çekirdek sekmeler</h2>
+  <p class="sec-sub">Her ekran veri görselleştirmesi üzerine kurulu: halkalar, gradyan eğriler, gölgeli haritalar.</p>
+  <div class="grid">
+
+    <!-- Dashboard rich -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="h1s">Bugün</div><div class="row"><div class="ico">🔔</div><div class="avatar">MB</div></div></div>
+      <div class="card glow" style="padding:12px 8px"><div class="spread" style="padding:0 4px"><div class="lbl">Son ölçüm</div><span class="gc tg">Hedefte</span></div>
+        <div class="row" style="justify-content:center;margin-top:2px"><div style="position:relative"><svg width="128" height="82" viewBox="0 0 128 82"><defs><linearGradient id="dg" x1="0" x2="1"><stop offset="0" stop-color="#22e39a"/><stop offset="1" stop-color="#2ee6ff"/></linearGradient></defs>
+          <path d="M16,74 A50,50 0 1 1 112,74" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9" stroke-linecap="round"/>
+          <path d="M16,74 A50,50 0 0 1 84,14" fill="none" stroke="url(#dg)" stroke-width="9" stroke-linecap="round" style="filter:drop-shadow(0 0 6px rgba(46,230,255,.6))"/></svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:14px"><div class="big num" style="color:#22e39a">118</div><div class="fs9 mut">mg/dL · 20dk</div></div></div></div></div>
+      <div class="card" style="border-color:color-mix(in srgb,var(--acc) 35%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--acc) 12%,transparent),transparent);padding:9px"><div class="spread"><div class="row"><span style="font-size:16px">⏱</span><div class="fs11"><b>Tokluk ölçümü</b></div></div><div class="big num" style="font-size:18px;color:var(--acc)">12:04</div></div></div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:5px">
+        <div class="lrow"><span class="gc hi">168</span><div class="grow fs11">🍽️ Öğle · 60g</div><span class="fs9 mut">2s</span></div>
+        <div class="lrow"><span class="gc tg">102</span><div class="grow fs11">💉 Bolus 6ü</div><span class="fs9 mut">4s</span></div>
+      </div>
+      <div class="cta">＋ Kayıt ekle</div>
+    </div></div><div class="cap"><b>Dashboard</b>Merkez glukoz halkası (gradyan+parıltı) + aktif zamanlayıcı + renk-kodlu günlük.</div></div>
+
+    <!-- Food rich -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="h1s">Öğünler</div><div class="ico">＋</div></div>
+      <div class="card glow center" style="padding:12px"><div class="lbl">Bugün toplam karbonhidrat</div>
+        <div class="row" style="align-items:baseline;gap:4px;margin-top:2px"><div class="big num" style="color:var(--acc)">142</div><span class="fs11 mut">/ 180 g</span></div>
+        <div style="width:100%;height:8px;border-radius:9px;background:rgba(255,255,255,.08);margin-top:8px;overflow:hidden"><div style="width:78%;height:100%;background:linear-gradient(90deg,#22e39a,#2ee6ff);box-shadow:0 0 8px var(--acc)"></div></div></div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:7px">
+        <div class="lrow"><div class="hero-food">🍳</div><div class="grow"><div class="h2s fs12">Kahvaltı</div><div class="fs9 mut">Yumurta, ekmek</div></div><span class="num h2s fs12">32g</span></div>
+        <div class="lrow"><div class="hero-food">🥗</div><div class="grow"><div class="h2s fs12">Öğle</div><div class="fs9 mut">Tavuk salata, pilav</div></div><span class="num h2s fs12">60g</span></div>
+        <div class="lrow"><div class="hero-food">🍎</div><div class="grow"><div class="h2s fs12">Ara</div><div class="fs9 mut">Elma</div></div><span class="num h2s fs12">25g</span></div>
+      </div>
+    </div></div><div class="cap"><b>Öğün günlüğü</b>Karb ilerleme çubuğu (gradyan glow) + illüstre öğün ikonları.</div></div>
+
+    <!-- Injection heat map rich -->
+    <div class="cell"><div class="phone"><span class="tag">Yeni</span><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="h1s">İnsülin</div><div class="ico">＋</div></div>
+      <div class="card glow center" style="gap:8px;padding:12px 8px"><div class="lbl">Son 30 gün kullanım</div>
+        <svg width="104" height="140" viewBox="0 0 104 140"><defs><radialGradient id="hot"><stop offset="0" stop-color="#ff7a3c"/><stop offset="1" stop-color="rgba(255,122,60,0)"/></radialGradient></defs>
+          <ellipse cx="52" cy="18" rx="13" ry="15" fill="rgba(255,255,255,.04)" stroke="var(--brd)" stroke-width="1.5"/>
+          <path d="M34,34 h36 a6,6 0 0 1 6,6 v34 a10,10 0 0 1 -10,10 h-28 a10,10 0 0 1 -10,-10 v-34 a6,6 0 0 1 6,-6 Z" fill="rgba(255,255,255,.03)" stroke="var(--brd)"/>
+          <circle cx="52" cy="56" r="20" fill="url(#hot)"/>
+          <rect x="20" y="40" width="12" height="30" rx="6" fill="rgba(34,227,154,.18)" stroke="var(--brd)"/>
+          <rect x="72" y="40" width="12" height="30" rx="6" fill="rgba(255,180,60,.28)" stroke="var(--brd)"/>
+          <rect x="34" y="90" width="14" height="42" rx="7" fill="rgba(34,227,154,.10)" stroke="var(--brd)"/>
+          <rect x="56" y="90" width="14" height="42" rx="7" fill="rgba(34,227,154,.10)" stroke="var(--brd)"/></svg>
+        <div class="fs9 mut">Karın en çok · en az kullanılan: sağ uyluk</div></div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:6px">
+        <div class="lrow"><span class="gc" style="background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc)">6ü</span><div class="grow fs11">Bolus · karın</div><span class="fs9 mut">2s</span></div>
+        <div class="lrow"><span class="gc" style="background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc)">12ü</span><div class="grow fs11">Bazal · uyluk</div><span class="fs9 mut">Sabah</span></div>
+      </div>
+    </div></div><div class="cap"><b>İnsülin · ısı haritası</b>Gölgeli vücut silueti, sıcak-nokta gradyanı; nötr dil. Kalem stoğu yok.</div></div>
+
+    <!-- Insights rich -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="h1s">İçgörüler</div><div class="glass fs10" style="padding:4px 9px">90 gün ▾</div></div>
+      <div class="card glow"><div class="spread"><div class="lbl">Hedefte geçen süre</div><span class="gc tg">78%</span></div>
+        <div class="row" style="justify-content:center;margin-top:4px"><div style="position:relative"><svg width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="38" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="11"/>
+          <circle cx="48" cy="48" r="38" fill="none" stroke="#ff5468" stroke-width="11" stroke-dasharray="24 239" stroke-dashoffset="0" transform="rotate(-90 48 48)"/>
+          <circle cx="48" cy="48" r="38" fill="none" stroke="#22e39a" stroke-width="11" stroke-dasharray="186 239" stroke-dashoffset="-24" transform="rotate(-90 48 48)" style="filter:drop-shadow(0 0 5px rgba(34,227,154,.5))"/>
+          <circle cx="48" cy="48" r="38" fill="none" stroke="#ffb43c" stroke-width="11" stroke-dasharray="26 239" stroke-dashoffset="-210" transform="rotate(-90 48 48)"/></svg>
+          <div style="position:absolute;inset:0;display:grid;place-items:center"><div class="big num" style="font-size:20px">78<span class="fs11">%</span></div></div></div></div></div>
+      <div class="card"><div class="lbl">Günlük profil (AGP)</div>
+        <div style="height:56px;margin-top:6px"><svg viewBox="0 0 100 56" preserveAspectRatio="none" style="width:100%;height:100%"><defs><linearGradient id="agp" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="rgba(46,230,255,.35)"/><stop offset="1" stop-color="rgba(46,230,255,0)"/></linearGradient></defs>
+        <rect x="0" y="20" width="100" height="18" fill="rgba(34,227,154,.10)"/>
+        <path d="M0,30 C20,18 40,40 60,26 S90,20 100,28 V56 H0 Z" fill="url(#agp)"/>
+        <path d="M0,30 C20,18 40,40 60,26 S90,20 100,28" fill="none" stroke="#2ee6ff" stroke-width="2" style="filter:drop-shadow(0 0 4px #2ee6ff)"/></svg></div></div>
+      <div class="row" style="gap:6px"><div class="card center grow" style="padding:7px"><div class="big num" style="font-size:16px">6.2</div><div class="fs9 mut">HbA1c*</div></div><div class="card center grow" style="padding:7px"><div class="big num" style="font-size:16px">132</div><div class="fs9 mut">Ort.</div></div></div>
+    </div></div><div class="cap"><b>İçgörüler</b>TIR donut (renk halkaları) + gradyan AGP eğrisi + StatCard'lar.</div></div>
+
+  </div>
+
+  <!-- ===== LOGGING ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">04</span> Kayıt akışları</h2>
+  <p class="sec-sub">Büyük rakam girişi + canlı görsel geri bildirim. "Önerilen doz" yok; kullanıcının sürdüğü hesap.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr" style="justify-content:flex-end;background:radial-gradient(120% 50% at 50% 120%,rgba(46,230,255,.15),transparent),linear-gradient(180deg,#0f2029,#080e14)">
+      <div class="grow"></div>
+      <div class="card glow" style="border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div style="width:36px;height:4px;border-radius:9px;background:var(--brd);align-self:center"></div>
+        <div class="h2s center">Şeker ölçümü</div>
+        <div class="center"><div class="big num" style="font-size:52px;color:#22e39a;text-shadow:0 0 24px rgba(34,227,154,.5)">118</div><div class="fs9 mut">mg/dL</div><div class="gc tg" style="margin-top:5px">● Hedefte</div></div>
+        <div class="row" style="gap:5px"><div class="cta sub" style="flex:1;padding:9px">Açlık</div><div class="cta" style="flex:1;padding:9px">Tokluk</div><div class="cta sub" style="flex:1;padding:9px">Yatmadan</div></div>
+        <div class="cta">Kaydet</div>
+      </div>
+    </div></div><div class="cap"><b>Şeker girişi sheet</b>Dev parlayan rakam + anlık renk sınıfı + bağlam.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="ico">✕</div><div class="h2s">Öğün ekle</div><div style="width:30px"></div></div>
+      <div class="card glow" style="padding:9px;display:flex;align-items:center;gap:8px"><span>🔍</span><span class="fs11 mut grow">Yemek ara ya da tara</span><span class="ico" style="width:26px;height:26px;background:var(--acc);color:#03181c">📷</span></div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:6px;margin-top:2px">
+        <div class="lrow"><div class="hero-food">🍞</div><div class="grow fs11">Tam buğday ekmek</div><span class="num fs11 mut">15g</span><span class="ico" style="width:24px;height:24px">＋</span></div>
+        <div class="lrow"><div class="hero-food">🥚</div><div class="grow fs11">Haşlanmış yumurta</div><span class="num fs11 mut">1g</span><span class="ico" style="width:24px;height:24px">＋</span></div>
+        <div class="lrow"><div class="hero-food">🥣</div><div class="grow fs11">Yulaf ezmesi</div><span class="num fs11 mut">27g</span><span class="ico" style="width:24px;height:24px">＋</span></div>
+      </div>
+      <div class="card glow"><div class="spread"><span class="lbl">Seçili toplam</span><div class="big num" style="font-size:20px;color:var(--acc)">43<span class="fs11 mut"> g</span></div></div></div>
+      <div class="cta">Öğünü kaydet</div>
+    </div></div><div class="cap"><b>Öğün ekle</b>İllüstre yemek ikonları + canlı toplam + tarama.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="ico">✕</div><div class="h2s">Doz hesaplayıcı</div><div style="width:30px"></div></div>
+      <div class="card"><div class="spread"><div class="lbl">Karbonhidrat</div><div class="row" style="align-items:baseline;gap:3px"><div class="big num" style="font-size:24px">60</div><span class="fs10 mut">g</span></div></div></div>
+      <div class="card"><div class="spread"><div class="lbl">Güncel şeker</div><div class="row"><div class="big num" style="font-size:24px;color:var(--hi)">168</div><span class="gc hi" style="margin-left:6px">Yüksek</span></div></div></div>
+      <div class="card glow" style="border-color:var(--acc);background:radial-gradient(120% 100% at 50% 0,color-mix(in srgb,var(--acc) 18%,transparent),transparent)"><div class="lbl">Hesaplanan (senin oranlarınla)</div>
+        <div class="center" style="margin-top:4px"><div class="big num" style="font-size:40px;color:var(--acc);text-shadow:0 0 20px rgba(46,230,255,.5)">7.5</div><div class="fs10 mut">ünite</div></div></div>
+      <div class="grow"></div><div class="cta">Enjeksiyon olarak kaydet</div>
+      <div class="fs9 mut center">Sadece senin girdiğin oranlarla</div>
+    </div></div><div class="cap"><b>Doz hesaplayıcı</b>Sonuç parlayan büyük rakam; "hesaplanan", tavsiye yok.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr center" style="justify-content:center;gap:12px;background:radial-gradient(120% 60% at 50% 30%,#0e2530,#050a0e)">
+      <div style="width:186px;height:124px;border-radius:18px;border:2px solid var(--acc);position:relative;background:rgba(46,230,255,.06);box-shadow:0 0 40px -10px var(--acc)">
+        <div style="position:absolute;inset:14px;border-radius:11px;border:1px dashed rgba(46,230,255,.5)"></div>
+        <div style="position:absolute;left:20px;right:20px;top:50%;height:2px;background:var(--acc);box-shadow:0 0 14px var(--acc)"></div></div>
+      <div class="fs11 mut">Barkodu çerçeveye getir</div>
+      <div class="glass fs10" style="padding:6px 12px">Işığı aç · elle gir</div>
+    </div></div><div class="cap"><b>Barkod tarama</b>Parlayan tarama çerçevesi; elle giriş alternatifi.</div></div>
+
+  </div>
+
+  <!-- ===== REPORT ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">05</span> Rapor · doktora hazır</h2>
+  <p class="sec-sub">mySugr paritesi: özet kartlar + renkli aralık cetveli + günlük 24 saat şeridi. Kendi verimiz.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr light" style="padding:12px;gap:7px;background:#fff">
+      <div class="spread"><div><div class="h1s" style="color:#0ea5b7">RAPOR</div><div class="fs9" style="color:#5f7480">1 Nis - 30 Haz · 90 gün</div></div><div style="width:30px;height:30px;border-radius:9px;background:#0ea5b715;display:grid;place-items:center"><svg width="20" height="12" viewBox="0 0 20 12"><path d="M1,6 C4,6 5,2 7,2 C9,2 10,10 12,10 C14,10 15,6 19,6" fill="none" stroke="#0ea5b7" stroke-width="2"/></svg></div></div>
+      <div class="row" style="gap:5px"><div class="card center grow" style="padding:7px;background:#f2f6f8;border-color:rgba(15,50,70,.08)"><div class="big num" style="font-size:15px;color:#10b981">6.2</div><div class="fs9" style="color:#5f7480">HbA1c*</div></div><div class="card center grow" style="padding:7px;background:#f2f6f8;border-color:rgba(15,50,70,.08)"><div class="big num" style="font-size:15px">132</div><div class="fs9" style="color:#5f7480">Ort</div></div><div class="card center grow" style="padding:7px;background:#f2f6f8;border-color:rgba(15,50,70,.08)"><div class="big num" style="font-size:15px;color:#ef4444">7</div><div class="fs9" style="color:#5f7480">Düşük</div></div><div class="card center grow" style="padding:7px;background:#f2f6f8;border-color:rgba(15,50,70,.08)"><div class="big num" style="font-size:15px;color:#f59e0b">42</div><div class="fs9" style="color:#5f7480">Yüksek</div></div></div>
+      <div class="card" style="background:#f2f6f8;border-color:rgba(15,50,70,.08)"><div class="fs9" style="color:#5f7480;font-weight:800">ARALIK</div><div class="row" style="margin-top:5px;height:14px;border-radius:6px;overflow:hidden"><div style="width:10%;background:#ef4444"></div><div style="width:76%;background:#10b981"></div><div style="width:11%;background:#f59e0b"></div><div style="width:3%;background:#f97316"></div></div></div>
+      <div class="fs9" style="color:#5f7480;font-weight:800;margin-top:2px">HAFTA 51 · GÜNLÜK</div>
+      <div style="display:flex;flex-direction:column;gap:3px" class="grow">
+        <div style="display:flex;gap:2px;align-items:center"><span class="fs9" style="width:24px;color:#5f7480">Pzt</span><div style="flex:1;height:15px;border-radius:4px;background:linear-gradient(90deg,#10b98125,#f59e0b25)"><span style="font-size:8px;background:#10b981;color:#fff;padding:0 3px;border-radius:3px;margin-left:16%">98</span><span style="font-size:8px;background:#f59e0b;color:#fff;padding:0 3px;border-radius:3px;margin-left:24%">168</span></div></div>
+        <div style="display:flex;gap:2px;align-items:center"><span class="fs9" style="width:24px;color:#5f7480">Sal</span><div style="flex:1;height:15px;border-radius:4px;background:#10b98118"><span style="font-size:8px;background:#10b981;color:#fff;padding:0 3px;border-radius:3px;margin-left:34%">106</span></div></div>
+        <div style="display:flex;gap:2px;align-items:center"><span class="fs9" style="width:24px;color:#5f7480">Çar</span><div style="flex:1;height:15px;border-radius:4px;background:linear-gradient(90deg,#ef444425,#10b98125)"><span style="font-size:8px;background:#ef4444;color:#fff;padding:0 3px;border-radius:3px;margin-left:8%">64</span><span style="font-size:8px;background:#10b981;color:#fff;padding:0 3px;border-radius:3px;margin-left:30%">112</span></div></div>
+      </div>
+      <div class="fs9" style="color:#8a97a0">* Tahmin, CGM içermez · veri günlük amaçlıdır</div>
+    </div></div><div class="cap"><b>Doktor PDF raporu</b>Özet kartlar + aralık cetveli + günlük 24h renkli şerit. Baskı için açık zemin.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="ico">‹</div><div class="h2s">Saatlik örüntü</div><div style="width:30px"></div></div>
+      <div class="card glow"><div class="lbl">Günün hangi saati riskli</div>
+        <div style="height:76px;margin-top:8px"><svg viewBox="0 0 100 76" preserveAspectRatio="none" style="width:100%;height:100%"><defs><linearGradient id="hr" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="rgba(255,180,60,.35)"/><stop offset="1" stop-color="rgba(46,230,255,0)"/></linearGradient></defs>
+        <rect x="0" y="28" width="100" height="20" fill="rgba(34,227,154,.10)"/>
+        <path d="M0,44 C15,48 25,22 40,26 C55,30 65,56 80,48 C90,42 96,34 100,38 V76 H0 Z" fill="url(#hr)"/>
+        <path d="M0,44 C15,48 25,22 40,26 C55,30 65,56 80,48 C90,42 96,34 100,38" fill="none" stroke="#2ee6ff" stroke-width="2" style="filter:drop-shadow(0 0 4px #2ee6ff)"/></svg></div>
+        <div class="spread fs9 mut" style="margin-top:4px"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
+      <div class="card"><div class="row"><span style="font-size:18px">⚠️</span><div><div class="lbl">En sık yüksek</div><div class="h2s fs12">Öğle sonrası · 13-15</div></div></div></div>
+      <div class="grow"></div><div class="cta">📤 PDF olarak paylaş</div>
+    </div></div><div class="cap"><b>Saatlik içgörü</b>Gradyan alan grafiği + okunur özet; PDF çıkışı.</div></div>
+
+  </div>
+
+  <!-- ===== SPIKE ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">06</span> Spike · yapay zeka</h2>
+  <p class="sec-sub">İlk kullanımda açık izin. Doz rakamı vermez, sağlık kayıtları gönderilmez.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><span class="tag">Yeni</span><div class="notch"></div><div class="scr center" style="justify-content:center;gap:11px">
+      <div style="width:64px;height:64px;border-radius:20px;background:conic-gradient(from 200deg,var(--acc),#7c5cff,var(--acc));display:grid;place-items:center;font-size:30px;box-shadow:0 0 40px -6px var(--acc)">✦</div>
+      <div class="h1s">Spike'a sor</div>
+      <div class="card" style="text-align:left"><div class="fs11" style="line-height:1.7">Gönderilir: <b>yazdığın soru</b> + bu sohbet.<br>Kime: sunucumuz → <b>OpenAI</b>.<br>Gönderilmez: <b>şeker/öğün/insülin kayıtların, kimliğin</b>.</div></div>
+      <div class="fs9 mut">Gizlilik politikası ›</div>
+      <div class="cta" style="width:100%">Kabul et ve devam et</div><div class="fs9 mut">Şimdi değil</div>
+    </div></div><div class="cap"><b>Spike izin kapısı</b>Açık onay (Apple 5.1.1); fail-closed, ayarlardan geri çekilir.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="ico">‹</div><div class="row"><div class="avatar" style="width:22px;height:22px;font-size:11px">✦</div><div class="h2s">Spike</div></div><div style="width:30px"></div></div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:8px;justify-content:flex-end">
+        <div class="cta sub" style="align-self:flex-end;max-width:80%;border-radius:14px 14px 4px 14px;font-size:11px;padding:9px 11px;text-align:left">Karbonhidrat sayımı nasıl daha doğru olur?</div>
+        <div class="card glow" style="align-self:flex-start;max-width:85%;border-radius:14px 14px 14px 4px;font-size:11px;line-height:1.6">Etiketteki porsiyon karbını, tükettiğin porsiyonla çarp. Tartı, tahminden isabetli. Barkod tarama bunu otomatik doldurur.
+          <div class="fs9 mut" style="margin-top:6px;border-top:1px solid var(--brd);padding-top:5px">Spike tıbbi tavsiye vermez.</div></div>
+      </div>
+      <div class="glass" style="padding:9px 11px;display:flex;align-items:center;gap:8px"><span class="fs11 mut grow">Bir şey sor...</span><span class="ico" style="width:26px;height:26px;background:var(--acc);color:#03181c">↑</span></div>
+    </div></div><div class="cap"><b>Spike sohbet</b>Baloncuklar; her yanıt altında sorumluluk notu; doz sorusuna sayı yok.</div></div>
+
+  </div>
+
+  <!-- ===== SETTINGS / INFO / SAFETY ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">07</span> Ayarlar, bilgi &amp; güvenlik</h2>
+  <p class="sec-sub">Ayarlar, kaynaklar, enjeksiyon rehberi, profil, SOS, acil kişiler.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="h1s">Ayarlar</div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:7px">
+        <div class="lrow"><div class="hero-food" style="font-size:15px">🎯</div><div class="grow h2s fs12">Hedef aralık</div><span class="fs11 mut">70-180 ›</span></div>
+        <div class="lrow"><div class="hero-food" style="font-size:15px">⚖️</div><div class="grow h2s fs12">Birim</div><span class="fs11 mut">mg/dL ›</span></div>
+        <div class="lrow"><div class="hero-food" style="font-size:15px">🔔</div><div class="grow h2s fs12">Hatırlatıcılar</div><div class="toggle on"><div class="k"></div></div></div>
+        <div class="lrow"><div class="hero-food" style="font-size:15px">💜</div><div class="grow h2s fs12">Israrcı hatırlatıcı</div><div class="toggle off"><div class="k"></div></div></div>
+        <div class="lrow"><div class="hero-food" style="font-size:15px">✦</div><div class="grow h2s fs12">Spike AI veri kullanımı</div><span class="fs11 mut">›</span></div>
+        <div class="lrow"><div class="hero-food" style="font-size:15px">📚</div><div class="grow h2s fs12">Bilimsel kaynaklar</div><span class="fs11 mut">›</span></div>
+        <div class="lrow"><div class="hero-food" style="font-size:15px">🌐</div><div class="grow h2s fs12">Dil</div><span class="fs11 mut">TR ›</span></div>
+      </div>
+    </div></div><div class="cap"><b>Ayarlar</b>İkon plakalı satırlar, büyük anahtarlar.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="ico">‹</div><div class="h2s">Bilimsel kaynaklar</div><div style="width:30px"></div></div>
+      <div class="fs10 mut">Skor ve hesaplamalar bu literatüre dayanır.</div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:7px;margin-top:4px">
+        <div class="card"><div class="h2s fs12">Diabetes Care · 2019</div><div class="fs9 mut">Time in range consensus</div><div class="fs9" style="color:var(--acc)">pubmed ›</div></div>
+        <div class="card"><div class="h2s fs12">ADA Standards · 2024</div><div class="fs9 mut">Glycemic targets</div><div class="fs9" style="color:var(--acc)">diabetesjournals ›</div></div>
+        <div class="card"><div class="h2s fs12">Battelino et al. · 2019</div><div class="fs9 mut">CGM targets</div><div class="fs9" style="color:var(--acc)">pubmed ›</div></div>
+      </div>
+    </div></div><div class="cap"><b>Kaynaklar</b>Tıklanabilir atıflar; "veri günlük amaçlıdır" tonu.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="ico">‹</div><div class="h2s">Enjeksiyon rehberi</div><div style="width:30px"></div></div>
+      <div class="card glow center" style="gap:8px;padding:16px 8px"><svg width="74" height="106" viewBox="0 0 74 106"><ellipse cx="37" cy="15" rx="11" ry="13" fill="rgba(255,255,255,.03)" stroke="var(--brd)" stroke-width="1.5"/><path d="M24,30 h26 a5,5 0 0 1 5,5 v28 a9,9 0 0 1 -9,9 h-18 a9,9 0 0 1 -9,-9 v-28 a5,5 0 0 1 5,-5Z" fill="rgba(46,230,255,.10)" stroke="var(--acc)" stroke-width="1.5"/><circle cx="37" cy="48" r="4" fill="var(--acc)" style="filter:drop-shadow(0 0 6px var(--acc))"/></svg>
+        <div class="h2s fs12">Bölge değiştir</div><div class="fs10 mut" style="max-width:22ch">Aynı bölgeyi tekrar kullanmamak için haritayı takip et.</div></div>
+      <div class="grow"></div><div class="row" style="justify-content:center;gap:5px"><span style="width:6px;height:6px;border-radius:99px;background:var(--acc);box-shadow:0 0 6px var(--acc)"></span><span style="width:6px;height:6px;border-radius:99px;background:var(--brd)"></span></div><div class="cta sub">Kapat</div>
+    </div></div><div class="cap"><b>Enjeksiyon rehberi</b>Parlayan görsel, kısa nötr dil; haritaya bağlanır.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr center" style="justify-content:center;gap:11px;background:radial-gradient(120% 60% at 50% 30%,#2a1418,#080a0d)">
+      <div style="width:60px;height:60px;border-radius:999px;background:radial-gradient(circle,rgba(255,84,104,.3),rgba(255,84,104,.06));display:grid;place-items:center;font-size:28px;box-shadow:0 0 34px -6px #ff5468">🆘</div>
+      <div class="h1s">Acil durum</div>
+      <div class="fs11 mut" style="max-width:24ch">Yakınına hazır mesaj gönder ya da acil numarayı ara.</div>
+      <div class="cta" style="width:100%;background:linear-gradient(180deg,#ff7a8a,#ff5468);color:#fff;box-shadow:0 10px 24px -10px #ff5468">📞 112'yi ara</div>
+      <div class="cta sub" style="width:100%">✉️ Yakınıma haber ver</div>
+    </div></div><div class="cap"><b>SOS</b>Prefilled mesaj + arama; nötr, panik yok.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div class="ico">‹</div><div class="h2s">Acil kişiler</div><div class="ico">＋</div></div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:7px">
+        <div class="lrow"><div class="avatar" style="width:28px;height:28px">AY</div><div class="grow"><div class="h2s fs12">Ayşe Yılmaz</div><div class="fs9 mut">Eş · +90 5xx</div></div><span class="fs11 mut">›</span></div>
+        <div class="lrow"><div class="avatar" style="width:28px;height:28px;background:conic-gradient(from 200deg,#22e39a,#2ee6ff,#22e39a)">DR</div><div class="grow"><div class="h2s fs12">Dr. Kaya</div><div class="fs9 mut">Endokrinolog</div></div><span class="fs11 mut">›</span></div>
+      </div>
+      <div class="cta sub">Rehberden ekle</div>
+    </div></div><div class="cap"><b>Acil kişiler</b>Uygulama-içi seçici; rol + numara.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr center" style="justify-content:center;gap:10px">
+      <div class="avatar" style="width:66px;height:66px;font-size:26px">MB</div>
+      <div class="h1s">Muhammed</div>
+      <div class="glass fs10" style="padding:5px 12px">Tip 1 · mg/dL · Hedef 70-180</div>
+      <div class="row" style="gap:6px;width:100%;margin-top:4px"><div class="card center grow" style="padding:9px"><div class="big num" style="font-size:16px">248</div><div class="fs9 mut">Kayıt</div></div><div class="card glow center grow" style="padding:9px"><div class="big num" style="font-size:16px;color:var(--acc)">🔥12</div><div class="fs9 mut">Gün serisi</div></div></div>
+      <div class="grow"></div><div class="cta sub" style="width:100%">Profili düzenle</div>
+    </div></div><div class="cap"><b>Profil / kurulum</b>Kimlik + hedefler + seri; çoklu profil geçişi.</div></div>
+
+  </div>
+
+  <!-- ===== MONETIZATION ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">08</span> Abonelik</h2>
+  <p class="sec-sub">Paywall, downsell, winback. Faturalanan tutar en baskın.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="spread"><div style="width:30px"></div><div class="h2s">zerospike Pro</div><div class="ico">✕</div></div>
+      <div class="card glow center" style="gap:5px;padding:14px 8px"><div style="font-size:30px">📄</div><div class="fs10 mut center">Doktor PDF · sınırsız analiz · widget · Apple Watch</div></div>
+      <div class="grow" style="display:flex;flex-direction:column;gap:8px">
+        <div class="card glow" style="border-color:var(--acc);background:radial-gradient(120% 100% at 50% 0,color-mix(in srgb,var(--acc) 14%,transparent),transparent)"><div class="spread"><div><div class="h2s fs12">Yıllık</div><div class="fs9 mut">7 gün ücretsiz, sonra ₺399,99/yıl</div></div><div class="big num" style="font-size:18px">₺399</div></div></div>
+        <div class="card"><div class="spread"><div class="h2s fs12">Aylık</div><div class="big num" style="font-size:18px">₺59,99</div></div></div>
+        <div class="card"><div class="spread"><div class="h2s fs12">Ömür boyu</div><div class="big num" style="font-size:18px">₺79,99</div></div></div>
+      </div>
+      <div class="cta">7 gün ücretsiz başla</div><div class="fs9 mut center">Otomatik yenilenir, istediğin an iptal</div>
+    </div></div><div class="cap"><b>Paywall</b>Fatura tutarı baskın; deneme caption; statura zinciri.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr center" style="justify-content:center;gap:10px;background:radial-gradient(120% 50% at 50% 20%,rgba(46,230,255,.12),transparent),linear-gradient(180deg,#0f2029,#080e14)">
+      <div class="card glow" style="border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:9px;align-items:center;border-color:var(--acc)">
+        <div class="gc" style="background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc)">Son şans</div>
+        <div class="h2s center">Yıllık · ilk yıl yarı fiyat</div>
+        <div class="big num" style="font-size:26px">₺199 <span class="fs11 mut" style="text-decoration:line-through">₺399</span></div>
+        <div class="fs9 mut center">İlk yıl ₺199,99, sonra ₺399,99/yıl</div>
+        <div class="cta" style="width:100%">İndirimi al</div><div class="fs9 mut">Vazgeç</div>
+      </div>
+    </div></div><div class="cap"><b>Downsell</b>Kapatınca bir kez; iki tutar açık.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr center" style="justify-content:center;gap:10px">
+      <div style="font-size:34px">👋</div><div class="h1s">Tekrar hoş geldin</div>
+      <div class="fs11 mut center" style="max-width:24ch">Kaldığın yerden devam et. Pro ile raporun hazır.</div>
+      <div class="card glow" style="width:100%"><div class="spread"><div class="h2s fs12">Yıllık · %30 indirim</div><div class="big num" style="font-size:16px">₺279</div></div></div>
+      <div class="cta" style="width:100%">Pro'ya dön</div><div class="fs9 mut">Şimdi değil</div>
+    </div></div><div class="cap"><b>Winback</b>Süresi geçmiş aboneye dönüş teklifi.</div></div>
+
+  </div>
+
+  <!-- ===== NATIVE ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">09</span> Kilit ekranı, widget &amp; Apple Watch</h2>
+  <p class="sec-sub">Uygulamayı açmadan: canlı sayaç, widget, bilekte komplikasyon + saat uygulaması.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr" style="background:linear-gradient(160deg,#0e2028,#04080b);justify-content:space-between;padding:22px 14px">
+      <div class="center" style="gap:2px;margin-top:10px"><div class="fs11 mut">Pazartesi 20 Tem</div><div style="font-size:44px;font-weight:700" class="num">9:41</div></div>
+      <div class="card glow" style="padding:11px;display:flex;align-items:center;gap:10px;border-radius:16px"><div style="width:36px;height:36px;border-radius:11px;background:radial-gradient(circle,rgba(46,230,255,.3),rgba(46,230,255,.06));display:grid;place-items:center;color:var(--acc);box-shadow:0 0 16px -3px var(--acc)">〜</div>
+        <div class="grow"><div class="fs9 lbl">Tokluk ölçümü</div><div class="h2s num">12:04 kaldı</div></div><span class="gc tg">Son 118</span></div>
+    </div></div><div class="cap"><b>Kilit ekranı · Live Activity</b>Aktif zamanlayıcı canlı; son şeker. Telefonu açmadan.</div></div>
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr" style="background:linear-gradient(160deg,#0e2028,#04080b)">
+      <div class="sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="center" style="margin:6px 0"><div style="width:158px;background:#000;border-radius:22px;padding:6px 16px;display:flex;align-items:center;gap:8px;justify-content:center;box-shadow:0 0 20px -6px var(--acc)"><span style="color:var(--acc)">〜</span><span class="h2s fs12 num" style="color:#fff">12:04</span><span class="dotL" style="background:#22e39a;box-shadow:0 0 6px #22e39a"></span></div><div class="fs9 mut" style="margin-top:6px">Dynamic Island · daraltılmış</div></div>
+      <div class="row" style="gap:9px;margin-top:6px">
+        <div class="card glow center grow" style="padding:12px 8px"><div class="fs9 lbl">Son şeker</div><div class="big num" style="font-size:22px;color:var(--tg);margin-top:4px">118</div><div class="fs9 mut">20dk</div><div style="height:20px;margin-top:6px;width:100%"><svg viewBox="0 0 100 20" preserveAspectRatio="none" style="width:100%;height:100%"><polyline points="0,12 25,10 50,13 75,9 100,11" fill="none" stroke="#2ee6ff" stroke-width="2"/></svg></div></div>
+        <div class="card center grow" style="padding:12px 8px"><div class="fs9 lbl">Zamanlayıcı</div><div style="font-size:22px;margin-top:4px">⏱</div><div class="h2s fs12 num" style="margin-top:2px;color:var(--acc)">12:04</div><div class="fs9 mut">tokluk</div></div></div>
+      <div class="grow"></div><div class="fs9 mut center">Ana ekran widget'ları · tık = uygulama</div>
+    </div></div><div class="cap"><b>Dynamic Island + Widget</b>Hap'ta canlı sayaç; ana ekranda son değer + zamanlayıcı.</div></div>
+
+    <div class="cell"><div class="phone" style="background:transparent;box-shadow:none;border:none;display:flex;flex-direction:column;gap:16px;justify-content:center;padding:0">
+      <div class="watch"><div class="wscr"><div class="fs9" style="color:#89a3b0;text-align:right">9:41</div>
+        <div class="center grow" style="gap:2px"><svg width="70" height="42" viewBox="0 0 70 42"><path d="M8,38 A27,27 0 1 1 62,38" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="6" stroke-linecap="round"/><path d="M8,38 A27,27 0 0 1 46,10" fill="none" stroke="#22e39a" stroke-width="6" stroke-linecap="round"/></svg>
+        <div style="margin-top:-26px" class="num big" >118</div></div>
+        <div class="center" style="gap:1px"><div class="fs9" style="color:#89a3b0">⏱ 12:04</div></div></div></div>
+      <div class="watch"><div class="wscr" style="justify-content:center;align-items:center;gap:4px"><div class="fs9" style="color:#89a3b0">TOKLUK</div><div class="num" style="font-size:22px;color:#2ee6ff;text-shadow:0 0 12px #2ee6ff">12:04</div><div class="gc tg" style="font-size:9px;padding:2px 6px">Son 118</div></div></div>
+    </div><div class="cap"><b>Apple Watch</b>Saat uygulaması (halka + zamanlayıcı) + kadran komplikasyonu.</div></div>
+
+  </div>
+
+  <!-- ===== SYSTEM / COMPONENTS ===== -->
+  <hr class="rule">
+  <h2 class="sec"><span class="n">10</span> Sistem &amp; bileşen dili</h2>
+  <p class="sec-sub">Bildirim/dialog + görsel yapı taşları: glukoz halkası/çipi, StatCard, gradyan grafik.</p>
+  <div class="grid">
+
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="scr" style="justify-content:flex-end;gap:8px">
+      <div class="grow"></div>
+      <div class="card glow" style="padding:11px;display:flex;align-items:center;gap:9px;border-color:var(--tg)"><span class="dotL" style="background:var(--tg);width:10px;height:10px;box-shadow:0 0 8px var(--tg)"></span><div class="grow fs11"><b>Kaydedildi</b><div class="fs9 mut">Öğle · 60g karb</div></div></div>
+      <div class="card glow" style="padding:14px;border-radius:16px"><div class="h2s center">Kaydı sil?</div><div class="fs10 mut center" style="margin:6px 0">Bu geri alınamaz.</div><div class="row" style="gap:7px"><div class="cta sub" style="flex:1;padding:9px">Vazgeç</div><div class="cta" style="flex:1;padding:9px;background:linear-gradient(180deg,#ff7a8a,#ff5468);color:#fff">Sil</div></div></div>
+    </div></div><div class="cap"><b>Toast &amp; dialog</b>Temalı bildirim + onay; modal-üstü sorunu çözülü.</div></div>
+
+    <div class="cell"><div style="background:var(--panel);border:1px solid var(--hair);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:13px;color:var(--muted);font-weight:700">Glukoz çipleri</div>
+      <div class="row" style="flex-wrap:wrap;gap:6px"><span class="gc lo" style="--lo:#ff5468">64 Düşük</span><span class="gc tg" style="--tg:#22e39a">118 Hedef</span><span class="gc hi" style="--hi:#ffb43c">168 Yüksek</span><span class="gc vh" style="--vh:#ff7a3c">255 Çok yüksek</span></div>
+      <div style="font-size:13px;color:var(--muted);font-weight:700;margin-top:6px">StatCard + gradyan grafik</div>
+      <div style="background:radial-gradient(120% 100% at 0 0,color-mix(in srgb,var(--accent) 12%,transparent),transparent);border:1px solid var(--hair);border-radius:14px;padding:11px"><div style="font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:800">Ortalama</div><div class="big num" style="color:var(--ink)">132</div><div style="height:28px"><svg viewBox="0 0 100 28" preserveAspectRatio="none" style="width:100%;height:100%"><defs><linearGradient id="cc" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="color-mix(in srgb,var(--accent) 40%,transparent)"/><stop offset="1" stop-color="transparent"/></linearGradient></defs><path d="M0,18 C25,12 45,20 65,10 S90,8 100,14 V28 H0Z" fill="url(#cc)"/><polyline points="0,18 25,12 45,20 65,10 80,9 100,14" fill="none" stroke="var(--accent)" stroke-width="2"/></svg></div></div>
+    </div><div class="cap"><b>Bileşen dili</b>Glukoz çipi (renk+sayı+etiket parıltılı), StatCard, gradyan sparkline.</div></div>
+
+  </div>
+
+  <hr class="rule">
+  <div class="foot">
+    <p><b style="font-size:18px">Sıradaki adım.</b></p>
+    <p>Bu sürüm çok daha görsel: halka göstergeler, gradyan grafikler, ışıltı, gölgeli haritalar. Bir yön seç (A/B/C) ve hâlâ zayıf bulduğun ekran varsa söyle, o ekranı daha da zenginleştiririm. Kilitlediğimiz görünüm yapım session'ının kıstası olur; her ekran öncesi/sonrası ile kanıtlanır. Regülasyon korunur: nötr dil, doz rakamı yok, sağlık kayıtları paylaşılmaz.</p>
+  </div>
+</div>
