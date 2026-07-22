@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from "react-native-svg";
 
-import { AGP_TARGET_HIGH, AGP_TARGET_LOW } from "../../lib/agpChart";
+import { DEFAULT_TARGET_BAND, type TargetBand } from "../../lib/agpChart";
 import type { DailyAverage } from "../../lib/insights";
 import { formatGlucose } from "../../lib/glucose";
 import type { GlucoseUnit } from "../../lib/db/types";
@@ -13,9 +13,9 @@ const PAD_T = 10;
 const PAD_B = 18;
 
 /** Pads a value range so the extremes are not drawn on the frame itself. */
-function axisRange(values: number[]): { min: number; max: number } {
-  const lo = Math.min(AGP_TARGET_LOW, ...values);
-  const hi = Math.max(AGP_TARGET_HIGH, ...values);
+function axisRange(values: number[], band: TargetBand): { min: number; max: number } {
+  const lo = Math.min(band.low, ...values);
+  const hi = Math.max(band.high, ...values);
   const pad = Math.max(10, (hi - lo) * 0.1);
   return { min: Math.max(0, lo - pad), max: hi + pad };
 }
@@ -34,6 +34,7 @@ export function TrendChart({
   height,
   startLabel,
   endLabel,
+  band = DEFAULT_TARGET_BAND,
 }: {
   days: DailyAverage[];
   windowDays: number;
@@ -43,13 +44,15 @@ export function TrendChart({
   /** Localized axis ends; this component holds no copy of its own. */
   startLabel: string;
   endLabel: string;
+  /** The profile's own target band; the shading is the user's range. */
+  band?: TargetBand;
 }) {
   const geometry = useMemo(() => {
     const plotLeft = PAD_L;
     const plotRight = width - PAD_R;
     const plotTop = PAD_T;
     const plotBottom = height - PAD_B;
-    const { min, max } = axisRange(days.map((d) => d.avg));
+    const { min, max } = axisRange(days.map((d) => d.avg), band);
 
     // A single-day window would divide by zero; centre the lone point instead.
     const span = Math.max(1, windowDays - 1);
@@ -64,13 +67,13 @@ export function TrendChart({
       plotTop,
       plotBottom,
       points: days.map((d) => ({ x: x(d.offset), y: y(d.avg) })),
-      targetTop: y(Math.min(max, AGP_TARGET_HIGH)),
-      targetBottom: y(Math.max(min, AGP_TARGET_LOW)),
-      yTicks: [AGP_TARGET_LOW, AGP_TARGET_HIGH]
+      targetTop: y(Math.min(max, band.high)),
+      targetBottom: y(Math.max(min, band.low)),
+      yTicks: [band.low, band.high]
         .filter((v) => v >= min && v <= max)
         .map((value) => ({ value, y: y(value) })),
     };
-  }, [days, windowDays, width, height]);
+  }, [days, windowDays, width, height, band]);
 
   const line = geometry.points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 

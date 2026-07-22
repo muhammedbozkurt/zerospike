@@ -1,6 +1,18 @@
 import * as SQLite from "expo-sqlite";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { uuid } from "../uuid";
 import { SEED_FOODS } from "./seed";
+import type { DiabetesType, InsulinMode } from "./types";
+import {
+  V8_CARB_RANGE_UPDATE,
+  V8_COPY_INJECTIONS,
+  V8_CREATE_INJECTIONS,
+  V8_DROP_OLD,
+  V8_DROP_SCRATCH,
+  V8_INDEX,
+  V8_PROFILE_COLUMNS,
+  V8_RENAME,
+} from "./v8Sql";
 import i18n from "../i18n";
 
 /** Localized default profile name (resolved at creation time / device language). */
@@ -9,7 +21,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -82,7 +94,7 @@ export async function initDatabase(): Promise<void> {
     }
   }
 
-  // v3 → v4: insulin pens + injection-site logging (preserves existing data).
+  // v3 → v4: injection-site logging (preserves existing data).
   if (currentVersion >= 1 && currentVersion < 4) {
     await createInjectionSchema(db);
   }
@@ -100,12 +112,9 @@ export async function initDatabase(): Promise<void> {
     }
   }
 
-  // v6 → v7: the insulin-pen (stock-tracking) feature was removed in R5. Drop
-  // the table. Foreign keys are ON, so the FK's ON DELETE SET NULL nulls every
-  // injection_logs.pen_id first - no injection row is deleted (data preserved).
-  // The now-dormant injection_logs.pen_id column is left in place (never read
-  // or written again); its dangling FK is inert because we only ever write
-  // NULL there, and SQLite never checks a NULL foreign key.
+  // v6 → v7: the stock-tracking feature removed in R5 left one table behind.
+  // Foreign keys are ON, so its ON DELETE SET NULL clears the dangling
+  // references first - no injection row is deleted (data preserved).
   if (currentVersion >= 1 && currentVersion < 7) {
     try {
       await db.execAsync("DROP TABLE IF EXISTS insulin_pens;");
@@ -114,7 +123,84 @@ export async function initDatabase(): Promise<void> {
     }
   }
 
+  // v7 → v8: range targets, onboarding personalization, injection rotation
+  // points, and the final removal of the last dormant stock-tracking column.
+  if (currentVersion >= 1 && currentVersion < 8) {
+    await migrateToV8(db);
+  }
+
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+
+  // Lift the pre-v8 onboarding answers onto the profile (once, best-effort).
+  await adoptLegacyOnboardingContext();
+}
+
+/**
+ * The v8 migration, in one place because it touches two tables at once.
+ *
+ * user_profiles gains:
+ *   - target_fasting_min / target_postmeal_min / hypo_threshold_mgdl, so a
+ *     target is a RANGE rather than a single ceiling. Existing users get the
+ *     ADA-shaped defaults (80 low end, 70 hypo) while their own *_max values
+ *     are preserved untouched.
+ *   - daily_carb_target_min_g, derived from the existing single value (x 0.8).
+ *   - diabetes_type / insulin_mode / ratios_confirmed, so the onboarding answers
+ *     stop being dead data. insulin_mode defaults to 'both' here (preserving the
+ *     pre-v8 behaviour of showing every insulin surface); the one-time carry of
+ *     the old AsyncStorage answers happens in adoptLegacyOnboardingContext().
+ *     ratios_confirmed defaults to 1 for existing users: they have been running
+ *     on whatever ratios are stored for a while and we cannot retroactively tell
+ *     a confirmed value from a default, so we do not start nagging them.
+ *
+ * injection_logs is REBUILT (not altered) because the last dormant column from
+ * the removed stock-tracking feature sits in a foreign-key constraint, which
+ * SQLite refuses to DROP COLUMN through. The rebuild also adds site_point (the
+ * FITTER 2x2 rotation point) and source.
+ *
+ * The whole body runs in ONE transaction and normalises rather than filters, so
+ * it cannot lose an entry or leave the database without an injection_logs table.
+ * The statements live in ./v8Sql.ts so scripts/migration.test.ts runs the real
+ * ones. See that test for the row-preservation guarantee.
+ */
+async function migrateToV8(db: SQLite.SQLiteDatabase): Promise<void> {
+  // Which profile columns are missing. Read up front so no statement inside the
+  // transaction below can fail: a caught "duplicate column" error mid-migration
+  // is exactly the kind of thing that leaves a half-applied schema behind.
+  const existing = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(user_profiles);"
+  );
+  const present = new Set(existing.map((c) => c.name));
+  const missing = V8_PROFILE_COLUMNS.filter((c) => !present.has(c.name));
+
+  // PRAGMA foreign_keys is a no-op inside a transaction, so it is toggled
+  // around it. Off for the table rebuild: the copy briefly has two tables
+  // referencing the same rows.
+  await db.execAsync("PRAGMA foreign_keys = OFF;");
+  try {
+    // All of it or none of it. The previous version ran DROP and RENAME as
+    // separate statements with no transaction, so a crash in between left the
+    // database with NO injection_logs table at all and user_version still at 7,
+    // which meant the migration re-ran and failed on every subsequent launch.
+    await db.withTransactionAsync(async () => {
+      for (const col of missing) {
+        await db.execAsync(
+          `ALTER TABLE user_profiles ADD COLUMN ${col.name} ${col.type};`
+        );
+      }
+      if (missing.some((c) => c.name === "daily_carb_target_min_g")) {
+        await db.execAsync(V8_CARB_RANGE_UPDATE);
+      }
+
+      await db.execAsync(V8_DROP_SCRATCH);
+      await db.execAsync(V8_CREATE_INJECTIONS);
+      await db.execAsync(V8_COPY_INJECTIONS);
+      await db.execAsync(V8_DROP_OLD);
+      await db.execAsync(V8_RENAME);
+      await db.execAsync(V8_INDEX);
+    });
+  } finally {
+    await db.execAsync("PRAGMA foreign_keys = ON;");
+  }
 }
 
 async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
@@ -126,10 +212,17 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       carb_ratio_breakfast REAL NOT NULL DEFAULT 10,
       carb_ratio_lunch REAL NOT NULL DEFAULT 12,
       carb_ratio_dinner REAL NOT NULL DEFAULT 12,
+      target_fasting_min INTEGER NOT NULL DEFAULT 80,
       target_fasting_max INTEGER NOT NULL DEFAULT 100,
+      target_postmeal_min INTEGER NOT NULL DEFAULT 80,
       target_postmeal_max INTEGER NOT NULL DEFAULT 140,
+      hypo_threshold_mgdl INTEGER NOT NULL DEFAULT 70,
       daily_carb_target_g INTEGER NOT NULL DEFAULT 200,
+      daily_carb_target_min_g INTEGER NOT NULL DEFAULT 160,
       glucose_unit TEXT NOT NULL DEFAULT 'mgdl',
+      diabetes_type TEXT NOT NULL DEFAULT 'unknown',
+      insulin_mode TEXT NOT NULL DEFAULT 'both',
+      ratios_confirmed INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
 
@@ -233,12 +326,13 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
 /**
  * Creates the injection-site logging table. Idempotent (IF NOT EXISTS) so it is
  * safe both on a fresh install and as the v3 → v4 migration step. Existing rows
- * are untouched.
+ * are untouched. Migrated installs converge on this exact shape through the v8
+ * table rebuild (see migrateToV8).
  *
- * Note: the insulin-pen (stock-tracking) feature was removed in R5, so fresh
- * installs get no insulin_pens table and no pen_id column. Installs created
- * before R5 keep a dormant pen_id column (dropped-table FK, never read/written);
- * see the v6 → v7 migration in initDatabase.
+ * `site_point` is the FITTER-style rotation point (a 2x2 quarter inside the
+ * region); null on rows logged before v8, which count toward their region total
+ * only. `source` marks where the row came from ('manual', or 'calculator' for
+ * the bolus row the dose calculator writes alongside a meal).
  */
 async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
@@ -248,10 +342,12 @@ async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       site TEXT NOT NULL
         CHECK (site IN ('abdomen_left','abdomen_right','thigh_left','thigh_right',
                         'arm_left','arm_right','buttock_left','buttock_right')),
+      site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
       dose_units REAL,
       insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
       meal_log_id TEXT,
       note TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
       logged_at TEXT NOT NULL,
       tags TEXT NOT NULL DEFAULT '[]',
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
@@ -267,11 +363,83 @@ async function ensureDefaultProfile(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.runAsync(
     `INSERT OR IGNORE INTO user_profiles
        (id, name, insulin_sensitivity_factor, carb_ratio_breakfast,
-        carb_ratio_lunch, carb_ratio_dinner, target_fasting_max,
-        target_postmeal_max, daily_carb_target_g, created_at)
-     VALUES (?, ?, 40, 10, 12, 12, 100, 140, 200, ?);`,
+        carb_ratio_lunch, carb_ratio_dinner, target_fasting_min,
+        target_fasting_max, target_postmeal_min, target_postmeal_max,
+        hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
+        created_at)
+     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, ?);`,
     [DEFAULT_PROFILE_ID, defaultProfileName(), now]
   );
+}
+
+/**
+ * One-time carry of the pre-v8 onboarding answers. Before v8 the quiz wrote the
+ * diabetes/insulin answers to AsyncStorage and nothing ever read them back, so
+ * the profile columns start at their neutral defaults. This lifts whatever the
+ * user actually answered onto the profile once, then marks itself done.
+ *
+ * Only ever runs against profiles still sitting on the migration default, so it
+ * cannot overwrite a choice the user has since made in settings. Best-effort:
+ * a failure just leaves the profile on 'both', which is the pre-v8 behaviour.
+ */
+export async function adoptLegacyOnboardingContext(): Promise<void> {
+  const DONE_KEY = "zerospike.v8ContextAdopted";
+  const DIABETES_KEY = "zerospike.diabetesContext";
+  const INSULIN_KEY = "zerospike.insulinContext";
+  try {
+    if ((await AsyncStorage.getItem(DONE_KEY)) === "true") return;
+
+    const [diabetesRaw, insulinRaw] = await Promise.all([
+      AsyncStorage.getItem(DIABETES_KEY),
+      AsyncStorage.getItem(INSULIN_KEY),
+    ]);
+
+    const db = await getDb();
+    const diabetes = normalizeDiabetesType(diabetesRaw);
+    if (diabetes) {
+      await db.runAsync(
+        "UPDATE user_profiles SET diabetes_type = ? WHERE diabetes_type = 'unknown';",
+        [diabetes]
+      );
+    }
+    const mode = normalizeInsulinMode(insulinRaw);
+    if (mode) {
+      await db.runAsync(
+        "UPDATE user_profiles SET insulin_mode = ? WHERE insulin_mode = 'both';",
+        [mode]
+      );
+    }
+
+    await AsyncStorage.setItem(DONE_KEY, "true");
+  } catch {
+    // best-effort; the profile defaults preserve the pre-v8 behaviour
+  }
+}
+
+function normalizeDiabetesType(raw: string | null): DiabetesType | null {
+  switch (raw) {
+    case "type1":
+    case "type2":
+    case "gestational":
+    case "prediabetes":
+      return raw;
+    case "other":
+      return "unknown";
+    default:
+      return null;
+  }
+}
+
+function normalizeInsulinMode(raw: string | null): InsulinMode | null {
+  switch (raw) {
+    case "basal":
+    case "bolus":
+    case "both":
+    case "none":
+      return raw;
+    default:
+      return null;
+  }
 }
 
 /** Build a deduped synonym list from the five translated names. */

@@ -43,7 +43,7 @@ function Dot({ active }: { active: boolean }) {
   return (
     <Animated.View
       style={style}
-      className={`h-2 rounded-full mx-1 ${active ? "bg-brand" : "bg-zinc-700"}`}
+      className={`h-2 rounded-full mx-1 ${active ? "bg-brand" : "bg-glass"}`}
     />
   );
 }
@@ -133,12 +133,12 @@ export function Welcome({ onStart }: { onStart: () => void }) {
                   <View className="w-24 h-24 rounded-full bg-brand/10 items-center justify-center mb-8">
                     <Ionicons name={slide.icon} size={44} color="#2ee6ff" />
                   </View>
-                  <Text className="text-zinc-50 text-center text-2xl font-extrabold">
+                  <Text className="text-ink text-center text-2xl font-extrabold">
                     {t(`onboarding.${slide.key}Title`)}
                   </Text>
                 </FadeSlideIn>
                 <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
-                  <Text className="text-zinc-400 mt-3 text-center text-base leading-6">
+                  <Text className="text-mut mt-3 text-center text-base leading-6">
                     {t(`onboarding.${slide.key}Body`)}
                   </Text>
                 </FadeSlideIn>

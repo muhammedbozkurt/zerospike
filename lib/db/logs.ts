@@ -135,6 +135,42 @@ export async function sugarLogExistsAt(
   return (row?.c ?? 0) > 0;
 }
 
+/** How far apart two readings of the same value can be and still be the same
+ *  measurement typed twice. */
+export const SUGAR_DEDUP_WINDOW_MINUTES = 15;
+
+/**
+ * Finds a reading the profile already has that is almost certainly the SAME
+ * measurement: identical value, within a few minutes.
+ *
+ * The calculator asks for the current glucose, and a user who just logged that
+ * reading on the dashboard will type the same number again. Inserting it twice
+ * doubles it in the journal, the averages and the export. This lets the caller
+ * reuse the existing row instead of opening a second one.
+ *
+ * Value-aware on purpose: two DIFFERENT values minutes apart are two real
+ * readings (a low and its recheck), and both must survive.
+ */
+export async function findMatchingSugarLog(
+  profileId: string,
+  glucoseMgdl: number,
+  at: Date = new Date(),
+  windowMinutes: number = SUGAR_DEDUP_WINDOW_MINUTES
+): Promise<SugarLog | null> {
+  const db = await getDb();
+  const half = windowMinutes * 60_000;
+  const from = new Date(at.getTime() - half).toISOString();
+  const to = new Date(at.getTime() + half).toISOString();
+  const row = await db.getFirstAsync<SugarRow>(
+    `SELECT * FROM sugar_logs
+      WHERE profile_id = ? AND glucose_level_mgdl = ?
+        AND logged_at BETWEEN ? AND ?
+      ORDER BY logged_at DESC LIMIT 1;`,
+    [profileId, Math.round(glucoseMgdl), from, to]
+  );
+  return row ? mapSugar(row) : null;
+}
+
 // ── Meal logs ────────────────────────────────────────────────────────────
 
 export interface NewMealLogInput {
@@ -195,9 +231,40 @@ export async function listMealLogs(
   return rows.map(mapMeal);
 }
 
+/**
+ * Deletes a meal AND the bolus row the calculator wrote for it.
+ *
+ * injection_logs.meal_log_id is ON DELETE SET NULL, so a plain delete left the
+ * auto-written bolus alive with a null meal reference - still counted by
+ * activeInsulin(), still inflating IOB for hours, with no way for the user to
+ * connect it to the meal they just removed. Only rows this app created itself
+ * (source = 'calculator') are removed; anything the user entered by hand on the
+ * Injection tab is their own record and is never touched.
+ */
 export async function deleteMealLog(id: string): Promise<void> {
   const db = await getDb();
+  await db.runAsync(
+    "DELETE FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator';",
+    [id]
+  );
   await db.runAsync("DELETE FROM meal_logs WHERE id = ?;", [id]);
+}
+
+/**
+ * Deletes a meal together with EVERYTHING that one save created: the meal, its
+ * calculator-written bolus, and the glucose reading it opened. Used by undo.
+ *
+ * `createdSugarLogId` is passed explicitly rather than read off the meal,
+ * because a meal can be LINKED to a reading the user had already logged (see
+ * findMatchingSugarLog). Undoing the meal must not erase a measurement that
+ * existed before it.
+ */
+export async function deleteMealRecord(
+  id: string,
+  createdSugarLogId?: string | null
+): Promise<void> {
+  await deleteMealLog(id);
+  if (createdSugarLogId) await deleteSugarLog(createdSugarLogId);
 }
 
 export type MealLogUpdate = Partial<
@@ -256,36 +323,67 @@ export async function getMealLog(id: string): Promise<MealLog | null> {
   return row ? mapMeal(row) : null;
 }
 
-/** A previously-logged food + the portion used the last time, for one-tap re-log. */
+/**
+ * A previously-logged meal + the portion used the last time, for one-tap re-log.
+ * `food` is null for a meal that was only ever a typed name, which still has a
+ * carb figure worth repeating.
+ */
 export interface RecentMeal {
-  food: Food;
+  food: Food | null;
+  /** What to show in the list (the food's name, or the typed one). */
+  name: string;
   portion_g: number;
+  /** Carbs from the most recent time this meal was logged. */
+  carbs_g: number;
 }
 
 /**
- * Distinct seeded/custom foods the profile logged most recently, with the
- * portion from the latest time — powers the food tab's one-tap "recent meals".
- * Custom-name-only meals (no food_id) are skipped since they can't be reopened
- * in the calculator. SQLite returns the bare columns from the MAX(logged_at)
- * row, so portion_g is the most recent one for each food.
+ * The profile's most recently logged distinct meals, newest first, with the
+ * portion and carbs from the latest time - the food tab's one-tap re-log.
+ *
+ * Custom-name-only meals (no food_id) are INCLUDED. They used to be dropped
+ * because they cannot be reopened in the calculator, which quietly punished the
+ * fastest way to log something: type a name and a carb figure. They now re-log
+ * directly from their stored values, and only catalogue foods route through the
+ * calculator. SQLite returns the bare columns from the MAX(logged_at) row, so
+ * portion_g and calculated_carbs_g are the most recent ones for each meal.
  */
 export async function getRecentMeals(
   profileId: string,
   limit = 8
 ): Promise<RecentMeal[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<Food & { _portion: number }>(
-    `SELECT f.*, m.portion_g AS _portion, MAX(m.logged_at) AS _lastAt
-       FROM meal_logs m JOIN foods f ON f.id = m.food_id
-      WHERE m.profile_id = ? AND m.food_id IS NOT NULL
-      GROUP BY m.food_id
+  const rows = await db.getAllAsync<
+    Partial<Food> & {
+      _portion: number;
+      _carbs: number;
+      _customName: string | null;
+      _foodId: string | null;
+    }
+  >(
+    `SELECT f.*, m.food_id AS _foodId, m.custom_food_name AS _customName,
+            m.portion_g AS _portion, m.calculated_carbs_g AS _carbs,
+            MAX(m.logged_at) AS _lastAt
+       FROM meal_logs m LEFT JOIN foods f ON f.id = m.food_id
+      WHERE m.profile_id = ?
+        AND (m.food_id IS NOT NULL OR TRIM(COALESCE(m.custom_food_name, '')) <> '')
+      GROUP BY COALESCE(m.food_id, LOWER(TRIM(m.custom_food_name)))
       ORDER BY _lastAt DESC
       LIMIT ?;`,
     [profileId, limit]
   );
+
   return rows.map((r) => {
-    const { _portion, ...food } = r as Food & { _portion: number; _lastAt?: string };
-    return { food: food as Food, portion_g: _portion };
+    const { _portion, _carbs, _customName, _foodId, ...rest } = r as typeof r & {
+      _lastAt?: string;
+    };
+    const food = _foodId ? (rest as unknown as Food) : null;
+    return {
+      food,
+      name: _customName?.trim() || "",
+      portion_g: _portion,
+      carbs_g: _carbs,
+    };
   });
 }
 

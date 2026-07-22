@@ -7,7 +7,10 @@ import type { GlucoseStatus } from "../glucose";
  * Tailwind handles most className styling; these constants are for the places
  * that need raw values: charts, SVG, the print HTML, and animated components.
  *
- * Keep tailwind.config.js in sync with COLORS below (it mirrors these names).
+ * Keep tailwind.config.js in sync with GLUCOSE_COLORS and THEME below (it
+ * mirrors those names). There is no separate neutral scale: the Midnight
+ * Monitor surfaces in THEME are the only ones, so a screen cannot accidentally
+ * reach for an off-palette grey.
  */
 
 /* ── Glucose color language ────────────────────────────────────────────────
@@ -24,10 +27,11 @@ import type { GlucoseStatus } from "../glucose";
  * so the mapping stays legible for color-vision differences and greyscale print.
  * Shades are chosen to also separate by lightness. */
 export const GLUCOSE_COLORS: Record<GlucoseStatus, string> = {
-  low: "#ff5468", // rose      - hypoglycemia (< 70 mg/dL). R5: low stays red.
-  normal: "#22e39a", // mint      - in range (target)
-  elevated: "#ffb43c", // amber     - above target
-  high: "#ff7a3c", // orange    - well above target
+  low: "#ff5468", // rose        - below the user's own low threshold
+  normal: "#22e39a", // mint        - in the target range
+  elevated: "#ffb43c", // amber       - above the range
+  high: "#ff7a3c", // orange      - well above the range
+  veryHigh: "#f4511e", // deep orange - at/above the fixed 250 mg/dL ceiling
 };
 
 /** Soft translucent fills of the glucose colors, for pills/banners/backgrounds. */
@@ -36,31 +40,8 @@ export const GLUCOSE_TINT: Record<GlucoseStatus, string> = {
   normal: "rgba(34,227,154,0.16)",
   elevated: "rgba(255,180,60,0.16)",
   high: "rgba(255,122,60,0.16)",
+  veryHigh: "rgba(244,81,30,0.16)",
 };
-
-/* ── Core palette ──────────────────────────────────────────────────────────*/
-export const COLORS = {
-  /** Brand accent - cyan/ice, deliberately distinct from the diagnostic green.
-   *  Aligned to the Midnight Monitor accent (#2ee6ff). */
-  brand: "#2ee6ff",
-  brandDark: "#12c6e0",
-  brandTint: "rgba(46,230,255,0.12)",
-
-  // Neutral surface scale (zinc), centralized so screens stop hard-coding hexes.
-  bg: "#000000",
-  surface: "#18181b", // zinc-900
-  surfaceAlt: "#27272a", // zinc-800
-  border: "#27272a", // zinc-800
-  borderStrong: "#3f3f46", // zinc-700
-
-  textPrimary: "#fafafa", // zinc-50
-  textSecondary: "#a1a1aa", // zinc-400
-  textMuted: "#71717a", // zinc-500
-  textFaint: "#52525b", // zinc-600
-
-  // Glucose language re-exported for programmatic use.
-  glucose: GLUCOSE_COLORS,
-} as const;
 
 /* ── Spacing - 4 / 8 pt grid ───────────────────────────────────────────────*/
 export const SPACE = {
@@ -166,11 +147,21 @@ export const THEME = {
  * sole signal - a value + label always sits beside it.
  */
 export const GLUCOSE_RICH = {
-  low: "#ff5468", // hypo (R5: low stays red)
-  target: "#22e39a", // in range
-  high: "#ffb43c", // above target
-  veryHigh: "#ff7a3c", // well above target
+  low: "#ff5468", // below the user's low threshold (R5: low stays red)
+  target: "#22e39a", // in the target range
+  high: "#ffb43c", // above the range
+  wellAbove: "#ff7a3c", // further above the range
+  veryHigh: "#f4511e", // at/above the fixed clinical 250 mg/dL ceiling
 } as const;
+
+/** GlucoseStatus -> the rich palette. One mapping for every rich surface. */
+export const RICH_BY_STATUS: Record<GlucoseStatus, string> = {
+  low: GLUCOSE_RICH.low,
+  normal: GLUCOSE_RICH.target,
+  elevated: GLUCOSE_RICH.high,
+  high: GLUCOSE_RICH.wellAbove,
+  veryHigh: GLUCOSE_RICH.veryHigh,
+};
 
 /** Colored glow shadow (iOS shadow* / Android elevation) matched to a hue. Hero
  *  cards and rings use this so the surface "lights up" in its own color. */

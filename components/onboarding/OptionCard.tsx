@@ -42,15 +42,15 @@ export function OptionCard({
       {icon ? (
         <View
           className={`w-10 h-10 rounded-xl items-center justify-center mr-3.5 ${
-            selected ? "bg-brand/20" : "bg-zinc-800"
+            selected ? "bg-brand/20" : "bg-glass"
           }`}
         >
-          <Ionicons name={icon} size={20} color={selected ? "#2ee6ff" : "#a1a1aa"} />
+          <Ionicons name={icon} size={20} color={selected ? "#2ee6ff" : THEME.muted} />
         </View>
       ) : (
         <View
           className={`w-6 h-6 rounded-full border-2 items-center justify-center mr-3.5 ${
-            selected ? "border-brand" : "border-zinc-600"
+            selected ? "border-brand" : "border-hair"
           }`}
         >
           {selected ? <View className="w-3 h-3 rounded-full bg-brand" /> : null}
@@ -59,7 +59,7 @@ export function OptionCard({
 
       <Text
         className={`flex-1 text-base ${
-          selected ? "text-brand font-semibold" : "text-zinc-200"
+          selected ? "text-brand font-semibold" : "text-ink"
         }`}
       >
         {label}

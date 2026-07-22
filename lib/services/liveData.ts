@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 
+import i18n from "../i18n";
 import { listSugarLogs } from "../db/logs";
 import { getNotificationPrefs } from "./notificationPrefs";
 import { getPostMealTimerEnd } from "./notifications";
@@ -15,18 +17,23 @@ import type { GlucoseUnit } from "../db/types";
  * to shared storage so every surface reads the same numbers. It contains no
  * medical interpretation; it only reflects what the user has already logged.
  *
- * Shared storage: in-app consumers read AsyncStorage (LIVE_DATA_KEY). The native
- * targets read the SAME JSON from the App Group (LIVE_DATA_APP_GROUP). Bridging
- * the write to the App Group needs a native module (ExtensionStorage from
- * @bacons/apple-targets, or App Group UserDefaults on Android) - that is a HUMAN
- * native step; see docs/native-live-surfaces.md. Until then the JSON is written
- * to AsyncStorage and the shape/keys below are the contract the native code targets.
+ * Shared storage: in-app consumers read AsyncStorage (LIVE_DATA_KEY). The iOS
+ * widget and Live Activity read the SAME JSON from the App Group
+ * (LIVE_DATA_APP_GROUP), written here through ExtensionStorage. The Android
+ * widget renders in the RN JS context, so it reads AsyncStorage directly - no
+ * second copy of the data and no second format.
+ *
+ * Both native writes are best-effort: in Expo Go, or in any build made before
+ * `npx expo prebuild` linked the targets, they are no-ops. A stale glanceable
+ * surface must never break the app.
  */
 
-/** iOS App Group / Android shared-prefs id the native readers use. */
+/** iOS App Group id the widget and Live Activity read from. */
 export const LIVE_DATA_APP_GROUP = "group.com.greeneyeapp.zerospike";
 /** Key holding the LiveData JSON, in both AsyncStorage and the App Group. */
 export const LIVE_DATA_KEY = "zerospike.liveData";
+/** The Android home-screen widget's registered name (see app.json). */
+export const ANDROID_WIDGET_NAME = "Zerospike";
 
 export type ReminderKind = "postMeal" | "basal" | "glucose";
 
@@ -42,6 +49,13 @@ export interface LiveData {
   /** epoch ms the next reminder is due, or null when none is pending. */
   nextReminderAt: number | null;
   nextReminderKind: ReminderKind | null;
+  /** Strings the app already localized, so a native surface owns no copy of the
+   *  five translations and can never drift out of the app's language. */
+  labels: {
+    lastReading: string;
+    nextReminder: string;
+    noData: string;
+  };
 }
 
 /** epoch ms of the next time HH:MM occurs (today if still ahead, else tomorrow). */
@@ -88,7 +102,43 @@ export async function computeLiveData(
     lastGlucoseAt: latest ? new Date(latest.logged_at).getTime() : null,
     nextReminderAt: next?.at ?? null,
     nextReminderKind: next?.kind ?? null,
+    labels: {
+      lastReading: i18n.t("widget.lastReading"),
+      nextReminder: i18n.t("widget.nextReminder"),
+      noData: i18n.t("widget.noData"),
+    },
   };
+}
+
+/**
+ * Pushes the snapshot to the native surfaces. Separate from the AsyncStorage
+ * write so a missing native module can never lose the in-app copy.
+ */
+async function publishToNativeSurfaces(json: string): Promise<void> {
+  if (Platform.OS === "ios") {
+    try {
+      const { ExtensionStorage } = await import("@bacons/apple-targets");
+      const storage = new ExtensionStorage(LIVE_DATA_APP_GROUP);
+      storage.set(LIVE_DATA_KEY, json);
+      // Ask WidgetKit to rebuild its timeline with the value we just wrote.
+      ExtensionStorage.reloadWidget();
+    } catch {
+      // Expo Go / pre-prebuild build: no App Group to write to.
+    }
+    return;
+  }
+  if (Platform.OS === "android") {
+    try {
+      const { requestWidgetUpdate } = await import("react-native-android-widget");
+      const { buildZerospikeWidget } = await import("./androidWidget");
+      await requestWidgetUpdate({
+        widgetName: ANDROID_WIDGET_NAME,
+        renderWidget: () => buildZerospikeWidget(JSON.parse(json) as LiveData),
+      });
+    } catch {
+      // No widget placed on the home screen, or the module is not linked yet.
+    }
+  }
 }
 
 /**
@@ -96,10 +146,8 @@ export async function computeLiveData(
  * after any log/timer/preference change; failures are swallowed (a stale live
  * surface must never break the app). Returns the snapshot it wrote.
  *
- * NATIVE SEAM: to feed the iOS Live Activity / widget / watch, also write
- * `json` to the App Group here once @bacons/apple-targets is wired, e.g.
- *   ExtensionStorage.set(LIVE_DATA_KEY, json, { appGroup: LIVE_DATA_APP_GROUP })
- * and reload the widget timeline. See docs/native-live-surfaces.md.
+ * Also publishes the snapshot to the iOS App Group (widget + Live Activity) and
+ * refreshes the Android widget. See docs/native-live-surfaces.md.
  */
 export async function syncLiveData(
   profileId: string,
@@ -107,7 +155,9 @@ export async function syncLiveData(
 ): Promise<LiveData | null> {
   try {
     const data = await computeLiveData(profileId, unit);
-    await AsyncStorage.setItem(LIVE_DATA_KEY, JSON.stringify(data));
+    const json = JSON.stringify(data);
+    await AsyncStorage.setItem(LIVE_DATA_KEY, json);
+    void publishToNativeSurfaces(json);
     return data;
   } catch {
     return null;

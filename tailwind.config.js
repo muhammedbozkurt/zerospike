@@ -17,10 +17,11 @@ module.exports = {
         brandDark: "#12c6e0", // pressed state
         // Glucose color language - MIRRORS lib/theme/tokens.ts GLUCOSE_COLORS
         // (the canonical source). Keep the two in sync. Midnight Monitor palette.
-        low: "#ff5468", // rose - hypoglycemia (< 70 mg/dL)
-        normal: "#22e39a", // mint - in range (target)
-        elevated: "#ffb43c", // amber - above target
-        high: "#ff7a3c", // orange - well above target
+        low: "#ff5468", // rose - below the user's own low threshold
+        normal: "#22e39a", // mint - in the target range
+        elevated: "#ffb43c", // amber - above the range
+        high: "#ff7a3c", // orange - well above the range
+        veryHigh: "#f4511e", // deep orange - at/above the fixed 250 mg/dL ceiling
         // Midnight Monitor glass surfaces (translucent over the app wash).
         glass: "rgba(255,255,255,0.05)",
         hair: "rgba(255,255,255,0.10)",

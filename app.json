@@ -41,6 +41,12 @@
           "de",
           "fr",
           "es"
+        ],
+        "NSSupportsLiveActivities": true
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.greeneyeapp.zerospike"
         ]
       }
     },
@@ -114,7 +120,26 @@
       ],
       "@react-native-firebase/app",
       "@react-native-firebase/analytics",
-      "@react-native-firebase/crashlytics"
+      "@react-native-firebase/crashlytics",
+      "@bacons/apple-targets",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Zerospike",
+              "label": "zerospike",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "description": "Last reading and the next reminder",
+              "previewImage": "./assets/icon.png",
+              "targetCellWidth": 3,
+              "targetCellHeight": 2,
+              "updatePeriodMillis": 900000
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -125,7 +150,8 @@
       },
       "eas": {
         "projectId": "c52316bd-99ee-4ae9-8254-2a3542585ffb"
-      }
+      },
+      "spikeFnUrl": ""
     }
   }
 }

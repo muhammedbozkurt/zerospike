@@ -7,6 +7,7 @@ import type {
 } from "./db/types";
 import { INJECTION_SITES, LOG_TAGS } from "./db/types";
 import { percentile } from "./agp";
+import { VERY_HIGH_MGDL } from "./glucose";
 
 /**
  * Pro "Insights" — a read-only, descriptive summary of the user's own logged
@@ -27,9 +28,11 @@ export interface Insights {
   meals: number;
   days: number;
   avgGlucose: number | null;
-  inRangePct: number | null; // 70–180 mg/dL
-  lowPct: number | null; // < 70
-  highPct: number | null; // > 180
+  /** The four shares are mutually exclusive and sum to 100. */
+  inRangePct: number | null; // inside the profile's target band
+  lowPct: number | null; // below the band's low end
+  highPct: number | null; // above the band, under the fixed 250 ceiling
+  veryHighPct: number | null; // at/above 250 mg/dL
   gmi: number | null; // estimated A1C (%)
   avgFasting: number | null;
   avgPostMeal: number | null;
@@ -61,12 +64,45 @@ export interface Insights {
 
 export const TIR_LOW = 70;
 export const TIR_HIGH = 180;
+
+/** The band time-in-range is measured against. */
+export interface TirBand {
+  low: number;
+  high: number;
+}
+
+/** Used when no profile is available (population default). */
+export const DEFAULT_TIR_BAND: TirBand = { low: TIR_LOW, high: TIR_HIGH };
+
+/**
+ * GMI is an estimate of A1C from mean glucose, and it is only meaningful over a
+ * real stretch of time. Five readings taken in one afternoon are not an A1C
+ * estimate, so the figure is withheld until the sample both has enough readings
+ * AND spans enough days; the UI then shows a "more data needed" note instead.
+ */
+export const GMI_MIN_READINGS = 14;
+export const GMI_MIN_SPAN_DAYS = 14;
 /** Default (Pro) window; free tier is limited to the 7-day basic summary. */
 export const INSIGHTS_WINDOW_DAYS = 30;
 /** Selectable windows for the Insights screen: 7 (free) / 30 / 90 (Pro). */
 export const INSIGHTS_WINDOWS = [7, 30, 90] as const;
 /** The only window a free user sees fully. */
 export const FREE_INSIGHTS_WINDOW = 7;
+
+/**
+ * Whether a reading set is a defensible basis for GMI: enough readings, spread
+ * over enough calendar time. Both conditions matter - many readings crammed into
+ * two days describe two days, not a quarter.
+ */
+export function hasGmiBasis(readings: { logged_at: string }[]): boolean {
+  if (readings.length < GMI_MIN_READINGS) return false;
+  const times = readings
+    .map((x) => new Date(x.logged_at).getTime())
+    .filter((t) => !Number.isNaN(t));
+  if (times.length < GMI_MIN_READINGS) return false;
+  const span = Math.max(...times) - Math.min(...times);
+  return span >= GMI_MIN_SPAN_DAYS * 86_400_000;
+}
 
 function mean(ns: number[]): number | null {
   return ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : null;
@@ -94,7 +130,8 @@ export function computeInsights(
   sugar: SugarLog[],
   meals: MealLog[],
   injections: Injection[],
-  windowDays = INSIGHTS_WINDOW_DAYS
+  windowDays = INSIGHTS_WINDOW_DAYS,
+  band: TirBand = DEFAULT_TIR_BAND
 ): Insights {
   const since = Date.now() - windowDays * 86_400_000;
   const within = (iso: string) => {
@@ -109,15 +146,21 @@ export function computeInsights(
   const levels = s.map((x) => x.glucose_level_mgdl);
   const readings = levels.length;
 
-  const inRange = levels.filter((v) => v >= TIR_LOW && v <= TIR_HIGH).length;
-  const low = levels.filter((v) => v < TIR_LOW).length;
-  const high = levels.filter((v) => v > TIR_HIGH).length;
+  const inRange = levels.filter((v) => v >= band.low && v <= band.high).length;
+  const low = levels.filter((v) => v < band.low).length;
+  const veryHigh = levels.filter((v) => v >= VERY_HIGH_MGDL).length;
+  const high = levels.filter((v) => v > band.high && v < VERY_HIGH_MGDL).length;
 
   const avgGlucose = mean(levels);
   const sd = stdev(levels);
 
+  // Period averages use ONLY readings the user tagged themselves. Health-store
+  // imports carry a guessed period (there is no period on a HealthKit sample),
+  // so folding them in would quietly poison the fasting/post-meal figures with
+  // an assumption rather than an observation.
+  const userTagged = s.filter((x) => x.source !== "health");
   const avgFasting = mean(
-    s
+    userTagged
       .filter(
         (x) =>
           x.period_tag === "fasting" ||
@@ -127,7 +170,9 @@ export function computeInsights(
       .map((x) => x.glucose_level_mgdl)
   );
   const avgPostMeal = mean(
-    s.filter((x) => x.period_tag === "post_meal_2h").map((x) => x.glucose_level_mgdl)
+    userTagged
+      .filter((x) => x.period_tag === "post_meal_2h")
+      .map((x) => x.glucose_level_mgdl)
   );
 
   // Mean glucose per time-of-day slice.
@@ -191,8 +236,11 @@ export function computeInsights(
     inRangePct: readings ? (inRange / readings) * 100 : null,
     lowPct: readings ? (low / readings) * 100 : null,
     highPct: readings ? (high / readings) * 100 : null,
-    // GMI needs a meaningful sample; require at least 5 readings.
-    gmi: avgGlucose != null && readings >= 5 ? 3.31 + 0.02392 * avgGlucose : null,
+    veryHighPct: readings ? (veryHigh / readings) * 100 : null,
+    gmi:
+      avgGlucose != null && hasGmiBasis(s)
+        ? 3.31 + 0.02392 * avgGlucose
+        : null,
     avgFasting,
     avgPostMeal,
     avgDailyCarbs: days > 0 && m.length ? totalCarbs / days : null,
@@ -220,7 +268,8 @@ export function computeInsights(
  */
 export function trendVsPrevious(
   sugar: SugarLog[],
-  windowDays: number
+  windowDays: number,
+  band: TirBand = DEFAULT_TIR_BAND
 ): { avgDelta: number | null; tirDelta: number | null } {
   const now = Date.now();
   const span = windowDays * 86_400_000;
@@ -235,7 +284,9 @@ export function trendVsPrevious(
   const prev = bucket(now - 2 * span, now - span);
   const avgOf = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
   const tirOf = (a: number[]) =>
-    a.length ? (a.filter((v) => v >= TIR_LOW && v <= TIR_HIGH).length / a.length) * 100 : null;
+    a.length
+      ? (a.filter((v) => v >= band.low && v <= band.high).length / a.length) * 100
+      : null;
   const curAvg = avgOf(cur);
   const prevAvg = avgOf(prev);
   const curTir = tirOf(cur);
@@ -355,9 +406,12 @@ export type WeeklySentence =
   | { kind: "avg"; avgDelta: number } // mg/dL vs last week
   | { kind: "morning_evening"; diff: number; higher: "morning" | "evening" };
 
-export function weeklyDigest(sugar: SugarLog[]): WeeklySentence[] {
-  const week = computeInsights(sugar, [], [], 7);
-  const trend = trendVsPrevious(sugar, 7);
+export function weeklyDigest(
+  sugar: SugarLog[],
+  band: TirBand = DEFAULT_TIR_BAND
+): WeeklySentence[] {
+  const week = computeInsights(sugar, [], [], 7, band);
+  const trend = trendVsPrevious(sugar, 7, band);
   const out: WeeklySentence[] = [];
   if (
     week.inRangePct != null &&

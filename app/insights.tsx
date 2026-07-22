@@ -20,6 +20,7 @@ import { getInjections } from "../lib/db/injections";
 import { readHealthSummary, type HealthSummary } from "../lib/services/health";
 import type { Injection, MealLog, SugarLog } from "../lib/db/types";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
+import { targetBandFor } from "../lib/agpChart";
 import { AGP_MIN_READINGS, computeAgp } from "../lib/agp";
 import {
   computeInsights,
@@ -29,24 +30,37 @@ import {
   windowPercentiles,
   weeklyDigest,
   FREE_INSIGHTS_WINDOW,
+  GMI_MIN_READINGS,
+  GMI_MIN_SPAN_DAYS,
   INSIGHTS_WINDOW_DAYS,
   INSIGHTS_WINDOWS,
   type DayKind,
   type InsightPattern,
   type WeeklySentence,
 } from "../lib/insights";
+import { insulinModeUsesInsulin } from "../lib/insulinMode";
 import { maybeReviewOnWeeklyView } from "../lib/services/review";
-import { Button } from "../components/ui";
 import { ChartCard } from "../components/charts/ChartCard";
-import { DailyProfileChart } from "../components/charts/DailyProfileChart";
 import { HourlyChart } from "../components/charts/HourlyChart";
-import { TimeInRangeBar } from "../components/charts/TimeInRangeBar";
 import { TrendChart } from "../components/charts/TrendChart";
 import { CHART, CHART_HEIGHT } from "../components/charts/theme";
+import { StatCard } from "../components/StatCard";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { useFeedback } from "../components/Feedback";
 import { logEvent } from "../lib/analytics";
 import { num } from "../lib/format";
-import { AppBackground, TIRDonut, tirSegments } from "../components/rich";
-import { GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
+import {
+  AppBackground,
+  GlassCard,
+  GlucoseChip,
+  GradientAreaChart,
+  GradientCTA,
+  IconTile,
+  TIRDonut,
+  tirSegments,
+  withAlpha,
+} from "../components/rich";
+import { GLUCOSE_RICH, TABULAR, THEME, glow } from "../lib/theme/tokens";
 
 const GREEN = GLUCOSE_RICH.target;
 const AMBER = GLUCOSE_RICH.high;
@@ -55,35 +69,6 @@ const BRAND = THEME.accent;
 /** Two points make a line; one is just a dot. */
 const TREND_MIN_DAYS = 2;
 
-function Tile({
-  label,
-  value,
-  unit,
-  color = "#fafafa",
-  sub,
-}: {
-  label: string;
-  value: string;
-  unit?: string;
-  color?: string;
-  sub?: string;
-}) {
-  return (
-    <View className="w-1/2 p-1.5">
-      <View className="rounded-2xl bg-glass border border-hair p-4">
-        <Text className="text-mut text-xs">{label}</Text>
-        <View className="flex-row items-baseline mt-1">
-          <Text className="text-2xl font-bold" style={{ color }}>
-            {value}
-          </Text>
-          {unit ? <Text className="text-zinc-500 text-xs ml-1">{unit}</Text> : null}
-        </View>
-        {sub ? <Text className="text-zinc-500 text-[11px] mt-1">{sub}</Text> : null}
-      </View>
-    </View>
-  );
-}
-
 function Seg({ pct, color }: { pct: number; color: string }) {
   if (pct <= 0) return null;
   return <View style={{ width: `${pct}%`, backgroundColor: color }} className="h-full" />;
@@ -91,7 +76,7 @@ function Seg({ pct, color }: { pct: number; color: string }) {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mt-5 mb-2 px-1.5">
+    <Text className="text-xs font-semibold uppercase tracking-wider text-mut mt-5 mb-2 px-1.5">
       {children}
     </Text>
   );
@@ -99,14 +84,28 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 const SLICES: DayKind[] = ["night", "morning", "afternoon", "evening"];
 
+/**
+ * Insights, rebuilt to the mockup's composition: the window as a chip in the
+ * header, a time-in-range DONUT as the hero, a gradient AGP area curve under it,
+ * then a strip of StatCards. Everything below that (trend, hourly, percentiles,
+ * injections, Health) is supporting detail, in that order.
+ *
+ * Every figure is descriptive: it reports what the user logged. Time in range is
+ * measured against the user's OWN target band, not a fixed 70-180 rectangle.
+ */
 export default function InsightsScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, isProUser } = useApp();
+  const { actionSheet } = useFeedback();
   const unit = activeProfile?.glucose_unit ?? "mgdl";
   const fmtG = (mgdl: number | null) =>
     mgdl == null ? "-" : formatGlucose(mgdl, unit);
+
+  // The band every figure on this screen is measured against: the profile's own.
+  const band = useMemo(() => targetBandFor(activeProfile ?? {}), [activeProfile]);
+  const tirBand = useMemo(() => ({ low: band.low, high: band.high }), [band]);
 
   // Optional ?window=7|14|30 (e.g. from the dashboard "This week" card).
   const { window: windowParam } = useLocalSearchParams<{ window?: string }>();
@@ -154,11 +153,10 @@ export default function InsightsScreen() {
 
   // Recompute locally when the window changes (no reload).
   const data = useMemo(
-    () => computeInsights(sugar, meals, injections, windowDays),
-    [sugar, meals, injections, windowDays]
+    () => computeInsights(sugar, meals, injections, windowDays, tirBand),
+    [sugar, meals, injections, windowDays, tirBand]
   );
 
-  const round = (n: number | null) => (n == null ? "-" : String(Math.round(n)));
   const pct = (n: number | null) => (n == null ? "-" : `${Math.round(n)}`);
 
   // Descriptive patterns from the user's own readings (never causal/advice).
@@ -190,8 +188,8 @@ export default function InsightsScreen() {
 
   // Trend vs the previous equal-length window, and the window percentile summary.
   const trend = useMemo(
-    () => trendVsPrevious(sugar, windowDays),
-    [sugar, windowDays]
+    () => trendVsPrevious(sugar, windowDays, tirBand),
+    [sugar, windowDays, tirBand]
   );
   const pctile = useMemo(
     () => windowPercentiles(sugar, windowDays),
@@ -201,6 +199,7 @@ export default function InsightsScreen() {
   // preview behind a lock (curiosity gap, not an empty screen).
   const locked = !isProUser && windowDays !== FREE_INSIGHTS_WINDOW;
   const premium = isProUser || locked;
+  const showsInjections = insulinModeUsesInsulin(activeProfile?.insulin_mode);
 
   // Pro "from Health" summary: activity minutes + insulin delivery (read-only).
   const [health, setHealth] = useState<HealthSummary | null>(null);
@@ -218,7 +217,7 @@ export default function InsightsScreen() {
 
   // Weekly digest (Pro): rule-based, descriptive sentences comparing this week
   // to last. Viewing it is one of the review-prompt triggers.
-  const digest = useMemo(() => weeklyDigest(sugar), [sugar]);
+  const digest = useMemo(() => weeklyDigest(sugar, tirBand), [sugar, tirBand]);
   useEffect(() => {
     if (isProUser && !loading && digest.length > 0) void maybeReviewOnWeeklyView();
   }, [isProUser, loading, digest.length]);
@@ -239,6 +238,7 @@ export default function InsightsScreen() {
           : t("insights.weeklyEveningHigher", { diff: fmtG(s.diff), unit: u });
     }
   };
+
   // ── Chart data. All memoized: a 90-day window is a few thousand readings and
   // the window selector re-renders the whole screen. ────────────────────────
   const agp = useMemo(() => computeAgp(sugar, windowDays), [sugar, windowDays]);
@@ -246,6 +246,8 @@ export default function InsightsScreen() {
     () => dailyAverages(sugar, windowDays),
     [sugar, windowDays]
   );
+  /** The hourly median curve, for the mockup's gradient AGP area. */
+  const agpCurve = useMemo(() => agp.bands.map((b) => b.p50), [agp]);
 
   const u = glucoseUnitLabel(unit);
 
@@ -311,14 +313,22 @@ export default function InsightsScreen() {
         )}% ${t("insights.vsPrevious")}`
       : undefined;
 
-  const Header = (
-    <View className="flex-row items-center px-4 py-2">
-      <Pressable onPress={() => router.back()} hitSlop={10} className="p-1 mr-2">
-        <Ionicons name="chevron-back" size={26} color="#a1a1aa" />
-      </Pressable>
-      <Text className="text-zinc-50 text-xl font-bold">{t("insights.title")}</Text>
-    </View>
-  );
+  /** The mockup's header chip: the active window, opening the window picker. */
+  function openWindowPicker() {
+    actionSheet({
+      title: t("insights.title"),
+      actions: INSIGHTS_WINDOWS.map((d) => ({
+        label:
+          !isProUser && d !== FREE_INSIGHTS_WINDOW
+            ? `${t("insights.windowDays", { n: d })} · ${t("common.pro")}`
+            : t("insights.windowDays", { n: d }),
+        icon: (!isProUser && d !== FREE_INSIGHTS_WINDOW
+          ? "lock-closed"
+          : "calendar-outline") as keyof typeof Ionicons.glyphMap,
+        onPress: () => setWindowDays(d),
+      })),
+    });
+  }
 
   const isEmpty =
     data.readings === 0 && data.injectionCount === 0 && data.meals === 0;
@@ -329,7 +339,29 @@ export default function InsightsScreen() {
 
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
-      {Header}
+      <ScreenHeader
+        title={t("insights.title")}
+        onBack={() => router.back()}
+        right={
+          <Pressable
+            onPress={openWindowPicker}
+            hitSlop={8}
+            className="flex-row items-center rounded-full px-3 py-1.5"
+            style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
+          >
+            <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}>
+              {t("insights.windowDays", { n: windowDays })}
+            </Text>
+            <Ionicons
+              name="chevron-down"
+              size={11}
+              color={THEME.muted}
+              style={{ marginLeft: 4 }}
+            />
+          </Pressable>
+        }
+      />
+
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color={BRAND} />
@@ -339,502 +371,677 @@ export default function InsightsScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Weekly digest (Pro): 2-3 descriptive sentences, this week vs last */}
-          {isProUser && digest.length > 0 ? (
-            <View className="rounded-2xl bg-zinc-900 border border-brand/30 p-4 mb-3">
-              <View className="flex-row items-center mb-2">
-                <Ionicons name="calendar-outline" size={16} color={BRAND} />
-                <Text className="text-brand text-xs font-bold uppercase tracking-wider ml-2">
-                  {t("insights.weeklyTitle")}
-                </Text>
-              </View>
-              {digest.map((s, i) => (
-                <View key={i} className="flex-row items-start mb-1.5">
-                  <Text className="text-zinc-500 mr-2">•</Text>
-                  <Text className="text-zinc-200 text-sm leading-5 flex-1">
-                    {weeklyText(s)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          {/* Window selector (30 / 90 are Pro; free previews them blurred) */}
-          <View className="flex-row gap-2 mb-3">
-            {INSIGHTS_WINDOWS.map((d) => {
-              const active = windowDays === d;
-              const isLocked = !isProUser && d !== FREE_INSIGHTS_WINDOW;
-              return (
-                <Pressable
-                  key={d}
-                  onPress={() => setWindowDays(d)}
-                  className={`flex-1 flex-row items-center justify-center rounded-xl border py-2.5 ${
-                    active ? "border-brand bg-brand/10" : "border-zinc-800 bg-zinc-900"
-                  }`}
-                >
-                  <Text
-                    className={
-                      active ? "text-brand font-semibold" : "text-zinc-300"
-                    }
-                  >
-                    {t("insights.windowDays", { n: d })}
-                  </Text>
-                  {isLocked ? (
-                    <Ionicons
-                      name="lock-closed"
-                      size={12}
-                      color="#71717a"
-                      style={{ marginLeft: 4 }}
-                    />
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Descriptive disclaimer */}
-          <View className="flex-row items-start rounded-2xl border border-zinc-800 bg-zinc-900 p-3.5 mb-2">
-            <Ionicons name="information-circle-outline" size={16} color="#71717a" />
-            <Text className="text-zinc-500 text-xs leading-5 ml-2.5 flex-1">
-              {t("insights.disclaimer")}
-            </Text>
-          </View>
-
           {isEmpty ? (
             <View className="items-center py-12">
-              <Ionicons name="analytics-outline" size={40} color="#3f3f46" />
-              <Text className="text-zinc-400 text-center mt-3">
+              <IconTile icon="analytics-outline" size={64} radius={20} hero />
+              <Text style={{ color: THEME.muted, textAlign: "center", marginTop: 14 }}>
                 {t("insights.empty")}
               </Text>
             </View>
           ) : (
             <View>
               <View pointerEvents={locked ? "none" : "auto"}>
-              {/* ── Glucose ───────────────────────────────────────────────── */}
-              {data.readings > 0 ? (
-                <>
-                  {/* Hero: time-in-range donut (Midnight Monitor signature) */}
-                  <View
-                    className="rounded-2xl bg-glass border border-hair p-4 mb-1 flex-row items-center"
-                    style={glow(GLUCOSE_RICH.target, 26, 0.3)}
-                  >
-                    <TIRDonut
-                      segments={tirSegments({
-                        low: data.lowPct ?? 0,
-                        target: data.inRangePct ?? 0,
-                        high: data.highPct ?? 0,
-                      })}
-                      centerValue={pct(data.inRangePct)}
-                      centerSuffix="%"
-                      size={104}
-                    />
-                    <View style={{ flex: 1, marginLeft: 16, gap: 6 }}>
-                      {[
-                        [t("insights.low"), GLUCOSE_RICH.low, data.lowPct],
-                        [t("insights.inRange"), GLUCOSE_RICH.target, data.inRangePct],
-                        [t("insights.high"), GLUCOSE_RICH.high, data.highPct],
-                      ].map(([name, color, value]) => (
-                        <View key={name as string} className="flex-row items-center">
-                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color as string }} />
-                          <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700", flex: 1, marginLeft: 8 }}>
-                            {name as string}
+                {/* ── Glucose ─────────────────────────────────────────────── */}
+                {data.readings > 0 ? (
+                  <>
+                    {/* HERO: the time-in-range donut (mockup's signature) */}
+                    <GlassCard glow={GREEN} style={{ marginBottom: 10 }}>
+                      <View className="flex-row items-center justify-between mb-1">
+                        <Text
+                          style={{
+                            color: THEME.muted,
+                            fontSize: 9,
+                            letterSpacing: 1.3,
+                            textTransform: "uppercase",
+                            fontWeight: "800",
+                          }}
+                        >
+                          {t("insights.timeInRange")}
+                        </Text>
+                        <GlucoseChip
+                          status="normal"
+                          dot={false}
+                          label={`${pct(data.inRangePct)}%`}
+                        />
+                      </View>
+                      <View className="flex-row items-center">
+                        <TIRDonut
+                          segments={tirSegments({
+                            low: data.lowPct ?? 0,
+                            target: data.inRangePct ?? 0,
+                            high: data.highPct ?? 0,
+                            veryHigh: data.veryHighPct ?? 0,
+                          })}
+                          centerValue={pct(data.inRangePct)}
+                          centerSuffix="%"
+                          size={104}
+                        />
+                        <View style={{ flex: 1, marginLeft: 16, gap: 6 }}>
+                          {(
+                            [
+                              [t("insights.low"), GLUCOSE_RICH.low, data.lowPct],
+                              [t("insights.inRange"), GLUCOSE_RICH.target, data.inRangePct],
+                              [t("insights.high"), GLUCOSE_RICH.high, data.highPct],
+                              [
+                                t("insights.veryHigh"),
+                                GLUCOSE_RICH.veryHigh,
+                                data.veryHighPct,
+                              ],
+                            ] as const
+                          ).map(([name, color, value]) => (
+                            <View key={name} className="flex-row items-center">
+                              <View
+                                style={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: 4,
+                                  backgroundColor: color,
+                                }}
+                              />
+                              <Text
+                                style={{
+                                  color: THEME.ink,
+                                  fontSize: 12,
+                                  fontWeight: "700",
+                                  flex: 1,
+                                  marginLeft: 8,
+                                }}
+                              >
+                                {name}
+                              </Text>
+                              <Text style={[TABULAR, { color: THEME.muted, fontSize: 12 }]}>
+                                {value == null ? "-" : `${Math.round(value)}%`}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                      <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 10 }}>
+                        {t("glucose.bandLabel", {
+                          min: formatGlucose(band.low, unit),
+                          max: formatGlucose(band.high, unit),
+                          unit: u,
+                        })}
+                      </Text>
+                    </GlassCard>
+
+                    {/* AGP as the mockup's gradient area curve */}
+                    <GlassCard style={{ marginBottom: 10 }}>
+                      <Text
+                        style={{
+                          color: THEME.muted,
+                          fontSize: 9,
+                          letterSpacing: 1.3,
+                          textTransform: "uppercase",
+                          fontWeight: "800",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {t("insights.agpTitle")}
+                      </Text>
+                      {agpCurve.length >= 2 ? (
+                        <>
+                          <GradientAreaChart
+                            data={agpCurve}
+                            height={84}
+                            targetBand={{ min: band.low, max: band.high }}
+                            style={{ alignSelf: "stretch", width: "100%" }}
+                          />
+                          <View className="flex-row justify-between mt-1">
+                            {["00", "06", "12", "18", "24"].map((h) => (
+                              <Text key={h} style={{ color: THEME.muted, fontSize: 10 }}>
+                                {h}
+                              </Text>
+                            ))}
+                          </View>
+                          <Text
+                            style={{
+                              color: THEME.muted,
+                              fontSize: 11,
+                              lineHeight: 16,
+                              marginTop: 6,
+                            }}
+                          >
+                            {dailyCaption}
                           </Text>
-                          <Text style={{ color: THEME.muted, fontSize: 12 }}>
-                            {value == null ? "-" : `${Math.round(value as number)}%`}
+                        </>
+                      ) : (
+                        <Text style={{ color: THEME.muted, fontSize: 12, paddingVertical: 12 }}>
+                          {t("insights.chartNeedMore")}
+                        </Text>
+                      )}
+                    </GlassCard>
+
+                    {/* The mockup's StatCard strip */}
+                    <View className="flex-row" style={{ gap: 8 }}>
+                      <StatCard
+                        glass
+                        glow={data.gmi != null}
+                        label={t("insights.gmi")}
+                        display={data.gmi == null ? "-" : data.gmi.toFixed(1)}
+                        suffix={data.gmi == null ? undefined : "%"}
+                        accent={BRAND}
+                        style={{ flex: 1 }}
+                      />
+                      <StatCard
+                        glass
+                        label={t("insights.avgGlucose")}
+                        display={fmtG(data.avgGlucose)}
+                        suffix={u}
+                        footnote={premium ? avgTrend : undefined}
+                        style={{ flex: 1 }}
+                      />
+                    </View>
+                    <View className="flex-row mt-2" style={{ gap: 8 }}>
+                      <StatCard
+                        glass
+                        label={t("insights.timeInRange")}
+                        display={pct(data.inRangePct)}
+                        suffix="%"
+                        accent={GREEN}
+                        footnote={premium ? tirTrend : undefined}
+                        style={{ flex: 1 }}
+                      />
+                      <StatCard
+                        glass
+                        label={t("insights.readings")}
+                        display={String(data.readings)}
+                        footnote={t("insights.windowDays", { n: data.days })}
+                        style={{ flex: 1 }}
+                      />
+                    </View>
+
+                    {/* GMI is withheld until the sample can carry it */}
+                    <Text
+                      style={{
+                        color: THEME.muted,
+                        fontSize: 11,
+                        lineHeight: 16,
+                        marginTop: 8,
+                        paddingHorizontal: 6,
+                      }}
+                    >
+                      {data.gmi == null
+                        ? t("insights.gmiNeedMore", {
+                            n: GMI_MIN_READINGS,
+                            days: GMI_MIN_SPAN_DAYS,
+                          })
+                        : t("insights.gmiNote")}
+                    </Text>
+
+                    {/* Weekly digest (Pro): this week vs last, in sentences */}
+                    {isProUser && digest.length > 0 ? (
+                      <GlassCard accent style={{ marginTop: 12 }}>
+                        <View className="flex-row items-center mb-2">
+                          <Ionicons name="calendar-outline" size={15} color={BRAND} />
+                          <Text
+                            style={{
+                              color: BRAND,
+                              fontSize: 10,
+                              fontWeight: "800",
+                              letterSpacing: 1.2,
+                              textTransform: "uppercase",
+                              marginLeft: 8,
+                            }}
+                          >
+                            {t("insights.weeklyTitle")}
                           </Text>
                         </View>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View className="flex-row flex-wrap -m-1.5">
-                    <Tile
-                      label={t("insights.avgGlucose")}
-                      value={fmtG(data.avgGlucose)}
-                      unit={glucoseUnitLabel(unit)}
-                      color={BRAND}
-                      sub={premium ? avgTrend : undefined}
-                    />
-                    <Tile
-                      label={t("insights.timeInRange")}
-                      value={pct(data.inRangePct)}
-                      unit="%"
-                      color={GREEN}
-                      sub={premium ? tirTrend : undefined}
-                    />
-                    <Tile
-                      label={t("insights.readings")}
-                      value={String(data.readings)}
-                    />
-                    <Tile label={t("insights.days")} value={String(data.days)} />
-                  </View>
-
-                  {/* Time in range bar */}
-                  <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
-                    <Text className="text-zinc-300 font-semibold mb-3">
-                      {t("insights.timeInRange")}
-                    </Text>
-                    <TimeInRangeBar
-                      lowPct={data.lowPct ?? 0}
-                      inRangePct={data.inRangePct ?? 0}
-                      highPct={data.highPct ?? 0}
-                      labels={{
-                        low: t("insights.low"),
-                        inRange: t("insights.inRange"),
-                        high: t("insights.high"),
-                      }}
-                    />
-                    <Text className="text-zinc-600 text-[11px] mt-3">
-                      {t("insights.inRange")} = {formatGlucose(70, unit)}-
-                      {formatGlucose(180, unit)} {u}
-                    </Text>
-                  </View>
-
-                  {/* Daily profile (AGP): median + IQR by hour of day (Pro) */}
-                  {premium ? (
-                    <ChartCard
-                      title={t("insights.chartDailyTitle")}
-                      subtitle={t("insights.chartDailySub")}
-                      legend={[
-                        { label: t("insights.chartMedianLegend"), color: CHART.line },
-                        { label: t("insights.chartIqrLegend"), color: CHART.band, faded: true },
-                        { label: t("insights.chartTargetLegend"), color: CHART.target, faded: true },
-                      ]}
-                      caption={dailyCaption}
-                      emptyNote={
-                        agp.totalReadings < AGP_MIN_READINGS
-                          ? t("insights.chartNeedMore")
-                          : undefined
-                      }
-                      height={CHART_HEIGHT.dailyProfile}
-                    >
-                      {(w) => (
-                        <DailyProfileChart
-                          agp={agp}
-                          unit={unit}
-                          width={w}
-                          height={CHART_HEIGHT.dailyProfile}
-                        />
-                      )}
-                    </ChartCard>
-                  ) : null}
-
-                  {/* Daily average over the window, with a neutral delta chip (Pro) */}
-                  {premium ? (
-                    <ChartCard
-                      title={t("insights.chartTrendTitle")}
-                      subtitle={t("insights.chartTrendSub")}
-                      accessory={
-                        avgDeltaChip ? (
-                          <View className="rounded-full bg-zinc-800 px-2.5 py-1">
-                            <Text className="text-zinc-300 text-[11px] font-semibold">
-                              {avgDeltaChip}
-                            </Text>
-                          </View>
-                        ) : null
-                      }
-                      caption={
-                        avgDeltaChip
-                          ? `${trendCaption} ${avgDeltaChip} ${t("insights.chartDeltaLabel")}.`
-                          : trendCaption
-                      }
-                      emptyNote={
-                        trendDays.length < TREND_MIN_DAYS
-                          ? t("insights.chartNeedMore")
-                          : undefined
-                      }
-                      height={CHART_HEIGHT.trend}
-                    >
-                      {(w) => (
-                        <TrendChart
-                          days={trendDays}
-                          windowDays={windowDays}
-                          unit={unit}
-                          width={w}
-                          height={CHART_HEIGHT.trend}
-                          startLabel={windowStartLabel}
-                          endLabel={t("common.today")}
-                        />
-                      )}
-                    </ChartCard>
-                  ) : null}
-
-                  {/* Percentile band summary (AGP numeric), Pro */}
-                  {premium && pctile ? (
-                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
-                      <Text className="text-zinc-300 font-semibold mb-1">
-                        {t("insights.percentileTitle")}
-                      </Text>
-                      <Text className="text-zinc-500 text-xs mb-3">
-                        {t("insights.percentileSub")}
-                      </Text>
-                      <View className="flex-row justify-between">
-                        {(
-                          [
-                            ["p05", pctile.p05],
-                            ["p25", pctile.p25],
-                            ["median", pctile.p50],
-                            ["p75", pctile.p75],
-                            ["p95", pctile.p95],
-                          ] as const
-                        ).map(([k, v]) => (
-                          <View key={k} className="items-center flex-1">
+                        {digest.map((s, i) => (
+                          <View key={i} className="flex-row items-start mb-1.5">
+                            <Text style={{ color: THEME.muted, marginRight: 8 }}>•</Text>
                             <Text
-                              className={`text-base font-bold ${
-                                k === "median" ? "text-brand" : "text-zinc-100"
-                              }`}
+                              style={{
+                                color: THEME.ink,
+                                fontSize: 13,
+                                lineHeight: 19,
+                                flex: 1,
+                              }}
                             >
-                              {fmtG(v)}
-                            </Text>
-                            <Text className="text-zinc-500 text-[10px] mt-0.5">
-                              {t(`insights.${k}`)}
+                              {weeklyText(s)}
                             </Text>
                           </View>
                         ))}
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {premium ? (
-                    <>
-                  {/* Period + variability + lows */}
-                  <View className="flex-row flex-wrap -m-1.5 mt-1.5">
-                    <Tile
-                      label={t("insights.fasting")}
-                      value={fmtG(data.avgFasting)}
-                      unit={glucoseUnitLabel(unit)}
-                    />
-                    <Tile
-                      label={t("insights.postMeal")}
-                      value={fmtG(data.avgPostMeal)}
-                      unit={glucoseUnitLabel(unit)}
-                    />
-                    <Tile
-                      label={t("insights.variability")}
-                      value={fmtG(data.glucoseSD)}
-                      unit={glucoseUnitLabel(unit)}
-                    />
-                    <Tile
-                      label={t("insights.cv")}
-                      value={data.glucoseCV == null ? "-" : String(Math.round(data.glucoseCV))}
-                      unit="%"
-                    />
-                    {/* Blue, not rose: a hypo is never shown in the colour this
-                        app reserves for a high (see lib/glucose.ts). */}
-                    <Tile
-                      label={t("insights.lows")}
-                      value={String(data.hypoCount)}
-                      color={CHART.low}
-                    />
-                    <Tile
-                      label={t("insights.gmi")}
-                      value={data.gmi == null ? "-" : data.gmi.toFixed(1)}
-                      unit="%"
-                      color={BRAND}
-                    />
-                  </View>
-                  <Text className="text-zinc-600 text-[11px] mt-1 px-1.5 leading-4">
-                    {t("insights.variabilityNote")}
-                  </Text>
-
-                  {/* Average by time of day */}
-                  <ChartCard
-                    title={t("insights.hourlyTitle")}
-                    caption={hourlyCaption}
-                    emptyNote={hourlyEmpty ? t("insights.chartNeedMore") : undefined}
-                    height={CHART_HEIGHT.hourly}
-                  >
-                    {(w) => (
-                      <HourlyChart
-                        bars={hourlyBars}
-                        unit={unit}
-                        width={w}
-                        height={CHART_HEIGHT.hourly}
-                      />
-                    )}
-                  </ChartCard>
-
-                  <Text className="text-zinc-600 text-[11px] mt-4 px-1.5 leading-4">
-                    {t("insights.gmiNote")}
-                  </Text>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
-
-              {/* ── Patterns (descriptive observations) ───────────────────── */}
-              {premium && patterns.length > 0 ? (
-                <>
-                  <SectionTitle>{t("insights.patternsTitle")}</SectionTitle>
-                  {patterns.map((p, i) => (
-                    <View
-                      key={`${p.kind}-${i}`}
-                      className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mb-2"
-                    >
-                      <Ionicons name="bulb-outline" size={16} color={BRAND} />
-                      <Text className="text-zinc-300 text-sm leading-5 ml-2.5 flex-1">
-                        {patternText(p)}
-                      </Text>
-                    </View>
-                  ))}
-                </>
-              ) : null}
-
-              {/* ── Injections (Pro) ──────────────────────────────────────── */}
-              {premium ? (
-                <>
-              <SectionTitle>{t("injection.title")}</SectionTitle>
-              {data.injectionCount === 0 ? (
-                <Text className="text-zinc-600 text-sm px-1.5 py-2">
-                  {t("injection.empty")}
-                </Text>
-              ) : (
-                <>
-                  <View className="flex-row flex-wrap -m-1.5">
-                    <Tile
-                      label={t("insights.injectionsCount")}
-                      value={String(data.injectionCount)}
-                    />
-                    <Tile
-                      label={t("insights.avgDose")}
-                      value={data.avgDailyDose == null ? "-" : num(Math.round(data.avgDailyDose * 10) / 10)}
-                      unit={t("common.units")}
-                    />
-                  </View>
-
-                  {/* Basal / Bolus split */}
-                  {data.basalPct != null ? (
-                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
-                      <Text className="text-zinc-300 font-semibold mb-3">
-                        {t("insights.basalBolus")}
-                      </Text>
-                      <View className="h-3 rounded-full overflow-hidden flex-row bg-zinc-800">
-                        <Seg pct={data.basalPct} color={BRAND} />
-                        <Seg pct={100 - data.basalPct} color={AMBER} />
-                      </View>
-                      <View className="flex-row justify-between mt-3">
-                        <View className="flex-row items-center">
-                          <View className="w-2.5 h-2.5 rounded-full mr-1.5" style={{ backgroundColor: BRAND }} />
-                          <Text className="text-zinc-400 text-xs">
-                            {t("insights.basal")} {num(Math.round(data.basalUnits * 10) / 10)} {t("common.units")}
-                          </Text>
-                        </View>
-                        <View className="flex-row items-center">
-                          <View className="w-2.5 h-2.5 rounded-full mr-1.5" style={{ backgroundColor: AMBER }} />
-                          <Text className="text-zinc-400 text-xs">
-                            {t("insights.bolus")} {num(Math.round(data.bolusUnits * 10) / 10)} {t("common.units")}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {/* Most-used site */}
-                  {data.mostUsedSite ? (
-                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3 flex-row items-center">
-                      <View className="w-10 h-10 rounded-full bg-brand/10 items-center justify-center mr-3">
-                        <Ionicons name="body-outline" size={20} color={BRAND} />
-                      </View>
-                      <View className="flex-1">
-                        <Text className="text-zinc-500 text-xs">{t("insights.mostUsedSite")}</Text>
-                        <Text className="text-zinc-100 font-semibold mt-0.5">
-                          {t(`injectionSite.${data.mostUsedSite}`)}
-                        </Text>
-                      </View>
-                      <Text className="text-zinc-300 font-semibold">
-                        {data.mostUsedSiteCount}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {/* Site distribution */}
-                  {usedSites.length > 0 ? (
-                    <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
-                      <Text className="text-zinc-300 font-semibold mb-3">
-                        {t("insights.siteDistribution")}
-                      </Text>
-                      {usedSites.map((sc) => (
-                        <View key={sc.site} className="flex-row items-center mb-2">
-                          <Text className="text-zinc-400 text-xs w-28 pr-2" numberOfLines={1}>
-                            {t(`injectionSite.${sc.site}`)}
-                          </Text>
-                          <View className="flex-1 h-2 rounded-full bg-zinc-800 overflow-hidden mr-2">
-                            <View
-                              className="h-2 rounded-full bg-brand"
-                              style={{ width: `${(sc.count / maxSite) * 100}%` }}
-                            />
-                          </View>
-                          <Text className="text-zinc-500 text-xs w-6 text-right">
-                            {sc.count}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </>
-              )}
-                </>
-              ) : null}
-
-              {/* ── From Apple Health / Health Connect (Pro, read-only) ─────── */}
-              {premium &&
-              health &&
-              (health.activeMinutes != null || health.insulin != null) ? (
-                <>
-                  <SectionTitle>{t("insights.healthTitle")}</SectionTitle>
-                  <View className="flex-row flex-wrap -m-1.5">
-                    {health.activeMinutes != null ? (
-                      <Tile
-                        label={t("insights.activeMinutes")}
-                        value={String(health.activeMinutes)}
-                        unit={t("insights.minShort")}
-                      />
+                      </GlassCard>
                     ) : null}
-                    {health.insulin != null ? (
+
+                    {/* Daily average over the window, with a neutral delta chip */}
+                    {premium ? (
+                      <ChartCard
+                        title={t("insights.chartTrendTitle")}
+                        subtitle={t("insights.chartTrendSub")}
+                        accessory={
+                          avgDeltaChip ? (
+                            <View
+                              className="rounded-full px-2.5 py-1"
+                              style={{ backgroundColor: THEME.glass }}
+                            >
+                              <Text
+                                style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}
+                              >
+                                {avgDeltaChip}
+                              </Text>
+                            </View>
+                          ) : null
+                        }
+                        caption={
+                          avgDeltaChip
+                            ? `${trendCaption} ${avgDeltaChip} ${t("insights.chartDeltaLabel")}.`
+                            : trendCaption
+                        }
+                        emptyNote={
+                          trendDays.length < TREND_MIN_DAYS
+                            ? t("insights.chartNeedMore")
+                            : undefined
+                        }
+                        height={CHART_HEIGHT.trend}
+                      >
+                        {(w) => (
+                          <TrendChart
+                            days={trendDays}
+                            windowDays={windowDays}
+                            unit={unit}
+                            width={w}
+                            height={CHART_HEIGHT.trend}
+                            startLabel={windowStartLabel}
+                            endLabel={t("common.today")}
+                            band={band}
+                          />
+                        )}
+                      </ChartCard>
+                    ) : null}
+
+                    {/* Percentile band summary (AGP numeric), Pro */}
+                    {premium && pctile ? (
+                      <GlassCard style={{ marginTop: 12 }}>
+                        <Text style={{ color: THEME.ink, fontWeight: "800" }}>
+                          {t("insights.percentileTitle")}
+                        </Text>
+                        <Text style={{ color: THEME.muted, fontSize: 11, marginBottom: 12 }}>
+                          {t("insights.percentileSub")}
+                        </Text>
+                        <View className="flex-row justify-between">
+                          {(
+                            [
+                              ["p05", pctile.p05],
+                              ["p25", pctile.p25],
+                              ["median", pctile.p50],
+                              ["p75", pctile.p75],
+                              ["p95", pctile.p95],
+                            ] as const
+                          ).map(([k, v]) => (
+                            <View key={k} className="items-center flex-1">
+                              <Text
+                                style={[
+                                  TABULAR,
+                                  {
+                                    color: k === "median" ? BRAND : THEME.ink,
+                                    fontSize: 15,
+                                    fontWeight: "800",
+                                  },
+                                ]}
+                              >
+                                {fmtG(v)}
+                              </Text>
+                              <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
+                                {t(`insights.${k}`)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </GlassCard>
+                    ) : null}
+
+                    {premium ? (
                       <>
-                        <Tile
-                          label={t("insights.healthBasal")}
-                          value={num(health.insulin.basalUnits)}
-                          unit={t("common.units")}
-                        />
-                        <Tile
-                          label={t("insights.healthBolus")}
-                          value={num(health.insulin.bolusUnits)}
-                          unit={t("common.units")}
-                        />
+                        {/* Period + variability + lows */}
+                        <View className="flex-row mt-3" style={{ gap: 8 }}>
+                          <StatCard
+                            glass
+                            label={t("insights.fasting")}
+                            display={fmtG(data.avgFasting)}
+                            suffix={u}
+                            style={{ flex: 1 }}
+                          />
+                          <StatCard
+                            glass
+                            label={t("insights.postMeal")}
+                            display={fmtG(data.avgPostMeal)}
+                            suffix={u}
+                            style={{ flex: 1 }}
+                          />
+                        </View>
+                        <View className="flex-row mt-2" style={{ gap: 8 }}>
+                          <StatCard
+                            glass
+                            label={t("insights.variability")}
+                            display={fmtG(data.glucoseSD)}
+                            suffix={u}
+                            style={{ flex: 1 }}
+                          />
+                          <StatCard
+                            glass
+                            label={t("insights.cv")}
+                            display={
+                              data.glucoseCV == null
+                                ? "-"
+                                : String(Math.round(data.glucoseCV))
+                            }
+                            suffix="%"
+                            style={{ flex: 1 }}
+                          />
+                          {/* A low is never shown in the colour reserved for a
+                              high (see lib/glucose.ts). */}
+                          <StatCard
+                            glass
+                            label={t("insights.lows")}
+                            display={String(data.hypoCount)}
+                            accent={GLUCOSE_RICH.low}
+                            style={{ flex: 1 }}
+                          />
+                        </View>
+                        <Text
+                          style={{
+                            color: THEME.muted,
+                            fontSize: 11,
+                            lineHeight: 16,
+                            marginTop: 8,
+                            paddingHorizontal: 6,
+                          }}
+                        >
+                          {t("insights.variabilityNote")}
+                        </Text>
+
+                        {/* Average by time of day */}
+                        <ChartCard
+                          title={t("insights.hourlyTitle")}
+                          caption={hourlyCaption}
+                          emptyNote={hourlyEmpty ? t("insights.chartNeedMore") : undefined}
+                          height={CHART_HEIGHT.hourly}
+                        >
+                          {(w) => (
+                            <HourlyChart
+                              bars={hourlyBars}
+                              unit={unit}
+                              width={w}
+                              height={CHART_HEIGHT.hourly}
+                              band={band}
+                            />
+                          )}
+                        </ChartCard>
                       </>
                     ) : null}
-                  </View>
-                  <Text className="text-zinc-600 text-[11px] mt-1 px-1.5 leading-4">
-                    {t("insights.healthNote")}
+                  </>
+                ) : null}
+
+                {/* ── Patterns (descriptive observations) ─────────────────── */}
+                {premium && patterns.length > 0 ? (
+                  <>
+                    <SectionTitle>{t("insights.patternsTitle")}</SectionTitle>
+                    {patterns.map((p, i) => (
+                      <View
+                        key={`${p.kind}-${i}`}
+                        className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mb-2"
+                      >
+                        <Ionicons name="bulb-outline" size={16} color={BRAND} />
+                        <Text
+                          style={{
+                            color: THEME.ink,
+                            fontSize: 13,
+                            lineHeight: 19,
+                            marginLeft: 10,
+                            flex: 1,
+                          }}
+                        >
+                          {patternText(p)}
+                        </Text>
+                      </View>
+                    ))}
+                  </>
+                ) : null}
+
+                {/* ── Injections (Pro, insulin users) ─────────────────────── */}
+                {premium && showsInjections ? (
+                  <>
+                    <SectionTitle>{t("injection.title")}</SectionTitle>
+                    {data.injectionCount === 0 ? (
+                      <Text
+                        style={{
+                          color: THEME.muted,
+                          fontSize: 13,
+                          paddingHorizontal: 6,
+                          paddingVertical: 8,
+                        }}
+                      >
+                        {t("injection.empty")}
+                      </Text>
+                    ) : (
+                      <>
+                        <View className="flex-row" style={{ gap: 8 }}>
+                          <StatCard
+                            glass
+                            label={t("insights.injectionsCount")}
+                            display={String(data.injectionCount)}
+                            style={{ flex: 1 }}
+                          />
+                          <StatCard
+                            glass
+                            label={t("insights.avgDose")}
+                            display={
+                              data.avgDailyDose == null
+                                ? "-"
+                                : num(Math.round(data.avgDailyDose * 10) / 10)
+                            }
+                            suffix={t("common.units")}
+                            style={{ flex: 1 }}
+                          />
+                        </View>
+
+                        {/* Basal / Bolus split */}
+                        {data.basalPct != null ? (
+                          <GlassCard style={{ marginTop: 12 }}>
+                            <Text style={{ color: THEME.ink, fontWeight: "800", marginBottom: 12 }}>
+                              {t("insights.basalBolus")}
+                            </Text>
+                            <View
+                              className="h-3 rounded-full overflow-hidden flex-row"
+                              style={{ backgroundColor: THEME.track }}
+                            >
+                              <Seg pct={data.basalPct} color={BRAND} />
+                              <Seg pct={100 - data.basalPct} color={AMBER} />
+                            </View>
+                            <View className="flex-row justify-between mt-3">
+                              <View className="flex-row items-center">
+                                <View
+                                  className="w-2.5 h-2.5 rounded-full mr-1.5"
+                                  style={{ backgroundColor: BRAND }}
+                                />
+                                <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                                  {t("insights.basal")}{" "}
+                                  {num(Math.round(data.basalUnits * 10) / 10)}{" "}
+                                  {t("common.units")}
+                                </Text>
+                              </View>
+                              <View className="flex-row items-center">
+                                <View
+                                  className="w-2.5 h-2.5 rounded-full mr-1.5"
+                                  style={{ backgroundColor: AMBER }}
+                                />
+                                <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                                  {t("insights.bolus")}{" "}
+                                  {num(Math.round(data.bolusUnits * 10) / 10)}{" "}
+                                  {t("common.units")}
+                                </Text>
+                              </View>
+                            </View>
+                          </GlassCard>
+                        ) : null}
+
+                        {/* Most-used site */}
+                        {data.mostUsedSite ? (
+                          <GlassCard style={{ marginTop: 12, flexDirection: "row", alignItems: "center" }}>
+                            <IconTile icon="body-outline" size={38} radius={12} hero />
+                            <View className="flex-1 ml-3">
+                              <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                                {t("insights.mostUsedSite")}
+                              </Text>
+                              <Text style={{ color: THEME.ink, fontWeight: "800", marginTop: 2 }}>
+                                {t(`injectionSite.${data.mostUsedSite}`)}
+                              </Text>
+                            </View>
+                            <Text
+                              style={[TABULAR, { color: THEME.ink, fontWeight: "800" }]}
+                            >
+                              {data.mostUsedSiteCount}
+                            </Text>
+                          </GlassCard>
+                        ) : null}
+
+                        {/* Site distribution */}
+                        {usedSites.length > 0 ? (
+                          <GlassCard style={{ marginTop: 12 }}>
+                            <Text style={{ color: THEME.ink, fontWeight: "800", marginBottom: 12 }}>
+                              {t("insights.siteDistribution")}
+                            </Text>
+                            {usedSites.map((sc) => (
+                              <View key={sc.site} className="flex-row items-center mb-2">
+                                <Text
+                                  style={{ color: THEME.muted, fontSize: 11, width: 112, paddingRight: 8 }}
+                                  numberOfLines={1}
+                                >
+                                  {t(`injectionSite.${sc.site}`)}
+                                </Text>
+                                <View
+                                  className="flex-1 h-2 rounded-full overflow-hidden mr-2"
+                                  style={{ backgroundColor: THEME.track }}
+                                >
+                                  <View
+                                    className="h-2 rounded-full"
+                                    style={{
+                                      width: `${(sc.count / maxSite) * 100}%`,
+                                      backgroundColor: BRAND,
+                                    }}
+                                  />
+                                </View>
+                                <Text
+                                  style={[
+                                    TABULAR,
+                                    { color: THEME.muted, fontSize: 11, width: 24, textAlign: "right" },
+                                  ]}
+                                >
+                                  {sc.count}
+                                </Text>
+                              </View>
+                            ))}
+                          </GlassCard>
+                        ) : null}
+                      </>
+                    )}
+                  </>
+                ) : null}
+
+                {/* ── From Apple Health (Pro, read-only) ──────────────────── */}
+                {premium &&
+                health &&
+                (health.activeMinutes != null || health.insulin != null) ? (
+                  <>
+                    <SectionTitle>{t("insights.healthTitle")}</SectionTitle>
+                    <View className="flex-row" style={{ gap: 8 }}>
+                      {health.activeMinutes != null ? (
+                        <StatCard
+                          glass
+                          label={t("insights.activeMinutes")}
+                          display={String(health.activeMinutes)}
+                          suffix={t("insights.minShort")}
+                          style={{ flex: 1 }}
+                        />
+                      ) : null}
+                      {health.insulin != null ? (
+                        <>
+                          <StatCard
+                            glass
+                            label={t("insights.healthBasal")}
+                            display={num(health.insulin.basalUnits)}
+                            suffix={t("common.units")}
+                            style={{ flex: 1 }}
+                          />
+                          <StatCard
+                            glass
+                            label={t("insights.healthBolus")}
+                            display={num(health.insulin.bolusUnits)}
+                            suffix={t("common.units")}
+                            style={{ flex: 1 }}
+                          />
+                        </>
+                      ) : null}
+                    </View>
+                    <Text
+                      style={{
+                        color: THEME.muted,
+                        fontSize: 11,
+                        lineHeight: 16,
+                        marginTop: 8,
+                        paddingHorizontal: 6,
+                      }}
+                    >
+                      {t("insights.healthNote")}
+                    </Text>
+                  </>
+                ) : null}
+
+                {/* Descriptive disclaimer */}
+                <View className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mt-5">
+                  <Ionicons name="information-circle-outline" size={15} color={THEME.muted} />
+                  <Text
+                    style={{
+                      color: THEME.muted,
+                      fontSize: 11,
+                      lineHeight: 17,
+                      marginLeft: 10,
+                      flex: 1,
+                    }}
+                  >
+                    {t("insights.disclaimer")}
                   </Text>
-                </>
-              ) : null}
+                </View>
 
-              {/* Sources link */}
-              <Pressable
-                onPress={() => router.push("/sources")}
-                className="flex-row items-center justify-center mt-6 py-2"
-              >
-                <Ionicons name="information-circle-outline" size={15} color={BRAND} />
-                <Text className="text-brand text-xs underline ml-1.5">
-                  {t("sources.calcLink")}
-                </Text>
-              </Pressable>
-
-              {/* Free 7-day: nudge to Pro for the longer windows */}
-              {!premium ? (
+                {/* Sources link */}
                 <Pressable
-                  onPress={() => router.push("/paywall")}
-                  className="rounded-2xl border border-brand/30 bg-brand/10 p-4 mt-4 flex-row items-center active:opacity-80"
+                  onPress={() => router.push("/sources")}
+                  className="flex-row items-center justify-center mt-4 py-2"
                 >
-                  <Ionicons name="sparkles" size={18} color={BRAND} />
-                  <Text className="text-brand text-sm font-medium flex-1 ml-2.5">
-                    {t("insights.freeUpsell")}
+                  <Ionicons name="information-circle-outline" size={14} color={BRAND} />
+                  <Text style={{ color: BRAND, fontSize: 12, marginLeft: 6 }}>
+                    {t("sources.calcLink")}
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color={BRAND} />
                 </Pressable>
-              ) : null}
+
+                {/* Free 7-day: nudge to Pro for the longer windows */}
+                {!premium ? (
+                  <Pressable
+                    onPress={() => router.push("/paywall")}
+                    className="rounded-2xl p-4 mt-4 flex-row items-center active:opacity-80"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: withAlpha(BRAND, 0.3),
+                      backgroundColor: withAlpha(BRAND, 0.1),
+                    }}
+                  >
+                    <Ionicons name="sparkles" size={18} color={BRAND} />
+                    <Text
+                      style={{
+                        color: BRAND,
+                        fontSize: 13,
+                        fontWeight: "600",
+                        flex: 1,
+                        marginLeft: 10,
+                      }}
+                    >
+                      {t("insights.freeUpsell")}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={BRAND} />
+                  </Pressable>
+                ) : null}
               </View>
 
               {/* Locked (free 30/90): blurred preview + unlock card */}
@@ -846,19 +1053,33 @@ export default function InsightsScreen() {
                   className="items-center justify-center overflow-hidden rounded-2xl"
                 >
                   <View className="items-center px-8">
-                    <View className="w-14 h-14 rounded-3xl bg-brand/20 items-center justify-center mb-3">
-                      <Ionicons name="lock-closed" size={24} color={BRAND} />
-                    </View>
-                    <Text className="text-zinc-50 text-lg font-bold text-center">
+                    <IconTile icon="lock-closed" size={56} radius={18} hero />
+                    <Text
+                      style={{
+                        color: THEME.ink,
+                        fontSize: 18,
+                        fontWeight: "800",
+                        textAlign: "center",
+                        marginTop: 12,
+                      }}
+                    >
                       {t("insights.lockedTitle")}
                     </Text>
-                    <Text className="text-zinc-300 text-center mt-2 mb-5">
+                    <Text
+                      style={{
+                        color: THEME.muted,
+                        textAlign: "center",
+                        marginTop: 8,
+                        marginBottom: 18,
+                        lineHeight: 20,
+                      }}
+                    >
                       {t("insights.lockedBody")}
                     </Text>
-                    <Button
+                    <GradientCTA
                       label={t("paywall.cta")}
-                      size="lg"
                       onPress={() => router.push("/paywall")}
+                      style={{ alignSelf: "stretch" }}
                     />
                   </View>
                 </BlurView>

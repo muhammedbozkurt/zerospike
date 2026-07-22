@@ -30,8 +30,8 @@ export const INJECTION_STEPS: InjectionStep[] = [
   },
   {
     icon: "build-outline",
-    titleKey: "injectionGuide.steps.prepare_pen.title",
-    bodyKey: "injectionGuide.steps.prepare_pen.body",
+    titleKey: "injectionGuide.steps.prepare_device.title",
+    bodyKey: "injectionGuide.steps.prepare_device.body",
   },
   {
     icon: "hand-left-outline",

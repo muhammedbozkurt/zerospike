@@ -44,7 +44,31 @@ export function mmolToMgdl(mmol: number): number {
   return mmol * MGDL_PER_MMOL;
 }
 
-export type GlucoseStatus = "low" | "normal" | "elevated" | "high";
+export type GlucoseStatus = "low" | "normal" | "elevated" | "high" | "veryHigh";
+
+/**
+ * Fixed clinical ceiling, independent of the personal target range. A reading
+ * at or above this sits in its own class no matter how lenient the user's own
+ * range is, so a wide personal target can never render a 300 as a mild "high".
+ * 250 mg/dL is the widely-published threshold for a markedly raised reading.
+ */
+export const VERY_HIGH_MGDL = 250;
+
+/** Bounds the user's own range/threshold inputs to values that stay sane. */
+export const HYPO_THRESHOLD_RANGE = { min: 54, max: 90 } as const;
+export const TARGET_RANGE_BOUNDS = { min: 60, max: 300 } as const;
+
+export function clampHypoThreshold(value: number): number {
+  return Math.round(
+    Math.min(HYPO_THRESHOLD_RANGE.max, Math.max(HYPO_THRESHOLD_RANGE.min, value))
+  );
+}
+
+export function clampTarget(value: number): number {
+  return Math.round(
+    Math.min(TARGET_RANGE_BOUNDS.max, Math.max(TARGET_RANGE_BOUNDS.min, value))
+  );
+}
 
 /** Diagnostic palette - the single glucose color language (lib/theme/tokens.ts,
  *  mirrored in tailwind.config). low=red, normal=green, elevated=amber,
@@ -58,6 +82,7 @@ export const STATUS_BORDER: Record<GlucoseStatus, string> = {
   normal: "border-l-normal",
   elevated: "border-l-elevated",
   high: "border-l-high",
+  veryHigh: "border-l-veryHigh",
 };
 
 export const STATUS_TEXT: Record<GlucoseStatus, string> = {
@@ -65,45 +90,80 @@ export const STATUS_TEXT: Record<GlucoseStatus, string> = {
   normal: "text-normal",
   elevated: "text-elevated",
   high: "text-high",
+  veryHigh: "text-veryHigh",
 };
 
-/** Fasting/pre-meal/bedtime compare to the fasting target; post-meal to its own. */
-function maxFor(
-  tag: PeriodTag,
-  profile: Pick<UserProfile, "target_fasting_max" | "target_postmeal_max">
-): number {
-  switch (tag) {
-    case "post_meal_2h":
-      return profile.target_postmeal_max;
-    case "fasting":
-    case "pre_meal":
-    case "bedtime":
-      return profile.target_fasting_max;
-    case "manual":
-    default:
-      // Neutral manual reading: use the more lenient post-meal threshold.
-      return profile.target_postmeal_max;
-  }
+/** The subset of a profile the classification and range helpers need. */
+export type TargetProfile = Pick<
+  UserProfile,
+  | "target_fasting_min"
+  | "target_fasting_max"
+  | "target_postmeal_min"
+  | "target_postmeal_max"
+  | "hypo_threshold_mgdl"
+>;
+
+export interface TargetRange {
+  min: number;
+  max: number;
+}
+
+/** The user's own low threshold, defaulted and clamped to a sane band. */
+export function hypoThreshold(profile: Partial<TargetProfile>): number {
+  return clampHypoThreshold(profile.hypo_threshold_mgdl ?? 70);
 }
 
 /**
- * Classifies a reading against the user's personal targets.
- * - low:      hypoglycemia (< 70 mg/dL, ADA level-1) - its own state so it is
- *             never shown like a high; a hypo is treated with carbs, not insulin
- * - normal:   at/under target (and not hypo)
- * - elevated: up to ~25% above target
- * - high:     beyond that
+ * The target RANGE for a reading's period. Fasting/pre-meal/bedtime use the
+ * fasting range; post-meal uses its own; an untagged manual reading uses the
+ * more lenient post-meal range (unchanged from the pre-range behaviour).
+ */
+export function targetRangeFor(
+  tag: PeriodTag,
+  profile: Partial<TargetProfile>
+): TargetRange {
+  const postMeal = tag === "post_meal_2h" || tag === "manual";
+  const min = postMeal
+    ? (profile.target_postmeal_min ?? 80)
+    : (profile.target_fasting_min ?? 80);
+  const max = postMeal
+    ? (profile.target_postmeal_max ?? 140)
+    : (profile.target_fasting_max ?? 100);
+  // Defensive: a stored min above its max would invert the band.
+  return min <= max ? { min, max } : { min: max, max: min };
+}
+
+/** Middle of a target range - what a correction aims for (never the ceiling). */
+export function targetMidpoint(range: TargetRange): number {
+  return Math.round((range.min + range.max) / 2);
+}
+
+/**
+ * Classifies a reading against the user's personal target RANGE.
+ * - low:      below the user's own hypo threshold (default 70, ADA level-1) -
+ *             its own state so it is never shown like a high; a low is handled
+ *             with carbs, not insulin
+ * - normal:   inside the target range (min..max)
+ * - elevated: above the range, up to ~25% over its ceiling
+ * - high:     further above the ceiling
+ * - veryHigh: at/above the fixed clinical 250 mg/dL, whatever the personal range
+ *
+ * A reading between the hypo threshold and the range's low end is NOT a low; it
+ * counts as normal, because the low end of a target band is a preference, not a
+ * clinical event.
  *
  * Display-only: this never feeds estimateInsulin (which uses raw mg/dL).
  */
 export function classifyGlucose(
   value: number,
   tag: PeriodTag,
-  profile: Pick<UserProfile, "target_fasting_max" | "target_postmeal_max">
+  profile: Partial<TargetProfile>
 ): GlucoseStatus {
-  if (value < 70) return "low";
-  const max = maxFor(tag, profile);
-  if (value <= max) return "normal";
+  if (value < hypoThreshold(profile)) return "low";
+  if (value >= VERY_HIGH_MGDL) return "veryHigh";
+  const { min, max } = targetRangeFor(tag, profile);
+  if (value >= min && value <= max) return "normal";
+  if (value < min) return "normal"; // above hypo but under the band's low end
   if (value <= max * 1.25) return "elevated";
   return "high";
 }

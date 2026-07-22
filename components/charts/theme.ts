@@ -1,4 +1,5 @@
 import { STATUS_COLOR } from "../../lib/glucose";
+import { THEME } from "../../lib/theme/tokens";
 
 /**
  * One palette for every chart on the Insights screen.
@@ -25,7 +26,7 @@ export const CHART = {
   grid: "rgba(255,255,255,0.08)",
   axis: "#89a3b0",
   bar: "#2ee6ff",
-  barMuted: "#3f3f46", // zinc-700
+  barMuted: THEME.border, // hairline track for an empty bar
 } as const;
 
 /** Chart heights, in points. Tuned so three charts do not bury the tiles. */

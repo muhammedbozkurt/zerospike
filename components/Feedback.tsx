@@ -26,8 +26,16 @@ import {
   pushHost,
   shouldStackButtons,
 } from "../lib/feedback";
+import { GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
+import { GlassCard } from "./rich/GlassCard";
 
 type ToastKind = "success" | "info" | "error";
+
+/** An optional single action on a toast, e.g. "Undo" on an auto-created entry. */
+export interface ToastAction {
+  label: string;
+  onPress: () => void;
+}
 
 interface ConfirmOptions {
   title?: string;
@@ -50,7 +58,7 @@ interface ActionSheetOptions {
 }
 
 interface FeedbackApi {
-  toast: (message: string, kind?: ToastKind) => void;
+  toast: (message: string, kind?: ToastKind, action?: ToastAction) => void;
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
   actionSheet: (opts: ActionSheetOptions) => void;
 }
@@ -71,6 +79,8 @@ interface FeedbackInternal {
   unregisterHost: (id: number) => void;
   toastMsg: string;
   toastKind: ToastKind;
+  toastAction: ToastAction | null;
+  runToastAction: () => void;
   toastAnim: Animated.Value;
   confirmOpts: ConfirmOptions | null;
   closeConfirm: (result: boolean) => void;
@@ -84,19 +94,21 @@ const FeedbackInternalContext = createContext<FeedbackInternal | null>(null);
 
 let nextHostId = 0;
 
+/** Mockup 10: a glass card with a glowing status dot, tinted per kind. */
 const TOAST_STYLE: Record<
   ToastKind,
-  { icon: keyof typeof Ionicons.glyphMap; color: string; border: string }
+  { icon: keyof typeof Ionicons.glyphMap; color: string }
 > = {
-  success: { icon: "checkmark-circle", color: "#10b981", border: "border-emerald-500/40" },
-  info: { icon: "information-circle", color: "#2ee6ff", border: "border-brand/40" },
-  error: { icon: "alert-circle", color: "#f43f5e", border: "border-rose-500/40" },
+  success: { icon: "checkmark-circle", color: GLUCOSE_RICH.target },
+  info: { icon: "information-circle", color: THEME.accent },
+  error: { icon: "alert-circle", color: GLUCOSE_RICH.low },
 };
 
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   // Toast state
   const [toastMsg, setToastMsg] = useState("");
   const [toastKind, setToastKind] = useState<ToastKind>("success");
+  const [toastAction, setToastAction] = useState<ToastAction | null>(null);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -145,9 +157,10 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   );
 
   const toast = useCallback(
-    (message: string, kind: ToastKind = "success") => {
+    (message: string, kind: ToastKind = "success", action?: ToastAction) => {
       setToastMsg(message);
       setToastKind(kind);
+      setToastAction(action ?? null);
       if (hideTimer.current) clearTimeout(hideTimer.current);
       Animated.timing(toastAnim, {
         toValue: 1,
@@ -162,10 +175,25 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }).start();
-      }, 2200);
+        setToastAction(null);
+      }, action ? 5200 : 2200);
     },
     [toastAnim]
   );
+
+  /** Runs the toast's action once, then dismisses it. */
+  const runToastAction = useCallback(() => {
+    const action = toastAction;
+    setToastAction(null);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    Animated.timing(toastAnim, {
+      toValue: 0,
+      duration: 160,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    action?.onPress();
+  }, [toastAction, toastAnim]);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     // A dialog left dangling by a previous caller never blocks a new one.
@@ -208,6 +236,8 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       unregisterHost,
       toastMsg,
       toastKind,
+      toastAction,
+      runToastAction,
       toastAnim,
       confirmOpts,
       closeConfirm,
@@ -221,6 +251,8 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       unregisterHost,
       toastMsg,
       toastKind,
+      toastAction,
+      runToastAction,
       toastAnim,
       confirmOpts,
       closeConfirm,
@@ -270,6 +302,8 @@ function FeedbackOverlays() {
   const {
     toastMsg,
     toastKind,
+    toastAction,
+    runToastAction,
     toastAnim,
     confirmOpts,
     closeConfirm,
@@ -292,9 +326,10 @@ function FeedbackOverlays() {
         <SheetOverlay sheet={sheet} onClose={closeSheet} onRun={runSheetAction} />
       ) : null}
 
-      {/* Toast rides above the dialogs, and survives the screen that fired it. */}
+      {/* Toast rides above the dialogs, and survives the screen that fired it.
+          It only accepts touches while it carries an action. */}
       <Animated.View
-        pointerEvents="none"
+        pointerEvents={toastAction ? "box-none" : "none"}
         style={{
           position: "absolute",
           left: 16,
@@ -311,12 +346,25 @@ function FeedbackOverlays() {
           ],
         }}
       >
-        <View
-          className={`flex-row items-center rounded-2xl bg-zinc-900 border ${ts.border} px-4 py-3.5`}
-        >
-          <Ionicons name={ts.icon} size={20} color={ts.color} />
-          <Text className="text-zinc-100 font-medium ml-3 flex-1">{toastMsg}</Text>
-        </View>
+        <GlassCard glow={ts.color} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 13, paddingHorizontal: 14 }}>
+          <View
+            style={[
+              { width: 10, height: 10, borderRadius: 5, backgroundColor: ts.color },
+              glow(ts.color, 8, 0.8),
+            ]}
+          />
+          <Ionicons name={ts.icon} size={17} color={ts.color} style={{ marginLeft: 9 }} />
+          <Text style={{ color: THEME.ink, fontWeight: "600", marginLeft: 9, flex: 1 }}>
+            {toastMsg}
+          </Text>
+          {toastAction ? (
+            <Pressable onPress={runToastAction} hitSlop={10} style={{ paddingLeft: 10 }}>
+              <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 13 }}>
+                {toastAction.label}
+              </Text>
+            </Pressable>
+          ) : null}
+        </GlassCard>
       </Animated.View>
     </View>
   );
@@ -370,9 +418,9 @@ function ConfirmOverlay({
   const cancelButton = (
     <Pressable
       onPress={dismiss}
-      className={`${width} rounded-2xl bg-zinc-800 active:bg-zinc-700 py-3.5 px-3`}
+      className={`${width} rounded-2xl bg-glass border border-hair active:opacity-80 py-3.5 px-3`}
     >
-      <DialogLabel className="text-zinc-100 font-semibold">{cancelLabel}</DialogLabel>
+      <DialogLabel className="text-ink font-semibold">{cancelLabel}</DialogLabel>
     </Pressable>
   );
 
@@ -381,7 +429,7 @@ function ConfirmOverlay({
       onPress={() => onClose(true)}
       className={`${width} rounded-2xl py-3.5 px-3 ${
         opts.destructive
-          ? "bg-rose-500 active:bg-rose-600"
+          ? "bg-low active:opacity-80"
           : "bg-brand active:bg-brandDark"
       }`}
     >
@@ -411,7 +459,7 @@ function ConfirmOverlay({
             <View className="items-center mb-3">
               <View
                 className={`w-12 h-12 rounded-full items-center justify-center ${
-                  opts.destructive ? "bg-rose-500/15" : "bg-brand/15"
+                  opts.destructive ? "bg-low/15" : "bg-brand/15"
                 }`}
               >
                 <Ionicons
@@ -420,17 +468,17 @@ function ConfirmOverlay({
                     (opts.destructive ? "trash-outline" : "help-circle-outline")
                   }
                   size={24}
-                  color={opts.destructive ? "#f43f5e" : "#2ee6ff"}
+                  color={opts.destructive ? GLUCOSE_RICH.low : THEME.accent}
                 />
               </View>
             </View>
 
             {opts.title ? (
-              <Text className="text-zinc-50 text-lg font-bold text-center mb-1.5">
+              <Text className="text-ink text-lg font-bold text-center mb-1.5">
                 {opts.title}
               </Text>
             ) : null}
-            <Text className="text-zinc-300 text-center text-[15px] leading-5 mb-5">
+            <Text className="text-mut text-center text-[15px] leading-5 mb-5">
               {opts.message}
             </Text>
 
@@ -505,15 +553,18 @@ function SheetOverlay({
           }}
         >
           <Pressable
-            className="rounded-t-3xl bg-zinc-950 border-t border-x border-zinc-800 px-4 pt-3"
-            style={{ paddingBottom: insets.bottom + 20 }}
+            className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
+            style={{
+              backgroundColor: THEME.bg.g1,
+              paddingBottom: insets.bottom + 20,
+            }}
             onPress={(e) => e.stopPropagation()}
           >
             <View className="items-center mb-2">
-              <View className="w-10 h-1 rounded-full bg-zinc-700" />
+              <View className="w-10 h-1 rounded-full bg-hair" />
             </View>
             {sheet.title ? (
-              <Text className="text-zinc-400 text-center text-sm py-2">
+              <Text className="text-mut text-center text-sm py-2">
                 {sheet.title}
               </Text>
             ) : null}
@@ -521,13 +572,13 @@ function SheetOverlay({
               <Pressable
                 key={i}
                 onPress={() => onRun(a)}
-                className="flex-row items-center rounded-2xl bg-glass border border-hair px-4 py-3.5 mb-2 active:bg-zinc-800"
+                className="flex-row items-center rounded-2xl bg-glass border border-hair px-4 py-3.5 mb-2 active:opacity-80"
               >
                 {a.icon ? (
                   <Ionicons
                     name={a.icon}
                     size={20}
-                    color={a.destructive ? "#f43f5e" : "#2ee6ff"}
+                    color={a.destructive ? GLUCOSE_RICH.low : THEME.accent}
                   />
                 ) : null}
                 {/* A sheet option is one tappable line. The longest of these
@@ -538,7 +589,7 @@ function SheetOverlay({
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
                   className={`flex-1 ${a.icon ? "ml-3" : ""} font-medium text-base ${
-                    a.destructive ? "text-rose-400" : "text-zinc-100"
+                    a.destructive ? "text-low" : "text-ink"
                   }`}
                 >
                   {a.label}
@@ -547,9 +598,9 @@ function SheetOverlay({
             ))}
             <Pressable
               onPress={onClose}
-              className="rounded-2xl bg-zinc-800 active:bg-zinc-700 px-4 py-3.5 mt-1"
+              className="rounded-2xl bg-glass border border-hair active:opacity-80 px-4 py-3.5 mt-1"
             >
-              <DialogLabel className="text-zinc-300 font-semibold">
+              <DialogLabel className="text-mut font-semibold">
                 {t("common.cancel")}
               </DialogLabel>
             </Pressable>

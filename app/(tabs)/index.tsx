@@ -9,6 +9,9 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../../lib/store/AppContext";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry } from "../../lib/db/journal";
 import { activeInsulin } from "../../lib/iob";
+import { targetBandFor } from "../../lib/agpChart";
+import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
+import { insulinModeShowsBolus } from "../../lib/insulinMode";
 import {
   addSugarLog,
   updateSugarLog,
@@ -52,7 +55,7 @@ import { SegmentedStat } from "../../components/ui";
 import { EmptyState } from "../../components/EmptyState";
 import Animated from "react-native-reanimated";
 import { listEntering } from "../../lib/theme/motion";
-import { COLORS, GLUCOSE_RICH, THEME, TABULAR } from "../../lib/theme/tokens";
+import { RICH_BY_STATUS, THEME, TABULAR } from "../../lib/theme/tokens";
 import {
   AppBackground,
   GlassCard,
@@ -256,12 +259,6 @@ export default function DashboardScreen() {
   const lastGlucose = entries.find(
     (e): e is GlucoseEntry => e.kind === "glucose"
   );
-  const RICH_BY_STATUS = {
-    low: GLUCOSE_RICH.low,
-    normal: GLUCOSE_RICH.target,
-    elevated: GLUCOSE_RICH.high,
-    high: GLUCOSE_RICH.veryHigh,
-  } as const;
   const lastStatus =
     lastGlucose && activeProfile
       ? classifyGlucose(lastGlucose.glucose_level_mgdl, lastGlucose.period_tag, activeProfile)
@@ -283,13 +280,16 @@ export default function DashboardScreen() {
         ) / weekReadings
       )
     : null;
+  // Measured against the PROFILE'S band, not a fixed 70-180 rectangle, so this
+  // figure agrees with the one on Insights and in the doctor report.
+  const weekBand = targetBandFor(activeProfile ?? {});
   const weekTIR = weekReadings
     ? Math.round(
         (weekGlucose.filter(
           (e) =>
             e.kind === "glucose" &&
-            e.glucose_level_mgdl >= 70 &&
-            e.glucose_level_mgdl <= 180
+            e.glucose_level_mgdl >= weekBand.low &&
+            e.glucose_level_mgdl <= weekBand.high
         ).length /
           weekReadings) *
           100
@@ -309,15 +309,20 @@ export default function DashboardScreen() {
   const avgColor =
     weekAvg != null && activeProfile
       ? STATUS_COLOR[classifyGlucose(weekAvg, "manual", activeProfile)]
-      : COLORS.textPrimary;
+      : THEME.ink;
   const tirColor =
     weekTIR == null
-      ? COLORS.textPrimary
+      ? THEME.ink
       : weekTIR >= 70
         ? STATUS_COLOR.normal
         : weekTIR >= 50
           ? STATUS_COLOR.elevated
           : STATUS_COLOR.high;
+
+  // Onboarding said whether this user takes a mealtime insulin at all. When they
+  // do not, the insulin apparatus (IOB line here, the whole Injection tab) stays
+  // out of the way instead of implying they should be dosing.
+  const showsInsulin = insulinModeShowsBolus(activeProfile?.insulin_mode);
 
   // Active insulin still working from recent bolus doses (stacking awareness).
   const iob = activeInsulin(
@@ -412,7 +417,9 @@ export default function DashboardScreen() {
             ? "feedbackLow"
             : status === "elevated"
               ? "feedbackElevated"
-              : "feedbackHigh";
+              : status === "veryHigh"
+                ? "feedbackVeryHigh"
+                : "feedbackHigh";
       toast(
         t(`dashboard.${key}`, {
           value: formatGlucose(value, unit),
@@ -465,7 +472,7 @@ export default function DashboardScreen() {
 
   // First-run preview: fill an empty profile with realistic sample data so a
   // new user instantly sees a populated dashboard, Insights and AGP. Fully
-  // reversible (clears all logs + pens) and only offered on an empty profile.
+  // reversible (clears every log on the profile) and only offered when empty.
   async function loadSample() {
     if (!activeProfile || loadingSample) return;
     setLoadingSample(true);
@@ -547,13 +554,18 @@ export default function DashboardScreen() {
           {t("common.today")}
         </Text>
         <View className="flex-row items-center" style={{ gap: 10 }}>
-          <Pressable
-            onPress={() => router.push("/spike")}
-            hitSlop={8}
-            accessibilityLabel={t("spike.title")}
-          >
-            <IconTile icon="sparkles" size={32} radius={10} />
-          </Pressable>
+          {/* Spike's entry point only exists when the function URL is actually
+              configured. A visible button that opens a dead end is worse than
+              no button; see lib/ai/spikeClient.ts. */}
+          {spikeConfigured ? (
+            <Pressable
+              onPress={() => router.push("/spike")}
+              hitSlop={8}
+              accessibilityLabel={t("spike.title")}
+            >
+              <IconTile icon="sparkles" size={32} radius={10} />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={() => router.push("/sos")}
             hitSlop={8}
@@ -604,7 +616,9 @@ export default function DashboardScreen() {
                     ? t("insights.inRange")
                     : lastStatus === "low"
                       ? t("insights.low")
-                      : t("insights.high")
+                      : lastStatus === "veryHigh"
+                        ? t("insights.veryHigh")
+                        : t("insights.high")
                 }
               />
             ) : null}
@@ -650,8 +664,9 @@ export default function DashboardScreen() {
         </Pressable>
       </GlassCard>
 
-      {/* Active insulin (IOB): a compact contextual line, only when working */}
-      {iob > 0 ? (
+      {/* Active insulin (IOB): a compact contextual line, only when working and
+          only for users who actually take a mealtime insulin. */}
+      {iob > 0 && showsInsulin ? (
         <View className="flex-row items-center justify-center mb-3" style={{ gap: 6 }}>
           <Ionicons name="hourglass-outline" size={12} color={THEME.accent} />
           <Text style={{ color: THEME.muted, fontSize: 11 }}>
@@ -666,9 +681,9 @@ export default function DashboardScreen() {
 
       {/* One-time tap-to-edit discoverability hint */}
       {showEditHint && entries.length > 0 ? (
-        <View className="flex-row items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 mb-2">
-          <Ionicons name="create-outline" size={14} color="#2ee6ff" />
-          <Text className="text-zinc-400 text-xs ml-2 flex-1">
+        <View className="flex-row items-center rounded-xl border border-hair bg-glass px-3 py-2.5 mb-2">
+          <Ionicons name="create-outline" size={14} color={THEME.accent} />
+          <Text className="text-mut text-xs ml-2 flex-1">
             {t("journal.editHint")}
           </Text>
           <Pressable
@@ -676,7 +691,7 @@ export default function DashboardScreen() {
             hitSlop={10}
             accessibilityLabel={t("common.close")}
           >
-            <Ionicons name="close" size={16} color="#71717a" />
+            <Ionicons name="close" size={16} color={THEME.muted} />
           </Pressable>
         </View>
       ) : null}
@@ -701,7 +716,7 @@ export default function DashboardScreen() {
                 <Text style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}>{t("insights.title")}</Text>
                 <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("insights.cardSub")}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#52525b" />
+              <Ionicons name="chevron-forward" size={18} color={THEME.muted} />
             </Pressable>
 
             {Platform.OS === "ios" ? (
@@ -734,8 +749,8 @@ export default function DashboardScreen() {
                   <Switch
                     value={cgmOn}
                     onValueChange={toggleCgm}
-                    trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                    thumbColor="#fafafa"
+                    trackColor={{ true: THEME.accent, false: THEME.border }}
+                    thumbColor={THEME.ink}
                   />
                 ) : (
                   <View className="rounded-full bg-brand px-2 py-0.5">
@@ -769,8 +784,8 @@ export default function DashboardScreen() {
         }
         ListEmptyComponent={
           <View className="items-center py-12">
-            <Ionicons name="document-text-outline" size={40} color="#3f3f46" />
-            <Text className="text-zinc-600 text-center mt-3 px-8">
+            <Ionicons name="document-text-outline" size={40} color={THEME.muted} />
+            <Text className="text-mut text-center mt-3 px-8">
               {t("dashboard.empty")}
             </Text>
             {!sampleActive ? (
@@ -810,6 +825,7 @@ export default function DashboardScreen() {
         visible={sheetOpen}
         initialPeriod={initialPeriod}
         unit={activeProfile?.glucose_unit ?? "mgdl"}
+        profile={activeProfile ?? undefined}
         edit={editGlucose}
         onClose={() => {
           setSheetOpen(false);

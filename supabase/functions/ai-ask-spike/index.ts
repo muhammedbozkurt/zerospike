@@ -19,6 +19,52 @@ const MODEL = "gpt-4o-mini";
 const MAX_MESSAGES = 16; // trailing chat window the client may send
 const MAX_CHARS = 1500; // per message, defensive cap
 
+// ── Rate limit ──────────────────────────────────────────────────────────────
+// The app meters Spike per device (lib/ai/spikeLimit.ts), but that lives on the
+// client and the function URL is a plain HTTPS endpoint: if it ever leaks, the
+// only thing between a scraper and the OpenAI bill is this. A per-caller hourly
+// ceiling costs nothing and bounds the damage.
+//
+// Per-isolate memory, so it is best-effort across a scaled-out deployment - it
+// is a cost ceiling, not an access-control mechanism. Callers are keyed by the
+// forwarded client IP, falling back to a single shared bucket when no IP header
+// is present (that bucket then throttles as a whole, which is the safe way to
+// be wrong).
+const HOURLY_LIMIT = 30;
+const WINDOW_MS = 60 * 60 * 1000;
+/** Above this many tracked callers, the oldest windows are dropped. */
+const MAX_TRACKED = 5000;
+
+const hits = new Map<string, { count: number; resetAt: number }>();
+
+function callerKey(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for") ?? "";
+  const first = forwarded.split(",")[0]?.trim();
+  return first || req.headers.get("cf-connecting-ip") || "unknown";
+}
+
+/** Returns true when this caller may proceed, counting the request. */
+function allowRequest(key: string, now: number): boolean {
+  const entry = hits.get(key);
+  if (!entry || entry.resetAt <= now) {
+    if (hits.size >= MAX_TRACKED) {
+      for (const [k, v] of hits) {
+        if (v.resetAt <= now) hits.delete(k);
+      }
+      // Still full of live windows: drop the oldest so memory stays bounded.
+      if (hits.size >= MAX_TRACKED) {
+        const oldest = [...hits.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt)[0];
+        if (oldest) hits.delete(oldest[0]);
+      }
+    }
+    hits.set(key, { count: 1, resetAt: now + WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= HOURLY_LIMIT) return false;
+  entry.count += 1;
+  return true;
+}
+
 const SYSTEM_PROMPT = `You are Spike, the in-app assistant for zerospike, a diabetes LOGBOOK app (it records glucose, meals and insulin the user enters; it is not a medical device and gives no treatment advice).
 
 Your job, and only this:
@@ -56,6 +102,10 @@ function json(body: unknown, status = 200): Response {
 (globalThis as any).Deno?.serve?.(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  if (!allowRequest(callerKey(req), Date.now())) {
+    return json({ error: "rate_limited" }, 429);
+  }
 
   // deno-lint-ignore no-explicit-any
   const apiKey = (globalThis as any).Deno?.env?.get?.("OPENAI_API_KEY");

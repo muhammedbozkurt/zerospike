@@ -17,12 +17,45 @@ import { AGP_MIN_READINGS, type Agp } from "./agp";
 export const AGP_G_MIN = 40;
 export const AGP_G_MAX = 320;
 
-/** The standard time-in-range band. */
+/**
+ * The default time-in-range band, used when no profile range is supplied (and
+ * as the fallback for the population-level charts). Screens that know the
+ * profile pass its own range instead: the shaded band is the user's target, not
+ * a fixed 70-180 rectangle. See targetBandFor().
+ */
 export const AGP_TARGET_LOW = 70;
 export const AGP_TARGET_HIGH = 180;
 
-/** Horizontal gridlines: both target edges, plus one high reference. */
-export const AGP_Y_TICKS: readonly number[] = [70, 180, 300];
+/** A displayed target band in mg/dL. */
+export interface TargetBand {
+  low: number;
+  high: number;
+}
+
+export const DEFAULT_TARGET_BAND: TargetBand = {
+  low: AGP_TARGET_LOW,
+  high: AGP_TARGET_HIGH,
+};
+
+/**
+ * The band an AGP-style chart shades, derived from the profile. The chart spans
+ * a whole day, so it uses the widest sensible reading of the user's own targets:
+ * the low end of the fasting range up to the post-meal ceiling.
+ */
+export function targetBandFor(profile: {
+  target_fasting_min?: number;
+  target_postmeal_max?: number;
+  hypo_threshold_mgdl?: number;
+}): TargetBand {
+  const low = profile.target_fasting_min ?? AGP_TARGET_LOW;
+  const high = profile.target_postmeal_max ?? AGP_TARGET_HIGH;
+  return low < high ? { low, high } : DEFAULT_TARGET_BAND;
+}
+
+/** Horizontal gridlines: both band edges, plus one high reference. */
+export function agpYTicks(band: TargetBand = DEFAULT_TARGET_BAND): number[] {
+  return [band.low, band.high, 300];
+}
 
 /** Vertical gridlines every six hours, midnight to midnight. */
 export const AGP_X_TICKS: readonly number[] = [0, 6, 12, 18, 24];
@@ -62,7 +95,11 @@ export interface AgpGeometry {
  * which is the caller's cue to show a "fills in as you add readings" note
  * rather than a chart drawn from three readings.
  */
-export function buildAgpGeometry(agp: Agp, box: ChartBox): AgpGeometry | null {
+export function buildAgpGeometry(
+  agp: Agp,
+  box: ChartBox,
+  band: TargetBand = DEFAULT_TARGET_BAND
+): AgpGeometry | null {
   if (agp.totalReadings < AGP_MIN_READINGS || agp.bands.length === 0) return null;
 
   const plotLeft = box.padL;
@@ -91,13 +128,13 @@ export function buildAgpGeometry(agp: Agp, box: ChartBox): AgpGeometry | null {
   return {
     targetBand: {
       x: plotLeft,
-      y: y(AGP_TARGET_HIGH),
+      y: y(band.high),
       width: plotWidth,
-      height: y(AGP_TARGET_LOW) - y(AGP_TARGET_HIGH),
+      height: y(band.low) - y(band.high),
     },
     iqrPolygon,
     medianLine: bands.map((b) => ({ x: x(b.hour), y: y(b.p50) })),
-    yTicks: AGP_Y_TICKS.map((value) => ({ value, y: y(value) })),
+    yTicks: agpYTicks(band).map((value) => ({ value, y: y(value) })),
     xTicks: AGP_X_TICKS.map((hour) => ({ hour, x: x(hour) })),
     plotLeft,
     plotRight,

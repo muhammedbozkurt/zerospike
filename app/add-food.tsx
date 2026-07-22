@@ -3,13 +3,16 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AppBackgroundFill } from "../components/rich";
+import { AppBackground, GradientCTA } from "../components/rich";
+import { withAlpha } from "../components/rich/GlassCard";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { GLUCOSE_RICH, TABULAR, THEME } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { addCustomFood, getFood, updateFood } from "../lib/db/foods";
 import { canAddCustomFood } from "../lib/guardrails";
-import { Button, Field } from "../components/ui";
+import { Field } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 
@@ -102,17 +105,15 @@ export default function AddFoodScreen() {
   }
 
   return (
-    <View className="flex-1">
-      <AppBackgroundFill />
+    <AppBackground>
       <View className="flex-1" style={{ paddingTop: insets.top }}>
-        <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
-          <Text className="text-zinc-50 text-lg font-bold flex-1">
-            {isEdit ? t("food.editCustom") : t("food.addCustom")}
-          </Text>
-          <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-            <Ionicons name="close" size={24} color="#a1a1aa" />
-          </Pressable>
-        </View>
+        {/* Header (mockup 04: close, centred title, balancing spacer) */}
+        <ScreenHeader
+          title={isEdit ? t("food.editCustom") : t("food.addCustom")}
+          onBack={() => router.back()}
+          backIcon="close"
+          accessibilityLabel={t("common.close")}
+        />
 
         <ScrollView
           {...keyboardAwareScrollProps}
@@ -122,10 +123,15 @@ export default function AddFoodScreen() {
           {!allowed && !isEdit ? (
             <Pressable
               onPress={() => router.replace({ pathname: "/paywall", params: { reason: "foods" } })}
-              className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 mb-4 flex-row items-center"
+              className="rounded-2xl p-4 mb-4 flex-row items-center active:opacity-80"
+              style={{
+                borderWidth: 1,
+                borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+                backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+              }}
             >
-              <Ionicons name="lock-closed-outline" size={18} color="#f59e0b" />
-              <Text className="text-amber-200 text-sm ml-3 flex-1">
+              <Ionicons name="lock-closed-outline" size={18} color={GLUCOSE_RICH.high} />
+              <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 12, flex: 1 }}>
                 {t("paywall.limitTitleFoods")}
               </Text>
             </Pressable>
@@ -133,8 +139,8 @@ export default function AddFoodScreen() {
 
           {barcode || loadedBarcode ? (
             <View className="rounded-2xl bg-glass border border-hair p-3.5 mb-4 flex-row items-center">
-              <Ionicons name="barcode-outline" size={18} color="#2ee6ff" />
-              <Text className="text-zinc-300 ml-3 font-mono">
+              <Ionicons name="barcode-outline" size={18} color={THEME.accent} />
+              <Text style={[TABULAR, { color: THEME.ink, marginLeft: 12, fontSize: 13 }]}>
                 {barcode ?? loadedBarcode}
               </Text>
             </View>
@@ -182,15 +188,14 @@ export default function AddFoodScreen() {
           />
 
           <View className="h-2" />
-          <Button
+          <GradientCTA
             label={isEdit ? t("common.save") : t("food.addFood")}
-            size="lg"
             disabled={!valid}
             onPress={save}
           />
         </ScrollView>
       </View>
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

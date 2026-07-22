@@ -12,7 +12,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { AppBackgroundFill } from "../components/rich";
+import {
+  AppBackground,
+  ConicAvatar,
+  GlassCard,
+  GradientCTA,
+  IconTile,
+} from "../components/rich";
+import { withAlpha } from "../components/rich/GlassCard";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { GLUCOSE_RICH, RADIUS, THEME } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 import {
   Contact,
@@ -31,10 +40,27 @@ import {
   type ContactCandidate,
   type EmergencyContact,
 } from "../lib/services/emergency";
-import { Button } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
+
+/** Two-letter mark for a contact avatar (mockup 07's contact rows). */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "#";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+const inputStyle = {
+  borderRadius: RADIUS.md,
+  borderWidth: 1,
+  borderColor: THEME.border,
+  backgroundColor: THEME.glass,
+  paddingHorizontal: 14,
+  paddingVertical: 12,
+  color: THEME.ink,
+} as const;
 
 /** A phone-bearing address-book entry, flattened for the in-app list. */
 interface DeviceContact {
@@ -250,26 +276,26 @@ export default function EmergencyContactsScreen() {
   }, [deviceContacts, query]);
 
   return (
-    <View className="flex-1">
-      <AppBackgroundFill />
+    <AppBackground>
       <View className="flex-1" style={{ paddingTop: insets.top }}>
-        <View className="flex-row items-center justify-between px-4 py-2">
-          {pickerOpen ? (
-            <Pressable onPress={() => setPickerOpen(false)} hitSlop={10} className="p-1">
-              <Ionicons name="chevron-back" size={24} color="#a1a1aa" />
-            </Pressable>
-          ) : null}
-          <Text className="text-zinc-50 text-xl font-bold flex-1 ml-1">
-            {pickerOpen ? t("emergency.pickFromContacts") : t("emergency.title")}
-          </Text>
-          <Pressable
-            onPress={() => (pickerOpen ? setPickerOpen(false) : router.back())}
-            hitSlop={10}
-            className="p-1"
-          >
-            <Ionicons name="close" size={26} color="#71717a" />
-          </Pressable>
-        </View>
+        {/* Header (mockup 07: back, centred title, add action) */}
+        <ScreenHeader
+          title={pickerOpen ? t("emergency.pickFromContacts") : t("emergency.title")}
+          onBack={() => (pickerOpen ? setPickerOpen(false) : router.back())}
+          backIcon={pickerOpen ? "chevron-back" : "close"}
+          accessibilityLabel={t("common.close")}
+          right={
+            pickerOpen ? undefined : (
+              <Pressable
+                onPress={openPicker}
+                hitSlop={8}
+                accessibilityLabel={t("emergency.pickFromContacts")}
+              >
+                <IconTile icon="add" size={30} radius={10} />
+              </Pressable>
+            )
+          }
+        />
 
         {pickerOpen ? (
           <View className="flex-1 px-5">
@@ -277,22 +303,24 @@ export default function EmergencyContactsScreen() {
                 Add button stay put while the list filters underneath. */}
             {!pickerLoading && !pickerDenied && deviceContacts.length > 0 ? (
               <View className="flex-row items-center justify-between mb-3">
-                <Text className="text-zinc-400 text-sm">
+                <Text style={{ color: THEME.muted, fontSize: 13 }}>
                   {t("emergency.selectedCount", { n: selected.size })}
                 </Text>
                 <Pressable
                   onPress={addSelected}
                   disabled={selected.size === 0}
-                  className={`rounded-xl px-5 py-2.5 ${
-                    selected.size === 0
-                      ? "bg-zinc-800"
-                      : "bg-brand active:bg-brandDark"
-                  }`}
+                  className="rounded-xl px-5 py-2.5"
+                  style={{
+                    backgroundColor: selected.size === 0 ? THEME.glass : THEME.accent,
+                    borderWidth: 1,
+                    borderColor: selected.size === 0 ? THEME.border : THEME.accent,
+                  }}
                 >
                   <Text
-                    className={`font-semibold ${
-                      selected.size === 0 ? "text-zinc-600" : "text-black"
-                    }`}
+                    style={{
+                      fontWeight: "800",
+                      color: selected.size === 0 ? THEME.muted : "#00232b",
+                    }}
                   >
                     {t("emergency.add")}
                   </Text>
@@ -300,35 +328,56 @@ export default function EmergencyContactsScreen() {
               </View>
             ) : null}
 
-            <View className="flex-row items-center rounded-xl bg-zinc-800/80 border border-zinc-700 px-3 mb-3">
-              <Ionicons name="search" size={16} color="#71717a" />
+            <View
+              className="flex-row items-center rounded-xl px-3 mb-3"
+              style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
+            >
+              <Ionicons name="search" size={16} color={THEME.muted} />
               <TextInput
                 value={query}
                 onChangeText={setQuery}
                 placeholder={t("emergency.searchPlaceholder")}
-                placeholderTextColor="#52525b"
+                placeholderTextColor="rgba(137,163,176,0.6)"
                 autoCorrect={false}
-                className="flex-1 px-2 py-3 text-zinc-50"
+                className="flex-1 px-2 py-3"
+                style={{ color: THEME.ink }}
               />
             </View>
 
             {pickerLoading ? (
               <View className="items-center py-10">
-                <ActivityIndicator color="#2ee6ff" />
+                <ActivityIndicator color={THEME.accent} />
               </View>
             ) : pickerDenied ? (
-              <View className="rounded-2xl bg-glass border border-hair p-5 items-center">
-                <Ionicons name="lock-closed-outline" size={26} color="#71717a" />
-                <Text className="text-zinc-300 text-center mt-3 mb-4 leading-5">
+              <GlassCard style={{ alignItems: "center", paddingVertical: 20 }}>
+                <IconTile icon="lock-closed-outline" size={44} radius={14} tint={THEME.muted} />
+                <Text
+                  style={{
+                    color: THEME.muted,
+                    textAlign: "center",
+                    marginTop: 12,
+                    marginBottom: 14,
+                    lineHeight: 20,
+                  }}
+                >
                   {t("emergency.permissionHint")}
                 </Text>
-                <Button
+                <GradientCTA
                   label={t("settings.openSystemSettings")}
                   onPress={() => Linking.openSettings().catch(() => {})}
+                  style={{ alignSelf: "stretch" }}
                 />
-              </View>
+              </GlassCard>
             ) : deviceContacts.length === 0 ? (
-              <Text className="text-zinc-500 text-center py-10 px-6 leading-5">
+              <Text
+                style={{
+                  color: THEME.muted,
+                  textAlign: "center",
+                  paddingVertical: 40,
+                  paddingHorizontal: 24,
+                  lineHeight: 20,
+                }}
+              >
                 {t("emergency.noDeviceContacts")}
               </Text>
             ) : (
@@ -339,13 +388,21 @@ export default function EmergencyContactsScreen() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
                 ListEmptyComponent={
-                  <Text className="text-zinc-500 text-center py-10">
+                  <Text style={{ color: THEME.muted, textAlign: "center", paddingVertical: 40 }}>
                     {t("emergency.noResults")}
                   </Text>
                 }
                 renderItem={({ item }) => (
                   <View className="mb-2.5">
-                    <Text className="text-zinc-400 text-xs font-semibold px-1 mb-1">
+                    <Text
+                      style={{
+                        color: THEME.muted,
+                        fontSize: 11,
+                        fontWeight: "700",
+                        paddingHorizontal: 4,
+                        marginBottom: 4,
+                      }}
+                    >
                       {item.name || t("emergency.unnamedContact")}
                     </Text>
                     {item.numbers.map((number) => {
@@ -358,31 +415,35 @@ export default function EmergencyContactsScreen() {
                           key={key}
                           onPress={() => toggleNumber(item, number)}
                           disabled={already}
-                          className={`flex-row items-center rounded-2xl border px-4 py-3 mb-1.5 ${
-                            already
-                              ? "bg-zinc-900/40 border-zinc-800"
-                              : checked
-                                ? "bg-brand/10 border-brand/50 active:bg-brand/20"
-                                : "bg-zinc-900 border-zinc-800 active:bg-zinc-800"
-                          }`}
+                          className="flex-row items-center rounded-2xl px-4 py-3 mb-1.5 active:opacity-80"
+                          style={{
+                            borderWidth: 1,
+                            borderColor: checked && !already ? THEME.accent : THEME.border,
+                            backgroundColor:
+                              checked && !already
+                                ? withAlpha(THEME.accent, 0.12)
+                                : THEME.glass,
+                            opacity: already ? 0.5 : 1,
+                          }}
                         >
                           {/* The box is always visible: no long-press to reach
                               selection mode, one tap ticks a number. */}
                           <View
-                            className={`w-5 h-5 rounded-md items-center justify-center mr-3 border ${
-                              already
-                                ? "border-zinc-700"
-                                : checked
-                                  ? "bg-brand border-brand"
-                                  : "border-zinc-600"
-                            }`}
+                            className="w-5 h-5 rounded-md items-center justify-center mr-3"
+                            style={{
+                              borderWidth: 1,
+                              borderColor: checked && !already ? THEME.accent : THEME.border,
+                              backgroundColor:
+                                checked && !already ? THEME.accent : "transparent",
+                            }}
                           >
                             {checked && !already ? (
                               <Ionicons name="checkmark" size={14} color="#000000" />
                             ) : null}
                           </View>
                           <Text
-                            className={`flex-1 ${already ? "text-zinc-600" : "text-zinc-100"}`}
+                            className="flex-1"
+                            style={{ color: THEME.ink }}
                             numberOfLines={1}
                           >
                             {number}
@@ -392,9 +453,9 @@ export default function EmergencyContactsScreen() {
                               <Ionicons
                                 name="checkmark-circle"
                                 size={16}
-                                color="#3f3f46"
+                                color={THEME.muted}
                               />
-                              <Text className="text-zinc-600 text-xs ml-1.5">
+                              <Text style={{ color: THEME.muted, fontSize: 11, marginLeft: 6 }}>
                                 {t("emergency.alreadyAdded")}
                               </Text>
                             </View>
@@ -413,28 +474,45 @@ export default function EmergencyContactsScreen() {
             contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
             showsVerticalScrollIndicator={false}
           >
-            <Text className="text-zinc-400 leading-5 mb-5">
+            <Text style={{ color: THEME.muted, lineHeight: 20, marginBottom: 18, fontSize: 13 }}>
               {t("emergency.subtitle")}
             </Text>
 
             {contacts.map((c, i) => (
               <View
                 key={`${c.phone}-${i}`}
-                className="flex-row items-center rounded-2xl bg-glass border border-hair px-4 py-3 mb-2.5"
+                className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2"
               >
-                <View className="flex-1">
-                  <Text className="text-zinc-50 font-semibold">{c.name}</Text>
-                  <Text className="text-zinc-500 text-sm">{c.phone}</Text>
+                <ConicAvatar label={initials(c.name)} size={30} />
+                <View className="flex-1 ml-3">
+                  <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>
+                    {c.name}
+                  </Text>
+                  <Text style={{ color: THEME.muted, fontSize: 11 }}>{c.phone}</Text>
                 </View>
-                <Pressable onPress={() => remove(i)} hitSlop={8} className="p-1">
-                  <Ionicons name="trash-outline" size={20} color="#fb7185" />
+                <Pressable
+                  onPress={() => remove(i)}
+                  hitSlop={8}
+                  className="p-1"
+                  accessibilityLabel={t("common.delete")}
+                >
+                  <Ionicons name="trash-outline" size={18} color={GLUCOSE_RICH.low} />
                 </Pressable>
               </View>
             ))}
 
             {/* Add form */}
-            <View className="rounded-2xl bg-glass border border-hair p-4 mt-2">
-              <Text className="text-zinc-300 font-semibold mb-3">
+            <GlassCard style={{ marginTop: 10 }}>
+              <Text
+                style={{
+                  color: THEME.muted,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  textTransform: "uppercase",
+                  fontWeight: "800",
+                  marginBottom: 10,
+                }}
+              >
                 {t("emergency.addTitle")}
               </Text>
               <TextInput
@@ -444,11 +522,13 @@ export default function EmergencyContactsScreen() {
                   if (nameError) setNameError(null);
                 }}
                 placeholder={t("emergency.namePlaceholder")}
-                placeholderTextColor="#52525b"
-                className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
+                placeholderTextColor="rgba(137,163,176,0.6)"
+                style={inputStyle}
               />
               {nameError ? (
-                <Text className="text-rose-400 text-xs mt-1.5 ml-1">{nameError}</Text>
+                <Text style={{ color: GLUCOSE_RICH.low, fontSize: 11, marginTop: 6, marginLeft: 4 }}>
+                  {nameError}
+                </Text>
               ) : null}
 
               <TextInput
@@ -458,30 +538,32 @@ export default function EmergencyContactsScreen() {
                   if (phoneError) setPhoneError(null);
                 }}
                 placeholder={t("emergency.phonePlaceholder")}
-                placeholderTextColor="#52525b"
+                placeholderTextColor="rgba(137,163,176,0.6)"
                 keyboardType="phone-pad"
-                className="rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50 mt-2.5"
+                style={[inputStyle, { marginTop: 10 }]}
               />
               {phoneError ? (
-                <Text className="text-rose-400 text-xs mt-1.5 ml-1">{phoneError}</Text>
+                <Text style={{ color: GLUCOSE_RICH.low, fontSize: 11, marginTop: 6, marginLeft: 4 }}>
+                  {phoneError}
+                </Text>
               ) : null}
 
               <View className="h-3" />
-              <Button label={t("emergency.add")} onPress={addTyped} />
-              <Pressable
-                onPress={openPicker}
-                className="flex-row items-center justify-center py-3 mt-1"
-              >
-                <Ionicons name="people-outline" size={18} color="#2ee6ff" />
-                <Text className="text-brand font-medium ml-2">
-                  {t("emergency.pickFromContacts")}
-                </Text>
-              </Pressable>
-            </View>
+              <GradientCTA label={t("emergency.add")} onPress={addTyped} />
+            </GlassCard>
+
+            {/* The mockup's bottom secondary action */}
+            <GradientCTA
+              variant="sub"
+              label={t("emergency.pickFromContacts")}
+              icon={<Ionicons name="people-outline" size={17} color={THEME.ink} />}
+              onPress={openPicker}
+              style={{ marginTop: 12 }}
+            />
           </ScrollView>
         )}
       </View>
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

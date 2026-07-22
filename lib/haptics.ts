@@ -7,7 +7,7 @@ import * as Haptics from "expo-haptics";
  *
  *   success → log saved / item created
  *   warning → delete / Pro-gate / error
- *   select  → a discrete choice (site, pen, segment/chip)
+ *   select  → a discrete choice (site, point, segment/chip)
  */
 function run(p: () => Promise<unknown>): void {
   try {

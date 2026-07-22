@@ -26,7 +26,7 @@ import {
   mmolToMgdl,
   MGDL_PER_MMOL,
 } from "../lib/glucose";
-import { estimateInsulin } from "../lib/insulin";
+import { checkDose, estimateInsulin } from "../lib/insulin";
 import { activeInsulin, DEFAULT_DIA_HOURS } from "../lib/iob";
 import { derivePatterns } from "../lib/insights";
 import { percentile, computeAgp } from "../lib/agp";
@@ -51,13 +51,17 @@ function section(title: string): void {
   console.log(`\n${title}`);
 }
 
+// Schema v8: targets are RANGES and the low threshold is the user's own.
 const P = {
   carb_ratio_breakfast: 10,
   carb_ratio_lunch: 12,
   carb_ratio_dinner: 12,
   insulin_sensitivity_factor: 40,
+  target_fasting_min: 80,
   target_fasting_max: 100,
+  target_postmeal_min: 80,
   target_postmeal_max: 140,
+  hypo_threshold_mgdl: 70,
 };
 
 // Mapper mirrors lib/services/health.ts: round(pickMgdl(...)) — proves the
@@ -110,6 +114,22 @@ eq("140 post_meal -> normal", C(140, "post_meal_2h"), "normal");
 eq("175 post_meal -> elevated", C(175, "post_meal_2h"), "elevated");
 eq("176 post_meal -> high", C(176, "post_meal_2h"), "high");
 eq("240 post_meal -> high", C(240, "post_meal_2h"), "high");
+// A value between the hypo threshold and the band's low end is NOT a low: the
+// low end of a target band is a preference, the threshold is the clinical event.
+eq("75 fasting -> normal (above hypo, under the band)", C(75, "fasting"), "normal");
+// The fixed clinical ceiling outranks any personal range.
+eq("250 post_meal -> veryHigh", C(250, "post_meal_2h"), "veryHigh");
+eq("400 fasting -> veryHigh", C(400, "fasting"), "veryHigh");
+eq("249 post_meal -> high (just under the ceiling)", C(249, "post_meal_2h"), "high");
+
+// ── D2. checkDose — the hand-entered dose plausibility gate ──────────────────
+section("D2. checkDose (confirm, never refuse)");
+eq("6 units -> ok", checkDose(6), "ok");
+eq("24.9 units -> ok", checkDose(24.9), "ok");
+eq("25 units -> high", checkDose(25), "high");
+eq("60 units -> high", checkDose(60), "high");
+eq("100 units -> implausible", checkDose(100), "implausible");
+eq("600 units (stray digit) -> implausible", checkDose(600), "implausible");
 
 // ── E. estimateInsulin — dose math, warnings, conservative correction ─────────
 section("E. estimateInsulin (math + guardrails)");
@@ -135,20 +155,21 @@ const est = (carb100: number, portion: number, opts: any = {}, prof: any = P) =>
 {
   // Correction targets the post-meal max (140) — the INTENTIONALLY kept
   // conservative behavior (documented in sources.methodNote).
+  // Range midpoint is (80 + 140) / 2 = 110, so (180 - 110) / 40 = 1.75.
   const e = est(0, 100, { currentGlucose: 180 });
-  eq("correction 180 -> 1.0 (target 140)", e.correctionDose, 1.0);
+  eq("correction 180 -> 1.75 (target = range midpoint 110)", e.correctionDose, 1.75);
   const e2 = est(0, 100, { currentGlucose: 150 });
-  eq("correction 150 -> 0.25 (conservative)", e2.correctionDose, 0.25);
+  eq("correction 150 -> 1.0", e2.correctionDose, 1.0);
 }
 {
   const e = est(0, 100, { currentGlucose: 400 }, { ...P, insulin_sensitivity_factor: 500 });
-  eq("high ISF 500 corr 0.52", e.correctionDose, 0.52);
+  eq("high ISF 500 corr 0.58", e.correctionDose, 0.58);
   eq("high ISF 500 total 0.5", e.totalDose, 0.5);
   ok("high ISF flags isf_out_of_range", e.warnings.includes("isf_out_of_range"));
 }
 {
   const e = est(0, 100, { currentGlucose: 400 }); // ISF 40 normal
-  eq("normal ISF corr 6.5", e.correctionDose, 6.5);
+  eq("normal ISF corr 7.25", e.correctionDose, 7.25);
   ok("normal ISF no isf warning", !e.warnings.includes("isf_out_of_range"));
 }
 {
@@ -212,17 +233,17 @@ eq("DEFAULT_DIA_HOURS is 4", DEFAULT_DIA_HOURS, 4);
 
 section("H2. IOB-aware correction (only ever lowers the dose)");
 {
-  // correction (220-140)/40 = 2.0; IOB 1.5 -> 0.5; meal carbs 0
+  // correction (220-110)/40 = 2.75; IOB 1.5 -> 1.25; meal carbs 0
   const e = est(0, 100, { currentGlucose: 220, currentIOB: 1.5 });
-  eq("IOB trims correction 2.0->0.5", e.correctionDose, 0.5);
+  eq("IOB trims correction 2.75->1.25", e.correctionDose, 1.25);
   eq("iobReduction 1.5", e.iobReduction, 1.5);
-  eq("total 0.5", e.totalDose, 0.5);
+  eq("total 1.5", e.totalDose, 1.5);
 }
 {
   // IOB exceeds correction -> clamped to 0
   const e = est(0, 100, { currentGlucose: 180, currentIOB: 3 });
   eq("IOB clamps correction to 0", e.correctionDose, 0);
-  eq("iobReduction = full correction 1.0", e.iobReduction, 1.0);
+  eq("iobReduction = full correction 1.75", e.iobReduction, 1.75);
 }
 {
   // no correction to trim (glucose below target) -> IOB does nothing
@@ -287,7 +308,7 @@ eq("empty -> 0", percentile([], 50), 0);
     glucose_level_mgdl: mgdl,
     period_tag: "manual",
     source: "manual",
-    logged_at: NOW.toISOString(),
+    logged_at: new Date().toISOString(),
     tags: [],
   });
   const agp = computeAgp([at(60), at(100), at(140), at(180), at(220)]);

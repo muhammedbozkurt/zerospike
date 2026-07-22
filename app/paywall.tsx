@@ -3,8 +3,14 @@ import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AppBackgroundFill } from "../components/rich";
-import { THEME, glow } from "../lib/theme/tokens";
+import {
+  AppBackground,
+  GlassCard,
+  GradientCTA,
+  IconTile,
+} from "../components/rich";
+import { withAlpha } from "../components/rich/GlassCard";
+import { GLUCOSE_RICH, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -26,7 +32,6 @@ import { scheduleTrialEndingReminder } from "../lib/services/notifications";
 import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
-import { Button } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
@@ -46,6 +51,12 @@ function fmtMoney(amount: number, currencyCode: string): string {
   }
 }
 
+/**
+ * A plan row in the mockup's 08 composition: the plan name and its terms on the
+ * left, and the BILLED AMOUNT as the dominant figure on the right. The selected
+ * plan is lit with an accent border, an accent wash and a glow; selection is
+ * also carried by the radio, so it never rests on colour alone.
+ */
 function PlanCard({
   selected,
   onSelect,
@@ -70,42 +81,62 @@ function PlanCard({
   return (
     <Pressable
       onPress={onSelect}
-      style={selected ? glow(THEME.accent, 24, 0.45) : undefined}
-      className={`rounded-2xl border p-4 flex-row items-center mb-3 ${
-        selected ? "border-brand bg-brand/10" : "border-hair bg-glass"
-      }`}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      className="rounded-2xl p-4 flex-row items-center mb-3"
+      style={[
+        {
+          borderWidth: 1,
+          borderColor: selected ? THEME.accent : THEME.border,
+          backgroundColor: selected ? withAlpha(THEME.accent, 0.12) : THEME.glass,
+        },
+        selected ? glow(THEME.accent, 24, 0.45) : undefined,
+      ]}
     >
       <View
-        className={`w-5 h-5 rounded-full border-2 items-center justify-center mr-3 ${
-          selected ? "border-brand" : "border-zinc-600"
-        }`}
+        className="w-5 h-5 rounded-full items-center justify-center mr-3"
+        style={{ borderWidth: 2, borderColor: selected ? THEME.accent : THEME.border }}
       >
-        {selected ? <View className="w-2.5 h-2.5 rounded-full bg-brand" /> : null}
+        {selected ? (
+          <View
+            style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: THEME.accent }}
+          />
+        ) : null}
       </View>
 
       <View className="flex-1">
-        <View className="flex-row items-center flex-wrap">
-          <Text className="text-zinc-50 font-bold text-base mr-2">{name}</Text>
+        <View className="flex-row items-center flex-wrap" style={{ gap: 6 }}>
+          <Text style={{ color: THEME.ink, fontWeight: "800", fontSize: 15 }}>{name}</Text>
           {badge ? (
-            <View className="rounded-full bg-brand px-2 py-0.5 mr-2">
+            <View className="rounded-full bg-brand px-2 py-0.5">
               <Text className="text-black text-[10px] font-bold">{badge}</Text>
             </View>
           ) : null}
           {save ? (
-            <View className="rounded-full bg-emerald-500/15 px-2 py-0.5">
-              <Text className="text-emerald-400 text-[10px] font-bold">{save}</Text>
+            <View
+              className="rounded-full px-2 py-0.5"
+              style={{ backgroundColor: withAlpha(GLUCOSE_RICH.target, 0.16) }}
+            >
+              <Text style={{ color: GLUCOSE_RICH.target, fontSize: 10, fontWeight: "800" }}>
+                {save}
+              </Text>
             </View>
           ) : null}
         </View>
-        <Text className="text-zinc-400 text-xs mt-0.5" numberOfLines={2}>
+        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }} numberOfLines={2}>
           {desc}
         </Text>
-        {foot ? <Text className="text-zinc-500 text-[11px] mt-0.5">{foot}</Text> : null}
+        {foot ? (
+          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>{foot}</Text>
+        ) : null}
       </View>
 
+      {/* The billed amount, dominant */}
       <View className="items-end ml-2">
-        <Text className="text-zinc-50 font-bold text-base">{price}</Text>
-        <Text className="text-zinc-500 text-xs">{period}</Text>
+        <Text style={[TABULAR, { color: THEME.ink, fontSize: 20, fontWeight: "800" }]}>
+          {price}
+        </Text>
+        <Text style={{ color: THEME.muted, fontSize: 11 }}>{period}</Text>
       </View>
     </Pressable>
   );
@@ -281,22 +312,30 @@ export default function PaywallScreen() {
   const unavailable = offer?.status === "unavailable";
 
   return (
-    <View className="flex-1">
-      <AppBackgroundFill />
+    <AppBackground>
       <View className="flex-1" style={{ paddingTop: insets.top }}>
+        {/* Header (mockup 08: free exit left, title centred, close right) */}
         <View className="flex-row items-center justify-between px-4 py-2">
-          {/* Visible free exit: same dismiss path (downsell chain) as the X. */}
           <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1">
-            <Text className="text-zinc-400 font-medium">{t("paywall.notNow")}</Text>
+            <Text style={{ color: THEME.muted, fontWeight: "600", fontSize: 13 }}>
+              {t("paywall.notNow")}
+            </Text>
           </Pressable>
+          <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }}>
+            {t("paywall.title")}
+          </Text>
           <View className="flex-row items-center">
             {context === "onboarding" ? (
               <View className="mr-2">
                 <LanguageChip />
               </View>
             ) : null}
-            <Pressable onPress={dismiss} hitSlop={10} className="p-1">
-              <Ionicons name="close" size={26} color="#71717a" />
+            <Pressable
+              onPress={dismiss}
+              hitSlop={10}
+              accessibilityLabel={t("common.close")}
+            >
+              <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
             </Pressable>
           </View>
         </View>
@@ -305,29 +344,44 @@ export default function PaywallScreen() {
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
-          <View className="items-center mb-6">
-            <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-4" style={glow(THEME.accent, 34, 0.5)}>
-              <Ionicons name="sparkles" size={28} color="#2ee6ff" />
-            </View>
-            <Text className="text-zinc-50 text-3xl font-bold">
-              {t("paywall.title")}
-            </Text>
-            <Text className="text-zinc-400 text-center mt-2 px-2">
+          {/* Hero: one compact glow card, the value stated in a single line */}
+          <GlassCard glow style={{ alignItems: "center", paddingVertical: 16, marginBottom: 14 }}>
+            <Text style={{ fontSize: 30 }}>📄</Text>
+            <Text
+              style={{
+                color: THEME.muted,
+                fontSize: 12,
+                lineHeight: 18,
+                textAlign: "center",
+                marginTop: 6,
+              }}
+            >
               {t("paywall.subtitle")}
             </Text>
-          </View>
+          </GlassCard>
 
           {limit ? (
-            <View className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-4 mb-6">
-              <Text className="text-amber-300 font-semibold mb-1">{limit.title}</Text>
-              <Text className="text-amber-200/80 text-sm leading-5">{limit.body}</Text>
+            <View
+              className="rounded-2xl p-4 mb-4"
+              style={{
+                borderWidth: 1,
+                borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+                backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+              }}
+            >
+              <Text style={{ color: GLUCOSE_RICH.high, fontWeight: "800", marginBottom: 2 }}>
+                {limit.title}
+              </Text>
+              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.85 }}>
+                {limit.body}
+              </Text>
             </View>
           ) : null}
 
           {/* Benefits: a single, focused list (at most 4 rows). Health sync is
               iOS-only (Health Connect removed for Play policy), so on Android it
               drops off and an injection benefit fills the slot. */}
-          <View className="rounded-2xl bg-glass border border-hair p-5 mb-6">
+          <GlassCard style={{ paddingVertical: 16, marginBottom: 16 }}>
             {[
               ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
               t("paywall.featureInsights"),
@@ -341,29 +395,34 @@ export default function PaywallScreen() {
                   key={i}
                   className={`flex-row items-center ${i < arr.length - 1 ? "mb-3" : ""}`}
                 >
-                  <Ionicons name="checkmark-circle" size={18} color="#2ee6ff" />
-                  <Text className="text-zinc-200 flex-1 ml-3 text-[14px]">{text}</Text>
+                  <Ionicons name="checkmark-circle" size={17} color={THEME.accent} />
+                  <Text style={{ color: THEME.ink, flex: 1, marginLeft: 10, fontSize: 13 }}>
+                    {text}
+                  </Text>
                 </View>
               ))}
-          </View>
+          </GlassCard>
 
           {loading ? (
             <View className="items-center py-8">
-              <Text className="text-zinc-500">{t("common.loading")}</Text>
+              <Text style={{ color: THEME.muted }}>{t("common.loading")}</Text>
             </View>
           ) : unavailable ? (
             // Release-only: prices could not be loaded. Never show fake prices;
             // offer a retry instead.
-            <View className="rounded-2xl bg-glass border border-hair p-5 items-center">
-              <Ionicons name="cloud-offline-outline" size={28} color="#71717a" />
-              <Text className="text-zinc-300 text-center mt-3 mb-4">
+            <GlassCard style={{ alignItems: "center", paddingVertical: 20 }}>
+              <IconTile icon="cloud-offline-outline" size={44} radius={14} tint={THEME.muted} />
+              <Text
+                style={{ color: THEME.muted, textAlign: "center", marginTop: 12, marginBottom: 14 }}
+              >
                 {t("paywall.pricesUnavailable")}
               </Text>
-              <Button
+              <GradientCTA
                 label={t("paywall.retry")}
                 onPress={() => setReloadToken((n) => n + 1)}
+                style={{ alignSelf: "stretch" }}
               />
-            </View>
+            </GlassCard>
           ) : (
             <>
               {/* Plans */}
@@ -402,41 +461,66 @@ export default function PaywallScreen() {
               />
 
               <View className="h-2" />
-              <Button label={ctaLabel} size="lg" loading={busy} onPress={buy} />
+              <GradientCTA label={ctaLabel} disabled={busy} onPress={buy} />
 
               {ctaTrial ? (
-                <Text className="text-zinc-400 text-xs text-center mt-2 px-2 leading-4">
+                <Text
+                  style={{
+                    color: THEME.muted,
+                    fontSize: 11,
+                    textAlign: "center",
+                    marginTop: 8,
+                    lineHeight: 16,
+                    paddingHorizontal: 8,
+                  }}
+                >
                   {t("paywall.trialNote")}
                 </Text>
               ) : null}
 
               {/* Secure payment */}
               <View className="flex-row items-center justify-center mt-3">
-                <Ionicons name="lock-closed" size={12} color="#52525b" />
-                <Text className="text-zinc-500 text-xs ml-1.5 text-center">
+                <Ionicons name="lock-closed" size={12} color={THEME.muted} />
+                <Text
+                  style={{ color: THEME.muted, fontSize: 11, marginLeft: 6, textAlign: "center" }}
+                >
                   {t("paywall.securePayment")}
                 </Text>
               </View>
 
               <Pressable onPress={onRestore} disabled={busy} className="py-3 items-center">
-                <Text className={`font-medium ${busy ? "text-zinc-600" : "text-zinc-400"}`}>
+                <Text style={{ color: THEME.muted, fontWeight: "600", opacity: busy ? 0.5 : 1 }}>
                   {t("paywall.restore")}
                 </Text>
               </Pressable>
             </>
           )}
 
-          <Text className="text-zinc-600 text-[11px] text-center px-2 leading-4 mb-3 mt-2">
+          <Text
+            style={{
+              color: THEME.muted,
+              fontSize: 11,
+              textAlign: "center",
+              paddingHorizontal: 8,
+              lineHeight: 16,
+              marginTop: 8,
+              marginBottom: 12,
+            }}
+          >
             {t("paywall.legalNote")}
           </Text>
-          <View className="flex-row justify-center gap-6">
+          <View className="flex-row justify-center" style={{ gap: 24 }}>
             <Pressable onPress={() => Linking.openURL(privacyUrl())}>
-              <Text className="text-zinc-500 text-xs underline">
+              <Text
+                style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+              >
                 {t("settings.privacy")}
               </Text>
             </Pressable>
             <Pressable onPress={() => Linking.openURL(termsUrl())}>
-              <Text className="text-zinc-500 text-xs underline">
+              <Text
+                style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+              >
                 {t("settings.terms")}
               </Text>
             </Pressable>
@@ -444,6 +528,6 @@ export default function PaywallScreen() {
         </ScrollView>
       </View>
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

@@ -18,6 +18,14 @@ import { AppBackground, ConicAvatar, GlassCard, GradientCTA, withAlpha } from ".
 import { THEME, glow } from "../lib/theme/tokens";
 import { askSpike, isConfigured, type SpikeMessage } from "../lib/ai/spikeClient";
 import {
+  getSpikeUsage,
+  noteSpikeMessage,
+  FREE_DAILY_MESSAGES,
+  PRO_DAILY_MESSAGES,
+  type SpikeUsage,
+} from "../lib/ai/spikeLimit";
+import { useApp } from "../lib/store/AppContext";
+import {
   grantSpikeConsent,
   hasSpikeConsent,
 } from "../lib/services/spikeConsent";
@@ -41,14 +49,17 @@ export default function SpikeScreen() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [errored, setErrored] = useState(false);
+  const [usage, setUsage] = useState<SpikeUsage | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const { isProUser } = useApp();
 
   useEffect(() => {
     (async () => {
       setConsented(await hasSpikeConsent());
+      setUsage(await getSpikeUsage(isProUser));
       setReady(true);
     })();
-  }, []);
+  }, [isProUser]);
 
   useEffect(() => {
     logEvent("spike_opened");
@@ -60,15 +71,19 @@ export default function SpikeScreen() {
     setConsented(true);
   }
 
+  const exhausted = usage != null && usage.remaining <= 0;
+
   async function send() {
     const text = input.trim();
-    if (!text || sending || !isConfigured) return;
+    if (!text || sending || !isConfigured || exhausted) return;
     hapticSelect();
     setErrored(false);
     const next: SpikeMessage[] = [...messages, { role: "user", content: text }];
     setMessages(next);
     setInput("");
     setSending(true);
+    // Counted at dispatch, so a failed request does not silently burn a message.
+    setUsage(await noteSpikeMessage(isProUser));
     try {
       const reply = await askSpike(next, i18n.language);
       setMessages((m) => [...m, { role: "assistant", content: reply }]);
@@ -142,6 +157,17 @@ export default function SpikeScreen() {
           <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }}>
             {t("spike.title")}
           </Text>
+          <View className="flex-1" />
+          {usage ? (
+            <View
+              className="rounded-full px-2.5 py-1"
+              style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
+            >
+              <Text style={{ color: THEME.muted, fontSize: 10, fontWeight: "700" }}>
+                {t("spike.remaining", { n: usage.remaining })}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <ScrollView
@@ -226,6 +252,30 @@ export default function SpikeScreen() {
           ) : null}
         </ScrollView>
 
+        {/* Allowance spent: a neutral card, not a failed send. */}
+        {exhausted ? (
+          <GlassCard accent style={{ marginHorizontal: 12, marginBottom: 8 }}>
+            <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
+              {t("spike.limitTitle")}
+            </Text>
+            <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginTop: 4 }}>
+              {isProUser
+                ? t("spike.limitProBody", { n: PRO_DAILY_MESSAGES })
+                : t("spike.limitFreeBody", {
+                    n: FREE_DAILY_MESSAGES,
+                    pro: PRO_DAILY_MESSAGES,
+                  })}
+            </Text>
+            {!isProUser ? (
+              <GradientCTA
+                label={t("spike.limitCta")}
+                onPress={() => router.push("/paywall")}
+                style={{ marginTop: 12 }}
+              />
+            ) : null}
+          </GlassCard>
+        ) : null}
+
         <View
           className="flex-row items-center mx-3 mb-2 px-3"
           style={{
@@ -242,14 +292,14 @@ export default function SpikeScreen() {
             onChangeText={setInput}
             placeholder={t("spike.inputPlaceholder")}
             placeholderTextColor={THEME.muted}
-            editable={isConfigured && !sending}
+            editable={isConfigured && !sending && !exhausted}
             onSubmitEditing={send}
             returnKeyType="send"
             style={{ flex: 1, color: THEME.ink, paddingVertical: 11, fontSize: 14 }}
           />
           <Pressable
             onPress={send}
-            disabled={!input.trim() || sending || !isConfigured}
+            disabled={!input.trim() || sending || !isConfigured || exhausted}
             style={[
               {
                 width: 30,
@@ -258,7 +308,8 @@ export default function SpikeScreen() {
                 alignItems: "center",
                 justifyContent: "center",
                 backgroundColor: THEME.accent,
-                opacity: !input.trim() || sending || !isConfigured ? 0.4 : 1,
+                opacity:
+                  !input.trim() || sending || !isConfigured || exhausted ? 0.4 : 1,
               },
               glow(THEME.accent, 10, 0.5),
             ]}

@@ -44,7 +44,7 @@ SEE THE PICTURE
 
 STAY ON ROUTINE
 - Reminders at your own times: basal, daily checks, weekly summary
-- Injection site notes and pen tracking
+- Injection site and rotation-point notes
 - SOS screen: reach your emergency contact with your location in one tap
 
 FAMILY READY
@@ -162,7 +162,7 @@ DEN ÜBERBLICK SEHEN
 
 IN DER ROUTINE BLEIBEN
 - Erinnerungen zu deinen Zeiten: Basal, tägliche Messung, Wochenübersicht
-- Notizen zur Injektionsstelle und Pen-Verwaltung
+- Notizen zu Injektionsstelle und Rotationspunkt
 - SOS-Bildschirm: Notfallkontakt samt Standort mit einem Tipp erreichen
 
 FÜR DIE FAMILIE

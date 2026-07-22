@@ -5,8 +5,9 @@ import type {
   Lang,
   LogTag,
   PeriodTag,
+  SitePoint,
 } from "./types";
-import { foodName, parseTags } from "./types";
+import { asSitePoint, foodName, parseTags } from "./types";
 import type { Food } from "./types";
 
 export interface GlucoseEntry {
@@ -38,9 +39,12 @@ export interface InjectionEntry {
   id: string;
   logged_at: string;
   site: InjectionSite;
+  site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
   note: string | null;
+  /** 'manual', or 'calculator' for the bolus row a meal log wrote for you. */
+  source: string;
   tags: LogTag[];
 }
 
@@ -114,12 +118,15 @@ export async function getJournal(
     id: string;
     logged_at: string;
     site: InjectionSite;
+    site_point: number | null;
     dose_units: number | null;
     insulin_type: InsulinType | null;
     note: string | null;
+    source: string | null;
     tags: string | null;
   }>(
-    `SELECT i.id, i.logged_at, i.site, i.dose_units, i.insulin_type, i.note, i.tags
+    `SELECT i.id, i.logged_at, i.site, i.site_point, i.dose_units, i.insulin_type,
+            i.note, i.source, i.tags
        FROM injection_logs i
      WHERE i.profile_id = ? ORDER BY i.logged_at DESC LIMIT ?;`,
     [profileId, limit]
@@ -130,9 +137,11 @@ export async function getJournal(
     id: r.id,
     logged_at: r.logged_at,
     site: r.site,
+    site_point: asSitePoint(r.site_point),
     dose_units: r.dose_units,
     insulin_type: r.insulin_type,
     note: r.note,
+    source: r.source ?? "manual",
     tags: parseTags(r.tags),
   }));
 

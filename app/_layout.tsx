@@ -2,13 +2,6 @@ import "../global.css";
 import React, { useEffect, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 
-// TEMP (redesign screenshots only): when set, the app boots straight to this
-// route so the simulator can capture a screen without taps. MUST be null for
-// shipping - reverted at the end of each redesign phase. Do not commit non-null.
-const DEV_SCREENSHOT_ROUTE: string | null = null;
-// TEMP: seed demo data + mark onboarded on boot, so core screens render with
-// realistic content for before/after screenshots. MUST be false for shipping.
-const DEV_SEED = false;
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -34,19 +27,6 @@ function RootNavigator() {
   const segments = useSegments();
   const router = useRouter();
 
-  // TEMP redesign seed: fill the active profile with demo data + onboard, once.
-  useEffect(() => {
-    if (!DEV_SEED || !ready || !activeProfile) return;
-    (async () => {
-      const { loadDemoData } = await import("../lib/db/demo");
-      const { markSampleActive } = await import("../lib/sampleData");
-      await loadDemoData(activeProfile.id);
-      await markSampleActive(activeProfile.id);
-      await completeOnboarding();
-      bumpData();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, activeProfile?.id]);
   const prevProRef = useRef<boolean | null>(null);
   // Distinguishes a genuine re-entry (an already-onboarded user reaching
   // /onboarding) from the in-place completion (the flag flips to true while the
@@ -77,16 +57,8 @@ function RootNavigator() {
   // Route gate AND splash control in one place: keep the native splash up until
   // routing has settled on the correct screen, so a fresh (not-onboarded) launch
   // never reveals the dashboard for even one frame before redirecting.
-  // TEMP redesign hook: force a target route for screenshots, bypass the gate.
-  useEffect(() => {
-    if (!ready || !DEV_SCREENSHOT_ROUTE) return;
-    SplashScreen.hideAsync().catch(() => {});
-    router.replace(DEV_SCREENSHOT_ROUTE as never);
-  }, [ready, router]);
-
   useEffect(() => {
     if (!ready) return;
-    if (DEV_SCREENSHOT_ROUTE) return; // screenshot mode owns routing
     const root = segments[0];
     const inOnboarding = root === "onboarding";
     // The onboarding flow hands off to the soft paywall (and its downsell) before
@@ -173,7 +145,6 @@ function RootNavigator() {
         name="spike"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
-      <Stack.Screen name="design-gallery" />
     </Stack>
   );
 }

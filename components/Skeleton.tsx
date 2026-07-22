@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { COLORS, RADIUS } from "../lib/theme/tokens";
+import { RADIUS, THEME } from "../lib/theme/tokens";
 
 interface SkeletonProps {
   width?: DimensionValue;
@@ -46,7 +46,7 @@ export function Skeleton({
   return (
     <Animated.View
       style={[
-        { width, height, borderRadius: radius, backgroundColor: COLORS.surfaceAlt },
+        { width, height, borderRadius: radius, backgroundColor: THEME.track },
         animatedStyle,
         style,
       ]}

@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
 
-import { AGP_TARGET_HIGH, AGP_TARGET_LOW } from "../../lib/agpChart";
+import { DEFAULT_TARGET_BAND, type TargetBand } from "../../lib/agpChart";
 import { formatGlucose } from "../../lib/glucose";
 import type { GlucoseUnit } from "../../lib/db/types";
 import { CHART } from "./theme";
@@ -29,11 +29,14 @@ export function HourlyChart({
   unit,
   width,
   height,
+  band = DEFAULT_TARGET_BAND,
 }: {
   bars: HourlyBar[];
   unit: GlucoseUnit;
   width: number;
   height: number;
+  /** The profile's own target band; the shading is the user's range. */
+  band?: TargetBand;
 }) {
   const geometry = useMemo(() => {
     const plotLeft = PAD_L;
@@ -44,7 +47,7 @@ export function HourlyChart({
     const values = bars.map((b) => b.value).filter((v): v is number => v != null);
     // Scale bars against the target band so their height is readable in context,
     // never against their own min/max (which would exaggerate small differences).
-    const max = Math.max(AGP_TARGET_HIGH * 1.2, ...values) * 1.05;
+    const max = Math.max(band.high * 1.2, ...values) * 1.05;
 
     const y = (value: number) =>
       plotBottom - (Math.min(value, max) / max) * (plotBottom - plotTop);
@@ -63,14 +66,14 @@ export function HourlyChart({
         width: barWidth,
         centerX: plotLeft + i * slot + slot / 2,
       })),
-      yTicks: [AGP_TARGET_LOW, AGP_TARGET_HIGH].map((value) => ({
+      yTicks: [band.low, band.high].map((value) => ({
         value,
         y: y(value),
       })),
-      targetTop: y(AGP_TARGET_HIGH),
-      targetBottom: y(AGP_TARGET_LOW),
+      targetTop: y(band.high),
+      targetBottom: y(band.low),
     };
-  }, [bars, width, height]);
+  }, [bars, width, height, band]);
 
   return (
     <Svg width={width} height={height}>

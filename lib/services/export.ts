@@ -3,7 +3,8 @@ import * as Sharing from "expo-sharing";
 import i18n from "../i18n";
 import { getJournal } from "../db/journal";
 import { currentLang } from "../i18n";
-import type { InsulinType, LogTag, PeriodTag } from "../db/types";
+import type { GlucoseUnit, InsulinType, LogTag, PeriodTag } from "../db/types";
+import { formatGlucose, glucoseUnitLabel } from "../glucose";
 import { num } from "../format";
 
 export type ExportResult =
@@ -51,7 +52,10 @@ function tagsLabel(tags: LogTag[]): string {
  */
 export async function exportLogsCsv(
   profileId: string,
-  profileName: string
+  profileName: string,
+  /** The profile's display unit. Storage is mg/dL; the export follows the unit
+   *  the user actually reads, and names it in its own column. */
+  unit: GlucoseUnit = "mgdl"
 ): Promise<ExportResult> {
   const lang = currentLang();
   const entries = await getJournal(profileId, lang, 5000);
@@ -62,6 +66,7 @@ export async function exportLogsCsv(
     i18n.t("export.colTime"),
     i18n.t("export.colType"),
     i18n.t("export.colGlucose"),
+    i18n.t("export.colUnit"),
     i18n.t("export.colCarbs"),
     i18n.t("export.colInsulin"),
     i18n.t("export.colFood"),
@@ -81,7 +86,10 @@ export async function exportLogsCsv(
           date,
           time,
           `${i18n.t("export.typeGlucose")} · ${periodLabel(e.period_tag)}`,
-          e.glucose_level_mgdl,
+          // The user's own unit, not the raw storage value: a mmol/L household
+          // reading "112" in their doctor's copy would be a real misreading.
+          formatGlucose(e.glucose_level_mgdl, unit),
+          glucoseUnitLabel(unit),
           "",
           "",
           "",
@@ -98,6 +106,7 @@ export async function exportLogsCsv(
           date,
           time,
           i18n.t("export.typeMeal"),
+          "",
           "",
           Math.round(e.calculated_carbs_g * 10) / 10,
           e.insulin_dose_units,
@@ -119,6 +128,7 @@ export async function exportLogsCsv(
           typeLabel
             ? `${i18n.t("export.typeInjection")} · ${typeLabel}`
             : i18n.t("export.typeInjection"),
+          "",
           "",
           "",
           e.dose_units != null ? num(e.dose_units) : "",

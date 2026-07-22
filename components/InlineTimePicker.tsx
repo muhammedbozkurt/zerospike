@@ -54,7 +54,7 @@ export function InlineTimePicker({
 
   return (
     <View className="rounded-2xl bg-glass border border-hair mb-4 overflow-hidden">
-      <View className="flex-row items-center justify-end px-3 py-2 border-b border-zinc-800">
+      <View className="flex-row items-center justify-end px-3 py-2 border-b border-hair">
         <Pressable
           onPress={onClose}
           hitSlop={8}

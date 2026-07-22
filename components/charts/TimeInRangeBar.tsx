@@ -2,6 +2,7 @@ import React from "react";
 import { Text, View } from "react-native";
 
 import { CHART } from "./theme";
+import { THEME } from "../../lib/theme/tokens";
 
 /** A segment narrower than this cannot hold its own percentage legibly. */
 const MIN_INLINE_LABEL_PCT = 14;
@@ -37,7 +38,7 @@ export function TimeInRangeBar({
 
   return (
     <View>
-      <View className="h-7 rounded-lg overflow-hidden flex-row bg-zinc-800">
+      <View className="h-7 rounded-lg overflow-hidden flex-row bg-glass">
         {segments.map((s) =>
           s.pct > 0 ? (
             <View
@@ -49,7 +50,11 @@ export function TimeInRangeBar({
                 // Near-black on every segment: it clears WCAG AA against all
                 // three (5.4:1 on the blue, 7.8:1 on the emerald, 9.3:1 on the
                 // amber), where white would only reach 3.7:1 on the blue.
-                <Text numberOfLines={1} className="text-[11px] font-bold text-zinc-950">
+                <Text
+                  numberOfLines={1}
+                  className="text-[11px] font-bold"
+                  style={{ color: THEME.bg.g1 }}
+                >
                   {Math.round(s.pct)}%
                 </Text>
               ) : null}
@@ -65,7 +70,7 @@ export function TimeInRangeBar({
               className="w-2.5 h-2.5 rounded-full mr-1.5"
               style={{ backgroundColor: s.color }}
             />
-            <Text className="text-zinc-400 text-xs">
+            <Text className="text-mut text-xs">
               {s.label} {Math.round(s.pct)}%
             </Text>
           </View>

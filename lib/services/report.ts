@@ -6,7 +6,13 @@ import { listSugarLogs, listMealLogs } from "../db/logs";
 import { getInjections } from "../db/injections";
 import { computeInsights } from "../insights";
 import { computeAgp, type Agp } from "../agp";
-import { buildAgpGeometry, pointsAttr, type ChartBox } from "../agpChart";
+import {
+  buildAgpGeometry,
+  pointsAttr,
+  targetBandFor,
+  type ChartBox,
+  type TargetBand,
+} from "../agpChart";
 import { formatGlucose, glucoseUnitLabel } from "../glucose";
 import { num } from "../format";
 import { logEvent } from "../analytics";
@@ -67,14 +73,16 @@ const AGP_BOX: ChartBox = {
 
 /**
  * Renders the AGP (Ambulatory Glucose Profile) as an inline SVG: a green target
- * band (70–180), the median curve, and the 25–75 % inter-quartile band by hour
- * of day. Returns "" when there isn't enough data to be meaningful.
+ * band, the median curve, and the 25–75 % inter-quartile band by hour of day.
+ * The shaded band is the PROFILE'S own target range, so the printed chart and
+ * the app agree on what "in range" means. Returns "" when there isn't enough
+ * data to be meaningful.
  *
  * The coordinates come from lib/agpChart.ts, the same module the Insights
  * screen draws from, so the printed chart and the on-screen chart agree.
  */
-function buildAgpSvg(agp: Agp, unit: GlucoseUnit): string {
-  const g = buildAgpGeometry(agp, AGP_BOX);
+function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
+  const g = buildAgpGeometry(agp, AGP_BOX, band);
   if (!g) return "";
   const { width: W, height: H } = AGP_BOX;
   const f1 = (n: number) => n.toFixed(1);
@@ -121,6 +129,8 @@ function buildHtml(
 ): string {
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
   const u = glucoseUnitLabel(unit);
+  // The band the caption states is the profile's own, matching the chart above.
+  const reportBand = targetBandFor(profile);
   const fmtG = (mgdl: number | null) =>
     mgdl == null ? "-" : `${formatGlucose(mgdl, unit)} ${u}`;
   const now = new Date();
@@ -232,7 +242,7 @@ function buildHtml(
   <h2>${t("report.summary")}</h2>
   ${summaryTable}
 
-  ${agpSvg ? `<h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(70, unit)), high: esc(formatGlucose(180, unit)) })}</div>` : ""}
+  ${agpSvg ? `<h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(reportBand.low, unit)), high: esc(formatGlucose(reportBand.high, unit)) })}</div>` : ""}
 
   ${glucoseSection}
   ${injectionSection}
@@ -263,8 +273,13 @@ export async function exportLogsPdf(
     getJournal(profile.id, lang, 5000),
   ]);
 
-  const insights = computeInsights(sugar, mealsRaw, inj, windowDays);
-  const agpSvg = buildAgpSvg(computeAgp(sugar, windowDays), unit);
+  // The report measures against the profile's own range, exactly like the app.
+  const reportBand = targetBandFor(profile);
+  const insights = computeInsights(sugar, mealsRaw, inj, windowDays, {
+    low: reportBand.low,
+    high: reportBand.high,
+  });
+  const agpSvg = buildAgpSvg(computeAgp(sugar, windowDays), unit, reportBand);
 
   // Tables are built from the journal feed (resolved names) within the window,
   // oldest-first for natural reading order.

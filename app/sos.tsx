@@ -1,11 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { AppBackgroundFill } from "../components/rich";
-import { glow } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import * as SMS from "expo-sms";
 import * as Location from "expo-location";
 import { getLocales } from "expo-localization";
@@ -19,6 +26,10 @@ import {
 import { logEvent } from "../lib/analytics";
 import { hapticSelect } from "../lib/haptics";
 import { FeedbackHost } from "../components/Feedback";
+import { GlassCard, GradientCTA } from "../components/rich";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
+import { withAlpha } from "../components/rich/GlassCard";
 
 /** Tries to build a maps link from the current location; null if unavailable. */
 async function tryLocationLink(): Promise<string | null> {
@@ -35,27 +46,20 @@ async function tryLocationLink(): Promise<string | null> {
   }
 }
 
-function ActionButton({
-  icon,
-  label,
-  color,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  color: string;
-  onPress: () => void;
-}) {
+/** The mockup's warm red wash - this one screen departs from the cyan wash. */
+function SosBackground() {
   return (
-    <Pressable
-      onPress={onPress}
-      className="flex-row items-center rounded-2xl px-5 py-4 mb-3 active:opacity-80"
-      style={{ backgroundColor: color }}
-    >
-      <Ionicons name={icon} size={24} color="#fff" />
-      <Text className="text-white font-bold text-base ml-3 flex-1">{label}</Text>
-      <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
-    </Pressable>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: "#080a0d" }]}>
+      <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+        <Defs>
+          <RadialGradient id="sosGlow" cx="50%" cy="26%" rx="120%" ry="60%">
+            <Stop offset="0" stopColor="#2a1418" stopOpacity={1} />
+            <Stop offset="1" stopColor="#080a0d" stopOpacity={1} />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#sosGlow)" />
+      </Svg>
+    </View>
   );
 }
 
@@ -139,97 +143,142 @@ export default function SosScreen() {
     Linking.openURL(`tel:${emergencyNumber}`).catch(() => {});
   }
 
+  const primaryContact = contacts[0];
+
   return (
     <View className="flex-1">
-      <AppBackgroundFill />
+      <SosBackground />
       <View className="flex-1" style={{ paddingTop: insets.top }}>
-        <View className="flex-row items-center justify-between px-4 py-2">
-          <Text className="text-zinc-50 text-xl font-bold">{t("sos.title")}</Text>
-          <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-            <Ionicons name="close" size={26} color="#71717a" />
-          </Pressable>
-        </View>
+        <ScreenHeader
+          title={t("sos.title")}
+          onBack={() => router.back()}
+          backIcon="close"
+          accessibilityLabel={t("common.close")}
+        />
 
         <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
+          contentContainerStyle={{
+            paddingHorizontal: 20,
+            paddingBottom: insets.bottom + 24,
+          }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Radial-glow emergency emblem (mockup hero) */}
-          <View className="items-center mb-4">
+          {/* Hero: radial red emblem, title, one line of honest framing */}
+          <View className="items-center mt-4 mb-5">
             <View
               className="w-16 h-16 rounded-full items-center justify-center"
               style={[
-                { backgroundColor: "rgba(255,84,104,0.16)", borderWidth: 1, borderColor: "rgba(255,84,104,0.3)" },
-                glow("#ff5468", 34, 0.6),
+                {
+                  backgroundColor: withAlpha(GLUCOSE_RICH.low, 0.18),
+                  borderWidth: 1,
+                  borderColor: withAlpha(GLUCOSE_RICH.low, 0.3),
+                },
+                glow(GLUCOSE_RICH.low, 34, 0.6),
               ]}
             >
               <Ionicons name="medical" size={30} color="#ff7a8a" />
             </View>
+            <Text
+              style={{
+                color: THEME.ink,
+                fontSize: 24,
+                fontWeight: "800",
+                marginTop: 12,
+              }}
+            >
+              {t("sos.title")}
+            </Text>
+            <Text
+              style={{
+                color: THEME.muted,
+                fontSize: 13,
+                lineHeight: 19,
+                textAlign: "center",
+                marginTop: 6,
+                maxWidth: 260,
+              }}
+            >
+              {t("sos.subtitle")}
+            </Text>
           </View>
 
-          {/* Honest framing: no auto-send, no auto-call. */}
-          <Text className="text-zinc-400 leading-5 mb-5 text-center">{t("sos.subtitle")}</Text>
-
-          {/* Emergency number is always available */}
-          <ActionButton
-            icon="call"
+          {/* The two primary actions the mockup leads with */}
+          <GradientCTA
+            danger
             label={t("sos.callEmergency", { number: emergencyNumber })}
-            color="#dc2626"
+            icon={<Ionicons name="call" size={17} color="#fff" />}
             onPress={callEmergency}
+            style={{ marginBottom: 10 }}
           />
+          {primaryContact ? (
+            <GradientCTA
+              variant="sub"
+              label={t("sos.messageContact")}
+              icon={<Ionicons name="chatbubble-ellipses" size={17} color={THEME.ink} />}
+              onPress={() => messageContact(primaryContact.phone)}
+              style={{ marginBottom: 18 }}
+            />
+          ) : (
+            <GradientCTA
+              variant="sub"
+              label={t("sos.addContact")}
+              icon={<Ionicons name="person-add-outline" size={17} color={THEME.ink} />}
+              onPress={() => router.push("/emergency-contacts")}
+              style={{ marginBottom: 18 }}
+            />
+          )}
 
           {contacts.length === 0 ? (
-            <View className="rounded-2xl bg-glass border border-hair p-5 mt-2">
-              <Text className="text-zinc-300 text-center mb-4">
-                {t("sos.noContacts")}
-              </Text>
-              <Pressable
-                onPress={() => router.push("/emergency-contacts")}
-                className="rounded-xl bg-brand active:bg-brandDark py-3 items-center"
-              >
-                <Text className="text-black font-semibold">{t("sos.addContact")}</Text>
-              </Pressable>
-            </View>
+            <Text
+              style={{
+                color: THEME.muted,
+                fontSize: 12,
+                textAlign: "center",
+                lineHeight: 18,
+              }}
+            >
+              {t("sos.noContacts")}
+            </Text>
           ) : (
             <>
               {contacts.map((c, i) => (
-                <View
-                  key={`${c.phone}-${i}`}
-                  className="rounded-2xl bg-glass border border-hair p-4 mt-4"
-                >
-                  <Text className="text-zinc-50 font-bold text-base">{c.name}</Text>
-                  <Text className="text-zinc-500 text-sm mb-3">{c.phone}</Text>
-                  <ActionButton
-                    icon="call"
-                    label={t("sos.callContact")}
-                    color="#16a34a"
-                    onPress={() => callNumber(c.phone)}
-                  />
-                  <ActionButton
-                    icon="chatbubble-ellipses"
-                    label={t("sos.messageContact")}
-                    color="#2563eb"
-                    onPress={() => messageContact(c.phone)}
-                  />
-                  <ActionButton
-                    icon="logo-whatsapp"
-                    label={t("sos.whatsappContact")}
-                    color="#059669"
-                    onPress={() => whatsappContact(c.phone)}
-                  />
-                </View>
+                <GlassCard key={`${c.phone}-${i}`} style={{ marginBottom: 10 }}>
+                  <Text style={{ color: THEME.ink, fontSize: 15, fontWeight: "800" }}>
+                    {c.name}
+                  </Text>
+                  <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 10 }}>
+                    {c.phone}
+                  </Text>
+                  <View className="flex-row" style={{ gap: 8 }}>
+                    <ContactAction
+                      icon="call"
+                      label={t("sos.callContact")}
+                      onPress={() => callNumber(c.phone)}
+                    />
+                    <ContactAction
+                      icon="chatbubble-ellipses"
+                      label={t("sos.messageContact")}
+                      onPress={() => messageContact(c.phone)}
+                    />
+                    <ContactAction
+                      icon="logo-whatsapp"
+                      label={t("sos.whatsappContact")}
+                      onPress={() => whatsappContact(c.phone)}
+                    />
+                  </View>
+                </GlassCard>
               ))}
 
-              {/* Once a contact exists the big empty-state card is gone, and with
-                  it the only way to reach the contacts screen. A second contact
-                  has to be reachable from here. The list refreshes on focus. */}
+              {/* Once a contact exists the empty-state route is gone, so the
+                  contacts screen has to stay reachable from here. */}
               <Pressable
                 onPress={() => router.push("/emergency-contacts")}
-                className="flex-row items-center justify-center rounded-2xl border border-zinc-800 py-3.5 mt-4 active:bg-zinc-900"
+                className="flex-row items-center justify-center rounded-2xl py-3.5 mt-2 active:opacity-80"
+                style={{ borderWidth: 1, borderColor: THEME.border }}
               >
-                <Ionicons name="person-add-outline" size={17} color="#2ee6ff" />
+                <Ionicons name="person-add-outline" size={17} color={THEME.accent} />
                 <Text
-                  className="text-brand font-medium ml-2"
+                  style={{ color: THEME.accent, fontWeight: "700", marginLeft: 8 }}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.85}
@@ -240,12 +289,53 @@ export default function SosScreen() {
             </>
           )}
 
-          <Text className="text-zinc-600 text-[11px] text-center leading-4 mt-6 px-2">
+          <Text
+            style={{
+              color: THEME.muted,
+              fontSize: 11,
+              textAlign: "center",
+              lineHeight: 16,
+              marginTop: 22,
+              paddingHorizontal: 8,
+            }}
+          >
             {t("sos.disclaimer")}
           </Text>
         </ScrollView>
       </View>
       <FeedbackHost />
     </View>
+  );
+}
+
+/** One compact action tile inside a contact card. */
+function ContactAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityLabel={label}
+      className="flex-1 items-center rounded-xl py-3 active:opacity-80"
+      style={{
+        borderWidth: 1,
+        borderColor: THEME.border,
+        backgroundColor: THEME.glass,
+      }}
+    >
+      <Ionicons name={icon} size={18} color={THEME.accent} />
+      <Text
+        style={{ color: THEME.muted, fontSize: 10, marginTop: 4 }}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }

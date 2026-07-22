@@ -13,18 +13,12 @@ import {
 } from "../lib/glucose";
 import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
-import { GLUCOSE_RICH, THEME, TABULAR, glow } from "../lib/theme/tokens";
+import { RICH_BY_STATUS, THEME, TABULAR, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { IconTile } from "./rich/IconTile";
 import { withAlpha } from "./rich/GlassCard";
 
-/** Rich status color (Midnight Monitor), keyed by classification. */
-const STATUS_RICH: Record<GlucoseStatus, string> = {
-  low: GLUCOSE_RICH.low,
-  normal: GLUCOSE_RICH.target,
-  elevated: GLUCOSE_RICH.high,
-  high: GLUCOSE_RICH.veryHigh,
-};
+
 
 /** The shared glass "lrow": translucent fill, light border, left accent bar. */
 function Row({
@@ -105,7 +99,7 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
       entry.period_tag,
       profile
     );
-    const color = STATUS_RICH[status];
+    const color = RICH_BY_STATUS[status];
     return (
       <Row accent={color} onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
         {/* value chip carries the reading in its status color (never color alone) */}

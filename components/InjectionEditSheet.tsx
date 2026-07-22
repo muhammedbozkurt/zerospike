@@ -13,24 +13,96 @@ import {
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
-import type { InsulinType } from "../lib/db/types";
+import type { InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
+import { INJECTION_SITES, SITE_POINTS } from "../lib/db/types";
 import { updateInjection, type InjectionUpdate } from "../lib/db/injections";
+import { checkDose } from "../lib/insulin";
 import { logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
-import { Button } from "./ui";
+import { useFeedback } from "./Feedback";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
+import { RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { GradientCTA } from "./rich/GradientCTA";
+import { withAlpha } from "./rich/GlassCard";
 
 /** The stored injection being corrected (structurally matches Injection). */
 export interface InjectionEditTarget {
   id: string;
+  site: InjectionSite;
+  site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
   logged_at: string;
 }
 
+const inputStyle = {
+  borderRadius: RADIUS.md,
+  borderWidth: 1,
+  borderColor: THEME.border,
+  backgroundColor: THEME.glass,
+  paddingHorizontal: 14,
+  paddingVertical: 12,
+  color: THEME.ink,
+} as const;
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+      {children}
+    </Text>
+  );
+}
+
+/** A selectable pill in the Midnight Monitor language. */
+function Chip({
+  label,
+  on,
+  onPress,
+  style,
+}: {
+  label: string;
+  on: boolean;
+  onPress: () => void;
+  style?: object;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: on }}
+      style={[
+        {
+          borderRadius: RADIUS.md,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          borderWidth: 1,
+          borderColor: on ? THEME.accent : THEME.border,
+          backgroundColor: on ? withAlpha(THEME.accent, 0.14) : THEME.glass,
+        },
+        on ? glow(THEME.accent, 12, 0.35) : undefined,
+        style,
+      ]}
+    >
+      <Text
+        style={{
+          color: on ? THEME.accent : THEME.muted,
+          fontSize: 12,
+          fontWeight: on ? "800" : "600",
+          textAlign: "center",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 /**
- * Bottom sheet for correcting an injection's dose, insulin type and time.
+ * Bottom sheet for correcting an injection: dose, insulin type, region, rotation
+ * point and time. The calculator writes a bolus row automatically, so this is
+ * where that row gets its real site and point - which is exactly why the site
+ * and point are editable here rather than fixed at creation.
  *
  * Rendered from tab screens (injection tab, dashboard journal), which are not
  * modal routes, so a plain RN Modal is fine here (gotcha 22 applies to the
@@ -48,8 +120,11 @@ export function InjectionEditSheet({
   onSaved: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const { confirm } = useFeedback();
   const [dose, setDose] = useState("");
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
+  const [site, setSite] = useState<InjectionSite>("abdomen_left");
+  const [point, setPoint] = useState<SitePoint | null>(null);
   const [loggedAt, setLoggedAt] = useState<Date>(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,20 +133,47 @@ export function InjectionEditSheet({
     if (visible && injection) {
       setDose(injection.dose_units != null ? num(injection.dose_units) : "");
       setInsulinType(injection.insulin_type ?? "bolus");
+      setSite(injection.site);
+      setPoint(injection.site_point);
       setLoggedAt(new Date(injection.logged_at));
       setTimePickerOpen(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, injection?.id]);
 
+  /** Same plausibility gate as the create form: confirm, never refuse. */
+  async function confirmDose(units: number): Promise<boolean> {
+    const check = checkDose(units);
+    if (check === "ok") return true;
+    const first = await confirm({
+      title: t("injection.doseCheckTitle", { n: num(units) }),
+      message: t("injection.doseCheckBody"),
+      confirmLabel: t("injection.doseCheckConfirm"),
+      icon: "help-circle-outline",
+    });
+    if (!first) return false;
+    if (check === "high") return true;
+    return confirm({
+      title: t("injection.doseCheckTitle", { n: num(units) }),
+      message: t("injection.doseImplausibleBody"),
+      confirmLabel: t("injection.doseCheckConfirm"),
+      icon: "help-circle-outline",
+    });
+  }
+
   async function save() {
     if (!injection || saving) return;
+    const doseNum = parseFloat(dose.replace(",", "."));
+    const hasDose = Number.isFinite(doseNum) && doseNum > 0;
+    if (hasDose && !(await confirmDose(doseNum))) return;
+
     setSaving(true);
     try {
-      const doseNum = parseFloat(dose.replace(",", "."));
       const patch: InjectionUpdate = {
-        dose_units: Number.isFinite(doseNum) && doseNum > 0 ? doseNum : null,
+        dose_units: hasDose ? doseNum : null,
         insulin_type: insulinType,
+        site,
+        site_point: point,
         logged_at: loggedAt.toISOString(),
       };
       await updateInjection(injection.id, patch);
@@ -89,21 +191,37 @@ export function InjectionEditSheet({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
-        <Pressable className="flex-1 bg-black/70 justify-end" onPress={onClose}>
+        <Pressable
+          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+          onPress={onClose}
+        >
           <Pressable
-            className="rounded-t-3xl bg-zinc-950 border-t border-x border-zinc-800 px-5 pt-3"
-            style={{ maxHeight: "100%" }}
+            style={[
+              {
+                maxHeight: "100%",
+                borderTopLeftRadius: 26,
+                borderTopRightRadius: 26,
+                borderTopWidth: 1,
+                borderLeftWidth: 1,
+                borderRightWidth: 1,
+                borderColor: THEME.border,
+                backgroundColor: THEME.bg.g1,
+                paddingHorizontal: 18,
+                paddingTop: 10,
+              },
+              glow(THEME.accent, 30, 0.3),
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
-            <View className="items-center mb-2 py-1">
-              <View className="w-10 h-1 rounded-full bg-zinc-700" />
+            <View className="items-center py-1 mb-1">
+              <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-zinc-50 text-xl font-bold">
+              <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
                 {t("calculator.editTitle")}
               </Text>
               <Pressable onPress={onClose} hitSlop={12} className="p-1">
-                <Ionicons name="close" size={24} color="#71717a" />
+                <Ionicons name="close" size={22} color={THEME.muted} />
               </Pressable>
             </View>
 
@@ -114,10 +232,7 @@ export function InjectionEditSheet({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 32 }}
             >
-              {/* Dose (optional, mirrors the injection tab's create form) */}
-              <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-                {t("injection.dose")}
-              </Text>
+              <FieldLabel>{t("injection.dose")}</FieldLabel>
               <View className="flex-row items-center mb-4">
                 <TextInput
                   value={dose}
@@ -126,55 +241,73 @@ export function InjectionEditSheet({
                   }
                   keyboardType="decimal-pad"
                   placeholder="-"
-                  placeholderTextColor="#52525b"
+                  placeholderTextColor="rgba(137,163,176,0.5)"
                   maxLength={5}
-                  className="flex-1 rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-zinc-50"
+                  style={[inputStyle, { flex: 1 }]}
                 />
-                <Text className="text-zinc-500 ml-2">{t("common.units")}</Text>
+                <Text style={{ color: THEME.muted, marginLeft: 8 }}>{t("common.units")}</Text>
               </View>
 
-              {/* Insulin type */}
-              <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-                {t("injection.insulinType")}
-              </Text>
-              <View className="flex-row gap-2 mb-4">
+              <FieldLabel>{t("injection.insulinType")}</FieldLabel>
+              <View className="flex-row mb-4" style={{ gap: 8 }}>
                 {(["basal", "bolus"] as const).map((type) => (
-                  <Pressable
+                  <Chip
                     key={type}
+                    label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
+                    on={insulinType === type}
                     onPress={() => {
                       hapticSelect();
                       setInsulinType(type);
                     }}
-                    className={`flex-1 rounded-xl border px-3 py-2.5 items-center ${
-                      insulinType === type
-                        ? "border-brand bg-brand/10"
-                        : "border-zinc-700 bg-zinc-800/60"
-                    }`}
-                  >
-                    <Text
-                      className={
-                        insulinType === type ? "text-brand font-medium" : "text-zinc-300"
-                      }
-                    >
-                      {type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
-                    </Text>
-                  </Pressable>
+                    style={{ flex: 1 }}
+                  />
                 ))}
               </View>
 
-              {/* When it was injected (date + time, never in the future) */}
-              <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-                {t("calculator.loggedTime")}
-              </Text>
+              <FieldLabel>{t("injection.selectSite")}</FieldLabel>
+              <View className="flex-row flex-wrap mb-4" style={{ gap: 6 }}>
+                {INJECTION_SITES.map((s) => (
+                  <Chip
+                    key={s}
+                    label={t(`injectionSite.${s}`)}
+                    on={site === s}
+                    onPress={() => {
+                      hapticSelect();
+                      setSite(s);
+                    }}
+                  />
+                ))}
+              </View>
+
+              <FieldLabel>{t("injection.selectPoint")}</FieldLabel>
+              <View className="flex-row mb-4" style={{ gap: 6 }}>
+                {SITE_POINTS.map((p) => (
+                  <Chip
+                    key={p}
+                    label={t("injection.pointLabel", { n: p })}
+                    on={point === p}
+                    onPress={() => {
+                      hapticSelect();
+                      // Tapping the current point clears it: a row logged before
+                      // v8 genuinely has no point, and "unset" must stay reachable.
+                      setPoint((prev) => (prev === p ? null : p));
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                ))}
+              </View>
+
+              <FieldLabel>{t("calculator.loggedTime")}</FieldLabel>
               <Pressable
                 onPress={() => {
                   Keyboard.dismiss();
                   setTimePickerOpen((v) => !v);
                 }}
-                className="flex-row items-center rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 mb-5"
+                className="flex-row items-center mb-5"
+                style={inputStyle}
               >
-                <Ionicons name="time-outline" size={16} color="#a1a1aa" />
-                <Text className="text-zinc-50 ml-2">
+                <Ionicons name="time-outline" size={16} color={THEME.muted} />
+                <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
                   {relativeDay(loggedAt.toISOString(), {
                     today: t("common.today"),
                     yesterday: t("common.yesterday"),
@@ -192,12 +325,7 @@ export function InjectionEditSheet({
                 onClose={() => setTimePickerOpen(false)}
               />
 
-              <Button
-                label={t("common.save")}
-                size="lg"
-                loading={saving}
-                onPress={save}
-              />
+              <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
             </ScrollView>
           </Pressable>
         </Pressable>

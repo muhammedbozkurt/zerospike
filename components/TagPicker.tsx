@@ -30,7 +30,7 @@ export function TagPicker({
 
   return (
     <View className={className}>
-      <Text className="text-sm font-medium text-zinc-400 mb-1.5">
+      <Text className="text-sm font-medium text-mut mb-1.5">
         {t("tags.label")}
       </Text>
       <View className="flex-row flex-wrap gap-2">
@@ -43,11 +43,11 @@ export function TagPicker({
               className={`rounded-full border px-3 py-1.5 ${
                 active
                   ? "border-brand bg-brand/10"
-                  : "border-zinc-700 bg-zinc-800/60"
+                  : "border-hair bg-glass"
               }`}
             >
               <Text
-                className={`text-sm ${active ? "text-brand font-medium" : "text-zinc-300"}`}
+                className={`text-sm ${active ? "text-brand font-medium" : "text-mut"}`}
               >
                 {t(`tags.${tag}`)}
               </Text>

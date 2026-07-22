@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { THEME } from "../lib/theme/tokens";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -33,7 +34,7 @@ export function FormCard({
               <Ionicons name={icon} size={13} color="#2ee6ff" />
             </View>
           ) : null}
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          <Text className="text-xs font-semibold uppercase tracking-wider text-mut">
             {title}
           </Text>
         </View>
@@ -72,32 +73,32 @@ export function InputRow({
           <Ionicons
             name={icon}
             size={large ? 20 : 18}
-            color="#71717a"
+            color={THEME.muted}
             style={{ marginRight: 12 }}
           />
         ) : null}
         <View className="flex-1 pr-3">
-          <Text className={`${large ? "text-base" : "text-[15px]"} text-zinc-100`}>
+          <Text className={`${large ? "text-base" : "text-[15px]"} text-ink`}>
             {label}
           </Text>
           {hint ? (
-            <Text className="text-xs text-zinc-500 mt-0.5">{hint}</Text>
+            <Text className="text-xs text-mut mt-0.5">{hint}</Text>
           ) : null}
         </View>
         <View className="flex-row items-center">
           <TextInput
-            placeholderTextColor="#52525b"
+            placeholderTextColor={THEME.muted}
             className={`text-right ${
               large ? "text-[19px]" : "text-[16px]"
-            } font-semibold text-zinc-50 min-w-[56px] max-w-[150px] py-1`}
+            } font-semibold text-ink min-w-[56px] max-w-[150px] py-1`}
             {...input}
           />
           {suffix ? (
-            <Text className="text-zinc-500 text-sm ml-1.5">{suffix}</Text>
+            <Text className="text-mut text-sm ml-1.5">{suffix}</Text>
           ) : null}
         </View>
       </View>
-      {!last ? <View className="h-px bg-zinc-800 ml-4" /> : null}
+      {!last ? <View className="h-px bg-glass ml-4" /> : null}
     </View>
   );
 }
@@ -120,13 +121,13 @@ export function ActionRow({
     <View>
       <Pressable onPress={onPress} className="flex-row items-center px-4 py-3.5">
         {icon ? (
-          <Ionicons name={icon} size={18} color="#71717a" style={{ marginRight: 12 }} />
+          <Ionicons name={icon} size={18} color={THEME.muted} style={{ marginRight: 12 }} />
         ) : null}
-        <Text className="flex-1 text-[15px] text-zinc-100">{label}</Text>
-        <Text className="text-zinc-50 font-semibold mr-1.5">{value}</Text>
-        <Ionicons name="chevron-forward" size={16} color="#52525b" />
+        <Text className="flex-1 text-[15px] text-ink">{label}</Text>
+        <Text className="text-ink font-semibold mr-1.5">{value}</Text>
+        <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
       </Pressable>
-      {!last ? <View className="h-px bg-zinc-800 ml-4" /> : null}
+      {!last ? <View className="h-px bg-glass ml-4" /> : null}
     </View>
   );
 }
@@ -158,12 +159,12 @@ export function AcceptCheck({
       className={`flex-row items-center rounded-2xl border px-4 py-3.5 ${
         checked
           ? "bg-brand/10 border-brand/40"
-          : "bg-zinc-900 border-zinc-800"
+          : "bg-glass border-hair"
       }`}
     >
       <View
         className={`w-6 h-6 rounded-md items-center justify-center mr-3 border-2 ${
-          checked ? "bg-brand border-brand" : "border-zinc-600"
+          checked ? "bg-brand border-brand" : "border-hair"
         }`}
       >
         <Animated.View
@@ -173,7 +174,7 @@ export function AcceptCheck({
         </Animated.View>
       </View>
       <Text
-        className={`flex-1 text-sm ${checked ? "text-brand" : "text-zinc-300"}`}
+        className={`flex-1 text-sm ${checked ? "text-brand" : "text-mut"}`}
       >
         {label}
       </Text>

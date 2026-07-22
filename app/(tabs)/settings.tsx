@@ -25,20 +25,44 @@ import {
   setNotificationPrefs,
   type NotificationPrefs,
 } from "../../lib/services/notificationPrefs";
-import type { Lang, GlucoseUnit } from "../../lib/db/types";
+import type {
+  Lang,
+  GlucoseUnit,
+  DiabetesType,
+  InsulinMode,
+} from "../../lib/db/types";
 import {
+  clampHypoThreshold,
+  clampTarget,
   glucoseToDisplay,
   glucoseFromDisplay,
   glucoseUnitLabel,
+  TARGET_RANGE_BOUNDS,
 } from "../../lib/glucose";
+import { CARB_TARGET_BOUNDS, clampCarbTarget } from "../../lib/insulin";
+import {
+  insulinModeOf,
+  insulinModeShowsBasal,
+  insulinModeShowsBolus,
+  insulinModeUsesInsulin,
+} from "../../lib/insulinMode";
 import { SectionLabel, Segmented } from "../../components/ui";
 import { FormCard, InputRow } from "../../components/form";
+import { RangeInput } from "../../components/RangeInput";
+import {
+  checkReminderReliability,
+  remindersMayBeLimited,
+  type ReminderReliability,
+} from "../../lib/services/notifications";
+import { GLUCOSE_RICH, THEME } from "../../lib/theme/tokens";
+import { withAlpha } from "../../components/rich/GlassCard";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { LanguagePicker } from "../../components/LanguagePicker";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DisclaimerBanner } from "../../components/Disclaimer";
 import { useFeedback } from "../../components/Feedback";
 import { privacyUrl, termsUrl } from "../../lib/legal";
+import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
 
 function Row({
   icon,
@@ -61,18 +85,20 @@ function Row({
       className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 active:opacity-80"
     >
       <View
-        className={`w-9 h-9 rounded-xl items-center justify-center ${danger ? "bg-rose-500/15" : "bg-brand/12"}`}
+        className="w-9 h-9 rounded-xl items-center justify-center"
+        style={{ backgroundColor: withAlpha(danger ? GLUCOSE_RICH.low : THEME.accent, 0.14) }}
       >
-        <Ionicons name={icon} size={18} color={danger ? "#fb7185" : "#2ee6ff"} />
+        <Ionicons name={icon} size={18} color={danger ? GLUCOSE_RICH.low : THEME.accent} />
       </View>
       <Text
-        className={`flex-1 ml-3 text-[15px] font-semibold ${danger ? "text-rose-400" : "text-ink"}`}
+        className="flex-1 ml-3 text-[15px] font-semibold"
+        style={{ color: danger ? GLUCOSE_RICH.low : THEME.ink }}
       >
         {label}
       </Text>
       {value ? <Text className="text-mut text-[13px] mr-1 font-medium">{value}</Text> : null}
       {right ?? (onPress ? (
-        <Ionicons name="chevron-forward" size={18} color="#52586a" />
+        <Ionicons name="chevron-forward" size={18} color={THEME.muted} />
       ) : null)}
     </Pressable>
   );
@@ -100,9 +126,13 @@ export default function SettingsScreen() {
   const [crB, setCrB] = useState("");
   const [crL, setCrL] = useState("");
   const [crD, setCrD] = useState("");
-  const [fasting, setFasting] = useState("");
-  const [postmeal, setPostmeal] = useState("");
-  const [dailyCarb, setDailyCarb] = useState("");
+  const [fastingMin, setFastingMin] = useState("");
+  const [fastingMax, setFastingMax] = useState("");
+  const [postmealMin, setPostmealMin] = useState("");
+  const [postmealMax, setPostmealMax] = useState("");
+  const [carbMin, setCarbMin] = useState("");
+  const [carbMax, setCarbMax] = useState("");
+  const [reliability, setReliability] = useState<ReminderReliability | null>(null);
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
   const [openPicker, setOpenPicker] = useState<
     "basal" | "glucose" | "weekly" | null
@@ -113,6 +143,15 @@ export default function SettingsScreen() {
   const [restoring, setRestoring] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
+  // The accepted band, expressed in the unit the user is actually typing in.
+  const glucoseBounds = {
+    min: glucoseToDisplay(TARGET_RANGE_BOUNDS.min, unit),
+    max: glucoseToDisplay(TARGET_RANGE_BOUNDS.max, unit),
+  };
+  const insulinMode = insulinModeOf(activeProfile);
+  const showsBolus = insulinModeShowsBolus(insulinMode);
+  const showsBasal = insulinModeShowsBasal(insulinMode);
+  const usesInsulin = insulinModeUsesInsulin(insulinMode);
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -123,9 +162,12 @@ export default function SettingsScreen() {
     setCrL(String(activeProfile.carb_ratio_lunch));
     setCrD(String(activeProfile.carb_ratio_dinner));
     // Targets are stored in mg/dL - show them in the profile's unit.
-    setFasting(String(glucoseToDisplay(activeProfile.target_fasting_max, u)));
-    setPostmeal(String(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
-    setDailyCarb(String(activeProfile.daily_carb_target_g));
+    setFastingMin(String(glucoseToDisplay(activeProfile.target_fasting_min, u)));
+    setFastingMax(String(glucoseToDisplay(activeProfile.target_fasting_max, u)));
+    setPostmealMin(String(glucoseToDisplay(activeProfile.target_postmeal_min, u)));
+    setPostmealMax(String(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
+    setCarbMin(String(activeProfile.daily_carb_target_min_g));
+    setCarbMax(String(activeProfile.daily_carb_target_g));
   }, [activeProfile?.id, activeProfile?.glucose_unit]);
 
   // Load notification preferences + current permission state.
@@ -135,6 +177,7 @@ export default function SettingsScreen() {
       setPrefs(p);
       const granted = await hasNotificationPermission();
       setNotifDenied(p.enabled && !granted);
+      setReliability(await checkReminderReliability());
     })();
   }, []);
 
@@ -146,6 +189,7 @@ export default function SettingsScreen() {
     await applyNotificationPrefs(next);
     const granted = await hasNotificationPermission();
     setNotifDenied(next.enabled && !granted);
+    setReliability(await checkReminderReliability());
   }
 
   function n(v: string, fallback: number): number {
@@ -159,6 +203,64 @@ export default function SettingsScreen() {
     bumpData();
   }
 
+  /**
+   * Saving a ratio is the user telling us this IS their number, so it also
+   * clears the "running on defaults" state the calculator surfaces. Until they
+   * do, a default must never be presented as if they had chosen it.
+   */
+  async function persistRatio(patch: Record<string, number>) {
+    await persist({ ...patch, ratios_confirmed: 1 });
+  }
+
+  /** Both ends parse and the low end is genuinely below the high one. */
+  function rangeOk(minText: string, maxText: string): boolean {
+    const lo = parseFloat(minText.replace(",", "."));
+    const hi = parseFloat(maxText.replace(",", "."));
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return false;
+    return lo < hi;
+  }
+
+  /** Whether both ends sit inside the accepted band (display unit). */
+  function withinBounds(
+    minText: string,
+    maxText: string,
+    bounds: { min: number; max: number }
+  ): boolean {
+    const lo = parseFloat(minText.replace(",", "."));
+    const hi = parseFloat(maxText.replace(",", "."));
+    return (
+      lo >= bounds.min && lo <= bounds.max && hi >= bounds.min && hi <= bounds.max
+    );
+  }
+
+  // Ranges are only written once both ends are coherent, so a half-typed pair
+  // never lands in the database and starts miscolouring readings.
+  async function persistRange(which: "fasting" | "postmeal") {
+    const minText = which === "fasting" ? fastingMin : postmealMin;
+    const maxText = which === "fasting" ? fastingMax : postmealMax;
+    // Out-of-band input is reported on the control and NOT stored: clamping it
+    // silently would leave the field showing a number the profile never got.
+    if (!rangeOk(minText, maxText)) return;
+    if (!withinBounds(minText, maxText, glucoseBounds)) return;
+    const lo = clampTarget(glucoseFromDisplay(n(minText, 80), unit));
+    const hi = clampTarget(glucoseFromDisplay(n(maxText, 140), unit));
+    if (lo >= hi) return;
+    await persist(
+      which === "fasting"
+        ? { target_fasting_min: lo, target_fasting_max: hi }
+        : { target_postmeal_min: lo, target_postmeal_max: hi }
+    );
+  }
+
+  async function persistCarbRange() {
+    if (!rangeOk(carbMin, carbMax)) return;
+    if (!withinBounds(carbMin, carbMax, CARB_TARGET_BOUNDS)) return;
+    const lo = clampCarbTarget(n(carbMin, 160));
+    const hi = clampCarbTarget(n(carbMax, 200));
+    if (lo >= hi) return;
+    await persist({ daily_carb_target_min_g: lo, daily_carb_target_g: hi });
+  }
+
   async function onExport() {
     if (!activeProfile) return;
     if (!isProUser) {
@@ -166,7 +268,7 @@ export default function SettingsScreen() {
       return;
     }
     setExporting(true);
-    const res = await exportLogsCsv(activeProfile.id, activeProfile.name);
+    const res = await exportLogsCsv(activeProfile.id, activeProfile.name, unit);
     setExporting(false);
     if (!res.ok) {
       toast(
@@ -330,75 +432,154 @@ export default function SettingsScreen() {
           </View>
         </FormCard>
 
-        {/* Targets */}
-        <FormCard icon="speedometer-outline" title={t("onboarding.secTargets")}>
-          <InputRow
-            icon="sunny-outline"
-            label={t("period.fasting")}
-            value={fasting}
-            onChangeText={setFasting}
-            keyboardType="decimal-pad"
-            suffix={glucoseUnitLabel(unit)}
-            maxLength={5}
-            onEndEditing={() =>
-              persist({
-                target_fasting_max: glucoseFromDisplay(
-                  n(fasting, glucoseToDisplay(100, unit)),
-                  unit
-                ),
-              })
-            }
+        {/* What the user actually uses - the answers that shape the whole UI */}
+        <SectionLabel>{t("settings.insulinMode")}</SectionLabel>
+        <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
+          <Segmented
+            options={(["none", "basal", "bolus", "both"] as InsulinMode[]).map((m) => ({
+              value: m,
+              label: t(`onboarding.insulin_${m}`),
+            }))}
+            value={insulinMode}
+            onChange={(m: InsulinMode) => persist({ insulin_mode: m })}
           />
-          <InputRow
-            icon="time-outline"
-            label={t("period.post_meal_2h")}
-            value={postmeal}
-            onChangeText={setPostmeal}
-            keyboardType="decimal-pad"
-            suffix={glucoseUnitLabel(unit)}
-            maxLength={5}
-            onEndEditing={() =>
-              persist({
-                target_postmeal_max: glucoseFromDisplay(
-                  n(postmeal, glucoseToDisplay(140, unit)),
-                  unit
-                ),
-              })
-            }
-          />
-          <InputRow
-            icon="pie-chart-outline"
-            label={t("settings.dailyCarbTarget")}
-            value={dailyCarb}
-            onChangeText={setDailyCarb}
-            keyboardType="number-pad"
-            suffix={t("common.grams")}
-            onEndEditing={() =>
-              persist({ daily_carb_target_g: Math.round(n(dailyCarb, 200)) })
-            }
-          />
-          <InputRow
-            icon="pulse-outline"
-            label={t("settings.isf")}
-            hint={t("settings.isfHint")}
-            value={isf}
-            onChangeText={setIsf}
-            keyboardType="decimal-pad"
-            suffix={glucoseUnitLabel(unit)}
-            maxLength={5}
-            onEndEditing={() =>
-              persist({
-                insulin_sensitivity_factor: glucoseFromDisplay(
-                  n(isf, glucoseToDisplay(40, unit)),
-                  unit
-                ),
-              })
-            }
-            last
-          />
-        </FormCard>
+          <Text className="text-mut text-xs mt-2 leading-4">
+            {t("settings.insulinModeHint")}
+          </Text>
+        </View>
 
-        {/* Carb ratios */}
+        <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-3">
+          <Text className="text-mut text-xs mb-2">{t("settings.diabetesType")}</Text>
+          <Segmented
+            options={(
+              ["type1", "type2", "gestational", "prediabetes", "unknown"] as DiabetesType[]
+            ).map((d) => ({
+              value: d,
+              label:
+                d === "unknown"
+                  ? t("onboarding.diabetes_other")
+                  : t(`onboarding.diabetes_${d}`),
+            }))}
+            value={activeProfile?.diabetes_type ?? "unknown"}
+            onChange={(d: DiabetesType) => persist({ diabetes_type: d })}
+          />
+          <Text className="text-mut text-xs mt-2 leading-4">
+            {t("settings.diabetesTypeHint")}
+          </Text>
+        </View>
+
+        {/* Targets: RANGES, not single ceilings */}
+        <SectionLabel>{t("settings.targetsSection")}</SectionLabel>
+        <RangeInput
+          label={t("settings.fastingRange")}
+          unit={glucoseUnitLabel(unit)}
+          minText={fastingMin}
+          maxText={fastingMax}
+          onChangeMin={setFastingMin}
+          onChangeMax={setFastingMax}
+          onBlur={() => persistRange("fasting")}
+          axisMin={glucoseToDisplay(50, unit)}
+          axisMax={glucoseToDisplay(250, unit)}
+          minLabel={t("common.rangeMin")}
+          maxLabel={t("common.rangeMax")}
+          invalid={!rangeOk(fastingMin, fastingMax)}
+          invalidMessage={t("settings.rangeInvalid")}
+          bounds={glucoseBounds}
+          outOfBoundsMessage={t("settings.rangeOutOfBounds", {
+            min: glucoseBounds.min,
+            max: glucoseBounds.max,
+          })}
+          decimals={unit === "mmol"}
+        />
+        <RangeInput
+          label={t("settings.postmealRange")}
+          unit={glucoseUnitLabel(unit)}
+          minText={postmealMin}
+          maxText={postmealMax}
+          onChangeMin={setPostmealMin}
+          onChangeMax={setPostmealMax}
+          onBlur={() => persistRange("postmeal")}
+          axisMin={glucoseToDisplay(50, unit)}
+          axisMax={glucoseToDisplay(300, unit)}
+          minLabel={t("common.rangeMin")}
+          maxLabel={t("common.rangeMax")}
+          invalid={!rangeOk(postmealMin, postmealMax)}
+          invalidMessage={t("settings.rangeInvalid")}
+          bounds={glucoseBounds}
+          outOfBoundsMessage={t("settings.rangeOutOfBounds", {
+            min: glucoseBounds.min,
+            max: glucoseBounds.max,
+          })}
+          decimals={unit === "mmol"}
+        />
+        <RangeInput
+          label={t("settings.carbRange")}
+          unit={t("common.grams")}
+          minText={carbMin}
+          maxText={carbMax}
+          onChangeMin={setCarbMin}
+          onChangeMax={setCarbMax}
+          onBlur={persistCarbRange}
+          axisMin={0}
+          axisMax={400}
+          minLabel={t("common.rangeMin")}
+          maxLabel={t("common.rangeMax")}
+          invalid={!rangeOk(carbMin, carbMax)}
+          invalidMessage={t("settings.rangeInvalid")}
+          bounds={CARB_TARGET_BOUNDS}
+          outOfBoundsMessage={t("settings.rangeOutOfBounds", {
+            min: CARB_TARGET_BOUNDS.min,
+            max: CARB_TARGET_BOUNDS.max,
+          })}
+        />
+
+        {/* The user's own low threshold - the boundary "low" is measured from */}
+        <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-3">
+          <Text className="text-mut text-xs mb-2">
+            {t("settings.hypoThreshold")} ({glucoseUnitLabel(unit)})
+          </Text>
+          <Segmented
+            options={[54, 60, 65, 70, 75, 80].map((mgdl) => ({
+              value: String(mgdl),
+              label: String(glucoseToDisplay(mgdl, unit)),
+            }))}
+            value={String(activeProfile?.hypo_threshold_mgdl ?? 70)}
+            onChange={(v) =>
+              void persist({ hypo_threshold_mgdl: clampHypoThreshold(Number(v)) })
+            }
+          />
+          <Text className="text-mut text-xs mt-2 leading-4">
+            {t("settings.hypoThresholdHint")}
+          </Text>
+        </View>
+
+        {/* Insulin sensitivity sits with the ratios it belongs to */}
+        {showsBolus ? (
+          <FormCard icon="pulse-outline" title={t("settings.isf")}>
+            <InputRow
+              icon="pulse-outline"
+              label={t("settings.isf")}
+              hint={t("settings.isfHint")}
+              value={isf}
+              onChangeText={setIsf}
+              keyboardType="decimal-pad"
+              suffix={glucoseUnitLabel(unit)}
+              maxLength={5}
+              onEndEditing={() =>
+                persistRatio({
+                  insulin_sensitivity_factor: glucoseFromDisplay(
+                    n(isf, glucoseToDisplay(40, unit)),
+                    unit
+                  ),
+                })
+              }
+              last
+            />
+          </FormCard>
+        ) : null}
+
+        {/* Carb ratios (mealtime insulin only) */}
+        {showsBolus ? (
         <FormCard icon="restaurant-outline" title={t("settings.carbRatios")}>
           <InputRow
             icon="cafe-outline"
@@ -407,7 +588,7 @@ export default function SettingsScreen() {
             onChangeText={setCrB}
             keyboardType="decimal-pad"
             suffix={t("common.carbRatioUnit")}
-            onEndEditing={() => persist({ carb_ratio_breakfast: n(crB, 10) })}
+            onEndEditing={() => persistRatio({ carb_ratio_breakfast: n(crB, 10) })}
           />
           <InputRow
             icon="partly-sunny-outline"
@@ -416,7 +597,7 @@ export default function SettingsScreen() {
             onChangeText={setCrL}
             keyboardType="decimal-pad"
             suffix={t("common.carbRatioUnit")}
-            onEndEditing={() => persist({ carb_ratio_lunch: n(crL, 12) })}
+            onEndEditing={() => persistRatio({ carb_ratio_lunch: n(crL, 12) })}
           />
           <InputRow
             icon="moon-outline"
@@ -425,10 +606,11 @@ export default function SettingsScreen() {
             onChangeText={setCrD}
             keyboardType="decimal-pad"
             suffix={t("common.carbRatioUnit")}
-            onEndEditing={() => persist({ carb_ratio_dinner: n(crD, 12) })}
+            onEndEditing={() => persistRatio({ carb_ratio_dinner: n(crD, 12) })}
             last
           />
         </FormCard>
+        ) : null}
 
         {/* Notifications */}
         <SectionLabel>{t("settings.notificationsSection")}</SectionLabel>
@@ -441,8 +623,8 @@ export default function SettingsScreen() {
                 <Switch
                   value={prefs.enabled}
                   onValueChange={(v) => updatePrefs({ enabled: v })}
-                  trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                  thumbColor="#fafafa"
+                  trackColor={{ true: THEME.accent, false: THEME.border }}
+                  thumbColor={THEME.ink}
                 />
               }
             />
@@ -450,12 +632,43 @@ export default function SettingsScreen() {
             {prefs.enabled && notifDenied ? (
               <Pressable
                 onPress={() => Linking.openSettings()}
-                className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 mb-2"
+                className="rounded-2xl px-4 py-3 mb-2"
+                style={{
+                  borderWidth: 1,
+                  borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+                  backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+                }}
               >
-                <Text className="text-amber-200/90 text-sm leading-5">
+                <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
                   {t("notifications.permissionDenied")}
                 </Text>
-                <Text className="text-brand text-xs font-semibold mt-1">
+                <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+                  {t("settings.openSystemSettings")}
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {/* Reminders can quietly stop arriving after the fact: a revoked
+                permission, a turned-down Android channel, or (Android 12+) the
+                exact-alarm setting we cannot read from here. Neutral wording,
+                one route into system settings. */}
+            {prefs.enabled && !notifDenied && reliability && remindersMayBeLimited(reliability) ? (
+              <Pressable
+                onPress={() => Linking.openSettings()}
+                className="rounded-2xl px-4 py-3 mb-2"
+                style={{
+                  borderWidth: 1,
+                  borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+                  backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+                }}
+              >
+                <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>
+                  {t("settings.exactAlarmTitle")}
+                </Text>
+                <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 17, marginTop: 2, opacity: 0.85 }}>
+                  {t("settings.exactAlarmBody")}
+                </Text>
+                <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 6 }}>
                   {t("settings.openSystemSettings")}
                 </Text>
               </Pressable>
@@ -463,7 +676,8 @@ export default function SettingsScreen() {
 
             {prefs.enabled ? (
               <>
-                {/* Night insulin */}
+                {/* Night insulin (only for users who take a long-acting dose) */}
+                {showsBasal ? (
                 <Row
                   icon="moon-outline"
                   label={t("settings.reminderBasal")}
@@ -471,12 +685,13 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.basal}
                       onValueChange={(v) => updatePrefs({ basal: v })}
-                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                      thumbColor="#fafafa"
+                      trackColor={{ true: THEME.accent, false: THEME.border }}
+                      thumbColor={THEME.ink}
                     />
                   }
                 />
-                {prefs.basal ? (
+                ) : null}
+                {showsBasal && prefs.basal ? (
                   <>
                     <Row
                       icon="alarm-outline"
@@ -503,8 +718,8 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.glucose}
                       onValueChange={(v) => updatePrefs({ glucose: v })}
-                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                      thumbColor="#fafafa"
+                      trackColor={{ true: THEME.accent, false: THEME.border }}
+                      thumbColor={THEME.ink}
                     />
                   }
                 />
@@ -535,8 +750,8 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.postMeal}
                       onValueChange={(v) => updatePrefs({ postMeal: v })}
-                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                      thumbColor="#fafafa"
+                      trackColor={{ true: THEME.accent, false: THEME.border }}
+                      thumbColor={THEME.ink}
                     />
                   }
                 />
@@ -568,8 +783,8 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.weekly}
                       onValueChange={(v) => updatePrefs({ weekly: v })}
-                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                      thumbColor="#fafafa"
+                      trackColor={{ true: THEME.accent, false: THEME.border }}
+                      thumbColor={THEME.ink}
                     />
                   }
                 />
@@ -627,8 +842,8 @@ export default function SettingsScreen() {
                     <Switch
                       value={prefs.lowFollowup}
                       onValueChange={(v) => updatePrefs({ lowFollowup: v })}
-                      trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                      thumbColor="#fafafa"
+                      trackColor={{ true: THEME.accent, false: THEME.border }}
+                      thumbColor={THEME.ink}
                     />
                   }
                 />
@@ -658,21 +873,29 @@ export default function SettingsScreen() {
         <SectionLabel>{t("settings.language")}</SectionLabel>
         <LanguagePicker value={lang} onChange={onChangeLang} />
 
-        {/* Spike AI */}
-        <SectionLabel>{t("spike.title")}</SectionLabel>
-        <Row
-          icon="sparkles-outline"
-          label={t("spike.settingsRow")}
-          onPress={() => router.push("/spike")}
-        />
+        {/* Spike AI - hidden entirely until the function URL is configured */}
+        {spikeConfigured ? (
+          <>
+            <SectionLabel>{t("spike.title")}</SectionLabel>
+            <Row
+              icon="sparkles-outline"
+              label={t("spike.settingsRow")}
+              onPress={() => router.push("/spike")}
+            />
+          </>
+        ) : null}
 
         {/* Injection */}
-        <SectionLabel>{t("injection.title")}</SectionLabel>
-        <Row
-          icon="medkit-outline"
-          label={t("injection.guideLink")}
-          onPress={() => router.push("/injection-guide")}
-        />
+        {usesInsulin ? (
+          <>
+            <SectionLabel>{t("injection.title")}</SectionLabel>
+            <Row
+              icon="medkit-outline"
+              label={t("injection.guideLink")}
+              onPress={() => router.push("/injection-guide")}
+            />
+          </>
+        ) : null}
 
         {/* Emergency / SOS */}
         <SectionLabel>{t("sos.title")}</SectionLabel>
@@ -693,7 +916,7 @@ export default function SettingsScreen() {
           <Row
             icon="checkmark-circle"
             label={t("settings.proActive")}
-            right={<Ionicons name="sparkles" size={18} color="#2ee6ff" />}
+            right={<Ionicons name="sparkles" size={18} color={THEME.accent} />}
           />
         ) : (
           <Row
@@ -715,7 +938,7 @@ export default function SettingsScreen() {
           onPress={onRestore}
           right={
             restoring ? (
-              <Ionicons name="hourglass-outline" size={18} color="#52525b" />
+              <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
             ) : undefined
           }
         />
@@ -725,9 +948,9 @@ export default function SettingsScreen() {
           onPress={onExport}
           right={
             exporting ? (
-              <Ionicons name="hourglass-outline" size={18} color="#52525b" />
+              <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
             ) : !isProUser ? (
-              <Ionicons name="lock-closed" size={16} color="#52525b" />
+              <Ionicons name="lock-closed" size={16} color={THEME.muted} />
             ) : undefined
           }
         />
@@ -737,9 +960,9 @@ export default function SettingsScreen() {
           onPress={onExportPdf}
           right={
             exportingPdf ? (
-              <Ionicons name="hourglass-outline" size={18} color="#52525b" />
+              <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
             ) : !isProUser ? (
-              <Ionicons name="lock-closed" size={16} color="#52525b" />
+              <Ionicons name="lock-closed" size={16} color={THEME.muted} />
             ) : undefined
           }
         />
@@ -792,15 +1015,15 @@ export default function SettingsScreen() {
             <SectionLabel>{t("settings.developerSection")}</SectionLabel>
             <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
               <View className="flex-row items-center">
-                <Ionicons name="construct-outline" size={19} color="#a1a1aa" />
+                <Ionicons name="construct-outline" size={19} color={THEME.muted} />
                 <Text className="flex-1 ml-3 font-medium text-ink">
                   {t("settings.simulatePro")}
                 </Text>
                 <Switch
                   value={isProUser}
                   onValueChange={onToggleSimPro}
-                  trackColor={{ true: "#2ee6ff", false: "#3f3f46" }}
-                  thumbColor="#fafafa"
+                  trackColor={{ true: THEME.accent, false: THEME.border }}
+                  thumbColor={THEME.ink}
                 />
               </View>
               <Text className="text-mut text-xs mt-2">

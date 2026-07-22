@@ -4,7 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AnimatedNumber } from "./AnimatedNumber";
-import { COLORS, TABULAR, THEME, glow as glowShadow } from "../lib/theme/tokens";
+import { TABULAR, THEME, glow as glowShadow } from "../lib/theme/tokens";
 
 interface StatCardProps {
   /** Small caption above/below the value. */
@@ -26,8 +26,8 @@ interface StatCardProps {
   sparkline?: React.ReactNode;
   /** Optional secondary line (context, e.g. "from 42 readings"). */
   footnote?: string;
-  /** Midnight Monitor glass surface (translucent fill + light border) instead
-   *  of the solid zinc card. Off by default so existing tiles are unchanged. */
+  /** Midnight Monitor glass surface: a translucent fill with a light border and
+   *  an optional colour-matched glow. Off by default (a plain tile). */
   glass?: boolean;
   /** Color-matched glow (only meaningful with `glass`); `true` uses the accent. */
   glow?: boolean | string;
@@ -57,7 +57,7 @@ export function StatCard({
   style,
   className = "",
 }: StatCardProps) {
-  const valueColor = accent ?? (glass ? THEME.ink : COLORS.textPrimary);
+  const valueColor = accent ?? THEME.ink;
   const glowColor = glow === true ? THEME.accent : typeof glow === "string" ? glow : undefined;
   return (
     <View
@@ -72,10 +72,10 @@ export function StatCard({
     >
       <View className="flex-row items-center mb-1">
         {icon ? (
-          <Ionicons name={icon} size={13} color={COLORS.textMuted} style={{ marginRight: 5 }} />
+          <Ionicons name={icon} size={13} color={THEME.muted} style={{ marginRight: 5 }} />
         ) : null}
         <Text
-          className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
+          className="text-[11px] font-semibold uppercase tracking-wider text-mut"
           numberOfLines={1}
         >
           {label}
@@ -101,13 +101,13 @@ export function StatCard({
           </Text>
         )}
         {suffix ? (
-          <Text className="text-zinc-500 text-sm font-semibold mb-1 ml-1">{suffix}</Text>
+          <Text className="text-mut text-sm font-semibold mb-1 ml-1">{suffix}</Text>
         ) : null}
       </View>
 
       {sparkline ? <View className="mt-2">{sparkline}</View> : null}
       {footnote ? (
-        <Text className="text-zinc-500 text-[11px] mt-1" numberOfLines={1}>
+        <Text className="text-mut text-[11px] mt-1" numberOfLines={1}>
           {footnote}
         </Text>
       ) : null}

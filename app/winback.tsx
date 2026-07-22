@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { Redirect, useRouter } from "expo-router";
-import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -15,10 +13,17 @@ import {
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
-import { Button } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSuccess } from "../lib/haptics";
+import { AppBackground, GlassCard, GradientCTA, IconTile } from "../components/rich";
+import { TABULAR, THEME } from "../lib/theme/tokens";
 
+/**
+ * The return offer for a lapsed subscriber, rebuilt to the mockup's 08
+ * "Winback" composition: a centred emblem, a warm headline, one line of copy,
+ * then a single glowing offer row where the plan sits left and the billed
+ * amount sits right, a full-width CTA and a quiet "not now".
+ */
 export default function WinbackScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -93,75 +98,122 @@ export default function WinbackScreen() {
   const loading = offer === null;
 
   return (
-    <View className="flex-1">
-      <AppBackgroundFill />
+    <AppBackground>
       <View
         className="flex-1"
         style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }}
       >
         <View className="flex-row justify-end px-4">
-          <Pressable onPress={decline} hitSlop={10} className="p-1">
-            <Ionicons name="close" size={26} color="#71717a" />
+          <Pressable
+            onPress={decline}
+            hitSlop={10}
+            accessibilityLabel={t("common.close")}
+          >
+            <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
           </Pressable>
         </View>
 
-        <View className="flex-1 px-6 justify-center">
+        <View className="flex-1 px-6 justify-center items-center" style={{ gap: 12 }}>
           {loading ? (
-            <Text className="text-zinc-500 text-center">{t("common.loading")}</Text>
+            <Text style={{ color: THEME.muted, textAlign: "center" }}>
+              {t("common.loading")}
+            </Text>
           ) : (
             <>
-              <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-5 self-start">
-                <Ionicons name="heart-outline" size={28} color="#2ee6ff" />
-              </View>
-              <Text className="text-zinc-50 text-3xl font-bold">
+              <Text style={{ fontSize: 34 }}>👋</Text>
+              <Text
+                style={{
+                  color: THEME.ink,
+                  fontSize: 24,
+                  fontWeight: "800",
+                  textAlign: "center",
+                }}
+              >
                 {t("winback.title")}
               </Text>
-              <Text className="text-zinc-400 mt-2 leading-5">
+              <Text
+                style={{
+                  color: THEME.muted,
+                  textAlign: "center",
+                  lineHeight: 20,
+                  maxWidth: 280,
+                }}
+              >
                 {t("winback.subtitle", { percent: offer!.savingsPercent })}
               </Text>
 
-              <View className="rounded-2xl bg-zinc-900 border border-brand/40 p-5 mt-6">
-                <View className="flex-row items-baseline">
-                  <Text className="text-brand text-3xl font-bold">
+              <GlassCard glow style={{ alignSelf: "stretch", marginTop: 4 }}>
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-1 pr-3">
+                    <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
+                      {t("downsell.savingsBadge", { percent: offer!.savingsPercent })}
+                    </Text>
+                    <Text
+                      style={[
+                        TABULAR,
+                        {
+                          color: THEME.muted,
+                          fontSize: 12,
+                          textDecorationLine: "line-through",
+                          marginTop: 2,
+                        },
+                      ]}
+                    >
+                      {offer!.standardPriceString}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[TABULAR, { color: THEME.ink, fontSize: 22, fontWeight: "800" }]}
+                  >
                     {offer!.discountedPriceString}
                   </Text>
-                  <Text className="text-zinc-500 text-base ml-3 line-through">
-                    {offer!.standardPriceString}
-                  </Text>
                 </View>
-                <Text className="text-emerald-400 text-xs font-bold mt-1">
-                  {t("downsell.savingsBadge", { percent: offer!.savingsPercent })}
-                </Text>
-                <Text className="text-zinc-500 text-[11px] leading-4 mt-3">
+                <Text
+                  style={{
+                    color: THEME.muted,
+                    fontSize: 11,
+                    lineHeight: 16,
+                    marginTop: 10,
+                  }}
+                >
                   {t("downsell.renewalDisclosure", {
                     discountPrice: offer!.discountedPriceString,
                     standardPrice: offer!.standardPriceString,
                   })}
                 </Text>
-              </View>
+              </GlassCard>
             </>
           )}
         </View>
 
         {!loading ? (
           <View className="px-6">
-            <Button
+            <GradientCTA
               label={t("winback.cta", { percent: offer!.savingsPercent })}
-              size="lg"
-              loading={busy}
+              disabled={busy}
               onPress={accept}
             />
-            <Pressable onPress={decline} disabled={busy} className="py-3 items-center mt-1">
-              <Text className="text-zinc-400 font-medium">{t("winback.decline")}</Text>
+            <Pressable
+              onPress={decline}
+              disabled={busy}
+              className="py-3 items-center mt-1"
+            >
+              <Text style={{ color: THEME.muted, fontWeight: "600" }}>
+                {t("winback.decline")}
+              </Text>
             </Pressable>
-            <View className="flex-row justify-center gap-6 mt-1">
+            <View className="flex-row justify-center" style={{ gap: 24 }}>
               <Pressable onPress={() => Linking.openURL(privacyUrl())}>
-                <Text className="text-zinc-600 text-xs underline">
+                <Text
+                  style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                >
                   {t("settings.privacy")}
                 </Text>
               </Pressable>
               <Pressable onPress={() => Linking.openURL(termsUrl())}>
-                <Text className="text-zinc-600 text-xs underline">
+                <Text
+                  style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                >
                   {t("settings.terms")}
                 </Text>
               </Pressable>
@@ -170,6 +222,6 @@ export default function WinbackScreen() {
         ) : null}
       </View>
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

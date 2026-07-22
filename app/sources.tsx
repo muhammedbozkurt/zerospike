@@ -3,52 +3,61 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
 
+import { AppBackground, GlassCard } from "../components/rich";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { FeedbackHost } from "../components/Feedback";
+import { THEME } from "../lib/theme/tokens";
 
 /**
  * Medical information sources (App Store Guideline 1.4.1).
  *
- * Lists the publicly available clinical references behind the carb-counting and
- * insulin-estimation methods, plus a plain-language description of the formulas.
- * Reached from Settings → "Medical information & sources" and from the
- * calculator's dose card, so the citations are easy for the user to find.
+ * Rebuilt to the mockup's "Bilimsel kaynaklar" composition: a back header, one
+ * line of framing copy, then a stack of individual citation cards - each with
+ * its source title, what it covers, and the destination in the accent color.
+ * The formula explanation keeps its own card at the top, because the citations
+ * only mean something next to the arithmetic they back.
  *
  * Links are to authoritative, language-neutral health organisations and stay
  * the same across all app languages.
  */
-const REFERENCES: { label: string; org: string; url: string }[] = [
+const REFERENCES: { label: string; org: string; url: string; host: string }[] = [
   {
     org: "American Diabetes Association (ADA)",
     label: "Diabetes management & treatment",
     url: "https://diabetes.org/",
+    host: "diabetes.org",
   },
   {
     org: "American Diabetes Association (ADA)",
     label: "Understanding carbohydrates & carb counting",
     url: "https://diabetes.org/food-nutrition/understanding-carbs",
+    host: "diabetes.org",
   },
   {
     org: "NIDDK, National Institutes of Health (NIH)",
     label: "Managing diabetes (insulin & carbohydrates)",
     url: "https://www.niddk.nih.gov/health-information/diabetes/overview/managing-diabetes",
+    host: "niddk.nih.gov",
   },
   {
     org: "Centers for Disease Control and Prevention (CDC)",
     label: "Diabetes & healthy eating (carbohydrates)",
     url: "https://www.cdc.gov/diabetes/healthy-eating/index.html",
+    host: "cdc.gov",
   },
   {
     org: "MedlinePlus, National Library of Medicine (NIH)",
     label: "Diabetes medicines & insulin",
     url: "https://medlineplus.gov/diabetesmedicines.html",
+    host: "medlineplus.gov",
   },
   {
     org: "Diabetes Care (ADA), Bergenstal et al. 2018",
     label: "Glucose Management Indicator (GMI)",
     url: "https://diabetesjournals.org/care/article/41/11/2275/36593/Glucose-Management-Indicator-GMI-A-New-Term-for",
+    host: "diabetesjournals.org",
   },
 ];
 
@@ -58,66 +67,77 @@ export default function SourcesScreen() {
   const router = useRouter();
 
   return (
-    <View className="flex-1">
-      <AppBackgroundFill />
-      <View className="flex-1" style={{ paddingTop: insets.top }}>
-        {/* Header */}
-        <View className="flex-row items-center justify-between px-4 py-3 border-b border-zinc-900">
-          <Text className="text-zinc-50 text-lg font-bold flex-1" numberOfLines={1}>
-            {t("sources.title")}
+    <AppBackground style={{ paddingTop: insets.top }}>
+      <ScreenHeader
+        title={t("sources.title")}
+        onBack={() => router.back()}
+        backIcon="close"
+        accessibilityLabel={t("common.close")}
+      />
+
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginBottom: 14 }}>
+          {t("sources.intro")}
+        </Text>
+
+        {/* The arithmetic, in words */}
+        <GlassCard glow style={{ marginBottom: 18 }}>
+          <Text style={{ color: THEME.ink, fontWeight: "800", marginBottom: 6 }}>
+            {t("sources.methodTitle")}
           </Text>
-          <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-            <Ionicons name="close" size={24} color="#a1a1aa" />
+          <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 21 }}>
+            {t("sources.method")}
+          </Text>
+          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 17, marginTop: 12 }}>
+            {t("sources.methodNote")}
+          </Text>
+          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 17, marginTop: 8 }}>
+            {t("sources.iobNote")}
+          </Text>
+        </GlassCard>
+
+        <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
+          {t("sources.listTitle")}
+        </Text>
+
+        {/* One card per citation (mockup 07) */}
+        {REFERENCES.map((ref) => (
+          <Pressable
+            key={ref.url}
+            onPress={() => Linking.openURL(ref.url)}
+            className="active:opacity-80"
+            accessibilityRole="link"
+          >
+            <GlassCard style={{ marginBottom: 8 }}>
+              <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "800" }}>
+                {ref.org}
+              </Text>
+              <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+                {ref.label}
+              </Text>
+              <View className="flex-row items-center mt-2">
+                <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }}>
+                  {ref.host}
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={12}
+                  color={THEME.accent}
+                  style={{ marginLeft: 2 }}
+                />
+              </View>
+            </GlassCard>
           </Pressable>
-        </View>
+        ))}
 
-        <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text className="text-zinc-300 leading-6 mb-6">{t("sources.intro")}</Text>
-
-          {/* Formula explanation */}
-          <View className="rounded-2xl bg-glass border border-hair p-4 mb-6">
-            <Text className="text-zinc-100 font-semibold mb-2">
-              {t("sources.methodTitle")}
-            </Text>
-            <Text className="text-zinc-400 leading-6">{t("sources.method")}</Text>
-            <Text className="text-zinc-500 leading-5 text-xs mt-3">
-              {t("sources.methodNote")}
-            </Text>
-            <Text className="text-zinc-500 leading-5 text-xs mt-2">
-              {t("sources.iobNote")}
-            </Text>
-          </View>
-
-          {/* References list */}
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
-            {t("sources.listTitle")}
-          </Text>
-          <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
-            {REFERENCES.map((ref, i) => (
-              <Pressable
-                key={ref.url}
-                onPress={() => Linking.openURL(ref.url)}
-                className={`flex-row items-center p-4 active:bg-zinc-800 ${
-                  i > 0 ? "border-t border-zinc-800" : ""
-                }`}
-              >
-                <View className="flex-1 pr-3">
-                  <Text className="text-zinc-100 font-medium">{ref.label}</Text>
-                  <Text className="text-zinc-500 text-xs mt-0.5">{ref.org}</Text>
-                </View>
-                <Ionicons name="open-outline" size={18} color="#52525b" />
-              </Pressable>
-            ))}
-          </View>
-          <Text className="text-zinc-600 text-xs mt-2 px-1">
-            {t("sources.openHint")}
-          </Text>
-        </ScrollView>
-      </View>
+        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 6, paddingHorizontal: 4 }}>
+          {t("sources.openHint")}
+        </Text>
+      </ScrollView>
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

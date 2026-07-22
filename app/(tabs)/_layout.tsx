@@ -3,17 +3,29 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
+import { useApp } from "../../lib/store/AppContext";
+import { insulinModeUsesInsulin } from "../../lib/insulinMode";
+import { THEME } from "../../lib/theme/tokens";
+
 export default function TabsLayout() {
   const { t } = useTranslation();
+  const { activeProfile } = useApp();
+
+  // A profile that takes no insulin drops to three tabs. The route still exists
+  // (deep links and the journal's edit flow keep working); it just stops being
+  // advertised, so the app does not present dosing machinery to someone who does
+  // not dose. Flipping the setting brings the tab straight back.
+  const showsInjection = insulinModeUsesInsulin(activeProfile?.insulin_mode);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#2ee6ff",
-        tabBarInactiveTintColor: "#52525b",
+        tabBarActiveTintColor: THEME.accent,
+        tabBarInactiveTintColor: THEME.muted,
         tabBarStyle: {
-          backgroundColor: "#09090b",
-          borderTopColor: "#18181b",
+          backgroundColor: THEME.bg.g1,
+          borderTopColor: THEME.border,
           borderTopWidth: 1,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
@@ -41,6 +53,7 @@ export default function TabsLayout() {
         name="injection"
         options={{
           title: t("injection.tab"),
+          href: showsInjection ? undefined : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="medkit-outline" size={size} color={color} />
           ),

@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { createProfile } from "../lib/db/profiles";
 import { Button } from "./ui";
+import { THEME } from "../lib/theme/tokens";
 
 export function ProfileSwitcher() {
   const { t } = useTranslation();
@@ -67,11 +68,11 @@ export function ProfileSwitcher() {
         onPress={() => setOpen(true)}
         className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-1.5"
       >
-        <Ionicons name="person-circle-outline" size={18} color="#a1a1aa" />
-        <Text className="text-zinc-200 font-medium text-sm mx-1.5" numberOfLines={1}>
+        <Ionicons name="person-circle-outline" size={18} color={THEME.muted} />
+        <Text className="text-ink font-medium text-sm mx-1.5" numberOfLines={1}>
           {activeProfile?.name ?? "-"}
         </Text>
-        <Ionicons name="chevron-down" size={14} color="#71717a" />
+        <Ionicons name="chevron-down" size={14} color={THEME.muted} />
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -89,7 +90,7 @@ export function ProfileSwitcher() {
               className="rounded-3xl bg-glass border border-hair p-5"
               onPress={(e) => e.stopPropagation()}
             >
-              <Text className="text-zinc-50 text-lg font-bold mb-3">
+              <Text className="text-ink text-lg font-bold mb-3">
                 {t("profiles.switch")}
               </Text>
 
@@ -102,17 +103,17 @@ export function ProfileSwitcher() {
                     className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
                       active
                         ? "bg-brand/10 border-brand/40"
-                        : "bg-zinc-800/60 border-zinc-700"
+                        : "bg-glass border-hair"
                     }`}
                   >
                     <Ionicons
                       name={active ? "person" : "person-outline"}
                       size={18}
-                      color={active ? "#2ee6ff" : "#a1a1aa"}
+                      color={active ? "#2ee6ff" : THEME.muted}
                     />
                     <Text
                       className={`flex-1 ml-3 font-medium ${
-                        active ? "text-brand" : "text-zinc-200"
+                        active ? "text-brand" : "text-ink"
                       }`}
                     >
                       {p.name}
@@ -131,8 +132,8 @@ export function ProfileSwitcher() {
                     onChangeText={setName}
                     autoFocus
                     placeholder={t("profiles.newNamePlaceholder")}
-                    placeholderTextColor="#52525b"
-                    className="rounded-xl bg-zinc-800 border border-zinc-700 px-4 py-3 text-zinc-50 mb-3"
+                    placeholderTextColor={THEME.muted}
+                    className="rounded-xl bg-glass border border-hair px-4 py-3 text-ink mb-3"
                   />
                   <View className="flex-row gap-3">
                     <View className="flex-1">
@@ -158,7 +159,7 @@ export function ProfileSwitcher() {
                     <Ionicons
                       name={isProUser ? "add" : "lock-closed"}
                       size={isProUser ? 18 : 15}
-                      color="#e4e4e7"
+                      color={THEME.ink}
                     />
                   }
                   onPress={handleAddPress}

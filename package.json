@@ -1,7 +1,7 @@
 {
   "name": "zerospike",
   "version": "1.2.1",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "start:clear": "expo start --clear",
@@ -11,9 +11,11 @@
     "prebuild": "expo prebuild --clean",
     "typecheck": "tsc --noEmit && node scripts/i18n-check.js",
     "i18n:check": "node scripts/i18n-check.js",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "i18n-check": "node scripts/i18n-check.js"
   },
   "dependencies": {
+    "@bacons/apple-targets": "^5.0.0",
     "@expo/vector-icons": "^15.0.2",
     "@kingstinct/react-native-healthkit": "^14.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -52,6 +54,7 @@
     "react": "19.2.3",
     "react-i18next": "^15.7.3",
     "react-native": "0.86.0",
+    "react-native-android-widget": "^0.21.0",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-nitro-modules": "^0.36.1",
     "react-native-purchases": "^10.4.1",

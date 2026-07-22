@@ -43,6 +43,14 @@ export interface SyncResult {
   read: number;
 }
 
+/**
+ * A GUESS at the period of an imported sample, from its hour of day. HealthKit
+ * carries no fasting/post-meal context, so this is an assumption, not an
+ * observation - which is exactly why every imported row is stored with
+ * source: "health" and why the fasting/post-meal AVERAGES exclude those rows
+ * (see lib/insights.ts). The tag is only there so an imported reading still has
+ * a sensible label in the journal.
+ */
 function pickTagForHour(hour: number): PeriodTag {
   if (hour < 9) return "fasting";
   if (hour >= 22 || hour < 1) return "bedtime";

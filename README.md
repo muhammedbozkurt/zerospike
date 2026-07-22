@@ -1,140 +1,141 @@
-# Zerospike 🌴
+# zerospike
 
-Minimalist, **offline-first** glycemic index & glucose tracker.
-Pure-black UI, 5 languages, local SQLite (with FTS5 search), barcode scanning,
-time-based insulin estimation, multi-profile family mode, and real CSV export —
-**no server, no mandatory login, everything works offline.**
+An offline-first diabetes logbook for iOS and Android. Glucose readings, meals
+and injections go in; descriptive summaries, a doctor-ready report and a set of
+glanceable surfaces come out.
+
+zerospike is **not a medical device**. It records what the user enters and
+describes it back. It never diagnoses, never recommends a treatment, and never
+tells anyone how much insulin to take: the calculator is arithmetic over the
+user's own ratios, and every figure it produces stays editable.
 
 - **Bundle ID:** `com.greeneyeapp.zerospike`
-- **Stack:** Expo SDK 51 · Expo Router · TypeScript · NativeWind v4 · expo-sqlite (typed API) · expo-camera · expo-notifications · expo-file-system · expo-sharing · expo-localization
+- **Stack:** Expo SDK 57 · Expo Router · TypeScript · NativeWind v4 ·
+  expo-sqlite · expo-camera · expo-notifications · react-native-svg ·
+  react-native-purchases
 
----
+## What it does
 
-## 1. Setup
+**Four tabs:** Dashboard (today as a live journal, with the last reading as the
+hero ring), Meals, Injection, Settings. A profile that takes no insulin drops
+the Injection tab and the whole dose apparatus.
 
-> ⚠️ Use **`npx expo install`** (not `npm install`) so SDK-compatible versions
-> are selected. The versions in `package.json` are already pinned for SDK 51 —
-> most importantly **NativeWind is pinned to `4.1.23`** (newer 4.2.x pulls
-> `react-native-css-interop` that references Reanimated-4's
-> `react-native-worklets/plugin`, which does not exist on SDK 51).
+- **Glucose logging.** A bottom sheet with one large numeral that takes its
+  colour from the same classification the rest of the app uses, a period tag,
+  optional context tags (sport, illness, stress, travel, alcohol) and a
+  backdatable timestamp.
+- **Meals.** A 562-item multilingual food catalogue with FTS5 search across five
+  languages plus synonyms, barcode scanning (Open Food Facts, cached locally so
+  the second scan of a product works offline), custom foods, and one-tap re-log
+  of recent meals.
+- **Dose calculator.** carbs ÷ carb ratio, plus an optional correction toward
+  the middle of the user's post-meal range, minus active insulin. Logging a meal
+  also stores the glucose reading that was typed and, for a mealtime-insulin
+  user, the matching bolus row, so active-insulin tracking actually sees it.
+- **Injections.** A usage map at rotation-POINT resolution: eight body regions,
+  each split into four points, coloured by how often and how recently the user
+  used them. A picture of their own history, never a placement instruction.
+- **Insights.** Time in range against the user's own target band, an AGP daily
+  profile, daily averages, a percentile summary, time-of-day means, descriptive
+  patterns, and a GMI estimate that is withheld until the sample can carry it.
+- **Doctor report.** A one-tap PDF: summary tiles, the AGP chart drawn from the
+  same geometry the app renders, and the full log tables. CSV export follows the
+  profile's display unit and names it in its own column.
+- **Spike.** An in-app assistant for app help and general diabetes education,
+  behind an explicit consent gate, metered per day. It never returns a dose
+  number, and no health record leaves the device: only the typed question and
+  the chat window are sent.
+- **SOS.** A calm screen that opens the dialer on the region's emergency number
+  or hands a prefilled message (optionally with a location link) to a contact.
+  Nothing is ever sent or dialled automatically.
+- **Reminders.** Post-meal check with a live countdown, night insulin, glucose
+  check, weekly summary, and an optional follow-up after a low reading.
+- **Glanceable surfaces.** An iOS home-screen widget and post-meal Live Activity
+  (lock screen + Dynamic Island), and an Android home-screen widget. All three
+  render the same snapshot the app writes.
+- **Family mode.** Multiple profiles, each with its own targets, ratios, unit
+  and logs.
+
+## Regulatory posture
+
+- Neutral language throughout. No "alarm", no "warns you", no "recommended
+  dose"; a dose is always "calculated" and always editable.
+- The rotation map and every insight are descriptive summaries of the user's own
+  entries.
+- Spike declines dose questions in one sentence and points to the care team.
+- Estimates carry a disclaimer at the point of decision, not only in Settings.
+- A default ratio is never presented as if the user had chosen it: until they
+  confirm their own ICR/ISF, the calculator says so on the result.
+
+## Architecture
+
+**SQLite is the single source of truth.** The app works fully offline and
+nothing is uploaded.
+
+```
+app/                 expo-router screens (tabs + modal routes)
+components/          shared UI
+  rich/              the Midnight Monitor visual vocabulary
+  charts/            AGP, trend and hourly charts
+lib/
+  db/                schema + migrations, typed data access
+  services/          notifications, health, export/report, purchases, live data
+  i18n/locales/      tr, en, de, es, fr
+  theme/             design tokens (mirrored in tailwind.config.js)
+  glucose.ts         units + classification (the one glucose language)
+  insulin.ts         the dose estimator + plausibility guardrails
+  iob.ts             active insulin from logged bolus doses
+modules/             local native modules (the Live Activity bridge)
+targets/widget/      iOS WidgetKit + ActivityKit target (Swift)
+supabase/functions/  the Spike edge function (Deno, deployed separately)
+scripts/             gate scripts and the math test suites
+```
+
+### Data model (schema v8)
+
+`user_profiles` carries the personal numbers: target RANGES (fasting and
+post-meal, each a min and a max), the user's own low threshold, a carb ratio per
+meal slot, insulin sensitivity, a daily carb range, display unit, diabetes type
+(wording only, never a calculation input), insulin mode, and whether the ratios
+were confirmed by the user or are still defaults.
+
+`sugar_logs`, `meal_logs` and `injection_logs` hold the entries. Injections
+carry a region, an optional rotation point (1-4), and where the row came from.
+The insulin-pen stock feature was removed in R5; its last dormant column was
+dropped in the v8 table rebuild.
+
+## Development
+
+Use `npx expo install` for Expo-managed packages so SDK-compatible versions are
+picked.
 
 ```bash
-# 1) Install (respects the pinned versions in package.json)
 npm install
-
-# (Recommended on macOS to avoid Metro "EMFILE: too many open files")
-brew install watchman
-
-# 2) These features need a native dev build (not Expo Go):
-#    expo-camera (barcode scanner) + expo-notifications scheduling.
-npx expo prebuild --clean
-npx expo run:ios       # or: npx expo run:android
-
-# 3) Day-to-day, after the dev build is installed:
-npx expo start --clear
+npm start          # Expo dev server
+npm run ios        # or: npm run android
 ```
 
-> Local notifications, SQLite, file export and sharing also run in **Expo Go**,
-> but the **camera barcode scanner** requires a development build.
+Gates, all of which must pass:
 
----
-
-## 2. Project structure
-
-```
-app/                         # Expo Router (file-based)
-  _layout.tsx                # providers, DB+i18n bootstrap, onboarding gate
-  onboarding.tsx             # first-run targets + medical disclaimer
-  (tabs)/
-    _layout.tsx              # 3 tabs: Dashboard · Food & Scan · Settings
-    index.tsx                # Dashboard: fast loggers, CGM toggle, journal feed
-    food.tsx                 # search, favorites, scan/add entry points
-    settings.tsx             # profile, ratios, language, Pro, export, dev toggle
-  scan.tsx                   # expo-camera barcode/QR scanner (offline lookup)
-  calculator.tsx             # portion slider + estimated dose + meal logging
-  add-food.tsx               # custom food form (+ barcode capture)
-  paywall.tsx                # Zerospike Pro paywall (mock RevenueCat)
-
-lib/
-  db/                        # schema, FTS5, 173-item seed, typed queries
-    index.ts  seed.ts  foods.ts  logs.ts  profiles.ts  favorites.ts
-    journal.ts  types.ts
-  i18n/                      # i18next setup + tr/en/de/es/fr locales
-  services/                  # notifications · purchases(mock) · health(mock) · export(CSV)
-  store/AppContext.tsx       # active profile, isPro, language, ready/onboarding
-  glucose.ts  insulin.ts  guardrails.ts  format.ts  uuid.ts
-
-components/                  # Button/Field/Segmented, JournalItem, FoodRow,
-                             # ProfileSwitcher, GlucoseInputSheet, TimeField, Disclaimer
+```bash
+npx tsc --noEmit                     # types
+npm run i18n-check                   # every static t() key exists in the schema
+npx tsx scripts/calc.test.ts         # units, classification, dose math, IOB
+npx tsx scripts/feedback.test.ts
+npx tsx scripts/offParse.test.ts
 ```
 
----
+Every new string is added in all five languages. The translation schema is
+`lib/i18n/locales/tr.ts`; TypeScript enforces parity across the other four.
 
-## 3. Key implementation notes
+### Native steps
 
-### Database & search
-- On first launch, the DB is seeded **once** (guarded by `PRAGMA user_version`)
-  with **173 foods** (Turkish staples + global) localized in 5 languages.
-- A **FTS5** virtual table (`foods_fts`) indexes all 5 name columns + aliases +
-  brand, kept in sync by triggers. Searching `rice`, `reis`, `arroz` or `pilav`
-  all return the same record. LIKE fallback if FTS is unavailable.
-- Tables: `user_profiles` (UUID, per-meal carb ratios + ISF), `foods`
-  (aliases_json, barcode, portion, brand), `sugar_logs` (period_tag), `meal_logs`
-  (photo + note), `favorites`. Foreign keys cascade per profile.
+The widget, the Live Activity and Spike need work outside this repo:
 
-### Insulin estimation (time-based)
-- Active carb ratio is chosen by the clock: **Breakfast 06–11 · Lunch 11–17 ·
-  Dinner/Night 17–06** (overridable in the calculator).
-- Dose = `carbs / activeRatio` + optional ISF correction. Always presented as an
-  **"Estimated Dose Recommendation"** and fully editable — never prescriptive.
-
-### Notifications (no server)
-- Daily **night-insulin** reminder at the user's chosen time (rescheduled on
-  change; never stacked).
-- A **2-hour post-meal** reminder is scheduled whenever a fasting/pre-meal
-  reading is logged. Permissions are requested gracefully (denial just disables
-  reminders).
-
-### Health / CGM
-- `lib/services/health.ts` exposes the real permission-request surface (stubbed)
-  and a mock CGM stream that writes `BloodGlucose` samples straight into SQLite,
-  deduped by timestamp. The Dashboard toggle imports on enable.
-
-### CSV export (real, offline)
-- `lib/services/export.ts` builds a proper UTF-8 (BOM) CSV of the full journal
-  (Date, Time, Type, Glucose, Carbs, Insulin, Food, Note) with `expo-file-system`
-  and opens the native share sheet (`expo-sharing`) → WhatsApp / Email / etc.
-
-### Free vs Pro (mock RevenueCat)
-- Free tier: **3 custom foods** and **5 total logs** (glucose + meals combined).
-  Hitting a limit opens the paywall with the relevant message.
-- `lib/services/purchases.ts` mirrors a RevenueCat integration but is backed by
-  AsyncStorage. **Settings → Developer → "Simulate Pro"** flips Pro on/off so you
-  can test both states locally. To go live, swap the three function bodies for
-  `react-native-purchases` calls — the rest of the app already consumes this API.
-
-### Medical disclaimer
-- Shown during onboarding **and** permanently in Settings:
-  *"Zerospike bir tıbbi cihaz değildir, lütfen tedavi kararlarınız için
-  doktorunuza danışınız."* (localized in all 5 languages).
-
----
-
-## 4. Going to production (lessons baked in)
-
-These are pre-applied from prior store-submission experience:
-
-- NativeWind pinned to `4.1.23`; `tailwind.config.js` `content` covers
-  `app/`, `components/`, **and** `lib/`.
-- `app.json`: `usesNonExemptEncryption: false`; Android `targetSdkVersion 35`
-  via `expo-build-properties`; camera/notification/health permission strings.
-- Paywall includes **Privacy Policy + Terms** links (required for store review);
-  update `PRIVACY_URL` / `TERMS_URL` in `app/paywall.tsx` and
-  `app/(tabs)/settings.tsx`.
-- If targeting API 35 you may hit the known Kotlin/Swift build errors
-  (`react-native-screens` `removeLast()`, `expo-modules-core` nullable
-  permissions, `expo-localization` exhaustive switch) — fix with `patch-package`
-  (a `postinstall` hook is already wired in `package.json`).
-
-> The `assets/*.png` are generated solid-color placeholders — replace with your
-> real 1024×1024 icon / splash before shipping.
+- `npx expo prebuild` and a device build, with the App Group
+  `group.com.greeneyeapp.zerospike` and the Live Activity capability enabled in
+  the Apple Developer portal and in EAS credentials.
+- `supabase secrets set OPENAI_API_KEY=...` and
+  `supabase functions deploy ai-ask-spike`, then the resulting URL in
+  `expo.extra.spikeFnUrl`. Until it is set, every Spike entry point stays hidden
+  rather than opening a dead end.

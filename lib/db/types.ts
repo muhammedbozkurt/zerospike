@@ -56,6 +56,15 @@ export function serializeTags(
   return JSON.stringify(LOG_TAGS.filter((tag) => set.has(tag)));
 }
 
+/** Diabetes type, collected in onboarding. Tone only: it NEVER enters any
+ *  calculation (regulation rule). Kept on the profile so the copy the user reads
+ *  can match what they told us. */
+export type DiabetesType = "type1" | "type2" | "gestational" | "prediabetes" | "unknown";
+
+/** Which insulin the user actually takes. Drives which surfaces are shown:
+ *  "none" hides the whole injection/bolus apparatus. */
+export type InsulinMode = "basal" | "bolus" | "both" | "none";
+
 export interface UserProfile {
   id: string; // UUID
   name: string;
@@ -63,10 +72,22 @@ export interface UserProfile {
   carb_ratio_breakfast: number; // g carb per 1 unit
   carb_ratio_lunch: number;
   carb_ratio_dinner: number;
+  /** Target RANGE, not a single ceiling (ADA states targets as ranges). */
+  target_fasting_min: number; // default 80
   target_fasting_max: number; // default 100
+  target_postmeal_min: number; // default 80
   target_postmeal_max: number; // default 140
-  daily_carb_target_g: number;
+  /** The user's own low threshold in mg/dL (default 70, ADA level-1). */
+  hypo_threshold_mgdl: number;
+  daily_carb_target_g: number; // upper end of the daily carb range
+  daily_carb_target_min_g: number; // lower end (default 0.8 x max)
   glucose_unit: GlucoseUnit; // display/entry unit (storage stays mg/dL)
+  diabetes_type: DiabetesType; // tone only, never a calculation input
+  insulin_mode: InsulinMode; // which insulin surfaces are shown
+  /** 1 when the user entered/confirmed their own ICR+ISF, 0 while the app is
+   *  still running on the "not sure" defaults. Surfaces a neutral notice on the
+   *  calculator so a default is never mistaken for a personal ratio. */
+  ratios_confirmed: number; // 0 | 1
   created_at: string;
 }
 
@@ -152,9 +173,9 @@ export function parseAliases(food: Food): string[] {
 
 /* ── Injection-site logging ────────────────────────────────────────────────
  *
- * Injections are logged directly against an insulin type + optional dose (no
- * pen/stock tracking; that feature was removed in R5). `pen_id` remains a
- * dormant nullable column on migrated installs and is never read or written. */
+ * Injections are logged directly against an insulin type + optional dose. Stock
+ * tracking was removed in R5 and every trace of it (table, column, types, i18n)
+ * was dropped in the v8 migration, so nothing dormant is left behind. */
 
 /** Basal (long-acting) vs bolus (mealtime) insulin. */
 export type InsulinType = "basal" | "bolus";
@@ -182,14 +203,48 @@ export const INJECTION_SITES: InjectionSite[] = [
   "buttock_right",
 ];
 
+/**
+ * The four rotation points inside one region (schema v8). Following the FITTER
+ * quarter/rotation model, a region is split into a 2x2 grid and the user marks
+ * the actual point used, not just the region:
+ *
+ *   1 = upper outer   2 = upper inner
+ *   3 = lower outer   4 = lower inner
+ *
+ * Rows logged before v8 carry null and count toward the region total only.
+ */
+export type SitePoint = 1 | 2 | 3 | 4;
+
+export const SITE_POINTS: SitePoint[] = [1, 2, 3, 4];
+
+/** Row/column of a point in its region's 2x2 grid (for map + sheet layout). */
+export function pointGrid(point: SitePoint): { row: 0 | 1; col: 0 | 1 } {
+  return {
+    row: point <= 2 ? 0 : 1,
+    col: point % 2 === 1 ? 0 : 1,
+  };
+}
+
+/** Narrows any stored value to a SitePoint, or null when it is not one. */
+export function asSitePoint(value: unknown): SitePoint | null {
+  const n = typeof value === "string" ? parseInt(value, 10) : value;
+  return n === 1 || n === 2 || n === 3 || n === 4 ? n : null;
+}
+
 export interface Injection {
   id: string; // UUID
   profile_id: string;
   site: InjectionSite;
+  /** Which of the region's four rotation points (v8). Null on older rows. */
+  site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
   meal_log_id: string | null; // FK → meal_logs (SET NULL on meal delete)
   note: string | null;
+  /** Where the row came from: 'manual' by default, 'calculator' for the bolus
+   *  row the dose calculator writes alongside a meal (so the injection tab can
+   *  show it as already-logged instead of inviting a duplicate entry). */
+  source: string;
   logged_at: string;
   tags: LogTag[];
 }

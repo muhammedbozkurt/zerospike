@@ -2,7 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import Svg, { Path, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 
-import { COLORS, glow } from "../lib/theme/tokens";
+import { THEME, glow } from "../lib/theme/tokens";
 
 interface SparklineProps {
   data: number[];
@@ -28,7 +28,7 @@ export function Sparkline({
   data,
   width = 96,
   height = 32,
-  color = COLORS.brand,
+  color = THEME.accent,
   fill = true,
   showLast = true,
   strokeWidth = 2,

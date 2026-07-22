@@ -2,7 +2,13 @@ import React, { useMemo } from "react";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 
 import type { Agp } from "../../lib/agp";
-import { buildAgpGeometry, pointsAttr, type ChartBox } from "../../lib/agpChart";
+import {
+  buildAgpGeometry,
+  pointsAttr,
+  DEFAULT_TARGET_BAND,
+  type ChartBox,
+  type TargetBand,
+} from "../../lib/agpChart";
 import { formatGlucose } from "../../lib/glucose";
 import type { GlucoseUnit } from "../../lib/db/types";
 import { CHART } from "./theme";
@@ -19,17 +25,20 @@ export function DailyProfileChart({
   unit,
   width,
   height,
+  band = DEFAULT_TARGET_BAND,
 }: {
   agp: Agp;
   unit: GlucoseUnit;
   width: number;
   height: number;
+  /** The profile's own target band; the shading is the user's range. */
+  band?: TargetBand;
 }) {
   const box: ChartBox = useMemo(
     () => ({ width, height, padL: 34, padR: 6, padT: 8, padB: 20 }),
     [width, height]
   );
-  const g = useMemo(() => buildAgpGeometry(agp, box), [agp, box]);
+  const g = useMemo(() => buildAgpGeometry(agp, box, band), [agp, box, band]);
   if (!g) return null;
 
   const hasCurve = g.iqrPolygon.length > 0;

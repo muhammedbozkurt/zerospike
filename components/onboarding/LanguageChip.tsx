@@ -7,17 +7,18 @@ import type { Lang } from "../../lib/db/types";
 import { LANG_LABELS, SUPPORTED_LANGS } from "../../lib/i18n";
 import { useApp } from "../../lib/store/AppContext";
 import { hapticSelect } from "../../lib/haptics";
+import { THEME } from "../../lib/theme/tokens";
 
 /** Uppercase language-code badge (flag emojis render as "?" on some devices). */
 function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
   return (
     <View
       className={`w-9 h-7 rounded-md items-center justify-center ${
-        active ? "bg-brand/20" : "bg-zinc-800"
+        active ? "bg-brand/20" : "bg-glass"
       }`}
     >
       <Text
-        className={`text-[11px] font-bold ${active ? "text-brand" : "text-zinc-300"}`}
+        className={`text-[11px] font-bold ${active ? "text-brand" : "text-mut"}`}
       >
         {code.toUpperCase()}
       </Text>
@@ -47,13 +48,13 @@ export function LanguageChip() {
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={t("settings.language")}
-        className="flex-row items-center rounded-full border border-zinc-800 bg-zinc-900 pl-2.5 pr-2 py-1.5"
+        className="flex-row items-center rounded-full border border-hair bg-glass pl-2.5 pr-2 py-1.5"
       >
-        <Ionicons name="language-outline" size={15} color="#a1a1aa" />
-        <Text className="text-zinc-200 text-xs font-semibold ml-1.5">
+        <Ionicons name="language-outline" size={15} color={THEME.muted} />
+        <Text className="text-ink text-xs font-semibold ml-1.5">
           {lang.toUpperCase()}
         </Text>
-        <Ionicons name="chevron-down" size={13} color="#52525b" />
+        <Ionicons name="chevron-down" size={13} color={THEME.muted} />
       </Pressable>
 
       <Modal
@@ -67,10 +68,10 @@ export function LanguageChip() {
           onPress={() => setOpen(false)}
         >
           <Pressable
-            className="rounded-t-3xl bg-zinc-900 border-t border-zinc-800 p-4 pb-8"
+            className="rounded-t-3xl bg-glass border-t border-hair p-4 pb-8"
             onPress={(e) => e.stopPropagation()}
           >
-            <Text className="text-zinc-50 text-lg font-bold mb-3 px-1">
+            <Text className="text-ink text-lg font-bold mb-3 px-1">
               {t("settings.language")}
             </Text>
             {SUPPORTED_LANGS.map((l) => {
@@ -82,13 +83,13 @@ export function LanguageChip() {
                   className={`flex-row items-center rounded-2xl px-3 py-2.5 mb-1.5 border ${
                     active
                       ? "bg-brand/10 border-brand/40"
-                      : "bg-zinc-800/40 border-transparent"
+                      : "bg-glass border-transparent"
                   }`}
                 >
                   <CodeBadge code={l} active={active} />
                   <Text
                     className={`flex-1 ml-3 font-medium ${
-                      active ? "text-brand" : "text-zinc-200"
+                      active ? "text-brand" : "text-ink"
                     }`}
                   >
                     {LANG_LABELS[l]}

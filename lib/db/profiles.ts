@@ -1,6 +1,6 @@
 import { getDb, DEFAULT_PROFILE_ID, defaultProfileName } from "./index";
 import { uuid } from "../uuid";
-import type { UserProfile } from "./types";
+import type { DiabetesType, InsulinMode, UserProfile } from "./types";
 
 export async function listProfiles(): Promise<UserProfile[]> {
   const db = await getDb();
@@ -29,9 +29,11 @@ export async function getDefaultProfile(): Promise<UserProfile> {
   await db.runAsync(
     `INSERT INTO user_profiles
        (id, name, insulin_sensitivity_factor, carb_ratio_breakfast,
-        carb_ratio_lunch, carb_ratio_dinner, target_fasting_max,
-        target_postmeal_max, daily_carb_target_g, created_at)
-     VALUES (?, ?, 40, 10, 12, 12, 100, 140, 200, ?);`,
+        carb_ratio_lunch, carb_ratio_dinner, target_fasting_min,
+        target_fasting_max, target_postmeal_min, target_postmeal_max,
+        hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
+        created_at)
+     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, ?);`,
     [DEFAULT_PROFILE_ID, defaultProfileName(), now]
   );
   return (await getProfile(DEFAULT_PROFILE_ID))!;
@@ -43,9 +45,15 @@ export interface NewProfileInput {
   carb_ratio_breakfast?: number;
   carb_ratio_lunch?: number;
   carb_ratio_dinner?: number;
+  target_fasting_min?: number;
   target_fasting_max?: number;
+  target_postmeal_min?: number;
   target_postmeal_max?: number;
+  hypo_threshold_mgdl?: number;
   daily_carb_target_g?: number;
+  daily_carb_target_min_g?: number;
+  diabetes_type?: DiabetesType;
+  insulin_mode?: InsulinMode;
 }
 
 export async function createProfile(
@@ -54,12 +62,15 @@ export async function createProfile(
   const db = await getDb();
   const id = uuid();
   const now = new Date().toISOString();
+  const carbMax = input.daily_carb_target_g ?? 200;
   await db.runAsync(
     `INSERT INTO user_profiles
        (id, name, insulin_sensitivity_factor, carb_ratio_breakfast,
-        carb_ratio_lunch, carb_ratio_dinner, target_fasting_max,
-        target_postmeal_max, daily_carb_target_g, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        carb_ratio_lunch, carb_ratio_dinner, target_fasting_min,
+        target_fasting_max, target_postmeal_min, target_postmeal_max,
+        hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
+        diabetes_type, insulin_mode, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.name.trim() || "Profil",
@@ -67,9 +78,15 @@ export async function createProfile(
       input.carb_ratio_breakfast ?? 10,
       input.carb_ratio_lunch ?? 12,
       input.carb_ratio_dinner ?? 12,
+      input.target_fasting_min ?? 80,
       input.target_fasting_max ?? 100,
+      input.target_postmeal_min ?? 80,
       input.target_postmeal_max ?? 140,
-      input.daily_carb_target_g ?? 200,
+      input.hypo_threshold_mgdl ?? 70,
+      carbMax,
+      input.daily_carb_target_min_g ?? Math.round(carbMax * 0.8),
+      input.diabetes_type ?? "unknown",
+      input.insulin_mode ?? "both",
       now,
     ]
   );

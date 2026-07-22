@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AppBackgroundFill } from "../components/rich";
 import { useTranslation } from "react-i18next";
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import { useApp } from "../lib/store/AppContext";
 import {
@@ -15,11 +14,20 @@ import {
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
-import { Button } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSuccess } from "../lib/haptics";
+import { AppBackground, GradientCTA } from "../components/rich";
+import { withAlpha } from "../components/rich/GlassCard";
+import { TABULAR, THEME, glow } from "../lib/theme/tokens";
 
+/**
+ * The last-chance annual offer, rebuilt to the mockup's 08 "Downsell"
+ * composition: one centred, accent-bordered glow card carrying a small badge, a
+ * short headline, the BILLED AMOUNT as the dominant element with the standard
+ * price struck through beside it, the renewal disclosure, then the CTA and a
+ * quiet decline. Nothing else competes with the price.
+ */
 export default function DownsellScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -97,8 +105,20 @@ export default function DownsellScreen() {
   const discount = offer?.hasRealDiscount ?? false;
 
   return (
-    <View className="flex-1">
-      <AppBackgroundFill />
+    <AppBackground>
+      {/* The mockup's top cyan bloom behind the single offer card */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+          <Defs>
+            <RadialGradient id="dsGlow" cx="50%" cy="18%" rx="120%" ry="50%">
+              <Stop offset="0" stopColor={THEME.accent} stopOpacity={0.14} />
+              <Stop offset="1" stopColor={THEME.accent} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#dsGlow)" />
+        </Svg>
+      </View>
+
       <View
         className="flex-1"
         style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }}
@@ -112,79 +132,144 @@ export default function DownsellScreen() {
 
         <View className="flex-1 px-6 justify-center">
           {loading ? (
-            <Text className="text-zinc-500 text-center">{t("common.loading")}</Text>
-          ) : (
-            <>
-              <View className="w-16 h-16 rounded-3xl bg-brand/15 items-center justify-center mb-5 self-start">
-                <Ionicons name="gift-outline" size={28} color="#2ee6ff" />
+            <Text style={{ color: THEME.muted, textAlign: "center" }}>
+              {t("common.loading")}
+            </Text>
+          ) : discount ? (
+            <View
+              className="items-center rounded-3xl p-5"
+              style={[
+                {
+                  borderWidth: 1,
+                  borderColor: THEME.accent,
+                  backgroundColor: withAlpha(THEME.accent, 0.08),
+                  gap: 10,
+                },
+                glow(THEME.accent, 34, 0.4),
+              ]}
+            >
+              <View
+                className="rounded-full px-3 py-1"
+                style={{ backgroundColor: withAlpha(THEME.accent, 0.18) }}
+              >
+                <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "800" }}>
+                  {t("downsell.savingsBadge", { percent: offer!.savingsPercent })}
+                </Text>
               </View>
-              <Text className="text-zinc-50 text-3xl font-bold">
+
+              <Text
+                style={{
+                  color: THEME.ink,
+                  fontSize: 17,
+                  fontWeight: "800",
+                  textAlign: "center",
+                }}
+              >
                 {t("downsell.title")}
               </Text>
-              <Text className="text-zinc-400 mt-2 leading-5">
-                {discount
-                  ? t("downsell.discountSubtitle", { percent: offer!.savingsPercent })
-                  : t("downsell.fallbackSubtitle")}
+
+              {/* The billed amount dominates */}
+              <View className="flex-row items-baseline" style={{ gap: 10 }}>
+                <Text
+                  style={[
+                    TABULAR,
+                    { color: THEME.ink, fontSize: 34, fontWeight: "800" },
+                  ]}
+                >
+                  {offer!.discountedPriceString}
+                </Text>
+                <Text
+                  style={[
+                    TABULAR,
+                    {
+                      color: THEME.muted,
+                      fontSize: 15,
+                      textDecorationLine: "line-through",
+                    },
+                  ]}
+                >
+                  {offer!.standardPriceString}
+                </Text>
+              </View>
+
+              <Text
+                style={{
+                  color: THEME.muted,
+                  fontSize: 11,
+                  lineHeight: 16,
+                  textAlign: "center",
+                }}
+              >
+                {t("downsell.renewalDisclosure", {
+                  discountPrice: offer!.discountedPriceString,
+                  standardPrice: offer!.standardPriceString,
+                })}
               </Text>
 
-              {discount ? (
-                <View className="rounded-2xl bg-zinc-900 border border-brand/40 p-5 mt-6">
-                  <View className="flex-row items-baseline">
-                    <Text className="text-brand text-3xl font-bold">
-                      {offer!.discountedPriceString}
-                    </Text>
-                    <Text className="text-zinc-500 text-base ml-3 line-through">
-                      {offer!.standardPriceString}
-                    </Text>
-                  </View>
-                  <Text className="text-emerald-400 text-xs font-bold mt-1">
-                    {t("downsell.savingsBadge", { percent: offer!.savingsPercent })}
-                  </Text>
-                  <Text className="text-zinc-500 text-[11px] leading-4 mt-3">
-                    {t("downsell.renewalDisclosure", {
-                      discountPrice: offer!.discountedPriceString,
-                      standardPrice: offer!.standardPriceString,
-                    })}
-                  </Text>
-                </View>
-              ) : null}
-            </>
+              <GradientCTA
+                label={t("downsell.discountCta", { percent: offer!.savingsPercent })}
+                disabled={busy}
+                onPress={accept}
+                style={{ alignSelf: "stretch", marginTop: 2 }}
+              />
+              <Pressable onPress={decline} disabled={busy} hitSlop={8}>
+                <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}>
+                  {t("downsell.decline")}
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View className="items-center" style={{ gap: 12 }}>
+              <Text
+                style={{
+                  color: THEME.ink,
+                  fontSize: 22,
+                  fontWeight: "800",
+                  textAlign: "center",
+                }}
+              >
+                {t("downsell.title")}
+              </Text>
+              <Text
+                style={{
+                  color: THEME.muted,
+                  textAlign: "center",
+                  lineHeight: 20,
+                  maxWidth: 280,
+                }}
+              >
+                {t("downsell.fallbackSubtitle")}
+              </Text>
+            </View>
           )}
         </View>
 
         {!loading ? (
           <View className="px-6">
             {discount ? (
-              <>
-                <Button
-                  label={t("downsell.discountCta", { percent: offer!.savingsPercent })}
-                  size="lg"
-                  loading={busy}
-                  onPress={accept}
-                />
-                <Pressable onPress={decline} disabled={busy} className="py-3 items-center mt-1">
-                  <Text className="text-zinc-400 font-medium">{t("downsell.decline")}</Text>
+              <View className="flex-row justify-center" style={{ gap: 24 }}>
+                <Pressable onPress={() => Linking.openURL(privacyUrl())}>
+                  <Text
+                    style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                  >
+                    {t("settings.privacy")}
+                  </Text>
                 </Pressable>
-                <View className="flex-row justify-center gap-6 mt-1">
-                  <Pressable onPress={() => Linking.openURL(privacyUrl())}>
-                    <Text className="text-zinc-600 text-xs underline">
-                      {t("settings.privacy")}
-                    </Text>
-                  </Pressable>
-                  <Pressable onPress={() => Linking.openURL(termsUrl())}>
-                    <Text className="text-zinc-600 text-xs underline">
-                      {t("settings.terms")}
-                    </Text>
-                  </Pressable>
-                </View>
-              </>
+                <Pressable onPress={() => Linking.openURL(termsUrl())}>
+                  <Text
+                    style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                  >
+                    {t("settings.terms")}
+                  </Text>
+                </Pressable>
+              </View>
             ) : (
-              <Button label={t("downsell.fallbackCta")} size="lg" onPress={decline} />
+              <GradientCTA label={t("downsell.fallbackCta")} onPress={decline} />
             )}
           </View>
         ) : null}
       </View>
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

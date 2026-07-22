@@ -8,22 +8,30 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import type { GlucoseUnit, LogTag, PeriodTag } from "../lib/db/types";
-import type { GlucoseStatus } from "../lib/glucose";
-import { glucoseFromDisplay, glucoseToDisplay, glucoseUnitLabel } from "../lib/glucose";
-import { Button, Segmented } from "./ui";
+import type { GlucoseStatus, TargetProfile } from "../lib/glucose";
+import {
+  classifyGlucose,
+  glucoseFromDisplay,
+  glucoseToDisplay,
+  glucoseUnitLabel,
+} from "../lib/glucose";
 import { TagPicker } from "./TagPicker";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, relativeDay } from "../lib/format";
-import { GLUCOSE_RICH, THEME } from "../lib/theme/tokens";
+import { RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
+import { GradientCTA } from "./rich/GradientCTA";
+import { PressableScale } from "../lib/theme/motion";
 
 const PERIODS: PeriodTag[] = [
   "fasting",
@@ -47,6 +55,8 @@ interface Props {
   visible: boolean;
   initialPeriod?: PeriodTag;
   unit?: GlucoseUnit;
+  /** The profile's own range, so the live status matches the rest of the app. */
+  profile?: Partial<TargetProfile>;
   /** When set, the sheet opens prefilled to correct this existing reading. */
   edit?: GlucoseEditTarget | null;
   /** value is in mg/dL (already converted from the display unit).
@@ -60,10 +70,18 @@ interface Props {
   ) => void;
 }
 
+/**
+ * The glucose-entry sheet, built to the mockup's B04 composition: a radial cyan
+ * wash behind a glass sheet, one enormous glowing numeral that takes its color
+ * from the live classification, the period as a row of pill buttons under it,
+ * and a single gradient CTA. Detail controls (time, context tags) sit below the
+ * hero, so the first thing on screen is always the number being entered.
+ */
 export function GlucoseInputSheet({
   visible,
   initialPeriod = "fasting",
   unit = "mgdl",
+  profile,
   edit = null,
   onClose,
   onSubmit,
@@ -146,27 +164,27 @@ export function GlucoseInputSheet({
     return Number.isFinite(n) && n >= minD && n <= maxD;
   })();
 
-  // Live status color for the big number (neutral: color + the number itself).
-  // Simple in/out-of-range banding on mg/dL; the full per-period classification
-  // happens on save. Never the sole cue - the numeral is always shown.
+  // Live status for the big number. It runs the SAME classification the journal
+  // and dashboard use, against the same profile range and period, so the colour
+  // the user sees while typing is the colour the saved entry gets. Never the
+  // sole cue: the numeral and a labelled chip always accompany it.
   const mgdlNow = valid ? glucoseFromDisplay(parseFloat(value), unit) : null;
   const liveStatus: GlucoseStatus | null =
-    mgdlNow == null
-      ? null
-      : mgdlNow < 70
-        ? "low"
-        : mgdlNow <= 180
-          ? "normal"
-          : mgdlNow <= 250
-            ? "elevated"
-            : "high";
-  const RICH: Record<GlucoseStatus, string> = {
-    low: GLUCOSE_RICH.low,
-    normal: GLUCOSE_RICH.target,
-    elevated: GLUCOSE_RICH.high,
-    high: GLUCOSE_RICH.veryHigh,
-  };
-  const numColor = liveStatus ? RICH[liveStatus] : THEME.ink;
+    mgdlNow == null ? null : classifyGlucose(mgdlNow, period, profile ?? {});
+  const numColor = liveStatus ? RICH_BY_STATUS[liveStatus] : THEME.ink;
+
+  function statusLabel(status: GlucoseStatus): string {
+    switch (status) {
+      case "normal":
+        return t("insights.inRange");
+      case "low":
+        return t("insights.low");
+      case "veryHigh":
+        return t("insights.veryHigh");
+      default:
+        return t("insights.high");
+    }
+  }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -177,25 +195,61 @@ export function GlucoseInputSheet({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
-        <Pressable className="flex-1 bg-black/70 justify-end" onPress={onClose}>
+        <Pressable
+          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+          onPress={onClose}
+        >
           {/* Capped at the lifted container's height: on a small phone the sheet
               is taller than what the keyboard leaves, and Save would otherwise
               be pushed off the top with no way to reach it. */}
           <Animated.View style={{ transform: [{ translateY }], maxHeight: "100%" }}>
             <Pressable
-              className="rounded-t-3xl bg-zinc-950 border-t border-x border-zinc-800 px-5 pt-3"
               onPress={(e) => e.stopPropagation()}
+              style={[
+                {
+                  borderTopLeftRadius: 26,
+                  borderTopRightRadius: 26,
+                  borderTopWidth: 1,
+                  borderLeftWidth: 1,
+                  borderRightWidth: 1,
+                  borderColor: THEME.border,
+                  backgroundColor: THEME.bg.g1,
+                  paddingHorizontal: 18,
+                  paddingTop: 10,
+                  overflow: "hidden",
+                },
+                glow(liveStatus ? numColor : THEME.accent, 34, 0.35),
+              ]}
             >
+              {/* The mockup's bottom radial glow, tinted to the live status. */}
+              <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+                <Defs>
+                  <RadialGradient id="sheetGlow" cx="50%" cy="118%" rx="110%" ry="55%">
+                    <Stop offset="0" stopColor={numColor} stopOpacity={0.22} />
+                    <Stop offset="1" stopColor={numColor} stopOpacity={0} />
+                  </RadialGradient>
+                </Defs>
+                <Rect x="0" y="0" width="100%" height="100%" fill="url(#sheetGlow)" />
+              </Svg>
+
               <View {...pan.panHandlers}>
-                <View className="items-center mb-2 py-1">
-                  <View className="w-10 h-1 rounded-full bg-zinc-700" />
+                <View className="items-center py-1 mb-1">
+                  <View
+                    style={{
+                      width: 38,
+                      height: 4,
+                      borderRadius: 9,
+                      backgroundColor: THEME.border,
+                    }}
+                  />
                 </View>
-                <View className="flex-row items-center justify-between mb-4">
-                  <Text className="text-zinc-50 text-xl font-bold">
+                <View className="flex-row items-center justify-between">
+                  <View style={{ width: 28 }} />
+                  <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
                     {edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}
                   </Text>
-                  <Pressable onPress={onClose} hitSlop={12} className="p-1">
-                    <Ionicons name="close" size={24} color="#71717a" />
+                  <Pressable onPress={onClose} hitSlop={12} style={{ width: 28, alignItems: "flex-end" }}>
+                    <Ionicons name="close" size={22} color={THEME.muted} />
                   </Pressable>
                 </View>
               </View>
@@ -207,66 +261,123 @@ export function GlucoseInputSheet({
                 bounces={false}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 32 }}
+                contentContainerStyle={{ paddingBottom: 30, paddingTop: 12 }}
               >
-                <Text className="text-sm font-medium text-zinc-400 mb-2">
-                  {t("dashboard.selectPeriod")}
-                </Text>
-                <Segmented
-                  options={PERIODS.map((p) => ({ value: p, label: t(`period.${p}`) }))}
-                  value={period}
-                  onChange={setPeriod}
-                  className="mb-5"
-                />
-
-                <View className="flex-row items-end justify-center mb-2">
+                {/* Hero: the numeral is the screen. */}
+                <View className="items-center">
                   <TextInput
                     value={value}
                     onChangeText={onType}
                     keyboardType={mmol ? "decimal-pad" : "number-pad"}
                     autoFocus
                     placeholder={mmol ? "6.1" : "110"}
-                    placeholderTextColor="#3f3f46"
-                    className="text-6xl font-bold text-center min-w-[120px]"
-                    style={{
-                      color: numColor,
-                      textShadowColor: valid ? `${numColor}99` : "transparent",
-                      textShadowRadius: 22,
-                    }}
+                    placeholderTextColor="rgba(137,163,176,0.4)"
+                    style={[
+                      TABULAR,
+                      {
+                        color: numColor,
+                        fontSize: 56,
+                        lineHeight: 64,
+                        fontWeight: "800",
+                        textAlign: "center",
+                        minWidth: 150,
+                        textShadowColor: valid ? `${numColor}99` : "transparent",
+                        textShadowRadius: 26,
+                      },
+                    ]}
                     maxLength={mmol ? 4 : 3}
                   />
-                  <Text className="text-zinc-500 text-lg mb-3 ml-2">
+                  <Text style={{ color: THEME.muted, fontSize: 12, marginTop: -4 }}>
                     {glucoseUnitLabel(unit)}
                   </Text>
+                  <View style={{ minHeight: 26, marginTop: 8 }}>
+                    {liveStatus ? (
+                      <GlucoseChip status={liveStatus} label={statusLabel(liveStatus)} />
+                    ) : null}
+                  </View>
                 </View>
-                <View className="items-center mb-6" style={{ minHeight: 24 }}>
-                  {liveStatus ? (
-                    <GlucoseChip
-                      status={liveStatus}
-                      label={
-                        liveStatus === "normal"
-                          ? t("insights.inRange")
-                          : liveStatus === "low"
-                            ? t("insights.low")
-                            : t("insights.high")
-                      }
-                    />
-                  ) : null}
+
+                {/* The fixed clinical class gets one line of neutral, general
+                    information. No diagnosis, no treatment, no instruction. */}
+                {liveStatus === "veryHigh" ? (
+                  <View
+                    className="rounded-2xl px-3.5 py-3 mt-3"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: `${RICH_BY_STATUS.veryHigh}4d`,
+                      backgroundColor: `${RICH_BY_STATUS.veryHigh}1a`,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: RICH_BY_STATUS.veryHigh,
+                        fontSize: 12,
+                        fontWeight: "800",
+                        marginBottom: 2,
+                      }}
+                    >
+                      {t("glucose.veryHighTitle")}
+                    </Text>
+                    <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18, opacity: 0.85 }}>
+                      {t("glucose.veryHighNote")}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Period as pill buttons, the mockup's row of small CTAs. */}
+                <View className="flex-row flex-wrap justify-center mt-5" style={{ gap: 6 }}>
+                  {PERIODS.map((p) => {
+                    const on = p === period;
+                    return (
+                      <PressableScale
+                        key={p}
+                        onPress={() => setPeriod(p)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: on }}
+                        style={[
+                          {
+                            borderRadius: RADIUS.md,
+                            paddingHorizontal: 12,
+                            paddingVertical: 9,
+                            borderWidth: 1,
+                            borderColor: on ? THEME.accent : THEME.border,
+                            backgroundColor: on ? "rgba(46,230,255,0.16)" : THEME.glass,
+                          },
+                          on ? glow(THEME.accent, 12, 0.4) : undefined,
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: on ? THEME.accent : THEME.muted,
+                            fontSize: 12,
+                            fontWeight: "700",
+                          }}
+                        >
+                          {t(`period.${p}`)}
+                        </Text>
+                      </PressableScale>
+                    );
+                  })}
                 </View>
 
                 {/* When the reading was taken (date + time, never in the future) */}
-                <Text className="text-sm font-medium text-zinc-400 mb-1.5">
-                  {t("calculator.loggedTime")}
-                </Text>
                 <Pressable
                   onPress={() => {
                     Keyboard.dismiss();
                     setTimePickerOpen((v) => !v);
                   }}
-                  className="flex-row items-center rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 mb-5"
+                  className="flex-row items-center mt-5"
+                  style={{
+                    borderRadius: RADIUS.md,
+                    borderWidth: 1,
+                    borderColor: THEME.border,
+                    backgroundColor: THEME.glass,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                  }}
                 >
-                  <Ionicons name="time-outline" size={16} color="#a1a1aa" />
-                  <Text className="text-zinc-50 ml-2">
+                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
+                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
                     {relativeDay((loggedAt ?? new Date()).toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
@@ -284,14 +395,9 @@ export function GlucoseInputSheet({
                   onClose={() => setTimePickerOpen(false)}
                 />
 
-                <TagPicker value={tags} onChange={setTags} className="mb-5" />
+                <TagPicker value={tags} onChange={setTags} className="mt-4 mb-5" />
 
-                <Button
-                  label={t("common.save")}
-                  size="lg"
-                  disabled={!valid}
-                  onPress={submit}
-                />
+                <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
               </ScrollView>
             </Pressable>
           </Animated.View>

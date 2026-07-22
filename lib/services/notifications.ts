@@ -7,6 +7,11 @@ import {
   getNotificationPrefs,
   type NotificationPrefs,
 } from "./notificationPrefs";
+import { formatGlucose, glucoseUnitLabel } from "../glucose";
+import {
+  endPostMealActivity,
+  startPostMealActivity,
+} from "../../modules/zerospike-live-activity";
 
 const BASAL_ID = "zerospike-basal-reminder";
 const GLUCOSE_ID = "zerospike-glucose-reminder";
@@ -107,6 +112,59 @@ function parseHHMM(time: string): { hour: number; minute: number } {
 // ── Daily repeating reminders ──────────────────────────────────────────────
 // These are low-level: they (re)schedule unconditionally. Permission and the
 // preference gating are decided by applyNotificationPrefs (the orchestrator).
+
+/**
+ * Whether timed reminders can actually be expected to arrive.
+ *
+ * Two things can silently break a scheduled reminder after the user has already
+ * said yes: the OS permission being revoked later, and (Android) the reminders
+ * channel being turned down or blocked in system settings. Both are queryable,
+ * so both are reported here and the UI shows one neutral card with a route into
+ * system settings.
+ *
+ * KNOWN LIMIT: Android 12+ also gates *exact* alarm delivery behind
+ * SCHEDULE_EXACT_ALARM, and expo-notifications exposes no JS API for
+ * AlarmManager.canScheduleExactAlarms() in this SDK. Rather than assert a state
+ * we cannot read, "exactAlarmUnknown" reports that honestly for API 31+; the UI
+ * folds it into the same card only when nothing stronger is already wrong, so a
+ * user on a modern Android still gets the settings route without being shown a
+ * warning that pretends to be a measurement.
+ */
+export type ReminderReliability = {
+  /** The OS-level notification permission is missing. */
+  permissionMissing: boolean;
+  /** Android: the reminders channel is blocked or set below default importance. */
+  channelLimited: boolean;
+  /** Android 12+: exact-alarm state is not readable from JS (see above). */
+  exactAlarmUnknown: boolean;
+};
+
+export async function checkReminderReliability(): Promise<ReminderReliability> {
+  const result: ReminderReliability = {
+    permissionMissing: false,
+    channelLimited: false,
+    exactAlarmUnknown: false,
+  };
+  try {
+    result.permissionMissing = !(await hasNotificationPermission());
+    if (Platform.OS !== "android") return result;
+
+    const channel = await Notifications.getNotificationChannelAsync("reminders");
+    if (channel && channel.importance < Notifications.AndroidImportance.DEFAULT) {
+      result.channelLimited = true;
+    }
+    const api = Device.platformApiLevel ?? 0;
+    result.exactAlarmUnknown = api >= 31;
+  } catch {
+    // A failed probe must never be reported as a problem with the user's setup.
+  }
+  return result;
+}
+
+/** True when anything above suggests a reminder might not arrive on time. */
+export function remindersMayBeLimited(r: ReminderReliability): boolean {
+  return r.permissionMissing || r.channelLimited || r.exactAlarmUnknown;
+}
 
 export async function scheduleBasalReminder(time: string): Promise<void> {
   await ensureAndroidChannel();
@@ -286,14 +344,30 @@ async function schedulePostMealAt(minutes: number): Promise<void> {
   // Persist the end time so the dashboard button can count down and disable
   // itself. Only reached once permission is granted (callers gate on it), so it
   // never writes without a real pending notification.
+  const endsAt = Date.now() + seconds * 1000;
   try {
-    await AsyncStorage.setItem(
-      POSTMEAL_TIMER_END_KEY,
-      String(Date.now() + seconds * 1000)
-    );
+    await AsyncStorage.setItem(POSTMEAL_TIMER_END_KEY, String(endsAt));
   } catch {
     // best-effort persistence
   }
+
+  // Mirror the same countdown onto the lock screen and Dynamic Island, so the
+  // user can see the time left without opening the app. Timer-style, no push:
+  // iOS draws the countdown from the end date we just persisted. A no-op when
+  // Live Activities are unavailable or the module is not linked.
+  // Imported lazily: liveData reads the pending timer from this module, and a
+  // module-scope import here would close that cycle.
+  const { readLiveData } = await import("./liveData");
+  const snapshot = await readLiveData();
+  startPostMealActivity({
+    endsAt,
+    title: i18n.t("widget.timerTitle"),
+    lastReading:
+      snapshot?.lastGlucoseMgdl != null
+        ? formatGlucose(snapshot.lastGlucoseMgdl, snapshot.unit)
+        : null,
+    unitLabel: snapshot ? glucoseUnitLabel(snapshot.unit) : "",
+  });
 }
 
 /**
@@ -332,6 +406,7 @@ export async function cancelPostMealTimer(): Promise<void> {
   } catch {
     // best-effort
   }
+  endPostMealActivity();
 }
 
 /**

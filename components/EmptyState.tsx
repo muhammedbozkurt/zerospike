@@ -2,7 +2,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { COLORS } from "../lib/theme/tokens";
+import { THEME } from "../lib/theme/tokens";
 import { FadeSlideIn } from "../lib/theme/motion";
 import { Button } from "./ui";
 
@@ -32,11 +32,11 @@ export function EmptyState({
     <FadeSlideIn>
       <View className={`items-center ${compact ? "py-8" : "py-14"} px-6`}>
         <View className="w-16 h-16 rounded-full bg-glass border border-hair items-center justify-center mb-4">
-          <Ionicons name={icon} size={28} color={COLORS.textFaint} />
+          <Ionicons name={icon} size={28} color={THEME.muted} />
         </View>
-        <Text className="text-zinc-200 text-base font-semibold text-center">{title}</Text>
+        <Text className="text-ink text-base font-semibold text-center">{title}</Text>
         {subtitle ? (
-          <Text className="text-zinc-500 text-sm text-center mt-1.5 leading-5">{subtitle}</Text>
+          <Text className="text-mut text-sm text-center mt-1.5 leading-5">{subtitle}</Text>
         ) : null}
         {actionLabel && onAction ? (
           <View className="mt-5">

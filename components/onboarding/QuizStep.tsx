@@ -44,11 +44,11 @@ export function QuizStep({
         showsVerticalScrollIndicator={false}
       >
         <FadeSlideIn>
-          <Text className="text-zinc-50 text-2xl font-bold">{title}</Text>
+          <Text className="text-ink text-2xl font-bold">{title}</Text>
         </FadeSlideIn>
         {hint ? (
           <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
-            <Text className="text-zinc-400 mt-2 leading-5">{hint}</Text>
+            <Text className="text-mut mt-2 leading-5">{hint}</Text>
           </FadeSlideIn>
         ) : null}
         <View className="mt-6">{children}</View>

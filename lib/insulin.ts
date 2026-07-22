@@ -1,4 +1,5 @@
 import type { Food, MealSlot, UserProfile } from "./db/types";
+import { targetMidpoint, targetRangeFor } from "./glucose";
 
 /** Maps an hour (0–23) to the active meal slot per the product rules. */
 export function mealSlotForHour(hour: number): MealSlot {
@@ -36,9 +37,39 @@ export function carbRatioForSlot(
  * most dosing apps lack. Bounds are generous so only clear errors trip them.
  */
 export const PLAUSIBLE_CARB_RATIO = { min: 1, max: 50 } as const; // g per unit
+/** Bounds for the daily carbohydrate range a profile can be given (grams). */
+export const CARB_TARGET_BOUNDS = { min: 30, max: 600 } as const;
+
+export function clampCarbTarget(value: number): number {
+  return Math.round(
+    Math.min(CARB_TARGET_BOUNDS.max, Math.max(CARB_TARGET_BOUNDS.min, value))
+  );
+}
 export const PLAUSIBLE_ISF = { min: 5, max: 200 } as const; // mg/dL per unit
 /** A single mealtime estimate at/above this many units is unusual → warn. */
 export const HIGH_DOSE_WARNING_UNITS = 25;
+/**
+ * A single hand-entered dose above this is almost certainly a typo (a stray
+ * digit). It is never REFUSED - refusing would block a legitimate outlier and
+ * lose the record - but it takes a second explicit confirmation before it is
+ * stored. Same non-blocking philosophy as the warnings above.
+ */
+export const IMPLAUSIBLE_DOSE_UNITS = 100;
+
+/** How a hand-entered dose reads against the plausibility bands. */
+export type DoseCheck = "ok" | "high" | "implausible";
+
+/**
+ * Classifies a typed dose so an entry screen can ask for confirmation before it
+ * saves. Pure and display-only: nothing here changes what gets stored, it only
+ * decides whether to ask "is that what you meant?" first.
+ */
+export function checkDose(units: number): DoseCheck {
+  if (!Number.isFinite(units) || units <= 0) return "ok";
+  if (units >= IMPLAUSIBLE_DOSE_UNITS) return "implausible";
+  if (units >= HIGH_DOSE_WARNING_UNITS) return "high";
+  return "ok";
+}
 
 export type InsulinWarning =
   | "high_dose"
@@ -54,7 +85,7 @@ export interface InsulinEstimate {
   mealDose: number;
   /** optional correction for an above-target reading (units) */
   correctionDose: number;
-  /** mealDose + correctionDose, rounded to nearest 0.5 (pen resolution) */
+  /** mealDose + correctionDose, rounded to the nearest 0.5 unit */
   totalDose: number;
   /** units the correction was reduced by active insulin (IOB), if any */
   iobReduction: number;
@@ -65,7 +96,7 @@ export interface InsulinEstimate {
 export interface EstimateOptions {
   /** current glucose, for an optional ISF correction */
   currentGlucose?: number | null;
-  /** target the correction aims for (defaults to postmeal target) */
+  /** target the correction aims for (defaults to the post-meal range midpoint) */
   targetGlucose?: number | null;
   /**
    * Active insulin (IOB) already working from recent bolus doses. When given,
@@ -85,7 +116,13 @@ export interface EstimateOptions {
  *   mealDose    = carbs / activeCarbRatio
  *   correction  = max(0, currentGlucose − target) / ISF   (only if provided)
  *
- * Always presented to the user as an "Estimated Dose Recommendation".
+ * The correction target is the MIDDLE of the user's post-meal range, not its
+ * ceiling. Aiming at the ceiling means every correction lands at the very top of
+ * the band; the midpoint is the conventional, more honest choice, and the UI
+ * states it in plain words ("the middle of your target range") so the number is
+ * never a black box.
+ *
+ * Always presented to the user as a calculated, editable estimate.
  */
 export function estimateInsulin(
   food: Pick<Food, "carb_100g">,
@@ -96,6 +133,7 @@ export function estimateInsulin(
     | "carb_ratio_lunch"
     | "carb_ratio_dinner"
     | "insulin_sensitivity_factor"
+    | "target_postmeal_min"
     | "target_postmeal_max"
   >,
   options: EstimateOptions = {}
@@ -115,7 +153,14 @@ export function estimateInsulin(
     profile.insulin_sensitivity_factor > 0
   ) {
     isfApplied = profile.insulin_sensitivity_factor;
-    const target = options.targetGlucose ?? profile.target_postmeal_max;
+    const target =
+      options.targetGlucose ??
+      targetMidpoint(
+        targetRangeFor("post_meal_2h", {
+          target_postmeal_min: profile.target_postmeal_min,
+          target_postmeal_max: profile.target_postmeal_max,
+        })
+      );
     const delta = options.currentGlucose - target;
     if (delta > 0) {
       correctionDose = delta / profile.insulin_sensitivity_factor;

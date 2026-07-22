@@ -11,17 +11,33 @@ import {
   listFavoriteFoods,
   toggleFavorite as dbToggleFav,
 } from "../../lib/db/favorites";
-import { getRecentMeals, type RecentMeal } from "../../lib/db/logs";
+import { addMealLog, getRecentMeals, type RecentMeal } from "../../lib/db/logs";
+import { getJournal, type MealEntry } from "../../lib/db/journal";
 import type { Food } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
-import { CATEGORIES, CATEGORY_ICON, Category } from "../../lib/db/categories";
+import { CATEGORIES, CATEGORY_EMOJI, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
 import { useFeedback } from "../../components/Feedback";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
-import { AppBackground, IconTile } from "../../components/rich";
-import { THEME } from "../../lib/theme/tokens";
+import {
+  AppBackground,
+  GlassCard,
+  IconTile,
+  NeonProgressBar,
+} from "../../components/rich";
+import { formatDateKey } from "../../lib/format";
+import { hapticSuccess } from "../../lib/haptics";
+import { TABULAR, THEME } from "../../lib/theme/tokens";
+import { mealSlotForHour } from "../../lib/insulin";
 
 type Selection = Category | "favorites" | "custom";
+
+/** Illustrated plate per meal slot, for the day's journal rows. */
+const SLOT_EMOJI = {
+  breakfast: "🍳",
+  lunch: "🥗",
+  dinner: "🍲",
+} as const;
 
 export default function FoodScreen() {
   const { t } = useTranslation();
@@ -37,6 +53,7 @@ export default function FoodScreen() {
   const [searchResults, setSearchResults] = useState<Food[]>([]);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [recent, setRecent] = useState<RecentMeal[]>([]);
+  const [todayMeals, setTodayMeals] = useState<MealEntry[]>([]);
 
   const loadAll = useCallback(async () => setAll(await listAllFoods(lang)), [lang]);
   const loadFavorites = useCallback(async () => {
@@ -50,15 +67,34 @@ export default function FoodScreen() {
     setRecent(await getRecentMeals(activeProfile.id, 8));
   }, [activeProfile]);
 
+  // Today's meals drive the hero: this tab is a meal journal first and a food
+  // catalogue second, which is the order the mockup puts them in.
+  const loadToday = useCallback(async () => {
+    if (!activeProfile) return;
+    const feed = await getJournal(activeProfile.id, lang, 120);
+    const todayKey = formatDateKey(new Date().toISOString());
+    setTodayMeals(
+      feed.filter(
+        (e): e is MealEntry =>
+          e.kind === "meal" && formatDateKey(e.logged_at) === todayKey
+      )
+    );
+  }, [activeProfile, lang]);
+
   useEffect(() => {
     loadAll();
   }, [loadAll, dataVersion]);
+
+  useEffect(() => {
+    loadToday();
+  }, [loadToday, dataVersion]);
 
   useFocusEffect(
     useCallback(() => {
       loadFavorites();
       loadRecent();
-    }, [loadFavorites, loadRecent])
+      loadToday();
+    }, [loadFavorites, loadRecent, loadToday])
   );
 
   useEffect(() => {
@@ -99,6 +135,32 @@ export default function FoodScreen() {
     }
     return [];
   }, [mode, searchResults, selected, favs, customFoods, byCat]);
+
+  /**
+   * One-tap re-log. A catalogue food reopens in the calculator (its portion is
+   * adjustable there); a typed-name meal has no catalogue row to reopen, so it
+   * is written straight back with the same name and carbs it had last time.
+   */
+  async function reLog(r: RecentMeal) {
+    if (r.food) {
+      router.push({
+        pathname: "/calculator",
+        params: { foodId: r.food.id, portion: String(r.portion_g) },
+      });
+      return;
+    }
+    if (!activeProfile) return;
+    await addMealLog({
+      profile_id: activeProfile.id,
+      food_id: null,
+      custom_food_name: r.name,
+      portion_g: r.portion_g,
+      calculated_carbs_g: r.carbs_g,
+      insulin_dose_units: 0,
+    });
+    hapticSuccess();
+    bumpData();
+  }
 
   async function onToggleFav(food: Food) {
     if (!activeProfile) return;
@@ -148,10 +210,11 @@ export default function FoodScreen() {
     if (sel === "custom") return t("food.custom");
     return t(`category.${sel}`);
   }
-  function iconFor(sel: Selection): keyof typeof Ionicons.glyphMap {
-    if (sel === "favorites") return "star";
-    if (sel === "custom") return "create-outline";
-    return CATEGORY_ICON[sel as Category] as keyof typeof Ionicons.glyphMap;
+  /** The illustrated plate the mockup puts on every food surface. */
+  function emojiFor(sel: Selection): string {
+    if (sel === "favorites") return "⭐";
+    if (sel === "custom") return "✏️";
+    return CATEGORY_EMOJI[sel as Category] ?? "🍽️";
   }
 
   // Category grid tiles: Favorites, (Custom if any), then all categories.
@@ -163,72 +226,161 @@ export default function FoodScreen() {
     ...CATEGORIES.map((c) => ({ sel: c as Selection, count: byCat[c]?.length ?? 0 })),
   ];
 
+  // Search row with the scan action inline, as the mockup's B04 search bar.
   const SearchBar = (
-    <View className="flex-row items-center rounded-2xl bg-glass border border-hair px-3.5 mb-3">
-      <Ionicons name="search" size={18} color="#71717a" />
+    <View className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 mb-3">
+      <Ionicons name="search" size={17} color={THEME.muted} />
       <TextInput
         value={query}
         onChangeText={setQuery}
         placeholder={t("food.searchPlaceholder")}
-        placeholderTextColor="#52525b"
-        className="flex-1 py-3 px-2.5 text-zinc-50 text-base"
+        placeholderTextColor="rgba(137,163,176,0.6)"
+        className="flex-1 py-3 px-2.5"
+        style={{ color: THEME.ink, fontSize: 14 }}
       />
       {query ? (
-        <Pressable hitSlop={10} onPress={() => setQuery("")}>
-          <Ionicons name="close-circle" size={18} color="#52525b" />
+        <Pressable hitSlop={10} onPress={() => setQuery("")} className="mr-1">
+          <Ionicons name="close-circle" size={18} color={THEME.muted} />
         </Pressable>
       ) : null}
+      <Pressable
+        onPress={() => router.push("/scan")}
+        hitSlop={8}
+        accessibilityLabel={t("food.scan")}
+      >
+        <View
+          className="w-7 h-7 rounded-lg items-center justify-center"
+          style={{ backgroundColor: THEME.accent }}
+        >
+          <Ionicons name="barcode-outline" size={15} color="#03181c" />
+        </View>
+      </Pressable>
     </View>
   );
 
-  const Actions = (
-    <View className="flex-row gap-2.5 mb-3">
-      <Pressable
-        onPress={() => router.push("/scan")}
-        className="flex-1 flex-row items-center justify-center rounded-2xl bg-brand active:bg-brandDark py-3"
-      >
-        <Ionicons name="barcode-outline" size={18} color="#000" />
-        <Text className="text-black font-semibold ml-2">{t("food.scan")}</Text>
-      </Pressable>
-      <Pressable
-        onPress={() => router.push("/add-food")}
-        className="flex-1 flex-row items-center justify-center rounded-2xl bg-zinc-800 active:bg-zinc-700 py-3"
-      >
-        <Ionicons name="add-circle-outline" size={18} color="#e4e4e7" />
-        <Text className="text-zinc-100 font-semibold ml-2">{t("food.addCustom")}</Text>
-      </Pressable>
-    </View>
+  const carbMax = activeProfile?.daily_carb_target_g ?? 200;
+  const carbMin = activeProfile?.daily_carb_target_min_g ?? Math.round(carbMax * 0.8);
+  const todayCarbs = Math.round(
+    todayMeals.reduce((sum, m) => sum + (m.calculated_carbs_g || 0), 0)
   );
 
   const Header = (
     <View className="px-4 pt-2">
-      <Text className="text-zinc-50 text-2xl font-bold mb-3">{t("food.title")}</Text>
+      {/* Header (mockup B03: title left, one add action right) */}
+      <View className="flex-row items-center justify-between mb-3">
+        <Text style={{ color: THEME.ink, fontSize: 24, fontWeight: "800" }}>
+          {t("food.title")}
+        </Text>
+        <Pressable
+          onPress={() => router.push("/add-food")}
+          hitSlop={8}
+          accessibilityLabel={t("food.addCustom")}
+        >
+          <IconTile icon="add" size={32} radius={10} />
+        </Pressable>
+      </View>
+
+      {/* Hero: today's carbohydrate total against the user's own range */}
+      <GlassCard glow style={{ alignItems: "center", paddingVertical: 14, marginBottom: 12 }}>
+        <Text
+          style={{
+            color: THEME.muted,
+            fontSize: 9,
+            letterSpacing: 1.3,
+            textTransform: "uppercase",
+            fontWeight: "800",
+          }}
+        >
+          {t("dashboard.dailyCarbs")}
+        </Text>
+        <View className="flex-row items-baseline mt-1" style={{ gap: 4 }}>
+          <Text
+            style={[TABULAR, { color: THEME.accent, fontSize: 34, fontWeight: "800" }]}
+          >
+            {todayCarbs}
+          </Text>
+          <Text style={{ color: THEME.muted, fontSize: 13 }}>
+            / {carbMin}-{carbMax} {t("common.grams")}
+          </Text>
+        </View>
+        <NeonProgressBar
+          value={todayCarbs}
+          max={carbMax}
+          style={{ alignSelf: "stretch", marginTop: 10 }}
+        />
+      </GlassCard>
+
+      {/* Today's meals, as the mockup's illustrated rows */}
+      {todayMeals.length > 0 ? (
+        <View className="mb-4">
+          <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
+            {t("common.today")}
+          </Text>
+          {todayMeals.map((meal) => (
+            <Pressable
+              key={meal.id}
+              onPress={() =>
+                router.push({ pathname: "/calculator", params: { mealLogId: meal.id } })
+              }
+              className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
+            >
+              <IconTile
+                emoji={SLOT_EMOJI[mealSlotForHour(new Date(meal.logged_at).getHours())]}
+                hero
+                size={36}
+                radius={12}
+                style={{ marginRight: 10 }}
+              />
+              <View className="flex-1 pr-2">
+                <Text
+                  style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
+                  numberOfLines={1}
+                >
+                  {t(`slot.${mealSlotForHour(new Date(meal.logged_at).getHours())}`)}
+                </Text>
+                <Text style={{ color: THEME.muted, fontSize: 11 }} numberOfLines={1}>
+                  {meal.display_name}
+                </Text>
+              </View>
+              <Text
+                style={[TABULAR, { color: THEME.ink, fontSize: 14, fontWeight: "800" }]}
+              >
+                {Math.round(meal.calculated_carbs_g)}
+                <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+                  {t("common.grams")}
+                </Text>
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       {SearchBar}
-      {Actions}
 
       {mode === "grid" && recent.length > 0 ? (
         <View className="mb-4">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+          <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
             {t("food.recent")}
           </Text>
           <View className="flex-row flex-wrap gap-2">
-            {recent.map((r) => (
+            {recent.map((r, i) => (
               <Pressable
-                key={r.food.id}
-                onPress={() =>
-                  router.push({
-                    pathname: "/calculator",
-                    params: { foodId: r.food.id, portion: String(r.portion_g) },
-                  })
-                }
-                className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-2 active:bg-zinc-800"
+                key={r.food ? r.food.id : `custom-${i}-${r.name}`}
+                onPress={() => reLog(r)}
+                className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-2 active:opacity-80"
               >
-                <Ionicons name="time-outline" size={14} color="#2ee6ff" />
-                <Text className="text-zinc-200 text-sm ml-1.5" numberOfLines={1}>
-                  {foodName(r.food, lang)}
+                <Text style={{ fontSize: 13 }}>
+                  {r.food ? (CATEGORY_EMOJI[r.food.category as Category] ?? "🍽️") : "🍽️"}
                 </Text>
-                <Text className="text-zinc-500 text-xs ml-1.5">
-                  {Math.round(r.portion_g)}g
+                <Text
+                  style={{ color: THEME.ink, fontSize: 13, marginLeft: 6 }}
+                  numberOfLines={1}
+                >
+                  {r.food ? foodName(r.food, lang) : r.name}
+                </Text>
+                <Text style={{ color: THEME.muted, fontSize: 11, marginLeft: 6 }}>
+                  {Math.round(r.carbs_g)}
+                  {t("common.grams")}
                 </Text>
               </Pressable>
             ))}
@@ -245,11 +397,10 @@ export default function FoodScreen() {
               className="w-[48%] rounded-2xl bg-glass border border-hair p-4 mb-3 active:opacity-80"
             >
               <IconTile
-                icon={iconFor(tile.sel)}
+                emoji={emojiFor(tile.sel)}
                 hero
                 size={40}
                 radius={12}
-                tint={tile.sel === "favorites" ? "#ffb43c" : THEME.accent}
                 style={{ marginBottom: 10 }}
               />
               <Text className="text-ink font-semibold" numberOfLines={1}>
@@ -266,12 +417,14 @@ export default function FoodScreen() {
           onPress={() => setSelected(null)}
           className="flex-row items-center mb-3 mt-1"
         >
-          <Ionicons name="chevron-back" size={20} color="#2ee6ff" />
-          <Ionicons name={iconFor(selected)} size={16} color="#2ee6ff" style={{ marginLeft: 2 }} />
-          <Text className="text-zinc-100 font-bold text-base ml-2">
+          <Ionicons name="chevron-back" size={20} color={THEME.accent} />
+          <Text style={{ fontSize: 15, marginLeft: 2 }}>{emojiFor(selected)}</Text>
+          <Text style={{ color: THEME.ink, fontWeight: "800", fontSize: 15, marginLeft: 8 }}>
             {titleFor(selected)}
           </Text>
-          <Text className="text-zinc-600 text-xs ml-2">{listData.length}</Text>
+          <Text style={{ color: THEME.muted, fontSize: 11, marginLeft: 8 }}>
+            {listData.length}
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -304,9 +457,9 @@ export default function FoodScreen() {
               <Ionicons
                 name={selected === "favorites" ? "star-outline" : "search-outline"}
                 size={40}
-                color="#3f3f46"
+                color={THEME.muted}
               />
-              <Text className="text-zinc-600 text-center mt-3 px-8">
+              <Text style={{ color: THEME.muted, textAlign: "center", marginTop: 12, paddingHorizontal: 32 }}>
                 {selected === "favorites"
                   ? t("food.noFavorites")
                   : t("food.noResults")}

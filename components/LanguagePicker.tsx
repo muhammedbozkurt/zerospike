@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import type { Lang } from "../lib/db/types";
 import { LANG_LABELS, SUPPORTED_LANGS } from "../lib/i18n";
+import { THEME } from "../lib/theme/tokens";
 
 /** Small uppercase language-code badge (no flag emojis - those render as "?"
  *  on devices without regional-indicator glyph support). */
@@ -12,12 +13,12 @@ function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
   return (
     <View
       className={`w-9 h-7 rounded-md items-center justify-center ${
-        active ? "bg-brand/20" : "bg-zinc-800"
+        active ? "bg-brand/20" : "bg-glass"
       }`}
     >
       <Text
         className={`text-[11px] font-bold ${
-          active ? "text-brand" : "text-zinc-300"
+          active ? "text-brand" : "text-mut"
         }`}
       >
         {code.toUpperCase()}
@@ -48,12 +49,12 @@ export function LanguagePicker({
         onPress={() => setOpen(true)}
         className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3"
       >
-        <Ionicons name="language-outline" size={19} color="#a1a1aa" />
-        <Text className="flex-1 ml-3 font-medium text-zinc-100">
+        <Ionicons name="language-outline" size={19} color={THEME.muted} />
+        <Text className="flex-1 ml-3 font-medium text-ink">
           {t("settings.language")}
         </Text>
-        <Text className="text-zinc-400 mr-2">{LANG_LABELS[value]}</Text>
-        <Ionicons name="chevron-down" size={16} color="#52525b" />
+        <Text className="text-mut mr-2">{LANG_LABELS[value]}</Text>
+        <Ionicons name="chevron-down" size={16} color={THEME.muted} />
       </Pressable>
 
       <Modal
@@ -70,7 +71,7 @@ export function LanguagePicker({
             className="rounded-3xl bg-glass border border-hair p-4"
             onPress={(e) => e.stopPropagation()}
           >
-            <Text className="text-zinc-50 text-lg font-bold mb-3 px-1">
+            <Text className="text-ink text-lg font-bold mb-3 px-1">
               {t("settings.language")}
             </Text>
             {SUPPORTED_LANGS.map((l) => {
@@ -82,13 +83,13 @@ export function LanguagePicker({
                   className={`flex-row items-center rounded-2xl px-3 py-2.5 mb-1.5 border ${
                     active
                       ? "bg-brand/10 border-brand/40"
-                      : "bg-zinc-800/40 border-transparent"
+                      : "bg-glass border-transparent"
                   }`}
                 >
                   <CodeBadge code={l} active={active} />
                   <Text
                     className={`flex-1 ml-3 font-medium ${
-                      active ? "text-brand" : "text-zinc-200"
+                      active ? "text-brand" : "text-ink"
                     }`}
                   >
                     {LANG_LABELS[l]}

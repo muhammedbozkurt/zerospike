@@ -11,7 +11,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { hapticSelect } from "../lib/haptics";
-import { COLORS, TABULAR } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, TABULAR, THEME } from "../lib/theme/tokens";
+import { withAlpha } from "./rich/GlassCard";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 type ButtonSize = "lg" | "md" | "sm";
@@ -29,16 +30,16 @@ interface ButtonProps {
 
 const VARIANT_BG: Record<ButtonVariant, string> = {
   primary: "bg-brand active:bg-brandDark",
-  secondary: "bg-zinc-800 active:bg-zinc-700",
-  danger: "bg-rose-500/15 active:bg-rose-500/25 border border-rose-500/40",
-  ghost: "bg-transparent active:bg-zinc-900",
+  secondary: "bg-glass active:opacity-80",
+  danger: "bg-low/15 active:opacity-80 border border-low/40",
+  ghost: "bg-transparent active:opacity-80",
 };
 
 const VARIANT_TEXT: Record<ButtonVariant, string> = {
   primary: "text-black",
-  secondary: "text-zinc-100",
-  danger: "text-rose-400",
-  ghost: "text-zinc-300",
+  secondary: "text-ink",
+  danger: "text-low",
+  ghost: "text-mut",
 };
 
 const SIZE_PAD: Record<ButtonSize, string> = {
@@ -70,7 +71,7 @@ export function Button({
       className={`flex-row items-center justify-center rounded-2xl ${SIZE_PAD[size]} ${VARIANT_BG[variant]} ${isOff ? "opacity-50" : ""} ${className}`}
     >
       {loading ? (
-        <ActivityIndicator color={variant === "primary" ? "#000" : "#a1a1aa"} />
+        <ActivityIndicator color={variant === "primary" ? "#000" : THEME.muted} />
       ) : (
         <>
           {icon ? <View className="mr-2">{icon}</View> : null}
@@ -102,14 +103,14 @@ export function Card({
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2 mt-1">
+    <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2 mt-1">
       {children}
     </Text>
   );
 }
 
 export function H1({ children }: { children: React.ReactNode }) {
-  return <Text className="text-3xl font-bold text-zinc-50">{children}</Text>;
+  return <Text className="text-3xl font-bold text-ink">{children}</Text>;
 }
 
 export function Muted({
@@ -119,7 +120,7 @@ export function Muted({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <Text className={`text-zinc-400 ${className}`}>{children}</Text>;
+  return <Text className={`text-mut ${className}`}>{children}</Text>;
 }
 
 interface FieldProps extends TextInputProps {
@@ -131,14 +132,14 @@ export function Field({ label, hint, className = "", ...rest }: FieldProps) {
   return (
     <View className="mb-3">
       {label ? (
-        <Text className="text-sm font-medium text-zinc-300 mb-1.5">{label}</Text>
+        <Text className="text-sm font-medium text-mut mb-1.5">{label}</Text>
       ) : null}
       <TextInput
-        placeholderTextColor="#52525b"
-        className={`rounded-xl bg-zinc-800/80 border border-zinc-700 px-4 py-3 text-base text-zinc-50 ${className}`}
+        placeholderTextColor={THEME.muted}
+        className={`rounded-xl bg-glass border border-hair px-4 py-3 text-base text-ink ${className}`}
         {...rest}
       />
-      {hint ? <Text className="text-xs text-zinc-500 mt-1">{hint}</Text> : null}
+      {hint ? <Text className="text-xs text-mut mt-1">{hint}</Text> : null}
     </View>
   );
 }
@@ -172,12 +173,12 @@ export function Segmented<T extends string>({
             className={`rounded-full px-3.5 py-2 border ${
               active
                 ? "bg-brand border-brand"
-                : "bg-zinc-900 border-zinc-700"
+                : "bg-glass border-hair"
             }`}
           >
             <Text
               className={`text-sm font-medium ${
-                active ? "text-black" : "text-zinc-300"
+                active ? "text-black" : "text-mut"
               }`}
             >
               {opt.label}
@@ -190,7 +191,7 @@ export function Segmented<T extends string>({
 }
 
 export function Divider() {
-  return <View className="h-px bg-zinc-800 my-1" />;
+  return <View className="h-px bg-glass my-1" />;
 }
 
 interface IconRowProps {
@@ -219,32 +220,35 @@ export function IconRow({
   value,
   right,
   onPress,
-  tint = COLORS.brand,
+  tint = THEME.accent,
   destructive = false,
 }: IconRowProps) {
   const body = (
     <>
       <View
         className="w-10 h-10 rounded-full items-center justify-center mr-3"
-        style={{ backgroundColor: destructive ? "rgba(244,63,94,0.12)" : COLORS.brandTint }}
+        style={{
+          backgroundColor: withAlpha(destructive ? GLUCOSE_RICH.low : THEME.accent, 0.12),
+        }}
       >
-        <Ionicons name={icon} size={20} color={destructive ? "#fb7185" : tint} />
+        <Ionicons name={icon} size={20} color={destructive ? GLUCOSE_RICH.low : tint} />
       </View>
       <View className="flex-1">
-        <Text className={`font-semibold ${destructive ? "text-rose-400" : "text-zinc-100"}`}>
+        <Text className="font-semibold"
+          style={{ color: destructive ? GLUCOSE_RICH.low : THEME.ink }}>
           {label}
         </Text>
-        {sublabel ? <Text className="text-zinc-500 text-xs mt-0.5">{sublabel}</Text> : null}
+        {sublabel ? <Text className="text-mut text-xs mt-0.5">{sublabel}</Text> : null}
       </View>
       {right ? (
         right
       ) : value ? (
-        <Text style={TABULAR} className="text-zinc-300 font-semibold mr-1">
+        <Text style={TABULAR} className="text-mut font-semibold mr-1">
           {value}
         </Text>
       ) : null}
       {onPress ? (
-        <Ionicons name="chevron-forward" size={18} color={COLORS.textFaint} />
+        <Ionicons name="chevron-forward" size={18} color={THEME.muted} />
       ) : null}
     </>
   );
@@ -253,7 +257,7 @@ export function IconRow({
     "rounded-2xl bg-glass border border-hair p-3.5 flex-row items-center mb-2";
   if (!onPress) return <View className={className}>{body}</View>;
   return (
-    <Pressable onPress={onPress} className={`${className} active:bg-zinc-800`}>
+    <Pressable onPress={onPress} className={`${className} active:opacity-80`}>
       {body}
     </Pressable>
   );
@@ -286,18 +290,18 @@ export function SegmentedStat({
           key={item.label}
           className="flex-1 items-center px-1"
           style={
-            i > 0 ? { borderLeftWidth: 1, borderLeftColor: COLORS.border } : undefined
+            i > 0 ? { borderLeftWidth: 1, borderLeftColor: THEME.border } : undefined
           }
         >
           <Text
-            style={[{ color: item.accent ?? COLORS.textPrimary }, TABULAR]}
+            style={[{ color: item.accent ?? THEME.ink }, TABULAR]}
             className="text-lg font-extrabold"
             numberOfLines={1}
           >
             {item.value}
           </Text>
           <Text
-            className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 mt-0.5 text-center"
+            className="text-[10px] font-semibold uppercase tracking-wide text-mut mt-0.5 text-center"
             numberOfLines={1}
           >
             {item.label}

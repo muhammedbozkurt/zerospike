@@ -8,8 +8,8 @@ import { useTranslation } from "react-i18next";
 
 import { cacheBarcodeFood, getFoodByBarcode } from "../lib/db/foods";
 import { lookupBarcode, OFF_SOURCE } from "../lib/services/openFoodFacts";
-import { Button } from "../components/ui";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { THEME, glow } from "../lib/theme/tokens";
 
 export default function ScanScreen() {
@@ -119,20 +119,35 @@ export default function ScanScreen() {
           ]}
         />
       </View>
-      <Text className="text-zinc-200 mt-5 px-10 text-center">
+      <Text
+        style={{ color: THEME.ink, marginTop: 20, textAlign: "center", paddingHorizontal: 40 }}
+      >
         {t("scan.hint")}
       </Text>
+      {/* The mockup's glass pill: the manual route out of a scan that will not
+          resolve, always visible rather than hidden behind a failed lookup. */}
+      <Pressable
+        onPress={() => router.replace({ pathname: "/add-food" })}
+        className="flex-row items-center rounded-full px-4 py-2 mt-4 active:opacity-80"
+        style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
+      >
+        <Ionicons name="create-outline" size={14} color={THEME.accent} />
+        <Text style={{ color: THEME.ink, fontSize: 12, marginLeft: 6 }}>
+          {t("scan.saveAsNew")}
+        </Text>
+      </Pressable>
     </View>
   );
 
   const CloseButton = (
     <Pressable
       onPress={() => router.back()}
-      className="absolute right-5 w-10 h-10 rounded-full bg-black/60 items-center justify-center"
+      className="absolute right-5"
       style={{ top: insets.top + 8 }}
       hitSlop={10}
+      accessibilityLabel={t("common.close")}
     >
-      <Ionicons name="close" size={22} color="#fafafa" />
+      <IconTile icon="close" size={38} radius={19} tint={THEME.ink} />
     </Pressable>
   );
 
@@ -141,7 +156,7 @@ export default function ScanScreen() {
     if (!permission) {
       return (
         <View className="flex-1 items-center justify-center">
-          <Text className="text-zinc-400">{t("scan.requesting")}</Text>
+          <Text style={{ color: THEME.muted }}>{t("scan.requesting")}</Text>
         </View>
       );
     }
@@ -152,12 +167,12 @@ export default function ScanScreen() {
     if (!permission.granted && permission.status === "undetermined") {
       return (
         <View className="flex-1 items-center justify-center px-8">
-          <Ionicons name="camera-outline" size={48} color="#3f3f46" />
-          <Text className="text-zinc-300 text-center my-4">
+          <IconTile icon="camera-outline" size={64} radius={20} hero />
+          <Text style={{ color: THEME.muted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
             {t("scan.permissionIntro")}
           </Text>
           <View className="w-full">
-            <Button label={t("common.continue")} onPress={requestPermission} />
+            <GradientCTA label={t("common.continue")} onPress={requestPermission} />
           </View>
         </View>
       );
@@ -168,16 +183,16 @@ export default function ScanScreen() {
     if (!permission.granted) {
       return (
         <View className="flex-1 items-center justify-center px-8">
-          <Ionicons name="camera-outline" size={48} color="#3f3f46" />
-          <Text className="text-zinc-300 text-center my-4">
+          <IconTile icon="camera-outline" size={64} radius={20} hero />
+          <Text style={{ color: THEME.muted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
             {t("scan.permissionDenied")}
           </Text>
           <View className="w-full">
-            <Button label={t("scan.openSettings")} onPress={() => Linking.openSettings()} />
+            <GradientCTA label={t("scan.openSettings")} onPress={() => Linking.openSettings()} />
             <View className="h-3" />
-            <Button
+            <GradientCTA
               label={t("common.close")}
-              variant="secondary"
+              variant="sub"
               onPress={() => router.back()}
             />
           </View>
@@ -189,16 +204,16 @@ export default function ScanScreen() {
     if (cameraError) {
       return (
         <View className="flex-1 items-center justify-center px-8">
-          <Ionicons name="alert-circle-outline" size={48} color="#3f3f46" />
-          <Text className="text-zinc-300 text-center my-4">
+          <IconTile icon="alert-circle-outline" size={64} radius={20} hero />
+          <Text style={{ color: THEME.muted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
             {t("scan.cameraError")}
           </Text>
           <View className="w-full">
-            <Button label={t("scan.retry")} onPress={() => setCameraError(false)} />
+            <GradientCTA label={t("scan.retry")} onPress={() => setCameraError(false)} />
             <View className="h-3" />
-            <Button
+            <GradientCTA
               label={t("common.close")}
-              variant="secondary"
+              variant="sub"
               onPress={() => router.back()}
             />
           </View>
@@ -237,7 +252,7 @@ export default function ScanScreen() {
   // The host stays mounted across every branch so the "not found" dialog is
   // drawn over the camera, inside this screen's own view controller.
   return (
-    <View className="flex-1 bg-black">
+    <AppBackground>
       {renderContent()}
 
       {searching ? (
@@ -246,14 +261,23 @@ export default function ScanScreen() {
           className="absolute left-0 right-0 items-center"
           style={{ bottom: insets.bottom + 48 }}
         >
-          <View className="flex-row items-center rounded-full bg-zinc-900/95 border border-zinc-800 px-4 py-2.5">
-            <ActivityIndicator size="small" color="#2ee6ff" />
-            <Text className="text-zinc-200 text-sm ml-2.5">{t("scan.searching")}</Text>
+          <View
+            className="flex-row items-center rounded-full px-4 py-2.5"
+            style={{
+              borderWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: "rgba(8,14,20,0.92)",
+            }}
+          >
+            <ActivityIndicator size="small" color={THEME.accent} />
+            <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 10 }}>
+              {t("scan.searching")}
+            </Text>
           </View>
         </View>
       ) : null}
 
       <FeedbackHost />
-    </View>
+    </AppBackground>
   );
 }

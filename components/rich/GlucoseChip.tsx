@@ -3,16 +3,10 @@ import { Text, View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 
 import type { GlucoseStatus } from "../../lib/glucose";
-import { GLUCOSE_RICH, TABULAR, glow } from "../../lib/theme/tokens";
+import { RICH_BY_STATUS, TABULAR, glow } from "../../lib/theme/tokens";
 import { withAlpha } from "./GlassCard";
 
-/** Map the app's GlucoseStatus onto the mockup's four-state rich palette. */
-const STATUS_RICH: Record<GlucoseStatus, string> = {
-  low: GLUCOSE_RICH.low,
-  normal: GLUCOSE_RICH.target,
-  elevated: GLUCOSE_RICH.high,
-  high: GLUCOSE_RICH.veryHigh,
-};
+
 
 interface GlucoseChipProps {
   /** Reading value string (already unit-formatted), shown before the label. */
@@ -32,7 +26,7 @@ interface GlucoseChipProps {
  * report). The mockup's `.gc` element.
  */
 export function GlucoseChip({ value, label, status, dot = true, style }: GlucoseChipProps) {
-  const color = STATUS_RICH[status];
+  const color = RICH_BY_STATUS[status];
   return (
     <View
       style={[

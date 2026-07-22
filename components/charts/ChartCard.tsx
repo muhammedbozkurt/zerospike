@@ -51,11 +51,11 @@ export function ChartCard({
   return (
     <View className="rounded-2xl bg-glass border border-hair p-4 mt-3">
       <View className="flex-row items-start">
-        <Text className="text-zinc-300 font-semibold flex-1 pr-2">{title}</Text>
+        <Text className="text-mut font-semibold flex-1 pr-2">{title}</Text>
         {accessory}
       </View>
       {subtitle ? (
-        <Text className="text-zinc-500 text-xs mt-1 leading-4">{subtitle}</Text>
+        <Text className="text-mut text-xs mt-1 leading-4">{subtitle}</Text>
       ) : null}
 
       {emptyNote ? (
@@ -64,7 +64,7 @@ export function ChartCard({
           style={{ minHeight: height / 2 }}
         >
           <Ionicons name="hourglass-outline" size={16} color={CHART.axis} />
-          <Text className="text-zinc-500 text-xs ml-2 flex-1 leading-4">
+          <Text className="text-mut text-xs ml-2 flex-1 leading-4">
             {emptyNote}
           </Text>
         </View>
@@ -83,7 +83,7 @@ export function ChartCard({
                       opacity: entry.faded ? 0.35 : 1,
                     }}
                   />
-                  <Text className="text-zinc-400 text-[11px]">{entry.label}</Text>
+                  <Text className="text-mut text-[11px]">{entry.label}</Text>
                 </View>
               ))}
             </View>
@@ -101,7 +101,7 @@ export function ChartCard({
           </View>
 
           {caption ? (
-            <Text className="text-zinc-500 text-[11px] leading-4 mt-2.5">
+            <Text className="text-mut text-[11px] leading-4 mt-2.5">
               {caption}
             </Text>
           ) : null}
