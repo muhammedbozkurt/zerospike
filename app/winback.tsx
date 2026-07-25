@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Pressable, Text, View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -101,7 +101,7 @@ export default function WinbackScreen() {
     <AppBackground>
       <View
         className="flex-1"
-        style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }}
+        style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top + 8, paddingBottom: insets.bottom + 16 }}
       >
         <View className="flex-row justify-end px-4">
           <Pressable

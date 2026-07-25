@@ -58,7 +58,8 @@ export interface Insights {
   basalPct: number | null;
   mostUsedSite: InjectionSite | null;
   mostUsedSiteCount: number;
-  /** All eight sites with their use count in the window (descriptive). */
+  /** Every injection site with its use count in the window (descriptive). The
+   *  set grew from eight to twelve in schema v9 (abdomen quadrants). */
   siteDistribution: SiteCount[];
 }
 
@@ -88,6 +89,27 @@ export const INSIGHTS_WINDOW_DAYS = 30;
 export const INSIGHTS_WINDOWS = [7, 30, 90] as const;
 /** The only window a free user sees fully. */
 export const FREE_INSIGHTS_WINDOW = 7;
+
+/**
+ * An explicit date range (epoch ms), for the custom "from-to" window. The whole
+ * insights/report/export stack can take EITHER a windowDays shortcut OR a range;
+ * this is the one place the two meet. `rangeFromWindow` is the single conversion
+ * from the [7,30,90] shortcuts, so a shortcut and a hand-picked range flow
+ * through identical code.
+ */
+export interface DateRange {
+  start: number;
+  end: number;
+}
+
+export function rangeFromWindow(windowDays: number, now = Date.now()): DateRange {
+  return { start: now - windowDays * 86_400_000, end: now };
+}
+
+/** Whole days a range spans (inclusive), for the shortcut-shaped helpers. */
+export function rangeWindowDays(range: DateRange): number {
+  return Math.max(1, Math.ceil((range.end - range.start) / 86_400_000));
+}
 
 /**
  * Whether a reading set is a defensible basis for GMI: enough readings, spread
@@ -131,13 +153,21 @@ export function computeInsights(
   meals: MealLog[],
   injections: Injection[],
   windowDays = INSIGHTS_WINDOW_DAYS,
-  band: TirBand = DEFAULT_TIR_BAND
+  band: TirBand = DEFAULT_TIR_BAND,
+  /** Optional explicit range. When given, the window is [start, end] (two-sided,
+   *  so a range ending in the past is honoured); otherwise it is the last
+   *  `windowDays` up to now - byte-identical to the pre-R7.2 behaviour. */
+  range?: DateRange
 ): Insights {
-  const since = Date.now() - windowDays * 86_400_000;
-  const within = (iso: string) => {
-    const t = new Date(iso).getTime();
-    return !Number.isNaN(t) && t >= since;
-  };
+  const within = range
+    ? (iso: string) => {
+        const t = new Date(iso).getTime();
+        return !Number.isNaN(t) && t >= range.start && t <= range.end;
+      }
+    : (iso: string) => {
+        const t = new Date(iso).getTime();
+        return !Number.isNaN(t) && t >= Date.now() - windowDays * 86_400_000;
+      };
 
   const s = sugar.filter((x) => within(x.logged_at));
   const m = meals.filter((x) => within(x.logged_at));
@@ -269,10 +299,9 @@ export function computeInsights(
 export function trendVsPrevious(
   sugar: SugarLog[],
   windowDays: number,
-  band: TirBand = DEFAULT_TIR_BAND
+  band: TirBand = DEFAULT_TIR_BAND,
+  range?: DateRange
 ): { avgDelta: number | null; tirDelta: number | null } {
-  const now = Date.now();
-  const span = windowDays * 86_400_000;
   const bucket = (lo: number, hi: number) =>
     sugar
       .filter((x) => {
@@ -280,8 +309,19 @@ export function trendVsPrevious(
         return !Number.isNaN(t) && t >= lo && t < hi;
       })
       .map((x) => x.glucose_level_mgdl);
-  const cur = bucket(now - span, now + 1);
-  const prev = bucket(now - 2 * span, now - span);
+  let cur: number[];
+  let prev: number[];
+  if (range) {
+    // The previous window is the equal-length span immediately before it.
+    const span = range.end - range.start;
+    cur = bucket(range.start, range.end + 1);
+    prev = bucket(range.start - span, range.start);
+  } else {
+    const now = Date.now();
+    const span = windowDays * 86_400_000;
+    cur = bucket(now - span, now + 1);
+    prev = bucket(now - 2 * span, now - span);
+  }
   const avgOf = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
   const tirOf = (a: number[]) =>
     a.length
@@ -331,10 +371,14 @@ function dayKey(d: Date): string {
  */
 export function dailyAverages(
   sugar: SugarLog[],
-  windowDays: number
+  windowDays: number,
+  range?: DateRange
 ): DailyAverage[] {
-  const firstDate = startOfDay(new Date());
-  firstDate.setDate(firstDate.getDate() - (windowDays - 1));
+  // For a custom range the axis starts on the range's first day and spans its
+  // own length; otherwise it is the last `windowDays` ending today (unchanged).
+  const daysCount = range ? rangeWindowDays(range) : windowDays;
+  const firstDate = range ? startOfDay(new Date(range.start)) : startOfDay(new Date());
+  if (!range) firstDate.setDate(firstDate.getDate() - (windowDays - 1));
   const first = firstDate.getTime();
 
   const buckets = new Map<number, number[]>();
@@ -343,7 +387,7 @@ export function dailyAverages(
     if (Number.isNaN(d.getTime())) continue;
     // Round, because a day spanning a clock change is 23 or 25 hours long.
     const offset = Math.round((startOfDay(d).getTime() - first) / 86_400_000);
-    if (offset < 0 || offset > windowDays - 1) continue;
+    if (offset < 0 || offset > daysCount - 1) continue;
     const bucket = buckets.get(offset);
     if (bucket) bucket.push(x.glucose_level_mgdl);
     else buckets.set(offset, [x.glucose_level_mgdl]);
@@ -375,13 +419,15 @@ export interface WindowPercentiles {
 /** Overall glucose percentiles across the window (the AGP band numeric summary). */
 export function windowPercentiles(
   sugar: SugarLog[],
-  windowDays: number
+  windowDays: number,
+  range?: DateRange
 ): WindowPercentiles | null {
   const since = Date.now() - windowDays * 86_400_000;
   const vals = sugar
     .filter((x) => {
       const t = new Date(x.logged_at).getTime();
-      return !Number.isNaN(t) && t >= since;
+      if (Number.isNaN(t)) return false;
+      return range ? t >= range.start && t <= range.end : t >= since;
     })
     .map((x) => x.glucose_level_mgdl)
     .sort((a, b) => a - b);
@@ -498,12 +544,14 @@ export type InsightPattern =
  */
 export function derivePatterns(
   sugar: SugarLog[],
-  windowDays = INSIGHTS_WINDOW_DAYS
+  windowDays = INSIGHTS_WINDOW_DAYS,
+  range?: DateRange
 ): InsightPattern[] {
   const since = Date.now() - windowDays * 86_400_000;
   const within = (iso: string) => {
     const t = new Date(iso).getTime();
-    return !Number.isNaN(t) && t >= since;
+    if (Number.isNaN(t)) return false;
+    return range ? t >= range.start && t <= range.end : t >= since;
   };
   const readings = sugar.filter((x) => within(x.logged_at));
   const levels = readings.map((x) => x.glucose_level_mgdl);

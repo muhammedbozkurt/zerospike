@@ -1,10 +1,16 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import i18n, { currentLang } from "../i18n";
 import { getJournal } from "../db/journal";
 import { listSugarLogs, listMealLogs } from "../db/logs";
 import { getInjections } from "../db/injections";
-import { computeInsights } from "../insights";
+import {
+  computeInsights,
+  rangeFromWindow,
+  rangeWindowDays,
+  type DateRange,
+} from "../insights";
 import { computeAgp, type Agp } from "../agp";
 import {
   buildAgpGeometry,
@@ -13,8 +19,16 @@ import {
   type ChartBox,
   type TargetBand,
 } from "../agpChart";
-import { formatGlucose, glucoseUnitLabel } from "../glucose";
-import { num } from "../format";
+import {
+  formatGlucose,
+  glucoseUnitLabel,
+  hypoThreshold,
+  VERY_HIGH_MGDL,
+  LOW_FOLLOWUP_MINUTES,
+} from "../glucose";
+import { num, formatDate, formatTime, formatDateKey } from "../format";
+import { GLUCOSE_COLORS, GLUCOSE_VERY_LOW } from "../theme/tokens";
+import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
 import type { ExportResult } from "./export";
@@ -35,16 +49,23 @@ function two(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
+// Dates/times follow the active locale (Intl), like the rest of the app.
 function fmtDateTime(iso: string): { date: string; time: string } {
-  const d = new Date(iso);
-  return {
-    date: `${two(d.getDate())}.${two(d.getMonth() + 1)}.${d.getFullYear()}`,
-    time: `${two(d.getHours())}:${two(d.getMinutes())}`,
-  };
+  return { date: formatDate(iso), time: formatTime(iso) };
 }
 
 function fmtDay(d: Date): string {
-  return `${two(d.getDate())}.${two(d.getMonth() + 1)}.${d.getFullYear()}`;
+  return formatDate(d.toISOString());
+}
+
+/** A five-band time-in-range breakdown (reading counts), for the stacked bar. */
+export interface TirBreakdown {
+  veryLow: number;
+  low: number;
+  target: number;
+  high: number;
+  veryHigh: number;
+  total: number;
 }
 
 /** Minimal HTML escaping for any user-entered text injected into the report. */
@@ -118,11 +139,148 @@ function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
   );
 }
 
+type Tf = (k: string, o?: Record<string, unknown>) => string;
+
+/** Report colour for a reading, five-band, against the profile's range. */
+function dotColor(v: number, band: TargetBand): string {
+  if (v >= VERY_HIGH_MGDL) return GLUCOSE_COLORS.veryHigh;
+  if (v < 54) return GLUCOSE_VERY_LOW;
+  if (v < band.low) return GLUCOSE_COLORS.low;
+  if (v <= band.high) return GLUCOSE_COLORS.normal;
+  return GLUCOSE_COLORS.elevated;
+}
+
+/**
+ * The daily time-line: one horizontal band per day, a 00-24 axis with the day's
+ * glucose readings as colour-coded dots, meals as small triangles above and
+ * doses as dots below, and the day's avg + TIR at the band head. `page-break-
+ * inside: avoid` on each band keeps a day from splitting across a page.
+ */
+function buildTimeline(
+  sugar: SugarLog[],
+  meals: MealLog[],
+  injections: Injection[],
+  band: TargetBand,
+  unit: GlucoseUnit,
+  tf: Tf
+): string {
+  type Day = { readings: SugarLog[]; meals: MealLog[]; doses: Injection[] };
+  const dayMap = new Map<string, Day>();
+  const ensure = (iso: string): Day => {
+    const k = formatDateKey(iso);
+    let d = dayMap.get(k);
+    if (!d) {
+      d = { readings: [], meals: [], doses: [] };
+      dayMap.set(k, d);
+    }
+    return d;
+  };
+  for (const s of sugar) ensure(s.logged_at).readings.push(s);
+  for (const m of meals) ensure(m.logged_at).meals.push(m);
+  for (const i of injections) if (i.dose_units && i.dose_units > 0) ensure(i.logged_at).doses.push(i);
+  const dayKeys = Array.from(dayMap.keys()).sort().reverse();
+  if (dayKeys.length === 0) return "";
+
+  const W = 540;
+  const padL = 6;
+  const padR = 6;
+  const span = W - padL - padR;
+  const xFor = (iso: string) => {
+    const d = new Date(iso);
+    const h = d.getHours() + d.getMinutes() / 60;
+    return padL + (h / 24) * span;
+  };
+  const grid = [6, 12, 18]
+    .map((h) => `<line x1="${(padL + (h / 24) * span).toFixed(1)}" y1="4" x2="${(padL + (h / 24) * span).toFixed(1)}" y2="26" stroke="#f4f4f5"/>`)
+    .join("");
+  const u = glucoseUnitLabel(unit);
+
+  const bands = dayKeys
+    .map((k) => {
+      const g = dayMap.get(k)!;
+      const levels = g.readings.map((r) => r.glucose_level_mgdl);
+      const avg = levels.length ? Math.round(levels.reduce((a, b) => a + b, 0) / levels.length) : null;
+      const inR = levels.filter((v) => v >= band.low && v <= band.high).length;
+      const tir = levels.length ? Math.round((inR / levels.length) * 100) : null;
+      const dots = g.readings
+        .map((r) => `<circle cx="${xFor(r.logged_at).toFixed(1)}" cy="15" r="3" fill="${dotColor(r.glucose_level_mgdl, band)}"/>`)
+        .join("");
+      const mealMarks = g.meals
+        .map((m) => `<text x="${xFor(m.logged_at).toFixed(1)}" y="7" font-size="7" text-anchor="middle" fill="${BRAND}">&#9650;</text>`)
+        .join("");
+      const doseMarks = g.doses
+        .map((i) => `<circle cx="${xFor(i.logged_at).toFixed(1)}" cy="27" r="1.8" fill="#2563eb"/>`)
+        .join("");
+      const summary = avg != null ? `${esc(formatGlucose(avg, unit))} ${u} · TIR ${tir}%` : "-";
+      return (
+        `<div class="band"><div class="bandhead"><span class="bd">${esc(fmtDay(new Date(`${k}T12:00:00`)))}</span><span class="bs">${summary}</span></div>` +
+        `<svg viewBox="0 0 ${W} 30" width="100%" height="30" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
+        `<line x1="${padL}" y1="15" x2="${W - padR}" y2="15" stroke="#eee"/>${grid}${mealMarks}${dots}${doseMarks}</svg></div>`
+      );
+    })
+    .join("");
+  return `<h2 class="pbreak">${tf("report.timelineTitle")}</h2><div class="cap">${tf("report.timelineCaption")}</div>${bands}`;
+}
+
+/** The events page: low events (+ follow-up), the highest five readings, and a
+ *  basal/bolus dose summary bar. */
+function buildEvents(
+  sugar: SugarLog[],
+  insights: ReturnType<typeof computeInsights>,
+  hypoThresh: number,
+  unit: GlucoseUnit,
+  tf: Tf
+): string {
+  const u = glucoseUnitLabel(unit);
+  const byNewest = [...sugar].sort((a, b) => (a.logged_at < b.logged_at ? 1 : -1));
+  const hypos = byNewest.filter((s) => s.glucose_level_mgdl < hypoThresh);
+  const followUp = (s: SugarLog) =>
+    sugar.find((x) => {
+      const dt = (new Date(x.logged_at).getTime() - new Date(s.logged_at).getTime()) / 60000;
+      return dt > 0 && dt <= LOW_FOLLOWUP_MINUTES;
+    });
+  const hypoRows = hypos
+    .slice(0, 20)
+    .map((s) => {
+      const { date, time } = fmtDateTime(s.logged_at);
+      const f = followUp(s);
+      return `<tr><td>${esc(date)} ${esc(time)}</td><td>${esc(formatGlucose(s.glucose_level_mgdl, unit))} ${u}</td><td>${f ? `${esc(formatGlucose(f.glucose_level_mgdl, unit))} ${u}` : "-"}</td></tr>`;
+    })
+    .join("");
+  const top5 = [...sugar]
+    .sort((a, b) => b.glucose_level_mgdl - a.glucose_level_mgdl)
+    .slice(0, 5)
+    .map((s) => {
+      const { date, time } = fmtDateTime(s.logged_at);
+      return `<tr><td>${esc(date)} ${esc(time)}</td><td>${esc(formatGlucose(s.glucose_level_mgdl, unit))} ${u}</td></tr>`;
+    })
+    .join("");
+  const bb = insights.basalUnits + insights.bolusUnits;
+  const basalPct = bb > 0 ? Math.round((insights.basalUnits / bb) * 100) : 0;
+  const doseBar =
+    bb > 0
+      ? `<div class="tirbar"><div style="width:${basalPct}%;background:${BRAND}"></div><div style="width:${100 - basalPct}%;background:#f59e0b"></div></div>` +
+        `<div class="tirleg"><span><i style="background:${BRAND}"></i>${tf("insights.basal")} ${esc(num(Math.round(insights.basalUnits * 10) / 10))}</span><span><i style="background:#f59e0b"></i>${tf("insights.bolus")} ${esc(num(Math.round(insights.bolusUnits * 10) / 10))}</span></div>`
+      : "";
+  const hypoSection = hypoRows
+    ? `<h3 class="evh">${tf("report.hypoEvents")}</h3><table><thead><tr><th>${tf("export.colDate")}</th><th>${tf("export.colGlucose")}</th><th>${tf("report.followUp", { n: LOW_FOLLOWUP_MINUTES })}</th></tr></thead><tbody>${hypoRows}</tbody></table>`
+    : "";
+  const topSection = top5
+    ? `<h3 class="evh">${tf("report.topReadings")}</h3><table><tbody>${top5}</tbody></table>`
+    : "";
+  const doseSection = doseBar ? `<h3 class="evh">${tf("report.doseSummary")}</h3>${doseBar}` : "";
+  if (!hypoSection && !topSection && !doseSection) return "";
+  return `<h2 class="pbreak">${tf("report.eventsTitle")}</h2>${hypoSection}${topSection}${doseSection}`;
+}
+
 function buildHtml(
   profile: UserProfile,
-  windowDays: number,
+  range: DateRange,
   insights: ReturnType<typeof computeInsights>,
+  timelineHtml: string,
+  eventsHtml: string,
   agpSvg: string,
+  tir: TirBreakdown,
   glucose: { date: string; time: string; value: string; period: string }[],
   injections: { date: string; time: string; site: string; dose: string }[],
   meals: { date: string; time: string; food: string; carbs: string; dose: string }[]
@@ -133,8 +291,11 @@ function buildHtml(
   const reportBand = targetBandFor(profile);
   const fmtG = (mgdl: number | null) =>
     mgdl == null ? "-" : `${formatGlucose(mgdl, unit)} ${u}`;
-  const now = new Date();
-  const start = new Date(now.getTime() - windowDays * 86_400_000);
+  // Cover shows the actual range; "generated" is the real current moment.
+  const start = new Date(range.start);
+  const rangeEnd = new Date(range.end);
+  const windowDays = rangeWindowDays(range);
+  const generated = new Date();
 
   const t = (k: string, o?: Record<string, unknown>) => esc(i18n.t(k, o));
 
@@ -167,6 +328,47 @@ function buildHtml(
           .join("")}
       </tbody>
     </table>`;
+
+  // KPI cards: the headline metrics as colour-accented boxes (mySugr-style).
+  const kpis: { label: string; value: string; color: string }[] = [
+    { label: t("insights.avgGlucose"), value: fmtG(insights.avgGlucose), color: BRAND },
+    { label: t("insights.gmi"), value: insights.gmi == null ? "-" : `${insights.gmi.toFixed(1)} %`, color: BRAND },
+    { label: t("insights.timeInRange"), value: insights.inRangePct == null ? "-" : `${Math.round(insights.inRangePct)} %`, color: GLUCOSE_COLORS.normal },
+    { label: t("insights.variability"), value: fmtG(insights.glucoseSD), color: BRAND },
+    { label: t("insights.cv"), value: insights.glucoseCV == null ? "-" : `${Math.round(insights.glucoseCV)} %`, color: BRAND },
+    { label: t("insights.lows"), value: String(insights.hypoCount), color: GLUCOSE_COLORS.low },
+  ];
+  const kpiCards = `<div class="kpis">${kpis
+    .map(
+      (k) =>
+        `<div class="kpi" style="border-top-color:${k.color}"><div class="kv">${k.value}</div><div class="kl">${k.label}</div></div>`
+    )
+    .join("")}</div>`;
+
+  // TIR stacked bar: veryLow / low / target / high / veryHigh, GLUCOSE colours.
+  const tirTotal = Math.max(1, tir.total);
+  const tirSegs: { n: number; color: string; label: string }[] = [
+    { n: tir.veryLow, color: GLUCOSE_VERY_LOW, label: t("insights.veryLow") },
+    { n: tir.low, color: GLUCOSE_COLORS.low, label: t("insights.low") },
+    { n: tir.target, color: GLUCOSE_COLORS.normal, label: t("insights.inRange") },
+    { n: tir.high, color: GLUCOSE_COLORS.elevated, label: t("insights.high") },
+    { n: tir.veryHigh, color: GLUCOSE_COLORS.veryHigh, label: t("insights.veryHigh") },
+  ];
+  const tirBar =
+    tir.total > 0
+      ? `<div class="tirbar">${tirSegs
+          .map(
+            (s) =>
+              `<div style="width:${((s.n / tirTotal) * 100).toFixed(1)}%;background:${s.color}"></div>`
+          )
+          .join("")}</div>` +
+        `<div class="tirleg">${tirSegs
+          .map(
+            (s) =>
+              `<span><i style="background:${s.color}"></i>${s.label} ${Math.round((s.n / tirTotal) * 100)}%</span>`
+          )
+          .join("")}</div>`
+      : "";
 
   const section = (title: string, head: string, body: string) =>
     body
@@ -214,35 +416,62 @@ function buildHtml(
   @page { size: A4; margin: 24px; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: #111; font-size: 12px; margin: 0; }
-  .head { border-bottom: 3px solid ${BRAND}; padding-bottom: 10px; margin-bottom: 16px; }
-  .head h1 { color: ${BRAND}; font-size: 20px; margin: 0 0 6px; }
-  .meta { color: #444; font-size: 11px; line-height: 1.5; }
-  .meta b { color: #111; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px; }
+  .head .brand { color: ${BRAND}; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+  .head .title { font-size: 25px; font-weight: 800; color: #111; margin-top: 3px; }
+  .head .info { text-align: right; color: #555; font-size: 11px; line-height: 1.7; }
+  .head .info b { color: #222; font-weight: 600; }
+  .headsep { border: none; border-top: 2px solid ${BRAND}; margin: 6px 0 20px; }
   h2 { font-size: 13px; margin: 18px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid #eee; vertical-align: top; }
-  th { background: #f4f4f5; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: #555; }
+  /* No uppercasing: Turkish 'i' upcases wrong under CSS text-transform. */
+  th { background: #f4f4f5; font-size: 10px; letter-spacing: .03em; color: #555; }
   td.k { color: #555; width: 55%; }
   td.v { font-weight: 600; text-align: right; }
   .foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid #ddd; color: #777; font-size: 10px; line-height: 1.5; }
   .cap { color: #777; font-size: 10px; margin: 4px 0 2px; }
+  .kpis { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+  .kpi { flex: 1 1 28%; min-width: 120px; border: 1px solid #eee; border-top: 4px solid ${BRAND}; border-radius: 8px; padding: 11px 13px; background: #fafafa; }
+  .kpi .kv { font-size: 23px; font-weight: 800; color: #111; }
+  .kpi .kl { font-size: 11px; color: #666; margin-top: 3px; }
+  .tirbar { display: flex; width: 100%; height: 18px; border-radius: 5px; overflow: hidden; margin: 4px 0 6px; }
+  .tirleg { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: #555; }
+  .tirleg span { display: inline-flex; align-items: center; }
+  .tirleg i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 4px; }
+  .band { page-break-inside: avoid; margin-bottom: 5px; }
+  .bandhead { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
+  .bandhead .bd { font-weight: 700; color: #222; }
+  .pbreak { page-break-before: always; }
+  .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }
 </style>
 </head>
 <body>
   <div class="head">
-    <h1>${t("export.title")}</h1>
-    <div class="meta">
+    <div>
+      <div class="brand">zerospike</div>
+      <div class="title">${t("report.reportTitle")}</div>
+    </div>
+    <div class="info">
       <div><b>${t("report.profile")}:</b> ${esc(profile.name)}</div>
-      <div><b>${t("settings.glucoseUnit")}:</b> ${esc(u)}</div>
-      <div><b>${t("report.dateRange")}:</b> ${fmtDay(start)} - ${fmtDay(now)} (${t("insights.windowDays", { n: windowDays })})</div>
-      <div><b>${t("report.generated")}:</b> ${fmtDay(now)} ${two(now.getHours())}:${two(now.getMinutes())}</div>
+      <div><b>${t("report.dateRange")}:</b> ${fmtDay(start)} - ${fmtDay(rangeEnd)}</div>
+      <div><b>${t("report.generated")}:</b> ${fmtDay(generated)} ${two(generated.getHours())}:${two(generated.getMinutes())}</div>
     </div>
   </div>
+  <hr class="headsep" />
+
+  <h2>${t("report.summary")}</h2>
+  ${kpiCards}
+  ${tirBar ? `<div class="cap">${t("insights.timeInRange")}</div>${tirBar}` : ""}
+
+  ${agpSvg ? `<h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(reportBand.low, unit)), high: esc(formatGlucose(reportBand.high, unit)) })}</div>` : ""}
 
   <h2>${t("report.summary")}</h2>
   ${summaryTable}
 
-  ${agpSvg ? `<h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(reportBand.low, unit)), high: esc(formatGlucose(reportBand.high, unit)) })}</div>` : ""}
+  ${timelineHtml}
+
+  ${eventsHtml}
 
   ${glucoseSection}
   ${injectionSection}
@@ -259,11 +488,21 @@ function buildHtml(
 
 export async function exportLogsPdf(
   profile: UserProfile,
-  windowDays: number
+  windowDays: number,
+  /** Optional explicit range; when given it overrides the windowDays shortcut. */
+  range?: DateRange,
+  /** Store-screenshot only: skip the share sheet and (optionally) copy the PDF to
+   *  a deterministic path so the capture pipeline can pull it headlessly. */
+  opts?: { skipShare?: boolean; copyTo?: string }
 ): Promise<ExportResult> {
   const lang = currentLang();
-  const since = Date.now() - windowDays * 86_400_000;
-  const within = (iso: string) => new Date(iso).getTime() >= since;
+  // One conversion: a shortcut window OR a hand-picked range, same downstream.
+  const r = range ?? rangeFromWindow(windowDays);
+  const effectiveDays = rangeWindowDays(r);
+  const within = (iso: string) => {
+    const ts = new Date(iso).getTime();
+    return ts >= r.start && ts <= r.end;
+  };
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
 
   const [sugar, mealsRaw, inj, entries] = await Promise.all([
@@ -275,11 +514,27 @@ export async function exportLogsPdf(
 
   // The report measures against the profile's own range, exactly like the app.
   const reportBand = targetBandFor(profile);
-  const insights = computeInsights(sugar, mealsRaw, inj, windowDays, {
+  const insights = computeInsights(sugar, mealsRaw, inj, effectiveDays, {
     low: reportBand.low,
     high: reportBand.high,
-  });
-  const agpSvg = buildAgpSvg(computeAgp(sugar, windowDays), unit, reportBand);
+  }, r);
+  // AGP over exactly the range's readings (pre-filtered; the huge window keeps
+  // computeAgp from re-windowing them).
+  const sugarInRange = sugar.filter((sg) => within(sg.logged_at));
+  const agpSvg = buildAgpSvg(computeAgp(sugarInRange, 1_000_000), unit, reportBand);
+
+  // Five-band TIR breakdown over the window, against the profile's own range.
+  const tir: TirBreakdown = { veryLow: 0, low: 0, target: 0, high: 0, veryHigh: 0, total: 0 };
+  for (const s of sugar) {
+    if (!within(s.logged_at)) continue;
+    const v = s.glucose_level_mgdl;
+    tir.total++;
+    if (v >= 250) tir.veryHigh++;
+    else if (v < 54) tir.veryLow++;
+    else if (v < reportBand.low) tir.low++;
+    else if (v <= reportBand.high) tir.target++;
+    else tir.high++;
+  }
 
   // Tables are built from the journal feed (resolved names) within the window,
   // oldest-first for natural reading order.
@@ -327,9 +582,44 @@ export async function exportLogsPdf(
       };
     });
 
-  const html = buildHtml(profile, windowDays, insights, agpSvg, glucose, injections, meals);
+  // Daily timeline + events, from the raw in-range rows.
+  const tf: Tf = (k, o) => esc(i18n.t(k, o));
+  const mealsInRange = mealsRaw.filter((mm) => within(mm.logged_at));
+  const injInRange = inj.filter((ii) => within(ii.logged_at));
+  const timelineHtml = buildTimeline(sugarInRange, mealsInRange, injInRange, reportBand, unit, tf);
+  const eventsHtml = buildEvents(sugarInRange, insights, hypoThreshold(profile), unit, tf);
+
+  const html = buildHtml(
+    profile,
+    r,
+    insights,
+    timelineHtml,
+    eventsHtml,
+    agpSvg,
+    tir,
+    glucose,
+    injections,
+    meals
+  );
 
   const { uri } = await Print.printToFileAsync({ html });
+
+  // Store-screenshot path: copy to a deterministic location and skip the share
+  // sheet, so the capture pipeline can pull the PDF without any UI interaction.
+  if (opts?.skipShare) {
+    let finalUri = uri;
+    if (opts.copyTo) {
+      try {
+        await FileSystem.deleteAsync(opts.copyTo, { idempotent: true });
+        await FileSystem.copyAsync({ from: uri, to: opts.copyTo });
+        finalUri = opts.copyTo;
+      } catch {
+        /* fall back to the print-cache uri */
+      }
+    }
+    logEvent("report_generated", { window: windowDays });
+    return { ok: true, uri: finalUri, count: inWindow.length };
+  }
 
   if (!(await Sharing.isAvailableAsync())) {
     return { ok: false, reason: "sharingUnavailable" };

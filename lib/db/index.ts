@@ -13,6 +13,15 @@ import {
   V8_PROFILE_COLUMNS,
   V8_RENAME,
 } from "./v8Sql";
+import {
+  V9_COPY_INJECTIONS,
+  V9_CREATE_INJECTIONS,
+  V9_DROP_OLD,
+  V9_DROP_SCRATCH,
+  V9_INDEX,
+  V9_RENAME,
+} from "./v9Sql";
+import { V10_ADD_HK_UUID } from "./v10Sql";
 import i18n from "../i18n";
 
 /** Localized default profile name (resolved at creation time / device language). */
@@ -21,7 +30,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 10;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -129,6 +138,19 @@ export async function initDatabase(): Promise<void> {
     await migrateToV8(db);
   }
 
+  // v8 → v9: widen the injection site set (abdomen split into four quadrants).
+  // Rebuilds injection_logs with the new CHECK; old abdomen_left/right rows stay
+  // valid and are copied verbatim (see migrateToV9 + v9Sql).
+  if (currentVersion >= 1 && currentVersion < 9) {
+    await migrateToV9(db);
+  }
+
+  // v9 → v10: add the nullable sugar_logs.healthkit_uuid column (Apple Health
+  // write-back mirror). A plain ADD COLUMN - no rebuild, cannot lose a row.
+  if (currentVersion >= 1 && currentVersion < 10) {
+    await migrateToV10(db);
+  }
+
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
 
   // Lift the pre-v8 onboarding answers onto the profile (once, best-effort).
@@ -203,6 +225,46 @@ async function migrateToV8(db: SQLite.SQLiteDatabase): Promise<void> {
   }
 }
 
+/**
+ * The v8 → v9 migration: rebuild injection_logs with the widened site CHECK (the
+ * abdomen quadrants). Mirrors the v8 rebuild - one transaction, foreign keys off
+ * for the copy, every row preserved verbatim. The OLD abdomen_left/right values
+ * are still in the CHECK, so legacy rows are copied unchanged (never rewritten
+ * into a quadrant). Statements live in ./v9Sql so the migration test runs the
+ * real SQL.
+ */
+async function migrateToV9(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync("PRAGMA foreign_keys = OFF;");
+  try {
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(V9_DROP_SCRATCH);
+      await db.execAsync(V9_CREATE_INJECTIONS);
+      await db.execAsync(V9_COPY_INJECTIONS);
+      await db.execAsync(V9_DROP_OLD);
+      await db.execAsync(V9_RENAME);
+      await db.execAsync(V9_INDEX);
+    });
+  } finally {
+    await db.execAsync("PRAGMA foreign_keys = ON;");
+  }
+}
+
+/**
+ * The v9 → v10 migration: add the nullable sugar_logs.healthkit_uuid column that
+ * records the Apple Health sample UUID of a mirrored manual reading. A single
+ * ADD COLUMN, guarded so a re-run (older build already at v10, or the column
+ * present from a fresh v10 schema) is a no-op rather than a "duplicate column"
+ * throw that would leave user_version stuck. No transaction is needed for one
+ * ALTER, and no row can be lost.
+ */
+async function migrateToV10(db: SQLite.SQLiteDatabase): Promise<void> {
+  const cols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(sugar_logs);"
+  );
+  if (cols.some((c) => c.name === "healthkit_uuid")) return;
+  await db.execAsync(V10_ADD_HK_UUID);
+}
+
 async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS user_profiles (
@@ -256,6 +318,7 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       source TEXT NOT NULL DEFAULT 'manual',
       logged_at TEXT NOT NULL,
       tags TEXT NOT NULL DEFAULT '[]',
+      healthkit_uuid TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
     );
 
@@ -340,8 +403,10 @@ async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       id TEXT PRIMARY KEY NOT NULL,
       profile_id TEXT NOT NULL,
       site TEXT NOT NULL
-        CHECK (site IN ('abdomen_left','abdomen_right','thigh_left','thigh_right',
-                        'arm_left','arm_right','buttock_left','buttock_right')),
+        CHECK (site IN ('abdomen_left','abdomen_right','abdomen_left_upper',
+                        'abdomen_right_upper','abdomen_left_lower','abdomen_right_lower',
+                        'thigh_left','thigh_right','arm_left','arm_right',
+                        'buttock_left','buttock_right')),
       site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
       dose_units REAL,
       insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),

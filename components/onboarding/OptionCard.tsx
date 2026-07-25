@@ -20,11 +20,14 @@ export function OptionCard({
   selected,
   onPress,
   icon,
+  description,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   icon?: IconName;
+  /** Optional short technical note under the label (e.g. a unit example). */
+  description?: string;
 }) {
   return (
     <Pressable
@@ -33,7 +36,7 @@ export function OptionCard({
       accessibilityState={{ selected }}
       accessibilityLabel={label}
       style={[{ minHeight: 60 }, selected ? glow(THEME.accent, 22, 0.4) : undefined]}
-      className={`flex-row items-center rounded-2xl border px-4 mb-3 ${
+      className={`flex-row items-center rounded-2xl border px-4 py-3 mb-3 ${
         selected
           ? "border-brand bg-brand/10"
           : "border-hair bg-glass active:opacity-80"
@@ -57,13 +60,18 @@ export function OptionCard({
         </View>
       )}
 
-      <Text
-        className={`flex-1 text-base ${
-          selected ? "text-brand font-semibold" : "text-ink"
-        }`}
-      >
-        {label}
-      </Text>
+      <View className="flex-1">
+        <Text
+          className={`text-base ${
+            selected ? "text-brand font-semibold" : "text-ink"
+          }`}
+        >
+          {label}
+        </Text>
+        {description ? (
+          <Text className="text-mut text-xs mt-0.5">{description}</Text>
+        ) : null}
+      </View>
 
       {selected ? (
         <Ionicons name="checkmark-circle" size={20} color="#2ee6ff" />

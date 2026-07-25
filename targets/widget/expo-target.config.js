@@ -7,9 +7,11 @@
  * Building this target is a HUMAN step (`npx expo prebuild` + a device build);
  * the Swift here is compiled by Xcode, not by the app's tsc gate.
  */
+// The target name MUST differ from the main app target ("zerospike"); a same
+// name collides in Xcode's build graph (duplicate outputs in zerospike.build).
 module.exports = {
   type: "widget",
-  name: "zerospike",
+  name: "ZerospikeWidget",
   icon: "../../assets/icon.png",
   entitlements: {
     "com.apple.security.application-groups": ["group.com.greeneyeapp.zerospike"],

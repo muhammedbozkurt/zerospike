@@ -5,6 +5,9 @@ import i18n from "../i18n";
 import { listSugarLogs } from "../db/logs";
 import { getNotificationPrefs } from "./notificationPrefs";
 import { getPostMealTimerEnd } from "./notifications";
+import { getProfile } from "../db/profiles";
+import { targetBandFor } from "../agpChart";
+import { hypoThreshold, VERY_HIGH_MGDL, formatGlucose } from "../glucose";
 import type { GlucoseUnit } from "../db/types";
 
 /**
@@ -44,19 +47,44 @@ export interface LiveData {
   unit: GlucoseUnit;
   /** Last logged reading in mg/dL (canonical storage unit), or null. */
   lastGlucoseMgdl: number | null;
+  /** The last reading PRE-FORMATTED in the display unit and the active locale
+   *  (Intl), so native surfaces print it verbatim instead of formatting a number
+   *  with a hard-coded dot (which showed "6.4" to a tr/de user). */
+  lastGlucoseDisplay: string | null;
   /** epoch ms of that reading, or null. */
   lastGlucoseAt: number | null;
+  /** Rolling average glucose over the last `avgWindowDays` (mg/dL), or null when
+   *  there are no readings in the window. This is what the home-screen widget
+   *  pins - a persistent, meaningful number rather than a single stale reading. */
+  avgGlucoseMgdl: number | null;
+  /** That average PRE-FORMATTED in the display unit + active locale. */
+  avgGlucoseDisplay: string | null;
+  /** The averaging window in days (7). */
+  avgWindowDays: number;
   /** epoch ms the next reminder is due, or null when none is pending. */
   nextReminderAt: number | null;
   nextReminderKind: ReminderKind | null;
+  /** The profile's OWN colour band (mg/dL), so every native surface colours a
+   *  reading the same way the app does instead of a fixed 70/180 rule. */
+  band: {
+    hypo: number;
+    low: number;
+    high: number;
+    veryHigh: number;
+  };
   /** Strings the app already localized, so a native surface owns no copy of the
    *  five translations and can never drift out of the app's language. */
   labels: {
     lastReading: string;
+    avgGlucose: string;
+    avgWindow: string;
     nextReminder: string;
     noData: string;
   };
 }
+
+/** The averaging window for the home-screen widget's pinned number. */
+const AVG_WINDOW_DAYS = 7;
 
 /** epoch ms of the next time HH:MM occurs (today if still ahead, else tomorrow). */
 function nextOccurrence(hhmm: string, now = new Date()): number {
@@ -77,8 +105,28 @@ export async function computeLiveData(
 ): Promise<LiveData> {
   const now = Date.now();
 
-  const [latest] = await listSugarLogs(profileId, 1);
+  const recent = await listSugarLogs(profileId, 1000);
+  const latest = recent[0];
+  // Rolling average over the last AVG_WINDOW_DAYS (canonical mg/dL).
+  const windowStart = now - AVG_WINDOW_DAYS * 86_400_000;
+  const inWindow = recent.filter(
+    (l) => new Date(l.logged_at).getTime() >= windowStart
+  );
+  const avgGlucoseMgdl = inWindow.length
+    ? Math.round(
+        inWindow.reduce((sum, l) => sum + l.glucose_level_mgdl, 0) / inWindow.length
+      )
+    : null;
   const prefs = await getNotificationPrefs();
+  // The profile's own band, so the widget/watch colour matches the app exactly.
+  const profile = await getProfile(profileId);
+  const targetBand = targetBandFor(profile ?? {});
+  const band = {
+    hypo: hypoThreshold(profile ?? {}),
+    low: targetBand.low,
+    high: targetBand.high,
+    veryHigh: VERY_HIGH_MGDL,
+  };
 
   const candidates: { at: number; kind: ReminderKind }[] = [];
 
@@ -99,11 +147,20 @@ export async function computeLiveData(
     updatedAt: now,
     unit,
     lastGlucoseMgdl: latest?.glucose_level_mgdl ?? null,
+    lastGlucoseDisplay: latest
+      ? formatGlucose(latest.glucose_level_mgdl, unit)
+      : null,
     lastGlucoseAt: latest ? new Date(latest.logged_at).getTime() : null,
+    avgGlucoseMgdl,
+    avgGlucoseDisplay: avgGlucoseMgdl != null ? formatGlucose(avgGlucoseMgdl, unit) : null,
+    avgWindowDays: AVG_WINDOW_DAYS,
     nextReminderAt: next?.at ?? null,
     nextReminderKind: next?.kind ?? null,
+    band,
     labels: {
       lastReading: i18n.t("widget.lastReading"),
+      avgGlucose: i18n.t("widget.avgGlucose"),
+      avgWindow: i18n.t("widget.avgWindow", { n: AVG_WINDOW_DAYS }),
       nextReminder: i18n.t("widget.nextReminder"),
       noData: i18n.t("widget.noData"),
     },

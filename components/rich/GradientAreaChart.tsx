@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { View } from "react-native";
-import type { StyleProp, ViewStyle } from "react-native";
+import type { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 
 import { GLUCOSE_RICH, THEME, glow } from "../../lib/theme/tokens";
@@ -8,6 +8,9 @@ import { seriesPaths } from "./svgGeom";
 
 interface GradientAreaChartProps {
   data: number[];
+  /** Fixed width (points). Omit to auto-fill the parent's measured width so the
+   *  curve spans the whole panel and its last point reaches the right edge (E2:
+   *  the AGP profile has to touch the 24:00 axis end, not stop short of it). */
   width?: number;
   height?: number;
   /** Line + area color (default cyan accent). */
@@ -25,18 +28,31 @@ interface GradientAreaChartProps {
  * top, and an optional green target band behind it. One shape for the AGP curve,
  * the hourly-pattern chart and the onboarding preview - the mockup's signature
  * "gradyan alan grafigi". Generalises the small Sparkline to a full panel.
+ *
+ * When `width` is omitted the SVG measures its container (onLayout) and draws at
+ * that full width, so the plotted series always reaches the right edge instead
+ * of a fixed 300pt canvas leaving an empty strip under the 24:00 tick.
  */
 export function GradientAreaChart({
   data,
-  width = 300,
+  width,
   height = 76,
   color = THEME.accent,
   targetBand,
   lineGlow = true,
   style,
 }: GradientAreaChartProps) {
-  const { line, area } = seriesPaths(data, width, height);
-  const gid = `area-${width}-${height}`;
+  const [measured, setMeasured] = useState(0);
+  const w = width ?? (measured || 300);
+  const onLayout =
+    width == null
+      ? (e: LayoutChangeEvent) => {
+          const lw = Math.round(e.nativeEvent.layout.width);
+          if (lw && lw !== measured) setMeasured(lw);
+        }
+      : undefined;
+  const { line, area } = seriesPaths(data, w, height);
+  const gid = `area-${w}-${height}`;
 
   let bandRect: { y: number; h: number } | null = null;
   if (targetBand && data.length) {
@@ -51,8 +67,11 @@ export function GradientAreaChart({
   }
 
   return (
-    <View style={[{ width, height }, lineGlow ? glow(color, 10, 0.35) : undefined, style]}>
-      <Svg width={width} height={height}>
+    <View
+      onLayout={onLayout}
+      style={[{ width: width ?? "100%", height }, lineGlow ? glow(color, 10, 0.35) : undefined, style]}
+    >
+      <Svg width={w} height={height}>
         <Defs>
           <LinearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={color} stopOpacity={0.38} />
@@ -60,7 +79,7 @@ export function GradientAreaChart({
           </LinearGradient>
         </Defs>
         {bandRect ? (
-          <Rect x="0" y={bandRect.y} width={width} height={bandRect.h} fill={GLUCOSE_RICH.target} opacity={0.12} />
+          <Rect x="0" y={bandRect.y} width={w} height={bandRect.h} fill={GLUCOSE_RICH.target} opacity={0.12} />
         ) : null}
         {area ? <Path d={area} fill={`url(#${gid})`} /> : null}
         {line ? <Path d={line} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" /> : null}

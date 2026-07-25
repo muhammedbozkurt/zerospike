@@ -34,11 +34,16 @@ import {
   GMI_MIN_SPAN_DAYS,
   INSIGHTS_WINDOW_DAYS,
   INSIGHTS_WINDOWS,
+  rangeWindowDays,
+  type DateRange,
   type DayKind,
   type InsightPattern,
   type WeeklySentence,
 } from "../lib/insights";
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
+import { DateRangePicker, type PickedRange } from "../components/DateRangePicker";
+import { formatDate } from "../lib/format";
+import { isScreenshotMode } from "../lib/screenshotMode";
 import { maybeReviewOnWeeklyView } from "../lib/services/review";
 import { ChartCard } from "../components/charts/ChartCard";
 import { HourlyChart } from "../components/charts/HourlyChart";
@@ -61,6 +66,7 @@ import {
   withAlpha,
 } from "../components/rich";
 import { GLUCOSE_RICH, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { upper } from "../lib/upper";
 
 const GREEN = GLUCOSE_RICH.target;
 const AMBER = GLUCOSE_RICH.high;
@@ -76,8 +82,8 @@ function Seg({ pct, color }: { pct: number; color: string }) {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <Text className="text-xs font-semibold uppercase tracking-wider text-mut mt-5 mb-2 px-1.5">
-      {children}
+    <Text className="text-xs font-semibold tracking-wider text-mut mt-5 mb-2 px-1.5">
+      {typeof children === "string" ? upper(children) : children}
     </Text>
   );
 }
@@ -97,7 +103,7 @@ export default function InsightsScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { activeProfile, isProUser } = useApp();
+  const { activeProfile, isProUser, lang } = useApp();
   const { actionSheet } = useFeedback();
   const unit = activeProfile?.glucose_unit ?? "mgdl";
   const fmtG = (mgdl: number | null) =>
@@ -108,7 +114,11 @@ export default function InsightsScreen() {
   const tirBand = useMemo(() => ({ low: band.low, high: band.high }), [band]);
 
   // Optional ?window=7|14|30 (e.g. from the dashboard "This week" card).
-  const { window: windowParam } = useLocalSearchParams<{ window?: string }>();
+  // ?custom=1 is store-screenshot-only: preselects a custom range for the shot.
+  const { window: windowParam, custom: customParam } = useLocalSearchParams<{
+    window?: string;
+    custom?: string;
+  }>();
   const initialWindow = (INSIGHTS_WINDOWS as readonly number[]).includes(
     Number(windowParam)
   )
@@ -119,10 +129,23 @@ export default function InsightsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [windowDays, setWindowDays] = useState<number>(initialWindow);
+  // Optional custom "from-to" window (Pro). When set it overrides windowDays for
+  // every chart via the range-aware compute functions.
+  const [customRange, setCustomRange] = useState<DateRange | null>(null);
+  const [rangePickerOpen, setRangePickerOpen] = useState(false);
+  const range = customRange ?? undefined;
 
   useEffect(() => {
     logEvent("insights_view", { window: windowDays });
   }, [windowDays]);
+
+  // Store-screenshot: preselect a 21-day custom range so the header chip shows a
+  // "from - to" label for the 05-insights shot. Double-locked; ignored otherwise.
+  useEffect(() => {
+    if (!isScreenshotMode() || customParam !== "1") return;
+    const end = Date.now();
+    setCustomRange({ start: end - 21 * 86_400_000, end });
+  }, [customParam]);
 
   const [sugar, setSugar] = useState<SugarLog[]>([]);
   const [meals, setMeals] = useState<MealLog[]>([]);
@@ -153,16 +176,16 @@ export default function InsightsScreen() {
 
   // Recompute locally when the window changes (no reload).
   const data = useMemo(
-    () => computeInsights(sugar, meals, injections, windowDays, tirBand),
-    [sugar, meals, injections, windowDays, tirBand]
+    () => computeInsights(sugar, meals, injections, windowDays, tirBand, range),
+    [sugar, meals, injections, windowDays, tirBand, customRange]
   );
 
   const pct = (n: number | null) => (n == null ? "-" : `${Math.round(n)}`);
 
   // Descriptive patterns from the user's own readings (never causal/advice).
   const patterns = useMemo(
-    () => derivePatterns(sugar, windowDays),
-    [sugar, windowDays]
+    () => derivePatterns(sugar, windowDays, range),
+    [sugar, windowDays, customRange]
   );
   const patternText = (p: InsightPattern): string => {
     const u = glucoseUnitLabel(unit);
@@ -188,22 +211,28 @@ export default function InsightsScreen() {
 
   // Trend vs the previous equal-length window, and the window percentile summary.
   const trend = useMemo(
-    () => trendVsPrevious(sugar, windowDays, tirBand),
-    [sugar, windowDays, tirBand]
+    () => trendVsPrevious(sugar, windowDays, tirBand, range),
+    [sugar, windowDays, tirBand, customRange]
   );
   const pctile = useMemo(
-    () => windowPercentiles(sugar, windowDays),
-    [sugar, windowDays]
+    () => windowPercentiles(sugar, windowDays, range),
+    [sugar, windowDays, customRange]
   );
   // Free users see only the 7-day basic summary fully; 30/90 render as a blurred
   // preview behind a lock (curiosity gap, not an empty screen).
-  const locked = !isProUser && windowDays !== FREE_INSIGHTS_WINDOW;
+  const locked = !isProUser && (windowDays !== FREE_INSIGHTS_WINDOW || customRange != null);
   const premium = isProUser || locked;
   const showsInjections = insulinModeUsesInsulin(activeProfile?.insulin_mode);
 
   // Pro "from Health" summary: activity minutes + insulin delivery (read-only).
   const [health, setHealth] = useState<HealthSummary | null>(null);
   useEffect(() => {
+    // The Health summary is windowDays-based; a custom range would mislabel it,
+    // so it is simply hidden while a custom range is active.
+    if (customRange) {
+      setHealth(null);
+      return;
+    }
     // iOS-only (Health Connect removed for Play policy).
     if (!isProUser || Platform.OS !== "ios") return;
     let alive = true;
@@ -213,7 +242,7 @@ export default function InsightsScreen() {
     return () => {
       alive = false;
     };
-  }, [isProUser, windowDays]);
+  }, [isProUser, windowDays, customRange]);
 
   // Weekly digest (Pro): rule-based, descriptive sentences comparing this week
   // to last. Viewing it is one of the review-prompt triggers.
@@ -241,10 +270,10 @@ export default function InsightsScreen() {
 
   // ── Chart data. All memoized: a 90-day window is a few thousand readings and
   // the window selector re-renders the whole screen. ────────────────────────
-  const agp = useMemo(() => computeAgp(sugar, windowDays), [sugar, windowDays]);
+  const agp = useMemo(() => computeAgp(sugar, windowDays, range), [sugar, windowDays, customRange]);
   const trendDays = useMemo(
-    () => dailyAverages(sugar, windowDays),
-    [sugar, windowDays]
+    () => dailyAverages(sugar, windowDays, range),
+    [sugar, windowDays, customRange]
   );
   /** The hourly median curve, for the mockup's gradient AGP area. */
   const agpCurve = useMemo(() => agp.bands.map((b) => b.p50), [agp]);
@@ -292,6 +321,21 @@ export default function InsightsScreen() {
     return `${two(d.getDate())}.${two(d.getMonth() + 1)}`;
   }, [windowDays]);
 
+  // Trend chart axis: with a custom range the x-scale spans the range's own day
+  // count and the labels come from the range's real ends (end = "Today" only when
+  // it actually is today), so the last point reaches the right edge.
+  const shortDate = (ms: number) => {
+    const d = new Date(ms);
+    const two = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${two(d.getDate())}.${two(d.getMonth() + 1)}`;
+  };
+  const trendWindowDays = customRange ? rangeWindowDays(customRange) : windowDays;
+  const trendStartLabel = customRange ? shortDate(customRange.start) : windowStartLabel;
+  const endIsToday = customRange
+    ? new Date(customRange.end).toDateString() === new Date().toDateString()
+    : true;
+  const trendEndLabel = customRange && !endIsToday ? shortDate(customRange.end) : t("common.today");
+
   // Neutral delta chip: the signed difference, and nothing about what it means.
   const avgDeltaChip =
     trend.avgDelta == null
@@ -317,16 +361,29 @@ export default function InsightsScreen() {
   function openWindowPicker() {
     actionSheet({
       title: t("insights.title"),
-      actions: INSIGHTS_WINDOWS.map((d) => ({
-        label:
-          !isProUser && d !== FREE_INSIGHTS_WINDOW
-            ? `${t("insights.windowDays", { n: d })} · ${t("common.pro")}`
-            : t("insights.windowDays", { n: d }),
-        icon: (!isProUser && d !== FREE_INSIGHTS_WINDOW
-          ? "lock-closed"
-          : "calendar-outline") as keyof typeof Ionicons.glyphMap,
-        onPress: () => setWindowDays(d),
-      })),
+      actions: [
+        ...INSIGHTS_WINDOWS.map((d) => ({
+          label:
+            !isProUser && d !== FREE_INSIGHTS_WINDOW
+              ? `${t("insights.windowDays", { n: d })} · ${t("common.pro")}`
+              : t("insights.windowDays", { n: d }),
+          icon: (!isProUser && d !== FREE_INSIGHTS_WINDOW
+            ? "lock-closed"
+            : "calendar-outline") as keyof typeof Ionicons.glyphMap,
+          // A shortcut clears any custom range so the two never fight.
+          onPress: () => {
+            setCustomRange(null);
+            setWindowDays(d);
+          },
+        })),
+        {
+          label: !isProUser
+            ? `${t("report.customRange")} · ${t("common.pro")}`
+            : t("report.customRange"),
+          icon: (!isProUser ? "lock-closed" : "create-outline") as keyof typeof Ionicons.glyphMap,
+          onPress: () => setRangePickerOpen(true),
+        },
+      ],
     });
   }
 
@@ -350,7 +407,9 @@ export default function InsightsScreen() {
             style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
           >
             <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}>
-              {t("insights.windowDays", { n: windowDays })}
+              {customRange
+                ? `${formatDate(new Date(customRange.start).toISOString())} - ${formatDate(new Date(customRange.end).toISOString())}`
+                : t("insights.windowDays", { n: windowDays })}
             </Text>
             <Ionicons
               name="chevron-down"
@@ -390,13 +449,12 @@ export default function InsightsScreen() {
                         <Text
                           style={{
                             color: THEME.muted,
-                            fontSize: 9,
+                            fontSize: 11,
                             letterSpacing: 1.3,
-                            textTransform: "uppercase",
                             fontWeight: "800",
                           }}
                         >
-                          {t("insights.timeInRange")}
+                          {upper(t("insights.timeInRange"))}
                         </Text>
                         <GlucoseChip
                           status="normal"
@@ -470,14 +528,13 @@ export default function InsightsScreen() {
                       <Text
                         style={{
                           color: THEME.muted,
-                          fontSize: 9,
+                          fontSize: 11,
                           letterSpacing: 1.3,
-                          textTransform: "uppercase",
                           fontWeight: "800",
                           marginBottom: 8,
                         }}
                       >
-                        {t("insights.agpTitle")}
+                        {upper(t("insights.agpTitle"))}
                       </Text>
                       {agpCurve.length >= 2 ? (
                         <>
@@ -580,11 +637,10 @@ export default function InsightsScreen() {
                               fontSize: 10,
                               fontWeight: "800",
                               letterSpacing: 1.2,
-                              textTransform: "uppercase",
                               marginLeft: 8,
                             }}
                           >
-                            {t("insights.weeklyTitle")}
+                            {upper(t("insights.weeklyTitle"))}
                           </Text>
                         </View>
                         {digest.map((s, i) => (
@@ -639,12 +695,12 @@ export default function InsightsScreen() {
                         {(w) => (
                           <TrendChart
                             days={trendDays}
-                            windowDays={windowDays}
+                            windowDays={trendWindowDays}
                             unit={unit}
                             width={w}
                             height={CHART_HEIGHT.trend}
-                            startLabel={windowStartLabel}
-                            endLabel={t("common.today")}
+                            startLabel={trendStartLabel}
+                            endLabel={trendEndLabel}
                             band={band}
                           />
                         )}
@@ -908,6 +964,8 @@ export default function InsightsScreen() {
                                 <Text
                                   style={{ color: THEME.muted, fontSize: 11, width: 112, paddingRight: 8 }}
                                   numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.85}
                                 >
                                   {t(`injectionSite.${sc.site}`)}
                                 </Text>
@@ -1088,6 +1146,19 @@ export default function InsightsScreen() {
           )}
         </ScrollView>
       )}
+      <DateRangePicker
+        visible={rangePickerOpen}
+        minDate={activeProfile ? new Date(activeProfile.created_at) : new Date(2020, 0, 1)}
+        maxDate={new Date()}
+        initialStart={customRange ? new Date(customRange.start) : new Date(Date.now() - 30 * 86_400_000)}
+        initialEnd={customRange ? new Date(customRange.end) : new Date()}
+        locale={lang}
+        onCancel={() => setRangePickerOpen(false)}
+        onConfirm={(r: PickedRange) => {
+          setRangePickerOpen(false);
+          setCustomRange({ start: r.start, end: r.end });
+        }}
+      />
     </AppBackground>
   );
 }

@@ -148,7 +148,7 @@ export default function SosScreen() {
   return (
     <View className="flex-1">
       <SosBackground />
-      <View className="flex-1" style={{ paddingTop: insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
         <ScreenHeader
           title={t("sos.title")}
           onBack={() => router.back()}

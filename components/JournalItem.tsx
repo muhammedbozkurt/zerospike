@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
@@ -55,30 +55,57 @@ function Row({
   );
 }
 
+/** Max tag chips shown before the rest collapse into a "+N" chip. Keeps tags on
+ *  ONE line (no flex-wrap second row). */
+const MAX_TAG_CHIPS = 2;
+
+function TagChip({ label }: { label: string }) {
+  return (
+    <View
+      style={{
+        borderRadius: 999,
+        backgroundColor: withAlpha(THEME.accent, 0.12),
+        borderWidth: 1,
+        borderColor: withAlpha(THEME.accent, 0.22),
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        marginRight: 4,
+      }}
+    >
+      <Text style={{ color: THEME.accent, fontSize: 10, fontWeight: "600" }}>{label}</Text>
+    </View>
+  );
+}
+
 function TagBadges({ tags }: { tags: LogTag[] }) {
   const { t } = useTranslation();
+  // Collapsed to one line ("+N") until the user taps +N to reveal them all. The
+  // +N Pressable is its own responder, so tapping it does NOT open the row's
+  // edit flow.
+  const [expanded, setExpanded] = useState(false);
   if (tags.length === 0) return null;
+  const visible = expanded ? tags : tags.slice(0, MAX_TAG_CHIPS);
+  const overflow = tags.length - visible.length;
+  const allLabel = tags.map((tag) => t(`tags.${tag}`)).join(", ");
   return (
-    <View className="flex-row flex-wrap mt-1">
-      {tags.map((tag) => (
-        <View
-          key={tag}
-          style={{
-            borderRadius: 999,
-            backgroundColor: withAlpha(THEME.accent, 0.12),
-            borderWidth: 1,
-            borderColor: withAlpha(THEME.accent, 0.22),
-            paddingHorizontal: 6,
-            paddingVertical: 1,
-            marginRight: 4,
-            marginBottom: 2,
-          }}
-        >
-          <Text style={{ color: THEME.accent, fontSize: 10, fontWeight: "600" }}>
-            {t(`tags.${tag}`)}
-          </Text>
-        </View>
+    <View
+      className={`flex-row items-center mt-1 ${expanded ? "flex-wrap" : ""}`}
+      accessibilityLabel={`${t("tags.label")}: ${allLabel}`}
+    >
+      {visible.map((tag) => (
+        <TagChip key={tag} label={t(`tags.${tag}`)} />
       ))}
+      {overflow > 0 || expanded ? (
+        <Pressable
+          onPress={() => setExpanded((e) => !e)}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={expanded ? t("journal.showLess") : allLabel}
+        >
+          <TagChip label={expanded ? t("journal.showLess") : `+${overflow}`} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -156,12 +183,17 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
           </View>
         ) : null}
         <View className="flex-1">
-          <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }} numberOfLines={1}>
+          <Text
+            style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
             {t(`injectionSite.${entry.site}`)}
             {typeLabel ? ` · ${typeLabel}` : ""}
           </Text>
           {entry.note ? (
-            <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={1}>
+            <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
               {`“${entry.note}”`}
             </Text>
           ) : null}
@@ -172,16 +204,17 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
     );
   }
 
-  // meal entry
+  // meal entry — neutral (muted) accent, on-palette instead of slate hexes.
   return (
-    <Row accent="#64748b" onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
+    <Row accent={THEME.muted} onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
       {entry.photo_uri_local ? (
         <Image source={{ uri: entry.photo_uri_local }} style={{ width: 30, height: 30, borderRadius: 10, marginRight: 10 }} />
       ) : (
-        <IconTile icon="restaurant" size={30} radius={10} tint="#94a3b8" style={{ marginRight: 10 }} />
+        <IconTile icon="restaurant" size={30} radius={10} tint={THEME.muted} style={{ marginRight: 10 }} />
       )}
       <View className="flex-1">
-        <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }} numberOfLines={1}>
+        {/* Food name is user data: wraps to two lines rather than clipping. */}
+        <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }} numberOfLines={2}>
           {entry.display_name}
         </Text>
         <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 1 }}>
@@ -192,7 +225,7 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
           · {t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })}
         </Text>
         {entry.personal_note ? (
-          <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={1}>
+          <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
             “{entry.personal_note}”
           </Text>
         ) : null}

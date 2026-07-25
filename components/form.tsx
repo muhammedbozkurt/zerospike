@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { THEME } from "../lib/theme/tokens";
+import { upper } from "../lib/upper";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -34,8 +35,8 @@ export function FormCard({
               <Ionicons name={icon} size={13} color="#2ee6ff" />
             </View>
           ) : null}
-          <Text className="text-xs font-semibold uppercase tracking-wider text-mut">
-            {title}
+          <Text className="text-xs font-semibold tracking-wider text-mut">
+            {upper(title)}
           </Text>
         </View>
       ) : null}

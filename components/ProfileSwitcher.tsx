@@ -66,10 +66,18 @@ export function ProfileSwitcher() {
     <>
       <Pressable
         onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={t("profiles.switch")}
         className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-1.5"
       >
         <Ionicons name="person-circle-outline" size={18} color={THEME.muted} />
-        <Text className="text-ink font-medium text-sm mx-1.5" numberOfLines={1}>
+        <Text
+          className="text-ink font-medium text-sm mx-1.5"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+          style={{ maxWidth: 120 }}
+        >
           {activeProfile?.name ?? "-"}
         </Text>
         <Ionicons name="chevron-down" size={14} color={THEME.muted} />
@@ -85,9 +93,19 @@ export function ProfileSwitcher() {
           <Pressable
             className="flex-1 bg-black/70 justify-center px-6"
             onPress={() => setOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.close")}
           >
             <Pressable
-              className="rounded-3xl bg-glass border border-hair p-5"
+              className="rounded-3xl border border-hair p-5"
+              style={{
+                backgroundColor: THEME.sheet,
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: 12 },
+                elevation: 16,
+              }}
               onPress={(e) => e.stopPropagation()}
             >
               <Text className="text-ink text-lg font-bold mb-3">
@@ -100,6 +118,9 @@ export function ProfileSwitcher() {
                   <Pressable
                     key={p.id}
                     onPress={() => handleSelect(p.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={p.name}
                     className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
                       active
                         ? "bg-brand/10 border-brand/40"

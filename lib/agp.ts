@@ -42,13 +42,19 @@ export function percentile(sortedAsc: number[], p: number): number {
 
 /** Pools readings in the window into 24 hour-of-day buckets and returns the
  *  percentile band for every hour that has at least one reading. */
-export function computeAgp(sugar: SugarLog[], windowDays = 14): Agp {
+export function computeAgp(
+  sugar: SugarLog[],
+  windowDays = 14,
+  /** Optional explicit range (epoch ms); two-sided, overrides windowDays. */
+  range?: { start: number; end: number }
+): Agp {
   const since = Date.now() - windowDays * 86_400_000;
   const byHour: number[][] = Array.from({ length: 24 }, () => []);
   let total = 0;
   for (const r of sugar) {
     const t = new Date(r.logged_at).getTime();
-    if (Number.isNaN(t) || t < since) continue;
+    if (Number.isNaN(t)) continue;
+    if (range ? t < range.start || t > range.end : t < since) continue;
     const h = new Date(r.logged_at).getHours();
     if (Number.isNaN(h)) continue;
     byHour[h].push(r.glucose_level_mgdl);

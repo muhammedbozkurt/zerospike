@@ -1,5 +1,6 @@
 import type { GlucoseUnit, PeriodTag, UserProfile } from "./db/types";
 import { GLUCOSE_COLORS } from "./theme/tokens";
+import { getActiveLang } from "./lang";
 
 /* ── Units ─────────────────────────────────────────────────────────────────
  * Everything is stored in mg/dL. These helpers convert only at the display /
@@ -14,11 +15,22 @@ export function glucoseUnitLabel(unit: GlucoseUnit): string {
   return unit === "mmol" ? "mmol/L" : "mg/dL";
 }
 
-/** mg/dL → the profile's unit as a display string (mmol shows 1 decimal). */
+/** mg/dL → the profile's unit as a display string (mmol shows 1 decimal), in the
+ *  active locale's number format (mmol "5,5" in tr / de, "5.5" in en). */
 export function formatGlucose(mgdl: number, unit: GlucoseUnit): string {
-  return unit === "mmol"
-    ? (mgdl / MGDL_PER_MMOL).toFixed(1)
-    : String(Math.round(mgdl));
+  const lang = getActiveLang();
+  try {
+    return unit === "mmol"
+      ? (mgdl / MGDL_PER_MMOL).toLocaleString(lang, {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        })
+      : Math.round(mgdl).toLocaleString(lang);
+  } catch {
+    return unit === "mmol"
+      ? (mgdl / MGDL_PER_MMOL).toFixed(1)
+      : String(Math.round(mgdl));
+  }
 }
 
 /** mg/dL → editable number in the profile's unit (mmol rounded to 1 decimal). */
@@ -43,6 +55,13 @@ export function glucoseFromDisplay(value: number, unit: GlucoseUnit): number {
 export function mmolToMgdl(mmol: number): number {
   return mmol * MGDL_PER_MMOL;
 }
+
+/**
+ * The neutral re-measure follow-up window (minutes) after a low reading. ONE
+ * source: the dashboard schedules the reminder at this interval and the doctor
+ * report pairs a low with the reading logged within it, so the two never drift.
+ */
+export const LOW_FOLLOWUP_MINUTES = 15;
 
 export type GlucoseStatus = "low" | "normal" | "elevated" | "high" | "veryHigh";
 

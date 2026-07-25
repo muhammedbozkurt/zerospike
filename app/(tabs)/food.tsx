@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
 import { searchFoods, deleteFood, listAllFoods } from "../../lib/db/foods";
+import { captureFoodDeletion } from "../../lib/db/undo";
+import { useUndoBatch } from "../../components/useUndoBatch";
 import {
   listFavoriteFoods,
   toggleFavorite as dbToggleFav,
@@ -29,6 +31,7 @@ import { formatDateKey } from "../../lib/format";
 import { hapticSuccess } from "../../lib/haptics";
 import { TABULAR, THEME } from "../../lib/theme/tokens";
 import { mealSlotForHour } from "../../lib/insulin";
+import { upper } from "../../lib/upper";
 
 type Selection = Category | "favorites" | "custom";
 
@@ -44,7 +47,8 @@ export default function FoodScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, lang, dataVersion, bumpData } = useApp();
-  const { confirm, actionSheet } = useFeedback();
+  const { actionSheet } = useFeedback();
+  const deleteWithUndo = useUndoBatch(bumpData);
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
@@ -168,16 +172,12 @@ export default function FoodScreen() {
     await loadFavorites();
   }
 
+  // Delete immediately + accumulating 6-second undo (shared useUndoBatch). The
+  // custom food is captured first so undo re-inserts it verbatim.
   async function onDeleteCustom(food: Food) {
     if (!food.is_custom) return;
-    const ok = await confirm({
-      message: t("food.deleteFood"),
-      confirmLabel: t("common.delete"),
-      destructive: true,
-    });
-    if (!ok) return;
-    await deleteFood(food.id);
-    bumpData();
+    const snap = await captureFoodDeletion(food.id);
+    await deleteWithUndo(snap, () => deleteFood(food.id));
   }
 
   // Long press on a custom food = edit/delete menu; seeded catalog and cached
@@ -234,7 +234,7 @@ export default function FoodScreen() {
         value={query}
         onChangeText={setQuery}
         placeholder={t("food.searchPlaceholder")}
-        placeholderTextColor="rgba(137,163,176,0.6)"
+        placeholderTextColor="rgba(137,163,176,0.7)"
         className="flex-1 py-3 px-2.5"
         style={{ color: THEME.ink, fontSize: 14 }}
       />
@@ -285,13 +285,12 @@ export default function FoodScreen() {
         <Text
           style={{
             color: THEME.muted,
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: 1.3,
-            textTransform: "uppercase",
             fontWeight: "800",
           }}
         >
-          {t("dashboard.dailyCarbs")}
+          {upper(t("dashboard.dailyCarbs"))}
         </Text>
         <View className="flex-row items-baseline mt-1" style={{ gap: 4 }}>
           <Text
@@ -313,8 +312,8 @@ export default function FoodScreen() {
       {/* Today's meals, as the mockup's illustrated rows */}
       {todayMeals.length > 0 ? (
         <View className="mb-4">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
-            {t("common.today")}
+          <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
+            {upper(t("common.today"))}
           </Text>
           {todayMeals.map((meal) => (
             <Pressable
@@ -335,10 +334,12 @@ export default function FoodScreen() {
                 <Text
                   style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
                 >
                   {t(`slot.${mealSlotForHour(new Date(meal.logged_at).getHours())}`)}
                 </Text>
-                <Text style={{ color: THEME.muted, fontSize: 11 }} numberOfLines={1}>
+                <Text style={{ color: THEME.muted, fontSize: 11 }} numberOfLines={2}>
                   {meal.display_name}
                 </Text>
               </View>
@@ -359,8 +360,8 @@ export default function FoodScreen() {
 
       {mode === "grid" && recent.length > 0 ? (
         <View className="mb-4">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
-            {t("food.recent")}
+          <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
+            {upper(t("food.recent"))}
           </Text>
           <View className="flex-row flex-wrap gap-2">
             {recent.map((r, i) => (
@@ -373,8 +374,10 @@ export default function FoodScreen() {
                   {r.food ? (CATEGORY_EMOJI[r.food.category as Category] ?? "🍽️") : "🍽️"}
                 </Text>
                 <Text
-                  style={{ color: THEME.ink, fontSize: 13, marginLeft: 6 }}
+                  style={{ color: THEME.ink, fontSize: 13, marginLeft: 6, maxWidth: 150 }}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
                 >
                   {r.food ? foodName(r.food, lang) : r.name}
                 </Text>
@@ -403,7 +406,12 @@ export default function FoodScreen() {
                 radius={12}
                 style={{ marginBottom: 10 }}
               />
-              <Text className="text-ink font-semibold" numberOfLines={1}>
+              <Text
+                className="text-ink font-semibold"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
                 {titleFor(tile.sel)}
               </Text>
               <Text className="text-mut text-xs mt-0.5">{tile.count}</Text>

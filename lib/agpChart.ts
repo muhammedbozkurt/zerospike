@@ -117,11 +117,31 @@ export function buildAgpGeometry(
 
   const bands = agp.bands;
   const wide = bands.length >= MIN_BANDS_FOR_CURVE;
+  const first = bands[0];
+  const last = bands[bands.length - 1];
+
+  // AGP is a continuous day-long profile. The hour buckets are centred on their
+  // hour (0..23), so the earliest/latest buckets can fall an hour or two short of
+  // the axis ends and leave an empty left/right margin. Extend the extreme points
+  // flat to the domain edges (x=0 and x=24) - clamping the endpoint x to the edge
+  // is the standard AGP presentation - so the ribbon and median span the whole
+  // axis with no empty edge (E2).
+  const medianLine: Point[] = bands.length
+    ? [
+        { x: plotLeft, y: y(first.p50) },
+        ...bands.map((b) => ({ x: x(b.hour), y: y(b.p50) })),
+        { x: plotRight, y: y(last.p50) },
+      ]
+    : [];
 
   const iqrPolygon: Point[] = wide
     ? [
+        { x: plotLeft, y: y(first.p75) },
         ...bands.map((b) => ({ x: x(b.hour), y: y(b.p75) })),
+        { x: plotRight, y: y(last.p75) },
+        { x: plotRight, y: y(last.p25) },
         ...[...bands].reverse().map((b) => ({ x: x(b.hour), y: y(b.p25) })),
+        { x: plotLeft, y: y(first.p25) },
       ]
     : [];
 
@@ -133,7 +153,7 @@ export function buildAgpGeometry(
       height: y(band.low) - y(band.high),
     },
     iqrPolygon,
-    medianLine: bands.map((b) => ({ x: x(b.hour), y: y(b.p50) })),
+    medianLine,
     yTicks: agpYTicks(band).map((value) => ({ value, y: y(value) })),
     xTicks: AGP_X_TICKS.map((hour) => ({ hour, x: x(hour) })),
     plotLeft,

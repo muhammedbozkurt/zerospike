@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "hypershots": {
+      "source": "hypersocialinc/hypershots",
+      "sourceType": "github",
+      "skillPath": "skills/hypershots/SKILL.md",
+      "computedHash": "9fad12f66ae16e160b413d525323a853a7e60fccd21943b60c149f05c5c3472f"
+    }
+  }
+}

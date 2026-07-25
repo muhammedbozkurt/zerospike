@@ -38,20 +38,26 @@ export function QuizStep({
       {/* No automaticallyAdjustKeyboardInsets here: the footer is pinned outside
           this ScrollView, so onboarding lifts the whole screen with a
           KeyboardAvoidingView instead. Doing both would compensate twice. */}
+      {/* The title block sits at the top; the options are vertically centred in
+          the space left over, so a two-option step fills the screen instead of
+          stacking at the top with a big empty middle. A many-option step (e.g.
+          diabetes type) simply grows past centre and scrolls as before. */}
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 16 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <FadeSlideIn>
-          <Text className="text-ink text-2xl font-bold">{title}</Text>
-        </FadeSlideIn>
-        {hint ? (
-          <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
-            <Text className="text-mut mt-2 leading-5">{hint}</Text>
+        <View>
+          <FadeSlideIn>
+            <Text className="text-ink text-2xl font-bold">{title}</Text>
           </FadeSlideIn>
-        ) : null}
-        <View className="mt-6">{children}</View>
+          {hint ? (
+            <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
+              <Text className="text-mut mt-2 leading-5">{hint}</Text>
+            </FadeSlideIn>
+          ) : null}
+        </View>
+        <View className="flex-1 justify-center mt-6">{children}</View>
       </ScrollView>
 
       {footer ? (

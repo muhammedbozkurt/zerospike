@@ -1,0 +1,221 @@
+# Create gear
+
+Author a fresh screenshot set from app captures + a brief. Run the steps in order — the self-review loop (step 7) is the reliability mechanism, not optional polish.
+
+`<skill>` = the installed skill directory (read-only reference). All authored files live in the user's repo workspace (`<ws>`, default `.shots/`).
+
+## 1. Preflight
+
+```bash
+bash <skill>/scripts/preflight.sh
+```
+
+Always exits 0 — it's a report, you decide what to do:
+
+- `chrome`, `node` — **REQUIRED**. Missing either: stop and tell the user how to install (or `export CHROME=/path/to/chrome`).
+- `imagemagick` — optional: alpha flattening in validate, contact sheets, style-edit compositing.
+- `genmedia` — optional: AI sticker assets + style grade. Missing: degrade (see `asset-recipes.md` for the consent-gated bootstrap and the fully-supported no-genmedia paths). Never block on it.
+
+## 2. Scaffold
+
+```bash
+bash <skill>/scripts/scaffold.sh          # default: .shots
+bash <skill>/scripts/scaffold.sh <dir>    # custom workspace dir
+```
+
+Refuses to run if `<ws>/brief.md` already exists (workspace already scaffolded — you're in revise territory). Creates:
+
+- `panels/`, `assets/`, `out/` — empty dirs
+- `frame.css`, `fit.js`, `fonts.css`, `fonts/`, `profiles.json` — copied from the skill, pinned per workspace
+- `theme.css` — placeholder tokens you MUST replace (step 4)
+- `brief.md` — the questionnaire (step 3)
+
+The installed skill dir stays read-only reference; never author or edit files there.
+
+## 3. Brief questionnaire
+
+**Harvest before you ask.** A one-prompt-no-context run misses the app's key features — field-proven failure mode. Before the questionnaire, mine what's already there: the codebase (feature modules, paywall copy, onboarding strings), the App Store listing / README / website if any. From that, draft a ranked **one-feature-per-panel plan** (panel 1 = the emotional hook, see Narrative arc below) and put it IN the questionnaire message for the user to confirm, reorder, or veto. Thirty seconds of confirmation beats three revision rounds on missed features.
+
+Ask the user in ONE message, mirroring the scaffolded `brief.md` fields:
+
+1. App name / one-line positioning
+2. Captures provided (files to drop in `assets/`) — **if the app's core surface is the camera/AR/live video, real captures are effectively required; see the mockup policy in step 5**
+3. Panel plan — your harvested proposal: N panels, per-panel feature + headline & sub
+4. Stickers / generated assets wanted (or none)
+5. Device profile(s) — default `iphone-6.9`
+6. Locales — default `en`
+
+Write the answers into `<ws>/brief.md`. It persists across create → revise → translate runs.
+
+Taking the captures yourself (marketing-clean status bar, light/dark appearance, mid-gesture frames)? → `capture-recipes.md`.
+
+## 4. Theme
+
+Derive `<ws>/theme.css` from the app's **real brand** — sample colors from the actual captures in `assets/`, check the app's icon/site. **Never ship the scaffold's placeholder values unchanged.**
+
+Required tokens (consumed by frame.css — all of them):
+
+```
+--paper --paper-hi --ink --mid --rule --accent --badge-bg --badge-ink
+--font-sans --font-mono
+```
+
+Fonts: the kit vendors **Inter Tight** (variable 400–900, normal+italic) and **IBM Plex Mono** (400/500/600), latin + latin-ext subsets. Choosing a face is a brand decision — `typography.md` has the hierarchy (mirror the app's real brand font first, else pick from the curated menu). Using other fonts requires vendoring the woff2 into the workspace with `@font-face` — **NEVER a remote `@import`**: it breaks offline determinism, races Chrome's `--virtual-time-budget`, and upstream font builds drift metrics. Vendor correctly in one command:
+
+```bash
+bash <skill>/scripts/fetch-fonts.sh <ws> "Fraunces" "600;900"   # downloads woff2 + appends @font-face to <ws>/fonts.css + fetches the OFL
+```
+
+## 5. Author panels
+
+Write `<ws>/panels/panel-1.html` … `panel-N.html`. Bespoke HTML per app — there is no fill-in template, but the STRUCTURE below is required.
+
+**Minimal panel skeleton** (adapt the content, keep the structure; hrefs are workspace-sibling — render.sh generates `profile.css` next to `panels/`):
+
+```html
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../fonts.css">
+<link rel="stylesheet" href="../frame.css">
+<link rel="stylesheet" href="../theme.css">
+<link rel="stylesheet" href="../profile.css">
+<style>/* per-panel styles for in-screen content go here — geometry classes are
+   immutable; type classes may be restyled in theme.css, not here (see Frame
+   contract below); never reuse frame.css class names (see gotchas.md) */</style>
+</head><body>
+<div class="panel">
+  <div class="wrap" data-protect="copy">
+    <!-- eyebrow is OPTIONAL — decoration at thumbnail size; drop it if the
+         headline works harder without it -->
+    <div class="eyebrow"><b data-i18n="p1.eyebrow">Check before you go</b><i></i></div>
+    <div class="headline" data-fit data-i18n="p1.headline">How clean is your<br>favorite restaurant?</div>
+    <div class="sub" data-i18n="p1.sub">You might not want to know.</div>
+  </div>
+  <div class="stage">
+    <div class="device" data-protect="device"><div class="screen">
+      <!-- REAL simulator capture: this img ONLY — it already contains its own
+           status bar + Dynamic Island -->
+      <img class="shot" src="../assets/capture-1.png">
+      <!-- HAND-BUILT screen instead: replace .shot with your markup PLUS these
+           two (never combine them with a real capture), and mark the built
+           region data-mockup="screen" — see the mockup policy below:
+      <div class="di"></div>
+      <div class="statusbar"><span class="time">9:41</span><span class="icons"></span></div>
+      -->
+    </div></div>
+    <img class="cutout" src="../assets/sticker.png"
+         style="left:-24px;top:388px;width:134px;transform:rotate(-8deg)">
+  </div>
+</div>
+<script src="../fit.js"></script>   <!-- LAST element in <body> -->
+</body></html>
+```
+
+Structure notes:
+
+- `.wrap` is the copy block above the device (z-index 2). `.stage` is the absolute-positioned layer (`inset:0`, z-index 1) that holds the device AND the stickers — omit it and the device loses its positioning context, producing a wrong-but-validating panel. Stickers live in `.stage` as siblings of `.device`, not inside `.screen`.
+- An annotated example set ships in `examples/spotless/` — if absent in your copy of the skill, the contract in this file is complete on its own.
+
+**Frame contract** (frame.css is the geometric contract):
+
+- Geometry classes are IMMUTABLE: `.panel` `.stage` `.device` `.screen` `.di` `.statusbar`. Profile variables (`--panel-w`/`--panel-h`) size everything; anchors are ratios of panel size, so the same panel renders at any near-aspect iPhone profile. Type classes (`.headline` `.sub` `.eyebrow`) MAY be restyled in `theme.css` — that's the brand layer's job (fit.js measures actual boxes, so size/weight changes are safe). ONE sanctioned geometry override: `theme.css` may set `--device-top-ratio` (default 0.330) within **0.28–0.36** — set-wide only, never per-panel (gotchas.md, "Dead zone between copy and device").
+- Never reuse a frame.css class name for a per-panel style — a collision inherits absolute positioning silently and validates cleanly. Reserved list + symptom: gotchas.md, "Reserved class names".
+- Real simulator captures go in `<img class="shot" src="../assets/capture.png">` inside `.screen`. They already contain the device's own status bar and island — **never add `.di`/`.statusbar` over a real capture** (double-Dynamic-Island bug). Use `.di` + `.statusbar` only on hand-built screens.
+- **Mockup policy (App Review 2.3.3).** Screenshots must reflect the app in actual use — real captures are the rule, hand-built screens the exception. When you do build a screen in HTML (no captures provided yet, or a state that can't be staged), mark the built region `data-mockup="screen"`: render.sh prints a warning per mockup panel and the review page banners it *replace with real capture (2.3.3)*. A mocked screen must reproduce the REAL app UI (from captures/recordings of other states, the codebase's actual copy and layout) — never invent features or data the app doesn't show. Camera/AR/live-video apps: the store set needs real captured content in the device; get captures per `capture-recipes.md` (camera apps section) before submission — a fabricated camera view is a rejection risk no validator can see.
+- Screen aspect is ~0.460 (w/h). Captures should match; `.shot` top-anchor cover-crops (`object-fit:cover; object-position:top center`) so slightly-taller captures lose bottom pixels, not get stretched.
+
+**Marker rules** (create-time discipline that makes translate and style-edit mechanical later — full contract in `i18n.md`):
+
+- `data-i18n="pN.key"` on EVERY translatable text node. **Double quotes only** — the injector's regex matches double-quoted attributes. Content on one line: text + `<br>` only; the injector fatally rejects any other nested markup inside a marked element. Wrap styled fragments in their own marked elements instead.
+- `data-fit` on the headline (optionally `data-fit-floor="px"`, default floor 26; `data-fit-max="px"` to override the budget). Fit shrinks the element 1px at a time until it **and all its following siblings** clear the device top (budget = device-top − 14px) — shrinking the headline pulls `.sub` up out of the device zone too. Any extra element you add to `.wrap` consumes fit budget and the headline shrinks to pay for it. Floor breach = fit failure = render exit 2.
+- `data-protect="name"` on `.wrap` (e.g. `"copy"`) and `.device` (e.g. `"device"`). Render dumps their on-screen boxes to `boxes.json`; the style-edit builds its protection mask from them. Zero `data-protect` elements = nothing to protect later. Author them from panel one.
+
+**Determinism contract:** panels must not depend on time, randomness, or animations. render.sh does two Chrome passes per panel — screenshot, then DOM dump — and they must agree; anything nondeterministic makes the boxes lie about the pixels.
+
+**Sticker primitives** (from frame.css; position via inline `left/top/width` + `transform:rotate()`):
+
+- `.cutout` — transparent-PNG die-cut sticker (`<img class="cutout" src="../assets/x.png" style="left:-24px;top:388px;width:134px;transform:rotate(-8deg)">`)
+- `.chip` — white pill with bold value (`9.6<small>/10</small>`)
+- `.pin` — map-pin callout with tail
+- `.gradeBadge` — square letter-grade badge
+- `.emoji` — plain emoji glyph with drop shadow (zero-dependency sticker)
+- `.popCard` — a piece of the in-screen UI lifted out of the device as a rotated floating card (defaults wider than the device so it breaks the bezel on both sides). Two composition rules: it MUST fully cover the source region it duplicates (rotation shifts corners — check all four in the rendered PNG), and alternate the rotation sign across panels so the set doesn't feel stamped from one template.
+
+**Bridge the copy→device zone.** Short copy leaves dead paper between `.sub` and the device top — the shipped gold sets never show it because a sticker (`.cutout`/`.chip`) or `.popCard` overlaps the device's top edge and carries the eye down. On panels with short copy, author a bridging element; if paper persists, escalate per gotchas.md, "Dead zone between copy and device".
+
+**Perspective (optional):** `.device.tilt-l` / `.device.tilt-r` / `.device.lean` (frame.css) tilt the device with CSS only — geometry stays deterministic and boxes.json captures the transformed bounds. When: the hero panel of a feature-led set, at most ONE tilted panel per set. Never on capture-critical panels whose in-screen text must be read.
+
+Negative left/right offsets that bleed off the panel edge are fine — `.panel` clips. Sticker drop shadows extend beyond their boxes; the style-edit mask pads for it.
+
+**Copy contract** (field-learned — these four rules survived a shipped set):
+
+- **Outcome in the headline, mechanism in the sub.** "Find your perfect NYC apartment" / "With an AI agent that hunts every listing site for you" — the headline sells what the user gets; the differentiator is the sub's job.
+- **Eyebrows: default is NONE, and never a chip.** Store search shows ~200px-wide thumbnails — an eyebrow is decoration there; visitors read headline-first. Drop it when the headline works harder without it. If one earns its place: plain mono text + hairline rule (the kit's `.eyebrow` exactly) — never a gradient/filled-background chip, which fails the thumbnail test (gotchas.md, "Eyebrow rendered as a chip/highlight").
+- **Headlines are exactly 2 lines, authored with `<br>`; subs exactly 1 line.** A 3-line headline or an orphan-word sub reads broken at store size — the fix is REWORDING, not resizing. Glyph width matters more than character count: "Track every home" (16 chars) overflowed where "Find your perfect" (17 chars) fit.
+- **Type scale:** kit defaults are headline 45px/800, sub 19.5px/500; field sessions landed at ~47px/900 and ~23px/600. Restyling type classes in `theme.css` is sanctioned (see Frame contract above). Beyond ~50px/900 a typical two-word line force-wraps at 430px.
+- **Legibility floor: no marketing copy below 15px CSS** (eyebrows exempt — they're decoration by contract). Store search shows the panel at roughly 1/6 scale; 14px copy is noise there. fit.js dumps a font-size census of `.wrap`, render.sh warns on breaches, and the review page flags the panel + shows a store-scale thumbnail strip. The fix is FEWER WORDS at a legible size, not more words smaller — if a sub needs 14px to fit on one line, reword it (field-reported: "some text is quite small" was the first thing a founder's friend said about an otherwise-solid set).
+
+**Narrative arc** (from the shipped Spotless set): shock/hook → map/core value → trust/data-source → share/delight → bonus. The FIRST 3 panels are all most visitors see (see `store-specs.md`) — they carry the install decision. Lead with the emotional hook, not the feature list.
+
+## 6. Render
+
+```bash
+bash <skill>/scripts/render.sh <ws> [profile=iphone-6.9] [locale=en]
+```
+
+What it does: resolves the profile → writes `<ws>/profile.css` (generated, do not edit/commit) → purges `out/<profile>/<locale>/panel-*` → for each panel runs Chrome twice (screenshot at exact device-scale canvas; DOM dump to extract fit results + protect boxes + `.shot` capture boxes) → writes `panel-N.png` + `panel-N.boxes.json`.
+
+Chrome discovery: `$CHROME` env override → macOS app path → `google-chrome`/`chromium`/`chromium-browser` on PATH. Each Chrome call has a 180s watchdog.
+
+Debug: append `--grid` to render a labeled 50px CSS-space coordinate grid over every panel — the fastest way to place overlays over a capture (see gotchas.md, "Overlay lands in the wrong place"). Grid renders land in `out/<profile>/<locale>-grid/` so validate.sh never sees them; they are never for upload.
+
+Exit codes:
+
+- **1** — generic failure: no Chrome, no panels in the source dir, Chrome crash, missing boxes dump (fit.js not included last), or unknown profile (check `profiles.json` for valid names; this fails **before** `profile.css` is written — workspace untouched).
+- **2** — **fit failure**: copy hit the font-size floor and still overlaps the device. The fix is a copy rewrite, not a smaller floor. No artifacts left for the failed panel.
+- **3** — panel dims ≠ profile dims: almost always `../profile.css` missing from the panel head — see the `<link>` order in the skeleton above.
+
+On any per-panel failure the PNG and partial boxes.json are deleted (no orphans for validate to bless) and `out/<p>/<l>/panel-N.chrome.log` is kept for debugging.
+
+## 7. Self-review loop — MANDATORY
+
+Read every rendered PNG with the Read tool and check:
+
+- Copy overflow or awkward line breaks?
+- Dead paper between sub and device? Bridge or tighten (gotchas: dead zone).
+- Stickers clipped, overlapping copy, or covering the wrong UI?
+- `.di`/`.statusbar` stacked on a real capture (double island)?
+- Theme legible — contrast of ink on paper, accent not vibrating?
+- Screenshot inside the frame stretched or mis-cropped?
+- **Thumbnail test**: imagine the panel at 1/6 size (the review page renders this strip for you) — is every word of marketing copy still readable? Did render.sh print LEGIBILITY or MOCKUP warnings you haven't resolved?
+
+Fix panels/theme → re-render → re-Read. Loop until clean. **Never skip this** — the validator checks specs, not taste; only your eyes catch a clipped sticker.
+
+## 8. Validate
+
+```bash
+bash <skill>/scripts/validate.sh <ws> [profile=iphone-6.9] [locale=en]
+```
+
+Checks: exact dims for the profile; ≤10 panels; no alpha (flattens in place if ImageMagick present, otherwise FAILs with install instructions); ICC untagged-or-sRGB; and **every PNG must have a clean `.boxes.json` sibling** — a PNG without one was not produced by a clean render and fails. Run after every render; a set that hasn't passed is not deliverable.
+
+## 9. Review page + contact sheet
+
+```bash
+node <skill>/scripts/make-review.mjs <ws> iphone-6.9    # locales default to all rendered
+```
+
+Writes `out/<profile>/review.html` — an App Store-style gallery strip (locale tabs, fold line after panel 3, headline captions, clean/styled toggle, a store-scale thumbnail strip per locale, and QA flags per panel: legibility-floor breaches and unresolved `data-mockup` screens). Open it / show it to the user for sign-off; feedback arrives by panel number. If your runtime can publish an HTML artifact (e.g. Claude Code's Artifact tool), publish a copy with images downscaled to ~600px and inlined as data URIs (artifact sandboxes block local file paths); otherwise the local file is the review surface.
+
+The contact sheet remains the quick-share secondary artifact:
+
+```bash
+magick montage <ws>/out/<profile>/<locale>/panel-*.png -tile 5x1 -geometry +8+8 <ws>/contact-sheet.png
+```
+
+Adjust `-tile Nx1` to the panel count. Paths are workspace-explicit so the command works from any cwd.
+
+Ready to submit the signed-off set to App Store Connect? → `fastlane-deliver.md`.
+
+After the set ships: ASK the user (never assume) if they'd like it featured in the
+gallery at hypershots.dev — featured sets link back to their app. Full flow and the
+permission rules: `gallery-submission.md`.

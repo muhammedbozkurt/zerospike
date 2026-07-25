@@ -23,6 +23,15 @@ import {
   V8_PROFILE_COLUMNS,
   V8_RENAME,
 } from "../lib/db/v8Sql";
+import {
+  V9_COPY_INJECTIONS,
+  V9_CREATE_INJECTIONS,
+  V9_DROP_OLD,
+  V9_DROP_SCRATCH,
+  V9_INDEX,
+  V9_RENAME,
+} from "../lib/db/v9Sql";
+import { V10_ADD_HK_UUID } from "../lib/db/v10Sql";
 
 let passed = 0;
 let failed = 0;
@@ -126,7 +135,55 @@ function runV8(db: DatabaseSync): void {
   }
 }
 
-console.log("zerospike schema v8 migration test");
+/** A database shaped like a v8 install: injection_logs with the v8 site CHECK. */
+function makeV8InjectionDb(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE meal_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, logged_at TEXT NOT NULL);
+    CREATE TABLE injection_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      site TEXT NOT NULL
+        CHECK (site IN ('abdomen_left','abdomen_right','thigh_left','thigh_right',
+                        'arm_left','arm_right','buttock_left','buttock_right')),
+      site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
+      dose_units REAL,
+      insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+      meal_log_id TEXT,
+      note TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]'
+    );
+  `);
+  db.exec(
+    `INSERT INTO user_profiles (id, name, created_at) VALUES ('p1', 'Me', '2026-01-01T00:00:00.000Z');`
+  );
+  return db;
+}
+
+/** The real v9 migration body, mirroring lib/db/index.ts migrateToV9. */
+function runV9(db: DatabaseSync): void {
+  db.exec("PRAGMA foreign_keys = OFF;");
+  db.exec("BEGIN;");
+  try {
+    db.exec(V9_DROP_SCRATCH);
+    db.exec(V9_CREATE_INJECTIONS);
+    db.exec(V9_COPY_INJECTIONS);
+    db.exec(V9_DROP_OLD);
+    db.exec(V9_RENAME);
+    db.exec(V9_INDEX);
+    db.exec("COMMIT;");
+  } catch (e) {
+    db.exec("ROLLBACK;");
+    throw e;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON;");
+  }
+}
+
+console.log("zerospike schema v8/v9 migration test");
 
 // ── A. No row is ever dropped, however odd its values ────────────────────────
 section("A. row preservation (the INSERT OR IGNORE data-loss path)");
@@ -266,6 +323,189 @@ section("C. re-running and crash recovery");
     db.prepare("SELECT COUNT(*) AS c FROM injection_logs;").get() as { c: number }
   ).c;
   eq("and its rows intact", rows, 1);
+  db.close();
+}
+
+// ── D. v9: abdomen quadrants (legacy sites preserved, new sites accepted) ─────
+section("D. v9 abdomen quadrants");
+{
+  const db = makeV8InjectionDb();
+  const insert = db.prepare(
+    `INSERT INTO injection_logs
+       (id, profile_id, site, site_point, dose_units, insulin_type, meal_log_id, note, source, logged_at, tags)
+     VALUES (?, 'p1', ?, ?, ?, ?, NULL, NULL, 'manual', ?, '[]');`
+  );
+  // Legacy general-abdomen rows (with and without a rotation point) + another site.
+  insert.run("i1", "abdomen_left", 3, 6, "bolus", "2026-07-01T08:00:00.000Z");
+  insert.run("i2", "abdomen_right", null, 4, "basal", "2026-07-01T09:00:00.000Z");
+  insert.run("i3", "thigh_left", 2, 10, "bolus", "2026-07-01T10:00:00.000Z");
+
+  eq(
+    "fixture has 3 rows",
+    (db.prepare("SELECT COUNT(*) AS c FROM injection_logs;").get() as { c: number }).c,
+    3
+  );
+
+  runV9(db);
+
+  const after = (
+    db.prepare("SELECT COUNT(*) AS c FROM injection_logs;").get() as { c: number }
+  ).c;
+  eq("all 3 rows survive v9", after, 3);
+
+  const rows = db
+    .prepare("SELECT id, site, site_point FROM injection_logs ORDER BY id;")
+    .all() as { id: string; site: string; site_point: number | null }[];
+  // Legacy values are NEVER rewritten into a quadrant - copied verbatim.
+  eq("legacy abdomen_left preserved verbatim", rows[0].site, "abdomen_left");
+  eq("legacy abdomen_right preserved verbatim", rows[1].site, "abdomen_right");
+  eq("legacy rotation point preserved", rows[0].site_point, 3);
+  eq("other site preserved", rows[2].site, "thigh_left");
+
+  // The new quadrant values are now accepted by the widened CHECK.
+  let acceptedNew = true;
+  try {
+    db.exec(
+      `INSERT INTO injection_logs (id, profile_id, site, logged_at, tags)
+       VALUES ('i4', 'p1', 'abdomen_left_upper', '2026-07-02T08:00:00.000Z', '[]');`
+    );
+  } catch {
+    acceptedNew = false;
+  }
+  ok("v9 accepts the new abdomen_left_upper quadrant", acceptedNew);
+
+  // A genuinely off-list value is still rejected.
+  let rejectedGarbage = false;
+  try {
+    db.exec(
+      `INSERT INTO injection_logs (id, profile_id, site, logged_at, tags)
+       VALUES ('i5', 'p1', 'elbow', '2026-07-02T09:00:00.000Z', '[]');`
+    );
+  } catch {
+    rejectedGarbage = true;
+  }
+  ok("v9 still rejects an unknown site", rejectedGarbage);
+  db.close();
+}
+
+// ── E. v9 idempotency + crash recovery (mirrors the v8 C section) ─────────────
+section("E. v9 idempotency + crash recovery");
+{
+  const db = makeV8InjectionDb();
+  db.exec(
+    `INSERT INTO injection_logs (id, profile_id, site, logged_at, tags)
+     VALUES ('i1', 'p1', 'abdomen_left', '2026-07-01T08:00:00.000Z', '[]');`
+  );
+  runV9(db);
+  // A leftover scratch table from a killed attempt must not double the rows.
+  db.exec("CREATE TABLE injection_logs_v9 (id TEXT PRIMARY KEY NOT NULL);");
+  db.exec("INSERT INTO injection_logs_v9 (id) VALUES ('stale');");
+  runV9(db);
+  eq(
+    "re-running v9 keeps exactly one copy of the row",
+    (db.prepare("SELECT COUNT(*) AS c FROM injection_logs;").get() as { c: number }).c,
+    1
+  );
+  db.close();
+}
+{
+  const db = makeV8InjectionDb();
+  db.exec(
+    `INSERT INTO injection_logs (id, profile_id, site, logged_at, tags)
+     VALUES ('i1', 'p1', 'abdomen_left', '2026-07-01T08:00:00.000Z', '[]');`
+  );
+  db.exec("PRAGMA foreign_keys = OFF;");
+  db.exec("BEGIN;");
+  try {
+    db.exec(V9_DROP_SCRATCH);
+    db.exec(V9_CREATE_INJECTIONS);
+    db.exec(V9_COPY_INJECTIONS);
+    db.exec(V9_DROP_OLD);
+    throw new Error("simulated crash before RENAME");
+  } catch {
+    db.exec("ROLLBACK;");
+  }
+  const tables = (
+    db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='injection_logs';")
+      .all() as { name: string }[]
+  ).length;
+  eq("a crash mid v9-rebuild leaves injection_logs in place", tables, 1);
+  eq(
+    "and its rows intact",
+    (db.prepare("SELECT COUNT(*) AS c FROM injection_logs;").get() as { c: number }).c,
+    1
+  );
+  db.close();
+}
+
+// ── F. v10: sugar_logs.healthkit_uuid (add column, rows + values preserved) ───
+section("F. v10 sugar_logs.healthkit_uuid");
+
+/** The real v10 migration body, mirroring lib/db/index.ts migrateToV10. */
+function runV10(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(sugar_logs);").all() as {
+    name: string;
+  }[];
+  if (cols.some((c) => c.name === "healthkit_uuid")) return;
+  db.exec(V10_ADD_HK_UUID);
+}
+
+{
+  const db = new DatabaseSync(":memory:");
+  db.exec(
+    `CREATE TABLE sugar_logs (
+       id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+       glucose_level_mgdl INTEGER NOT NULL, period_tag TEXT NOT NULL DEFAULT 'manual',
+       source TEXT NOT NULL DEFAULT 'manual', logged_at TEXT NOT NULL,
+       tags TEXT NOT NULL DEFAULT '[]');`
+  );
+  db.exec(
+    `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags)
+     VALUES ('s1','p1',112,'manual','manual','2026-07-24T10:00:00.000Z','[]');`
+  );
+  runV10(db);
+
+  const cols = (
+    db.prepare("PRAGMA table_info(sugar_logs);").all() as { name: string }[]
+  ).map((c) => c.name);
+  ok("v10 adds the healthkit_uuid column", cols.includes("healthkit_uuid"));
+
+  const row = db.prepare("SELECT * FROM sugar_logs WHERE id='s1';").get() as {
+    glucose_level_mgdl: number;
+    healthkit_uuid: string | null;
+  };
+  eq("the existing row survives v10", row.glucose_level_mgdl, 112);
+  eq("healthkit_uuid defaults to NULL", row.healthkit_uuid, null);
+
+  db.exec("UPDATE sugar_logs SET healthkit_uuid='HK-1' WHERE id='s1';");
+  eq(
+    "healthkit_uuid can be recorded",
+    (
+      db.prepare("SELECT healthkit_uuid AS u FROM sugar_logs WHERE id='s1';").get() as {
+        u: string | null;
+      }
+    ).u,
+    "HK-1"
+  );
+
+  // Re-running is a guarded no-op (older build at v10 / fresh v10 schema), and it
+  // must not wipe the value or duplicate the row.
+  runV10(db);
+  eq(
+    "re-running v10 keeps the recorded value",
+    (
+      db.prepare("SELECT healthkit_uuid AS u FROM sugar_logs WHERE id='s1';").get() as {
+        u: string | null;
+      }
+    ).u,
+    "HK-1"
+  );
+  eq(
+    "still exactly one row after v10 re-run",
+    (db.prepare("SELECT COUNT(*) AS c FROM sugar_logs;").get() as { c: number }).c,
+    1
+  );
   db.close();
 }
 

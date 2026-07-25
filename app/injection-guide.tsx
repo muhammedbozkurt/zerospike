@@ -5,8 +5,7 @@ import {
   ScrollView,
   Text,
   useWindowDimensions,
-  View,
-} from "react-native";
+  View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -74,7 +73,7 @@ export default function InjectionGuideScreen() {
   }
 
   return (
-    <AppBackground style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
       <ScreenHeader
         title={t("injectionGuide.screenTitle")}
         onBack={() => router.back()}

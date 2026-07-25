@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Modal, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import Svg, {
   Circle,
   Defs,
   Ellipse,
   G,
+  LinearGradient,
+  Path,
   RadialGradient,
   Rect,
   Stop,
@@ -13,51 +15,76 @@ import Svg, {
 } from "react-native-svg";
 
 import type { InjectionSite, SitePoint } from "../lib/db/types";
-import { SITE_POINTS, pointGrid } from "../lib/db/types";
+import { SITE_POINTS } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
+import { isScreenshotMode } from "../lib/screenshotMode";
 
 /**
- * Injection-site usage map, at ROTATION-POINT resolution.
+ * Injection-site usage map (schema v9), at ROTATION-POINT resolution.
  *
- * The model follows the quarter/rotation idea used in injection-technique
- * guidance (FITTER): a body region is not one spot, it is a small area you work
- * across. So each of the eight regions is split into four points, and the user
- * marks the point they actually used. The silhouette shows the region-level
- * picture; tapping a region opens its four points at full touch size (a 32-target
- * grid squeezed onto a 190pt silhouette could not be hit reliably, and the 44pt
- * minimum is not negotiable).
+ * R7.1: the silhouette is now a layered, anatomically proportioned body with a
+ * FRONT / BACK toggle. The abdomen is split into four quadrants (FITTER model);
+ * thighs and arms sit on the front, buttocks on the back. Selecting a region
+ * auto-switches to the face it lives on. Legacy pre-v9 general-abdomen rows are
+ * never rewritten and are shown as a small "abdomen (general)" total on the
+ * front, so no logged data is hidden.
  *
  * Colour is a picture of the user's OWN history: how many times a point was used
- * in the window, weighted by how recently. Frequent and recent reads hot; long
- * untouched reads cool. The longest-unused point carries a dashed marker.
- *
- * Neutral by design. Nothing here says where to inject; it reports what was
- * logged. Every colour is paired with a count, so the map is readable without
- * relying on hue.
+ * in the window, weighted by how recently. Neutral by design - nothing says
+ * where to inject; every colour is paired with a count, so it reads without hue.
  */
+
+type BodyView = "front" | "back";
 
 interface Region {
   site: InjectionSite;
+  view: BodyView;
+  /** Point layout: horizontal row (abdomen), vertical line (thigh / arm) or 2x2 grid (buttock). */
+  orient: "h" | "v" | "g";
+  /** Centre of the 4-point cluster + spacing between points. */
   cx: number;
   cy: number;
-  rx: number;
-  ry: number;
+  sp: number;
+  /** Rounded tap/selection container [x, y, w, h] behind the points. */
+  box: [number, number, number, number];
 }
 
-// Coordinates in the 200 x 360 viewBox. Left/right are the viewer's left/right;
-// the text label resolves the anatomical side, so there is no ambiguity.
+// A smooth, WIDE anatomical body outline on the 0 0 240 380 viewBox (symmetric about
+// x=120): a stockier torso so the 8 belly points sit comfortably, and shorter legs
+// (ending near the knee) so the whole figure can be shown large. Head is separate.
+const BODY_PATH =
+  "M 111 60 C 103.8 66 93.2 86.3 86 96 C 78.8 105.7 72.3 109 68 118 C 63.7 127 61.5 138.3 60 150 " +
+  "C 58.5 161.7 59.3 175.3 59 188 C 58.7 200.7 57 217.7 58 226 C 59 234.3 62.7 237.7 65 238 " +
+  "C 67.3 238.3 70.7 235.7 72 228 C 73.3 220.3 71.2 205.7 73 192 C 74.8 178.3 80.2 146.3 83 146 " +
+  "C 85.8 145.7 90 176.7 90 190 C 90 203.3 83.7 210.7 83 226 C 82.3 241.3 84.3 263.7 86 282 " +
+  "C 87.7 300.3 91.3 323 93 336 C 94.7 349 94.2 354.7 96 360 C 97.8 365.3 101.3 368 104 368 " +
+  "C 106.7 368 110 372.3 112 360 C 114 347.7 114.8 311.7 116 294 C 117.2 276.3 118.3 261.7 119 254 " +
+  "C 119.7 246.3 119.7 248 120 248 C 120.3 248 120.3 246.3 121 254 C 121.7 261.7 122.8 276.3 124 294 " +
+  "C 125.2 311.7 126 347.7 128 360 C 130 372.3 133.3 368 136 368 C 138.7 368 142.2 365.3 144 360 " +
+  "C 145.8 354.7 145.3 349 147 336 C 148.7 323 152.3 300.3 154 282 C 155.7 263.7 157.7 241.3 157 226 " +
+  "C 156.3 210.7 150 203.3 150 190 C 150 176.7 154.2 145.7 157 146 C 159.8 146.3 165.2 178.3 167 192 " +
+  "C 168.8 205.7 166.7 220.3 168 228 C 169.3 235.7 172.7 238.3 175 238 C 177.3 237.7 181 234.3 182 226 " +
+  "C 183 217.7 181.3 200.7 181 188 C 180.7 175.3 181.5 161.7 180 150 C 178.5 138.3 176.3 127 172 118 " +
+  "C 167.7 109 161.2 105.7 154 96 C 146.8 86.3 136.2 66 129 60 C 121.8 54 118.2 54 111 60 Z";
+
+// viewBox 0 0 240 380. Left/right are the viewer's; the label resolves the
+// anatomical side, so there is no ambiguity.
 const REGIONS: Region[] = [
-  { site: "arm_left", cx: 49, cy: 118, rx: 11, ry: 22 },
-  { site: "arm_right", cx: 151, cy: 118, rx: 11, ry: 22 },
-  { site: "abdomen_left", cx: 86, cy: 168, rx: 15, ry: 20 },
-  { site: "abdomen_right", cx: 114, cy: 168, rx: 15, ry: 20 },
-  { site: "buttock_left", cx: 85, cy: 205, rx: 14, ry: 13 },
-  { site: "buttock_right", cx: 115, cy: 205, rx: 14, ry: 13 },
-  { site: "thigh_left", cx: 85, cy: 258, rx: 14, ry: 30 },
-  { site: "thigh_right", cx: 115, cy: 258, rx: 14, ry: 30 },
+  // FRONT: abdomen as a single horizontal row of 4 points on each side of the navel
+  // (wide spacing, fits the wider belly), plus the outer thighs as a vertical line.
+  { site: "abdomen_left", view: "front", orient: "h", cx: 101.75, cy: 202, sp: 7.5, box: [83, 194, 37, 16] },
+  { site: "abdomen_right", view: "front", orient: "h", cx: 138.25, cy: 202, sp: 7.5, box: [120, 194, 37, 16] },
+  { site: "thigh_left", view: "front", orient: "v", cx: 104, cy: 301, sp: 22, box: [96, 260, 16, 82] },
+  { site: "thigh_right", view: "front", orient: "v", cx: 136, cy: 301, sp: 22, box: [128, 260, 16, 82] },
+  // BACK: back-outer upper arms (vertical line) + the upper-outer buttocks (a small
+  // 2x2 cluster each - a valid site even if lightly used).
+  { site: "arm_left", view: "back", orient: "v", cx: 66, cy: 176, sp: 16, box: [58, 144, 16, 66] },
+  { site: "arm_right", view: "back", orient: "v", cx: 174, cy: 176, sp: 16, box: [166, 144, 16, 66] },
+  { site: "buttock_left", view: "back", orient: "g", cx: 103, cy: 242, sp: 6, box: [91, 230, 24, 24] },
+  { site: "buttock_right", view: "back", orient: "g", cx: 137, cy: 242, sp: 6, box: [125, 230, 24, 24] },
 ];
 
 export interface PointSelection {
@@ -91,6 +118,13 @@ function heatFill(intensity: number): string {
   return `rgba(${r},${g},${b},${lerp(0.6, 0.85, t).toFixed(2)})`;
 }
 
+/** A faint container tint for a region, keyed to how used it is (cool vs warm). */
+function heatTint(intensity: number): string {
+  const i = Math.min(1, Math.max(0, intensity));
+  if (i <= 0) return "rgba(255,255,255,0.05)";
+  return i < 0.5 ? "rgba(46,230,255,0.10)" : "rgba(255,160,42,0.11)";
+}
+
 /** How recently a point was used, 0 (never / long ago) to 1 (today). */
 function recencyWeight(lastUsedAt: string | null, now: number): number {
   if (!lastUsedAt) return 0;
@@ -102,31 +136,115 @@ function recencyWeight(lastUsedAt: string | null, now: number): number {
   return 1 - days / RECENCY_WINDOW_DAYS;
 }
 
+/** Whole days since a timestamp (for the accessibility recency phrase). */
+function daysSince(lastUsedAt: string | null, now: number): number | null {
+  if (!lastUsedAt) return null;
+  const t = new Date(lastUsedAt).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((now - t) / 86_400_000));
+}
+
+/** A smooth anatomical silhouette for one face, on the 0 0 240 440 viewBox. */
+function BodySilhouette({ view }: { view: BodyView }) {
+  return (
+    <G>
+      <Ellipse cx={120} cy={38} rx={22} ry={25} fill="url(#bodyGrad)" stroke="rgba(255,255,255,0.22)" strokeWidth={1.4} />
+      <Path d={BODY_PATH} fill="url(#bodyGrad)" stroke="rgba(255,255,255,0.22)" strokeWidth={1.4} />
+      {view === "back" ? (
+        // Back: a faint spine + shoulder-blade hint so the face reads as the back.
+        <>
+          <Path d="M120 94 L120 242" stroke="rgba(10,20,26,0.20)" strokeWidth={1} strokeDasharray="2 5" />
+          <Ellipse cx={104} cy={146} rx={11} ry={15} fill="none" stroke="rgba(10,20,26,0.16)" strokeWidth={0.8} />
+          <Ellipse cx={136} cy={146} rx={11} ry={15} fill="none" stroke="rgba(10,20,26,0.16)" strokeWidth={0.8} />
+        </>
+      ) : (
+        // Front: a soft navel between the two abdomen rows.
+        <Circle cx={120} cy={202} r={2} fill="rgba(10,20,26,0.30)" />
+      )}
+    </G>
+  );
+}
+
+/** Regions laid out as a vertical 1x4 strip (arm/thigh) vs a 2x2 grid. */
+function isVerticalRegion(site: InjectionSite): boolean {
+  return site.startsWith("arm") || site.startsWith("thigh");
+}
+
+/** Neutral, educational absorption-speed note per region type (info, NOT advice;
+ *  no insulin type is ever tied to a site). */
+function absorptionKey(site: InjectionSite): string {
+  if (site.startsWith("abdomen")) return "injection.absorbFast";
+  if (site.startsWith("arm")) return "injection.absorbMedFast";
+  if (site.startsWith("thigh")) return "injection.absorbMedSlow";
+  return "injection.absorbSlow"; // buttock / hip
+}
+
 export function InjectionBodyMap({
   usage,
   selected,
   onSelect,
   windowDays = 30,
+  initialZoom,
 }: {
   usage: SiteUsage[];
   selected: PointSelection | null;
   onSelect: (selection: PointSelection) => void;
   windowDays?: number;
+  /** Store-screenshot only: open this region's zoom card on mount. */
+  initialZoom?: string;
 }) {
   const { t } = useTranslation();
+  const { width: winW, height: winH } = useWindowDimensions();
+  // Silhouette scales with the screen width (capped) so it fills the card on both
+  // a narrow phone and a wide tablet, rather than sitting tiny on the iPad.
+  const svgW = Math.min(Math.round(winW * 0.78), 384);
+  const svgH = Math.round((svgW * 380) / 240);
+  const legendH = Math.round(svgH * 0.46);
   const [openRegion, setOpenRegion] = useState<InjectionSite | null>(null);
+  const [view, setView] = useState<BodyView>("front");
+
+  // Screenshot navigation: open a region's zoom card (and its face) on mount.
+  React.useEffect(() => {
+    if (!initialZoom) return;
+    const region = REGIONS.find((r) => r.site === initialZoom);
+    if (region) {
+      setView(region.view);
+      setOpenRegion(region.site);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialZoom]);
 
   const now = Date.now();
+
+  // Auto-switch to the face a freshly selected region lives on.
+  const selectedView = selected
+    ? REGIONS.find((r) => r.site === selected.site)?.view
+    : undefined;
+  React.useEffect(() => {
+    if (selectedView && selectedView !== view) setView(selectedView);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.site]);
 
   const model = useMemo(() => {
     const bySite = new Map<InjectionSite, SiteUsage>();
     usage.forEach((u) => bySite.set(u.site, u));
 
-    const allPoints: PointUsage[] = usage.flatMap((u) => u.points);
+    // Only the selectable regions feed the heat scale / hottest / least logic.
+    const regionSites = new Set(REGIONS.map((r) => r.site));
+    const selectableUsage = usage.filter((u) => regionSites.has(u.site));
+    const allPoints: PointUsage[] = selectableUsage.flatMap((u) => u.points);
     const maxPointCount = Math.max(1, ...allPoints.map((p) => p.count));
-    const maxSiteCount = Math.max(1, ...usage.map((u) => u.count));
-    const total = usage.reduce((sum, u) => sum + u.count, 0);
+    const maxSiteCount = Math.max(1, ...selectableUsage.map((u) => u.count));
+    const total = selectableUsage.reduce((sum, u) => sum + u.count, 0);
     const unassigned = usage.reduce((sum, u) => sum + u.unassignedCount, 0);
+
+    // Data logged against the retired abdomen quadrants is not on the new map; surface
+    // it as an aggregate note so no history is ever hidden.
+    const legacyAbdomen =
+      (bySite.get("abdomen_left_upper")?.count ?? 0) +
+      (bySite.get("abdomen_right_upper")?.count ?? 0) +
+      (bySite.get("abdomen_left_lower")?.count ?? 0) +
+      (bySite.get("abdomen_right_lower")?.count ?? 0);
 
     // The point untouched the longest: never-used wins, then oldest last use.
     let least: PointSelection | null = null;
@@ -149,7 +267,7 @@ export function InjectionBodyMap({
       }
     }
 
-    return { bySite, maxPointCount, maxSiteCount, total, unassigned, least, hottest };
+    return { bySite, maxPointCount, maxSiteCount, total, unassigned, legacyAbdomen, least, hottest };
   }, [usage]);
 
   /** Combined frequency + recency intensity for one point. */
@@ -160,7 +278,17 @@ export function InjectionBodyMap({
     return Math.min(1, freq * 0.65 + recent * 0.35);
   }
 
+  /** "used today" / "N days ago" / "never used" for the accessibility label. */
+  function recencyPhrase(lastUsedAt: string | null): string {
+    const d = daysSince(lastUsedAt, now);
+    if (d == null) return t("injection.usedNever");
+    if (d === 0) return t("injection.usedToday");
+    return t("injection.daysAgo", { n: d });
+  }
+
   const openUsage = openRegion ? model.bySite.get(openRegion) : undefined;
+  const zoomVertical = openRegion ? isVerticalRegion(openRegion) : false;
+  const visibleRegions = REGIONS.filter((r) => r.view === view);
 
   function choose(site: InjectionSite, point: SitePoint) {
     hapticSelect();
@@ -178,7 +306,13 @@ export function InjectionBodyMap({
   return (
     <View
       className="rounded-2xl bg-glass border border-hair p-4"
-      style={model.total > 0 ? glow(THEME.accent, 24, 0.3) : undefined}
+      style={[
+        // A floor only for very short screens; the big responsive silhouette already
+        // makes the card tall enough to fill the phone viewport (rotation card mostly
+        // off-screen) without leaving dead space under the notes on a taller tablet.
+        { minHeight: Math.round(winH * 0.5) },
+        model.total > 0 ? glow(THEME.accent, 24, 0.3) : null,
+      ]}
     >
       <View className="flex-row items-center justify-between mb-1">
         <Text className="text-ink font-semibold">{t("injection.pointMapTitle")}</Text>
@@ -186,86 +320,144 @@ export function InjectionBodyMap({
           {t("injection.usageWindow", { n: windowDays })}
         </Text>
       </View>
-      <Text className="text-mut text-[11px] leading-4 mb-1">
+      <Text className="text-mut text-[11px] leading-4 mb-2">
         {t("injection.pointMapSub")}
       </Text>
 
-      <View className="items-center py-1">
-        <Svg width={190} height={342} viewBox="0 0 200 360">
+      {/* Front / back toggle */}
+      <View className="flex-row self-center rounded-full border border-hair mb-1" style={{ overflow: "hidden" }}>
+        {(["front", "back"] as BodyView[]).map((v) => {
+          const on = v === view;
+          return (
+            <Pressable
+              key={v}
+              onPress={() => {
+                hapticSelect();
+                setView(v);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={v === "front" ? t("injection.frontView") : t("injection.backView")}
+              style={{
+                paddingHorizontal: 18,
+                paddingVertical: 7,
+                backgroundColor: on ? THEME.accent : "transparent",
+              }}
+            >
+              <Text style={{ color: on ? "#00171c" : THEME.muted, fontSize: 12, fontWeight: "800" }}>
+                {v === "front" ? t("injection.frontView") : t("injection.backView")}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View className="items-center py-1" style={{ alignSelf: "stretch", position: "relative" }}>
+        {/* Vertical heat legend, ABSOLUTE at the far left so the silhouette stays centred */}
+        <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 24, alignItems: "center", justifyContent: "center" }}>
+          <Text className="text-mut" style={{ fontSize: 10, marginBottom: 6 }}>{t("injection.heatHigh")}</Text>
+          <Svg width={10} height={legendH}>
+            <Defs>
+              <LinearGradient id="legendGradV" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor={heatFill(1)} />
+                <Stop offset="0.5" stopColor={heatFill(0.5)} />
+                <Stop offset="1" stopColor={heatFill(0.08)} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={10} height={legendH} rx={5} fill="url(#legendGradV)" />
+          </Svg>
+          <Text className="text-mut" style={{ fontSize: 10, marginTop: 6 }}>{t("injection.heatLow")}</Text>
+        </View>
+        <Svg width={svgW} height={svgH} viewBox="0 0 240 380">
           <Defs>
-            {/* Warm hot-spot radial under the busiest region (mockup B03). */}
+            <LinearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#eef7fb" />
+              <Stop offset="1" stopColor="#c2d5df" />
+            </LinearGradient>
             <RadialGradient id="hotspot">
-              <Stop offset="0" stopColor={GLUCOSE_RICH.wellAbove} stopOpacity={0.55} />
+              <Stop offset="0" stopColor={GLUCOSE_RICH.wellAbove} stopOpacity={0.5} />
               <Stop offset="1" stopColor={GLUCOSE_RICH.wellAbove} stopOpacity={0} />
             </RadialGradient>
           </Defs>
-          {model.total > 0 ? (
-            <Circle cx={model.hottest.cx} cy={model.hottest.cy} r={34} fill="url(#hotspot)" />
+
+          {/* Warm hot-spot under the busiest region on the current face */}
+          {model.total > 0 && model.hottest.view === view ? (
+            <Circle cx={model.hottest.cx} cy={model.hottest.cy} r={30} fill="url(#hotspot)" />
           ) : null}
 
-          {/* Base silhouette (muted) */}
-          <G>
-            <Circle cx={100} cy={38} r={24} fill={THEME.glass} stroke={THEME.border} strokeWidth={1.5} />
-            <Rect x={94} y={58} width={12} height={12} fill={THEME.glass} />
-            <Rect x={64} y={64} width={72} height={130} rx={26} fill={THEME.glass} stroke={THEME.border} strokeWidth={1.5} />
-            <Rect x={38} y={70} width={22} height={96} rx={11} fill={THEME.glass} stroke={THEME.border} strokeWidth={1.5} />
-            <Rect x={140} y={70} width={22} height={96} rx={11} fill={THEME.glass} stroke={THEME.border} strokeWidth={1.5} />
-            <Rect x={68} y={188} width={64} height={34} rx={16} fill={THEME.glass} stroke={THEME.border} strokeWidth={1.5} />
-            <Rect x={70} y={214} width={26} height={124} rx={13} fill={THEME.glass} stroke={THEME.border} strokeWidth={1.5} />
-            <Rect x={104} y={214} width={26} height={124} rx={13} fill={THEME.glass} stroke={THEME.border} strokeWidth={1.5} />
-          </G>
+          <BodySilhouette view={view} />
 
-          {/* Regions: shaded by their own total, each opening its four points */}
-          {REGIONS.map((r) => {
+          {/* Selectable regions on this face: a soft container + the 4 heat dots + count */}
+          {visibleRegions.map((r) => {
             const u = model.bySite.get(r.site);
             const count = u?.count ?? 0;
             const isSelected = selected?.site === r.site;
             const holdsLeast = model.least?.site === r.site;
+            const [bx, by, bw, bh] = r.box;
+            const stroke = isSelected || holdsLeast ? THEME.accent : "rgba(255,255,255,0.32)";
             return (
               <G key={r.site} onPress={() => setOpenRegion(r.site)}>
-                <Ellipse
-                  cx={r.cx}
-                  cy={r.cy}
-                  rx={r.rx}
-                  ry={r.ry}
-                  fill={heatFill(count / model.maxSiteCount)}
-                  stroke={isSelected || holdsLeast ? THEME.accent : THEME.border}
-                  strokeWidth={isSelected ? 2.5 : 1.5}
+                <Rect
+                  x={bx}
+                  y={by}
+                  width={bw}
+                  height={bh}
+                  rx={Math.min(bw, bh) / 2}
+                  fill={heatTint(count / model.maxSiteCount)}
+                  stroke={stroke}
+                  strokeWidth={isSelected ? 1.8 : 1.1}
                   strokeDasharray={holdsLeast && !isSelected ? "3 3" : undefined}
                 />
-                {/* The four points as small dots inside the region, so the 2x2
-                    structure is visible at a glance even before it is opened. */}
-                {u
-                  ? u.points.map((p) => {
-                      const { row, col } = pointGrid(p.point);
-                      const dx = (col === 0 ? -1 : 1) * r.rx * 0.42;
-                      const dy = (row === 0 ? -1 : 1) * r.ry * 0.42;
-                      const on =
-                        selected?.site === r.site && selected.point === p.point;
-                      return (
-                        <Circle
-                          key={p.point}
-                          cx={r.cx + dx}
-                          cy={r.cy + dy}
-                          r={on ? 3.6 : 2.6}
-                          fill={p.count > 0 ? heatFill(pointIntensity(p)) : "rgba(255,255,255,0.12)"}
-                          stroke={on ? THEME.accent : "rgba(255,255,255,0.18)"}
-                          strokeWidth={on ? 1.6 : 0.8}
-                        />
-                      );
-                    })
-                  : null}
+                {SITE_POINTS.map((point) => {
+                  const p = u?.points.find((x) => x.point === point);
+                  let cx: number, cy: number;
+                  if (r.orient === "g") {
+                    cx = r.cx + ((point - 1) % 2 === 0 ? -r.sp : r.sp);
+                    cy = r.cy + (point <= 2 ? -r.sp : r.sp);
+                  } else {
+                    const off = (point - 2.5) * r.sp;
+                    cx = r.orient === "h" ? r.cx + off : r.cx;
+                    cy = r.orient === "v" ? r.cy + off : r.cy;
+                  }
+                  const on = selected?.site === r.site && selected.point === point;
+                  const c = p && p.count > 0 ? heatFill(pointIntensity(p)) : "rgba(255,255,255,0.14)";
+                  return (
+                    <G key={point}>
+                      {p && p.count > 0 ? (
+                        <Circle cx={cx} cy={cy} r={6.5} fill={c} opacity={0.16} />
+                      ) : null}
+                      <Circle
+                        cx={cx}
+                        cy={cy}
+                        r={on ? 4.6 : 4.2}
+                        fill={c}
+                        stroke={on ? THEME.accent : "rgba(10,20,26,0.5)"}
+                        strokeWidth={on ? 1.9 : 1.1}
+                      />
+                    </G>
+                  );
+                })}
                 {count > 0 ? (
-                  <SvgText
-                    x={r.cx}
-                    y={r.cy + 4}
-                    fontSize={11}
-                    fontWeight="bold"
-                    fill={THEME.ink}
-                    textAnchor="middle"
-                  >
-                    {String(count)}
-                  </SvgText>
+                  <G>
+                    <Circle
+                      cx={bx + bw / 2}
+                      cy={by - 8}
+                      r={8}
+                      fill="rgba(8,16,22,0.82)"
+                      stroke="rgba(255,255,255,0.25)"
+                      strokeWidth={0.8}
+                    />
+                    <SvgText
+                      x={bx + bw / 2}
+                      y={by - 8 + 3.3}
+                      fontSize={9}
+                      fontWeight="bold"
+                      fill={THEME.ink}
+                      textAnchor="middle"
+                    >
+                      {String(count)}
+                    </SvgText>
+                  </G>
                 ) : null}
               </G>
             );
@@ -273,29 +465,17 @@ export function InjectionBodyMap({
         </Svg>
       </View>
 
-      <Text className="text-ink font-semibold text-center">{selectedLabel}</Text>
-
-      <View className="flex-row items-center justify-center mt-2" style={{ gap: 14 }}>
-        <View className="flex-row items-center">
-          <View
-            className="w-3 h-3 rounded-full mr-1.5"
-            style={{ backgroundColor: heatFill(1) }}
-          />
-          <Text className="text-mut text-[11px]">{t("injection.mostUsedPoint")}</Text>
-        </View>
-        <View className="flex-row items-center">
-          <View
-            className="w-3 h-3 rounded-full mr-1.5"
-            style={{ borderWidth: 1, borderStyle: "dashed", borderColor: THEME.accent }}
-          />
-          <Text className="text-mut text-[11px]">{t("injection.leastUsedPoint")}</Text>
-        </View>
-      </View>
+      <Text className="text-ink font-semibold text-center mt-1">{selectedLabel}</Text>
 
       <Text className="text-mut text-[11px] text-center mt-2 leading-4">
         {t("injection.pointNeutral")}
       </Text>
-      {model.unassigned > 0 ? (
+      {!isScreenshotMode() && model.legacyAbdomen > 0 ? (
+        <Text className="text-mut text-[11px] text-center mt-1">
+          {t("injection.abdomenGeneral", { n: model.legacyAbdomen })}
+        </Text>
+      ) : null}
+      {!isScreenshotMode() && model.unassigned > 0 ? (
         <Text className="text-mut text-[11px] text-center mt-1">
           {t("injection.noPointYet", { n: model.unassigned })}
         </Text>
@@ -330,52 +510,97 @@ export function InjectionBodyMap({
               glow(THEME.accent, 30, 0.35),
             ]}
           >
-            <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800", textAlign: "center" }}>
-              {openRegion ? t(`injectionSite.${openRegion}`) : ""}
-            </Text>
-            <Text style={{ color: THEME.muted, fontSize: 11, textAlign: "center", marginTop: 4 }}>
-              {t("injection.selectPoint")}
-            </Text>
+            {/* Header: region name + close */}
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: THEME.ink, fontSize: 18, fontWeight: "800" }}>
+                  {openRegion ? t(`injectionSite.${openRegion}`) : ""}
+                </Text>
+                <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 2 }}>
+                  {t("injection.selectPoint")}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setOpenRegion(null)}
+                accessibilityRole="button"
+                accessibilityLabel={t("common.close")}
+                hitSlop={10}
+                style={{
+                  width: 30, height: 30, borderRadius: 15,
+                  alignItems: "center", justifyContent: "center",
+                  backgroundColor: withAlpha("#ffffff", 0.06),
+                  borderWidth: 1, borderColor: THEME.border,
+                }}
+              >
+                <Text style={{ color: THEME.muted, fontSize: 15, fontWeight: "700", lineHeight: 17 }}>×</Text>
+              </Pressable>
+            </View>
 
-            <View className="flex-row flex-wrap justify-between mt-4">
+            {/* Absorption note as a subtle chip */}
+            {openRegion ? (
+              <View
+                style={{
+                  alignSelf: "flex-start", marginTop: 12,
+                  flexDirection: "row", alignItems: "center", gap: 6,
+                  paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999,
+                  backgroundColor: withAlpha(THEME.accent, 0.12),
+                  borderWidth: 1, borderColor: withAlpha(THEME.accent, 0.3),
+                }}
+              >
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: THEME.accent }} />
+                <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }}>
+                  {t(absorptionKey(openRegion))}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={{ marginTop: 14, gap: 8 }}>
               {SITE_POINTS.map((point) => {
                 const p = openUsage?.points.find((x) => x.point === point);
-                const on =
-                  selected?.site === openRegion && selected.point === point;
-                const isLeast =
-                  model.least?.site === openRegion && model.least.point === point;
+                const on = selected?.site === openRegion && selected.point === point;
+                const isLeast = model.least?.site === openRegion && model.least.point === point;
                 const intensity = p ? pointIntensity(p) : 0;
+                const used = (p?.count ?? 0) > 0;
                 return (
                   <Pressable
                     key={point}
                     onPress={() => openRegion && choose(openRegion, point)}
                     accessibilityRole="button"
                     accessibilityState={{ selected: on }}
-                    accessibilityLabel={t("injection.siteWithPoint", {
+                    accessibilityLabel={`${t("injection.siteWithPoint", {
                       site: openRegion ? t(`injectionSite.${openRegion}`) : "",
                       n: point,
-                    })}
+                    })} · ${recencyPhrase(p?.lastUsedAt ?? null)}`}
                     style={{
-                      width: "48%",
-                      minHeight: HIT_TARGET * 1.6,
-                      marginBottom: 10,
+                      flexDirection: "row", alignItems: "center", gap: 12,
+                      minHeight: HIT_TARGET,
                       borderRadius: RADIUS.lg,
-                      borderWidth: on ? 2 : 1,
+                      borderWidth: on ? 1.6 : 1,
                       borderColor: on || isLeast ? THEME.accent : THEME.border,
                       borderStyle: isLeast && !on ? "dashed" : "solid",
-                      backgroundColor: heatFill(intensity),
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 10,
+                      backgroundColor: withAlpha("#ffffff", on ? 0.06 : 0.03),
+                      paddingVertical: 10, paddingHorizontal: 12,
                     }}
                   >
-                    <Text style={{ color: THEME.ink, fontWeight: "800", fontSize: 13 }}>
-                      {t("injection.pointLabel", { n: point })}
-                    </Text>
-                    <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
-                      {t(`injection.point_${point}`)}
-                    </Text>
-                    <Text style={{ color: THEME.ink, fontSize: 11, marginTop: 4, opacity: 0.8 }}>
+                    <View
+                      style={{
+                        width: 34, height: 34, borderRadius: 17,
+                        alignItems: "center", justifyContent: "center",
+                        backgroundColor: used ? heatFill(intensity) : withAlpha("#ffffff", 0.06),
+                        borderWidth: 1, borderColor: withAlpha("#0a141a", 0.35),
+                      }}
+                    >
+                      <Text style={{ color: THEME.ink, fontWeight: "800", fontSize: 14 }}>{point}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={1} style={{ color: THEME.ink, fontWeight: "700", fontSize: 14 }}>
+                        {t("injection.pointLabel", { n: point })}
+                      </Text>
+                      <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+                        {recencyPhrase(p?.lastUsedAt ?? null)}
+                      </Text>
+                    </View>
+                    <Text style={{ color: used ? THEME.ink : THEME.muted, fontWeight: "800", fontSize: 17, minWidth: 22, textAlign: "right" }}>
                       {p?.count ?? 0}
                     </Text>
                   </Pressable>
@@ -383,25 +608,9 @@ export function InjectionBodyMap({
               })}
             </View>
 
-            <Text style={{ color: THEME.muted, fontSize: 11, textAlign: "center", lineHeight: 16 }}>
+            <Text style={{ color: THEME.muted, fontSize: 11, textAlign: "center", lineHeight: 16, marginTop: 12 }}>
               {t("injection.pointNeutral")}
             </Text>
-
-            <Pressable
-              onPress={() => setOpenRegion(null)}
-              style={{
-                marginTop: 12,
-                borderRadius: RADIUS.lg,
-                borderWidth: 1,
-                borderColor: THEME.border,
-                backgroundColor: withAlpha("#ffffff", 0.04),
-                paddingVertical: 12,
-              }}
-            >
-              <Text style={{ color: THEME.muted, fontWeight: "700", textAlign: "center" }}>
-                {t("common.close")}
-              </Text>
-            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>

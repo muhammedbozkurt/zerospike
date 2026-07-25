@@ -15,7 +15,7 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { AppBackground, ConicAvatar, GlassCard, GradientCTA, withAlpha } from "../components/rich";
-import { THEME, glow } from "../lib/theme/tokens";
+import { THEME, glow, HIT_TARGET } from "../lib/theme/tokens";
 import { askSpike, isConfigured, type SpikeMessage } from "../lib/ai/spikeClient";
 import {
   getSpikeUsage,
@@ -73,26 +73,40 @@ export default function SpikeScreen() {
 
   const exhausted = usage != null && usage.remaining <= 0;
 
-  async function send() {
-    const text = input.trim();
-    if (!text || sending || !isConfigured || exhausted) return;
-    hapticSelect();
+  // Shared request path. A message is counted ONLY on a successful reply, so a
+  // failed request never burns the user's daily allowance; a failure exposes a
+  // retry that re-sends the same history without re-appending the question.
+  async function runRequest(history: SpikeMessage[]) {
     setErrored(false);
-    const next: SpikeMessage[] = [...messages, { role: "user", content: text }];
-    setMessages(next);
-    setInput("");
     setSending(true);
-    // Counted at dispatch, so a failed request does not silently burn a message.
-    setUsage(await noteSpikeMessage(isProUser));
     try {
-      const reply = await askSpike(next, i18n.language);
+      const reply = await askSpike(history, i18n.language);
       setMessages((m) => [...m, { role: "assistant", content: reply }]);
+      setUsage(await noteSpikeMessage(isProUser));
     } catch {
       setErrored(true);
     } finally {
       setSending(false);
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
     }
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || sending || !isConfigured || exhausted) return;
+    hapticSelect();
+    const next: SpikeMessage[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    setInput("");
+    await runRequest(next);
+  }
+
+  // Retry the last (failed) exchange. The user turn is still the tail of
+  // `messages`, so we re-send that history as-is instead of appending again.
+  function retry() {
+    if (sending || !isConfigured || messages.length === 0) return;
+    hapticSelect();
+    void runRequest(messages);
   }
 
   if (!ready) {
@@ -108,7 +122,7 @@ export default function SpikeScreen() {
   // ── Consent gate ───────────────────────────────────────────────────────────
   if (!consented) {
     return (
-      <AppBackground style={{ paddingTop: insets.top }}>
+      <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
         <View className="flex-row items-center justify-end px-4 py-2">
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
             <Ionicons name="close" size={26} color={THEME.muted} />
@@ -144,7 +158,7 @@ export default function SpikeScreen() {
 
   // ── Chat ───────────────────────────────────────────────────────────────────
   return (
-    <AppBackground style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
@@ -229,7 +243,7 @@ export default function SpikeScreen() {
                     borderTopColor: THEME.border,
                   }}
                 >
-                  <Text style={{ color: THEME.muted, fontSize: 9 }}>{t("spike.disclaimer")}</Text>
+                  <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("spike.disclaimer")}</Text>
                 </View>
               </View>
             )
@@ -241,9 +255,34 @@ export default function SpikeScreen() {
             </View>
           ) : null}
           {errored ? (
-            <Text style={{ color: "#ff7a8a", fontSize: 12, alignSelf: "flex-start" }}>
-              {t("spike.error")}
-            </Text>
+            <View
+              style={{
+                alignSelf: "flex-start",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Text style={{ color: "#ff7a8a", fontSize: 12 }}>{t("spike.error")}</Text>
+              <Pressable
+                onPress={retry}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t("spike.retry")}
+                style={{
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: THEME.border,
+                  backgroundColor: THEME.glass,
+                  paddingHorizontal: 12,
+                  paddingVertical: 5,
+                }}
+              >
+                <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "800" }}>
+                  {t("spike.retry")}
+                </Text>
+              </Pressable>
+            </View>
           ) : null}
           {!isConfigured ? (
             <Text style={{ color: THEME.muted, fontSize: 12, alignSelf: "center" }}>
@@ -300,11 +339,14 @@ export default function SpikeScreen() {
           <Pressable
             onPress={send}
             disabled={!input.trim() || sending || !isConfigured || exhausted}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("spike.title")}
             style={[
               {
-                width: 30,
-                height: 30,
-                borderRadius: 8,
+                width: HIT_TARGET,
+                height: HIT_TARGET,
+                borderRadius: 10,
                 alignItems: "center",
                 justifyContent: "center",
                 backgroundColor: THEME.accent,
@@ -314,7 +356,7 @@ export default function SpikeScreen() {
               glow(THEME.accent, 10, 0.5),
             ]}
           >
-            <Ionicons name="arrow-up" size={18} color="#03181c" />
+            <Ionicons name="arrow-up" size={20} color="#03181c" />
           </Pressable>
         </View>
       </KeyboardAvoidingView>

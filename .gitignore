@@ -11,6 +11,9 @@ expo-env.d.ts
 /ios
 /android
 
+# Raw store-screenshot captures (composited into zerospike-store/; not tracked)
+/raw
+
 # Build outputs & secrets
 *.ipa
 *.aab

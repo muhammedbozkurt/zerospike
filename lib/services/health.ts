@@ -1,7 +1,28 @@
 import { Platform } from "react-native";
-import { addSugarLog, sugarLogExistsAt } from "../db/logs";
-import type { PeriodTag } from "../db/types";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { addSugarLog, sugarLogExistsAt, setSugarLogHealthUuid } from "../db/logs";
+import type { PeriodTag, SugarLog } from "../db/types";
 import { pickMgdl, snapIso } from "./healthMath";
+
+/** Our own app bundle id, used to skip our OWN writes on import (loop guard). */
+const OWN_BUNDLE_ID = "com.greeneyeapp.zerospike";
+
+/** Persisted "mirror manual readings to Apple Health" preference (default OFF). */
+const HEALTH_WRITE_KEY = "zerospike.healthWriteEnabled";
+export async function getHealthWriteEnabled(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(HEALTH_WRITE_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+export async function setHealthWriteEnabled(on: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(HEALTH_WRITE_KEY, on ? "1" : "0");
+  } catch {
+    // best-effort
+  }
+}
 
 /**
  * Apple Health (HealthKit) / Android Health Connect bridge.
@@ -134,7 +155,14 @@ async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
       filter: { date: { startDate: from } },
     }
   );
-  return (samples ?? []).map((s: any) => {
+  return (samples ?? [])
+    // H2 loop guard: NEVER re-import a sample we wrote ourselves, or a
+    // mirror-then-import cycle would double every manual reading. HealthKit tags
+    // each sample with the writing app's bundle in sourceRevision.
+    .filter(
+      (s: any) => s?.sourceRevision?.source?.bundleIdentifier !== OWN_BUNDLE_ID
+    )
+    .map((s: any) => {
     const when = new Date(s.endDate ?? s.startDate);
     // The query above requests unit "mg/dL", so s.quantity is ALREADY mg/dL —
     // it must NOT pass through any mmol heuristic (that inverted true sub-30
@@ -157,6 +185,93 @@ export async function readRecentGlucose(): Promise<GlucoseSample[]> {
     return [];
   }
   return [];
+}
+
+// ── Writes: mirror manual readings to Apple Health (opt-in) ─────────────────
+
+/**
+ * Requests WRITE (share) permission for blood glucose. Called at POINT OF USE -
+ * when the user turns the "write to Apple Health" toggle ON - never at onboarding.
+ * iOS never reveals whether share access was granted, so a resolved call is the
+ * best signal; the caller keeps the toggle on only if this resolves true.
+ */
+export async function requestHealthWritePermission(): Promise<boolean> {
+  if (DEBUG_MOCK_HEALTH) return isHealthAvailable();
+  try {
+    if (Platform.OS === "ios") {
+      const HK = require("@kingstinct/react-native-healthkit");
+      await HK.requestAuthorization({
+        toShare: ["HKQuantityTypeIdentifierBloodGlucose"],
+        toRead: [],
+      });
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * Writes ONE reading to Apple Health as a bloodGlucose sample (mg/dL) and returns
+ * the created sample's UUID, or null on failure / off iOS. The UUID is stored on
+ * the local row so the mirror can be revoked when the row is deleted.
+ */
+export async function writeGlucoseToHealth(
+  mgdl: number,
+  dateIso: string
+): Promise<string | null> {
+  if (!Number.isFinite(mgdl) || mgdl <= 0) return null;
+  if (DEBUG_MOCK_HEALTH) return `mock-hk-${Date.parse(dateIso) || 0}-${Math.round(mgdl)}`;
+  try {
+    if (Platform.OS === "ios") {
+      const HK = require("@kingstinct/react-native-healthkit");
+      const when = new Date(dateIso);
+      const res = await HK.saveQuantitySample(
+        "HKQuantityTypeIdentifierBloodGlucose",
+        { unit: "mg/dL", quantity: Math.round(mgdl), start: when, end: when }
+      );
+      // v14 returns the new sample's UUID string (older shapes: an object).
+      if (typeof res === "string") return res;
+      return res?.uuid ?? null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Best-effort revoke of a mirrored sample by UUID. HealthKit only lets an app
+ * delete samples IT wrote, so this is safe; any failure is swallowed and never
+ * blocks the local delete.
+ */
+export async function deleteGlucoseFromHealth(uuid: string | null): Promise<void> {
+  if (!uuid || DEBUG_MOCK_HEALTH) return;
+  try {
+    if (Platform.OS === "ios") {
+      const HK = require("@kingstinct/react-native-healthkit");
+      await HK.deleteObjects("HKQuantityTypeIdentifierBloodGlucose", {
+        uuids: [uuid],
+      });
+    }
+  } catch {
+    // swallow: a failed mirror-delete must never block the local delete
+  }
+}
+
+/**
+ * If the user opted in, mirror a freshly-added MANUAL reading to Apple Health and
+ * store the returned UUID on the row. Never mirrors imported ('health') rows -
+ * that is where the loop would start. Fire-and-forget from the add flow; a failed
+ * mirror leaves the row un-mirrored (healthkit_uuid stays null) and never crashes.
+ */
+export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void> {
+  if (log.source === "health") return;
+  if (Platform.OS !== "ios") return;
+  if (!(await getHealthWriteEnabled())) return;
+  const uuid = await writeGlucoseToHealth(log.glucose_level_mgdl, log.logged_at);
+  if (uuid) await setSugarLogHealthUuid(log.id, uuid);
 }
 
 // ── Import into local SQLite ───────────────────────────────────────────────

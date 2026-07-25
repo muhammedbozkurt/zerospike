@@ -68,7 +68,15 @@ export function LanguagePicker({
           onPress={() => setOpen(false)}
         >
           <Pressable
-            className="rounded-3xl bg-glass border border-hair p-4"
+            className="rounded-3xl border border-hair p-4"
+            style={{
+              backgroundColor: THEME.sheet,
+              shadowColor: "#000",
+              shadowOpacity: 0.5,
+              shadowRadius: 28,
+              shadowOffset: { width: 0, height: 12 },
+              elevation: 16,
+            }}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1">

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -121,7 +121,7 @@ export default function DownsellScreen() {
 
       <View
         className="flex-1"
-        style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }}
+        style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top + 8, paddingBottom: insets.bottom + 16 }}
       >
         {/* Onboarding-sourced downsell carries the language chip too. */}
         {trigger === "onboarding" ? (

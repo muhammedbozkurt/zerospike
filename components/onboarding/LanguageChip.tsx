@@ -68,7 +68,15 @@ export function LanguageChip() {
           onPress={() => setOpen(false)}
         >
           <Pressable
-            className="rounded-t-3xl bg-glass border-t border-hair p-4 pb-8"
+            className="rounded-t-3xl border-t border-hair p-4 pb-8"
+            style={{
+              backgroundColor: THEME.sheet,
+              shadowColor: "#000",
+              shadowOpacity: 0.5,
+              shadowRadius: 28,
+              shadowOffset: { width: 0, height: -8 },
+              elevation: 16,
+            }}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1">

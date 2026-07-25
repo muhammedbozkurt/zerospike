@@ -3,6 +3,7 @@ import { initReactI18next } from "react-i18next";
 import { getLocales } from "expo-localization";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Lang } from "../db/types";
+import { setActiveLang } from "../lang";
 
 import tr from "./locales/tr";
 import en from "./locales/en";
@@ -52,6 +53,11 @@ if (!i18n.isInitialized) {
     compatibilityJSON: "v3",
   });
 }
+
+// Mirror the language into the lightweight holder that the pure format helpers
+// read (they must not import this heavy module). Set once now and on every change.
+setActiveLang(i18n.language);
+i18n.on("languageChanged", (lng) => setActiveLang(lng));
 
 /**
  * Initializes i18next.

@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { hapticSelect } from "../lib/haptics";
 import { GLUCOSE_RICH, TABULAR, THEME } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
+import { upper } from "../lib/upper";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 type ButtonSize = "lg" | "md" | "sm";
@@ -102,9 +103,12 @@ export function Card({
 }
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
+  // Locale-correct uppercasing (drops CSS textTransform, which mangles Turkish
+  // 'i'). Non-string children are passed through untouched.
+  const content = typeof children === "string" ? upper(children) : children;
   return (
-    <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2 mt-1">
-      {children}
+    <Text className="text-xs font-semibold tracking-wider text-mut mb-2 mt-1">
+      {content}
     </Text>
   );
 }
@@ -128,13 +132,17 @@ interface FieldProps extends TextInputProps {
   hint?: string;
 }
 
-export function Field({ label, hint, className = "", ...rest }: FieldProps) {
+export const Field = React.forwardRef<TextInput, FieldProps>(function Field(
+  { label, hint, className = "", ...rest },
+  ref
+) {
   return (
     <View className="mb-3">
       {label ? (
         <Text className="text-sm font-medium text-mut mb-1.5">{label}</Text>
       ) : null}
       <TextInput
+        ref={ref}
         placeholderTextColor={THEME.muted}
         className={`rounded-xl bg-glass border border-hair px-4 py-3 text-base text-ink ${className}`}
         {...rest}
@@ -142,7 +150,7 @@ export function Field({ label, hint, className = "", ...rest }: FieldProps) {
       {hint ? <Text className="text-xs text-mut mt-1">{hint}</Text> : null}
     </View>
   );
-}
+});
 
 interface SegmentedProps<T extends string> {
   options: { value: T; label: string }[];
@@ -170,6 +178,10 @@ export function Segmented<T extends string>({
               if (!active) hapticSelect();
               onChange(opt.value);
             }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={opt.label}
             className={`rounded-full px-3.5 py-2 border ${
               active
                 ? "bg-brand border-brand"
@@ -301,10 +313,10 @@ export function SegmentedStat({
             {item.value}
           </Text>
           <Text
-            className="text-[10px] font-semibold uppercase tracking-wide text-mut mt-0.5 text-center"
+            className="text-[10px] font-semibold tracking-wide text-mut mt-0.5 text-center"
             numberOfLines={1}
           >
-            {item.label}
+            {upper(item.label)}
           </Text>
         </View>
       ))}

@@ -7,19 +7,19 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
-import { INJECTION_SITES, SITE_POINTS } from "../lib/db/types";
+import { SELECTABLE_SITES, SITE_POINTS } from "../lib/db/types";
 import { updateInjection, type InjectionUpdate } from "../lib/db/injections";
 import { checkDose } from "../lib/insulin";
 import { logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import { useFeedback } from "./Feedback";
+import { Stepper } from "./Stepper";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { RADIUS, THEME, glow } from "../lib/theme/tokens";
@@ -121,7 +121,8 @@ export function InjectionEditSheet({
 }) {
   const { t, i18n } = useTranslation();
   const { confirm } = useFeedback();
-  const [dose, setDose] = useState("");
+  // Dose in units (0 = no dose). Stepper-driven, keyboard-editable.
+  const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [site, setSite] = useState<InjectionSite>("abdomen_left");
   const [point, setPoint] = useState<SitePoint | null>(null);
@@ -131,7 +132,7 @@ export function InjectionEditSheet({
 
   useEffect(() => {
     if (visible && injection) {
-      setDose(injection.dose_units != null ? num(injection.dose_units) : "");
+      setDose(injection.dose_units ?? 0);
       setInsulinType(injection.insulin_type ?? "bolus");
       setSite(injection.site);
       setPoint(injection.site_point);
@@ -163,14 +164,13 @@ export function InjectionEditSheet({
 
   async function save() {
     if (!injection || saving) return;
-    const doseNum = parseFloat(dose.replace(",", "."));
-    const hasDose = Number.isFinite(doseNum) && doseNum > 0;
-    if (hasDose && !(await confirmDose(doseNum))) return;
+    const hasDose = dose > 0;
+    if (hasDose && !(await confirmDose(dose))) return;
 
     setSaving(true);
     try {
       const patch: InjectionUpdate = {
-        dose_units: hasDose ? doseNum : null,
+        dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
         site,
         site_point: point,
@@ -220,7 +220,13 @@ export function InjectionEditSheet({
               <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
                 {t("calculator.editTitle")}
               </Text>
-              <Pressable onPress={onClose} hitSlop={12} className="p-1">
+              <Pressable
+                onPress={onClose}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={t("common.close")}
+                className="p-1"
+              >
                 <Ionicons name="close" size={22} color={THEME.muted} />
               </Pressable>
             </View>
@@ -233,20 +239,18 @@ export function InjectionEditSheet({
               contentContainerStyle={{ paddingBottom: 32 }}
             >
               <FieldLabel>{t("injection.dose")}</FieldLabel>
-              <View className="flex-row items-center mb-4">
-                <TextInput
-                  value={dose}
-                  onChangeText={(s) =>
-                    setDose(s.replace(/[^0-9.,]/g, "").replace(/(\..*)\./g, "$1"))
-                  }
-                  keyboardType="decimal-pad"
-                  placeholder="-"
-                  placeholderTextColor="rgba(137,163,176,0.5)"
-                  maxLength={5}
-                  style={[inputStyle, { flex: 1 }]}
-                />
-                <Text style={{ color: THEME.muted, marginLeft: 8 }}>{t("common.units")}</Text>
-              </View>
+              <Stepper
+                value={dose}
+                onChange={setDose}
+                step={0.5}
+                longStep={1}
+                min={0}
+                max={150}
+                decimals={1}
+                suffix={t("common.units")}
+                accessibilityLabel={t("injection.dose")}
+                style={{ marginBottom: 16 }}
+              />
 
               <FieldLabel>{t("injection.insulinType")}</FieldLabel>
               <View className="flex-row mb-4" style={{ gap: 8 }}>
@@ -266,7 +270,7 @@ export function InjectionEditSheet({
 
               <FieldLabel>{t("injection.selectSite")}</FieldLabel>
               <View className="flex-row flex-wrap mb-4" style={{ gap: 6 }}>
-                {INJECTION_SITES.map((s) => (
+                {SELECTABLE_SITES.map((s) => (
                   <Chip
                     key={s}
                     label={t(`injectionSite.${s}`)}

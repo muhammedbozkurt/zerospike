@@ -26,8 +26,7 @@ import {
   pushHost,
   shouldStackButtons,
 } from "../lib/feedback";
-import { GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
-import { GlassCard } from "./rich/GlassCard";
+import { GLUCOSE_RICH, THEME, RADIUS, ELEVATION } from "../lib/theme/tokens";
 
 type ToastKind = "success" | "info" | "error";
 
@@ -176,7 +175,9 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
           useNativeDriver: true,
         }).start();
         setToastAction(null);
-      }, action ? 5200 : 2200);
+        // 6200ms matches the undo-batch accumulation window (useUndoBatch), so a
+        // toast never fades while its batch is still open to a second delete.
+      }, action ? 6200 : 2200);
     },
     [toastAnim]
   );
@@ -298,6 +299,7 @@ export function FeedbackHost() {
 
 function FeedbackOverlays() {
   const internal = useContext(FeedbackInternalContext);
+  const insets = useSafeAreaInsets();
   if (!internal) return null;
   const {
     toastMsg,
@@ -326,45 +328,75 @@ function FeedbackOverlays() {
         <SheetOverlay sheet={sheet} onClose={closeSheet} onRun={runSheetAction} />
       ) : null}
 
-      {/* Toast rides above the dialogs, and survives the screen that fired it.
-          It only accepts touches while it carries an action. */}
+      {/* Toast enters from the TOP, clear of the tab bar and any bottom CTA bar,
+          and survives the screen that fired it. Solid dark surface (not a 5%
+          glass) so it reads over any background; the kind color is only the left
+          strip + icon. It accepts touches only while it carries an action. */}
       <Animated.View
         pointerEvents={toastAction ? "box-none" : "none"}
         style={{
           position: "absolute",
           left: 16,
           right: 16,
-          bottom: 90,
+          top: insets.top + 8,
           opacity: toastAnim,
           transform: [
             {
               translateY: toastAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [24, 0],
+                outputRange: [-24, 0],
               }),
             },
           ],
         }}
       >
-        <GlassCard glow={ts.color} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 13, paddingHorizontal: 14 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: THEME.bg.g2,
+            borderRadius: RADIUS.lg,
+            borderWidth: 1,
+            borderColor: `${ts.color}55`,
+            paddingVertical: 12,
+            paddingHorizontal: 14,
+            overflow: "hidden",
+            ...ELEVATION.card,
+          }}
+        >
+          {/* Kind color as a left strip only (never the fill) */}
           <View
-            style={[
-              { width: 10, height: 10, borderRadius: 5, backgroundColor: ts.color },
-              glow(ts.color, 8, 0.8),
-            ]}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 4,
+              backgroundColor: ts.color,
+            }}
           />
-          <Ionicons name={ts.icon} size={17} color={ts.color} style={{ marginLeft: 9 }} />
-          <Text style={{ color: THEME.ink, fontWeight: "600", marginLeft: 9, flex: 1 }}>
+          <Ionicons name={ts.icon} size={18} color={ts.color} style={{ marginLeft: 4 }} />
+          <Text style={{ color: THEME.ink, fontWeight: "600", marginLeft: 10, flex: 1 }}>
             {toastMsg}
           </Text>
           {toastAction ? (
-            <Pressable onPress={runToastAction} hitSlop={10} style={{ paddingLeft: 10 }}>
-              <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 13 }}>
+            <Pressable
+              onPress={runToastAction}
+              hitSlop={8}
+              style={{
+                marginLeft: 10,
+                backgroundColor: THEME.accent,
+                borderRadius: RADIUS.full,
+                paddingHorizontal: 14,
+                paddingVertical: 7,
+              }}
+            >
+              <Text style={{ color: "#00171c", fontWeight: "800", fontSize: 13 }}>
                 {toastAction.label}
               </Text>
             </Pressable>
           ) : null}
-        </GlassCard>
+        </View>
       </Animated.View>
     </View>
   );
@@ -453,7 +485,15 @@ function ConfirmOverlay({
           }}
         >
           <Pressable
-            className="rounded-3xl bg-glass border border-hair p-5"
+            className="rounded-3xl border border-hair p-5"
+            style={{
+              backgroundColor: THEME.sheet,
+              shadowColor: "#000",
+              shadowOpacity: 0.5,
+              shadowRadius: 28,
+              shadowOffset: { width: 0, height: 12 },
+              elevation: 16,
+            }}
             onPress={(e) => e.stopPropagation()}
           >
             <View className="items-center mb-3">

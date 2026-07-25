@@ -7,8 +7,7 @@ import {
   ScrollView,
   Text,
   TextInput,
-  View,
-} from "react-native";
+  View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -22,6 +21,7 @@ import {
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { GLUCOSE_RICH, RADIUS, THEME } from "../lib/theme/tokens";
+import { upper } from "../lib/upper";
 import { useTranslation } from "react-i18next";
 import {
   Contact,
@@ -277,7 +277,7 @@ export default function EmergencyContactsScreen() {
 
   return (
     <AppBackground>
-      <View className="flex-1" style={{ paddingTop: insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
         {/* Header (mockup 07: back, centred title, add action) */}
         <ScreenHeader
           title={pickerOpen ? t("emergency.pickFromContacts") : t("emergency.title")}
@@ -337,7 +337,7 @@ export default function EmergencyContactsScreen() {
                 value={query}
                 onChangeText={setQuery}
                 placeholder={t("emergency.searchPlaceholder")}
-                placeholderTextColor="rgba(137,163,176,0.6)"
+                placeholderTextColor="rgba(137,163,176,0.7)"
                 autoCorrect={false}
                 className="flex-1 px-2 py-3"
                 style={{ color: THEME.ink }}
@@ -506,14 +506,13 @@ export default function EmergencyContactsScreen() {
               <Text
                 style={{
                   color: THEME.muted,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1.3,
-                  textTransform: "uppercase",
                   fontWeight: "800",
                   marginBottom: 10,
                 }}
               >
-                {t("emergency.addTitle")}
+                {upper(t("emergency.addTitle"))}
               </Text>
               <TextInput
                 value={name}
@@ -522,7 +521,7 @@ export default function EmergencyContactsScreen() {
                   if (nameError) setNameError(null);
                 }}
                 placeholder={t("emergency.namePlaceholder")}
-                placeholderTextColor="rgba(137,163,176,0.6)"
+                placeholderTextColor="rgba(137,163,176,0.7)"
                 style={inputStyle}
               />
               {nameError ? (
@@ -538,7 +537,7 @@ export default function EmergencyContactsScreen() {
                   if (phoneError) setPhoneError(null);
                 }}
                 placeholder={t("emergency.phonePlaceholder")}
-                placeholderTextColor="rgba(137,163,176,0.6)"
+                placeholderTextColor="rgba(137,163,176,0.7)"
                 keyboardType="phone-pad"
                 style={[inputStyle, { marginTop: 10 }]}
               />

@@ -19,11 +19,15 @@ module.exports = {
         // (the canonical source). Keep the two in sync. Midnight Monitor palette.
         low: "#ff5468", // rose - below the user's own low threshold
         normal: "#22e39a", // mint - in the target range
-        elevated: "#ffb43c", // amber - above the range
-        high: "#ff7a3c", // orange - well above the range
-        veryHigh: "#f4511e", // deep orange - at/above the fixed 250 mg/dL ceiling
+        elevated: "#ffd23f", // yellow - above the range (E1)
+        high: "#ffa02a", // amber - well above the range
+        veryHigh: "#ff8a00", // deep orange - at/above the fixed 250 mg/dL ceiling
         // Midnight Monitor glass surfaces (translucent over the app wash).
         glass: "rgba(255,255,255,0.05)",
+        // OPAQUE elevated surface for center-popover modals (language / profile
+        // pickers). A translucent glass here shows the screen behind it through the
+        // dim overlay and becomes unreadable - popovers must be solid.
+        sheet: "#16232e",
         hair: "rgba(255,255,255,0.10)",
         ink: "#eaf6fa",
         mut: "#89a3b0",

@@ -1,6 +1,7 @@
 import * as StoreReview from "expo-store-review";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logEvent } from "../analytics";
+import { isScreenshotMode } from "../screenshotMode";
 
 /**
  * Asks for a store review at most once in the app's lifetime, at a genuinely
@@ -22,6 +23,8 @@ async function alreadyPrompted(): Promise<boolean> {
 }
 
 async function promptOnce(): Promise<void> {
+  // Never let the native review sheet steal a store-screenshot capture.
+  if (isScreenshotMode()) return;
   if (await alreadyPrompted()) return;
   try {
     if (!(await StoreReview.hasAction())) return;

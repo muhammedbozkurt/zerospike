@@ -58,9 +58,31 @@ export async function listSugarLogs(
   return rows.map(mapSugar);
 }
 
-export async function deleteSugarLog(id: string): Promise<void> {
+/** Records the Apple Health sample UUID for a mirrored reading (schema v10). */
+export async function setSugarLogHealthUuid(
+  id: string,
+  healthkitUuid: string | null
+): Promise<void> {
   const db = await getDb();
+  await db.runAsync("UPDATE sugar_logs SET healthkit_uuid = ? WHERE id = ?;", [
+    healthkitUuid,
+    id,
+  ]);
+}
+
+/**
+ * Deletes a sugar log and returns its healthkit_uuid (or null) so the caller can
+ * best-effort revoke the mirrored Apple Health sample. Returning it here means
+ * every delete path (journal swipe, undo) gets the value without a second query.
+ */
+export async function deleteSugarLog(id: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ healthkit_uuid: string | null }>(
+    "SELECT healthkit_uuid FROM sugar_logs WHERE id = ?;",
+    [id]
+  );
   await db.runAsync("DELETE FROM sugar_logs WHERE id = ?;", [id]);
+  return row?.healthkit_uuid ?? null;
 }
 
 export type SugarLogUpdate = Partial<

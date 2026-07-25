@@ -313,7 +313,7 @@ export default function PaywallScreen() {
 
   return (
     <AppBackground>
-      <View className="flex-1" style={{ paddingTop: insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
         {/* Header (mockup 08: free exit left, title centred, close right) */}
         <View className="flex-row items-center justify-between px-4 py-2">
           <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1">

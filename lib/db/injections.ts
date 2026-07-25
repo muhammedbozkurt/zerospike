@@ -3,6 +3,7 @@ import { uuid } from "../uuid";
 import type { Injection, InjectionSite, InsulinType, SitePoint } from "./types";
 import {
   INJECTION_SITES,
+  SELECTABLE_SITES,
   SITE_POINTS,
   asSitePoint,
   parseTags,
@@ -191,7 +192,8 @@ export function pointKey(site: InjectionSite, point: SitePoint): string {
 
 /**
  * Per-site AND per-point usage over the last `days`, for the rotation heat map.
- * Every one of the eight regions is returned, each carrying its four points
+ * Every INJECTION_SITES region is returned (twelve since schema v9, including the
+ * legacy general-abdomen buckets), each carrying its four points
  * (unused ones with lastUsedAt = null, count = 0). Rows logged before v8 have no
  * point, so they land in `unassignedCount` and still count toward the region.
  *
@@ -273,7 +275,9 @@ export async function leastRecentlyUsedPoint(
     lastUsed.set(pointKey(r.site, point), r.lastUsedAt);
   }
 
-  const all = INJECTION_SITES.flatMap((site) =>
+  // Rotation only ever suggests a selectable (v9) region, never a legacy
+  // general-abdomen bucket that the map no longer offers for a new entry.
+  const all = SELECTABLE_SITES.flatMap((site) =>
     SITE_POINTS.map((point) => ({ site, point }))
   );
   const neverUsed = all.find((p) => !lastUsed.has(pointKey(p.site, p.point)));

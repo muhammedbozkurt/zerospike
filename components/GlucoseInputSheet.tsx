@@ -32,6 +32,7 @@ import { RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/token
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { GradientCTA } from "./rich/GradientCTA";
 import { PressableScale } from "../lib/theme/motion";
+import { hapticSelect } from "../lib/haptics";
 
 const PERIODS: PeriodTag[] = [
   "fasting",
@@ -248,7 +249,13 @@ export function GlucoseInputSheet({
                   <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
                     {edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}
                   </Text>
-                  <Pressable onPress={onClose} hitSlop={12} style={{ width: 28, alignItems: "flex-end" }}>
+                  <Pressable
+                    onPress={onClose}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("common.close")}
+                    style={{ width: 28, alignItems: "flex-end" }}
+                  >
                     <Ionicons name="close" size={22} color={THEME.muted} />
                   </Pressable>
                 </View>
@@ -271,7 +278,7 @@ export function GlucoseInputSheet({
                     keyboardType={mmol ? "decimal-pad" : "number-pad"}
                     autoFocus
                     placeholder={mmol ? "6.1" : "110"}
-                    placeholderTextColor="rgba(137,163,176,0.4)"
+                    placeholderTextColor="rgba(137,163,176,0.7)"
                     style={[
                       TABULAR,
                       {
@@ -331,14 +338,19 @@ export function GlucoseInputSheet({
                     return (
                       <PressableScale
                         key={p}
-                        onPress={() => setPeriod(p)}
+                        onPress={() => {
+                          hapticSelect();
+                          setPeriod(p);
+                        }}
+                        hitSlop={8}
                         accessibilityRole="button"
                         accessibilityState={{ selected: on }}
+                        accessibilityLabel={t(`period.${p}`)}
                         style={[
                           {
                             borderRadius: RADIUS.md,
                             paddingHorizontal: 12,
-                            paddingVertical: 9,
+                            paddingVertical: 11,
                             borderWidth: 1,
                             borderColor: on ? THEME.accent : THEME.border,
                             backgroundColor: on ? "rgba(46,230,255,0.16)" : THEME.glass,

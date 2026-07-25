@@ -1,5 +1,5 @@
 import React from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -9,6 +9,7 @@ import { AppBackground, GlassCard } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { FeedbackHost } from "../components/Feedback";
 import { THEME } from "../lib/theme/tokens";
+import { upper } from "../lib/upper";
 
 /**
  * Medical information sources (App Store Guideline 1.4.1).
@@ -67,7 +68,7 @@ export default function SourcesScreen() {
   const router = useRouter();
 
   return (
-    <AppBackground style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
       <ScreenHeader
         title={t("sources.title")}
         onBack={() => router.back()}
@@ -99,8 +100,8 @@ export default function SourcesScreen() {
           </Text>
         </GlassCard>
 
-        <Text className="text-xs font-semibold uppercase tracking-wider text-mut mb-2">
-          {t("sources.listTitle")}
+        <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
+          {upper(t("sources.listTitle"))}
         </Text>
 
         {/* One card per citation (mockup 07) */}

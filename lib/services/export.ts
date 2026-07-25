@@ -5,19 +5,27 @@ import { getJournal } from "../db/journal";
 import { currentLang } from "../i18n";
 import type { GlucoseUnit, InsulinType, LogTag, PeriodTag } from "../db/types";
 import { formatGlucose, glucoseUnitLabel } from "../glucose";
-import { num } from "../format";
+import type { DateRange } from "../insights";
 
 export type ExportResult =
   | { ok: true; uri: string; count: number }
   | { ok: false; reason: "noData" | "sharingUnavailable" };
 
-function csvEscape(value: string | number | null | undefined): string {
+/** Quotes a field when it contains the active delimiter, a quote or a newline. */
+function csvEscape(value: string | number | null | undefined, delim: string): string {
   if (value == null) return "";
   const s = String(value);
-  if (/[",\n;]/.test(s)) {
+  if (s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(delim)) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
+}
+
+/** A CSV number in the locale's decimal mark, WITHOUT grouping (grouping marks
+ *  would collide with the delimiter). English keeps the dot. */
+function csvNum(n: number, decimalComma: boolean): string {
+  const s = String(Math.round(n * 100) / 100);
+  return decimalComma ? s.replace(".", ",") : s;
 }
 
 function two(n: number): string {
@@ -55,11 +63,27 @@ export async function exportLogsCsv(
   profileName: string,
   /** The profile's display unit. Storage is mg/dL; the export follows the unit
    *  the user actually reads, and names it in its own column. */
-  unit: GlucoseUnit = "mgdl"
+  unit: GlucoseUnit = "mgdl",
+  /** Optional explicit range; when given, only entries inside it are exported. */
+  range?: DateRange
 ): Promise<ExportResult> {
   const lang = currentLang();
-  const entries = await getJournal(profileId, lang, 5000);
+  const all = await getJournal(profileId, lang, 5000);
+  const entries = range
+    ? all.filter((e) => {
+        const t = new Date(e.logged_at).getTime();
+        return t >= range.start && t <= range.end;
+      })
+    : all;
   if (entries.length === 0) return { ok: false, reason: "noData" };
+
+  // Locales whose decimal mark is a comma (tr/de/es/fr) get a ";" delimiter, a
+  // comma decimal, and a leading `sep=;` hint so Excel splits columns correctly
+  // instead of pasting every row into one cell. English keeps the "," format.
+  const decimalComma = lang !== "en";
+  const delim = decimalComma ? ";" : ",";
+  const esc = (v: string | number | null | undefined) => csvEscape(v, delim);
+  const cnum = (n: number) => csvNum(n, decimalComma);
 
   const headers = [
     i18n.t("export.colDate"),
@@ -75,7 +99,7 @@ export async function exportLogsCsv(
     i18n.t("export.colTags"),
   ];
 
-  const rows: string[] = [headers.map(csvEscape).join(",")];
+  const rows: string[] = [headers.map(esc).join(delim)];
 
   // entries are newest-first; export oldest-first for a natural reading order
   for (const e of [...entries].reverse()) {
@@ -97,8 +121,8 @@ export async function exportLogsCsv(
           "",
           tagsLabel(e.tags),
         ]
-          .map(csvEscape)
-          .join(",")
+          .map(esc)
+          .join(delim)
       );
     } else if (e.kind === "meal") {
       rows.push(
@@ -108,15 +132,15 @@ export async function exportLogsCsv(
           i18n.t("export.typeMeal"),
           "",
           "",
-          Math.round(e.calculated_carbs_g * 10) / 10,
-          e.insulin_dose_units,
+          cnum(Math.round(e.calculated_carbs_g * 10) / 10),
+          cnum(e.insulin_dose_units),
           e.display_name,
           "",
           e.personal_note ?? "",
           tagsLabel(e.tags),
         ]
-          .map(csvEscape)
-          .join(",")
+          .map(esc)
+          .join(delim)
       );
     } else {
       // injection
@@ -131,14 +155,14 @@ export async function exportLogsCsv(
           "",
           "",
           "",
-          e.dose_units != null ? num(e.dose_units) : "",
+          e.dose_units != null ? cnum(e.dose_units) : "",
           "",
           i18n.t(`injectionSite.${e.site}`),
           e.note ?? "",
           tagsLabel(e.tags),
         ]
-          .map(csvEscape)
-          .join(",")
+          .map(esc)
+          .join(delim)
       );
     }
   }
@@ -146,18 +170,20 @@ export async function exportLogsCsv(
   // Trailing medical disclaimer so the doctor-facing export is never read as
   // prescriptive (blank separator row keeps it clear of the data table).
   rows.push("");
-  rows.push(csvEscape(i18n.t("export.disclaimer")));
+  rows.push(esc(i18n.t("export.disclaimer")));
 
-  // UTF-8 BOM so Excel renders Turkish characters correctly.
-  const content = "﻿" + rows.join("\r\n");
+  // UTF-8 BOM so Excel renders Turkish characters correctly, plus a `sep=` hint
+  // for the comma-decimal locales so Excel picks the right delimiter.
+  const sepLine = decimalComma ? `sep=${delim}\r\n` : "";
+  const content = "﻿" + sepLine + rows.join("\r\n");
 
   const safeName = profileName.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 40);
-  const stamp = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}_${two(
-      d.getHours()
-    )}${two(d.getMinutes())}`;
-  })();
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}`;
+  // A chosen range names the file by its span; otherwise by the generation time.
+  const stamp = range
+    ? `${ymd(new Date(range.start))}-${ymd(new Date(range.end))}`
+    : `${ymd(new Date())}_${two(new Date().getHours())}${two(new Date().getMinutes())}`;
   const fileUri = `${FileSystem.cacheDirectory}zerospike_${safeName}_${stamp}.csv`;
 
   await FileSystem.writeAsStringAsync(fileUri, content, {

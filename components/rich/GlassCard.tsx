@@ -1,5 +1,5 @@
 import React from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import type { ViewProps, StyleProp, ViewStyle } from "react-native";
 
 import { THEME, RADIUS, glow } from "../../lib/theme/tokens";
@@ -30,6 +30,20 @@ export function GlassCard({
   ...rest
 }: GlassCardProps) {
   const glowColor = glowProp === true ? THEME.accent : typeof glowProp === "string" ? glowProp : undefined;
+  // I6: iOS renders a soft COLOURED glow through shadow* (shadowColor is honoured).
+  // Android's elevation shadow is a hard grey drop that looks broken behind the
+  // translucent glass fill, so there the glow becomes a FLAT lit treatment - the
+  // card is tinted in the glow colour (colour-matched border + faint fill) with a
+  // small elevation for depth. The iOS appearance is unchanged.
+  const glowStyle: StyleProp<ViewStyle> = glowColor
+    ? Platform.OS === "ios"
+      ? glow(glowColor, 30, 0.4)
+      : {
+          borderColor: withAlpha(glowColor, 0.5),
+          backgroundColor: withAlpha(glowColor, 0.1),
+          elevation: 3,
+        }
+    : undefined;
   return (
     <View
       style={[
@@ -40,7 +54,7 @@ export function GlassCard({
           backgroundColor: accent ? withAlpha(THEME.accent, 0.1) : THEME.glass,
           padding: 12,
         },
-        glowColor ? glow(glowColor, 30, 0.4) : undefined,
+        glowStyle,
         style,
       ]}
       {...rest}

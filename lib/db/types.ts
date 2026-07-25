@@ -122,6 +122,9 @@ export interface SugarLog {
   source: string; // 'manual' | 'health'
   logged_at: string;
   tags: LogTag[];
+  /** HealthKit sample UUID when this manual reading was mirrored to Apple Health
+   *  (schema v10). NULL for readings that were never written to Health. */
+  healthkit_uuid: string | null;
 }
 
 export interface MealLog {
@@ -180,19 +183,64 @@ export function parseAliases(food: Food): string[] {
 /** Basal (long-acting) vs bolus (mealtime) insulin. */
 export type InsulinType = "basal" | "bolus";
 
-/** Injection sites: four body regions, each split left/right. */
+/**
+ * Injection sites (schema v9). The abdomen is split into four quadrants to match
+ * the FITTER rotation guidance and the R7.1 body map. The pre-v9 general
+ * `abdomen_left` / `abdomen_right` values remain VALID so migrated rows are never
+ * rewritten; they are shown on the map as a general abdomen total.
+ */
 export type InjectionSite =
+  // Legacy general abdomen (pre-v9 rows keep these).
   | "abdomen_left"
   | "abdomen_right"
+  // v9 abdomen quadrants (front).
+  | "abdomen_left_upper"
+  | "abdomen_right_upper"
+  | "abdomen_left_lower"
+  | "abdomen_right_lower"
   | "thigh_left"
   | "thigh_right"
   | "arm_left"
   | "arm_right"
+  // Buttocks (back view).
   | "buttock_left"
   | "buttock_right";
 
-/** Canonical site order (drives the body map, rotation and recommendation). */
+/**
+ * Every valid site, in canonical order. Drives usage bucketing (so no logged
+ * site, legacy or new, is ever hidden from the heat map).
+ */
 export const INJECTION_SITES: InjectionSite[] = [
+  "abdomen_left_upper",
+  "abdomen_right_upper",
+  "abdomen_left_lower",
+  "abdomen_right_lower",
+  "thigh_left",
+  "thigh_right",
+  "arm_left",
+  "arm_right",
+  "buttock_left",
+  "buttock_right",
+  "abdomen_left",
+  "abdomen_right",
+];
+
+/** Sites retired by the anatomically-corrected map. Kept VALID in INJECTION_SITES so
+ *  migrated rows are never lost or hidden, but not offered for new selection: the old
+ *  abdomen quadrants (replaced by a left/right row each side of the navel). */
+export const RETIRED_SITES: InjectionSite[] = [
+  "abdomen_left_upper",
+  "abdomen_right_upper",
+  "abdomen_left_lower",
+  "abdomen_right_lower",
+];
+
+/**
+ * The sites the map offers for SELECTION and that rotation considers: the abdomen as
+ * a single row of points on each side of the navel (left / right), the outer thighs
+ * and back-outer upper arms (a vertical line each), and the upper-outer buttocks.
+ */
+export const SELECTABLE_SITES: InjectionSite[] = [
   "abdomen_left",
   "abdomen_right",
   "thigh_left",

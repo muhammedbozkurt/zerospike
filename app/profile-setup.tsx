@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -18,6 +18,7 @@ import { CARB_TARGET_BOUNDS, clampCarbTarget } from "../lib/insulin";
 import { insulinModeShowsBasal, insulinModeShowsBolus } from "../lib/insulinMode";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { RangeInput } from "../components/RangeInput";
+import { Stepper } from "../components/Stepper";
 import { InlineTimePicker } from "../components/InlineTimePicker";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { FeedbackHost } from "../components/Feedback";
@@ -67,11 +68,12 @@ export default function ProfileSetupScreen() {
   const [postmealMax, setPostmealMax] = useState(
     String(glucoseToDisplay(activeProfile?.target_postmeal_max ?? 140, unit))
   );
-  const [crB, setCrB] = useState(String(activeProfile?.carb_ratio_breakfast ?? 10));
-  const [crL, setCrL] = useState(String(activeProfile?.carb_ratio_lunch ?? 12));
-  const [crD, setCrD] = useState(String(activeProfile?.carb_ratio_dinner ?? 12));
+  // Ratios / ISF are stepper-driven numbers (E.7); ISF is in the display unit.
+  const [crB, setCrB] = useState(activeProfile?.carb_ratio_breakfast ?? 10);
+  const [crL, setCrL] = useState(activeProfile?.carb_ratio_lunch ?? 12);
+  const [crD, setCrD] = useState(activeProfile?.carb_ratio_dinner ?? 12);
   const [isf, setIsf] = useState(
-    String(glucoseToDisplay(activeProfile?.insulin_sensitivity_factor ?? 40, unit))
+    glucoseToDisplay(activeProfile?.insulin_sensitivity_factor ?? 40, unit)
   );
   const [carbMin, setCarbMin] = useState(
     String(activeProfile?.daily_carb_target_min_g ?? 160)
@@ -141,13 +143,10 @@ export default function ProfileSetupScreen() {
         target_postmeal_max: clampTarget(
           glucoseFromDisplay(n(postmealMax, glucoseToDisplay(140, unit)), unit)
         ),
-        carb_ratio_breakfast: n(crB, 10),
-        carb_ratio_lunch: n(crL, 12),
-        carb_ratio_dinner: n(crD, 12),
-        insulin_sensitivity_factor: glucoseFromDisplay(
-          n(isf, glucoseToDisplay(40, unit)),
-          unit
-        ),
+        carb_ratio_breakfast: crB,
+        carb_ratio_lunch: crL,
+        carb_ratio_dinner: crD,
+        insulin_sensitivity_factor: glucoseFromDisplay(isf, unit),
         daily_carb_target_min_g: clampCarbTarget(n(carbMin, 160)),
         daily_carb_target_g: clampCarbTarget(n(carbMax, 200)),
         // These are values the user has now explicitly entered for this profile,
@@ -165,7 +164,7 @@ export default function ProfileSetupScreen() {
   const summary = [glucoseUnitLabel(unit), `${fastingMin}-${fastingMax}`].join(" · ");
 
   return (
-    <AppBackground style={{ paddingTop: insets.top }}>
+    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
       <ScreenHeader
         title={t("profiles.add")}
         onBack={() => router.back()}
@@ -279,48 +278,48 @@ export default function ProfileSetupScreen() {
 
         {showsBolus ? (
           <FormCard icon="restaurant-outline" title={t("settings.carbRatios")}>
-            <InputRow
-              icon="cafe-outline"
-              label={t("slot.breakfast")}
-              value={crB}
-              onChangeText={setCrB}
-              keyboardType="decimal-pad"
-              suffix={t("common.carbRatioUnit")}
-            />
-            <InputRow
-              icon="partly-sunny-outline"
-              label={t("slot.lunch")}
-              value={crL}
-              onChangeText={setCrL}
-              keyboardType="decimal-pad"
-              suffix={t("common.carbRatioUnit")}
-            />
-            <InputRow
-              icon="moon-outline"
-              label={t("slot.dinner")}
-              value={crD}
-              onChangeText={setCrD}
-              keyboardType="decimal-pad"
-              suffix={t("common.carbRatioUnit")}
-              last
-            />
+            {(
+              [
+                ["breakfast", crB, setCrB],
+                ["lunch", crL, setCrL],
+                ["dinner", crD, setCrD],
+              ] as const
+            ).map(([slot, value, setter]) => (
+              <View key={slot} className="px-4 py-3">
+                <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
+                <Stepper
+                  value={value}
+                  onChange={setter}
+                  step={0.5}
+                  longStep={1}
+                  min={1}
+                  max={50}
+                  decimals={1}
+                  suffix={t("common.carbRatioUnit")}
+                  accessibilityLabel={t(`slot.${slot}`)}
+                />
+              </View>
+            ))}
           </FormCard>
         ) : null}
 
         {showsBolus || showsBasal ? (
           <FormCard icon="pulse-outline" title={t("onboarding.secReminder")}>
             {showsBolus ? (
-              <InputRow
-                icon="pulse-outline"
-                label={t("settings.isf")}
-                hint={t("settings.isfHint")}
-                value={isf}
-                onChangeText={setIsf}
-                keyboardType="decimal-pad"
-                suffix={glucoseUnitLabel(unit)}
-                maxLength={5}
-                last={!showsBasal}
-              />
+              <View className="px-4 py-3">
+                <Text className="text-mut text-xs mb-2">{t("settings.isfHint")}</Text>
+                <Stepper
+                  value={isf}
+                  onChange={setIsf}
+                  step={unit === "mmol" ? 0.1 : 1}
+                  longStep={unit === "mmol" ? 0.5 : 5}
+                  min={unit === "mmol" ? 0.5 : 5}
+                  max={unit === "mmol" ? 30 : 500}
+                  decimals={unit === "mmol" ? 1 : 0}
+                  suffix={glucoseUnitLabel(unit)}
+                  accessibilityLabel={t("settings.isf")}
+                />
+              </View>
             ) : null}
             {showsBasal ? (
               <ActionRow

@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { GLUCOSE_RICH, TABULAR, THEME } from "../../lib/theme/tokens";
+import { upper } from "../../lib/upper";
 import { FadeSlideIn, useCountUp } from "./motion";
 import { computeAgp } from "../../lib/agp";
 import { formatGlucose, glucoseUnitLabel } from "../../lib/glucose";
@@ -139,12 +140,11 @@ export function Reveal({
               color: THEME.muted,
               fontSize: 10,
               letterSpacing: 1.4,
-              textTransform: "uppercase",
               fontWeight: "800",
               textAlign: "center",
             }}
           >
-            {t("onboarding.previewTag")}
+            {upper(t("onboarding.previewTag"))}
           </Text>
         </FadeSlideIn>
         <FadeSlideIn delay={D_TITLE}>
@@ -179,13 +179,12 @@ export function Reveal({
               <Text
                 style={{
                   color: THEME.muted,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1.3,
-                  textTransform: "uppercase",
                   fontWeight: "800",
                 }}
               >
-                {t("onboarding.sampleBadge")}
+                {upper(t("onboarding.sampleBadge"))}
               </Text>
               <GlucoseChip
                 status="normal"
@@ -212,14 +211,13 @@ export function Reveal({
             <Text
               style={{
                 color: THEME.muted,
-                fontSize: 9,
+                fontSize: 11,
                 letterSpacing: 1.3,
-                textTransform: "uppercase",
                 fontWeight: "800",
                 marginBottom: 10,
               }}
             >
-              {t("onboarding.revealTargetsTitle")}
+              {upper(t("onboarding.revealTargetsTitle"))}
             </Text>
             <View className="flex-row">
               <View className="flex-1 items-center">
@@ -258,14 +256,13 @@ export function Reveal({
             <Text
               style={{
                 color: THEME.muted,
-                fontSize: 9,
+                fontSize: 11,
                 letterSpacing: 1.3,
-                textTransform: "uppercase",
                 fontWeight: "800",
                 marginBottom: 4,
               }}
             >
-              {t("onboarding.revealPlanTitle")}
+              {upper(t("onboarding.revealPlanTitle"))}
             </Text>
             <PlanRow icon="restaurant-outline" label={t("onboarding.planPostMeal")} />
             <PlanRow icon="pulse-outline" label={t("onboarding.planLowFollow")} />

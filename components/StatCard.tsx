@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AnimatedNumber } from "./AnimatedNumber";
 import { TABULAR, THEME, glow as glowShadow } from "../lib/theme/tokens";
+import { upper } from "../lib/upper";
 
 interface StatCardProps {
   /** Small caption above/below the value. */
@@ -75,10 +76,10 @@ export function StatCard({
           <Ionicons name={icon} size={13} color={THEME.muted} style={{ marginRight: 5 }} />
         ) : null}
         <Text
-          className="text-[11px] font-semibold uppercase tracking-wider text-mut"
+          className="text-[11px] font-semibold tracking-wider text-mut"
           numberOfLines={1}
         >
-          {label}
+          {upper(label)}
         </Text>
       </View>
 

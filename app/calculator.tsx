@@ -5,8 +5,7 @@ import {
   ScrollView,
   Text,
   TextInput,
-  View,
-} from "react-native";
+  View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import * as ImagePicker from "expo-image-picker";
@@ -54,10 +53,13 @@ import {
 } from "../lib/glucose";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { schedulePostMealReminder } from "../lib/services/notifications";
+import { writeGlucoseToHealthIfEnabled } from "../lib/services/health";
 import { foodSourceLabel } from "../lib/services/openFoodFacts";
 import type { Food, LogTag, MealSlot } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { Segmented } from "../components/ui";
+import { Stepper } from "../components/Stepper";
+import { Tooltip } from "../components/Tooltip";
 import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
@@ -73,6 +75,7 @@ import {
   withAlpha,
 } from "../components/rich";
 import { GLUCOSE_RICH, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { upper } from "../lib/upper";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
@@ -111,14 +114,13 @@ function ReadoutCard({
         <Text
           style={{
             color: THEME.muted,
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: 1.3,
-            textTransform: "uppercase",
             fontWeight: "800",
             flex: 1,
           }}
         >
-          {label}
+          {upper(label)}
         </Text>
         <View className="flex-row items-baseline" style={{ gap: 4 }}>
           <Text
@@ -497,6 +499,8 @@ export default function CalculatorScreen() {
             tags,
             logged_at: loggedIso,
           });
+          // Opt-in Apple Health mirror (H1); no-op unless the user enabled it.
+          void writeGlucoseToHealthIfEnabled(sugar);
           sugarLogId = sugar.id;
           createdSugarLogId = sugar.id;
         }
@@ -595,10 +599,15 @@ export default function CalculatorScreen() {
 
   return (
     <AppBackground>
-      <View className="flex-1" style={{ paddingTop: insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
         {/* Header (mockup B04: close, centred title, balancing spacer) */}
         <View className="flex-row items-center justify-between px-4 py-3">
-          <Pressable onPress={() => router.back()} hitSlop={10}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.close")}
+          >
             <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
           </Pressable>
           <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
@@ -647,19 +656,32 @@ export default function CalculatorScreen() {
             value={num(estimate.carbs)}
             suffix={t("common.grams")}
           >
-            <View className="flex-row items-center justify-between mt-2">
+            <View className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
               <Text style={{ color: THEME.muted, fontSize: 11 }}>
                 {t("calculator.portion")}
               </Text>
-              <Text style={[TABULAR, { color: THEME.ink, fontSize: 13, fontWeight: "700" }]}>
-                {Math.round(portion)} {t("common.grams")}
-              </Text>
+              {/* Typeable / steppable so any gram value is reachable (e.g. 237 g,
+                  or above the slider's 500 g coarse range up to 1500 g). */}
+              <Stepper
+                value={portion}
+                onChange={setPortion}
+                step={5}
+                longStep={25}
+                min={0}
+                max={1500}
+                decimals={0}
+                suffix={t("common.grams")}
+                accessibilityLabel={t("calculator.portion")}
+                style={{ width: 148 }}
+              />
             </View>
+            {/* The slider stays a 0-500 g coarse control; typing can exceed it, so
+                clamp only its thumb, never the real portion. */}
             <Slider
               minimumValue={0}
               maximumValue={500}
               step={5}
-              value={portion}
+              value={Math.min(portion, 500)}
               onValueChange={setPortion}
               minimumTrackTintColor={THEME.accent}
               maximumTrackTintColor={THEME.track}
@@ -673,14 +695,13 @@ export default function CalculatorScreen() {
               <Text
                 style={{
                   color: THEME.muted,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1.3,
-                  textTransform: "uppercase",
                   fontWeight: "800",
                   flex: 1,
                 }}
               >
-                {t("calculator.currentGlucose")}
+                {upper(t("calculator.currentGlucose"))}
               </Text>
               <View className="flex-row items-center" style={{ gap: 8 }}>
                 <TextInput
@@ -694,7 +715,7 @@ export default function CalculatorScreen() {
                   }
                   keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
                   placeholder="-"
-                  placeholderTextColor="rgba(137,163,176,0.5)"
+                  placeholderTextColor="rgba(137,163,176,0.7)"
                   maxLength={unit === "mmol" ? 4 : 3}
                   style={[
                     TABULAR,
@@ -748,13 +769,12 @@ export default function CalculatorScreen() {
                 <Text
                   style={{
                     color: THEME.accent,
-                    fontSize: 9,
+                    fontSize: 11,
                     letterSpacing: 1.3,
-                    textTransform: "uppercase",
                     fontWeight: "800",
                   }}
                 >
-                  {t("calculator.estimatedDose")}
+                  {upper(t("calculator.estimatedDose"))}
                 </Text>
 
                 <View className="items-center mt-1">
@@ -805,17 +825,24 @@ export default function CalculatorScreen() {
                   ) : null}
                 </View>
 
-                <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 10, lineHeight: 16 }}>
-                  {t("calculator.overrideHint")}
-                </Text>
-                {correctionTarget != null ? (
-                  <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 4, lineHeight: 16 }}>
-                    {t("calculator.correctionTargetNote", {
-                      value: formatGlucose(correctionTarget, unit),
-                      unit: glucoseUnitLabel(unit),
-                    })}
+                {/* The "adjust it yourself" explanation collapses into a tooltip
+                    so the read-out stays uncluttered (regulation note below is
+                    always visible). */}
+                <View className="flex-row items-center justify-end" style={{ marginTop: 8, gap: 6 }}>
+                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                    {t("common.note")}
                   </Text>
-                ) : null}
+                  <Tooltip
+                    text={
+                      correctionTarget != null
+                        ? `${t("calculator.overrideHint")}\n\n${t("calculator.correctionTargetNote", {
+                            value: formatGlucose(correctionTarget, unit),
+                            unit: glucoseUnitLabel(unit),
+                          })}`
+                        : t("calculator.overrideHint")
+                    }
+                  />
+                </View>
               </View>
 
               {/* Regulation: a non-advice note accompanies every dose display. */}
@@ -921,6 +948,9 @@ export default function CalculatorScreen() {
               <Image source={{ uri: photo }} className="w-full h-44 rounded-2xl" />
               <Pressable
                 onPress={() => setPhoto(null)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={t("common.delete")}
                 className="absolute top-2 right-2 rounded-full p-1.5"
                 style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
               >
@@ -945,7 +975,7 @@ export default function CalculatorScreen() {
             value={note}
             onChangeText={setNote}
             placeholder={t("calculator.notePlaceholder")}
-            placeholderTextColor="rgba(137,163,176,0.5)"
+            placeholderTextColor="rgba(137,163,176,0.7)"
             multiline
             style={[inputStyle, { marginBottom: 16, minHeight: 72 }]}
             textAlignVertical="top"

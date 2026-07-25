@@ -26,21 +26,36 @@ import type { GlucoseStatus } from "../glucose";
  * sole signal - every reading is shown with its numeric value and period label,
  * so the mapping stays legible for color-vision differences and greyscale print.
  * Shades are chosen to also separate by lightness. */
+/** SINGLE source for the "very high" hue (>= the fixed 250 mg/dL ceiling). Kept a
+ *  deep ORANGE so it can never read as the low rose in the TIR legend / report,
+ *  even at legend-dot size. Every veryHigh below derives from this one value (D1).
+ *  E1: pulled to #ff8a00 so it separates from the yellow "high"/elevated band. */
+export const VERY_HIGH = "#ff8a00";
+
+/* E1 four-way separation (legend-dot size, dark ground): low rose, target mint,
+ * elevated YELLOW, veryHigh ORANGE - each pair visibly distinct. The `high`
+ * (well-above) status sits between as an amber so the full 5-step ramp above
+ * green stays monotonic (yellow -> amber -> orange). */
 export const GLUCOSE_COLORS: Record<GlucoseStatus, string> = {
   low: "#ff5468", // rose        - below the user's own low threshold
   normal: "#22e39a", // mint        - in the target range
-  elevated: "#ffb43c", // amber       - above the range
-  high: "#ff7a3c", // orange      - well above the range
-  veryHigh: "#f4511e", // deep orange - at/above the fixed 250 mg/dL ceiling
+  elevated: "#ffd23f", // yellow      - above the range
+  high: "#ffa02a", // amber       - well above the range
+  veryHigh: VERY_HIGH, // deep orange  - distinct from yellow elevated / rose low
 };
+
+/** Below the level-2 hypo threshold (~54 mg/dL): a darker red than `low`, for
+ *  surfaces (the five-band TIR bar, the doctor report) where very-low is its own
+ *  slice. Not a GlucoseStatus - a semantic accent for that one band. */
+export const GLUCOSE_VERY_LOW = "#b3243b";
 
 /** Soft translucent fills of the glucose colors, for pills/banners/backgrounds. */
 export const GLUCOSE_TINT: Record<GlucoseStatus, string> = {
   low: "rgba(255,84,104,0.16)",
   normal: "rgba(34,227,154,0.16)",
-  elevated: "rgba(255,180,60,0.16)",
-  high: "rgba(255,122,60,0.16)",
-  veryHigh: "rgba(244,81,30,0.16)",
+  elevated: "rgba(255,210,63,0.16)",
+  high: "rgba(255,160,42,0.16)",
+  veryHigh: "rgba(255,138,0,0.16)",
 };
 
 /* ── Spacing - 4 / 8 pt grid ───────────────────────────────────────────────*/
@@ -134,6 +149,10 @@ export const THEME = {
   violet: "#7c5cff", // conic avatar mid-stop
   /** Glass card surface. */
   glass: "rgba(255,255,255,0.05)",
+  /** OPAQUE elevated surface for center-popover modals (never see-through over the
+   *  dim overlay). Bottom sheets use bg.g1; floating popovers use this slightly
+   *  lighter tone so they read as elevated, not as a hole. */
+  sheet: "#16232e",
   glassHi: "rgba(255,255,255,0.015)", // second stop of the 160deg card gradient
   glassInset: "rgba(255,255,255,0.06)", // top inset highlight line
   border: "rgba(255,255,255,0.10)",
@@ -149,9 +168,9 @@ export const THEME = {
 export const GLUCOSE_RICH = {
   low: "#ff5468", // below the user's low threshold (R5: low stays red)
   target: "#22e39a", // in the target range
-  high: "#ffb43c", // above the range
-  wellAbove: "#ff7a3c", // further above the range
-  veryHigh: "#f4511e", // at/above the fixed clinical 250 mg/dL ceiling
+  high: "#ffd23f", // above the range (E1: yellow, distinct from orange veryHigh)
+  wellAbove: "#ffa02a", // further above the range (amber, mid-ramp)
+  veryHigh: VERY_HIGH, // at/above the fixed clinical 250 mg/dL ceiling (D1: one source)
 } as const;
 
 /** GlucoseStatus -> the rich palette. One mapping for every rich surface. */

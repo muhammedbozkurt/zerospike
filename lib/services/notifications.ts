@@ -7,7 +7,7 @@ import {
   getNotificationPrefs,
   type NotificationPrefs,
 } from "./notificationPrefs";
-import { formatGlucose, glucoseUnitLabel } from "../glucose";
+import { formatGlucose, glucoseUnitLabel, LOW_FOLLOWUP_MINUTES } from "../glucose";
 import {
   endPostMealActivity,
   startPostMealActivity,
@@ -70,12 +70,43 @@ const IOS_TIME_SENSITIVE =
 const reminderExtras = { ...androidChannel, ...IOS_TIME_SENSITIVE };
 
 /**
- * Requests notification permission gracefully. Returns true if granted.
- * Never throws - a denied permission simply disables reminders.
+ * Route hint carried in every notification's content.data. app/_layout.tsx reads
+ * it (on tap AND on cold start via getLastNotificationResponseAsync) and opens
+ * the screen the reminder is about, instead of dropping the user on whatever they
+ * last had open.
  */
-export async function requestNotificationPermission(): Promise<boolean> {
+export type NotificationRoute =
+  | "postMeal"
+  | "basal"
+  | "glucose"
+  | "weekly"
+  | "lowFollowup"
+  | "trial";
+
+/**
+ * The real outcome of asking for notification permission, so the UI can tell the
+ * truth instead of pretending a denied prompt was granted:
+ *  - granted:      the user allowed notifications
+ *  - denied:       the user (or a prior choice) said no
+ *  - undetermined: never asked / the prompt was dismissed without a choice
+ *  - unavailable:  we could not ask at all (simulator, or the probe threw). This
+ *                  is reported honestly rather than being swallowed as a false.
+ */
+export type NotificationPermission =
+  | "granted"
+  | "denied"
+  | "undetermined"
+  | "unavailable";
+
+/**
+ * Requests notification permission and reports the real outcome. Never throws;
+ * a probe that fails is reported as "unavailable" (not silently as a denial), so
+ * onboarding and Settings can show an accurate status and a route into system
+ * settings.
+ */
+export async function requestNotificationPermission(): Promise<NotificationPermission> {
   try {
-    if (!Device.isDevice) return false; // simulators can't receive push reliably
+    if (!Device.isDevice) return "unavailable"; // simulators can't receive push reliably
     await ensureAndroidChannel();
 
     const settings = await Notifications.getPermissionsAsync();
@@ -84,10 +115,17 @@ export async function requestNotificationPermission(): Promise<boolean> {
       const req = await Notifications.requestPermissionsAsync();
       status = req.status;
     }
-    return status === "granted";
+    if (status === "granted") return "granted";
+    if (status === "denied") return "denied";
+    return "undetermined";
   } catch {
-    return false;
+    return "unavailable";
   }
+}
+
+/** Convenience for the schedulers: did we actually get permission? */
+export async function ensureNotificationPermission(): Promise<boolean> {
+  return (await requestNotificationPermission()) === "granted";
 }
 
 /** True if notification permission is already granted (does not prompt). */
@@ -98,6 +136,23 @@ export async function hasNotificationPermission(): Promise<boolean> {
     return settings.status === "granted";
   } catch {
     return false;
+  }
+}
+
+/**
+ * Reads the current permission WITHOUT prompting, for a status row that is shown
+ * independently of the app's own notification toggle. Same four honest states as
+ * the request path.
+ */
+export async function getNotificationPermission(): Promise<NotificationPermission> {
+  try {
+    if (!Device.isDevice) return "unavailable";
+    const settings = await Notifications.getPermissionsAsync();
+    if (settings.status === "granted") return "granted";
+    if (settings.status === "denied") return "denied";
+    return "undetermined";
+  } catch {
+    return "unavailable";
   }
 }
 
@@ -175,6 +230,7 @@ export async function scheduleBasalReminder(time: string): Promise<void> {
     content: {
       title: i18n.t("notifications.basalTitle"),
       body: i18n.t("notifications.basalBody"),
+      data: { route: "basal" satisfies NotificationRoute },
       ...reminderExtras,
     },
     trigger: {
@@ -202,6 +258,7 @@ export async function scheduleGlucoseReminder(time: string): Promise<void> {
     content: {
       title: i18n.t("notifications.glucoseTitle"),
       body: i18n.t("notifications.glucoseBody"),
+      data: { route: "glucose" satisfies NotificationRoute },
       ...reminderExtras,
     },
     trigger: {
@@ -233,6 +290,7 @@ export async function scheduleWeeklySummary(
     content: {
       title: i18n.t("notifications.weeklyTitle"),
       body: i18n.t("notifications.weeklyBody"),
+      data: { route: "weekly" satisfies NotificationRoute },
       ...androidChannel,
     },
     trigger: {
@@ -270,7 +328,7 @@ export async function applyNotificationPrefs(
     return;
   }
 
-  const granted = await requestNotificationPermission();
+  const granted = await ensureNotificationPermission();
   if (!granted) {
     await cancelBasalReminder();
     await cancelGlucoseReminder();
@@ -298,7 +356,7 @@ export async function scheduleTrialEndingReminder(trialDays: number): Promise<vo
   const leadDays = 2;
   const fireInDays = trialDays - leadDays;
   if (fireInDays <= 0) return;
-  const granted = await requestNotificationPermission();
+  const granted = await ensureNotificationPermission();
   if (!granted) return;
   await ensureAndroidChannel();
   await Notifications.scheduleNotificationAsync({
@@ -306,6 +364,7 @@ export async function scheduleTrialEndingReminder(trialDays: number): Promise<vo
     content: {
       title: i18n.t("notifications.trialTitle"),
       body: i18n.t("notifications.trialBody"),
+      data: { route: "trial" satisfies NotificationRoute },
       ...androidChannel,
     },
     trigger: {
@@ -333,6 +392,7 @@ async function schedulePostMealAt(minutes: number): Promise<void> {
     content: {
       title: i18n.t("notifications.postmealTitle"),
       body: i18n.t("notifications.postmealBody"),
+      data: { route: "postMeal" satisfies NotificationRoute },
       ...reminderExtras,
     },
     trigger: {
@@ -417,7 +477,7 @@ export async function cancelPostMealTimer(): Promise<void> {
 export async function schedulePostMealReminder(): Promise<void> {
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled || !prefs.postMeal) return;
-  if (!(await requestNotificationPermission())) return;
+  if (!(await ensureNotificationPermission())) return;
   await schedulePostMealAt(prefs.postMealMinutes);
 }
 
@@ -431,7 +491,7 @@ export async function schedulePostMealReminder(): Promise<void> {
 export async function startPostMealTimer(): Promise<number | null> {
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled) return null;
-  if (!(await requestNotificationPermission())) return null;
+  if (!(await ensureNotificationPermission())) return null;
   await schedulePostMealAt(prefs.postMealMinutes);
   return prefs.postMealMinutes;
 }
@@ -446,7 +506,7 @@ const LOWFOLLOW_ID = "zerospike-low-followup";
  * with no diagnosis or alarm wording. Returns false if permission is denied.
  */
 export async function scheduleLowFollowup(): Promise<boolean> {
-  if (!(await requestNotificationPermission())) return false;
+  if (!(await ensureNotificationPermission())) return false;
   await ensureAndroidChannel();
   try {
     await Notifications.cancelScheduledNotificationAsync(LOWFOLLOW_ID);
@@ -458,11 +518,12 @@ export async function scheduleLowFollowup(): Promise<boolean> {
     content: {
       title: i18n.t("notifications.lowFollowTitle"),
       body: i18n.t("notifications.lowFollowBody"),
+      data: { route: "lowFollowup" satisfies NotificationRoute },
       ...reminderExtras,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: 15 * 60,
+      seconds: LOW_FOLLOWUP_MINUTES * 60,
       repeats: false,
     },
   });

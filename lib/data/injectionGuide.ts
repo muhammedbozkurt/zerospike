@@ -29,6 +29,11 @@ export const INJECTION_STEPS: InjectionStep[] = [
     bodyKey: "injectionGuide.steps.choose_site.body",
   },
   {
+    icon: "sync-outline",
+    titleKey: "injectionGuide.steps.rotate_sites.title",
+    bodyKey: "injectionGuide.steps.rotate_sites.body",
+  },
+  {
     icon: "build-outline",
     titleKey: "injectionGuide.steps.prepare_device.title",
     bodyKey: "injectionGuide.steps.prepare_device.body",

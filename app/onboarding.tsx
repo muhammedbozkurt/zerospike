@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BackHandler,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   Text,
@@ -17,6 +18,7 @@ import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
 import {
   applyNotificationPrefs,
   requestNotificationPermission,
+  type NotificationPermission,
 } from "../lib/services/notifications";
 import {
   DEFAULT_PREFS,
@@ -32,10 +34,12 @@ import {
   TARGET_RANGE_BOUNDS,
 } from "../lib/glucose";
 import { RangeInput } from "../components/RangeInput";
+import { Stepper } from "../components/Stepper";
 import { logEvent } from "../lib/analytics";
 import { hapticSelect } from "../lib/haptics";
 import { Button } from "../components/ui";
-import { InputRow, AcceptCheck } from "../components/form";
+import { AcceptCheck } from "../components/form";
+import { BigInput } from "../components/onboarding/BigInput";
 import { InlineTimePicker } from "../components/InlineTimePicker";
 import { DisclaimerBanner } from "../components/Disclaimer";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
@@ -45,7 +49,7 @@ import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
 import { AppBackground } from "../components/rich";
-import { THEME } from "../lib/theme/tokens";
+import { THEME, GLUCOSE_RICH } from "../lib/theme/tokens";
 
 // Sensible defaults used by the "I'm not sure" path (never blocks a new user).
 // Taking this path leaves ratios_confirmed at 0, so the calculator can say out
@@ -90,6 +94,7 @@ type StepId =
   | "carbRatio"
   | "isf"
   | "basal"
+  | "widget"
   | "notify"
   | "disclaimer";
 
@@ -124,16 +129,20 @@ export default function OnboardingScreen() {
   );
   // Set only by the explicit "I'm not sure" shortcut on the ratio steps.
   const [usedDefaultRatios, setUsedDefaultRatios] = useState(false);
+  // Ratio + ISF are stepper-driven numbers (E.7); ISF is in the display unit.
   const [carbRatio, setCarbRatio] = useState(
-    String(activeProfile?.carb_ratio_breakfast ?? DEFAULT_CARB_RATIO)
+    activeProfile?.carb_ratio_breakfast ?? DEFAULT_CARB_RATIO
   );
   const [isf, setIsf] = useState(
-    String(glucoseToDisplay(activeProfile?.insulin_sensitivity_factor ?? DEFAULT_ISF_MGDL, unit))
+    glucoseToDisplay(activeProfile?.insulin_sensitivity_factor ?? DEFAULT_ISF_MGDL, unit)
   );
   const [basalTime, setBasalTime] = useState("22:00");
   const [showTime, setShowTime] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [saving, setSaving] = useState(false);
+  // The real outcome of the notification prompt, shown on the notify step so the
+  // flow never advances as if permission was granted when it was not.
+  const [notifyResult, setNotifyResult] = useState<NotificationPermission | null>(null);
 
   const hasInsulin =
     insulin === "basal" || insulin === "bolus" || insulin === "both";
@@ -143,7 +152,7 @@ export default function OnboardingScreen() {
   const steps = useMemo<StepId[]>(() => {
     const base: StepId[] = ["name", "unit", "diabetes", "insulin", "targets"];
     const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
-    return [...base, ...branch, "notify", "disclaimer"];
+    return [...base, ...branch, "widget", "notify", "disclaimer"];
   }, [hasInsulin]);
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
@@ -178,7 +187,8 @@ export default function OnboardingScreen() {
     setFastingMax(convert(fastingMax, DEFAULT_FASTING_RANGE.max));
     setPostmealMin(convert(postmealMin, DEFAULT_POSTMEAL_RANGE.min));
     setPostmealMax(convert(postmealMax, DEFAULT_POSTMEAL_RANGE.max));
-    setIsf(convert(isf, DEFAULT_ISF_MGDL));
+    // ISF is a number in the current display unit - convert it numerically.
+    setIsf(glucoseToDisplay(glucoseFromDisplay(isf, unit), next));
     setUnit(next);
   }
 
@@ -209,10 +219,12 @@ export default function OnboardingScreen() {
   }
 
   // Leaving the notification step: the on-screen rationale has been shown, so
-  // fire the OS prompt here (contextual), then advance.
+  // fire the OS prompt here (contextual). We DON'T advance blindly: the step now
+  // reflects the true outcome (on / off) and the user taps Continue to proceed,
+  // so the flow never pretends permission was granted when it was not.
   async function nextFromNotify() {
-    await requestNotificationPermission().catch(() => {});
-    next();
+    const result = await requestNotificationPermission();
+    setNotifyResult(result);
   }
 
   const toMgdl = (text: string, fallbackMgdl: number) =>
@@ -278,14 +290,11 @@ export default function OnboardingScreen() {
       // Insulin math is only relevant to insulin users; leave the profile's
       // defaults untouched otherwise.
       if (hasInsulin) {
-        const cr = num(carbRatio, DEFAULT_CARB_RATIO);
+        const cr = carbRatio;
         patch.carb_ratio_breakfast = cr;
         patch.carb_ratio_lunch = cr;
         patch.carb_ratio_dinner = cr;
-        patch.insulin_sensitivity_factor = glucoseFromDisplay(
-          num(isf, glucoseToDisplay(DEFAULT_ISF_MGDL, unit)),
-          unit
-        );
+        patch.insulin_sensitivity_factor = glucoseFromDisplay(isf, unit);
         // A number the user typed is theirs; one they skipped past is not, and
         // the calculator has to be able to tell those apart.
         patch.ratios_confirmed = usedDefaultRatios ? 0 : 1;
@@ -333,6 +342,8 @@ export default function OnboardingScreen() {
         return t("onboarding.qIsfHint");
       case "basal":
         return t("onboarding.qBasalHint");
+      case "widget":
+        return t("onboarding.qWidgetHint");
       case "notify":
         return t("onboarding.qNotifyHint");
       case "disclaimer":
@@ -416,17 +427,13 @@ export default function OnboardingScreen() {
       case "name":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
-              <InputRow
-                icon="text-outline"
-                label={t("onboarding.profileName")}
-                value={name}
-                onChangeText={setName}
-                placeholder={t("onboarding.profileNamePlaceholder")}
-                large
-                last
-              />
-            </View>
+            <BigInput
+              value={name}
+              onChangeText={setName}
+              placeholder={t("onboarding.profileNamePlaceholder")}
+              maxLength={40}
+              accessibilityLabel={t("onboarding.profileName")}
+            />
           </FadeSlideIn>
         );
 
@@ -440,6 +447,7 @@ export default function OnboardingScreen() {
                 <OptionCard
                   icon={UNIT_ICONS[opt]}
                   label={glucoseUnitLabel(opt)}
+                  description={t(`onboarding.unitHint_${opt}`)}
                   selected={unit === opt}
                   onPress={() => {
                     hapticSelect();
@@ -466,16 +474,22 @@ export default function OnboardingScreen() {
           </View>
         );
 
+      // Binary in onboarding: "Do you use insulin?" Yes → both (carbRatio/isf/
+      // basal follow), No → none. The finer 4-way distinction stays in Settings,
+      // which is its only real consumer (tab visibility, IOB, calculator mode).
       case "insulin":
         return (
           <View>
-            {INSULIN_OPTIONS.map((opt, i) => (
-              <FadeSlideIn key={opt} delay={optDelay(i)}>
+            {([
+              ["both", "yes", "checkmark-circle-outline"],
+              ["none", "no", "remove-circle-outline"],
+            ] as const).map(([val, key, icon], i) => (
+              <FadeSlideIn key={val} delay={optDelay(i)}>
                 <OptionCard
-                  icon={INSULIN_ICONS[opt]}
-                  label={t(`onboarding.insulin_${opt}`)}
-                  selected={insulin === opt}
-                  onPress={() => selectAndAdvance(() => setInsulin(opt))}
+                  icon={icon}
+                  label={t(`onboarding.insulinUse_${key}`)}
+                  selected={insulin === val}
+                  onPress={() => selectAndAdvance(() => setInsulin(val))}
                 />
               </FadeSlideIn>
             ))}
@@ -537,38 +551,34 @@ export default function OnboardingScreen() {
       case "carbRatio":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
-              <InputRow
-                icon="restaurant-outline"
-                label={t("settings.carbRatios")}
-                value={carbRatio}
-                onChangeText={setCarbRatio}
-                keyboardType="decimal-pad"
-                suffix={t("common.carbRatioUnit")}
-                maxLength={4}
-                large
-                last
-              />
-            </View>
+            <Stepper
+              value={carbRatio}
+              onChange={setCarbRatio}
+              step={0.5}
+              longStep={1}
+              min={1}
+              max={50}
+              decimals={1}
+              suffix={t("common.carbRatioUnit")}
+              accessibilityLabel={t("settings.carbRatios")}
+            />
           </FadeSlideIn>
         );
 
       case "isf":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="rounded-2xl bg-glass border border-hair overflow-hidden">
-              <InputRow
-                icon="pulse-outline"
-                label={t("settings.isf")}
-                value={isf}
-                onChangeText={setIsf}
-                keyboardType="decimal-pad"
-                suffix={glucoseUnitLabel(unit)}
-                maxLength={5}
-                large
-                last
-              />
-            </View>
+            <Stepper
+              value={isf}
+              onChange={setIsf}
+              step={unit === "mmol" ? 0.1 : 1}
+              longStep={unit === "mmol" ? 0.5 : 5}
+              min={unit === "mmol" ? 0.5 : 5}
+              max={unit === "mmol" ? 30 : 500}
+              decimals={unit === "mmol" ? 1 : 0}
+              suffix={glucoseUnitLabel(unit)}
+              accessibilityLabel={t("settings.isf")}
+            />
           </FadeSlideIn>
         );
 
@@ -597,13 +607,112 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
+      case "widget":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            {/* Lock-screen Live Activity mock (in-app drawing, no OS permission). */}
+            <View className="rounded-2xl border border-hair bg-glass p-4">
+              <View className="flex-row items-center" style={{ gap: 12 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    backgroundColor: THEME.accent,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name="pulse" size={20} color="#00171c" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text className="text-mut text-[11px] font-bold">zerospike</Text>
+                  <Text className="text-ink text-sm font-bold" numberOfLines={1}>
+                    {t("dashboard.quickPostMeal")}
+                  </Text>
+                </View>
+                <Text style={{ color: THEME.accent, fontSize: 18, fontWeight: "800" }}>1:12</Text>
+              </View>
+              <View
+                style={{ height: 5, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden", marginTop: 10 }}
+              >
+                <View style={{ height: "100%", width: "40%", backgroundColor: THEME.accent }} />
+              </View>
+            </View>
+            {/* Home-screen widget mock */}
+            <View className="flex-row mt-3" style={{ gap: 12 }}>
+              <View
+                style={{
+                  width: 96,
+                  height: 96,
+                  borderRadius: 18,
+                  borderWidth: 1,
+                  borderColor: THEME.border,
+                  backgroundColor: THEME.glass,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text className="text-mut text-[9px] font-bold">SON ÖLÇÜM</Text>
+                <Text style={{ color: GLUCOSE_RICH.target, fontSize: 28, fontWeight: "800" }}>112</Text>
+                <Text className="text-mut text-[10px]">mg/dL</Text>
+              </View>
+              <View style={{ flex: 1, justifyContent: "center" }}>
+                <Text className="text-ink text-sm leading-6">{t("onboarding.widgetIntro")}</Text>
+              </View>
+            </View>
+            <Text className="text-mut text-xs leading-5 mt-3">{t("onboarding.widgetAddHome")}</Text>
+          </FadeSlideIn>
+        );
+
       case "notify":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <View className="flex-row items-start rounded-2xl border border-hair bg-glass p-4">
-              <Ionicons name="notifications-outline" size={18} color={THEME.accent} />
+            {notifyResult == null ? (
+              <View className="flex-row items-start rounded-2xl border border-hair bg-glass p-4">
+                <Ionicons name="notifications-outline" size={18} color={THEME.accent} />
+                <Text className="text-mut text-sm leading-6 ml-3 flex-1">
+                  {t("onboarding.notifRationale")}
+                </Text>
+              </View>
+            ) : notifyResult === "granted" ? (
+              <View className="flex-row items-center rounded-2xl border border-hair bg-glass p-4">
+                <Ionicons name="checkmark-circle" size={20} color={GLUCOSE_RICH.target} />
+                <Text className="text-ink text-sm leading-6 ml-3 flex-1">
+                  {t("onboarding.notifGranted")}
+                </Text>
+              </View>
+            ) : (
+              <View className="rounded-2xl border border-hair bg-glass p-4">
+                <View className="flex-row items-start">
+                  <Ionicons name="notifications-off-outline" size={20} color={THEME.muted} />
+                  <Text className="text-mut text-sm leading-6 ml-3 flex-1">
+                    {t("onboarding.notifOff")}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => Linking.openSettings()}
+                  className="mt-3 flex-row items-center justify-center rounded-xl border border-hair py-2.5 active:opacity-80"
+                >
+                  <Ionicons name="settings-outline" size={16} color={THEME.accent} />
+                  <Text className="text-brand font-semibold ml-2">
+                    {t("settings.openSystemSettings")}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+            {/* Camera + Apple Health are only INTRODUCED here; the OS ask stays at
+                the point of use (first barcode scan / when Health is opened). */}
+            <View className="mt-3 flex-row items-start rounded-2xl border border-hair bg-glass p-4">
+              <Ionicons name="barcode-outline" size={18} color={THEME.accent} />
               <Text className="text-mut text-sm leading-6 ml-3 flex-1">
-                {t("onboarding.notifRationale")}
+                {t("onboarding.permCamera")}
+              </Text>
+            </View>
+            <View className="mt-3 flex-row items-start rounded-2xl border border-hair bg-glass p-4">
+              <Ionicons name="fitness-outline" size={18} color={THEME.accent} />
+              <Text className="text-mut text-sm leading-6 ml-3 flex-1">
+                {t("onboarding.permHealth")}
               </Text>
             </View>
           </FadeSlideIn>
@@ -631,8 +740,17 @@ export default function OnboardingScreen() {
     if (step === "insulin") return null;
 
     if (step === "notify") {
-      return (
-        <Button label={t("onboarding.notifyCta")} size="lg" onPress={nextFromNotify} />
+      // Before asking: the prompt trigger. After a result: a plain Continue, so
+      // the flow advances only on an explicit tap and never fakes a grant.
+      return notifyResult == null ? (
+        <View>
+          <Button label={t("onboarding.notifyCta")} size="lg" onPress={nextFromNotify} />
+          <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
+            <Text className="text-mut font-medium">{t("onboarding.skipForNow")}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Button label={t("onboarding.continue")} size="lg" onPress={next} />
       );
     }
 
@@ -652,8 +770,8 @@ export default function OnboardingScreen() {
       step === "carbRatio" || step === "isf" ? (
         <Pressable
           onPress={() => {
-            if (step === "carbRatio") setCarbRatio(String(DEFAULT_CARB_RATIO));
-            else setIsf(String(glucoseToDisplay(DEFAULT_ISF_MGDL, unit)));
+            if (step === "carbRatio") setCarbRatio(DEFAULT_CARB_RATIO);
+            else setIsf(glucoseToDisplay(DEFAULT_ISF_MGDL, unit));
             setUsedDefaultRatios(true);
             next();
           }}

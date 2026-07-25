@@ -23,19 +23,30 @@ import { VERY_HIGH_MGDL } from "../glucose";
  * needs its own copy of the five translations.
  */
 
-/** Population-default colouring: the widget has no profile range to read. It is
- *  a glance, not a classification, and the value is always printed beside it. */
-function readingColor(mgdl: number | null): ColorProp {
+/** Colours a reading against the PROFILE's own band from the snapshot, matching
+ *  the app and the iOS widget. Falls back to population defaults for a snapshot
+ *  written before R7. A glance, not a classification; the value is always shown. */
+function readingColor(
+  mgdl: number | null,
+  band: LiveData["band"] | undefined
+): ColorProp {
   // The token palette is hex throughout, which is exactly what the widget wants.
   if (mgdl == null) return THEME.muted as ColorProp;
-  if (mgdl < 70) return GLUCOSE_RICH.low as ColorProp;
-  if (mgdl >= VERY_HIGH_MGDL) return GLUCOSE_RICH.veryHigh as ColorProp;
-  if (mgdl <= 180) return GLUCOSE_RICH.target as ColorProp;
+  const hypo = band?.hypo ?? 70;
+  const high = band?.high ?? 180;
+  const veryHigh = band?.veryHigh ?? VERY_HIGH_MGDL;
+  if (mgdl < hypo) return GLUCOSE_RICH.low as ColorProp;
+  if (mgdl >= veryHigh) return GLUCOSE_RICH.veryHigh as ColorProp;
+  if (mgdl <= high) return GLUCOSE_RICH.target as ColorProp;
   return GLUCOSE_RICH.high as ColorProp;
 }
 
 function formatReading(data: LiveData | null): string {
-  const mgdl = data?.lastGlucoseMgdl;
+  // The widget pins the rolling AVERAGE (a persistent number), not a single stale
+  // reading. Prefer the app's locale-formatted string (so tr/de show "6,4"); fall
+  // back to the last reading only for a pre-R10 snapshot that has no average yet.
+  if (data?.avgGlucoseDisplay) return data.avgGlucoseDisplay;
+  const mgdl = data?.avgGlucoseMgdl ?? data?.lastGlucoseMgdl;
   if (mgdl == null) return "-";
   return data?.unit === "mmol"
     ? (mgdl / MGDL_PER_MMOL).toFixed(1)
@@ -78,7 +89,7 @@ export function buildZerospikeWidget(data: LiveData | null): React.JSX.Element {
       FlexWidget,
       { style: { flexDirection: "column" } },
       React.createElement(TextWidget, {
-        text: data?.labels?.lastReading ?? "",
+        text: data?.labels?.avgGlucose ?? data?.labels?.lastReading ?? "",
         style: { fontSize: 10, fontWeight: "bold", color: THEME.muted as ColorProp },
       }),
       React.createElement(
@@ -89,7 +100,7 @@ export function buildZerospikeWidget(data: LiveData | null): React.JSX.Element {
           style: {
             fontSize: 32,
             fontWeight: "bold",
-            color: readingColor(data?.lastGlucoseMgdl ?? null),
+            color: readingColor(data?.avgGlucoseMgdl ?? data?.lastGlucoseMgdl ?? null, data?.band),
           },
         }),
         React.createElement(TextWidget, {
@@ -104,7 +115,7 @@ export function buildZerospikeWidget(data: LiveData | null): React.JSX.Element {
           { style: { flexDirection: "column" } },
           React.createElement(TextWidget, {
             text: data?.labels?.nextReminder ?? "",
-            style: { fontSize: 9, fontWeight: "bold", color: THEME.muted as ColorProp },
+            style: { fontSize: 11, fontWeight: "bold", color: THEME.muted as ColorProp },
           }),
           React.createElement(TextWidget, {
             text: remaining,
@@ -112,7 +123,10 @@ export function buildZerospikeWidget(data: LiveData | null): React.JSX.Element {
           })
         )
       : React.createElement(TextWidget, {
-          text: data?.lastGlucoseMgdl == null ? (data?.labels?.noData ?? "") : "",
+          text:
+            data?.avgGlucoseMgdl == null
+              ? (data?.labels?.noData ?? "")
+              : (data?.labels?.avgWindow ?? ""),
           style: { fontSize: 11, color: THEME.muted as ColorProp },
         })
   );
