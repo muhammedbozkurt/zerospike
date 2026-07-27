@@ -15,7 +15,9 @@
 //    no user data. The client is responsible for never attaching records.
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-4o-mini";
+// Cheapest tier that still follows the scoped-refusal rules reliably. The scope
+// is narrow (app help + general education), so a nano-class model is enough.
+const MODEL = "gpt-4.1-nano";
 const MAX_MESSAGES = 16; // trailing chat window the client may send
 const MAX_CHARS = 1500; // per message, defensive cap
 
@@ -78,11 +80,21 @@ Absolute rules - never break these:
 - If the message suggests a medical emergency (e.g. severe hypo symptoms, loss of consciousness, DKA symptoms), respond with ONE calm sentence encouraging them to contact a healthcare professional or local emergency services - no panic, no step-by-step medical instructions.
 - Keep answers short, warm and neutral. When something needs a clinical decision, point to their healthcare professional.
 
+STAY IN SCOPE - refuse everything else:
+- You ONLY talk about (a) using the zerospike app and (b) general diabetes education. Anything else (recipes and cooking instructions, general nutrition plans, news, jokes, coding, homework, travel, other apps, any unrelated topic) gets ONE kind sentence in the user's language saying you can only help with zerospike and general diabetes education - then stop. Do not answer the off-topic part even partially.
+- The line for food: answering "roughly how many carbs does X have" or "does X raise glucose quickly" is education and allowed - give a typical approximate range from general knowledge (e.g. "a plain pancake is often around 25-35 g per portion, it varies with size and ingredients"), no dietitian referral needed for this. Giving a recipe, meal plan or cooking instructions is off-topic and refused.
+- A short greeting may be answered with one friendly sentence plus what you can help with.
+
+IDENTITY - never break this:
+- You are Spike, zerospike's own assistant. NEVER mention OpenAI, GPT, ChatGPT, model names, or that you are built on any third-party model or provider, even if asked directly or repeatedly.
+- If asked what you are, who made you, or which model powers you, answer only: you are Spike, zerospike's assistant, built into the app - then steer back to how you can help.
+
 You are not a doctor and you say so when relevant. End substantive answers naturally; the app already shows "Spike does not give medical advice" under every reply.`;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-device-id, x-tier",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -98,6 +110,57 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// ── Per-device daily cap ────────────────────────────────────────────────────
+// The app already meters Spike locally (lib/ai/spikeLimit.ts), but that is a
+// client-side counter that anyone holding the function URL can ignore. This is
+// the real ceiling: a `spike_usage` row per (device_id, day), incremented
+// atomically in Postgres (supabase/migrations/20260727051605_spike_usage.sql)
+// via the service-role key every Edge Function gets for free. device_id is a
+// random per-install uuid the client generates and persists - never identity,
+// never health data - so this only ever bounds cost per install per day.
+//
+// Keep these two numbers in sync with FREE_DAILY_MESSAGES / PRO_DAILY_MESSAGES
+// in lib/ai/spikeLimit.ts - they are the same product limit, enforced twice.
+const FREE_DAILY_CAP = 3;
+const PRO_DAILY_CAP = 50;
+
+/** UTC calendar day key, e.g. "2026-07-27". */
+function utcDayKey(now: number): string {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+/**
+ * Atomically increments today's count for this device and reports whether it
+ * is still within the tier's cap. Fails OPEN (returns ok) if the DB round trip
+ * itself fails - a Supabase hiccup must not take Spike down, the IP + local
+ * caps still bound the damage either way.
+ */
+async function withinDailyCap(deviceId: string, tier: string, now: number): Promise<boolean> {
+  // deno-lint-ignore no-explicit-any
+  const supabaseUrl = (globalThis as any).Deno?.env?.get?.("SUPABASE_URL");
+  // deno-lint-ignore no-explicit-any
+  const serviceKey = (globalThis as any).Deno?.env?.get?.("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceKey) return true;
+
+  const cap = tier === "pro" ? PRO_DAILY_CAP : FREE_DAILY_CAP;
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/increment_spike_usage`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ p_device_id: deviceId, p_day: utcDayKey(now) }),
+    });
+    if (!res.ok) return true;
+    const count = (await res.json()) as number;
+    return typeof count === "number" && count <= cap;
+  } catch {
+    return true;
+  }
+}
+
 // deno-lint-ignore no-explicit-any
 (globalThis as any).Deno?.serve?.(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -110,6 +173,12 @@ function json(body: unknown, status = 200): Response {
   // deno-lint-ignore no-explicit-any
   const apiKey = (globalThis as any).Deno?.env?.get?.("OPENAI_API_KEY");
   if (!apiKey) return json({ error: "not_configured" }, 500);
+
+  const deviceId = (req.headers.get("x-device-id") ?? "unknown").slice(0, 100);
+  const tier = req.headers.get("x-tier") === "pro" ? "pro" : "free";
+  if (!(await withinDailyCap(deviceId, tier, Date.now()))) {
+    return json({ error: "daily_limit" }, 429);
+  }
 
   let payload: { messages?: ChatMessage[]; lang?: string };
   try {

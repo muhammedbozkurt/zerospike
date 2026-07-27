@@ -67,7 +67,7 @@ export function StatCard({
         glass
           ? { backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }
           : undefined,
-        glass && glowColor ? glowShadow(glowColor, 26, 0.4) : undefined,
+        glass && glowColor ? glowShadow(glowColor, 26, 0.4, "fill") : undefined,
         style,
       ]}
     >

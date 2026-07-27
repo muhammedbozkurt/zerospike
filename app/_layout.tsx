@@ -234,6 +234,15 @@ function RootNavigator() {
     prevOnboardedRef.current = onboarded;
     if (prev === false && onboarded === true) completedRef.current = true;
     if (!onboarded && !inOnboarding && !inOnboardingPaywall) {
+      // Screenshot mode's own effect completes onboarding asynchronously (an
+      // AsyncStorage write before the state flip), so on a genuinely fresh
+      // install this gate can still see onboarded=false on the same commit and
+      // fire first. Don't redirect away from the deep-link target in that case -
+      // just wait; the completion effect flips `onboarded` a beat later and this
+      // gate re-runs. Without this, a fresh screenshot-mode launch got bounced to
+      // /onboarding and then stuck there (the re-entry guard below treats the
+      // in-flight completion as an already-onboarded user re-entering onboarding).
+      if (isScreenshotMode()) return;
       router.replace("/onboarding");
       return; // splash stays up through the redirect (no dashboard flash)
     }

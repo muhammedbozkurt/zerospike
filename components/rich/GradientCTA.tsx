@@ -51,7 +51,7 @@ export function GradientCTA({
           borderColor: THEME.border,
           backgroundColor: sub ? THEME.glass : undefined,
         },
-        !sub ? glow(glowColor, 22, 0.5) : undefined,
+        !sub ? glow(glowColor, 22, 0.5, "fill") : undefined,
         style,
       ]}
     >

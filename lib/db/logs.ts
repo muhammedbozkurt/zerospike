@@ -293,6 +293,7 @@ export type MealLogUpdate = Partial<
   Pick<
     MealLog,
     | "food_id"
+    | "sugar_log_id"
     | "custom_food_name"
     | "portion_g"
     | "calculated_carbs_g"
@@ -407,5 +408,38 @@ export async function getRecentMeals(
       carbs_g: _carbs,
     };
   });
+}
+
+/**
+ * Previous logs of the SAME meal, newest first: same catalogue food (by
+ * food_id), or for a typed-name meal, the same normalized custom name. Powers
+ * the meal-response screen's "previous attempts" comparison (see
+ * lib/mealResponse.ts) — each row still needs its own computeMealResponse call
+ * against the profile's readings, this only finds the matching meals.
+ */
+export async function getMealResponseHistory(
+  profileId: string,
+  meal: Pick<MealLog, "id" | "food_id" | "custom_food_name">,
+  limit = 5
+): Promise<MealLog[]> {
+  const db = await getDb();
+  let rows: MealRow[];
+  if (meal.food_id) {
+    rows = await db.getAllAsync<MealRow>(
+      `SELECT * FROM meal_logs WHERE profile_id = ? AND food_id = ? AND id != ?
+       ORDER BY logged_at DESC LIMIT ?;`,
+      [profileId, meal.food_id, meal.id, limit]
+    );
+  } else {
+    const name = (meal.custom_food_name ?? "").trim().toLowerCase();
+    if (!name) return [];
+    rows = await db.getAllAsync<MealRow>(
+      `SELECT * FROM meal_logs WHERE profile_id = ? AND food_id IS NULL AND id != ?
+         AND LOWER(TRIM(custom_food_name)) = ?
+       ORDER BY logged_at DESC LIMIT ?;`,
+      [profileId, meal.id, name, limit]
+    );
+  }
+  return rows.map(mapMeal);
 }
 

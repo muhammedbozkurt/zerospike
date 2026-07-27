@@ -37,6 +37,7 @@ import {
   getInjections,
   logInjection,
   deleteInjection,
+  findRecentCalculatorBolus,
   type SiteUsage,
 } from "../../lib/db/injections";
 import { captureDeletion } from "../../lib/db/undo";
@@ -162,9 +163,28 @@ export default function InjectionScreen() {
     });
   }
 
+  /** Gentle, non-blocking nudge when a bolus the calculator already wrote sits
+   *  within DOUBLE_BOLUS_WINDOW_MINUTES of this one (R10 1.4). Runs before the
+   *  dose-threshold checks so the two never fight for the same dialog. */
+  async function confirmDoubleBolus(): Promise<boolean> {
+    if (!activeProfile) return true;
+    const existing = await findRecentCalculatorBolus(activeProfile.id, new Date());
+    if (!existing) return true;
+    return confirm({
+      title: t("injection.doubleBolusTitle", {
+        n: num(existing.dose_units ?? 0),
+        time: formatTime(existing.logged_at),
+      }),
+      message: t("injection.doubleBolusBody"),
+      confirmLabel: t("injection.doubleBolusConfirm"),
+      icon: "help-circle-outline",
+    });
+  }
+
   async function save() {
     if (!activeProfile || !selected || saving) return;
     const hasDose = dose > 0;
+    if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return;
     if (hasDose && !(await confirmDose(dose))) return;
     setSaving(true);
     try {

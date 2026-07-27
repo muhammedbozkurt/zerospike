@@ -14,10 +14,15 @@ import { Ionicons } from "@expo/vector-icons";
 
 import type { InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
 import { SELECTABLE_SITES, SITE_POINTS } from "../lib/db/types";
-import { updateInjection, type InjectionUpdate } from "../lib/db/injections";
+import {
+  findRecentCalculatorBolus,
+  updateInjection,
+  type InjectionUpdate,
+} from "../lib/db/injections";
 import { checkDose } from "../lib/insulin";
 import { logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
+import { useApp } from "../lib/store/AppContext";
 import { useFeedback } from "./Feedback";
 import { Stepper } from "./Stepper";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
@@ -120,6 +125,7 @@ export function InjectionEditSheet({
   onSaved: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const { activeProfile } = useApp();
   const { confirm } = useFeedback();
   // Dose in units (0 = no dose). Stepper-driven, keyboard-editable.
   const [dose, setDose] = useState(0);
@@ -162,9 +168,28 @@ export function InjectionEditSheet({
     });
   }
 
+  /** Same gentle double-bolus nudge as the injection tab's own form (R10 1.4),
+   *  runs before the dose-threshold checks. Excludes the row being edited so a
+   *  calculator-written bolus never flags against its own value. */
+  async function confirmDoubleBolus(): Promise<boolean> {
+    if (!activeProfile || !injection) return true;
+    const existing = await findRecentCalculatorBolus(activeProfile.id, loggedAt, injection.id);
+    if (!existing) return true;
+    return confirm({
+      title: t("injection.doubleBolusTitle", {
+        n: num(existing.dose_units ?? 0),
+        time: formatTime(existing.logged_at),
+      }),
+      message: t("injection.doubleBolusBody"),
+      confirmLabel: t("injection.doubleBolusConfirm"),
+      icon: "help-circle-outline",
+    });
+  }
+
   async function save() {
     if (!injection || saving) return;
     const hasDose = dose > 0;
+    if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return;
     if (hasDose && !(await confirmDose(dose))) return;
 
     setSaving(true);

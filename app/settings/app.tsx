@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Linking, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, type Href } from "expo-router";
+import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -88,7 +88,7 @@ export default function AppSettings() {
       <Row
         icon="apps-outline"
         label={t("widgetGuide.title")}
-        onPress={() => router.push("/widget-guide" as Href)}
+        onPress={() => router.push("/widget-guide")}
       />
     </SettingsScaffold>
   );

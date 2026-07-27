@@ -1,4 +1,6 @@
 import Constants from "expo-constants";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { uuid } from "../uuid";
 
 /**
  * Spike client - posts the chat window to the ai-ask-spike edge function and
@@ -23,10 +25,37 @@ const FN_URL: string | undefined =
 
 export const isConfigured = typeof FN_URL === "string" && FN_URL.length > 0;
 
-/** POST the trailing chat window; resolve with the assistant reply text. */
+const DEVICE_ID_KEY = "zerospike.deviceId";
+
+/**
+ * Persistent anonymous install id (R10 FAZ 2), created once and reused for the
+ * life of the install. Sent as `x-device-id` ONLY so the edge function can
+ * apply a per-device daily message cap even if its URL leaks — it is not tied
+ * to identity or health data, and this is the only thing it is used for.
+ * Spoofable by design (a fresh install gets a fresh id, and the header can be
+ * forged); the goal is a cost ceiling, not access control.
+ */
+async function getDeviceId(): Promise<string> {
+  try {
+    const existing = await AsyncStorage.getItem(DEVICE_ID_KEY);
+    if (existing) return existing;
+    const id = uuid();
+    await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+    return id;
+  } catch {
+    return "unknown";
+  }
+}
+
+/** POST the trailing chat window; resolve with the assistant reply text.
+ *  `tier` drives the function's daily cap (free/pro) - purely a cost signal,
+ *  never trusted for anything else. Throws "daily_limit" specifically when the
+ *  server-side per-device cap is hit, so the UI can show the same exhausted
+ *  card it shows for the local allowance. */
 export async function askSpike(
   messages: SpikeMessage[],
-  lang: string
+  lang: string,
+  tier: "free" | "pro"
 ): Promise<string> {
   if (!isConfigured || !FN_URL) throw new Error("not_configured");
   // Data boundary: send ONLY roles + typed content. Never enrich with records.
@@ -35,11 +64,26 @@ export async function askSpike(
     .map((m) => ({ role: m.role, content: String(m.content).slice(0, 1500) }))
     .slice(-16);
 
+  const deviceId = await getDeviceId();
   const res = await fetch(FN_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-device-id": deviceId,
+      "x-tier": tier,
+    },
     body: JSON.stringify({ messages: safe, lang: lang.slice(0, 5) }),
   });
+  if (res.status === 429) {
+    let code = "rate_limited";
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data?.error) code = data.error;
+    } catch {
+      // no JSON body - fall back to the generic rate_limited code
+    }
+    throw new Error(code === "daily_limit" ? "daily_limit" : "rate_limited");
+  }
   if (!res.ok) throw new Error("upstream");
   const data = (await res.json()) as { reply?: string; error?: string };
   const reply = data?.reply?.trim();

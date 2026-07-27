@@ -25,6 +25,8 @@ export interface MealEntry {
   id: string;
   logged_at: string;
   food_id: string | null;
+  /** The reading this meal is attached to, if any (see lib/mealResponse.ts). */
+  sugar_log_id: string | null;
   display_name: string;
   portion_g: number;
   calculated_carbs_g: number;
@@ -54,6 +56,7 @@ interface MealRow {
   id: string;
   logged_at: string;
   food_id: string | null;
+  sugar_log_id: string | null;
   custom_food_name: string | null;
   portion_g: number;
   calculated_carbs_g: number;
@@ -104,7 +107,7 @@ export async function getJournal(
   }));
 
   const mealRows = await db.getAllAsync<MealRow>(
-    `SELECT m.id, m.logged_at, m.food_id, m.custom_food_name, m.portion_g,
+    `SELECT m.id, m.logged_at, m.food_id, m.sugar_log_id, m.custom_food_name, m.portion_g,
             m.calculated_carbs_g, m.insulin_dose_units, m.photo_uri_local,
             m.personal_note, m.tags,
             f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr
@@ -164,6 +167,7 @@ export async function getJournal(
       id: r.id,
       logged_at: r.logged_at,
       food_id: r.food_id,
+      sugar_log_id: r.sugar_log_id,
       display_name: display || "-",
       portion_g: r.portion_g,
       calculated_carbs_g: r.calculated_carbs_g,

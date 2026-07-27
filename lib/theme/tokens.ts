@@ -182,14 +182,53 @@ export const RICH_BY_STATUS: Record<GlucoseStatus, string> = {
   veryHigh: GLUCOSE_RICH.veryHigh,
 };
 
+/** `#rrggbb` + alpha -> `rgba()`. Local copy (not imported from GlassCard) to
+ *  avoid a components -> lib -> components import cycle. */
+function hexAlpha(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 /** Colored glow shadow (iOS shadow* / Android elevation) matched to a hue. Hero
- *  cards and rings use this so the surface "lights up" in its own color. */
-export function glow(color: string, radius = 24, opacity = 0.5) {
-  return {
-    shadowColor: color,
-    shadowOpacity: opacity,
-    shadowRadius: radius,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  } as const;
+ *  cards and rings use this so the surface "lights up" in its own color.
+ *
+ * I8: Android's `elevation` ignores `shadowColor` and always paints a flat grey
+ * drop shadow, which reads as a broken block behind these translucent surfaces.
+ * So on Android there is no shadow/elevation at all - instead a color-matched
+ * flat treatment stands in for the "lit" look:
+ *   - "border" (default): a thin color-matched ring (safe everywhere - never
+ *     touches backgroundColor, so it can't wash out a fill a caller already set).
+ *   - "fill": the border ring plus a faint color-matched wash, for surfaces with
+ *     no meaningful background of their own (hero cards/rings/CTAs) - mirrors the
+ *     GlassCard Android treatment.
+ *   - "shadowless": strip the shadow and add nothing - for decorative elements
+ *     (e.g. a drag handle) whose own border/fill is the whole point and must not
+ *     be overridden.
+ * The iOS branch is unchanged. */
+export function glow(
+  color: string,
+  radius = 24,
+  opacity = 0.5,
+  androidMode: "border" | "fill" | "shadowless" = "border",
+) {
+  // Lazy require: tokens.ts is also imported by pure-Node scripts (e.g.
+  // scripts/calc.test.ts via lib/glucose.ts) that never call glow(). A
+  // top-level `import ... from "react-native"` would eagerly load RN's
+  // Flow-annotated source there and fail to parse under tsx/esbuild.
+  const isIOS = (require("react-native") as typeof import("react-native")).Platform.OS === "ios";
+  if (isIOS) {
+    return {
+      shadowColor: color,
+      shadowOpacity: opacity,
+      shadowRadius: radius,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 8,
+    } as const;
+  }
+  if (androidMode === "shadowless") return {} as const;
+  const ring = { borderWidth: 1, borderColor: hexAlpha(color, 0.3), elevation: 0 } as const;
+  return androidMode === "fill" ? { ...ring, backgroundColor: hexAlpha(color, 0.1) } : ring;
 }

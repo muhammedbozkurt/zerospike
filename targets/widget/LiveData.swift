@@ -45,6 +45,11 @@ struct LiveData: Codable {
     let avgWindow: String?
     let nextReminder: String
     let noData: String
+    // Optional: absent on an older cached snapshot written before this field
+    // existed, so decode must never fail on a stale App Group value.
+    let hourShort: String?
+    let minuteShort: String?
+    let agoTemplate: String?
   }
 }
 

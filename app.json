@@ -26,7 +26,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "35",
+      "buildNumber": "38",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
@@ -53,7 +53,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 38,
+      "versionCode": 39,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -153,7 +153,7 @@
       "eas": {
         "projectId": "c52316bd-99ee-4ae9-8254-2a3542585ffb"
       },
-      "spikeFnUrl": ""
+      "spikeFnUrl": "https://zobtmenqgsradocrxdtc.supabase.co/functions/v1/ai-ask-spike"
     }
   }
 }

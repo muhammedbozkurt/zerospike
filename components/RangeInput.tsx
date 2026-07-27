@@ -199,7 +199,7 @@ export function RangeInput({
             borderColor: bandColor,
           },
           dragging === which
-            ? glow(bandColor, 12, 0.7)
+            ? glow(bandColor, 12, 0.7, "shadowless")
             : { shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
         ]}
       />

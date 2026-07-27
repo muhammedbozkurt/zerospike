@@ -1,16 +1,18 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform, Pressable, SectionList, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams, type Href } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
-import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry } from "../../lib/db/journal";
+import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulin } from "../../lib/iob";
+import { computeMealResponse } from "../../lib/mealResponse";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
+import { isScreenshotMode } from "../../lib/screenshotMode";
 import { insulinModeShowsBolus, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import {
   addSugarLog,
@@ -598,6 +600,24 @@ export default function DashboardScreen() {
     }
   }
 
+  // Meal rows with a computable response (lib/mealResponse.ts) get a small
+  // additive chevron (JournalItem) that opens it instead of the edit flow.
+  // Recomputed from the already-loaded feed — no extra query.
+  const mealResponseIds = useMemo(() => {
+    if (!activeProfile) return new Set<string>();
+    const readings = entries.filter((e): e is GlucoseEntry => e.kind === "glucose");
+    const meals = entries.filter((e): e is MealEntry => e.kind === "meal");
+    const ids = new Set<string>();
+    for (const meal of meals) {
+      if (computeMealResponse(meal, readings, activeProfile)) ids.add(meal.id);
+    }
+    return ids;
+  }, [entries, activeProfile]);
+
+  function openMealResponse(entry: JournalEntry) {
+    router.push({ pathname: "/meal-response", params: { mealId: entry.id } });
+  }
+
   // Long press = edit/delete menu (the built-in cancel row closes it).
   function onEntryLongPress(entry: JournalEntry) {
     actionSheet({
@@ -661,8 +681,10 @@ export default function DashboardScreen() {
         <View className="flex-row items-center" style={{ gap: 10 }}>
           {/* Spike's entry point only exists when the function URL is actually
               configured. A visible button that opens a dead end is worse than
-              no button; see lib/ai/spikeClient.ts. */}
-          {spikeConfigured ? (
+              no button; see lib/ai/spikeClient.ts. K4: also shown in store-
+              screenshot mode, where spike.tsx renders a mock chat with no
+              backend. */}
+          {spikeConfigured || isScreenshotMode() ? (
             <Pressable
               onPress={() => router.push("/spike")}
               hitSlop={8}
@@ -880,7 +902,7 @@ export default function DashboardScreen() {
             <Pressable
               onPress={() => {
                 void dismissWidgetTip();
-                router.push("/widget-guide" as Href);
+                router.push("/widget-guide");
               }}
               hitSlop={6}
             >
@@ -1057,6 +1079,8 @@ export default function DashboardScreen() {
                 profile={activeProfile}
                 onPress={openEdit}
                 onLongPress={onEntryLongPress}
+                hasResponse={item.kind === "meal" && mealResponseIds.has(item.id)}
+                onOpenResponse={openMealResponse}
               />
             </Animated.View>
           ) : null

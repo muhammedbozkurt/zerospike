@@ -51,3 +51,10 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 *.log
+
+# Store visuals & planning docs — never part of the app binary, keep the upload small
+zerospike-store*/
+/raw
+docs/
+HUMAN-TODO.md
+.tmp*

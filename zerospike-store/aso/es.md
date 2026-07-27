@@ -11,14 +11,14 @@ Sin rayas largas (em-dash). Reglas completas en ../../docs/aso-appstore.md.
 
 **Subtitle (27/30):** Glucosa, insulina y comidas
 
-**Promotional Text (169/170):**
-Un diario privado para glucosa, comidas e insulina. Registra en segundos, revisa tu historial y tiempo en rango, y exporta un PDF para tu médico. Todo queda en tu móvil.
+**Promotional Text (167/170):**
+Un diario privado para glucosa, comidas e insulina. Registra en segundos, revisa tu historial y tiempo en rango, y exporta un PDF médico. Registros quedan en tu móvil.
 
 **Keywords (96/100):**
 azúcar,glucemia,carbohidratos,medición,tipo 1,tipo 2,hba1c,a1c,inyección,bolo,basal,cgm,registro
 
 **Description:**
-zerospike es un diario privado para personas con diabetes. Registra glucosa, comidas e insulina en un solo lugar. No hay cuenta y no se sube nada; todo queda en tu móvil.
+zerospike es un diario privado para personas con diabetes. Registra glucosa, comidas e insulina en un solo lugar. No necesitas cuenta; tus registros de salud quedan en tu dispositivo.
 
 REGISTRA EN SEGUNDOS
 - Registra glucosa en mg/dL o mmol/L con etiquetas de periodo: ayunas, antes de comer, posprandial (2 h) y antes de dormir
@@ -30,6 +30,7 @@ REVISA TU HISTORIAL
 - Diario con colores y una gráfica diaria
 - Insights (Pro): tiempo en rango, perfil de glucosa ambulatorio (AGP), A1C estimada (GMI), además de tendencias de 30 y 90 días y un resumen semanal
 - Informe PDF listo para tu médico para el rango de fechas que elijas
+- Respuesta a la comida: mira el curso de 3 horas tras una comida; compara con intentos anteriores del mismo alimento (Pro)
 
 ROTACIÓN DE ZONAS DE INYECCIÓN
 - Un mapa corporal de las inyecciones que has registrado
@@ -38,11 +39,12 @@ ROTACIÓN DE ZONAS DE INYECCIÓN
 
 MANTÉN LA RUTINA
 - Cuenta atrás posprandial en la Live Activity de iOS, más un widget de pantalla de inicio y de bloqueo con tu última lectura y el próximo recordatorio
+- Apple Watch: última medición y temporizador posprandial, con complicaciones en la esfera
 - Recordatorios a las horas que elijas
 
 MÁS
 - Varios perfiles para cuidadores y familia
-- Apple Salud: lee tus propias lecturas de glucosa en el diario (Pro)
+- Apple Salud (Pro): lee tus mediciones de glucosa en el diario; si quieres, lo que registras se escribe también en Salud
 - Disponible en turco, inglés, alemán, español y francés
 
 zerospike es un diario personal de seguimiento. No es consejo médico ni un producto sanitario. Decide siempre el tratamiento con tu equipo de salud.
@@ -53,13 +55,11 @@ Política de privacidad: https://greeneyeapp.com/es/legal/zerospike-privacy
 Términos de uso (EULA): https://greeneyeapp.com/es/legal/zerospike-terms
 
 **What's New:**
-Un zerospike renovado:
-- Panel, diario y pantallas de inyección rediseñados
-- Mapa corporal de inyección con rotación por puntos; consulta tu punto sin usar durante más tiempo
-- Insights: tiempo en rango, AGP y A1C estimada, con tendencias de 30 y 90 días (Pro)
-- Informe PDF listo para el médico para cualquier rango de fechas (Pro)
-- Temporizador posprandial en la Live Activity y el widget de pantalla de inicio
-- Ahora en 5 idiomas: turco, inglés, alemán, español, francés
+1.5.0:
+- Respuesta a la comida: curso de 3 horas tras una comida, con comparación de intentos anteriores (Pro)
+- App de Apple Watch: última medición y temporizador posprandial, con complicaciones
+- Escribir en Apple Salud: si quieres, tus mediciones se escriben también en Salud
+- Mejoras visuales y correcciones
 
 =====================================================================
 ## Google Play (es-ES)
@@ -73,7 +73,7 @@ pantalla de bloqueo (solo widget de Android), según la política de datos de Pl
 Diario de diabetes privado: glucosa, comidas e insulina en tu móvil.
 
 **Full description:**
-zerospike es un diario privado para personas con diabetes. Registra glucosa, comidas e insulina en un solo lugar. No hay cuenta y no se sube nada; todo queda en tu móvil.
+zerospike es un diario privado para personas con diabetes. Registra glucosa, comidas e insulina en un solo lugar. No necesitas cuenta; tus registros de salud quedan en tu dispositivo.
 
 REGISTRA EN SEGUNDOS
 - Registra glucosa en mg/dL o mmol/L con etiquetas de periodo: ayunas, antes de comer, posprandial (2 h) y antes de dormir
@@ -85,6 +85,7 @@ REVISA TU HISTORIAL
 - Diario con colores y una gráfica diaria
 - Insights (Pro): tiempo en rango, perfil de glucosa ambulatorio (AGP), A1C estimada (GMI), además de tendencias de 30 y 90 días y un resumen semanal
 - Informe PDF listo para tu médico para el rango de fechas que elijas
+- Respuesta a la comida: mira el curso de 3 horas tras una comida; compara con intentos anteriores del mismo alimento (Pro)
 
 ROTACIÓN DE ZONAS DE INYECCIÓN
 - Un mapa corporal de las inyecciones que has registrado

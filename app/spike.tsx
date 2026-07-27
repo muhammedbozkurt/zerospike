@@ -31,6 +31,7 @@ import {
 } from "../lib/services/spikeConsent";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logEvent } from "../lib/analytics";
+import { isScreenshotMode } from "../lib/screenshotMode";
 
 /**
  * Spike - the in-app assistant. Two states behind one route: a fail-closed
@@ -53,13 +54,33 @@ export default function SpikeScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const { isProUser } = useApp();
 
+  // K4: store-screenshot mode renders the chat with no backend, no consent
+  // round-trip, and a fixed neutral 2-message example - never in a release
+  // build (isScreenshotMode() double-locks on __DEV__ + the env flag).
+  const screenshotChat = isScreenshotMode();
+  const effectiveConfigured = isConfigured || screenshotChat;
+
   useEffect(() => {
     (async () => {
+      if (screenshotChat) {
+        setConsented(true);
+        setUsage({ used: 1, limit: FREE_DAILY_MESSAGES, remaining: FREE_DAILY_MESSAGES - 1 });
+        setMessages([
+          { role: "user", content: t("spike.mockQuestion") },
+          { role: "assistant", content: t("spike.mockAnswer") },
+          { role: "user", content: t("spike.mockQuestion2") },
+          { role: "assistant", content: t("spike.mockAnswer2") },
+          { role: "user", content: t("spike.mockQuestion3") },
+          { role: "assistant", content: t("spike.mockAnswer3") },
+        ]);
+        setReady(true);
+        return;
+      }
       setConsented(await hasSpikeConsent());
       setUsage(await getSpikeUsage(isProUser));
       setReady(true);
     })();
-  }, [isProUser]);
+  }, [isProUser, screenshotChat, t]);
 
   useEffect(() => {
     logEvent("spike_opened");
@@ -71,7 +92,12 @@ export default function SpikeScreen() {
     setConsented(true);
   }
 
-  const exhausted = usage != null && usage.remaining <= 0;
+  // serverExhausted mirrors the local allowance card for a server-side 429
+  // (the per-device daily cap in ai-ask-spike/index.ts) - same UI either way,
+  // so a leaked function URL or a stale local counter looks identical to the
+  // user: a neutral "today's allowance is spent" card, never a failed send.
+  const [serverExhausted, setServerExhausted] = useState(false);
+  const exhausted = serverExhausted || (usage != null && usage.remaining <= 0);
 
   // Shared request path. A message is counted ONLY on a successful reply, so a
   // failed request never burns the user's daily allowance; a failure exposes a
@@ -80,11 +106,12 @@ export default function SpikeScreen() {
     setErrored(false);
     setSending(true);
     try {
-      const reply = await askSpike(history, i18n.language);
+      const reply = await askSpike(history, i18n.language, isProUser ? "pro" : "free");
       setMessages((m) => [...m, { role: "assistant", content: reply }]);
       setUsage(await noteSpikeMessage(isProUser));
-    } catch {
-      setErrored(true);
+    } catch (e) {
+      if (e instanceof Error && e.message === "daily_limit") setServerExhausted(true);
+      else setErrored(true);
     } finally {
       setSending(false);
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
@@ -93,7 +120,7 @@ export default function SpikeScreen() {
 
   async function send() {
     const text = input.trim();
-    if (!text || sending || !isConfigured || exhausted) return;
+    if (!text || sending || !isConfigured || exhausted || screenshotChat) return;
     hapticSelect();
     const next: SpikeMessage[] = [...messages, { role: "user", content: text }];
     setMessages(next);
@@ -104,7 +131,7 @@ export default function SpikeScreen() {
   // Retry the last (failed) exchange. The user turn is still the tail of
   // `messages`, so we re-send that history as-is instead of appending again.
   function retry() {
-    if (sending || !isConfigured || messages.length === 0) return;
+    if (sending || !isConfigured || messages.length === 0 || screenshotChat) return;
     hapticSelect();
     void runRequest(messages);
   }
@@ -146,6 +173,9 @@ export default function SpikeScreen() {
               </Text>
             </View>
           </GlassCard>
+          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
+            {t("spike.consentDeviceId")}
+          </Text>
           <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("spike.privacy")} ›</Text>
           <GradientCTA label={t("spike.accept")} onPress={accept} style={{ width: "100%" }} />
           <Pressable onPress={() => router.back()} hitSlop={8}>
@@ -284,7 +314,7 @@ export default function SpikeScreen() {
               </Pressable>
             </View>
           ) : null}
-          {!isConfigured ? (
+          {!effectiveConfigured ? (
             <Text style={{ color: THEME.muted, fontSize: 12, alignSelf: "center" }}>
               {t("spike.notConfigured")}
             </Text>
@@ -331,14 +361,14 @@ export default function SpikeScreen() {
             onChangeText={setInput}
             placeholder={t("spike.inputPlaceholder")}
             placeholderTextColor={THEME.muted}
-            editable={isConfigured && !sending && !exhausted}
+            editable={effectiveConfigured && !sending && !exhausted && !screenshotChat}
             onSubmitEditing={send}
             returnKeyType="send"
             style={{ flex: 1, color: THEME.ink, paddingVertical: 11, fontSize: 14 }}
           />
           <Pressable
             onPress={send}
-            disabled={!input.trim() || sending || !isConfigured || exhausted}
+            disabled={!input.trim() || sending || !effectiveConfigured || exhausted || screenshotChat}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t("spike.title")}
@@ -351,7 +381,7 @@ export default function SpikeScreen() {
                 justifyContent: "center",
                 backgroundColor: THEME.accent,
                 opacity:
-                  !input.trim() || sending || !isConfigured || exhausted ? 0.4 : 1,
+                  !input.trim() || sending || !effectiveConfigured || exhausted || screenshotChat ? 0.4 : 1,
               },
               glow(THEME.accent, 10, 0.5),
             ]}

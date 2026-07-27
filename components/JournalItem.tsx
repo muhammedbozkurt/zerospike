@@ -115,9 +115,13 @@ interface Props {
   profile: UserProfile;
   onLongPress?: (entry: JournalEntry) => void;
   onPress?: (entry: JournalEntry) => void;
+  /** Meal rows only: when true, shows a small curve chevron that opens the
+   *  meal's response (lib/mealResponse.ts) instead of the row's own edit tap. */
+  hasResponse?: boolean;
+  onOpenResponse?: (entry: JournalEntry) => void;
 }
 
-export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
+export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse, onOpenResponse }: Props) {
   const { t } = useTranslation();
 
   if (entry.kind === "glucose") {
@@ -231,7 +235,20 @@ export function JournalItem({ entry, profile, onLongPress, onPress }: Props) {
         ) : null}
         <TagBadges tags={entry.tags} />
       </View>
-      <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+      <View className="items-end">
+        <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+        {hasResponse && onOpenResponse ? (
+          <Pressable
+            onPress={() => onOpenResponse(entry)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("mealResponse.title")}
+            style={{ marginTop: 3 }}
+          >
+            <Ionicons name="pulse-outline" size={14} color={THEME.accent} />
+          </Pressable>
+        ) : null}
+      </View>
     </Row>
   );
 }

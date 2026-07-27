@@ -14,7 +14,8 @@ import {
   toggleFavorite as dbToggleFav,
 } from "../../lib/db/favorites";
 import { addMealLog, getRecentMeals, type RecentMeal } from "../../lib/db/logs";
-import { getJournal, type MealEntry } from "../../lib/db/journal";
+import { getJournal, type GlucoseEntry, type MealEntry } from "../../lib/db/journal";
+import { computeMealResponse } from "../../lib/mealResponse";
 import type { Food } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
 import { CATEGORIES, CATEGORY_EMOJI, Category } from "../../lib/db/categories";
@@ -58,6 +59,7 @@ export default function FoodScreen() {
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [recent, setRecent] = useState<RecentMeal[]>([]);
   const [todayMeals, setTodayMeals] = useState<MealEntry[]>([]);
+  const [feedReadings, setFeedReadings] = useState<GlucoseEntry[]>([]);
 
   const loadAll = useCallback(async () => setAll(await listAllFoods(lang)), [lang]);
   const loadFavorites = useCallback(async () => {
@@ -83,7 +85,19 @@ export default function FoodScreen() {
           e.kind === "meal" && formatDateKey(e.logged_at) === todayKey
       )
     );
+    setFeedReadings(feed.filter((e): e is GlucoseEntry => e.kind === "glucose"));
   }, [activeProfile, lang]);
+
+  // Today's meals with a computable response (lib/mealResponse.ts) get a small
+  // additive chevron on their row, opening the response instead of the edit flow.
+  const mealResponseIds = useMemo(() => {
+    if (!activeProfile) return new Set<string>();
+    const ids = new Set<string>();
+    for (const meal of todayMeals) {
+      if (computeMealResponse(meal, feedReadings, activeProfile)) ids.add(meal.id);
+    }
+    return ids;
+  }, [todayMeals, feedReadings, activeProfile]);
 
   useEffect(() => {
     loadAll();
@@ -351,6 +365,17 @@ export default function FoodScreen() {
                   {t("common.grams")}
                 </Text>
               </Text>
+              {mealResponseIds.has(meal.id) ? (
+                <Pressable
+                  onPress={() => router.push({ pathname: "/meal-response", params: { mealId: meal.id } })}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("mealResponse.title")}
+                  style={{ marginLeft: 8 }}
+                >
+                  <Ionicons name="pulse-outline" size={15} color={THEME.accent} />
+                </Pressable>
+              ) : null}
             </Pressable>
           ))}
         </View>

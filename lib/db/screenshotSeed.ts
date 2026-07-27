@@ -38,7 +38,7 @@ import i18n from "../i18n";
 // Bump the version suffix whenever the seeded STORY changes (reading spread,
 // colours, etc.) so an already-seeded screenshot build re-materialises cleanly on
 // next cold launch instead of keeping stale data.
-const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v7";
+const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v8";
 const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
 
 /** Deterministic pseudo-random in [0,1) so the seed is stable across runs. */

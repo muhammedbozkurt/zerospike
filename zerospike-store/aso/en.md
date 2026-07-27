@@ -11,14 +11,14 @@ No em-dashes. See ../../docs/aso-appstore.md for the full rule set.
 
 **Subtitle (27/30):** Glucose, insulin & meal log
 
-**Promotional Text (164/170):**
-A private logbook for glucose, meals and insulin. Log in seconds, see your history and time in range, and export a doctor-ready PDF. Everything stays on your phone.
+**Promotional Text (167/170):**
+A private logbook for glucose, meals and insulin. Log in seconds, see your history and time in range, and export a doctor-ready PDF. Health records stay on your phone.
 
 **Keywords (98/100):**
 blood sugar,sugar,tracker,diary,a1c,hba1c,carbs,injection,bolus,basal,type 1,type 2,cgm,bg,logbook
 
 **Description:**
-zerospike is a private logbook for people living with diabetes. Record glucose, meals and insulin in one place. There is no account and nothing is uploaded; everything stays on your phone.
+zerospike is a private logbook for people living with diabetes. Record glucose, meals and insulin in one place. No account needed; your health records stay on your device.
 
 LOG IN SECONDS
 - Record glucose in mg/dL or mmol/L with period tags: fasting, pre-meal, post-meal (2h) and bedtime
@@ -30,6 +30,7 @@ REVIEW YOUR HISTORY
 - Color-coded journal and a daily chart
 - Insights (Pro): time in range, ambulatory glucose profile (AGP), estimated A1C (GMI), plus 30 and 90 day trends and a weekly digest
 - Doctor-ready PDF report for any date range you choose
+- Meal response: see the 3-hour course after a meal; compare with past attempts of the same food (Pro)
 
 INJECTION SITE ROTATION
 - A body map of the injections you have logged
@@ -38,11 +39,12 @@ INJECTION SITE ROTATION
 
 STAY ON ROUTINE
 - Post-meal countdown on the iOS Live Activity, plus a home-screen and lock-screen widget that shows your last reading and next reminder
+- Apple Watch: last reading and the post-meal timer, with watch-face complications
 - Reminders at times you choose
 
 MORE
 - Multiple profiles for caregivers and family
-- Apple Health: read your own glucose readings into the journal (Pro)
+- Apple Health (Pro): read your glucose readings into the journal; optionally write what you log back to Health
 - Available in Turkish, English, German, Spanish and French
 
 zerospike is a personal tracking logbook. It is not medical advice and not a medical device. Always decide treatment with your healthcare team.
@@ -53,13 +55,11 @@ Privacy Policy: https://greeneyeapp.com/en/legal/zerospike-privacy
 Terms of Use (EULA): https://greeneyeapp.com/en/legal/zerospike-terms
 
 **What's New:**
-A refreshed zerospike:
-- Redesigned dashboard, journal and injection screens
-- Injection body map with point-level rotation; see your longest-unused point
-- Insights: time in range, AGP and estimated A1C, with 30 and 90 day trends (Pro)
-- Doctor-ready PDF report for any date range (Pro)
-- Post-meal timer on the Live Activity and home-screen widget
-- Now in 5 languages: Turkish, English, German, Spanish, French
+1.5.0:
+- Meal response: the 3-hour course after a meal, with past-attempt comparison (Pro)
+- Apple Watch app: last reading and the post-meal timer, with complications
+- Write to Apple Health: optionally write the readings you log back to Health
+- Visual polish and bug fixes
 
 =====================================================================
 ## Google Play (en-US)
@@ -73,7 +73,7 @@ Note: no Apple Health line and no iOS Live Activity / lock-screen wording on Pla
 Private logbook for glucose, meals and insulin. All on your phone.
 
 **Full description:**
-zerospike is a private logbook for people living with diabetes. Record glucose, meals and insulin in one place. There is no account and nothing is uploaded; everything stays on your phone.
+zerospike is a private logbook for people living with diabetes. Record glucose, meals and insulin in one place. No account needed; your health records stay on your device.
 
 LOG IN SECONDS
 - Record glucose in mg/dL or mmol/L with period tags: fasting, pre-meal, post-meal (2h) and bedtime
@@ -85,6 +85,7 @@ REVIEW YOUR HISTORY
 - Color-coded journal and a daily chart
 - Insights (Pro): time in range, ambulatory glucose profile (AGP), estimated A1C (GMI), plus 30 and 90 day trends and a weekly digest
 - Doctor-ready PDF report for any date range you choose
+- Meal response: see the 3-hour course after a meal; compare with past attempts of the same food (Pro)
 
 INJECTION SITE ROTATION
 - A body map of the injections you have logged

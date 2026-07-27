@@ -463,6 +463,31 @@ export default function CalculatorScreen() {
             glucose_level_mgdl: glucoseMgdl,
             ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
           });
+        } else if (!linkedSugarLogId && glucoseMgdl != null) {
+          // R10 1.3: the meal had no reading attached, but one was typed while
+          // editing it — it was silently discarded before. Same dedup as a fresh
+          // save (reuse a measurement logged minutes ago instead of doubling it),
+          // then link the result so it stops disappearing on save.
+          const existingReading = await findMatchingSugarLog(
+            activeProfile.id,
+            glucoseMgdl,
+            at
+          );
+          let newSugarLogId: string;
+          if (existingReading) {
+            newSugarLogId = existingReading.id;
+          } else {
+            const sugar = await addSugarLog({
+              profile_id: activeProfile.id,
+              glucose_level_mgdl: glucoseMgdl,
+              period_tag: "pre_meal",
+              tags,
+              logged_at: loggedIso,
+            });
+            void writeGlucoseToHealthIfEnabled(sugar);
+            newSugarLogId = sugar.id;
+          }
+          await updateMealLog(mealLogId, { sugar_log_id: newSugarLogId });
         }
 
         logEvent("log_edited", { kind: "meal" });

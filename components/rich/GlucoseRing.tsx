@@ -58,7 +58,7 @@ export function GlucoseRing({
   const centre = display ?? (value != null ? String(Math.round(value)) : "-");
 
   return (
-    <View style={[{ width: size, height: size }, glow(gradientTo, 22, 0.45), style]}>
+    <View style={[{ width: size, height: size, borderRadius: size / 2 }, glow(gradientTo, 22, 0.45, "fill"), style]}>
       <Svg width={size} height={size}>
         <Defs>
           <LinearGradient id={gid} x1="0" y1="0" x2="1" y2="0">

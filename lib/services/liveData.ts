@@ -80,6 +80,16 @@ export interface LiveData {
     avgWindow: string;
     nextReminder: string;
     noData: string;
+    /** For building a hand-formatted "elapsed since" string (e.g. "6 sa 23 dk
+     *  önce") - SwiftUI's `Text(date, style: .relative)` is localized to the
+     *  WATCH's system language, not the app's in-app language, so the watch
+     *  and watch-widget targets must compose their own relative-time string
+     *  from these instead of relying on that formatter. */
+    hourShort: string;
+    minuteShort: string;
+    /** Contains a "{{t}}" placeholder for the already-composed duration
+     *  (e.g. "6 sa 23 dk"); do the substitution on the native side. */
+    agoTemplate: string;
   };
 }
 
@@ -163,6 +173,9 @@ export async function computeLiveData(
       avgWindow: i18n.t("widget.avgWindow", { n: AVG_WINDOW_DAYS }),
       nextReminder: i18n.t("widget.nextReminder"),
       noData: i18n.t("widget.noData"),
+      hourShort: i18n.t("widget.hourShort"),
+      minuteShort: i18n.t("widget.minuteShort"),
+      agoTemplate: i18n.t("widget.agoTemplate"),
     },
   };
 }
@@ -181,6 +194,16 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
       ExtensionStorage.reloadWidget();
     } catch {
       // Expo Go / pre-prebuild build: no App Group to write to.
+    }
+    // R10 FAZ 3: also relay to a paired Apple Watch. The watch cannot read the
+    // App Group above, so this is its only path to the data (see
+    // modules/zerospike-watch-bridge). Optional and best-effort: no watch, no
+    // companion app, or the module not linked yet must never affect the phone.
+    try {
+      const { pushLiveDataToWatch } = await import("../../modules/zerospike-watch-bridge");
+      pushLiveDataToWatch(json);
+    } catch {
+      // module not linked (Expo Go / pre-prebuild build) - silent no-op
     }
     return;
   }

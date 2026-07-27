@@ -246,7 +246,9 @@ export default function PaywallScreen() {
           ? { title: t("paywall.limitTitleProfiles"), body: t("paywall.limitBodyProfiles") }
           : reason === "rotation"
             ? { title: t("paywall.limitTitleRotation"), body: t("paywall.limitBodyRotation") }
-            : null;
+            : reason === "mealResponse"
+              ? { title: t("paywall.limitTitleMealResponse"), body: t("paywall.limitBodyMealResponse") }
+              : null;
 
   async function buy() {
     if (busy) return;

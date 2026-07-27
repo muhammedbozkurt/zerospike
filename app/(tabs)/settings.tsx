@@ -32,7 +32,7 @@ export default function SettingsHub() {
     (async () => setPermission(await getNotificationPermission()))();
   }, []);
 
-  const go = (path: string) => () => router.push(path as Href);
+  const go = (path: Href) => () => router.push(path);
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
   return (

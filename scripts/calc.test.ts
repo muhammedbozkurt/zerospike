@@ -272,12 +272,16 @@ const sl = (mgdl: number, tags: LogTag[] = []): SugarLog => {
     tags,
   };
 };
-eq("no readings -> none", derivePatterns([]).length, 0);
-eq("below min readings -> none", derivePatterns([sl(150), sl(150), sl(150)]).length, 0);
-eq("uniform readings -> none", derivePatterns([sl(100), sl(100), sl(105), sl(95)]).length, 0);
+// Fixture timestamps hang off the fixed NOW above; derivePatterns windows off
+// the real clock when no range is given, so these tests must pin an explicit
+// range or they start failing once real time drifts past NOW + windowDays.
+const PATTERN_RANGE = { start: NOW.getTime() - 86_400_000, end: NOW.getTime() };
+eq("no readings -> none", derivePatterns([], undefined, PATTERN_RANGE).length, 0);
+eq("below min readings -> none", derivePatterns([sl(150), sl(150), sl(150)], undefined, PATTERN_RANGE).length, 0);
+eq("uniform readings -> none", derivePatterns([sl(100), sl(100), sl(105), sl(95)], undefined, PATTERN_RANGE).length, 0);
 {
   const data = [sl(180, ["stress"]), sl(180, ["stress"]), sl(180, ["stress"]), sl(180, ["stress"]), sl(100), sl(100)];
-  const p = derivePatterns(data).find((x) => x.kind === "tag_higher");
+  const p = derivePatterns(data, undefined, PATTERN_RANGE).find((x) => x.kind === "tag_higher");
   ok("tag_higher detected", !!p);
   if (p && p.kind === "tag_higher") {
     eq("tag is stress", p.tag, "stress");
@@ -287,7 +291,7 @@ eq("uniform readings -> none", derivePatterns([sl(100), sl(100), sl(105), sl(95)
   }
 }
 {
-  const p = derivePatterns([sl(60), sl(60), sl(240), sl(240)]).find((x) => x.kind === "high_variability");
+  const p = derivePatterns([sl(60), sl(60), sl(240), sl(240)], undefined, PATTERN_RANGE).find((x) => x.kind === "high_variability");
   ok("high_variability detected", !!p);
   if (p && p.kind === "high_variability") eq("cv 69", p.cv, 69);
 }
