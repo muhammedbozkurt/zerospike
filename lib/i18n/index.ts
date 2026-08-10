@@ -5,12 +5,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Lang } from "../db/types";
 import { setActiveLang } from "../lang";
 
-import tr from "./locales/tr";
-import en from "./locales/en";
-import de from "./locales/de";
-import es from "./locales/es";
-import fr from "./locales/fr";
-
 export const SUPPORTED_LANGS: Lang[] = ["tr", "en", "de", "es", "fr"];
 const LANG_STORAGE_KEY = "zerospike.lang";
 
@@ -22,32 +16,65 @@ export const LANG_LABELS: Record<Lang, string> = {
   fr: "Français",
 };
 
-const resources = {
-  tr: { translation: tr },
-  en: { translation: en },
-  de: { translation: de },
-  es: { translation: es },
-  fr: { translation: fr },
+/**
+ * Per-language bundle loaders. All five used to be STATIC imports, so every cold
+ * start parsed and kept the whole translation set in memory (~220 KB of object
+ * literals) to render in exactly one of them. A `require` inside a function body
+ * is not evaluated until it is called, so a language nobody selected costs
+ * nothing.
+ *
+ * Only two bundles are ever loaded up front: the one being rendered, and the
+ * 'en' fallback (fallbackLng below), so a key missing from a locale resolves
+ * exactly as it did when all five were resident.
+ */
+type Bundle = Record<string, unknown>;
+const LOCALE_LOADERS: Record<Lang, () => Bundle> = {
+  tr: () => require("./locales/tr").default as Bundle,
+  en: () => require("./locales/en").default as Bundle,
+  de: () => require("./locales/de").default as Bundle,
+  es: () => require("./locales/es").default as Bundle,
+  fr: () => require("./locales/fr").default as Bundle,
 };
+
+const FALLBACK_LANG: Lang = "en";
+const loadedLangs = new Set<Lang>();
+
+/** Loads a language's bundle into the live i18next instance, once. */
+function ensureLangLoaded(lang: Lang): void {
+  if (loadedLangs.has(lang)) return;
+  loadedLangs.add(lang);
+  i18n.addResourceBundle(lang, "translation", LOCALE_LOADERS[lang](), true, true);
+}
 
 function deviceLang(): Lang {
   try {
     const code = getLocales()[0]?.languageCode?.toLowerCase();
     if (code && (SUPPORTED_LANGS as string[]).includes(code)) return code as Lang;
   } catch {
-    // expo-localization not ready — fall through
+    // expo-localization not ready, fall through
   }
   return "en"; // unsupported system language → English (global default)
 }
 
 // Initialize i18next SYNCHRONOUSLY at module load with the device language, so
 // react-i18next always has a bound instance before any component renders (an
-// async init caused "pass in an i18next instance" + a hook-order crash).
+// async init caused "pass in an i18next instance" + a hook-order crash). The
+// bundles are resolved through synchronous require()s here, so lazy loading
+// does NOT reintroduce an async init.
 if (!i18n.isInitialized) {
+  const initial = deviceLang();
+  const resources: Record<string, { translation: Bundle }> = {
+    [initial]: { translation: LOCALE_LOADERS[initial]() },
+  };
+  loadedLangs.add(initial);
+  if (initial !== FALLBACK_LANG) {
+    resources[FALLBACK_LANG] = { translation: LOCALE_LOADERS[FALLBACK_LANG]() };
+    loadedLangs.add(FALLBACK_LANG);
+  }
   i18n.use(initReactI18next).init({
     resources,
-    lng: deviceLang(),
-    fallbackLng: "en",
+    lng: initial,
+    fallbackLng: FALLBACK_LANG,
     interpolation: { escapeValue: false },
     returnNull: false,
     compatibilityJSON: "v3",
@@ -76,14 +103,16 @@ export async function initI18n(): Promise<void> {
       (SUPPORTED_LANGS as string[]).includes(saved) &&
       i18n.language !== saved
     ) {
+      ensureLangLoaded(saved as Lang);
       await i18n.changeLanguage(saved);
     }
   } catch {
-    // ignore storage errors — keep the device language
+    // ignore storage errors, keep the device language
   }
 }
 
 export async function setLanguage(lang: Lang): Promise<void> {
+  ensureLangLoaded(lang);
   await i18n.changeLanguage(lang);
   try {
     await AsyncStorage.setItem(LANG_STORAGE_KEY, lang);

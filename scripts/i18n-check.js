@@ -7,12 +7,19 @@
  * "common.continue" when the key lives under "onboarding") ships as a raw key.
  * This script closes that gap. Dynamic keys (template literals with ${...}) are
  * skipped; run it in CI via `npm run i18n:check`.
+ *
+ * It also audits the NATIVE permission strings, which no TypeScript type covers:
+ * every *UsageDescription declared in app.json's ios.infoPlist must have a
+ * translation in every file listed under expo.locales. An iOS permission prompt
+ * that falls back to the English base string is invisible in the JS bundle, so it
+ * only ever surfaced on a device in a non-English locale.
  */
 const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const SCHEMA_FILE = path.join(ROOT, "lib/i18n/locales/tr.ts");
+const APP_CONFIG = path.join(ROOT, "app.json");
 const SCAN_DIRS = ["app", "lib", "components"];
 
 function loadSchemaKeys() {
@@ -47,6 +54,66 @@ function listSourceFiles(dir) {
   return out;
 }
 
+/**
+ * app.json ios.infoPlist vs. ios-locales/*.json. Returns a list of problem lines
+ * (empty when the two key sets agree for every declared locale).
+ */
+function checkIosLocales() {
+  const problems = [];
+  const cfg = JSON.parse(fs.readFileSync(APP_CONFIG, "utf8")).expo || {};
+  const infoPlist = (cfg.ios && cfg.ios.infoPlist) || {};
+  const locales = cfg.locales || {};
+
+  const expected = Object.keys(infoPlist)
+    .filter((k) => k.endsWith("UsageDescription"))
+    .sort();
+
+  if (expected.length === 0) {
+    problems.push("app.json ios.infoPlist declares no *UsageDescription keys");
+    return problems;
+  }
+  if (Object.keys(locales).length === 0) {
+    problems.push("app.json declares no expo.locales, so no permission prompt is localized");
+    return problems;
+  }
+
+  for (const [lang, relPath] of Object.entries(locales)) {
+    const abs = path.join(ROOT, relPath);
+    if (!fs.existsSync(abs)) {
+      problems.push(`${lang}: ${relPath} is missing`);
+      continue;
+    }
+    let ios;
+    try {
+      ios = (JSON.parse(fs.readFileSync(abs, "utf8")) || {}).ios;
+    } catch (err) {
+      problems.push(`${lang}: ${relPath} is not valid JSON (${err.message})`);
+      continue;
+    }
+    if (!ios || typeof ios !== "object") {
+      problems.push(`${lang}: ${relPath} has no "ios" object`);
+      continue;
+    }
+    const have = new Set(Object.keys(ios));
+    const absent = expected.filter((k) => !have.has(k));
+    const extra = [...have].filter((k) => !expected.includes(k)).sort();
+    if (absent.length > 0) {
+      problems.push(`${lang}: ${relPath} is missing ${absent.join(", ")}`);
+    }
+    if (extra.length > 0) {
+      problems.push(
+        `${lang}: ${relPath} translates ${extra.join(", ")}, which app.json ios.infoPlist does not declare`
+      );
+    }
+    for (const key of expected) {
+      if (have.has(key) && String(ios[key]).trim() === "") {
+        problems.push(`${lang}: ${relPath} has an empty ${key}`);
+      }
+    }
+  }
+  return problems;
+}
+
 // Static t("...") / t('...') / i18n.t("...") keys. Skips template literals.
 const CALL_RE = /(?:\bi18n)?\.?\bt\(\s*(["'])([A-Za-z0-9_.]+)\1/g;
 
@@ -74,13 +141,24 @@ for (const dir of SCAN_DIRS) {
   }
 }
 
-if (missing.size === 0) {
-  console.log(`i18n-check: OK (${schema.size} schema keys, no missing static t() keys)`);
-  process.exit(0);
+const nativeProblems = checkIosLocales();
+
+if (missing.size > 0) {
+  console.error(`i18n-check: ${missing.size} missing key(s):`);
+  for (const [key, locs] of missing) {
+    console.error(`  ${key}  <-  ${locs.join(", ")}`);
+  }
 }
 
-console.error(`i18n-check: ${missing.size} missing key(s):`);
-for (const [key, locs] of missing) {
-  console.error(`  ${key}  <-  ${locs.join(", ")}`);
+if (nativeProblems.length > 0) {
+  console.error(`i18n-check: ${nativeProblems.length} native permission string problem(s):`);
+  for (const line of nativeProblems) console.error(`  ${line}`);
+}
+
+if (missing.size === 0 && nativeProblems.length === 0) {
+  console.log(
+    `i18n-check: OK (${schema.size} schema keys, no missing static t() keys, ios-locales match app.json)`
+  );
+  process.exit(0);
 }
 process.exit(1);

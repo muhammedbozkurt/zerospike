@@ -13,11 +13,11 @@ import { logEvent } from "../analytics";
  *
  * Flip to real by shipping a production build (DEBUG_MOCK_PURCHASES is __DEV__),
  * or set the constant to `false` to test live billing on a dev build (needs
- * App Store sandbox / Play internal testing — see the project notebook §9).
+ * App Store sandbox / Play internal testing, see the project notebook §9).
  */
 export const DEBUG_MOCK_PURCHASES = __DEV__;
 
-// RevenueCat PUBLIC SDK keys (safe to embed — not secret).
+// RevenueCat PUBLIC SDK keys (safe to embed, not secret).
 const RC_API_KEY = Platform.select({
   ios: "appl_VOtCxNdWIKrDWSGaXFPvxPgZsiO",
   android: "goog_ytrLwdOzfMjGeWdDHByBOJlnTBA",
@@ -86,21 +86,48 @@ async function ensureConfigured(): Promise<void> {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-export async function isPro(): Promise<boolean> {
-  if (DEBUG_MOCK_PURCHASES) {
-    try {
-      return (await AsyncStorage.getItem(PRO_KEY)) === "true";
-    } catch {
-      return false;
-    }
-  }
+/**
+ * The last known entitlement, read from local storage ONLY - no SDK configure,
+ * no network round trip. This is what the launch path reads: waiting on
+ * RevenueCat held the splash screen up for the whole `getCustomerInfo` call, on
+ * a cold, possibly offline start. The real value is fetched right after the app
+ * is on screen (see AppContext) and corrects the flag then.
+ */
+export async function isProCached(): Promise<boolean> {
   try {
-    await ensureConfigured();
-    const info = await rc().getCustomerInfo();
-    return Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
+    return (await AsyncStorage.getItem(PRO_KEY)) === "true";
   } catch {
     return false;
   }
+}
+
+/**
+ * The entitlement as the STORE sees it, or null when the store could not be
+ * reached at all (offline, SDK not configured, request failed).
+ *
+ * That distinction matters to the launch path: it starts from the cached flag, so
+ * a failure it could not tell apart from a genuine "no longer subscribed" would
+ * demote a paying user mid-session and trip the win-back offer at them. Callers
+ * that only want a boolean use isPro() below, which keeps the original
+ * "unreachable counts as not pro" reading.
+ */
+export async function verifyProWithStore(): Promise<boolean | null> {
+  if (DEBUG_MOCK_PURCHASES) return isProCached();
+  try {
+    await ensureConfigured();
+    const info = await rc().getCustomerInfo();
+    const active = Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
+    // Keep the launch cache warm. Only written on a SUCCESSFUL answer, so a
+    // failure can never overwrite a paying user's stored flag.
+    await AsyncStorage.setItem(PRO_KEY, active ? "true" : "false").catch(() => {});
+    return active;
+  } catch {
+    return null;
+  }
+}
+
+export async function isPro(): Promise<boolean> {
+  return (await verifyProWithStore()) === true;
 }
 
 /** Which plan unlocked Pro (for display), if known. */
@@ -129,7 +156,7 @@ export type PurchaseErrorClass = "cancelled" | "alreadyOwned" | "storeError";
 /**
  * Outcome of a purchase attempt.
  * - `ok`        Pro is active (either the purchase went through, or it was
- *               recovered without a restart — see `recovered`).
+ *               recovered without a restart, see `recovered`).
  * - `cancelled` the user dismissed the native sheet (distinct from a store
  *               error), so the caller can route a cancel into the downsell.
  * - `recovered` Pro became active via already-owned recovery, so the UI can
@@ -289,11 +316,11 @@ export async function presentCodeRedemption(): Promise<void> {
     await ensureConfigured();
     await rc().presentCodeRedemptionSheet();
   } catch {
-    // sheet unavailable — ignore
+    // sheet unavailable, ignore
   }
 }
 
-/** Developer toggle (Settings → Developer) — local override for testing UI. */
+/** Developer toggle (Settings → Developer): local override for testing UI. */
 export async function setProOverride(value: boolean): Promise<void> {
   await AsyncStorage.setItem(PRO_KEY, value ? "true" : "false");
   if (!value) await AsyncStorage.removeItem(PLAN_KEY);
@@ -419,6 +446,19 @@ const NO_DOWNSELL: DownsellOffer = {
   savingsPercent: 0,
 };
 
+/**
+ * Dev-only stand-in for the real 'downsell' offering, which does not exist on a
+ * dev build: without it the screen could only ever be seen in its no-offer
+ * fallback, so the discount card itself was never previewable. purchaseDownsell
+ * already grants Pro under the same flag, so the whole flow runs end to end.
+ */
+const MOCK_DOWNSELL: DownsellOffer = {
+  hasRealDiscount: true,
+  discountedPriceString: "$19.99",
+  standardPriceString: "$39.99",
+  savingsPercent: 50,
+};
+
 function findAnnual(pkgs: any[]): PlanMeta | undefined {
   for (const p of pkgs ?? []) {
     const m = mapRcPackage(p);
@@ -445,11 +485,11 @@ function savingsPct(standard?: PlanMeta, discounted?: PlanMeta): number {
 /**
  * Reads the dedicated 'downsell' RevenueCat offering's annual package and
  * reports a discount only when it is (same currency) genuinely cheaper than the
- * standard annual. In dev there is no real offering, so it returns no discount
- * and the screen shows its honest "no offer" fallback.
+ * standard annual. In dev there is no real offering, so a mock discount is
+ * returned instead and the card can be reviewed on a dev build.
  */
 export async function getDownsellOffer(): Promise<DownsellOffer> {
-  if (DEBUG_MOCK_PURCHASES) return NO_DOWNSELL;
+  if (DEBUG_MOCK_PURCHASES) return MOCK_DOWNSELL;
   try {
     await ensureConfigured();
     const offerings = await rc().getOfferings();

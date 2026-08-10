@@ -1,6 +1,6 @@
 import React from "react";
 import { Platform, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -8,11 +8,12 @@ import { useTranslation } from "react-i18next";
 import { AppBackground, GlassCard, IconTile } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { GLUCOSE_RICH, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
 import { isLiveActivityAvailable } from "../modules/zerospike-live-activity";
+import { useLayout } from "../lib/useLayout";
 
 /**
- * "Widgets & Lock Screen" — the one place that tells the user these native
+ * "Widgets & Lock Screen": the one place that tells the user these native
  * surfaces exist and how to place them. Discoverability was zero before; a
  * reminder that a home/lock-screen widget and a Live Activity are available is
  * worth more than the surfaces themselves if nobody knows to add them.
@@ -57,24 +58,32 @@ function Steps({ text }: { text: string }) {
   );
 }
 
-export default function WidgetGuideScreen() {
+function WidgetGuideScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { contentColumn } = useLayout();
   const ios = Platform.OS === "ios";
   const liveOn = isLiveActivityAvailable();
 
   return (
     <AppBackground>
-      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
         <ScreenHeader
-          title={t("widgetGuide.title")}
+          // Android never renders the lock-screen/Live Activity sections below
+          // (both iOS-only), so its title drops "ve Kilit Ekranı" instead of
+          // promising sections the page doesn't show there.
+          title={ios ? t("widgetGuide.title") : t("widgetGuide.titleAndroid")}
           onBack={() => router.back()}
           backIcon="close"
           accessibilityLabel={t("common.close")}
         />
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: insets.bottom + 32,
+            ...(contentColumn ?? {}),
+          }}
           showsVerticalScrollIndicator={false}
         >
           <Section icon="grid-outline" title={t("widgetGuide.homeTitle")}>
@@ -124,5 +133,13 @@ export default function WidgetGuideScreen() {
         </ScrollView>
       </View>
     </AppBackground>
+  );
+}
+
+export default function WidgetGuideRoute() {
+  return (
+    <SafeAreaProvider>
+      <WidgetGuideScreen />
+    </SafeAreaProvider>
   );
 }

@@ -11,6 +11,9 @@ export type ExportResult =
   | { ok: true; uri: string; count: number }
   | { ok: false; reason: "noData" | "sharingUnavailable" };
 
+/** Upper bound on rows written into one file (the range is applied in SQL). */
+export const EXPORT_MAX_ROWS = 20000;
+
 /** Quotes a field when it contains the active delimiter, a quote or a newline. */
 function csvEscape(value: string | number | null | undefined, delim: string): string {
   if (value == null) return "";
@@ -68,13 +71,10 @@ export async function exportLogsCsv(
   range?: DateRange
 ): Promise<ExportResult> {
   const lang = currentLang();
-  const all = await getJournal(profileId, lang, 5000);
-  const entries = range
-    ? all.filter((e) => {
-        const t = new Date(e.logged_at).getTime();
-        return t >= range.start && t <= range.end;
-      })
-    : all;
+  // The range goes into SQL, not a filter over the newest 5000 rows: an export of
+  // an early month used to come back short (or empty) once the profile had more
+  // history than the limit, with nothing in the file saying so.
+  const entries = await getJournal(profileId, lang, EXPORT_MAX_ROWS, range);
   if (entries.length === 0) return { ok: false, reason: "noData" };
 
   // Locales whose decimal mark is a comma (tr/de/es/fr) get a ";" delimiter, a
@@ -157,7 +157,9 @@ export async function exportLogsCsv(
           "",
           e.dose_units != null ? cnum(e.dose_units) : "",
           "",
-          i18n.t(`injectionSite.${e.site}`),
+          e.site
+            ? i18n.t(`injectionSite.${e.site}`)
+            : i18n.t("injectionSite.unassigned"),
           e.note ?? "",
           tagsLabel(e.tags),
         ]

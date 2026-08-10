@@ -42,6 +42,14 @@ export function GradientCTA({
   return (
     <PressableScale
       onPress={disabled ? undefined : onPress}
+      // This is the app's PRIMARY action on almost every screen and it carried no
+      // role and no state at all: a screen reader announced the most important
+      // control on the paywall, onboarding and SOS screens as plain text, and a
+      // disabled one as fully available (the 0.5 opacity says nothing to it).
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
       style={[
         {
           borderRadius: RADIUS.lg,
@@ -74,7 +82,14 @@ export function GradientCTA({
       ) : null}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, paddingHorizontal: 14 }}>
         {icon}
-        <Text style={{ color: textColor, fontWeight: "800", fontSize: 15 }}>{label}</Text>
+        <Text
+          style={{ color: textColor, fontWeight: "800", fontSize: 15, flexShrink: 1 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
+          {label}
+        </Text>
       </View>
     </PressableScale>
   );

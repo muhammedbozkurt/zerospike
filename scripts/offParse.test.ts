@@ -19,6 +19,7 @@ declare const process: { exit: (code: number) => void };
 import {
   foodSourceLabel,
   isProductBarcode,
+  mapOffCategory,
   parseOffProduct,
   OFF_ATTRIBUTION,
 } from "../lib/services/offParse";
@@ -54,13 +55,21 @@ console.log("\nproduct parsing");
 const nutella = {
   product_name: "Nutella",
   brands: "Ferrero",
+  categories_tags: [
+    "en:breakfasts",
+    "en:spreads",
+    "en:sweet-spreads",
+    "en:chocolate-spreads",
+  ],
   nutriments: { carbohydrates_100g: 57.5, carbohydrates_unit: "g" },
   serving_quantity: 15,
 };
 eq("a complete product parses", parseOffProduct("3017624010701", nutella), {
   barcode: "3017624010701",
   name: "Nutella",
+  names: { tr: "Nutella", en: "Nutella", de: "Nutella", es: "Nutella", fr: "Nutella" },
   brand: "Ferrero",
+  category: "sweets",
   carb100g: 57.5,
   portionG: 15,
 });
@@ -73,7 +82,15 @@ eq(
     nutriments: { carbohydrates_100g: "12.5" },
     serving_quantity: "30",
   }),
-  { barcode: "40084022", name: "Test", brand: null, carb100g: 12.5, portionG: 30 }
+  {
+    barcode: "40084022",
+    name: "Test",
+    names: { tr: "Test", en: "Test", de: "Test", es: "Test", fr: "Test" },
+    brand: null,
+    category: "other",
+    carb100g: 12.5,
+    portionG: 30,
+  }
 );
 
 eq(
@@ -164,6 +181,136 @@ eq(
   "a plausible serving is kept",
   parseOffProduct("40084022", { ...noServing, serving_quantity: 330 })?.portionG,
   330
+);
+
+console.log("\nper-language names");
+
+// The product carries its own translations; each column gets the right one.
+const multi = {
+  product_name: "Vollkornbrot",
+  product_name_de: "Vollkornbrot",
+  product_name_tr: "Tam buğday ekmeği",
+  product_name_en: "Wholemeal bread",
+  product_name_fr: "Pain complet",
+  product_name_es: "Pan integral",
+  nutriments: { carbohydrates_100g: 41 },
+};
+eq("every translated name is kept", parseOffProduct("40084022", multi)?.names, {
+  tr: "Tam buğday ekmeği",
+  en: "Wholemeal bread",
+  de: "Vollkornbrot",
+  es: "Pan integral",
+  fr: "Pain complet",
+});
+
+// A missing or blank translation falls back to the product's main name, which is
+// exactly what a single-name product used to get in all five columns.
+eq(
+  "a missing translation falls back to the main name",
+  parseOffProduct("40084022", {
+    product_name: "Ayran",
+    product_name_tr: "Ayran",
+    product_name_de: "  ",
+    product_name_fr: "",
+    nutriments: { carbohydrates_100g: 4 },
+  })?.names,
+  { tr: "Ayran", en: "Ayran", de: "Ayran", es: "Ayran", fr: "Ayran" }
+);
+
+// A product whose only name is a translated one is still a named product.
+eq(
+  "a translated name alone is enough",
+  parseOffProduct("40084022", {
+    product_name_fr: "Yaourt nature",
+    nutriments: { carbohydrates_100g: 5 },
+  })?.name,
+  "Yaourt nature"
+);
+eq(
+  "and it fills the other columns",
+  parseOffProduct("40084022", {
+    product_name: "   ",
+    product_name_tr: "Sade yoğurt",
+    nutriments: { carbohydrates_100g: 5 },
+  })?.names,
+  {
+    tr: "Sade yoğurt",
+    en: "Sade yoğurt",
+    de: "Sade yoğurt",
+    es: "Sade yoğurt",
+    fr: "Sade yoğurt",
+  }
+);
+// Names are not nutrition: a non-string in a name field is ignored, never coerced.
+eq(
+  "a non-string translation is ignored",
+  parseOffProduct("40084022", {
+    product_name: "Su",
+    product_name_de: 42,
+    product_name_fr: { a: 1 },
+    nutriments: { carbohydrates_100g: 0 },
+  })?.names,
+  { tr: "Su", en: "Su", de: "Su", es: "Su", fr: "Su" }
+);
+
+console.log("\ncategory tags map to a shelf");
+
+eq("bread is bakery", mapOffCategory(["en:plant-based-foods", "en:breads"]), "bakery");
+eq("cheese is dairy", mapOffCategory(["en:dairies", "en:cheeses"]), "dairy");
+eq("soda is a beverage", mapOffCategory(["en:beverages", "en:sodas"]), "beverages");
+eq("canned fish is protein", mapOffCategory(["en:canned-fishes"]), "protein");
+eq("dried fruit is fruit", mapOffCategory(["en:fruits", "en:dried-fruits"]), "fruits");
+eq("pasta is a staple", mapOffCategory(["en:cereals-and-potatoes", "en:pastas"]), "staples");
+eq("hummus is a legume", mapOffCategory(["en:legumes", "en:hummus"]), "legumes");
+eq("a frozen pizza is a dish", mapOffCategory(["en:meals", "en:pizzas"]), "dishes");
+eq("a burger is fast food", mapOffCategory(["en:fast-food", "en:hamburgers"]), "fastfood");
+eq("pickles are vegetables", mapOffCategory(["en:vegetables", "en:pickles"]), "vegetables");
+eq("almonds are nuts", mapOffCategory(["en:nuts", "en:almonds"]), "nuts");
+
+// The tag list runs general to specific, so the LAST thing we recognise wins.
+eq(
+  "the most specific recognised tag wins",
+  mapOffCategory(["en:beverages", "en:dairies", "en:milks", "en:yogurts"]),
+  "dairy"
+);
+// A tag we do not know sits between two we do; the specific known one still wins.
+eq(
+  "an unknown tag does not stop the search",
+  mapOffCategory(["en:snacks", "en:some-brand-new-tag", "en:biscuits"]),
+  "sweets"
+);
+
+// Contributors tag in their own language; the locale prefix is not the product.
+eq("a non-English tag prefix is stripped", mapOffCategory(["fr:fromages"]), "dairy");
+eq("a tag with no prefix still matches", mapOffCategory(["breads"]), "bakery");
+eq("casing and padding are tolerated", mapOffCategory(["  EN:Breads "]), "bakery");
+
+// Word matching for the tags the exact table misses, in the order that keeps a
+// broader word from swallowing a narrower one.
+eq(
+  "milk chocolate is a sweet, not dairy",
+  mapOffCategory(["en:snacks", "en:milk-chocolates"]),
+  "sweets"
+);
+eq("a fruit juice is a drink, not fruit", mapOffCategory(["en:orange-juices"]), "beverages");
+eq("peanut butter is a nut, not dairy", mapOffCategory(["en:peanut-butters"]), "nuts");
+
+console.log("\nunrecognised or broken tags mean 'other', never a guess");
+
+eq("no tags at all", mapOffCategory(undefined), "other");
+eq("null tags", mapOffCategory(null), "other");
+eq("a string instead of a list", mapOffCategory("en:breads"), "other");
+eq("an empty list", mapOffCategory([]), "other");
+eq("nothing recognised", mapOffCategory(["en:zzz", "en:qqq"]), "other");
+eq("non-string entries", mapOffCategory([1, null, {}, ["en:breads"]]), "other");
+eq("blank entries", mapOffCategory(["", "  ", "en:"]), "other");
+eq(
+  "a product with no tags field lands on the column default",
+  parseOffProduct("40084022", {
+    product_name: "X",
+    nutriments: { carbohydrates_100g: 10 },
+  })?.category,
+  "other"
 );
 
 console.log("\nattribution");

@@ -4,8 +4,10 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { createProfile } from "../lib/db/profiles";
 import { Button } from "./ui";
-import { THEME } from "../lib/theme/tokens";
+import { INPUT_TEXT, THEME } from "../lib/theme/tokens";
 
 export function ProfileSwitcher() {
   const { t } = useTranslation();
@@ -31,6 +33,7 @@ export function ProfileSwitcher() {
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const { height: winHeight } = useWindowDimensions();
 
   async function handleSelect(id: string) {
     await setActiveProfileId(id);
@@ -45,6 +48,17 @@ export function ProfileSwitcher() {
       return;
     }
     setAdding(true);
+  }
+
+  // A free/single-profile user has nothing to pick from: the switch list would
+  // just show the one active profile next to a locked add button. Skip straight
+  // to the paywall instead of opening a list modal with nothing to switch.
+  function handlePillPress() {
+    if (!isProUser && profiles.length <= 1) {
+      router.push({ pathname: "/paywall", params: { reason: "profiles" } });
+      return;
+    }
+    setOpen(true);
   }
 
   async function handleCreate() {
@@ -65,7 +79,7 @@ export function ProfileSwitcher() {
   return (
     <>
       <Pressable
-        onPress={() => setOpen(true)}
+        onPress={handlePillPress}
         accessibilityRole="button"
         accessibilityLabel={t("profiles.switch")}
         className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-1.5"
@@ -112,39 +126,47 @@ export function ProfileSwitcher() {
                 {t("profiles.switch")}
               </Text>
 
-              {profiles.map((p) => {
-                const active = p.id === activeProfile?.id;
-                return (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => handleSelect(p.id)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    accessibilityLabel={p.name}
-                    className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
-                      active
-                        ? "bg-brand/10 border-brand/40"
-                        : "bg-glass border-hair"
-                    }`}
-                  >
-                    <Ionicons
-                      name={active ? "person" : "person-outline"}
-                      size={18}
-                      color={active ? "#2ee6ff" : THEME.muted}
-                    />
-                    <Text
-                      className={`flex-1 ml-3 font-medium ${
-                        active ? "text-brand" : "text-ink"
+              {/* Pro allows unlimited profiles (family/caregiver use), so this list
+                  has no fixed length: capped height + scroll keeps the Add/Create
+                  row reachable instead of it being pushed off-screen. */}
+              <ScrollView
+                style={{ maxHeight: winHeight * 0.5 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {profiles.map((p) => {
+                  const active = p.id === activeProfile?.id;
+                  return (
+                    <Pressable
+                      key={p.id}
+                      onPress={() => handleSelect(p.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={p.name}
+                      className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
+                        active
+                          ? "bg-brand/10 border-brand/40"
+                          : "bg-glass border-hair"
                       }`}
                     >
-                      {p.name}
-                    </Text>
-                    {active ? (
-                      <Ionicons name="checkmark-circle" size={18} color="#2ee6ff" />
-                    ) : null}
-                  </Pressable>
-                );
-              })}
+                      <Ionicons
+                        name={active ? "person" : "person-outline"}
+                        size={18}
+                        color={active ? "#2ee6ff" : THEME.muted}
+                      />
+                      <Text
+                        className={`flex-1 ml-3 font-medium ${
+                          active ? "text-brand" : "text-ink"
+                        }`}
+                      >
+                        {p.name}
+                      </Text>
+                      {active ? (
+                        <Ionicons name="checkmark-circle" size={18} color="#2ee6ff" />
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
 
               {adding ? (
                 <View className="mt-1">
@@ -155,6 +177,7 @@ export function ProfileSwitcher() {
                     placeholder={t("profiles.newNamePlaceholder")}
                     placeholderTextColor={THEME.muted}
                     className="rounded-xl bg-glass border border-hair px-4 py-3 text-ink mb-3"
+                    style={INPUT_TEXT}
                   />
                   <View className="flex-row gap-3">
                     <View className="flex-1">

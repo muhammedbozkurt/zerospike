@@ -3,13 +3,14 @@ import { AppState, Platform, Pressable, SectionList, Switch, Text, View } from "
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulin } from "../../lib/iob";
-import { computeMealResponse } from "../../lib/mealResponse";
+import { mealSlotForHour } from "../../lib/insulin";
+import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
 import { isScreenshotMode } from "../../lib/screenshotMode";
@@ -19,26 +20,34 @@ import {
   updateSugarLog,
   deleteSugarLog,
   deleteMealLog,
+  getSugarLog,
+  setSugarLogHealthUuid,
 } from "../../lib/db/logs";
+import { useLayout } from "../../lib/useLayout";
 import { deleteInjection } from "../../lib/db/injections";
 import { captureDeletion } from "../../lib/db/undo";
-import { loadDemoData, clearProfileData } from "../../lib/db/demo";
-import { markSampleActive, clearSampleFlag, isSampleActive } from "../../lib/sampleData";
 import type { LogTag, PeriodTag } from "../../lib/db/types";
 import {
-  schedulePostMealReminder,
   startPostMealTimer,
   scheduleLowFollowup,
-  getPostMealTimerEnd,
+  getPostMealTimerState,
   cancelPostMealTimer,
+  completePostMealTimer,
+  noteJournalActivity,
 } from "../../lib/services/notifications";
-import { formatPostMealRemaining } from "../../lib/postMealTimer";
+import {
+  formatPostMealRemaining,
+  postMealElapsedFraction,
+  type PostMealTimerWindow,
+} from "../../lib/postMealTimer";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { syncLiveData } from "../../lib/services/liveData";
 import {
   importHealthGlucose,
   writeGlucoseToHealthIfEnabled,
+  updateGlucoseInHealth,
   deleteGlucoseFromHealth,
+  getHealthWriteEnabled,
   type SyncResult,
 } from "../../lib/services/health";
 import { consecutiveLogDays } from "../../lib/insights";
@@ -55,16 +64,30 @@ const EDIT_HINT_KEY = "zerospike.editHintDismissed";
 const WIDGET_TIP_KEY = "zerospike.widgetTipDismissed";
 // Name the health source explicitly in the UI (App Review guideline 2.5.1).
 const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
+// Journal paging. One slice is at most JOURNAL_PAGE rows AND at most
+// JOURNAL_WINDOW_DAYS of history - whichever boundary is reached first. The list
+// no longer grows by itself as you scroll: every further slice is an explicit
+// "show more" press, and the button disappears once the feed is exhausted.
+const JOURNAL_PAGE = 50;
+const JOURNAL_WINDOW_DAYS = 14;
+// How much wider the SQL window gets when a page-down runs past the loaded feed.
+const JOURNAL_LOAD_STEP = 250;
+// The floating "add record" CTA sits above the tab bar, and the tab bar already
+// carries the device's safe-area inset - adding insets.bottom on top of it only
+// left a dead band (same correction as the food tab).
+const CTA_BOTTOM = 10;
+// What the journal has to scroll clear of: the CTA overlay plus a little air.
+const CTA_CLEARANCE = CTA_BOTTOM + 100;
 import { JournalItem } from "../../components/JournalItem";
 import { QuickAddSheet } from "../../components/QuickAddSheet";
 import { useUndoBatch } from "../../components/useUndoBatch";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
-import { useFeedback } from "../../components/Feedback";
+import { useFeedback, type SheetAction } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
 import { Sparkline } from "../../components/Sparkline";
-import { SegmentedStat } from "../../components/ui";
+import { Button, SegmentedStat } from "../../components/ui";
 import { EmptyState } from "../../components/EmptyState";
 import Animated from "react-native-reanimated";
 import { listEntering, PressableScale } from "../../lib/theme/motion";
@@ -77,7 +100,7 @@ import {
   GradientCTA,
   IconTile,
 } from "../../components/rich";
-import { formatDateKey, formatTime, relativeDay, num } from "../../lib/format";
+import { formatDate, formatDateKey, formatTime, formatWeekday, relativeDay, num, pct } from "../../lib/format";
 import {
   formatGlucose,
   glucoseUnitLabel,
@@ -88,16 +111,80 @@ import {
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 import { upper } from "../../lib/upper";
 
+type JournalSection = { title: string; dateLabel: string; data: JournalEntry[] };
+
+const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
+
+/**
+ * Re-mirrors an EDITED reading into Apple Health: the stale sample is revoked and
+ * the corrected value/time written in its place (HealthKit has no update), then
+ * the new UUID is recorded on the row - or cleared when the write did not land,
+ * so the row never points at a sample that no longer exists.
+ *
+ * Only touches rows that were actually mirrored, and only while the write toggle
+ * is on: with the mirror switched off the old sample stays where it is and its
+ * link is kept, so a later delete can still revoke it. Best-effort throughout -
+ * the local edit is already saved and a mirror failure must never surface.
+ */
+async function remirrorEditedGlucose(
+  previous: GlucoseEntry,
+  mgdl: number,
+  loggedAt: Date | null
+): Promise<void> {
+  try {
+    if (!previous.healthkit_uuid || Platform.OS !== "ios") return;
+    if (!(await getHealthWriteEnabled())) return;
+    const dateIso = (loggedAt ?? new Date(previous.logged_at)).toISOString();
+    const uuid = await updateGlucoseInHealth(previous.healthkit_uuid, mgdl, dateIso);
+    // Same orphan guard as writeGlucoseToHealthIfEnabled: if the row was
+    // deleted while the rewrite was in flight, revoke the fresh sample instead
+    // of leaving it unlinked in the user's Health app.
+    if (uuid && !(await getSugarLog(previous.id))) {
+      await deleteGlucoseFromHealth(uuid);
+      return;
+    }
+    await setSugarLogHealthUuid(previous.id, uuid);
+  } catch {
+    // best-effort mirror: never blocks or reports back to the edit flow
+  }
+}
+
+/**
+ * End index of the next journal slice, walking the newest-first feed from
+ * `from`: stops at JOURNAL_PAGE rows, or as soon as a row is older than
+ * JOURNAL_WINDOW_DAYS before the slice's newest row - whichever comes first.
+ *
+ * The day window is anchored on the slice's own newest row rather than on "now",
+ * so a user who has not logged for a month still opens on their last two weeks
+ * of records instead of on an empty list with a button under it.
+ */
+function nextJournalCut(list: JournalEntry[], from: number): number {
+  if (from >= list.length) return from;
+  const oldest =
+    new Date(list[from].logged_at).getTime() - JOURNAL_WINDOW_DAYS * 86_400_000;
+  let i = from;
+  while (i < list.length && i - from < JOURNAL_PAGE) {
+    if (new Date(list[i].logged_at).getTime() < oldest) break;
+    i++;
+  }
+  // A slice always advances, so a sparse feed can never stall the button.
+  return Math.max(i, from + 1);
+}
 
 export default function DashboardScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string }>();
+  const { contentColumn } = useLayout();
   const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  // The first feed read has landed. Without it an empty `entries` means both
+  // "still loading" and "nothing logged yet", and the first-run guide flashed
+  // over an existing user's dashboard for one frame on every cold start.
+  const [loaded, setLoaded] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editGlucose, setEditGlucose] = useState<GlucoseEntry | null>(null);
   const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
@@ -105,48 +192,66 @@ export default function DashboardScreen() {
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
   const [cgmOn, setCgmOn] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [sampleActive, setSampleActive] = useState(false);
-  const [loadingSample, setLoadingSample] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [showWidgetTip, setShowWidgetTip] = useState(false);
-  // Journal: session-only kind filter + page size (grows on scroll). Stats below
-  // still read the full loaded feed, so filtering/paging never skews them.
+  // Journal: session-only kind filter + how many slices are revealed (one, plus
+  // one per "show more" press). Stats below still read the full loaded feed, so
+  // filtering/paging never skews them.
   const [filter, setFilter] = useState<"all" | "glucose" | "meal" | "injection">("all");
-  const [journalLimit, setJournalLimit] = useState(50);
-  // Post-meal reminder countdown: end time (epoch ms) of the pending nudge, and
-  // a tick that drives the live label. Armed by the button OR the automatic
-  // schedule paths (both persist the end time in the service).
-  const [postMealEnd, setPostMealEnd] = useState<number | null>(null);
-  const [nowTick, setNowTick] = useState(() => Date.now());
-  // Full post-meal window (min) so the compact card's progress bar can show how
-  // much of it has elapsed. Loaded from prefs (90/120/150); 120 is the default.
+  const [journalPages, setJournalPages] = useState(1);
+  // SQL window (rows of the merged feed): decoupled from the visible slices so a
+  // page-down is a pure in-memory slice. Widened by "show more" only when the
+  // loaded feed is exhausted; 300 stays the stats-safe floor the hero/week tiles
+  // read.
+  const [loadLimit, setLoadLimit] = useState(300);
+  // Post-meal reminder countdown: the pending nudge's own start + end (epoch ms).
+  // Armed by the "I started eating" button or by logging a meal (both persist the
+  // timer in the service). Carrying the START too is what lets the card describe
+  // the timer that is actually running rather than assuming it was armed with the
+  // current preference. The live ticking label lives in <PostMealCountdown> so it
+  // never re-renders this screen's journal list.
+  const [postMealTimer, setPostMealTimer] = useState<PostMealTimerWindow | null>(null);
+  // The preference (90/120/150), for the idle CTA's label only.
   const [postMealWindowMin, setPostMealWindowMin] = useState(120);
 
   const refreshPostMealTimer = useCallback(async () => {
-    setPostMealEnd(await getPostMealTimerEnd());
+    setPostMealTimer(await getPostMealTimerState());
     setPostMealWindowMin((await getNotificationPrefs()).postMealMinutes);
   }, []);
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
-    // Load a stats-safe floor (weekly/today/hero read the full feed) that also
-    // grows as the paginated journal list is scrolled past it.
-    const loadLimit = Math.max(300, journalLimit + 50);
+    // One SQL window for the whole screen: stats read the full feed, the list
+    // slices it. Paging inside the window never re-runs this query.
     const feed = await getJournal(activeProfile.id, lang, loadLimit);
     setEntries(feed);
-    setSampleActive(await isSampleActive(activeProfile.id));
-    // Refresh the shared live-surface snapshot (next reminder + last glucose)
-    // so the notification/Live Activity/widget/watch layer reads current data.
-    void syncLiveData(activeProfile.id, activeProfile.glucose_unit ?? "mgdl");
-  }, [activeProfile, lang, journalLimit]);
+    setLoaded(true);
+  }, [activeProfile, lang, loadLimit]);
 
   useEffect(() => {
     load();
   }, [load, dataVersion]);
 
-  // Deep-link from a reminder tap (app/_layout.tsx routes the notification here
-  // with a `sheet` param): open the glucose sheet on the requested period, then
-  // clear the param so returning to this tab later doesn't reopen it.
+  // Refresh the shared live-surface snapshot (next reminder + last glucose) so
+  // the notification/Live Activity/widget/watch layer reads current data.
+  //
+  // Deliberately NOT part of load(): load widens its SQL window as the user
+  // scrolls the journal, and riding along with it meant scrolling to the bottom
+  // of the list recomputed the snapshot and asked WidgetKit / the Android widget
+  // / the paired watch to redraw. Scroll position is not news for a widget. This
+  // fires on what actually changes the numbers: the profile, its unit, and data.
+  const profileId = activeProfile?.id;
+  const glucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
+  useEffect(() => {
+    if (!profileId) return;
+    void syncLiveData(profileId, glucoseUnit);
+  }, [profileId, glucoseUnit, dataVersion]);
+
+  // Deep-link with a `sheet` param: a reminder tap (app/_layout.tsx routes the
+  // notification here) or the Quick Add widget's zerospike:///?sheet=glucose
+  // URL. Opens the glucose sheet on the requested period ("glucose" and any
+  // unknown value fall back to fasting), then clears the param so returning to
+  // this tab later doesn't reopen it.
   useEffect(() => {
     const s = params.sheet;
     if (!s || !activeProfile) return;
@@ -183,32 +288,19 @@ export default function DashboardScreen() {
     refreshPostMealTimer();
   }, [refreshPostMealTimer, dataVersion]);
 
-  // Drive the countdown label while armed: 30 s cadence far out, 1 s in the last
-  // minute; clears itself (button returns to normal) when the time is reached.
-  useEffect(() => {
-    if (postMealEnd == null) return;
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      const remaining = postMealEnd - Date.now();
-      if (remaining <= 0) {
-        setPostMealEnd(null);
-        return;
-      }
-      setNowTick(Date.now());
-      timeoutId = setTimeout(tick, remaining <= 60_000 ? 1_000 : 30_000);
-    };
-    tick();
-    return () => clearTimeout(timeoutId);
-  }, [postMealEnd]);
+  // Also on focus: the post-meal window label must pick up a delay changed in
+  // Settings without waiting for a data change or an app restart.
+  useFocusEffect(
+    useCallback(() => {
+      refreshPostMealTimer();
+    }, [refreshPostMealTimer])
+  );
 
   // Coming back to the foreground: re-read the timer (it may have elapsed while
-  // backgrounded) and refresh the tick immediately.
+  // backgrounded; the service returns null for an elapsed end, which disarms).
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        refreshPostMealTimer();
-        setNowTick(Date.now());
-      }
+      if (state === "active") refreshPostMealTimer();
     });
     return () => sub.remove();
   }, [refreshPostMealTimer]);
@@ -278,107 +370,128 @@ export default function DashboardScreen() {
     }
   }
 
-  const todayCarbs = entries
-    .filter(
-      (e) =>
-        e.kind === "meal" &&
-        formatDateKey(e.logged_at) === formatDateKey(new Date().toISOString())
-    )
-    .reduce((sum, e) => sum + (e.kind === "meal" ? e.calculated_carbs_g : 0), 0);
-
-  const todayKey = formatDateKey(new Date().toISOString());
-  const todayInjections = entries.filter(
-    (e) => e.kind === "injection" && formatDateKey(e.logged_at) === todayKey
-  ).length;
-  const anyInjections = entries.some((e) => e.kind === "injection");
-  // Encouraging consistency count ("X days in a row"), never a streak to protect.
-  const logStreak = consecutiveLogDays(entries.map((e) => e.logged_at));
-
-  // Hero ring: the most recent glucose reading in its status color (Midnight
-  // Monitor). Decorative sweep only - the value + period label carry the reading.
-  const lastGlucose = entries.find(
-    (e): e is GlucoseEntry => e.kind === "glucose"
-  );
-  const lastStatus =
-    lastGlucose && activeProfile
-      ? classifyGlucose(lastGlucose.glucose_level_mgdl, lastGlucose.period_tag, activeProfile)
-      : null;
-  const lastColor = lastStatus ? RICH_BY_STATUS[lastStatus] : THEME.accent;
-
-  // ── This-week summary (derived from the already-loaded feed) ──────────────
   const unit = activeProfile?.glucose_unit ?? "mgdl";
-  const weekAgo = Date.now() - 7 * 86_400_000;
-  const weekGlucose = entries.filter(
-    (e) => e.kind === "glucose" && new Date(e.logged_at).getTime() >= weekAgo
-  );
-  const weekReadings = weekGlucose.length;
-  const weekAvg = weekReadings
-    ? Math.round(
-        weekGlucose.reduce(
-          (a, e) => a + (e.kind === "glucose" ? e.glucose_level_mgdl : 0),
-          0
-        ) / weekReadings
-      )
-    : null;
-  // Measured against the PROFILE'S band, not a fixed 70-180 rectangle, so this
-  // figure agrees with the one on Insights and in the doctor report.
-  const weekBand = targetBandFor(activeProfile ?? {});
-  const weekTIR = weekReadings
-    ? Math.round(
-        (weekGlucose.filter(
-          (e) =>
-            e.kind === "glucose" &&
+
+  /**
+   * Every derived figure on this screen, from ONE pass over the feed.
+   *
+   * These were a dozen independent chained `.filter().reduce()` expressions in
+   * the render body: each walked the whole loaded feed (up to 300 entries, more
+   * once the user pages), several parsed `logged_at` into a Date again per entry,
+   * and one of them built `new Date().toISOString()` per row just to compare day
+   * keys. All of it re-ran on every single re-render - a ticking countdown, a
+   * sheet opening, a filter chip - to produce values that only change when the
+   * feed or the profile does. Same figures, same order of operations, computed
+   * once.
+   */
+  const stats = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 86_400_000;
+    // Measured against the PROFILE'S band, not a fixed 70-180 rectangle, so
+    // these figures agree with Insights and the doctor report.
+    const weekBand = targetBandFor(activeProfile ?? {});
+
+    let weekReadings = 0;
+    let weekSum = 0;
+    let weekInBand = 0;
+    let weekInjections = 0;
+    let lastGlucose: GlucoseEntry | undefined;
+    const injections: InjectionEntry[] = [];
+    const logDates: string[] = [];
+    // Feed order is newest-first; the sparkline reads chronologically.
+    const weekValuesDesc: number[] = [];
+
+    for (const e of entries) {
+      logDates.push(e.logged_at);
+      if (e.kind === "meal") continue;
+      const inWeek = new Date(e.logged_at).getTime() >= weekAgo;
+      if (e.kind === "glucose") {
+        if (!lastGlucose) lastGlucose = e;
+        if (inWeek) {
+          weekReadings++;
+          weekSum += e.glucose_level_mgdl;
+          weekValuesDesc.push(e.glucose_level_mgdl);
+          if (
             e.glucose_level_mgdl >= weekBand.low &&
             e.glucose_level_mgdl <= weekBand.high
-        ).length /
-          weekReadings) *
-          100
-      )
-    : null;
-  const weekInjections = entries.filter(
-    (e) => e.kind === "injection" && new Date(e.logged_at).getTime() >= weekAgo
-  ).length;
-  const hasWeekData = weekReadings > 0 || weekInjections > 0;
+          ) {
+            weekInBand++;
+          }
+        }
+        continue;
+      }
+      injections.push(e);
+      if (inWeek) weekInjections++;
+    }
 
-  // Weekly-average accent (single glucose color language) + a chronological
-  // sparkline of the week's readings for the summary tile.
-  const weekSparkline = weekGlucose
-    .slice()
-    .reverse()
-    .map((e) => (e.kind === "glucose" ? e.glucose_level_mgdl : 0));
-  const avgColor =
-    weekAvg != null && activeProfile
-      ? STATUS_COLOR[classifyGlucose(weekAvg, "manual", activeProfile)]
-      : THEME.ink;
-  const tirColor =
-    weekTIR == null
-      ? THEME.ink
-      : weekTIR >= 70
-        ? STATUS_COLOR.normal
-        : weekTIR >= 50
-          ? STATUS_COLOR.elevated
-          : STATUS_COLOR.high;
+    const weekAvg = weekReadings ? Math.round(weekSum / weekReadings) : null;
+    const weekTIR = weekReadings
+      ? Math.round((weekInBand / weekReadings) * 100)
+      : null;
+    const lastStatus =
+      lastGlucose && activeProfile
+        ? classifyGlucose(
+            lastGlucose.glucose_level_mgdl,
+            lastGlucose.period_tag,
+            activeProfile
+          )
+        : null;
+
+    return {
+      // Encouraging consistency count ("X days in a row"), never a streak to
+      // protect.
+      logStreak: consecutiveLogDays(logDates),
+      // Hero ring: the most recent glucose reading in its status color (Midnight
+      // Monitor). Decorative sweep only - the value + period label carry it.
+      lastGlucose,
+      lastStatus,
+      lastColor: lastStatus ? RICH_BY_STATUS[lastStatus] : THEME.accent,
+      weekAvg,
+      weekTIR,
+      hasWeekData: weekReadings > 0 || weekInjections > 0,
+      weekSparkline: weekValuesDesc.reverse(),
+      avgColor:
+        weekAvg != null && activeProfile
+          ? STATUS_COLOR[classifyGlucose(weekAvg, "manual", activeProfile)]
+          : THEME.ink,
+      tirColor:
+        weekTIR == null
+          ? THEME.ink
+          : weekTIR >= 70
+            ? STATUS_COLOR.normal
+            : weekTIR >= 50
+              ? STATUS_COLOR.elevated
+              : STATUS_COLOR.high,
+      // Active insulin still working from recent bolus doses (stacking awareness).
+      iob: activeInsulin(injections),
+    };
+  }, [entries, activeProfile]);
+
+  const {
+    lastGlucose,
+    lastStatus,
+    lastColor,
+    logStreak,
+    weekAvg,
+    weekTIR,
+    hasWeekData,
+    weekSparkline,
+    avgColor,
+    tirColor,
+    iob,
+  } = stats;
 
   // Onboarding said whether this user takes a mealtime insulin at all. When they
   // do not, the insulin apparatus (IOB line here, the whole Injection tab) stays
   // out of the way instead of implying they should be dosing.
   const showsInsulin = insulinModeShowsBolus(activeProfile?.insulin_mode);
 
-  // Active insulin still working from recent bolus doses (stacking awareness).
-  const iob = activeInsulin(
-    entries.filter((e): e is InjectionEntry => e.kind === "injection")
-  );
-
-  // Post-meal button: while a reminder is pending it is disabled and shows a
-  // live countdown (recomputed from nowTick), otherwise it is the normal CTA.
-  const postMealArmed = postMealEnd != null && postMealEnd > nowTick;
-  const postMealCountdown = postMealArmed
-    ? formatPostMealRemaining(postMealEnd - nowTick)
-    : null;
-  // Fraction of the post-meal window already elapsed (fills the compact bar).
-  const postMealProgress = postMealArmed
-    ? Math.min(1, Math.max(0, 1 - (postMealEnd - nowTick) / (postMealWindowMin * 60_000)))
-    : 0;
+  // Post-meal button slot: while a reminder is pending the <PostMealCountdown>
+  // child ticks in place, otherwise the slot is the normal CTA. Reaching the end
+  // also closes the lock-screen countdown (the notification has just fired).
+  const onPostMealElapsed = useCallback(() => {
+    setPostMealTimer(null);
+    void completePostMealTimer();
+  }, []);
 
   // Manual logging is unlimited on both tiers now, so there is no gate here.
   function openLogger(period: PeriodTag) {
@@ -435,6 +548,11 @@ export default function DashboardScreen() {
         tags,
         ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
       });
+      // H2: keep the Apple Health mirror honest. A corrected reading whose
+      // mirrored sample still carried the old value made the two disagree, and
+      // HealthKit has no "update", so the helper revokes and rewrites. Only for
+      // rows that were actually mirrored; fire-and-forget, never blocks the edit.
+      void remirrorEditedGlucose(editGlucose, value, loggedAt);
       setEditGlucose(null);
       logEvent("log_edited", { kind: "glucose" });
       hapticSuccess();
@@ -454,15 +572,16 @@ export default function DashboardScreen() {
     });
     // Opt-in Apple Health mirror (H1); no-op unless the user enabled it.
     void writeGlucoseToHealthIfEnabled(addedSugar);
+    void noteJournalActivity();
     logEvent("log_added", { kind: "glucose", source: "manual" });
     void noteLogAndMaybeReview();
     hapticSuccess();
-    // Per spec: a fasting/pre-meal reading schedules the 2-hour post-meal nudge,
-    // which also arms the countdown button.
-    if (isNow && (period === "fasting" || period === "pre_meal")) {
-      await schedulePostMealReminder();
-      await refreshPostMealTimer();
-    }
+    // NOTHING is armed here. A reading is a measurement, not a meal: logging a
+    // fasting or manual value used to start the post-meal countdown by itself, so
+    // a user who only checked their sugar got a lock-screen timer and a nudge two
+    // hours later about a meal that never happened. The timer now has exactly two
+    // deliberate sources: the "I started eating" button and a logged meal.
+    //
     // Reflective feedback for a 2-hour post-meal reading: a descriptive note
     // comparing the user's own reading to their own target (never advice).
     if (period === "post_meal_2h") {
@@ -470,7 +589,7 @@ export default function DashboardScreen() {
         // Early completion: the 2-hour reading is logged, so the pending nudge
         // is no longer needed. Cancel it and clear the countdown.
         await cancelPostMealTimer();
-        setPostMealEnd(null);
+        setPostMealTimer(null);
       }
       const status = classifyGlucose(value, "post_meal_2h", activeProfile);
       const key =
@@ -533,40 +652,25 @@ export default function DashboardScreen() {
     if (next) await runSync(true);
   }
 
-  // First-run preview: fill an empty profile with realistic sample data so a
-  // new user instantly sees a populated dashboard, Insights and AGP. Fully
-  // reversible (clears every log on the profile) and only offered when empty.
-  async function loadSample() {
-    if (!activeProfile || loadingSample) return;
-    setLoadingSample(true);
-    try {
-      await loadDemoData(activeProfile.id);
-      await markSampleActive(activeProfile.id);
-      hapticSuccess();
-      bumpData();
-    } finally {
-      setLoadingSample(false);
+  // The one Health entry point, shared by the quick-access card and the
+  // first-run step: sell the feature when it is locked, arm the sync when it is
+  // off, and sync now when it is already on. The card used to be inert whenever
+  // the switch was off, so only its 30pt switch reacted to a tap.
+  function openHealthFlow() {
+    if (!isProUser) {
+      hapticWarning();
+      router.push({ pathname: "/paywall", params: { reason: "health" } });
+      return;
     }
-  }
-
-  async function clearSample() {
-    if (!activeProfile) return;
-    const ok = await confirm({
-      message: t("dashboard.sampleClearConfirm"),
-      confirmLabel: t("dashboard.sampleClear"),
-      destructive: true,
-    });
-    if (!ok) return;
-    await clearProfileData(activeProfile.id);
-    await clearSampleFlag(activeProfile.id);
-    hapticWarning();
-    bumpData();
+    if (syncing) return;
+    if (cgmOn) void runSync(true);
+    else void toggleCgm(true);
   }
 
   // "I started eating" timer running: let the user cancel it in place.
   async function cancelEatingTimer() {
     await cancelPostMealTimer();
-    setPostMealEnd(null);
+    setPostMealTimer(null);
     hapticWarning();
   }
 
@@ -602,68 +706,180 @@ export default function DashboardScreen() {
 
   // Meal rows with a computable response (lib/mealResponse.ts) get a small
   // additive chevron (JournalItem) that opens it instead of the edit flow.
-  // Recomputed from the already-loaded feed — no extra query.
+  // Recomputed from the already-loaded feed, no extra query.
+  //
+  // One pass, via mealIdsWithResponse: running the full response builder per meal
+  // re-filtered every reading and re-parsed its timestamp for each one, so a feed
+  // with 60 meals and 200 readings did 12 000 Date constructions to decide which
+  // rows get an icon. The set it returns is identical (see the parity test in
+  // scripts/mealResponse.test.ts).
   const mealResponseIds = useMemo(() => {
     if (!activeProfile) return new Set<string>();
-    const readings = entries.filter((e): e is GlucoseEntry => e.kind === "glucose");
-    const meals = entries.filter((e): e is MealEntry => e.kind === "meal");
-    const ids = new Set<string>();
-    for (const meal of meals) {
-      if (computeMealResponse(meal, readings, activeProfile)) ids.add(meal.id);
+    const readings: GlucoseEntry[] = [];
+    const meals: MealEntry[] = [];
+    for (const e of entries) {
+      if (e.kind === "glucose") readings.push(e);
+      else if (e.kind === "meal") meals.push(e);
     }
-    return ids;
+    return mealIdsWithResponse(meals, readings);
   }, [entries, activeProfile]);
 
   function openMealResponse(entry: JournalEntry) {
     router.push({ pathname: "/meal-response", params: { mealId: entry.id } });
   }
 
-  // Long press = edit/delete menu (the built-in cancel row closes it).
+  // Long press = edit/delete menu (the built-in cancel row closes it). A meal row
+  // also offers "make a template out of this": the whole day+slot bucket it belongs
+  // to becomes the items (groupMealsBySlot, resolved on the editor screen).
   function onEntryLongPress(entry: JournalEntry) {
-    actionSheet({
-      actions: [
-        {
-          label: t("common.edit"),
-          icon: "create-outline",
-          onPress: () => openEdit(entry),
-        },
-        {
-          label: t("common.delete"),
-          icon: "trash-outline",
-          destructive: true,
-          onPress: () => {
-            void deleteWithUndo(entry);
-          },
-        },
-      ],
+    const actions: SheetAction[] = [
+      {
+        label: t("common.edit"),
+        icon: "create-outline",
+        onPress: () => openEdit(entry),
+      },
+    ];
+    if (entry.kind === "meal") {
+      actions.push({
+        label: t("templates.fromMeal"),
+        icon: "bookmark-outline",
+        onPress: () =>
+          router.push({
+            pathname: "/meal-template",
+            params: {
+              fromDay: formatDateKey(entry.logged_at),
+              fromSlot: mealSlotForHour(new Date(entry.logged_at).getHours()),
+            },
+          }),
+      });
+    }
+    actions.push({
+      label: t("common.delete"),
+      icon: "trash-outline",
+      destructive: true,
+      onPress: () => {
+        void deleteWithUndo(entry);
+      },
     });
+    actionSheet({ actions });
   }
 
-  // Journal display: apply the kind filter, page to journalLimit, group by day.
-  const JOURNAL_PAGE = 50;
-  const filteredEntries =
-    filter === "all" ? entries : entries.filter((e) => e.kind === filter);
-  const displayEntries = filteredEntries.slice(0, journalLimit);
-  const journalSections: { title: string; data: JournalEntry[] }[] = [];
-  {
+  // Journal display: apply the kind filter, cut it at the revealed slices, group
+  // by day. Memoized so re-renders that do not touch the feed (countdowns, sheet
+  // state) reuse the same section objects and the SectionList can bail out.
+  const { filteredEntries, displayEntries, journalSections } = useMemo(() => {
+    const filtered =
+      filter === "all" ? entries : entries.filter((e) => e.kind === filter);
+    let cut = 0;
+    for (let p = 0; p < journalPages; p++) cut = nextJournalCut(filtered, cut);
+    const display = filtered.slice(0, cut);
+    const sections: JournalSection[] = [];
     const byKey = new Map<string, JournalEntry[]>();
-    for (const e of displayEntries) {
+    for (const e of display) {
       const key = formatDateKey(e.logged_at);
       let arr = byKey.get(key);
       if (!arr) {
         arr = [];
         byKey.set(key, arr);
-        journalSections.push({
-          title: relativeDay(e.logged_at, {
-            today: t("common.today"),
-            yesterday: t("common.yesterday"),
-          }),
+        const rel = relativeDay(e.logged_at, {
+          today: t("common.today"),
+          yesterday: t("common.yesterday"),
+        });
+        const date = formatDate(e.logged_at);
+        sections.push({
+          // Relative word for today/yesterday, weekday further back; the chip
+          // shows the concrete date next to it either way.
+          title: rel !== date ? rel : formatWeekday(e.logged_at) || date,
+          dateLabel: date,
           data: arr,
         });
       }
       arr.push(e);
     }
+    return { filteredEntries: filtered, displayEntries: display, journalSections: sections };
+  }, [entries, filter, journalPages, t]);
+
+  // "Show more" is offered while the loaded feed still has rows to reveal, or
+  // while the SQL window came back full (so the DB may hold older records). Both
+  // false = the journal really is at its end and the button goes away.
+  const canShowMore =
+    displayEntries.length < filteredEntries.length || entries.length >= loadLimit;
+
+  function showMoreJournal() {
+    hapticSelect();
+    if (displayEntries.length < filteredEntries.length) {
+      // Rows are already in memory: revealing the next slice is a pure slice.
+      setJournalPages((p) => p + 1);
+    } else if (entries.length >= loadLimit) {
+      // Loaded window exhausted and the query filled it: widen the window once
+      // and advance with it. When the DB is drained the length check stops this.
+      setLoadLimit((l) => l + JOURNAL_LOAD_STEP);
+      setJournalPages((p) => p + 1);
+    }
   }
+
+  // Row actions behind a ref so renderItem keeps ONE identity across renders:
+  // list cells then only re-render when the feed itself changes.
+  const rowActionsRef = useRef({ openEdit, onEntryLongPress, openMealResponse });
+  rowActionsRef.current = { openEdit, onEntryLongPress, openMealResponse };
+  const onRowPress = useCallback((e: JournalEntry) => rowActionsRef.current.openEdit(e), []);
+  const onRowLongPress = useCallback(
+    (e: JournalEntry) => rowActionsRef.current.onEntryLongPress(e),
+    []
+  );
+  const onRowOpenResponse = useCallback(
+    (e: JournalEntry) => rowActionsRef.current.openMealResponse(e),
+    []
+  );
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: JournalEntry; index: number }) =>
+      activeProfile ? (
+        <Animated.View entering={listEntering.delay(Math.min(index, 8) * 40)}>
+          <JournalItem
+            entry={item}
+            profile={activeProfile}
+            onPress={onRowPress}
+            onLongPress={onRowLongPress}
+            hasResponse={item.kind === "meal" && mealResponseIds.has(item.id)}
+            onOpenResponse={onRowOpenResponse}
+          />
+        </Animated.View>
+      ) : null,
+    [activeProfile, mealResponseIds, onRowPress, onRowLongPress, onRowOpenResponse]
+  );
+
+  // Day separator: an opaque chip (relative day + date) that stays readable
+  // while stuck over scrolling rows.
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: JournalSection }) => (
+      <View style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 6 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: THEME.sheet,
+            borderWidth: 1,
+            borderColor: THEME.border,
+            borderRadius: RADIUS.full,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+            {upper(section.title)}
+          </Text>
+          {section.dateLabel !== section.title ? (
+            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+              {section.dateLabel}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    ),
+    []
+  );
 
   const FILTER_CHIPS: { key: typeof filter; label: string }[] = [
     { key: "all", label: t("dashboard.filterAll") },
@@ -671,6 +887,128 @@ export default function DashboardScreen() {
     { key: "meal", label: t("dashboard.quickAddFood") },
     { key: "injection", label: t("dashboard.quickAddInjection") },
   ];
+
+  // Nothing logged yet: the dashboard is every number this app has, and all of
+  // them are empty. Instead of showing a hero with no reading in it, a meal
+  // timer for a meal nobody logged and two shortcuts into empty screens, the
+  // screen becomes a short guided setup - the ring the first reading will fill,
+  // the numbered steps, one button.
+  const isFirstRun = loaded && entries.length === 0;
+
+  const startSteps: {
+    key: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    label: string;
+    onPress: () => void;
+  }[] = [
+    {
+      key: "log",
+      icon: "water",
+      label: t("dashboard.stepGlucose"),
+      onPress: () => setQuickAddOpen(true),
+    },
+    // Health sync is iOS-only here (Health Connect stays out of the Android
+    // build), so on Android the guide is a two-step one and numbers itself.
+    ...(Platform.OS === "ios"
+      ? [
+          {
+            key: "health",
+            icon: "pulse" as keyof typeof Ionicons.glyphMap,
+            label: HEALTH_NAME,
+            onPress: openHealthFlow,
+          },
+        ]
+      : []),
+    {
+      key: "widget",
+      icon: "phone-portrait",
+      label: t("dashboard.stepWidget"),
+      onPress: () => router.push("/widget-guide"),
+    },
+  ];
+
+  const FirstRunGuide = (
+    <>
+      {/* The hero ring, empty: same shape and size the first reading will take,
+          in a neutral track colour, with the invitation under it. */}
+      <GlassCard style={{ paddingVertical: 16, marginBottom: 12 }}>
+        <View className="items-center">
+          {/* Both colours stay HEX: the ring's glow runs them through the
+              token helper, which parses hex (an rgba token comes out NaN). */}
+          <GlucoseRing
+            display="-"
+            caption={glucoseUnitLabel(unit)}
+            color={THEME.muted}
+            gradientTo={THEME.muted}
+            fraction={0}
+            size={132}
+          />
+          <Text
+            style={{
+              color: THEME.muted,
+              fontSize: 12,
+              lineHeight: 17,
+              textAlign: "center",
+              marginTop: 10,
+              paddingHorizontal: 8,
+            }}
+          >
+            {t("dashboard.empty")}
+          </Text>
+        </View>
+      </GlassCard>
+
+      <GlassCard accent style={{ marginBottom: 12, gap: 8 }}>
+        <Text
+          style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
+        >
+          {upper(t("dashboard.startTitle", { n: startSteps.length }))}
+        </Text>
+        {startSteps.map((step, i) => (
+          <Pressable
+            key={step.key}
+            onPress={step.onPress}
+            accessibilityRole="button"
+            accessibilityLabel={`${i + 1}. ${step.label}`}
+            className="flex-row items-center active:opacity-80"
+            style={{ gap: 10, paddingVertical: 3 }}
+          >
+            <View
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 11,
+                alignItems: "center",
+                justifyContent: "center",
+                borderWidth: 1,
+                borderColor: THEME.border,
+                backgroundColor: THEME.glass,
+              }}
+            >
+              <Text style={[TABULAR, { color: THEME.accent, fontSize: 11, fontWeight: "800" }]}>
+                {i + 1}
+              </Text>
+            </View>
+            <IconTile icon={step.icon} size={38} radius={12} hero />
+            <Text
+              style={{ color: THEME.ink, fontSize: 14, fontWeight: "700", flex: 1 }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              {step.label}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
+          </Pressable>
+        ))}
+        <GradientCTA
+          label={t("dashboard.firstCta")}
+          onPress={() => setQuickAddOpen(true)}
+          style={{ marginTop: 4 }}
+        />
+      </GlassCard>
+    </>
+  );
 
   const Header = (
     <View className="pb-2">
@@ -704,21 +1042,8 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* Sample-data preview banner (tap to clear and start fresh) */}
-      {sampleActive ? (
-        <Pressable
-          onPress={clearSample}
-          className="rounded-2xl border border-brand/30 bg-brand/10 p-3.5 mb-3 flex-row items-center active:opacity-80"
-        >
-          <Ionicons name="flask-outline" size={18} color="#2ee6ff" />
-          <Text className="text-brand text-sm font-medium flex-1 ml-2.5">
-            {t("dashboard.sampleActive")}
-          </Text>
-          <Text className="text-brand text-xs underline">
-            {t("dashboard.sampleClear")}
-          </Text>
-        </Pressable>
-      ) : null}
+
+      {isFirstRun ? FirstRunGuide : null}
 
       {/* Hero: most recent reading as the signature glucose ring */}
       {lastGlucose ? (
@@ -784,12 +1109,12 @@ export default function DashboardScreen() {
             items={[
               {
                 label: t("insights.avgGlucose"),
-                value: weekAvg != null ? formatGlucose(weekAvg, unit) : "—",
+                value: weekAvg != null ? formatGlucose(weekAvg, unit) : t("dashboard.noValueYet"),
                 accent: avgColor,
               },
               {
                 label: t("insights.timeInRange"),
-                value: weekTIR != null ? `${weekTIR}%` : "—",
+                value: weekTIR != null ? pct(weekTIR) : t("dashboard.noValueYet"),
                 accent: tirColor,
               },
               { label: t("dashboard.streakDays"), value: `${logStreak}` },
@@ -800,64 +1125,16 @@ export default function DashboardScreen() {
 
       {/* Post-meal timer: a REAL filled pill button, not text that reads like a
           value. While the timer runs, the same slot shows the countdown + a small
-          cancel action. */}
+          cancel action. Hidden before the first entry: "I started eating" was the
+          loudest action on a brand-new dashboard, ahead of logging anything. */}
+      {!isFirstRun ? (
       <GlassCard accent style={{ marginBottom: 12, paddingVertical: 12 }}>
-        {postMealArmed && postMealCountdown ? (
-          // Active: a compact card — small label, thin elapsed-progress bar, short
-          // remaining, cancel. No big sentence that reads like a value.
-          <View>
-            <View
-              className="flex-row items-center justify-between"
-              style={{ marginBottom: 10 }}
-            >
-              <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
-                <Ionicons name="time" size={16} color={THEME.accent} />
-                <Text
-                  style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", flex: 1 }}
-                  numberOfLines={1}
-                >
-                  {t("dashboard.quickPostMeal")}
-                </Text>
-              </View>
-              <View className="flex-row items-center" style={{ gap: 10 }}>
-                <Text style={[TABULAR, { color: THEME.accent, fontSize: 15, fontWeight: "800" }]}>
-                  {postMealCountdown.seconds
-                    ? t("dashboard.postMealCountdownSec", { s: postMealCountdown.value })
-                    : t("dashboard.postMealCountdownMin", { m: postMealCountdown.value })}
-                </Text>
-                <Pressable
-                  onPress={cancelEatingTimer}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("common.cancel")}
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: 15,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: THEME.glass,
-                    borderWidth: 1,
-                    borderColor: THEME.border,
-                  }}
-                >
-                  <Ionicons name="close" size={15} color={THEME.muted} />
-                </Pressable>
-              </View>
-            </View>
-            <View
-              style={{ height: 6, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden" }}
-            >
-              <View
-                style={{
-                  height: "100%",
-                  width: `${Math.round(postMealProgress * 100)}%`,
-                  backgroundColor: THEME.accent,
-                  borderRadius: 3,
-                }}
-              />
-            </View>
-          </View>
+        {postMealTimer != null ? (
+          <PostMealCountdown
+            timer={postMealTimer}
+            onCancel={cancelEatingTimer}
+            onElapsed={onPostMealElapsed}
+          />
         ) : (
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
@@ -868,7 +1145,7 @@ export default function DashboardScreen() {
                 adjustsFontSizeToFit
                 minimumFontScale={0.85}
               >
-                {t("dashboard.quickPostMeal")}
+                {t("dashboard.quickPostMeal", { n: postMealWindowMin })}
               </Text>
             </View>
             <PressableScale
@@ -889,6 +1166,7 @@ export default function DashboardScreen() {
           </View>
         )}
       </GlassCard>
+      ) : null}
 
       {/* One-time tip after the first meal timer: the countdown is also a native
           lock-screen surface. Dismissible; points at the widget guide. */}
@@ -904,9 +1182,16 @@ export default function DashboardScreen() {
                 void dismissWidgetTip();
                 router.push("/widget-guide");
               }}
-              hitSlop={6}
+              // 11px text with hitSlop 6 is a ~23pt target. The slop is widened
+              // instead of the type, so the tip keeps its size while the tap
+              // area clears 44pt.
+              hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel={t("dashboard.widgetTipCta")}
             >
-              <Text style={{ color: THEME.accent, fontSize: 11, marginTop: 2 }}>
+              <Text
+                style={{ color: THEME.accent, fontSize: 11, marginTop: 2, minHeight: 16 }}
+              >
                 {t("dashboard.widgetTipCta")}
               </Text>
             </Pressable>
@@ -933,9 +1218,87 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
-      <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
-        {upper(t("dashboard.history"))}
-      </Text>
+      {/* Quick access: Insights + Health sync, promoted from the old list footer
+          so they are reachable without scrolling past the whole journal. The Pro
+          gate and the sync switch behave exactly as before. Both lead into
+          screens that have nothing to show yet before the first entry, so the row
+          waits for it. */}
+      {!isFirstRun ? (
+      <View className="flex-row mb-3" style={{ gap: 8 }}>
+        <Pressable
+          onPress={() => router.push("/insights")}
+          accessibilityRole="button"
+          accessibilityLabel={t("insights.title")}
+          className="rounded-2xl bg-glass border border-hair p-3 active:opacity-80"
+          // Android has no Health card next to it, and a lone flex:1 card
+          // stretched the full row width around a small icon and two short
+          // lines. There it takes a card's width instead of the row's.
+          style={Platform.OS === "ios" ? { flex: 1 } : { width: 220, maxWidth: "100%" }}
+        >
+          <View className="flex-row items-center justify-between">
+            <IconTile icon="stats-chart" size={28} radius={9} />
+            <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
+          </View>
+          <Text
+            numberOfLines={1}
+            style={{ color: THEME.ink, fontWeight: "700", fontSize: 13, marginTop: 8 }}
+          >
+            {t("insights.title")}
+          </Text>
+          <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
+            {t("insights.cardSub")}
+          </Text>
+        </Pressable>
+
+        {Platform.OS === "ios" ? (
+          <Pressable
+            onPress={openHealthFlow}
+            disabled={isProUser && syncing}
+            accessibilityRole="button"
+            accessibilityLabel={HEALTH_NAME}
+            className="flex-1 rounded-2xl bg-glass border border-hair p-3 active:opacity-80"
+          >
+            <View className="flex-row items-center justify-between">
+              <IconTile icon="pulse" size={28} radius={9} />
+              {isProUser ? (
+                <Switch
+                  value={cgmOn}
+                  onValueChange={toggleCgm}
+                  trackColor={{ true: THEME.accent, false: THEME.border }}
+                  thumbColor={THEME.ink}
+                  style={{ transform: [{ scale: 0.75 }], marginVertical: -6 }}
+                />
+              ) : (
+                <View className="rounded-full bg-brand px-2 py-0.5">
+                  <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
+                </View>
+              )}
+            </View>
+            <Text
+              numberOfLines={1}
+              style={{ color: THEME.ink, fontWeight: "700", fontSize: 13, marginTop: 8 }}
+            >
+              {HEALTH_NAME}
+            </Text>
+            <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
+              {!isProUser
+                ? t("dashboard.cgmProHint")
+                : syncing
+                  ? t("dashboard.syncing")
+                  : cgmOn
+                    ? t("dashboard.cgmOnTapToSync")
+                    : t("dashboard.cgmSubtitle")}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+      ) : null}
+
+      {!isFirstRun ? (
+        <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
+          {upper(t("dashboard.history"))}
+        </Text>
+      ) : null}
 
       {/* Journal kind filter (session-only) */}
       {entries.length > 0 ? (
@@ -948,7 +1311,7 @@ export default function DashboardScreen() {
                 onPress={() => {
                   hapticSelect();
                   setFilter(c.key);
-                  setJournalLimit(50);
+                  setJournalPages(1);
                 }}
                 hitSlop={6}
                 accessibilityRole="button"
@@ -992,137 +1355,92 @@ export default function DashboardScreen() {
     <AppBackground style={{ paddingTop: insets.top }}>
       <SectionList
         sections={journalSections}
-        keyExtractor={(e) => `${e.kind}-${e.id}`}
-        stickySectionHeadersEnabled={false}
-        renderSectionHeader={({ section }) => (
-          <Text className="text-[11px] font-semibold tracking-wider text-mut mt-3 mb-1.5">
-            {upper(section.title)}
-          </Text>
-        )}
-        onEndReachedThreshold={0.4}
-        onEndReached={() => {
-          if (displayEntries.length < filteredEntries.length)
-            setJournalLimit((l) => l + JOURNAL_PAGE);
-        }}
+        keyExtractor={journalKey}
+        stickySectionHeadersEnabled={true}
+        renderSectionHeader={renderSectionHeader}
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+        windowSize={7}
         ListHeaderComponent={Header}
         ListFooterComponent={
-          <View className="mt-3" style={{ gap: 8 }}>
-            {/* Secondary utilities, demoted below the mockup's core composition */}
-            <Pressable
-              onPress={() => router.push("/insights")}
-              className="rounded-2xl bg-glass border border-hair p-3.5 flex-row items-center active:opacity-80"
-            >
-              <IconTile icon="stats-chart" size={30} radius={10} style={{ marginRight: 12 }} />
-              <View className="flex-1">
-                <Text style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}>{t("insights.title")}</Text>
-                <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("insights.cardSub")}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={THEME.muted} />
-            </Pressable>
-
-            {Platform.OS === "ios" ? (
-              <Pressable
-                onPress={() => {
-                  if (!isProUser) {
-                    hapticWarning();
-                    router.push({ pathname: "/paywall", params: { reason: "health" } });
-                    return;
-                  }
-                  if (cgmOn) runSync(true);
-                }}
-                disabled={isProUser && (!cgmOn || syncing)}
-                className="rounded-2xl bg-glass border border-hair p-3.5 flex-row items-center active:opacity-80"
-              >
-                <IconTile icon="pulse" size={30} radius={10} style={{ marginRight: 12 }} />
-                <View className="flex-1">
-                  <Text style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}>{HEALTH_NAME}</Text>
-                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
-                    {!isProUser
-                      ? t("dashboard.cgmProHint")
-                      : syncing
-                        ? t("dashboard.syncing")
-                        : cgmOn
-                          ? t("dashboard.cgmOnTapToSync")
-                          : t("dashboard.cgmSubtitle")}
-                  </Text>
-                </View>
-                {isProUser ? (
-                  <Switch
-                    value={cgmOn}
-                    onValueChange={toggleCgm}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
-                  />
-                ) : (
-                  <View className="rounded-full bg-brand px-2 py-0.5">
-                    <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
-                  </View>
-                )}
-              </Pressable>
-            ) : null}
-
-            {entries.length > 0 ? (
-              <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3">
+          entries.length > 0 ? (
+            <View>
+              {canShowMore ? (
+                <Button
+                  label={t("journal.showMore")}
+                  variant="secondary"
+                  onPress={showMoreJournal}
+                  className="border border-hair mt-3"
+                  icon={<Ionicons name="chevron-down" size={16} color={THEME.ink} />}
+                />
+              ) : null}
+              <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-3">
                 <Ionicons name="medical-outline" size={15} color="#f59e0b" />
                 <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
                   {t("disclaimer.short")}
                 </Text>
               </View>
-            ) : null}
-          </View>
-        }
-        renderItem={({ item, index }) =>
-          activeProfile ? (
-            <Animated.View entering={listEntering.delay(Math.min(index, 8) * 40)}>
-              <JournalItem
-                entry={item}
-                profile={activeProfile}
-                onPress={openEdit}
-                onLongPress={onEntryLongPress}
-                hasResponse={item.kind === "meal" && mealResponseIds.has(item.id)}
-                onOpenResponse={openMealResponse}
-              />
-            </Animated.View>
+            </View>
           ) : null
         }
+        renderItem={renderItem}
+        // A kind filter with no matches is NOT the first-run case: the user has
+        // records, just none of this kind, and telling them to add their first
+        // reading was wrong. The first-run copy now lives in the guide above, so
+        // this slot only speaks for an empty filter.
         ListEmptyComponent={
-          <View className="items-center py-12">
-            <Ionicons name="document-text-outline" size={40} color={THEME.muted} />
-            <Text className="text-mut text-center mt-3 px-8">
-              {t("dashboard.empty")}
-            </Text>
-            {!sampleActive ? (
+          filter !== "all" ? (
+            <View className="items-center py-10">
+              <Ionicons name="funnel-outline" size={32} color={THEME.muted} />
+              <Text className="text-mut text-center mt-3 px-8">
+                {t("dashboard.emptyFilter")}
+              </Text>
               <Pressable
-                onPress={loadSample}
-                disabled={loadingSample}
-                className="flex-row items-center mt-5 rounded-2xl bg-brand active:bg-brandDark px-5 py-3"
-                style={{ opacity: loadingSample ? 0.6 : 1 }}
+                onPress={() => {
+                  hapticSelect();
+                  setFilter("all");
+                  setJournalPages(1);
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t("dashboard.filterAll")}
+                className="mt-3 rounded-full border border-hair bg-glass px-3.5 py-1.5"
               >
-                <Ionicons name="flask-outline" size={18} color="#000" />
-                <Text className="text-black font-semibold ml-2">
-                  {t("dashboard.sampleCta")}
+                <Text className="text-xs font-semibold text-mut">
+                  {t("dashboard.filterAll")}
                 </Text>
               </Pressable>
-            ) : null}
-          </View>
+            </View>
+          ) : null
         }
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingBottom: 110,
+          // No floating CTA during first run, so the list does not have to
+          // scroll clear of one.
+          paddingBottom: isFirstRun ? 24 : CTA_CLEARANCE,
+          // Tablet: one centred reading column instead of a stretched phone
+          // layout. Undefined on phones, so the narrow render is unchanged.
+          ...(contentColumn ?? {}),
         }}
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Bottom CTA (mockup B03: single "add record") */}
-      <View
-        className="absolute left-0 right-0 bottom-0 px-4 pt-2"
-        style={{ paddingBottom: 10 }}
-      >
-        <GradientCTA
-          label={`＋ ${t("dashboard.addRecord")}`}
-          onPress={() => setQuickAddOpen(true)}
-        />
-      </View>
+      {/* Bottom CTA (mockup B03: single "add record"). During first run the
+          guide carries the one primary button, so this one stands down rather
+          than putting two identical CTAs on an otherwise empty screen. */}
+      {!isFirstRun ? (
+        <View
+          className="absolute left-0 right-0 bottom-0 px-4 pt-2"
+          style={{ paddingBottom: CTA_BOTTOM }}
+        >
+          <View style={contentColumn}>
+            <GradientCTA
+              label={`＋ ${t("dashboard.addRecord")}`}
+              onPress={() => setQuickAddOpen(true)}
+            />
+          </View>
+        </View>
+      ) : null}
 
       <QuickAddSheet
         visible={quickAddOpen}
@@ -1158,5 +1476,107 @@ export default function DashboardScreen() {
         }}
       />
     </AppBackground>
+  );
+}
+
+/**
+ * The armed post-meal slot: small label, live remaining time, thin elapsed bar,
+ * cancel. Owns its own tick (30 s cadence far out, 1 s in the last minute) so
+ * the once-per-tick re-render stays inside this card instead of re-rendering
+ * the dashboard and its journal list. Calls onElapsed when the time is reached.
+ */
+function PostMealCountdown({
+  timer,
+  onCancel,
+  onElapsed,
+}: {
+  timer: PostMealTimerWindow;
+  onCancel: () => void;
+  onElapsed: () => void;
+}) {
+  const { t } = useTranslation();
+  const [now, setNow] = useState(() => Date.now());
+  const end = timer.endsAt;
+
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const remaining = end - Date.now();
+      if (remaining <= 0) {
+        onElapsed();
+        return;
+      }
+      setNow(Date.now());
+      timeoutId = setTimeout(tick, remaining <= 60_000 ? 1_000 : 30_000);
+    };
+    tick();
+    return () => clearTimeout(timeoutId);
+  }, [end, onElapsed]);
+
+  // Foreground return: the scheduled tick was frozen, refresh the label now.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") setNow(Date.now());
+    });
+    return () => sub.remove();
+  }, []);
+
+  const remainingMs = Math.max(0, end - now);
+  const countdown = formatPostMealRemaining(remainingMs);
+  // Both the label and the bar read the RUNNING timer's own window, so a window
+  // shortened mid-countdown is described honestly instead of against the length
+  // the timer happened to be armed with.
+  const windowMin = Math.max(1, Math.round((end - timer.startedAt) / 60_000));
+  const progress = postMealElapsedFraction(timer, now);
+
+  return (
+    <View>
+      <View className="flex-row items-center justify-between" style={{ marginBottom: 10 }}>
+        <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
+          <Ionicons name="time" size={16} color={THEME.accent} />
+          <Text
+            style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", flex: 1 }}
+            numberOfLines={1}
+          >
+            {t("dashboard.quickPostMeal", { n: windowMin })}
+          </Text>
+        </View>
+        <View className="flex-row items-center" style={{ gap: 10 }}>
+          <Text style={[TABULAR, { color: THEME.accent, fontSize: 15, fontWeight: "800" }]}>
+            {countdown.seconds
+              ? t("dashboard.postMealCountdownSec", { s: countdown.value })
+              : t("dashboard.postMealCountdownMin", { m: countdown.value })}
+          </Text>
+          <Pressable
+            onPress={onCancel}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.cancel")}
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 15,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: THEME.glass,
+              borderWidth: 1,
+              borderColor: THEME.border,
+            }}
+          >
+            <Ionicons name="close" size={15} color={THEME.muted} />
+          </Pressable>
+        </View>
+      </View>
+      <View style={{ height: 6, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden" }}>
+        <View
+          style={{
+            height: "100%",
+            width: `${Math.round(progress * 100)}%`,
+            backgroundColor: THEME.accent,
+            borderRadius: 3,
+          }}
+        />
+      </View>
+    </View>
   );
 }

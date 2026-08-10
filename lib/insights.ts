@@ -10,7 +10,7 @@ import { percentile } from "./agp";
 import { VERY_HIGH_MGDL } from "./glucose";
 
 /**
- * Pro "Insights" — a read-only, descriptive summary of the user's own logged
+ * Pro "Insights": a read-only, descriptive summary of the user's own logged
  * data over a recent window. Not medical advice and no interpretation: every
  * figure is computed from what the user entered. GMI is the standard Glucose
  * Management Indicator estimate (Bergenstal 2018).
@@ -139,8 +139,8 @@ function stdev(ns: number[]): number | null {
   return Math.sqrt(variance);
 }
 
-/** Maps an hour (0–23) to a time-of-day slice. Boundaries: night 0–6,
- *  morning 6–12, afternoon 12–18, evening 18–24. */
+/** Maps an hour (0-23) to a time-of-day slice. Boundaries: night 0-6,
+ *  morning 6-12, afternoon 12-18, evening 18-24. */
 function hourSlice(hour: number): DayKind {
   if (hour < 6) return "night";
   if (hour < 12) return "morning";
@@ -223,9 +223,13 @@ export function computeInsights(
     evening: mean(slices.evening),
   };
 
-  // Distinct calendar days with any log.
+  // Distinct calendar days with any log. LOCAL days: logged_at is stored as UTC,
+  // so slicing its date part counted "yesterday" for every late-evening entry
+  // east of Greenwich (and every early-morning one west of it), which then also
+  // skewed avgDailyCarbs and avgDailyDose. Every other day-bucketing surface in
+  // the app (dailyAverages, the journal sections, the report timeline) is local.
   const dayKeys = new Set<string>();
-  [...s, ...m].forEach((x) => dayKeys.add(x.logged_at.slice(0, 10)));
+  [...s, ...m].forEach((x) => dayKeys.add(localDayKey(x.logged_at)));
   const days = dayKeys.size;
 
   const totalCarbs = m.reduce((a, x) => a + (x.calculated_carbs_g || 0), 0);
@@ -233,7 +237,7 @@ export function computeInsights(
   // ── Injection metrics ──
   const dosed = inj.filter((x) => x.dose_units != null && x.dose_units > 0);
   const totalDose = dosed.reduce((a, x) => a + (x.dose_units || 0), 0);
-  const doseDays = new Set(dosed.map((x) => x.logged_at.slice(0, 10))).size;
+  const doseDays = new Set(dosed.map((x) => localDayKey(x.logged_at))).size;
 
   const basalUnits = dosed
     .filter((x) => x.insulin_type === "basal")
@@ -243,8 +247,14 @@ export function computeInsights(
     .reduce((a, x) => a + (x.dose_units || 0), 0);
   const bbTotal = basalUnits + bolusUnits;
 
+  // Region distribution counts only injections that HAVE a region: a dose logged
+  // without one (the calculator's mealtime bolus) describes no place, so it can
+  // neither fill a bar nor become the "most used" region.
   const siteCounts = new Map<InjectionSite, number>();
-  for (const x of inj) siteCounts.set(x.site, (siteCounts.get(x.site) ?? 0) + 1);
+  for (const x of inj) {
+    if (x.site == null) continue;
+    siteCounts.set(x.site, (siteCounts.get(x.site) ?? 0) + 1);
+  }
   const siteDistribution: SiteCount[] = INJECTION_SITES.map((site) => ({
     site,
     count: siteCounts.get(site) ?? 0,
@@ -359,6 +369,13 @@ function pad2(n: number): string {
  *  would name the previous day for a local midnight east of Greenwich. */
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** The local day a stored timestamp falls in. Empty string for an unparsable
+ *  value, so it collapses into one bucket instead of inventing days. */
+function localDayKey(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : dayKey(d);
 }
 
 /**
@@ -518,7 +535,7 @@ export function consecutiveLogDays(logDates: string[]): number {
 }
 
 /* ── Actionable patterns ──────────────────────────────────────────────────
- * Purely DESCRIPTIVE observations about the user's own readings — never causal
+ * Purely DESCRIPTIVE observations about the user's own readings, never causal
  * claims, never advice. Each requires a minimum sample so a single outlier
  * can't manufacture a "pattern". The UI renders each from its typed key. */
 
@@ -538,7 +555,7 @@ export type InsightPattern =
  * Derives descriptive patterns from a profile's recent readings:
  *  - tag_higher:      readings carrying a context tag (sport/stress/…) average
  *                     notably higher than the overall mean
- *  - dawn:            morning readings (06:00–12:00) average notably higher
+ *  - dawn:            morning readings (06:00-12:00) average notably higher
  *  - high_variability: coefficient of variation ≥ 36 %
  * Returns at most a few, strongest-first. Empty when there isn't enough data.
  */
@@ -560,7 +577,7 @@ export function derivePatterns(
 
   const out: InsightPattern[] = [];
 
-  // Tag correlations — only tags with enough tagged readings and a clear lift.
+  // Tag correlations: only tags with enough tagged readings and a clear lift.
   const tagFindings: { tag: LogTag; avg: number; n: number }[] = [];
   for (const tag of LOG_TAGS) {
     if (tag === "other") continue; // catch-all tag → not a meaningful correlation
@@ -579,7 +596,7 @@ export function derivePatterns(
       out.push({ kind: "tag_higher", tag: f.tag, avg: f.avg, baseline: Math.round(baseline), n: f.n })
     );
 
-  // Dawn phenomenon — morning slice (06:00–12:00) clearly above the mean.
+  // Dawn phenomenon: morning slice (06:00-12:00) clearly above the mean.
   const morning = readings
     .filter((x) => {
       const h = new Date(x.logged_at).getHours();

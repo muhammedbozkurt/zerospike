@@ -7,18 +7,23 @@ import {
   Pressable,
   ScrollView,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
-import { SELECTABLE_SITES, SITE_POINTS } from "../lib/db/types";
+import { SELECTABLE_SITES } from "../lib/db/types";
 import {
   findRecentCalculatorBolus,
+  getSiteUsageHistory,
   updateInjection,
   type InjectionUpdate,
+  type SiteUsage,
 } from "../lib/db/injections";
+import { getRotationCycleStart } from "../lib/rotationCycle";
+import { SitePointSelector } from "./InjectionSiteBoard";
 import { checkDose } from "../lib/insulin";
 import { logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
@@ -34,12 +39,16 @@ import { withAlpha } from "./rich/GlassCard";
 /** The stored injection being corrected (structurally matches Injection). */
 export interface InjectionEditTarget {
   id: string;
-  site: InjectionSite;
+  /** Null for a row logged without a region (schema v11). */
+  site: InjectionSite | null;
   site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
   logged_at: string;
 }
+
+// Same heat window as the injection tab's map surface.
+const USAGE_WINDOW_DAYS = 30;
 
 const inputStyle = {
   borderRadius: RADIUS.md,
@@ -127,20 +136,45 @@ export function InjectionEditSheet({
   const { t, i18n } = useTranslation();
   const { activeProfile } = useApp();
   const { confirm } = useFeedback();
+  const { height: winH } = useWindowDimensions();
   // Dose in units (0 = no dose). Stepper-driven, keyboard-editable.
   const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [site, setSite] = useState<InjectionSite>("abdomen_left");
   const [point, setPoint] = useState<SitePoint | null>(null);
+  // Whether the user actually touched the region selector while this row was
+  // open. A row logged WITHOUT a region has to open on some region for the
+  // selector to render, and saving must not turn that placeholder into a record
+  // the user never made.
+  const [siteTouched, setSiteTouched] = useState(false);
   const [loggedAt, setLoggedAt] = useState<Date>(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [usage, setUsage] = useState<SiteUsage[] | undefined>(undefined);
+
+  // Heat data for the selector dots, from the profile's cycle stamp on.
+  useEffect(() => {
+    if (!visible || !activeProfile) return;
+    let alive = true;
+    (async () => {
+      const cycle = await getRotationCycleStart(activeProfile.id);
+      const u = await getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS, cycle);
+      if (alive) setUsage(u.sites);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [visible, activeProfile]);
 
   useEffect(() => {
     if (visible && injection) {
       setDose(injection.dose_units ?? 0);
       setInsulinType(injection.insulin_type ?? "bolus");
-      setSite(injection.site);
+      // A row logged without a region (a calculator bolus) opens on the first
+      // selectable region so the user CAN fill one in; it only becomes part of the
+      // record if they pick one (see siteTouched).
+      setSite(injection.site ?? SELECTABLE_SITES[0]);
+      setSiteTouched(false);
       setPoint(injection.site_point);
       setLoggedAt(new Date(injection.logged_at));
       setTimePickerOpen(false);
@@ -194,11 +228,14 @@ export function InjectionEditSheet({
 
     setSaving(true);
     try {
+      // An entry that had no region keeps having none unless the user chose one
+      // here: correcting a dose must not quietly file it under a body region.
+      const keepsNoSite = injection.site == null && !siteTouched;
       const patch: InjectionUpdate = {
         dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
-        site,
-        site_point: point,
+        site: keepsNoSite ? null : site,
+        site_point: keepsNoSite ? null : point,
         logged_at: loggedAt.toISOString(),
       };
       await updateInjection(injection.id, patch);
@@ -223,7 +260,10 @@ export function InjectionEditSheet({
           <Pressable
             style={[
               {
-                maxHeight: "100%",
+                // Bounded like the other bottom sheets (see InjectionSiteBoard's
+                // region modal): "100%" let the sheet cover the whole screen with
+                // no dim overlay showing above it once the keyboard was open.
+                maxHeight: Math.round(winH * 0.86),
                 borderTopLeftRadius: 26,
                 borderTopRightRadius: 26,
                 borderTopWidth: 1,
@@ -232,13 +272,13 @@ export function InjectionEditSheet({
                 borderColor: THEME.border,
                 backgroundColor: THEME.bg.g1,
                 paddingHorizontal: 18,
-                paddingTop: 10,
+                paddingTop: 8,
               },
               glow(THEME.accent, 30, 0.3),
             ]}
             onPress={(e) => e.stopPropagation()}
           >
-            <View className="items-center py-1 mb-1">
+            <View className="items-center mb-1.5">
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View className="flex-row items-center justify-between mb-4">
@@ -294,37 +334,18 @@ export function InjectionEditSheet({
               </View>
 
               <FieldLabel>{t("injection.selectSite")}</FieldLabel>
-              <View className="flex-row flex-wrap mb-4" style={{ gap: 6 }}>
-                {SELECTABLE_SITES.map((s) => (
-                  <Chip
-                    key={s}
-                    label={t(`injectionSite.${s}`)}
-                    on={site === s}
-                    onPress={() => {
-                      hapticSelect();
-                      setSite(s);
-                    }}
-                  />
-                ))}
-              </View>
-
-              <FieldLabel>{t("injection.selectPoint")}</FieldLabel>
-              <View className="flex-row mb-4" style={{ gap: 6 }}>
-                {SITE_POINTS.map((p) => (
-                  <Chip
-                    key={p}
-                    label={t("injection.pointLabel", { n: p })}
-                    on={point === p}
-                    onPress={() => {
-                      hapticSelect();
-                      // Tapping the current point clears it: a row logged before
-                      // v8 genuinely has no point, and "unset" must stay reachable.
-                      setPoint((prev) => (prev === p ? null : p));
-                    }}
-                    style={{ flex: 1 }}
-                  />
-                ))}
-              </View>
+              <SitePointSelector
+                usage={usage}
+                site={site}
+                point={point}
+                onChange={(s, p) => {
+                  setSite(s);
+                  setPoint(p);
+                  setSiteTouched(true);
+                }}
+                allowClearPoint
+                style={{ marginBottom: 16 }}
+              />
 
               <FieldLabel>{t("calculator.loggedTime")}</FieldLabel>
               <Pressable

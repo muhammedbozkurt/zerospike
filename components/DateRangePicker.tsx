@@ -4,12 +4,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { THEME, RADIUS } from "../lib/theme/tokens";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
+import { ActionRow } from "./form";
 
 export interface PickedRange {
   start: number;
@@ -68,26 +68,25 @@ export function DateRangePicker({
 
   const valid = startOfDay(start) <= startOfDay(end);
 
+  // Shares form.tsx's ActionRow instead of hand-drawing icon+label+value again,
+  // so a date row sits at the same height/rhythm as every other row in the app.
   const row = (
     key: "start" | "end",
     label: string,
     value: Date,
   ) => (
-    <Pressable
-      onPress={() => {
-        hapticSelect();
-        setOpen((o) => (o === key ? null : key));
-      }}
-      accessibilityRole="button"
-      accessibilityLabel={`${label}: ${formatDate(value.toISOString())}`}
-      className="flex-row items-center rounded-xl bg-glass border border-hair px-4 py-3 mb-2"
-    >
-      <Ionicons name="calendar-outline" size={16} color={THEME.accent} />
-      <Text style={{ color: THEME.muted, fontSize: 13, marginLeft: 10, flex: 1 }}>{label}</Text>
-      <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "700" }}>
-        {formatDate(value.toISOString())}
-      </Text>
-    </Pressable>
+    <View className="rounded-xl bg-glass border border-hair overflow-hidden mb-2">
+      <ActionRow
+        icon="calendar-outline"
+        label={label}
+        value={formatDate(value.toISOString())}
+        onPress={() => {
+          hapticSelect();
+          setOpen((o) => (o === key ? null : key));
+        }}
+        last
+      />
+    </View>
   );
 
   const picker = (key: "start" | "end", value: Date) => (
@@ -128,11 +127,11 @@ export function DateRangePicker({
             borderColor: THEME.border,
             backgroundColor: THEME.bg.g1,
             paddingHorizontal: 18,
-            paddingTop: 12,
+            paddingTop: 8,
             paddingBottom: insets.bottom + 20,
           }}
         >
-          <View className="items-center mb-2">
+          <View className="items-center mb-1.5">
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: THEME.border }} />
           </View>
           <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800", textAlign: "center", marginBottom: 12 }}>

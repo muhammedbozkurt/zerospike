@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import {
   Animated,
+  BackHandler,
   Easing,
   Pressable,
   StyleSheet,
@@ -55,6 +56,23 @@ export function QuickAddSheet({
     }).start();
   }, [visible, anim]);
 
+  /**
+   * Android hardware back closes the sheet.
+   *
+   * This is an absolute overlay, not an RN <Modal>, so back was never routed to
+   * it: pressing back with the sheet open left the sheet on screen and popped the
+   * dashboard out from under it. Registered only while visible, and it consumes
+   * the event so the navigator does not also act on it.
+   */
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onClose]);
+
   if (!visible) return null;
 
   const options: {
@@ -84,11 +102,16 @@ export function QuickAddSheet({
   };
 
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 200 }]}>
+    <View
+      style={[StyleSheet.absoluteFill, { zIndex: 200 }]}
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+    >
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.7)" }]}
           onPress={onClose}
+          accessibilityRole="button"
           accessibilityLabel={t("common.close")}
         />
       </Animated.View>
@@ -113,11 +136,11 @@ export function QuickAddSheet({
               borderTopWidth: 1,
               borderColor: THEME.border,
               paddingHorizontal: 16,
-              paddingTop: 12,
+              paddingTop: 8,
               paddingBottom: insets.bottom + 20,
             }}
           >
-            <View style={{ alignItems: "center", marginBottom: 8 }}>
+            <View style={{ alignItems: "center", marginBottom: 6 }}>
               <View
                 style={{
                   width: 40,
@@ -127,17 +150,9 @@ export function QuickAddSheet({
                 }}
               />
             </View>
-            <Text
-              style={{
-                color: THEME.muted,
-                textAlign: "center",
-                fontSize: 13,
-                paddingVertical: 6,
-              }}
-            >
-              {t("dashboard.quickAddTitle")}
-            </Text>
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 6 }}>
+            {/* The three cards carry their own labels, so the question above
+                them only repeated what they already say. */}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
               {options.map((opt) => (
                 <Pressable
                   key={opt.key}

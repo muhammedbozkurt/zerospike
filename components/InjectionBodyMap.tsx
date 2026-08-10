@@ -104,7 +104,7 @@ function lerp(a: number, b: number, t: number): number {
  * (frequent and recent). Two segments so a lightly used point is clearly
  * distinct from an untouched one without already reading as "hot".
  */
-function heatFill(intensity: number): string {
+export function heatFill(intensity: number): string {
   const i = Math.min(1, Math.max(0, intensity));
   if (i <= 0) return "rgba(255,255,255,0.05)";
   if (i < 0.5) {
@@ -126,7 +126,7 @@ function heatTint(intensity: number): string {
 }
 
 /** How recently a point was used, 0 (never / long ago) to 1 (today). */
-function recencyWeight(lastUsedAt: string | null, now: number): number {
+export function recencyWeight(lastUsedAt: string | null, now: number): number {
   if (!lastUsedAt) return 0;
   const t = new Date(lastUsedAt).getTime();
   if (Number.isNaN(t)) return 0;
@@ -137,7 +137,7 @@ function recencyWeight(lastUsedAt: string | null, now: number): number {
 }
 
 /** Whole days since a timestamp (for the accessibility recency phrase). */
-function daysSince(lastUsedAt: string | null, now: number): number | null {
+export function daysSince(lastUsedAt: string | null, now: number): number | null {
   if (!lastUsedAt) return null;
   const t = new Date(lastUsedAt).getTime();
   if (Number.isNaN(t)) return null;
@@ -172,7 +172,7 @@ function isVerticalRegion(site: InjectionSite): boolean {
 
 /** Neutral, educational absorption-speed note per region type (info, NOT advice;
  *  no insulin type is ever tied to a site). */
-function absorptionKey(site: InjectionSite): string {
+export function absorptionKey(site: InjectionSite): string {
   if (site.startsWith("abdomen")) return "injection.absorbFast";
   if (site.startsWith("arm")) return "injection.absorbMedFast";
   if (site.startsWith("thigh")) return "injection.absorbMedSlow";

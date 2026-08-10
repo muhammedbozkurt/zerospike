@@ -9,6 +9,8 @@ import type {
 } from "./types";
 import { asSitePoint, foodName, parseTags } from "./types";
 import type { Food } from "./types";
+import type { DateRange } from "../insights";
+import { journalFeedArgs, journalFeedSql } from "./journalSql";
 
 export interface GlucoseEntry {
   kind: "glucose";
@@ -18,6 +20,9 @@ export interface GlucoseEntry {
   period_tag: PeriodTag;
   source: string;
   tags: LogTag[];
+  /** Apple Health sample this reading is mirrored to, when the user opted in.
+   *  Carried on the feed so an edit can re-mirror without a second query. */
+  healthkit_uuid: string | null;
 }
 
 export interface MealEntry {
@@ -28,6 +33,8 @@ export interface MealEntry {
   /** The reading this meal is attached to, if any (see lib/mealResponse.ts). */
   sugar_log_id: string | null;
   display_name: string;
+  /** Joined food category (lib/db/categories.ts), null for custom-named meals. */
+  category: string | null;
   portion_g: number;
   calculated_carbs_g: number;
   insulin_dose_units: number;
@@ -40,7 +47,8 @@ export interface InjectionEntry {
   kind: "injection";
   id: string;
   logged_at: string;
-  site: InjectionSite;
+  /** Null when no region was recorded (an auto-written mealtime bolus). */
+  site: InjectionSite | null;
   site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
@@ -52,103 +60,98 @@ export interface InjectionEntry {
 
 export type JournalEntry = GlucoseEntry | MealEntry | InjectionEntry;
 
-interface MealRow {
+/** One row of the union in ./journalSql: the columns of the table it came from. */
+interface FeedRow {
+  kind: "glucose" | "meal" | "injection";
   id: string;
   logged_at: string;
+  tags: string | null;
+  // glucose
+  glucose_level_mgdl: number | null;
+  period_tag: PeriodTag | null;
+  source: string | null;
+  healthkit_uuid: string | null;
+  // meal (+ joined food name columns)
   food_id: string | null;
   sugar_log_id: string | null;
   custom_food_name: string | null;
-  portion_g: number;
-  calculated_carbs_g: number;
-  insulin_dose_units: number;
+  portion_g: number | null;
+  calculated_carbs_g: number | null;
+  insulin_dose_units: number | null;
   photo_uri_local: string | null;
   personal_note: string | null;
-  tags: string | null;
-  // joined food name columns (nullable)
   name_tr: string | null;
   name_en: string | null;
   name_de: string | null;
   name_es: string | null;
   name_fr: string | null;
+  category: string | null;
+  // injection
+  site: InjectionSite | null;
+  site_point: number | null;
+  dose_units: number | null;
+  insulin_type: InsulinType | null;
+  note: string | null;
 }
 
 /**
- * Unified chronological feed combining glucose readings and meal logs for a
- * profile. Meal names are resolved to the active language (or the custom name).
+ * Unified chronological feed of a profile's readings, meals and injections.
+ * Meal names are resolved to the active language (or the custom name).
+ *
+ * ONE query, not three (see ./journalSql). Limiting each table separately meant
+ * `limit` rows of every kind were read to display `limit` rows of the merged feed
+ * (300 became up to 900), and the rows beyond the merged cut were fetched only to
+ * be thrown away. The UNION is ordered and limited by SQLite, so `limit` means
+ * what it says.
+ *
+ * `range` filters in SQL as well. Without it, an old date range had to be found
+ * inside whatever the newest `limit` rows happened to cover, so a report or an
+ * export of an early month silently came back short.
  */
 export async function getJournal(
   profileId: string,
   lang: Lang,
-  limit = 300
+  limit = 300,
+  range?: DateRange
 ): Promise<JournalEntry[]> {
   const db = await getDb();
 
-  const glucoseRows = await db.getAllAsync<{
-    id: string;
-    logged_at: string;
-    glucose_level_mgdl: number;
-    period_tag: PeriodTag;
-    source: string;
-    tags: string | null;
-  }>(
-    `SELECT id, logged_at, glucose_level_mgdl, period_tag, source, tags
-       FROM sugar_logs WHERE profile_id = ? ORDER BY logged_at DESC LIMIT ?;`,
-    [profileId, limit]
+  // The statement and its bound values live in ./journalSql (dependency-free), so
+  // scripts/journal.test.ts runs the real query rather than a copy of it.
+  const rows = await db.getAllAsync<FeedRow>(
+    journalFeedSql(range != null),
+    journalFeedArgs(profileId, limit, range)
   );
 
-  const glucose: GlucoseEntry[] = glucoseRows.map((r) => ({
-    kind: "glucose",
-    id: r.id,
-    logged_at: r.logged_at,
-    glucose_level_mgdl: r.glucose_level_mgdl,
-    period_tag: r.period_tag,
-    source: r.source,
-    tags: parseTags(r.tags),
-  }));
-
-  const mealRows = await db.getAllAsync<MealRow>(
-    `SELECT m.id, m.logged_at, m.food_id, m.sugar_log_id, m.custom_food_name, m.portion_g,
-            m.calculated_carbs_g, m.insulin_dose_units, m.photo_uri_local,
-            m.personal_note, m.tags,
-            f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr
-       FROM meal_logs m
-       LEFT JOIN foods f ON f.id = m.food_id
-     WHERE m.profile_id = ? ORDER BY m.logged_at DESC LIMIT ?;`,
-    [profileId, limit]
-  );
-
-  const injectionRows = await db.getAllAsync<{
-    id: string;
-    logged_at: string;
-    site: InjectionSite;
-    site_point: number | null;
-    dose_units: number | null;
-    insulin_type: InsulinType | null;
-    note: string | null;
-    source: string | null;
-    tags: string | null;
-  }>(
-    `SELECT i.id, i.logged_at, i.site, i.site_point, i.dose_units, i.insulin_type,
-            i.note, i.source, i.tags
-       FROM injection_logs i
-     WHERE i.profile_id = ? ORDER BY i.logged_at DESC LIMIT ?;`,
-    [profileId, limit]
-  );
-
-  const injections: InjectionEntry[] = injectionRows.map((r) => ({
-    kind: "injection",
-    id: r.id,
-    logged_at: r.logged_at,
-    site: r.site,
-    site_point: asSitePoint(r.site_point),
-    dose_units: r.dose_units,
-    insulin_type: r.insulin_type,
-    note: r.note,
-    source: r.source ?? "manual",
-    tags: parseTags(r.tags),
-  }));
-
-  const meals: MealEntry[] = mealRows.map((r) => {
+  return rows.map((r) => {
+    if (r.kind === "glucose") {
+      const entry: GlucoseEntry = {
+        kind: "glucose",
+        id: r.id,
+        logged_at: r.logged_at,
+        glucose_level_mgdl: r.glucose_level_mgdl ?? 0,
+        period_tag: r.period_tag ?? "manual",
+        source: r.source ?? "manual",
+        tags: parseTags(r.tags),
+        healthkit_uuid: r.healthkit_uuid,
+      };
+      return entry;
+    }
+    if (r.kind === "injection") {
+      const entry: InjectionEntry = {
+        kind: "injection",
+        id: r.id,
+        logged_at: r.logged_at,
+        site: r.site,
+        site_point: asSitePoint(r.site_point),
+        dose_units: r.dose_units,
+        insulin_type: r.insulin_type,
+        note: r.note,
+        source: r.source ?? "manual",
+        tags: parseTags(r.tags),
+      };
+      return entry;
+    }
     let display = r.custom_food_name ?? "";
     if (!display && r.name_tr) {
       display = foodName(
@@ -162,23 +165,21 @@ export async function getJournal(
         lang
       );
     }
-    return {
+    const entry: MealEntry = {
       kind: "meal",
       id: r.id,
       logged_at: r.logged_at,
       food_id: r.food_id,
       sugar_log_id: r.sugar_log_id,
       display_name: display || "-",
-      portion_g: r.portion_g,
-      calculated_carbs_g: r.calculated_carbs_g,
-      insulin_dose_units: r.insulin_dose_units,
+      category: r.category,
+      portion_g: r.portion_g ?? 0,
+      calculated_carbs_g: r.calculated_carbs_g ?? 0,
+      insulin_dose_units: r.insulin_dose_units ?? 0,
       photo_uri_local: r.photo_uri_local,
       personal_note: r.personal_note,
       tags: parseTags(r.tags),
     };
+    return entry;
   });
-
-  return [...glucose, ...meals, ...injections].sort((a, b) =>
-    a.logged_at < b.logged_at ? 1 : -1
-  );
 }

@@ -9,7 +9,8 @@ import { withAlpha } from "./GlassCard";
 interface IconTileProps {
   /** Emoji / glyph string (illustrated food & settings rows). */
   emoji?: string;
-  /** Or an Ionicons name. */
+  /** Ionicons name. Used on its own, or as the FALLBACK when `emoji` resolves
+   *  to nothing - so a plate is never a blank box. */
   icon?: keyof typeof Ionicons.glyphMap;
   size?: number;
   radius?: number;
@@ -24,6 +25,11 @@ interface IconTileProps {
  * cyan-lit hero variant. The mockup's `.ico` / `.hero-food` - used on food
  * rows, settings rows, quiz options and empty states so icons stop floating
  * naked on the wash.
+ *
+ * A caller may pass BOTH: the emoji is the illustration, the Ionicons name is
+ * the guarantee. An unclassified row, a category the emoji map does not know,
+ * or a stripped string used to render an empty plate; now it falls through to
+ * the icon, which ships with the app as a font.
  */
 export function IconTile({
   emoji,
@@ -34,6 +40,7 @@ export function IconTile({
   tint = THEME.accent,
   style,
 }: IconTileProps) {
+  const glyph = typeof emoji === "string" ? emoji.trim() : "";
   return (
     <View
       style={[
@@ -50,10 +57,14 @@ export function IconTile({
         style,
       ]}
     >
-      {emoji ? (
-        <Text style={{ fontSize: size * 0.5 }}>{emoji}</Text>
+      {glyph ? (
+        // The plate is a fixed square, so its glyph must not grow with the OS
+        // text size: a scaled emoji overflows the box it is meant to sit in.
+        <Text allowFontScaling={false} style={{ fontSize: Math.round(size * 0.5) }}>
+          {glyph}
+        </Text>
       ) : icon ? (
-        <Ionicons name={icon} size={size * 0.48} color={tint} />
+        <Ionicons name={icon} size={Math.round(size * 0.48)} color={tint} />
       ) : null}
     </View>
   );

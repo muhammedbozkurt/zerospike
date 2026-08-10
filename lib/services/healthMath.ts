@@ -24,7 +24,7 @@ export function snapIso(iso: string, seconds: number = SNAP_SECONDS): string {
 
 /**
  * Resolve a health record's canonical mg/dL from its EXPLICIT unit fields.
- * Never infers the unit from magnitude — a clinically real severe-hypo mg/dL
+ * Never infers the unit from magnitude, and a clinically real severe-hypo mg/dL
  * reading (e.g. 22) overlaps the mmol range, and a magnitude guess would
  * silently 18×-inflate that life-threatening LOW into a fake HIGH. Each platform
  * already knows its unit (iOS queries in mg/dL; Android exposes both fields), so

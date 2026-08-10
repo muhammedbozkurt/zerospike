@@ -1,7 +1,7 @@
 import type { Injection } from "./db/types";
 
 /**
- * Insulin on Board (IOB) — estimated *active* insulin still working from
+ * Insulin on Board (IOB): estimated *active* insulin still working from
  * recently logged BOLUS injections. Its whole purpose is safety: it lets the
  * app warn against "stacking" (dosing again while a prior dose is still active),
  * a common cause of hypoglycemia.
@@ -12,7 +12,7 @@ import type { Injection } from "./db/types";
  * an educational ESTIMATE from the user's own logs, never a directive, and any
  * dose that uses it stays fully editable.
  *
- * Basal (long-acting) injections are excluded — basal is not a mealtime
+ * Basal (long-acting) injections are excluded, basal is not a mealtime
  * correction reservoir, so counting it would over-state active bolus insulin.
  */
 

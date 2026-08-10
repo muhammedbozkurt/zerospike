@@ -11,7 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { hapticSelect } from "../lib/haptics";
-import { GLUCOSE_RICH, TABULAR, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { upper } from "../lib/upper";
 
@@ -69,6 +69,13 @@ export function Button({
   return (
     <Pressable
       onPress={isOff ? undefined : onPress}
+      // Passed to Pressable, not just used for styling: a screen reader announced
+      // a greyed-out button as fully available, and the "dimmed" cue is invisible
+      // to it. `disabled` also stops the press ripple/highlight from firing.
+      disabled={isOff}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!isOff, busy: !!loading }}
       className={`flex-row items-center justify-center rounded-2xl ${SIZE_PAD[size]} ${VARIANT_BG[variant]} ${isOff ? "opacity-50" : ""} ${className}`}
     >
       {loading ? (
@@ -76,8 +83,13 @@ export function Button({
       ) : (
         <>
           {icon ? <View className="mr-2">{icon}</View> : null}
+          {/* No adjustsFontSizeToFit: inside a scale-in dialog iOS measures the
+              first (tiny) width and the shrunken font sticks. Long labels
+              ellipsize instead. */}
           <Text
             className={`font-semibold ${SIZE_TEXT[size]} ${VARIANT_TEXT[variant]}`}
+            style={{ flexShrink: 1 }}
+            numberOfLines={1}
           >
             {label}
           </Text>
@@ -133,7 +145,7 @@ interface FieldProps extends TextInputProps {
 }
 
 export const Field = React.forwardRef<TextInput, FieldProps>(function Field(
-  { label, hint, className = "", ...rest },
+  { label, hint, className = "", style, ...rest },
   ref
 ) {
   return (
@@ -141,11 +153,14 @@ export const Field = React.forwardRef<TextInput, FieldProps>(function Field(
       {label ? (
         <Text className="text-sm font-medium text-mut mb-1.5">{label}</Text>
       ) : null}
+      {/* The size comes from INPUT_TEXT, never from a `text-*` class: that class
+          would also set a lineHeight, which iOS clips the glyphs against. */}
       <TextInput
         ref={ref}
         placeholderTextColor={THEME.muted}
-        className={`rounded-xl bg-glass border border-hair px-4 py-3 text-base text-ink ${className}`}
+        className={`rounded-xl bg-glass border border-hair px-4 py-3 text-ink ${className}`}
         {...rest}
+        style={[INPUT_TEXT, style]}
       />
       {hint ? <Text className="text-xs text-mut mt-1">{hint}</Text> : null}
     </View>
@@ -282,7 +297,7 @@ export interface SegmentedStatItem {
 }
 
 /**
- * A compact horizontal strip of 2–4 mini stats (label + value) separated by
+ * A compact horizontal strip of 2-4 mini stats (label + value) separated by
  * hairline dividers - the "N-up" summary used on the dashboard and mirrored in
  * the doctor report. One row, one card, one visual language.
  */
@@ -305,16 +320,23 @@ export function SegmentedStat({
             i > 0 ? { borderLeftWidth: 1, borderLeftColor: THEME.border } : undefined
           }
         >
+          {/* German and French labels are 1.5-2x the English ones in the same
+              fixed-width column, so both lines must be allowed to shrink instead
+              of being clipped mid-word. */}
           <Text
             style={[{ color: item.accent ?? THEME.ink }, TABULAR]}
             className="text-lg font-extrabold"
             numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
           >
             {item.value}
           </Text>
           <Text
             className="text-[10px] font-semibold tracking-wide text-mut mt-0.5 text-center"
-            numberOfLines={1}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
           >
             {upper(item.label)}
           </Text>

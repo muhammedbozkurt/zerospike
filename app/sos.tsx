@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -28,7 +28,7 @@ import { hapticSelect } from "../lib/haptics";
 import { FeedbackHost } from "../components/Feedback";
 import { GlassCard, GradientCTA } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "../components/rich/GlassCard";
 
 /** Tries to build a maps link from the current location; null if unavailable. */
@@ -63,7 +63,7 @@ function SosBackground() {
   );
 }
 
-export default function SosScreen() {
+function SosScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -148,7 +148,7 @@ export default function SosScreen() {
   return (
     <View className="flex-1">
       <SosBackground />
-      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
         <ScreenHeader
           title={t("sos.title")}
           onBack={() => router.back()}
@@ -228,18 +228,7 @@ export default function SosScreen() {
             />
           )}
 
-          {contacts.length === 0 ? (
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 12,
-                textAlign: "center",
-                lineHeight: 18,
-              }}
-            >
-              {t("sos.noContacts")}
-            </Text>
-          ) : (
+          {contacts.length === 0 ? null : (
             <>
               {contacts.map((c, i) => (
                 <GlassCard key={`${c.phone}-${i}`} style={{ marginBottom: 10 }}>
@@ -337,5 +326,13 @@ function ContactAction({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+export default function SosRoute() {
+  return (
+    <SafeAreaProvider>
+      <SosScreen />
+    </SafeAreaProvider>
   );
 }

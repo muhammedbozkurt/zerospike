@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   Linking,
   Pressable,
@@ -8,7 +9,7 @@ import {
   Text,
   TextInput,
   View, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
@@ -20,7 +21,7 @@ import {
 } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { GLUCOSE_RICH, RADIUS, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, THEME } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
 import { useTranslation } from "react-i18next";
 import {
@@ -48,8 +49,8 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "#";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (parts.length === 1) return upper(parts[0].slice(0, 2));
+  return upper(parts[0][0] + parts[1][0]);
 }
 
 const inputStyle = {
@@ -92,7 +93,7 @@ function digitsOnly(value: string): string {
   return value.replace(/[^0-9]/g, "");
 }
 
-export default function EmergencyContactsScreen() {
+function EmergencyContactsScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -126,6 +127,18 @@ export default function EmergencyContactsScreen() {
   useEffect(() => {
     getEmergencyContacts().then(setContacts);
   }, []);
+
+  // Android hardware back, while the picker is open, must match the header's
+  // own back arrow: close the picker, not the whole screen (same pattern as
+  // Feedback.tsx's overlay handler).
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setPickerOpen(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [pickerOpen]);
 
   async function persist(next: EmergencyContact[]) {
     setContacts(next);
@@ -277,7 +290,7 @@ export default function EmergencyContactsScreen() {
 
   return (
     <AppBackground>
-      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
         {/* Header (mockup 07: back, centred title, add action) */}
         <ScreenHeader
           title={pickerOpen ? t("emergency.pickFromContacts") : t("emergency.title")}
@@ -340,7 +353,7 @@ export default function EmergencyContactsScreen() {
                 placeholderTextColor="rgba(137,163,176,0.7)"
                 autoCorrect={false}
                 className="flex-1 px-2 py-3"
-                style={{ color: THEME.ink }}
+                style={[INPUT_TEXT, { color: THEME.ink }]}
               />
             </View>
 
@@ -369,17 +382,19 @@ export default function EmergencyContactsScreen() {
                 />
               </GlassCard>
             ) : deviceContacts.length === 0 ? (
-              <Text
-                style={{
-                  color: THEME.muted,
-                  textAlign: "center",
-                  paddingVertical: 40,
-                  paddingHorizontal: 24,
-                  lineHeight: 20,
-                }}
-              >
-                {t("emergency.noDeviceContacts")}
-              </Text>
+              <GlassCard style={{ alignItems: "center", paddingVertical: 20 }}>
+                <IconTile icon="people-outline" size={44} radius={14} tint={THEME.muted} />
+                <Text
+                  style={{
+                    color: THEME.muted,
+                    textAlign: "center",
+                    marginTop: 12,
+                    lineHeight: 20,
+                  }}
+                >
+                  {t("emergency.noDeviceContacts")}
+                </Text>
+              </GlassCard>
             ) : (
               <FlatList
                 {...keyboardAwareScrollProps}
@@ -522,7 +537,7 @@ export default function EmergencyContactsScreen() {
                 }}
                 placeholder={t("emergency.namePlaceholder")}
                 placeholderTextColor="rgba(137,163,176,0.7)"
-                style={inputStyle}
+                style={[inputStyle, INPUT_TEXT]}
               />
               {nameError ? (
                 <Text style={{ color: GLUCOSE_RICH.low, fontSize: 11, marginTop: 6, marginLeft: 4 }}>
@@ -539,7 +554,7 @@ export default function EmergencyContactsScreen() {
                 placeholder={t("emergency.phonePlaceholder")}
                 placeholderTextColor="rgba(137,163,176,0.7)"
                 keyboardType="phone-pad"
-                style={[inputStyle, { marginTop: 10 }]}
+                style={[inputStyle, INPUT_TEXT, { marginTop: 10 }]}
               />
               {phoneError ? (
                 <Text style={{ color: GLUCOSE_RICH.low, fontSize: 11, marginTop: 6, marginLeft: 4 }}>
@@ -564,5 +579,13 @@ export default function EmergencyContactsScreen() {
       </View>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function EmergencyContactsRoute() {
+  return (
+    <SafeAreaProvider>
+      <EmergencyContactsScreen />
+    </SafeAreaProvider>
   );
 }

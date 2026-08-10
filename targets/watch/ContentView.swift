@@ -16,12 +16,17 @@ import SwiftUI
 // resolved by the phone's i18n, same as `labels.noData`.
 
 private enum GlucoseColor {
-  static let low = Color(red: 1.0, green: 0.33, blue: 0.41)      // #ff5468
-  static let target = Color(red: 0.13, green: 0.89, blue: 0.60)  // #22e39a
-  static let high = Color(red: 1.0, green: 0.824, blue: 0.247)   // #ffd23f
-  static let veryHigh = Color(red: 1.0, green: 0.541, blue: 0.0) // #ff8a00
-  static let accent = Color(red: 0.18, green: 0.90, blue: 1.0)   // #2ee6ff
-  static let muted = Color(red: 0.54, green: 0.64, blue: 0.69)   // #89a3b0
+  // Exact sRGB components of the tokens in lib/theme/tokens.ts.
+  static let low = Color(red: 1.0, green: 0.3294, blue: 0.4078)        // #ff5468
+  static let target = Color(red: 0.1333, green: 0.8902, blue: 0.6039)  // #22e39a
+  static let high = Color(red: 1.0, green: 0.8235, blue: 0.2471)       // #ffd23f
+  static let wellAbove = Color(red: 1.0, green: 0.6275, blue: 0.1647)  // #ffa02a
+  static let veryHigh = Color(red: 1.0, green: 0.5412, blue: 0.0)      // #ff8a00
+  static let accent = Color(red: 0.1804, green: 0.9020, blue: 1.0)     // #2ee6ff
+  static let muted = Color(red: 0.5373, green: 0.6392, blue: 0.6902)   // #89a3b0
+  // Same literal as the phone widget's WidgetBackground (#080e14), so every
+  // zerospike surface sits on the one Midnight Monitor ground.
+  static let background = Color(red: 0.0314, green: 0.0549, blue: 0.0784)
 
   static func forReading(_ mgdl: Double, band: LiveData.Band?) -> Color {
     let hypoMgdl = band?.hypo ?? 70
@@ -30,7 +35,8 @@ private enum GlucoseColor {
     if mgdl < hypoMgdl { return low }
     if mgdl >= veryHighMgdl { return veryHigh }
     if mgdl <= highMgdl { return target }
-    return high
+    if mgdl <= highMgdl * 1.25 { return high }
+    return wellAbove
   }
 }
 
@@ -69,6 +75,18 @@ struct ContentView: View {
   }
 
   var body: some View {
+    // The brand ground was never set before, so the screen fell back to plain
+    // system black. `.background` covers every watchOS this target runs on;
+    // watchOS 10 additionally paints the system container (the area behind the
+    // toolbar/status bar) via containerBackground.
+    if #available(watchOS 10.0, *) {
+      content.containerBackground(GlucoseColor.background, for: .navigation)
+    } else {
+      content
+    }
+  }
+
+  private var content: some View {
     VStack(spacing: 4) {
       Text(reading)
         .font(.system(size: 40, weight: .bold, design: .rounded))
@@ -102,6 +120,8 @@ struct ContentView: View {
       }
     }
     .padding()
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(GlucoseColor.background.ignoresSafeArea())
     .onReceive(refresh) { _ in
       data = LiveDataStore.read()
     }

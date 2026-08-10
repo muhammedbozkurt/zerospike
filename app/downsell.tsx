@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
@@ -17,9 +25,10 @@ import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSuccess } from "../lib/haptics";
-import { AppBackground, GradientCTA } from "../components/rich";
+import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
-import { TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { MODAL_TOP_PAD, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { pct } from "../lib/format";
 
 /**
  * The last-chance annual offer, rebuilt to the mockup's 08 "Downsell"
@@ -28,7 +37,7 @@ import { TABULAR, THEME, glow } from "../lib/theme/tokens";
  * price struck through beside it, the renewal disclosure, then the CTA and a
  * quiet decline. Nothing else competes with the price.
  */
-export default function DownsellScreen() {
+function DownsellScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -121,20 +130,23 @@ export default function DownsellScreen() {
 
       <View
         className="flex-1"
-        style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top + 8, paddingBottom: insets.bottom + 16 }}
+        style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD), paddingBottom: insets.bottom + 16 }}
       >
         {/* Onboarding-sourced downsell carries the language chip too. */}
         {trigger === "onboarding" ? (
-          <View className="flex-row justify-end px-6 pb-2">
+          <View className="flex-row justify-end px-6 pt-2 pb-2">
             <LanguageChip />
           </View>
         ) : null}
 
         <View className="flex-1 px-6 justify-center">
           {loading ? (
-            <Text style={{ color: THEME.muted, textAlign: "center" }}>
-              {t("common.loading")}
-            </Text>
+            <View className="items-center">
+              <ActivityIndicator color={THEME.accent} />
+              <Text style={{ color: THEME.muted, marginTop: 10, textAlign: "center" }}>
+                {t("common.loading")}
+              </Text>
+            </View>
           ) : discount ? (
             <View
               className="items-center rounded-3xl p-5"
@@ -153,7 +165,7 @@ export default function DownsellScreen() {
                 style={{ backgroundColor: withAlpha(THEME.accent, 0.18) }}
               >
                 <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "800" }}>
-                  {t("downsell.savingsBadge", { percent: offer!.savingsPercent })}
+                  {t("downsell.savingsBadge", { percent: pct(offer!.savingsPercent) })}
                 </Text>
               </View>
 
@@ -207,7 +219,7 @@ export default function DownsellScreen() {
               </Text>
 
               <GradientCTA
-                label={t("downsell.discountCta", { percent: offer!.savingsPercent })}
+                label={t("downsell.discountCta", { percent: pct(offer!.savingsPercent) })}
                 disabled={busy}
                 onPress={accept}
                 style={{ alignSelf: "stretch", marginTop: 2 }}
@@ -220,6 +232,11 @@ export default function DownsellScreen() {
             </View>
           ) : (
             <View className="items-center" style={{ gap: 12 }}>
+              {/* The discount headline promises a price; with nothing to show it
+                  would be a bare claim, so the no-offer branch says so plainly.
+                  The tile is the same visual anchor its sibling states carry, so
+                  this branch is not two lines of text floating in empty space. */}
+              <IconTile icon="pricetag-outline" size={44} radius={14} tint={THEME.muted} />
               <Text
                 style={{
                   color: THEME.ink,
@@ -228,7 +245,7 @@ export default function DownsellScreen() {
                   textAlign: "center",
                 }}
               >
-                {t("downsell.title")}
+                {t("downsell.noOfferTitle")}
               </Text>
               <Text
                 style={{
@@ -271,5 +288,13 @@ export default function DownsellScreen() {
       </View>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function DownsellRoute() {
+  return (
+    <SafeAreaProvider>
+      <DownsellScreen />
+    </SafeAreaProvider>
   );
 }

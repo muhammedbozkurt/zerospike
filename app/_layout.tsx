@@ -1,7 +1,7 @@
 import "../global.css";
 import React, { useEffect, useRef, useState } from "react";
 import { LogBox, View } from "react-native";
-import { Stack, useRouter, useSegments, useGlobalSearchParams } from "expo-router";
+import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams } from "expo-router";
 import * as Notifications from "expo-notifications";
 
 import { StatusBar } from "expo-status-bar";
@@ -56,6 +56,9 @@ function routeForNotification(
     case "glucose":
     case "lowFollowup":
       router.navigate({ pathname: "/(tabs)", params: { sheet: "fasting" } });
+      break;
+    case "idle":
+      router.navigate({ pathname: "/(tabs)", params: { sheet: "glucose" } });
       break;
     case "basal":
       router.navigate("/(tabs)/injection");
@@ -181,7 +184,7 @@ function RootNavigator() {
         };
         routeForNotification(data?.route, router);
       } catch {
-        // no launching notification — nothing to route
+        // no launching notification, nothing to route
       }
     })();
   }, [ready, onboarded, router]);
@@ -189,16 +192,15 @@ function RootNavigator() {
   const prevProRef = useRef<boolean | null>(null);
   // Distinguishes a genuine re-entry (an already-onboarded user reaching
   // /onboarding) from the in-place completion (the flag flips to true while the
-  // reveal is showing, just before the paywall). prevOnboardedRef starts null so
-  // the first settled render is only a baseline, never counted as a completion;
-  // completedRef then latches once we see a false→true flip in-session and stays
-  // latched across any spurious effect re-runs so the reveal is never bounced.
+  // reveal is showing, just before the paywall). completedRef latches once we see
+  // a false→true flip in-session and stays latched across any re-render, so the
+  // reveal is never bounced.
   const prevOnboardedRef = useRef<boolean | null>(null);
   const completedRef = useRef(false);
   // Until routing has SETTLED on the correct first screen, a full-bleed cover (in
   // the splash colour) sits over the navigator so the tab bar / dashboard can
   // never paint for even one frame before the onboarding redirect (A6).
-  const [routeSettled, setRouteSettled] = useState(false);
+  const [revealed, setRevealed] = useState(false);
 
   // One-time winback: when the Pro entitlement is lost, offer the discounted
   // annual once (only if a real discount is configured).
@@ -217,46 +219,58 @@ function RootNavigator() {
     }
   }, [ready, isProUser, router]);
 
-  // Route gate AND splash control in one place: keep the native splash up until
-  // routing has settled on the correct screen, so a fresh (not-onboarded) launch
-  // never reveals the dashboard for even one frame before redirecting.
-  useEffect(() => {
-    if (!ready) return;
-    const root = segments[0];
-    const inOnboarding = root === "onboarding";
-    // The onboarding flow hands off to the soft paywall (and its downsell) before
-    // completing, so those routes are allowed while still not onboarded.
-    const inOnboardingPaywall =
-      root === "paywall" || root === "downsell" || root === "winback";
-    // Latch "completed this session" on the false→true flip (the reveal calling
-    // completeOnboarding). The first settled render only sets the baseline.
-    const prev = prevOnboardedRef.current;
+  // ── Route gate: decided during RENDER, never in an effect ──────────────────
+  // An effect-driven redirect can only run AFTER the wrong screen has already
+  // been committed and handed to the native stack, which is how a fresh install
+  // still got a look at the dashboard before onboarding appeared. Everything
+  // below is derived from the current commit, so the cover and the redirect are
+  // always decided on the same frame the route is known.
+  const root = segments[0];
+  const inOnboarding = root === "onboarding";
+  // The onboarding flow hands off to the soft paywall (and its downsell) before
+  // completing, so those routes are allowed while still not onboarded.
+  const inOnboardingPaywall =
+    root === "paywall" || root === "downsell" || root === "winback";
+  const needsOnboarding =
+    ready && !onboarded && !inOnboarding && !inOnboardingPaywall;
+  // Screenshot mode completes onboarding itself (an AsyncStorage write before the
+  // state flip), so on a genuinely fresh launch this gate can still see
+  // onboarded=false on the same commit. Don't redirect away from the deep-link
+  // target in that case - just hold the cover; the completion effect flips
+  // `onboarded` a beat later. Without this, a fresh screenshot-mode launch got
+  // bounced to /onboarding and then stuck there (the re-entry guard below treats
+  // the in-flight completion as an already-onboarded user re-entering).
+  const screenshotPending = needsOnboarding && isScreenshotMode();
+
+  // Latched during RENDER for the same reason the gate is: the re-entry guard
+  // below has to know about the completion on the very commit `onboarded` flips,
+  // and an effect-set latch would still read false there and bounce the in-place
+  // reveal to the dashboard. prevOnboardedRef starts null so the first ready
+  // render is only a baseline, never counted as a completion; the write is
+  // guarded on an actual change so repeated renders stay a no-op.
+  if (ready && prevOnboardedRef.current !== onboarded) {
+    const prevOnboarded = prevOnboardedRef.current;
     prevOnboardedRef.current = onboarded;
-    if (prev === false && onboarded === true) completedRef.current = true;
-    if (!onboarded && !inOnboarding && !inOnboardingPaywall) {
-      // Screenshot mode's own effect completes onboarding asynchronously (an
-      // AsyncStorage write before the state flip), so on a genuinely fresh
-      // install this gate can still see onboarded=false on the same commit and
-      // fire first. Don't redirect away from the deep-link target in that case -
-      // just wait; the completion effect flips `onboarded` a beat later and this
-      // gate re-runs. Without this, a fresh screenshot-mode launch got bounced to
-      // /onboarding and then stuck there (the re-entry guard below treats the
-      // in-flight completion as an already-onboarded user re-entering onboarding).
-      if (isScreenshotMode()) return;
-      router.replace("/onboarding");
-      return; // splash stays up through the redirect (no dashboard flash)
-    }
-    // Block an already-onboarded user from re-entering /onboarding, but leave the
-    // active reveal alone (it completed in-place this session, before the paywall).
-    if (onboarded && inOnboarding && !completedRef.current) {
-      router.replace("/");
-      return; // splash stays up until the app screen is active
-    }
-    // Settled on the correct screen: safe to reveal (drop both the native splash
-    // and the JS cover together, so no wrong screen is ever seen).
-    SplashScreen.hideAsync().catch(() => {});
-    setRouteSettled(true);
-  }, [ready, onboarded, segments, router]);
+    if (prevOnboarded === false && onboarded === true) completedRef.current = true;
+  }
+  // Block an already-onboarded user from re-entering /onboarding, but leave the
+  // active reveal alone (it completed in-place this session, before the paywall).
+  const blockedReentry =
+    ready && onboarded && inOnboarding && !completedRef.current;
+
+  const settled = ready && !needsOnboarding && !blockedReentry;
+
+  // Drop the native splash and the JS cover together, one frame AFTER the correct
+  // route is committed, so neither ever lifts while the navigator is still
+  // swapping screens.
+  useEffect(() => {
+    if (!settled || revealed) return;
+    const frame = requestAnimationFrame(() => {
+      SplashScreen.hideAsync().catch(() => {});
+      setRevealed(true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [settled, revealed]);
 
   // While loading, render nothing so the native splash stays on screen.
   if (!ready) return null;
@@ -266,12 +280,15 @@ function RootNavigator() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: "#000000" },
+        contentStyle: { backgroundColor: "#0f1f29" },
         animation: "slide_from_right",
       }}
     >
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
+      {/* No transition: /onboarding is only ever reached from the gate below, and
+          a cross-fade kept the outgoing dashboard on screen for the whole
+          animation - visible the moment the cover lifted. */}
+      <Stack.Screen name="onboarding" options={{ animation: "none" }} />
       <Stack.Screen
         name="paywall"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
@@ -305,6 +322,10 @@ function RootNavigator() {
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen
+        name="meal-template"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
         name="profile-setup"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
@@ -325,7 +346,11 @@ function RootNavigator() {
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
     </Stack>
-    {!routeSettled ? (
+    {needsOnboarding && !screenshotPending ? (
+      <Redirect href="/onboarding" />
+    ) : null}
+    {blockedReentry ? <Redirect href="/" /> : null}
+    {!settled || !revealed ? (
       <View
         pointerEvents="none"
         style={{
@@ -335,6 +360,7 @@ function RootNavigator() {
           right: 0,
           bottom: 0,
           backgroundColor: "#04161d",
+          zIndex: 10,
         }}
       />
     ) : null}
@@ -344,7 +370,7 @@ function RootNavigator() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#000000" }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0f1f29" }}>
       <SafeAreaProvider>
         <AppProvider>
           <FeedbackProvider>

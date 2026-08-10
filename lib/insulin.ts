@@ -1,11 +1,11 @@
 import type { Food, MealSlot, UserProfile } from "./db/types";
 import { targetMidpoint, targetRangeFor } from "./glucose";
 
-/** Maps an hour (0–23) to the active meal slot per the product rules. */
+/** Maps an hour (0-23) to the active meal slot per the product rules. */
 export function mealSlotForHour(hour: number): MealSlot {
   if (hour >= 6 && hour < 11) return "breakfast";
   if (hour >= 11 && hour < 17) return "lunch";
-  return "dinner"; // 17:00 – 06:00
+  return "dinner"; // 17:00 - 06:00
 }
 
 export function activeMealSlot(date = new Date()): MealSlot {
@@ -30,13 +30,14 @@ export function carbRatioForSlot(
 }
 
 /**
- * Plausibility guardrails. These NEVER change the math or block logging — they
- * only flag an estimate so the UI can warn the user to double-check (the dose
- * stays fully editable). Catching a "carb ratio 1 instead of 10" typo before it
- * becomes a 10× over-estimate is exactly the input-validation safety net that
- * most dosing apps lack. Bounds are generous so only clear errors trip them.
+ * Plausibility guardrails. These NEVER change the math or block logging - they
+ * only flag an estimate so the UI can show a descriptive note (the dose stays
+ * fully editable). The lower bound has to be well above 1, or the "carb ratio 1
+ * instead of 10" typo this guard exists for slips through as a plausible value:
+ * a real mealtime ratio below 3 g per unit is not a clinical setting, it is a
+ * missing digit. Bounds stay generous so only clear errors trip them.
  */
-export const PLAUSIBLE_CARB_RATIO = { min: 1, max: 50 } as const; // g per unit
+export const PLAUSIBLE_CARB_RATIO = { min: 3, max: 50 } as const; // g per unit
 /** Bounds for the daily carbohydrate range a profile can be given (grams). */
 export const CARB_TARGET_BOUNDS = { min: 30, max: 600 } as const;
 
@@ -76,6 +77,9 @@ export type InsulinWarning =
   | "carb_ratio_out_of_range"
   | "isf_out_of_range";
 
+/** Why the correction component was left out of an estimate, when it was. */
+export type CorrectionSkipReason = "isf_invalid";
+
 export interface InsulinEstimate {
   slot: MealSlot;
   carbRatio: number;
@@ -89,6 +93,12 @@ export interface InsulinEstimate {
   totalDose: number;
   /** units the correction was reduced by active insulin (IOB), if any */
   iobReduction: number;
+  /**
+   * Set when a reading was given but the correction could not be computed, so
+   * the UI can say WHY the estimate covers carbs only instead of silently
+   * dropping the component. Descriptive, never an instruction.
+   */
+  correctionSkipped: CorrectionSkipReason | null;
   /** non-blocking plausibility flags for the UI (empty when the estimate looks sane) */
   warnings: InsulinWarning[];
 }
@@ -101,7 +111,7 @@ export interface EstimateOptions {
   /**
    * Active insulin (IOB) already working from recent bolus doses. When given,
    * it is subtracted from the CORRECTION component only (never the meal dose),
-   * clamped at 0 — so it can only LOWER the estimate, preventing stacking.
+   * clamped at 0, so it can only LOWER the estimate, preventing stacking.
    */
   currentIOB?: number | null;
   /** override the auto-detected slot */
@@ -146,29 +156,35 @@ export function estimateInsulin(
   const carbs = (food.carb_100g * portionGrams) / 100;
   const mealDose = carbs / carbRatio;
 
+  // A stored ISF of 0 (or a non-finite one) cannot produce a correction. It used
+  // to disable the whole component in silence AND skip the range flag, so an
+  // unusable setting looked identical to a healthy one; now it is reported.
+  const rawIsf = profile.insulin_sensitivity_factor;
+  const isfUsable = Number.isFinite(rawIsf) && rawIsf > 0;
+
   let correctionDose = 0;
-  let isfApplied: number | null = null;
-  if (
-    options.currentGlucose != null &&
-    profile.insulin_sensitivity_factor > 0
-  ) {
-    isfApplied = profile.insulin_sensitivity_factor;
-    const target =
-      options.targetGlucose ??
-      targetMidpoint(
-        targetRangeFor("post_meal_2h", {
-          target_postmeal_min: profile.target_postmeal_min,
-          target_postmeal_max: profile.target_postmeal_max,
-        })
-      );
-    const delta = options.currentGlucose - target;
-    if (delta > 0) {
-      correctionDose = delta / profile.insulin_sensitivity_factor;
+  let correctionSkipped: CorrectionSkipReason | null = null;
+  if (options.currentGlucose != null) {
+    if (!isfUsable) {
+      correctionSkipped = "isf_invalid";
+    } else {
+      const target =
+        options.targetGlucose ??
+        targetMidpoint(
+          targetRangeFor("post_meal_2h", {
+            target_postmeal_min: profile.target_postmeal_min,
+            target_postmeal_max: profile.target_postmeal_max,
+          })
+        );
+      const delta = options.currentGlucose - target;
+      if (delta > 0) {
+        correctionDose = delta / rawIsf;
+      }
     }
   }
 
   // Subtract active insulin from the CORRECTION only (never the meal carbs),
-  // clamped at 0. This can only reduce the estimate — the safe, anti-stacking
+  // clamped at 0. This can only reduce the estimate in the safe, anti-stacking
   // direction. The dose stays editable.
   let iobReduction = 0;
   if (options.currentIOB != null && options.currentIOB > 0 && correctionDose > 0) {
@@ -186,10 +202,7 @@ export function estimateInsulin(
   ) {
     warnings.push("carb_ratio_out_of_range");
   }
-  if (
-    isfApplied != null &&
-    (isfApplied < PLAUSIBLE_ISF.min || isfApplied > PLAUSIBLE_ISF.max)
-  ) {
+  if (!isfUsable || rawIsf < PLAUSIBLE_ISF.min || rawIsf > PLAUSIBLE_ISF.max) {
     warnings.push("isf_out_of_range");
   }
   if (totalDose >= HIGH_DOSE_WARNING_UNITS) {
@@ -204,6 +217,7 @@ export function estimateInsulin(
     correctionDose: Math.round(correctionDose * 100) / 100,
     totalDose,
     iobReduction: Math.round(iobReduction * 100) / 100,
+    correctionSkipped,
     warnings,
   };
 }

@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -16,10 +17,36 @@ import {
 } from "../db/profiles";
 import type { UserProfile, Lang } from "../db/types";
 import { initI18n, setLanguage as i18nSetLanguage, currentLang } from "../i18n";
-import { isPro as readIsPro } from "../services/purchases";
+import {
+  isPro as readIsPro,
+  isProCached,
+  verifyProWithStore,
+} from "../services/purchases";
 
 const ACTIVE_PROFILE_KEY = "zerospike.activeProfile";
 const ONBOARDED_KEY = "zerospike.onboarded";
+
+/**
+ * Field-wise equality for a profile row. Every refresh re-reads the row from
+ * SQLite and gets a brand new object back, so identity alone said "changed" on
+ * every single data bump. Screens key their loaders on `activeProfile`, which
+ * turned one log write into a second full dashboard load (a second getJournal
+ * AND a second live-surface publish) plus two extra renders of every consumer.
+ * Comparing the values lets an unchanged row keep its old object.
+ */
+function sameProfile(a: UserProfile | null, b: UserProfile | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a) as (keyof UserProfile)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((k) => a[k] === b[k]);
+}
+
+function sameProfileList(a: UserProfile[], b: UserProfile[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((p, i) => sameProfile(p, b[i]));
+}
 
 interface AppState {
   ready: boolean;
@@ -50,13 +77,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isProUser, setIsProUser] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
 
+  // The active profile's id, mirrored so the refresh callbacks below stay stable
+  // across renders (a dep on `activeProfile` gave them a new identity on every
+  // profile refresh, which is half of the double-load story).
+  const activeIdRef = useRef<string | null>(null);
+  activeIdRef.current = activeProfile?.id ?? null;
+
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
 
-  const refreshProfiles = useCallback(async () => {
-    const list = await listProfiles();
-    setProfiles(list);
-    return;
+  const applyProfileList = useCallback((list: UserProfile[]) => {
+    setProfiles((prev) => (sameProfileList(prev, list) ? prev : list));
   }, []);
+
+  const applyActiveProfile = useCallback((next: UserProfile | null) => {
+    setActiveProfile((prev) => (sameProfile(prev, next) ? prev : next));
+  }, []);
+
+  /**
+   * ONE pass over the profile table that refreshes the list AND the active row.
+   * It used to be two round trips (listProfiles + getProfile) fired from the same
+   * effect, each landing in its own commit.
+   *
+   * Still never sits on a DELETED profile: when the active id is gone from the
+   * list, hand over to a real profile (getProfile returned null there, and
+   * keeping the old object left the whole app addressing a dead profile - empty
+   * lists, new logs written under an id nothing else can reach).
+   */
+  const syncProfiles = useCallback(async () => {
+    const list = await listProfiles();
+    const currentId = activeIdRef.current;
+    const stillThere = currentId
+      ? (list.find((p) => p.id === currentId) ?? null)
+      : null;
+    if (stillThere || currentId == null) {
+      applyProfileList(list);
+      if (stillThere) applyActiveProfile(stillThere);
+      return;
+    }
+    const next = list[0] ?? (await getDefaultProfile());
+    applyProfileList(list.length ? list : [next]);
+    applyActiveProfile(next);
+    try {
+      await AsyncStorage.setItem(ACTIVE_PROFILE_KEY, next.id);
+    } catch {
+      // a failed hand-over write only costs the choice on next launch
+    }
+  }, [applyProfileList, applyActiveProfile]);
 
   const refreshPro = useCallback(async () => {
     setIsProUser(await readIsPro());
@@ -73,6 +139,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setLanguage = useCallback(async (next: Lang) => {
     await i18nSetLanguage(next);
     setLang(next);
+    // A scheduled reminder keeps the literal text the OS was handed, so every
+    // pending one is still speaking the previous language. Re-registered in the
+    // background: the language switch itself must stay instant.
+    void import("../services/notifications").then((m) =>
+      m.rescheduleForLanguageChange()
+    );
   }, []);
 
   const completeOnboarding = useCallback(async () => {
@@ -84,6 +156,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      try {
       await initI18n();
       await initDatabase();
 
@@ -97,11 +170,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // ignore
       }
-      const active = (await getProfile(activeId)) ?? fallback;
+      // Taken from the list already in hand rather than re-queried: activeId is
+      // either a row that list was just proved to contain, or the fallback itself.
+      const active = list.find((p) => p.id === activeId) ?? fallback;
 
       const onboardedFlag =
         (await AsyncStorage.getItem(ONBOARDED_KEY)) === "true";
-      const pro = await readIsPro();
+      // Cache-first: the LAST KNOWN entitlement, straight from local storage.
+      // Asking RevenueCat here meant the splash screen stayed up for a network
+      // round trip on every cold start (and for its full timeout when offline).
+      const pro = await isProCached();
 
       if (cancelled) return;
       setProfiles(list.length ? list : [fallback]);
@@ -110,24 +188,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setOnboarded(onboardedFlag);
       setIsProUser(pro);
       setReady(true);
+
+      // Now that the app is on screen, verify the entitlement against the store
+      // and correct the flag if the cache was stale. `null` means the store could
+      // not be reached, which is NOT the same as "not subscribed": treating it as
+      // one would demote an offline paying user (and fire the win-back offer at
+      // them), so an unreachable store simply leaves the cached flag standing.
+      const verified = await verifyProWithStore();
+      if (!cancelled && verified != null && verified !== pro) {
+        setIsProUser(verified);
+      }
+      } catch (e) {
+        // A bootstrap throw (a failed migration, a corrupt DB) must not leave
+        // the native splash up forever: RootNavigator only reveals the app once
+        // `ready` flips, so flip it and let the screens surface their own empty
+        // or error states.
+        console.error("bootstrap failed", e);
+        if (!cancelled) setReady(true);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Keep the active profile object fresh after edits.
-  const refreshActive = useCallback(async () => {
-    if (!activeProfile) return;
-    const fresh = await getProfile(activeProfile.id);
-    if (fresh) setActiveProfile(fresh);
-  }, [activeProfile]);
-
-  // Re-pull the active profile and list whenever data is bumped.
+  // Re-pull the profile list + the active row whenever data is bumped. One query,
+  // one commit, and no state write at all when nothing actually changed.
   useEffect(() => {
     if (!ready) return;
-    refreshProfiles();
-    refreshActive();
+    void syncProfiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataVersion]);
 
@@ -142,7 +231,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       dataVersion,
       bumpData,
       setActiveProfileId,
-      refreshProfiles,
+      refreshProfiles: syncProfiles,
       setLanguage,
       refreshPro,
       completeOnboarding,
@@ -157,7 +246,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       dataVersion,
       bumpData,
       setActiveProfileId,
-      refreshProfiles,
+      syncProfiles,
       setLanguage,
       refreshPro,
       completeOnboarding,

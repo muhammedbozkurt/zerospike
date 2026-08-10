@@ -6,7 +6,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -41,6 +43,7 @@ import {
   type WeeklySentence,
 } from "../lib/insights";
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
+import { useLayout } from "../lib/useLayout";
 import { DateRangePicker, type PickedRange } from "../components/DateRangePicker";
 import { formatDate } from "../lib/format";
 import { isScreenshotMode } from "../lib/screenshotMode";
@@ -53,7 +56,7 @@ import { StatCard } from "../components/StatCard";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { useFeedback } from "../components/Feedback";
 import { logEvent } from "../lib/analytics";
-import { num } from "../lib/format";
+import { num, pct, pctParts } from "../lib/format";
 import {
   AppBackground,
   GlassCard,
@@ -74,6 +77,37 @@ const BRAND = THEME.accent;
 
 /** Two points make a line; one is just a dot. */
 const TREND_MIN_DAYS = 2;
+
+/** Gutter between the two card columns on a wide screen. */
+const GRID_GAP = 12;
+/** Cap for the two-column report. Wider than the single reading column
+ *  (lib/useLayout) because it holds two of them: each column then lands near a
+ *  phone's card width instead of a stretched half-screen. */
+const GRID_MAX_WIDTH = 1040;
+
+/**
+ * The report's card flow. On a phone it renders its children exactly as they
+ * were written (a fragment, no wrapper); on a tablet it deals them into two
+ * equal columns, alternating, so the cards stop being one endless stretched
+ * strip. Each child is one card: a card that is really a titled group keeps its
+ * parts together by staying a single keyed fragment.
+ */
+function CardGrid({
+  isWide,
+  children,
+}: {
+  isWide: boolean;
+  children: React.ReactNode;
+}) {
+  if (!isWide) return <>{children}</>;
+  const cards = React.Children.toArray(children);
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: GRID_GAP }}>
+      <View style={{ flex: 1 }}>{cards.filter((_, i) => i % 2 === 0)}</View>
+      <View style={{ flex: 1 }}>{cards.filter((_, i) => i % 2 === 1)}</View>
+    </View>
+  );
+}
 
 function Seg({ pct, color }: { pct: number; color: string }) {
   if (pct <= 0) return null;
@@ -102,9 +136,15 @@ const SLICES: DayKind[] = ["night", "morning", "afternoon", "evening"];
 export default function InsightsScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const { activeProfile, isProUser, lang } = useApp();
+  const { isWide } = useLayout();
   const { actionSheet } = useFeedback();
+  // Tablet: the report is centred and capped instead of stretching edge to edge.
+  const bodyColumn: ViewStyle | undefined = isWide
+    ? { width: "100%", maxWidth: GRID_MAX_WIDTH, alignSelf: "center" }
+    : undefined;
   const unit = activeProfile?.glucose_unit ?? "mgdl";
   const fmtG = (mgdl: number | null) =>
     mgdl == null ? "-" : formatGlucose(mgdl, unit);
@@ -151,6 +191,33 @@ export default function InsightsScreen() {
   const [meals, setMeals] = useState<MealLog[]>([]);
   const [injections, setInjections] = useState<Injection[]>([]);
 
+  /**
+   * The span the three queries below are allowed to read.
+   *
+   * The window selector recomputes locally with no reload, so one fetch has to
+   * cover every window the user can switch to WITHOUT a refetch - the widest
+   * shortcut (90 days) and the previous equal-length window `trendVsPrevious`
+   * compares it against, hence 2x. That is the honest upper bound, and it was
+   * missing entirely: all three tables were read with no date filter at all, so a
+   * profile with years of history pulled 2000 rows of it on every open to compute
+   * figures that can only ever look back six months.
+   *
+   * A custom range (Pro) can point anywhere, so it extends the span by its own
+   * length on the leading side for the same trend comparison.
+   */
+  const fetchRange = useMemo<DateRange>(() => {
+    const now = Date.now();
+    const widest = Math.max(...INSIGHTS_WINDOWS);
+    let start = now - 2 * widest * 86_400_000;
+    let end = now;
+    if (customRange) {
+      const span = Math.max(0, customRange.end - customRange.start);
+      start = Math.min(start, customRange.start - span);
+      end = Math.max(end, customRange.end);
+    }
+    return { start, end };
+  }, [customRange]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -159,9 +226,9 @@ export default function InsightsScreen() {
         return;
       }
       const [s, m, inj] = await Promise.all([
-        listSugarLogs(activeProfile.id, 2000),
-        listMealLogs(activeProfile.id, 2000),
-        getInjections(activeProfile.id, 2000),
+        listSugarLogs(activeProfile.id, 2000, fetchRange),
+        listMealLogs(activeProfile.id, 2000, fetchRange),
+        getInjections(activeProfile.id, 2000, fetchRange),
       ]);
       if (!alive) return;
       setSugar(s);
@@ -172,7 +239,7 @@ export default function InsightsScreen() {
     return () => {
       alive = false;
     };
-  }, [isProUser, activeProfile]);
+  }, [isProUser, activeProfile, fetchRange]);
 
   // Recompute locally when the window changes (no reload).
   const data = useMemo(
@@ -180,7 +247,11 @@ export default function InsightsScreen() {
     [sugar, meals, injections, windowDays, tirBand, customRange]
   );
 
-  const pct = (n: number | null) => (n == null ? "-" : `${Math.round(n)}`);
+  // The bare number, for widgets that style the percent sign separately; and the
+  // whole percentage, sign placed by the language (lib/format).
+  const pctNum = (n: number | null) => (n == null ? "-" : pctParts(n).number);
+  const pctText = (n: number | null) => (n == null ? "-" : pct(n));
+  const PCT_SIGN = pctParts(0);
 
   // Descriptive patterns from the user's own readings (never causal/advice).
   const patterns = useMemo(
@@ -205,7 +276,7 @@ export default function InsightsScreen() {
           unit: u,
         });
       case "high_variability":
-        return t("insights.patternHighVariability", { cv: p.cv });
+        return t("insights.patternHighVariability", { cv: pct(p.cv) });
     }
   };
 
@@ -221,6 +292,9 @@ export default function InsightsScreen() {
   // Free users see only the 7-day basic summary fully; 30/90 render as a blurred
   // preview behind a lock (curiosity gap, not an empty screen).
   const locked = !isProUser && (windowDays !== FREE_INSIGHTS_WINDOW || customRange != null);
+  // Enough blurred report to create the curiosity gap, never more than fits on
+  // screen (the unlock card is centred inside it).
+  const lockedPreviewHeight = Math.max(360, windowHeight - insets.top - insets.bottom - 120);
   const premium = isProUser || locked;
   const showsInjections = insulinModeUsesInsulin(activeProfile?.insulin_mode);
 
@@ -255,8 +329,8 @@ export default function InsightsScreen() {
     switch (s.kind) {
       case "tir":
         return s.delta >= 0
-          ? t("insights.weeklyTirUp", { tir: s.tir, points: Math.abs(s.delta) })
-          : t("insights.weeklyTirDown", { tir: s.tir, points: Math.abs(s.delta) });
+          ? t("insights.weeklyTirUp", { tir: pct(s.tir), points: Math.abs(s.delta) })
+          : t("insights.weeklyTirDown", { tir: pct(s.tir), points: Math.abs(s.delta) });
       case "avg":
         return s.avgDelta >= 0
           ? t("insights.weeklyAvgUp", { n: fmtG(Math.abs(s.avgDelta)), unit: u })
@@ -381,7 +455,11 @@ export default function InsightsScreen() {
             ? `${t("report.customRange")} · ${t("common.pro")}`
             : t("report.customRange"),
           icon: (!isProUser ? "lock-closed" : "create-outline") as keyof typeof Ionicons.glyphMap,
-          onPress: () => setRangePickerOpen(true),
+          // A free user used to be walked through the whole two-date picker and
+          // only THEN shown a lock over the result. The option is already marked
+          // Pro, so it goes where it actually leads.
+          onPress: () =>
+            isProUser ? setRangePickerOpen(true) : router.push("/paywall"),
         },
       ],
     });
@@ -389,6 +467,7 @@ export default function InsightsScreen() {
 
   const isEmpty =
     data.readings === 0 && data.injectionCount === 0 && data.meals === 0;
+  const hasReadings = data.readings > 0;
   const maxSite = Math.max(1, ...data.siteDistribution.map((s) => s.count));
   const usedSites = data.siteDistribution
     .filter((s) => s.count > 0)
@@ -406,7 +485,15 @@ export default function InsightsScreen() {
             className="flex-row items-center rounded-full px-3 py-1.5"
             style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
           >
-            <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}>
+            {/* A custom range puts two dates in one chip next to the back arrow
+                and the title; on a narrow screen that overflowed. Same guard the
+                rest of this screen's labels use. */}
+            <Text
+              style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
               {customRange
                 ? `${formatDate(new Date(customRange.start).toISOString())} - ${formatDate(new Date(customRange.end).toISOString())}`
                 : t("insights.windowDays", { n: windowDays })}
@@ -427,7 +514,11 @@ export default function InsightsScreen() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }}
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: insets.bottom + 24,
+            ...(bodyColumn ?? {}),
+          }}
           showsVerticalScrollIndicator={false}
         >
           {isEmpty ? (
@@ -438,13 +529,45 @@ export default function InsightsScreen() {
               </Text>
             </View>
           ) : (
-            <View>
-              <View pointerEvents={locked ? "none" : "auto"}>
-                {/* ── Glucose ─────────────────────────────────────────────── */}
-                {data.readings > 0 ? (
-                  <>
-                    {/* HERO: the time-in-range donut (mockup's signature) */}
-                    <GlassCard glow={GREEN} style={{ marginBottom: 10 }}>
+            // Locked, the preview is clipped to roughly one screen. The unlock
+            // card is centred inside this box, and the box used to be the FULL
+            // (several-screens-tall) report, so the lock's title, body and CTA
+            // landed far below the fold: the user saw a blurred wall with no
+            // visible way out unless they thought to scroll it.
+            <View
+              style={
+                locked
+                  ? { maxHeight: lockedPreviewHeight, overflow: "hidden" }
+                  : undefined
+              }
+            >
+              <View
+                pointerEvents={locked ? "none" : "auto"}
+                importantForAccessibility={locked ? "no-hide-descendants" : "auto"}
+              >
+                {/* Meals (or injections) logged but no glucose reading: almost
+                    every card below is gated on readings, so the report rendered
+                    as a blank page under the header with no explanation. */}
+                {!hasReadings ? (
+                  <View className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mb-1">
+                    <Ionicons name="water-outline" size={15} color={THEME.muted} />
+                    <Text
+                      style={{
+                        color: THEME.muted,
+                        fontSize: 12,
+                        lineHeight: 18,
+                        marginLeft: 10,
+                        flex: 1,
+                      }}
+                    >
+                      {t("insights.noReadings")}
+                    </Text>
+                  </View>
+                ) : null}
+                <CardGrid isWide={isWide}>
+                  {/* ── Glucose ───────────────────────────────────────────── */}
+                  {hasReadings ? (
+                    <GlassCard key="tir" glow={GREEN} style={{ marginBottom: 10 }}>
                       <View className="flex-row items-center justify-between mb-1">
                         <Text
                           style={{
@@ -459,7 +582,7 @@ export default function InsightsScreen() {
                         <GlucoseChip
                           status="normal"
                           dot={false}
-                          label={`${pct(data.inRangePct)}%`}
+                          label={pctText(data.inRangePct)}
                         />
                       </View>
                       <View className="flex-row items-center">
@@ -470,8 +593,9 @@ export default function InsightsScreen() {
                             high: data.highPct ?? 0,
                             veryHigh: data.veryHighPct ?? 0,
                           })}
-                          centerValue={pct(data.inRangePct)}
-                          centerSuffix="%"
+                          centerValue={pctNum(data.inRangePct)}
+                          centerSuffix={PCT_SIGN.sign}
+                          centerSuffixFirst={PCT_SIGN.signFirst}
                           size={104}
                         />
                         <View style={{ flex: 1, marginLeft: 16, gap: 6 }}>
@@ -508,7 +632,7 @@ export default function InsightsScreen() {
                                 {name}
                               </Text>
                               <Text style={[TABULAR, { color: THEME.muted, fontSize: 12 }]}>
-                                {value == null ? "-" : `${Math.round(value)}%`}
+                                {pctText(value)}
                               </Text>
                             </View>
                           ))}
@@ -522,9 +646,11 @@ export default function InsightsScreen() {
                         })}
                       </Text>
                     </GlassCard>
+                  ) : null}
 
-                    {/* AGP as the mockup's gradient area curve */}
-                    <GlassCard style={{ marginBottom: 10 }}>
+                  {/* AGP as the mockup's gradient area curve */}
+                  {hasReadings ? (
+                    <GlassCard key="agp" style={{ marginBottom: 10 }}>
                       <Text
                         style={{
                           color: THEME.muted,
@@ -568,15 +694,19 @@ export default function InsightsScreen() {
                         </Text>
                       )}
                     </GlassCard>
+                  ) : null}
 
-                    {/* The mockup's StatCard strip */}
+                  {/* The mockup's StatCard strip, with the note that qualifies it */}
+                  {hasReadings ? (
+                    <React.Fragment key="stats">
                     <View className="flex-row" style={{ gap: 8 }}>
                       <StatCard
                         glass
                         glow={data.gmi != null}
                         label={t("insights.gmi")}
-                        display={data.gmi == null ? "-" : data.gmi.toFixed(1)}
-                        suffix={data.gmi == null ? undefined : "%"}
+                        display={data.gmi == null ? "-" : pctParts(data.gmi, 1).number}
+                        suffix={data.gmi == null ? undefined : PCT_SIGN.sign}
+                        suffixFirst={PCT_SIGN.signFirst}
                         accent={BRAND}
                         style={{ flex: 1 }}
                       />
@@ -593,8 +723,9 @@ export default function InsightsScreen() {
                       <StatCard
                         glass
                         label={t("insights.timeInRange")}
-                        display={pct(data.inRangePct)}
-                        suffix="%"
+                        display={pctNum(data.inRangePct)}
+                        suffix={PCT_SIGN.sign}
+                        suffixFirst={PCT_SIGN.signFirst}
                         accent={GREEN}
                         footnote={premium ? tirTrend : undefined}
                         style={{ flex: 1 }}
@@ -625,10 +756,12 @@ export default function InsightsScreen() {
                           })
                         : t("insights.gmiNote")}
                     </Text>
+                    </React.Fragment>
+                  ) : null}
 
-                    {/* Weekly digest (Pro): this week vs last, in sentences */}
-                    {isProUser && digest.length > 0 ? (
-                      <GlassCard accent style={{ marginTop: 12 }}>
+                  {/* Weekly digest (Pro): this week vs last, in sentences */}
+                  {hasReadings && isProUser && digest.length > 0 ? (
+                      <GlassCard key="digest" accent style={{ marginTop: 12 }}>
                         <View className="flex-row items-center mb-2">
                           <Ionicons name="calendar-outline" size={15} color={BRAND} />
                           <Text
@@ -661,9 +794,10 @@ export default function InsightsScreen() {
                       </GlassCard>
                     ) : null}
 
-                    {/* Daily average over the window, with a neutral delta chip */}
-                    {premium ? (
+                  {/* Daily average over the window, with a neutral delta chip */}
+                  {hasReadings && premium ? (
                       <ChartCard
+                        key="trend"
                         title={t("insights.chartTrendTitle")}
                         subtitle={t("insights.chartTrendSub")}
                         accessory={
@@ -707,9 +841,9 @@ export default function InsightsScreen() {
                       </ChartCard>
                     ) : null}
 
-                    {/* Percentile band summary (AGP numeric), Pro */}
-                    {premium && pctile ? (
-                      <GlassCard style={{ marginTop: 12 }}>
+                  {/* Percentile band summary (AGP numeric), Pro */}
+                  {hasReadings && premium && pctile ? (
+                      <GlassCard key="pctile" style={{ marginTop: 12 }}>
                         <Text style={{ color: THEME.ink, fontWeight: "800" }}>
                           {t("insights.percentileTitle")}
                         </Text>
@@ -748,8 +882,9 @@ export default function InsightsScreen() {
                       </GlassCard>
                     ) : null}
 
-                    {premium ? (
-                      <>
+                  {/* Period averages, variability and lows */}
+                  {hasReadings && premium ? (
+                      <React.Fragment key="vitals">
                         {/* Period + variability + lows */}
                         <View className="flex-row mt-3" style={{ gap: 8 }}>
                           <StatCard
@@ -778,12 +913,9 @@ export default function InsightsScreen() {
                           <StatCard
                             glass
                             label={t("insights.cv")}
-                            display={
-                              data.glucoseCV == null
-                                ? "-"
-                                : String(Math.round(data.glucoseCV))
-                            }
-                            suffix="%"
+                            display={pctNum(data.glucoseCV)}
+                            suffix={PCT_SIGN.sign}
+                            suffixFirst={PCT_SIGN.signFirst}
                             style={{ flex: 1 }}
                           />
                           {/* A low is never shown in the colour reserved for a
@@ -807,9 +939,13 @@ export default function InsightsScreen() {
                         >
                           {t("insights.variabilityNote")}
                         </Text>
+                      </React.Fragment>
+                  ) : null}
 
-                        {/* Average by time of day */}
+                  {/* Average by time of day */}
+                  {hasReadings && premium ? (
                         <ChartCard
+                          key="hourly"
                           title={t("insights.hourlyTitle")}
                           caption={hourlyCaption}
                           emptyNote={hourlyEmpty ? t("insights.chartNeedMore") : undefined}
@@ -825,14 +961,11 @@ export default function InsightsScreen() {
                             />
                           )}
                         </ChartCard>
-                      </>
-                    ) : null}
-                  </>
-                ) : null}
+                  ) : null}
 
-                {/* ── Patterns (descriptive observations) ─────────────────── */}
-                {premium && patterns.length > 0 ? (
-                  <>
+                  {/* ── Patterns (descriptive observations) ───────────────── */}
+                  {premium && patterns.length > 0 ? (
+                    <React.Fragment key="patterns">
                     <SectionTitle>{t("insights.patternsTitle")}</SectionTitle>
                     {patterns.map((p, i) => (
                       <View
@@ -853,12 +986,12 @@ export default function InsightsScreen() {
                         </Text>
                       </View>
                     ))}
-                  </>
-                ) : null}
+                    </React.Fragment>
+                  ) : null}
 
-                {/* ── Injections (Pro, insulin users) ─────────────────────── */}
-                {premium && showsInjections ? (
-                  <>
+                  {/* ── Injections (Pro, insulin users) ───────────────────── */}
+                  {premium && showsInjections ? (
+                    <React.Fragment key="injections">
                     <SectionTitle>{t("injection.title")}</SectionTitle>
                     {data.injectionCount === 0 ? (
                       <Text
@@ -961,11 +1094,16 @@ export default function InsightsScreen() {
                             </Text>
                             {usedSites.map((sc) => (
                               <View key={sc.site} className="flex-row items-center mb-2">
+                                {/* 112px at scale 0.85 could not hold "Abdomen
+                                    superior izquierdo" or "Abdomen inférieur
+                                    gauche", so those clipped. Wider column, two
+                                    lines allowed, and a floor low enough that no
+                                    region name is ever cut. */}
                                 <Text
-                                  style={{ color: THEME.muted, fontSize: 11, width: 112, paddingRight: 8 }}
-                                  numberOfLines={1}
+                                  style={{ color: THEME.muted, fontSize: 11, width: 132, paddingRight: 8 }}
+                                  numberOfLines={2}
                                   adjustsFontSizeToFit
-                                  minimumFontScale={0.85}
+                                  minimumFontScale={0.7}
                                 >
                                   {t(`injectionSite.${sc.site}`)}
                                 </Text>
@@ -995,14 +1133,14 @@ export default function InsightsScreen() {
                         ) : null}
                       </>
                     )}
-                  </>
-                ) : null}
+                    </React.Fragment>
+                  ) : null}
 
-                {/* ── From Apple Health (Pro, read-only) ──────────────────── */}
-                {premium &&
-                health &&
-                (health.activeMinutes != null || health.insulin != null) ? (
-                  <>
+                  {/* ── From Apple Health (Pro, read-only) ────────────────── */}
+                  {premium &&
+                  health &&
+                  (health.activeMinutes != null || health.insulin != null) ? (
+                    <React.Fragment key="health">
                     <SectionTitle>{t("insights.healthTitle")}</SectionTitle>
                     <View className="flex-row" style={{ gap: 8 }}>
                       {health.activeMinutes != null ? (
@@ -1044,8 +1182,9 @@ export default function InsightsScreen() {
                     >
                       {t("insights.healthNote")}
                     </Text>
-                  </>
-                ) : null}
+                    </React.Fragment>
+                  ) : null}
+                </CardGrid>
 
                 {/* Descriptive disclaimer */}
                 <View className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mt-5">
@@ -1109,6 +1248,7 @@ export default function InsightsScreen() {
                   tint="dark"
                   style={StyleSheet.absoluteFill}
                   className="items-center justify-center overflow-hidden rounded-2xl"
+                  accessibilityViewIsModal
                 >
                   <View className="items-center px-8">
                     <IconTile icon="lock-closed" size={56} radius={18} hero />

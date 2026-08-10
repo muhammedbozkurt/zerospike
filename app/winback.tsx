@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Pressable, Text, View, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivityIndicator, Linking, Platform, Pressable, Text, View } from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
@@ -16,7 +16,8 @@ import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GlassCard, GradientCTA, IconTile } from "../components/rich";
-import { TABULAR, THEME } from "../lib/theme/tokens";
+import { MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
+import { pct } from "../lib/format";
 
 /**
  * The return offer for a lapsed subscriber, rebuilt to the mockup's 08
@@ -24,7 +25,7 @@ import { TABULAR, THEME } from "../lib/theme/tokens";
  * then a single glowing offer row where the plan sits left and the billed
  * amount sits right, a full-width CTA and a quiet "not now".
  */
-export default function WinbackScreen() {
+function WinbackScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -101,9 +102,9 @@ export default function WinbackScreen() {
     <AppBackground>
       <View
         className="flex-1"
-        style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top + 8, paddingBottom: insets.bottom + 16 }}
+        style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD), paddingBottom: insets.bottom + 16 }}
       >
-        <View className="flex-row justify-end px-4">
+        <View className="flex-row justify-end px-4 pt-2">
           <Pressable
             onPress={decline}
             hitSlop={10}
@@ -115,9 +116,12 @@ export default function WinbackScreen() {
 
         <View className="flex-1 px-6 justify-center items-center" style={{ gap: 12 }}>
           {loading ? (
-            <Text style={{ color: THEME.muted, textAlign: "center" }}>
-              {t("common.loading")}
-            </Text>
+            <View className="items-center">
+              <ActivityIndicator color={THEME.accent} />
+              <Text style={{ color: THEME.muted, marginTop: 10, textAlign: "center" }}>
+                {t("common.loading")}
+              </Text>
+            </View>
           ) : (
             <>
               <Text style={{ fontSize: 34 }}>👋</Text>
@@ -139,14 +143,14 @@ export default function WinbackScreen() {
                   maxWidth: 280,
                 }}
               >
-                {t("winback.subtitle", { percent: offer!.savingsPercent })}
+                {t("winback.subtitle", { percent: pct(offer!.savingsPercent) })}
               </Text>
 
               <GlassCard glow style={{ alignSelf: "stretch", marginTop: 4 }}>
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1 pr-3">
                     <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
-                      {t("downsell.savingsBadge", { percent: offer!.savingsPercent })}
+                      {t("downsell.savingsBadge", { percent: pct(offer!.savingsPercent) })}
                     </Text>
                     <Text
                       style={[
@@ -189,7 +193,7 @@ export default function WinbackScreen() {
         {!loading ? (
           <View className="px-6">
             <GradientCTA
-              label={t("winback.cta", { percent: offer!.savingsPercent })}
+              label={t("winback.cta", { percent: pct(offer!.savingsPercent) })}
               disabled={busy}
               onPress={accept}
             />
@@ -223,5 +227,13 @@ export default function WinbackScreen() {
       </View>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function WinbackRoute() {
+  return (
+    <SafeAreaProvider>
+      <WinbackScreen />
+    </SafeAreaProvider>
   );
 }

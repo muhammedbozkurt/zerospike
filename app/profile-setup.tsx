@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ScrollView, Text, View, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
@@ -24,14 +24,17 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { FeedbackHost } from "../components/Feedback";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { AppBackground, ConicAvatar, GradientCTA } from "../components/rich";
-import { THEME } from "../lib/theme/tokens";
+import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { parseDecimalText } from "../lib/numberInput";
+import { upper } from "../lib/upper";
+import { useLayout } from "../lib/useLayout";
 
 /** Two-letter mark for the conic avatar (mockup 07's profile hero). */
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (parts.length === 1) return upper(parts[0].slice(0, 2));
+  return upper(parts[0][0] + parts[1][0]);
 }
 
 /**
@@ -43,10 +46,11 @@ function initials(name: string): string {
  * numbers they are editing. Targets are ranges, using the same band control as
  * settings and onboarding.
  */
-export default function ProfileSetupScreen() {
+function ProfileSetupScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { contentColumn } = useLayout();
   const { activeProfile, bumpData } = useApp();
   // Glucose fields (targets, ISF) are stored in mg/dL but shown/entered in this
   // profile's unit, so a mmol household never sees mg/dL labels or writes mmol
@@ -55,7 +59,9 @@ export default function ProfileSetupScreen() {
   const showsBolus = insulinModeShowsBolus(activeProfile?.insulin_mode);
   const showsBasal = insulinModeShowsBasal(activeProfile?.insulin_mode);
 
-  const [name, setName] = useState(activeProfile?.name ?? "Profil");
+  const [name, setName] = useState(
+    activeProfile?.name ?? t("profiles.defaultName")
+  );
   const [fastingMin, setFastingMin] = useState(
     String(glucoseToDisplay(activeProfile?.target_fasting_min ?? 80, unit))
   );
@@ -86,13 +92,13 @@ export default function ProfileSetupScreen() {
   const [saving, setSaving] = useState(false);
 
   function n(v: string, fallback: number): number {
-    const x = parseFloat(v.replace(",", "."));
+    const x = (parseDecimalText(v) ?? NaN);
     return Number.isFinite(x) && x > 0 ? x : fallback;
   }
 
   function rangeOk(minText: string, maxText: string): boolean {
-    const lo = parseFloat(minText.replace(",", "."));
-    const hi = parseFloat(maxText.replace(",", "."));
+    const lo = (parseDecimalText(minText) ?? NaN);
+    const hi = (parseDecimalText(maxText) ?? NaN);
     return Number.isFinite(lo) && Number.isFinite(hi) && lo < hi;
   }
 
@@ -102,8 +108,8 @@ export default function ProfileSetupScreen() {
     maxText: string,
     bounds: { min: number; max: number }
   ): boolean {
-    const lo = parseFloat(minText.replace(",", "."));
-    const hi = parseFloat(maxText.replace(",", "."));
+    const lo = (parseDecimalText(minText) ?? NaN);
+    const hi = (parseDecimalText(maxText) ?? NaN);
     return (
       lo >= bounds.min && lo <= bounds.max && hi >= bounds.min && hi <= bounds.max
     );
@@ -130,7 +136,7 @@ export default function ProfileSetupScreen() {
     setSaving(true);
     try {
       await updateProfile(activeProfile.id, {
-        name: name.trim() || "Profil",
+        name: name.trim() || t("profiles.defaultName"),
         target_fasting_min: clampTarget(
           glucoseFromDisplay(n(fastingMin, glucoseToDisplay(80, unit)), unit)
         ),
@@ -164,7 +170,7 @@ export default function ProfileSetupScreen() {
   const summary = [glucoseUnitLabel(unit), `${fastingMin}-${fastingMax}`].join(" · ");
 
   return (
-    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+    <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
       <ScreenHeader
         title={t("profiles.add")}
         onBack={() => router.back()}
@@ -174,7 +180,11 @@ export default function ProfileSetupScreen() {
 
       <ScrollView
         {...keyboardAwareScrollProps}
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: insets.bottom + 28,
+          ...(contentColumn ?? {}),
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* Identity hero (mockup 07) */}
@@ -348,5 +358,13 @@ export default function ProfileSetupScreen() {
       </ScrollView>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function ProfileSetupRoute() {
+  return (
+    <SafeAreaProvider>
+      <ProfileSetupScreen />
+    </SafeAreaProvider>
   );
 }

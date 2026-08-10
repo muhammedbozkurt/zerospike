@@ -77,12 +77,25 @@ export async function captureFoodDeletion(id: string): Promise<DeletionSnapshot>
   };
 }
 
-/** Re-inserts a captured snapshot verbatim. Foods and meals go back before
- *  injections so a bolus row's meal_log_id foreign key resolves. */
+/**
+ * Re-inserts a captured snapshot verbatim. Foods and meals go back before
+ * injections so a bolus row's meal_log_id foreign key resolves.
+ *
+ * ONE column is deliberately not restored: sugar_logs.healthkit_uuid. Deleting a
+ * reading revokes its mirrored Apple Health sample, so that UUID names a sample
+ * that no longer exists; writing it back left the restored row claiming a mirror
+ * it does not have. The reading comes back un-mirrored, which is the truth.
+ */
 export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
   const db = await getDb();
   for (const row of snap.foods ?? []) await insertRow(db, "foods", row);
   for (const row of snap.meals ?? []) await insertRow(db, "meal_logs", row);
-  for (const row of snap.sugar ?? []) await insertRow(db, "sugar_logs", row);
+  for (const row of snap.sugar ?? []) {
+    await insertRow(
+      db,
+      "sugar_logs",
+      "healthkit_uuid" in row ? { ...row, healthkit_uuid: null } : row
+    );
+  }
   for (const row of snap.injections ?? []) await insertRow(db, "injection_logs", row);
 }

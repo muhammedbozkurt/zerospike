@@ -5,13 +5,13 @@ import { requireOptionalNativeModule } from "expo-modules-core";
  *
  * The watch cannot read the iPhone's App Group (a WatchKit extension gets its
  * own isolated container), so LiveData reaches it exclusively through
- * WatchConnectivity's `updateApplicationContext` — the "latest snapshot wins,
+ * WatchConnectivity's `updateApplicationContext`, the "latest snapshot wins,
  * delivered when convenient" channel, which is exactly what a glanceable
  * last-reading/next-reminder summary wants (no need for immediate delivery).
  *
  * `requireOptionalNativeModule` returns null in Expo Go and in any build made
  * before `npx expo prebuild` linked the module, so every call below is a no-op
- * there — a missing watch companion must never affect logging on the phone.
+ * there, a missing watch companion must never affect logging on the phone.
  */
 interface WatchBridgeNativeModule {
   isAvailable(): boolean;

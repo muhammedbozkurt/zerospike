@@ -22,8 +22,17 @@ import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import { TagPicker } from "../../components/TagPicker";
 import {
   InjectionBodyMap,
+  daysSince,
   type PointSelection,
 } from "../../components/InjectionBodyMap";
+import {
+  InjectionSiteBoard,
+  type LastPointRecord,
+} from "../../components/InjectionSiteBoard";
+import {
+  getRotationCycleStart,
+  startRotationCycle,
+} from "../../lib/rotationCycle";
 import {
   AppBackground,
   GlassCard,
@@ -38,23 +47,30 @@ import {
   logInjection,
   deleteInjection,
   findRecentCalculatorBolus,
-  type SiteUsage,
+  type RotationUsage,
 } from "../../lib/db/injections";
 import { captureDeletion } from "../../lib/db/undo";
 import { checkDose } from "../../lib/insulin";
 import { logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
-import { relativeDay, formatTime, formatDateKey, num } from "../../lib/format";
+import { noteJournalActivity } from "../../lib/services/notifications";
+import { formatTime, num } from "../../lib/format";
+import { groupInjectionsByDay, initialHistorySlice } from "../../lib/injectionHistory";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
-import { GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, INPUT_TEXT, RADIUS, TABULAR, THEME, glow } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { upper } from "../../lib/upper";
 import { isScreenshotMode } from "../../lib/screenshotMode";
+import { useLayout } from "../../lib/useLayout";
 
 // Heat-map / rotation usage window (days). The prompt's "last 30 days" heat map.
 const USAGE_WINDOW_DAYS = 30;
-// History page size (virtualised, loads more on scroll).
+// History page size (count-based paging behind the "show more" button).
 const HISTORY_PAGE = 50;
+// Initial history slice: the last HISTORY_INITIAL_DAYS days, capped at
+// HISTORY_PAGE records - whichever boundary is hit first. No auto-loading
+// scroll: "show more" fetches/reveals the next page explicitly.
+const HISTORY_INITIAL_DAYS = 14;
 
 type Segment = "save" | "map" | "history";
 
@@ -84,15 +100,26 @@ export default function InjectionScreen() {
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
   const { confirm, actionSheet, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
+  const { contentColumn } = useLayout();
 
   // Which of the three faces is showing. State (form values, selected site) lives
   // at the component level, so switching segments never loses anything.
   const [segment, setSegment] = useState<Segment>("save");
 
-  const [usage, setUsage] = useState<SiteUsage[]>([]);
+  const [usage, setUsage] = useState<RotationUsage>({
+    sites: [],
+    noSiteCount: 0,
+    legacyCount: 0,
+    legacyLastUsedAt: null,
+  });
   const [leastUsed, setLeastUsed] = useState<PointSelection | null>(null);
   const [history, setHistory] = useState<Injection[]>([]);
   const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE);
+  // False = trimmed to the last HISTORY_INITIAL_DAYS days (still capped at
+  // HISTORY_PAGE); true once "show more" was pressed at least once, so every
+  // fetched row is shown instead of only the ones inside that day window.
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [cycleStart, setCycleStart] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<PointSelection | null>(null);
   const [dose, setDose] = useState(0);
@@ -108,15 +135,31 @@ export default function InjectionScreen() {
     [t]
   );
 
-  const load = useCallback(async () => {
+  /**
+   * The rotation picture: per-region/per-point usage and the least-recently-used
+   * point. Both are whole-history GROUP BY aggregates and neither depends on how
+   * far the history list has been paged - they used to sit in the same loader as
+   * the list, so every scroll-to-end recomputed the entire heat map and the LRU
+   * scan to append twenty rows.
+   *
+   * The rotation-cycle stamp narrows what feeds the heat colours and the
+   * least-recently-used helper. injection_logs themselves are never touched.
+   */
+  const loadRotation = useCallback(async () => {
     if (!activeProfile) return;
-    const [u, least, hist] = await Promise.all([
-      getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS),
-      leastRecentlyUsedPoint(activeProfile.id),
-      getInjections(activeProfile.id, historyLimit),
+    const cycle = await getRotationCycleStart(activeProfile.id);
+    const [u, least] = await Promise.all([
+      getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS, cycle),
+      leastRecentlyUsedPoint(activeProfile.id, cycle),
     ]);
+    setCycleStart(cycle);
     setUsage(u);
     setLeastUsed(least);
+  }, [activeProfile]);
+
+  const loadHistory = useCallback(async () => {
+    if (!activeProfile) return;
+    const hist = await getInjections(activeProfile.id, historyLimit);
     setHistory(hist);
     if (!typeSeeded.current && hist[0]?.insulin_type) {
       setInsulinType(hist[0].insulin_type);
@@ -125,8 +168,12 @@ export default function InjectionScreen() {
   }, [activeProfile, historyLimit]);
 
   useEffect(() => {
-    load();
-  }, [load, dataVersion]);
+    loadRotation();
+  }, [loadRotation, dataVersion]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory, dataVersion]);
 
   // Quick-add "compose" deep-link (from the dashboard): open the KAYDET segment
   // so the form is front and centre. Cleared so it fires once.
@@ -199,6 +246,7 @@ export default function InjectionScreen() {
       });
       logEvent("log_added", { kind: "insulin", source: "manual" });
       void noteLogAndMaybeReview();
+      void noteJournalActivity();
       hapticSuccess();
       toast(t("injection.saved"), "success");
       setSelected(null);
@@ -216,6 +264,43 @@ export default function InjectionScreen() {
     setSelected(sel);
     setSegment("save");
   }
+
+  /** Confirms, then stamps a new rotation cycle for this profile. Presentation
+   *  only: heat colours restart from now, the log rows stay untouched. */
+  async function startNewCycle() {
+    if (!activeProfile) return;
+    const ok = await confirm({
+      title: t("injection.newCycleConfirmTitle"),
+      message: t("injection.newCycleConfirmBody"),
+      confirmLabel: t("injection.newCycle"),
+      icon: "refresh-outline",
+    });
+    if (!ok) return;
+    await startRotationCycle(activeProfile.id);
+    hapticSuccess();
+    toast(t("injection.newCycleStarted"), "success");
+    bumpData();
+  }
+
+  // The newest stored injection with a region AND a point, for the repeat-point
+  // annotation. A dose logged without a region marks no point as repeated.
+  const lastRecord: LastPointRecord | null = useMemo(() => {
+    const latest = history.find((h) => h.site != null && h.site_point != null);
+    return latest && latest.site != null && latest.site_point != null
+      ? { site: latest.site, point: latest.site_point, loggedAt: latest.logged_at }
+      : null;
+  }, [history]);
+
+  // Descriptive only, never a block: the chosen point equals the last record's.
+  const samePointNote = useMemo(() => {
+    if (!selected || !lastRecord) return null;
+    if (selected.site !== lastRecord.site || selected.point !== lastRecord.point) return null;
+    const d = daysSince(lastRecord.loggedAt, Date.now());
+    if (d == null) return null;
+    if (d === 0) return t("injection.samePointToday");
+    if (d === 1) return t("injection.samePointYesterday");
+    return t("injection.samePointDays", { n: d });
+  }, [selected, lastRecord, t]);
 
   async function onDelete(id: string) {
     const snap = await captureDeletion("injection", id);
@@ -245,22 +330,32 @@ export default function InjectionScreen() {
       })
     : null;
 
-  // History grouped into day sections (Today / Yesterday / date), newest first.
-  const sections = useMemo(() => {
-    const groups: { key: string; title: string; data: Injection[] }[] = [];
-    const byKey = new Map<string, { title: string; data: Injection[] }>();
-    for (const inj of history) {
-      const key = formatDateKey(inj.logged_at);
-      let g = byKey.get(key);
-      if (!g) {
-        g = { title: relativeDay(inj.logged_at, dateLabels), data: [] };
-        byKey.set(key, g);
-        groups.push({ key, ...g });
-      }
-      g.data.push(inj);
-    }
-    return groups.map((g) => ({ title: byKey.get(g.key)!.title, data: byKey.get(g.key)!.data }));
-  }, [history, dateLabels]);
+  // The slice actually shown: trimmed to HISTORY_INITIAL_DAYS (still capped at
+  // HISTORY_PAGE) until "show more" is pressed once, then everything fetched.
+  const visibleHistory = useMemo(
+    () =>
+      historyExpanded ? history : initialHistorySlice(history, HISTORY_INITIAL_DAYS, HISTORY_PAGE),
+    [history, historyExpanded]
+  );
+
+  // More exists either because the day window is still hiding rows already
+  // fetched, or because the last fetch came back full (there may be older
+  // rows the DB hasn't been asked for yet). Same "fetched a full page" signal
+  // the old onEndReached check used.
+  const hasMoreHistory =
+    (!historyExpanded && visibleHistory.length < history.length) || history.length >= historyLimit;
+
+  function showMoreHistory() {
+    setHistoryExpanded(true);
+    setHistoryLimit((l) => l + HISTORY_PAGE);
+  }
+
+  // History grouped into day sections (Today / Yesterday / weekday + date),
+  // same rule as the dashboard journal, newest first.
+  const sections = useMemo(
+    () => groupInjectionsByDay(visibleHistory, dateLabels),
+    [visibleHistory, dateLabels]
+  );
 
   const SEGMENTS: { key: Segment; label: string }[] = [
     { key: "save", label: t("injection.segSave") },
@@ -279,7 +374,7 @@ export default function InjectionScreen() {
         style={[{ backgroundColor: withAlpha(THEME.accent, 0.16) }, glow(THEME.accent, 10, 0.35)]}
       >
         <Text style={[TABULAR, { color: THEME.accent, fontWeight: "800", fontSize: 11 }]}>
-          {inj.dose_units != null ? `${num(inj.dose_units)}${t("common.units").slice(0, 1)}` : "-"}
+          {inj.dose_units != null ? `${num(inj.dose_units)}${t("common.unitsShort")}` : "-"}
         </Text>
       </View>
       <View className="flex-1 ml-3">
@@ -292,9 +387,11 @@ export default function InjectionScreen() {
           {inj.insulin_type
             ? `${inj.insulin_type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")} · `
             : ""}
-          {inj.site_point != null
-            ? t("injection.siteWithPoint", { site: t(`injectionSite.${inj.site}`), n: inj.site_point })
-            : t(`injectionSite.${inj.site}`)}
+          {inj.site == null
+            ? t("injectionSite.unassigned")
+            : inj.site_point != null
+              ? t("injection.siteWithPoint", { site: t(`injectionSite.${inj.site}`), n: inj.site_point })
+              : t(`injectionSite.${inj.site}`)}
         </Text>
         <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>
           {formatTime(inj.logged_at)}
@@ -371,8 +468,13 @@ export default function InjectionScreen() {
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t("injection.guideLink")}
+            className="flex-row items-center"
+            style={{ gap: 6 }}
           >
             <IconTile icon="help-circle" size={32} radius={10} />
+            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}>
+              {t("injection.guideLinkLabel")}
+            </Text>
           </Pressable>
           <ProfileSwitcher />
         </View>
@@ -412,42 +514,115 @@ export default function InjectionScreen() {
           keyExtractor={(inj) => inj.id}
           renderItem={({ item }) => <View className="px-4">{injectionRow(item)}</View>}
           renderSectionHeader={({ section }) => (
-            <Text className="text-xs font-semibold tracking-wider text-mut px-4 pt-3 pb-1">
-              {upper(section.title)}
-            </Text>
+            <View className="px-4" style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 6 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  backgroundColor: THEME.sheet,
+                  borderWidth: 1,
+                  borderColor: THEME.border,
+                  borderRadius: RADIUS.full,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                }}
+              >
+                <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+                  {upper(section.title)}
+                </Text>
+                {section.dateLabel !== section.title ? (
+                  <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+                    {section.dateLabel}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
           )}
           stickySectionHeadersEnabled={false}
-          onEndReachedThreshold={0.4}
-          onEndReached={() => {
-            if (history.length >= historyLimit) setHistoryLimit((l) => l + HISTORY_PAGE);
-          }}
+          initialNumToRender={20}
+          maxToRenderPerBatch={20}
+          windowSize={7}
           ListEmptyComponent={
             <View className="items-center py-12">
               <Ionicons name="document-text-outline" size={36} color={THEME.muted} />
               <Text style={{ color: THEME.muted, textAlign: "center", marginTop: 8 }}>
                 {t("injection.empty")}
               </Text>
+              <Pressable
+                onPress={() => setSegment("save")}
+                accessibilityRole="button"
+                accessibilityLabel={t("injection.emptyCta")}
+                className="flex-row items-center rounded-full mt-4 px-4 py-2.5 active:opacity-80"
+                style={{
+                  borderWidth: 1,
+                  borderColor: withAlpha(THEME.accent, 0.3),
+                  backgroundColor: withAlpha(THEME.accent, 0.12),
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={15} color={THEME.accent} />
+                <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
+                  {t("injection.emptyCta")}
+                </Text>
+              </Pressable>
             </View>
           }
-          contentContainerStyle={{ paddingBottom: insets.bottom + 32, paddingTop: 4 }}
+          ListFooterComponent={
+            hasMoreHistory ? (
+              <Pressable
+                onPress={showMoreHistory}
+                accessibilityRole="button"
+                accessibilityLabel={t("common.showMore")}
+                className="flex-row items-center justify-center rounded-full mx-4 mt-1 py-2.5 active:opacity-80"
+                style={{
+                  borderWidth: 1,
+                  borderColor: withAlpha(THEME.accent, 0.3),
+                  backgroundColor: withAlpha(THEME.accent, 0.12),
+                }}
+              >
+                <Ionicons name="chevron-down-outline" size={14} color={THEME.accent} />
+                <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
+                  {upper(t("common.showMore"))}
+                </Text>
+              </Pressable>
+            ) : null
+          }
+          contentContainerStyle={[{ paddingBottom: insets.bottom + 32, paddingTop: 4 }, contentColumn]}
           showsVerticalScrollIndicator={false}
         />
       ) : (
         <ScrollView
           {...keyboardAwareScrollProps}
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
+          contentContainerStyle={[{ padding: 16, paddingBottom: insets.bottom + 32 }, contentColumn]}
           showsVerticalScrollIndicator={false}
         >
           {segment === "map" ? (
             <>
               <View className="mb-2">
-                <InjectionBodyMap
-                  usage={usage}
-                  selected={selected}
-                  onSelect={onMapSelect}
-                  windowDays={USAGE_WINDOW_DAYS}
-                  initialZoom={isScreenshotMode() ? params.zoom : undefined}
-                />
+                {isScreenshotMode() ? (
+                  // Store screenshots keep the approved silhouette shot (02-bodymap).
+                  <InjectionBodyMap
+                    usage={usage.sites}
+                    selected={selected}
+                    onSelect={onMapSelect}
+                    windowDays={USAGE_WINDOW_DAYS}
+                    initialZoom={params.zoom}
+                  />
+                ) : (
+                  <InjectionSiteBoard
+                    usage={usage.sites}
+                    selected={selected}
+                    onSelect={onMapSelect}
+                    windowDays={USAGE_WINDOW_DAYS}
+                    cycleStart={cycleStart}
+                    onStartNewCycle={startNewCycle}
+                    lastRecord={lastRecord}
+                    recent={history}
+                    legacyCount={usage.legacyCount}
+                    legacyLastUsedAt={usage.legacyLastUsedAt}
+                    noSiteCount={usage.noSiteCount}
+                  />
+                )}
               </View>
               {rotationCard}
             </>
@@ -472,7 +647,7 @@ export default function InjectionScreen() {
                 <Pressable
                   onPress={() => setSegment("map")}
                   accessibilityRole="button"
-                  accessibilityLabel={selectedLabel ?? t("injection.tapRegion")}
+                  accessibilityLabel={selectedLabel ?? t("injection.chooseSitePoint")}
                   className="flex-row items-center rounded-xl px-3 py-2.5 mb-4 active:opacity-80"
                   style={{
                     borderWidth: 1,
@@ -495,10 +670,31 @@ export default function InjectionScreen() {
                     }}
                     numberOfLines={1}
                   >
-                    {selectedLabel ?? t("injection.tapRegion")}
+                    {selectedLabel ?? t("injection.chooseSitePoint")}
                   </Text>
                   <Ionicons name="map-outline" size={16} color={THEME.accent} />
                 </Pressable>
+
+                {/* Repeat-point annotation: descriptive only, saving stays possible. */}
+                {samePointNote ? (
+                  <View
+                    className="flex-row items-center rounded-xl px-3 py-2"
+                    style={{
+                      marginTop: -8,
+                      marginBottom: 16,
+                      borderWidth: 1,
+                      borderColor: withAlpha(THEME.accent, 0.25),
+                      backgroundColor: withAlpha(THEME.accent, 0.08),
+                    }}
+                  >
+                    <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />
+                    <Text
+                      style={{ color: THEME.ink, fontSize: 11, lineHeight: 15, marginLeft: 8, flex: 1 }}
+                    >
+                      {samePointNote}
+                    </Text>
+                  </View>
+                ) : null}
 
                 <FieldLabel>{t("injection.dose")}</FieldLabel>
                 <Stepper
@@ -552,7 +748,7 @@ export default function InjectionScreen() {
                   placeholder={t("injection.notePlaceholder")}
                   placeholderTextColor="rgba(137,163,176,0.7)"
                   returnKeyType="done"
-                  style={[inputStyle, { marginBottom: 16 }]}
+                  style={[inputStyle, INPUT_TEXT, { marginBottom: 16 }]}
                 />
 
                 <TagPicker value={tags} onChange={setTags} className="mb-4" />

@@ -2,7 +2,7 @@ import { classifyGlucose, type TargetProfile } from "./glucose";
 
 /**
  * Meal response: how a single meal's glucose moved over the following window.
- * Pure and storage-agnostic — the caller supplies the meal + every reading it
+ * Pure and storage-agnostic: the caller supplies the meal + every reading it
  * might draw from; this never touches the database.
  *
  * Regulation note (see docs/build-prompt-r10-release-plus.md §0): this reports
@@ -15,15 +15,17 @@ import { classifyGlucose, type TargetProfile } from "./glucose";
 export const MEAL_RESPONSE_HOURS = 3;
 
 /** How far back before the meal start a reading can still stand in for a
- *  baseline, when the meal has no directly linked glucose log. */
-const BASELINE_LOOKBACK_MINUTES = 45;
+ *  baseline, when the meal has no directly linked glucose log. Exported so a
+ *  caller can fetch exactly the readings a response can draw from instead of
+ *  handing over the profile's whole history. */
+export const BASELINE_LOOKBACK_MINUTES = 45;
 
 /** The "+2h" read-out is the nearest reading to +120 min, accepted anywhere in
  *  this range so a slightly early/late measurement still counts. */
 const TWO_HOUR_WINDOW = { min: 90, max: 150 } as const;
 
 /** Fewer readings than this in the window and there is nothing to report. */
-const MIN_READINGS_FOR_RESPONSE = 2;
+export const MIN_READINGS_FOR_RESPONSE = 2;
 
 export interface MealResponseMealInput {
   id: string;
@@ -65,10 +67,72 @@ export interface MealResponse {
   band: MealResponseBandSplit;
 }
 
+/** Index of the first element >= value in an ascending array. */
+function lowerBound(sorted: number[], value: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Index of the first element > value in an ascending array. */
+function upperBound(sorted: number[], value: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Which of these meals HAS a computable response, in one pass.
+ *
+ * Exactly the set of meals `computeMealResponse` would return a non-null value
+ * for: that function's only rejection is "fewer than MIN_READINGS_FOR_RESPONSE
+ * readings in the window", and nothing else can make it bail. The journal screens
+ * only need that yes/no answer for a chevron, and asking it through the full
+ * builder re-scanned and re-PARSED every reading's timestamp once per meal:
+ * meals x readings Date constructions to decide which rows get an icon.
+ *
+ * Here each reading's timestamp is parsed ONCE and the window is found by binary
+ * search, so the cost is a sort plus a lookup per meal.
+ */
+export function mealIdsWithResponse(
+  meals: { id: string; logged_at: string }[],
+  readings: { logged_at: string }[]
+): Set<string> {
+  const ids = new Set<string>();
+  if (meals.length === 0 || readings.length === 0) return ids;
+  const times: number[] = [];
+  for (const r of readings) {
+    const t = new Date(r.logged_at).getTime();
+    // An unparseable timestamp fails every window comparison in
+    // computeMealResponse too, so it belongs to no window here either.
+    if (Number.isFinite(t)) times.push(t);
+  }
+  times.sort((a, b) => a - b);
+  for (const meal of meals) {
+    const start = new Date(meal.logged_at).getTime();
+    if (!Number.isFinite(start)) continue;
+    const end = start + MEAL_RESPONSE_HOURS * 3_600_000;
+    const from = lowerBound(times, start);
+    const to = upperBound(times, end);
+    if (to - from >= MIN_READINGS_FOR_RESPONSE) ids.add(meal.id);
+  }
+  return ids;
+}
+
 /**
  * Builds a meal's response from every reading that MIGHT belong to it. Returns
  * null when the window (meal start .. +MEAL_RESPONSE_HOURS) has fewer than two
- * readings — too sparse for a curve to mean anything; the UI shows an honest
+ * readings, too sparse for a curve to mean anything; the UI shows an honest
  * empty state instead of a two-point guess.
  */
 export function computeMealResponse(
@@ -89,7 +153,7 @@ export function computeMealResponse(
   if (inWindow.length < MIN_READINGS_FOR_RESPONSE) return null;
 
   // Baseline: the meal's own linked reading wins outright. Otherwise the
-  // nearest reading in the 45 minutes before the meal — "nearest" collapses to
+  // nearest reading in the 45 minutes before the meal, where "nearest" collapses to
   // "latest" once every candidate is already constrained to before the start.
   let baseline: number | null = null;
   if (meal.sugar_log_id) {

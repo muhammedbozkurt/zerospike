@@ -40,6 +40,7 @@ import i18n from "../i18n";
 // next cold launch instead of keeping stale data.
 const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v8";
 const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
+const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
 
 /** Deterministic pseudo-random in [0,1) so the seed is stable across runs. */
 function rng(seed: number): number {
@@ -116,10 +117,13 @@ export async function seedScreenshotData(profileId: string, lang: Lang): Promise
     // already-seeded early-return) so each capture - even a same-language relaunch
     // - shows the same healthy ~72m remaining (a partially-filled bar) instead of
     // a stale countdown that has ticked down or expired. No OS permission needed.
-    await AsyncStorage.setItem(
-      POSTMEAL_TIMER_END_KEY,
-      String(Date.now() + 72 * 60 * 1000)
-    );
+    // The start is seeded too (48 min behind), so the elapsed bar is drawn from
+    // the timer's own window rather than from whatever delay is configured.
+    const timerEnd = Date.now() + 72 * 60 * 1000;
+    await AsyncStorage.multiSet([
+      [POSTMEAL_TIMER_END_KEY, String(timerEnd)],
+      [POSTMEAL_TIMER_START_KEY, String(timerEnd - 120 * 60 * 1000)],
+    ]);
 
     const seededLang = await AsyncStorage.getItem(SEEDED_LANG_KEY);
     if (seededLang === lang) return; // already fully seeded in this language

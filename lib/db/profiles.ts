@@ -17,7 +17,7 @@ export async function getProfile(id: string): Promise<UserProfile | null> {
   );
 }
 
-/** Always returns a usable profile — falls back to (or recreates) the default. */
+/** Always returns a usable profile, falling back to (or recreating) the default. */
 export async function getDefaultProfile(): Promise<UserProfile> {
   const db = await getDb();
   const existing = await db.getFirstAsync<UserProfile>(
@@ -73,7 +73,7 @@ export async function createProfile(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
-      input.name.trim() || "Profil",
+      input.name.trim() || defaultProfileName(),
       input.insulin_sensitivity_factor ?? 40,
       input.carb_ratio_breakfast ?? 10,
       input.carb_ratio_lunch ?? 12,

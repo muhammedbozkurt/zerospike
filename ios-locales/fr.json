@@ -2,6 +2,10 @@
   "ios": {
     "NSCameraUsageDescription": "zerospike utilise votre caméra pour scanner les codes-barres des aliments et ajouter des photos de repas.",
     "NSPhotoLibraryUsageDescription": "zerospike accède à votre photothèque pour ajouter des photos à votre journal de repas.",
-    "NSHealthShareUsageDescription": "zerospike lit vos glycémies depuis Apple Santé pour les enregistrer automatiquement."
+    "NSHealthShareUsageDescription": "zerospike lit vos glycémies, vos données d'insuline et vos minutes actives depuis Apple Santé pour les afficher dans votre journal et vos résumés.",
+    "NSHealthUpdateUsageDescription": "zerospike écrit dans Apple Santé uniquement les glycémies que vous saisissez manuellement, lorsque vous activez cette option dans les Réglages.",
+    "NSLocationWhenInUseUsageDescription": "zerospike peut joindre votre position actuelle à un message envoyé depuis l'écran SOS, pour qu'on vous retrouve plus vite.",
+    "NSContactsUsageDescription": "zerospike vous laisse choisir un contact d'urgence dans vos contacts pour l'écran SOS.",
+    "NSMotionUsageDescription": "zerospike ne collecte aucune donnée de mouvement. Cette autorisation n'existe que parce qu'un composant de localisation de l'app référence les API de mouvement; vos déplacements ne sont jamais suivis."
   }
 }

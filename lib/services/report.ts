@@ -3,8 +3,6 @@ import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
 import i18n, { currentLang } from "../i18n";
 import { getJournal } from "../db/journal";
-import { listSugarLogs, listMealLogs } from "../db/logs";
-import { getInjections } from "../db/injections";
 import {
   computeInsights,
   rangeFromWindow,
@@ -26,12 +24,12 @@ import {
   VERY_HIGH_MGDL,
   LOW_FOLLOWUP_MINUTES,
 } from "../glucose";
-import { num, formatDate, formatTime, formatDateKey } from "../format";
+import { num, pct, formatDate, formatTime, formatDateKey } from "../format";
 import { GLUCOSE_COLORS, GLUCOSE_VERY_LOW } from "../theme/tokens";
 import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
-import type { ExportResult } from "./export";
+import { EXPORT_MAX_ROWS, type ExportResult } from "./export";
 
 /**
  * Generates a printable A4 PDF report (HTML → PDF via expo-print) of a profile's
@@ -94,7 +92,7 @@ const AGP_BOX: ChartBox = {
 
 /**
  * Renders the AGP (Ambulatory Glucose Profile) as an inline SVG: a green target
- * band, the median curve, and the 25–75 % inter-quartile band by hour of day.
+ * band, the median curve, and the 25-75 % inter-quartile band by hour of day.
  * The shaded band is the PROFILE'S own target range, so the printed chart and
  * the app agree on what "in range" means. Returns "" when there isn't enough
  * data to be meaningful.
@@ -211,7 +209,10 @@ function buildTimeline(
       const doseMarks = g.doses
         .map((i) => `<circle cx="${xFor(i.logged_at).toFixed(1)}" cy="27" r="1.8" fill="#2563eb"/>`)
         .join("");
-      const summary = avg != null ? `${esc(formatGlucose(avg, unit))} ${u} · TIR ${tir}%` : "-";
+      const summary =
+        avg != null
+          ? `${esc(formatGlucose(avg, unit))} ${u} · TIR ${esc(pct(tir ?? 0))}`
+          : "-";
       return (
         `<div class="band"><div class="bandhead"><span class="bd">${esc(fmtDay(new Date(`${k}T12:00:00`)))}</span><span class="bs">${summary}</span></div>` +
         `<svg viewBox="0 0 ${W} 30" width="100%" height="30" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
@@ -302,10 +303,10 @@ function buildHtml(
   // Summary rows (label, value) - labels and values reuse existing i18n.
   const summaryRows: [string, string][] = [
     [t("insights.avgGlucose"), fmtG(insights.avgGlucose)],
-    [t("insights.timeInRange"), insights.inRangePct == null ? "-" : `${Math.round(insights.inRangePct)} %`],
-    [t("insights.gmi"), insights.gmi == null ? "-" : `${insights.gmi.toFixed(1)} %`],
+    [t("insights.timeInRange"), insights.inRangePct == null ? "-" : esc(pct(insights.inRangePct))],
+    [t("insights.gmi"), insights.gmi == null ? "-" : esc(pct(insights.gmi, 1))],
     [t("insights.variability"), fmtG(insights.glucoseSD)],
-    [t("insights.cv"), insights.glucoseCV == null ? "-" : `${Math.round(insights.glucoseCV)} %`],
+    [t("insights.cv"), insights.glucoseCV == null ? "-" : esc(pct(insights.glucoseCV))],
     [t("insights.lows"), String(insights.hypoCount)],
     [t("insights.avgDose"), insights.avgDailyDose == null ? "-" : `${num(Math.round(insights.avgDailyDose * 10) / 10)} ${t("common.units")}`],
     [
@@ -332,10 +333,10 @@ function buildHtml(
   // KPI cards: the headline metrics as colour-accented boxes (mySugr-style).
   const kpis: { label: string; value: string; color: string }[] = [
     { label: t("insights.avgGlucose"), value: fmtG(insights.avgGlucose), color: BRAND },
-    { label: t("insights.gmi"), value: insights.gmi == null ? "-" : `${insights.gmi.toFixed(1)} %`, color: BRAND },
-    { label: t("insights.timeInRange"), value: insights.inRangePct == null ? "-" : `${Math.round(insights.inRangePct)} %`, color: GLUCOSE_COLORS.normal },
+    { label: t("insights.gmi"), value: insights.gmi == null ? "-" : esc(pct(insights.gmi, 1)), color: BRAND },
+    { label: t("insights.timeInRange"), value: insights.inRangePct == null ? "-" : esc(pct(insights.inRangePct)), color: GLUCOSE_COLORS.normal },
     { label: t("insights.variability"), value: fmtG(insights.glucoseSD), color: BRAND },
-    { label: t("insights.cv"), value: insights.glucoseCV == null ? "-" : `${Math.round(insights.glucoseCV)} %`, color: BRAND },
+    { label: t("insights.cv"), value: insights.glucoseCV == null ? "-" : esc(pct(insights.glucoseCV)), color: BRAND },
     { label: t("insights.lows"), value: String(insights.hypoCount), color: GLUCOSE_COLORS.low },
   ];
   const kpiCards = `<div class="kpis">${kpis
@@ -365,7 +366,7 @@ function buildHtml(
         `<div class="tirleg">${tirSegs
           .map(
             (s) =>
-              `<span><i style="background:${s.color}"></i>${s.label} ${Math.round((s.n / tirTotal) * 100)}%</span>`
+              `<span><i style="background:${s.color}"></i>${s.label} ${esc(pct((s.n / tirTotal) * 100))}</span>`
           )
           .join("")}</div>`
       : "";
@@ -486,6 +487,72 @@ function buildHtml(
 </html>`;
 }
 
+/**
+ * Splits the journal feed back into the three per-table row shapes the metric
+ * helpers take (computeInsights, computeAgp, buildTimeline, buildEvents).
+ *
+ * The feed carries every column those helpers read; the few it does not are the
+ * ones none of them touch (a reading's HealthKit mirror uuid, a meal's raw
+ * custom name - the resolved display_name is what the tables print - its source
+ * template, and an injection's meal reference). They are filled with the honest
+ * empty value rather than guessed at. Feed order is newest-first, exactly like the per-table
+ * queries this replaces, and every helper downstream either sorts for itself or
+ * does not care.
+ */
+function splitJournalFeed(
+  profileId: string,
+  entries: Awaited<ReturnType<typeof getJournal>>
+): { sugar: SugarLog[]; meals: MealLog[]; injections: Injection[] } {
+  const sugar: SugarLog[] = [];
+  const meals: MealLog[] = [];
+  const injections: Injection[] = [];
+  for (const e of entries) {
+    if (e.kind === "glucose") {
+      sugar.push({
+        id: e.id,
+        profile_id: profileId,
+        glucose_level_mgdl: e.glucose_level_mgdl,
+        period_tag: e.period_tag,
+        source: e.source,
+        logged_at: e.logged_at,
+        tags: e.tags,
+        healthkit_uuid: null,
+      });
+    } else if (e.kind === "meal") {
+      meals.push({
+        id: e.id,
+        profile_id: profileId,
+        sugar_log_id: e.sugar_log_id,
+        food_id: e.food_id,
+        custom_food_name: null,
+        portion_g: e.portion_g,
+        calculated_carbs_g: e.calculated_carbs_g,
+        insulin_dose_units: e.insulin_dose_units,
+        photo_uri_local: e.photo_uri_local,
+        personal_note: e.personal_note,
+        logged_at: e.logged_at,
+        tags: e.tags,
+        meal_template_id: null,
+      });
+    } else {
+      injections.push({
+        id: e.id,
+        profile_id: profileId,
+        site: e.site,
+        site_point: e.site_point,
+        dose_units: e.dose_units,
+        insulin_type: e.insulin_type,
+        meal_log_id: null,
+        note: e.note,
+        source: e.source,
+        logged_at: e.logged_at,
+        tags: e.tags,
+      });
+    }
+  }
+  return { sugar, meals, injections };
+}
+
 export async function exportLogsPdf(
   profile: UserProfile,
   windowDays: number,
@@ -499,18 +566,28 @@ export async function exportLogsPdf(
   // One conversion: a shortcut window OR a hand-picked range, same downstream.
   const r = range ?? rangeFromWindow(windowDays);
   const effectiveDays = rangeWindowDays(r);
-  const within = (iso: string) => {
-    const ts = new Date(iso).getTime();
-    return ts >= r.start && ts <= r.end;
-  };
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
 
-  const [sugar, mealsRaw, inj, entries] = await Promise.all([
-    listSugarLogs(profile.id, 5000),
-    listMealLogs(profile.id, 5000),
-    getInjections(profile.id, 5000),
-    getJournal(profile.id, lang, 5000),
-  ]);
+  // The range is a SQL filter, not a JS pass over the newest N rows: a report of
+  // a month further back than the row cap used to be quietly incomplete.
+  //
+  // ONE read of the three log tables, not two. The journal feed already unions
+  // sugar_logs / meal_logs / injection_logs over this exact range (and resolves
+  // meal names through the foods join), and the raw per-table queries that used to
+  // run alongside it re-read the very same rows to hand the metric functions their
+  // own copy. Splitting the feed back out costs one pass over rows already in
+  // memory; the queries cost a second trip through every table.
+  //
+  // EXPORT_MAX_ROWS now caps the merged feed rather than each table separately,
+  // which only matters for a range holding more than 20 000 entries in total. Past
+  // that point the document was already truncated - and now its charts, its
+  // metrics and its tables all describe the SAME rows, where before the metrics
+  // could cover readings the tables had no room to list.
+  const entries = await getJournal(profile.id, lang, EXPORT_MAX_ROWS, r);
+  const { sugar, meals: mealsRaw, injections: inj } = splitJournalFeed(
+    profile.id,
+    entries
+  );
 
   // The report measures against the profile's own range, exactly like the app.
   const reportBand = targetBandFor(profile);
@@ -518,15 +595,14 @@ export async function exportLogsPdf(
     low: reportBand.low,
     high: reportBand.high,
   }, r);
-  // AGP over exactly the range's readings (pre-filtered; the huge window keeps
-  // computeAgp from re-windowing them).
-  const sugarInRange = sugar.filter((sg) => within(sg.logged_at));
+  // AGP over exactly the range's readings (the query already scoped them; the
+  // huge window keeps computeAgp from re-windowing them).
+  const sugarInRange = sugar;
   const agpSvg = buildAgpSvg(computeAgp(sugarInRange, 1_000_000), unit, reportBand);
 
   // Five-band TIR breakdown over the window, against the profile's own range.
   const tir: TirBreakdown = { veryLow: 0, low: 0, target: 0, high: 0, veryHigh: 0, total: 0 };
   for (const s of sugar) {
-    if (!within(s.logged_at)) continue;
     const v = s.glucose_level_mgdl;
     tir.total++;
     if (v >= 250) tir.veryHigh++;
@@ -538,7 +614,7 @@ export async function exportLogsPdf(
 
   // Tables are built from the journal feed (resolved names) within the window,
   // oldest-first for natural reading order.
-  const inWindow = entries.filter((e) => within(e.logged_at)).reverse();
+  const inWindow = [...entries].reverse();
   if (inWindow.length === 0) return { ok: false, reason: "noData" };
 
   const glucose = inWindow
@@ -562,7 +638,9 @@ export async function exportLogsPdf(
       return {
         date,
         time,
-        site: i18n.t(`injectionSite.${x.site}`),
+        site: x.site
+          ? i18n.t(`injectionSite.${x.site}`)
+          : i18n.t("injectionSite.unassigned"),
         dose:
           x.dose_units != null ? `${num(x.dose_units)} ${i18n.t("common.units")}` : "",
       };
@@ -584,9 +662,7 @@ export async function exportLogsPdf(
 
   // Daily timeline + events, from the raw in-range rows.
   const tf: Tf = (k, o) => esc(i18n.t(k, o));
-  const mealsInRange = mealsRaw.filter((mm) => within(mm.logged_at));
-  const injInRange = inj.filter((ii) => within(ii.logged_at));
-  const timelineHtml = buildTimeline(sugarInRange, mealsInRange, injInRange, reportBand, unit, tf);
+  const timelineHtml = buildTimeline(sugarInRange, mealsRaw, inj, reportBand, unit, tf);
   const eventsHtml = buildEvents(sugarInRange, insights, hypoThreshold(profile), unit, tf);
 
   const html = buildHtml(

@@ -25,6 +25,9 @@ export interface NotificationPrefs {
    *  15-minute re-measure reminder. User-set threshold, stored in mg/dL. */
   lowFollowup: boolean;
   lowThresholdMgdl: number;
+  /** Rolling reminder that the journal has been empty for a day. Re-armed on
+   *  every entry, so someone who logs regularly never sees it. */
+  idleReminder: boolean;
 }
 
 export const DEFAULT_PREFS: NotificationPrefs = {
@@ -40,6 +43,7 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   weeklyTime: "20:00",
   lowFollowup: true,
   lowThresholdMgdl: 70,
+  idleReminder: true,
 };
 
 const KEY = "zerospike.notifPrefs";

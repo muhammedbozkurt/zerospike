@@ -40,6 +40,13 @@ export function TagPicker({
             <Pressable
               key={tag}
               onPress={() => toggle(tag)}
+              hitSlop={8}
+              // A chip's selected state was carried by its border and text colour
+              // only, so a screen reader read every tag identically whether it was
+              // on or off. `selected` is what actually announces it.
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: active }}
+              accessibilityLabel={t(`tags.${tag}`)}
               className={`rounded-full border px-3 py-1.5 ${
                 active
                   ? "border-brand bg-brand/10"

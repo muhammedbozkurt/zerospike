@@ -1,5 +1,9 @@
 import { Platform } from "react-native";
 
+// Global font-scale cap (maxFontSizeMultiplier). Must run before expo-router
+// boots and before nativewind registers Text/TextInput; see the module itself.
+require("./lib/theme/fontScale");
+
 /**
  * App entry.
  *

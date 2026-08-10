@@ -140,12 +140,58 @@ export interface MealLog {
   personal_note: string | null;
   logged_at: string;
   tags: LogTag[];
+  /** The meal template this row was logged from (schema v13), or null. Pure
+   *  provenance and NOT a foreign key: the record outlives the template being
+   *  renamed, re-itemised or deleted. Also the flag that keeps a template row out
+   *  of the "recent meals" chips, which cannot re-log one faithfully. */
+  meal_template_id: string | null;
 }
 
 export interface Favorite {
   id: string;
   profile_id: string;
   food_id: string;
+}
+
+/* ── Meal templates (schema v13) ───────────────────────────────────────────
+ *
+ * A template is a RECIPE the user wrote down: the meal they repeat, named once
+ * and logged with one tap. It is never generated, never suggested and never
+ * commented on; the app only stores it, orders it and repeats it.
+ *
+ * Logging one writes a SINGLE meal_logs row (see lib/db/mealTemplates.ts), and
+ * the read rule for its carbs lives in exactly one place (lib/mealTemplates.ts).
+ */
+export interface MealTemplate {
+  id: string;
+  profile_id: string;
+  name: string;
+  /** ORDERING signal only, and nullable (a snack template has none). It never
+   *  enters a dose: the carb ratio always comes from the clock, because a ratio
+   *  describes the time of day, not the name of a recipe. */
+  slot: MealSlot | null;
+  sort_order: number;
+  use_count: number;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface MealTemplateItem {
+  id: string;
+  template_id: string;
+  /** The LIVE catalogue link, nulled if that food is deleted. */
+  food_id: string | null;
+  /** What the item was called when it was added; the fallback once food_id is
+   *  gone, and the only name a typed-name item ever had. */
+  name_snapshot: string;
+  /** The carb value at the time it was added; insurance against losing the
+   *  catalogue row, never preferred over the live one. */
+  carb_100g_snapshot: number;
+  portion_g: number;
+  /** A carb total stored outright, for an item that has no carb_100g to derive
+   *  from (built out of a typed-name meal). Wins over both values above. */
+  carbs_g_fixed: number | null;
+  sort_order: number;
 }
 
 /** Returns the food name in the active language, with graceful fallback. */
@@ -251,6 +297,31 @@ export const SELECTABLE_SITES: InjectionSite[] = [
   "buttock_right",
 ];
 
+/** True for a region the map no longer offers for a new entry (see RETIRED_SITES). */
+export function isRetiredSite(site: InjectionSite): boolean {
+  return RETIRED_SITES.includes(site);
+}
+
+/**
+ * The selectable region a stored site belongs to. The four retired v9 quadrants
+ * sit on the same side of the navel as the left/right abdomen rows that replaced
+ * them, so their history still describes that side. Used by the rotation helpers:
+ * a side injected yesterday under its old quadrant name must not read as
+ * untouched. Every other site maps to itself.
+ */
+export function canonicalSite(site: InjectionSite): InjectionSite {
+  switch (site) {
+    case "abdomen_left_upper":
+    case "abdomen_left_lower":
+      return "abdomen_left";
+    case "abdomen_right_upper":
+    case "abdomen_right_lower":
+      return "abdomen_right";
+    default:
+      return site;
+  }
+}
+
 /**
  * The four rotation points inside one region (schema v8). Following the FITTER
  * quarter/rotation model, a region is split into a 2x2 grid and the user marks
@@ -282,7 +353,10 @@ export function asSitePoint(value: unknown): SitePoint | null {
 export interface Injection {
   id: string; // UUID
   profile_id: string;
-  site: InjectionSite;
+  /** Null when no region was recorded (schema v11): the dose calculator writes a
+   *  mealtime bolus without ever asking for one, and an unspecified region is
+   *  honest where a guessed one would silently shape the rotation picture. */
+  site: InjectionSite | null;
   /** Which of the region's four rotation points (v8). Null on older rows. */
   site_point: SitePoint | null;
   dose_units: number | null;

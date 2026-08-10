@@ -1,7 +1,7 @@
 import type { SugarLog } from "./db/types";
 
 /**
- * Ambulatory Glucose Profile (AGP) — the standard chart clinicians read: glucose
+ * Ambulatory Glucose Profile (AGP): the standard chart clinicians read: glucose
  * percentile bands by time of day, pooled across all days in the window. Pure
  * and deterministic so it can be unit-tested; the PDF report renders it as SVG.
  *

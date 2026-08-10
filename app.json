@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "1.5.0",
+    "version": "1.5.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
@@ -26,7 +26,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "38",
+      "buildNumber": "46",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
@@ -34,8 +34,10 @@
       "infoPlist": {
         "NSCameraUsageDescription": "zerospike uses your camera to scan food barcodes and add meal photos.",
         "NSPhotoLibraryUsageDescription": "zerospike accesses your photo library to add photos to your meal journal.",
-        "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically.",
-        "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you log to Apple Health when you turn this on in Settings.",
+        "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries.",
+        "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you enter by hand to Apple Health, only when you turn this on in Settings.",
+        "NSLocationWhenInUseUsageDescription": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster.",
+        "NSContactsUsageDescription": "zerospike lets you pick an emergency contact from your contacts for the SOS screen.",
         "CFBundleLocalizations": [
           "en",
           "tr",
@@ -43,7 +45,8 @@
           "fr",
           "es"
         ],
-        "NSSupportsLiveActivities": true
+        "NSSupportsLiveActivities": true,
+        "NSMotionUsageDescription": "zerospike does not collect motion data. A location component in the app references this permission; your movement is never tracked."
       },
       "entitlements": {
         "com.apple.security.application-groups": [
@@ -53,7 +56,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 39,
+      "versionCode": 41,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -67,11 +70,13 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/withAndroidNavBarContrast",
       "expo-localization",
       [
         "expo-camera",
         {
           "cameraPermission": "zerospike uses your camera to scan food barcodes and add meal photos.",
+          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ],
@@ -91,15 +96,18 @@
       [
         "@kingstinct/react-native-healthkit",
         {
-          "NSHealthShareUsageDescription": "zerospike reads your blood glucose readings from Apple Health to log them automatically.",
-          "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you log to Apple Health when you turn this on in Settings.",
+          "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries.",
+          "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you enter by hand to Apple Health, only when you turn this on in Settings.",
           "background": false
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster."
+          "locationWhenInUsePermission": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster.",
+          "locationAlwaysPermission": false,
+          "locationAlwaysAndWhenInUsePermission": false,
+          "motionUsagePermission": "zerospike does not collect motion data. A location component in the app references this permission; your movement is never tracked."
         }
       ],
       [
@@ -133,11 +141,23 @@
               "label": "zerospike",
               "minWidth": "180dp",
               "minHeight": "110dp",
-              "description": "Last reading and the next reminder",
+              "description": "zerospike",
               "previewImage": "./assets/icon.png",
               "targetCellWidth": 3,
               "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
               "updatePeriodMillis": 900000
+            },
+            {
+              "name": "ZerospikeQuickAdd",
+              "label": "zerospike +",
+              "minWidth": "250dp",
+              "minHeight": "60dp",
+              "description": "zerospike",
+              "previewImage": "./assets/icon.png",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal"
             }
           ]
         }

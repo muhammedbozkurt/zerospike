@@ -50,6 +50,9 @@ import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
 import { AppBackground } from "../components/rich";
 import { THEME, GLUCOSE_RICH } from "../lib/theme/tokens";
+import { upper } from "../lib/upper";
+import { parseDecimalText } from "../lib/numberInput";
+import { useLayout } from "../lib/useLayout";
 
 // Sensible defaults used by the "I'm not sure" path (never blocks a new user).
 // Taking this path leaves ratios_confirmed at 0, so the calculator can say out
@@ -101,6 +104,7 @@ type StepId =
 export default function OnboardingScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { contentColumn } = useLayout();
   const router = useRouter();
   const { activeProfile, bumpData, completeOnboarding } = useApp();
 
@@ -127,8 +131,11 @@ export default function OnboardingScreen() {
   const [postmealMax, setPostmealMax] = useState(
     String(glucoseToDisplay(activeProfile?.target_postmeal_max ?? DEFAULT_POSTMEAL_RANGE.max, unit))
   );
-  // Set only by the explicit "I'm not sure" shortcut on the ratio steps.
-  const [usedDefaultRatios, setUsedDefaultRatios] = useState(false);
+  // A prefilled ratio only becomes the user's own once they actually move the
+  // control on its step. Walking past the default with Next is not a
+  // confirmation, so these stay false and ratios_confirmed stays 0.
+  const [carbRatioTouched, setCarbRatioTouched] = useState(false);
+  const [isfTouched, setIsfTouched] = useState(false);
   // Ratio + ISF are stepper-driven numbers (E.7); ISF is in the display unit.
   const [carbRatio, setCarbRatio] = useState(
     activeProfile?.carb_ratio_breakfast ?? DEFAULT_CARB_RATIO
@@ -170,7 +177,7 @@ export default function OnboardingScreen() {
   }, [phase, step]);
 
   function num(v: string, fallback: number): number {
-    const x = parseFloat(v.replace(",", "."));
+    const x = (parseDecimalText(v) ?? NaN);
     return Number.isFinite(x) && x > 0 ? x : fallback;
   }
 
@@ -242,7 +249,7 @@ export default function OnboardingScreen() {
     max: glucoseToDisplay(TARGET_RANGE_BOUNDS.max, unit),
   };
   const withinBounds = (text: string) => {
-    const v = parseFloat(text.replace(",", "."));
+    const v = (parseDecimalText(text) ?? NaN);
     return (
       Number.isFinite(v) && v >= glucoseBounds.min && v <= glucoseBounds.max
     );
@@ -295,9 +302,9 @@ export default function OnboardingScreen() {
         patch.carb_ratio_lunch = cr;
         patch.carb_ratio_dinner = cr;
         patch.insulin_sensitivity_factor = glucoseFromDisplay(isf, unit);
-        // A number the user typed is theirs; one they skipped past is not, and
-        // the calculator has to be able to tell those apart.
-        patch.ratios_confirmed = usedDefaultRatios ? 0 : 1;
+        // A number the user set is theirs; one they skipped past is not, and
+        // the meal-log screen has to be able to tell those apart.
+        patch.ratios_confirmed = carbRatioTouched && isfTouched ? 1 : 0;
       }
       await updateProfile(activeProfile.id, patch);
 
@@ -323,30 +330,21 @@ export default function OnboardingScreen() {
     router.replace({ pathname: "/paywall", params: { context: "onboarding" } });
   }
 
-  // Optional subtitle per step (the title is derived from the step id).
+  // Optional subtitle per step (the title is derived from the step id). Steps
+  // whose own controls already carry the explanation get no subtitle at all.
   function hintFor(s: StepId): string | undefined {
     switch (s) {
-      case "name":
-        return t("onboarding.qNameHint");
       case "unit":
         return t("onboarding.qUnitHint");
       case "diabetes":
         return t("onboarding.qDiabetesHint");
-      case "insulin":
-        return t("onboarding.qInsulinHint");
-      case "targets":
-        return t("onboarding.qTargetsHint");
       case "carbRatio":
         return t("onboarding.qCarbRatioHint");
       case "isf":
         return t("onboarding.qIsfHint");
       case "basal":
         return t("onboarding.qBasalHint");
-      case "widget":
-        return t("onboarding.qWidgetHint");
-      case "notify":
-        return t("onboarding.qNotifyHint");
-      case "disclaimer":
+      default:
         return undefined;
     }
   }
@@ -367,8 +365,13 @@ export default function OnboardingScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       className="flex-1"
     >
-      {/* Shared header: back (quiz only) + always-present language chip */}
-      <View className="px-6 pt-2 pb-2 flex-row items-center justify-between">
+      {/* Shared header: back (quiz only) + always-present language chip. Shares
+          the content column so the chip stays over the copy on a tablet instead
+          of drifting to the far edge of the screen. */}
+      <View
+        className="px-6 pt-2 pb-2 flex-row items-center justify-between"
+        style={contentColumn}
+      >
         {onBack ? (
           <Pressable onPress={onBack} hitSlop={10} className="pr-3 py-1">
             <Ionicons name="chevron-back" size={24} color={THEME.muted} />
@@ -381,7 +384,7 @@ export default function OnboardingScreen() {
 
       <View
         className="flex-1 px-6"
-        style={{ paddingBottom: insets.bottom + 16 }}
+        style={{ paddingBottom: insets.bottom + 16, ...contentColumn }}
       >
         {phase === "welcome" ? (
           <Welcome
@@ -505,7 +508,6 @@ export default function OnboardingScreen() {
           <FadeSlideIn delay={optDelay(0)}>
             <RangeInput
               label={t("period.fasting")}
-              hint={t("onboarding.qFastingHint")}
               unit={glucoseUnitLabel(unit)}
               minText={fastingMin}
               maxText={fastingMax}
@@ -553,7 +555,10 @@ export default function OnboardingScreen() {
           <FadeSlideIn delay={optDelay(0)}>
             <Stepper
               value={carbRatio}
-              onChange={setCarbRatio}
+              onChange={(v) => {
+                setCarbRatio(v);
+                setCarbRatioTouched(true);
+              }}
               step={0.5}
               longStep={1}
               min={1}
@@ -570,7 +575,10 @@ export default function OnboardingScreen() {
           <FadeSlideIn delay={optDelay(0)}>
             <Stepper
               value={isf}
-              onChange={setIsf}
+              onChange={(v) => {
+                setIsf(v);
+                setIsfTouched(true);
+              }}
               step={unit === "mmol" ? 0.1 : 1}
               longStep={unit === "mmol" ? 0.5 : 5}
               min={unit === "mmol" ? 0.5 : 5}
@@ -610,6 +618,19 @@ export default function OnboardingScreen() {
       case "widget":
         return (
           <FadeSlideIn delay={optDelay(0)}>
+            {/* The numbers below are drawn, not the user's own records, so they
+                carry the same sample label the reveal preview uses. */}
+            <Text
+              style={{
+                color: THEME.muted,
+                fontSize: 11,
+                letterSpacing: 1.3,
+                fontWeight: "800",
+                marginBottom: 8,
+              }}
+            >
+              {upper(t("onboarding.sampleBadge"))}
+            </Text>
             {/* Lock-screen Live Activity mock (in-app drawing, no OS permission). */}
             <View className="rounded-2xl border border-hair bg-glass p-4">
               <View className="flex-row items-center" style={{ gap: 12 }}>
@@ -628,7 +649,7 @@ export default function OnboardingScreen() {
                 <View style={{ flex: 1 }}>
                   <Text className="text-mut text-[11px] font-bold">zerospike</Text>
                   <Text className="text-ink text-sm font-bold" numberOfLines={1}>
-                    {t("dashboard.quickPostMeal")}
+                    {t("dashboard.quickPostMeal", { n: 120 })}
                   </Text>
                 </View>
                 <Text style={{ color: THEME.accent, fontSize: 18, fontWeight: "800" }}>1:12</Text>
@@ -653,7 +674,9 @@ export default function OnboardingScreen() {
                   justifyContent: "center",
                 }}
               >
-                <Text className="text-mut text-[9px] font-bold">SON ÖLÇÜM</Text>
+                <Text className="text-mut text-[9px] font-bold">
+                  {upper(t("widget.lastReading"))}
+                </Text>
                 <Text style={{ color: GLUCOSE_RICH.target, fontSize: 28, fontWeight: "800" }}>112</Text>
                 <Text className="text-mut text-[10px]">mg/dL</Text>
               </View>
@@ -661,7 +684,6 @@ export default function OnboardingScreen() {
                 <Text className="text-ink text-sm leading-6">{t("onboarding.widgetIntro")}</Text>
               </View>
             </View>
-            <Text className="text-mut text-xs leading-5 mt-3">{t("onboarding.widgetAddHome")}</Text>
           </FadeSlideIn>
         );
 
@@ -770,9 +792,13 @@ export default function OnboardingScreen() {
       step === "carbRatio" || step === "isf" ? (
         <Pressable
           onPress={() => {
-            if (step === "carbRatio") setCarbRatio(DEFAULT_CARB_RATIO);
-            else setIsf(glucoseToDisplay(DEFAULT_ISF_MGDL, unit));
-            setUsedDefaultRatios(true);
+            if (step === "carbRatio") {
+              setCarbRatio(DEFAULT_CARB_RATIO);
+              setCarbRatioTouched(false);
+            } else {
+              setIsf(glucoseToDisplay(DEFAULT_ISF_MGDL, unit));
+              setIsfTouched(false);
+            }
             next();
           }}
           hitSlop={8}
@@ -782,16 +808,30 @@ export default function OnboardingScreen() {
         </Pressable>
       ) : null;
 
+    // The diabetes question is optional, but skipping it has to be a deliberate
+    // tap: Continue stays inert until something is picked, and the skip sits
+    // next to it as its own action instead of hiding inside Continue.
+    const skipQuestion =
+      step === "diabetes" ? (
+        <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
+          <Text className="text-mut font-medium">{t("onboarding.skipQuestion")}</Text>
+        </Pressable>
+      ) : null;
+
     const label = step === "diabetes" ? t("onboarding.continue") : t("onboarding.next");
     return (
       <View>
         <Button
           label={label}
           size="lg"
-          disabled={step === "targets" && !rangesOk}
+          disabled={
+            (step === "targets" && !rangesOk) ||
+            (step === "diabetes" && diabetes == null)
+          }
           onPress={next}
         />
         {notSure}
+        {skipQuestion}
       </View>
     );
   }

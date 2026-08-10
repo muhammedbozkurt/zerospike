@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
 import i18n from "../i18n";
-import { listSugarLogs } from "../db/logs";
+import { getLatestSugarLog, getSugarAverageSince } from "../db/logs";
 import { getNotificationPrefs } from "./notificationPrefs";
 import { getPostMealTimerEnd } from "./notifications";
 import { getProfile } from "../db/profiles";
@@ -37,6 +37,8 @@ export const LIVE_DATA_APP_GROUP = "group.com.greeneyeapp.zerospike";
 export const LIVE_DATA_KEY = "zerospike.liveData";
 /** The Android home-screen widget's registered name (see app.json). */
 export const ANDROID_WIDGET_NAME = "Zerospike";
+/** The Android Quick Add widget's registered name (see app.json). */
+export const ANDROID_QUICK_ADD_WIDGET_NAME = "ZerospikeQuickAdd";
 
 export type ReminderKind = "postMeal" | "basal" | "glucose";
 
@@ -90,6 +92,12 @@ export interface LiveData {
     /** Contains a "{{t}}" placeholder for the already-composed duration
      *  (e.g. "6 sa 23 dk"); do the substitution on the native side. */
     agoTemplate: string;
+    /** Quick Add widget shortcut titles (iOS QuickAdd.swift + the Android
+     *  quick add widget), so those tiles never own their own translations. */
+    quickAdd: string;
+    addGlucose: string;
+    addMeal: string;
+    addInjection: string;
   };
 }
 
@@ -115,21 +123,23 @@ export async function computeLiveData(
 ): Promise<LiveData> {
   const now = Date.now();
 
-  const recent = await listSugarLogs(profileId, 1000);
-  const latest = recent[0];
-  // Rolling average over the last AVG_WINDOW_DAYS (canonical mg/dL).
-  const windowStart = now - AVG_WINDOW_DAYS * 86_400_000;
-  const inWindow = recent.filter(
-    (l) => new Date(l.logged_at).getTime() >= windowStart
-  );
-  const avgGlucoseMgdl = inWindow.length
-    ? Math.round(
-        inWindow.reduce((sum, l) => sum + l.glucose_level_mgdl, 0) / inWindow.length
-      )
-    : null;
-  const prefs = await getNotificationPrefs();
-  // The profile's own band, so the widget/watch colour matches the app exactly.
-  const profile = await getProfile(profileId);
+  // Two aggregates, not a thousand rows. This snapshot needs exactly one reading
+  // and one mean, and it used to read (and fully hydrate) the newest 1000 rows to
+  // derive both in JS - on every log write, and again on every dashboard load.
+  //
+  // The five reads are independent of one another, so they go out together rather
+  // than as a chain of awaits.
+  const windowStart = new Date(now - AVG_WINDOW_DAYS * 86_400_000).toISOString();
+  const [latest, avgWindow, prefs, profile, postMealEnd] = await Promise.all([
+    getLatestSugarLog(profileId),
+    getSugarAverageSince(profileId, windowStart),
+    getNotificationPrefs(),
+    // The profile's own band, so the widget/watch colour matches the app exactly.
+    getProfile(profileId),
+    getPostMealTimerEnd(),
+  ]);
+  const avgGlucoseMgdl =
+    avgWindow.avgMgdl != null ? Math.round(avgWindow.avgMgdl) : null;
   const targetBand = targetBandFor(profile ?? {});
   const band = {
     hypo: hypoThreshold(profile ?? {}),
@@ -140,7 +150,6 @@ export async function computeLiveData(
 
   const candidates: { at: number; kind: ReminderKind }[] = [];
 
-  const postMealEnd = await getPostMealTimerEnd();
   if (postMealEnd && postMealEnd > now) {
     candidates.push({ at: postMealEnd, kind: "postMeal" });
   }
@@ -176,6 +185,10 @@ export async function computeLiveData(
       hourShort: i18n.t("widget.hourShort"),
       minuteShort: i18n.t("widget.minuteShort"),
       agoTemplate: i18n.t("widget.agoTemplate"),
+      quickAdd: i18n.t("widget.quickAdd"),
+      addGlucose: i18n.t("widget.addGlucose"),
+      addMeal: i18n.t("widget.addMeal"),
+      addInjection: i18n.t("widget.addInjection"),
     },
   };
 }
@@ -210,10 +223,17 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
   if (Platform.OS === "android") {
     try {
       const { requestWidgetUpdate } = await import("react-native-android-widget");
-      const { buildZerospikeWidget } = await import("./androidWidget");
+      const { buildZerospikeWidget, buildQuickAddWidget } = await import("./androidWidget");
+      const data = JSON.parse(json) as LiveData;
       await requestWidgetUpdate({
         widgetName: ANDROID_WIDGET_NAME,
-        renderWidget: () => buildZerospikeWidget(JSON.parse(json) as LiveData),
+        // The callback receives the placed widget's current dp size, so the
+        // layout can tier itself (see sizesFor in androidWidget.ts).
+        renderWidget: (info) => buildZerospikeWidget(data, info),
+      });
+      await requestWidgetUpdate({
+        widgetName: ANDROID_QUICK_ADD_WIDGET_NAME,
+        renderWidget: (info) => buildQuickAddWidget(data, info),
       });
     } catch {
       // No widget placed on the home screen, or the module is not linked yet.
@@ -222,12 +242,52 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
 }
 
 /**
+ * How long the native publish waits before it can fire again. Rebuilding a
+ * WidgetKit timeline / re-rendering the Android widget / relaying to the watch is
+ * the expensive half of a sync, and a burst of calls (a meal save writes a
+ * reading, a meal and a bolus, and the dashboard reloads after each) asked for it
+ * several times inside a second to show the same numbers.
+ */
+const NATIVE_PUBLISH_COALESCE_MS = 30_000;
+
+let lastPublishAt = 0;
+let pendingJson: string | null = null;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Publishes at most once per NATIVE_PUBLISH_COALESCE_MS, always with the LATEST
+ * snapshot. Nothing is dropped: a call inside the window replaces the pending
+ * payload and the trailing publish sends that. The in-app AsyncStorage copy is
+ * written unconditionally by the caller, so nothing reading it ever sees a delay.
+ */
+function publishCoalesced(json: string): void {
+  const now = Date.now();
+  const elapsed = now - lastPublishAt;
+  if (elapsed >= NATIVE_PUBLISH_COALESCE_MS) {
+    lastPublishAt = now;
+    void publishToNativeSurfaces(json);
+    return;
+  }
+  pendingJson = json;
+  if (pendingTimer != null) return;
+  pendingTimer = setTimeout(() => {
+    pendingTimer = null;
+    const next = pendingJson;
+    pendingJson = null;
+    if (next == null) return;
+    lastPublishAt = Date.now();
+    void publishToNativeSurfaces(next);
+  }, NATIVE_PUBLISH_COALESCE_MS - elapsed);
+}
+
+/**
  * Computes and persists the LiveData snapshot. Safe to call on app open and
  * after any log/timer/preference change; failures are swallowed (a stale live
  * surface must never break the app). Returns the snapshot it wrote.
  *
  * Also publishes the snapshot to the iOS App Group (widget + Live Activity) and
- * refreshes the Android widget. See docs/native-live-surfaces.md.
+ * refreshes the Android widget (coalesced, see above). See
+ * docs/native-live-surfaces.md.
  */
 export async function syncLiveData(
   profileId: string,
@@ -237,7 +297,7 @@ export async function syncLiveData(
     const data = await computeLiveData(profileId, unit);
     const json = JSON.stringify(data);
     await AsyncStorage.setItem(LIVE_DATA_KEY, json);
-    void publishToNativeSurfaces(json);
+    publishCoalesced(json);
     return data;
   } catch {
     return null;

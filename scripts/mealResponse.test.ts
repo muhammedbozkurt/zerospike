@@ -1,5 +1,5 @@
 /**
- * lib/mealResponse.ts correctness harness. No jest — same standalone style as
+ * lib/mealResponse.ts correctness harness. No jest, same standalone style as
  * scripts/calc.test.ts.
  *
  * Run: npx tsx scripts/mealResponse.test.ts
@@ -9,6 +9,7 @@ declare const process: { exit: (code: number) => void };
 
 import {
   computeMealResponse,
+  mealIdsWithResponse,
   MEAL_RESPONSE_HOURS,
   type MealResponseMealInput,
   type MealResponseReadingInput,
@@ -22,7 +23,7 @@ function ok(name: string, cond: boolean, detail = ""): void {
     passed++;
   } else {
     failed++;
-    console.log(`  ✗ ${name}${detail ? "  — " + detail : ""}`);
+    console.log(`  ✗ ${name}${detail ? ": " + detail : ""}`);
   }
 }
 function eq<T>(name: string, actual: T, expected: T): void {
@@ -65,8 +66,8 @@ section("A. window boundary (3h01 falls outside, 3h00 inside)");
   const readings = [
     reading("r1", 0, 100),
     reading("r2", 60, 150),
-    reading("r3", 180, 130), // exactly at the 3h edge — included
-    reading("r4", 181, 999), // 3h01 — excluded (and would blow up peak if not)
+    reading("r3", 180, 130), // exactly at the 3h edge, included
+    reading("r4", 181, 999), // 3h01, excluded (and would blow up peak if not)
   ];
   const res = computeMealResponse(meal("m1"), readings, P);
   ok("result is not null", res !== null);
@@ -92,7 +93,7 @@ section("B. baseline selection (linked > 45-min-before > null)");
   // No link: nearest (= latest) reading within 45 min before wins.
   const readings = [
     reading("far", -40, 95),
-    reading("near", -5, 110), // closer to start — this one wins
+    reading("near", -5, 110), // closer to start, this one wins
     reading("r1", 30, 140),
     reading("r2", 60, 150),
   ];
@@ -135,7 +136,7 @@ section("D. twoHourValue (nearest to +120min within [90,150])");
   const readings = [
     reading("r0", 0, 100),
     reading("r1", 95, 150), // 25 min from 120
-    reading("r2", 118, 140), // 2 min from 120 — closest
+    reading("r2", 118, 140), // 2 min from 120, closest
     reading("r3", 145, 135), // 25 min from 120
   ];
   const res = computeMealResponse(meal("m6", "r0"), readings, P);
@@ -174,6 +175,62 @@ section("F. insufficient data");
   // A reading exists but it's outside the window entirely.
   const res2 = computeMealResponse(meal("m11"), [reading("r0", 400, 140)], P);
   eq("only out-of-window readings -> null", res2, null);
+}
+
+// ── G. mealIdsWithResponse agrees with computeMealResponse, exactly ──────────
+// The journal screens use the fast set-builder instead of running the full
+// builder per meal. It is only allowed to exist if it never disagrees.
+section("G. mealIdsWithResponse parity");
+{
+  const mealAt = (id: string, offsetMin: number): MealResponseMealInput => ({
+    id,
+    logged_at: new Date(startMs + offsetMin * 60_000).toISOString(),
+    sugar_log_id: null,
+  });
+
+  const meals: MealResponseMealInput[] = [
+    mealAt("a", 0), // two readings right after it
+    mealAt("b", 600), // one reading only
+    mealAt("c", 1200), // nothing in the window
+    mealAt("d", -240), // readings sit exactly on the window edges
+    mealAt("e", 0), // same instant as "a"
+  ];
+  const readings: MealResponseReadingInput[] = [
+    reading("r1", 10, 120),
+    reading("r2", 150, 160),
+    reading("r3", 600, 110), // "b" window: only this one
+    reading("r4", -240, 95), // "d" window start, inclusive
+    reading("r5", -60, 105), // "d" window end (+3 h), inclusive
+  ];
+
+  const fast = mealIdsWithResponse(meals, readings);
+  const slow = new Set(
+    meals.filter((m) => computeMealResponse(m, readings, P) != null).map((m) => m.id)
+  );
+  eq("same number of meals flagged", fast.size, slow.size);
+  for (const m of meals) {
+    eq(`meal ${m.id} agrees`, fast.has(m.id), slow.has(m.id));
+  }
+  ok("boundary-only readings still count", fast.has("d"));
+  ok("a single in-window reading does not", !fast.has("b"));
+  ok("an empty window does not", !fast.has("c"));
+
+  // Degenerate inputs must not throw or invent members.
+  eq("no readings -> empty set", mealIdsWithResponse(meals, []).size, 0);
+  eq("no meals -> empty set", mealIdsWithResponse([], readings).size, 0);
+  eq(
+    "an unparseable meal timestamp is skipped, not thrown on",
+    mealIdsWithResponse([{ id: "bad", logged_at: "not-a-date" }], readings).size,
+    0
+  );
+  eq(
+    "an unparseable reading timestamp belongs to no window",
+    mealIdsWithResponse(
+      [mealAt("a", 0)],
+      [reading("r1", 10, 120), { id: "rx", logged_at: "nope", glucose_level_mgdl: 130 }]
+    ).size,
+    0
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

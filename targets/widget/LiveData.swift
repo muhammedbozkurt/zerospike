@@ -50,6 +50,12 @@ struct LiveData: Codable {
     let hourShort: String?
     let minuteShort: String?
     let agoTemplate: String?
+    // Quick Add widget shortcut titles (see QuickAdd.swift). Also optional so
+    // a pre-quick-add snapshot still decodes.
+    let quickAdd: String?
+    let addGlucose: String?
+    let addMeal: String?
+    let addInjection: String?
   }
 }
 

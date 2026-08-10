@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -10,7 +18,8 @@ import {
   IconTile,
 } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
-import { GLUCOSE_RICH, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { money, pct } from "../lib/format";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -39,18 +48,6 @@ import { hapticSelect, hapticSuccess } from "../lib/haptics";
 /** Default free-trial length for the annual plan (RC intro offer). */
 const TRIAL_DAYS = 7;
 
-/** Formats a raw amount in its store currency (for derived per-month / savings). */
-function fmtMoney(amount: number, currencyCode: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currencyCode,
-    }).format(amount);
-  } catch {
-    return String(Math.round(amount * 100) / 100);
-  }
-}
-
 /**
  * A plan row in the mockup's 08 composition: the plan name and its terms on the
  * left, and the BILLED AMOUNT as the dominant figure on the right. The selected
@@ -73,7 +70,7 @@ function PlanCard({
   name: string;
   desc: string;
   foot?: string;
-  price: string;
+  price: string | null;
   period: string;
   badge?: string;
   save?: string;
@@ -131,18 +128,30 @@ function PlanCard({
         ) : null}
       </View>
 
-      {/* The billed amount, dominant */}
+      {/* The billed amount, dominant. A plan whose store price is missing shows a
+          placeholder bar instead of an empty slot in the loudest spot on the row. */}
       <View className="items-end ml-2">
-        <Text style={[TABULAR, { color: THEME.ink, fontSize: 20, fontWeight: "800" }]}>
-          {price}
-        </Text>
+        {price ? (
+          <Text style={[TABULAR, { color: THEME.ink, fontSize: 20, fontWeight: "800" }]}>
+            {price}
+          </Text>
+        ) : (
+          <View
+            style={{
+              width: 56,
+              height: 20,
+              borderRadius: 6,
+              backgroundColor: THEME.track,
+            }}
+          />
+        )}
         <Text style={{ color: THEME.muted, fontSize: 11 }}>{period}</Text>
       </View>
     </Pressable>
   );
 }
 
-export default function PaywallScreen() {
+function PaywallScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -183,7 +192,9 @@ export default function PaywallScreen() {
     });
   }, [offer, reason, annualTrial]);
 
-  const priceStr = (p: PlanId) => plans[p]?.priceString ?? "";
+  // null, not "": a missing store price must never render as an empty gap where
+  // the billed amount belongs.
+  const priceStr = (p: PlanId) => plans[p]?.priceString ?? null;
 
   // Derived, currency-correct: annual per-month and savings vs 12 months.
   const monthly = plans.monthly;
@@ -194,7 +205,7 @@ export default function PaywallScreen() {
       : 0;
   const annualPerMonth =
     annual && annual.price > 0
-      ? fmtMoney(annual.price / 12, annual.currencyCode)
+      ? money(annual.price / 12, annual.currencyCode)
       : null;
 
   function selectPlan(p: PlanId) {
@@ -306,27 +317,46 @@ export default function PaywallScreen() {
         ? t("paywall.perYear")
         : ` ${t("paywall.perOnce")}`;
   const ctaTrial = plan === "annual" && annualTrial;
+  const selectedPrice = priceStr(plan);
   const ctaLabel = ctaTrial
     ? t("paywall.ctaTrial")
-    : `${t("paywall.cta")} · ${priceStr(plan)}${ctaPeriod}`;
+    : selectedPrice
+      ? `${t("paywall.cta")} · ${selectedPrice}${ctaPeriod}`
+      : t("paywall.cta");
 
   const loading = offer === null;
   const unavailable = offer?.status === "unavailable";
 
   return (
     <AppBackground>
-      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+      <View
+        className="flex-1"
+        style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}
+      >
         {/* Header (mockup 08: free exit left, title centred, close right) */}
         <View className="flex-row items-center justify-between px-4 py-2">
-          <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1">
-            <Text style={{ color: THEME.muted, fontWeight: "600", fontSize: 13 }}>
+          <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1" style={{ flexShrink: 1 }}>
+            <Text
+              style={{ color: THEME.muted, fontWeight: "600", fontSize: 13, flexShrink: 1 }}
+              numberOfLines={1}
+            >
               {t("paywall.notNow")}
             </Text>
           </Pressable>
-          <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }}>
+          <Text
+            style={{
+              color: THEME.ink,
+              fontSize: 16,
+              fontWeight: "800",
+              flexShrink: 1,
+              minWidth: 0,
+              marginHorizontal: 8,
+            }}
+            numberOfLines={1}
+          >
             {t("paywall.title")}
           </Text>
-          <View className="flex-row items-center">
+          <View className="flex-row items-center" style={{ flexShrink: 0 }}>
             {context === "onboarding" ? (
               <View className="mr-2">
                 <LanguageChip />
@@ -406,9 +436,14 @@ export default function PaywallScreen() {
           </GlassCard>
 
           {loading ? (
-            <View className="items-center py-8">
-              <Text style={{ color: THEME.muted }}>{t("common.loading")}</Text>
-            </View>
+            // Same waiting composition as downsell / winback: a spinner carries
+            // the wait so the plan slot never reads as a broken empty band.
+            <GlassCard style={{ alignItems: "center", paddingVertical: 28 }}>
+              <ActivityIndicator color={THEME.accent} />
+              <Text style={{ color: THEME.muted, marginTop: 10 }}>
+                {t("common.loading")}
+              </Text>
+            </GlassCard>
           ) : unavailable ? (
             // Release-only: prices could not be loaded. Never show fake prices;
             // offer a retry instead.
@@ -451,7 +486,7 @@ export default function PaywallScreen() {
                 price={priceStr("annual")}
                 period={t("paywall.perYear")}
                 badge={t("paywall.mostPopular")}
-                save={savePct > 0 ? t("paywall.savePercent", { percent: savePct }) : undefined}
+                save={savePct > 0 ? t("paywall.savePercent", { percent: pct(savePct) }) : undefined}
               />
               <PlanCard
                 selected={plan === "lifetime"}
@@ -531,5 +566,13 @@ export default function PaywallScreen() {
       </View>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function PaywallRoute() {
+  return (
+    <SafeAreaProvider>
+      <PaywallScreen />
+    </SafeAreaProvider>
   );
 }

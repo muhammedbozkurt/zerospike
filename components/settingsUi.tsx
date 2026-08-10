@@ -32,9 +32,12 @@ export function Row({
   return (
     <Pressable
       onPress={onPress}
+      disabled={!onPress}
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={label}
-      className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 active:opacity-80"
+      className={`flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 ${
+        onPress ? "active:opacity-80" : ""
+      }`}
     >
       <View
         className="w-9 h-9 rounded-xl items-center justify-center"
@@ -51,6 +54,28 @@ export function Row({
       {value ? <Text className="text-mut text-[13px] mr-1 font-medium">{value}</Text> : null}
       {right ?? (onPress ? <Ionicons name="chevron-forward" size={18} color={THEME.muted} /> : null)}
     </Pressable>
+  );
+}
+
+/**
+ * A sub-control card that sits right under an enabled Row (e.g. the post-meal
+ * delay picker under its toggle). Repeats the Row's icon-plate + left-indent
+ * so its content lines up with the Row's label instead of sitting flush left.
+ */
+export function InlineConfigCard({
+  icon,
+  children,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  children: React.ReactNode;
+}) {
+  return (
+    <View className="flex-row bg-glass border border-hair rounded-2xl px-3 py-3 mb-2">
+      <View className="w-9 items-center pt-0.5">
+        <Ionicons name={icon} size={16} color={THEME.muted} />
+      </View>
+      <View className="flex-1 ml-3">{children}</View>
+    </View>
   );
 }
 

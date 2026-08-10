@@ -13,7 +13,7 @@ function run(p: () => Promise<unknown>): void {
   try {
     p().catch(() => {});
   } catch {
-    // haptics unavailable — ignore
+    // haptics unavailable, ignore
   }
 }
 

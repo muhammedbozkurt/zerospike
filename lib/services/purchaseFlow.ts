@@ -12,7 +12,7 @@ export interface PurchaseToast {
  * path is ever silent:
  * - success: normal activation, or an already-owned recovery ("already yours").
  * - store error: an honest generic message (never a silent stay).
- * - cancel: null — the caller decides (route to downsell, or just dismiss).
+ * - cancel: null, the caller decides (route to downsell, or just dismiss).
  */
 export function purchaseToastFor(outcome: PurchaseOutcome): PurchaseToast | null {
   if (outcome.ok) {

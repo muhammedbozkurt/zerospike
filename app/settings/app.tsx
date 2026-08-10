@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Linking, Platform } from "react-native";
+import { Linking, Platform, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -14,6 +14,7 @@ import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { useFeedback } from "../../components/Feedback";
 import { THEME } from "../../lib/theme/tokens";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
+import { useLayout } from "../../lib/useLayout";
 
 /** Settings > App: language, Spike, Pro / subscription, widget guide. */
 export default function AppSettings() {
@@ -21,6 +22,7 @@ export default function AppSettings() {
   const router = useRouter();
   const { toast } = useFeedback();
   const { lang, setLanguage, isProUser, refreshPro } = useApp();
+  const { contentColumn } = useLayout();
   const [restoring, setRestoring] = useState(false);
 
   async function onChangeLang(next: Lang) {
@@ -54,6 +56,7 @@ export default function AppSettings() {
 
   return (
     <SettingsScaffold title={t("settings.appSection")}>
+      <View style={contentColumn}>
       <SectionLabel>{t("settings.language")}</SectionLabel>
       <LanguagePicker value={lang} onChange={onChangeLang} />
 
@@ -84,12 +87,12 @@ export default function AppSettings() {
         right={restoring ? <Ionicons name="hourglass-outline" size={18} color={THEME.muted} /> : undefined}
       />
 
-      <SectionLabel>{t("widgetGuide.title")}</SectionLabel>
       <Row
         icon="apps-outline"
         label={t("widgetGuide.title")}
         onPress={() => router.push("/widget-guide")}
       />
+      </View>
     </SettingsScaffold>
   );
 }

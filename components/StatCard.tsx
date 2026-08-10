@@ -17,6 +17,9 @@ interface StatCardProps {
   decimals?: number;
   format?: (n: number) => string;
   suffix?: string;
+  /** Render `suffix` BEFORE the value. Turkish puts the percent sign first, so a
+   *  percentage tile has to be able to flip it (see lib/format pctParts). */
+  suffixFirst?: boolean;
   /** Animate the value on mount (default true when `value` is numeric). */
   animate?: boolean;
   /** Accent color for the value (e.g. a glucose-language color). */
@@ -48,6 +51,7 @@ export function StatCard({
   decimals = 0,
   format,
   suffix,
+  suffixFirst = false,
   animate = true,
   accent,
   icon,
@@ -60,6 +64,13 @@ export function StatCard({
 }: StatCardProps) {
   const valueColor = accent ?? THEME.ink;
   const glowColor = glow === true ? THEME.accent : typeof glow === "string" ? glow : undefined;
+  const suffixNode = suffix ? (
+    <Text
+      className={`text-mut text-sm font-semibold mb-1 ${suffixFirst ? "mr-1" : "ml-1"}`}
+    >
+      {suffix}
+    </Text>
+  ) : null;
   return (
     <View
       className={glass ? `rounded-2xl p-4 ${className}` : `rounded-2xl bg-glass border border-hair p-4 ${className}`}
@@ -78,14 +89,23 @@ export function StatCard({
         <Text
           className="text-[11px] font-semibold tracking-wider text-mut"
           numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
         >
           {upper(label)}
         </Text>
       </View>
 
       <View className="flex-row items-end">
+        {suffixFirst ? suffixNode : null}
         {display !== undefined ? (
-          <Text style={[{ color: valueColor }, TABULAR]} className="text-3xl font-extrabold">
+          <Text
+            style={[{ color: valueColor }, TABULAR, { flexShrink: 1 }]}
+            className="text-3xl font-extrabold"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
             {display}
           </Text>
         ) : value !== undefined && animate ? (
@@ -97,18 +117,27 @@ export function StatCard({
             style={{ color: valueColor }}
           />
         ) : (
-          <Text style={[{ color: valueColor }, TABULAR]} className="text-3xl font-extrabold">
+          <Text
+            style={[{ color: valueColor }, TABULAR, { flexShrink: 1 }]}
+            className="text-3xl font-extrabold"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
             {value !== undefined ? (format ? format(value) : value.toFixed(decimals)) : "-"}
           </Text>
         )}
-        {suffix ? (
-          <Text className="text-mut text-sm font-semibold mb-1 ml-1">{suffix}</Text>
-        ) : null}
+        {suffixFirst ? null : suffixNode}
       </View>
 
       {sparkline ? <View className="mt-2">{sparkline}</View> : null}
       {footnote ? (
-        <Text className="text-mut text-[11px] mt-1" numberOfLines={1}>
+        <Text
+          className="text-mut text-[11px] mt-1"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
           {footnote}
         </Text>
       ) : null}

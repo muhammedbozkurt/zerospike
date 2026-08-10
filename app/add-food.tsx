@@ -1,23 +1,33 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AppBackground, GradientCTA } from "../components/rich";
+import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { GLUCOSE_RICH, TABULAR, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { addCustomFood, getFood, updateFood } from "../lib/db/foods";
+import {
+  DEFAULT_FOOD_CATEGORY,
+  FOOD_CATEGORIES,
+  categoryEmoji,
+  isFoodCategory,
+  type FoodCategory,
+} from "../lib/db/categories";
+import { categoryTileIcon } from "../components/FoodPlate";
 import { canAddCustomFood } from "../lib/guardrails";
 import { Field } from "../components/ui";
 import { Stepper } from "../components/Stepper";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
+import { hapticSelect } from "../lib/haptics";
+import { useLayout } from "../lib/useLayout";
 
-export default function AddFoodScreen() {
+function AddFoodScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -27,6 +37,7 @@ export default function AddFoodScreen() {
   }>();
   const { isProUser, bumpData } = useApp();
   const { toast } = useFeedback();
+  const { contentColumn } = useLayout();
 
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
@@ -35,6 +46,11 @@ export default function AddFoodScreen() {
   const [gi, setGi] = useState("");
   const [portion, setPortion] = useState(100);
   const [notes, setNotes] = useState("");
+  // The shelf this food is filed on. It decides the plate the food is drawn
+  // with everywhere, which is why it is asked for here: every hand-typed and
+  // scanned food used to land on the unclassified shelf and so every one of
+  // them showed the same picture.
+  const [category, setCategory] = useState<FoodCategory>(DEFAULT_FOOD_CATEGORY);
   const [allowed, setAllowed] = useState(true);
   const [loadedBarcode, setLoadedBarcode] = useState<string | null>(null);
 
@@ -68,6 +84,9 @@ export default function AddFoodScreen() {
       setPortion(f.portion_size_g);
       setNotes(f.custom_notes ?? "");
       setLoadedBarcode(f.barcode);
+      // A row written before this field existed (or by a migration's backfill)
+      // can hold anything at all, so it is narrowed rather than trusted.
+      setCategory(isFoodCategory(f.category) ? f.category : DEFAULT_FOOD_CATEGORY);
     })();
   }, [isEdit, foodId]);
 
@@ -85,6 +104,7 @@ export default function AddFoodScreen() {
         glycemic_index: parseInt(gi, 10) || 0,
         portion_size_g: portion || 100,
         custom_notes: notes.trim() || null,
+        category,
       });
       bumpData();
       toast(t("food.saved"), "success");
@@ -104,6 +124,7 @@ export default function AddFoodScreen() {
       portion_size_g: portion || 100,
       barcode: barcode ?? null,
       custom_notes: notes.trim() || null,
+      category,
     });
     bumpData();
     toast(t("food.saved"), "success");
@@ -112,123 +133,192 @@ export default function AddFoodScreen() {
 
   return (
     <AppBackground>
-      <View className="flex-1" style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+      <View className="flex-1" style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
         {/* Header (mockup 04: close, centred title, balancing spacer) */}
-        <ScreenHeader
-          title={isEdit ? t("food.editCustom") : t("food.addCustom")}
-          onBack={() => router.back()}
-          backIcon="close"
-          accessibilityLabel={t("common.close")}
-        />
+        <View style={contentColumn}>
+          <ScreenHeader
+            title={isEdit ? t("food.editCustom") : t("food.addCustom")}
+            onBack={() => router.back()}
+            backIcon="close"
+            accessibilityLabel={t("common.close")}
+          />
+        </View>
 
         <ScrollView
           {...keyboardAwareScrollProps}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
           showsVerticalScrollIndicator={false}
         >
-          {!allowed && !isEdit ? (
-            <Pressable
-              onPress={() => router.replace({ pathname: "/paywall", params: { reason: "foods" } })}
-              className="rounded-2xl p-4 mb-4 flex-row items-center active:opacity-80"
-              style={{
-                borderWidth: 1,
-                borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-                backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-              }}
-            >
-              <Ionicons name="lock-closed-outline" size={18} color={GLUCOSE_RICH.high} />
-              <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 12, flex: 1 }}>
-                {t("paywall.limitTitleFoods")}
-              </Text>
-            </Pressable>
-          ) : null}
+          <View style={contentColumn}>
+            {!allowed && !isEdit ? (
+              <Pressable
+                onPress={() => router.replace({ pathname: "/paywall", params: { reason: "foods" } })}
+                className="rounded-2xl p-4 mb-4 flex-row items-center active:opacity-80"
+                style={{
+                  borderWidth: 1,
+                  borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+                  backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+                }}
+              >
+                <Ionicons name="lock-closed-outline" size={18} color={GLUCOSE_RICH.high} />
+                <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 12, flex: 1 }}>
+                  {t("paywall.limitTitleFoods")}
+                </Text>
+              </Pressable>
+            ) : null}
 
-          {barcode || loadedBarcode ? (
-            <View className="rounded-2xl bg-glass border border-hair p-3.5 mb-4 flex-row items-center">
-              <Ionicons name="barcode-outline" size={18} color={THEME.accent} />
-              <Text style={[TABULAR, { color: THEME.ink, marginLeft: 12, fontSize: 13 }]}>
-                {barcode ?? loadedBarcode}
+            {barcode || loadedBarcode ? (
+              <View className="rounded-2xl bg-glass border border-hair p-3.5 mb-4 flex-row items-center">
+                <Ionicons name="barcode-outline" size={18} color={THEME.accent} />
+                <Text style={[TABULAR, { color: THEME.ink, marginLeft: 12, fontSize: 13 }]}>
+                  {barcode ?? loadedBarcode}
+                </Text>
+              </View>
+            ) : null}
+
+            <Field
+              label={t("food.name")}
+              value={name}
+              onChangeText={setName}
+              placeholder="-"
+              autoFocus
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => brandRef.current?.focus()}
+            />
+            <Field
+              ref={brandRef}
+              label={t("food.brand")}
+              value={brand}
+              onChangeText={setBrand}
+              placeholder="-"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => giRef.current?.focus()}
+            />
+
+            {/* Category: a plate + a name per shelf, so the choice is made on the
+                picture the food will actually carry, not on a word alone. */}
+            <View className="mb-4">
+              <Text className="text-sm font-medium text-mut mb-2">
+                {t("food.category")}
               </Text>
+              <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                {FOOD_CATEGORIES.map((c) => {
+                  const active = c === category;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => {
+                        if (!active) hapticSelect();
+                        setCategory(c);
+                      }}
+                      hitSlop={4}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={t(`category.${c}`)}
+                      className="flex-row items-center rounded-full px-2.5 active:opacity-80"
+                      style={{
+                        minHeight: 40,
+                        borderWidth: 1,
+                        borderColor: active ? THEME.accent : THEME.border,
+                        backgroundColor: active
+                          ? withAlpha(THEME.accent, 0.16)
+                          : THEME.glass,
+                      }}
+                    >
+                      <IconTile
+                        emoji={categoryEmoji(c)}
+                        icon={categoryTileIcon(c)}
+                        size={24}
+                        radius={9}
+                        hero={active}
+                        tint={active ? THEME.accent : THEME.muted}
+                      />
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          color: active ? THEME.accent : THEME.ink,
+                          fontSize: 13,
+                          fontWeight: active ? "700" : "500",
+                          marginLeft: 7,
+                          maxWidth: 150,
+                        }}
+                      >
+                        {t(`category.${c}`)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
-          ) : null}
 
-          <Field
-            label={t("food.name")}
-            value={name}
-            onChangeText={setName}
-            placeholder="-"
-            autoFocus
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={() => brandRef.current?.focus()}
-          />
-          <Field
-            ref={brandRef}
-            label={t("food.brand")}
-            value={brand}
-            onChangeText={setBrand}
-            placeholder="-"
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={() => giRef.current?.focus()}
-          />
-          <View className="mb-3">
-            <Text className="text-sm font-medium text-mut mb-1.5">{t("food.carbs")}</Text>
-            <Stepper
-              value={carb}
-              onChange={setCarb}
-              step={1}
-              longStep={5}
-              min={0}
-              max={100}
-              decimals={1}
-              suffix={t("common.grams")}
-              accessibilityLabel={t("food.carbs")}
+            <View className="mb-3">
+              <Text className="text-sm font-medium text-mut mb-1.5">{t("food.carbs")}</Text>
+              <Stepper
+                value={carb}
+                onChange={setCarb}
+                step={1}
+                longStep={5}
+                min={0}
+                max={100}
+                decimals={1}
+                suffix={t("common.grams")}
+                accessibilityLabel={t("food.carbs")}
+              />
+            </View>
+            <Field
+              ref={giRef}
+              label={t("food.gi")}
+              value={gi}
+              onChangeText={setGi}
+              keyboardType="number-pad"
+              placeholder="0"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => notesRef.current?.focus()}
+            />
+            <View className="mb-3">
+              <Text className="text-sm font-medium text-mut mb-1.5">{t("food.portionSize")}</Text>
+              <Stepper
+                value={portion}
+                onChange={setPortion}
+                step={5}
+                longStep={25}
+                min={0}
+                max={2000}
+                decimals={0}
+                suffix={t("common.grams")}
+                accessibilityLabel={t("food.portionSize")}
+              />
+            </View>
+            <Field
+              ref={notesRef}
+              label={t("food.notes")}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="-"
+              returnKeyType="done"
+            />
+
+            <View style={{ height: 12 }} />
+            <GradientCTA
+              label={isEdit ? t("common.save") : t("food.addFood")}
+              disabled={!valid}
+              onPress={save}
             />
           </View>
-          <Field
-            ref={giRef}
-            label={t("food.gi")}
-            value={gi}
-            onChangeText={setGi}
-            keyboardType="number-pad"
-            placeholder="0"
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={() => notesRef.current?.focus()}
-          />
-          <View className="mb-3">
-            <Text className="text-sm font-medium text-mut mb-1.5">{t("food.portionSize")}</Text>
-            <Stepper
-              value={portion}
-              onChange={setPortion}
-              step={5}
-              longStep={25}
-              min={0}
-              max={2000}
-              decimals={0}
-              suffix={t("common.grams")}
-              accessibilityLabel={t("food.portionSize")}
-            />
-          </View>
-          <Field
-            ref={notesRef}
-            label={t("food.notes")}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="-"
-            returnKeyType="done"
-          />
-
-          <View className="h-2" />
-          <GradientCTA
-            label={isEdit ? t("common.save") : t("food.addFood")}
-            disabled={!valid}
-            onPress={save}
-          />
         </ScrollView>
       </View>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function AddFoodRoute() {
+  return (
+    <SafeAreaProvider>
+      <AddFoodScreen />
+    </SafeAreaProvider>
   );
 }

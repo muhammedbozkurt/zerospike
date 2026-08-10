@@ -2,6 +2,26 @@ import { getDb } from "./index";
 import { uuid } from "../uuid";
 import type { Food, MealLog, PeriodTag, SugarLog } from "./types";
 import { parseTags, serializeTags } from "./types";
+import type { DateRange } from "../insights";
+
+/**
+ * SQL fragment + bound values for an optional date range. Reports and exports
+ * ask for a SPAN, so the span belongs in the query: filtering the newest N rows
+ * in JS silently dropped older entries once a profile outgrew N.
+ */
+function rangeClause(
+  column: string,
+  range?: DateRange
+): { sql: string; values: string[] } {
+  if (!range) return { sql: "", values: [] };
+  return {
+    sql: ` AND ${column} BETWEEN ? AND ?`,
+    values: [
+      new Date(range.start).toISOString(),
+      new Date(range.end).toISOString(),
+    ],
+  };
+}
 
 // Raw rows carry `tags` as the stored JSON string; mappers parse it to LogTag[].
 type SugarRow = Omit<SugarLog, "tags"> & { tags: string | null };
@@ -48,12 +68,104 @@ export async function addSugarLog(input: NewSugarLogInput): Promise<SugarLog> {
 
 export async function listSugarLogs(
   profileId: string,
-  limit = 500
+  limit = 500,
+  range?: DateRange
 ): Promise<SugarLog[]> {
   const db = await getDb();
+  const { sql, values } = rangeClause("logged_at", range);
   const rows = await db.getAllAsync<SugarRow>(
-    "SELECT * FROM sugar_logs WHERE profile_id = ? ORDER BY logged_at DESC LIMIT ?;",
-    [profileId, limit]
+    `SELECT * FROM sugar_logs WHERE profile_id = ?${sql} ORDER BY logged_at DESC LIMIT ?;`,
+    [profileId, ...values, limit]
+  );
+  return rows.map(mapSugar);
+}
+
+/** The newest reading's value + time, or null when the profile has none. */
+export interface LatestReading {
+  glucose_level_mgdl: number;
+  logged_at: string;
+}
+
+/**
+ * The single newest reading. The live-surface snapshot only ever shows this one
+ * value, and it used to arrive as `listSugarLogs(profileId, 1000)[0]` - a
+ * thousand fully hydrated rows read and mapped to keep the first.
+ */
+export async function getLatestSugarLog(
+  profileId: string
+): Promise<LatestReading | null> {
+  const db = await getDb();
+  return db.getFirstAsync<LatestReading>(
+    `SELECT glucose_level_mgdl, logged_at FROM sugar_logs
+      WHERE profile_id = ? ORDER BY logged_at DESC LIMIT 1;`,
+    [profileId]
+  );
+}
+
+/**
+ * Mean reading (and how many there were) since an ISO instant, computed by
+ * SQLite. The widget's rolling average used to be a JS reduce over a thousand
+ * rows pulled into memory for two numbers - and silently truncated to those
+ * thousand once a profile logged more than that inside the window.
+ *
+ * logged_at is stored as a UTC ISO string, so the string comparison here is the
+ * same chronological order as the parsed dates it replaces.
+ */
+export async function getSugarAverageSince(
+  profileId: string,
+  sinceIso: string
+): Promise<{ avgMgdl: number | null; count: number }> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ avg: number | null; n: number }>(
+    `SELECT AVG(glucose_level_mgdl) AS avg, COUNT(*) AS n FROM sugar_logs
+      WHERE profile_id = ? AND logged_at >= ?;`,
+    [profileId, sinceIso]
+  );
+  const count = row?.n ?? 0;
+  return {
+    avgMgdl: count > 0 && row?.avg != null ? row.avg : null,
+    count,
+  };
+}
+
+/** An inclusive [from, to] span of ISO instants to pull readings for. */
+export interface SugarWindow {
+  from: string;
+  to: string;
+}
+
+/**
+ * Readings inside ANY of a handful of time windows (plus, optionally, specific
+ * ids). Meal-response screens care about a three-hour span around each of a few
+ * meals, and getting there by reading the newest 2000 rows meant the query grew
+ * with the profile's whole history instead of with the question being asked.
+ *
+ * `ids` exists for the baseline rule: a meal's linked reading counts as its
+ * starting value even when it sits outside the lookback window, so it has to be
+ * fetched by id or that baseline silently disappears.
+ */
+export async function listSugarLogsForWindows(
+  profileId: string,
+  windows: SugarWindow[],
+  ids: string[] = []
+): Promise<SugarLog[]> {
+  if (windows.length === 0 && ids.length === 0) return [];
+  const db = await getDb();
+  const clauses: string[] = [];
+  const values: string[] = [profileId];
+  for (const w of windows) {
+    clauses.push("logged_at BETWEEN ? AND ?");
+    values.push(w.from, w.to);
+  }
+  if (ids.length > 0) {
+    clauses.push(`id IN (${ids.map(() => "?").join(", ")})`);
+    values.push(...ids);
+  }
+  const rows = await db.getAllAsync<SugarRow>(
+    `SELECT * FROM sugar_logs
+      WHERE profile_id = ? AND (${clauses.join(" OR ")})
+      ORDER BY logged_at DESC;`,
+    values
   );
   return rows.map(mapSugar);
 }
@@ -136,25 +248,73 @@ export async function getSugarLog(id: string): Promise<SugarLog | null> {
   return row ? mapSugar(row) : null;
 }
 
+/** One sample from the platform health store, ready to be stored. */
+export interface HealthSugarSample {
+  glucose_level_mgdl: number;
+  period_tag: PeriodTag;
+  /** Already snapped to the dedup grain by the caller (see healthMath.snapIso). */
+  logged_at: string;
+}
+
 /**
- * Avoids duplicating the same Health/CGM sample on re-import — but is
- * value-aware: two readings at the same (snapped) timestamp with DIFFERENT
- * values are kept (e.g. a 42 mg/dL confirming fingerstick is not dropped as a
- * "duplicate" of a 95 mg/dL CGM sample). The caller snaps `loggedAt` to a fixed
- * grain (see lib/services/healthMath.ts) so ms-drift re-reads still collapse.
+ * Imports a whole batch of health-store samples in ONE transaction, and returns
+ * how many rows were actually new.
+ *
+ * Dedup stays value-aware: a row is a duplicate only when the same snapped
+ * timestamp carries the same value, so a 42 mg/dL confirming fingerstick is never
+ * dropped as a "duplicate" of a 95 mg/dL CGM sample at that minute. It is now
+ * resolved from a SINGLE range query instead of a COUNT per sample, and the
+ * inserts skip the row read-back addSugarLog does for its return value. A
+ * 300-sample sync used to be ~900 round trips outside any transaction, so an
+ * interrupted sync could leave a partially imported window.
+ *
+ * The seen-set is also updated as we go, so two identical samples inside the same
+ * batch collapse into one row instead of both passing a pre-batch existence check.
  */
-export async function sugarLogExistsAt(
+export async function insertHealthSugarLogs(
   profileId: string,
-  loggedAt: string,
-  source: string,
-  glucoseMgdl: number
-): Promise<boolean> {
+  samples: HealthSugarSample[]
+): Promise<number> {
+  if (samples.length === 0) return 0;
   const db = await getDb();
-  const row = await db.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM sugar_logs WHERE profile_id = ? AND logged_at = ? AND source = ? AND glucose_level_mgdl = ?;",
-    [profileId, loggedAt, source, Math.round(glucoseMgdl)]
+
+  let from = samples[0].logged_at;
+  let to = samples[0].logged_at;
+  for (const s of samples) {
+    if (s.logged_at < from) from = s.logged_at;
+    if (s.logged_at > to) to = s.logged_at;
+  }
+
+  const existing = await db.getAllAsync<{
+    logged_at: string;
+    glucose_level_mgdl: number;
+  }>(
+    `SELECT logged_at, glucose_level_mgdl FROM sugar_logs
+      WHERE profile_id = ? AND source = 'health' AND logged_at BETWEEN ? AND ?;`,
+    [profileId, from, to]
   );
-  return (row?.c ?? 0) > 0;
+  const key = (loggedAt: string, mgdl: number) => `${loggedAt}|${mgdl}`;
+  const seen = new Set(
+    existing.map((r) => key(r.logged_at, Math.round(r.glucose_level_mgdl)))
+  );
+
+  let inserted = 0;
+  await db.withTransactionAsync(async () => {
+    for (const s of samples) {
+      const mgdl = Math.round(s.glucose_level_mgdl);
+      const k = key(s.logged_at, mgdl);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      await db.runAsync(
+        `INSERT INTO sugar_logs
+           (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags)
+         VALUES (?, ?, ?, ?, 'health', ?, '[]');`,
+        [uuid(), profileId, mgdl, s.period_tag, s.logged_at]
+      );
+      inserted++;
+    }
+  });
+  return inserted;
 }
 
 /** How far apart two readings of the same value can be and still be the same
@@ -207,6 +367,9 @@ export interface NewMealLogInput {
   personal_note?: string | null;
   logged_at?: string;
   tags?: string[];
+  /** The meal template this row was logged from (schema v13). Provenance only:
+   *  see lib/db/mealTemplates.ts and MealLog.meal_template_id. */
+  meal_template_id?: string | null;
 }
 
 export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
@@ -216,8 +379,9 @@ export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
   await db.runAsync(
     `INSERT INTO meal_logs
        (id, profile_id, sugar_log_id, food_id, custom_food_name, portion_g,
-        calculated_carbs_g, insulin_dose_units, photo_uri_local, personal_note, logged_at, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        calculated_carbs_g, insulin_dose_units, photo_uri_local, personal_note, logged_at, tags,
+        meal_template_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.profile_id,
@@ -231,6 +395,7 @@ export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
       input.personal_note ?? null,
       loggedAt,
       serializeTags(input.tags),
+      input.meal_template_id ?? null,
     ]
   );
   return mapMeal(
@@ -243,12 +408,14 @@ export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
 
 export async function listMealLogs(
   profileId: string,
-  limit = 500
+  limit = 500,
+  range?: DateRange
 ): Promise<MealLog[]> {
   const db = await getDb();
+  const { sql, values } = rangeClause("logged_at", range);
   const rows = await db.getAllAsync<MealRow>(
-    "SELECT * FROM meal_logs WHERE profile_id = ? ORDER BY logged_at DESC LIMIT ?;",
-    [profileId, limit]
+    `SELECT * FROM meal_logs WHERE profile_id = ?${sql} ORDER BY logged_at DESC LIMIT ?;`,
+    [profileId, ...values, limit]
   );
   return rows.map(mapMeal);
 }
@@ -280,13 +447,18 @@ export async function deleteMealLog(id: string): Promise<void> {
  * because a meal can be LINKED to a reading the user had already logged (see
  * findMatchingSugarLog). Undoing the meal must not erase a measurement that
  * existed before it.
+ *
+ * Returns the deleted reading's healthkit_uuid (or null), so the caller can
+ * revoke the mirrored Apple Health sample exactly like the journal delete does.
+ * Undo used to drop the local row and leave that sample behind for good.
  */
 export async function deleteMealRecord(
   id: string,
   createdSugarLogId?: string | null
-): Promise<void> {
+): Promise<string | null> {
   await deleteMealLog(id);
-  if (createdSugarLogId) await deleteSugarLog(createdSugarLogId);
+  if (!createdSugarLogId) return null;
+  return deleteSugarLog(createdSugarLogId);
 }
 
 export type MealLogUpdate = Partial<
@@ -351,6 +523,9 @@ export async function getMealLog(id: string): Promise<MealLog | null> {
  * `food` is null for a meal that was only ever a typed name, which still has a
  * carb figure worth repeating.
  */
+/** How many of the newest meal rows getRecentMeals groups over. */
+const RECENT_MEAL_SCAN_ROWS = 200;
+
 export interface RecentMeal {
   food: Food | null;
   /** What to show in the list (the food's name, or the typed one). */
@@ -370,12 +545,27 @@ export interface RecentMeal {
  * directly from their stored values, and only catalogue foods route through the
  * calculator. SQLite returns the bare columns from the MAX(logged_at) row, so
  * portion_g and calculated_carbs_g are the most recent ones for each meal.
+ *
+ * The grouping key is an EXPRESSION (COALESCE over a lowercased name), which no
+ * index can serve, so grouping straight off meal_logs meant scanning and
+ * aggregating the profile's entire meal history to show eight chips. The inner
+ * query narrows to the newest RECENT_MEAL_SCAN_ROWS meals first - that one IS
+ * index-served (idx_meal_profile is (profile_id, logged_at DESC), and the LIMIT
+ * stops it early) - and the grouping then runs over a bounded set. "Recent" is
+ * exactly what this list claims to be, so a bounded look-back is the honest read.
+ *
+ * Rows logged from a TEMPLATE are excluded (meal_template_id IS NULL). They have
+ * their own surface, which re-logs the template's CURRENT items, offers undo and
+ * arms the post-meal reminder; a chip here would re-log a frozen copy of the
+ * totals under the template's name and do none of those three things. Filtered in
+ * the INNER query so template rows do not eat the bounded look-back either.
  */
 export async function getRecentMeals(
   profileId: string,
   limit = 8
 ): Promise<RecentMeal[]> {
   const db = await getDb();
+  const scan = Math.max(limit * 25, RECENT_MEAL_SCAN_ROWS);
   const rows = await db.getAllAsync<
     Partial<Food> & {
       _portion: number;
@@ -387,13 +577,20 @@ export async function getRecentMeals(
     `SELECT f.*, m.food_id AS _foodId, m.custom_food_name AS _customName,
             m.portion_g AS _portion, m.calculated_carbs_g AS _carbs,
             MAX(m.logged_at) AS _lastAt
-       FROM meal_logs m LEFT JOIN foods f ON f.id = m.food_id
-      WHERE m.profile_id = ?
-        AND (m.food_id IS NOT NULL OR TRIM(COALESCE(m.custom_food_name, '')) <> '')
+       FROM (SELECT id, food_id, custom_food_name, portion_g, calculated_carbs_g,
+                    logged_at
+               FROM meal_logs
+              WHERE profile_id = ?
+                AND meal_template_id IS NULL
+                AND (food_id IS NOT NULL
+                     OR TRIM(COALESCE(custom_food_name, '')) <> '')
+              ORDER BY logged_at DESC
+              LIMIT ?) m
+       LEFT JOIN foods f ON f.id = m.food_id
       GROUP BY COALESCE(m.food_id, LOWER(TRIM(m.custom_food_name)))
       ORDER BY _lastAt DESC
       LIMIT ?;`,
-    [profileId, limit]
+    [profileId, scan, limit]
   );
 
   return rows.map((r) => {
@@ -414,7 +611,7 @@ export async function getRecentMeals(
  * Previous logs of the SAME meal, newest first: same catalogue food (by
  * food_id), or for a typed-name meal, the same normalized custom name. Powers
  * the meal-response screen's "previous attempts" comparison (see
- * lib/mealResponse.ts) — each row still needs its own computeMealResponse call
+ * lib/mealResponse.ts). Each row still needs its own computeMealResponse call
  * against the profile's readings, this only finds the matching meals.
  */
 export async function getMealResponseHistory(

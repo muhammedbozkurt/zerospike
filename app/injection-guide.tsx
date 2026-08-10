@@ -6,7 +6,7 @@ import {
   Text,
   useWindowDimensions,
   View, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -16,7 +16,7 @@ import { INJECTION_STEPS } from "../lib/data/injectionGuide";
 import { AppBackground, GlassCard, GradientCTA } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { FeedbackHost } from "../components/Feedback";
-import { GLUCOSE_RICH, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "../components/rich/GlassCard";
 
 /**
@@ -56,7 +56,7 @@ function BodyMark() {
   );
 }
 
-export default function InjectionGuideScreen() {
+function InjectionGuideScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -73,101 +73,101 @@ export default function InjectionGuideScreen() {
   }
 
   return (
-    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
-      <ScreenHeader
-        title={t("injectionGuide.screenTitle")}
-        onBack={() => router.back()}
-        backIcon="close"
-        accessibilityLabel={t("common.close")}
-      />
+    <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
+      <ScreenHeader title={t("injectionGuide.screenTitle")} />
 
-      {/* Prominent medical disclaimer, above the deck */}
-      <View
-        className="flex-row items-start rounded-2xl mx-4 p-4 mb-2"
-        style={{
-          borderWidth: 1,
-          borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-          backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-        }}
-      >
-        <Ionicons name="medical-outline" size={17} color={GLUCOSE_RICH.high} />
-        <View className="flex-1 ml-3">
-          <Text style={{ color: GLUCOSE_RICH.high, fontWeight: "800", fontSize: 13 }}>
-            {t("disclaimer.title")}
-          </Text>
-          <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18, marginTop: 2, opacity: 0.85 }}>
-            {t("injectionGuide.disclaimer")}
-          </Text>
+      {/* Disclaimer + pager deck share the space left after the header, centred
+          as a group so a short deck never leaves a dead gap above "Kapat"
+          (the header's own close icon was dropped: this CTA is the one close
+          action for the screen now). */}
+      <View style={{ flex: 1, justifyContent: "center" }}>
+        {/* Prominent medical disclaimer, above the deck */}
+        <View
+          className="flex-row items-start rounded-2xl mx-4 p-4 mb-2"
+          style={{
+            borderWidth: 1,
+            borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+            backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+          }}
+        >
+          <Ionicons name="medical-outline" size={17} color={GLUCOSE_RICH.high} />
+          <View className="flex-1 ml-3">
+            <Text style={{ color: GLUCOSE_RICH.high, fontWeight: "800", fontSize: 13 }}>
+              {t("disclaimer.title")}
+            </Text>
+            <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18, marginTop: 2, opacity: 0.85 }}>
+              {t("injectionGuide.disclaimer")}
+            </Text>
+          </View>
+        </View>
+
+        {/* One step per glowing card */}
+        <ScrollView
+          ref={scroller}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          style={{ flexGrow: 0 }}
+        >
+          {INJECTION_STEPS.map((step, i) => (
+            <View key={step.titleKey} style={{ width: pageWidth, paddingHorizontal: 16 }}>
+              <GlassCard
+                glow
+                style={{ width: cardWidth, alignItems: "center", paddingVertical: 22, gap: 10 }}
+              >
+                <View style={glow(THEME.accent, 30, 0.45)}>
+                  <BodyMark />
+                </View>
+                <View className="flex-row items-center" style={{ gap: 8 }}>
+                  <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "800" }}>
+                    {i + 1}
+                  </Text>
+                  <Ionicons
+                    name={step.icon as keyof typeof Ionicons.glyphMap}
+                    size={16}
+                    color={THEME.accent}
+                  />
+                  <Text style={{ color: THEME.ink, fontSize: 15, fontWeight: "800" }}>
+                    {t(step.titleKey)}
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    color: THEME.muted,
+                    fontSize: 13,
+                    lineHeight: 20,
+                    textAlign: "center",
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  {t(step.bodyKey)}
+                </Text>
+              </GlassCard>
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* Pager dots (mockup 07) */}
+        <View className="flex-row justify-center mt-4" style={{ gap: 6 }}>
+          {INJECTION_STEPS.map((step, i) => (
+            <View
+              key={step.titleKey}
+              style={[
+                {
+                  width: 6,
+                  height: 6,
+                  borderRadius: 99,
+                  backgroundColor: i === page ? THEME.accent : THEME.border,
+                },
+                i === page ? glow(THEME.accent, 6, 0.8) : undefined,
+              ]}
+            />
+          ))}
         </View>
       </View>
 
-      {/* One step per glowing card */}
-      <ScrollView
-        ref={scroller}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        style={{ flexGrow: 0 }}
-      >
-        {INJECTION_STEPS.map((step, i) => (
-          <View key={step.titleKey} style={{ width: pageWidth, paddingHorizontal: 16 }}>
-            <GlassCard
-              glow
-              style={{ width: cardWidth, alignItems: "center", paddingVertical: 22, gap: 10 }}
-            >
-              <View style={glow(THEME.accent, 30, 0.45)}>
-                <BodyMark />
-              </View>
-              <View className="flex-row items-center" style={{ gap: 8 }}>
-                <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "800" }}>
-                  {i + 1}
-                </Text>
-                <Ionicons
-                  name={step.icon as keyof typeof Ionicons.glyphMap}
-                  size={16}
-                  color={THEME.accent}
-                />
-                <Text style={{ color: THEME.ink, fontSize: 15, fontWeight: "800" }}>
-                  {t(step.titleKey)}
-                </Text>
-              </View>
-              <Text
-                style={{
-                  color: THEME.muted,
-                  fontSize: 13,
-                  lineHeight: 20,
-                  textAlign: "center",
-                  paddingHorizontal: 8,
-                }}
-              >
-                {t(step.bodyKey)}
-              </Text>
-            </GlassCard>
-          </View>
-        ))}
-      </ScrollView>
-
-      {/* Pager dots (mockup 07) */}
-      <View className="flex-row justify-center mt-4" style={{ gap: 6 }}>
-        {INJECTION_STEPS.map((step, i) => (
-          <View
-            key={step.titleKey}
-            style={[
-              {
-                width: 6,
-                height: 6,
-                borderRadius: 99,
-                backgroundColor: i === page ? THEME.accent : THEME.border,
-              },
-              i === page ? glow(THEME.accent, 6, 0.8) : undefined,
-            ]}
-          />
-        ))}
-      </View>
-
-      <View className="flex-1" />
       <View style={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}>
         <GradientCTA
           label={t("common.close")}
@@ -177,5 +177,13 @@ export default function InjectionGuideScreen() {
       </View>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function InjectionGuideRoute() {
+  return (
+    <SafeAreaProvider>
+      <InjectionGuideScreen />
+    </SafeAreaProvider>
   );
 }

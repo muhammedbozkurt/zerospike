@@ -1,6 +1,7 @@
 import { getDb } from "./index";
 import { uuid } from "../uuid";
 import { foodName } from "./types";
+import { DEFAULT_FOOD_CATEGORY, type FoodCategory } from "./categories";
 import type { Food, Lang } from "./types";
 
 /** Free-tier custom-food cap. */
@@ -125,11 +126,71 @@ export async function searchFoods(
     .slice(0, limit);
 }
 
-/** All foods, customs first, sorted by the active-language name (localeCompare).
- *  The food tab re-groups these by category in the UI. */
-export async function listAllFoods(lang: Lang, limit = 2000): Promise<Food[]> {
+/** The name column SQLite orders a page by, per active language. */
+const NAME_COLUMN: Record<Lang, string> = {
+  tr: "name_tr",
+  en: "name_en",
+  de: "name_de",
+  es: "name_es",
+  fr: "name_fr",
+};
+
+/** How many rows one category page pulls. Must stay comfortably above the
+ *  largest seeded category (dishes, 258 after the R11 expansion) or the tail of
+ *  the alphabet becomes unreachable outside search; scripts/seed.test.ts pins
+ *  this invariant. */
+export const FOOD_PAGE_SIZE = 400;
+
+/**
+ * How many catalog foods each category holds (customs excluded, which get their
+ * own tile). Twelve aggregate rows instead of the whole catalog: the food tab's
+ * landing grid only ever shows these COUNTS, and it used to read all 562 rows
+ * into memory - on mount, on every language change, and again after every single
+ * log write - to call `.length` on twelve buckets.
+ */
+export async function countFoodsByCategory(): Promise<Record<string, number>> {
   const db = await getDb();
-  const rows = await db.getAllAsync<Food>("SELECT * FROM foods LIMIT ?;", [limit]);
+  const rows = await db.getAllAsync<{ category: string; c: number }>(
+    "SELECT category, COUNT(*) AS c FROM foods WHERE is_custom = 0 GROUP BY category;"
+  );
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.category] = r.c;
+  return out;
+}
+
+/** The user's own foods, in the same order the full catalog put them in. */
+export async function listCustomFoods(lang: Lang): Promise<Food[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Food>(
+    "SELECT * FROM foods WHERE is_custom = 1;"
+  );
+  return rows.sort(defaultOrder(lang));
+}
+
+/**
+ * One category's page of catalog foods.
+ *
+ * Ordering and paging are SQL's (idx_foods_category serves the filter, the name
+ * column gives the page a stable cut), then the page is re-sorted with the same
+ * locale-aware comparator the full list used - expo-sqlite has no ICU collation,
+ * so Turkish/French alphabetical order can only be settled in JS. A page holds
+ * more rows than any seeded category, so the displayed order is unchanged from
+ * when the whole catalog was sorted at once.
+ */
+export async function listFoodsByCategory(
+  category: string,
+  lang: Lang,
+  limit = FOOD_PAGE_SIZE,
+  offset = 0
+): Promise<Food[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Food>(
+    `SELECT * FROM foods
+      WHERE is_custom = 0 AND category = ?
+      ORDER BY ${NAME_COLUMN[lang]} COLLATE NOCASE
+      LIMIT ? OFFSET ?;`,
+    [category, limit, offset]
+  );
   return rows.sort(defaultOrder(lang));
 }
 
@@ -155,6 +216,25 @@ export async function countCustomFoods(): Promise<number> {
   return row?.c ?? 0;
 }
 
+/** Deduped, lowercased synonym list; what the FTS index searches on. */
+function buildAliases(names: string[]): string {
+  const seen = new Set<string>();
+  for (const n of names) {
+    const key = n.trim().toLowerCase();
+    if (key) seen.add(key);
+  }
+  return JSON.stringify([...seen]);
+}
+
+/** A name per language, as Open Food Facts reports them. */
+export interface FoodNames {
+  tr: string;
+  en: string;
+  de: string;
+  es: string;
+  fr: string;
+}
+
 /**
  * Stores a barcode result fetched from Open Food Facts so the next scan of the
  * same product resolves offline.
@@ -163,6 +243,12 @@ export async function countCustomFoods(): Promise<number> {
  * it must not eat into the free tier's custom-food allowance. `source` records
  * where it came from, which the calculator shows as attribution.
  *
+ * `names` carries the product's own translations where it has them, so a cached
+ * product reads correctly in whatever language the app is in; a language the
+ * product has no name for gets the main one, which is what a single-name product
+ * used to get in all five columns. `category` is the shelf guessed from the
+ * product's tags and falls back to the column default rather than to a guess.
+ *
  * Open Food Facts carries no glycemic index. Rather than guess one, GI and GL
  * stay at zero for the user to fill in; neither feeds the dose estimate.
  * Returns the existing row if this barcode was already cached.
@@ -170,7 +256,9 @@ export async function countCustomFoods(): Promise<number> {
 export async function cacheBarcodeFood(input: {
   barcode: string;
   name: string;
+  names?: FoodNames;
   brand: string | null;
+  category?: FoodCategory;
   carb_100g: number;
   portion_size_g: number;
   source: string;
@@ -182,22 +270,31 @@ export async function cacheBarcodeFood(input: {
   const id = uuid();
   const now = new Date().toISOString();
   const name = input.name.trim();
-  const aliases = JSON.stringify([name.toLowerCase()]);
+  const pick = (value: string | undefined): string => value?.trim() || name;
+  const names: FoodNames = {
+    tr: pick(input.names?.tr),
+    en: pick(input.names?.en),
+    de: pick(input.names?.de),
+    es: pick(input.names?.es),
+    fr: pick(input.names?.fr),
+  };
+  const aliases = buildAliases([name, names.tr, names.en, names.de, names.es, names.fr]);
 
   await db.runAsync(
     `INSERT INTO foods
       (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
-       barcode, carb_100g, glycemic_index, glycemic_load, portion_size_g,
-       brand_name, custom_notes, is_custom, source, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, 0, ?, ?);`,
+       category, barcode, carb_100g, glycemic_index, glycemic_load,
+       portion_size_g, brand_name, custom_notes, is_custom, source, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, 0, ?, ?);`,
     [
       id,
-      name,
-      name,
-      name,
-      name,
-      name,
+      names.tr,
+      names.en,
+      names.de,
+      names.es,
+      names.fr,
       aliases,
+      input.category ?? DEFAULT_FOOD_CATEGORY,
       input.barcode.trim(),
       input.carb_100g,
       input.portion_size_g,
@@ -216,6 +313,8 @@ export interface NewFoodInput {
   name: string; // entered in user's language; copied across columns + aliases
   carb_100g: number;
   glycemic_index: number;
+  /** Which shelf the food is filed under; the column default when omitted. */
+  category?: FoodCategory;
   portion_size_g?: number;
   brand_name?: string | null;
   barcode?: string | null;
@@ -225,6 +324,10 @@ export interface NewFoodInput {
 /**
  * Adds a custom food. The entered name is written to every language column
  * (so it stays searchable regardless of UI language) and included in aliases.
+ *
+ * `category` is optional and additive: a caller that does not pass one gets the
+ * same "other" the column has always defaulted to, so every existing call site
+ * keeps working unchanged.
  */
 export async function addCustomFood(input: NewFoodInput): Promise<Food> {
   const db = await getDb();
@@ -237,9 +340,9 @@ export async function addCustomFood(input: NewFoodInput): Promise<Food> {
   await db.runAsync(
     `INSERT INTO foods
       (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
-       barcode, carb_100g, glycemic_index, glycemic_load, portion_size_g,
-       brand_name, custom_notes, is_custom, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?);`,
+       category, barcode, carb_100g, glycemic_index, glycemic_load,
+       portion_size_g, brand_name, custom_notes, is_custom, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?);`,
     [
       id,
       name,
@@ -248,6 +351,7 @@ export async function addCustomFood(input: NewFoodInput): Promise<Food> {
       name,
       name,
       aliases,
+      input.category ?? DEFAULT_FOOD_CATEGORY,
       input.barcode?.trim() || null,
       input.carb_100g,
       input.glycemic_index,
@@ -295,6 +399,10 @@ export async function updateFood(
     }
     fields.push("aliases_json = ?");
     values.push(JSON.stringify([name.toLowerCase()]));
+  }
+  if (patch.category !== undefined) {
+    fields.push("category = ?");
+    values.push(patch.category);
   }
   if (patch.carb_100g !== undefined) {
     fields.push("carb_100g = ?");

@@ -1,31 +1,42 @@
-import React, { useRef, useState } from "react";
-import { PanResponder, Text, TextInput, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, PanResponder, Pressable, Text, TextInput, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "expo-router";
+import { useTranslation } from "react-i18next";
 
-import { GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow, HIT_TARGET } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlassCard, withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
 import { upper } from "../lib/upper";
+import { useLayout } from "../lib/useLayout";
+import { parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
 
 /**
- * The target-range editor: a real dual-thumb slider. A target is a RANGE, not a
- * single ceiling (that is how glycemic targets are actually stated), so the control
- * edits both ends at once and draws the band it describes, with the two numbers
- * under it.
+ * The target-range editor: a dual-thumb band picker with two typeable ends.
  *
- * R10 rebuild: a clean View-based track (pill rail + filled band + two round
- * handles), each handle a 44pt draggable with a live value bubble and a haptic tick
- * per step. Typing still moves the handles; only the end that is out of bounds turns
- * red (never both).
+ * Layout, top to bottom: the caption, ONE large readout of the range as it
+ * currently stands ("80-130 mg/dL"), the rail, and the two ends as large tap
+ * targets that open the numeric keyboard. The rail paints the band the values
+ * describe - below the low end, the band itself, above the high end - purely as
+ * a picture of what was entered. It states nothing about what a value means and
+ * recommends nothing.
  *
- * BUGFIX (R10): the handle used to be a component defined INSIDE render, so every
- * drag step re-created its type and React remounted it mid-gesture - the pan
- * responder terminated after ONE step, capping a whole drag at +-1 step (+-5 mg/dL).
- * The handles are now plain inline Views (a render helper, not a component), so the
- * gesture survives the re-renders a drag causes and the full range is reachable.
+ * Nothing here refuses input. Typing an end past its bounds, or a low end above
+ * the high end, leaves the value exactly as typed and adds a descriptive line;
+ * the caller decides whether to persist. Values are in the caller's DISPLAY
+ * unit and are reported back as raw text, so this component never converts.
  *
- * Values are in the caller's DISPLAY unit; this component never converts. It reports
- * raw text so the caller can parse, clamp and store on its own terms.
+ * Geometry note: thumb centres map onto `trackW - THUMB` and are offset by half
+ * a thumb, so value-to-position stays linear and a thumb at either extreme sits
+ * flush inside the rail instead of hanging over the edge.
  */
+
+const THUMB = 22;
+const RAIL_H = 10;
+/** The rail's touch band. Kept at the 44pt minimum so the thumbs stay easy to
+ *  grab without the card growing a strip of empty space. */
+const TRACK_H = 44;
+
 export function RangeInput({
   label,
   hint,
@@ -64,12 +75,25 @@ export function RangeInput({
   maxLabel: string;
   decimals?: boolean;
 }) {
-  const lo = parseFloat(minText.replace(",", "."));
-  const hi = parseFloat(maxText.replace(",", "."));
+  const { isWide, contentColumn } = useLayout();
+  const navigation = useNavigation();
+
+  /** The low thumb can sit inside the native back-swipe zone, so a horizontal
+   *  thumb drag used to double as an interactive pop and slid the whole screen.
+   *  The stack gesture is parked only while a drag is actually in flight. */
+  function setScreenGesture(enabled: boolean) {
+    try {
+      navigation.setOptions({ gestureEnabled: enabled });
+    } catch {
+      // outside a stack screen there is nothing to park
+    }
+  }
+
+  const lo = parseDecimalText(minText) ?? NaN;
+  const hi = parseDecimalText(maxText) ?? NaN;
   const span = Math.max(1, axisMax - axisMin);
-  const pct = (v: number) =>
-    Math.max(0, Math.min(100, ((v - axisMin) / span) * 100));
-  const hasBand = Number.isFinite(lo) && Number.isFinite(hi) && lo < hi;
+  const bothSet = Number.isFinite(lo) && Number.isFinite(hi);
+  const hasBand = bothSet && lo < hi;
 
   const loOut =
     bounds != null && Number.isFinite(lo) && (lo < bounds.min || lo > bounds.max);
@@ -81,14 +105,15 @@ export function RangeInput({
   const loInvalid = !!loOut || (orderInvalid && !hiOut);
   const hiInvalid = !!hiOut || (orderInvalid && !loOut);
   const showsError = orderInvalid || !!loOut || !!hiOut;
+  const errorText = showsError
+    ? (loOut || hiOut) && outOfBoundsMessage
+      ? outOfBoundsMessage
+      : invalidMessage
+    : undefined;
   const bandColor = showsError ? GLUCOSE_RICH.low : GLUCOSE_RICH.target;
-  const x1 = hasBand ? pct(lo) : 0;
-  const x2 = hasBand ? pct(hi) : 0;
 
   function sanitize(s: string): string {
-    return decimals
-      ? s.replace(/[^0-9.,]/g, "").replace(/(\..*)\./g, "$1")
-      : s.replace(/[^0-9]/g, "");
+    return sanitizeNumberText(s, decimals === true);
   }
 
   // ── Drag support ────────────────────────────────────────────────────────
@@ -98,17 +123,62 @@ export function RangeInput({
   const fmtVal = (v: number) =>
     decimals ? (Math.round(v * 10) / 10).toFixed(1) : String(Math.round(v));
 
-  const trackWRef = useRef(0);
+  const [trackW, setTrackW] = useState(0);
   const [dragging, setDragging] = useState<null | "lo" | "hi">(null);
+  const draggingRef = useRef<null | "lo" | "hi">(null);
+  draggingRef.current = dragging;
+  const usable = Math.max(1, trackW - THUMB);
+  const usableRef = useRef(usable);
+  usableRef.current = usable;
+
+  const clamp01 = (p: number) => Math.max(0, Math.min(1, p));
+  const posOf = (v: number) => THUMB / 2 + clamp01((v - axisMin) / span) * usable;
+
   const startValRef = useRef(0);
   const lastValRef = useRef<number | null>(null);
-  // Everything the responder needs, refreshed each render so a unit switch (which
-  // changes span/step/bounds) is picked up without re-arming the responder.
-  const env = { span, step, decimals, minBound, maxBound, onChangeMin, onChangeMax, onBlur, lo, hi };
+  // Everything the responders need, refreshed each render so a unit switch
+  // (which changes span/step/bounds) is picked up without re-arming them.
+  const env = {
+    span,
+    step,
+    decimals,
+    axisMin,
+    minBound,
+    maxBound,
+    onChangeMin,
+    onChangeMax,
+    onBlur,
+    lo,
+    hi,
+  };
   const envRef = useRef(env);
   envRef.current = env;
 
-  const makeResponder = (which: "lo" | "hi") =>
+  /** One clamp for drags, rail taps and accessibility nudges alike. */
+  function settle(which: "lo" | "hi", raw: number): number {
+    const e = envRef.current;
+    let v = Math.round(raw / e.step) * e.step;
+    if (e.decimals) v = Math.round(v * 10) / 10;
+    if (which === "lo") {
+      const ceiling = Number.isFinite(e.hi) ? e.hi - e.step : e.maxBound;
+      v = Math.max(e.minBound, Math.min(v, ceiling));
+    } else {
+      const floor = Number.isFinite(e.lo) ? e.lo + e.step : e.minBound;
+      v = Math.min(e.maxBound, Math.max(v, floor));
+    }
+    return e.decimals ? Math.round(v * 10) / 10 : v;
+  }
+
+  function emit(which: "lo" | "hi", v: number) {
+    if (lastValRef.current === v) return;
+    lastValRef.current = v;
+    hapticSelect();
+    (which === "lo" ? envRef.current.onChangeMin : envRef.current.onChangeMax)(
+      fmtVal(v)
+    );
+  }
+
+  const makeThumbResponder = (which: "lo" | "hi") =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
@@ -116,100 +186,145 @@ export function RangeInput({
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
         const e = envRef.current;
+        setScreenGesture(false);
         setDragging(which);
         startValRef.current = which === "lo" ? e.lo : e.hi;
         lastValRef.current = null;
       },
       onPanResponderMove: (_evt, g) => {
         const e = envRef.current;
-        const w = trackWRef.current || 1;
-        let v = startValRef.current + (g.dx / w) * e.span;
-        v = Math.round(v / e.step) * e.step;
-        if (e.decimals) v = Math.round(v * 10) / 10;
-        if (which === "lo") v = Math.max(e.minBound, Math.min(v, e.hi - e.step));
-        else v = Math.min(e.maxBound, Math.max(v, e.lo + e.step));
-        if (lastValRef.current !== v) {
-          lastValRef.current = v;
-          hapticSelect();
-          (which === "lo" ? e.onChangeMin : e.onChangeMax)(fmtVal(v));
-        }
+        emit(
+          which,
+          settle(which, startValRef.current + (g.dx / usableRef.current) * e.span)
+        );
       },
       onPanResponderRelease: () => {
+        setScreenGesture(true);
         setDragging(null);
         envRef.current.onBlur?.();
       },
       onPanResponderTerminate: () => {
+        setScreenGesture(true);
         setDragging(null);
         envRef.current.onBlur?.();
       },
     });
 
-  const loResponder = useRef(makeResponder("lo")).current;
-  const hiResponder = useRef(makeResponder("hi")).current;
+  const loResponder = useRef(makeThumbResponder("lo")).current;
+  const hiResponder = useRef(makeThumbResponder("hi")).current;
 
-  // A render HELPER, not a component: the returned host Views keep a stable type
-  // across renders, so the pan responder is never remounted mid-drag (see BUGFIX).
+  /**
+   * The keyboard/screen-reader path for the same two ends. `adjustable`
+   * promises "swipe up or down to change this", so the actions have to exist
+   * and land on exactly the drag arithmetic, one-step separation included.
+   */
+  const nudge = (which: "lo" | "hi", direction: 1 | -1) => {
+    const e = envRef.current;
+    const current = which === "lo" ? e.lo : e.hi;
+    if (!Number.isFinite(current)) return;
+    const v = settle(which, current + direction * e.step);
+    if (v === current) return;
+    lastValRef.current = null;
+    emit(which, v);
+    e.onBlur?.();
+  };
+
+  // The lift on the thumb being dragged: transform only, so it runs on the UI
+  // thread and never competes with the value updates the gesture is emitting.
+  const loLift = useRef(new Animated.Value(1)).current;
+  const hiLift = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.spring(loLift, {
+      toValue: dragging === "lo" ? 1.18 : 1,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 260,
+      mass: 0.6,
+    }).start();
+    Animated.spring(hiLift, {
+      toValue: dragging === "hi" ? 1.18 : 1,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 260,
+      mass: 0.6,
+    }).start();
+  }, [dragging, loLift, hiLift]);
+
+  // A render HELPER, not a component: the returned host Views keep a stable
+  // type across renders, so a pan responder is never remounted mid-drag.
   const thumb = (
     which: "lo" | "hi",
-    at: number,
     value: number,
-    responder: typeof loResponder
+    responder: typeof loResponder,
+    lift: Animated.Value
   ) => (
     <View
       key={which}
       {...responder.panHandlers}
+      // The visible thumb is 22pt; the slop brings the grab area to 44pt wide.
+      hitSlop={{ top: 6, bottom: 6, left: 11, right: 11 }}
       style={{
         position: "absolute",
-        left: `${at}%`,
+        left: posOf(value) - THUMB / 2,
         top: 0,
         bottom: 0,
-        width: HIT_TARGET,
-        marginLeft: -HIT_TARGET / 2,
+        width: THUMB,
         alignItems: "center",
         justifyContent: "center",
       }}
+      accessible
       accessibilityRole="adjustable"
-      accessibilityLabel={which === "lo" ? minLabel : maxLabel}
-      accessibilityValue={{ now: value }}
+      accessibilityLabel={`${label}, ${which === "lo" ? minLabel : maxLabel}`}
+      accessibilityValue={{
+        now: value,
+        min: minBound,
+        max: maxBound,
+        text: `${fmtVal(value)} ${unit}`,
+      }}
+      accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "increment") nudge(which, 1);
+        else if (event.nativeEvent.actionName === "decrement") nudge(which, -1);
+      }}
     >
-      {dragging === which ? (
-        <View
-          style={{
-            position: "absolute",
-            top: -6,
-            backgroundColor: bandColor,
-            borderRadius: RADIUS.sm,
-            paddingHorizontal: 8,
-            paddingVertical: 3,
-          }}
-        >
-          <Text style={[TABULAR, { color: "#04121a", fontSize: 12, fontWeight: "800" }]}>
-            {fmtVal(value)}
-          </Text>
-        </View>
-      ) : null}
-      <View
+      {/* No drag bubble on purpose: the big readout above the rail is the live
+          value display, and a bubble here covered it while adjusting. */}
+      <Animated.View
         style={[
           {
-            width: 26,
-            height: 26,
-            borderRadius: 13,
+            width: THUMB,
+            height: THUMB,
+            borderRadius: THUMB / 2,
             backgroundColor: THEME.ink,
             borderWidth: 3,
             borderColor: bandColor,
+            transform: [{ scale: lift }],
           },
           dragging === which
-            ? glow(bandColor, 12, 0.7, "shadowless")
-            : { shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
+            ? glow(bandColor, 14, 0.75, "shadowless")
+            : {
+                shadowColor: "#000",
+                shadowOpacity: 0.35,
+                shadowRadius: 6,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: 4,
+              },
         ]}
       />
     </View>
   );
 
+  const loX = bothSet ? posOf(lo) : 0;
+  const hiX = bothSet ? posOf(hi) : 0;
+  // The stretch above the high end reads as a ramp rather than one flat block:
+  // yellow nearest the band, amber at the far end.
+  const aboveW = Math.max(0, trackW - hiX);
+
   return (
     <GlassCard
       glow={hasBand && !showsError ? GLUCOSE_RICH.target : undefined}
-      style={{ marginBottom: 12 }}
+      radius={RADIUS.xl}
+      style={[{ marginBottom: 12, padding: 14 }, isWide ? contentColumn : undefined]}
     >
       <Text
         style={{
@@ -222,29 +337,95 @@ export function RangeInput({
         {upper(label)}
       </Text>
 
-      {/* The rail + filled band + two draggable handles */}
+      {/* The range as it stands right now, in one readable line. */}
       <View
-        style={{ height: HIT_TARGET, marginTop: 12, justifyContent: "center" }}
-        onLayout={(e) => {
-          trackWRef.current = e.nativeEvent.layout.width;
-        }}
+        className="flex-row items-baseline"
+        style={{ marginTop: 6 }}
+        accessible
+        accessibilityLabel={`${label}. ${minLabel} ${minText || "-"} ${unit}. ${maxLabel} ${maxText || "-"} ${unit}`}
       >
-        {/* rail */}
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+          style={[
+            TABULAR,
+            {
+              color: showsError ? GLUCOSE_RICH.low : THEME.ink,
+              fontSize: 21,
+              lineHeight: 25,
+              fontWeight: "800",
+              flexShrink: 1,
+            },
+          ]}
+        >
+          {minText || "-"}
+          <Text style={{ color: THEME.muted, fontWeight: "700" }}>-</Text>
+          {maxText || "-"}
+        </Text>
+        <Text
+          numberOfLines={1}
+          style={{ color: THEME.muted, fontSize: 12, marginLeft: 7, flexShrink: 0 }}
+        >
+          {unit}
+        </Text>
+      </View>
+
+      {/* Rail: below-band, band, above-band. A picture of the entered values.
+          Deliberately NOT tappable: a tap that teleported the nearer end made
+          near-miss grabs feel broken. Adjusting is thumbs or typing only. */}
+      <View
+        style={{ height: TRACK_H, marginTop: 8, justifyContent: "center" }}
+        onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+      >
         <View
           style={{
-            height: 8,
-            borderRadius: 4,
+            height: RAIL_H,
+            borderRadius: RAIL_H / 2,
             backgroundColor: THEME.track,
             overflow: "hidden",
           }}
         >
-          {/* filled band between the two ends */}
-          {hasBand ? (
+          {bothSet && trackW > 0 ? (
+            <>
+              <View
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  width: Math.max(0, loX),
+                  top: 0,
+                  bottom: 0,
+                  backgroundColor: withAlpha(GLUCOSE_RICH.low, 0.22),
+                }}
+              />
+              <View
+                style={{
+                  position: "absolute",
+                  left: hiX,
+                  width: aboveW * 0.5,
+                  top: 0,
+                  bottom: 0,
+                  backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.18),
+                }}
+              />
+              <View
+                style={{
+                  position: "absolute",
+                  left: hiX + aboveW * 0.5,
+                  width: aboveW * 0.5,
+                  top: 0,
+                  bottom: 0,
+                  backgroundColor: withAlpha(GLUCOSE_RICH.wellAbove, 0.3),
+                }}
+              />
+            </>
+          ) : null}
+          {hasBand && trackW > 0 ? (
             <View
               style={{
                 position: "absolute",
-                left: `${x1}%`,
-                width: `${Math.max(0.5, x2 - x1)}%`,
+                left: loX,
+                width: Math.max(2, hiX - loX),
                 top: 0,
                 bottom: 0,
                 backgroundColor: bandColor,
@@ -252,13 +433,25 @@ export function RangeInput({
             />
           ) : null}
         </View>
-        {/* handles (inline host Views - never remount mid-drag) */}
-        {hasBand ? thumb("lo", x1, lo, loResponder) : null}
-        {hasBand ? thumb("hi", x2, hi, hiResponder) : null}
+
+        {/* Both thumbs render even when the ends are the wrong way round, so an
+            out-of-order range can still be dragged back into shape. */}
+        {bothSet && trackW > 0 ? thumb("lo", lo, loResponder, loLift) : null}
+        {bothSet && trackW > 0 ? thumb("hi", hi, hiResponder, hiLift) : null}
       </View>
 
-      {/* The two ends, editable */}
-      <View className="flex-row mt-2" style={{ gap: 10 }}>
+      {/* Axis ends, so the rail's scale is readable without dragging it. */}
+      <View className="flex-row justify-between" style={{ marginTop: -2, marginBottom: 10 }}>
+        <Text style={[TABULAR, { color: THEME.muted, fontSize: 10 }]}>
+          {fmtVal(axisMin)}
+        </Text>
+        <Text style={[TABULAR, { color: THEME.muted, fontSize: 10 }]}>
+          {fmtVal(axisMax)}
+        </Text>
+      </View>
+
+      {/* The two ends, typeable */}
+      <View className="flex-row" style={{ gap: 10 }}>
         <End
           label={minLabel}
           value={minText}
@@ -267,6 +460,7 @@ export function RangeInput({
           unit={unit}
           decimals={decimals}
           invalid={loInvalid}
+          errorText={errorText}
         />
         <End
           label={maxLabel}
@@ -276,23 +470,34 @@ export function RangeInput({
           unit={unit}
           decimals={decimals}
           invalid={hiInvalid}
+          errorText={errorText}
         />
       </View>
 
       {hint ? (
-        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 8, lineHeight: 16 }}>
+        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 10, lineHeight: 16 }}>
           {hint}
         </Text>
       ) : null}
-      {showsError ? (
-        <Text style={{ color: GLUCOSE_RICH.low, fontSize: 11, marginTop: 6 }}>
-          {(loOut || hiOut) && outOfBoundsMessage ? outOfBoundsMessage : invalidMessage}
+      {errorText ? (
+        <Text
+          style={{ color: GLUCOSE_RICH.low, fontSize: 11, marginTop: 8, lineHeight: 16 }}
+          accessibilityRole="alert"
+        >
+          {errorText}
         </Text>
       ) : null}
     </GlassCard>
   );
 }
 
+/**
+ * One end of the range as a large, obviously-tappable field.
+ *
+ * The whole box is a press target that focuses the input, not just the glyphs:
+ * a bare TextInput is only as tall as its own line box, so most of a field-sized
+ * area was dead space that swallowed taps without opening the keyboard.
+ */
 function End({
   label,
   value,
@@ -301,6 +506,7 @@ function End({
   unit,
   decimals,
   invalid,
+  errorText,
 }: {
   label: string;
   value: string;
@@ -309,43 +515,90 @@ function End({
   unit: string;
   decimals: boolean;
   invalid?: boolean;
+  /** The message shown under the card, so the field can announce WHY it is red. */
+  errorText?: string;
 }) {
+  const { t } = useTranslation();
+  const ref = useRef<TextInput>(null);
+  const [focused, setFocused] = useState(false);
+
+  const borderColor = invalid
+    ? withAlpha(GLUCOSE_RICH.low, 0.55)
+    : focused
+      ? withAlpha(THEME.accent, 0.7)
+      : THEME.border;
+
   return (
-    <View
+    <Pressable
       className="flex-1"
+      onPress={() => ref.current?.focus()}
+      accessible={false}
       style={[
         {
-          borderRadius: RADIUS.md,
+          borderRadius: RADIUS.lg,
           borderWidth: 1,
-          borderColor: invalid ? withAlpha(GLUCOSE_RICH.low, 0.5) : THEME.border,
-          backgroundColor: THEME.glass,
-          paddingHorizontal: 12,
-          paddingVertical: 8,
+          borderColor,
+          backgroundColor: focused ? withAlpha(THEME.accent, 0.08) : THEME.glass,
+          paddingHorizontal: 10,
+          paddingTop: 6,
+          paddingBottom: 7,
+          minHeight: 46,
+          justifyContent: "center",
         },
         invalid ? glow(GLUCOSE_RICH.low, 10, 0.3) : undefined,
       ]}
     >
-      <Text style={{ color: THEME.muted, fontSize: 10, fontWeight: "700" }}>{label}</Text>
-      <View className="flex-row items-baseline">
+      <View className="flex-row items-center justify-between">
+        <Text
+          numberOfLines={1}
+          style={{ color: THEME.muted, fontSize: 10, fontWeight: "700", flexShrink: 1 }}
+        >
+          {label}
+        </Text>
+        <Ionicons
+          name="keypad-outline"
+          size={12}
+          color={focused ? THEME.accent : THEME.muted}
+        />
+      </View>
+      <View className="flex-row items-baseline" style={{ marginTop: 1 }}>
         <TextInput
+          ref={ref}
           value={value}
           onChangeText={onChange}
-          onBlur={onBlur}
+          onFocus={() => setFocused(true)}
+          onBlur={() => {
+            setFocused(false);
+            onBlur?.();
+          }}
+          selectTextOnFocus
           keyboardType={decimals ? "decimal-pad" : "number-pad"}
-          maxLength={decimals ? 5 : 3}
+          returnKeyType="done"
+          // Wide enough to never refuse a plausible entry; anything past the
+          // caller's bounds is described under the card, not blocked here.
+          maxLength={decimals ? 5 : 4}
+          // The caption above and the unit beside it are siblings, so on their
+          // own the field announced as a bare number with no idea what it edits.
+          accessibilityLabel={`${label}, ${unit}`}
+          accessibilityHint={invalid ? errorText : t("common.tapToEdit")}
           style={[
             TABULAR,
             {
               color: THEME.ink,
-              fontSize: 20,
+              fontSize: 17,
               fontWeight: "800",
-              paddingVertical: 2,
+              padding: 0,
+              minHeight: 22,
               flex: 1,
+              includeFontPadding: false,
+              textAlignVertical: "center",
             },
           ]}
         />
-        <Text style={{ color: THEME.muted, fontSize: 11 }}>{unit}</Text>
+        <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, marginLeft: 4 }}>
+          {unit}
+        </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }

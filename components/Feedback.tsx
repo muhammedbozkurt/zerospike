@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import {
+  AccessibilityInfo,
   Animated,
   BackHandler,
   Easing,
@@ -45,7 +46,7 @@ interface ConfirmOptions {
   icon?: keyof typeof Ionicons.glyphMap;
 }
 
-interface SheetAction {
+export interface SheetAction {
   label: string;
   icon?: keyof typeof Ionicons.glyphMap;
   destructive?: boolean;
@@ -103,6 +104,20 @@ const TOAST_STYLE: Record<
   error: { icon: "alert-circle", color: GLUCOSE_RICH.low },
 };
 
+/** How long a toast stays up. */
+const TOAST_MS = 2200;
+/**
+ * A toast that carries an action stays 6200ms, matching the undo-batch
+ * accumulation window (useUndoBatch).
+ *
+ * With a screen reader on, that window was not an undo model at all: the toast is
+ * painted, not focused, so the announcement lands mid-sentence, the user then has
+ * to swipe to the button, and 6 seconds is gone before they reach it. The whole
+ * "you can take that back" affordance was effectively unavailable to them.
+ */
+const TOAST_ACTION_MS = 6200;
+const TOAST_ACTION_SCREEN_READER_MS = 20000;
+
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   // Toast state
   const [toastMsg, setToastMsg] = useState("");
@@ -155,6 +170,30 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     [closeConfirm, closeSheet]
   );
 
+  // Whether a screen reader is running. Read once and kept current, because
+  // `toast` is synchronous and cannot await the query.
+  const screenReaderOn = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isScreenReaderEnabled()
+      .then((on) => {
+        if (alive) screenReaderOn.current = on;
+      })
+      .catch(() => {
+        // treat an unavailable probe as "off"; the timings stay as they were
+      });
+    const sub = AccessibilityInfo.addEventListener(
+      "screenReaderChanged",
+      (on) => {
+        screenReaderOn.current = on;
+      }
+    );
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+
   const toast = useCallback(
     (message: string, kind: ToastKind = "success", action?: ToastAction) => {
       setToastMsg(message);
@@ -167,6 +206,23 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
+
+      // A toast is painted into an overlay and never takes focus, so a screen
+      // reader user got NO feedback at all that their save/delete/undo landed.
+      // Announce it, and name the action so they know one is on offer.
+      try {
+        AccessibilityInfo.announceForAccessibility(
+          action ? `${message}. ${action.label}` : message
+        );
+      } catch {
+        // announcing is best-effort; the visual toast is unaffected
+      }
+
+      const visibleMs = action
+        ? screenReaderOn.current
+          ? TOAST_ACTION_SCREEN_READER_MS
+          : TOAST_ACTION_MS
+        : TOAST_MS;
       hideTimer.current = setTimeout(() => {
         Animated.timing(toastAnim, {
           toValue: 0,
@@ -175,9 +231,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
           useNativeDriver: true,
         }).start();
         setToastAction(null);
-        // 6200ms matches the undo-batch accumulation window (useUndoBatch), so a
-        // toast never fades while its batch is still open to a second delete.
-      }, action ? 6200 : 2200);
+      }, visibleMs);
     },
     [toastAnim]
   );
@@ -376,15 +430,23 @@ function FeedbackOverlays() {
             }}
           />
           <Ionicons name={ts.icon} size={18} color={ts.color} style={{ marginLeft: 4 }} />
-          <Text style={{ color: THEME.ink, fontWeight: "600", marginLeft: 10, flex: 1 }}>
+          <Text
+            accessible
+            accessibilityRole="text"
+            style={{ color: THEME.ink, fontWeight: "600", marginLeft: 10, flex: 1 }}
+          >
             {toastMsg}
           </Text>
           {toastAction ? (
             <Pressable
               onPress={runToastAction}
-              hitSlop={8}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={toastAction.label}
               style={{
                 marginLeft: 10,
+                minHeight: 44,
+                justifyContent: "center",
                 backgroundColor: THEME.accent,
                 borderRadius: RADIUS.full,
                 paddingHorizontal: 14,
@@ -450,6 +512,8 @@ function ConfirmOverlay({
   const cancelButton = (
     <Pressable
       onPress={dismiss}
+      accessibilityRole="button"
+      accessibilityLabel={cancelLabel}
       className={`${width} rounded-2xl bg-glass border border-hair active:opacity-80 py-3.5 px-3`}
     >
       <DialogLabel className="text-ink font-semibold">{cancelLabel}</DialogLabel>
@@ -459,6 +523,8 @@ function ConfirmOverlay({
   const confirmButton = (
     <Pressable
       onPress={() => onClose(true)}
+      accessibilityRole="button"
+      accessibilityLabel={confirmLabel}
       className={`${width} rounded-2xl py-3.5 px-3 ${
         opts.destructive
           ? "bg-low active:opacity-80"
@@ -470,8 +536,20 @@ function ConfirmOverlay({
   );
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
-      <Pressable className="flex-1 bg-black/70 justify-center px-8" onPress={dismiss}>
+    // accessibilityViewIsModal: without it VoiceOver kept swiping straight past
+    // the dialog into the screen underneath, so a destructive confirmation could
+    // be answered by tapping a control it was supposed to be blocking.
+    <Animated.View
+      style={[StyleSheet.absoluteFill, { opacity: anim }]}
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+    >
+      <Pressable
+        className="flex-1 bg-black/70 justify-center px-8"
+        onPress={dismiss}
+        accessibilityRole="button"
+        accessibilityLabel={cancelLabel}
+      >
         <Animated.View
           style={{
             transform: [
@@ -495,6 +573,10 @@ function ConfirmOverlay({
               elevation: 16,
             }}
             onPress={(e) => e.stopPropagation()}
+            accessibilityRole="alert"
+            accessibilityLabel={
+              opts.title ? `${opts.title}. ${opts.message}` : opts.message
+            }
           >
             <View className="items-center mb-3">
               <View
@@ -578,8 +660,19 @@ function SheetOverlay({
   useBackHandler(onClose);
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
-      <Pressable className="flex-1 bg-black/70 justify-end" onPress={onClose}>
+    // See ConfirmOverlay: the sheet has to own accessibility focus, or a screen
+    // reader walks past its options into the list it is covering.
+    <Animated.View
+      style={[StyleSheet.absoluteFill, { opacity: anim }]}
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+    >
+      <Pressable
+        className="flex-1 bg-black/70 justify-end"
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel={t("common.cancel")}
+      >
         <Animated.View
           style={{
             transform: [
@@ -612,6 +705,8 @@ function SheetOverlay({
               <Pressable
                 key={i}
                 onPress={() => onRun(a)}
+                accessibilityRole="button"
+                accessibilityLabel={a.label}
                 className="flex-row items-center rounded-2xl bg-glass border border-hair px-4 py-3.5 mb-2 active:opacity-80"
               >
                 {a.icon ? (
@@ -638,6 +733,8 @@ function SheetOverlay({
             ))}
             <Pressable
               onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.cancel")}
               className="rounded-2xl bg-glass border border-hair active:opacity-80 px-4 py-3.5 mt-1"
             >
               <DialogLabel className="text-mut font-semibold">

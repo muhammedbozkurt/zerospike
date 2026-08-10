@@ -55,7 +55,9 @@ export default function ScanScreen() {
         const food = await cacheBarcodeFood({
           barcode: result.product.barcode,
           name: result.product.name,
+          names: result.product.names,
           brand: result.product.brand,
+          category: result.product.category,
           carb_100g: result.product.carb100g,
           portion_size_g: result.product.portionG,
           source: OFF_SOURCE,

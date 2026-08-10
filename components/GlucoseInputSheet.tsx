@@ -21,18 +21,33 @@ import type { GlucoseUnit, LogTag, PeriodTag } from "../lib/db/types";
 import type { GlucoseStatus, TargetProfile } from "../lib/glucose";
 import {
   classifyGlucose,
+  formatGlucose,
   glucoseFromDisplay,
   glucoseToDisplay,
   glucoseUnitLabel,
+  VERY_HIGH_MGDL,
 } from "../lib/glucose";
 import { TagPicker } from "./TagPicker";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
-import { formatTime, relativeDay } from "../lib/format";
-import { RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { formatTime, num, relativeDay } from "../lib/format";
+import {
+  GLUCOSE_INPUT_CEILING,
+  glucoseAboveCeiling,
+  parseDecimalText,
+  sanitizeNumberText,
+} from "../lib/numberInput";
+import { INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { GradientCTA } from "./rich/GradientCTA";
 import { PressableScale } from "../lib/theme/motion";
 import { hapticSelect } from "../lib/haptics";
+import { useLayout } from "../lib/useLayout";
+
+/** Below this much room left over, the sheet drops into its compact type and
+ *  spacing so the hero, the pills and Save all still fit above the keyboard. */
+const COMPACT_BELOW = 520;
+/** Widest the sheet gets on a tablet before it stops stretching and centres. */
+const SHEET_MAX_WIDTH = 600;
 
 const PERIODS: PeriodTag[] = [
   "fasting",
@@ -94,7 +109,21 @@ export function GlucoseInputSheet({
   // null keeps the "log it as of now" default; a Date is an explicit pick.
   const [loggedAt, setLoggedAt] = useState<Date | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
-  const translateY = useRef(new Animated.Value(0)).current;
+  const { isWide } = useLayout();
+  const heroRef = useRef<TextInput>(null);
+  /** Height actually left for the sheet: the keyboard has already been taken out
+   *  of it on both platforms (iOS via the avoiding view's padding, Android via
+   *  the modal window's adjustResize), so one measurement drives compact mode
+   *  without guessing at keyboard metrics. */
+  const [availH, setAvailH] = useState(0);
+  const compact = availH > 0 && availH < COMPACT_BELOW;
+
+  // OFFSCREEN, not 0: the sheet's real height is only known after layout, so it
+  // waits out of frame instead of flashing at its final position for a frame.
+  const translateY = useRef(new Animated.Value(900)).current;
+  const backdrop = useRef(new Animated.Value(0)).current;
+  const sheetHRef = useRef(0);
+  const appearedRef = useRef(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -116,10 +145,50 @@ export function GlucoseInputSheet({
         setLoggedAt(null);
       }
       setTimePickerOpen(false);
-      translateY.setValue(0);
+      appearedRef.current = false;
+      translateY.setValue(900);
+      backdrop.setValue(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, initialPeriod, edit?.id]);
+
+  /**
+   * The keyboard comes up in the same motion as the sheet: the request goes in
+   * as soon as the content mounts, so both animate together instead of the
+   * keyboard arriving as a second, separate jump. `onShow` repeats the request
+   * as a backstop for platforms where an autofocus inside a modal is dropped.
+   */
+  const submittedRef = useRef(false);
+  useEffect(() => {
+    if (!visible) return;
+    submittedRef.current = false;
+    const id = setTimeout(() => heroRef.current?.focus(), 60);
+    return () => clearTimeout(id);
+  }, [visible]);
+
+  /** Slide the sheet out first, then hand back to the caller (close or save).
+   *  Every exit goes through here, so the sheet never simply blinks away. */
+  function animateOut(done: () => void) {
+    Keyboard.dismiss();
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: sheetHRef.current || 700,
+        duration: 190,
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdrop, {
+        toValue: 0,
+        duration: 190,
+        useNativeDriver: true,
+      }),
+    ]).start(() => done());
+  }
+
+  function animateClose() {
+    animateOut(() => closeRef.current());
+  }
+  const closeSheetRef = useRef(animateClose);
+  closeSheetRef.current = animateClose;
 
   const pan = useRef(
     PanResponder.create({
@@ -131,11 +200,7 @@ export function GlucoseInputSheet({
       },
       onPanResponderRelease: (_, g) => {
         if (g.dy > 120 || g.vy > 0.6) {
-          Animated.timing(translateY, {
-            toValue: 700,
-            duration: 180,
-            useNativeDriver: true,
-          }).start(() => closeRef.current());
+          closeSheetRef.current();
         } else {
           Animated.spring(translateY, {
             toValue: 0,
@@ -147,29 +212,40 @@ export function GlucoseInputSheet({
     })
   ).current;
 
+  // ONE numeric normalizer for every field in the app (lib/numberInput): the
+  // comma is a decimal separator, so "5,5" stays 5.5 mmol/L instead of being
+  // stripped into 55 - an 18x fictional reading on a comma-decimal keyboard.
   function onType(s: string) {
-    const clean = mmol
-      ? s.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1")
-      : s.replace(/[^0-9]/g, "");
-    setValue(clean);
+    setValue(sanitizeNumberText(s, mmol));
   }
+
+  const typed = parseDecimalText(value);
 
   function submit() {
-    const num = parseFloat(value);
-    if (!Number.isFinite(num) || num < minD || num > maxD) return;
-    onSubmit(glucoseFromDisplay(num, unit), period, tags, loggedAt);
+    if (typed == null || typed < minD || typed > maxD) return;
+    // A second Save tap during the 190ms exit would restart the animation and
+    // fire onSubmit twice, storing the reading twice.
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    // Captured BEFORE the exit animation: the callback fires a frame later and
+    // must save exactly what was on screen when Save was pressed.
+    const mgdl = glucoseFromDisplay(typed, unit);
+    const p = period;
+    const tg = tags;
+    const at = loggedAt;
+    animateOut(() => onSubmit(mgdl, p, tg, at));
   }
 
-  const valid = (() => {
-    const n = parseFloat(value);
-    return Number.isFinite(n) && n >= minD && n <= maxD;
-  })();
+  const valid = typed != null && typed >= minD && typed <= maxD;
+
+  // Descriptive, never blocking: the value is still saved exactly as entered.
+  const aboveMeterRange = glucoseAboveCeiling(typed, unit);
 
   // Live status for the big number. It runs the SAME classification the journal
   // and dashboard use, against the same profile range and period, so the colour
   // the user sees while typing is the colour the saved entry gets. Never the
   // sole cue: the numeral and a labelled chip always accompany it.
-  const mgdlNow = valid ? glucoseFromDisplay(parseFloat(value), unit) : null;
+  const mgdlNow = valid && typed != null ? glucoseFromDisplay(typed, unit) : null;
   const liveStatus: GlucoseStatus | null =
     mgdlNow == null ? null : classifyGlucose(mgdlNow, period, profile ?? {});
   const numColor = liveStatus ? RICH_BY_STATUS[liveStatus] : THEME.ink;
@@ -188,22 +264,81 @@ export function GlucoseInputSheet({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      {/* A bottom sheet has nothing to scroll into view, so it lifts as a whole.
-          This is the case KeyboardAvoidingView is for; the scroll-container
-          screens use automaticallyAdjustKeyboardInsets instead (lib/keyboard.ts). */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-      >
-        <Pressable
-          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
-          onPress={onClose}
+    <Modal
+      visible={visible}
+      transparent
+      // The slide is driven here instead (native driver, measured height), so
+      // the keyboard can rise in the SAME motion as the sheet rather than
+      // fighting a platform transition that has its own timing.
+      animationType="none"
+      onRequestClose={animateClose}
+      onShow={() => heroRef.current?.focus()}
+    >
+      <View className="flex-1">
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: "#000",
+              opacity: backdrop.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.72],
+              }),
+            },
+          ]}
+        />
+        {/* A bottom sheet has nothing to scroll into view, so it lifts as a whole.
+            This is the case KeyboardAvoidingView is for; the scroll-container
+            screens use automaticallyAdjustKeyboardInsets instead (lib/keyboard.ts).
+            Inside a Modal the sheet starts at the window's own top, so the
+            offset is 0 - anything else double-counts a header that is not there. */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={0}
+          className="flex-1"
         >
-          {/* Capped at the lifted container's height: on a small phone the sheet
-              is taller than what the keyboard leaves, and Save would otherwise
-              be pushed off the top with no way to reach it. */}
-          <Animated.View style={{ transform: [{ translateY }], maxHeight: "100%" }}>
+          <Pressable
+            style={{ flex: 1, justifyContent: "flex-end" }}
+            onPress={animateClose}
+            onLayout={(e) => setAvailH(e.nativeEvent.layout.height)}
+          >
+            {/* Capped at the lifted container's height: on a small phone the sheet
+                is taller than what the keyboard leaves, and Save would otherwise
+                be pushed off the top with no way to reach it. */}
+            <Animated.View
+              style={[
+                { transform: [{ translateY }], maxHeight: "100%" },
+                isWide
+                  ? {
+                      width: "100%",
+                      maxWidth: SHEET_MAX_WIDTH,
+                      alignSelf: "center",
+                    }
+                  : undefined,
+              ]}
+              onLayout={(e) => {
+                const h = e.nativeEvent.layout.height;
+                sheetHRef.current = h;
+                if (appearedRef.current || h <= 0) return;
+                appearedRef.current = true;
+                translateY.setValue(h);
+                Animated.parallel([
+                  Animated.spring(translateY, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    damping: 26,
+                    stiffness: 260,
+                    mass: 0.9,
+                  }),
+                  Animated.timing(backdrop, {
+                    toValue: 1,
+                    duration: 200,
+                    useNativeDriver: true,
+                  }),
+                ]).start();
+              }}
+            >
             <Pressable
               onPress={(e) => e.stopPropagation()}
               style={[
@@ -216,9 +351,18 @@ export function GlucoseInputSheet({
                   borderColor: THEME.border,
                   backgroundColor: THEME.bg.g1,
                   paddingHorizontal: 18,
-                  paddingTop: 10,
+                  // ONE gap above the grabber; the row below carries the rest.
+                  paddingTop: 8,
                   overflow: "hidden",
                 },
+                isWide
+                  ? {
+                      borderBottomLeftRadius: 26,
+                      borderBottomRightRadius: 26,
+                      borderBottomWidth: 1,
+                      marginBottom: 20,
+                    }
+                  : undefined,
                 glow(liveStatus ? numColor : THEME.accent, 34, 0.35),
               ]}
             >
@@ -234,7 +378,9 @@ export function GlucoseInputSheet({
               </Svg>
 
               <View {...pan.panHandlers}>
-                <View className="items-center py-1 mb-1">
+                {/* The grabber's own row IS the gap under it; the sheet's
+                    paddingTop is the one above. No stacked py + mb. */}
+                <View className="items-center" style={{ paddingBottom: 10 }}>
                   <View
                     style={{
                       width: 38,
@@ -250,7 +396,7 @@ export function GlucoseInputSheet({
                     {edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}
                   </Text>
                   <Pressable
-                    onPress={onClose}
+                    onPress={animateClose}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel={t("common.close")}
@@ -268,44 +414,63 @@ export function GlucoseInputSheet({
                 bounces={false}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 30, paddingTop: 12 }}
+                contentContainerStyle={{
+                  paddingBottom: compact ? 16 : 30,
+                  paddingTop: compact ? 4 : 12,
+                }}
               >
-                {/* Hero: the numeral is the screen. */}
+                {/* Hero: the numeral is the screen. On a short phone with the
+                    keyboard up it gives back height first, so the pills, the
+                    time row and Save stay reachable instead of scrolling away. */}
                 <View className="items-center">
                   <TextInput
+                    ref={heroRef}
                     value={value}
                     onChangeText={onType}
                     keyboardType={mmol ? "decimal-pad" : "number-pad"}
-                    autoFocus
                     placeholder={mmol ? "6.1" : "110"}
                     placeholderTextColor="rgba(137,163,176,0.7)"
+                    accessibilityLabel={`${edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}, ${glucoseUnitLabel(unit)}`}
                     style={[
                       TABULAR,
+                      INPUT_TEXT,
                       {
                         color: numColor,
-                        fontSize: 56,
-                        lineHeight: 64,
+                        fontSize: compact ? 40 : 56,
                         fontWeight: "800",
                         textAlign: "center",
                         minWidth: 150,
+                        paddingVertical: 0,
                         textShadowColor: valid ? `${numColor}99` : "transparent",
                         textShadowRadius: 26,
                       },
                     ]}
                     maxLength={mmol ? 4 : 3}
                   />
-                  <Text style={{ color: THEME.muted, fontSize: 12, marginTop: -4 }}>
+                  <Text
+                    style={{
+                      color: THEME.muted,
+                      fontSize: 12,
+                      marginTop: compact ? 0 : -4,
+                    }}
+                  >
                     {glucoseUnitLabel(unit)}
                   </Text>
-                  <View style={{ minHeight: 26, marginTop: 8 }}>
+                  <View style={{ minHeight: 26, marginTop: compact ? 5 : 8 }}>
                     {liveStatus ? (
                       <GlucoseChip status={liveStatus} label={statusLabel(liveStatus)} />
                     ) : null}
                   </View>
                 </View>
 
-                {/* The fixed clinical class gets one line of neutral, general
-                    information. No diagnosis, no treatment, no instruction. */}
+                {/* The fixed clinical class gets one purely descriptive line.
+                    No diagnosis, no treatment, no instruction. The threshold is
+                    rendered in the profile's own unit, so an mmol user is not
+                    shown an mg/dL number they have to convert in their head.
+                    aboveMeterRange (past what a consumer meter reports) is a
+                    STRICT superset of veryHigh, so the two never need separate
+                    boxes: one box, title always veryHighTitle, body swaps to the
+                    meter-range note only when the value is past the ceiling. */}
                 {liveStatus === "veryHigh" ? (
                   <View
                     className="rounded-2xl px-3.5 py-3 mt-3"
@@ -326,13 +491,36 @@ export function GlucoseInputSheet({
                       {t("glucose.veryHighTitle")}
                     </Text>
                     <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18, opacity: 0.85 }}>
-                      {t("glucose.veryHighNote")}
+                      {aboveMeterRange
+                        ? t("glucose.aboveMeterRange", {
+                            max: num(GLUCOSE_INPUT_CEILING[unit]),
+                            unit: glucoseUnitLabel(unit),
+                          })
+                        : t("glucose.veryHighNote", {
+                            value: formatGlucose(VERY_HIGH_MGDL, unit),
+                            unit: glucoseUnitLabel(unit),
+                          })}
                     </Text>
                   </View>
                 ) : null}
 
-                {/* Period as pill buttons, the mockup's row of small CTAs. */}
-                <View className="flex-row flex-wrap justify-center mt-5" style={{ gap: 6 }}>
+                {/* Period as pill buttons, the mockup's row of small CTAs.
+                    A horizontal scroller, not a wrap: at DE/FR label lengths a
+                    wrapping row breaks unevenly onto a second line and leaves
+                    a lopsided one- or two-pill remainder centered under it. A
+                    single scrollable row keeps every language on one line. */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  bounces={false}
+                  style={{ marginTop: compact ? 12 : 20 }}
+                  contentContainerStyle={{
+                    flexGrow: 1,
+                    flexDirection: "row",
+                    justifyContent: "center",
+                    gap: 6,
+                  }}
+                >
                   {PERIODS.map((p) => {
                     const on = p === period;
                     return (
@@ -370,7 +558,7 @@ export function GlucoseInputSheet({
                       </PressableScale>
                     );
                   })}
-                </View>
+                </ScrollView>
 
                 {/* When the reading was taken (date + time, never in the future) */}
                 <Pressable
@@ -378,8 +566,9 @@ export function GlucoseInputSheet({
                     Keyboard.dismiss();
                     setTimePickerOpen((v) => !v);
                   }}
-                  className="flex-row items-center mt-5"
+                  className="flex-row items-center"
                   style={{
+                    marginTop: compact ? 12 : 20,
                     borderRadius: RADIUS.md,
                     borderWidth: 1,
                     borderColor: THEME.border,
@@ -407,14 +596,19 @@ export function GlucoseInputSheet({
                   onClose={() => setTimePickerOpen(false)}
                 />
 
-                <TagPicker value={tags} onChange={setTags} className="mt-4 mb-5" />
+                <TagPicker
+                  value={tags}
+                  onChange={setTags}
+                  className={compact ? "mt-3 mb-3" : "mt-4 mb-5"}
+                />
 
                 <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
               </ScrollView>
             </Pressable>
-          </Animated.View>
-        </Pressable>
-      </KeyboardAvoidingView>
+            </Animated.View>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

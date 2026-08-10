@@ -30,7 +30,7 @@ const DEVICE_ID_KEY = "zerospike.deviceId";
 /**
  * Persistent anonymous install id (R10 FAZ 2), created once and reused for the
  * life of the install. Sent as `x-device-id` ONLY so the edge function can
- * apply a per-device daily message cap even if its URL leaks — it is not tied
+ * apply a per-device daily message cap even if its URL leaks, it is not tied
  * to identity or health data, and this is the only thing it is used for.
  * Spoofable by design (a fresh install gets a fresh id, and the header can be
  * forged); the goal is a cost ceiling, not access control.

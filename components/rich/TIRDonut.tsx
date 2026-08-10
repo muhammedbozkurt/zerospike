@@ -19,6 +19,8 @@ interface TIRDonutProps {
   centerValue?: string;
   /** Small suffix after the centre number (e.g. "%"). */
   centerSuffix?: string;
+  /** Render `centerSuffix` BEFORE the number (Turkish writes "%92"). */
+  centerSuffixFirst?: boolean;
   size?: number;
   strokeWidth?: number;
   style?: StyleProp<ViewStyle>;
@@ -35,6 +37,7 @@ export function TIRDonut({
   segments,
   centerValue,
   centerSuffix,
+  centerSuffixFirst = false,
   size = 96,
   strokeWidth = 11,
   style,
@@ -77,9 +80,17 @@ export function TIRDonut({
           pointerEvents="none"
           style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}
         >
-          <Text style={[TABULAR, { color: THEME.ink, fontSize: size * 0.22, fontWeight: "800" }]}>
+          <Text
+            style={[TABULAR, { color: THEME.ink, fontSize: size * 0.22, fontWeight: "800" }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+          >
+            {centerSuffix && centerSuffixFirst ? (
+              <Text style={{ fontSize: size * 0.12, color: THEME.muted }}>{centerSuffix}</Text>
+            ) : null}
             {centerValue}
-            {centerSuffix ? (
+            {centerSuffix && !centerSuffixFirst ? (
               <Text style={{ fontSize: size * 0.12, color: THEME.muted }}>{centerSuffix}</Text>
             ) : null}
           </Text>

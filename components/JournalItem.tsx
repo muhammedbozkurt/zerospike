@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import type { JournalEntry } from "../lib/db/journal";
 import type { LogTag, UserProfile } from "../lib/db/types";
+import { FoodPlate } from "./FoodPlate";
 import {
   classifyGlucose,
   GlucoseStatus,
@@ -13,32 +14,56 @@ import {
 } from "../lib/glucose";
 import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
-import { RICH_BY_STATUS, THEME, TABULAR, glow } from "../lib/theme/tokens";
+import { RICH_BY_STATUS, THEME, TABULAR, glow, HIT_TARGET } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { IconTile } from "./rich/IconTile";
 import { withAlpha } from "./rich/GlassCard";
 
 
 
-/** The shared glass "lrow": translucent fill, light border, left accent bar. */
+/** The shared glass "lrow": translucent fill, light border, left accent bar.
+ *
+ *  The edit/delete menu is reached ONLY by long-pressing the row, which a screen
+ *  reader neither announces nor offers. It is now both hinted and exposed as a
+ *  real accessibility action, so the menu is reachable without a long press. */
 function Row({
   children,
   accent,
+  label,
   onPress,
   onLongPress,
 }: {
   children: React.ReactNode;
   accent: string;
+  /** What this row is, spoken as one phrase (the children are decorative parts). */
+  label: string;
   onPress?: () => void;
   onLongPress?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={onLongPress ? t("journal.rowHint") : undefined}
+      accessibilityActions={
+        onLongPress
+          ? [{ name: "longpress", label: t("journal.rowActions") }]
+          : undefined
+      }
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "longpress") onLongPress?.();
+      }}
       style={{
         flexDirection: "row",
         alignItems: "center",
+        // The shortest row (a glucose reading with no tags) came to ~40pt, just
+        // under the 44pt target - and this row IS the tap target for editing.
+        // A floor, not a height: taller rows are untouched, and the row still
+        // grows with the text at a large accessibility font size.
+        minHeight: HIT_TARGET,
         borderRadius: 13,
         borderWidth: 1,
         borderColor: THEME.border,
@@ -98,7 +123,10 @@ function TagBadges({ tags }: { tags: LogTag[] }) {
       {overflow > 0 || expanded ? (
         <Pressable
           onPress={() => setExpanded((e) => !e)}
-          hitSlop={6}
+          // A 10pt chip inside the row's own Pressable: a near-miss opened the
+          // edit flow instead of expanding the tags. The slop carries the target
+          // to ~44pt without making the chip (or the row) any taller.
+          hitSlop={{ top: 13, bottom: 13, left: 12, right: 12 }}
           accessibilityRole="button"
           accessibilityState={{ expanded }}
           accessibilityLabel={expanded ? t("journal.showLess") : allLabel}
@@ -109,6 +137,18 @@ function TagBadges({ tags }: { tags: LogTag[] }) {
     </View>
   );
 }
+
+/**
+ * The meal thumbnail's on-screen size, and the decode budget derived from it.
+ *
+ * A logged meal photo is a full-resolution camera image (several megapixels). It
+ * is shown in a 30x30 dp square, and without a size hint the loader decoded the
+ * whole thing into memory for every visible row - the single most expensive thing
+ * on the journal list. The hint caps the decode at 3x the display size, which is
+ * past any screen's pixel density and a rounding error next to the original.
+ */
+const MEAL_THUMB_DP = 30;
+const MEAL_THUMB_DECODE_PX = MEAL_THUMB_DP * 3;
 
 interface Props {
   entry: JournalEntry;
@@ -121,7 +161,7 @@ interface Props {
   onOpenResponse?: (entry: JournalEntry) => void;
 }
 
-export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse, onOpenResponse }: Props) {
+function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, onOpenResponse }: Props) {
   const { t } = useTranslation();
 
   if (entry.kind === "glucose") {
@@ -131,8 +171,21 @@ export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse,
       profile
     );
     const color = RICH_BY_STATUS[status];
+    const label = [
+      `${formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)} ${glucoseUnitLabel(profile.glucose_unit)}`,
+      t(`period.${entry.period_tag}`),
+      status === "low" ? t("journal.lowBadge") : null,
+      formatTime(entry.logged_at),
+    ]
+      .filter(Boolean)
+      .join(", ");
     return (
-      <Row accent={color} onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
+      <Row
+        accent={color}
+        label={label}
+        onPress={() => onPress?.(entry)}
+        onLongPress={() => onLongPress?.(entry)}
+      >
         {/* value chip carries the reading in its status color (never color alone) */}
         <GlucoseChip
           value={formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)}
@@ -153,7 +206,16 @@ export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse,
           ) : null}
           <TagBadges tags={entry.tags} />
         </View>
-        <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+        {/* The time is the row's right edge: at a large accessibility font size
+            it shrinks rather than wrapping the clock onto two lines. */}
+        <Text
+          style={{ color: THEME.muted, fontSize: 10, marginLeft: 6 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
+          {formatTime(entry.logged_at)}
+        </Text>
       </Row>
     );
   }
@@ -165,8 +227,23 @@ export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse,
         : entry.insulin_type === "bolus"
           ? t("injection.typeBolus")
           : null;
+    const label = [
+      entry.dose_units != null
+        ? `${num(entry.dose_units)} ${t("common.units")}`
+        : null,
+      entry.site ? t(`injectionSite.${entry.site}`) : t("injectionSite.unassigned"),
+      typeLabel,
+      formatTime(entry.logged_at),
+    ]
+      .filter(Boolean)
+      .join(", ");
     return (
-      <Row accent={THEME.accent} onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
+      <Row
+        accent={THEME.accent}
+        label={label}
+        onPress={() => onPress?.(entry)}
+        onLongPress={() => onLongPress?.(entry)}
+      >
         <IconTile icon="medical" size={30} radius={10} style={{ marginRight: 10 }} />
         {entry.dose_units != null ? (
           <View
@@ -193,7 +270,9 @@ export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse,
             adjustsFontSizeToFit
             minimumFontScale={0.85}
           >
-            {t(`injectionSite.${entry.site}`)}
+            {entry.site
+              ? t(`injectionSite.${entry.site}`)
+              : t("injectionSite.unassigned")}
             {typeLabel ? ` · ${typeLabel}` : ""}
           </Text>
           {entry.note ? (
@@ -203,18 +282,62 @@ export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse,
           ) : null}
           <TagBadges tags={entry.tags} />
         </View>
-        <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+        <Text
+          style={{ color: THEME.muted, fontSize: 10, marginLeft: 6 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
+          {formatTime(entry.logged_at)}
+        </Text>
       </Row>
     );
   }
 
-  // meal entry — neutral (muted) accent, on-palette instead of slate hexes.
+  // meal entry: neutral (muted) accent, on-palette instead of slate hexes.
+  const mealLabel = [
+    entry.display_name,
+    `${Math.round(entry.portion_g)} ${t("common.grams")}`,
+    t("journal.carbsLabel", {
+      carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
+    }),
+    t("journal.doseLabel", { dose: num(entry.insulin_dose_units) }),
+    formatTime(entry.logged_at),
+  ].join(", ");
   return (
-    <Row accent={THEME.muted} onPress={() => onPress?.(entry)} onLongPress={() => onLongPress?.(entry)}>
+    <Row
+      accent={THEME.muted}
+      label={mealLabel}
+      onPress={() => onPress?.(entry)}
+      onLongPress={() => onLongPress?.(entry)}
+    >
       {entry.photo_uri_local ? (
-        <Image source={{ uri: entry.photo_uri_local }} style={{ width: 30, height: 30, borderRadius: 10, marginRight: 10 }} />
+        <Image
+          source={{
+            uri: entry.photo_uri_local,
+            width: MEAL_THUMB_DECODE_PX,
+            height: MEAL_THUMB_DECODE_PX,
+          }}
+          resizeMode="cover"
+          resizeMethod="resize"
+          fadeDuration={0}
+          style={{
+            width: MEAL_THUMB_DP,
+            height: MEAL_THUMB_DP,
+            borderRadius: 10,
+            marginRight: 10,
+          }}
+        />
       ) : (
-        <IconTile icon="restaurant" size={30} radius={10} tint={THEME.muted} style={{ marginRight: 10 }} />
+        // Shared food plate: the emoji always travels with an Ionicons fallback,
+        // so a category the emoji map does not know (or a device without an
+        // emoji font) still shows a picture instead of a blank box.
+        <FoodPlate
+          category={entry.category}
+          size={MEAL_THUMB_DP}
+          radius={10}
+          style={{ marginRight: 10 }}
+        />
       )}
       <View className="flex-1">
         {/* Food name is user data: wraps to two lines rather than clipping. */}
@@ -235,20 +358,41 @@ export function JournalItem({ entry, profile, onLongPress, onPress, hasResponse,
         ) : null}
         <TagBadges tags={entry.tags} />
       </View>
-      <View className="items-end">
-        <Text style={{ color: THEME.muted, fontSize: 10 }}>{formatTime(entry.logged_at)}</Text>
+      <View className="items-end" style={{ marginLeft: 6 }}>
+        <Text
+          style={{ color: THEME.muted, fontSize: 10 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
+          {formatTime(entry.logged_at)}
+        </Text>
         {hasResponse && onOpenResponse ? (
+          // Nested inside the row's own Pressable, so it has to be an
+          // unmistakable target of its own: 14pt + hitSlop 8 came to ~30pt, and a
+          // near-miss silently opened the row's edit flow instead. The slop
+          // carries it to 44pt without making the row taller.
           <Pressable
             onPress={() => onOpenResponse(entry)}
-            hitSlop={8}
+            hitSlop={{ top: 14, bottom: 14, left: 16, right: 16 }}
             accessibilityRole="button"
             accessibilityLabel={t("mealResponse.title")}
             style={{ marginTop: 3 }}
           >
-            <Ionicons name="pulse-outline" size={14} color={THEME.accent} />
+            <Ionicons name="pulse-outline" size={16} color={THEME.accent} />
           </Pressable>
         ) : null}
       </View>
     </Row>
   );
 }
+
+/**
+ * Memoized: a journal row's output is a pure function of its entry, the profile's
+ * targets and its two flags. The dashboard re-renders on plenty of things a row
+ * knows nothing about (a ticking timer, a sheet opening, a filter chip), and each
+ * of those used to re-render every visible row - including re-decoding every meal
+ * photo above. The callback props are already identity-stable on the caller side
+ * (a ref-backed wrapper), so the default shallow compare is enough.
+ */
+export const JournalItem = React.memo(JournalItemBase);

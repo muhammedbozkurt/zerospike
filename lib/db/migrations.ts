@@ -19,17 +19,28 @@ import {
   V9_RENAME,
 } from "./v9Sql";
 import { V10_ADD_HK_UUID } from "./v10Sql";
+import {
+  V11_COPY_INJECTIONS,
+  V11_CREATE_INJECTIONS,
+  V11_DROP_OLD,
+  V11_DROP_SCRATCH,
+  V11_INDEX,
+  V11_RENAME,
+} from "./v11Sql";
+import { V12_INDEXES } from "./v12Sql";
+import { V13_ADD_MEAL_TEMPLATE_ID, V13_CREATE } from "./v13Sql";
+import { V14_CREATE } from "./v14Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
  * lib/db/index.ts so scripts/migration.test.ts can import and run the REAL
  * functions instead of hand-maintained copies. Behavior is byte-for-byte
  * identical to before the extraction: same SQL statement order, same PRAGMA
- * placement, same transaction boundaries — only the function bodies moved.
+ * placement, same transaction boundaries. Only the function bodies moved.
  *
  * `SQLite.SQLiteDatabase` is imported as a TYPE ONLY (erased at both build time
  * and by esbuild/tsx), so this file never attempts to load the native
- * expo-sqlite module — the same functions run unmodified against a real
+ * expo-sqlite module, so the same functions run unmodified against a real
  * on-device database (from lib/db/index.ts) and against the node:sqlite
  * adapter in the Node-only migration test.
  */
@@ -140,4 +151,93 @@ export async function migrateToV10(db: SQLite.SQLiteDatabase): Promise<void> {
   );
   if (cols.some((c) => c.name === "healthkit_uuid")) return;
   await db.execAsync(V10_ADD_HK_UUID);
+}
+
+/**
+ * The v10 → v11 migration: rebuild injection_logs with a NULLABLE site, so a dose
+ * logged without a region (the calculator's mealtime bolus) can say so instead of
+ * being filed under a region the user never picked. Same shape as the v8/v9
+ * rebuilds - one transaction, foreign keys off for the copy, every row preserved
+ * verbatim. Statements live in ./v11Sql so the migration test runs the real SQL.
+ */
+export async function migrateToV11(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync("PRAGMA foreign_keys = OFF;");
+  try {
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(V11_DROP_SCRATCH);
+      await db.execAsync(V11_CREATE_INJECTIONS);
+      await db.execAsync(V11_COPY_INJECTIONS);
+      await db.execAsync(V11_DROP_OLD);
+      await db.execAsync(V11_RENAME);
+      await db.execAsync(V11_INDEX);
+    });
+  } finally {
+    await db.execAsync("PRAGMA foreign_keys = ON;");
+  }
+}
+
+/**
+ * The v11 → v12 migration: indexes on the foreign-key CHILD columns, so a delete
+ * no longer table-scans every referencing table to enforce its referential
+ * action. See ./v12Sql for which columns and why each one earns an index.
+ *
+ * Pure DDL over indexes: no row is read, written or moved, and every statement is
+ * IF NOT EXISTS. One transaction so a kill mid-run leaves either all four indexes
+ * or none, never a half-applied schema with user_version already advanced. The
+ * order below matters not at all; nothing here depends on anything else.
+ */
+export async function migrateToV12(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const statement of V12_INDEXES) {
+      await db.execAsync(statement);
+    }
+  });
+}
+
+/**
+ * The v12 → v13 migration: the repeating-meal templates (two new tables) and the
+ * nullable meal_logs.meal_template_id that records which template a logged meal
+ * came from. See ./v13Sql for the shape and for why an item keeps both a live
+ * food_id and a name/carb snapshot.
+ *
+ * Create-only plus ONE guarded ADD COLUMN: no table is rebuilt, so no row can be
+ * lost or rewritten and an interrupted run leaves every existing meal exactly as
+ * it was. The column check is read BEFORE the transaction (like migrateToV8), so
+ * nothing inside it can throw a "duplicate column" that would leave a
+ * half-applied schema with user_version already advanced; a re-run, or an install
+ * that already has the column from a fresh v13 schema, is a no-op.
+ */
+export async function migrateToV13(db: SQLite.SQLiteDatabase): Promise<void> {
+  const cols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(meal_logs);"
+  );
+  const hasColumn = cols.some((c) => c.name === "meal_template_id");
+
+  await db.withTransactionAsync(async () => {
+    for (const statement of V13_CREATE) {
+      await db.execAsync(statement);
+    }
+    if (!hasColumn) {
+      await db.execAsync(V13_ADD_MEAL_TEMPLATE_ID);
+    }
+  });
+}
+
+/**
+ * The v13 → v14 migration: the app_meta key/value table, which is what lets the
+ * food catalog reach an install that already exists. See ./v14Sql for the table
+ * and ./seedVersion for the number it holds; the top-up itself is
+ * syncSeedCatalog() in ./index.ts and runs after every migration has landed.
+ *
+ * ONE create-only statement. No existing table is read, written or rebuilt, so
+ * an interrupted run cannot lose a row and a re-run is a no-op. The transaction
+ * is here for the same reason v12's was: a kill mid-run must leave either the
+ * table or nothing, never a half-applied schema with user_version advanced.
+ */
+export async function migrateToV14(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const statement of V14_CREATE) {
+      await db.execAsync(statement);
+    }
+  });
 }

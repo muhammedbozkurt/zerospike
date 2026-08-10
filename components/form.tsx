@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { THEME } from "../lib/theme/tokens";
+import { INPUT_TEXT, THEME } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -87,11 +87,15 @@ export function InputRow({
           ) : null}
         </View>
         <View className="flex-row items-center">
+          {/* The row's caption and its unit are SIBLINGS of the field, so the
+              field itself announced as an unlabelled text box holding a number.
+              A caller can still override either. */}
           <TextInput
             placeholderTextColor={THEME.muted}
-            className={`text-right ${
-              large ? "text-[19px]" : "text-[16px]"
-            } font-semibold text-ink min-w-[56px] max-w-[150px] py-1`}
+            accessibilityLabel={suffix ? `${label}, ${suffix}` : label}
+            accessibilityHint={hint}
+            className="text-right font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
+            style={[INPUT_TEXT, large ? { fontSize: 19 } : null]}
             {...input}
           />
           {suffix ? (
@@ -111,16 +115,24 @@ export function ActionRow({
   value,
   onPress,
   last,
+  accessibilityLabel,
 }: {
   icon?: IconName;
   label: string;
   value: string;
   onPress?: () => void;
   last?: boolean;
+  /** Defaults to "label: value" so a caller never has to repeat both by hand. */
+  accessibilityLabel?: string;
 }) {
   return (
     <View>
-      <Pressable onPress={onPress} className="flex-row items-center px-4 py-3.5">
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? `${label}: ${value}`}
+        className="flex-row items-center px-4 py-3.5"
+      >
         {icon ? (
           <Ionicons name={icon} size={18} color={THEME.muted} style={{ marginRight: 12 }} />
         ) : null}

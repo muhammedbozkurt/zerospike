@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -9,13 +10,14 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { AppBackground, ConicAvatar, GlassCard, GradientCTA, withAlpha } from "../components/rich";
-import { THEME, glow, HIT_TARGET } from "../lib/theme/tokens";
+import { privacyUrl } from "../lib/legal";
+import { INPUT_TEXT, MODAL_TOP_PAD, THEME, glow, HIT_TARGET } from "../lib/theme/tokens";
 import { askSpike, isConfigured, type SpikeMessage } from "../lib/ai/spikeClient";
 import {
   getSpikeUsage,
@@ -30,6 +32,7 @@ import {
   hasSpikeConsent,
 } from "../lib/services/spikeConsent";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
+import { useLayout } from "../lib/useLayout";
 import { logEvent } from "../lib/analytics";
 import { isScreenshotMode } from "../lib/screenshotMode";
 
@@ -39,10 +42,13 @@ import { isScreenshotMode } from "../lib/screenshotMode";
  * assistant reply carries the fixed "no medical advice" note; the client never
  * attaches health records (see lib/ai/spikeClient.ts + docs/spike-ai.md).
  */
-export default function SpikeScreen() {
+function SpikeScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  // Tablet: the conversation keeps a readable column instead of running the full
+  // width of an iPad. Undefined on phones, so nothing about that render changes.
+  const { contentColumn } = useLayout();
 
   const [ready, setReady] = useState(false);
   const [consented, setConsented] = useState(false);
@@ -149,13 +155,28 @@ export default function SpikeScreen() {
   // ── Consent gate ───────────────────────────────────────────────────────────
   if (!consented) {
     return (
-      <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+      <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
         <View className="flex-row items-center justify-end px-4 py-2">
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
             <Ionicons name="close" size={26} color={THEME.muted} />
           </Pressable>
         </View>
-        <View className="flex-1 items-center justify-center px-6" style={{ gap: 14 }}>
+        {/* The gate is avatar + title + three-line card + scope box + device-id
+            note + privacy link + two buttons. At a large accessibility text size,
+            or on a small phone, that runs past the screen: it scrolls instead of
+            being cut off with no way to reach the buttons. */}
+        <ScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingHorizontal: 24,
+            paddingVertical: 24,
+            gap: 14,
+            ...(contentColumn ?? {}),
+          }}
+          showsVerticalScrollIndicator={false}
+        >
           <ConicAvatar label="✦" size={64} />
           <Text style={{ color: THEME.ink, fontSize: 22, fontWeight: "800" }}>
             {t("spike.consentTitle")}
@@ -173,27 +194,62 @@ export default function SpikeScreen() {
               </Text>
             </View>
           </GlassCard>
+          {/* The medical scope is stated before consent, not only inside the
+              chat, so nobody accepts without seeing what Spike is not. */}
+          <View
+            className="rounded-2xl px-3.5 py-3"
+            style={{
+              width: "100%",
+              borderWidth: 1,
+              borderColor: "rgba(245,158,11,0.3)",
+              backgroundColor: "rgba(245,158,11,0.1)",
+            }}
+          >
+            <View className="flex-row items-start">
+              <Ionicons name="medical-outline" size={16} color="#f59e0b" />
+              <Text
+                style={{
+                  color: "rgba(253,230,138,0.85)",
+                  fontSize: 12,
+                  lineHeight: 18,
+                  marginLeft: 8,
+                  flex: 1,
+                }}
+              >
+                {t("spike.consentScope")}
+              </Text>
+            </View>
+          </View>
           <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
             {t("spike.consentDeviceId")}
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("spike.privacy")} ›</Text>
+          {/* The trailing chevron promised a link and nothing happened on a tap;
+              it now opens the policy, like every other privacy line in the app. */}
+          <Pressable
+            onPress={() => Linking.openURL(privacyUrl())}
+            hitSlop={10}
+            accessibilityRole="link"
+            accessibilityLabel={t("spike.privacy")}
+          >
+            <Text style={{ color: THEME.accent, fontSize: 11 }}>{t("spike.privacy")} ›</Text>
+          </Pressable>
           <GradientCTA label={t("spike.accept")} onPress={accept} style={{ width: "100%" }} />
           <Pressable onPress={() => router.back()} hitSlop={8}>
             <Text style={{ color: THEME.muted, fontSize: 12 }}>{t("spike.notNow")}</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </AppBackground>
     );
   }
 
   // ── Chat ───────────────────────────────────────────────────────────────────
   return (
-    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+    <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
-        <View className="flex-row items-center px-3 py-2" style={{ gap: 8 }}>
+        <View className="flex-row items-center px-3 py-2" style={[{ gap: 8 }, contentColumn]}>
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
             <Ionicons name="chevron-back" size={26} color={THEME.muted} />
           </Pressable>
@@ -216,7 +272,12 @@ export default function SpikeScreen() {
 
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={{ padding: 14, paddingBottom: 20, gap: 10 }}
+          contentContainerStyle={{
+            padding: 14,
+            paddingBottom: 20,
+            gap: 10,
+            ...(contentColumn ?? {}),
+          }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
@@ -227,6 +288,36 @@ export default function SpikeScreen() {
                 {t("spike.intro")}
               </Text>
             </GlassCard>
+          ) : null}
+
+          {/* An empty chat left the user to guess what can be asked. Two of the
+              existing neutral example questions become starters that fill the
+              input, so the first message costs one tap. */}
+          {messages.length === 0 && effectiveConfigured && !exhausted && !screenshotChat ? (
+            <View style={{ gap: 8, alignItems: "flex-start" }}>
+              {[t("spike.mockQuestion"), t("spike.mockQuestion2")].map((q) => (
+                <Pressable
+                  key={q}
+                  onPress={() => {
+                    hapticSelect();
+                    setInput(q);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={q}
+                  style={{
+                    maxWidth: "88%",
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: withAlpha(THEME.accent, 0.25),
+                    backgroundColor: THEME.glass,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                  }}
+                >
+                  <Text style={{ color: THEME.accent, fontSize: 12 }}>{q}</Text>
+                </Pressable>
+              ))}
+            </View>
           ) : null}
 
           {messages.map((m, i) =>
@@ -323,6 +414,7 @@ export default function SpikeScreen() {
 
         {/* Allowance spent: a neutral card, not a failed send. */}
         {exhausted ? (
+          <View style={contentColumn}>
           <GlassCard accent style={{ marginHorizontal: 12, marginBottom: 8 }}>
             <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
               {t("spike.limitTitle")}
@@ -343,8 +435,10 @@ export default function SpikeScreen() {
               />
             ) : null}
           </GlassCard>
+          </View>
         ) : null}
 
+        <View style={contentColumn}>
         <View
           className="flex-row items-center mx-3 mb-2 px-3"
           style={{
@@ -364,7 +458,7 @@ export default function SpikeScreen() {
             editable={effectiveConfigured && !sending && !exhausted && !screenshotChat}
             onSubmitEditing={send}
             returnKeyType="send"
-            style={{ flex: 1, color: THEME.ink, paddingVertical: 11, fontSize: 14 }}
+            style={[INPUT_TEXT, { flex: 1, color: THEME.ink, paddingVertical: 11, fontSize: 14 }]}
           />
           <Pressable
             onPress={send}
@@ -389,7 +483,16 @@ export default function SpikeScreen() {
             <Ionicons name="arrow-up" size={20} color="#03181c" />
           </Pressable>
         </View>
+        </View>
       </KeyboardAvoidingView>
     </AppBackground>
+  );
+}
+
+export default function SpikeRoute() {
+  return (
+    <SafeAreaProvider>
+      <SpikeScreen />
+    </SafeAreaProvider>
   );
 }

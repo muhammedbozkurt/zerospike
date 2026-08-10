@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Platform, Switch, Text, View } from "react-native";
+import { Platform, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
-import { deleteProfile } from "../../lib/db/profiles";
+import { deleteProfile, listProfiles } from "../../lib/db/profiles";
 import { clearAllLogs } from "../../lib/db/index";
-import { loadDemoData } from "../../lib/db/demo";
-import { markSampleActive, clearSampleFlag } from "../../lib/sampleData";
 import { exportLogsCsv } from "../../lib/services/export";
 import { exportLogsPdf } from "../../lib/services/report";
 import { INSIGHTS_WINDOWS } from "../../lib/insights";
@@ -24,6 +22,28 @@ import { SectionLabel } from "../../components/ui";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
 import { THEME } from "../../lib/theme/tokens";
+import { useLayout } from "../../lib/useLayout";
+
+/** One bullet inside the Apple Health transparency card's expanded detail. */
+function HealthDetailRow({
+  icon,
+  title,
+  body,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  body: string;
+}) {
+  return (
+    <View className="flex-row items-start">
+      <Ionicons name={icon} size={16} color={THEME.muted} style={{ marginTop: 1 }} />
+      <View className="flex-1 ml-2.5">
+        <Text className="text-ink text-xs font-semibold">{title}</Text>
+        <Text className="text-mut text-xs mt-0.5 leading-5">{body}</Text>
+      </View>
+    </View>
+  );
+}
 
 /** Settings > Data & Export: CSV/PDF (with the custom-range picker), profile
  *  count, clear logs, delete profile, and the dev-only sample-data loader. */
@@ -31,8 +51,17 @@ export default function DataSettings() {
   const { t } = useTranslation();
   const router = useRouter();
   const { toast, confirm, actionSheet } = useFeedback();
-  const { activeProfile, profiles, isProUser, bumpData, refreshPro, refreshProfiles, lang } =
-    useApp();
+  const {
+    activeProfile,
+    profiles,
+    isProUser,
+    bumpData,
+    refreshPro,
+    refreshProfiles,
+    setActiveProfileId,
+    lang,
+  } = useApp();
+  const { contentColumn } = useLayout();
 
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -93,18 +122,21 @@ export default function DataSettings() {
     });
   }
 
+  // The dialog names the profile it is about, and the delete is scoped to that
+  // profile alone: on a family install this row is reached from a screen that
+  // shows one person's data, so it may never touch anybody else's history.
   async function onClearLogs() {
+    if (!activeProfile) return;
     const ok = await confirm({
       title: t("settings.clearLogs"),
-      message: t("settings.clearLogsConfirm"),
+      message: t("settings.clearLogsConfirm", { name: activeProfile.name }),
       confirmLabel: t("common.delete"),
       destructive: true,
     });
     if (!ok) return;
-    await clearAllLogs();
-    if (activeProfile) await clearSampleFlag(activeProfile.id);
+    await clearAllLogs(activeProfile.id);
     bumpData();
-    toast(t("settings.saved"), "success");
+    toast(t("settings.clearLogsDone", { name: activeProfile.name }), "success");
   }
 
   async function onDeleteProfile() {
@@ -115,24 +147,30 @@ export default function DataSettings() {
     }
     const ok = await confirm({
       title: t("profiles.delete"),
-      message: t("profiles.deleteConfirm"),
+      message: t("profiles.deleteConfirm", { name: activeProfile.name }),
       confirmLabel: t("common.delete"),
       destructive: true,
       icon: "person-remove-outline",
     });
     if (!ok) return;
-    await deleteProfile(activeProfile.id);
+    const deleted = await deleteProfile(activeProfile.id);
+    if (!deleted) {
+      toast(t("profiles.cannotDeleteLast"), "error");
+      return;
+    }
+    // The app cannot stay pointed at a row that no longer exists: every screen
+    // would read an empty history and write logs keyed to a deleted profile.
+    const remaining = await listProfiles();
     await refreshProfiles();
     bumpData();
+    const next = remaining[0];
+    if (!next) {
+      router.replace("/profile-setup");
+      return;
+    }
+    await setActiveProfileId(next.id);
+    toast(t("profiles.switchedTo", { name: next.name }), "info");
     router.back();
-  }
-
-  async function onLoadDemo() {
-    if (!activeProfile) return;
-    await loadDemoData(activeProfile.id);
-    await markSampleActive(activeProfile.id);
-    bumpData();
-    toast(t("settings.demoLoaded"), "success");
   }
 
   async function onToggleSimPro(value: boolean) {
@@ -144,6 +182,7 @@ export default function DataSettings() {
   // write (share) permission is requested at POINT OF USE - here, when the toggle
   // is switched on - never at onboarding. If it is denied, the toggle stays off.
   const [healthWrite, setHealthWrite] = useState(false);
+  const [healthDetailsOpen, setHealthDetailsOpen] = useState(false);
   useEffect(() => {
     void getHealthWriteEnabled().then(setHealthWrite);
   }, []);
@@ -183,7 +222,7 @@ export default function DataSettings() {
         />
       }
     >
-      <SectionLabel>{t("settings.exportCsv")}</SectionLabel>
+      <View style={contentColumn}>
       <Row
         icon="document-text-outline"
         label={t("settings.exportCsv")}
@@ -219,9 +258,63 @@ export default function DataSettings() {
       <Row icon="trash-outline" label={t("settings.clearLogs")} onPress={onClearLogs} danger />
       <Row icon="person-remove-outline" label={t("profiles.delete")} onPress={onDeleteProfile} danger />
 
-      {Platform.OS === "ios" && isProUser ? (
+      {/* Also shown to a lapsed-Pro user while the write mirror is still on:
+          the mirror keeps running off its stored flag, so the switch to turn it
+          off must never disappear behind the paywall. */}
+      {Platform.OS === "ios" && (isProUser || healthWrite) ? (
         <>
           <SectionLabel>{t("settings.healthSection")}</SectionLabel>
+          {/* Transparency card: what Health sync reads/writes, shown BEFORE the
+              write toggle below so nobody switches it on blind. Collapsed by
+              default; the summary line alone already states the shape of it. */}
+          <Pressable
+            onPress={() => setHealthDetailsOpen((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={t("settings.healthAbout")}
+            accessibilityState={{ expanded: healthDetailsOpen }}
+            className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-2"
+          >
+            <View className="flex-row items-center">
+              <Ionicons name="information-circle-outline" size={19} color={THEME.accent} />
+              <Text className="flex-1 ml-3 font-medium text-ink">{t("settings.healthAbout")}</Text>
+              <Text className="text-mut text-[11px] mr-1">{t("settings.healthAboutToggle")}</Text>
+              <Ionicons
+                name={healthDetailsOpen ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={THEME.muted}
+              />
+            </View>
+            <Text className="text-mut text-xs mt-2 leading-5">{t("settings.healthAboutBody")}</Text>
+            {healthDetailsOpen ? (
+              <View className="mt-3" style={{ gap: 10 }}>
+                <HealthDetailRow
+                  icon="download-outline"
+                  title={t("settings.healthReadTitle")}
+                  body={t("settings.healthReadBody")}
+                />
+                <HealthDetailRow
+                  icon="cloud-upload-outline"
+                  title={t("settings.healthWriteDetailTitle")}
+                  body={t("settings.healthWriteDetailBody")}
+                />
+                <HealthDetailRow
+                  icon="phone-portrait-outline"
+                  title={t("settings.healthOnDeviceTitle")}
+                  body={t("settings.healthOnDeviceBody")}
+                />
+                <HealthDetailRow
+                  icon="options-outline"
+                  title={t("settings.healthPermissionsTitle")}
+                  body={t("settings.healthPermissionsBody")}
+                />
+                {__DEV__ ? (
+                  <Text className="text-mut text-[11px] italic">
+                    {t("settings.healthDevNote")}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </Pressable>
           <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
             <View className="flex-row items-center">
               <Ionicons name="heart-outline" size={19} color={THEME.muted} />
@@ -254,9 +347,9 @@ export default function DataSettings() {
             </View>
             <Text className="text-mut text-xs mt-2">{t("settings.simulateProHint")}</Text>
           </View>
-          <Row icon="flask-outline" label={t("settings.loadDemo")} onPress={onLoadDemo} />
         </>
       ) : null}
+      </View>
     </SettingsScaffold>
   );
 }

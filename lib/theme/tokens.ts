@@ -122,6 +122,34 @@ export const TABULAR = { fontVariant: ["tabular-nums" as const] };
 /** Minimum touch target (accessibility): 44pt per Apple HIG / WCAG. */
 export const HIT_TARGET = 44;
 
+/**
+ * Text metrics for EVERY TextInput in the app.
+ *
+ * A NativeWind `text-*` utility carries Tailwind's paired line-height
+ * (`text-base` = fontSize 16 + lineHeight 24). On a Text that is harmless, but
+ * iOS turns a TextInput's lineHeight into a fixed paragraph line box and then
+ * draws the glyphs inside it, so anything taller than the box is cut off - the
+ * field showed the top half of "Sabah" and nothing else. Inputs are therefore
+ * sized with fontSize ONLY and left to measure their own line box.
+ * includeFontPadding is the Android half: it drops the extra ascender padding
+ * so the same field is not visually off-centre there.
+ */
+export const INPUT_TEXT = {
+  fontSize: 16,
+  includeFontPadding: false,
+} as const;
+
+/**
+ * Top padding for a route presented as an iOS sheet (`presentation: "modal"` =
+ * UIModalPresentationPageSheet). The sheet already starts below the status bar,
+ * but useSafeAreaInsets still reports the ROOT WINDOW inset (~59pt on a notched
+ * phone) because the single SafeAreaProvider measures the root view, not the
+ * presented one - so `Math.max(insets.top, 8)` added a second status bar of dead
+ * space above every modal title. Android renders these routes full-screen, where
+ * insets.top is real and must stay.
+ */
+export const MODAL_TOP_PAD = 12;
+
 /* ── Midnight Monitor rich theme ───────────────────────────────────────────
  *
  * The approved visual spec (docs/design/redesign-mockup.html, direction

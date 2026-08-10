@@ -1,9 +1,9 @@
 import { TextInput, View } from "react-native";
 
-import { THEME, RADIUS } from "../../lib/theme/tokens";
+import { INPUT_TEXT, THEME, RADIUS } from "../../lib/theme/tokens";
 
 /**
- * Onboarding-only text input: big, centred, airy — matches the QuizStep visual
+ * Onboarding-only text input: big, centred, airy, matches the QuizStep visual
  * language instead of reusing the compact settings InputRow (which reads too small
  * on a full onboarding page). Purely presentational; the caller owns the value.
  */
@@ -46,6 +46,7 @@ export function BigInput({
         returnKeyType="done"
         accessibilityLabel={accessibilityLabel ?? placeholder}
         style={{
+          ...INPUT_TEXT,
           color: THEME.ink,
           fontSize: 26,
           fontWeight: "700",

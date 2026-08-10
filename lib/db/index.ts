@@ -1,9 +1,24 @@
 import * as SQLite from "expo-sqlite";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { uuid } from "../uuid";
-import { SEED_FOODS } from "./seed";
 import type { DiabetesType, InsulinMode } from "./types";
-import { migrateToV8, migrateToV9, migrateToV10 } from "./migrations";
+import {
+  migrateToV8,
+  migrateToV9,
+  migrateToV10,
+  migrateToV11,
+  migrateToV12,
+  migrateToV13,
+  migrateToV14,
+} from "./migrations";
+import { V13_CREATE } from "./v13Sql";
+import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "./v14Sql";
+import {
+  SEED_CATALOG_VERSION,
+  SEED_CATALOG_VERSION_KEY,
+  selectMissingFoods,
+} from "./seedVersion";
+import type { SeedFood } from "./seed";
 import i18n from "../i18n";
 
 /** Localized default profile name (resolved at creation time / device language). */
@@ -12,7 +27,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 14;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -28,7 +43,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 /**
  * Initializes the database on first launch. Idempotent and safe to call on
  * every start. Creates all tables, an FTS5 search index (+ sync triggers),
- * seeds 562 foods once, and ensures a default profile exists.
+ * seeds the food catalog, and ensures a default profile exists.
  */
 export async function initDatabase(): Promise<void> {
   const db = await getDb();
@@ -41,10 +56,14 @@ export async function initDatabase(): Promise<void> {
   );
   const currentVersion = row?.user_version ?? 0;
 
+  // Whether this launch wrote the whole catalog itself. If it did, the top-up at
+  // the end has nothing to look for and can just record the version.
+  let seededNow = false;
+
   if (currentVersion < 1) {
     await createSchemaV1(db);
     await ensureDefaultProfile(db);
-    await seedFoods(db);
+    seededNow = await seedFoods(db);
   }
 
   // v5 → v6: where a food row came from. NULL for the seeded catalog and for
@@ -71,7 +90,7 @@ export async function initDatabase(): Promise<void> {
       // column already exists, ignore
     }
     await db.execAsync("DELETE FROM foods WHERE is_custom = 0;");
-    await seedFoods(db);
+    seededNow = (await seedFoods(db)) || seededNow;
   }
 
   // v2 → v3: per-profile glucose display unit (mg/dL default).
@@ -133,7 +152,43 @@ export async function initDatabase(): Promise<void> {
     await migrateToV10(db);
   }
 
+  // v10 → v11: injection_logs.site becomes nullable, so a dose logged without a
+  // region (the calculator's mealtime bolus) is recorded as having none instead
+  // of being stamped 'abdomen_left'. Rebuild; every row copied verbatim.
+  if (currentVersion >= 1 && currentVersion < 11) {
+    await migrateToV11(db);
+  }
+
+  // v11 → v12: indexes on the foreign-key CHILD columns. SQLite indexes the
+  // parent side of a foreign key automatically but never the child, so every
+  // delete had to table-scan the referencing tables to enforce its action
+  // (meal_logs twice over, favorites, injection_logs) - and clearing a profile
+  // ran three of those scans in a row. Index-only change: no row is touched.
+  if (currentVersion >= 1 && currentVersion < 12) {
+    await migrateToV12(db);
+  }
+
+  // v12 → v13: repeating-meal templates (meal_templates + meal_template_items)
+  // and the nullable meal_logs.meal_template_id that records which template a
+  // logged meal came from. Create-only plus one guarded ADD COLUMN: no table is
+  // rebuilt, so no stored meal is touched (see migrateToV13 + v13Sql).
+  if (currentVersion >= 1 && currentVersion < 13) {
+    await migrateToV13(db);
+  }
+
+  // v13 → v14: the app_meta key/value table, which is what a food catalog
+  // version can be recorded in - and therefore what lets foods added in a later
+  // release reach an install that already exists. One CREATE TABLE IF NOT
+  // EXISTS: nothing is read, written or rebuilt (see migrateToV14 + v14Sql).
+  if (currentVersion >= 1 && currentVersion < 14) {
+    await migrateToV14(db);
+  }
+
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+
+  // Give an existing install the foods this release added. Runs last, so it can
+  // count on app_meta existing whichever path got us here.
+  await syncSeedCatalog(db, seededNow);
 
   // Lift the pre-v8 onboarding answers onto the profile (once, best-effort).
   await adoptLegacyOnboardingContext();
@@ -213,6 +268,9 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       personal_note TEXT,
       logged_at TEXT NOT NULL,
       tags TEXT NOT NULL DEFAULT '[]',
+      -- Which meal template this row was logged from (schema v13). Provenance
+      -- only, deliberately WITHOUT a foreign key: see ./v13Sql.
+      meal_template_id TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
       FOREIGN KEY (sugar_log_id) REFERENCES sugar_logs (id) ON DELETE SET NULL,
       FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL
@@ -231,6 +289,14 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_meal_profile ON meal_logs (profile_id, logged_at DESC);
     CREATE INDEX IF NOT EXISTS idx_foods_barcode ON foods (barcode);
     CREATE INDEX IF NOT EXISTS idx_foods_custom ON foods (is_custom);
+    -- The food tab asks for one category at a time; without this the counts and
+    -- every drill-down scanned the whole catalog.
+    CREATE INDEX IF NOT EXISTS idx_foods_category ON foods (is_custom, category);
+    -- Foreign-key CHILD columns (see ./v12Sql): SQLite never indexes these on its
+    -- own, so a delete had to scan the referencing table to enforce its action.
+    CREATE INDEX IF NOT EXISTS idx_meal_sugar_log ON meal_logs (sugar_log_id);
+    CREATE INDEX IF NOT EXISTS idx_meal_food ON meal_logs (food_id);
+    CREATE INDEX IF NOT EXISTS idx_favorites_food ON favorites (food_id);
   `);
 
   // FTS5 across all five language columns + aliases, keyed by the food UUID.
@@ -260,6 +326,19 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
     END;
   `);
 
+  // Repeating-meal templates (schema v13). The SAME statements the v12 → v13
+  // migration runs, so a fresh install and a migrated one are the same shape.
+  for (const statement of V13_CREATE) {
+    await db.execAsync(statement);
+  }
+
+  // The database's own key/value facts (schema v14), from the same statements
+  // the v13 → v14 migration runs. Created BEFORE the catalog is seeded, because
+  // seeding is what first has a version to record.
+  for (const statement of V14_CREATE) {
+    await db.execAsync(statement);
+  }
+
   // Injection-site logging (shared with the v3 → v4 migration).
   await createInjectionSchema(db);
 }
@@ -274,14 +353,17 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
  * region); null on rows logged before v8, which count toward their region total
  * only. `source` marks where the row came from ('manual', or 'calculator' for
  * the bolus row the dose calculator writes alongside a meal).
+ *
+ * `site` is nullable since v11: the calculator's mealtime bolus has no region,
+ * and recording none is honest where stamping a region was not.
  */
 async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS injection_logs (
       id TEXT PRIMARY KEY NOT NULL,
       profile_id TEXT NOT NULL,
-      site TEXT NOT NULL
-        CHECK (site IN ('abdomen_left','abdomen_right','abdomen_left_upper',
+      site TEXT
+        CHECK (site IS NULL OR site IN ('abdomen_left','abdomen_right','abdomen_left_upper',
                         'abdomen_right_upper','abdomen_left_lower','abdomen_right_lower',
                         'thigh_left','thigh_right','arm_left','arm_right',
                         'buttock_left','buttock_right')),
@@ -298,6 +380,9 @@ async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
+    -- Foreign-key child column (see ./v12Sql). Also read directly whenever a meal
+    -- is deleted or its calculator bolus is looked up.
+    CREATE INDEX IF NOT EXISTS idx_injection_meal_log ON injection_logs (meal_log_id);
   `);
 }
 
@@ -395,53 +480,172 @@ function buildAliases(names: string[]): string {
   return JSON.stringify([...seen]);
 }
 
-async function seedFoods(db: SQLite.SQLiteDatabase): Promise<void> {
-  // Count only seeded rows so a re-seed after migration works even when the
-  // user already has custom foods or cached barcode results (source IS NOT NULL).
-  const existing = await db.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) AS c FROM foods WHERE is_custom = 0 AND source IS NULL;"
-  );
-  if ((existing?.c ?? 0) > 0) return;
+/** Seed rows per multi-row INSERT. 13 bound values each, so a batch of 50 stays
+ *  well under SQLite's 999-parameter floor on older builds. */
+const SEED_BATCH_ROWS = 50;
 
+/**
+ * Inserts catalog rows. One multi-row INSERT per batch instead of one statement
+ * per food: each of those was its own statement parse plus its own round trip
+ * into the native layer, which is the bulk of a first launch's database time.
+ * One transaction, and the foods_ai FTS trigger fires per row exactly as before.
+ *
+ * Only ever INSERTs. Nothing here updates or deletes, so no row the user has
+ * touched can be reached by it.
+ */
+async function insertSeedFoods(
+  db: SQLite.SQLiteDatabase,
+  foods: SeedFood[]
+): Promise<void> {
   const now = new Date().toISOString();
 
   await db.withTransactionAsync(async () => {
-    for (const f of SEED_FOODS) {
-      const gl = Math.round((f.gi * f.carb) / 100);
-      const aliases = buildAliases([f.tr, f.en, f.de, f.es, f.fr]);
-      await db.runAsync(
-        `INSERT INTO foods
-          (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
-           category, barcode, carb_100g, glycemic_index, glycemic_load,
-           portion_size_g, brand_name, custom_notes, is_custom, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, 0, ?);`,
-        [
+    for (let start = 0; start < foods.length; start += SEED_BATCH_ROWS) {
+      const batch = foods.slice(start, start + SEED_BATCH_ROWS);
+      const values: (string | number)[] = [];
+      for (const f of batch) {
+        values.push(
           uuid(),
           f.tr,
           f.en,
           f.de,
           f.es,
           f.fr,
-          aliases,
+          buildAliases([f.tr, f.en, f.de, f.es, f.fr]),
           f.cat,
           f.carb,
           f.gi,
-          gl,
+          Math.round((f.gi * f.carb) / 100),
           f.portion ?? 100,
-          now,
-        ]
+          now
+        );
+      }
+      const rows = batch
+        .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, 0, ?)")
+        .join(", ");
+      await db.runAsync(
+        `INSERT INTO foods
+          (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
+           category, barcode, carb_100g, glycemic_index, glycemic_load,
+           portion_size_g, brand_name, custom_notes, is_custom, created_at)
+         VALUES ${rows};`,
+        values
       );
     }
   });
 }
 
+/** True when this call actually wrote the catalog. */
+async function seedFoods(db: SQLite.SQLiteDatabase): Promise<boolean> {
+  // Count only seeded rows so a re-seed after migration works even when the
+  // user already has custom foods or cached barcode results (source IS NOT NULL).
+  const existing = await db.getFirstAsync<{ c: number }>(
+    "SELECT COUNT(*) AS c FROM foods WHERE is_custom = 0 AND source IS NULL;"
+  );
+  if ((existing?.c ?? 0) > 0) return false;
+
+  // Loaded HERE, not at module scope: ./seed is a four-figure element literal
+  // that used to be parsed on every single cold start to serve a branch that
+  // runs once in the lifetime of an install. The early return above is now
+  // reached without ever touching it.
+  const { SEED_FOODS } = await import("./seed");
+  await insertSeedFoods(db, SEED_FOODS);
+  return true;
+}
+
+/** The stored catalog version, or 0 for an install that predates the marker. */
+async function readSeedCatalogVersion(db: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ value: string }>(V14_READ_META, [
+    SEED_CATALOG_VERSION_KEY,
+  ]);
+  if (!row) return 0;
+  const parsed = Number.parseInt(row.value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 /**
- * Clears all user-entered logs for every profile (keeps the seeded foods and
- * the profiles).
+ * Brings an EXISTING install up to the current food catalog.
+ *
+ * The catalog used to be a first-launch-only affair: seedFoods() returns the
+ * moment it finds one seeded row, so every food added in a later release only
+ * ever reached people who installed after it. This closes that: when the stored
+ * catalog version is behind, the foods this database does not have yet are
+ * inserted, and the version is recorded so the next launch does nothing.
+ *
+ * What it will not do, in order of how much it would cost the user to get wrong:
+ *
+ *   - It never UPDATEs and never DELETEs. Every statement it runs is an INSERT,
+ *     so a food the user edited, renamed or corrected the carb value of cannot be
+ *     reached by it, and neither can their own foods (is_custom = 1) or a cached
+ *     barcode result.
+ *   - It skips any catalog food whose English name already exists in the table,
+ *     matched case-insensitively against ALL rows - including the user's own. A
+ *     user who long ago typed in the food we are now shipping keeps theirs, and
+ *     does not end up with two rows of the same name in their list.
+ *   - It is best-effort. A failure here leaves the catalog exactly as it was and
+ *     the version unrecorded, so the next launch tries again; it must never be
+ *     the reason the app does not open.
+ *
+ * `justSeeded` is the fresh-install path: the whole catalog was written moments
+ * ago from this same array, so there is nothing to look for and the version is
+ * simply recorded. That keeps a first launch from paying for a scan that can only
+ * ever find everything already present.
  */
-export async function clearAllLogs(): Promise<void> {
+async function syncSeedCatalog(
+  db: SQLite.SQLiteDatabase,
+  justSeeded: boolean
+): Promise<void> {
+  try {
+    if (justSeeded) {
+      await db.runAsync(V14_WRITE_META, [
+        SEED_CATALOG_VERSION_KEY,
+        String(SEED_CATALOG_VERSION),
+      ]);
+      return;
+    }
+
+    // The whole point of the marker: one indexed lookup on every launch after
+    // the first, and ./seed is never parsed again.
+    if ((await readSeedCatalogVersion(db)) >= SEED_CATALOG_VERSION) return;
+
+    const { SEED_FOODS } = await import("./seed");
+
+    const rows = await db.getAllAsync<{ name_en: string | null }>(
+      "SELECT name_en FROM foods;"
+    );
+    const missing = selectMissingFoods(
+      SEED_FOODS,
+      rows.map((r) => r.name_en)
+    );
+    if (missing.length > 0) await insertSeedFoods(db, missing);
+
+    await db.runAsync(V14_WRITE_META, [
+      SEED_CATALOG_VERSION_KEY,
+      String(SEED_CATALOG_VERSION),
+    ]);
+  } catch {
+    // Best-effort: the catalog stays as it was and the next launch retries.
+  }
+}
+
+/**
+ * Clears the user-entered logs of ONE profile (keeps the seeded foods and every
+ * profile row).
+ *
+ * The profile filter is not optional. This used to run unfiltered DELETEs, so a
+ * parent clearing their own records also erased their child's glucose, meal and
+ * injection history from a screen that named a single profile - an unrecoverable
+ * loss of someone else's data. Anything that should span profiles has to be its
+ * own explicitly labelled action.
+ *
+ * Meal templates are NOT touched: a template is a recipe the user wrote, not a
+ * record of anything that happened, so clearing the history leaves what they
+ * repeat intact. They go with their profile (ON DELETE CASCADE) and are removed
+ * one at a time from the template list.
+ */
+export async function clearAllLogs(profileId: string): Promise<void> {
   const db = await getDb();
-  await db.execAsync("DELETE FROM injection_logs;");
-  await db.execAsync("DELETE FROM meal_logs;");
-  await db.execAsync("DELETE FROM sugar_logs;");
+  await db.runAsync("DELETE FROM injection_logs WHERE profile_id = ?;", [profileId]);
+  await db.runAsync("DELETE FROM meal_logs WHERE profile_id = ?;", [profileId]);
+  await db.runAsync("DELETE FROM sugar_logs WHERE profile_id = ?;", [profileId]);
 }

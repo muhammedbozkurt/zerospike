@@ -14,6 +14,7 @@ import {
 import { Row } from "../../components/settingsUi";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { THEME } from "../../lib/theme/tokens";
+import { useLayout } from "../../lib/useLayout";
 
 /**
  * Settings HUB (R7.3). The former single 1050-line scroll is split into five
@@ -26,6 +27,9 @@ export default function SettingsHub() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isProUser } = useApp();
+  // Tablet: hub title and rows share one centred column instead of full-width
+  // rows with a lone chevron at the far edge. Undefined on phones.
+  const { contentColumn } = useLayout();
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
 
   useEffect(() => {
@@ -38,13 +42,18 @@ export default function SettingsHub() {
   return (
     <View className="flex-1" style={{ paddingTop: insets.top }}>
       <AppBackgroundFill />
-      <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
+      <View className="flex-row items-center justify-between px-4 pt-2 pb-3" style={contentColumn}>
         <Text className="text-ink text-2xl font-bold">{t("settings.title")}</Text>
         <ProfileSwitcher />
       </View>
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, flexGrow: 1 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: insets.bottom + 32,
+          flexGrow: 1,
+          ...(contentColumn ?? {}),
+        }}
         showsVerticalScrollIndicator={false}
       >
         <Row icon="person-outline" label={t("settings.hubProfile")} onPress={go("/settings/profile")} />

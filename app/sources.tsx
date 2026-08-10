@@ -1,6 +1,6 @@
 import React from "react";
 import { Linking, Pressable, ScrollView, Text, View, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -8,8 +8,9 @@ import { useTranslation } from "react-i18next";
 import { AppBackground, GlassCard } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { FeedbackHost } from "../components/Feedback";
-import { THEME } from "../lib/theme/tokens";
+import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
+import { useLayout } from "../lib/useLayout";
 
 /**
  * Medical information sources (App Store Guideline 1.4.1).
@@ -21,54 +22,56 @@ import { upper } from "../lib/upper";
  * only mean something next to the arithmetic they back.
  *
  * Links are to authoritative, language-neutral health organisations and stay
- * the same across all app languages.
+ * the same across all app languages. The organisation names are proper nouns and
+ * stay verbatim; what each source COVERS is a translation key (sources.refs.*).
  */
-const REFERENCES: { label: string; org: string; url: string; host: string }[] = [
+const REFERENCES: { labelKey: string; org: string; url: string; host: string }[] = [
   {
     org: "American Diabetes Association (ADA)",
-    label: "Diabetes management & treatment",
+    labelKey: "sources.refs.adaManagement",
     url: "https://diabetes.org/",
     host: "diabetes.org",
   },
   {
     org: "American Diabetes Association (ADA)",
-    label: "Understanding carbohydrates & carb counting",
+    labelKey: "sources.refs.adaCarbs",
     url: "https://diabetes.org/food-nutrition/understanding-carbs",
     host: "diabetes.org",
   },
   {
     org: "NIDDK, National Institutes of Health (NIH)",
-    label: "Managing diabetes (insulin & carbohydrates)",
+    labelKey: "sources.refs.niddk",
     url: "https://www.niddk.nih.gov/health-information/diabetes/overview/managing-diabetes",
     host: "niddk.nih.gov",
   },
   {
     org: "Centers for Disease Control and Prevention (CDC)",
-    label: "Diabetes & healthy eating (carbohydrates)",
+    labelKey: "sources.refs.cdc",
     url: "https://www.cdc.gov/diabetes/healthy-eating/index.html",
     host: "cdc.gov",
   },
   {
     org: "MedlinePlus, National Library of Medicine (NIH)",
-    label: "Diabetes medicines & insulin",
+    labelKey: "sources.refs.medlinePlus",
     url: "https://medlineplus.gov/diabetesmedicines.html",
     host: "medlineplus.gov",
   },
   {
     org: "Diabetes Care (ADA), Bergenstal et al. 2018",
-    label: "Glucose Management Indicator (GMI)",
+    labelKey: "sources.refs.gmi",
     url: "https://diabetesjournals.org/care/article/41/11/2275/36593/Glucose-Management-Indicator-GMI-A-New-Term-for",
     host: "diabetesjournals.org",
   },
 ];
 
-export default function SourcesScreen() {
+function SourcesScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { contentColumn } = useLayout();
 
   return (
-    <AppBackground style={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top }}>
+    <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
       <ScreenHeader
         title={t("sources.title")}
         onBack={() => router.back()}
@@ -77,7 +80,11 @@ export default function SourcesScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 32 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: insets.bottom + 32,
+          ...(contentColumn ?? {}),
+        }}
         showsVerticalScrollIndicator={false}
       >
         <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginBottom: 14 }}>
@@ -111,13 +118,15 @@ export default function SourcesScreen() {
             onPress={() => Linking.openURL(ref.url)}
             className="active:opacity-80"
             accessibilityRole="link"
+            accessibilityLabel={`${ref.org}. ${t(ref.labelKey)}`}
+            accessibilityHint={t("sources.openHint")}
           >
             <GlassCard style={{ marginBottom: 8 }}>
               <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "800" }}>
                 {ref.org}
               </Text>
               <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
-                {ref.label}
+                {t(ref.labelKey)}
               </Text>
               <View className="flex-row items-center mt-2">
                 <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }}>
@@ -140,5 +149,13 @@ export default function SourcesScreen() {
       </ScrollView>
       <FeedbackHost />
     </AppBackground>
+  );
+}
+
+export default function SourcesRoute() {
+  return (
+    <SafeAreaProvider>
+      <SourcesScreen />
+    </SafeAreaProvider>
   );
 }

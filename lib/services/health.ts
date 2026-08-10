@@ -1,6 +1,10 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { addSugarLog, sugarLogExistsAt, setSugarLogHealthUuid } from "../db/logs";
+import {
+  getSugarLog,
+  insertHealthSugarLogs,
+  setSugarLogHealthUuid,
+} from "../db/logs";
 import type { PeriodTag, SugarLog } from "../db/types";
 import { pickMgdl, snapIso } from "./healthMath";
 
@@ -41,7 +45,11 @@ export async function setHealthWriteEnabled(on: boolean): Promise<void> {
  * a production build (DEBUG_MOCK_HEALTH is __DEV__), or set the constant to
  * `false` to test the real path on a dev build.
  */
-export const DEBUG_MOCK_HEALTH = __DEV__;
+/** Dev builds simulate Health end to end. To exercise the REAL HealthKit path
+ *  on a dev build (the simulator's Health app included), restart the bundler
+ *  with EXPO_PUBLIC_REAL_HEALTH=1; the native module is already linked. */
+export const DEBUG_MOCK_HEALTH =
+  __DEV__ && process.env.EXPO_PUBLIC_REAL_HEALTH !== "1";
 
 /** How far back a sync scans the health store (days). */
 const SYNC_WINDOW_DAYS = 90;
@@ -73,8 +81,11 @@ export interface SyncResult {
  * a sensible label in the journal.
  */
 function pickTagForHour(hour: number): PeriodTag {
-  if (hour < 9) return "fasting";
+  // Late evening / just after midnight first: the old order tested `hour < 9`
+  // ahead of it, so the `hour < 1` half of the bedtime rule could never run and
+  // a 00:30 reading was filed as "fasting".
   if (hour >= 22 || hour < 1) return "bedtime";
+  if (hour < 9) return "fasting";
   return "manual";
 }
 
@@ -164,7 +175,7 @@ async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
     )
     .map((s: any) => {
     const when = new Date(s.endDate ?? s.startDate);
-    // The query above requests unit "mg/dL", so s.quantity is ALREADY mg/dL —
+    // The query above requests unit "mg/dL", so s.quantity is ALREADY mg/dL,
     // it must NOT pass through any mmol heuristic (that inverted true sub-30
     // hypos into fake highs). snapIso collapses ms-drift re-reads on dedup.
     const mgdl = pickMgdl({ mgdl: Number(s.quantity) });
@@ -271,7 +282,48 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void
   if (Platform.OS !== "ios") return;
   if (!(await getHealthWriteEnabled())) return;
   const uuid = await writeGlucoseToHealth(log.glucose_level_mgdl, log.logged_at);
-  if (uuid) await setSugarLogHealthUuid(log.id, uuid);
+  if (!uuid) return;
+  try {
+    // The caller fires this and moves on, so the row can be undone while the write
+    // is still in flight. A sample whose local reading no longer exists is an
+    // orphan in the user's Health app, so it is revoked instead of being recorded
+    // on a row that is gone.
+    if (!(await getSugarLog(log.id))) {
+      await deleteGlucoseFromHealth(uuid);
+      return;
+    }
+    await setSugarLogHealthUuid(log.id, uuid);
+  } catch {
+    // This is fired-and-forgotten from the add flow (never awaited), so a DB
+    // hiccup here must never surface as an unhandled rejection. The sample is
+    // already written to Health; at worst it stays un-linked (healthkit_uuid
+    // not recorded on the row) instead of crashing.
+  }
+}
+
+/**
+ * Re-mirrors an EDITED reading: revokes the old Apple Health sample (if any)
+ * and writes a fresh one for the corrected value/time. Returns the new UUID to
+ * store on the row (via setSugarLogHealthUuid), or null when nothing should be
+ * stored (mirror off, or the write failed). Same delete-old-then-write-new
+ * shape as create (writeGlucoseToHealthIfEnabled) - HealthKit has no "update a
+ * sample" call, so a correction is a revoke of the stale value plus a write of
+ * the new one.
+ *
+ * NOT wired to a caller yet: the two edit flows that can change a mirrored
+ * reading's value (dashboard glucose edit, calculator's linked-reading edit)
+ * live in files outside this task's ownership. See the delivery report for the
+ * call sites and the one-line change each needs.
+ */
+export async function updateGlucoseInHealth(
+  oldUuid: string | null,
+  mgdl: number,
+  dateIso: string
+): Promise<string | null> {
+  if (Platform.OS !== "ios") return null;
+  if (!(await getHealthWriteEnabled())) return null;
+  if (oldUuid) await deleteGlucoseFromHealth(oldUuid);
+  return writeGlucoseToHealth(mgdl, dateIso);
 }
 
 // ── Import into local SQLite ───────────────────────────────────────────────
@@ -307,19 +359,17 @@ export async function importHealthGlucose(profileId: string): Promise<SyncResult
     return { status: "error", inserted: 0, read: 0 };
   }
 
-  let inserted = 0;
-  for (const s of samples) {
-    if (!Number.isFinite(s.value) || s.value <= 0) continue;
-    if (await sugarLogExistsAt(profileId, s.date, "health", s.value)) continue;
-    await addSugarLog({
-      profile_id: profileId,
+  // One transaction for the whole batch, with the dedup resolved from a single
+  // range query (see insertHealthSugarLogs) instead of a COUNT per sample.
+  const usable = samples.filter((s) => Number.isFinite(s.value) && s.value > 0);
+  const inserted = await insertHealthSugarLogs(
+    profileId,
+    usable.map((s) => ({
       glucose_level_mgdl: s.value,
       period_tag: s.period_tag,
-      source: "health",
       logged_at: s.date,
-    });
-    inserted++;
-  }
+    }))
+  );
   return { status: "ok", inserted, read: samples.length };
 }
 

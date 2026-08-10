@@ -1,6 +1,6 @@
 /**
  * Standalone, dependency-free correctness harness for zerospike's
- * SAFETY-CRITICAL pure math. No jest — compile + run with node:
+ * SAFETY-CRITICAL pure math. No jest, compile + run with node:
  *
  *   npx tsc scripts/calc.test.ts lib/glucose.ts lib/insulin.ts lib/iob.ts \
  *     lib/services/healthMath.ts lib/db/types.ts \
@@ -18,6 +18,8 @@
 // Minimal ambient decls so we need no @types/node / dom lib.
 declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void };
+declare const __dirname: string;
+declare function require(id: string): any;
 
 import {
   classifyGlucose,
@@ -26,7 +28,19 @@ import {
   mmolToMgdl,
   MGDL_PER_MMOL,
 } from "../lib/glucose";
-import { checkDose, estimateInsulin } from "../lib/insulin";
+import {
+  checkDose,
+  estimateInsulin,
+  PLAUSIBLE_CARB_RATIO,
+} from "../lib/insulin";
+import {
+  GLUCOSE_INPUT_CEILING,
+  glucoseAboveCeiling,
+  parseDecimalText,
+  sanitizeDecimalText,
+  sanitizeIntegerText,
+  sanitizeNumberText,
+} from "../lib/numberInput";
 import { activeInsulin, DEFAULT_DIA_HOURS } from "../lib/iob";
 import { derivePatterns } from "../lib/insights";
 import { percentile, computeAgp } from "../lib/agp";
@@ -41,7 +55,7 @@ function ok(name: string, cond: boolean, detail = ""): void {
     passed++;
   } else {
     failed++;
-    console.log(`  ✗ ${name}${detail ? "  — " + detail : ""}`);
+    console.log(`  ✗ ${name}${detail ? ": " + detail : ""}`);
   }
 }
 function eq<T>(name: string, actual: T, expected: T): void {
@@ -49,6 +63,37 @@ function eq<T>(name: string, actual: T, expected: T): void {
 }
 function section(title: string): void {
   console.log(`\n${title}`);
+}
+
+/* Some of the fixes below live in a screen or in SQL, where there is no pure
+ * function to call. Those are pinned by reading the source, so the exact
+ * regression (an unfiltered DELETE, a comma-stripping filter, an estimate
+ * overwriting a typed dose) fails this harness instead of shipping. */
+const fs = require("fs") as {
+  readFileSync: (p: string, enc: string) => string;
+  existsSync: (p: string) => boolean;
+};
+const nodePath = require("path") as {
+  join: (...parts: string[]) => string;
+  dirname: (p: string) => string;
+};
+
+const ROOT = (() => {
+  let dir = __dirname;
+  for (let i = 0; i < 8; i++) {
+    if (
+      fs.existsSync(nodePath.join(dir, "package.json")) &&
+      fs.existsSync(nodePath.join(dir, "lib", "db", "index.ts"))
+    ) {
+      return dir;
+    }
+    dir = nodePath.dirname(dir);
+  }
+  throw new Error("could not locate the repo root from " + __dirname);
+})();
+
+function src(rel: string): string {
+  return fs.readFileSync(nodePath.join(ROOT, rel), "utf8");
 }
 
 // Schema v8: targets are RANGES and the low threshold is the user's own.
@@ -64,20 +109,20 @@ const P = {
   hypo_threshold_mgdl: 70,
 };
 
-// Mapper mirrors lib/services/health.ts: round(pickMgdl(...)) — proves the
+// Mapper mirrors lib/services/health.ts: round(pickMgdl(...)), proves the
 // dangerous <30 mmol heuristic is gone.
 const importMgdl = (f: { mgdl?: number | null; mmol?: number | null }) => {
   const v = pickMgdl(f);
   return v == null ? 0 : Math.round(v);
 };
 
-// ── A. iOS import — value is already mg/dL; sub-30 lows MUST survive ──────────
+// ── A. iOS import, value is already mg/dL; sub-30 lows MUST survive ──────────
 section("A. iOS import (mg/dL pass-through, no 18x inflation)");
 for (const [v, want] of [[22, 22], [25, 25], [18, 18], [28, 28], [29, 29], [30, 30], [95, 95], [396, 396]] as const) {
   eq(`iOS ${v} mg/dL stays ${want}`, importMgdl({ mgdl: v }), want);
 }
 
-// ── B. Android import — explicit field, mmol via 18.0182, no guessing ─────────
+// ── B. Android import, explicit field, mmol via 18.0182, no guessing ─────────
 section("B. Android import (explicit field selection)");
 eq("mg/dL field wins over mmol", importMgdl({ mgdl: 25, mmol: 1.4 }), 25);
 eq("mg/dL 28 stays 28", importMgdl({ mgdl: 28 }), 28);
@@ -122,7 +167,7 @@ eq("250 post_meal -> veryHigh", C(250, "post_meal_2h"), "veryHigh");
 eq("400 fasting -> veryHigh", C(400, "fasting"), "veryHigh");
 eq("249 post_meal -> high (just under the ceiling)", C(249, "post_meal_2h"), "high");
 
-// ── D2. checkDose — the hand-entered dose plausibility gate ──────────────────
+// ── D2. checkDose, the hand-entered dose plausibility gate ──────────────────
 section("D2. checkDose (confirm, never refuse)");
 eq("6 units -> ok", checkDose(6), "ok");
 eq("24.9 units -> ok", checkDose(24.9), "ok");
@@ -131,7 +176,7 @@ eq("60 units -> high", checkDose(60), "high");
 eq("100 units -> implausible", checkDose(100), "implausible");
 eq("600 units (stray digit) -> implausible", checkDose(600), "implausible");
 
-// ── E. estimateInsulin — dose math, warnings, conservative correction ─────────
+// ── E. estimateInsulin, dose math, warnings, conservative correction ─────────
 section("E. estimateInsulin (math + guardrails)");
 const est = (carb100: number, portion: number, opts: any = {}, prof: any = P) =>
   estimateInsulin({ carb_100g: carb100 }, portion, prof, { slot: "breakfast", ...opts });
@@ -153,8 +198,8 @@ const est = (carb100: number, portion: number, opts: any = {}, prof: any = P) =>
   eq(".25 total -> 2.5", e.totalDose, 2.5);
 }
 {
-  // Correction targets the post-meal max (140) — the INTENTIONALLY kept
-  // conservative behavior (documented in sources.methodNote).
+  // Correction targets the MIDDLE of the post-meal range, never its ceiling
+  // (lib/insulin.ts, stated in words on the calculator screen).
   // Range midpoint is (80 + 140) / 2 = 110, so (180 - 110) / 40 = 1.75.
   const e = est(0, 100, { currentGlucose: 180 });
   eq("correction 180 -> 1.75 (target = range midpoint 110)", e.correctionDose, 1.75);
@@ -184,14 +229,14 @@ const est = (carb100: number, portion: number, opts: any = {}, prof: any = P) =>
   ok("tiny ratio flags carb_ratio_out_of_range", e.warnings.includes("carb_ratio_out_of_range"));
 }
 {
-  // SAFETY: a TRUE low (25) yields NO correction — proves the P0 import fix
+  // SAFETY: a TRUE low (25) yields NO correction, proves the P0 import fix
   // prevents the old fake (450-140)/40 = 7.75 U.
   const e = est(0, 100, { currentGlucose: 25 });
   eq("true-low 25 -> correction 0", e.correctionDose, 0);
   eq("true-low 25 -> total 0", e.totalDose, 0);
 }
 
-// ── F. CGM dedup — value-aware + 60s timestamp snap (mirrors logs.ts) ─────────
+// ── F. CGM dedup, value-aware + 60s timestamp snap (mirrors logs.ts) ─────────
 section("F. dedup (snap + value-aware)");
 const key = (ts: string, source: string, mgdl: number) => `${snapIso(ts)}|${source}|${mgdl}`;
 const T0 = "2026-06-25T08:00:00.000Z";
@@ -325,6 +370,225 @@ eq("empty -> 0", percentile([], 50), 0);
     eq("band p75", agp.bands[0].p75, 180);
     eq("band p05", agp.bands[0].p05, 68);
     eq("band p95", agp.bands[0].p95, 212);
+  }
+}
+
+// ── K. numeric input normalization (ONE normalizer, comma is a decimal) ───────
+section("K. numeric input (decimal separator)");
+eq('sanitize keeps the typed comma "5,5"', sanitizeDecimalText("5,5"), "5,5");
+eq('parse "5,5" -> 5.5', parseDecimalText("5,5"), 5.5);
+eq('parse "5.5" -> 5.5', parseDecimalText("5.5"), 5.5);
+eq('second separator ignored "5,5,5"', sanitizeDecimalText("5,5,5"), "5,55");
+eq('parse "5,5,5" -> 5.55', parseDecimalText("5,5,5"), 5.55);
+eq('second dot ignored "1.2.3"', sanitizeDecimalText("1.2.3"), "1.23");
+eq('parse "12,5,5" -> 12.55', parseDecimalText("12,5,5"), 12.55);
+eq("letters dropped", sanitizeDecimalText("a1b,2c"), "1,2");
+eq("integer field drops separators", sanitizeIntegerText("1,2.3"), "123");
+eq("sanitizeNumberText(decimals) keeps comma", sanitizeNumberText("5,5", true), "5,5");
+eq("sanitizeNumberText(integer) digits only", sanitizeNumberText("5,5", false), "55");
+eq("empty text is NOT a value", parseDecimalText(""), null);
+eq("separator only is NOT a value", parseDecimalText(","), null);
+eq("non-numeric is NOT a value", parseDecimalText("abc"), null);
+eq('"0" parses to 0, never null', parseDecimalText("0"), 0);
+eq('"0,0" parses to 0', parseDecimalText("0,0"), 0);
+eq('trailing separator "5," -> 5', parseDecimalText("5,"), 5);
+eq('leading separator ",5" -> 0.5', parseDecimalText(",5"), 0.5);
+
+// The P0 regression itself: "5,5" typed on a comma-decimal keyboard must stay
+// 5.5 mmol/L (99 mg/dL) and produce NO correction. The old filter stripped the
+// comma into 55 mmol/L -> 991 mg/dL -> a ~22 unit fictional correction that sat
+// just under the 25 unit high-dose guard, so it saved with zero notices.
+section("K2. the comma regression end to end");
+{
+  const typed = parseDecimalText("5,5");
+  ok('"5,5" is a value', typed != null);
+  eq('"5,5" mmol -> 99 mg/dL', glucoseFromDisplay(typed ?? 0, "mmol"), 99);
+  const e = est(0, 100, { currentGlucose: glucoseFromDisplay(typed ?? 0, "mmol") });
+  eq('"5,5" mmol yields no correction', e.correctionDose, 0);
+  eq('"5,5" mmol yields total 0', e.totalDose, 0);
+  // What the stripped value used to become, kept as the counter-case.
+  const stripped = est(0, 100, { currentGlucose: glucoseFromDisplay(55, "mmol") });
+  ok("55 mmol would have produced a large phantom dose", stripped.totalDose >= 20);
+  ok(
+    "55 mmol is described as above the meter range",
+    glucoseAboveCeiling(55, "mmol")
+  );
+}
+eq("mmol ceiling is 33.3", GLUCOSE_INPUT_CEILING.mmol, 33.3);
+eq("mg/dL ceiling is 600", GLUCOSE_INPUT_CEILING.mgdl, 600);
+eq("33.3 mmol is not above the ceiling", glucoseAboveCeiling(33.3, "mmol"), false);
+eq("33.4 mmol is above the ceiling", glucoseAboveCeiling(33.4, "mmol"), true);
+eq("600 mg/dL is not above the ceiling", glucoseAboveCeiling(600, "mgdl"), false);
+eq("601 mg/dL is above the ceiling", glucoseAboveCeiling(601, "mgdl"), true);
+eq("no value is never above the ceiling", glucoseAboveCeiling(null, "mgdl"), false);
+
+// ── L. what the dose field stores (empty vs 0) ────────────────────────────────
+section("L. manual dose: empty is not 0, and 0 is not the estimate");
+// Mirrors app/calculator.tsx logMeal: a typed number wins (including 0), an
+// EMPTY field asks before anything is written.
+const storedDose = (text: string): number | "ask" => {
+  const typed = parseDecimalText(text);
+  return typed == null ? "ask" : typed;
+};
+eq("typed 0 stores 0", storedDose("0"), 0);
+eq("typed 0,0 stores 0", storedDose("0,0"), 0);
+eq("typed 3,5 stores 3.5", storedDose("3,5"), 3.5);
+eq("empty field asks instead of storing", storedDose(""), "ask");
+ok("typed 0 is never swapped for the estimate", storedDose("0") !== 7);
+// The old expression, kept to prove why it was wrong.
+ok(
+  "old `parseFloat(text) || estimate` turned a declared 0 into a phantom dose",
+  (parseFloat("0") || 7) === 7
+);
+
+// ── M. ISF <= 0 : correction dropped OUT LOUD, never in silence ───────────────
+section("M. ISF guard");
+{
+  const e = est(0, 100, { currentGlucose: 300 }, { ...P, insulin_sensitivity_factor: 0 });
+  eq("ISF 0 -> no correction", e.correctionDose, 0);
+  eq("ISF 0 -> reason reported", e.correctionSkipped, "isf_invalid");
+  ok("ISF 0 flags isf_out_of_range", e.warnings.includes("isf_out_of_range"));
+}
+{
+  const e = est(0, 100, { currentGlucose: 300 }, { ...P, insulin_sensitivity_factor: -40 });
+  eq("negative ISF -> no correction", e.correctionDose, 0);
+  eq("negative ISF -> reason reported", e.correctionSkipped, "isf_invalid");
+  ok("negative ISF flags isf_out_of_range", e.warnings.includes("isf_out_of_range"));
+}
+{
+  const e = est(60, 100, {}, { ...P, insulin_sensitivity_factor: 0 });
+  eq("no reading -> nothing to skip", e.correctionSkipped, null);
+  ok("ISF 0 still flagged without a reading", e.warnings.includes("isf_out_of_range"));
+  eq("meal dose unaffected by the ISF flag", e.totalDose, 6);
+}
+{
+  const e = est(0, 100, { currentGlucose: 180 });
+  eq("valid ISF -> no skip reason", e.correctionSkipped, null);
+}
+{
+  const e = est(0, 100, { currentGlucose: 3 }, { ...P, insulin_sensitivity_factor: 2 });
+  ok("ISF 2 (under the band) is flagged", e.warnings.includes("isf_out_of_range"));
+}
+
+// ── N. carb-ratio band actually catches the "1 instead of 10" typo ────────────
+section("N. carb ratio plausibility band");
+ok(`min ${PLAUSIBLE_CARB_RATIO.min} >= 3`, PLAUSIBLE_CARB_RATIO.min >= 3);
+{
+  const e = est(50, 120, {}, { ...P, carb_ratio_breakfast: 1 });
+  ok("ratio 1 flags carb_ratio_out_of_range", e.warnings.includes("carb_ratio_out_of_range"));
+  ok("ratio 1 still flags high_dose", e.warnings.includes("high_dose"));
+}
+{
+  const e = est(50, 120, {}, { ...P, carb_ratio_breakfast: 2.9 });
+  ok("ratio 2.9 flagged", e.warnings.includes("carb_ratio_out_of_range"));
+}
+{
+  const e = est(20, 100, {}, { ...P, carb_ratio_breakfast: 3 });
+  ok("ratio 3 accepted", !e.warnings.includes("carb_ratio_out_of_range"));
+}
+{
+  const e = est(20, 100, {}, { ...P, carb_ratio_breakfast: 10 });
+  ok("ratio 10 accepted", !e.warnings.includes("carb_ratio_out_of_range"));
+}
+{
+  const e = est(20, 100, {}, { ...P, carb_ratio_breakfast: 51 });
+  ok("ratio 51 flagged", e.warnings.includes("carb_ratio_out_of_range"));
+}
+
+// ── O. source guards for the fixes that live outside pure math ────────────────
+// Data loss, profile hand-over, input filters and the save-time IOB read are all
+// screen/DB level. They have no pure function to call, so they are pinned here:
+// each check fails the moment the exact regression is reintroduced.
+section("O. source guards (data scope, profile hand-over, input filters)");
+{
+  const dbIndex = src("lib/db/index.ts");
+  ok(
+    "clearAllLogs takes a profileId",
+    /export async function clearAllLogs\(\s*profileId: string/.test(dbIndex)
+  );
+  for (const table of ["injection_logs", "meal_logs", "sugar_logs"]) {
+    ok(
+      `clearAllLogs scopes ${table} to one profile`,
+      new RegExp(`DELETE FROM ${table} WHERE profile_id = \\?`).test(dbIndex)
+    );
+  }
+  ok(
+    "no unfiltered log DELETE survives",
+    !/DELETE FROM (injection_logs|meal_logs|sugar_logs);/.test(dbIndex)
+  );
+
+  const dataScreen = src("app/settings/data.tsx");
+  ok(
+    "the clear action passes the active profile",
+    /clearAllLogs\(activeProfile\.id\)/.test(dataScreen)
+  );
+  ok(
+    "the confirm dialog names the profile",
+    /clearLogsConfirm", \{ name: activeProfile\.name \}/.test(dataScreen)
+  );
+  ok(
+    "deleting a profile hands over to a remaining one",
+    /listProfiles\(\)/.test(dataScreen) && /setActiveProfileId\(next\.id\)/.test(dataScreen)
+  );
+  ok(
+    "with no profile left it routes to profile setup",
+    /router\.replace\("\/profile-setup"\)/.test(dataScreen)
+  );
+
+  const ctx = src("lib/store/AppContext.tsx");
+  ok(
+    "the context never keeps a deleted active profile",
+    /const next = list\[0\] \?\? \(await getDefaultProfile\(\)\)/.test(ctx)
+  );
+
+  const calc = src("app/calculator.tsx");
+  ok(
+    "the estimate no longer overwrites a typed dose",
+    !/\|\| estimate\.totalDose/.test(calc)
+  );
+  ok(
+    "IOB is re-read at save time",
+    /const freshIob = await readFreshIob\(\)/.test(calc)
+  );
+  ok(
+    "a low reading gets a descriptive note",
+    /calculator\.lowReadingNote/.test(calc)
+  );
+  ok(
+    "a dropped correction states its reason",
+    /calculator\.correctionOffIsf/.test(calc)
+  );
+  ok(
+    "an empty dose field is asked about before the write",
+    /calculator\.emptyDoseTitle/.test(calc) && /calculator\.emptyDoseBody/.test(calc)
+  );
+  ok(
+    "a refreshed estimate is shown, not stored silently",
+    /calculator\.iobRefreshedBody/.test(calc)
+  );
+
+  for (const rel of ["components/Stepper.tsx", "components/RangeInput.tsx"]) {
+    const s = src(rel);
+    ok(
+      `${rel} uses the shared normalizer`,
+      /sanitizeNumberText\(/.test(s) && /parseDecimalText\(/.test(s)
+    );
+    ok(
+      `${rel} has no local decimal filter`,
+      !/replace\(\/\[\^0-9/.test(s)
+    );
+  }
+
+  for (const rel of ["app/calculator.tsx", "components/GlucoseInputSheet.tsx"]) {
+    const s = src(rel);
+    ok(
+      `${rel} routes input through the shared normalizer`,
+      /sanitizeNumberText\(/.test(s) && /parseDecimalText\(/.test(s)
+    );
+    ok(
+      `${rel} no longer strips the comma from a decimal field`,
+      !/\[\^0-9\.\]/.test(s)
+    );
   }
 }
 

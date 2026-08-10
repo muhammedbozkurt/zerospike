@@ -15,12 +15,14 @@ import {
 } from "../../lib/glucose";
 import { CARB_TARGET_BOUNDS, clampCarbTarget } from "../../lib/insulin";
 import { insulinModeOf, insulinModeShowsBolus } from "../../lib/insulinMode";
+import { parseDecimalText } from "../../lib/numberInput";
 import { Segmented } from "../../components/ui";
 import { FormCard, InputRow } from "../../components/form";
 import { RangeInput } from "../../components/RangeInput";
 import { Stepper } from "../../components/Stepper";
 import { SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
+import { useLayout } from "../../lib/useLayout";
 
 /**
  * Settings > Profile & Targets. Moved verbatim from the old single-scroll
@@ -30,6 +32,7 @@ import { SectionLabel } from "../../components/ui";
 export default function ProfileSettings() {
   const { t } = useTranslation();
   const { activeProfile, bumpData } = useApp();
+  const { contentColumn } = useLayout();
 
   const [name, setName] = useState("");
   const [isf, setIsf] = useState(0);
@@ -68,7 +71,7 @@ export default function ProfileSettings() {
   }, [activeProfile?.id, activeProfile?.glucose_unit]);
 
   function n(v: string, fallback: number): number {
-    const x = parseFloat(v.replace(",", "."));
+    const x = (parseDecimalText(v) ?? NaN);
     return Number.isFinite(x) && x > 0 ? x : fallback;
   }
 
@@ -85,8 +88,8 @@ export default function ProfileSettings() {
   }
 
   function rangeOk(minText: string, maxText: string): boolean {
-    const lo = parseFloat(minText.replace(",", "."));
-    const hi = parseFloat(maxText.replace(",", "."));
+    const lo = (parseDecimalText(minText) ?? NaN);
+    const hi = (parseDecimalText(maxText) ?? NaN);
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return false;
     return lo < hi;
   }
@@ -96,8 +99,8 @@ export default function ProfileSettings() {
     maxText: string,
     bounds: { min: number; max: number }
   ): boolean {
-    const lo = parseFloat(minText.replace(",", "."));
-    const hi = parseFloat(maxText.replace(",", "."));
+    const lo = (parseDecimalText(minText) ?? NaN);
+    const hi = (parseDecimalText(maxText) ?? NaN);
     return lo >= bounds.min && lo <= bounds.max && hi >= bounds.min && hi <= bounds.max;
   }
 
@@ -127,13 +130,16 @@ export default function ProfileSettings() {
 
   return (
     <SettingsScaffold title={t("onboarding.secProfile")}>
+      <View style={contentColumn}>
       <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
         <InputRow
           icon="text-outline"
           label={t("settings.name")}
           value={name}
           onChangeText={setName}
-          onEndEditing={() => persist({ name: name.trim() || "Profil" })}
+          onEndEditing={() =>
+            persist({ name: name.trim() || t("profiles.defaultName") })
+          }
           last
         />
       </FormCard>
@@ -151,33 +157,34 @@ export default function ProfileSettings() {
         </View>
       </FormCard>
 
-      <SectionLabel>{t("settings.insulinMode")}</SectionLabel>
-      <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
-        <Segmented
-          options={(["none", "basal", "bolus", "both"] as InsulinMode[]).map((m) => ({
-            value: m,
-            label: t(`onboarding.insulin_${m}`),
-          }))}
-          value={insulinMode}
-          onChange={(m: InsulinMode) => persist({ insulin_mode: m })}
-        />
-        <Text className="text-mut text-xs mt-2 leading-4">{t("settings.insulinModeHint")}</Text>
-      </View>
+      <FormCard icon="layers-outline" title={t("settings.insulinMode")}>
+        <View className="px-4 py-3.5">
+          <Segmented
+            options={(["none", "basal", "bolus", "both"] as InsulinMode[]).map((m) => ({
+              value: m,
+              label: t(`onboarding.insulin_${m}`),
+            }))}
+            value={insulinMode}
+            onChange={(m: InsulinMode) => persist({ insulin_mode: m })}
+          />
+        </View>
+      </FormCard>
 
-      <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-3">
-        <Text className="text-mut text-xs mb-2">{t("settings.diabetesType")}</Text>
-        <Segmented
-          options={(
-            ["type1", "type2", "gestational", "prediabetes", "unknown"] as DiabetesType[]
-          ).map((d) => ({
-            value: d,
-            label: d === "unknown" ? t("onboarding.diabetes_other") : t(`onboarding.diabetes_${d}`),
-          }))}
-          value={activeProfile?.diabetes_type ?? "unknown"}
-          onChange={(d: DiabetesType) => persist({ diabetes_type: d })}
-        />
-        <Text className="text-mut text-xs mt-2 leading-4">{t("settings.diabetesTypeHint")}</Text>
-      </View>
+      <FormCard icon="medkit-outline" title={t("settings.diabetesType")}>
+        <View className="px-4 py-3.5">
+          <Segmented
+            options={(
+              ["type1", "type2", "gestational", "prediabetes", "unknown"] as DiabetesType[]
+            ).map((d) => ({
+              value: d,
+              label: d === "unknown" ? t("onboarding.diabetes_other") : t(`onboarding.diabetes_${d}`),
+            }))}
+            value={activeProfile?.diabetes_type ?? "unknown"}
+            onChange={(d: DiabetesType) => persist({ diabetes_type: d })}
+          />
+          <Text className="text-mut text-xs mt-2 leading-4">{t("settings.diabetesTypeHint")}</Text>
+        </View>
+      </FormCard>
 
       <SectionLabel>{t("settings.targetsSection")}</SectionLabel>
       <RangeInput
@@ -234,20 +241,19 @@ export default function ProfileSettings() {
         outOfBoundsMessage={t("settings.rangeOutOfBounds", { min: CARB_TARGET_BOUNDS.min, max: CARB_TARGET_BOUNDS.max })}
       />
 
-      <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-3">
-        <Text className="text-mut text-xs mb-2">
-          {t("settings.hypoThreshold")} ({glucoseUnitLabel(unit)})
-        </Text>
-        <Segmented
-          options={[54, 60, 65, 70, 75, 80].map((mgdl) => ({
-            value: String(mgdl),
-            label: String(glucoseToDisplay(mgdl, unit)),
-          }))}
-          value={String(activeProfile?.hypo_threshold_mgdl ?? 70)}
-          onChange={(v) => void persist({ hypo_threshold_mgdl: clampHypoThreshold(Number(v)) })}
-        />
-        <Text className="text-mut text-xs mt-2 leading-4">{t("settings.hypoThresholdHint")}</Text>
-      </View>
+      <FormCard icon="warning-outline" title={`${t("settings.hypoThreshold")} (${glucoseUnitLabel(unit)})`}>
+        <View className="px-4 py-3.5">
+          <Segmented
+            options={[54, 60, 65, 70, 75, 80].map((mgdl) => ({
+              value: String(mgdl),
+              label: String(glucoseToDisplay(mgdl, unit)),
+            }))}
+            value={String(activeProfile?.hypo_threshold_mgdl ?? 70)}
+            onChange={(v) => void persist({ hypo_threshold_mgdl: clampHypoThreshold(Number(v)) })}
+          />
+          <Text className="text-mut text-xs mt-2 leading-4">{t("settings.hypoThresholdHint")}</Text>
+        </View>
+      </FormCard>
 
       {/* ISF + carb ratios: steppers (E.7), mealtime-insulin users only. */}
       {showsBolus ? (
@@ -307,6 +313,7 @@ export default function ProfileSettings() {
           ))}
         </FormCard>
       ) : null}
+      </View>
     </SettingsScaffold>
   );
 }

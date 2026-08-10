@@ -19,7 +19,45 @@ import { THEME } from "../../lib/theme/tokens";
  *
  * Not a flat single color - that flatness is exactly what the earlier round was
  * rejected for. Wrap a screen's content in it; children render above the wash.
+ *
+ * The wash itself is CONSTANT: three full-bleed rects and two gradient defs, the
+ * same on every screen and in every state. It used to be rebuilt as part of its
+ * host's element tree, so every dashboard/food/insights render walked and
+ * reconciled nine SVG nodes that could not possibly have changed. Both layers
+ * below therefore render a single module-level element - React sees the identical
+ * element object on a re-render and skips the subtree outright.
  */
+const Wash = React.memo(function Wash() {
+  return (
+    <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+      <Defs>
+        <LinearGradient id="bgLinear" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={THEME.bg.g2} />
+          {/* The ramp used to crush to g1 at the very bottom, which read as a
+              black shadow over the last rows of tall screens (worst right above
+              the tab bar). Hold a lighter floor instead; the tab bar itself
+              stays g1 and separates with its own border. */}
+          <Stop offset="0.7" stopColor="#0e1c26" />
+          <Stop offset="1" stopColor="#0f1f29" />
+        </LinearGradient>
+        <RadialGradient id="bgTeal" cx="15%" cy="-5%" rx="130%" ry="70%">
+          <Stop offset="0" stopColor={THEME.bg.gg} stopOpacity={1} />
+          <Stop offset="0.55" stopColor={THEME.bg.gg} stopOpacity={0} />
+        </RadialGradient>
+        <RadialGradient id="bgCyan" cx="100%" cy="105%" rx="120%" ry="70%">
+          <Stop offset="0" stopColor={THEME.accent} stopOpacity={0.12} />
+          <Stop offset="0.5" stopColor={THEME.accent} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgLinear)" />
+      <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgTeal)" />
+      <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgCyan)" />
+    </Svg>
+  );
+});
+
+const WASH_ELEMENT = <Wash />;
+
 export function AppBackground({
   children,
   style,
@@ -29,32 +67,15 @@ export function AppBackground({
 }) {
   return (
     <View style={[styles.root, style]}>
-      <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
-        <Defs>
-          <LinearGradient id="bgLinear" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={THEME.bg.g2} />
-            <Stop offset="1" stopColor={THEME.bg.g1} />
-          </LinearGradient>
-          <RadialGradient id="bgTeal" cx="15%" cy="-5%" rx="130%" ry="70%">
-            <Stop offset="0" stopColor={THEME.bg.gg} stopOpacity={1} />
-            <Stop offset="0.55" stopColor={THEME.bg.gg} stopOpacity={0} />
-          </RadialGradient>
-          <RadialGradient id="bgCyan" cx="100%" cy="105%" rx="120%" ry="70%">
-            <Stop offset="0" stopColor={THEME.accent} stopOpacity={0.12} />
-            <Stop offset="0.5" stopColor={THEME.accent} stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgLinear)" />
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgTeal)" />
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgCyan)" />
-      </Svg>
+      {WASH_ELEMENT}
       {children}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: THEME.bg.g1 },
+  root: { flex: 1, backgroundColor: "#0f1f29" },
+  fill: { backgroundColor: "#0f1f29" },
 });
 
 /**
@@ -62,14 +83,15 @@ const styles = StyleSheet.create({
  * existing flex-1 container (siblings after it render above it). Lets a screen
  * adopt the Midnight Monitor wash with a one-line edit and no close-tag change.
  */
-export function AppBackgroundFill() {
+const FillWash = React.memo(function FillWash() {
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: THEME.bg.g1 }]}>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.fill]}>
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>
           <LinearGradient id="bgfLinear" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={THEME.bg.g2} />
-            <Stop offset="1" stopColor={THEME.bg.g1} />
+            <Stop offset="0.7" stopColor="#0e1c26" />
+            <Stop offset="1" stopColor="#0f1f29" />
           </LinearGradient>
           <RadialGradient id="bgfTeal" cx="15%" cy="-5%" rx="130%" ry="70%">
             <Stop offset="0" stopColor={THEME.bg.gg} stopOpacity={1} />
@@ -86,4 +108,10 @@ export function AppBackgroundFill() {
       </Svg>
     </View>
   );
+});
+
+const FILL_WASH_ELEMENT = <FillWash />;
+
+export function AppBackgroundFill() {
+  return FILL_WASH_ELEMENT;
 }

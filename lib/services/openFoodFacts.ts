@@ -17,12 +17,34 @@ import { isProductBarcode, parseOffProduct, type OffProduct } from "./offParse";
 
 const ENDPOINT = "https://world.openfoodfacts.org/api/v3/product";
 
-/** Only what the calculator needs; the full product record is large. */
-const FIELDS = "product_name,brands,nutriments,serving_quantity";
+/**
+ * Only what the calculator and the food list need; the full product record is
+ * large. The five per-language names let a cached product read correctly
+ * whatever language the app is in, and `categories_tags` is what a shelf is
+ * guessed from. Everything else stays on the server.
+ */
+const FIELDS = [
+  "product_name",
+  "product_name_tr",
+  "product_name_en",
+  "product_name_de",
+  "product_name_es",
+  "product_name_fr",
+  "brands",
+  "categories_tags",
+  "nutriments",
+  "serving_quantity",
+].join(",");
 
 const TIMEOUT_MS = 5000;
 
-export { OFF_SOURCE, foodSourceLabel, type OffProduct } from "./offParse";
+export {
+  OFF_SOURCE,
+  foodSourceLabel,
+  mapOffCategory,
+  type OffNames,
+  type OffProduct,
+} from "./offParse";
 
 export type OffLookup =
   | { kind: "found"; product: OffProduct }

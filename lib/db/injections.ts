@@ -1,14 +1,19 @@
 import { getDb } from "./index";
 import { uuid } from "../uuid";
 import type { Injection, InjectionSite, InsulinType, SitePoint } from "./types";
+import type { DateRange } from "../insights";
 import {
   INJECTION_SITES,
-  SELECTABLE_SITES,
   SITE_POINTS,
   asSitePoint,
+  canonicalSite,
+  isRetiredSite,
   parseTags,
   serializeTags,
 } from "./types";
+import { pickLeastRecentlyUsedPoint, pointKey } from "../rotationPick";
+
+export { pointKey };
 
 // Raw row carries `tags` as the stored JSON string and `site_point` as a plain
 // integer; the mapper narrows both.
@@ -34,7 +39,8 @@ const mapInjection = (r: InjectionRow): Injection => ({
 
 export interface NewInjectionInput {
   profile_id: string;
-  site: InjectionSite;
+  /** Null / omitted when no region was chosen (schema v11). */
+  site?: InjectionSite | null;
   /** Which of the region's four rotation points; null when not specified. */
   site_point?: SitePoint | null;
   dose_units?: number | null;
@@ -63,7 +69,7 @@ export async function logInjection(
     [
       id,
       input.profile_id,
-      input.site,
+      input.site ?? null,
       input.site_point ?? null,
       input.dose_units ?? null,
       input.insulin_type ?? null,
@@ -85,12 +91,23 @@ export async function logInjection(
 
 export async function getInjections(
   profileId: string,
-  limit = 300
+  limit = 300,
+  /** Optional span, applied in SQL so a report of an old range is complete. */
+  range?: DateRange
 ): Promise<Injection[]> {
   const db = await getDb();
+  const bounds = range
+    ? {
+        sql: " AND logged_at BETWEEN ? AND ?",
+        values: [
+          new Date(range.start).toISOString(),
+          new Date(range.end).toISOString(),
+        ],
+      }
+    : { sql: "", values: [] as string[] };
   const rows = await db.getAllAsync<InjectionRow>(
-    "SELECT * FROM injection_logs WHERE profile_id = ? ORDER BY logged_at DESC LIMIT ?;",
-    [profileId, limit]
+    `SELECT * FROM injection_logs WHERE profile_id = ?${bounds.sql} ORDER BY logged_at DESC LIMIT ?;`,
+    [profileId, ...bounds.values, limit]
   );
   return rows.map(mapInjection);
 }
@@ -170,7 +187,7 @@ export const DOUBLE_BOLUS_WINDOW_MINUTES = 15;
 
 /**
  * The nearest calculator-written bolus within DOUBLE_BOLUS_WINDOW_MINUTES of
- * `at`, if any — the gentle "you already have a bolus from the calculator
+ * `at`, if any, for the gentle "you already have a bolus from the calculator
  * around this time" confirm. Never blocks the save; it only asks first.
  * `excludeId` skips the row being edited itself, so correcting a
  * calculator-written bolus never flags against its own value.
@@ -215,9 +232,22 @@ export interface PointUsage {
   count: number;
 }
 
-/** A point key that survives map lookups ("abdomen_left:3"). */
-export function pointKey(site: InjectionSite, point: SitePoint): string {
-  return `${site}:${point}`;
+/**
+ * The whole rotation picture for a window: every region's usage, plus the two
+ * buckets that belong to no selectable region but are still the user's own
+ * history and must not vanish from the board.
+ */
+export interface RotationUsage {
+  sites: SiteUsage[];
+  /** Injections with NO region recorded at all (site null, e.g. a calculator
+   *  mealtime bolus). Shown as "unassigned", never attributed to a region. */
+  noSiteCount: number;
+  /** Injections in a retired region (the v9 abdomen quadrants), as one legacy
+   *  total. Those regions are no longer offered, so they get no card of their
+   *  own - but the entries happened and are reported. */
+  legacyCount: number;
+  /** Most recent use across the retired regions, or null if there is none. */
+  legacyLastUsedAt: string | null;
 }
 
 /**
@@ -227,17 +257,29 @@ export function pointKey(site: InjectionSite, point: SitePoint): string {
  * (unused ones with lastUsedAt = null, count = 0). Rows logged before v8 have no
  * point, so they land in `unassignedCount` and still count toward the region.
  *
+ * Two kinds of row belong to no region CARD, and both are reported alongside the
+ * regions rather than dropped: entries in a retired quadrant (legacyCount) and
+ * entries with no region at all (noSiteCount). Silently omitting either showed
+ * the user a rotation history that was missing their own entries.
+ *
  * This is a usage VISUALISATION, not guidance: it reports what the user already
  * logged and nothing more.
+ *
+ * `cycleStart` (the profile's rotation-cycle stamp, see lib/rotationCycle) can
+ * narrow the window further: rows logged before it stop feeding the heat
+ * colours while the rows themselves stay untouched in injection_logs.
  */
 export async function getSiteUsageHistory(
   profileId: string,
-  days = 14
-): Promise<SiteUsage[]> {
+  days = 14,
+  cycleStart?: string | null
+): Promise<RotationUsage> {
   const db = await getDb();
-  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const windowSince = new Date(Date.now() - days * 86_400_000).toISOString();
+  const since =
+    cycleStart && cycleStart > windowSince ? cycleStart : windowSince;
   const rows = await db.getAllAsync<{
-    site: InjectionSite;
+    site: InjectionSite | null;
     site_point: number | null;
     lastUsedAt: string;
     count: number;
@@ -249,7 +291,22 @@ export async function getSiteUsageHistory(
     [profileId, since]
   );
 
-  return INJECTION_SITES.map((site) => {
+  // Rows with no region at all: reported as unassigned, never folded into a
+  // region's heat (that is exactly what the old 'abdomen_left' stamp did).
+  const noSiteCount = rows
+    .filter((r) => r.site == null)
+    .reduce((sum, r) => sum + r.count, 0);
+
+  const retiredRows = rows.filter(
+    (r) => r.site != null && isRetiredSite(r.site)
+  );
+  const legacyCount = retiredRows.reduce((sum, r) => sum + r.count, 0);
+  const legacyLastUsedAt = retiredRows.reduce<string | null>(
+    (acc, r) => (acc == null || r.lastUsedAt > acc ? r.lastUsedAt : acc),
+    null
+  );
+
+  const sites = INJECTION_SITES.map((site) => {
     const forSite = rows.filter((r) => r.site === site);
     const points: PointUsage[] = SITE_POINTS.map((point) => {
       const r = forSite.find((x) => asSitePoint(x.site_point) === point);
@@ -273,6 +330,8 @@ export async function getSiteUsageHistory(
       unassignedCount: unassigned.reduce((sum, r) => sum + r.count, 0),
     };
   });
+
+  return { sites, noSiteCount, legacyCount, legacyLastUsedAt };
 }
 
 /**
@@ -283,41 +342,64 @@ export async function getSiteUsageHistory(
  *
  * Rotation bookkeeping, not medical advice. The UI presents it as "least
  * recently used", never as "inject here".
+ *
+ * With a `cycleStart` stamp, only rows logged since it count: a point last used
+ * before the stamp reads as untouched in this cycle (presentation only, the
+ * rows themselves are never rewritten).
+ *
+ * History logged in a RETIRED region counts toward the selectable region on the
+ * same side of the navel (see canonicalSite). Dropping it made an abdomen side
+ * injected yesterday under its old quadrant name read as never used, which is the
+ * one thing this helper must not get wrong. Rows with no region are skipped: they
+ * describe no place, so they cannot make a place look used.
+ *
+ * The one point NEVER returned while any other exists is wherever the profile's
+ * single most recent record actually landed (all time, independent of
+ * `cycleStart`): repeating a suggestion of the point just used is exactly what
+ * this helper exists to avoid. See lib/rotationPick.ts for the pure selection
+ * rule and its edge cases (empty history, a fresh rotation-cycle reset, every
+ * point equally used).
  */
 export async function leastRecentlyUsedPoint(
-  profileId: string
+  profileId: string,
+  cycleStart?: string | null
 ): Promise<{ site: InjectionSite; point: SitePoint }> {
   const db = await getDb();
   const rows = await db.getAllAsync<{
-    site: InjectionSite;
+    site: InjectionSite | null;
     site_point: number | null;
     lastUsedAt: string;
   }>(
     `SELECT site, site_point, MAX(logged_at) AS lastUsedAt
-       FROM injection_logs WHERE profile_id = ? GROUP BY site, site_point;`,
-    [profileId]
+       FROM injection_logs WHERE profile_id = ?${cycleStart ? " AND logged_at >= ?" : ""}
+      GROUP BY site, site_point;`,
+    cycleStart ? [profileId, cycleStart] : [profileId]
   );
 
-  const lastUsed = new Map<string, string>();
+  const cycleLastUsed = new Map<string, string>();
   for (const r of rows) {
     const point = asSitePoint(r.site_point);
-    if (point == null) continue;
-    lastUsed.set(pointKey(r.site, point), r.lastUsedAt);
+    if (point == null || r.site == null) continue;
+    const key = pointKey(canonicalSite(r.site), point);
+    const known = cycleLastUsed.get(key);
+    if (known == null || r.lastUsedAt > known) cycleLastUsed.set(key, r.lastUsedAt);
   }
+
+  // The profile's single most recent record with a region AND a point, ALL
+  // time - independent of the cycle window, so a fresh reset never lets the
+  // just-used point look "never used" and come straight back.
+  const lastRow = await db.getFirstAsync<{ site: InjectionSite; site_point: number }>(
+    `SELECT site, site_point FROM injection_logs
+      WHERE profile_id = ? AND site IS NOT NULL AND site_point IS NOT NULL
+      ORDER BY logged_at DESC LIMIT 1;`,
+    [profileId]
+  );
+  const point = lastRow ? asSitePoint(lastRow.site_point) : null;
+  const lastPoint = lastRow && point != null ? { site: lastRow.site, point } : null;
 
   // Rotation only ever suggests a selectable (v9) region, never a legacy
   // general-abdomen bucket that the map no longer offers for a new entry.
-  const all = SELECTABLE_SITES.flatMap((site) =>
-    SITE_POINTS.map((point) => ({ site, point }))
-  );
-  const neverUsed = all.find((p) => !lastUsed.has(pointKey(p.site, p.point)));
-  if (neverUsed) return neverUsed;
-
-  return all.slice().sort((a, b) => {
-    const la = lastUsed.get(pointKey(a.site, a.point))!;
-    const lb = lastUsed.get(pointKey(b.site, b.point))!;
-    return la < lb ? -1 : la > lb ? 1 : 0;
-  })[0];
+  return pickLeastRecentlyUsedPoint({ cycleLastUsed, lastPoint });
 }
 
 /**
@@ -325,7 +407,8 @@ export async function leastRecentlyUsedPoint(
  * regions (the rotation card copy).
  */
 export async function recommendNextSite(
-  profileId: string
+  profileId: string,
+  cycleStart?: string | null
 ): Promise<InjectionSite> {
-  return (await leastRecentlyUsedPoint(profileId)).site;
+  return (await leastRecentlyUsedPoint(profileId, cycleStart)).site;
 }

@@ -9,6 +9,8 @@ import { glucoseToDisplay, glucoseUnitLabel } from "../../lib/glucose";
 import { insulinModeOf, insulinModeShowsBasal } from "../../lib/insulinMode";
 import {
   applyNotificationPrefs,
+  applyPostMealWindowChange,
+  getPostMealTimerEnd,
   hasNotificationPermission,
   getNotificationPermission,
   checkReminderReliability,
@@ -16,28 +18,37 @@ import {
   type NotificationPermission,
   type ReminderReliability,
 } from "../../lib/services/notifications";
+import { syncLiveData } from "../../lib/services/liveData";
 import {
+  DEFAULT_PREFS,
   getNotificationPrefs,
   setNotificationPrefs,
   type NotificationPrefs,
 } from "../../lib/services/notificationPrefs";
 import { Segmented } from "../../components/ui";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
-import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
 import { GLUCOSE_RICH, THEME } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
+import { useLayout } from "../../lib/useLayout";
 
 /** Settings > Notifications. Moved from the single-scroll screen; behaviour is
  *  unchanged (permission row, master toggle, timers, thresholds, reliability). */
 export default function NotificationSettings() {
   const { t } = useTranslation();
   const { activeProfile, lang } = useApp();
+  const { contentColumn } = useLayout();
 
-  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  // Initialized to the real defaults (not null) so the first render already
+  // shows a full list instead of flashing empty while prefs load from storage.
+  const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
   const [reliability, setReliability] = useState<ReminderReliability | null>(null);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [notifDenied, setNotifDenied] = useState(false);
   const [openPicker, setOpenPicker] = useState<"basal" | "glucose" | "weekly" | null>(null);
+  // A post-meal timer is counting down right now. Only then does the delay note
+  // have anything to describe, so it stays out of the way the rest of the time.
+  const [postMealRunning, setPostMealRunning] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
   const showsBasal = insulinModeShowsBasal(insulinModeOf(activeProfile));
@@ -50,6 +61,7 @@ export default function NotificationSettings() {
       setNotifDenied(p.enabled && !granted);
       setPermission(await getNotificationPermission());
       setReliability(await checkReminderReliability());
+      setPostMealRunning((await getPostMealTimerEnd()) != null);
     })();
   }, []);
 
@@ -59,14 +71,30 @@ export default function NotificationSettings() {
     setPrefs(next);
     await setNotificationPrefs(next);
     await applyNotificationPrefs(next);
+
+    // A running timer belongs to a meal that already happened, so a new window
+    // length is measured from THAT meal: the elapsed part is kept and only the
+    // remaining time is re-derived. Without this the countdown, the reminder and
+    // the lock-screen activity all stayed on the length the timer was armed with.
+    if (
+      patch.postMealMinutes != null &&
+      patch.postMealMinutes !== base.postMealMinutes
+    ) {
+      await applyPostMealWindowChange(patch.postMealMinutes, base.postMealMinutes);
+      // The next-reminder moment every glanceable surface shows just moved.
+      if (activeProfile) void syncLiveData(activeProfile.id, unit);
+    }
+
     const granted = await hasNotificationPermission();
     setNotifDenied(next.enabled && !granted);
     setPermission(await getNotificationPermission());
     setReliability(await checkReminderReliability());
+    setPostMealRunning((await getPostMealTimerEnd()) != null);
   }
 
   return (
     <SettingsScaffold title={t("settings.notificationsSection")}>
+      <View style={contentColumn}>
       {permission ? (
         <Row
           icon={permission === "granted" ? "notifications" : "notifications-off-outline"}
@@ -79,7 +107,24 @@ export default function NotificationSettings() {
             ) : undefined
           }
         />
-      ) : null}
+      ) : (
+        // Permission status isn't known yet: a same-shaped placeholder row
+        // instead of nothing, so the screen doesn't flash empty under the title.
+        <View
+          className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2"
+          style={{ opacity: 0.5 }}
+        >
+          <View
+            className="w-9 h-9 rounded-xl items-center justify-center"
+            style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
+          >
+            <Ionicons name="notifications-outline" size={18} color={THEME.accent} />
+          </View>
+          <Text className="flex-1 ml-3 text-[15px] font-semibold" style={{ color: THEME.ink }}>
+            {t("settings.notifPermissionRow")}
+          </Text>
+        </View>
+      )}
 
       {prefs ? (
         <>
@@ -212,7 +257,7 @@ export default function NotificationSettings() {
                 }
               />
               {prefs.postMeal ? (
-                <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
+                <InlineConfigCard icon="time-outline">
                   <Text className="text-mut text-xs mb-2">{t("settings.postMealDelay")}</Text>
                   <Segmented
                     options={[90, 120, 150].map((m) => ({
@@ -222,6 +267,31 @@ export default function NotificationSettings() {
                     value={String(prefs.postMealMinutes)}
                     onChange={(v) => updatePrefs({ postMealMinutes: Number(v) as 90 | 120 | 150 })}
                   />
+                  {/* Only while a timer is actually counting down: otherwise the
+                      note describes something that is not happening. */}
+                  {postMealRunning ? (
+                    <Text className="text-mut text-xs mt-2">
+                      {t("settings.postMealDelayRunningNote")}
+                    </Text>
+                  ) : null}
+                </InlineConfigCard>
+              ) : null}
+
+              <Row
+                icon="journal-outline"
+                label={t("settings.reminderIdle")}
+                right={
+                  <Switch
+                    value={prefs.idleReminder}
+                    onValueChange={(v) => updatePrefs({ idleReminder: v })}
+                    trackColor={{ true: THEME.accent, false: THEME.border }}
+                    thumbColor={THEME.ink}
+                  />
+                }
+              />
+              {prefs.idleReminder ? (
+                <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
+                  <Text className="text-mut text-xs">{t("settings.reminderIdleHint")}</Text>
                 </View>
               ) : null}
 
@@ -239,7 +309,7 @@ export default function NotificationSettings() {
               />
               {prefs.weekly ? (
                 <>
-                  <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
+                  <InlineConfigCard icon="calendar-outline">
                     <Text className="text-mut text-xs mb-2">{t("settings.reminderDay")}</Text>
                     <View className="flex-row justify-between">
                       {/* Locale week start: Monday-first for tr/de/es/fr. */}
@@ -262,7 +332,7 @@ export default function NotificationSettings() {
                         );
                       })}
                     </View>
-                  </View>
+                  </InlineConfigCard>
                   <Row
                     icon="alarm-outline"
                     label={t("settings.reminderTime")}
@@ -291,7 +361,7 @@ export default function NotificationSettings() {
                 }
               />
               {prefs.lowFollowup ? (
-                <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
+                <InlineConfigCard icon="pulse-outline">
                   <Text className="text-mut text-xs mb-2">
                     {t("settings.lowThreshold")} ({glucoseUnitLabel(unit)})
                   </Text>
@@ -303,12 +373,13 @@ export default function NotificationSettings() {
                     value={String(prefs.lowThresholdMgdl)}
                     onChange={(v) => updatePrefs({ lowThresholdMgdl: Number(v) })}
                   />
-                </View>
+                </InlineConfigCard>
               ) : null}
             </>
           ) : null}
         </>
       ) : null}
+      </View>
     </SettingsScaffold>
   );
 }
