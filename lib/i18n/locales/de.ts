@@ -49,7 +49,7 @@ const de: TranslationSchema = {
     methodNote:
       "Schätzungen werden auf eine Auflösung von 0,5 Einheiten gerundet und sind bewusst konservativ. Vor der Verwendung immer prüfen und anpassen. Die Korrekturdosis zielt auf die Mitte Ihres Zielbereichs nach dem Essen.",
     iobNote:
-      "Aktives Insulin (IOB) wird aus Ihren erfassten Bolusdosen mit einem einfachen linearen Abfall über ~4 Stunden geschätzt und senkt nur eine Korrekturschätzung, nie die Mahlzeitendosis. Es ist eine Schätzung, keine Anweisung.",
+      "Aktives Insulin (IOB) wird aus Ihren erfassten Bolusdosen anhand einer exponentiellen Insulinwirkkurve geschätzt, die sich nach dem Wirkgipfel und der Wirkdauer des in den Einstellungen ausgewählten Bolusinsulinprodukts richtet (bis Sie eines auswählen, wird ein allgemeines schnell wirkendes Profil verwendet). Sie senkt ausschließlich eine Korrekturschätzung, niemals die Mahlzeitendosis. Lang wirkende (Basal-)Dosen werden auf die gleiche Weise, aber separat geschätzt. Es handelt sich um eine Schätzung, keine Anweisung.",
     listTitle: "Quellen",
     openHint: "Wird im Browser geöffnet",
     refs: {
@@ -295,6 +295,17 @@ const de: TranslationSchema = {
     discardBody: "Das Foto, die Notiz, das Etikett oder die eingegebene Dosis werden verworfen.",
     discardConfirm: "Verwerfen",
   },
+  iob: {
+    basisText:
+      "Dies ist die Menge, die schätzungsweise noch aus Ihren zuletzt erfassten Mahlzeiten- oder Korrekturdosen (Bolus) aktiv ist.",
+    productText:
+      "Berechnet anhand der typischen Wirkdauer und des Wirkgipfels von {{product}} (~{{hours}} Stunden), dem Bolusinsulin, das Sie in den Einstellungen ausgewählt haben.",
+    genericText:
+      "Es ist noch kein Bolusinsulinprodukt ausgewählt, daher wird für diese Schätzung ein allgemeines schnell wirkendes Profil verwendet. Sie können Ihr Produkt in den Einstellungen auswählen, um eine persönlichere Schätzung zu erhalten.",
+    basalActive:
+      "Etwa {{value}} Einheiten Ihres lang wirkenden (Basal-)Insulins sind ebenfalls noch aktiv. Dies wird separat angezeigt und ist nicht in der obigen Zahl enthalten.",
+    personalNote: "Dies variiert von Person zu Person und ist nur eine Schätzung.",
+  },
   journal: {
     showMore: "Mehr anzeigen",
     carbsLabel: "{{carbs}} g KH",
@@ -339,6 +350,13 @@ const de: TranslationSchema = {
     isfHint: "Wie stark 1 Einheit die Glukose senkt.",
     carbRatios: "KH-Faktoren (g/Einheit)",
     dailyCarbTarget: "Tägliches KH-Ziel (g)",
+    basalDailyUnits: "Tägliche Basaldosis",
+    basalDailyUnitsHint: "Füllt das Dosisfeld bei einem Basal-Eintrag vor; Sie können den Wert bei jedem Eintrag ändern.",
+    basalInsulin: "Basalinsulin",
+    bolusInsulin: "Bolusinsulin",
+    bolusInsulinHint: "Ihre Schätzung des aktiven Insulins richtet sich nach dem typischen Wirkprofil dieses Produkts.",
+    insulinProductNotSet: "Nicht festgelegt",
+    insulinDurationLabel: "Typische Wirkdauer",
     language: "App-Sprache",
     glucoseUnit: "Glukose-Einheit",
     notificationsSection: "Benachrichtigungen",
@@ -774,7 +792,6 @@ const de: TranslationSchema = {
     history: "Verlauf",
     deleteEntry: "Diese Injektion löschen?",
     guideLink: "So injizieren Sie",
-    guideLinkLabel: "Anleitung",
     recommendedSite: "Am längsten nicht genutzte Stelle",
     useThisSite: "Diese Stelle auswählen",
     rotationTitle: "Stellenwechsel",
@@ -842,6 +859,17 @@ const de: TranslationSchema = {
     newCycleConfirmBody: "Farben beginnen ab jetzt neu; Ihre Einträge bleiben unverändert.",
     newCycleStarted: "Neue Runde gestartet",
     cycleSince: "Rundenbeginn: {{date}}",
+    time: "Uhrzeit",
+    bolusKindLabel: "Bolus-Art",
+    bolusKindMeal: "Vor der Mahlzeit",
+    bolusKindCorrection: "Korrektur",
+    basalPrefillHint: "Sie können Ihre tägliche Basalmenge in den Einstellungen speichern.",
+  },
+  injectionMap: {
+    sub: "Jede Region ist in vier Punkte unterteilt. Je dunkler eine Region, desto häufiger haben Sie sie genutzt.",
+    overviewHint: "Tippen Sie auf eine Region, um ihre vier Punkte zu öffnen.",
+    backToBody: "Zurück zum Körper",
+    entries: "{{n}} Einträge",
   },
   spike: {
     title: "Spike",
@@ -969,6 +997,11 @@ const de: TranslationSchema = {
     prefilledNote: "Die Lebensmittel stammen aus diesem Eintrag; geben Sie der Vorlage einen Namen.",
     fixedCarbs: "Erfasste Kohlenhydrate",
     calcFromItems: "Die Kohlenhydrate sind die Summe der Lebensmittel der Vorlage.",
+  },
+  errorBoundary: {
+    title: "Etwas ist schiefgelaufen",
+    body: "Auf diesem Bildschirm ist ein unerwartetes Problem aufgetreten. Ihre gespeicherten Daten sind sicher.",
+    retry: "Erneut versuchen",
   },
 };
 

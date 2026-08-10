@@ -32,8 +32,9 @@ export async function getDefaultProfile(): Promise<UserProfile> {
         carb_ratio_lunch, carb_ratio_dinner, target_fasting_min,
         target_fasting_max, target_postmeal_min, target_postmeal_max,
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
+        basal_daily_units, basal_insulin_id, bolus_insulin_id,
         created_at)
-     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, ?);`,
+     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, ?);`,
     [DEFAULT_PROFILE_ID, defaultProfileName(), now]
   );
   return (await getProfile(DEFAULT_PROFILE_ID))!;
@@ -54,6 +55,9 @@ export interface NewProfileInput {
   daily_carb_target_min_g?: number;
   diabetes_type?: DiabetesType;
   insulin_mode?: InsulinMode;
+  basal_daily_units?: number | null;
+  basal_insulin_id?: string | null;
+  bolus_insulin_id?: string | null;
 }
 
 export async function createProfile(
@@ -69,8 +73,9 @@ export async function createProfile(
         carb_ratio_lunch, carb_ratio_dinner, target_fasting_min,
         target_fasting_max, target_postmeal_min, target_postmeal_max,
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
-        diabetes_type, insulin_mode, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        diabetes_type, insulin_mode,
+        basal_daily_units, basal_insulin_id, bolus_insulin_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.name.trim() || defaultProfileName(),
@@ -87,6 +92,9 @@ export async function createProfile(
       input.daily_carb_target_min_g ?? Math.round(carbMax * 0.8),
       input.diabetes_type ?? "unknown",
       input.insulin_mode ?? "both",
+      input.basal_daily_units ?? null,
+      input.basal_insulin_id ?? null,
+      input.bolus_insulin_id ?? null,
       now,
     ]
   );

@@ -88,6 +88,12 @@ export interface UserProfile {
    *  still running on the "not sure" defaults. Surfaces a neutral notice on the
    *  calculator so a default is never mistaken for a personal ratio. */
   ratios_confirmed: number; // 0 | 1
+  /** Insulin product catalog (schema v15, lib/insulinCatalog.ts). Null while the
+   *  profile has not picked a product / entered a daily basal dose; the app falls
+   *  back to the generic profile (bolusProfileFor / basalProfileFor) either way. */
+  basal_daily_units: number | null;
+  basal_insulin_id: string | null;
+  bolus_insulin_id: string | null;
   created_at: string;
 }
 
@@ -229,6 +235,16 @@ export function parseAliases(food: Food): string[] {
 /** Basal (long-acting) vs bolus (mealtime) insulin. */
 export type InsulinType = "basal" | "bolus";
 
+/** What a bolus injection was for (schema v15). Always null on a basal row. */
+export type BolusKind = "meal" | "correction";
+
+export const BOLUS_KINDS: readonly BolusKind[] = ["meal", "correction"] as const;
+
+/** Narrows any stored value to a BolusKind, or null when it is not one. */
+export function parseBolusKind(v: unknown): BolusKind | null {
+  return v === "meal" || v === "correction" ? v : null;
+}
+
 /**
  * Injection sites (schema v9). The abdomen is split into four quadrants to match
  * the FITTER rotation guidance and the R7.1 body map. The pre-v9 general
@@ -361,6 +377,8 @@ export interface Injection {
   site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
+  /** Meal vs correction (schema v15). Always null when insulin_type isn't 'bolus'. */
+  bolus_kind: BolusKind | null;
   meal_log_id: string | null; // FK → meal_logs (SET NULL on meal delete)
   note: string | null;
   /** Where the row came from: 'manual' by default, 'calculator' for the bolus

@@ -54,7 +54,7 @@ export function journalFeedSql(withRange: boolean): string {
               NULL AS name_tr, NULL AS name_en, NULL AS name_de, NULL AS name_es,
               NULL AS name_fr, NULL AS category,
               NULL AS site, NULL AS site_point, NULL AS dose_units,
-              NULL AS insulin_type, NULL AS note,
+              NULL AS insulin_type, NULL AS bolus_kind, NULL AS note,
               s.healthkit_uuid AS healthkit_uuid
          FROM sugar_logs s
         WHERE s.profile_id = ?${bounds("s.logged_at")}
@@ -66,7 +66,7 @@ export function journalFeedSql(withRange: boolean): string {
               m.portion_g, m.calculated_carbs_g, m.insulin_dose_units,
               m.photo_uri_local, m.personal_note,
               f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr, f.category,
-              NULL, NULL, NULL, NULL, NULL,
+              NULL, NULL, NULL, NULL, NULL, NULL,
               NULL
          FROM meal_logs m LEFT JOIN foods f ON f.id = m.food_id
         WHERE m.profile_id = ?${bounds("m.logged_at")}
@@ -76,7 +76,7 @@ export function journalFeedSql(withRange: boolean): string {
               NULL, NULL, i.source,
               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
               NULL, NULL, NULL, NULL, NULL, NULL,
-              i.site, i.site_point, i.dose_units, i.insulin_type, i.note,
+              i.site, i.site_point, i.dose_units, i.insulin_type, i.bolus_kind, i.note,
               NULL
          FROM injection_logs i
         WHERE i.profile_id = ?${bounds("i.logged_at")}

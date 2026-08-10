@@ -47,7 +47,7 @@ const tr = {
     methodNote:
       "Tahminler 0,5 ünitelik çözünürlüğe yuvarlanır ve bilinçli olarak temkinlidir; kullanmadan önce her zaman gözden geçirip düzenleyin. Düzeltme dozu, tokluk hedef aralığınızın ortasını esas alır.",
     iobNote:
-      "Aktif insülin (IOB), kaydettiğiniz bolus dozlarından ~4 saatlik basit doğrusal azalmayla tahmin edilir ve yalnızca düzeltme tahminini düşürür, öğün dozunu asla. Bu bir tahmindir, talimat değildir.",
+      "Aktif insülin (IOB), kaydettiğiniz bolus dozlarından, Ayarlar'da seçtiğiniz bolus insülin ürününün zirve zamanı ve etki süresine göre şekillenen üstel bir insülin aktivite eğrisiyle tahmin edilir (bir ürün seçmediğiniz sürece genel hızlı etkili bir profil kullanılır). Yalnızca düzeltme tahminini düşürür, öğün dozunu asla. Uzun etkili (bazal) dozlar aynı yöntemle ama ayrı olarak tahmin edilir. Bu bir tahmindir, talimat değildir.",
     listTitle: "Kaynaklar",
     openHint: "Tarayıcınızda açılır",
     refs: {
@@ -293,6 +293,17 @@ const tr = {
     discardBody: "Girdiğiniz fotoğraf, not, etiket veya doz kaydedilmeden silinecek.",
     discardConfirm: "Kaydetmeden çık",
   },
+  iob: {
+    basisText:
+      "Bu değer, son kaydettiğiniz öğün veya düzeltme (bolus) dozlarından hâlâ aktif olduğu tahmin edilen miktardır.",
+    productText:
+      "Ayarlar'da seçtiğiniz bolus insülini olan {{product}} için tipik etki süresi ve zirve zamanına göre hesaplanır (~{{hours}} saat).",
+    genericText:
+      "Henüz bir bolus insülin ürünü seçmediniz, bu nedenle bu tahmin için genel hızlı etkili bir profil kullanılır. Ayarlar'dan ürününüzü seçerek daha kişisel bir tahmin alabilirsiniz.",
+    basalActive:
+      "Uzun etkili (bazal) insülininizden de yaklaşık {{value}} ünite hâlâ aktif. Bu ayrı gösterilir ve yukarıdaki sayıya dahil değildir.",
+    personalNote: "Kişiden kişiye değişir ve yalnızca bir tahmindir.",
+  },
   journal: {
     showMore: "Daha fazla göster",
     carbsLabel: "{{carbs}} g karbonhidrat",
@@ -337,6 +348,13 @@ const tr = {
     isfHint: "1 ünitenin şekeri ne kadar düşürdüğü.",
     carbRatios: "Karbonhidrat oranları (g/ünite)",
     dailyCarbTarget: "Günlük karbonhidrat hedefi (g)",
+    basalDailyUnits: "Günlük bazal doz",
+    basalDailyUnitsHint: "İğne kaydında bazal seçildiğinde doz alanına bu miktar önceden dolar; her kayıtta değiştirebilirsiniz.",
+    basalInsulin: "Bazal insülin",
+    bolusInsulin: "Bolus insülin",
+    bolusInsulinHint: "Aktif insülin tahmininiz bu ürünün tipik etki profiline göre hesaplanır.",
+    insulinProductNotSet: "Seçilmedi",
+    insulinDurationLabel: "Tipik etki süresi",
     language: "Uygulama Dili",
     glucoseUnit: "Glukoz birimi",
     notificationsSection: "Bildirimler",
@@ -772,7 +790,6 @@ const tr = {
     history: "Geçmiş",
     deleteEntry: "Bu enjeksiyon kaydı silinsin mi?",
     guideLink: "Nasıl enjekte edilir",
-    guideLinkLabel: "Rehber",
     recommendedSite: "En uzun süredir kullanılmayan bölge",
     useThisSite: "Bu bölgeyi seç",
     rotationTitle: "Bölge rotasyonu",
@@ -840,6 +857,17 @@ const tr = {
     newCycleConfirmBody: "Isı renkleri şimdiden başlar; kayıtlarınız değişmez.",
     newCycleStarted: "Yeni tur başlatıldı",
     cycleSince: "Tur başlangıcı: {{date}}",
+    time: "Saat",
+    bolusKindLabel: "Bolus türü",
+    bolusKindMeal: "Yemek öncesi",
+    bolusKindCorrection: "Düzeltme",
+    basalPrefillHint: "Günlük bazal miktarınızı Ayarlar'dan kaydedebilirsiniz.",
+  },
+  injectionMap: {
+    sub: "Her bölge dört noktaya ayrılır. Bölge ne kadar koyuysa orayı o kadar sık kullanmışsınız.",
+    overviewHint: "Dört noktasını açmak için bir bölgeye dokunun.",
+    backToBody: "Vücuda dön",
+    entries: "{{n}} kayıt",
   },
   spike: {
     title: "Spike",
@@ -966,6 +994,11 @@ const tr = {
     prefilledNote: "Yemekler bu kayıttan geldi; şablona bir ad verin.",
     fixedCarbs: "Kayıtlı karbonhidrat",
     calcFromItems: "Karbonhidrat, şablondaki yemeklerden toplandı.",
+  },
+  errorBoundary: {
+    title: "Bir şeyler ters gitti",
+    body: "Bu ekranda beklenmeyen bir sorun oluştu. Kayıtlı verileriniz güvende.",
+    retry: "Tekrar dene",
   },
 };
 

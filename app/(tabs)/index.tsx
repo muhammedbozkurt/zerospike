@@ -8,7 +8,8 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
-import { activeInsulin } from "../../lib/iob";
+import { activeInsulinBreakdown } from "../../lib/iob";
+import { bolusProfileFor, basalProfileFor, insulinProductById } from "../../lib/insulinCatalog";
 import { mealSlotForHour } from "../../lib/insulin";
 import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { targetBandFor } from "../../lib/agpChart";
@@ -52,7 +53,7 @@ import {
 } from "../../lib/services/health";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
-import { logEvent } from "../../lib/analytics";
+import { logCrash, logEvent } from "../../lib/analytics";
 
 const CGM_KEY = "zerospike.cgmSync";
 // Shown once to an existing free user who had auto-sync on before it became Pro.
@@ -78,6 +79,8 @@ const JOURNAL_LOAD_STEP = 250;
 const CTA_BOTTOM = 10;
 // What the journal has to scroll clear of: the CTA overlay plus a little air.
 const CTA_CLEARANCE = CTA_BOTTOM + 100;
+import { Tooltip } from "../../components/Tooltip";
+import { Skeleton } from "../../components/Skeleton";
 import { JournalItem } from "../../components/JournalItem";
 import { QuickAddSheet } from "../../components/QuickAddSheet";
 import { useUndoBatch } from "../../components/useUndoBatch";
@@ -171,6 +174,51 @@ function nextJournalCut(list: JournalEntry[], from: number): number {
   return Math.max(i, from + 1);
 }
 
+/**
+ * Hero placeholder, shown only while the first feed read is still in flight
+ * (before we know whether this is a first run or an existing user). Sized to
+ * match the loaded hero card (GlassCard + 152pt ring) so settling into either
+ * the real hero or the first-run guide's own ring is a small, single step -
+ * not the two-stage "wrong shell then everything shifts" jump this replaces.
+ */
+function HeroSkeleton() {
+  return (
+    <GlassCard style={{ paddingVertical: 14, marginBottom: 12 }}>
+      <View className="flex-row items-center justify-between px-1 mb-1">
+        <Skeleton width={90} height={11} radius={4} />
+        <Skeleton width={54} height={18} radius={9} />
+      </View>
+      <View className="items-center">
+        <Skeleton width={152} height={152} radius={76} />
+      </View>
+    </GlassCard>
+  );
+}
+
+/** This-week strip placeholder, sized to match the loaded SegmentedStat row. */
+function WeekSkeleton() {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <View className="flex-row items-center justify-between mb-1.5 px-1">
+        <Skeleton width={70} height={11} radius={4} />
+        <Skeleton width={72} height={20} radius={4} />
+      </View>
+      <View className="flex-row rounded-2xl bg-glass border border-hair py-3">
+        {[0, 1, 2].map((i) => (
+          <View
+            key={i}
+            className="flex-1 items-center px-1"
+            style={i > 0 ? { borderLeftWidth: 1, borderLeftColor: THEME.border } : undefined}
+          >
+            <Skeleton width={40} height={18} radius={4} style={{ marginBottom: 4 }} />
+            <Skeleton width={54} height={11} radius={4} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export default function DashboardScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -190,7 +238,11 @@ export default function DashboardScreen() {
   const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
   const [showEditHint, setShowEditHint] = useState(false);
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
-  const [cgmOn, setCgmOn] = useState(false);
+  // null = the persisted AsyncStorage preference has not been read yet. A Pro
+  // user who had sync ON must never see the switch commit to OFF for one frame
+  // and then jump to ON - the card stays in its skeleton shape until this
+  // resolves to a real boolean.
+  const [cgmOn, setCgmOn] = useState<boolean | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [showWidgetTip, setShowWidgetTip] = useState(false);
@@ -221,11 +273,19 @@ export default function DashboardScreen() {
 
   const load = useCallback(async () => {
     if (!activeProfile) return;
-    // One SQL window for the whole screen: stats read the full feed, the list
-    // slices it. Paging inside the window never re-runs this query.
-    const feed = await getJournal(activeProfile.id, lang, loadLimit);
-    setEntries(feed);
-    setLoaded(true);
+    try {
+      // One SQL window for the whole screen: stats read the full feed, the list
+      // slices it. Paging inside the window never re-runs this query.
+      const feed = await getJournal(activeProfile.id, lang, loadLimit);
+      setEntries(feed);
+    } catch (err) {
+      logCrash(err, { screen: "dashboard", load: "journal" });
+    } finally {
+      // In `finally`: a rejected read used to leave `loaded` false for good, so
+      // the hero/week skeletons stayed up with no message and no retry. The
+      // screen falls back to its empty state instead.
+      setLoaded(true);
+    }
   }, [activeProfile, lang, loadLimit]);
 
   useEffect(() => {
@@ -313,7 +373,15 @@ export default function DashboardScreen() {
     // Health/CGM sync is iOS-only (Health Connect was removed for Play policy).
     if (Platform.OS !== "ios") return;
     (async () => {
-      const saved = (await AsyncStorage.getItem(CGM_KEY)) === "true";
+      let saved = false;
+      try {
+        saved = (await AsyncStorage.getItem(CGM_KEY)) === "true";
+      } catch (err) {
+        // A failed read must still resolve cgmOn to a real boolean: left at
+        // null the Health card keeps its skeleton switch for good and
+        // openHealthFlow returns early, so the card cannot be used at all.
+        logCrash(err, { screen: "dashboard", load: "cgmPref" });
+      }
       if (isProUser) {
         setCgmOn(saved);
         if (saved && activeProfile) runSync(false);
@@ -461,8 +529,13 @@ export default function DashboardScreen() {
             : weekTIR >= 50
               ? STATUS_COLOR.elevated
               : STATUS_COLOR.high,
-      // Active insulin still working from recent bolus doses (stacking awareness).
-      iob: activeInsulin(injections),
+      // Active insulin still working from recent doses (stacking awareness),
+      // shaped by the user's own selected products; basal is kept apart from
+      // the headline bolus figure, see lib/iob.ts.
+      ...activeInsulinBreakdown(injections, {
+        bolusProfile: bolusProfileFor(activeProfile?.bolus_insulin_id),
+        basalProfile: basalProfileFor(activeProfile?.basal_insulin_id),
+      }),
     };
   }, [entries, activeProfile]);
 
@@ -477,13 +550,34 @@ export default function DashboardScreen() {
     weekSparkline,
     avgColor,
     tirColor,
-    iob,
+    bolus: iob,
+    basal: basalIob,
   } = stats;
 
   // Onboarding said whether this user takes a mealtime insulin at all. When they
   // do not, the insulin apparatus (IOB line here, the whole Injection tab) stays
   // out of the way instead of implying they should be dosing.
   const showsInsulin = insulinModeShowsBolus(activeProfile?.insulin_mode);
+
+  // "What is this based on?" explanation for the compact active-insulin line:
+  // names the selected bolus product and its typical duration, or says a
+  // generic profile is in use, plus any still-active basal kept apart from
+  // the headline bolus figure.
+  const iobTooltipText = useMemo(() => {
+    const bolusProduct = insulinProductById(activeProfile?.bolus_insulin_id);
+    const parts = [
+      t("iob.basisText"),
+      bolusProduct
+        ? t("iob.productText", {
+            product: bolusProduct.label,
+            hours: num(bolusProduct.durationHours),
+          })
+        : t("iob.genericText"),
+    ];
+    if (basalIob > 0) parts.push(t("iob.basalActive", { value: num(basalIob) }));
+    parts.push(t("iob.personalNote"));
+    return parts.join("\n\n");
+  }, [activeProfile?.bolus_insulin_id, basalIob, t]);
 
   // Post-meal button slot: while a reminder is pending the <PostMealCountdown>
   // child ticks in place, otherwise the slot is the normal CTA. Reaching the end
@@ -663,6 +757,9 @@ export default function DashboardScreen() {
       return;
     }
     if (syncing) return;
+    // The persisted preference has not resolved yet (card is still its
+    // skeleton, not a Pressable) - nothing to act on either way.
+    if (cgmOn == null) return;
     if (cgmOn) void runSync(true);
     else void toggleCgm(true);
   }
@@ -893,7 +990,17 @@ export default function DashboardScreen() {
   // timer for a meal nobody logged and two shortcuts into empty screens, the
   // screen becomes a short guided setup - the ring the first reading will fill,
   // the numbered steps, one button.
+  //
+  // Both of these require `loaded`: before the first feed read lands, entries
+  // is an empty array for EVERY user, existing or brand new. Without that
+  // guard, "existing user" chrome (post-meal card, quick-access row, history
+  // heading) used to render immediately on `!isFirstRun` alone, then vanish
+  // into the first-run guide if the user turned out to be new - or, for an
+  // existing user, sit there while the hero ring and week strip popped in on
+  // top of it a moment later and shoved everything down. See HeroSkeleton /
+  // WeekSkeleton below for what fills that gap instead.
   const isFirstRun = loaded && entries.length === 0;
+  const isExistingUser = loaded && entries.length > 0;
 
   const startSteps: {
     key: string;
@@ -1043,91 +1150,104 @@ export default function DashboardScreen() {
       </View>
 
 
-      {isFirstRun ? FirstRunGuide : null}
+      {!loaded ? (
+        // Unknown yet whether this is a first run or an existing user: neither
+        // shell is correct to show, so a same-sized placeholder holds the hero
+        // + week strip's height instead of guessing.
+        <>
+          <HeroSkeleton />
+          <WeekSkeleton />
+        </>
+      ) : isFirstRun ? (
+        FirstRunGuide
+      ) : (
+        <>
+          {/* Hero: most recent reading as the signature glucose ring */}
+          {lastGlucose ? (
+            <GlassCard glow={lastColor} style={{ paddingVertical: 14, marginBottom: 12 }}>
+              <View className="flex-row items-center justify-between px-1 mb-1">
+                <Text
+                  style={{
+                    color: THEME.muted,
+                    fontSize: 11,
+                    letterSpacing: 1.3,
+                    fontWeight: "800",
+                  }}
+                >
+                  {upper(t("dashboard.lastReading"))}
+                </Text>
+                {lastStatus ? (
+                  <GlucoseChip
+                    status={lastStatus}
+                    label={
+                      lastStatus === "normal"
+                        ? t("insights.inRange")
+                        : lastStatus === "low"
+                          ? t("insights.low")
+                          : lastStatus === "veryHigh"
+                            ? t("insights.veryHigh")
+                            : t("insights.high")
+                    }
+                  />
+                ) : null}
+              </View>
+              <View className="items-center">
+                <GlucoseRing
+                  value={lastGlucose.glucose_level_mgdl}
+                  display={formatGlucose(lastGlucose.glucose_level_mgdl, unit)}
+                  caption={`${glucoseUnitLabel(unit)} · ${formatTime(lastGlucose.logged_at)}`}
+                  color={lastColor}
+                  size={152}
+                />
+              </View>
+            </GlassCard>
+          ) : null}
 
-      {/* Hero: most recent reading as the signature glucose ring */}
-      {lastGlucose ? (
-        <GlassCard glow={lastColor} style={{ paddingVertical: 14, marginBottom: 12 }}>
-          <View className="flex-row items-center justify-between px-1 mb-1">
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 11,
-                letterSpacing: 1.3,
-                fontWeight: "800",
-              }}
-            >
-              {upper(t("dashboard.lastReading"))}
-            </Text>
-            {lastStatus ? (
-              <GlucoseChip
-                status={lastStatus}
-                label={
-                  lastStatus === "normal"
-                    ? t("insights.inRange")
-                    : lastStatus === "low"
-                      ? t("insights.low")
-                      : lastStatus === "veryHigh"
-                        ? t("insights.veryHigh")
-                        : t("insights.high")
-                }
+          {/* This-week strip: numbers that were computed but never shown (avg, TIR,
+              streak) with a small sparkline of the week's readings. One compact row. */}
+          {hasWeekData ? (
+            <View style={{ marginBottom: 12 }}>
+              <View className="flex-row items-center justify-between mb-1.5 px-1">
+                <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}>
+                  {t("dashboard.thisWeek")}
+                </Text>
+                {weekSparkline.length > 1 ? (
+                  <Sparkline
+                    data={weekSparkline}
+                    width={72}
+                    height={20}
+                    color={avgColor}
+                    showLast={false}
+                    fill={false}
+                  />
+                ) : null}
+              </View>
+              <SegmentedStat
+                items={[
+                  {
+                    label: t("insights.avgGlucose"),
+                    value: weekAvg != null ? formatGlucose(weekAvg, unit) : t("dashboard.noValueYet"),
+                    accent: avgColor,
+                  },
+                  {
+                    label: t("insights.timeInRange"),
+                    value: weekTIR != null ? pct(weekTIR) : t("dashboard.noValueYet"),
+                    accent: tirColor,
+                  },
+                  { label: t("dashboard.streakDays"), value: `${logStreak}` },
+                ]}
               />
-            ) : null}
-          </View>
-          <View className="items-center">
-            <GlucoseRing
-              value={lastGlucose.glucose_level_mgdl}
-              display={formatGlucose(lastGlucose.glucose_level_mgdl, unit)}
-              caption={`${glucoseUnitLabel(unit)} · ${formatTime(lastGlucose.logged_at)}`}
-              color={lastColor}
-              size={152}
-            />
-          </View>
-        </GlassCard>
-      ) : null}
-
-      {/* This-week strip: numbers that were computed but never shown (avg, TIR,
-          streak) with a small sparkline of the week's readings. One compact row. */}
-      {hasWeekData ? (
-        <View style={{ marginBottom: 12 }}>
-          <View className="flex-row items-center justify-between mb-1.5 px-1">
-            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}>
-              {t("dashboard.thisWeek")}
-            </Text>
-            {weekSparkline.length > 1 ? (
-              <Sparkline
-                data={weekSparkline}
-                width={72}
-                height={20}
-                color={avgColor}
-                showLast={false}
-                fill={false}
-              />
-            ) : null}
-          </View>
-          <SegmentedStat
-            items={[
-              {
-                label: t("insights.avgGlucose"),
-                value: weekAvg != null ? formatGlucose(weekAvg, unit) : t("dashboard.noValueYet"),
-                accent: avgColor,
-              },
-              {
-                label: t("insights.timeInRange"),
-                value: weekTIR != null ? pct(weekTIR) : t("dashboard.noValueYet"),
-                accent: tirColor,
-              },
-              { label: t("dashboard.streakDays"), value: `${logStreak}` },
-            ]}
-          />
-        </View>
-      ) : null}
+            </View>
+          ) : null}
+        </>
+      )}
 
       {/* Post-meal timer: a REAL filled pill button, not text that reads like a
           value. While the timer runs, the same slot shows the countdown + a small
-          cancel action. Hidden before the first entry: "I started eating" was the
+          cancel action. Hidden before the first entry (and before we know which
+          case this is - see isExistingUser above): "I started eating" was the
           loudest action on a brand-new dashboard, ahead of logging anything. */}
-      {!isFirstRun ? (
+      {isExistingUser ? (
       <GlassCard accent style={{ marginBottom: 12, paddingVertical: 12 }}>
         {postMealTimer != null ? (
           <PostMealCountdown
@@ -1210,11 +1330,14 @@ export default function DashboardScreen() {
       {/* Active insulin (IOB): a compact contextual line, only when working and
           only for users who actually take a mealtime insulin. */}
       {iob > 0 && showsInsulin ? (
-        <View className="flex-row items-center justify-center mb-3" style={{ gap: 6 }}>
-          <Ionicons name="hourglass-outline" size={12} color={THEME.accent} />
-          <Text style={{ color: THEME.muted, fontSize: 11 }}>
-            {t("dashboard.activeInsulin")}: {num(iob)} {t("common.units")}
-          </Text>
+        <View className="items-center mb-3">
+          <View className="flex-row items-center justify-center" style={{ gap: 6 }}>
+            <Ionicons name="hourglass-outline" size={12} color={THEME.accent} />
+            <Text style={{ color: THEME.muted, fontSize: 11 }}>
+              {t("dashboard.activeInsulin")}: {num(iob)} {t("common.units")}
+            </Text>
+            <Tooltip text={iobTooltipText} size={13} />
+          </View>
         </View>
       ) : null}
 
@@ -1222,8 +1345,9 @@ export default function DashboardScreen() {
           so they are reachable without scrolling past the whole journal. The Pro
           gate and the sync switch behave exactly as before. Both lead into
           screens that have nothing to show yet before the first entry, so the row
-          waits for it. */}
-      {!isFirstRun ? (
+          waits for it (and for `loaded`, so it never shows during the moment we
+          don't yet know which case this is). */}
+      {isExistingUser ? (
       <View className="flex-row mb-3" style={{ gap: 8 }}>
         <Pressable
           onPress={() => router.push("/insights")}
@@ -1260,7 +1384,17 @@ export default function DashboardScreen() {
           >
             <View className="flex-row items-center justify-between">
               <IconTile icon="pulse" size={28} radius={9} />
-              {isProUser ? (
+              {!isProUser ? (
+                <View className="rounded-full bg-brand px-2 py-0.5">
+                  <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
+                </View>
+              ) : cgmOn === null ? (
+                // The persisted preference has not been read yet: a Pro user
+                // who had sync ON must never see the switch commit to OFF and
+                // then jump ON a frame later, so it stays unresolved-looking
+                // until the AsyncStorage read lands.
+                <Skeleton width={30} height={18} radius={9} style={{ marginVertical: -6 }} />
+              ) : (
                 <Switch
                   value={cgmOn}
                   onValueChange={toggleCgm}
@@ -1268,10 +1402,6 @@ export default function DashboardScreen() {
                   thumbColor={THEME.ink}
                   style={{ transform: [{ scale: 0.75 }], marginVertical: -6 }}
                 />
-              ) : (
-                <View className="rounded-full bg-brand px-2 py-0.5">
-                  <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
-                </View>
               )}
             </View>
             <Text
@@ -1280,21 +1410,25 @@ export default function DashboardScreen() {
             >
               {HEALTH_NAME}
             </Text>
-            <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
-              {!isProUser
-                ? t("dashboard.cgmProHint")
-                : syncing
-                  ? t("dashboard.syncing")
-                  : cgmOn
-                    ? t("dashboard.cgmOnTapToSync")
-                    : t("dashboard.cgmSubtitle")}
-            </Text>
+            {isProUser && cgmOn === null ? (
+              <Skeleton width={110} height={10} radius={4} style={{ marginTop: 4 }} />
+            ) : (
+              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
+                {!isProUser
+                  ? t("dashboard.cgmProHint")
+                  : syncing
+                    ? t("dashboard.syncing")
+                    : cgmOn
+                      ? t("dashboard.cgmOnTapToSync")
+                      : t("dashboard.cgmSubtitle")}
+              </Text>
+            )}
           </Pressable>
         ) : null}
       </View>
       ) : null}
 
-      {!isFirstRun ? (
+      {isExistingUser ? (
         <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
           {upper(t("dashboard.history"))}
         </Text>

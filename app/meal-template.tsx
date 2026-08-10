@@ -59,7 +59,7 @@ import {
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
-import { logEvent } from "../lib/analytics";
+import { logCrash, logEvent } from "../lib/analytics";
 import {
   schedulePostMealReminder,
   noteJournalActivity,
@@ -138,6 +138,10 @@ function MealTemplateScreen() {
   const [name, setName] = useState("");
   const [slot, setSlot] = useState<SlotChoice>("any");
   const [items, setItems] = useState<ResolvedTemplateItem[]>([]);
+  // isEdit is known synchronously from the route params, so this starts true
+  // right away for that path: "genuinely empty template" and "not fetched
+  // yet" both start as items=[], and only this flag tells them apart.
+  const [templateLoading, setTemplateLoading] = useState(isEdit);
   const [prefilled, setPrefilled] = useState(false);
   // OFF by default: one day's larger helping must not quietly move the recipe.
   const [savePortions, setSavePortions] = useState(false);
@@ -151,44 +155,54 @@ function MealTemplateScreen() {
     if (!activeProfile) return;
     let active = true;
     void (async () => {
-      const all = await listTemplates(activeProfile.id);
-      if (!active) return;
-      setSiblings(all);
-
-      if (isEdit && templateId) {
-        const loaded = await getTemplateWithItems(templateId, lang);
-        if (!active || !loaded) return;
-        setTemplate(loaded.template);
-        setName(loaded.template.name);
-        setSlot(loaded.template.slot ?? "any");
-        // A link may carry one day's portions (the calculator's "adjust the
-        // portions" route back). They only parse when the whole list still
-        // matches, so a stale link falls back to the template as stored.
-        const carried = parsePortions(portions, loaded.items.length);
-        setItems(
-          carried
-            ? loaded.items.map((item, i) => applyItemPortion(item, carried[i]))
-            : loaded.items
-        );
-        return;
-      }
-
-      const dayRange = localDayRange(fromDay);
-      if (isSlot(fromSlot) && dayRange) {
-        // Read that ONE local day, not the newest N entries. A day+slot bucket never
-        // crosses a calendar day (see groupMealsBySlot: 23:00 and 01:00 are two
-        // different days), so this window is both complete and exact - a fixed
-        // look-back would come back empty for a meal deep in the history.
-        const feed = await getJournal(activeProfile.id, lang, 300, dayRange);
+      try {
+        const all = await listTemplates(activeProfile.id);
         if (!active) return;
-        const meals = feed.filter((e): e is MealEntry => e.kind === "meal");
-        const group = groupMealsBySlot(meals).find(
-          (g) => g.dateKey === fromDay && g.slot === fromSlot
-        );
-        if (!group) return;
-        setItems(templateItemsFromMeals(group.meals));
-        setSlot(group.slot);
-        setPrefilled(true);
+        setSiblings(all);
+
+        if (isEdit && templateId) {
+          const loaded = await getTemplateWithItems(templateId, lang);
+          if (!active) return;
+          if (loaded) {
+            setTemplate(loaded.template);
+            setName(loaded.template.name);
+            setSlot(loaded.template.slot ?? "any");
+            // A link may carry one day's portions (the calculator's "adjust the
+            // portions" route back). They only parse when the whole list still
+            // matches, so a stale link falls back to the template as stored.
+            const carried = parsePortions(portions, loaded.items.length);
+            setItems(
+              carried
+                ? loaded.items.map((item, i) => applyItemPortion(item, carried[i]))
+                : loaded.items
+            );
+          }
+          return;
+        }
+
+        const dayRange = localDayRange(fromDay);
+        if (isSlot(fromSlot) && dayRange) {
+          // Read that ONE local day, not the newest N entries. A day+slot bucket never
+          // crosses a calendar day (see groupMealsBySlot: 23:00 and 01:00 are two
+          // different days), so this window is both complete and exact - a fixed
+          // look-back would come back empty for a meal deep in the history.
+          const feed = await getJournal(activeProfile.id, lang, 300, dayRange);
+          if (!active) return;
+          const meals = feed.filter((e): e is MealEntry => e.kind === "meal");
+          const group = groupMealsBySlot(meals).find(
+            (g) => g.dateKey === fromDay && g.slot === fromSlot
+          );
+          if (!group) return;
+          setItems(templateItemsFromMeals(group.meals));
+          setSlot(group.slot);
+          setPrefilled(true);
+        }
+      } catch (err) {
+        logCrash(err, { screen: "meal-template", load: isEdit ? "edit" : "prefill" });
+      } finally {
+        // Always clears, loaded, missing, or errored - a failed read must not
+        // leave the screen stuck on its loading skeleton forever.
+        if (active) setTemplateLoading(false);
       }
     })();
     return () => {
@@ -504,17 +518,30 @@ function MealTemplateScreen() {
             ) : null}
 
             {isLog ? (
-              <Text
-                style={{
-                  color: THEME.ink,
-                  fontSize: 17,
-                  fontWeight: "800",
-                  marginBottom: 12,
-                }}
-                numberOfLines={2}
-              >
-                {template?.name ?? ""}
-              </Text>
+              templateLoading ? (
+                <View
+                  style={{
+                    width: "60%",
+                    height: 20,
+                    borderRadius: 6,
+                    backgroundColor: THEME.track,
+                    marginBottom: 12,
+                    opacity: 0.5,
+                  }}
+                />
+              ) : (
+                <Text
+                  style={{
+                    color: THEME.ink,
+                    fontSize: 17,
+                    fontWeight: "800",
+                    marginBottom: 12,
+                  }}
+                  numberOfLines={2}
+                >
+                  {template?.name ?? ""}
+                </Text>
+              )
             ) : (
               <>
                 <Field
@@ -570,14 +597,20 @@ function MealTemplateScreen() {
                       {upper(t("templates.total"))}
                     </Text>
                     <View className="flex-row items-baseline" style={{ gap: 4 }}>
-                      <Text
-                        style={[
-                          TABULAR,
-                          { color: THEME.accent, fontSize: 26, fontWeight: "800" },
-                        ]}
-                      >
-                        {num(totals.carbs_g)}
-                      </Text>
+                      {templateLoading ? (
+                        <View
+                          style={{ width: 40, height: 22, borderRadius: 6, backgroundColor: THEME.track }}
+                        />
+                      ) : (
+                        <Text
+                          style={[
+                            TABULAR,
+                            { color: THEME.accent, fontSize: 26, fontWeight: "800" },
+                          ]}
+                        >
+                          {num(totals.carbs_g)}
+                        </Text>
+                      )}
                       <Text style={{ color: THEME.muted, fontSize: 12 }}>
                         {t("common.grams")}
                       </Text>
@@ -589,12 +622,36 @@ function MealTemplateScreen() {
                   <Text className="text-xs font-semibold tracking-wider text-mut">
                     {upper(t("templates.items"))}
                   </Text>
-                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
-                    {t("templates.itemCount", { count: items.length })}
-                  </Text>
+                  {templateLoading ? null : (
+                    <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                      {t("templates.itemCount", { count: items.length })}
+                    </Text>
+                  )}
                 </View>
 
-                {items.length === 0 ? (
+                {templateLoading ? (
+                  // Editing an existing template: the real item count isn't known
+                  // yet, so this stands in for it instead of drawing "0 g" /
+                  // "no ingredients" - both would be wrong for a non-empty template.
+                  <>
+                    {[0, 1].map((i) => (
+                      <View
+                        key={i}
+                        className="rounded-2xl bg-glass border border-hair px-3 py-3 mb-2"
+                        style={{ opacity: 0.5 }}
+                      >
+                        <View className="flex-row items-center">
+                          <View
+                            style={{ width: 36, height: 36, borderRadius: 13, backgroundColor: THEME.track, marginRight: 11 }}
+                          />
+                          <View
+                            style={{ flex: 1, height: 14, borderRadius: 7, backgroundColor: THEME.track }}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                ) : items.length === 0 ? (
                   <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
                     <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
                       {/* isLog hides the add-item button below (see the isLog

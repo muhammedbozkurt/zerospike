@@ -182,9 +182,17 @@ export default function DataSettings() {
   // write (share) permission is requested at POINT OF USE - here, when the toggle
   // is switched on - never at onboarding. If it is denied, the toggle stays off.
   const [healthWrite, setHealthWrite] = useState(false);
+  // AsyncStorage read, so the real value cannot be known on the first render. A
+  // non-Pro user with the mirror already on must never see the section vanish
+  // even for one frame, so until this resolves the section renders in a
+  // pending state instead of committing to shown/hidden.
+  const [healthWriteLoaded, setHealthWriteLoaded] = useState(false);
   const [healthDetailsOpen, setHealthDetailsOpen] = useState(false);
   useEffect(() => {
-    void getHealthWriteEnabled().then(setHealthWrite);
+    void getHealthWriteEnabled().then((v) => {
+      setHealthWrite(v);
+      setHealthWriteLoaded(true);
+    });
   }, []);
   async function onToggleHealthWrite(value: boolean) {
     if (value) {
@@ -260,8 +268,23 @@ export default function DataSettings() {
 
       {/* Also shown to a lapsed-Pro user while the write mirror is still on:
           the mirror keeps running off its stored flag, so the switch to turn it
-          off must never disappear behind the paywall. */}
-      {Platform.OS === "ios" && (isProUser || healthWrite) ? (
+          off must never disappear behind the paywall. Pro status is already
+          known synchronously; only a non-Pro user's stored healthWrite is
+          still in flight, so ONLY that combination gets the pending row below
+          instead of a premature "hidden". */}
+      {Platform.OS === "ios" && !isProUser && !healthWriteLoaded ? (
+        <>
+          <SectionLabel>{t("settings.healthSection")}</SectionLabel>
+          <View
+            className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1"
+            style={{ opacity: 0.5 }}
+          >
+            <Ionicons name="heart-outline" size={19} color={THEME.muted} />
+            <Text className="flex-1 ml-3 font-medium text-ink">{t("settings.healthWrite")}</Text>
+            <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+          </View>
+        </>
+      ) : Platform.OS === "ios" && (isProUser || healthWrite) ? (
         <>
           <SectionLabel>{t("settings.healthSection")}</SectionLabel>
           {/* Transparency card: what Health sync reads/writes, shown BEFORE the
@@ -319,12 +342,20 @@ export default function DataSettings() {
             <View className="flex-row items-center">
               <Ionicons name="heart-outline" size={19} color={THEME.muted} />
               <Text className="flex-1 ml-3 font-medium text-ink">{t("settings.healthWrite")}</Text>
-              <Switch
-                value={healthWrite}
-                onValueChange={onToggleHealthWrite}
-                trackColor={{ true: THEME.accent, false: THEME.border }}
-                thumbColor={THEME.ink}
-              />
+              {/* A Pro user reaches this branch before healthWriteLoaded resolves
+                  too (isProUser alone already makes the section visible), so the
+                  switch itself must stay neutral until the real value is in -
+                  otherwise a Pro user with the mirror ON would see it flash OFF. */}
+              {healthWriteLoaded ? (
+                <Switch
+                  value={healthWrite}
+                  onValueChange={onToggleHealthWrite}
+                  trackColor={{ true: THEME.accent, false: THEME.border }}
+                  thumbColor={THEME.ink}
+                />
+              ) : (
+                <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+              )}
             </View>
             <Text className="text-mut text-xs mt-2">{t("settings.healthWriteHint")}</Text>
           </View>

@@ -30,6 +30,7 @@ import {
 import { V12_INDEXES } from "./v12Sql";
 import { V13_ADD_MEAL_TEMPLATE_ID, V13_CREATE } from "./v13Sql";
 import { V14_CREATE } from "./v14Sql";
+import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "./v15Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -238,6 +239,43 @@ export async function migrateToV14(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.withTransactionAsync(async () => {
     for (const statement of V14_CREATE) {
       await db.execAsync(statement);
+    }
+  });
+}
+
+/**
+ * The v14 → v15 migration: the insulin product catalog columns. user_profiles
+ * gains basal_daily_units / basal_insulin_id / bolus_insulin_id (which product the
+ * profile uses, and their own daily basal dose); injection_logs gains bolus_kind
+ * (meal vs correction). See ./v15Sql for why all four are nullable with no CHECK.
+ *
+ * Both column checks are read BEFORE the transaction (like migrateToV8/V13), so
+ * nothing inside it can throw a "duplicate column" that would leave a
+ * half-applied schema with user_version already advanced; a re-run, or an install
+ * that already has the columns from a fresh v15 schema, is a no-op.
+ */
+export async function migrateToV15(db: SQLite.SQLiteDatabase): Promise<void> {
+  const profileCols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(user_profiles);"
+  );
+  const presentOnProfile = new Set(profileCols.map((c) => c.name));
+  const missingProfileCols = V15_PROFILE_COLUMNS.filter(
+    (c) => !presentOnProfile.has(c.name)
+  );
+
+  const injectionCols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(injection_logs);"
+  );
+  const hasBolusKind = injectionCols.some((c) => c.name === "bolus_kind");
+
+  await db.withTransactionAsync(async () => {
+    for (const col of missingProfileCols) {
+      await db.execAsync(
+        `ALTER TABLE user_profiles ADD COLUMN ${col.name} ${col.type};`
+      );
+    }
+    if (!hasBolusKind) {
+      await db.execAsync(V15_ADD_BOLUS_KIND);
     }
   });
 }

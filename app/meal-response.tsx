@@ -25,6 +25,7 @@ import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { mealSlotForHour } from "../lib/insulin";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { Skeleton } from "../components/Skeleton";
 import { StatCard } from "../components/StatCard";
 import { EMOJI_RENDERS, FoodPlate } from "../components/FoodPlate";
 import { AppBackground, GlassCard, GradientAreaChart, IconTile } from "../components/rich";
@@ -62,6 +63,105 @@ function mealReadingWindow(meal: Pick<MealLog, "logged_at">): SugarWindow {
     from: new Date(start - BASELINE_LOOKBACK_MINUTES * 60_000).toISOString(),
     to: new Date(start + MEAL_RESPONSE_HOURS * 3_600_000).toISOString(),
   };
+}
+
+/** A StatCard-shaped placeholder: same container (rounded-2xl p-4, glass fill
+ *  + hairline border) and label row as the real chip, so the strip never
+ *  resizes when the real figure replaces the skeleton bar. */
+function ChipSkeleton({ label }: { label: string }) {
+  return (
+    <View
+      className="rounded-2xl p-4"
+      style={{ flex: 1, backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }}
+    >
+      <View className="flex-row items-center mb-1">
+        <Text
+          className="text-[11px] font-semibold tracking-wider text-mut"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+        >
+          {upper(label)}
+        </Text>
+      </View>
+      <View className="flex-row items-end">
+        <Skeleton width={48} height={28} radius={6} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Loading placeholder for the report: the same card shells (GlassCard, the
+ * chip strip) and every STATIC label (curve title, axis ticks, chip
+ * captions) shown for real - only the data-derived parts (the mini curve,
+ * the four figures) are skeletonised - so the swap to the real report lands
+ * on the same card heights instead of resizing the page under the user.
+ * `isWide` is layout, not data, so the chip row chunking (2 vs 4 per row)
+ * already matches the real strip before anything has loaded.
+ */
+function MealResponseSkeleton({ isWide }: { isWide: boolean }) {
+  const { t } = useTranslation();
+  const chipLabels = [
+    t("mealResponse.start"),
+    t("mealResponse.peak"),
+    t("mealResponse.twoHour"),
+    t("mealResponse.delta"),
+  ];
+  const perRow = isWide ? 4 : 2;
+  const rows: string[][] = [];
+  for (let i = 0; i < chipLabels.length; i += perRow) rows.push(chipLabels.slice(i, i + perRow));
+
+  return (
+    <>
+      {/* Meal summary */}
+      <View className="flex-row items-center mb-5">
+        <Skeleton width={46} height={46} radius={15} style={{ marginRight: 12 }} />
+        <View className="flex-1">
+          <Skeleton width="60%" height={19} />
+          <View style={{ marginTop: 6 }}>
+            <Skeleton width="45%" height={12} />
+          </View>
+        </View>
+      </View>
+
+      {/* Mini curve */}
+      <GlassCard style={{ marginBottom: 12 }}>
+        <Text
+          style={{
+            color: THEME.muted,
+            fontSize: 11,
+            letterSpacing: 1.3,
+            fontWeight: "800",
+            marginBottom: 8,
+          }}
+        >
+          {upper(t("mealResponse.curveTitle"))}
+        </Text>
+        <Skeleton height={100} radius={12} />
+        <View className="flex-row justify-between mt-1">
+          {["0", "1", "2", "3"].map((h) => (
+            <Text key={h} style={{ color: THEME.muted, fontSize: 10 }}>
+              {h}
+            </Text>
+          ))}
+        </View>
+      </GlassCard>
+
+      {/* Stat chips: start · peak · +2h · delta */}
+      {rows.map((row, rowIndex) => (
+        <View
+          key={rowIndex}
+          className="flex-row"
+          style={{ gap: 8, marginTop: rowIndex === 0 ? 0 : 8 }}
+        >
+          {row.map((label) => (
+            <ChipSkeleton key={label} label={label} />
+          ))}
+        </View>
+      ))}
+    </>
+  );
 }
 
 /**
@@ -200,9 +300,14 @@ export default function MealResponseScreen() {
       </View>
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <Text style={{ color: THEME.muted }}>{t("common.loading")}</Text>
-        </View>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[{ padding: 16 }, contentColumn]}>
+            <MealResponseSkeleton isWide={isWide} />
+          </View>
+        </ScrollView>
       ) : !meal ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text style={{ color: THEME.muted, textAlign: "center" }}>

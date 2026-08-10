@@ -41,7 +41,8 @@ import {
   sanitizeIntegerText,
   sanitizeNumberText,
 } from "../lib/numberInput";
-import { activeInsulin, DEFAULT_DIA_HOURS } from "../lib/iob";
+import { activeInsulin } from "../lib/iob";
+import { DEFAULT_BOLUS_PROFILE } from "../lib/insulinCatalog";
 import { derivePatterns } from "../lib/insights";
 import { percentile, computeAgp } from "../lib/agp";
 import { snapIso, pickMgdl } from "../lib/services/healthMath";
@@ -257,24 +258,34 @@ let constOk = true;
 for (let m = 1; m <= 30; m++) constOk = constOk && mmolToMgdl(m) === m * MGDL_PER_MMOL;
 ok("mmolToMgdl uses MGDL_PER_MMOL for 1..30", constOk);
 
-// ── H. Insulin on Board (active insulin, linear DIA decay) ────────────────────
+// ── H. Insulin on Board (active insulin) ──────────────────────────────────────
+// The decay curve itself is covered in scripts/iob.test.ts; what matters here is
+// only which rows the estimator is allowed to count.
 section("H. IOB / active insulin");
 const NOW = new Date("2026-06-25T12:00:00.000Z");
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
+const DIA = DEFAULT_BOLUS_PROFILE.durationHours;
 const bolus = (units: number, h: number) => ({
   insulin_type: "bolus" as const,
   dose_units: units,
   logged_at: hoursAgo(h),
 });
-eq("no injections -> 0", activeInsulin([], NOW), 0);
-eq("4u bolus 2h ago (DIA 4) -> 2.0", activeInsulin([bolus(4, 2)], NOW), 2.0);
-eq("6u bolus now -> 6.0", activeInsulin([bolus(6, 0)], NOW), 6.0);
-eq("4u bolus exactly DIA ago -> 0", activeInsulin([bolus(4, 4)], NOW), 0);
-eq("4u bolus past DIA -> 0", activeInsulin([bolus(4, 5)], NOW), 0);
-eq("basal excluded", activeInsulin([{ insulin_type: "basal", dose_units: 10, logged_at: hoursAgo(1) }], NOW), 0);
-eq("future injection ignored", activeInsulin([bolus(5, -1)], NOW), 0);
-eq("stacked boluses 4u@2h + 2u@1h -> 3.5", activeInsulin([bolus(4, 2), bolus(2, 1)], NOW), 3.5);
-eq("DEFAULT_DIA_HOURS is 4", DEFAULT_DIA_HOURS, 4);
+eq("no injections -> 0", activeInsulin([], { now: NOW }), 0);
+eq("6u bolus now -> 6.0", activeInsulin([bolus(6, 0)], { now: NOW }), 6.0);
+eq("4u bolus exactly DIA ago -> 0", activeInsulin([bolus(4, DIA)], { now: NOW }), 0);
+eq("4u bolus past DIA -> 0", activeInsulin([bolus(4, DIA + 1)], { now: NOW }), 0);
+eq(
+  "basal excluded",
+  activeInsulin([{ insulin_type: "basal", dose_units: 10, logged_at: hoursAgo(1) }], { now: NOW }),
+  0
+);
+eq("future injection ignored", activeInsulin([bolus(5, -1)], { now: NOW }), 0);
+{
+  const mid = activeInsulin([bolus(4, 2)], { now: NOW });
+  ok("4u bolus 2h ago decays into (0, 4)", mid > 0 && mid < 4);
+  const stacked = activeInsulin([bolus(4, 2), bolus(2, 1)], { now: NOW });
+  ok("stacked boluses exceed either alone", stacked > mid);
+}
 
 section("H2. IOB-aware correction (only ever lowers the dose)");
 {

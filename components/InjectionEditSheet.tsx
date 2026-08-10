@@ -12,9 +12,10 @@ import {
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
+import Animated from "react-native-reanimated";
 
-import type { InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
-import { SELECTABLE_SITES } from "../lib/db/types";
+import type { BolusKind, InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
+import { BOLUS_KINDS, SELECTABLE_SITES } from "../lib/db/types";
 import {
   findRecentCalculatorBolus,
   getSiteUsageHistory,
@@ -33,6 +34,7 @@ import { Stepper } from "./Stepper";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { listEntering, listExiting, listLayout } from "../lib/theme/motion";
 import { GradientCTA } from "./rich/GradientCTA";
 import { withAlpha } from "./rich/GlassCard";
 
@@ -44,6 +46,7 @@ export interface InjectionEditTarget {
   site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
+  bolus_kind: BolusKind | null;
   logged_at: string;
 }
 
@@ -140,6 +143,7 @@ export function InjectionEditSheet({
   // Dose in units (0 = no dose). Stepper-driven, keyboard-editable.
   const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
+  const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
   const [site, setSite] = useState<InjectionSite>("abdomen_left");
   const [point, setPoint] = useState<SitePoint | null>(null);
   // Whether the user actually touched the region selector while this row was
@@ -170,6 +174,7 @@ export function InjectionEditSheet({
     if (visible && injection) {
       setDose(injection.dose_units ?? 0);
       setInsulinType(injection.insulin_type ?? "bolus");
+      setBolusKind(injection.bolus_kind);
       // A row logged without a region (a calculator bolus) opens on the first
       // selectable region so the user CAN fill one in; it only becomes part of the
       // record if they pick one (see siteTouched).
@@ -234,6 +239,7 @@ export function InjectionEditSheet({
       const patch: InjectionUpdate = {
         dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
+        bolus_kind: insulinType === "bolus" ? bolusKind : null,
         site: keepsNoSite ? null : site,
         site_point: keepsNoSite ? null : point,
         logged_at: loggedAt.toISOString(),
@@ -303,50 +309,6 @@ export function InjectionEditSheet({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 32 }}
             >
-              <FieldLabel>{t("injection.dose")}</FieldLabel>
-              <Stepper
-                value={dose}
-                onChange={setDose}
-                step={0.5}
-                longStep={1}
-                min={0}
-                max={150}
-                decimals={1}
-                suffix={t("common.units")}
-                accessibilityLabel={t("injection.dose")}
-                style={{ marginBottom: 16 }}
-              />
-
-              <FieldLabel>{t("injection.insulinType")}</FieldLabel>
-              <View className="flex-row mb-4" style={{ gap: 8 }}>
-                {(["basal", "bolus"] as const).map((type) => (
-                  <Chip
-                    key={type}
-                    label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
-                    on={insulinType === type}
-                    onPress={() => {
-                      hapticSelect();
-                      setInsulinType(type);
-                    }}
-                    style={{ flex: 1 }}
-                  />
-                ))}
-              </View>
-
-              <FieldLabel>{t("injection.selectSite")}</FieldLabel>
-              <SitePointSelector
-                usage={usage}
-                site={site}
-                point={point}
-                onChange={(s, p) => {
-                  setSite(s);
-                  setPoint(p);
-                  setSiteTouched(true);
-                }}
-                allowClearPoint
-                style={{ marginBottom: 16 }}
-              />
-
               <FieldLabel>{t("calculator.loggedTime")}</FieldLabel>
               <Pressable
                 onPress={() => {
@@ -375,7 +337,83 @@ export function InjectionEditSheet({
                 onClose={() => setTimePickerOpen(false)}
               />
 
-              <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
+              <FieldLabel>{t("injection.insulinType")}</FieldLabel>
+              <View className="flex-row mb-4" style={{ gap: 8 }}>
+                {(["basal", "bolus"] as const).map((type) => (
+                  <Chip
+                    key={type}
+                    label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
+                    on={insulinType === type}
+                    onPress={() => {
+                      hapticSelect();
+                      setInsulinType(type);
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                ))}
+              </View>
+
+              <FieldLabel>{t("injection.dose")}</FieldLabel>
+              <Stepper
+                value={dose}
+                onChange={setDose}
+                step={0.5}
+                longStep={1}
+                min={0}
+                max={150}
+                decimals={1}
+                suffix={t("common.units")}
+                accessibilityLabel={t("injection.dose")}
+                style={{ marginBottom: 16 }}
+              />
+
+              {/* Reflows smoothly when the bolus-label row appears/disappears,
+                  same motion language as the create form (WP3). */}
+              <Animated.View layout={listLayout}>
+                {insulinType === "bolus" ? (
+                  <Animated.View
+                    entering={listEntering}
+                    exiting={listExiting}
+                    style={{ marginBottom: 16 }}
+                  >
+                    <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
+                    <View className="flex-row" style={{ gap: 8 }}>
+                      {BOLUS_KINDS.map((kind) => (
+                        <Chip
+                          key={kind}
+                          label={
+                            kind === "meal"
+                              ? t("injection.bolusKindMeal")
+                              : t("injection.bolusKindCorrection")
+                          }
+                          on={bolusKind === kind}
+                          onPress={() => {
+                            hapticSelect();
+                            setBolusKind((prev) => (prev === kind ? null : kind));
+                          }}
+                          style={{ flex: 1 }}
+                        />
+                      ))}
+                    </View>
+                  </Animated.View>
+                ) : null}
+
+                <FieldLabel>{t("injection.selectSite")}</FieldLabel>
+                <SitePointSelector
+                  usage={usage}
+                  site={site}
+                  point={point}
+                  onChange={(s, p) => {
+                    setSite(s);
+                    setPoint(p);
+                    setSiteTouched(true);
+                  }}
+                  allowClearPoint
+                  style={{ marginBottom: 16 }}
+                />
+
+                <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
+              </Animated.View>
             </ScrollView>
           </Pressable>
         </Pressable>

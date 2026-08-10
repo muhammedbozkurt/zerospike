@@ -49,7 +49,7 @@ const fr: TranslationSchema = {
     methodNote:
       "Les estimations sont arrondies à une résolution de 0,5 unité et sont volontairement prudentes. Vérifiez-les et ajustez-les toujours avant utilisation. La dose de correction vise le milieu de votre plage cible après le repas.",
     iobNote:
-      "L'insuline active (IOB) est estimée à partir de vos doses de bolus enregistrées via une décroissance linéaire simple sur ~4 heures, et ne réduit qu'une estimation de correction, jamais la dose du repas. C'est une estimation, pas une directive.",
+      "L'insuline active (IOB) est estimée à partir de vos doses bolus enregistrées à l'aide d'une courbe d'activité insulinique exponentielle, déterminée par le pic et la durée d'action de l'insuline bolus que vous sélectionnez dans les réglages (un profil rapide générique est utilisé tant que vous n'en avez pas sélectionné). Elle ne fait jamais que réduire une estimation de correction, jamais la dose du repas. Les doses lentes (basales) sont estimées de la même façon mais suivies séparément. C'est une estimation, pas une directive.",
     listTitle: "Références",
     openHint: "S'ouvre dans votre navigateur",
     refs: {
@@ -295,6 +295,17 @@ const fr: TranslationSchema = {
     discardBody: "La photo, la note, l'étiquette ou la dose saisie seront perdues.",
     discardConfirm: "Ne pas enregistrer",
   },
+  iob: {
+    basisText:
+      "Il s'agit de la quantité encore estimée active provenant de vos dernières doses de repas ou de correction (bolus) enregistrées.",
+    productText:
+      "Calculé à partir de la durée d'action et du pic typiques de {{product}} (~{{hours}} heures), l'insuline bolus que vous avez sélectionnée dans les réglages.",
+    genericText:
+      "Aucune insuline bolus n'est encore sélectionnée, un profil d'action rapide générique est donc utilisé pour cette estimation. Vous pouvez sélectionner votre produit dans les réglages pour une estimation plus personnelle.",
+    basalActive:
+      "Environ {{value}} unités de votre insuline lente (basale) sont également encore actives. Elles sont affichées séparément et ne sont pas incluses dans le chiffre ci-dessus.",
+    personalNote: "Cela varie d'une personne à l'autre et n'est qu'une estimation.",
+  },
   journal: {
     showMore: "Afficher plus",
     carbsLabel: "{{carbs}} g de glucides",
@@ -339,6 +350,13 @@ const fr: TranslationSchema = {
     isfHint: "De combien 1 unité abaisse la glycémie.",
     carbRatios: "Ratios glucidiques (g/unité)",
     dailyCarbTarget: "Objectif glucidique quotidien (g)",
+    basalDailyUnits: "Dose basale quotidienne",
+    basalDailyUnitsHint: "Préremplit le champ de dose lors d'une entrée basale ; vous pouvez la modifier à chaque entrée.",
+    basalInsulin: "Insuline basale",
+    bolusInsulin: "Insuline bolus",
+    bolusInsulinHint: "Votre estimation d'insuline active suit le profil d'action typique de ce produit.",
+    insulinProductNotSet: "Non défini",
+    insulinDurationLabel: "Durée d'action typique",
     language: "Langue de l'application",
     glucoseUnit: "Unité de glycémie",
     notificationsSection: "Notifications",
@@ -774,7 +792,6 @@ const fr: TranslationSchema = {
     history: "Historique",
     deleteEntry: "Supprimer cette injection ?",
     guideLink: "Comment injecter",
-    guideLinkLabel: "Guide",
     recommendedSite: "Zone la plus longtemps inutilisée",
     useThisSite: "Sélectionner cette zone",
     rotationTitle: "Rotation des zones",
@@ -842,6 +859,17 @@ const fr: TranslationSchema = {
     newCycleConfirmBody: "Les couleurs redémarrent dès maintenant ; vos entrées restent inchangées.",
     newCycleStarted: "Nouveau cycle démarré",
     cycleSince: "Début du cycle : {{date}}",
+    time: "Heure",
+    bolusKindLabel: "Type de bolus",
+    bolusKindMeal: "Avant le repas",
+    bolusKindCorrection: "Correction",
+    basalPrefillHint: "Vous pouvez enregistrer votre dose basale quotidienne dans les Réglages.",
+  },
+  injectionMap: {
+    sub: "Chaque zone est divisée en quatre points. Plus une zone est foncée, plus vous l'avez utilisée souvent.",
+    overviewHint: "Touchez une zone pour ouvrir ses quatre points.",
+    backToBody: "Retour au corps",
+    entries: "{{n}} entrées",
   },
   spike: {
     title: "Spike",
@@ -969,6 +997,11 @@ const fr: TranslationSchema = {
     prefilledNote: "Les aliments viennent de cet enregistrement ; donnez un nom au modèle.",
     fixedCarbs: "Glucides enregistrés",
     calcFromItems: "Les glucides sont la somme des aliments du modèle.",
+  },
+  errorBoundary: {
+    title: "Un problème est survenu",
+    body: "Cet écran a rencontré un problème inattendu. Vos données enregistrées sont en sécurité.",
+    retry: "Réessayer",
   },
 };
 

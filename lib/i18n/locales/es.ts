@@ -49,7 +49,7 @@ const es: TranslationSchema = {
     methodNote:
       "Las estimaciones se redondean a una resolución de 0,5 unidades y son intencionadamente conservadoras: revíselas y ajústelas siempre antes de usarlas. La dosis de corrección apunta al punto medio de su rango objetivo posprandial.",
     iobNote:
-      "La insulina activa (IOB) se estima a partir de sus dosis de bolo registradas con una caída lineal simple de ~4 horas, y solo reduce una estimación de corrección, nunca la dosis de la comida. Es una estimación, no una indicación.",
+      "La insulina activa (IOB) se estima a partir de sus dosis bolo registradas mediante una curva de actividad de insulina exponencial, determinada por el pico y la duración de acción de la insulina bolo que usted selecciona en Ajustes (se usa un perfil rápido genérico hasta que seleccione una). Solo reduce una estimación de corrección, nunca la dosis de la comida. Las dosis lentas (basales) se estiman de la misma manera pero se controlan por separado. Es una estimación, no una indicación.",
     listTitle: "Referencias",
     openHint: "Se abre en su navegador",
     refs: {
@@ -295,6 +295,17 @@ const es: TranslationSchema = {
     discardBody: "La foto, la nota, la etiqueta o la dosis introducida se perderán.",
     discardConfirm: "Descartar",
   },
+  iob: {
+    basisText:
+      "Esta es la cantidad que se estima aún activa a partir de sus últimas dosis de comida o corrección (bolo) registradas.",
+    productText:
+      "Calculado a partir de la duración de acción y el pico típicos de {{product}} (~{{hours}} horas), la insulina bolo que seleccionó en Ajustes.",
+    genericText:
+      "Aún no seleccionó ningún producto de insulina bolo, por lo que se usa un perfil de acción rápida general para esta estimación. Puede seleccionar su producto en Ajustes para obtener una estimación más personal.",
+    basalActive:
+      "También quedan activas aproximadamente {{value}} unidades de su insulina lenta (basal). Se muestran por separado y no están incluidas en el número anterior.",
+    personalNote: "Esto varía de una persona a otra y es solo una estimación.",
+  },
   journal: {
     showMore: "Mostrar más",
     carbsLabel: "{{carbs}} g de carbohidratos",
@@ -339,6 +350,13 @@ const es: TranslationSchema = {
     isfHint: "Cuánto baja la glucosa 1 unidad.",
     carbRatios: "Ratios de carbohidratos (g/unidad)",
     dailyCarbTarget: "Objetivo diario de carbohidratos (g)",
+    basalDailyUnits: "Dosis basal diaria",
+    basalDailyUnitsHint: "Rellena el campo de dosis al registrar una inyección basal; puede cambiarlo en cada registro.",
+    basalInsulin: "Insulina basal",
+    bolusInsulin: "Insulina bolo",
+    bolusInsulinHint: "Su estimación de insulina activa sigue el perfil de acción típico de este producto.",
+    insulinProductNotSet: "No establecido",
+    insulinDurationLabel: "Duración de acción típica",
     language: "Idioma de la aplicación",
     glucoseUnit: "Unidad de glucosa",
     notificationsSection: "Notificaciones",
@@ -774,7 +792,6 @@ const es: TranslationSchema = {
     history: "Historial",
     deleteEntry: "¿Eliminar esta inyección?",
     guideLink: "Cómo inyectar",
-    guideLinkLabel: "Guía",
     recommendedSite: "Zona sin usar durante más tiempo",
     useThisSite: "Seleccionar esta zona",
     rotationTitle: "Rotación de zonas",
@@ -842,6 +859,17 @@ const es: TranslationSchema = {
     newCycleConfirmBody: "Los colores se reinician desde ahora; sus registros no cambian.",
     newCycleStarted: "Nuevo ciclo iniciado",
     cycleSince: "Inicio del ciclo: {{date}}",
+    time: "Hora",
+    bolusKindLabel: "Tipo de bolus",
+    bolusKindMeal: "Antes de la comida",
+    bolusKindCorrection: "Corrección",
+    basalPrefillHint: "Puede guardar su dosis basal diaria en Ajustes.",
+  },
+  injectionMap: {
+    sub: "Cada zona se divide en cuatro puntos. Cuanto más oscura es una zona, más a menudo la ha usado.",
+    overviewHint: "Toque una zona para abrir sus cuatro puntos.",
+    backToBody: "Volver al cuerpo",
+    entries: "{{n}} registros",
   },
   spike: {
     title: "Spike",
@@ -969,6 +997,11 @@ const es: TranslationSchema = {
     prefilledNote: "Los alimentos vienen de ese registro; ponga un nombre a la plantilla.",
     fixedCarbs: "Carbohidratos guardados",
     calcFromItems: "Los carbohidratos son la suma de los alimentos de la plantilla.",
+  },
+  errorBoundary: {
+    title: "Algo salió mal",
+    body: "Esta pantalla encontró un problema inesperado. Sus datos guardados están seguros.",
+    retry: "Reintentar",
   },
 };
 

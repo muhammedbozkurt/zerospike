@@ -28,7 +28,8 @@ import { hapticSelect } from "../lib/haptics";
 import { FeedbackHost } from "../components/Feedback";
 import { GlassCard, GradientCTA } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { GLUCOSE_RICH, MODAL_TOP_PAD, THEME, glow } from "../lib/theme/tokens";
+import { Skeleton } from "../components/Skeleton";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "../components/rich/GlassCard";
 
 /** Tries to build a maps link from the current location; null if unavailable. */
@@ -44,6 +45,13 @@ async function tryLocationLink(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Content comparison (not object identity), so a re-focus that found the same
+ *  contacts never re-renders the CTA/list for nothing (same pattern as the
+ *  food tab's favorites/recent reload). */
+function sameList<T>(a: T[], b: T[]): boolean {
+  return a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** The mockup's warm red wash - this one screen departs from the cyan wash. */
@@ -68,6 +76,11 @@ function SosScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+  // Whether contacts have EVER resolved this mount. The primary CTA reads
+  // contacts[0] to decide between "message contact" and "add contact" - two
+  // different actions, not two visual states of the same one - so it must not
+  // commit to either before the real list is in.
+  const [contactsLoaded, setContactsLoaded] = useState(false);
 
   // 112 is not the emergency number everywhere, so follow the device region.
   // The app can only OPEN the dialer; it never places a call on its own.
@@ -89,7 +102,9 @@ function SosScreen() {
     useCallback(() => {
       let alive = true;
       getEmergencyContacts().then((list) => {
-        if (alive) setContacts(list);
+        if (!alive) return;
+        setContacts((prev) => (sameList(prev, list) ? prev : list));
+        setContactsLoaded(true);
       });
       return () => {
         alive = false;
@@ -210,7 +225,30 @@ function SosScreen() {
             onPress={callEmergency}
             style={{ marginBottom: 10 }}
           />
-          {primaryContact ? (
+          {!contactsLoaded ? (
+            // Same shell (padding, radius, border) as either resolved sub CTA
+            // below, so the height never shifts once the real one lands - but
+            // a neutral shimmer instead of a visibly empty button, and hidden
+            // from the accessibility tree instead of announcing an unnamed one.
+            <View
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: RADIUS.lg,
+                borderWidth: 1,
+                borderColor: THEME.border,
+                backgroundColor: THEME.glass,
+                paddingVertical: 13,
+                paddingHorizontal: 14,
+                marginBottom: 18,
+              }}
+            >
+              <Skeleton width={140} height={17} radius={4} />
+            </View>
+          ) : primaryContact ? (
             <GradientCTA
               variant="sub"
               label={t("sos.messageContact")}

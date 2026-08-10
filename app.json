@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "1.5.1",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
@@ -26,7 +26,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "46",
+      "buildNumber": "47",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
@@ -56,7 +56,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 41,
+      "versionCode": 42,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

@@ -21,6 +21,10 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // A backgrounded tab stops paying for re-render/layout work it cannot
+        // show; state is kept (unlike unmountOnBlur), so switching back is the
+        // same screen where the user left it.
+        freezeOnBlur: true,
         tabBarActiveTintColor: THEME.accent,
         tabBarInactiveTintColor: THEME.muted,
         tabBarStyle: {

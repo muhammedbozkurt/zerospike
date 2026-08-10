@@ -41,7 +41,8 @@ import {
   activeMealSlot,
   type InsulinWarning,
 } from "../lib/insulin";
-import { activeInsulin } from "../lib/iob";
+import { activeInsulinBreakdown } from "../lib/iob";
+import { bolusProfileFor, basalProfileFor, insulinProductById } from "../lib/insulinCatalog";
 import { getInjections } from "../lib/db/injections";
 import {
   classifyGlucose,
@@ -79,6 +80,7 @@ import { Tooltip } from "../components/Tooltip";
 import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
+import { Skeleton } from "../components/Skeleton";
 import { formatTime, num, relativeDay } from "../lib/format";
 import {
   GLUCOSE_INPUT_CEILING,
@@ -375,10 +377,16 @@ function CalculatorScreen() {
   const [glucose, setGlucose] = useState("");
   const [doseText, setDoseText] = useState("");
   const [doseTouched, setDoseTouched] = useState(false);
+  // The estimate.totalDose this field was last synced to (see below), so the
+  // sync only fires again when the estimate actually moves.
+  const [lastSyncedDose, setLastSyncedDose] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [tags, setTags] = useState<LogTag[]>([]);
   const [iob, setIob] = useState(0);
+  // Long-acting (basal) insulin still active, kept apart from `iob` (bolus
+  // only, see lib/iob.ts) and shown as its own line in the IOB tooltip.
+  const [basalIob, setBasalIob] = useState(0);
   const [saving, setSaving] = useState(false);
   // Flips true only on a direct user edit (photo, note, tags, typed dose) -
   // never on the edit-mode prefill - so the close button only warns about
@@ -486,9 +494,13 @@ function CalculatorScreen() {
   async function readFreshIob(): Promise<number> {
     if (!activeProfile) return 0;
     const injections = await getInjections(activeProfile.id, 100);
-    const fresh = activeInsulin(injections);
-    setIob(fresh);
-    return fresh;
+    const breakdown = activeInsulinBreakdown(injections, {
+      bolusProfile: bolusProfileFor(activeProfile.bolus_insulin_id),
+      basalProfile: basalProfileFor(activeProfile.basal_insulin_id),
+    });
+    setIob(breakdown.bolus);
+    setBasalIob(breakdown.basal);
+    return breakdown.bolus;
   }
 
   const unit = activeProfile?.glucose_unit ?? "mgdl";
@@ -523,6 +535,26 @@ function CalculatorScreen() {
     ? targetMidpoint(targetRangeFor("post_meal_2h", activeProfile))
     : null;
 
+  // "What is this based on?" explanation for the active-insulin figure below:
+  // names the selected bolus product and its typical duration, or says a
+  // generic profile is in use, plus any still-active basal. Shared copy with
+  // the dashboard's own IOB tooltip (iob.* keys).
+  const iobTooltipText = useMemo(() => {
+    const bolusProduct = insulinProductById(activeProfile?.bolus_insulin_id);
+    const parts = [
+      t("iob.basisText"),
+      bolusProduct
+        ? t("iob.productText", {
+            product: bolusProduct.label,
+            hours: num(bolusProduct.durationHours),
+          })
+        : t("iob.genericText"),
+    ];
+    if (basalIob > 0) parts.push(t("iob.basalActive", { value: num(basalIob) }));
+    parts.push(t("iob.personalNote"));
+    return parts.join("\n\n");
+  }, [activeProfile?.bolus_insulin_id, basalIob, t]);
+
   const estimate = useMemo(() => {
     if (!food || !activeProfile) return null;
     return estimateInsulin(food, portion, activeProfile, {
@@ -532,10 +564,16 @@ function CalculatorScreen() {
     });
   }, [food, activeProfile, portion, slot, glucoseMgdl, iob]);
 
-  // Keep the manual dose synced to the estimate until the user edits it.
-  useEffect(() => {
-    if (estimate && !doseTouched) setDoseText(num(estimate.totalDose));
-  }, [estimate, doseTouched]);
+  // Keep the manual dose synced to the estimate until the user edits it. This
+  // is a render-phase update, not a post-commit effect: an effect always
+  // paints one frame with the still-empty field before correcting it, which
+  // is exactly the "Manual Dose opens blank, fills a beat later" jump; doing
+  // it here means React re-renders with the synced value before anything is
+  // ever shown to the user.
+  if (estimate && !doseTouched && lastSyncedDose !== estimate.totalDose) {
+    setLastSyncedDose(estimate.totalDose);
+    setDoseText(num(estimate.totalDose));
+  }
 
   async function pickPhoto(fromCamera: boolean) {
     const perm = fromCamera
@@ -906,13 +944,327 @@ function CalculatorScreen() {
     }
   }
 
+  /** The lower "Details" block: slot, logged time, photo, note, tags and the
+   *  disclaimer. None of it reads `food`/`estimate` - it is the SAME state
+   *  the loaded screen below reads - so the loading skeleton calls this exact
+   *  function too: nothing here ever moves when the food card above it swaps
+   *  from a skeleton to real content. */
+  function renderDetails() {
+    return (
+      <>
+        <DetailLabel>{t("calculator.activeSlot")}</DetailLabel>
+        <Segmented
+          options={SLOTS.map((s) => ({ value: s, label: t(`slot.${s}`) }))}
+          value={slot}
+          onChange={setSlot}
+          className="mb-4"
+        />
+
+        <DetailLabel>{t("calculator.loggedTime")}</DetailLabel>
+        <Pressable
+          onPress={() => setTimePickerOpen((v) => !v)}
+          className="flex-row items-center mb-4"
+          style={inputStyle}
+        >
+          <Ionicons name="time-outline" size={16} color={THEME.muted} />
+          <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+            {relativeDay((loggedAt ?? new Date()).toISOString(), {
+              today: t("common.today"),
+              yesterday: t("common.yesterday"),
+            })}
+            {" · "}
+            {formatTime((loggedAt ?? new Date()).toISOString())}
+          </Text>
+        </Pressable>
+        <InlineDateTimePicker
+          visible={timePickerOpen}
+          value={loggedAt ?? new Date()}
+          max={new Date()}
+          locale={lang}
+          onChange={setLoggedAt}
+          onClose={() => setTimePickerOpen(false)}
+        />
+
+        {photo ? (
+          <View className="mb-4">
+            <Image source={{ uri: photo }} className="w-full h-44 rounded-2xl" />
+            <Pressable
+              onPress={() => {
+                setPhoto(null);
+                setDirty(true);
+              }}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.delete")}
+              className="absolute top-2 right-2 rounded-full p-1.5"
+              style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+            >
+              <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            onPress={choosePhoto}
+            className="flex-row items-center justify-center rounded-2xl py-4 mb-4"
+            style={{ borderWidth: 1, borderStyle: "dashed", borderColor: THEME.border }}
+          >
+            <Ionicons name="camera-outline" size={18} color={THEME.muted} />
+            <Text style={{ color: THEME.muted, marginLeft: 8 }}>
+              {t("calculator.addPhoto")}
+            </Text>
+          </Pressable>
+        )}
+
+        <DetailLabel>{t("calculator.personalNote")}</DetailLabel>
+        <TextInput
+          value={note}
+          onChangeText={(s) => {
+            setNote(s);
+            setDirty(true);
+          }}
+          placeholder={t("calculator.notePlaceholder")}
+          placeholderTextColor="rgba(137,163,176,0.7)"
+          multiline
+          style={[inputStyle, INPUT_TEXT, { marginBottom: 16, minHeight: 72 }]}
+          textAlignVertical="top"
+        />
+
+        <TagPicker
+          value={tags}
+          onChange={(v) => {
+            setTags(v);
+            setDirty(true);
+          }}
+          className="mb-5"
+        />
+
+        <NoticeCard
+          icon="medical-outline"
+          tint={GLUCOSE_RICH.high}
+          body={t("disclaimer.short")}
+        />
+      </>
+    );
+  }
+
   if (!food || !estimate) {
     // The host lives on every branch, so anything this screen ever says lands
     // inside its own view controller rather than behind it.
+    //
+    // Only the food-derived pieces below (identity, the carb read-out, the
+    // dose hero) are skeletons. The header title needs only isEdit/showsDose
+    // (profile + route params, both already known); the portion and glucose
+    // controls and renderDetails() read no food/estimate data at all, so they
+    // are the real, interactive controls from the first frame and never
+    // resize when the skeleton pieces are replaced by real content.
     return (
       <AppBackground>
-        <View className="flex-1 items-center justify-center">
-          <Text style={{ color: THEME.muted }}>{t("common.loading")}</Text>
+        <View className="flex-1" style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
+          <View className="flex-row items-center justify-between px-4 py-3">
+            <Pressable
+              onPress={handleClose}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.close")}
+            >
+              <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
+            </Pressable>
+            <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
+              {isEdit
+                ? t("calculator.editTitle")
+                : showsDose
+                  ? t("calculator.title")
+                  : t("calculator.carbFocusTitle")}
+            </Text>
+            <View style={{ width: 30 }} />
+          </View>
+
+          <ScrollView
+            {...keyboardAwareScrollProps}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 28 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Food identity */}
+            <View className="flex-row items-center mb-3">
+              <IconTile
+                emoji={EMOJI_RENDERS ? "🍽️" : undefined}
+                icon="restaurant-outline"
+                size={34}
+                radius={11}
+                hero
+                style={{ marginRight: 10 }}
+              />
+              <View className="flex-1">
+                <Skeleton width="55%" height={17} />
+                <View style={{ marginTop: 6 }}>
+                  <Skeleton width="35%" height={11} />
+                </View>
+              </View>
+            </View>
+
+            {/* Read-out 1: carbohydrate, with the (real, interactive) portion
+                slider under it - same container as ReadoutCard below. */}
+            <GlassCard style={{ marginBottom: 10 }}>
+              <View className="flex-row items-center justify-between">
+                <Text
+                  style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
+                >
+                  {upper(t("calculator.estCarbs"))}
+                </Text>
+                <View className="flex-row items-baseline" style={{ gap: 4 }}>
+                  <Skeleton width={48} height={26} radius={6} />
+                  <Text style={{ color: THEME.muted, fontSize: 12 }}>{t("common.grams")}</Text>
+                </View>
+              </View>
+              <View className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
+                <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                  {t("calculator.portion")}
+                </Text>
+                <Stepper
+                  value={portion}
+                  onChange={setPortion}
+                  step={5}
+                  longStep={25}
+                  min={0}
+                  max={1500}
+                  decimals={0}
+                  suffix={t("common.grams")}
+                  accessibilityLabel={t("calculator.portion")}
+                  style={{ flex: 1, maxWidth: 220 }}
+                />
+              </View>
+              <Slider
+                minimumValue={0}
+                maximumValue={500}
+                step={5}
+                value={Math.min(portion, 500)}
+                onValueChange={setPortion}
+                minimumTrackTintColor={THEME.accent}
+                maximumTrackTintColor={THEME.track}
+                thumbTintColor={THEME.accent}
+              />
+            </GlassCard>
+
+            {/* Read-out 2: current glucose - reads no food/estimate data, so
+                it is the real, typeable field from the first frame. */}
+            <GlassCard style={{ marginBottom: 10 }}>
+              <View className="flex-row items-center justify-between">
+                <Text
+                  style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
+                >
+                  {upper(t("calculator.currentGlucose"))}
+                </Text>
+                <View className="flex-row items-center" style={{ gap: 8 }}>
+                  <TextInput
+                    value={glucose}
+                    onChangeText={(s) => setGlucose(sanitizeNumberText(s, unit === "mmol"))}
+                    keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
+                    placeholder="-"
+                    placeholderTextColor="rgba(137,163,176,0.7)"
+                    maxLength={unit === "mmol" ? 4 : 3}
+                    style={[
+                      TABULAR,
+                      INPUT_TEXT,
+                      {
+                        color: THEME.ink,
+                        fontSize: 26,
+                        fontWeight: "800",
+                        minWidth: 58,
+                        textAlign: "right",
+                        padding: 0,
+                      },
+                    ]}
+                  />
+                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                    {glucoseUnitLabel(unit)}
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+
+            {showsDose ? (
+              <View
+                className="rounded-2xl p-4 mb-3"
+                style={[
+                  {
+                    borderWidth: 1,
+                    borderColor: withAlpha(THEME.accent, 0.45),
+                    backgroundColor: withAlpha(THEME.accent, 0.12),
+                  },
+                  glow(THEME.accent, 28, 0.45),
+                ]}
+              >
+                <Text
+                  style={{ color: THEME.accent, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
+                >
+                  {upper(t("calculator.estimatedDose"))}
+                </Text>
+
+                <View className="items-center mt-1">
+                  <Skeleton width={90} height={54} radius={10} />
+                  <Text style={{ color: THEME.muted, fontSize: 12, marginTop: -2 }}>
+                    {t("common.units")}
+                  </Text>
+                </View>
+
+                <View className="mt-3" style={{ gap: 5 }}>
+                  <View className="flex-row justify-between">
+                    <Text style={{ color: THEME.muted, fontSize: 12 }}>
+                      {t("calculator.mealDose")}
+                    </Text>
+                    <Skeleton width={48} height={14} />
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <NoticeCard
+                icon="information-circle-outline"
+                tint={THEME.accent}
+                title={t("calculator.carbFocusTitle")}
+                body={
+                  insulinMode === "basal"
+                    ? t("calculator.carbFocusBodyBasal")
+                    : t("calculator.carbFocusBody")
+                }
+              />
+            )}
+
+            {showsDose ? (
+              <>
+                <NoticeCard
+                  icon="medical-outline"
+                  tint={GLUCOSE_RICH.high}
+                  body={t("calculator.calcNotAdvice")}
+                />
+
+                <DetailLabel>{t("calculator.manualDose")}</DetailLabel>
+                <TextInput
+                  value={doseText}
+                  onChangeText={(s) => {
+                    setDoseTouched(true);
+                    setDirty(true);
+                    setDoseText(sanitizeNumberText(s, true));
+                  }}
+                  keyboardType="decimal-pad"
+                  style={[inputStyle, INPUT_TEXT, { marginBottom: 10 }]}
+                />
+              </>
+            ) : null}
+
+            {renderDetails()}
+
+            <GradientCTA
+              label={
+                isEdit
+                  ? t("calculator.saveChanges")
+                  : showsDose
+                    ? t("calculator.saveAsInjection")
+                    : t("calculator.logMeal")
+              }
+              disabled
+              onPress={() => {}}
+            />
+          </ScrollView>
         </View>
         <FeedbackHost />
       </AppBackground>
@@ -1197,6 +1549,7 @@ function CalculatorScreen() {
                     <Breakdown
                       label={t("calculator.activeInsulin")}
                       value={`${num(iob)} ${t("common.units")}`}
+                      tooltip={iobTooltipText}
                     />
                   ) : null}
                   {estimate.iobReduction > 0 ? (
@@ -1333,97 +1686,7 @@ function CalculatorScreen() {
           )}
 
           {/* ── Details ──────────────────────────────────────────────────── */}
-          <DetailLabel>{t("calculator.activeSlot")}</DetailLabel>
-          <Segmented
-            options={SLOTS.map((s) => ({ value: s, label: t(`slot.${s}`) }))}
-            value={slot}
-            onChange={setSlot}
-            className="mb-4"
-          />
-
-          <DetailLabel>{t("calculator.loggedTime")}</DetailLabel>
-          <Pressable
-            onPress={() => setTimePickerOpen((v) => !v)}
-            className="flex-row items-center mb-4"
-            style={inputStyle}
-          >
-            <Ionicons name="time-outline" size={16} color={THEME.muted} />
-            <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
-              {relativeDay((loggedAt ?? new Date()).toISOString(), {
-                today: t("common.today"),
-                yesterday: t("common.yesterday"),
-              })}
-              {" · "}
-              {formatTime((loggedAt ?? new Date()).toISOString())}
-            </Text>
-          </Pressable>
-          <InlineDateTimePicker
-            visible={timePickerOpen}
-            value={loggedAt ?? new Date()}
-            max={new Date()}
-            locale={lang}
-            onChange={setLoggedAt}
-            onClose={() => setTimePickerOpen(false)}
-          />
-
-          {photo ? (
-            <View className="mb-4">
-              <Image source={{ uri: photo }} className="w-full h-44 rounded-2xl" />
-              <Pressable
-                onPress={() => {
-                  setPhoto(null);
-                  setDirty(true);
-                }}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel={t("common.delete")}
-                className="absolute top-2 right-2 rounded-full p-1.5"
-                style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
-              >
-                <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              onPress={choosePhoto}
-              className="flex-row items-center justify-center rounded-2xl py-4 mb-4"
-              style={{ borderWidth: 1, borderStyle: "dashed", borderColor: THEME.border }}
-            >
-              <Ionicons name="camera-outline" size={18} color={THEME.muted} />
-              <Text style={{ color: THEME.muted, marginLeft: 8 }}>
-                {t("calculator.addPhoto")}
-              </Text>
-            </Pressable>
-          )}
-
-          <DetailLabel>{t("calculator.personalNote")}</DetailLabel>
-          <TextInput
-            value={note}
-            onChangeText={(s) => {
-              setNote(s);
-              setDirty(true);
-            }}
-            placeholder={t("calculator.notePlaceholder")}
-            placeholderTextColor="rgba(137,163,176,0.7)"
-            multiline
-            style={[inputStyle, INPUT_TEXT, { marginBottom: 16, minHeight: 72 }]}
-            textAlignVertical="top"
-          />
-
-          <TagPicker
-            value={tags}
-            onChange={(v) => {
-              setTags(v);
-              setDirty(true);
-            }}
-            className="mb-5"
-          />
-
-          <NoticeCard
-            icon="medical-outline"
-            tint={GLUCOSE_RICH.high}
-            body={t("disclaimer.short")}
-          />
+          {renderDetails()}
 
           <GradientCTA
             label={
@@ -1447,16 +1710,20 @@ function Breakdown({
   label,
   value,
   tint,
+  tooltip,
 }: {
   label: string;
   value: string;
   tint?: string;
+  /** optional "what is this based on?" explanation, rendered next to the label */
+  tooltip?: string;
 }) {
   return (
     <View className="flex-row justify-between">
-      <Text style={{ color: tint ?? THEME.muted, fontSize: 12, flex: 1, paddingRight: 8 }}>
-        {label}
-      </Text>
+      <View className="flex-row items-center" style={{ flex: 1, paddingRight: 8, gap: 4 }}>
+        <Text style={{ color: tint ?? THEME.muted, fontSize: 12 }}>{label}</Text>
+        {tooltip ? <Tooltip text={tooltip} size={12} tint={tint} /> : null}
+      </View>
       <Text style={[TABULAR, { color: tint ?? THEME.ink, fontSize: 12, fontWeight: "700" }]}>
         {value}
       </Text>

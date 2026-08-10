@@ -42,6 +42,7 @@ import {
   type EmergencyContact,
 } from "../lib/services/emergency";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { Skeleton } from "../components/Skeleton";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 
@@ -111,6 +112,10 @@ function EmergencyContactsScreen() {
   const phonePrefill = callingCode ? `${callingCode} ` : "";
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+  // The saved-contacts list sits ABOVE the add form; if it were left to pop in
+  // once loaded, the form and the "pick from contacts" CTA would shove down
+  // right as someone is about to use them. Both wait on this instead.
+  const [contactsLoaded, setContactsLoaded] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState(phonePrefill);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -125,7 +130,10 @@ function EmergencyContactsScreen() {
   const [selected, setSelected] = useState<Map<string, ContactCandidate>>(new Map());
 
   useEffect(() => {
-    getEmergencyContacts().then(setContacts);
+    getEmergencyContacts().then((list) => {
+      setContacts(list);
+      setContactsLoaded(true);
+    });
   }, []);
 
   // Android hardware back, while the picker is open, must match the header's
@@ -489,32 +497,51 @@ function EmergencyContactsScreen() {
             contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
             showsVerticalScrollIndicator={false}
           >
+            {/* Static content - not tied to the contacts read - stays on
+                screen the whole time instead of waiting on it too. */}
             <Text style={{ color: THEME.muted, lineHeight: 20, marginBottom: 18, fontSize: 13 }}>
               {t("emergency.subtitle")}
             </Text>
 
-            {contacts.map((c, i) => (
+            {!contactsLoaded ? (
+              // Only the list itself reserves a loading placeholder, shaped
+              // like one real contact row so this area doesn't resize when
+              // the real (possibly empty) list replaces it.
               <View
-                key={`${c.phone}-${i}`}
                 className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2"
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
               >
-                <ConicAvatar label={initials(c.name)} size={30} />
-                <View className="flex-1 ml-3">
-                  <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>
-                    {c.name}
-                  </Text>
-                  <Text style={{ color: THEME.muted, fontSize: 11 }}>{c.phone}</Text>
+                <Skeleton width={30} height={30} radius={15} />
+                <View className="flex-1 ml-3" style={{ gap: 6 }}>
+                  <Skeleton width="45%" height={12} />
+                  <Skeleton width="30%" height={10} />
                 </View>
-                <Pressable
-                  onPress={() => remove(i)}
-                  hitSlop={8}
-                  className="p-1"
-                  accessibilityLabel={t("common.delete")}
-                >
-                  <Ionicons name="trash-outline" size={18} color={GLUCOSE_RICH.low} />
-                </Pressable>
               </View>
-            ))}
+            ) : (
+              contacts.map((c, i) => (
+                <View
+                  key={`${c.phone}-${i}`}
+                  className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2"
+                >
+                  <ConicAvatar label={initials(c.name)} size={30} />
+                  <View className="flex-1 ml-3">
+                    <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>
+                      {c.name}
+                    </Text>
+                    <Text style={{ color: THEME.muted, fontSize: 11 }}>{c.phone}</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => remove(i)}
+                    hitSlop={10}
+                    className="p-1"
+                    accessibilityLabel={t("common.delete")}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={GLUCOSE_RICH.low} />
+                  </Pressable>
+                </View>
+              ))
+            )}
 
             {/* Add form */}
             <GlassCard style={{ marginTop: 10 }}>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Keyboard,
   Pressable,
   ScrollView,
   SectionList,
@@ -9,26 +10,25 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
+import Animated from "react-native-reanimated";
 
 import { useApp } from "../../lib/store/AppContext";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { Stepper } from "../../components/Stepper";
+import { InlineDateTimePicker } from "../../components/InlineDateTimePicker";
 import { useFeedback } from "../../components/Feedback";
 import { useUndoBatch } from "../../components/useUndoBatch";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
-import { TagPicker } from "../../components/TagPicker";
+import { listEntering, listExiting, listLayout } from "../../lib/theme/motion";
 import {
   InjectionBodyMap,
   daysSince,
   type PointSelection,
 } from "../../components/InjectionBodyMap";
-import {
-  InjectionSiteBoard,
-  type LastPointRecord,
-} from "../../components/InjectionSiteBoard";
+import type { LastPointRecord } from "../../components/InjectionSiteBoard";
 import {
   getRotationCycleStart,
   startRotationCycle,
@@ -39,7 +39,8 @@ import {
   GradientCTA,
   IconTile,
 } from "../../components/rich";
-import type { Injection, InsulinType, LogTag } from "../../lib/db/types";
+import type { BolusKind, Injection, InsulinType } from "../../lib/db/types";
+import { BOLUS_KINDS } from "../../lib/db/types";
 import {
   getSiteUsageHistory,
   leastRecentlyUsedPoint,
@@ -51,11 +52,15 @@ import {
 } from "../../lib/db/injections";
 import { captureDeletion } from "../../lib/db/undo";
 import { checkDose } from "../../lib/insulin";
-import { logEvent } from "../../lib/analytics";
+import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { noteJournalActivity } from "../../lib/services/notifications";
-import { formatTime, num } from "../../lib/format";
-import { groupInjectionsByDay, initialHistorySlice } from "../../lib/injectionHistory";
+import { formatTime, num, relativeDay } from "../../lib/format";
+import {
+  groupInjectionsByDay,
+  initialHistorySlice,
+  type InjectionDaySection,
+} from "../../lib/injectionHistory";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 import { GLUCOSE_RICH, INPUT_TEXT, RADIUS, TABULAR, THEME, glow } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
@@ -92,8 +97,41 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** One pill of a single-select row (insulin type, bolus label): the same visual
+ *  language for every segmented choice in this form. */
+function SegmentOption({
+  label,
+  on,
+  onPress,
+}: {
+  label: string;
+  on: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: on }}
+      className="flex-1 items-center rounded-xl px-3 py-2.5"
+      style={[
+        {
+          borderWidth: 1,
+          borderColor: on ? THEME.accent : THEME.border,
+          backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.glass,
+        },
+        on ? glow(THEME.accent, 12, 0.35) : undefined,
+      ]}
+    >
+      <Text style={{ color: on ? THEME.accent : THEME.muted, fontWeight: on ? "800" : "600" }}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function InjectionScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ compose?: string; segment?: string; zoom?: string }>();
@@ -113,7 +151,17 @@ export default function InjectionScreen() {
     legacyLastUsedAt: null,
   });
   const [leastUsed, setLeastUsed] = useState<PointSelection | null>(null);
+  // Flips true once loadRotation's first pass resolves. leastUsed always ends
+  // up non-null once it does (the DB helper has no empty case), so gating the
+  // rotation card's render on this instead of on leastUsed avoids the "-" ->
+  // real value swap and the CTA button popping in after the card is already
+  // on screen.
+  const [rotationLoaded, setRotationLoaded] = useState(false);
   const [history, setHistory] = useState<Injection[]>([]);
+  // Flips true once loadHistory's first pass resolves, so the GECMIS empty
+  // state (illustration + CTA) only ever shows once there truly is no history -
+  // never for the one frame before the first fetch comes back.
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE);
   // False = trimmed to the last HISTORY_INITIAL_DAYS days (still capped at
   // HISTORY_PAGE); true once "show more" was pressed at least once, so every
@@ -124,15 +172,39 @@ export default function InjectionScreen() {
   const [selected, setSelected] = useState<PointSelection | null>(null);
   const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
+  const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
+  const [loggedAt, setLoggedAt] = useState(new Date());
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [note, setNote] = useState("");
-  const [tags, setTags] = useState<LogTag[]>([]);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Injection | null>(null);
 
   const typeSeeded = useRef(false);
+  // True once the dose has been hand-edited this session; while false, an
+  // insulin-type switch is still allowed to prefill/clear it.
+  const doseTouched = useRef(false);
+  // True once the user has hand-picked a time this session. While false,
+  // loggedAt tracks "now" on every focus (see the useFocusEffect below): the
+  // tab never unmounts (freezeOnBlur), so without this a form left open from
+  // the morning would silently log an evening entry under the mount-time
+  // timestamp.
+  const timeTouched = useRef(false);
   const dateLabels = useMemo(
     () => ({ today: t("common.today"), yesterday: t("common.yesterday") }),
     [t]
+  );
+
+  /** Switches insulin type and, unless the user already hand-edited the dose
+   *  this session, pre-fills it: the profile's daily basal for basal, empty
+   *  for bolus (WP3 - basal is usually a fixed daily amount). */
+  const applyInsulinType = useCallback(
+    (type: InsulinType) => {
+      setInsulinType(type);
+      if (!doseTouched.current) {
+        setDose(type === "basal" ? activeProfile?.basal_daily_units ?? 0 : 0);
+      }
+    },
+    [activeProfile]
   );
 
   /**
@@ -145,27 +217,43 @@ export default function InjectionScreen() {
    * The rotation-cycle stamp narrows what feeds the heat colours and the
    * least-recently-used helper. injection_logs themselves are never touched.
    */
+  // Both flags are set in `finally`: a rejected read (locked or half-migrated
+  // DB) used to leave them false for good, so the rotation card and the history
+  // list stayed in their loading shape with no message and no retry. The screen
+  // now lands on the ordinary empty state and the failure is reported once.
   const loadRotation = useCallback(async () => {
     if (!activeProfile) return;
-    const cycle = await getRotationCycleStart(activeProfile.id);
-    const [u, least] = await Promise.all([
-      getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS, cycle),
-      leastRecentlyUsedPoint(activeProfile.id, cycle),
-    ]);
-    setCycleStart(cycle);
-    setUsage(u);
-    setLeastUsed(least);
+    try {
+      const cycle = await getRotationCycleStart(activeProfile.id);
+      const [u, least] = await Promise.all([
+        getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS, cycle),
+        leastRecentlyUsedPoint(activeProfile.id, cycle),
+      ]);
+      setCycleStart(cycle);
+      setUsage(u);
+      setLeastUsed(least);
+    } catch (err) {
+      logCrash(err, { screen: "injection", load: "rotation" });
+    } finally {
+      setRotationLoaded(true);
+    }
   }, [activeProfile]);
 
   const loadHistory = useCallback(async () => {
     if (!activeProfile) return;
-    const hist = await getInjections(activeProfile.id, historyLimit);
-    setHistory(hist);
-    if (!typeSeeded.current && hist[0]?.insulin_type) {
-      setInsulinType(hist[0].insulin_type);
-      typeSeeded.current = true;
+    try {
+      const hist = await getInjections(activeProfile.id, historyLimit);
+      setHistory(hist);
+      if (!typeSeeded.current && hist[0]?.insulin_type) {
+        applyInsulinType(hist[0].insulin_type);
+        typeSeeded.current = true;
+      }
+    } catch (err) {
+      logCrash(err, { screen: "injection", load: "history" });
+    } finally {
+      setHistoryLoaded(true);
     }
-  }, [activeProfile, historyLimit]);
+  }, [activeProfile, historyLimit, applyInsulinType]);
 
   useEffect(() => {
     loadRotation();
@@ -174,6 +262,17 @@ export default function InjectionScreen() {
   useEffect(() => {
     loadHistory();
   }, [loadHistory, dataVersion]);
+
+  // Keeps the KAYDET form's time honest across a tab switch: freezeOnBlur
+  // (app/(tabs)/_layout.tsx) means this screen never unmounts, so the
+  // useState(new Date()) initializer only ever ran once, at first mount - a
+  // form opened at 08:00 and saved at 20:00 was logging 08:00. Refreshed on
+  // every focus, but only while the user has not hand-picked a time.
+  useFocusEffect(
+    useCallback(() => {
+      if (!timeTouched.current) setLoggedAt(new Date());
+    }, [])
+  );
 
   // Quick-add "compose" deep-link (from the dashboard): open the KAYDET segment
   // so the form is front and centre. Cleared so it fires once.
@@ -215,7 +314,9 @@ export default function InjectionScreen() {
    *  dose-threshold checks so the two never fight for the same dialog. */
   async function confirmDoubleBolus(): Promise<boolean> {
     if (!activeProfile) return true;
-    const existing = await findRecentCalculatorBolus(activeProfile.id, new Date());
+    // Checked against the entry's OWN time, not "now": a back-dated entry has
+    // to be compared to what else was logged around that earlier moment.
+    const existing = await findRecentCalculatorBolus(activeProfile.id, loggedAt);
     if (!existing) return true;
     return confirm({
       title: t("injection.doubleBolusTitle", {
@@ -241,8 +342,9 @@ export default function InjectionScreen() {
         site_point: selected.point,
         dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
+        bolus_kind: insulinType === "bolus" ? bolusKind : null,
         note: note.trim() || null,
-        tags,
+        logged_at: loggedAt.toISOString(),
       });
       logEvent("log_added", { kind: "insulin", source: "manual" });
       void noteLogAndMaybeReview();
@@ -250,9 +352,16 @@ export default function InjectionScreen() {
       hapticSuccess();
       toast(t("injection.saved"), "success");
       setSelected(null);
-      setDose(0);
+      doseTouched.current = false;
+      // Re-applies the current insulinType's prefill rule (profile's daily
+      // basal for basal, 0 for bolus) now that doseTouched is clear again -
+      // a plain setDose(0) here made the NEXT basal entry start from zero
+      // instead of the profile's usual dose.
+      applyInsulinType(insulinType);
+      setBolusKind(null);
+      timeTouched.current = false;
+      setLoggedAt(new Date());
       setNote("");
-      setTags([]);
       bumpData();
     } finally {
       setSaving(false);
@@ -302,26 +411,32 @@ export default function InjectionScreen() {
     return t("injection.samePointDays", { n: d });
   }, [selected, lastRecord, t]);
 
-  async function onDelete(id: string) {
-    const snap = await captureDeletion("injection", id);
-    await deleteWithUndo(snap, () => deleteInjection(id));
-  }
+  const onDelete = useCallback(
+    async (id: string) => {
+      const snap = await captureDeletion("injection", id);
+      await deleteWithUndo(snap, () => deleteInjection(id));
+    },
+    [deleteWithUndo]
+  );
 
-  function onRowLongPress(inj: Injection) {
-    actionSheet({
-      actions: [
-        { label: t("common.edit"), icon: "create-outline", onPress: () => setEditing(inj) },
-        {
-          label: t("common.delete"),
-          icon: "trash-outline",
-          destructive: true,
-          onPress: () => {
-            void onDelete(inj.id);
+  const onRowLongPress = useCallback(
+    (inj: Injection) => {
+      actionSheet({
+        actions: [
+          { label: t("common.edit"), icon: "create-outline", onPress: () => setEditing(inj) },
+          {
+            label: t("common.delete"),
+            icon: "trash-outline",
+            destructive: true,
+            onPress: () => {
+              void onDelete(inj.id);
+            },
           },
-        },
-      ],
-    });
-  }
+        ],
+      });
+    },
+    [actionSheet, onDelete, t]
+  );
 
   const selectedLabel = selected
     ? t("injection.siteWithPoint", {
@@ -345,10 +460,10 @@ export default function InjectionScreen() {
   const hasMoreHistory =
     (!historyExpanded && visibleHistory.length < history.length) || history.length >= historyLimit;
 
-  function showMoreHistory() {
+  const showMoreHistory = useCallback(() => {
     setHistoryExpanded(true);
     setHistoryLimit((l) => l + HISTORY_PAGE);
-  }
+  }, []);
 
   // History grouped into day sections (Today / Yesterday / weekday + date),
   // same rule as the dashboard journal, newest first.
@@ -363,46 +478,149 @@ export default function InjectionScreen() {
     { key: "history", label: t("injection.segHistory") },
   ];
 
-  const injectionRow = (inj: Injection) => (
-    <Pressable
-      onPress={() => setEditing(inj)}
-      onLongPress={() => onRowLongPress(inj)}
-      className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
-    >
-      <View
-        className="rounded-lg px-2 py-1"
-        style={[{ backgroundColor: withAlpha(THEME.accent, 0.16) }, glow(THEME.accent, 10, 0.35)]}
+  const injectionRow = useCallback(
+    (inj: Injection) => (
+      <Pressable
+        onPress={() => setEditing(inj)}
+        onLongPress={() => onRowLongPress(inj)}
+        className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
       >
-        <Text style={[TABULAR, { color: THEME.accent, fontWeight: "800", fontSize: 11 }]}>
-          {inj.dose_units != null ? `${num(inj.dose_units)}${t("common.unitsShort")}` : "-"}
-        </Text>
-      </View>
-      <View className="flex-1 ml-3">
-        <Text
-          style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.85}
+        <View
+          className="rounded-lg px-2 py-1"
+          style={[{ backgroundColor: withAlpha(THEME.accent, 0.16) }, glow(THEME.accent, 10, 0.35)]}
         >
-          {inj.insulin_type
-            ? `${inj.insulin_type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")} · `
-            : ""}
-          {inj.site == null
-            ? t("injectionSite.unassigned")
-            : inj.site_point != null
-              ? t("injection.siteWithPoint", { site: t(`injectionSite.${inj.site}`), n: inj.site_point })
-              : t(`injectionSite.${inj.site}`)}
-        </Text>
-        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>
-          {formatTime(inj.logged_at)}
-          {inj.source === "calculator" ? ` · ${t("injection.fromCalculator")}` : ""}
-        </Text>
-      </View>
-      <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
-    </Pressable>
+          <Text style={[TABULAR, { color: THEME.accent, fontWeight: "800", fontSize: 11 }]}>
+            {inj.dose_units != null ? `${num(inj.dose_units)}${t("common.unitsShort")}` : "-"}
+          </Text>
+        </View>
+        <View className="flex-1 ml-3">
+          <Text
+            style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {inj.insulin_type
+              ? `${inj.insulin_type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}${
+                  inj.insulin_type === "bolus" && inj.bolus_kind
+                    ? ` (${
+                        inj.bolus_kind === "meal"
+                          ? t("injection.bolusKindMeal")
+                          : t("injection.bolusKindCorrection")
+                      })`
+                    : ""
+                } · `
+              : ""}
+            {inj.site == null
+              ? t("injectionSite.unassigned")
+              : inj.site_point != null
+                ? t("injection.siteWithPoint", { site: t(`injectionSite.${inj.site}`), n: inj.site_point })
+                : t(`injectionSite.${inj.site}`)}
+          </Text>
+          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>
+            {formatTime(inj.logged_at)}
+            {inj.source === "calculator" ? ` · ${t("injection.fromCalculator")}` : ""}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
+      </Pressable>
+    ),
+    [onRowLongPress, t]
   );
 
-  const rotationCard = isProUser ? (
+  const renderHistoryItem = useCallback(
+    ({ item }: { item: Injection }) => <View className="px-4">{injectionRow(item)}</View>,
+    [injectionRow]
+  );
+
+  const renderHistorySectionHeader = useCallback(
+    ({ section }: { section: InjectionDaySection }) => (
+      <View className="px-4" style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 6 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: THEME.sheet,
+            borderWidth: 1,
+            borderColor: THEME.border,
+            borderRadius: RADIUS.full,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+            {upper(section.title)}
+          </Text>
+          {section.dateLabel !== section.title ? (
+            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+              {section.dateLabel}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    ),
+    []
+  );
+
+  // Loading vs. genuinely empty: without historyLoaded this rendered for one
+  // frame on every first mount, so the empty-state illustration flashed even
+  // for a profile with plenty of history (it just had not been fetched yet).
+  const historyEmptyComponent = useMemo(() => {
+    if (!historyLoaded) return null;
+    return (
+      <View className="items-center py-12">
+        <Ionicons name="document-text-outline" size={36} color={THEME.muted} />
+        <Text style={{ color: THEME.muted, textAlign: "center", marginTop: 8 }}>
+          {t("injection.empty")}
+        </Text>
+        <Pressable
+          onPress={() => setSegment("save")}
+          accessibilityRole="button"
+          accessibilityLabel={t("injection.emptyCta")}
+          className="flex-row items-center rounded-full mt-4 px-4 py-2.5 active:opacity-80"
+          style={{
+            borderWidth: 1,
+            borderColor: withAlpha(THEME.accent, 0.3),
+            backgroundColor: withAlpha(THEME.accent, 0.12),
+          }}
+        >
+          <Ionicons name="add-circle-outline" size={15} color={THEME.accent} />
+          <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
+            {t("injection.emptyCta")}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }, [historyLoaded, t]);
+
+  const historyFooterComponent = useMemo(() => {
+    if (!hasMoreHistory) return null;
+    return (
+      <Pressable
+        onPress={showMoreHistory}
+        accessibilityRole="button"
+        accessibilityLabel={t("common.showMore")}
+        className="flex-row items-center justify-center rounded-full mx-4 mt-1 py-2.5 active:opacity-80"
+        style={{
+          borderWidth: 1,
+          borderColor: withAlpha(THEME.accent, 0.3),
+          backgroundColor: withAlpha(THEME.accent, 0.12),
+        }}
+      >
+        <Ionicons name="chevron-down-outline" size={14} color={THEME.accent} />
+        <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
+          {upper(t("common.showMore"))}
+        </Text>
+      </Pressable>
+    );
+  }, [hasMoreHistory, showMoreHistory, t]);
+
+  // Gated on rotationLoaded (not on leastUsed) so the card never shows the
+  // "-" placeholder or pops its CTA button in after first paint: the DB
+  // helper behind leastUsed always resolves to a real point, so once loaded
+  // it never reverts to empty.
+  const rotationCard = isProUser && !rotationLoaded ? null : isProUser ? (
     <GlassCard style={{ marginBottom: 16 }}>
       <View className="flex-row items-center mb-2">
         <Ionicons name="sync-outline" size={16} color={THEME.accent} />
@@ -468,13 +686,8 @@ export default function InjectionScreen() {
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t("injection.guideLink")}
-            className="flex-row items-center"
-            style={{ gap: 6 }}
           >
             <IconTile icon="help-circle" size={32} radius={10} />
-            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}>
-              {t("injection.guideLinkLabel")}
-            </Text>
           </Pressable>
           <ProfileSwitcher />
         </View>
@@ -497,6 +710,12 @@ export default function InjectionScreen() {
               accessibilityRole="button"
               accessibilityState={{ selected: on }}
               accessibilityLabel={s.label}
+              // The pill's visual height (py-2 + the label) is ~32-34pt; hitSlop
+              // widens the TOUCH area to clear the 44pt target without changing
+              // how the control looks. Left/right stay at 0 - these three sit
+              // edge-to-edge with no gap, so widening sideways would steal taps
+              // from the neighbouring segment.
+              hitSlop={{ top: 8, bottom: 8 }}
               className="flex-1 items-center rounded-full py-2"
               style={{ backgroundColor: on ? THEME.accent : "transparent" }}
             >
@@ -512,81 +731,18 @@ export default function InjectionScreen() {
         <SectionList
           sections={sections}
           keyExtractor={(inj) => inj.id}
-          renderItem={({ item }) => <View className="px-4">{injectionRow(item)}</View>}
-          renderSectionHeader={({ section }) => (
-            <View className="px-4" style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 6 }}>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  backgroundColor: THEME.sheet,
-                  borderWidth: 1,
-                  borderColor: THEME.border,
-                  borderRadius: RADIUS.full,
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                }}
-              >
-                <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
-                  {upper(section.title)}
-                </Text>
-                {section.dateLabel !== section.title ? (
-                  <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
-                    {section.dateLabel}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-          )}
+          renderItem={renderHistoryItem}
+          renderSectionHeader={renderHistorySectionHeader}
           stickySectionHeadersEnabled={false}
           initialNumToRender={20}
           maxToRenderPerBatch={20}
           windowSize={7}
-          ListEmptyComponent={
-            <View className="items-center py-12">
-              <Ionicons name="document-text-outline" size={36} color={THEME.muted} />
-              <Text style={{ color: THEME.muted, textAlign: "center", marginTop: 8 }}>
-                {t("injection.empty")}
-              </Text>
-              <Pressable
-                onPress={() => setSegment("save")}
-                accessibilityRole="button"
-                accessibilityLabel={t("injection.emptyCta")}
-                className="flex-row items-center rounded-full mt-4 px-4 py-2.5 active:opacity-80"
-                style={{
-                  borderWidth: 1,
-                  borderColor: withAlpha(THEME.accent, 0.3),
-                  backgroundColor: withAlpha(THEME.accent, 0.12),
-                }}
-              >
-                <Ionicons name="add-circle-outline" size={15} color={THEME.accent} />
-                <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
-                  {t("injection.emptyCta")}
-                </Text>
-              </Pressable>
-            </View>
-          }
-          ListFooterComponent={
-            hasMoreHistory ? (
-              <Pressable
-                onPress={showMoreHistory}
-                accessibilityRole="button"
-                accessibilityLabel={t("common.showMore")}
-                className="flex-row items-center justify-center rounded-full mx-4 mt-1 py-2.5 active:opacity-80"
-                style={{
-                  borderWidth: 1,
-                  borderColor: withAlpha(THEME.accent, 0.3),
-                  backgroundColor: withAlpha(THEME.accent, 0.12),
-                }}
-              >
-                <Ionicons name="chevron-down-outline" size={14} color={THEME.accent} />
-                <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
-                  {upper(t("common.showMore"))}
-                </Text>
-              </Pressable>
-            ) : null
-          }
+          // Android's default (true) recycles offscreen rows; WP6 saw the sibling
+          // food tab hand back blank recycled cells under the same default, so this
+          // list opts out too rather than risk the same class of bug here.
+          removeClippedSubviews={false}
+          ListEmptyComponent={historyEmptyComponent}
+          ListFooterComponent={historyFooterComponent}
           contentContainerStyle={[{ paddingBottom: insets.bottom + 32, paddingTop: 4 }, contentColumn]}
           showsVerticalScrollIndicator={false}
         />
@@ -599,30 +755,16 @@ export default function InjectionScreen() {
           {segment === "map" ? (
             <>
               <View className="mb-2">
-                {isScreenshotMode() ? (
-                  // Store screenshots keep the approved silhouette shot (02-bodymap).
-                  <InjectionBodyMap
-                    usage={usage.sites}
-                    selected={selected}
-                    onSelect={onMapSelect}
-                    windowDays={USAGE_WINDOW_DAYS}
-                    initialZoom={params.zoom}
-                  />
-                ) : (
-                  <InjectionSiteBoard
-                    usage={usage.sites}
-                    selected={selected}
-                    onSelect={onMapSelect}
-                    windowDays={USAGE_WINDOW_DAYS}
-                    cycleStart={cycleStart}
-                    onStartNewCycle={startNewCycle}
-                    lastRecord={lastRecord}
-                    recent={history}
-                    legacyCount={usage.legacyCount}
-                    legacyLastUsedAt={usage.legacyLastUsedAt}
-                    noSiteCount={usage.noSiteCount}
-                  />
-                )}
+                <InjectionBodyMap
+                  usage={usage.sites}
+                  noSiteCount={usage.noSiteCount}
+                  selected={selected}
+                  onSelect={onMapSelect}
+                  windowDays={USAGE_WINDOW_DAYS}
+                  initialZoom={params.zoom}
+                  cycleStart={cycleStart}
+                  onStartNewCycle={startNewCycle}
+                />
               </View>
               {rotationCard}
             </>
@@ -642,64 +784,65 @@ export default function InjectionScreen() {
                   {upper(t("injection.formTitle"))}
                 </Text>
 
-                {/* Site summary chip = the mini map preview: tap to open HARITA
-                    (the current selection is kept). */}
+                {/* 1. When: defaults to now, editable, never future (WP3). */}
+                <FieldLabel>{t("injection.time")}</FieldLabel>
                 <Pressable
-                  onPress={() => setSegment("map")}
-                  accessibilityRole="button"
-                  accessibilityLabel={selectedLabel ?? t("injection.chooseSitePoint")}
-                  className="flex-row items-center rounded-xl px-3 py-2.5 mb-4 active:opacity-80"
-                  style={{
-                    borderWidth: 1,
-                    borderColor: selected ? withAlpha(THEME.accent, 0.4) : THEME.border,
-                    backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setTimePickerOpen((v) => !v);
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("injection.time")}
+                  className="flex-row items-center mb-4"
+                  style={inputStyle}
                 >
-                  <Ionicons
-                    name="location-outline"
-                    size={15}
-                    color={selected ? THEME.accent : THEME.muted}
-                  />
-                  <Text
-                    style={{
-                      color: selected ? THEME.accent : THEME.muted,
-                      fontSize: 13,
-                      fontWeight: "700",
-                      marginLeft: 8,
-                      flex: 1,
-                    }}
-                    numberOfLines={1}
-                  >
-                    {selectedLabel ?? t("injection.chooseSitePoint")}
+                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
+                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                    {relativeDay(loggedAt.toISOString(), {
+                      today: t("common.today"),
+                      yesterday: t("common.yesterday"),
+                    })}
+                    {" · "}
+                    {formatTime(loggedAt.toISOString())}
                   </Text>
-                  <Ionicons name="map-outline" size={16} color={THEME.accent} />
                 </Pressable>
+                <InlineDateTimePicker
+                  visible={timePickerOpen}
+                  value={loggedAt}
+                  max={new Date()}
+                  locale={i18n.language}
+                  onChange={(d) => {
+                    timeTouched.current = true;
+                    setLoggedAt(d);
+                  }}
+                  onClose={() => setTimePickerOpen(false)}
+                />
 
-                {/* Repeat-point annotation: descriptive only, saving stays possible. */}
-                {samePointNote ? (
-                  <View
-                    className="flex-row items-center rounded-xl px-3 py-2"
-                    style={{
-                      marginTop: -8,
-                      marginBottom: 16,
-                      borderWidth: 1,
-                      borderColor: withAlpha(THEME.accent, 0.25),
-                      backgroundColor: withAlpha(THEME.accent, 0.08),
-                    }}
-                  >
-                    <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />
-                    <Text
-                      style={{ color: THEME.ink, fontSize: 11, lineHeight: 15, marginLeft: 8, flex: 1 }}
-                    >
-                      {samePointNote}
-                    </Text>
-                  </View>
-                ) : null}
+                {/* 2. Insulin type before dose: basal pre-fills the dose below. */}
+                <FieldLabel>{t("injection.insulinType")}</FieldLabel>
+                <View className="flex-row mb-4" style={{ gap: 8 }}>
+                  {(["basal", "bolus"] as const).map((type) => (
+                    <SegmentOption
+                      key={type}
+                      label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
+                      on={insulinType === type}
+                      onPress={() => {
+                        hapticSelect();
+                        applyInsulinType(type);
+                      }}
+                    />
+                  ))}
+                </View>
 
+                {/* 3. Dose: auto-filled from the profile's daily basal while on
+                    "basal" and not yet hand-edited this session. */}
                 <FieldLabel>{t("injection.dose")}</FieldLabel>
                 <Stepper
                   value={dose}
-                  onChange={setDose}
+                  onChange={(v) => {
+                    doseTouched.current = true;
+                    setDose(v);
+                  }}
                   step={0.5}
                   longStep={1}
                   min={0}
@@ -709,55 +852,122 @@ export default function InjectionScreen() {
                   accessibilityLabel={t("injection.dose")}
                   style={{ marginBottom: 16 }}
                 />
+                {insulinType === "basal" && activeProfile?.basal_daily_units == null ? (
+                  <Pressable
+                    onPress={() => router.push("/settings/profile")}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("injection.basalPrefillHint")}
+                    hitSlop={10}
+                    className="flex-row items-center"
+                    style={{ marginTop: -10, marginBottom: 16, paddingVertical: 8 }}
+                  >
+                    <Ionicons name="information-circle-outline" size={13} color={THEME.accent} />
+                    <Text style={{ color: THEME.accent, fontSize: 11, lineHeight: 15, marginLeft: 6, flex: 1 }}>
+                      {t("injection.basalPrefillHint")}
+                    </Text>
+                  </Pressable>
+                ) : null}
 
-                <FieldLabel>{t("injection.insulinType")}</FieldLabel>
-                <View className="flex-row mb-4" style={{ gap: 8 }}>
-                  {(["basal", "bolus"] as const).map((type) => {
-                    const on = insulinType === type;
-                    return (
-                      <Pressable
-                        key={type}
-                        onPress={() => {
-                          hapticSelect();
-                          setInsulinType(type);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: on }}
-                        className="flex-1 items-center rounded-xl px-3 py-2.5"
-                        style={[
-                          {
-                            borderWidth: 1,
-                            borderColor: on ? THEME.accent : THEME.border,
-                            backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.glass,
-                          },
-                          on ? glow(THEME.accent, 12, 0.35) : undefined,
-                        ]}
+                {/* 4. Everything below reflows smoothly when the bolus-label row
+                    (5.) appears or disappears above it (WP3 UI/UX rule). */}
+                <Animated.View layout={listLayout}>
+                  {insulinType === "bolus" ? (
+                    <Animated.View
+                      entering={listEntering}
+                      exiting={listExiting}
+                      style={{ marginBottom: 16 }}
+                    >
+                      <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
+                      <View className="flex-row" style={{ gap: 8 }}>
+                        {BOLUS_KINDS.map((kind) => (
+                          <SegmentOption
+                            key={kind}
+                            label={
+                              kind === "meal"
+                                ? t("injection.bolusKindMeal")
+                                : t("injection.bolusKindCorrection")
+                            }
+                            on={bolusKind === kind}
+                            onPress={() => {
+                              hapticSelect();
+                              setBolusKind((prev) => (prev === kind ? null : kind));
+                            }}
+                          />
+                        ))}
+                      </View>
+                    </Animated.View>
+                  ) : null}
+
+                  {/* Site summary chip = the mini map preview: tap to open HARITA
+                      (the current selection is kept). */}
+                  <Pressable
+                    onPress={() => setSegment("map")}
+                    accessibilityRole="button"
+                    accessibilityLabel={selectedLabel ?? t("injection.chooseSitePoint")}
+                    className="flex-row items-center rounded-xl px-3 py-2.5 mb-4 active:opacity-80"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: selected ? withAlpha(THEME.accent, 0.4) : THEME.border,
+                      backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+                    }}
+                  >
+                    <Ionicons
+                      name="location-outline"
+                      size={15}
+                      color={selected ? THEME.accent : THEME.muted}
+                    />
+                    <Text
+                      style={{
+                        color: selected ? THEME.accent : THEME.muted,
+                        fontSize: 13,
+                        fontWeight: "700",
+                        marginLeft: 8,
+                        flex: 1,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {selectedLabel ?? t("injection.chooseSitePoint")}
+                    </Text>
+                    <Ionicons name="map-outline" size={16} color={THEME.accent} />
+                  </Pressable>
+
+                  {/* Repeat-point annotation: descriptive only, saving stays possible. */}
+                  {samePointNote ? (
+                    <View
+                      className="flex-row items-center rounded-xl px-3 py-2"
+                      style={{
+                        marginTop: -8,
+                        marginBottom: 16,
+                        borderWidth: 1,
+                        borderColor: withAlpha(THEME.accent, 0.25),
+                        backgroundColor: withAlpha(THEME.accent, 0.08),
+                      }}
+                    >
+                      <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />
+                      <Text
+                        style={{ color: THEME.ink, fontSize: 11, lineHeight: 15, marginLeft: 8, flex: 1 }}
                       >
-                        <Text style={{ color: on ? THEME.accent : THEME.muted, fontWeight: on ? "800" : "600" }}>
-                          {type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                        {samePointNote}
+                      </Text>
+                    </View>
+                  ) : null}
 
-                <FieldLabel>{t("common.note")}</FieldLabel>
-                <TextInput
-                  value={note}
-                  onChangeText={setNote}
-                  placeholder={t("injection.notePlaceholder")}
-                  placeholderTextColor="rgba(137,163,176,0.7)"
-                  returnKeyType="done"
-                  style={[inputStyle, INPUT_TEXT, { marginBottom: 16 }]}
-                />
+                  <FieldLabel>{t("common.note")}</FieldLabel>
+                  <TextInput
+                    value={note}
+                    onChangeText={setNote}
+                    placeholder={t("injection.notePlaceholder")}
+                    placeholderTextColor="rgba(137,163,176,0.7)"
+                    returnKeyType="done"
+                    style={[inputStyle, INPUT_TEXT, { marginBottom: 16 }]}
+                  />
 
-                <TagPicker value={tags} onChange={setTags} className="mb-4" />
-
-                <GradientCTA
-                  label={t("injection.logInjection")}
-                  disabled={!selected || saving}
-                  onPress={save}
-                />
+                  <GradientCTA
+                    label={t("injection.logInjection")}
+                    disabled={!selected || saving}
+                    onPress={save}
+                  />
+                </Animated.View>
               </GlassCard>
 
               {/* Short disclaimer under KAYDET only. Wraps to two lines on a

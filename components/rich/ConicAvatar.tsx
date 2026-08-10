@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Text, View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import Svg, { Path } from "react-native-svg";
@@ -35,6 +35,11 @@ function conicColor(stops: string[], t: number): string {
   return lerpHex(loop[i], loop[i + 1], scaled - i);
 }
 
+/** Default conic stops, hoisted so a caller that omits `stops` (every current
+ *  one) hands useMemo below the SAME array reference on every render instead
+ *  of a fresh literal - an inline default parameter would defeat the memo. */
+const DEFAULT_STOPS = [THEME.accent, THEME.violet, THEME.accent];
+
 /**
  * A conic-gradient avatar, drawn as SVG wedges (react-native-svg has no native
  * conic gradient) with a color-matched glow and centered initials. Doubles as
@@ -43,30 +48,36 @@ function conicColor(stops: string[], t: number): string {
 export function ConicAvatar({
   label,
   size = 28,
-  stops = [THEME.accent, THEME.violet, THEME.accent],
+  stops = DEFAULT_STOPS,
   fromDeg = 200,
   style,
 }: ConicAvatarProps) {
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2;
-  const count = 48;
-  const wedge = 360 / count;
 
-  const wedges = [];
-  for (let i = 0; i < count; i++) {
-    const a0 = fromDeg + i * wedge;
-    const a1 = a0 + wedge + 0.6; // overlap to avoid hairline seams
-    const p0 = polar(cx, cy, r, a0);
-    const p1 = polar(cx, cy, r, a1);
-    wedges.push(
-      <Path
-        key={i}
-        d={`M${cx},${cy} L${p0.x.toFixed(2)},${p0.y.toFixed(2)} A${r},${r} 0 0 1 ${p1.x.toFixed(2)},${p1.y.toFixed(2)} Z`}
-        fill={conicColor(stops, i / count)}
-      />
-    );
-  }
+  // 48 paths + a conic sample per path: recomputed only when the geometry or
+  // colors actually change, not on every keystroke of an unrelated input on
+  // the same screen (app/profile-setup.tsx re-renders this on each character).
+  const wedges = useMemo(() => {
+    const count = 48;
+    const wedge = 360 / count;
+    const paths = [];
+    for (let i = 0; i < count; i++) {
+      const a0 = fromDeg + i * wedge;
+      const a1 = a0 + wedge + 0.6; // overlap to avoid hairline seams
+      const p0 = polar(cx, cy, r, a0);
+      const p1 = polar(cx, cy, r, a1);
+      paths.push(
+        <Path
+          key={i}
+          d={`M${cx},${cy} L${p0.x.toFixed(2)},${p0.y.toFixed(2)} A${r},${r} 0 0 1 ${p1.x.toFixed(2)},${p1.y.toFixed(2)} Z`}
+          fill={conicColor(stops, i / count)}
+        />
+      );
+    }
+    return paths;
+  }, [size, stops, fromDeg, cx, cy, r]);
 
   return (
     <View

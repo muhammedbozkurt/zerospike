@@ -14,12 +14,14 @@ import {
   TARGET_RANGE_BOUNDS,
 } from "../../lib/glucose";
 import { CARB_TARGET_BOUNDS, clampCarbTarget } from "../../lib/insulin";
-import { insulinModeOf, insulinModeShowsBolus } from "../../lib/insulinMode";
+import { insulinModeOf, insulinModeShowsBasal, insulinModeShowsBolus } from "../../lib/insulinMode";
+import { productsByCategory } from "../../lib/insulinCatalog";
 import { parseDecimalText } from "../../lib/numberInput";
 import { Segmented } from "../../components/ui";
 import { FormCard, InputRow } from "../../components/form";
 import { RangeInput } from "../../components/RangeInput";
 import { Stepper } from "../../components/Stepper";
+import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
 import { useLayout } from "../../lib/useLayout";
@@ -34,25 +36,46 @@ export default function ProfileSettings() {
   const { activeProfile, bumpData } = useApp();
   const { contentColumn } = useLayout();
 
-  const [name, setName] = useState("");
-  const [isf, setIsf] = useState(0);
-  const [crB, setCrB] = useState(0);
-  const [crL, setCrL] = useState(0);
-  const [crD, setCrD] = useState(0);
-  const [fastingMin, setFastingMin] = useState("");
-  const [fastingMax, setFastingMax] = useState("");
-  const [postmealMin, setPostmealMin] = useState("");
-  const [postmealMax, setPostmealMax] = useState("");
-  const [carbMin, setCarbMin] = useState("");
-  const [carbMax, setCarbMax] = useState("");
-
+  // activeProfile is already in context by the time this screen mounts (see
+  // profile-setup.tsx for the same pattern), so every field is seeded straight
+  // from it via a lazy initializer instead of starting blank/zero and jumping
+  // to the real value after an effect - a zero ISF or an empty name is a wrong
+  // value on screen, not just a loading state.
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
+  const [name, setName] = useState(() => activeProfile?.name ?? "");
+  const [isf, setIsf] = useState(() =>
+    activeProfile ? glucoseToDisplay(activeProfile.insulin_sensitivity_factor, unit) : 0
+  );
+  const [crB, setCrB] = useState(() => activeProfile?.carb_ratio_breakfast ?? 0);
+  const [crL, setCrL] = useState(() => activeProfile?.carb_ratio_lunch ?? 0);
+  const [crD, setCrD] = useState(() => activeProfile?.carb_ratio_dinner ?? 0);
+  const [fastingMin, setFastingMin] = useState(() =>
+    activeProfile ? String(glucoseToDisplay(activeProfile.target_fasting_min, unit)) : ""
+  );
+  const [fastingMax, setFastingMax] = useState(() =>
+    activeProfile ? String(glucoseToDisplay(activeProfile.target_fasting_max, unit)) : ""
+  );
+  const [postmealMin, setPostmealMin] = useState(() =>
+    activeProfile ? String(glucoseToDisplay(activeProfile.target_postmeal_min, unit)) : ""
+  );
+  const [postmealMax, setPostmealMax] = useState(() =>
+    activeProfile ? String(glucoseToDisplay(activeProfile.target_postmeal_max, unit)) : ""
+  );
+  const [carbMin, setCarbMin] = useState(() =>
+    activeProfile ? String(activeProfile.daily_carb_target_min_g) : ""
+  );
+  const [carbMax, setCarbMax] = useState(() =>
+    activeProfile ? String(activeProfile.daily_carb_target_g) : ""
+  );
+  const [basalUnits, setBasalUnits] = useState(() => activeProfile?.basal_daily_units ?? 0);
+
   const glucoseBounds = {
     min: glucoseToDisplay(TARGET_RANGE_BOUNDS.min, unit),
     max: glucoseToDisplay(TARGET_RANGE_BOUNDS.max, unit),
   };
   const insulinMode = insulinModeOf(activeProfile);
   const showsBolus = insulinModeShowsBolus(insulinMode);
+  const showsBasal = insulinModeShowsBasal(insulinMode);
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -68,6 +91,7 @@ export default function ProfileSettings() {
     setPostmealMax(String(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
     setCarbMin(String(activeProfile.daily_carb_target_min_g));
     setCarbMax(String(activeProfile.daily_carb_target_g));
+    setBasalUnits(activeProfile.basal_daily_units ?? 0);
   }, [activeProfile?.id, activeProfile?.glucose_unit]);
 
   function n(v: string, fallback: number): number {
@@ -75,7 +99,7 @@ export default function ProfileSettings() {
     return Number.isFinite(x) && x > 0 ? x : fallback;
   }
 
-  async function persist(patch: Record<string, string | number>) {
+  async function persist(patch: Record<string, string | number | null>) {
     if (!activeProfile) return;
     await updateProfile(activeProfile.id, patch);
     bumpData();
@@ -255,6 +279,46 @@ export default function ProfileSettings() {
         </View>
       </FormCard>
 
+      {/* Basal dose + product: long-acting-insulin users only (WP4). Grouped with
+          ISF/carb ratios below since all five cards are dosing-detail config,
+          kept apart from the general profile cards above (name, mode, targets). */}
+      {showsBasal ? (
+        <FormCard icon="moon-outline" title={t("settings.basalDailyUnits")}>
+          <View className="px-4 py-3">
+            <Text className="text-mut text-xs mb-2">{t("settings.basalDailyUnitsHint")}</Text>
+            <Stepper
+              value={basalUnits}
+              onChange={(v) => {
+                setBasalUnits(v);
+                void persist({ basal_daily_units: v > 0 ? v : null });
+              }}
+              step={0.5}
+              longStep={1}
+              min={0}
+              max={150}
+              decimals={1}
+              suffix={t("common.units")}
+              accessibilityLabel={t("settings.basalDailyUnits")}
+            />
+          </View>
+        </FormCard>
+      ) : null}
+
+      {showsBasal ? (
+        <FormCard icon="battery-charging-outline" title={t("settings.basalInsulin")}>
+          <View className="px-4 py-3.5">
+            <InsulinProductPicker
+              title={t("settings.basalInsulin")}
+              value={activeProfile?.basal_insulin_id ?? null}
+              products={productsByCategory("basal")}
+              onChange={(id) => void persist({ basal_insulin_id: id })}
+              notSetLabel={t("settings.insulinProductNotSet")}
+              durationLabel={t("settings.insulinDurationLabel")}
+            />
+          </View>
+        </FormCard>
+      ) : null}
+
       {/* ISF + carb ratios: steppers (E.7), mealtime-insulin users only. */}
       {showsBolus ? (
         <FormCard icon="pulse-outline" title={t("settings.isf")}>
@@ -311,6 +375,22 @@ export default function ProfileSettings() {
               />
             </View>
           ))}
+        </FormCard>
+      ) : null}
+
+      {showsBolus ? (
+        <FormCard icon="flash-outline" title={t("settings.bolusInsulin")}>
+          <View className="px-4 py-3.5">
+            <Text className="text-mut text-xs mb-2">{t("settings.bolusInsulinHint")}</Text>
+            <InsulinProductPicker
+              title={t("settings.bolusInsulin")}
+              value={activeProfile?.bolus_insulin_id ?? null}
+              products={productsByCategory("bolus")}
+              onChange={(id) => void persist({ bolus_insulin_id: id })}
+              notSetLabel={t("settings.insulinProductNotSet")}
+              durationLabel={t("settings.insulinDurationLabel")}
+            />
+          </View>
         </FormCard>
       ) : null}
       </View>

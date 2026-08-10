@@ -542,6 +542,7 @@ function splitJournalFeed(
         site_point: e.site_point,
         dose_units: e.dose_units,
         insulin_type: e.insulin_type,
+        bolus_kind: null,
         meal_log_id: null,
         note: e.note,
         source: e.source,

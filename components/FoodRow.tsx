@@ -36,7 +36,7 @@ function giColor(gi: number): string {
  * brand + GI + GL trio no longer fits one line on a narrow phone, and a row
  * that drops its GI is worse than a row that is one line taller.
  */
-export function FoodRow({
+function FoodRowBase({
   food,
   lang,
   favorite,
@@ -134,3 +134,12 @@ export function FoodRow({
     </Pressable>
   );
 }
+
+/**
+ * Memoized like JournalItem: the catalogue list re-renders on search/filter
+ * state that no single row cares about, and every visible row used to
+ * re-render (and re-format) with it. Callback props must stay identity-stable
+ * on the caller side (see app/(tabs)/food.tsx) or the shallow compare buys
+ * nothing.
+ */
+export const FoodRow = React.memo(FoodRowBase);

@@ -25,6 +25,7 @@ import {
   migrateToV12,
   migrateToV13,
   migrateToV14,
+  migrateToV15,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
 import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "../lib/db/v14Sql";
@@ -47,6 +48,7 @@ import {
   V11_COPY_INJECTIONS,
   V11_DROP_OLD,
 } from "../lib/db/v11Sql";
+import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "../lib/db/v15Sql";
 
 let passed = 0;
 let failed = 0;
@@ -385,6 +387,55 @@ function makeV14Database(seeded: number): DatabaseSync {
       null
     );
   });
+  return db;
+}
+
+/**
+ * A database shaped like a v14 install: every user_profiles column through v8
+ * (nothing was added to it in v9-v14), and injection_logs in its v11 shape
+ * (nullable site, no bolus_kind yet).
+ */
+function makeV14FullDatabase(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE user_profiles (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      insulin_sensitivity_factor REAL NOT NULL DEFAULT 40,
+      carb_ratio_breakfast REAL NOT NULL DEFAULT 10,
+      carb_ratio_lunch REAL NOT NULL DEFAULT 12,
+      carb_ratio_dinner REAL NOT NULL DEFAULT 12,
+      target_fasting_min INTEGER NOT NULL DEFAULT 80,
+      target_fasting_max INTEGER NOT NULL DEFAULT 100,
+      target_postmeal_min INTEGER NOT NULL DEFAULT 80,
+      target_postmeal_max INTEGER NOT NULL DEFAULT 140,
+      hypo_threshold_mgdl INTEGER NOT NULL DEFAULT 70,
+      daily_carb_target_g INTEGER NOT NULL DEFAULT 200,
+      daily_carb_target_min_g INTEGER NOT NULL DEFAULT 160,
+      glucose_unit TEXT NOT NULL DEFAULT 'mgdl',
+      diabetes_type TEXT NOT NULL DEFAULT 'unknown',
+      insulin_mode TEXT NOT NULL DEFAULT 'both',
+      ratios_confirmed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE injection_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      site TEXT,
+      site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
+      dose_units REAL,
+      insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+      meal_log_id TEXT,
+      note TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]'
+    );
+  `);
+  db.exec(
+    `INSERT INTO user_profiles (id, name, daily_carb_target_g, created_at)
+     VALUES ('p1', 'Me', 200, '2026-01-01T00:00:00.000Z');`
+  );
   return db;
 }
 
@@ -1736,7 +1787,8 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 14", /const SCHEMA_VERSION = 14;/.test(indexSrc));
+    // SCHEMA_VERSION itself has since moved past v14 (see J3, "SCHEMA_VERSION is 15");
+    // this section only checks the v13 → v14 step and the fresh-install shape.
     ok(
       "the v13 → v14 step runs the real migration",
       /currentVersion < 14\)\s*\{\s*await migrateToV14\(db\);/.test(indexSrc)
@@ -1757,6 +1809,155 @@ async function main() {
       "and contains no UPDATE or DELETE of any kind",
       !/\bUPDATE\b|\bDELETE\b/i.test(sync),
       sync.slice(0, 200)
+    );
+  }
+
+  section("J. v15 insulin catalog columns");
+  {
+    const db = makeV14FullDatabase();
+    db.exec(
+      `INSERT INTO injection_logs
+         (id, profile_id, site, dose_units, insulin_type, source, logged_at, tags)
+       VALUES ('i1', 'p1', 'abdomen_left', 6, 'bolus', 'manual', '2026-07-01T08:00:00.000Z', '[]');`
+    );
+
+    await migrateToV15(adapt(db));
+
+    const profileCols = columns(db, "user_profiles");
+    for (const col of V15_PROFILE_COLUMNS) {
+      ok(`user_profiles gains ${col.name}`, profileCols.has(col.name));
+      eq(`${col.name} is nullable`, profileCols.get(col.name)?.notnull, 0);
+      eq(`${col.name} has no default`, profileCols.get(col.name)?.dflt_value, null);
+    }
+    const injectionCols = columns(db, "injection_logs");
+    ok("injection_logs gains bolus_kind", injectionCols.has("bolus_kind"));
+    eq("bolus_kind is nullable", injectionCols.get("bolus_kind")?.notnull, 0);
+    eq("bolus_kind has no default", injectionCols.get("bolus_kind")?.dflt_value, null);
+
+    const profile = db
+      .prepare("SELECT * FROM user_profiles WHERE id='p1';")
+      .get() as Record<string, unknown>;
+    eq("the existing profile survives v15", profile.name, "Me");
+    eq("its untouched columns are unchanged", profile.daily_carb_target_g, 200);
+    eq("its new columns default to NULL", profile.basal_daily_units, null);
+    eq("basal_insulin_id defaults to NULL", profile.basal_insulin_id, null);
+    eq("bolus_insulin_id defaults to NULL", profile.bolus_insulin_id, null);
+
+    const injection = db
+      .prepare("SELECT * FROM injection_logs WHERE id='i1';")
+      .get() as Record<string, unknown>;
+    eq("the existing injection survives v15", injection.dose_units, 6);
+    eq("its insulin_type is unchanged", injection.insulin_type, "bolus");
+    eq("its new bolus_kind defaults to NULL", injection.bolus_kind, null);
+
+    // No CHECK on bolus_kind: validation of the stored value is TS-side
+    // (lib/db/types.ts parseBolusKind), because ADD COLUMN cannot carry a CHECK
+    // without a table rebuild.
+    ok(
+      "bolus_kind accepts a value with no CHECK constraint",
+      !refused(
+        db,
+        "UPDATE injection_logs SET bolus_kind = 'correction' WHERE id='i1';"
+      )
+    );
+    eq(
+      "and the value is actually stored",
+      (
+        db.prepare("SELECT bolus_kind AS b FROM injection_logs WHERE id='i1';").get() as {
+          b: string | null;
+        }
+      ).b,
+      "correction"
+    );
+
+    section("J2. v15 idempotence");
+    let reran = true;
+    try {
+      await migrateToV15(adapt(db));
+      await migrateToV15(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v15 threw: ${String(e)}`);
+    }
+    ok("v15 is safe to re-run", reran);
+    for (const col of ["basal_daily_units", "basal_insulin_id", "bolus_insulin_id"]) {
+      eq(
+        `re-running does not duplicate user_profiles.${col}`,
+        (db.prepare("PRAGMA table_info(user_profiles);").all() as { name: string }[]).filter(
+          (c) => c.name === col
+        ).length,
+        1
+      );
+    }
+    eq(
+      "re-running does not duplicate injection_logs.bolus_kind",
+      (db.prepare("PRAGMA table_info(injection_logs);").all() as { name: string }[]).filter(
+        (c) => c.name === "bolus_kind"
+      ).length,
+      1
+    );
+    eq(
+      "re-running keeps the stored bolus_kind value",
+      (
+        db.prepare("SELECT bolus_kind AS b FROM injection_logs WHERE id='i1';").get() as {
+          b: string | null;
+        }
+      ).b,
+      "correction"
+    );
+    eq(
+      "still exactly one profile",
+      (db.prepare("SELECT COUNT(*) AS c FROM user_profiles;").get() as { c: number }).c,
+      1
+    );
+    eq(
+      "still exactly one injection",
+      (db.prepare("SELECT COUNT(*) AS c FROM injection_logs;").get() as { c: number }).c,
+      1
+    );
+    db.close();
+  }
+
+  section("J3. v15 statements and fresh-install equivalence");
+  {
+    eq(
+      "V15_PROFILE_COLUMNS adds exactly the three documented columns",
+      V15_PROFILE_COLUMNS.map((c) => c.name).join(","),
+      "basal_daily_units,basal_insulin_id,bolus_insulin_id"
+    );
+    ok(
+      "V15_ADD_BOLUS_KIND adds injection_logs.bolus_kind",
+      /ALTER TABLE injection_logs ADD COLUMN bolus_kind TEXT;/.test(
+        V15_ADD_BOLUS_KIND
+      )
+    );
+    // v11's rebuild DDL is deliberately left untouched: it only replays the
+    // historical v10 → v11 shape mid-chain, and migrateToV15's ALTER (which runs
+    // later in the same chain) is what actually adds bolus_kind for a device
+    // migrating from before v11. See lib/db/v11Sql.ts / lib/db/migrations.ts.
+    ok(
+      "v11's injection_logs rebuild DDL does not itself carry bolus_kind",
+      !V11_CREATE_INJECTIONS.includes("bolus_kind")
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 15", /const SCHEMA_VERSION = 15;/.test(indexSrc));
+    ok(
+      "the v14 → v15 step runs the real migration",
+      /currentVersion < 15\)\s*\{\s*await migrateToV15\(db\);/.test(indexSrc)
+    );
+    ok(
+      "a fresh install declares the three profile columns itself",
+      /basal_daily_units REAL,\s*\n\s*basal_insulin_id TEXT,\s*\n\s*bolus_insulin_id TEXT,/.test(
+        indexSrc
+      )
+    );
+    ok(
+      "a fresh install declares injection_logs.bolus_kind itself",
+      /bolus_kind TEXT,/.test(indexSrc)
     );
   }
 

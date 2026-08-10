@@ -1,6 +1,12 @@
 import { getDb } from "./index";
 import { uuid } from "../uuid";
-import type { Injection, InjectionSite, InsulinType, SitePoint } from "./types";
+import type {
+  BolusKind,
+  Injection,
+  InjectionSite,
+  InsulinType,
+  SitePoint,
+} from "./types";
 import type { DateRange } from "../insights";
 import {
   INJECTION_SITES,
@@ -8,6 +14,7 @@ import {
   asSitePoint,
   canonicalSite,
   isRetiredSite,
+  parseBolusKind,
   parseTags,
   serializeTags,
 } from "./types";
@@ -17,15 +24,66 @@ export { pointKey };
 
 // Raw row carries `tags` as the stored JSON string and `site_point` as a plain
 // integer; the mapper narrows both.
-type InjectionRow = Omit<Injection, "tags" | "site_point"> & {
+type InjectionRow = Omit<Injection, "tags" | "site_point" | "bolus_kind"> & {
   tags: string | null;
   site_point: number | null;
+  bolus_kind: string | null;
 };
 const mapInjection = (r: InjectionRow): Injection => ({
   ...r,
   site_point: asSitePoint(r.site_point),
+  bolus_kind: parseBolusKind(r.bolus_kind),
   tags: parseTags(r.tags),
 });
+
+// ── Pure bolus_kind patch decision ──────────────────────────────────────────
+// TEST-EXTRACT-START (pinned verbatim by scripts/injectionsBolusKind.test.ts:
+// this module pulls in expo-sqlite at import time, which the plain-node test
+// harness cannot load, so the test reads this exact block out of the shipped
+// source instead of importing it - see that file's header for the mechanism)
+
+/** bolus_kind only ever describes a bolus row; a basal (or type-less) row never
+ *  carries one, whatever the caller passed in. */
+function normalizedBolusKind(
+  insulinType: InsulinType | null | undefined,
+  bolusKind: BolusKind | null | undefined
+): BolusKind | null {
+  return insulinType === "bolus" ? bolusKind ?? null : null;
+}
+
+/** Whether resolving the patch needs the row's CURRENT insulin_type: only when
+ *  bolus_kind is set explicitly without insulin_type in the same patch - the
+ *  one case where "is this row still a bolus row" cannot be read off the
+ *  patch alone. */
+function needsCurrentInsulinType(
+  patch: Pick<InjectionUpdate, "insulin_type" | "bolus_kind">
+): boolean {
+  return patch.bolus_kind !== undefined && patch.insulin_type === undefined;
+}
+
+/**
+ * Whether an UPDATE should write injection_logs.bolus_kind, and what value.
+ *
+ * Only two situations touch the column: the caller sets bolus_kind explicitly,
+ * or insulin_type moves OFF 'bolus' (which forces the kind back to null). Any
+ * OTHER patch - including one that sets insulin_type to 'bolus' without naming
+ * a kind, e.g. the calculator's `{dose_units, insulin_type: 'bolus', tags,
+ * logged_at}` correction - must leave the column untouched, or a kind the user
+ * picked by hand (Injection tab -> "Yemek oncesi"/"Duzeltme") silently
+ * disappears the next time the calculator re-saves the same meal's dose.
+ */
+function resolveBolusKindPatch(
+  patch: Pick<InjectionUpdate, "insulin_type" | "bolus_kind">,
+  currentInsulinType: InsulinType | null
+): { touches: false } | { touches: true; value: BolusKind | null } {
+  const movesOffBolus =
+    patch.insulin_type !== undefined && patch.insulin_type !== "bolus";
+  if (patch.bolus_kind === undefined && !movesOffBolus) return { touches: false };
+  const effectiveType =
+    patch.insulin_type !== undefined ? patch.insulin_type : currentInsulinType;
+  return { touches: true, value: normalizedBolusKind(effectiveType, patch.bolus_kind) };
+}
+// TEST-EXTRACT-END
 
 /**
  * Injection-site logging.
@@ -45,6 +103,8 @@ export interface NewInjectionInput {
   site_point?: SitePoint | null;
   dose_units?: number | null;
   insulin_type?: InsulinType | null;
+  /** Meal vs correction (schema v15). Forced to null unless insulin_type is 'bolus'. */
+  bolus_kind?: BolusKind | null;
   meal_log_id?: string | null;
   note?: string | null;
   /** 'manual' (default) or 'calculator' for the auto-written mealtime bolus. */
@@ -63,9 +123,9 @@ export async function logInjection(
 
   await db.runAsync(
     `INSERT INTO injection_logs
-       (id, profile_id, site, site_point, dose_units, insulin_type, meal_log_id,
-        note, source, logged_at, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+       (id, profile_id, site, site_point, dose_units, insulin_type, bolus_kind,
+        meal_log_id, note, source, logged_at, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.profile_id,
@@ -73,6 +133,7 @@ export async function logInjection(
       input.site_point ?? null,
       input.dose_units ?? null,
       input.insulin_type ?? null,
+      normalizedBolusKind(input.insulin_type, input.bolus_kind),
       input.meal_log_id ?? null,
       input.note ?? null,
       input.source ?? "manual",
@@ -119,6 +180,7 @@ export type InjectionUpdate = Partial<
     | "site_point"
     | "dose_units"
     | "insulin_type"
+    | "bolus_kind"
     | "note"
     | "logged_at"
     | "tags"
@@ -132,10 +194,24 @@ export async function updateInjection(
 ): Promise<Injection | null> {
   const db = await getDb();
 
+  // bolus_kind is only ever valid on a bolus row; resolveBolusKindPatch decides
+  // whether this patch touches it at all, and needs the row's CURRENT type only
+  // in the one case where the patch alone cannot say (see its doc comment).
+  let currentInsulinType: InsulinType | null = null;
+  if (needsCurrentInsulinType(patch)) {
+    const current = await db.getFirstAsync<{ insulin_type: InsulinType | null }>(
+      "SELECT insulin_type FROM injection_logs WHERE id = ?;",
+      [id]
+    );
+    currentInsulinType = current?.insulin_type ?? null;
+  }
+  const bolusKindPatch = resolveBolusKindPatch(patch, currentInsulinType);
+
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
+    if (key === "bolus_kind") continue; // handled below, via bolusKindPatch
     if (key === "tags") {
       fields.push("tags = ?");
       values.push(serializeTags(value as string[]));
@@ -143,6 +219,10 @@ export async function updateInjection(
       fields.push(`${key} = ?`);
       values.push(value as string | number | null);
     }
+  }
+  if (bolusKindPatch.touches) {
+    fields.push("bolus_kind = ?");
+    values.push(bolusKindPatch.value);
   }
 
   if (fields.length > 0) {

@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View, Platform } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { GLUCOSE_RICH, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, HIT_TARGET, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -20,6 +20,7 @@ import {
 } from "../lib/db/categories";
 import { categoryTileIcon } from "../components/FoodPlate";
 import { canAddCustomFood } from "../lib/guardrails";
+import { logCrash } from "../lib/analytics";
 import { Field } from "../components/ui";
 import { Stepper } from "../components/Stepper";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
@@ -51,8 +52,16 @@ function AddFoodScreen() {
   // scanned food used to land on the unclassified shelf and so every one of
   // them showed the same picture.
   const [category, setCategory] = useState<FoodCategory>(DEFAULT_FOOD_CATEGORY);
-  const [allowed, setAllowed] = useState(true);
+  // null = not checked yet. Starting at true (or false) draws a guess before
+  // the DB has answered; a user over the free limit would see the form with no
+  // banner for a frame, then have it shove the fields down once it appears.
+  const [allowed, setAllowed] = useState<boolean | null>(null);
   const [loadedBarcode, setLoadedBarcode] = useState<string | null>(null);
+  // Mirrors `allowed === null` on the add path: the edit path's fields come
+  // from an async getFood, so the form must not commit to its final shape
+  // (risking a prefill landing on top of what the user already typed) until
+  // that read has settled - success, "not found", or error alike.
+  const [foodLoaded, setFoodLoaded] = useState(false);
 
   // Return-key focus chain across the text fields (E.8): name -> brand -> gi ->
   // notes. Carbs/portion are steppers and sit outside the keyboard chain.
@@ -61,36 +70,73 @@ function AddFoodScreen() {
   const notesRef = useRef<TextInput>(null);
 
   // Editing an existing custom food. The free-tier cap gates ADDING only;
-  // correcting a food the user already owns is always allowed.
+  // correcting a food the user already owns is always allowed, so edit mode
+  // never needs the limit check and is never held back by it.
   const isEdit = typeof foodId === "string" && foodId.length > 0;
 
   useEffect(() => {
-    (async () => setAllowed(await canAddCustomFood(isProUser)))();
-  }, [isProUser]);
+    if (isEdit) return;
+    let alive = true;
+    (async () => {
+      try {
+        const ok = await canAddCustomFood(isProUser);
+        if (alive) setAllowed(ok);
+      } catch (err) {
+        logCrash(err, { screen: "add-food", load: "limit" });
+        // Fail closed: worst case a rare DB error sends save() to the
+        // paywall instead of through, which is recoverable - the alternative
+        // (stuck on null forever) never resolves this screen at all.
+        if (alive) setAllowed(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isProUser, isEdit]);
 
   // Edit mode: prefill from the stored food. Only custom rows are editable;
   // seeded catalog and cached barcode rows never reach here (guarded again in
   // updateFood). Custom foods carry the same name in every language column,
   // so name_tr is the canonical one.
   useEffect(() => {
+    if (!isEdit || !foodId) {
+      setFoodLoaded(true);
+      return;
+    }
+    let alive = true;
     (async () => {
-      if (!isEdit || !foodId) return;
-      const f = await getFood(foodId);
-      if (!f || f.is_custom !== 1) return;
-      setName(f.name_tr);
-      setBrand(f.brand_name ?? "");
-      setCarb(f.carb_100g);
-      setGi(f.glycemic_index > 0 ? String(f.glycemic_index) : "");
-      setPortion(f.portion_size_g);
-      setNotes(f.custom_notes ?? "");
-      setLoadedBarcode(f.barcode);
-      // A row written before this field existed (or by a migration's backfill)
-      // can hold anything at all, so it is narrowed rather than trusted.
-      setCategory(isFoodCategory(f.category) ? f.category : DEFAULT_FOOD_CATEGORY);
+      try {
+        const f = await getFood(foodId);
+        if (!alive || !f || f.is_custom !== 1) return;
+        setName(f.name_tr);
+        setBrand(f.brand_name ?? "");
+        setCarb(f.carb_100g);
+        setGi(f.glycemic_index > 0 ? String(f.glycemic_index) : "");
+        setPortion(f.portion_size_g);
+        setNotes(f.custom_notes ?? "");
+        setLoadedBarcode(f.barcode);
+        // A row written before this field existed (or by a migration's backfill)
+        // can hold anything at all, so it is narrowed rather than trusted.
+        setCategory(isFoodCategory(f.category) ? f.category : DEFAULT_FOOD_CATEGORY);
+      } catch (err) {
+        logCrash(err, { screen: "add-food", load: "edit" });
+      } finally {
+        // Always clears, loaded, missing, or errored - a failed read must not
+        // leave the screen stuck on its loading spinner forever.
+        if (alive) setFoodLoaded(true);
+      }
     })();
+    return () => {
+      alive = false;
+    };
   }, [isEdit, foodId]);
 
   const valid = name.trim().length > 0;
+  // Both paths hold the form off screen until their async answer is in: the
+  // add path waits on the free-tier count (a false banner is worse than a
+  // brief spinner), the edit path waits on foodLoaded so the prefill from
+  // getFood always lands before the form - and any typing in it - exists.
+  const checkingLimit = isEdit ? !foodLoaded : allowed === null;
 
   async function save() {
     if (!valid) return;
@@ -149,8 +195,13 @@ function AddFoodScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
           showsVerticalScrollIndicator={false}
         >
+          {checkingLimit ? (
+            <View style={[contentColumn, { paddingTop: 60, alignItems: "center" }]}>
+              <ActivityIndicator color={THEME.accent} />
+            </View>
+          ) : (
           <View style={contentColumn}>
-            {!allowed && !isEdit ? (
+            {allowed === false && !isEdit ? (
               <Pressable
                 onPress={() => router.replace({ pathname: "/paywall", params: { reason: "foods" } })}
                 className="rounded-2xl p-4 mb-4 flex-row items-center active:opacity-80"
@@ -219,7 +270,7 @@ function AddFoodScreen() {
                       accessibilityLabel={t(`category.${c}`)}
                       className="flex-row items-center rounded-full px-2.5 active:opacity-80"
                       style={{
-                        minHeight: 40,
+                        minHeight: HIT_TARGET,
                         borderWidth: 1,
                         borderColor: active ? THEME.accent : THEME.border,
                         backgroundColor: active
@@ -308,6 +359,7 @@ function AddFoodScreen() {
               onPress={save}
             />
           </View>
+          )}
         </ScrollView>
       </View>
       <FeedbackHost />

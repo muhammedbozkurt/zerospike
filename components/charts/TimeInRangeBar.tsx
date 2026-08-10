@@ -2,6 +2,7 @@ import React from "react";
 import { Text, View } from "react-native";
 
 import { CHART } from "./theme";
+import { pct } from "../../lib/format";
 import { THEME } from "../../lib/theme/tokens";
 
 /** A segment narrower than this cannot hold its own percentage legibly. */
@@ -55,7 +56,7 @@ export function TimeInRangeBar({
                   className="text-[11px] font-bold"
                   style={{ color: THEME.bg.g1 }}
                 >
-                  {Math.round(s.pct)}%
+                  {pct(s.pct)}
                 </Text>
               ) : null}
             </View>
@@ -71,7 +72,7 @@ export function TimeInRangeBar({
               style={{ backgroundColor: s.color }}
             />
             <Text className="text-mut text-xs">
-              {s.label} {Math.round(s.pct)}%
+              {s.label} {pct(s.pct)}
             </Text>
           </View>
         ))}

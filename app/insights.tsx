@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
@@ -54,6 +53,7 @@ import { TrendChart } from "../components/charts/TrendChart";
 import { CHART, CHART_HEIGHT } from "../components/charts/theme";
 import { StatCard } from "../components/StatCard";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { Skeleton } from "../components/Skeleton";
 import { useFeedback } from "../components/Feedback";
 import { logEvent } from "../lib/analytics";
 import { num, pct, pctParts } from "../lib/format";
@@ -68,12 +68,16 @@ import {
   tirSegments,
   withAlpha,
 } from "../components/rich";
-import { GLUCOSE_RICH, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
 
 const GREEN = GLUCOSE_RICH.target;
 const AMBER = GLUCOSE_RICH.high;
 const BRAND = THEME.accent;
+
+/** A hung native HealthKit call must not leave the Health card's own
+ *  skeleton spinning forever - it settles to "no data" instead. */
+const HEALTH_TIMEOUT_MS = 6000;
 
 /** Two points make a line; one is just a dot. */
 const TREND_MIN_DAYS = 2;
@@ -123,6 +127,194 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 const SLICES: DayKind[] = ["night", "morning", "afternoon", "evening"];
+
+/** A StatCard-shaped placeholder: same container (rounded-2xl p-4, glass fill
+ *  + hairline border) and label row as the real StatCard, so a card never
+ *  resizes when the real value replaces the skeleton bar. `footnote` reserves
+ *  the second line for the cards that carry one (readings, and avg/TIR once
+ *  premium adds their trend line). */
+function StatCardSkeleton({ label, footnote }: { label: string; footnote?: boolean }) {
+  return (
+    <View
+      className="rounded-2xl p-4"
+      style={{ flex: 1, backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }}
+    >
+      <View className="flex-row items-center mb-1">
+        <Text
+          className="text-[11px] font-semibold tracking-wider text-mut"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+        >
+          {upper(label)}
+        </Text>
+      </View>
+      <View className="flex-row items-end">
+        <Skeleton width={56} height={28} radius={6} />
+      </View>
+      {footnote ? (
+        <View style={{ marginTop: 4 }}>
+          <Skeleton width={64} height={11} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Loading placeholder for the whole report. It reuses the real card shells
+ * (GlassCard / ChartCard) and every STATIC label (section titles, StatCard
+ * captions, axis ticks) exactly as the real cards render them - only the
+ * data-derived parts (values, curves, the donut) are skeletonised - so the
+ * swap from this to the real report lands on the same card heights instead
+ * of resizing the page under the user. `premium` and `showsInjections` are
+ * both known before the fetch resolves (profile + entitlement, not data), so
+ * the sections that will actually appear are the ones skeletonised here.
+ */
+function InsightsSkeleton({
+  isWide,
+  premium,
+  showsInjections,
+}: {
+  isWide: boolean;
+  premium: boolean;
+  showsInjections: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <CardGrid isWide={isWide}>
+      {/* Time in range */}
+      <GlassCard key="tir" glow={GREEN} style={{ marginBottom: 10 }}>
+        <View className="flex-row items-center justify-between mb-1">
+          <Text
+            style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
+          >
+            {upper(t("insights.timeInRange"))}
+          </Text>
+          <Skeleton width={48} height={20} radius={RADIUS.full} />
+        </View>
+        <View className="flex-row items-center">
+          <Skeleton width={104} height={104} radius={52} />
+          <View style={{ flex: 1, marginLeft: 16, gap: 6 }}>
+            {(
+              [GLUCOSE_RICH.low, GLUCOSE_RICH.target, GLUCOSE_RICH.high, GLUCOSE_RICH.veryHigh] as const
+            ).map((color, i) => (
+              <View key={i} className="flex-row items-center">
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Skeleton height={12} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+        <View style={{ marginTop: 10 }}>
+          <Skeleton width="60%" height={11} />
+        </View>
+      </GlassCard>
+
+      {/* AGP gradient curve */}
+      <GlassCard key="agp" style={{ marginBottom: 10 }}>
+        <Text
+          style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", marginBottom: 8 }}
+        >
+          {upper(t("insights.agpTitle"))}
+        </Text>
+        <Skeleton height={84} radius={RADIUS.md} />
+        <View className="flex-row justify-between mt-1">
+          {["00", "06", "12", "18", "24"].map((h) => (
+            <Text key={h} style={{ color: THEME.muted, fontSize: 10 }}>
+              {h}
+            </Text>
+          ))}
+        </View>
+        <View style={{ marginTop: 6 }}>
+          <Skeleton width="80%" height={11} />
+        </View>
+      </GlassCard>
+
+      {/* StatCard strip */}
+      <React.Fragment key="stats">
+        <View className="flex-row" style={{ gap: 8 }}>
+          <StatCardSkeleton label={t("insights.gmi")} />
+          <StatCardSkeleton label={t("insights.avgGlucose")} footnote={premium} />
+        </View>
+        <View className="flex-row mt-2" style={{ gap: 8 }}>
+          <StatCardSkeleton label={t("insights.timeInRange")} footnote={premium} />
+          <StatCardSkeleton label={t("insights.readings")} footnote />
+        </View>
+        <View style={{ marginTop: 8, paddingHorizontal: 6 }}>
+          <Skeleton width="90%" height={11} />
+        </View>
+      </React.Fragment>
+
+      {premium ? (
+        <ChartCard
+          key="trend"
+          title={t("insights.chartTrendTitle")}
+          subtitle={t("insights.chartTrendSub")}
+          height={CHART_HEIGHT.trend}
+        >
+          {(w) => <Skeleton width={w} height={CHART_HEIGHT.trend} radius={RADIUS.md} />}
+        </ChartCard>
+      ) : null}
+
+      {premium ? (
+        <GlassCard key="pctile" style={{ marginTop: 12 }}>
+          <Text style={{ color: THEME.ink, fontWeight: "800" }}>
+            {t("insights.percentileTitle")}
+          </Text>
+          <Text style={{ color: THEME.muted, fontSize: 11, marginBottom: 12 }}>
+            {t("insights.percentileSub")}
+          </Text>
+          <View className="flex-row justify-between">
+            {(["p05", "p25", "median", "p75", "p95"] as const).map((k) => (
+              <View key={k} className="items-center flex-1">
+                <Skeleton width={36} height={15} />
+                <View style={{ marginTop: 2 }}>
+                  <Text style={{ color: THEME.muted, fontSize: 10 }}>{t(`insights.${k}`)}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </GlassCard>
+      ) : null}
+
+      {premium ? (
+        <React.Fragment key="vitals">
+          <View className="flex-row mt-3" style={{ gap: 8 }}>
+            <StatCardSkeleton label={t("insights.fasting")} />
+            <StatCardSkeleton label={t("insights.postMeal")} />
+          </View>
+          <View className="flex-row mt-2" style={{ gap: 8 }}>
+            <StatCardSkeleton label={t("insights.variability")} />
+            <StatCardSkeleton label={t("insights.cv")} />
+            <StatCardSkeleton label={t("insights.lows")} />
+          </View>
+          <View style={{ marginTop: 8, paddingHorizontal: 6 }}>
+            <Skeleton width="95%" height={11} />
+          </View>
+        </React.Fragment>
+      ) : null}
+
+      {premium ? (
+        <ChartCard key="hourly" title={t("insights.hourlyTitle")} height={CHART_HEIGHT.hourly}>
+          {(w) => <Skeleton width={w} height={CHART_HEIGHT.hourly} radius={RADIUS.md} />}
+        </ChartCard>
+      ) : null}
+
+      {premium && showsInjections ? (
+        <React.Fragment key="injections">
+          <SectionTitle>{t("injection.title")}</SectionTitle>
+          <View className="flex-row" style={{ gap: 8 }}>
+            <StatCardSkeleton label={t("insights.injectionsCount")} />
+            <StatCardSkeleton label={t("insights.avgDose")} />
+          </View>
+        </React.Fragment>
+      ) : null}
+    </CardGrid>
+  );
+}
 
 /**
  * Insights, rebuilt to the mockup's composition: the window as a chip in the
@@ -300,23 +492,65 @@ export default function InsightsScreen() {
 
   // Pro "from Health" summary: activity minutes + insulin delivery (read-only).
   const [health, setHealth] = useState<HealthSummary | null>(null);
+  // Whether the Health card applies AT ALL is known synchronously on the
+  // first render (profile + platform, not a query): Android, free, and
+  // non-Pro users never fetch, so that card reserves no space from the very
+  // first frame. When it IS applicable, this only tracks the very first
+  // read - a later window switch updates the card in place, with no local
+  // skeleton flash.
+  const [initialHealthPending] = useState(
+    () => isProUser && Platform.OS === "ios"
+  );
+  const [healthSettled, setHealthSettled] = useState(false);
   useEffect(() => {
     // The Health summary is windowDays-based; a custom range would mislabel it,
     // so it is simply hidden while a custom range is active.
     if (customRange) {
       setHealth(null);
+      setHealthSettled(true);
       return;
     }
     // iOS-only (Health Connect removed for Play policy).
-    if (!isProUser || Platform.OS !== "ios") return;
+    if (!isProUser || Platform.OS !== "ios") {
+      setHealth(null);
+      setHealthSettled(true);
+      return;
+    }
     let alive = true;
+    // A native HealthKit call that never resolves (a stuck query, see the
+    // audit that flagged this) used to leave the whole report on its
+    // skeleton with no way out. It no longer gates the report at all (see
+    // pageLoading below), but the Health card's own local skeleton still
+    // needs a floor - it settles to "no data", not an error message.
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!alive || settled) return;
+      settled = true;
+      setHealth(null);
+      setHealthSettled(true);
+    }, HEALTH_TIMEOUT_MS);
     readHealthSummary(windowDays)
-      .then((h) => alive && setHealth(h))
-      .catch(() => {});
+      .then((h) => {
+        if (alive && !settled) setHealth(h);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!alive || settled) return;
+        settled = true;
+        clearTimeout(timer);
+        setHealthSettled(true);
+      });
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
   }, [isProUser, windowDays, customRange]);
+
+  // The SQLite data (readings/meals/injections) is the report; Health is
+  // read-only supporting detail from a separate, slower native query. Gating
+  // the whole page on it used to mean a stuck HealthKit call froze the report
+  // forever even though every figure on it comes from data already in hand.
+  const pageLoading = loading;
 
   // Weekly digest (Pro): rule-based, descriptive sentences comparing this week
   // to last. Viewing it is one of the review-prompt triggers.
@@ -508,10 +742,17 @@ export default function InsightsScreen() {
         }
       />
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={BRAND} />
-        </View>
+      {pageLoading ? (
+        <ScrollView
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: insets.bottom + 24,
+            ...(bodyColumn ?? {}),
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <InsightsSkeleton isWide={isWide} premium={premium} showsInjections={showsInjections} />
+        </ScrollView>
       ) : (
         <ScrollView
           contentContainerStyle={{
@@ -1137,7 +1378,24 @@ export default function InsightsScreen() {
                   ) : null}
 
                   {/* ── From Apple Health (Pro, read-only) ────────────────── */}
-                  {premium &&
+                  {/* While the first Health read is still in flight, this
+                      reserves the SAME shape (title + one StatCard row + a
+                      footnote line) the real card below renders, so the
+                      section settling in - or collapsing to nothing, if
+                      there is no data - never shoves the disclaimer/upsell
+                      card under it. */}
+                  {initialHealthPending && !healthSettled ? (
+                    <React.Fragment key="health-pending">
+                    <SectionTitle>{t("insights.healthTitle")}</SectionTitle>
+                    <View className="flex-row" style={{ gap: 8 }}>
+                      <StatCardSkeleton label={t("insights.activeMinutes")} />
+                      <StatCardSkeleton label={t("insights.healthBasal")} />
+                    </View>
+                    <View style={{ marginTop: 8, paddingHorizontal: 6 }}>
+                      <Skeleton width="90%" height={11} />
+                    </View>
+                    </React.Fragment>
+                  ) : premium &&
                   health &&
                   (health.activeMinutes != null || health.insulin != null) ? (
                     <React.Fragment key="health">

@@ -8,6 +8,7 @@ import { AppBackground } from "./rich";
 import { withAlpha } from "./rich/GlassCard";
 import { ScreenHeader } from "./ScreenHeader";
 import { GLUCOSE_RICH, THEME } from "../lib/theme/tokens";
+import { keyboardAwareScrollProps } from "../lib/keyboard";
 
 /**
  * The settings list row: a tinted icon plate, a label, and an optional value /
@@ -38,6 +39,11 @@ export function Row({
       className={`flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 ${
         onPress ? "active:opacity-80" : ""
       }`}
+      // Floor, not a fixed height: a short single-line row keeps this exact
+      // height (icon plate 36 + the 12/12 vertical padding), so every plain
+      // row in a list still lines up - but a long DE/FR label is allowed to
+      // wrap to a second line under it instead of being clipped.
+      style={{ minHeight: 60 }}
     >
       <View
         className="w-9 h-9 rounded-xl items-center justify-center"
@@ -48,10 +54,15 @@ export function Row({
       <Text
         className="flex-1 ml-3 text-[15px] font-semibold"
         style={{ color: danger ? GLUCOSE_RICH.low : THEME.ink }}
+        numberOfLines={2}
       >
         {label}
       </Text>
-      {value ? <Text className="text-mut text-[13px] mr-1 font-medium">{value}</Text> : null}
+      {value ? (
+        <Text className="text-mut text-[13px] mr-1 font-medium" numberOfLines={2}>
+          {value}
+        </Text>
+      ) : null}
       {right ?? (onPress ? <Ionicons name="chevron-forward" size={18} color={THEME.muted} /> : null)}
     </Pressable>
   );
@@ -100,8 +111,8 @@ export function SettingsScaffold({
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         <ScreenHeader title={title} onBack={() => router.back()} />
         <ScrollView
+          {...keyboardAwareScrollProps}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {children}

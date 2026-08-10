@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View } from "react-native";
 import type { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
@@ -43,7 +43,11 @@ export function GradientAreaChart({
   style,
 }: GradientAreaChartProps) {
   const [measured, setMeasured] = useState(0);
-  const w = width ?? (measured || 300);
+  // Undefined until measured (no 300pt guess): the container below always
+  // reserves the final `height`, so nothing shifts vertically while this stays
+  // 0 - only the SVG itself waits, so it never draws at a width it will
+  // immediately have to redraw at.
+  const w = width ?? measured;
   const onLayout =
     width == null
       ? (e: LayoutChangeEvent) => {
@@ -51,11 +55,14 @@ export function GradientAreaChart({
           if (lw && lw !== measured) setMeasured(lw);
         }
       : undefined;
-  const { line, area } = seriesPaths(data, w, height);
+  const { line, area } = useMemo(
+    () => (w > 0 ? seriesPaths(data, w, height) : { line: "", area: "" }),
+    [data, w, height]
+  );
   const gid = `area-${w}-${height}`;
 
   let bandRect: { y: number; h: number } | null = null;
-  if (targetBand && data.length) {
+  if (w > 0 && targetBand && data.length) {
     const min = Math.min(...data);
     const max = Math.max(...data);
     const span = max - min || 1;
@@ -71,19 +78,21 @@ export function GradientAreaChart({
       onLayout={onLayout}
       style={[{ width: width ?? "100%", height }, lineGlow ? glow(color, 10, 0.35) : undefined, style]}
     >
-      <Svg width={w} height={height}>
-        <Defs>
-          <LinearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={color} stopOpacity={0.38} />
-            <Stop offset="1" stopColor={color} stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-        {bandRect ? (
-          <Rect x="0" y={bandRect.y} width={w} height={bandRect.h} fill={GLUCOSE_RICH.target} opacity={0.12} />
-        ) : null}
-        {area ? <Path d={area} fill={`url(#${gid})`} /> : null}
-        {line ? <Path d={line} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" /> : null}
-      </Svg>
+      {w > 0 ? (
+        <Svg width={w} height={height}>
+          <Defs>
+            <LinearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={color} stopOpacity={0.38} />
+              <Stop offset="1" stopColor={color} stopOpacity={0} />
+            </LinearGradient>
+          </Defs>
+          {bandRect ? (
+            <Rect x="0" y={bandRect.y} width={w} height={bandRect.h} fill={GLUCOSE_RICH.target} opacity={0.12} />
+          ) : null}
+          {area ? <Path d={area} fill={`url(#${gid})`} /> : null}
+          {line ? <Path d={line} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" /> : null}
+        </Svg>
+      ) : null}
     </View>
   );
 }

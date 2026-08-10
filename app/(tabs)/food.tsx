@@ -41,13 +41,14 @@ import {
   schedulePostMealReminder,
   noteJournalActivity,
 } from "../../lib/services/notifications";
-import { logEvent } from "../../lib/analytics";
+import { logCrash, logEvent } from "../../lib/analytics";
 import type { Food, MealSlot } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
 import { CATEGORIES, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
 import { EMOJI_RENDERS, FoodPlate } from "../../components/FoodPlate";
 import { EmptyState } from "../../components/EmptyState";
+import { Skeleton } from "../../components/Skeleton";
 import { useFeedback, type SheetAction } from "../../components/Feedback";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import {
@@ -65,6 +66,23 @@ import { useLayout } from "../../lib/useLayout";
 import { upper } from "../../lib/upper";
 
 type Selection = Category | "favorites" | "custom";
+
+/**
+ * The landing grid is DATA, not a header. Every mode renders the same FlatList
+ * with the same small ListHeaderComponent (title + hero + search field); only
+ * the rows differ. Keeping one container type is what stops the search field
+ * from being torn down and rebuilt on the first typed character - the whole
+ * subtree used to be swapped between a ScrollView and a FlatList there, which
+ * cost focus and the keyboard on every keystroke that changed the mode.
+ *
+ * Putting the bands in `data` also keeps the header small and near-fixed, so a
+ * focus reload can no longer resize it under a live VirtualizedList (the
+ * corrupted-scroll bug the ScrollView branch was meant to solve).
+ */
+type GridBand = "today" | "templates" | "recent" | "categories";
+const GRID_BANDS: readonly GridBand[] = ["today", "templates", "recent", "categories"];
+
+type ListRow = GridBand | Food;
 
 /** Keystroke quiet period before the catalog is searched. */
 const SEARCH_DEBOUNCE_MS = 250;
@@ -91,6 +109,23 @@ const TEMPLATE_PREVIEW = 4;
 /** Half-gutter inside each category cell (cells carry their own padding, so the
  *  grid stays exact at any column count and the last row never spreads). */
 const GRID_GUTTER = 5;
+
+/** Content comparison (not object identity) for the small lists a focus reload
+ *  re-fetches. Returning the previous array from a state setter is a documented
+ *  React bail-out, so a focus that found nothing new never re-renders the grid
+ *  header mid-scroll. Every list here is small (favorites/recent/today/templates),
+ *  so JSON comparison is cheap. */
+function sameList<T>(a: T[], b: T[]): boolean {
+  return a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Stable across every render (module scope, no closed-over state), so the
+ *  FlatList never sees a new keyExtractor identity - part of what FoodRow's
+ *  React.memo needs to actually pay off. Band keys carry a prefix so they can
+ *  never collide with a food id. */
+function rowKeyExtractor(row: ListRow): string {
+  return typeof row === "string" ? `band:${row}` : row.id;
+}
 
 /** Section caption, one voice for every band on this screen. */
 function SectionHeading({
@@ -173,44 +208,88 @@ export default function FoodScreen() {
   const [feedReadings, setFeedReadings] = useState<GlucoseEntry[]>([]);
   const [showAllToday, setShowAllToday] = useState(false);
   const [showAllTemplates, setShowAllTemplates] = useState(false);
+  // "Never fetched yet" vs. "fetched and genuinely empty" - the same distinction
+  // categoryLoading/searchPending already make for the drilled list/search. Set
+  // once on the first successful load and never cleared again, so a background
+  // refresh (focus, dataVersion bump) can't flash the empty-state placeholder
+  // back over rows that are simply being replaced with an identical-looking list.
+  const [todayLoaded, setTodayLoaded] = useState(false);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [recentLoaded, setRecentLoaded] = useState(false);
 
+  // Every loader below sets its "loaded" flag in a `finally`. A rejected read
+  // (locked or half-migrated DB) used to leave the flag false forever, so the
+  // section stayed in its skeleton with no message and no way out; it now falls
+  // back to the ordinary empty state and the failure is reported once.
   const loadCatalogSummary = useCallback(async () => {
-    const [counts, customs] = await Promise.all([
-      countFoodsByCategory(),
-      listCustomFoods(lang),
-    ]);
-    setCatCounts(counts);
-    setCustomFoods(customs);
+    try {
+      const [counts, customs] = await Promise.all([
+        countFoodsByCategory(),
+        listCustomFoods(lang),
+      ]);
+      setCatCounts(counts);
+      setCustomFoods(customs);
+    } catch (err) {
+      logCrash(err, { screen: "food", load: "catalog" });
+    }
   }, [lang]);
 
   const loadFavorites = useCallback(async () => {
     if (!activeProfile) return;
-    const list = await listFavoriteFoods(activeProfile.id);
-    setFavs(list);
-    setFavIds(new Set(list.map((f) => f.id)));
+    try {
+      const list = await listFavoriteFoods(activeProfile.id);
+      setFavs((prev) => (sameList(prev, list) ? prev : list));
+      setFavIds((prev) => {
+        const ids = new Set(list.map((f) => f.id));
+        if (prev.size === ids.size && [...ids].every((id) => prev.has(id))) return prev;
+        return ids;
+      });
+    } catch (err) {
+      logCrash(err, { screen: "food", load: "favorites" });
+    }
   }, [activeProfile]);
   const loadRecent = useCallback(async () => {
     if (!activeProfile) return;
-    setRecent(await getRecentMeals(activeProfile.id, 8));
+    try {
+      const list = await getRecentMeals(activeProfile.id, 8);
+      setRecent((prev) => (sameList(prev, list) ? prev : list));
+    } catch (err) {
+      logCrash(err, { screen: "food", load: "recent" });
+    } finally {
+      setRecentLoaded(true);
+    }
   }, [activeProfile]);
   const loadTemplates = useCallback(async () => {
     if (!activeProfile) return;
-    setTemplates(await listTemplatesWithItems(activeProfile.id, lang));
+    try {
+      const list = await listTemplatesWithItems(activeProfile.id, lang);
+      setTemplates((prev) => (sameList(prev, list) ? prev : list));
+    } catch (err) {
+      logCrash(err, { screen: "food", load: "templates" });
+    } finally {
+      setTemplatesLoaded(true);
+    }
   }, [activeProfile, lang]);
 
   // Today's meals drive the hero: this tab is a meal journal first and a food
   // catalogue second, which is the order the mockup puts them in.
   const loadToday = useCallback(async () => {
     if (!activeProfile) return;
-    const feed = await getJournal(activeProfile.id, lang, 120);
-    const todayKey = formatDateKey(new Date().toISOString());
-    setTodayMeals(
-      feed.filter(
+    try {
+      const feed = await getJournal(activeProfile.id, lang, 120);
+      const todayKey = formatDateKey(new Date().toISOString());
+      const meals = feed.filter(
         (e): e is MealEntry =>
           e.kind === "meal" && formatDateKey(e.logged_at) === todayKey
-      )
-    );
-    setFeedReadings(feed.filter((e): e is GlucoseEntry => e.kind === "glucose"));
+      );
+      const readings = feed.filter((e): e is GlucoseEntry => e.kind === "glucose");
+      setTodayMeals((prev) => (sameList(prev, meals) ? prev : meals));
+      setFeedReadings((prev) => (sameList(prev, readings) ? prev : readings));
+    } catch (err) {
+      logCrash(err, { screen: "food", load: "today" });
+    } finally {
+      setTodayLoaded(true);
+    }
   }, [activeProfile, lang]);
 
   // Today's meals with a computable response (lib/mealResponse.ts) get a small
@@ -259,10 +338,17 @@ export default function FoodScreen() {
     setSearchPending(true);
     const handle = setTimeout(() => {
       void (async () => {
-        const found = await searchFoods(trimmed, lang);
-        if (!active) return;
-        setSearchResults(found);
-        setSearchPending(false);
+        try {
+          const found = await searchFoods(trimmed, lang);
+          if (active) setSearchResults(found);
+        } catch (err) {
+          logCrash(err, { screen: "food", load: "search" });
+          if (active) setSearchResults([]);
+        } finally {
+          // In `finally`, so a failed query lands on the "no results" state
+          // instead of leaving the pending line up for good.
+          if (active) setSearchPending(false);
+        }
       })();
     }, SEARCH_DEBOUNCE_MS);
     return () => {
@@ -292,10 +378,15 @@ export default function FoodScreen() {
     let active = true;
     setCategoryLoading(true);
     void (async () => {
-      const rows = await listFoodsByCategory(drilledCategory, lang);
-      if (!active) return;
-      setCategoryFoods(rows);
-      setCategoryLoading(false);
+      try {
+        const rows = await listFoodsByCategory(drilledCategory, lang);
+        if (active) setCategoryFoods(rows);
+      } catch (err) {
+        logCrash(err, { screen: "food", load: "category" });
+        if (active) setCategoryFoods([]);
+      } finally {
+        if (active) setCategoryLoading(false);
+      }
     })();
     return () => {
       active = false;
@@ -504,11 +595,17 @@ export default function FoodScreen() {
     });
   }
 
-  async function onToggleFav(food: Food) {
-    if (!activeProfile) return;
-    await dbToggleFav(activeProfile.id, food.id);
-    await loadFavorites();
-  }
+  // Stable identity (useCallback): passed straight through to FoodRow's
+  // memoized onToggleFavorite prop, which only pays off if this reference does
+  // not change on every unrelated re-render (search typing, focus reloads).
+  const onToggleFav = useCallback(
+    async (food: Food) => {
+      if (!activeProfile) return;
+      await dbToggleFav(activeProfile.id, food.id);
+      await loadFavorites();
+    },
+    [activeProfile, loadFavorites]
+  );
 
   // Delete immediately + accumulating 6-second undo (shared useUndoBatch). The
   // custom food is captured first so undo re-inserts it verbatim.
@@ -542,6 +639,23 @@ export default function FoodScreen() {
       ],
     });
   }
+
+  // Row actions behind a ref (same technique as the dashboard's journal list):
+  // onCustomLongPress closes over onDeleteCustom, which closes over
+  // useUndoBatch's return value - a new function identity every render. The ref
+  // absorbs that churn so the wrapper handed to FoodRow's renderItem below keeps
+  // ONE identity, which is what its React.memo needs to actually skip re-renders.
+  const onCustomLongPressRef = useRef(onCustomLongPress);
+  onCustomLongPressRef.current = onCustomLongPress;
+  const onFoodLongPress = useCallback(
+    (food: Food) => onCustomLongPressRef.current(food),
+    []
+  );
+
+  const onFoodPress = useCallback(
+    (food: Food) => router.push({ pathname: "/calculator", params: { foodId: food.id } }),
+    [router]
+  );
 
   function titleFor(sel: Selection): string {
     if (sel === "favorites") return t("food.favorites");
@@ -638,7 +752,12 @@ export default function FoodScreen() {
     ? rankedTemplates
     : rankedTemplates.slice(0, TEMPLATE_PREVIEW);
 
-  const Header = (
+  // The ONE ListHeaderComponent, identical in every mode: title row, the hero
+  // card (grid only), the search field and the pending/back line. Nothing here
+  // grows with the data - the catalogue bands that used to live in this ~440-line
+  // block are FlatList rows now, so a focus reload can no longer change the
+  // header's height while the list is scrolled.
+  const HeaderTop = (
     <View style={[{ paddingHorizontal: 16, paddingTop: 4 }, contentColumn]}>
       {/* Title row: the screen's name and its one add action, in every mode -
           a search that finds nothing is exactly where "add it yourself" belongs. */}
@@ -741,9 +860,16 @@ export default function FoodScreen() {
           </Text>
         </Pressable>
       ) : null}
+    </View>
+  );
 
-      {/* Today's meals, as the mockup's illustrated rows */}
-      {mode === "grid" ? (
+  // Grid mode's four bands, one FlatList row each. Built on demand (called from
+  // renderItem rather than assembled up front) so list/search mode never walks
+  // today's meals or the templates for content it will not show.
+  function renderGridBand(band: GridBand): React.ReactNode {
+    // Today's meals, as the mockup's illustrated rows
+    if (band === "today") {
+      return (
         <View className="mb-5">
           <SectionHeading
             label={upper(t("common.today"))}
@@ -755,7 +881,16 @@ export default function FoodScreen() {
               ) : null
             }
           />
-          {todayMeals.length === 0 ? (
+          {!todayLoaded ? (
+            // Same box the real empty state uses (identical padding/border), so
+            // the one legitimate outcome that reuses this shape - "really no
+            // meals today" - lands with zero size change. Only a real list
+            // below resizes the section, which is new content arriving, not a
+            // wrong shell being corrected.
+            <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
+              <Skeleton width="55%" height={12} />
+            </View>
+          ) : todayMeals.length === 0 ? (
             <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
               <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
                 {t("food.noMealsToday")}
@@ -853,11 +988,13 @@ export default function FoodScreen() {
             </>
           )}
         </View>
-      ) : null}
+      );
+    }
 
-      {/* Meal templates: the recipes the user wrote down. A row rather than a chip,
-          because it carries a name, an item count, a figure and two tap targets. */}
-      {mode === "grid" ? (
+    // Meal templates: the recipes the user wrote down. A row rather than a chip,
+    // because it carries a name, an item count, a figure and two tap targets.
+    if (band === "templates") {
+      return (
         <View className="mb-5">
           <SectionHeading
             label={upper(t("templates.title"))}
@@ -879,7 +1016,15 @@ export default function FoodScreen() {
             }
           />
 
-          {rankedTemplates.length === 0 ? (
+          {!templatesLoaded ? (
+            // Matches the real empty state's shape (text line + pill button)
+            // rather than the list rows, since a brand-new profile lands here
+            // most often - see the Today section above for the size rationale.
+            <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
+              <Skeleton width="50%" height={12} />
+              <Skeleton width={96} height={36} radius={18} style={{ marginTop: 10 }} />
+            </View>
+          ) : rankedTemplates.length === 0 ? (
             <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
               <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
                 {t("templates.empty")}
@@ -991,9 +1136,29 @@ export default function FoodScreen() {
             </>
           )}
         </View>
-      ) : null}
+      );
+    }
 
-      {mode === "grid" && recent.length > 0 ? (
+    // Unlike Today/Templates, "no recent meals" has no empty-state copy of its
+    // own - the band is simply absent. Without recentLoaded that absence during
+    // the fetch was indistinguishable from a real empty result, so the whole
+    // band (with the categories grid below it) popped into existence the instant
+    // the query returned. A same-shaped skeleton row holds its place instead.
+    if (band === "recent") {
+      if (!recentLoaded) {
+        return (
+          <View className="mb-5">
+            <SectionHeading label={upper(t("food.recent"))} />
+            <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} width={112} height={40} radius={20} />
+              ))}
+            </View>
+          </View>
+        );
+      }
+      if (recent.length === 0) return null;
+      return (
         <View className="mb-5">
           <SectionHeading label={upper(t("food.recent"))} />
           <View className="flex-row flex-wrap" style={{ gap: 8 }}>
@@ -1027,11 +1192,13 @@ export default function FoodScreen() {
             ))}
           </View>
         </View>
-      ) : null}
+      );
+    }
 
-      {/* The catalogue itself: one dense grid of shelves, each with its own plate,
-          its own name and how many foods are on it. */}
-      {mode === "grid" ? (
+    // The catalogue itself: one dense grid of shelves, each with its own plate,
+    // its own name and how many foods are on it.
+    if (band === "categories") {
+      return (
         <View className="mb-1">
           <SectionHeading label={upper(t("food.categories"))} />
           <View
@@ -1072,34 +1239,49 @@ export default function FoodScreen() {
             ))}
           </View>
         </View>
-      ) : null}
-    </View>
-  );
+      );
+    }
+    return null;
+  }
+
+  // ONE container for every mode. The rows change; the FlatList, its header and
+  // the search field's position in the tree do not - and there is deliberately
+  // no `key` here, since a key on `mode` would bring back exactly the remount
+  // (and the lost keyboard focus) this shape exists to avoid.
+  const rows: readonly ListRow[] = mode === "grid" ? GRID_BANDS : listData;
 
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
       <FlatList
         {...keyboardAwareScrollProps}
-        data={listData}
-        keyExtractor={(f) => f.id}
-        ListHeaderComponent={Header}
+        data={rows}
+        keyExtractor={rowKeyExtractor}
+        ListHeaderComponent={HeaderTop}
         initialNumToRender={12}
+        // Android's default (true) recycles offscreen rows against a header whose
+        // size still changes between list and search (back row vs. pending text);
+        // false trades a little memory for never handing back a blank recycled cell.
+        removeClippedSubviews={false}
         renderItem={({ item }) => (
           <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
-            <FoodRow
-              food={item}
-              lang={lang}
-              favorite={favIds.has(item.id)}
-              onPress={(f) =>
-                router.push({ pathname: "/calculator", params: { foodId: f.id } })
-              }
-              onToggleFavorite={onToggleFav}
-              onLongPress={onCustomLongPress}
-            />
+            {typeof item === "string" ? (
+              renderGridBand(item)
+            ) : (
+              <FoodRow
+                food={item}
+                lang={lang}
+                favorite={favIds.has(item.id)}
+                onPress={onFoodPress}
+                onToggleFavorite={onToggleFav}
+                onLongPress={onFoodLongPress}
+              />
+            )}
           </View>
         )}
+        // Grid mode always carries its four bands, so this only ever speaks for
+        // an empty category/favourites shelf or a search that found nothing.
         ListEmptyComponent={
-          mode !== "grid" && !categoryLoading && !searchPending ? (
+          !categoryLoading && !searchPending ? (
             <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
               <EmptyState
                 compact

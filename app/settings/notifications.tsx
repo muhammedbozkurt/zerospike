@@ -39,9 +39,11 @@ export default function NotificationSettings() {
   const { activeProfile, lang } = useApp();
   const { contentColumn } = useLayout();
 
-  // Initialized to the real defaults (not null) so the first render already
-  // shows a full list instead of flashing empty while prefs load from storage.
-  const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+  // Starts unknown (not DEFAULT_PREFS): a user who turned the basal reminder
+  // off or moved the post-meal window would otherwise see the DEFAULTS drawn
+  // for one frame - wrong switch positions, not just an empty list - before
+  // the real stored prefs replace them.
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
   const [reliability, setReliability] = useState<ReminderReliability | null>(null);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [notifDenied, setNotifDenied] = useState(false);
@@ -378,7 +380,29 @@ export default function NotificationSettings() {
             </>
           ) : null}
         </>
-      ) : null}
+      ) : (
+        // Prefs not loaded yet: same-shaped rows as the permission placeholder
+        // above (no switch drawn, so no position can be wrong), reserving
+        // roughly the space the settled list will take instead of popping in.
+        <>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View
+              key={i}
+              className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2"
+              style={{ opacity: 0.5 }}
+            >
+              <View
+                className="w-9 h-9 rounded-xl"
+                style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
+              />
+              <View
+                className="flex-1 ml-3"
+                style={{ height: 14, borderRadius: 7, backgroundColor: THEME.track }}
+              />
+            </View>
+          ))}
+        </>
+      )}
       </View>
     </SettingsScaffold>
   );

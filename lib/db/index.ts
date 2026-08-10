@@ -10,6 +10,7 @@ import {
   migrateToV12,
   migrateToV13,
   migrateToV14,
+  migrateToV15,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
 import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "./v14Sql";
@@ -27,7 +28,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -184,6 +185,13 @@ export async function initDatabase(): Promise<void> {
     await migrateToV14(db);
   }
 
+  // v14 → v15: the insulin product catalog columns (profile's basal product +
+  // dose, both insulins' product ids, and which kind a bolus injection was). Two
+  // guarded ADD COLUMN passes, no table rebuilt (see migrateToV15 + v15Sql).
+  if (currentVersion >= 1 && currentVersion < 15) {
+    await migrateToV15(db);
+  }
+
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
 
   // Give an existing install the foods this release added. Runs last, so it can
@@ -218,6 +226,10 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       diabetes_type TEXT NOT NULL DEFAULT 'unknown',
       insulin_mode TEXT NOT NULL DEFAULT 'both',
       ratios_confirmed INTEGER NOT NULL DEFAULT 0,
+      -- Insulin product catalog (schema v15); all three nullable, see ./v15Sql.
+      basal_daily_units REAL,
+      basal_insulin_id TEXT,
+      bolus_insulin_id TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -356,6 +368,9 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
  *
  * `site` is nullable since v11: the calculator's mealtime bolus has no region,
  * and recording none is honest where stamping a region was not.
+ *
+ * `bolus_kind` (v15) records whether a bolus row was for a meal or a correction;
+ * always NULL for a basal row (see logInjection/updateInjection in ./injections.ts).
  */
 async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
@@ -375,6 +390,8 @@ async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       source TEXT NOT NULL DEFAULT 'manual',
       logged_at TEXT NOT NULL,
       tags TEXT NOT NULL DEFAULT '[]',
+      -- Meal vs correction bolus (schema v15), nullable: see ./v15Sql.
+      bolus_kind TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
       FOREIGN KEY (meal_log_id) REFERENCES meal_logs (id) ON DELETE SET NULL
     );

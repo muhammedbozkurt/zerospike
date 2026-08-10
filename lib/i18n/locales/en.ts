@@ -49,7 +49,7 @@ const en: TranslationSchema = {
     methodNote:
       "Estimates round to a 0.5-unit resolution and are intentionally conservative. Always review and edit before use. The correction dose aims at the middle of your post-meal target range.",
     iobNote:
-      "Active insulin (IOB) is estimated from your logged bolus doses using a simple linear decay over ~4 hours, and only ever lowers a correction estimate, never the meal dose. It is an estimate, not a directive.",
+      "Active insulin (IOB) is estimated from your logged bolus doses using an exponential insulin-activity curve, shaped by the peak time and duration of the bolus insulin product you select in Settings (a general fast-acting profile is used until you do). It only ever lowers a correction estimate, never the meal dose. Long-acting (basal) doses are estimated the same way but tracked separately. It is an estimate, not a directive.",
     listTitle: "References",
     openHint: "Opens in your browser",
     refs: {
@@ -295,6 +295,17 @@ const en: TranslationSchema = {
     discardBody: "The photo, note, tag or dose you entered will be discarded.",
     discardConfirm: "Discard",
   },
+  iob: {
+    basisText:
+      "This is the amount still estimated to be active from your most recently logged meal or correction (bolus) doses.",
+    productText:
+      "Calculated from the typical duration of action and peak time of {{product}} (~{{hours}} hours), the bolus insulin you selected in Settings.",
+    genericText:
+      "No bolus insulin product is selected yet, so a general fast-acting profile is used for this estimate. You can select your product in Settings for a more personal estimate.",
+    basalActive:
+      "About {{value}} units of your long-acting (basal) insulin are also still active. This is shown separately and not included in the number above.",
+    personalNote: "This varies from person to person and is only an estimate.",
+  },
   journal: {
     showMore: "Show more",
     carbsLabel: "{{carbs}} g carbs",
@@ -339,6 +350,13 @@ const en: TranslationSchema = {
     isfHint: "How much 1 unit lowers glucose.",
     carbRatios: "Carb ratios (g/unit)",
     dailyCarbTarget: "Daily carb target (g)",
+    basalDailyUnits: "Daily basal dose",
+    basalDailyUnitsHint: "Pre-fills the dose field when you log a basal injection. You can still change it on any entry.",
+    basalInsulin: "Basal insulin",
+    bolusInsulin: "Bolus insulin",
+    bolusInsulinHint: "Your active insulin estimate follows this product's typical action profile.",
+    insulinProductNotSet: "Not set",
+    insulinDurationLabel: "Typical action time",
     language: "App Language",
     glucoseUnit: "Glucose unit",
     notificationsSection: "Notifications",
@@ -774,7 +792,6 @@ const en: TranslationSchema = {
     history: "History",
     deleteEntry: "Delete this injection?",
     guideLink: "How to inject",
-    guideLinkLabel: "Guide",
     recommendedSite: "Site you have gone longest without using",
     useThisSite: "Select this site",
     rotationTitle: "Site rotation",
@@ -842,6 +859,17 @@ const en: TranslationSchema = {
     newCycleConfirmBody: "Heat colours restart from now; your entries stay the same.",
     newCycleStarted: "New cycle started",
     cycleSince: "Cycle started: {{date}}",
+    time: "Time",
+    bolusKindLabel: "Bolus type",
+    bolusKindMeal: "Before meal",
+    bolusKindCorrection: "Correction",
+    basalPrefillHint: "You can save your daily basal amount in Settings.",
+  },
+  injectionMap: {
+    sub: "Each region is split into four points. The darker a region, the more often you have used it.",
+    overviewHint: "Tap a region to open its four points.",
+    backToBody: "Back to the body",
+    entries: "{{n}} entries",
   },
   spike: {
     title: "Spike",
@@ -968,6 +996,11 @@ const en: TranslationSchema = {
     prefilledNote: "Items came from that logged meal; give the template a name.",
     fixedCarbs: "Recorded carbs",
     calcFromItems: "The carbohydrate is the total of the template's items.",
+  },
+  errorBoundary: {
+    title: "Something went wrong",
+    body: "This screen ran into an unexpected problem. Your logged data is safe.",
+    retry: "Try again",
   },
 };
 

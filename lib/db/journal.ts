@@ -1,5 +1,6 @@
 import { getDb } from "./index";
 import type {
+  BolusKind,
   InjectionSite,
   InsulinType,
   Lang,
@@ -7,7 +8,7 @@ import type {
   PeriodTag,
   SitePoint,
 } from "./types";
-import { asSitePoint, foodName, parseTags } from "./types";
+import { asSitePoint, foodName, parseBolusKind, parseTags } from "./types";
 import type { Food } from "./types";
 import type { DateRange } from "../insights";
 import { journalFeedArgs, journalFeedSql } from "./journalSql";
@@ -52,6 +53,8 @@ export interface InjectionEntry {
   site_point: SitePoint | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
+  /** Meal vs correction (schema v15). Always null when insulin_type isn't 'bolus'. */
+  bolus_kind: BolusKind | null;
   note: string | null;
   /** 'manual', or 'calculator' for the bolus row a meal log wrote for you. */
   source: string;
@@ -91,6 +94,7 @@ interface FeedRow {
   site_point: number | null;
   dose_units: number | null;
   insulin_type: InsulinType | null;
+  bolus_kind: string | null;
   note: string | null;
 }
 
@@ -146,6 +150,7 @@ export async function getJournal(
         site_point: asSitePoint(r.site_point),
         dose_units: r.dose_units,
         insulin_type: r.insulin_type,
+        bolus_kind: parseBolusKind(r.bolus_kind),
         note: r.note,
         source: r.source ?? "manual",
         tags: parseTags(r.tags),

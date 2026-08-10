@@ -20,6 +20,7 @@ import type { Lang } from "../lib/db/types";
 
 import { AppProvider, useApp } from "../lib/store/AppContext";
 import { FeedbackProvider, FeedbackHost } from "../components/Feedback";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
@@ -375,7 +376,13 @@ export default function RootLayout() {
         <AppProvider>
           <FeedbackProvider>
             <StatusBar style="light" />
-            <RootNavigator />
+            {/* Catches a render error anywhere in the routed screens: without it,
+                React unmounts the whole failing subtree and only the dark
+                AppBackground wash is left on screen (WP6 - reported as a totally
+                blank page recoverable only by an app restart). */}
+            <ErrorBoundary>
+              <RootNavigator />
+            </ErrorBoundary>
             {/* Serves the tabs and every non-modal route. Modal routes present a
                 separate view controller this cannot reach, so each mounts its
                 own host and takes over while it is on screen. */}
