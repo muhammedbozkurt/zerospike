@@ -26,7 +26,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "48",
+      "buildNumber": "49",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
@@ -56,7 +56,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 44,
+      "versionCode": 45,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
