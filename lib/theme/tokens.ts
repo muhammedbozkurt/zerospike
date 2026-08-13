@@ -185,6 +185,11 @@ export const THEME = {
   glassInset: "rgba(255,255,255,0.06)", // top inset highlight line
   border: "rgba(255,255,255,0.10)",
   track: "rgba(255,255,255,0.08)", // ring / progress track
+  /** "Worth a look" accent for a descriptive note that must out-rank the neutral
+   *  cyan without reading as an alarm: red would give the app the voice of a
+   *  medical device, which the product may not have. Derived from the existing
+   *  amber so there is only ever one such hex in the palette. */
+  caution: GLUCOSE_COLORS.high,
 } as const;
 
 /**

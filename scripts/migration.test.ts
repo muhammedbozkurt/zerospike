@@ -26,6 +26,7 @@ import {
   migrateToV13,
   migrateToV14,
   migrateToV15,
+  stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
 import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "../lib/db/v14Sql";
@@ -1961,6 +1962,436 @@ async function main() {
     );
   }
 
+  // ── K. The chain end to end, and the interruption it used to lose data to ──
+  section("K1. the full chain from every start version keeps every row");
+  for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
+    const db = makeChainDatabase(start);
+    fillChainDatabase(db, start);
+    const customFoodsBefore = (
+      db
+        .prepare("SELECT COUNT(*) AS c FROM foods WHERE is_custom = 1;")
+        .get() as { c: number }
+    ).c;
+
+    await runChain(db);
+
+    eq(`v${start}: ends at 15`, readUserVersion(db), 15);
+
+    eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
+    const p1 = db
+      .prepare("SELECT * FROM user_profiles WHERE id='p1';")
+      .get() as Record<string, unknown>;
+    eq(`v${start}: profile name`, p1.name, "Ben");
+    eq(`v${start}: sensitivity factor`, p1.insulin_sensitivity_factor, 45);
+    eq(`v${start}: breakfast ratio`, p1.carb_ratio_breakfast, 9);
+    eq(`v${start}: fasting max`, p1.target_fasting_max, 105);
+    eq(`v${start}: carb target`, p1.daily_carb_target_g, 210);
+    eq(`v${start}: profile reaches the v15 columns`, p1.basal_insulin_id, null);
+
+    eq(`v${start}: all 3 readings survive`, count(db, "sugar_logs"), 3);
+    const s1 = db.prepare("SELECT * FROM sugar_logs WHERE id='s1';").get() as Record<
+      string,
+      unknown
+    >;
+    eq(`v${start}: reading value`, s1.glucose_level_mgdl, 132);
+    eq(`v${start}: reading period`, s1.period_tag, "fasting");
+    // A v1 install had no tags column at all; the v4 → v5 step adds it with its
+    // default, so there is nothing for the chain to carry across on that path.
+    eq(`v${start}: reading tags`, s1.tags, start >= 5 ? '["sport"]' : "[]");
+
+    eq(`v${start}: all 3 meals survive`, count(db, "meal_logs"), 3);
+    const m1 = db.prepare("SELECT * FROM meal_logs WHERE id='m1';").get() as Record<
+      string,
+      unknown
+    >;
+    eq(`v${start}: meal carbs`, m1.calculated_carbs_g, 37.2);
+    eq(`v${start}: meal dose`, m1.insulin_dose_units, 3.5);
+    eq(`v${start}: meal note`, m1.personal_note, "az tuzlu");
+    eq(`v${start}: meal keeps its food`, m1.food_id, "f-mine");
+
+    eq(`v${start}: both favourites survive`, count(db, "favorites"), 2);
+    eq(
+      `v${start}: the user's own food survives`,
+      (
+        db
+          .prepare("SELECT COUNT(*) AS c FROM foods WHERE is_custom = 1;")
+          .get() as { c: number }
+      ).c,
+      customFoodsBefore
+    );
+
+    // injection_logs is the table the chain rebuilds three times over.
+    const expectedInjections = start >= 8 ? 3 : 0;
+    eq(
+      `v${start}: injection rows preserved`,
+      count(db, "injection_logs"),
+      expectedInjections
+    );
+    if (start >= 8) {
+      eq(`v${start}: inj1 site`, injectionField(db, "inj1", "site"), "abdomen_left");
+      eq(`v${start}: inj1 rotation point`, injectionField(db, "inj1", "site_point"), 3);
+      eq(`v${start}: inj1 dose`, injectionField(db, "inj1", "dose_units"), 6.5);
+      eq(`v${start}: inj1 type`, injectionField(db, "inj1", "insulin_type"), "bolus");
+      eq(`v${start}: inj1 source`, injectionField(db, "inj1", "source"), "manual");
+      eq(`v${start}: inj1 note`, injectionField(db, "inj1", "note"), "sabah");
+      eq(`v${start}: inj1 meal link`, injectionField(db, "inj1", "meal_log_id"), "m1");
+      eq(`v${start}: inj1 tags`, injectionField(db, "inj1", "tags"), '["sport"]');
+      eq(
+        `v${start}: inj2 site preserved verbatim`,
+        injectionField(db, "inj2", "site"),
+        start >= 9 ? "abdomen_left_upper" : "abdomen_right"
+      );
+      eq(`v${start}: inj2 rotation point`, injectionField(db, "inj2", "site_point"), 1);
+      eq(
+        `v${start}: inj3 calculator source survives`,
+        injectionField(db, "inj3", "source"),
+        "calculator"
+      );
+      eq(
+        `v${start}: inj3 site`,
+        injectionField(db, "inj3", "site"),
+        start >= 11 ? null : "arm_left"
+      );
+      eq(
+        `v${start}: bolus_kind exists and reads NULL`,
+        injectionField(db, "inj1", "bolus_kind"),
+        null
+      );
+    }
+
+    // The tables later steps introduce exist afterwards whatever the start was.
+    const expectedTemplates = start >= 13 ? 2 : 0;
+    eq(`v${start}: templates preserved`, count(db, "meal_templates"), expectedTemplates);
+    eq(
+      `v${start}: template items preserved`,
+      count(db, "meal_template_items"),
+      start >= 13 ? 3 : 0
+    );
+    ok(
+      `v${start}: app_meta exists`,
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_meta';")
+        .get() !== undefined
+    );
+    if (start >= 14) {
+      eq(
+        `v${start}: the stored catalog version survives`,
+        (
+          db.prepare(V14_READ_META).get(SEED_CATALOG_VERSION_KEY) as {
+            value: string;
+          }
+        ).value,
+        "3"
+      );
+    }
+    db.close();
+  }
+
+  section("K2. an interrupted chain must not replay the injection rebuilds");
+  {
+    // The regression for the loss this whole change exists to close. An install
+    // that has not opened the app since v8 migrates, and the process is killed
+    // after the last step committed but before the closing stamp on the last line
+    // of initDatabase().
+    const db = makeChainDatabase(8);
+    fillChainDatabase(db, 8);
+
+    await runChain(db, { stampFinal: false });
+
+    // Before the fix this read 8: nothing between the first step and that final
+    // line recorded anything, so the schema was v15 and the database said v8.
+    eq(
+      "each step stamped as it landed, so the version matches the schema",
+      readUserVersion(db),
+      15
+    );
+
+    // The user keeps using the app for weeks on that (v15) schema.
+    db.exec(
+      `INSERT INTO injection_logs
+         (id, profile_id, site, site_point, dose_units, insulin_type, meal_log_id,
+          note, source, logged_at, tags, bolus_kind)
+       VALUES ('after1','p1','thigh_left',2,3.5,'bolus',NULL,NULL,'calculator','2026-08-01T12:00:00.000Z','[]','meal'),
+              ('after2','p1',NULL,NULL,18,'basal',NULL,NULL,'manual','2026-08-01T22:00:00.000Z','[]',NULL);`
+    );
+    db.exec("UPDATE injection_logs SET bolus_kind = 'correction' WHERE id = 'inj1';");
+
+    // Next cold start. It must pick up from 15, not replay v9 and v11.
+    await runChain(db);
+
+    eq("the next launch still ends at 15", readUserVersion(db), 15);
+    eq(
+      "no injection row is lost",
+      count(db, "injection_logs"),
+      5
+    );
+    eq(
+      "a bolus recorded as a meal dose keeps its kind",
+      injectionField(db, "after1", "bolus_kind"),
+      "meal"
+    );
+    eq(
+      "and its rotation point",
+      injectionField(db, "after1", "site_point"),
+      2
+    );
+    eq(
+      "and the fact the calculator wrote it",
+      injectionField(db, "after1", "source"),
+      "calculator"
+    );
+    eq(
+      "a correction recorded on an older row keeps its kind",
+      injectionField(db, "inj1", "bolus_kind"),
+      "correction"
+    );
+    eq(
+      "and that row keeps its rotation point",
+      injectionField(db, "inj1", "site_point"),
+      3
+    );
+    eq(
+      "a region-less basal row stays region-less",
+      injectionField(db, "after2", "site"),
+      null
+    );
+    db.close();
+  }
+
+  section("K3. v14 → v15 preserves two profiles' rows exactly");
+  {
+    const db = makeChainDatabase(14);
+    fillChainDatabase(db, 14);
+    const before = {
+      user_profiles: snapshotRows(db, "user_profiles"),
+      sugar_logs: snapshotRows(db, "sugar_logs"),
+      meal_logs: snapshotRows(db, "meal_logs"),
+      injection_logs: snapshotRows(db, "injection_logs"),
+      favorites: snapshotRows(db, "favorites"),
+      foods: snapshotRows(db, "foods"),
+      meal_templates: snapshotRows(db, "meal_templates"),
+      meal_template_items: snapshotRows(db, "meal_template_items"),
+    };
+
+    await migrateToV15(adapt(db));
+
+    for (const [table, rows] of Object.entries(before)) {
+      sameRows(table, rows, snapshotRows(db, table));
+    }
+    // Both profiles are still whole and still their own.
+    eq(
+      "p2 keeps its own ratio",
+      (
+        db
+          .prepare("SELECT carb_ratio_lunch AS r FROM user_profiles WHERE id='p2';")
+          .get() as { r: number }
+      ).r,
+      16
+    );
+    eq(
+      "p2 keeps its own reading",
+      (
+        db
+          .prepare("SELECT glucose_level_mgdl AS g FROM sugar_logs WHERE id='s3';")
+          .get() as { g: number }
+      ).g,
+      96
+    );
+    eq("the stamp landed", readUserVersion(db), 15);
+    db.close();
+  }
+
+  section("K4. a downgrade and a second upgrade keep what was recorded");
+  {
+    const db = makeChainDatabase(14);
+    fillChainDatabase(db, 14);
+    await runChain(db);
+
+    db.exec("UPDATE injection_logs SET bolus_kind = 'correction' WHERE id = 'inj1';");
+    db.exec(
+      "UPDATE user_profiles SET basal_insulin_id = 'glargine-u100', basal_daily_units = 22 WHERE id = 'p1';"
+    );
+
+    // The user opens an older build (which stamps SCHEMA_VERSION back down), then
+    // the current one again.
+    db.exec("PRAGMA user_version = 14;");
+    await runChain(db);
+
+    eq("the chain lands on 15 again", readUserVersion(db), 15);
+    eq(
+      "the recorded bolus kind survives the round trip",
+      injectionField(db, "inj1", "bolus_kind"),
+      "correction"
+    );
+    eq(
+      "so does the profile's insulin product",
+      (
+        db
+          .prepare("SELECT basal_insulin_id AS b FROM user_profiles WHERE id='p1';")
+          .get() as { b: string | null }
+      ).b,
+      "glargine-u100"
+    );
+    eq(
+      "and its daily basal dose",
+      (
+        db
+          .prepare("SELECT basal_daily_units AS u FROM user_profiles WHERE id='p1';")
+          .get() as { u: number | null }
+      ).u,
+      22
+    );
+    eq(
+      "bolus_kind is still a single column",
+      (
+        db.prepare("PRAGMA table_info(injection_logs);").all() as { name: string }[]
+      ).filter((c) => c.name === "bolus_kind").length,
+      1
+    );
+    eq("every injection row is still there", count(db, "injection_logs"), 3);
+    db.close();
+  }
+
+  section("K5. a migrated user_profiles has a fresh install's columns");
+  {
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    // The REAL fresh-install DDL, lifted out of createSchemaV1 rather than
+    // retyped, so this cannot pass against a copy that has drifted.
+    const freshDdl =
+      /CREATE TABLE IF NOT EXISTS user_profiles \([\s\S]*?\n {4}\);/.exec(indexSrc)?.[0] ??
+      "";
+    ok("createSchemaV1's user_profiles DDL was found", freshDdl.length > 0);
+
+    const migrated = makeChainDatabase(1);
+    fillChainDatabase(migrated, 1);
+    await runChain(migrated);
+
+    const fresh = new DatabaseSync(":memory:");
+    fresh.exec(freshDdl);
+
+    const migratedOrder = [...columns(migrated, "user_profiles").keys()];
+    const freshOrder = [...columns(fresh, "user_profiles").keys()];
+    eq(
+      "the column NAME SET is identical",
+      [...migratedOrder].sort().join(","),
+      [...freshOrder].sort().join(",")
+    );
+    // Column ORDER differs on purpose and always will: ALTER TABLE ADD COLUMN can
+    // only append, so a migrated table carries its columns in the order the
+    // releases added them. Nothing reads by position, so only the set matters.
+    ok(
+      "while the column ORDER differs, as appending migrations must leave it",
+      migratedOrder.join(",") !== freshOrder.join(",")
+    );
+    migrated.close();
+    fresh.close();
+  }
+
+  section("K6. every step stamps the version it reaches, inside its own step");
+  {
+    // Behavioural, not textual: run each migration and read the header back.
+    const v8db = makeV7Database();
+    await migrateToV8(adapt(v8db));
+    eq("migrateToV8 stamps 8", readUserVersion(v8db), 8);
+    v8db.close();
+
+    const v9db = makeV8InjectionDb();
+    await migrateToV9(adapt(v9db));
+    eq("migrateToV9 stamps 9", readUserVersion(v9db), 9);
+    v9db.close();
+
+    const v10db = new DatabaseSync(":memory:");
+    v10db.exec(
+      `CREATE TABLE sugar_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+         glucose_level_mgdl INTEGER NOT NULL, logged_at TEXT NOT NULL);`
+    );
+    await migrateToV10(adapt(v10db));
+    eq("migrateToV10 stamps 10", readUserVersion(v10db), 10);
+    // The guarded no-op path has to stamp too, or an install that already had the
+    // column would replay the chain from v9 on every single launch.
+    v10db.exec("PRAGMA user_version = 9;");
+    await migrateToV10(adapt(v10db));
+    eq("and stamps 10 again when the column already exists", readUserVersion(v10db), 10);
+    v10db.close();
+
+    const v11db = makeV9InjectionDb();
+    await migrateToV11(adapt(v11db));
+    eq("migrateToV11 stamps 11", readUserVersion(v11db), 11);
+    v11db.close();
+
+    const v12db = makeV12Database();
+    await migrateToV12(adapt(v12db));
+    eq("migrateToV12 stamps 12", readUserVersion(v12db), 12);
+    v12db.close();
+
+    const v13db = makeV13Database();
+    await migrateToV13(adapt(v13db));
+    eq("migrateToV13 stamps 13", readUserVersion(v13db), 13);
+    v13db.close();
+
+    const v14db = makeV14Database(0);
+    await migrateToV14(adapt(v14db));
+    eq("migrateToV14 stamps 14", readUserVersion(v14db), 14);
+    v14db.close();
+
+    const v15db = makeV14FullDatabase();
+    await migrateToV15(adapt(v15db));
+    eq("migrateToV15 stamps 15", readUserVersion(v15db), 15);
+
+    // The property the whole fix rests on: SQLite keeps user_version in the
+    // database header, which is journalled, so a stamp written inside a
+    // transaction is undone when that transaction is. A step that fails after
+    // stamping therefore cannot leave a version claiming it succeeded.
+    const rollbackTarget = adapt(v15db);
+    v15db.exec("PRAGMA user_version = 9;");
+    let threw = false;
+    try {
+      await rollbackTarget.withTransactionAsync(async () => {
+        await stampSchemaVersion(rollbackTarget, 15);
+        throw new Error("simulated kill mid-step");
+      });
+    } catch {
+      threw = true;
+    }
+    ok("a step that fails after stamping is rolled back", threw);
+    eq("and the version is not advanced", readUserVersion(v15db), 9);
+    v15db.close();
+
+    // The pre-v8 steps are inline DDL in lib/db/index.ts, replayed by runChain()
+    // above. These pins are what keep that replay honest.
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    for (const version of [2, 3, 4, 5, 7]) {
+      ok(
+        `the pre-v8 chain stamps ${version}`,
+        new RegExp(`await stampSchemaVersion\\(db, ${version}\\);`).test(indexSrc)
+      );
+    }
+    // The foods.source step runs OUT of version order (seedFoods reads that
+    // column), so stamping 6 there would tell the next launch that v2 → v5 had
+    // run when they have not. The v6 → v7 step stamps 7 for both.
+    const sourceStep =
+      /currentVersion >= 1 && currentVersion < 6\) \{[\s\S]*?\n {2}\}/.exec(indexSrc)?.[0] ??
+      "";
+    ok("the out-of-order foods.source step was found", sourceStep.length > 0);
+    ok("and it deliberately stamps nothing", !/stampSchemaVersion/.test(sourceStep));
+    ok(
+      "6 is never stamped anywhere",
+      !/stampSchemaVersion\(db, 6\)/.test(indexSrc)
+    );
+    // The closing stamp stays: a fresh install runs no migrateToV*, so nothing
+    // else would record a version on that path.
+    ok(
+      "the final stamp is still there for the fresh-install path",
+      /await db\.execAsync\(`PRAGMA user_version = \$\{SCHEMA_VERSION\};`\);/.test(indexSrc)
+    );
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }
@@ -1968,6 +2399,432 @@ async function main() {
 /** A SQL string literal, for the fixtures that build statements by hand. */
 function quote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** The versions the end-to-end chain test starts from. */
+type ChainStart = 1 | 8 | 9 | 10 | 11 | 14;
+
+function readUserVersion(db: DatabaseSync): number {
+  return (db.prepare("PRAGMA user_version;").get() as { user_version: number })
+    .user_version;
+}
+
+const V8_SITE_SQL =
+  "'abdomen_left','abdomen_right','thigh_left','thigh_right','arm_left','arm_right','buttock_left','buttock_right'";
+const V9_SITE_SQL =
+  "'abdomen_left','abdomen_right','abdomen_left_upper','abdomen_right_upper'," +
+  "'abdomen_left_lower','abdomen_right_lower','thigh_left','thigh_right'," +
+  "'arm_left','arm_right','buttock_left','buttock_right'";
+
+/**
+ * A database shaped exactly like a real install sitting at `version`: every table
+ * that existed then, with every column it had then and none it did not. Built
+ * from the migration history rather than from today's schema, so the chain that
+ * runs over it is the chain a long-dormant install actually gets.
+ */
+function makeChainDatabase(version: ChainStart): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  const at = (from: number) => version >= from;
+
+  const profile = [
+    "id TEXT PRIMARY KEY NOT NULL",
+    "name TEXT NOT NULL",
+    "insulin_sensitivity_factor REAL NOT NULL DEFAULT 40",
+    "carb_ratio_breakfast REAL NOT NULL DEFAULT 10",
+    "carb_ratio_lunch REAL NOT NULL DEFAULT 12",
+    "carb_ratio_dinner REAL NOT NULL DEFAULT 12",
+    "target_fasting_max INTEGER NOT NULL DEFAULT 100",
+    "target_postmeal_max INTEGER NOT NULL DEFAULT 140",
+    "daily_carb_target_g INTEGER NOT NULL DEFAULT 200",
+  ];
+  if (at(3)) profile.push("glucose_unit TEXT NOT NULL DEFAULT 'mgdl'");
+  if (at(8)) {
+    profile.push(
+      "target_fasting_min INTEGER NOT NULL DEFAULT 80",
+      "target_postmeal_min INTEGER NOT NULL DEFAULT 80",
+      "hypo_threshold_mgdl INTEGER NOT NULL DEFAULT 70",
+      "daily_carb_target_min_g INTEGER NOT NULL DEFAULT 160",
+      "diabetes_type TEXT NOT NULL DEFAULT 'unknown'",
+      "insulin_mode TEXT NOT NULL DEFAULT 'both'",
+      "ratios_confirmed INTEGER NOT NULL DEFAULT 1"
+    );
+  }
+  profile.push("created_at TEXT NOT NULL");
+
+  const foods = [
+    "id TEXT PRIMARY KEY NOT NULL",
+    "name_tr TEXT NOT NULL",
+    "name_en TEXT NOT NULL DEFAULT ''",
+    "name_de TEXT NOT NULL DEFAULT ''",
+    "name_es TEXT NOT NULL DEFAULT ''",
+    "name_fr TEXT NOT NULL DEFAULT ''",
+    "aliases_json TEXT NOT NULL DEFAULT '[]'",
+  ];
+  if (at(2)) foods.push("category TEXT NOT NULL DEFAULT 'other'");
+  foods.push(
+    "barcode TEXT",
+    "carb_100g REAL NOT NULL DEFAULT 0",
+    "glycemic_index INTEGER NOT NULL DEFAULT 0",
+    "glycemic_load INTEGER NOT NULL DEFAULT 0",
+    "portion_size_g REAL NOT NULL DEFAULT 100",
+    "brand_name TEXT",
+    "custom_notes TEXT",
+    "is_custom INTEGER NOT NULL DEFAULT 0"
+  );
+  if (at(6)) foods.push("source TEXT");
+  foods.push("created_at TEXT NOT NULL");
+
+  const sugar = [
+    "id TEXT PRIMARY KEY NOT NULL",
+    "profile_id TEXT NOT NULL",
+    "glucose_level_mgdl INTEGER NOT NULL",
+    "period_tag TEXT NOT NULL DEFAULT 'manual' CHECK (period_tag IN ('fasting','pre_meal','post_meal_2h','bedtime','manual'))",
+    "source TEXT NOT NULL DEFAULT 'manual'",
+    "logged_at TEXT NOT NULL",
+  ];
+  if (at(5)) sugar.push("tags TEXT NOT NULL DEFAULT '[]'");
+  if (at(10)) sugar.push("healthkit_uuid TEXT");
+  sugar.push(
+    "FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE"
+  );
+
+  const meals = [
+    "id TEXT PRIMARY KEY NOT NULL",
+    "profile_id TEXT NOT NULL",
+    "sugar_log_id TEXT",
+    "food_id TEXT",
+    "custom_food_name TEXT",
+    "portion_g REAL NOT NULL DEFAULT 0",
+    "calculated_carbs_g REAL NOT NULL DEFAULT 0",
+    "insulin_dose_units REAL NOT NULL DEFAULT 0",
+    "photo_uri_local TEXT",
+    "personal_note TEXT",
+    "logged_at TEXT NOT NULL",
+  ];
+  if (at(5)) meals.push("tags TEXT NOT NULL DEFAULT '[]'");
+  if (at(13)) meals.push("meal_template_id TEXT");
+  meals.push(
+    "FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE",
+    "FOREIGN KEY (sugar_log_id) REFERENCES sugar_logs (id) ON DELETE SET NULL",
+    "FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL"
+  );
+
+  db.exec(`
+    CREATE TABLE user_profiles (${profile.join(", ")});
+    CREATE TABLE foods (${foods.join(", ")});
+    CREATE TABLE sugar_logs (${sugar.join(", ")});
+    CREATE TABLE meal_logs (${meals.join(", ")});
+    CREATE TABLE favorites (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      food_id TEXT NOT NULL,
+      UNIQUE (profile_id, food_id),
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
+      FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_sugar_profile ON sugar_logs (profile_id, logged_at DESC);
+    CREATE INDEX idx_meal_profile ON meal_logs (profile_id, logged_at DESC);
+  `);
+
+  // injection_logs only exists from v4 on. Its CHECK and its NOT NULL are what
+  // each rebuild in the chain exists to change, so the fixture carries the exact
+  // shape of its own era.
+  if (at(8)) {
+    const siteList = at(9) ? V9_SITE_SQL : V8_SITE_SQL;
+    const siteCol = at(11)
+      ? `site TEXT CHECK (site IS NULL OR site IN (${siteList}))`
+      : `site TEXT NOT NULL CHECK (site IN (${siteList}))`;
+    db.exec(`
+      CREATE TABLE injection_logs (
+        id TEXT PRIMARY KEY NOT NULL,
+        profile_id TEXT NOT NULL,
+        ${siteCol},
+        site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
+        dose_units REAL,
+        insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+        meal_log_id TEXT,
+        note TEXT,
+        source TEXT NOT NULL DEFAULT 'manual',
+        logged_at TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
+        FOREIGN KEY (meal_log_id) REFERENCES meal_logs (id) ON DELETE SET NULL
+      );
+      CREATE INDEX idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
+    `);
+  } else {
+    // The dormant stock-tracking table the v6 → v7 step exists to drop.
+    db.exec("CREATE TABLE insulin_pens (id TEXT PRIMARY KEY NOT NULL);");
+  }
+
+  if (at(13)) for (const statement of V13_CREATE) db.exec(statement);
+  if (at(14)) for (const statement of V14_CREATE) db.exec(statement);
+
+  db.exec(`PRAGMA user_version = ${version};`);
+  return db;
+}
+
+/** The same user data in every fixture, written through the columns of its era. */
+function fillChainDatabase(db: DatabaseSync, version: ChainStart): void {
+  const at = (from: number) => version >= from;
+  const tags = at(5);
+
+  db.exec(
+    `INSERT INTO user_profiles
+       (id, name, insulin_sensitivity_factor, carb_ratio_breakfast, carb_ratio_lunch,
+        carb_ratio_dinner, target_fasting_max, target_postmeal_max, daily_carb_target_g, created_at)
+     VALUES ('p1', 'Ben', 45, 9, 11, 13, 105, 145, 210, '2026-01-01T00:00:00.000Z'),
+            ('p2', 'Cocuk', 60, 14, 16, 16, 110, 150, 150, '2026-01-02T00:00:00.000Z');`
+  );
+
+  const foodCols = at(2)
+    ? "(id, name_tr, name_en, category, carb_100g, is_custom, created_at)"
+    : "(id, name_tr, name_en, carb_100g, is_custom, created_at)";
+  const cat = at(2) ? "'bakery', " : "";
+  const cat2 = at(2) ? "'dishes', " : "";
+  db.exec(
+    `INSERT INTO foods ${foodCols} VALUES
+       ('f-seed', 'Ekmek', 'Bread', ${cat}48.5, 0, '2026-01-01T00:00:00.000Z'),
+       ('f-mine', 'Anneannemin böreği', 'Grandmothers borek', ${cat2}31, 1, '2026-02-02T00:00:00.000Z');`
+  );
+
+  db.exec(
+    `INSERT INTO sugar_logs
+       (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at${tags ? ", tags" : ""})
+     VALUES ('s1','p1',132,'fasting','manual','2026-07-01T07:00:00.000Z'${tags ? `,'["sport"]'` : ""}),
+            ('s2','p1',188,'post_meal_2h','manual','2026-07-01T14:00:00.000Z'${tags ? ",'[]'" : ""}),
+            ('s3','p2',96,'bedtime','manual','2026-07-01T22:00:00.000Z'${tags ? ",'[]'" : ""});`
+  );
+
+  db.exec(
+    `INSERT INTO meal_logs
+       (id, profile_id, sugar_log_id, food_id, custom_food_name, portion_g,
+        calculated_carbs_g, insulin_dose_units, photo_uri_local, personal_note,
+        logged_at${tags ? ", tags" : ""})
+     VALUES ('m1','p1','s1','f-mine',NULL,120,37.2,3.5,NULL,'az tuzlu','2026-07-01T07:05:00.000Z'${tags ? ",'[]'" : ""}),
+            ('m2','p1',NULL,NULL,'Pilav',180,62.4,5,NULL,NULL,'2026-07-01T13:00:00.000Z'${tags ? `,'["sport"]'` : ""}),
+            ('m3','p2',NULL,'f-mine',NULL,60,18.6,1.5,'file:///photo.jpg',NULL,'2026-07-02T20:00:00.000Z'${tags ? ",'[]'" : ""});`
+  );
+
+  db.exec(
+    `INSERT INTO favorites (id, profile_id, food_id) VALUES
+       ('fav1','p1','f-mine'), ('fav2','p2','f-mine');`
+  );
+
+  if (at(8)) {
+    db.exec(
+      `INSERT INTO injection_logs
+         (id, profile_id, site, site_point, dose_units, insulin_type, meal_log_id,
+          note, source, logged_at, tags)
+       VALUES
+         ('inj1','p1','abdomen_left',3,6.5,'bolus','m1','sabah','manual','2026-07-01T07:10:00.000Z','["sport"]'),
+         ('inj2','p1',${at(9) ? "'abdomen_left_upper'" : "'abdomen_right'"},1,14,'basal',NULL,NULL,'manual','2026-07-01T22:10:00.000Z','[]'),
+         ('inj3','p2',${at(11) ? "NULL" : "'arm_left'"},NULL,4.5,'bolus',NULL,NULL,'calculator','2026-07-01T13:05:00.000Z','[]');`
+    );
+  }
+
+  if (at(13)) {
+    db.exec(
+      `INSERT INTO meal_templates
+         (id, profile_id, name, slot, sort_order, use_count, last_used_at, created_at)
+       VALUES ('t1','p1','Sabah rutini','breakfast',0,4,'2026-07-28T07:00:00.000Z','2026-07-01T00:00:00.000Z'),
+              ('t2','p2','Okul kahvaltisi',NULL,0,1,NULL,'2026-07-01T00:00:00.000Z');
+       INSERT INTO meal_template_items
+         (id, template_id, food_id, name_snapshot, carb_100g_snapshot, portion_g, carbs_g_fixed, sort_order)
+       VALUES ('ti1','t1','f-seed','Ekmek',48.5,50,NULL,0),
+              ('ti2','t1',NULL,'Cay',0,200,0,1),
+              ('ti3','t2','f-mine','Anneannemin böreği',31,120,NULL,0);`
+    );
+  }
+  if (at(14)) {
+    db.prepare(V14_WRITE_META).run(SEED_CATALOG_VERSION_KEY, "3");
+  }
+}
+
+/** Stands in for the three catalog rows the v1 → v2 re-seed writes. */
+const CHAIN_SEED_STUB = [
+  ["stub-1", "Ekmek", "Bread"],
+  ["stub-2", "Pilav", "Rice"],
+  ["stub-3", "Elma", "Apple"],
+];
+
+/**
+ * seedFoods() reduced to what the chain depends on: the same "is there already a
+ * catalog?" guard, three rows instead of the real array. What the real one
+ * inserts, and what it refuses to touch, is covered by I8-I11.
+ */
+function seedStub(db: DatabaseSync): void {
+  const existing = (
+    db
+      .prepare(
+        "SELECT COUNT(*) AS c FROM foods WHERE is_custom = 0 AND source IS NULL;"
+      )
+      .get() as { c: number }
+  ).c;
+  if (existing > 0) return;
+  const insert = db.prepare(
+    `INSERT INTO foods (id, name_tr, name_en, category, carb_100g, is_custom, created_at)
+     VALUES (?, ?, ?, 'other', 20, 0, '2026-01-01T00:00:00.000Z');`
+  );
+  for (const row of CHAIN_SEED_STUB) insert.run(...row);
+}
+
+/** The v3 → v4 step, verbatim from lib/db/index.ts createInjectionSchema(). */
+const CHAIN_CREATE_INJECTIONS = `
+  CREATE TABLE IF NOT EXISTS injection_logs (
+    id TEXT PRIMARY KEY NOT NULL,
+    profile_id TEXT NOT NULL,
+    site TEXT
+      CHECK (site IS NULL OR site IN ('abdomen_left','abdomen_right','abdomen_left_upper',
+                      'abdomen_right_upper','abdomen_left_lower','abdomen_right_lower',
+                      'thigh_left','thigh_right','arm_left','arm_right',
+                      'buttock_left','buttock_right')),
+    site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
+    dose_units REAL,
+    insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+    meal_log_id TEXT,
+    note TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
+    logged_at TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',
+    bolus_kind TEXT,
+    FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
+    FOREIGN KEY (meal_log_id) REFERENCES meal_logs (id) ON DELETE SET NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_injection_meal_log ON injection_logs (meal_log_id);
+`;
+
+/**
+ * initDatabase()'s migration chain, in the same order and with the same guards.
+ *
+ * The v8 → v15 steps are the REAL exported functions (and therefore the REAL
+ * stamps, which live inside their transactions). Only the pre-v8 steps, which are
+ * inline DDL in lib/db/index.ts and cannot be imported without pulling in
+ * expo-sqlite, are replayed here; K6 pins them against that file's source so this
+ * copy cannot drift.
+ *
+ * `stampFinal: false` is the crash under test: the chain runs to the end and the
+ * process dies before lib/db/index.ts's closing `PRAGMA user_version = 15`.
+ */
+async function runChain(
+  db: DatabaseSync,
+  opts: { stampFinal?: boolean } = {}
+): Promise<void> {
+  const target = adapt(db);
+  db.exec("PRAGMA foreign_keys = ON;");
+  const currentVersion = readUserVersion(db);
+
+  if (currentVersion >= 1 && currentVersion < 6) {
+    try {
+      db.exec("ALTER TABLE foods ADD COLUMN source TEXT;");
+    } catch {
+      // column already exists, ignore
+    }
+  }
+  if (currentVersion >= 1 && currentVersion < 2) {
+    try {
+      db.exec("ALTER TABLE foods ADD COLUMN category TEXT NOT NULL DEFAULT 'other';");
+    } catch {
+      // column already exists, ignore
+    }
+    db.exec("DELETE FROM foods WHERE is_custom = 0;");
+    seedStub(db);
+    await stampSchemaVersion(target, 2);
+  }
+  if (currentVersion >= 1 && currentVersion < 3) {
+    try {
+      db.exec(
+        "ALTER TABLE user_profiles ADD COLUMN glucose_unit TEXT NOT NULL DEFAULT 'mgdl';"
+      );
+    } catch {
+      // column already exists, ignore
+    }
+    await stampSchemaVersion(target, 3);
+  }
+  if (currentVersion >= 1 && currentVersion < 4) {
+    db.exec(CHAIN_CREATE_INJECTIONS);
+    await stampSchemaVersion(target, 4);
+  }
+  if (currentVersion >= 1 && currentVersion < 5) {
+    for (const table of ["sugar_logs", "meal_logs", "injection_logs"]) {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';`);
+      } catch {
+        // column already exists, ignore
+      }
+    }
+    await stampSchemaVersion(target, 5);
+  }
+  if (currentVersion >= 1 && currentVersion < 7) {
+    db.exec("DROP TABLE IF EXISTS insulin_pens;");
+    await stampSchemaVersion(target, 7);
+  }
+
+  if (currentVersion >= 1 && currentVersion < 8) await migrateToV8(target);
+  if (currentVersion >= 1 && currentVersion < 9) await migrateToV9(target);
+  if (currentVersion >= 1 && currentVersion < 10) await migrateToV10(target);
+  if (currentVersion >= 1 && currentVersion < 11) await migrateToV11(target);
+  if (currentVersion >= 1 && currentVersion < 12) await migrateToV12(target);
+  if (currentVersion >= 1 && currentVersion < 13) await migrateToV13(target);
+  if (currentVersion >= 1 && currentVersion < 14) await migrateToV14(target);
+  if (currentVersion >= 1 && currentVersion < 15) await migrateToV15(target);
+
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 15;");
+}
+
+function count(db: DatabaseSync, table: string): number {
+  return (db.prepare(`SELECT COUNT(*) AS c FROM ${table};`).get() as { c: number }).c;
+}
+
+function snapshotRows(db: DatabaseSync, table: string): Record<string, unknown>[] {
+  return db.prepare(`SELECT * FROM ${table} ORDER BY id;`).all() as Record<
+    string,
+    unknown
+  >[];
+}
+
+/** Every value a table held before must still be there, column by column. */
+function sameRows(
+  label: string,
+  before: Record<string, unknown>[],
+  after: Record<string, unknown>[]
+): void {
+  eq(`${label}: row count preserved`, after.length, before.length);
+  let identical = true;
+  for (let i = 0; i < before.length; i++) {
+    for (const key of Object.keys(before[i])) {
+      if (before[i][key] !== after[i]?.[key]) {
+        identical = false;
+        console.error(
+          `  ✗ ${label} ${String(before[i].id)}.${key}: ${String(
+            before[i][key]
+          )} → ${String(after[i]?.[key])}`
+        );
+      }
+    }
+  }
+  ok(`${label}: every stored value byte-for-byte unchanged`, identical);
+}
+
+/**
+ * One column of one injection row. Returns a sentinel rather than throwing when
+ * the column or the row is gone, so the loss this file is guarding against is
+ * REPORTED as a failed assertion instead of taking the whole run down.
+ */
+function injectionField(
+  db: DatabaseSync,
+  id: string,
+  column: string
+): unknown {
+  try {
+    const row = db
+      .prepare(`SELECT ${column} AS v FROM injection_logs WHERE id = ?;`)
+      .get(id) as { v: unknown } | undefined;
+    return row === undefined ? "<row gone>" : row.v;
+  } catch {
+    return "<column gone>";
+  }
 }
 
 /** The stored catalog version, or 0 when the marker was never written. */

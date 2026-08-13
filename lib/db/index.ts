@@ -11,6 +11,7 @@ import {
   migrateToV13,
   migrateToV14,
   migrateToV15,
+  stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
 import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "./v14Sql";
@@ -61,6 +62,18 @@ export async function initDatabase(): Promise<void> {
   // the end has nothing to look for and can just record the version.
   let seededNow = false;
 
+  // Every step below stamps the version it reaches as it lands, so a process
+  // killed part way through the chain resumes at the next step on the following
+  // launch instead of replaying steps that already committed. Replaying them is
+  // what destroyed data: the v8/v9/v11 rebuilds copy through column lists frozen
+  // at their own era, so running them a second time over a table that has since
+  // reached v15 drops bolus_kind and rewrites site_point / source. See
+  // stampSchemaVersion in ./migrations.
+  //
+  // `currentVersion` is read once and never reassigned, so the stamps cannot
+  // affect which of the branches below run on THIS launch: the chain still
+  // decides everything from the version the database had on entry.
+
   if (currentVersion < 1) {
     await createSchemaV1(db);
     await ensureDefaultProfile(db);
@@ -73,6 +86,12 @@ export async function initDatabase(): Promise<void> {
   //
   // Runs ahead of the older steps below on purpose: seedFoods() reads this
   // column, and the v1 → v2 step re-seeds.
+  //
+  // Deliberately NOT stamped: it is the only step out of version order, so
+  // recording 6 here would tell the next launch that v2 → v5 had run when they
+  // have not, and those steps would be skipped forever. The v6 → v7 step below
+  // stamps 7 instead, by which point everything through v6 really has landed
+  // (this ALTER runs on any launch that enters the chain below 6).
   if (currentVersion >= 1 && currentVersion < 6) {
     try {
       await db.execAsync("ALTER TABLE foods ADD COLUMN source TEXT;");
@@ -92,6 +111,15 @@ export async function initDatabase(): Promise<void> {
     }
     await db.execAsync("DELETE FROM foods WHERE is_custom = 0;");
     seededNow = (await seedFoods(db)) || seededNow;
+    // These early steps have no transaction of their own, so the stamp follows
+    // the step instead of committing with it. That is enough here and only here:
+    // each one is a guarded ALTER, a CREATE IF NOT EXISTS or a DROP IF EXISTS
+    // that rebuilds no table and deletes no user row (the DELETE above reaches
+    // only seeded catalog rows, which the same step re-inserts). A kill between
+    // the step and its stamp therefore costs a repeat of the step on the next
+    // launch, never a row. The rebuild steps from v8 on cannot say that, which is
+    // why their stamps are inside their transactions.
+    await stampSchemaVersion(db, 2);
   }
 
   // v2 → v3: per-profile glucose display unit (mg/dL default).
@@ -103,11 +131,13 @@ export async function initDatabase(): Promise<void> {
     } catch {
       // column already exists, ignore
     }
+    await stampSchemaVersion(db, 3);
   }
 
   // v3 → v4: injection-site logging (preserves existing data).
   if (currentVersion >= 1 && currentVersion < 4) {
     await createInjectionSchema(db);
+    await stampSchemaVersion(db, 4);
   }
 
   // v4 → v5: optional context tags on each log table.
@@ -121,6 +151,7 @@ export async function initDatabase(): Promise<void> {
         // column already exists, ignore
       }
     }
+    await stampSchemaVersion(db, 5);
   }
 
   // v6 → v7: the stock-tracking feature removed in R5 left one table behind.
@@ -132,6 +163,9 @@ export async function initDatabase(): Promise<void> {
     } catch {
       // best-effort; the app no longer references this table either way
     }
+    // Stamps 7, not 6: the v5 → v6 foods.source column is added by the step at
+    // the top of the chain, which any launch entering below 6 has just run.
+    await stampSchemaVersion(db, 7);
   }
 
   // v7 → v8: range targets, onboarding personalization, injection rotation
@@ -192,6 +226,12 @@ export async function initDatabase(): Promise<void> {
     await migrateToV15(db);
   }
 
+  // The fresh-install stamp, and a backstop for a database that entered the chain
+  // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
+  // directly and no migrateToV* runs on that path, so nothing else would record a
+  // version there. It is no longer what carries a MIGRATED install: every step
+  // above has already stamped what it reached, so a launch killed before this
+  // line resumes at the next step rather than replaying the chain.
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
 
   // Give an existing install the foods this release added. Runs last, so it can

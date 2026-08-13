@@ -649,7 +649,8 @@ export default function OnboardingScreen() {
                 <View style={{ flex: 1 }}>
                   <Text className="text-mut text-[11px] font-bold">zerospike</Text>
                   <Text className="text-ink text-sm font-bold" numberOfLines={1}>
-                    {t("dashboard.quickPostMeal", { n: 120 })}
+                    {t("dashboard.quickPostMealTitle")}{" "}
+                    {t("dashboard.quickPostMealWindow", { n: 120 })}
                   </Text>
                 </View>
                 <Text style={{ color: THEME.accent, fontSize: 18, fontWeight: "800" }}>1:12</Text>

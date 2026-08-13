@@ -229,6 +229,14 @@ export default function DashboardScreen() {
   const { toast, confirm, actionSheet } = useFeedback();
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  // The visible journal list only: same window, but with the calculator's own
+  // auto-written bolus row (source = 'calculator') filtered out in SQL, so a
+  // logged meal no longer shows its dose twice (once on the meal row, once on
+  // the injection line right under it). Kept SEPARATE from `entries` above -
+  // active insulin, the week strip and the response icons below still read the
+  // unfiltered feed, because IOB is computed from every bolus row including
+  // this one; only the rendered list itself hides it.
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   // The first feed read has landed. Without it an empty `entries` means both
   // "still loading" and "nothing logged yet", and the first-run guide flashed
   // over an existing user's dashboard for one frame on every cold start.
@@ -276,8 +284,20 @@ export default function DashboardScreen() {
     try {
       // One SQL window for the whole screen: stats read the full feed, the list
       // slices it. Paging inside the window never re-runs this query.
-      const feed = await getJournal(activeProfile.id, lang, loadLimit);
+      //
+      // The second read is the same window filtered for the rendered list (see
+      // the `journalEntries` state comment above); the filter runs in SQL before
+      // the LIMIT, so the row budget is spent on rows that actually display.
+      // Issued together rather than in sequence: this is the screen the app
+      // opens on, and awaiting them one after the other doubled its first paint.
+      const [feed, visible] = await Promise.all([
+        getJournal(activeProfile.id, lang, loadLimit),
+        getJournal(activeProfile.id, lang, loadLimit, undefined, {
+          excludeCalculatorInjections: true,
+        }),
+      ]);
       setEntries(feed);
+      setJournalEntries(visible);
     } catch (err) {
       logCrash(err, { screen: "dashboard", load: "journal" });
     } finally {
@@ -866,7 +886,9 @@ export default function DashboardScreen() {
   // state) reuse the same section objects and the SectionList can bail out.
   const { filteredEntries, displayEntries, journalSections } = useMemo(() => {
     const filtered =
-      filter === "all" ? entries : entries.filter((e) => e.kind === filter);
+      filter === "all"
+        ? journalEntries
+        : journalEntries.filter((e) => e.kind === filter);
     let cut = 0;
     for (let p = 0; p < journalPages; p++) cut = nextJournalCut(filtered, cut);
     const display = filtered.slice(0, cut);
@@ -894,20 +916,24 @@ export default function DashboardScreen() {
       arr.push(e);
     }
     return { filteredEntries: filtered, displayEntries: display, journalSections: sections };
-  }, [entries, filter, journalPages, t]);
+  }, [journalEntries, filter, journalPages, t]);
 
   // "Show more" is offered while the loaded feed still has rows to reveal, or
   // while the SQL window came back full (so the DB may hold older records). Both
-  // false = the journal really is at its end and the button goes away.
+  // false = the journal really is at its end and the button goes away. Reads
+  // `journalEntries` (not `entries`): that is the feed this window's fullness
+  // actually describes, now that the two queries can return different counts
+  // for the same LIMIT.
   const canShowMore =
-    displayEntries.length < filteredEntries.length || entries.length >= loadLimit;
+    displayEntries.length < filteredEntries.length ||
+    journalEntries.length >= loadLimit;
 
   function showMoreJournal() {
     hapticSelect();
     if (displayEntries.length < filteredEntries.length) {
       // Rows are already in memory: revealing the next slice is a pure slice.
       setJournalPages((p) => p + 1);
-    } else if (entries.length >= loadLimit) {
+    } else if (journalEntries.length >= loadLimit) {
       // Loaded window exhausted and the query filled it: widen the window once
       // and advance with it. When the DB is drained the length check stops this.
       setLoadLimit((l) => l + JOURNAL_LOAD_STEP);
@@ -1259,14 +1285,24 @@ export default function DashboardScreen() {
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
               <Ionicons name="restaurant-outline" size={18} color={THEME.accent} />
-              <Text
-                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", flex: 1 }}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-              >
-                {t("dashboard.quickPostMeal", { n: postMealWindowMin })}
-              </Text>
+              {/* Title and window on their own lines. As one line it needed
+                  adjustsFontSizeToFit to survive the CTA beside it, which is
+                  iOS-only, so the longer translations were simply clipped on
+                  Android. */}
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
+                  numberOfLines={2}
+                >
+                  {t("dashboard.quickPostMealTitle")}
+                </Text>
+                <Text
+                  style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}
+                  numberOfLines={1}
+                >
+                  {t("dashboard.quickPostMealWindow", { n: postMealWindowMin })}
+                </Text>
+              </View>
             </View>
             <PressableScale
               onPress={startedEating}
@@ -1434,8 +1470,10 @@ export default function DashboardScreen() {
         </Text>
       ) : null}
 
-      {/* Journal kind filter (session-only) */}
-      {entries.length > 0 ? (
+      {/* Journal kind filter (session-only). Gated on the VISIBLE list
+          (journalEntries), not the stats feed: the two can differ now that
+          the calculator's own bolus row is filtered out of the former. */}
+      {journalEntries.length > 0 ? (
         <View className="flex-row mb-2" style={{ gap: 6 }}>
           {FILTER_CHIPS.map((c) => {
             const on = filter === c.key;
@@ -1467,7 +1505,7 @@ export default function DashboardScreen() {
       ) : null}
 
       {/* One-time tap-to-edit discoverability hint */}
-      {showEditHint && entries.length > 0 ? (
+      {showEditHint && journalEntries.length > 0 ? (
         <View className="flex-row items-center rounded-xl border border-hair bg-glass px-3 py-2.5 mb-2">
           <Ionicons name="create-outline" size={14} color={THEME.accent} />
           <Text className="text-mut text-xs ml-2 flex-1">
@@ -1497,7 +1535,7 @@ export default function DashboardScreen() {
         windowSize={7}
         ListHeaderComponent={Header}
         ListFooterComponent={
-          entries.length > 0 ? (
+          journalEntries.length > 0 ? (
             <View>
               {canShowMore ? (
                 <Button
@@ -1672,7 +1710,8 @@ function PostMealCountdown({
             style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", flex: 1 }}
             numberOfLines={1}
           >
-            {t("dashboard.quickPostMeal", { n: windowMin })}
+            {t("dashboard.quickPostMealTitle")}{" "}
+            {t("dashboard.quickPostMealWindow", { n: windowMin })}
           </Text>
         </View>
         <View className="flex-row items-center" style={{ gap: 10 }}>

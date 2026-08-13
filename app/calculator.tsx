@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
+  Modal,
   Pressable,
   ScrollView,
   Text,
   TextInput,
-  View, Platform } from "react-native";
+  View, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import * as ImagePicker from "expo-image-picker";
@@ -30,10 +31,15 @@ import {
 import {
   deleteInjection,
   getCalculatorInjectionForMeal,
+  getSiteUsageHistory,
+  leastRecentlyUsedPoint,
   logInjection,
   updateInjection,
+  type SiteUsage,
 } from "../lib/db/injections";
-import { logEvent } from "../lib/analytics";
+import { getRotationCycleStart } from "../lib/rotationCycle";
+import { InjectionBodyMap, type PointSelection } from "../components/InjectionBodyMap";
+import { logCrash, logEvent } from "../lib/analytics";
 import { noteLogAndMaybeReview } from "../lib/services/review";
 import {
   checkDose,
@@ -71,8 +77,8 @@ import {
   writeGlucoseToHealthIfEnabled,
 } from "../lib/services/health";
 import { foodSourceLabel } from "../lib/services/openFoodFacts";
-import type { Food, LogTag, MealSlot } from "../lib/db/types";
-import { foodName } from "../lib/db/types";
+import type { Food, InjectionSite, LogTag, MealSlot, SitePoint } from "../lib/db/types";
+import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
 import { Stepper } from "../components/Stepper";
 import { EMOJI_RENDERS } from "../components/FoodPlate";
@@ -89,7 +95,7 @@ import {
   sanitizeNumberText,
 } from "../lib/numberInput";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
-import { hapticSuccess } from "../lib/haptics";
+import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import {
   AppBackground,
   GlassCard,
@@ -103,12 +109,9 @@ import { upper } from "../lib/upper";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
-/** The region an auto-written mealtime bolus is filed under: NONE. This screen
- *  never asks where the dose went, so it records no region and no rotation point
- *  (schema v11 allows a null site). It used to stamp 'abdomen_left', which put
- *  entries the user never placed into their rotation picture and heated that one
- *  region on the map; the injection tab can still fill the region in later. */
-const AUTO_BOLUS_SITE = null;
+// Same heat window as the injection tab's map and its edit sheet, so a region's
+// colour means the same thing wherever it is picked.
+const USAGE_WINDOW_DAYS = 30;
 
 /**
  * The stand-in food row for a meal that has none: a typed-name entry, or one
@@ -348,6 +351,108 @@ const inputStyle = {
   color: THEME.ink,
 } as const;
 
+/**
+ * Region picker, as a modal over the silhouette (InjectionBodyMap) instead of
+ * the card-grid SitePointSelector - the same picking language as the
+ * Injection tab's own map, so the app has one way to choose a site, not two.
+ * Chrome follows InjectionEditSheet's bottom sheet (same overlay/close/height
+ * pattern); no cycleStart/onStartNewCycle here, on purpose - this is a record
+ * screen, not where a rotation cycle gets managed.
+ */
+function SitePickerModal({
+  visible,
+  onClose,
+  usage,
+  noSiteCount,
+  selected,
+  onSelect,
+  showRotationHint,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  /** undefined while the lazy fetch (ensureSiteUsageLoaded) hasn't resolved yet
+   *  for this screen visit - renders a skeleton in its place until it does. */
+  usage: SiteUsage[] | undefined;
+  noSiteCount: number;
+  selected: PointSelection | null;
+  onSelect: (selection: PointSelection) => void;
+  /** Pro gate for the rotation-suggestion ring on the silhouette - passed
+   *  through as isProUser from the caller (see InjectionBodyMap). */
+  showRotationHint: boolean;
+}) {
+  const { t } = useTranslation();
+  const { height: winH } = useWindowDimensions();
+  // Matches InjectionBodyMap's own minHeight floor, so the skeleton reserves
+  // exactly the space the real silhouette will occupy - no jump once it loads.
+  const mapMinHeight = Math.round(winH * 0.5);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable
+        style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+        onPress={onClose}
+      >
+        <Pressable
+          style={[
+            {
+              maxHeight: Math.round(winH * 0.86),
+              borderTopLeftRadius: 26,
+              borderTopRightRadius: 26,
+              borderTopWidth: 1,
+              borderLeftWidth: 1,
+              borderRightWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: THEME.bg.g1,
+              paddingHorizontal: 18,
+              paddingTop: 8,
+            },
+            glow(THEME.accent, 30, 0.3),
+          ]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View className="items-center mb-1.5">
+            <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
+          </View>
+          <View className="flex-row items-center justify-between mb-3">
+            <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
+              {t("injection.selectSite")}
+            </Text>
+            <Pressable
+              onPress={onClose}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.close")}
+              className="p-1"
+            >
+              <Ionicons name="close" size={22} color={THEME.muted} />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={{ flexShrink: 1 }}
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 24 }}
+          >
+            {usage === undefined ? (
+              <Skeleton width="100%" height={mapMinHeight} radius={20} />
+            ) : (
+              <InjectionBodyMap
+                usage={usage}
+                noSiteCount={noSiteCount}
+                selected={selected}
+                onSelect={onSelect}
+                windowDays={USAGE_WINDOW_DAYS}
+                showRotationHint={showRotationHint}
+              />
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function CalculatorScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -365,7 +470,7 @@ function CalculatorScreen() {
     templateId?: string;
     portions?: string;
   }>();
-  const { activeProfile, lang, bumpData, dataVersion } = useApp();
+  const { activeProfile, lang, bumpData, dataVersion, isProUser } = useApp();
   const { actionSheet, confirm, toast } = useFeedback();
 
   const [food, setFood] = useState<Food | null>(null);
@@ -398,6 +503,35 @@ function CalculatorScreen() {
   // The reading an already-saved meal is attached to, so an edit updates that
   // row instead of silently leaving a stale value behind it.
   const [linkedSugarLogId, setLinkedSugarLogId] = useState<string | null>(null);
+
+  // Optional region for the bolus row this screen writes (see renderDetails'
+  // site picker below). `site`/`point` are only meaningful once `siteTouched`
+  // is true - they default to the first selectable region purely so the picker
+  // has something to display when it is opened, exactly the "opens on a
+  // placeholder region, only becomes real once picked" pattern InjectionEditSheet
+  // already uses for the same reason. Left blank by default, always: earlier
+  // builds auto-stamped this injection to a fixed 'abdomen_left', which polluted
+  // rotation-heat data with entries the user never actually placed.
+  const [site, setSite] = useState<InjectionSite>(SELECTABLE_SITES[0]);
+  const [point, setPoint] = useState<SitePoint | null>(null);
+  const [siteTouched, setSiteTouched] = useState(false);
+  const [siteModalOpen, setSiteModalOpen] = useState(false);
+  // undefined = not fetched yet (modal never opened this session). The silhouette
+  // in the modal reads this directly, so a fresh open shows its own skeleton
+  // until it resolves - see ensureSiteUsageLoaded.
+  const [siteUsage, setSiteUsage] = useState<SiteUsage[] | undefined>(undefined);
+  const [siteNoSiteCount, setSiteNoSiteCount] = useState(0);
+  // Guards the lazy fetch below to run at most once per screen visit, whichever
+  // modal open triggers it first.
+  const siteUsageRequestedRef = useRef(false);
+  // Least-recently-used point, shown as a factual hint only - never pre-applied.
+  // Edit mode only: false until the prefill effect below has finished every
+  // await. Gates the save button (see the effect's finally for why).
+  const [editPrefillDone, setEditPrefillDone] = useState(false);
+  const [siteSuggestion, setSiteSuggestion] = useState<{
+    site: InjectionSite;
+    point: SitePoint;
+  } | null>(null);
 
   const isEdit = typeof mealLogId === "string" && mealLogId.length > 0;
 
@@ -450,7 +584,11 @@ function CalculatorScreen() {
   // the estimate effect never overwrites the dose the user actually applied.
   useEffect(() => {
     (async () => {
-      if (!isEdit || !mealLogId) return;
+      if (!isEdit || !mealLogId) {
+        setEditPrefillDone(true);
+        return;
+      }
+      try {
       const log = await getMealLog(mealLogId);
       if (!log) return;
       const catalogueFood = log.food_id ? await getFood(log.food_id) : null;
@@ -465,6 +603,20 @@ function CalculatorScreen() {
       setTags(log.tags);
       setLoggedAt(new Date(log.logged_at));
       setLinkedSugarLogId(log.sugar_log_id);
+      // Prefill the region from whatever this meal's bolus row actually holds -
+      // possibly set later from the Injection tab, and never to be overwritten by
+      // a picker that opens on a placeholder. No injection row (dose was 0 when
+      // first saved) or no region on it both mean "nothing to prefill".
+      const existingInjection = await getCalculatorInjectionForMeal(mealLogId);
+      if (existingInjection?.site) {
+        setSite(existingInjection.site);
+        setPoint(existingInjection.site_point);
+        setSiteTouched(true);
+      } else {
+        setSite(SELECTABLE_SITES[0]);
+        setPoint(null);
+        setSiteTouched(false);
+      }
       if (log.sugar_log_id) {
         const reading = await getSugarLog(log.sugar_log_id);
         if (reading) {
@@ -478,6 +630,13 @@ function CalculatorScreen() {
           );
         }
       }
+      } finally {
+        // The region prefill is the LAST await here, but setFood() above already
+        // cleared the loading skeleton. Saving inside that window wrote a null
+        // region over one the user had assigned on the Injection tab, so the CTA
+        // stays disabled until every field has actually landed.
+        setEditPrefillDone(true);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, mealLogId]);
@@ -488,6 +647,50 @@ function CalculatorScreen() {
     void readFreshIob();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile, dataVersion]);
+
+  // The least-recently-used hint next to the site row below. Purely descriptive
+  // of the user's own history, same as the injection tab's own rotation card -
+  // never applied on its own (see renderDetails). This is cheap (one grouped
+  // query) and the hint has to be visible without ever opening the modal, so it
+  // loads eagerly; the heavier per-site usage history stays lazy (see
+  // ensureSiteUsageLoaded) since the calculator's main flow never needs it.
+  // Rotation is a Pro feature (same gate as the injection tab's rotation card),
+  // so a non-Pro profile never even issues this query - the Injection tab hides
+  // the identical suggestion behind a paywall card, and firing it here would
+  // quietly hand the same information to a free user through a screen that has
+  // no Pro gate of its own.
+  useEffect(() => {
+    if (!activeProfile || !isProUser) return;
+    let alive = true;
+    (async () => {
+      const cycle = await getRotationCycleStart(activeProfile.id);
+      const suggestion = await leastRecentlyUsedPoint(activeProfile.id, cycle);
+      if (!alive) return;
+      setSiteSuggestion(suggestion);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [activeProfile, isProUser]);
+
+  /** Site-usage history for the silhouette modal, fetched once per screen visit
+   *  the first time the modal opens rather than whenever the calculator does -
+   *  this screen's main flow (logging a meal) never touches it. On failure the
+   *  modal still has to open with a pickable (if colourless) silhouette rather
+   *  than staying stuck loading, so this falls back to an empty usage list. */
+  async function ensureSiteUsageLoaded() {
+    if (siteUsageRequestedRef.current || !activeProfile) return;
+    siteUsageRequestedRef.current = true;
+    try {
+      const cycle = await getRotationCycleStart(activeProfile.id);
+      const usage = await getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS, cycle);
+      setSiteUsage(usage.sites);
+      setSiteNoSiteCount(usage.noSiteCount);
+    } catch (err) {
+      logCrash(err, { screen: "calculator", step: "siteUsage" });
+      setSiteUsage([]);
+    }
+  }
 
   /** Re-reads active insulin from the log. IOB decays while this screen sits
    *  open, so the value the save uses is taken at save time, not at mount. */
@@ -616,6 +819,18 @@ function CalculatorScreen() {
     });
   }
 
+  /**
+   * router.back() is a no-op when this modal is the only route on the stack
+   * (scan reaches it via replace(), so a scan that was itself the entry point
+   * leaves nothing to pop). That stranded the user in a modal that had already
+   * saved and then refused to close. The food tab is the fallback: it closes
+   * the modal and lands where the new entry is visible.
+   */
+  function dismiss() {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/food");
+  }
+
   /** The header close button: a photo, note, tag or typed dose the user just
    *  added has nowhere else to live if this screen closes without saving, so
    *  leaving un-warned would silently drop it. Nothing to lose (dirty still
@@ -631,7 +846,7 @@ function CalculatorScreen() {
       });
       if (!proceed) return;
     }
-    router.back();
+    dismiss();
   }
 
   /**
@@ -718,6 +933,13 @@ function CalculatorScreen() {
       const loggedIso = loggedAt ? loggedAt.toISOString() : undefined;
       const at = loggedAt ?? new Date();
 
+      // The region for the bolus row below, if the user picked one (see
+      // renderDetails' site picker). Untouched stays null, same as a dose of 0
+      // writes no row at all - a place the user never actually chose must never
+      // land in a health record as if it had been.
+      const chosenSite = siteTouched ? site : null;
+      const chosenPoint = siteTouched ? point : null;
+
       if (isEdit && mealLogId) {
         // Correcting an existing record: no post-meal reminder and no review
         // nudge, but every row this meal owns has to move with it. Leaving the
@@ -739,14 +961,16 @@ function CalculatorScreen() {
             await updateInjection(existingInjection.id, {
               dose_units: dose,
               insulin_type: "bolus",
+              site: chosenSite,
+              site_point: chosenPoint,
               tags,
               ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
             });
           } else {
             await logInjection({
               profile_id: activeProfile.id,
-              site: AUTO_BOLUS_SITE,
-              site_point: null,
+              site: chosenSite,
+              site_point: chosenPoint,
               dose_units: dose,
               insulin_type: "bolus",
               meal_log_id: mealLogId,
@@ -818,7 +1042,7 @@ function CalculatorScreen() {
         logEvent("log_edited", { kind: "meal" });
         hapticSuccess();
         bumpData();
-        router.back();
+        dismiss();
         return;
       }
 
@@ -873,7 +1097,16 @@ function CalculatorScreen() {
         logged_at: loggedIso,
         meal_template_id: templateCtx ? templateCtx.template.id : null,
       });
-      if (templateCtx) await touchTemplate(templateCtx.template.id, meal.logged_at);
+      // From here on the meal row EXISTS. Everything below is a side effect, and
+      // none of it may keep the screen open: an exception between the write and
+      // dismiss() left the user staring at a modal that had already saved and
+      // would not close, with no way to tell it had worked.
+      try {
+        if (templateCtx)
+          await touchTemplate(templateCtx.template.id, meal.logged_at);
+      } catch (err) {
+        logCrash(err, { screen: "calculator", step: "touchTemplate" });
+      }
       logEvent("log_added", {
         kind: "meal",
         source: templateCtx ? "template" : "manual",
@@ -888,18 +1121,25 @@ function CalculatorScreen() {
       // duplicate, and it stays fully editable there.
       let wroteInjection = false;
       if (showsDose && dose > 0) {
-        await logInjection({
-          profile_id: activeProfile.id,
-          site: AUTO_BOLUS_SITE,
-          site_point: null,
-          dose_units: dose,
-          insulin_type: "bolus",
-          meal_log_id: meal.id,
-          source: "calculator",
-          tags,
-          logged_at: loggedIso,
-        });
-        wroteInjection = true;
+        try {
+          await logInjection({
+            profile_id: activeProfile.id,
+            site: chosenSite,
+            site_point: chosenPoint,
+            dose_units: dose,
+            insulin_type: "bolus",
+            meal_log_id: meal.id,
+            source: "calculator",
+            tags,
+            logged_at: loggedIso,
+          });
+          wroteInjection = true;
+        } catch (err) {
+          // The dose still lives on the meal row, so nothing the user typed is
+          // lost. wroteInjection stays false, which downgrades the toast to the
+          // plain "entry saved" wording instead of claiming a bolus row exists.
+          logCrash(err, { screen: "calculator", step: "logInjection" });
+        }
       }
 
       void noteLogAndMaybeReview();
@@ -909,7 +1149,16 @@ function CalculatorScreen() {
       // A backdated entry does not: the countdown would start from this moment
       // rather than from the meal, so writing up last night's dinner armed a
       // check for two hours from now and overwrote a timer already running.
-      if (loggedAt == null) await schedulePostMealReminder();
+      // Best effort on purpose: scheduleNotificationAsync throws on a device
+      // that refuses the schedule, and an unavailable REMINDER must never cost
+      // the user a saved MEAL or trap them in this modal.
+      if (loggedAt == null) {
+        try {
+          await schedulePostMealReminder();
+        } catch (err) {
+          logCrash(err, { screen: "calculator", step: "postMealReminder" });
+        }
+      }
       bumpData();
 
       // ONE undo for the whole record. Undoing "the injection" while the meal
@@ -919,8 +1168,13 @@ function CalculatorScreen() {
       // save did not create it.
       const mealId = meal.id;
       const createdReading = createdSugarLogId;
+      // A region was picked or not - the toast says which, since "edit it on the
+      // Injection tab" reads as a correction prompt when there is nothing wrong,
+      // and silence about a missing region reads as if one was recorded.
       const message = wroteInjection
-        ? t("calculator.autoInjection")
+        ? chosenSite
+          ? t("calculator.autoInjection")
+          : t("calculator.autoInjectionNoSite")
         : createdReading
           ? t("calculator.autoGlucose")
           : t("calculator.savedRecord");
@@ -938,7 +1192,13 @@ function CalculatorScreen() {
           })();
         },
       });
-      router.back();
+      dismiss();
+    } catch (err) {
+      // Only reachable while the record is still unwritten, so staying on the
+      // screen is right - but it used to stay in silence, with the button simply
+      // doing nothing and no way to tell whether anything had been saved.
+      logCrash(err, { screen: "calculator", step: "save" });
+      toast(t("calculator.saveFailed"), "error");
     } finally {
       setSaving(false);
     }
@@ -950,6 +1210,25 @@ function CalculatorScreen() {
    *  function too: nothing here ever moves when the food card above it swaps
    *  from a skeleton to real content. */
   function renderDetails() {
+    // Meaningful only once a dose will actually be written (showsDose && dose >
+    // 0): with no dose, this screen writes no injection row at all, so a region
+    // for one would describe a record that does not exist. The ROW itself still
+    // renders whenever showsDose does, just inert - `dose` flips through
+    // empty/0/positive on every keystroke while the user types it, and hiding
+    // the whole block on that same flicker is exactly the layout jump the rest
+    // of this form avoids. Disabled here, not unmounted.
+    const doseActive = typedDose != null && typedDose > 0;
+    const siteSummaryLabel = siteTouched
+      ? point != null
+        ? t("injection.siteWithPoint", { site: t(`injectionSite.${site}`), n: point })
+        : t(`injectionSite.${site}`)
+      : t("injection.chooseSitePoint");
+    // Only a fully touched region+point counts as "selected" for the modal's
+    // silhouette; a legacy row with a site but no point (see
+    // getCalculatorInjectionForMeal's prefill) has nothing to highlight there.
+    const siteModalSelection: PointSelection | null =
+      siteTouched && point != null ? { site, point } : null;
+
     return (
       <>
         <DetailLabel>{t("calculator.activeSlot")}</DetailLabel>
@@ -984,6 +1263,109 @@ function CalculatorScreen() {
           onChange={setLoggedAt}
           onClose={() => setTimePickerOpen(false)}
         />
+
+        {showsDose ? (
+          <>
+            <DetailLabel>{t("injection.selectSite")}</DetailLabel>
+            <View className="flex-row items-center mb-2" style={{ gap: 8 }}>
+              <Pressable
+                onPress={() => {
+                  hapticSelect();
+                  setSiteModalOpen(true);
+                  void ensureSiteUsageLoaded();
+                }}
+                disabled={!doseActive}
+                accessibilityRole="button"
+                accessibilityState={{ selected: siteTouched, disabled: !doseActive }}
+                accessibilityLabel={siteSummaryLabel}
+                className="flex-row items-center flex-1"
+                style={[inputStyle, { minHeight: 44, opacity: doseActive ? 1 : 0.45 }]}
+              >
+                <Ionicons
+                  name="location-outline"
+                  size={16}
+                  color={siteTouched ? THEME.accent : THEME.muted}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: siteTouched ? THEME.ink : THEME.muted,
+                    marginLeft: 8,
+                    fontSize: 13,
+                    flex: 1,
+                  }}
+                >
+                  {siteSummaryLabel}
+                </Text>
+                <Ionicons name="chevron-forward-outline" size={16} color={THEME.muted} />
+              </Pressable>
+              {siteTouched ? (
+                <Pressable
+                  onPress={() => {
+                    hapticSelect();
+                    setSiteTouched(false);
+                    setSite(SELECTABLE_SITES[0]);
+                    setPoint(null);
+                  }}
+                  disabled={!doseActive}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("common.delete")}
+                  style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+                >
+                  <Ionicons name="close-circle-outline" size={18} color={THEME.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {/* Rotation hint: a single line, applied with one tap, no modal
+                needed. Only shown once a dose is actually active, same gate as
+                the row above so it never suggests a site for a record that
+                will not be written - and only to Pro (isProUser), since the
+                underlying suggestion is a Pro feature on the Injection tab.
+                Region/point picking itself (the modal below) stays open to
+                everyone; only the "which point to prefer" suggestion is Pro,
+                so a non-Pro user gets no paywall card here, just no hint. */}
+            {doseActive && isProUser && siteSuggestion ? (
+              <Pressable
+                onPress={() => {
+                  hapticSelect();
+                  setSite(siteSuggestion.site);
+                  setPoint(siteSuggestion.point);
+                  setSiteTouched(true);
+                }}
+                accessibilityRole="button"
+                hitSlop={6}
+                className="flex-row items-center mb-4"
+              >
+                <Ionicons name="sync-outline" size={13} color={THEME.accent} />
+                <Text style={{ color: THEME.accent, fontSize: 11, marginLeft: 6, flex: 1 }} numberOfLines={1}>
+                  {t("injection.leastUsedPoint")}
+                  {" · "}
+                  {t("injection.siteWithPoint", {
+                    site: t(`injectionSite.${siteSuggestion.site}`),
+                    n: siteSuggestion.point,
+                  })}
+                </Text>
+              </Pressable>
+            ) : null}
+
+            <SitePickerModal
+              visible={siteModalOpen}
+              onClose={() => setSiteModalOpen(false)}
+              usage={siteUsage}
+              noSiteCount={siteNoSiteCount}
+              selected={siteModalSelection}
+              showRotationHint={isProUser}
+              onSelect={(selection) => {
+                setSite(selection.site);
+                setPoint(selection.point);
+                setSiteTouched(true);
+                setSiteModalOpen(false);
+              }}
+            />
+          </>
+        ) : null}
 
         {photo ? (
           <View className="mb-4">
@@ -1258,7 +1640,7 @@ function CalculatorScreen() {
                 isEdit
                   ? t("calculator.saveChanges")
                   : showsDose
-                    ? t("calculator.saveAsInjection")
+                    ? t("calculator.saveMealAndDose")
                     : t("calculator.logMeal")
               }
               disabled
@@ -1693,10 +2075,10 @@ function CalculatorScreen() {
               isEdit
                 ? t("calculator.saveChanges")
                 : showsDose
-                  ? t("calculator.saveAsInjection")
+                  ? t("calculator.saveMealAndDose")
                   : t("calculator.logMeal")
             }
-            disabled={saving}
+            disabled={saving || (isEdit && !editPrefillDone)}
             onPress={logMeal}
           />
         </ScrollView>

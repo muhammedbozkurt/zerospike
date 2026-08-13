@@ -138,6 +138,18 @@ function AddFoodScreen() {
   // getFood always lands before the form - and any typing in it - exists.
   const checkingLimit = isEdit ? !foodLoaded : allowed === null;
 
+  /**
+   * router.back() is a no-op when this modal is the only route on the stack
+   * (reached by a replace() from a screen that was itself the entry point),
+   * which strands the user in a modal that saved successfully and then refused
+   * to close. Falling back to the food tab both closes it and lands on the
+   * screen where the new entry is visible.
+   */
+  function closeAfterSave() {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/food");
+  }
+
   async function save() {
     if (!valid) return;
 
@@ -154,7 +166,7 @@ function AddFoodScreen() {
       });
       bumpData();
       toast(t("food.saved"), "success");
-      router.back();
+      closeAfterSave();
       return;
     }
 
@@ -174,7 +186,7 @@ function AddFoodScreen() {
     });
     bumpData();
     toast(t("food.saved"), "success");
-    router.back();
+    closeAfterSave();
   }
 
   return (

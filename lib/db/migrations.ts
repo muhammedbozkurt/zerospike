@@ -47,6 +47,37 @@ import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "./v15Sql";
  */
 
 /**
+ * The versions a step is allowed to stamp. A literal union rather than `number`
+ * because PRAGMA takes no bound parameter and the value below is therefore
+ * interpolated: typing it this way is compile-time proof that a schema version
+ * can only ever be one of these constants and never anything a user reaches.
+ */
+export type SchemaStamp = 2 | 3 | 4 | 5 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
+
+/**
+ * Records that the schema has reached `version`, from INSIDE the step's own
+ * transaction so the step and the number that says it ran commit together.
+ *
+ * The chain used to write one `user_version = 15` after every step had already
+ * committed. A process killed in that window (OS reclaim, force quit, crash) left
+ * an install whose schema was v15 while user_version still read, say, 8 - so the
+ * next launch re-ran the v9 and v11 injection_logs REBUILDS over a table that had
+ * since collected real entries. Those copy lists predate bolus_kind and, through
+ * v8, write site_point as NULL and source as 'manual', so every such value the
+ * user had recorded in between was destroyed. Stamping per step means an
+ * interrupted chain resumes at the next step instead of replaying landed ones.
+ *
+ * SQLite keeps user_version in the database header, which is journalled like any
+ * other page: written inside a transaction it commits and rolls back with it.
+ */
+export async function stampSchemaVersion(
+  db: SQLite.SQLiteDatabase,
+  version: SchemaStamp
+): Promise<void> {
+  await db.execAsync(`PRAGMA user_version = ${version};`);
+}
+
+/**
  * The v8 migration, in one place because it touches two tables at once.
  *
  * user_profiles gains:
@@ -108,6 +139,7 @@ export async function migrateToV8(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(V8_DROP_OLD);
       await db.execAsync(V8_RENAME);
       await db.execAsync(V8_INDEX);
+      await stampSchemaVersion(db, 8);
     });
   } finally {
     await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -132,6 +164,7 @@ export async function migrateToV9(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(V9_DROP_OLD);
       await db.execAsync(V9_RENAME);
       await db.execAsync(V9_INDEX);
+      await stampSchemaVersion(db, 9);
     });
   } finally {
     await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -143,15 +176,24 @@ export async function migrateToV9(db: SQLite.SQLiteDatabase): Promise<void> {
  * records the Apple Health sample UUID of a mirrored manual reading. A single
  * ADD COLUMN, guarded so a re-run (older build already at v10, or the column
  * present from a fresh v10 schema) is a no-op rather than a "duplicate column"
- * throw that would leave user_version stuck. No transaction is needed for one
- * ALTER, and no row can be lost.
+ * throw that would leave user_version stuck. No row can be lost.
+ *
+ * The one ALTER would not need a transaction on its own; the transaction is here
+ * so the stamp lands with it, and so the guarded no-op case still stamps rather
+ * than returning early and leaving the chain to replay from v9 forever.
  */
 export async function migrateToV10(db: SQLite.SQLiteDatabase): Promise<void> {
   const cols = await db.getAllAsync<{ name: string }>(
     "PRAGMA table_info(sugar_logs);"
   );
-  if (cols.some((c) => c.name === "healthkit_uuid")) return;
-  await db.execAsync(V10_ADD_HK_UUID);
+  const hasColumn = cols.some((c) => c.name === "healthkit_uuid");
+
+  await db.withTransactionAsync(async () => {
+    if (!hasColumn) {
+      await db.execAsync(V10_ADD_HK_UUID);
+    }
+    await stampSchemaVersion(db, 10);
+  });
 }
 
 /**
@@ -171,6 +213,7 @@ export async function migrateToV11(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(V11_DROP_OLD);
       await db.execAsync(V11_RENAME);
       await db.execAsync(V11_INDEX);
+      await stampSchemaVersion(db, 11);
     });
   } finally {
     await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -192,6 +235,7 @@ export async function migrateToV12(db: SQLite.SQLiteDatabase): Promise<void> {
     for (const statement of V12_INDEXES) {
       await db.execAsync(statement);
     }
+    await stampSchemaVersion(db, 12);
   });
 }
 
@@ -221,6 +265,7 @@ export async function migrateToV13(db: SQLite.SQLiteDatabase): Promise<void> {
     if (!hasColumn) {
       await db.execAsync(V13_ADD_MEAL_TEMPLATE_ID);
     }
+    await stampSchemaVersion(db, 13);
   });
 }
 
@@ -240,6 +285,7 @@ export async function migrateToV14(db: SQLite.SQLiteDatabase): Promise<void> {
     for (const statement of V14_CREATE) {
       await db.execAsync(statement);
     }
+    await stampSchemaVersion(db, 14);
   });
 }
 
@@ -277,5 +323,6 @@ export async function migrateToV15(db: SQLite.SQLiteDatabase): Promise<void> {
     if (!hasBolusKind) {
       await db.execAsync(V15_ADD_BOLUS_KIND);
     }
+    await stampSchemaVersion(db, 15);
   });
 }

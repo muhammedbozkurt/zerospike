@@ -23,7 +23,8 @@ import Svg, {
 import type { InjectionSite, SitePoint } from "../lib/db/types";
 import { SITE_POINTS, pointGrid } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
-import { RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { pointHeatLevel, regionHeatLevel } from "../lib/injectionHeat";
+import { GLUCOSE_COLORS, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
@@ -33,19 +34,29 @@ import { isScreenshotMode } from "../lib/screenshotMode";
  * Injection-site usage map (schema v9), at ROTATION-POINT resolution.
  *
  * ONE silhouette, divided into the eight selectable regions by a near-black
- * outline. A region's fill is a single-hue sequential ramp driven by FREQUENCY
- * alone (count / busiest count): untouched regions stay pale, the busiest one
- * goes deep teal. Tapping a region zooms the SVG onto it and reveals its four
- * rotation points at full touch size.
+ * outline. A region's fill is a single-hue sequential ramp driven by COUNT
+ * alone, on the rotation-aware scale in lib/injectionHeat: untouched regions
+ * stay pale, an evenly rotated history sits mid-ramp whatever its volume, and
+ * only a region carrying far more than its share goes deep teal. Tapping a
+ * region zooms the SVG onto it and reveals its four rotation points at full
+ * touch size.
  *
  * Colour is a picture of the user's OWN history: nothing says where to inject,
  * and every colour is paired with a count, so it reads without hue.
  */
 
+/** Which face of the body a region sits on. The silhouette only draws the front,
+ *  so "back" regions need their own plate to stop them reading as front ones. */
+type Surface = "front" | "back";
+
 interface Region {
   site: InjectionSite;
-  /** Point layout inside the box: 2x2 grid, or a single top-to-bottom column. */
-  layout: "grid" | "column";
+  /** Point layout inside the box: a 2x2 grid, a top-to-bottom column, or a
+   *  single left-to-right row. */
+  layout: "grid" | "column" | "row";
+  /** Body face. "back" swaps the frequency plate for BACK_STOPS and dashes the
+   *  region outline; it never changes which side of the picture the box is on. */
+  surface: Surface;
   /** Region container [x, y, w, h] in viewBox units. */
   box: readonly [number, number, number, number];
   /** Corner radius; w/2 turns the box into a capsule (limbs). */
@@ -76,51 +87,86 @@ const VB_ASPECT = VB_W / VB_H;
 
 /**
  * The eight regions, hand-fitted to BODY_PATH so no box crosses the silhouette
- * edge and no two boxes touch. Left/right are the VIEWER's; the label resolves
- * the anatomical side. Buttocks are drawn on the hip line of the single
- * silhouette, the usual simplification on a one-face injection diagram.
+ * edge and no two boxes touch.
+ *
+ * SIDE CONVENTION - SELF VIEW. The silhouette IS the user, seen the way they
+ * look down at their own body: the user's own LEFT side is drawn on the LEFT of
+ * the picture. Nothing is mirrored anywhere, so a box's position and its label
+ * always name the SAME thing, the user's own body side. The buttocks sit on the
+ * far face of that same body and follow the same rule - there is no second flip
+ * for them. injectionMap.selfViewNote says this in words under the map, and the
+ * two side badges mark it on the picture itself.
+ *
+ * Buttocks are drawn on the hip line of the single silhouette, the usual
+ * simplification on a one-face injection diagram, and carry surface: "back" so
+ * the plate tells the user they are looking at the far side.
+ *
+ * Every box below (grown by HALO) is sampled against a Bezier-sampled polygon of
+ * BODY_PATH at 2400 points around its contour: the WORST clearance to the
+ * silhouette edge is 1.72 units (upper arm) and the tightest gap between two
+ * boxes is 4 units. The arm boxes in particular are narrow because the limb
+ * tapers - their bottom end has to fit the arm where it is NARROWEST, not where
+ * the plate starts.
  */
 const REGIONS: readonly Region[] = [
-  { site: "abdomen_left", layout: "grid", box: [92, 192, 26, 36], rx: 6 },
-  { site: "abdomen_right", layout: "grid", box: [122, 192, 26, 36], rx: 6 },
-  { site: "thigh_left", layout: "column", box: [92, 264, 18, 58], rx: 9 },
-  { site: "thigh_right", layout: "column", box: [130, 264, 18, 58], rx: 9 },
-  { site: "arm_left", layout: "column", box: [60.5, 154, 12, 50], rx: 6 },
-  { site: "arm_right", layout: "column", box: [167.5, 154, 12, 50], rx: 6 },
-  { site: "buttock_left", layout: "grid", box: [85, 232, 24, 28], rx: 8 },
-  { site: "buttock_right", layout: "grid", box: [131, 232, 24, 28], rx: 8 },
+  { site: "abdomen_left", layout: "row", surface: "front", box: [90.5, 202, 26.5, 26], rx: 8 },
+  { site: "abdomen_right", layout: "row", surface: "front", box: [123, 202, 26.5, 26], rx: 8 },
+  { site: "thigh_left", layout: "column", surface: "front", box: [92.5, 265, 19, 46], rx: 9.5 },
+  { site: "thigh_right", layout: "column", surface: "front", box: [128.5, 265, 19, 46], rx: 9.5 },
+  { site: "arm_left", layout: "column", surface: "front", box: [62.5, 152.5, 9, 32], rx: 4.5 },
+  { site: "arm_right", layout: "column", surface: "front", box: [168.5, 152.5, 9, 32], rx: 4.5 },
+  { site: "buttock_left", layout: "grid", surface: "back", box: [87.5, 232, 26, 28], rx: 8 },
+  { site: "buttock_right", layout: "grid", surface: "back", box: [126.5, 232, 26, 28], rx: 8 },
 ];
 
 /**
- * Invisible touch-target padding for the two regions whose drawn width is
- * narrowest (arm ~12 units, thigh ~18 units - well under a 44pt target once
- * the silhouette is scaled down on a phone). Extends sideways only (their
- * height already clears 44pt at every supported screen width); LEFT/RIGHT are
- * viewBox-literal, not anatomical, and were chosen by hand against every
- * neighbouring region box in REGIONS so the padded rect never overlaps one:
+ * Invisible touch-target padding, rebalanced for the boxes above. Pads are
+ * viewBox-LITERAL directions, not anatomical ones. 44pt is 42.24 viewBox units
+ * at the narrowest supported width (winW 320 -> svgW 250), and every padded rect
+ * was checked against every other box and padded rect: no pair overlaps and the
+ * tightest gap is 1 unit.
  *
- *  - arm: 17 units each side stays clear of abdomen (a 2.5-unit gap at the
- *    narrowest point) while opening onto empty background on the other side.
- *  - thigh: only 9 units toward its mirror twin (2-unit gap across the groin
- *    gap of 20) but 17 outward, where nothing else sits below the ribcage.
- *
- * Not applied to abdomen/buttock: this is the fix the audit asked for
- * specifically for arm/thigh, and both of those already clear 44pt as drawn.
+ *  - arm (9 x 32 drawn): 26 units outward onto empty background, 8 inward, and
+ *    4/7 vertically -> 43 x 43 units, over 44pt both ways. The outward pad stops
+ *    at x=36.5, which is still ~17pt clear of the frequency legend column.
+ *  - abdomen (26.5 x 26): 9 units toward the arm rect (2-unit gap), 2.5 toward
+ *    its mirror twin (1-unit gap across the navel), 14 up into the empty
+ *    ribcage and 2 down (2-unit gap to the buttock rect) -> 38 x 42 units. The
+ *    midline is the hard limit here, so this one stays just under 44pt wide.
+ *  - buttock (26 x 28): now takes 14 units outward and 3 inward plus 2 below,
+ *    43 x 30 units, because the arm rect no longer reaches down this far.
+ *  - thigh (19 x 46): 17 outward, 7 toward its twin (3-unit gap across the
+ *    groin) -> 43 units wide; already over 44pt tall, so no vertical pad.
  */
-const HIT_PAD: Partial<Record<InjectionSite, { left: number; right: number }>> = {
-  arm_left: { left: 17, right: 17 },
-  arm_right: { left: 17, right: 17 },
-  thigh_left: { left: 17, right: 9 },
-  thigh_right: { left: 9, right: 17 },
+interface HitPad {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+}
+
+const HIT_PAD: Partial<Record<InjectionSite, HitPad>> = {
+  arm_left: { left: 26, right: 8, top: 4, bottom: 7 },
+  arm_right: { left: 8, right: 26, top: 4, bottom: 7 },
+  thigh_left: { left: 17, right: 7 },
+  thigh_right: { left: 7, right: 17 },
+  abdomen_left: { left: 9, right: 2.5, top: 14, bottom: 2 },
+  abdomen_right: { left: 2.5, right: 9, top: 14, bottom: 2 },
+  buttock_left: { left: 14, right: 3, bottom: 2 },
+  buttock_right: { left: 3, right: 14, bottom: 2 },
 };
 
-/** The region's box, widened by HIT_PAD if it has one; otherwise the box
- *  itself (the drawn Rect already IS the hit target for every other region). */
+/** The region's box, grown by HIT_PAD if it has one; otherwise the box itself
+ *  (the drawn Rect already IS the hit target for every other region). */
 function hitBoxFor(r: Region): Region["box"] {
   const pad = HIT_PAD[r.site];
   if (!pad) return r.box;
   const [x, y, w, h] = r.box;
-  return [x - pad.left, y, w + pad.left + pad.right, h];
+  const l = pad.left ?? 0;
+  const rt = pad.right ?? 0;
+  const tp = pad.top ?? 0;
+  const bt = pad.bottom ?? 0;
+  return [x - l, y - tp, w + l + rt, h + tp + bt];
 }
 
 interface PlacedPoint {
@@ -128,6 +174,10 @@ interface PlacedPoint {
   x: number;
   y: number;
 }
+
+/** Even spread along the box's long axis, with an edge margin so the 44pt+ dot
+ *  drawn on a point never pokes out of its own region plate. */
+const SPREAD = [0.14, 0.38, 0.62, 0.86] as const;
 
 function placePoints(r: Region): PlacedPoint[] {
   const [bx, by, bw, bh] = r.box;
@@ -141,22 +191,46 @@ function placePoints(r: Region): PlacedPoint[] {
       };
     });
   }
-  const fractions = [0.14, 0.38, 0.62, 0.86];
+  if (r.layout === "row") {
+    // One horizontal line, vertically centred: the belly reads as four spots
+    // beside the navel rather than a quadrant grid.
+    return SITE_POINTS.map((point) => ({
+      point,
+      x: bx + bw * SPREAD[point - 1],
+      y: by + bh / 2,
+    }));
+  }
   return SITE_POINTS.map((point) => ({
     point,
     x: bx + bw / 2,
-    y: by + bh * fractions[point - 1],
+    y: by + bh * SPREAD[point - 1],
   }));
 }
 
 type ViewBox = readonly [number, number, number, number];
 
-/** Padding around a zoomed region, in viewBox units. */
-const ZOOM_PAD = 11;
+/**
+ * Padding around a zoomed region, in viewBox units, per layout.
+ *
+ * A dot is drawn at a fixed 23pt radius whatever the zoom, so the only thing
+ * that decides whether two neighbouring dots collide is how many viewBox units
+ * the zoom spreads across the screen. Grid/column regions are long, so 11 units
+ * of air is free: at the narrowest supported phone (winW 320 -> svgW 250) the
+ * closest pair is 56.3pt apart (arm) against the 46pt dot diameter, and the dot
+ * radius comes out at 3.14 units inside a 4.5-unit half-width plate.
+ *
+ * A "row" region puts all four dots side by side across 26.5 units and its zoom
+ * width is exactly box width + 2 * pad, so the pad has to stay tight; at 3 units
+ * the same 320-wide phone leaves 48.9pt between neighbouring centres, and every
+ * wider screen only opens that up.
+ */
+const ZOOM_PAD: Record<Region["layout"], number> = { grid: 11, column: 11, row: 3 };
 
-function zoomViewBox(box: Region["box"]): ViewBox {
-  let w = box[2] + ZOOM_PAD * 2;
-  let h = box[3] + ZOOM_PAD * 2;
+function zoomViewBox(r: Region): ViewBox {
+  const box = r.box;
+  const pad = ZOOM_PAD[r.layout];
+  let w = box[2] + pad * 2;
+  let h = box[3] + pad * 2;
   if (w / h > VB_ASPECT) h = w / VB_ASPECT;
   else w = h * VB_ASPECT;
   let x = box[0] + box[2] / 2 - w / 2;
@@ -182,7 +256,7 @@ const GEOMETRY: Map<InjectionSite, Geometry> = new Map(
     {
       region,
       points: placePoints(region),
-      zoom: zoomViewBox(region.box),
+      zoom: zoomViewBox(region),
       cx: region.box[0] + region.box[2] / 2,
       cy: region.box[1] + region.box[3] / 2,
     },
@@ -226,7 +300,9 @@ export function heatFill(intensity: number): string {
  * The body is drawn light, so "more often used" = darker ink on that light
  * ground, which stays legible on the dark app background at both ends.
  */
-const FREQ_STOPS: readonly (readonly [number, number, number])[] = [
+type Rgb = readonly [number, number, number];
+
+const FREQ_STOPS: readonly Rgb[] = [
   [232, 245, 250],
   [166, 216, 232],
   [92, 172, 199],
@@ -234,27 +310,75 @@ const FREQ_STOPS: readonly (readonly [number, number, number])[] = [
   [9, 48, 68],
 ];
 
-export function frequencyFill(t: number): string {
-  const v = Math.min(1, Math.max(0, t)) * (FREQ_STOPS.length - 1);
-  const i = Math.min(FREQ_STOPS.length - 2, Math.floor(v));
+/**
+ * The same sequential idea for regions on the BACK of the body (the buttocks):
+ * a neutral desaturated slate where the front ramp is teal, so a back plate is
+ * telling the user "far side" at every frequency, not only when it is empty.
+ *
+ * It is a ramp of its own rather than a translucent veil laid over the front one
+ * because ANY constant veil makes the two surfaces collapse into each other
+ * somewhere along the scale: a dark veil converges at the dark end, a mid-grey
+ * one in the middle (measured: 1.01:1 at level 0.7). As its own ramp it keeps a
+ * 7.06:1 spread end to end, so "used a lot" still reads as clearly darker here.
+ *
+ * Against the front ramp it measures 1.60-1.81:1 over levels 0-0.6, 1.21-1.68:1
+ * over 0.6-0.85, then the two cross in luminance at level 0.94 (only ever the
+ * single busiest region), where the back plate is still neutral grey against a
+ * saturated teal and the dashed outline is the cue that does not depend on
+ * colour at all.
+ */
+const BACK_STOPS: readonly Rgb[] = [
+  [188, 195, 203],
+  [148, 157, 168],
+  [108, 118, 132],
+  [72, 82, 96],
+  [44, 52, 64],
+];
+
+function rampRgb(stops: readonly Rgb[], t: number): Rgb {
+  const v = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(v));
   const f = v - i;
-  const a = FREQ_STOPS[i];
-  const b = FREQ_STOPS[i + 1];
-  return `rgb(${Math.round(lerp(a[0], b[0], f))},${Math.round(
-    lerp(a[1], b[1], f)
-  )},${Math.round(lerp(a[2], b[2], f))})`;
+  const a = stops[i];
+  const b = stops[i + 1];
+  return [
+    Math.round(lerp(a[0], b[0], f)),
+    Math.round(lerp(a[1], b[1], f)),
+    Math.round(lerp(a[2], b[2], f)),
+  ];
 }
 
-/** Label colour that keeps its contrast at both ends of the ramp. */
-function frequencyInk(t: number): string {
-  return t >= 0.72 ? "#eaf6fa" : "#08161d";
+function rgbCss(c: Rgb): string {
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
-/** Frequency share of one count against the busiest one. A used region never
- *  sits at the very pale end, so "once" cannot read as "never". */
-function frequencyLevel(count: number, max: number): number {
-  if (count <= 0) return 0;
-  return 0.16 + 0.84 * Math.min(1, count / Math.max(1, max));
+export function frequencyFill(t: number): string {
+  return rgbCss(rampRgb(FREQ_STOPS, t));
+}
+
+/** The plate for one region: same scale, the ramp chosen by the body face. */
+function surfaceRgb(surface: Surface, t: number): Rgb {
+  return rampRgb(surface === "back" ? BACK_STOPS : FREQ_STOPS, t);
+}
+
+const INK_DARK = "#08161d";
+const INK_LIGHT = "#eaf6fa";
+
+/**
+ * Label colour that keeps its contrast on ANY plate. The two inks swap at the
+ * plate luminance where they are equally good (about 0.18), which is the choice
+ * that maximises the worst case rather than a hand-set position on one ramp:
+ * swept across both ramps the floor is 4.04:1, up from 3.67:1 under the old
+ * fixed "t >= 0.72" switch, and the flip lands within a hair of where that old
+ * switch sat, so the front map looks unchanged.
+ */
+function inkOn(plate: Rgb): string {
+  const lin = (v: number): number => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const luminance = 0.2126 * lin(plate[0]) + 0.7152 * lin(plate[1]) + 0.0722 * lin(plate[2]);
+  return luminance < 0.18 ? INK_LIGHT : INK_DARK;
 }
 
 /** How recently a point was used, 0 (never / long ago) to 1 (today). */
@@ -294,9 +418,79 @@ const BODY_EDGE = withAlpha(THEME.bg.g1, 0.34);
  *  silhouette edge. */
 const HALO = 1.4;
 
+/** Inset of the second ring drawn INSIDE a region's own box, used only when a
+ *  region is both selected and the rotation suggestion at once (see
+ *  showRotationHint below). HALO cannot be reused outward for a second ring -
+ *  it is already tuned to the tightest clearance on the silhouette (the upper
+ *  arm) - so the second ring goes inward instead, which is always safe: it
+ *  stays inside a box that is itself already well inside the body outline.
+ *  2.4 keeps a positive width even on the narrowest box (the arm, 9 units). */
+const REGION_INSET = 2.4;
+
+/** Same idea at zoom/point level: the outer ring keeps the point selection's
+ *  existing offset, the inner ring (combined state only) sits a few units
+ *  closer to the dot so the two never overlap. */
+const POINT_RING_OUTER = 3.5;
+const POINT_RING_INNER = 1.3;
+
+/**
+ * Rotation-suggestion ring colour (the least-recently-used region/point),
+ * drawn only when the caller opts in via showRotationHint - see the prop doc
+ * below. Derived from GLUCOSE_COLORS.normal (the app's existing target-range
+ * green) rather than a new hex. Checked against the three surfaces this ring
+ * can sit on:
+ *  - THEME.accent (cyan, hue ~187deg): this green sits at hue ~157deg, a
+ *    ~30deg hue separation, so a selected AND suggested region/point (both
+ *    rings drawn at once) never reads as one colour.
+ *  - THEME.caution (amber, hue ~33deg, used elsewhere on this same screen for
+ *    the repeat-point notice): ~124deg apart, not close.
+ *  - Legibility: 7.5:1 (WCAG luminance) against the darkest back-surface
+ *    (buttock) plate, and ~1.1-1.5:1 against the lightest front plate/skin -
+ *    the same order of magnitude as THEME.accent's own selection ring against
+ *    those same light surfaces (~1.36-1.39:1), which already ships today. On
+ *    light ground both rings read by hue and stroke shape (solid/dashed), not
+ *    by darkness, same as the rest of this map's outline language.
+ */
+const ROTATION_COLOR = GLUCOSE_COLORS.normal;
+
 /** Fade-out then fade-in around the instant viewBox swap (ms). */
 const FADE_OUT = 110;
 const FADE_IN = 170;
+
+/** Dash used on every "back" surface mark: the region outline on the map and the
+ *  swatch in the front/back key, so the two always read as the same thing. */
+const BACK_DASH: readonly [number, number] = [3.2, 2.4];
+
+/**
+ * The two swatches in the front/back key, sampled at the level where the ramps
+ * are furthest apart (1.79:1, saturated teal against neutral slate; both stay
+ * over 3.9:1 on the dark card). Both colours come out of surfaceRgb, so there is
+ * no second hand-written hex to drift from the map.
+ */
+const SURFACE_KEY = [
+  { key: "front" as const, fill: rgbCss(surfaceRgb("front", 0.5)), dashed: false },
+  { key: "back" as const, fill: rgbCss(surfaceRgb("back", 0.5)), dashed: true },
+];
+
+/** Hard ceiling on the key's width so a long translation cannot creep leftwards
+ *  over the figure: 96pt still leaves the head ~10 viewBox units of air at the
+ *  narrowest supported width, and the key sits above the silhouette's own top. */
+const SURFACE_KEY_MAX_W = 96;
+
+/**
+ * Decorative L/R side badges, anchored in viewBox units and drawn at a fixed pt
+ * size. The inner edge sits at x=56 (mirrored to 184), which measures 4.8 units
+ * clear of the silhouette at the smallest supported width and more as the map
+ * grows, 4.1 units above the padded arm hit rect and 8.1 above the arm plate at
+ * that same width (both open up as the map grows, since the badge height is a
+ * fixed pt value), and clear of the frequency legend column on the left at every
+ * width down to winW 320.
+ */
+const BADGE_INNER_X = 56;
+const BADGE_TOP_Y = 130;
+const BADGE_H = 15;
+/** Budgeted for the longest label, Turkish "Sağ"; a single letter just centres. */
+const BADGE_MAX_W = 30;
 
 export function InjectionBodyMap({
   usage,
@@ -307,6 +501,7 @@ export function InjectionBodyMap({
   initialZoom,
   cycleStart,
   onStartNewCycle,
+  showRotationHint = false,
 }: {
   usage: SiteUsage[];
   /** Injections with NO region recorded at all (e.g. a calculator mealtime
@@ -324,6 +519,12 @@ export function InjectionBodyMap({
   cycleStart?: string | null;
   /** Opens the parent's confirm dialog and stamps a new cycle. */
   onStartNewCycle?: () => void;
+  /** Rotation ("least-recently-used") is a Pro feature - callers pass their
+   *  own isProUser here. Defaults to false so a caller that forgets this prop
+   *  fails closed (no hint) rather than leaking it. When false, the ring, the
+   *  legend row and the accessibility suffix are all skipped; model.least is
+   *  still computed (cheap) but never surfaced. */
+  showRotationHint?: boolean;
 }) {
   const { t } = useTranslation();
   const { width: winW, height: winH } = useWindowDimensions();
@@ -333,6 +534,31 @@ export function InjectionBodyMap({
   const svgW = Math.min(Math.round(winW * 0.78), 384);
   const svgH = Math.round((svgW * VB_H) / VB_W);
   const legendH = Math.round(svgH * 0.44);
+
+  // Side badges live outside the SVG (so they can be hidden from the screen
+  // reader as one unit) but are placed from the same viewBox anchors, pinned by
+  // the edge that faces the body so a longer word grows away from the figure.
+  const badges = useMemo(() => {
+    const scale = svgW / VB_W;
+    const base = {
+      position: "absolute" as const,
+      top: BADGE_TOP_Y * scale,
+      height: BADGE_H,
+      maxWidth: BADGE_MAX_W,
+      minWidth: 20,
+      paddingHorizontal: 4,
+      borderRadius: BADGE_H / 2,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      borderWidth: 1,
+      borderColor: THEME.border,
+      backgroundColor: withAlpha("#ffffff", 0.07),
+    };
+    return [
+      { key: "sideLeft" as const, style: { ...base, right: svgW - BADGE_INNER_X * scale } },
+      { key: "sideRight" as const, style: { ...base, left: (VB_W - BADGE_INNER_X) * scale } },
+    ];
+  }, [svgW]);
 
   const [openSite, setOpenSite] = useState<InjectionSite | null>(null);
   const fade = useSharedValue(1);
@@ -372,8 +598,6 @@ export function InjectionBodyMap({
     const regionSites = new Set(REGIONS.map((r) => r.site));
     const selectableUsage = usage.filter((u) => regionSites.has(u.site));
     const allPoints: PointUsage[] = selectableUsage.flatMap((u) => u.points);
-    const maxPointCount = Math.max(1, ...allPoints.map((p) => p.count));
-    const maxSiteCount = Math.max(1, ...selectableUsage.map((u) => u.count));
     const total = selectableUsage.reduce((sum, u) => sum + u.count, 0);
     const unassigned = usage.reduce((sum, u) => sum + u.unassignedCount, 0);
 
@@ -396,7 +620,7 @@ export function InjectionBodyMap({
       }
     }
 
-    return { bySite, maxPointCount, maxSiteCount, total, unassigned, legacyAbdomen, least };
+    return { bySite, total, unassigned, legacyAbdomen, least };
   }, [usage]);
 
   const open = openSite ? GEOMETRY.get(openSite) ?? null : null;
@@ -491,44 +715,50 @@ export function InjectionBodyMap({
 
       <View className="items-center" style={{ alignSelf: "stretch", position: "relative" }}>
         {/* Sequential legend, ABSOLUTE at the far left so the silhouette stays centred.
-            It sits on a light plate so the dark end of the ramp reads on the dark card. */}
-        <View
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 24,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text className="text-mut" style={{ fontSize: 10, marginBottom: 6 }}>
-            {t("injection.heatHigh")}
-          </Text>
-          <Svg width={14} height={legendH}>
-            <Defs>
-              <LinearGradient id="freqLegend" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor={frequencyFill(1)} />
-                <Stop offset="0.5" stopColor={frequencyFill(0.5)} />
-                <Stop offset="1" stopColor={frequencyFill(0)} />
-              </LinearGradient>
-            </Defs>
-            <Rect
-              x={1}
-              y={1}
-              width={12}
-              height={legendH - 2}
-              rx={6}
-              fill="url(#freqLegend)"
-              stroke={EDGE}
-              strokeWidth={1.2}
-            />
-          </Svg>
-          <Text className="text-mut" style={{ fontSize: 10, marginTop: 6 }}>
-            {t("injection.heatLow")}
-          </Text>
-        </View>
+            It sits on a light plate so the dark end of the ramp reads on the dark card.
+            Hidden on zoom like the front/back key: the zoomed region is drawn at the
+            full width of the card and would otherwise run underneath these labels.
+            Being absolute, it takes no space in the flow either way, so hiding it
+            cannot move the silhouette. */}
+        {!open ? (
+          <View
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text className="text-mut" style={{ fontSize: 10, marginBottom: 6 }}>
+              {t("injection.heatHigh")}
+            </Text>
+            <Svg width={14} height={legendH}>
+              <Defs>
+                <LinearGradient id="freqLegend" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor={frequencyFill(1)} />
+                  <Stop offset="0.5" stopColor={frequencyFill(0.5)} />
+                  <Stop offset="1" stopColor={frequencyFill(0)} />
+                </LinearGradient>
+              </Defs>
+              <Rect
+                x={1}
+                y={1}
+                width={12}
+                height={legendH - 2}
+                rx={6}
+                fill="url(#freqLegend)"
+                stroke={EDGE}
+                strokeWidth={1.2}
+              />
+            </Svg>
+            <Text className="text-mut" style={{ fontSize: 10, marginTop: 6 }}>
+              {t("injection.heatLow")}
+            </Text>
+          </View>
+        ) : null}
 
         <Animated.View style={[{ width: svgW, height: svgH }, fadeStyle]}>
           <Svg width={svgW} height={svgH} viewBox={`${vx} ${vy} ${vw} ${vh}`}>
@@ -562,15 +792,16 @@ export function InjectionBodyMap({
               const geo = GEOMETRY.get(r.site)!;
               const u = model.bySite.get(r.site);
               const count = u?.count ?? 0;
-              const level = frequencyLevel(count, model.maxSiteCount);
+              const level = regionHeatLevel(count, model.total);
+              const plate = surfaceRgb(r.surface, level);
               const isOpen = openSite === r.site;
               const isSelected = selected?.site === r.site;
-              const holdsLeast = model.least?.site === r.site;
+              const holdsLeast = showRotationHint && model.least?.site === r.site;
               const [bx, by, bw, bh] = r.box;
               const [hx, hy, hw, hh] = hitBoxFor(r);
               // While a region is zoomed, its neighbours are backdrop only. Their
               // padded hit rects reach into the zoomed viewBox (thigh_right's
-              // starts at x=121, inside thigh_left's zoom which ends at 126.3) and,
+              // starts at x=121.5, inside thigh_left's zoom which ends at 123.5) and,
               // drawn later, answered taps meant for the open region's edge or for
               // "back to body". Dropping the handler AND the invisible rect lets
               // those taps fall through to the silhouette, which returns to the
@@ -588,13 +819,22 @@ export function InjectionBodyMap({
                       ? undefined
                       : `${t(`injectionSite.${r.site}`)} · ${t("injectionMap.entries", {
                           n: count,
-                        })}`
+                        })}${holdsLeast ? ` · ${t("injection.leastUsedPoint")}` : ""}`
                   }
                 >
-                  {hw !== bw && !inert ? (
+                  {(hw !== bw || hh !== bh) && !inert ? (
                     <Rect x={hx} y={hy} width={hw} height={hh} fill="transparent" />
                   ) : null}
-                  {isSelected || holdsLeast ? (
+                  {/* Selection and the rotation suggestion are drawn as two
+                      separate rings so neither hides the other when both are
+                      true at once: selection keeps its usual OUTER ring
+                      (HALO is already tuned to the tightest silhouette
+                      clearance, the upper arm, so it cannot grow further
+                      outward for a second ring); the suggestion ring goes on
+                      the outside when selection is absent, and INSIDE the box
+                      (always safe - the box itself is already well inside the
+                      body outline) when both apply at once. */}
+                  {isSelected ? (
                     <Rect
                       x={bx - HALO}
                       y={by - HALO}
@@ -604,26 +844,61 @@ export function InjectionBodyMap({
                       fill="none"
                       stroke={THEME.accent}
                       strokeWidth={1.6 * upx}
-                      strokeDasharray={isSelected ? undefined : `${3 * upx} ${3 * upx}`}
                     />
                   ) : null}
+                  {holdsLeast && !isSelected ? (
+                    <Rect
+                      x={bx - HALO}
+                      y={by - HALO}
+                      width={bw + HALO * 2}
+                      height={bh + HALO * 2}
+                      rx={r.rx + HALO}
+                      fill="none"
+                      stroke={ROTATION_COLOR}
+                      strokeWidth={1.6 * upx}
+                      strokeDasharray={`${3 * upx} ${3 * upx}`}
+                    />
+                  ) : null}
+                  {/* A back region keeps the frequency ramp but paints it on the
+                      slate plate and dashes its outline, the drawing convention
+                      for an edge that is on the far side of the object. */}
                   <Rect
                     x={bx}
                     y={by}
                     width={bw}
                     height={bh}
                     rx={r.rx}
-                    fill={frequencyFill(level)}
+                    fill={rgbCss(plate)}
                     stroke={EDGE}
                     strokeWidth={2.2 * upx}
+                    strokeDasharray={
+                      r.surface === "back"
+                        ? `${BACK_DASH[0] * upx} ${BACK_DASH[1] * upx}`
+                        : undefined
+                    }
                   />
+                  {/* Combined state only: the plate fill above would paint over
+                      an inset ring drawn earlier, so this one is drawn last,
+                      on top of the opaque plate. */}
+                  {holdsLeast && isSelected ? (
+                    <Rect
+                      x={bx + REGION_INSET}
+                      y={by + REGION_INSET}
+                      width={bw - REGION_INSET * 2}
+                      height={bh - REGION_INSET * 2}
+                      rx={Math.max(0, r.rx - REGION_INSET)}
+                      fill="none"
+                      stroke={ROTATION_COLOR}
+                      strokeWidth={1.6 * upx}
+                    />
+                  ) : null}
                   {!open ? (
                     <SvgText
                       x={geo.cx}
                       y={geo.cy + countFont * 0.36}
                       fontSize={countFont}
                       fontWeight="bold"
-                      fill={frequencyInk(level)}
+                      fill={inkOn(plate)}
                       textAnchor="middle"
                     >
                       {String(count)}
@@ -638,10 +913,16 @@ export function InjectionBodyMap({
               ? GEOMETRY.get(open.region.site)!.points.map((pp) => {
                   const p = openUsage?.points.find((x) => x.point === pp.point);
                   const count = p?.count ?? 0;
-                  const level = frequencyLevel(count, model.maxPointCount);
+                  const level = pointHeatLevel(count, openCount);
+                  // The dots inherit their region's face, so a zoomed buttock
+                  // still reads as the back of the body rather than switching
+                  // back to the front ramp under the user's finger.
+                  const dot = surfaceRgb(open.region.surface, level);
                   const on = selected?.site === open.region.site && selected.point === pp.point;
                   const isLeast =
-                    model.least?.site === open.region.site && model.least.point === pp.point;
+                    showRotationHint &&
+                    model.least?.site === open.region.site &&
+                    model.least.point === pp.point;
                   return (
                     <G
                       key={pp.point}
@@ -656,13 +937,28 @@ export function InjectionBodyMap({
                         p?.lastUsedAt ?? null
                       )}${isLeast ? ` · ${t("injection.leastUsedPoint")}` : ""}`}
                     >
-                      {on || isLeast ? (
+                      {/* Same outer/inner split as the region ring above: the
+                          selection ring keeps its usual radius, the suggestion
+                          ring moves to a smaller radius (still outside the
+                          dot) only when both are true, so one never masks the
+                          other. */}
+                      {on ? (
                         <Circle
                           cx={pp.x}
                           cy={pp.y}
-                          r={pointRadius + 3.5 * upx}
+                          r={pointRadius + POINT_RING_OUTER * upx}
                           fill="none"
                           stroke={THEME.accent}
+                          strokeWidth={1.8 * upx}
+                        />
+                      ) : null}
+                      {isLeast ? (
+                        <Circle
+                          cx={pp.x}
+                          cy={pp.y}
+                          r={pointRadius + (on ? POINT_RING_INNER : POINT_RING_OUTER) * upx}
+                          fill="none"
+                          stroke={ROTATION_COLOR}
                           strokeWidth={1.8 * upx}
                           strokeDasharray={on ? undefined : `${3 * upx} ${3 * upx}`}
                         />
@@ -671,16 +967,21 @@ export function InjectionBodyMap({
                         cx={pp.x}
                         cy={pp.y}
                         r={pointRadius}
-                        fill={frequencyFill(level)}
+                        fill={rgbCss(dot)}
                         stroke={EDGE}
                         strokeWidth={1.6 * upx}
+                        strokeDasharray={
+                          open.region.surface === "back"
+                            ? `${BACK_DASH[0] * upx} ${BACK_DASH[1] * upx}`
+                            : undefined
+                        }
                       />
                       <SvgText
                         x={pp.x}
                         y={pp.y + pointFont * 0.36}
                         fontSize={pointFont}
                         fontWeight="bold"
-                        fill={frequencyInk(level)}
+                        fill={inkOn(dot)}
                         textAnchor="middle"
                       >
                         {String(pp.point)}
@@ -690,8 +991,96 @@ export function InjectionBodyMap({
                 })
               : null}
           </Svg>
+
+          {/* Side badges, pinned beside the shoulders. Decorative: every region's
+              own label already names the side, so the screen reader is told to
+              skip them. Each pill is its own absolute child rather than a
+              full-size overlay, so nothing ever lies across the map's taps. */}
+          {!open
+            ? badges.map((b) => (
+                <View
+                  key={b.key}
+                  pointerEvents="none"
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  style={b.style}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: THEME.muted, fontSize: 10, fontWeight: "800" }}
+                  >
+                    {t(`injectionMap.${b.key}`)}
+                  </Text>
+                </View>
+              ))
+            : null}
         </Animated.View>
+
+        {/* Front/back key, top right. Hidden on zoom so it cannot sit over the
+            enlarged region or the back button above it. */}
+        {!open ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              gap: 4,
+              maxWidth: SURFACE_KEY_MAX_W,
+            }}
+          >
+            {SURFACE_KEY.map((s) => (
+              <View
+                key={s.key}
+                style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+              >
+                <Svg width={11} height={11}>
+                  <Circle
+                    cx={5.5}
+                    cy={5.5}
+                    r={4.4}
+                    fill={s.fill}
+                    stroke={EDGE}
+                    strokeWidth={1.1}
+                    strokeDasharray={s.dashed ? "2.2 1.7" : undefined}
+                  />
+                </Svg>
+                <Text
+                  numberOfLines={1}
+                  style={{ color: THEME.muted, fontSize: 10, fontWeight: "700" }}
+                >
+                  {t(`injectionMap.${s.key}`)}
+                </Text>
+              </View>
+            ))}
+            {showRotationHint ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Svg width={11} height={11}>
+                  <Circle
+                    cx={5.5}
+                    cy={5.5}
+                    r={4.4}
+                    fill="none"
+                    stroke={ROTATION_COLOR}
+                    strokeWidth={1.3}
+                    strokeDasharray="2.2 1.7"
+                  />
+                </Svg>
+                <Text
+                  numberOfLines={1}
+                  style={{ color: THEME.muted, fontSize: 10, fontWeight: "700" }}
+                >
+                  {t("injectionMap.rotationHint")}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
       </View>
+
+      <Text className="text-mut text-[11px] text-center mt-2 leading-4">
+        {t("injectionMap.selfViewNote")}
+      </Text>
 
       {/* Fixed slot: the absorption chip appears on zoom without moving anything below. */}
       <View style={{ height: 30, alignItems: "center", justifyContent: "center" }}>

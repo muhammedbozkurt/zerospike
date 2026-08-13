@@ -39,10 +39,27 @@ export function journalFeedArgs(
  * `withRange` must match the args built above. `ord` reproduces the old merge
  * order for entries sharing a timestamp (a meal save writes its reading and the
  * meal at the same instant), so the feed reads exactly as it did before.
+ *
+ * `excludeCalculatorInjections` drops the bolus row a meal save auto-writes
+ * (injection_logs.source = 'calculator') from the injection branch, so the
+ * dashboard's journal can stop showing it as a second line directly under the
+ * meal it belongs to. It is an opt-in filter, not a default: the row is still
+ * the only place active-insulin (IOB) is computed from, and a report or export
+ * built on this same query must keep seeing it, so every caller other than the
+ * dashboard's own journal list leaves this false. The condition lives in the
+ * WHERE clause of the branch, inside the UNION, so it is applied before the
+ * outer ORDER BY / LIMIT rather than after - filtering post-LIMIT would spend
+ * the row budget on rows that then get hidden, showing fewer than intended.
  */
-export function journalFeedSql(withRange: boolean): string {
+export function journalFeedSql(
+  withRange: boolean,
+  excludeCalculatorInjections = false
+): string {
   const bounds = (col: string) =>
     withRange ? ` AND ${col} BETWEEN ? AND ?` : "";
+  const notCalculator = excludeCalculatorInjections
+    ? " AND (i.source IS NULL OR i.source <> 'calculator')"
+    : "";
   return `SELECT * FROM (
        SELECT 'glucose' AS kind, s.id AS id, s.logged_at AS logged_at, s.tags AS tags,
               0 AS ord,
@@ -79,7 +96,7 @@ export function journalFeedSql(withRange: boolean): string {
               i.site, i.site_point, i.dose_units, i.insulin_type, i.bolus_kind, i.note,
               NULL
          FROM injection_logs i
-        WHERE i.profile_id = ?${bounds("i.logged_at")}
+        WHERE i.profile_id = ?${bounds("i.logged_at")}${notCalculator}
      )
      ORDER BY logged_at DESC, ord
      LIMIT ?;`;

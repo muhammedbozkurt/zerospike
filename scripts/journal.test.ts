@@ -90,10 +90,11 @@ function makeFeedDb(days: number): DatabaseSync {
 function feed(
   db: DatabaseSync,
   limit: number,
-  range?: { start: number; end: number }
+  range?: { start: number; end: number },
+  excludeCalculatorInjections = false
 ): FeedRow[] {
   return db
-    .prepare(journalFeedSql(range != null))
+    .prepare(journalFeedSql(range != null, excludeCalculatorInjections))
     .all(...(journalFeedArgs("p1", limit, range) as never[])) as unknown as FeedRow[];
 }
 
@@ -155,6 +156,44 @@ function main() {
       end: day("2025-01-31T00:00:00.000Z"),
     });
     eq("a range with no entries returns none", empty.length, 0);
+    db.close();
+  }
+
+  section("C. excludeCalculatorInjections (dashboard journal only)");
+  {
+    // 3 days of the usual fixture (a calculator-written bolus each day), plus
+    // one HAND-entered injection - the flag must never touch that one.
+    const db = makeFeedDb(3);
+    db.exec(
+      `INSERT INTO injection_logs VALUES
+        ('manual1','p1','abdomen_left',1,3,'bolus',NULL,NULL,NULL,'manual','2026-07-03T09:30:00.000Z','[]');`
+    );
+
+    const withCalc = feed(db, 100);
+    eq("default mode still carries the calculator bolus", withCalc.some((r) => r.id === "i3"), true);
+    eq("default mode carries the manual injection too", withCalc.some((r) => r.id === "manual1"), true);
+
+    const noCalc = feed(db, 100, undefined, true);
+    eq("exclude mode drops the calculator bolus", noCalc.some((r) => r.id === "i3"), false);
+    eq("exclude mode keeps the hand-entered injection", noCalc.some((r) => r.id === "manual1"), true);
+    eq(
+      "exclude mode leaves meal rows untouched",
+      noCalc.filter((r) => r.kind === "meal").length,
+      3
+    );
+
+    // The core of R11: the filter sits in the branch's WHERE, inside the UNION,
+    // so it runs before the outer LIMIT. A limit tight enough to matter must
+    // still fill up with visible rows - filtering AFTER a limit built from the
+    // unfiltered feed would have handed back 3 rows here (the 4th slot spent on
+    // the calculator row this mode is supposed to hide), not 4.
+    const tight = feed(db, 4, undefined, true);
+    eq("the filter is applied before LIMIT, not after", tight.length, 4);
+    eq(
+      "none of the limited rows are a calculator-sourced injection",
+      tight.every((r) => r.source !== "calculator"),
+      true
+    );
     db.close();
   }
 

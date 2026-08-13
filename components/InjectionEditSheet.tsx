@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -24,9 +24,10 @@ import {
   type SiteUsage,
 } from "../lib/db/injections";
 import { getRotationCycleStart } from "../lib/rotationCycle";
-import { SitePointSelector } from "./InjectionSiteBoard";
+import { InjectionBodyMap } from "./InjectionBodyMap";
+import { Skeleton } from "./Skeleton";
 import { checkDose } from "../lib/insulin";
-import { logEvent } from "../lib/analytics";
+import { logCrash, logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import { useApp } from "../lib/store/AppContext";
 import { useFeedback } from "./Feedback";
@@ -137,38 +138,38 @@ export function InjectionEditSheet({
   onSaved: () => void;
 }) {
   const { t, i18n } = useTranslation();
-  const { activeProfile } = useApp();
+  const { activeProfile, isProUser } = useApp();
   const { confirm } = useFeedback();
   const { height: winH } = useWindowDimensions();
+  // Fixed, not just a cap: the sheet swaps its body between the form and the
+  // site-picking step (see `step` below) without ever resizing the frame
+  // around it, so a step change can never jump the sheet's height.
+  const sheetHeight = Math.round(winH * 0.86);
   // Dose in units (0 = no dose). Stepper-driven, keyboard-editable.
   const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
   const [site, setSite] = useState<InjectionSite>("abdomen_left");
   const [point, setPoint] = useState<SitePoint | null>(null);
-  // Whether the user actually touched the region selector while this row was
-  // open. A row logged WITHOUT a region has to open on some region for the
-  // selector to render, and saving must not turn that placeholder into a record
-  // the user never made.
-  const [siteTouched, setSiteTouched] = useState(false);
+  // Whether the working state currently HAS a site (site+point pair), as
+  // opposed to merely displaying a placeholder region for the picker to open
+  // on. True from an existing record, from a fresh pick on the body map,
+  // false again if the user clears it. save() writes null for both columns
+  // exactly when this is false, so a row logged with no region only gains one
+  // if the user actually chose it, and a chosen region can be removed again.
+  const [hasSite, setHasSite] = useState(false);
   const [loggedAt, setLoggedAt] = useState<Date>(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Which body the sheet shows: the form, or the site-picking silhouette
+  // (entered from the compact site row, returns to the form on a pick).
+  const [step, setStep] = useState<"form" | "site">("form");
+  // undefined = not fetched yet for this sheet-open. Loaded lazily the first
+  // time the site step is actually entered, not on every sheet open (see
+  // ensureUsageLoaded).
   const [usage, setUsage] = useState<SiteUsage[] | undefined>(undefined);
-
-  // Heat data for the selector dots, from the profile's cycle stamp on.
-  useEffect(() => {
-    if (!visible || !activeProfile) return;
-    let alive = true;
-    (async () => {
-      const cycle = await getRotationCycleStart(activeProfile.id);
-      const u = await getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS, cycle);
-      if (alive) setUsage(u.sites);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [visible, activeProfile]);
+  const [noSiteCount, setNoSiteCount] = useState(0);
+  const usageRequestedRef = useRef(false);
 
   useEffect(() => {
     if (visible && injection) {
@@ -176,16 +177,39 @@ export function InjectionEditSheet({
       setInsulinType(injection.insulin_type ?? "bolus");
       setBolusKind(injection.bolus_kind);
       // A row logged without a region (a calculator bolus) opens on the first
-      // selectable region so the user CAN fill one in; it only becomes part of the
-      // record if they pick one (see siteTouched).
+      // selectable region so the user CAN fill one in; it only becomes part of
+      // the record if they pick one (see hasSite).
       setSite(injection.site ?? SELECTABLE_SITES[0]);
-      setSiteTouched(false);
+      setHasSite(injection.site != null);
       setPoint(injection.site_point);
       setLoggedAt(new Date(injection.logged_at));
       setTimePickerOpen(false);
+      setStep("form");
+      setUsage(undefined);
+      setNoSiteCount(0);
+      usageRequestedRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, injection?.id]);
+
+  /** Site-usage history for the silhouette step, fetched once per sheet-open
+   *  the first time it is actually entered - most edits never touch the site,
+   *  so the main open/save flow never pays for this query. On failure the
+   *  step still has to open with a pickable (if colourless) silhouette rather
+   *  than staying stuck loading, so this falls back to an empty usage list. */
+  async function ensureUsageLoaded() {
+    if (usageRequestedRef.current || !activeProfile) return;
+    usageRequestedRef.current = true;
+    try {
+      const cycle = await getRotationCycleStart(activeProfile.id);
+      const u = await getSiteUsageHistory(activeProfile.id, USAGE_WINDOW_DAYS, cycle);
+      setUsage(u.sites);
+      setNoSiteCount(u.noSiteCount);
+    } catch (err) {
+      logCrash(err, { screen: "injectionEditSheet", step: "siteUsage" });
+      setUsage([]);
+    }
+  }
 
   /** Same plausibility gate as the create form: confirm, never refuse. */
   async function confirmDose(units: number): Promise<boolean> {
@@ -233,15 +257,12 @@ export function InjectionEditSheet({
 
     setSaving(true);
     try {
-      // An entry that had no region keeps having none unless the user chose one
-      // here: correcting a dose must not quietly file it under a body region.
-      const keepsNoSite = injection.site == null && !siteTouched;
       const patch: InjectionUpdate = {
         dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
         bolus_kind: insulinType === "bolus" ? bolusKind : null,
-        site: keepsNoSite ? null : site,
-        site_point: keepsNoSite ? null : point,
+        site: hasSite ? site : null,
+        site_point: hasSite ? point : null,
         logged_at: loggedAt.toISOString(),
       };
       await updateInjection(injection.id, patch);
@@ -252,6 +273,18 @@ export function InjectionEditSheet({
       setSaving(false);
     }
   }
+
+  // Neutral vs. real: the row only names an actual region once one is on the
+  // working state (hasSite) - an existing record shows it right away, a
+  // cleared one falls back to the neutral prompt, same as the create form.
+  const siteSummaryLabel = hasSite
+    ? point != null
+      ? t("injection.siteWithPoint", { site: t(`injectionSite.${site}`), n: point })
+      : t(`injectionSite.${site}`)
+    : t("injection.chooseSitePoint");
+  // Reserves exactly the space InjectionBodyMap's own minHeight will occupy,
+  // so the skeleton -> real map swap never resizes the step.
+  const mapMinHeight = Math.round(winH * 0.5);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -266,10 +299,12 @@ export function InjectionEditSheet({
           <Pressable
             style={[
               {
-                // Bounded like the other bottom sheets (see InjectionSiteBoard's
-                // region modal): "100%" let the sheet cover the whole screen with
-                // no dim overlay showing above it once the keyboard was open.
-                maxHeight: Math.round(winH * 0.86),
+                // Fixed (not a cap): the body swaps between the form and the
+                // site step below without the frame around it ever resizing.
+                // 86% keeps the same "under 100%" margin the sheet always had,
+                // so the dim overlay stays visible above it even with the
+                // keyboard open.
+                height: sheetHeight,
                 borderTopLeftRadius: 26,
                 borderTopRightRadius: 26,
                 borderTopWidth: 1,
@@ -288,9 +323,26 @@ export function InjectionEditSheet({
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View className="flex-row items-center justify-between mb-4">
-              <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
-                {t("calculator.editTitle")}
-              </Text>
+              <View className="flex-row items-center flex-1" style={{ gap: 6 }}>
+                {step === "site" ? (
+                  <Pressable
+                    onPress={() => setStep("form")}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("common.back")}
+                    style={{ marginLeft: -4 }}
+                    className="p-1"
+                  >
+                    <Ionicons name="chevron-back" size={22} color={THEME.muted} />
+                  </Pressable>
+                ) : null}
+                <Text
+                  numberOfLines={1}
+                  style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
+                >
+                  {step === "site" ? t("injection.selectSite") : t("calculator.editTitle")}
+                </Text>
+              </View>
               <Pressable
                 onPress={onClose}
                 hitSlop={12}
@@ -302,119 +354,184 @@ export function InjectionEditSheet({
               </Pressable>
             </View>
 
-            <ScrollView
-              style={{ flexShrink: 1 }}
-              bounces={false}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 32 }}
-            >
-              <FieldLabel>{t("calculator.loggedTime")}</FieldLabel>
-              <Pressable
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setTimePickerOpen((v) => !v);
-                }}
-                className="flex-row items-center mb-5"
-                style={inputStyle}
+            {step === "site" ? (
+              <ScrollView
+                style={{ flex: 1 }}
+                bounces={false}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 24 }}
               >
-                <Ionicons name="time-outline" size={16} color={THEME.muted} />
-                <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
-                  {relativeDay(loggedAt.toISOString(), {
-                    today: t("common.today"),
-                    yesterday: t("common.yesterday"),
-                  })}
-                  {" · "}
-                  {formatTime(loggedAt.toISOString())}
-                </Text>
-              </Pressable>
-              <InlineDateTimePicker
-                visible={timePickerOpen}
-                value={loggedAt}
-                max={new Date()}
-                locale={i18n.language}
-                onChange={setLoggedAt}
-                onClose={() => setTimePickerOpen(false)}
-              />
-
-              <FieldLabel>{t("injection.insulinType")}</FieldLabel>
-              <View className="flex-row mb-4" style={{ gap: 8 }}>
-                {(["basal", "bolus"] as const).map((type) => (
-                  <Chip
-                    key={type}
-                    label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
-                    on={insulinType === type}
-                    onPress={() => {
-                      hapticSelect();
-                      setInsulinType(type);
+                {usage === undefined ? (
+                  <Skeleton width="100%" height={mapMinHeight} radius={20} />
+                ) : (
+                  <InjectionBodyMap
+                    usage={usage}
+                    noSiteCount={noSiteCount}
+                    selected={hasSite && point != null ? { site, point } : null}
+                    onSelect={(selection) => {
+                      setSite(selection.site);
+                      setPoint(selection.point);
+                      setHasSite(true);
+                      setStep("form");
                     }}
-                    style={{ flex: 1 }}
+                    windowDays={USAGE_WINDOW_DAYS}
+                    // Rotation suggestion is a Pro feature; a non-Pro user picks
+                    // a region freely but never sees the hint ring here either.
+                    showRotationHint={isProUser}
                   />
-                ))}
-              </View>
-
-              <FieldLabel>{t("injection.dose")}</FieldLabel>
-              <Stepper
-                value={dose}
-                onChange={setDose}
-                step={0.5}
-                longStep={1}
-                min={0}
-                max={150}
-                decimals={1}
-                suffix={t("common.units")}
-                accessibilityLabel={t("injection.dose")}
-                style={{ marginBottom: 16 }}
-              />
-
-              {/* Reflows smoothly when the bolus-label row appears/disappears,
-                  same motion language as the create form (WP3). */}
-              <Animated.View layout={listLayout}>
-                {insulinType === "bolus" ? (
-                  <Animated.View
-                    entering={listEntering}
-                    exiting={listExiting}
-                    style={{ marginBottom: 16 }}
-                  >
-                    <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
-                    <View className="flex-row" style={{ gap: 8 }}>
-                      {BOLUS_KINDS.map((kind) => (
-                        <Chip
-                          key={kind}
-                          label={
-                            kind === "meal"
-                              ? t("injection.bolusKindMeal")
-                              : t("injection.bolusKindCorrection")
-                          }
-                          on={bolusKind === kind}
-                          onPress={() => {
-                            hapticSelect();
-                            setBolusKind((prev) => (prev === kind ? null : kind));
-                          }}
-                          style={{ flex: 1 }}
-                        />
-                      ))}
-                    </View>
-                  </Animated.View>
-                ) : null}
-
-                <FieldLabel>{t("injection.selectSite")}</FieldLabel>
-                <SitePointSelector
-                  usage={usage}
-                  site={site}
-                  point={point}
-                  onChange={(s, p) => {
-                    setSite(s);
-                    setPoint(p);
-                    setSiteTouched(true);
+                )}
+              </ScrollView>
+            ) : (
+              <ScrollView
+                style={{ flex: 1 }}
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 32 }}
+              >
+                <FieldLabel>{t("calculator.loggedTime")}</FieldLabel>
+                <Pressable
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setTimePickerOpen((v) => !v);
                   }}
-                  allowClearPoint
+                  className="flex-row items-center mb-5"
+                  style={inputStyle}
+                >
+                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
+                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                    {relativeDay(loggedAt.toISOString(), {
+                      today: t("common.today"),
+                      yesterday: t("common.yesterday"),
+                    })}
+                    {" · "}
+                    {formatTime(loggedAt.toISOString())}
+                  </Text>
+                </Pressable>
+                <InlineDateTimePicker
+                  visible={timePickerOpen}
+                  value={loggedAt}
+                  max={new Date()}
+                  locale={i18n.language}
+                  onChange={setLoggedAt}
+                  onClose={() => setTimePickerOpen(false)}
+                />
+
+                <FieldLabel>{t("injection.insulinType")}</FieldLabel>
+                <View className="flex-row mb-4" style={{ gap: 8 }}>
+                  {(["basal", "bolus"] as const).map((type) => (
+                    <Chip
+                      key={type}
+                      label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
+                      on={insulinType === type}
+                      onPress={() => {
+                        hapticSelect();
+                        setInsulinType(type);
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                  ))}
+                </View>
+
+                <FieldLabel>{t("injection.dose")}</FieldLabel>
+                <Stepper
+                  value={dose}
+                  onChange={setDose}
+                  step={0.5}
+                  longStep={1}
+                  min={0}
+                  max={150}
+                  decimals={1}
+                  suffix={t("common.units")}
+                  accessibilityLabel={t("injection.dose")}
                   style={{ marginBottom: 16 }}
                 />
 
-                <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
-              </Animated.View>
-            </ScrollView>
+                {/* Reflows smoothly when the bolus-label row appears/disappears,
+                    same motion language as the create form (WP3). */}
+                <Animated.View layout={listLayout}>
+                  {insulinType === "bolus" ? (
+                    <Animated.View
+                      entering={listEntering}
+                      exiting={listExiting}
+                      style={{ marginBottom: 16 }}
+                    >
+                      <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
+                      <View className="flex-row" style={{ gap: 8 }}>
+                        {BOLUS_KINDS.map((kind) => (
+                          <Chip
+                            key={kind}
+                            label={
+                              kind === "meal"
+                                ? t("injection.bolusKindMeal")
+                                : t("injection.bolusKindCorrection")
+                            }
+                            on={bolusKind === kind}
+                            onPress={() => {
+                              hapticSelect();
+                              setBolusKind((prev) => (prev === kind ? null : kind));
+                            }}
+                            style={{ flex: 1 }}
+                          />
+                        ))}
+                      </View>
+                    </Animated.View>
+                  ) : null}
+
+                  <FieldLabel>{t("injection.selectSite")}</FieldLabel>
+                  <View className="flex-row items-center mb-4" style={{ gap: 8 }}>
+                    <Pressable
+                      onPress={() => {
+                        hapticSelect();
+                        setStep("site");
+                        void ensureUsageLoaded();
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: hasSite }}
+                      accessibilityLabel={siteSummaryLabel}
+                      className="flex-row items-center flex-1"
+                      style={[inputStyle, { minHeight: 44 }]}
+                    >
+                      <Ionicons
+                        name="location-outline"
+                        size={16}
+                        color={hasSite ? THEME.accent : THEME.muted}
+                      />
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          color: hasSite ? THEME.ink : THEME.muted,
+                          marginLeft: 8,
+                          fontSize: 13,
+                          flex: 1,
+                        }}
+                      >
+                        {siteSummaryLabel}
+                      </Text>
+                      <Ionicons name="chevron-forward-outline" size={16} color={THEME.muted} />
+                    </Pressable>
+                    {hasSite ? (
+                      <Pressable
+                        onPress={() => {
+                          hapticSelect();
+                          setHasSite(false);
+                          setSite(SELECTABLE_SITES[0]);
+                          setPoint(null);
+                        }}
+                        hitSlop={10}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("common.delete")}
+                        style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+                      >
+                        <Ionicons name="close-circle-outline" size={18} color={THEME.muted} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+
+                  <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
+                </Animated.View>
+              </ScrollView>
+            )}
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>

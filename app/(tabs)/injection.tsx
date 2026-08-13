@@ -40,7 +40,7 @@ import {
   IconTile,
 } from "../../components/rich";
 import type { BolusKind, Injection, InsulinType } from "../../lib/db/types";
-import { BOLUS_KINDS } from "../../lib/db/types";
+import { BOLUS_KINDS, SELECTABLE_SITES, SITE_POINTS } from "../../lib/db/types";
 import {
   getSiteUsageHistory,
   leastRecentlyUsedPoint,
@@ -48,6 +48,7 @@ import {
   logInjection,
   deleteInjection,
   findRecentCalculatorBolus,
+  pointKey,
   type RotationUsage,
 } from "../../lib/db/injections";
 import { captureDeletion } from "../../lib/db/undo";
@@ -274,6 +275,15 @@ export default function InjectionScreen() {
     }, [])
   );
 
+  // Same "now" refresh as the focus effect above, for the one path that never
+  // triggers a focus event: freezeOnBlur keeps this screen mounted and focused
+  // while switching segments, so picking a site on MAP and landing back on
+  // KAYDET (or tapping the KAYDET pill directly) would otherwise keep
+  // whatever loggedAt was last set at mount/focus.
+  useEffect(() => {
+    if (segment === "save" && !timeTouched.current) setLoggedAt(new Date());
+  }, [segment]);
+
   // Quick-add "compose" deep-link (from the dashboard): open the KAYDET segment
   // so the form is front and centre. Cleared so it fires once.
   useEffect(() => {
@@ -329,9 +339,45 @@ export default function InjectionScreen() {
     });
   }
 
+  /** Gentle, non-blocking nudge when the selected point already has entries
+   *  this rotation cycle AND another point is still untouched (a genuinely
+   *  empty point, or every point already used, both skip this - see
+   *  selectedPointCount/unusedPointCount above). Runs first in the chain: the
+   *  user confirms the SITE choice itself before the dose questions below it. */
+  async function confirmReusedPoint(): Promise<boolean> {
+    if (!selected || selectedPointCount === 0 || unusedPointCount === 0) return true;
+    return confirm({
+      title: t("injection.reusedPointTitle"),
+      message: t("injection.reusedPointBody", {
+        count: selectedPointCount,
+        remaining: unusedPointCount,
+      }),
+      confirmLabel: t("injection.reusedPointConfirm"),
+      icon: "help-circle-outline",
+    });
+  }
+
+  /** Shared post-action reset for the KAYDET form: save() and startNewCycle()
+   *  both clear the same fields through this one place, so the two paths can
+   *  never drift apart. */
+  function resetForm() {
+    setSelected(null);
+    doseTouched.current = false;
+    // Re-applies the current insulinType's prefill rule (profile's daily
+    // basal for basal, 0 for bolus) now that doseTouched is clear again -
+    // a plain setDose(0) here made the NEXT basal entry start from zero
+    // instead of the profile's usual dose.
+    applyInsulinType(insulinType);
+    setBolusKind(null);
+    timeTouched.current = false;
+    setLoggedAt(new Date());
+    setNote("");
+  }
+
   async function save() {
     if (!activeProfile || !selected || saving) return;
     const hasDose = dose > 0;
+    if (!(await confirmReusedPoint())) return;
     if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return;
     if (hasDose && !(await confirmDose(dose))) return;
     setSaving(true);
@@ -351,17 +397,7 @@ export default function InjectionScreen() {
       void noteJournalActivity();
       hapticSuccess();
       toast(t("injection.saved"), "success");
-      setSelected(null);
-      doseTouched.current = false;
-      // Re-applies the current insulinType's prefill rule (profile's daily
-      // basal for basal, 0 for bolus) now that doseTouched is clear again -
-      // a plain setDose(0) here made the NEXT basal entry start from zero
-      // instead of the profile's usual dose.
-      applyInsulinType(insulinType);
-      setBolusKind(null);
-      timeTouched.current = false;
-      setLoggedAt(new Date());
-      setNote("");
+      resetForm();
       bumpData();
     } finally {
       setSaving(false);
@@ -375,7 +411,10 @@ export default function InjectionScreen() {
   }
 
   /** Confirms, then stamps a new rotation cycle for this profile. Presentation
-   *  only: heat colours restart from now, the log rows stay untouched. */
+   *  only: heat colours restart from now, the log rows stay untouched.
+   *  resetForm() runs AFTER the stamp is written, so the fresh loggedAt it
+   *  sets is guaranteed to land after cycleStart - otherwise the very next
+   *  save would log before its own cycle's window and never show on the map. */
   async function startNewCycle() {
     if (!activeProfile) return;
     const ok = await confirm({
@@ -386,6 +425,7 @@ export default function InjectionScreen() {
     });
     if (!ok) return;
     await startRotationCycle(activeProfile.id);
+    resetForm();
     hapticSuccess();
     toast(t("injection.newCycleStarted"), "success");
     bumpData();
@@ -400,6 +440,42 @@ export default function InjectionScreen() {
       : null;
   }, [history]);
 
+  // Per-point usage across the 32 selectable region x point combinations
+  // (SELECTABLE_SITES x SITE_POINTS), keyed by pointKey. getSiteUsageHistory
+  // already returns one row per INJECTION_SITES site (a superset of
+  // SELECTABLE_SITES) with every SITE_POINTS count zero-filled, so nothing here
+  // is ever actually missing - but the lookup is still driven off the fixed
+  // selectable grid, not off whatever usage.sites happens to contain, so a
+  // future change to that shape (e.g. only returning sites with history)
+  // cannot silently break this count.
+  const pointCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const site of SELECTABLE_SITES) {
+      const siteUsage = usage.sites.find((s) => s.site === site);
+      for (const point of SITE_POINTS) {
+        counts.set(
+          pointKey(site, point),
+          siteUsage?.points.find((p) => p.point === point)?.count ?? 0
+        );
+      }
+    }
+    return counts;
+  }, [usage]);
+
+  // How many times the selected point was logged this rotation cycle, and how
+  // many of the 32 points are still untouched - the two facts the "already
+  // used" confirm and its inline note report. Never a recommendation.
+  const selectedPointCount = selected
+    ? pointCounts.get(pointKey(selected.site, selected.point)) ?? 0
+    : 0;
+  const unusedPointCount = useMemo(() => {
+    let n = 0;
+    pointCounts.forEach((c) => {
+      if (c === 0) n++;
+    });
+    return n;
+  }, [pointCounts]);
+
   // Descriptive only, never a block: the chosen point equals the last record's.
   const samePointNote = useMemo(() => {
     if (!selected || !lastRecord) return null;
@@ -410,6 +486,21 @@ export default function InjectionScreen() {
     if (d === 1) return t("injection.samePointYesterday");
     return t("injection.samePointDays", { n: d });
   }, [selected, lastRecord, t]);
+
+  // Fallback for samePointNote: fires only when that more specific note has
+  // nothing to say, and only while the point has been used this cycle AND
+  // another point is still empty (same gating as confirmReusedPoint). The two
+  // notes never show at once.
+  const reusedPointNote = useMemo(() => {
+    if (samePointNote) return null;
+    if (!selected || selectedPointCount === 0 || unusedPointCount === 0) return null;
+    return t("injection.reusedPointNote", {
+      count: selectedPointCount,
+      remaining: unusedPointCount,
+    });
+  }, [samePointNote, selected, selectedPointCount, unusedPointCount, t]);
+
+  const pointNote = samePointNote ?? reusedPointNote;
 
   const onDelete = useCallback(
     async (id: string) => {
@@ -764,6 +855,7 @@ export default function InjectionScreen() {
                   initialZoom={params.zoom}
                   cycleStart={cycleStart}
                   onStartNewCycle={startNewCycle}
+                  showRotationHint={isProUser}
                 />
               </View>
               {rotationCard}
@@ -811,6 +903,13 @@ export default function InjectionScreen() {
                   value={loggedAt}
                   max={new Date()}
                   locale={i18n.language}
+                  // No min={cycleStart}: a hand-picked time before the rotation
+                  // cycle started is still a real injection and stays logged and
+                  // editable - it just falls outside THIS cycle's window, so the
+                  // heat map and point counts read it as if it never happened
+                  // (correct: it is not part of the new cycle). Left unblocked
+                  // and unflagged rather than warned, same as any other
+                  // pre-cycle row.
                   onChange={(d) => {
                     timeTouched.current = true;
                     setLoggedAt(d);
@@ -931,23 +1030,28 @@ export default function InjectionScreen() {
                     <Ionicons name="map-outline" size={16} color={THEME.accent} />
                   </Pressable>
 
-                  {/* Repeat-point annotation: descriptive only, saving stays possible. */}
-                  {samePointNote ? (
+                  {/* Repeat-point / rotation-usage annotation: descriptive only, saving
+                      stays possible. Amber rather than red, because red would make this
+                      read as an alarm from a medical device, which the app is not allowed
+                      to be. samePointNote (same point as the newest record) is the more
+                      specific signal and wins; reusedPointNote is only the fallback when
+                      it has nothing to say - the two never show together. */}
+                  {pointNote ? (
                     <View
                       className="flex-row items-center rounded-xl px-3 py-2"
                       style={{
                         marginTop: -8,
                         marginBottom: 16,
                         borderWidth: 1,
-                        borderColor: withAlpha(THEME.accent, 0.25),
-                        backgroundColor: withAlpha(THEME.accent, 0.08),
+                        borderColor: withAlpha(THEME.caution, 0.4),
+                        backgroundColor: withAlpha(THEME.caution, 0.12),
                       }}
                     >
-                      <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />
+                      <Ionicons name="alert-circle-outline" size={14} color={THEME.caution} />
                       <Text
                         style={{ color: THEME.ink, fontSize: 11, lineHeight: 15, marginLeft: 8, flex: 1 }}
                       >
-                        {samePointNote}
+                        {pointNote}
                       </Text>
                     </View>
                   ) : null}

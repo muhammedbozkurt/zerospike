@@ -111,19 +111,26 @@ interface FeedRow {
  * `range` filters in SQL as well. Without it, an old date range had to be found
  * inside whatever the newest `limit` rows happened to cover, so a report or an
  * export of an early month silently came back short.
+ *
+ * `options.excludeCalculatorInjections` hides the auto-written mealtime-bolus
+ * row (source = 'calculator') from the injection branch. Defaults to false -
+ * IOB, the report and every export read the unfiltered feed and must keep
+ * seeing that row; only the dashboard's own journal list opts in, to stop
+ * showing it as a duplicate line under the meal that wrote it.
  */
 export async function getJournal(
   profileId: string,
   lang: Lang,
   limit = 300,
-  range?: DateRange
+  range?: DateRange,
+  options?: { excludeCalculatorInjections?: boolean }
 ): Promise<JournalEntry[]> {
   const db = await getDb();
 
   // The statement and its bound values live in ./journalSql (dependency-free), so
   // scripts/journal.test.ts runs the real query rather than a copy of it.
   const rows = await db.getAllAsync<FeedRow>(
-    journalFeedSql(range != null),
+    journalFeedSql(range != null, options?.excludeCalculatorInjections ?? false),
     journalFeedArgs(profileId, limit, range)
   );
 

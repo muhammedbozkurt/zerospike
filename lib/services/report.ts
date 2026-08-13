@@ -113,11 +113,15 @@ function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
         `<text x="${g.plotLeft - 4}" y="${f1(y + 3)}" font-size="9" fill="#777" text-anchor="end">${esc(formatGlucose(value, unit))}</text>`
     )
     .join("");
+  // Middle-anchored text centres on x, so the first/last ticks (sitting right at
+  // the plot edges) would overflow the viewBox by half their glyph width. Anchor
+  // the end ticks toward the inside instead; only the interior ticks stay centred.
+  const lastXTick = g.xTicks.length - 1;
   const xTicks = g.xTicks
-    .map(
-      ({ hour, x }) =>
-        `<text x="${f1(x)}" y="${H - 6}" font-size="9" fill="#777" text-anchor="middle">${hour}:00</text>`
-    )
+    .map(({ hour, x }, i) => {
+      const anchor = i === 0 ? "start" : i === lastXTick ? "end" : "middle";
+      return `<text x="${f1(x)}" y="${H - 6}" font-size="9" fill="#777" text-anchor="${anchor}">${hour}:00</text>`;
+    })
     .join("");
 
   const dots = g.medianLine
@@ -146,6 +150,31 @@ function dotColor(v: number, band: TargetBand): string {
   if (v < band.low) return GLUCOSE_COLORS.low;
   if (v <= band.high) return GLUCOSE_COLORS.normal;
   return GLUCOSE_COLORS.elevated;
+}
+
+// Timeline glyph geometry, defined once and shared by both the day bands and
+// their legend, so the two can never draw the same mark two different ways.
+const TIMELINE_DOT_R = 3;
+const TIMELINE_MEAL_FONT = 7;
+const TIMELINE_DOSE_R = 1.8;
+const TIMELINE_DOSE_COLOR = "#2563eb";
+
+/**
+ * A small inline-SVG key for the timeline's own glyphs (glucose dot, meal
+ * triangle, dose dot), built from the exact same size/colour constants the
+ * bands draw with. The colour legend for what each glucose colour MEANS
+ * already lives at the top of the report, so this only explains the shapes.
+ */
+function buildTimelineLegend(tf: Tf): string {
+  const item = (glyph: string, label: string) =>
+    `<span><svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">${glyph}</svg>${label}</span>`;
+  return (
+    `<div class="tlleg">` +
+    item(`<circle cx="6" cy="6" r="${TIMELINE_DOT_R}" fill="${GLUCOSE_COLORS.normal}"/>`, tf("report.legendGlucose")) +
+    item(`<text x="6" y="9" font-size="${TIMELINE_MEAL_FONT}" text-anchor="middle" fill="${BRAND}">&#9650;</text>`, tf("report.legendMeal")) +
+    item(`<circle cx="6" cy="6" r="${TIMELINE_DOSE_R}" fill="${TIMELINE_DOSE_COLOR}"/>`, tf("report.legendDose")) +
+    `</div>`
+  );
 }
 
 /**
@@ -201,13 +230,13 @@ function buildTimeline(
       const inR = levels.filter((v) => v >= band.low && v <= band.high).length;
       const tir = levels.length ? Math.round((inR / levels.length) * 100) : null;
       const dots = g.readings
-        .map((r) => `<circle cx="${xFor(r.logged_at).toFixed(1)}" cy="15" r="3" fill="${dotColor(r.glucose_level_mgdl, band)}"/>`)
+        .map((r) => `<circle cx="${xFor(r.logged_at).toFixed(1)}" cy="15" r="${TIMELINE_DOT_R}" fill="${dotColor(r.glucose_level_mgdl, band)}"/>`)
         .join("");
       const mealMarks = g.meals
-        .map((m) => `<text x="${xFor(m.logged_at).toFixed(1)}" y="7" font-size="7" text-anchor="middle" fill="${BRAND}">&#9650;</text>`)
+        .map((m) => `<text x="${xFor(m.logged_at).toFixed(1)}" y="7" font-size="${TIMELINE_MEAL_FONT}" text-anchor="middle" fill="${BRAND}">&#9650;</text>`)
         .join("");
       const doseMarks = g.doses
-        .map((i) => `<circle cx="${xFor(i.logged_at).toFixed(1)}" cy="27" r="1.8" fill="#2563eb"/>`)
+        .map((i) => `<circle cx="${xFor(i.logged_at).toFixed(1)}" cy="27" r="${TIMELINE_DOSE_R}" fill="${TIMELINE_DOSE_COLOR}"/>`)
         .join("");
       const summary =
         avg != null
@@ -220,7 +249,7 @@ function buildTimeline(
       );
     })
     .join("");
-  return `<h2 class="pbreak">${tf("report.timelineTitle")}</h2><div class="cap">${tf("report.timelineCaption")}</div>${bands}`;
+  return `<h2 class="pbreak">${tf("report.timelineTitle")}</h2><div class="cap">${tf("report.timelineCaption")}</div>${buildTimelineLegend(tf)}${bands}`;
 }
 
 /** The events page: low events (+ follow-up), the highest five readings, and a
@@ -440,6 +469,9 @@ function buildHtml(
   .tirleg { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: #555; }
   .tirleg span { display: inline-flex; align-items: center; }
   .tirleg i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 4px; }
+  .tlleg { display: flex; flex-wrap: wrap; gap: 12px; font-size: 10px; color: #555; margin: 2px 0 8px; }
+  .tlleg span { display: inline-flex; align-items: center; gap: 3px; }
+  .tlleg svg { display: block; flex-shrink: 0; }
   .band { page-break-inside: avoid; margin-bottom: 5px; }
   .bandhead { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
   .bandhead .bd { font-weight: 700; color: #222; }
