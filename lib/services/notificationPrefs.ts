@@ -21,14 +21,19 @@ export interface NotificationPrefs {
   postMeal: boolean;
   /** Post-meal check delay in minutes (drives both the auto reminder and the
    *  "I started eating" timer). */
-  postMealMinutes: 90 | 120 | 150;
+  postMealMinutes: 60 | 90 | 120 | 150;
   /** Weekly summary nudge, at a user-chosen day + time. */
   weekly: boolean;
   weeklyDay: number; // expo-notifications weekday: 1 = Sunday ... 7 = Saturday
   weeklyTime: string; // "HH:MM"
   /** After the user logs a reading below their own threshold, offer a neutral
-   *  15-minute re-measure reminder. User-set threshold, stored in mg/dL. */
+   *  15-minute re-measure reminder. */
   lowFollowup: boolean;
+  /** @deprecated UX#1 (2.1.0 wave 2b): the offer now always uses the active
+   *  profile's own low threshold (see lowFollowupThresholdMgdl in
+   *  lib/services/notifications.ts), the same number classifyGlucose uses
+   *  everywhere else. Kept only so an already-stored value still parses;
+   *  no longer read. */
   lowThresholdMgdl: number;
   /** Rolling reminder that the journal has been empty for a day. Re-armed on
    *  every entry, so someone who logs regularly never sees it. */

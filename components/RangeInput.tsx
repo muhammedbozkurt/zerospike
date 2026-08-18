@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, PanResponder, Pressable, Text, TextInput, View } from "react-native";
+import { Animated, I18nManager, PanResponder, Pressable, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -193,9 +193,14 @@ export function RangeInput({
       },
       onPanResponderMove: (_evt, g) => {
         const e = envRef.current;
+        // The rail itself mirrors under RTL (posOf's `left` gets auto-swapped),
+        // but g.dx is a raw physical-screen delta with no notion of that flip.
+        // Negate it so dragging toward the rail's physical right still moves
+        // the value the way the now-mirrored thumb visually promises.
+        const dx = I18nManager.isRTL ? -g.dx : g.dx;
         emit(
           which,
-          settle(which, startValRef.current + (g.dx / usableRef.current) * e.span)
+          settle(which, startValRef.current + (dx / usableRef.current) * e.span)
         );
       },
       onPanResponderRelease: () => {

@@ -134,7 +134,7 @@ export function GlucoseInputSheet({
   useEffect(() => {
     if (visible) {
       if (edit) {
-        setValue(String(glucoseToDisplay(edit.glucose_level_mgdl, unit)));
+        setValue(num(glucoseToDisplay(edit.glucose_level_mgdl, unit)));
         setPeriod(edit.period_tag);
         setTags(edit.tags);
         setLoggedAt(new Date(edit.logged_at));
@@ -428,7 +428,7 @@ export function GlucoseInputSheet({
                     value={value}
                     onChangeText={onType}
                     keyboardType={mmol ? "decimal-pad" : "number-pad"}
-                    placeholder={mmol ? "6.1" : "110"}
+                    placeholder={mmol ? num(6.1) : "110"}
                     placeholderTextColor="rgba(137,163,176,0.7)"
                     accessibilityLabel={`${edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}, ${glucoseUnitLabel(unit)}`}
                     style={[

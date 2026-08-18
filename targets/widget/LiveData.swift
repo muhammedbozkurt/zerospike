@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // The contract with the app. lib/services/liveData.ts writes exactly this JSON
 // to the shared App Group under LIVE_DATA_KEY; nothing here derives or
@@ -9,6 +10,11 @@ import Foundation
 struct LiveData: Codable {
   let updatedAt: Double
   let unit: String
+  /// The active in-app language (e.g. "ar"), so a native surface can mirror the
+  /// app's own writing direction instead of the device's system language.
+  /// Optional so a snapshot written by an older app build still decodes; a
+  /// missing value means the surface keeps the device's own layout direction.
+  let lang: String?
   let lastGlucoseMgdl: Double?
   /// Pre-formatted reading (display unit + active locale). Optional so a snapshot
   /// written by an older app build still decodes; falls back to local formatting.
@@ -124,5 +130,29 @@ extension LiveData {
   var nextReminderDate: Date? {
     guard let at = nextReminderAt else { return nil }
     return Date(timeIntervalSince1970: at / 1000)
+  }
+}
+
+/// The writing direction the given in-app language calls for, mirroring
+/// `isRTLLang` in lib/i18n/index.ts: "ar" is the only in-app language that
+/// reads right-to-left. `nil` for a missing `lang` (a pre-Wave-3h snapshot, or
+/// a decode failure) so the caller falls back to the device's own layout
+/// direction instead of asserting one.
+func layoutDirection(forLang lang: String?) -> LayoutDirection? {
+  guard let lang else { return nil }
+  return lang == "ar" ? .rightToLeft : .leftToRight
+}
+
+extension View {
+  /// Applies an explicit layout direction, or leaves the environment
+  /// untouched when `direction` is `nil` so the view falls back to whatever
+  /// direction its parent (ultimately the device) already set.
+  @ViewBuilder
+  func applyingLayoutDirection(_ direction: LayoutDirection?) -> some View {
+    if let direction {
+      environment(\.layoutDirection, direction)
+    } else {
+      self
+    }
   }
 }

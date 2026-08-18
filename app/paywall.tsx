@@ -19,7 +19,7 @@ import {
 } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { GLUCOSE_RICH, MODAL_TOP_PAD, TABULAR, THEME, glow } from "../lib/theme/tokens";
-import { money, pct } from "../lib/format";
+import { isolateLtr, money, pct } from "../lib/format";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -119,7 +119,17 @@ function PlanCard({
               className="rounded-full px-2 py-0.5"
               style={{ backgroundColor: withAlpha(GLUCOSE_RICH.target, 0.16) }}
             >
-              <Text style={{ color: GLUCOSE_RICH.target, fontSize: 10, fontWeight: "800" }}>
+              {/* Bidi: pct() already orders the number and sign correctly for
+                  the language ("50%"); pin it LTR so an RTL base paragraph
+                  direction cannot reorder the sign to the front. */}
+              <Text
+                style={{
+                  color: GLUCOSE_RICH.target,
+                  fontSize: 10,
+                  fontWeight: "800",
+                  writingDirection: "ltr",
+                }}
+              >
                 {save}
               </Text>
             </View>
@@ -265,7 +275,11 @@ function PaywallScreen() {
     await triggerDownsell();
   }
 
-  const limit =
+  // Title-only reasons (insights, export) have no matching limitBody* copy: the
+  // nudge from those screens is a one-line "this is part of Pro", not a full
+  // limit explanation, so `body` stays optional and the card below only renders
+  // it when present.
+  const limit: { title: string; body?: string } | null =
     reason === "health"
       ? { title: t("paywall.limitTitleHealth"), body: t("paywall.limitBodyHealth") }
       : reason === "foods"
@@ -279,7 +293,11 @@ function PaywallScreen() {
             ? { title: t("paywall.limitTitleRotation"), body: t("paywall.limitBodyRotation") }
             : reason === "mealResponse"
               ? { title: t("paywall.limitTitleMealResponse"), body: t("paywall.limitBodyMealResponse") }
-              : null;
+              : reason === "insights"
+                ? { title: t("paywall.limitTitleInsights") }
+                : reason === "export"
+                  ? { title: t("paywall.limitTitleExport") }
+                  : null;
 
   async function buy() {
     if (busy) return;
@@ -440,9 +458,11 @@ function PaywallScreen() {
               <Text style={{ color: GLUCOSE_RICH.high, fontWeight: "800", marginBottom: 2 }}>
                 {limit.title}
               </Text>
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.85 }}>
-                {limit.body}
-              </Text>
+              {limit.body ? (
+                <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.85 }}>
+                  {limit.body}
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -528,7 +548,15 @@ function PaywallScreen() {
                 price={priceStr("annual")}
                 period={t("paywall.perYear")}
                 badge={t("paywall.mostPopular")}
-                save={savePct > 0 ? t("paywall.savePercent", { percent: pct(savePct) }) : undefined}
+                // Bidi: "50%" still got the sign glued onto the translated
+                // word instead of the number under RTL (writingDirection on
+                // the badge Text alone was verified NOT enough on-device);
+                // isolating just the number+sign pair holds it as one block.
+                save={
+                  savePct > 0
+                    ? t("paywall.savePercent", { percent: isolateLtr(pct(savePct)) })
+                    : undefined
+                }
               />
               <PlanCard
                 selected={plan === "lifetime"}

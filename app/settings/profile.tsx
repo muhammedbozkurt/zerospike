@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Switch, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -14,7 +14,9 @@ import {
   TARGET_RANGE_BOUNDS,
 } from "../../lib/glucose";
 import { CARB_TARGET_BOUNDS, clampCarbTarget } from "../../lib/insulin";
+import { num } from "../../lib/format";
 import { insulinModeOf, insulinModeShowsBasal, insulinModeShowsBolus } from "../../lib/insulinMode";
+import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G, isNoInsulinDiabetesType } from "../../lib/diabetesDefaults";
 import {
   applyNotificationPrefs,
   cancelBasalReminder,
@@ -28,9 +30,10 @@ import { FormCard, InputRow } from "../../components/form";
 import { RangeInput } from "../../components/RangeInput";
 import { Stepper } from "../../components/Stepper";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
+import { InsulinModeSection } from "../../components/InsulinModeSection";
 import { SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
-import { THEME } from "../../lib/theme/tokens";
+import { useFeedback } from "../../components/Feedback";
 import { useLayout } from "../../lib/useLayout";
 
 /**
@@ -42,6 +45,7 @@ export default function ProfileSettings() {
   const { t } = useTranslation();
   const { activeProfile, bumpData } = useApp();
   const { contentColumn } = useLayout();
+  const { confirm } = useFeedback();
 
   // activeProfile is already in context by the time this screen mounts (see
   // profile-setup.tsx for the same pattern), so every field is seeded straight
@@ -57,16 +61,16 @@ export default function ProfileSettings() {
   const [crL, setCrL] = useState(() => activeProfile?.carb_ratio_lunch ?? 0);
   const [crD, setCrD] = useState(() => activeProfile?.carb_ratio_dinner ?? 0);
   const [fastingMin, setFastingMin] = useState(() =>
-    activeProfile ? String(glucoseToDisplay(activeProfile.target_fasting_min, unit)) : ""
+    activeProfile ? num(glucoseToDisplay(activeProfile.target_fasting_min, unit)) : ""
   );
   const [fastingMax, setFastingMax] = useState(() =>
-    activeProfile ? String(glucoseToDisplay(activeProfile.target_fasting_max, unit)) : ""
+    activeProfile ? num(glucoseToDisplay(activeProfile.target_fasting_max, unit)) : ""
   );
   const [postmealMin, setPostmealMin] = useState(() =>
-    activeProfile ? String(glucoseToDisplay(activeProfile.target_postmeal_min, unit)) : ""
+    activeProfile ? num(glucoseToDisplay(activeProfile.target_postmeal_min, unit)) : ""
   );
   const [postmealMax, setPostmealMax] = useState(() =>
-    activeProfile ? String(glucoseToDisplay(activeProfile.target_postmeal_max, unit)) : ""
+    activeProfile ? num(glucoseToDisplay(activeProfile.target_postmeal_max, unit)) : ""
   );
   const [carbMin, setCarbMin] = useState(() =>
     activeProfile ? String(activeProfile.daily_carb_target_min_g) : ""
@@ -84,6 +88,7 @@ export default function ProfileSettings() {
   const showsBolus = insulinModeShowsBolus(insulinMode);
   const showsBasal = insulinModeShowsBasal(insulinMode);
   const oralMeds = activeProfile?.oral_meds_enabled === 1;
+  const diabetesType: DiabetesType = activeProfile?.diabetes_type ?? "unknown";
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -93,10 +98,10 @@ export default function ProfileSettings() {
     setCrB(activeProfile.carb_ratio_breakfast);
     setCrL(activeProfile.carb_ratio_lunch);
     setCrD(activeProfile.carb_ratio_dinner);
-    setFastingMin(String(glucoseToDisplay(activeProfile.target_fasting_min, u)));
-    setFastingMax(String(glucoseToDisplay(activeProfile.target_fasting_max, u)));
-    setPostmealMin(String(glucoseToDisplay(activeProfile.target_postmeal_min, u)));
-    setPostmealMax(String(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
+    setFastingMin(num(glucoseToDisplay(activeProfile.target_fasting_min, u)));
+    setFastingMax(num(glucoseToDisplay(activeProfile.target_fasting_max, u)));
+    setPostmealMin(num(glucoseToDisplay(activeProfile.target_postmeal_min, u)));
+    setPostmealMax(num(glucoseToDisplay(activeProfile.target_postmeal_max, u)));
     setCarbMin(String(activeProfile.daily_carb_target_min_g));
     setCarbMax(String(activeProfile.daily_carb_target_g));
     setBasalUnits(activeProfile.basal_daily_units ?? 0);
@@ -192,6 +197,59 @@ export default function ProfileSettings() {
     await persist({ daily_carb_target_min_g: lo, daily_carb_target_g: hi });
   }
 
+  /**
+   * Changing diabetes type is a two-step confirm (Wave 2a): first that visible
+   * sections will follow the new type (records are never touched), then a
+   * separate offer to reset the target-range defaults for it. Switching into
+   * prediabetes/none also switches off insulin_mode, the same way the insulin
+   * segment itself does, since those two types never show insulin controls;
+   * that side effect is called out in the first dialog's body rather than
+   * happening silently.
+   */
+  async function handleDiabetesTypeChange(next: DiabetesType) {
+    if (next === diabetesType) return;
+    const willCancelInsulin = isNoInsulinDiabetesType(next) && insulinMode !== "none";
+
+    const confirmed = await confirm({
+      title: t("settings.typeChangeTitle"),
+      message: willCancelInsulin
+        ? `${t("settings.typeChangeBody")}\n\n${t("settings.typeChangeInsulinNote")}`
+        : t("settings.typeChangeBody"),
+    });
+    if (!confirmed) return;
+
+    await persist({ diabetes_type: next });
+    if (willCancelInsulin) await persistInsulinMode("none");
+
+    const wantsDefaults = await confirm({
+      title: t("settings.typeDefaultsTitle"),
+      message: t("settings.typeDefaultsBody"),
+      confirmLabel: t("settings.useDefaults"),
+      cancelLabel: t("settings.keepValues"),
+    });
+    if (!wantsDefaults) return;
+
+    const { fasting, postmeal } = TARGET_DEFAULTS_MGDL[next];
+    const patch: Record<string, number> = {
+      target_fasting_min: fasting.min,
+      target_fasting_max: fasting.max,
+      target_postmeal_min: postmeal.min,
+      target_postmeal_max: postmeal.max,
+    };
+    setFastingMin(num(glucoseToDisplay(fasting.min, unit)));
+    setFastingMax(num(glucoseToDisplay(fasting.max, unit)));
+    setPostmealMin(num(glucoseToDisplay(postmeal.min, unit)));
+    setPostmealMax(num(glucoseToDisplay(postmeal.max, unit)));
+    if (next === "gestational") {
+      const carb = CARB_TARGET_DEFAULTS_G.gestational;
+      patch.daily_carb_target_min_g = carb.min;
+      patch.daily_carb_target_g = carb.max;
+      setCarbMin(String(carb.min));
+      setCarbMax(String(carb.max));
+    }
+    await persist(patch);
+  }
+
   return (
     <SettingsScaffold title={t("onboarding.secProfile")}>
       <View style={contentColumn}>
@@ -221,32 +279,13 @@ export default function ProfileSettings() {
         </View>
       </FormCard>
 
-      <FormCard icon="layers-outline" title={t("settings.insulinMode")}>
-        <View className="px-4 py-3.5">
-          <Segmented
-            options={(["none", "basal", "bolus", "both"] as InsulinMode[]).map((m) => ({
-              value: m,
-              label: t(`onboarding.insulin_${m}`),
-            }))}
-            value={insulinMode}
-            onChange={(m: InsulinMode) => persistInsulinMode(m)}
-          />
-        </View>
-      </FormCard>
-
-      <FormCard icon="medical-outline" title={t("meds.toggleLabel")}>
-        <View className="px-4 py-3.5 flex-row items-center">
-          <View className="flex-1 pr-3">
-            <Text className="text-mut text-xs leading-4">{t("meds.toggleHint")}</Text>
-          </View>
-          <Switch
-            value={oralMeds}
-            onValueChange={(v) => void persistOralMeds(v)}
-            trackColor={{ true: THEME.accent, false: THEME.border }}
-            thumbColor={THEME.ink}
-          />
-        </View>
-      </FormCard>
+      <InsulinModeSection
+        diabetesType={diabetesType}
+        insulinMode={insulinMode}
+        onChangeInsulinMode={(m) => void persistInsulinMode(m)}
+        oralMeds={oralMeds}
+        onChangeOralMeds={(v) => void persistOralMeds(v)}
+      />
 
       <FormCard icon="medkit-outline" title={t("settings.diabetesType")}>
         <View className="px-4 py-3.5">
@@ -257,8 +296,8 @@ export default function ProfileSettings() {
               value: d,
               label: d === "unknown" ? t("onboarding.diabetes_other") : t(`onboarding.diabetes_${d}`),
             }))}
-            value={activeProfile?.diabetes_type ?? "unknown"}
-            onChange={(d: DiabetesType) => persist({ diabetes_type: d })}
+            value={diabetesType}
+            onChange={(d: DiabetesType) => void handleDiabetesTypeChange(d)}
           />
           <Text className="text-mut text-xs mt-2 leading-4">{t("settings.diabetesTypeHint")}</Text>
         </View>
@@ -324,7 +363,7 @@ export default function ProfileSettings() {
           <Segmented
             options={[54, 60, 65, 70, 75, 80].map((mgdl) => ({
               value: String(mgdl),
-              label: String(glucoseToDisplay(mgdl, unit)),
+              label: num(glucoseToDisplay(mgdl, unit)),
             }))}
             value={String(activeProfile?.hypo_threshold_mgdl ?? 70)}
             onChange={(v) => void persist({ hypo_threshold_mgdl: clampHypoThreshold(Number(v)) })}

@@ -427,3 +427,47 @@ export interface MedLog {
    *  latter and never the former). */
   created_at: number;
 }
+
+/* ── Reminders registry (schema v17) ───────────────────────────────────────
+ *
+ * One table backing every scheduled local reminder the app manages: the three
+ * that already existed (basal, oral medication, glucose) plus any number of
+ * user-defined custom ones. Device-level, like NotificationPrefs (no
+ * profile_id): a reminder schedule follows the device owner's own day, not one
+ * profile. Storage only - see lib/db/reminders.ts for the accessors and
+ * lib/services/notifications.ts (applyReminders) for what turns a row into an
+ * actual OS notification.
+ */
+
+export type ReminderType = "glucose" | "med" | "basal" | "custom";
+
+export const REMINDER_TYPES: readonly ReminderType[] = [
+  "glucose",
+  "med",
+  "basal",
+  "custom",
+] as const;
+
+/** Narrows any stored value to a ReminderType, or null when it is not one. */
+export function parseReminderType(v: unknown): ReminderType | null {
+  return v === "glucose" || v === "med" || v === "basal" || v === "custom"
+    ? v
+    : null;
+}
+
+export interface Reminder {
+  id: string;
+  type: ReminderType;
+  /** What a custom reminder is called; NULL for the three built-in types,
+   *  whose copy comes from i18n (notifications.basalTitle etc). */
+  label: string | null;
+  /** "HH:MM", parsed the same way every other daily reminder in the app is
+   *  (see parseHHMM in lib/services/notifications.ts). */
+  time: string;
+  enabled: number; // 0 | 1
+  /** The user's own ordering; also what applyReminders schedules in. */
+  sort: number;
+  /** Epoch milliseconds, unlike the older log tables' ISO text: nothing here is
+   *  ever range-queried against a reading or a meal. */
+  created_at: number;
+}

@@ -19,7 +19,23 @@ import { createProfile } from "../lib/db/profiles";
 import { Button } from "./ui";
 import { INPUT_TEXT, THEME } from "../lib/theme/tokens";
 
-export function ProfileSwitcher() {
+/**
+ * Own trigger pill + modal by default (every existing call site just renders
+ * `<ProfileSwitcher />`). `open`/`onOpenChange` let a caller drive the modal from
+ * its own row instead (settings/data.tsx's "multi-profile" row) without a second,
+ * competing implementation of the picker: pass `hideTrigger` to drop the pill and
+ * control `open` externally: the rest of the component (list, add/create) is
+ * unchanged either way.
+ */
+export function ProfileSwitcher({
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+} = {}) {
   const { t } = useTranslation();
   const router = useRouter();
   const {
@@ -30,7 +46,9 @@ export function ProfileSwitcher() {
     refreshProfiles,
     bumpData,
   } = useApp();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const { height: winHeight } = useWindowDimensions();
@@ -78,24 +96,26 @@ export function ProfileSwitcher() {
 
   return (
     <>
-      <Pressable
-        onPress={handlePillPress}
-        accessibilityRole="button"
-        accessibilityLabel={t("profiles.switch")}
-        className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-1.5"
-      >
-        <Ionicons name="person-circle-outline" size={18} color={THEME.muted} />
-        <Text
-          className="text-ink font-medium text-sm mx-1.5"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.85}
-          style={{ maxWidth: 120 }}
+      {!hideTrigger ? (
+        <Pressable
+          onPress={handlePillPress}
+          accessibilityRole="button"
+          accessibilityLabel={t("profiles.switch")}
+          className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-1.5"
         >
-          {activeProfile?.name ?? "-"}
-        </Text>
-        <Ionicons name="chevron-down" size={14} color={THEME.muted} />
-      </Pressable>
+          <Ionicons name="person-circle-outline" size={18} color={THEME.muted} />
+          <Text
+            className="text-ink font-medium text-sm mx-1.5"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+            style={{ maxWidth: 120 }}
+          >
+            {activeProfile?.name ?? "-"}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={THEME.muted} />
+        </Pressable>
+      ) : null}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         {/* The "new profile" field autofocuses and its Create/Cancel row sits

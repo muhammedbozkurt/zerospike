@@ -1,6 +1,6 @@
 {
   "name": "zerospike",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -49,6 +49,7 @@
     "expo-status-bar": "~57.0.0",
     "expo-store-review": "~57.0.0",
     "expo-system-ui": "~57.0.0",
+    "expo-updates": "~57.0.15",
     "i18next": "^23.11.5",
     "nativewind": "4.2.6",
     "promise": "^8.3.0",

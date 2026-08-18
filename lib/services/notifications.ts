@@ -7,9 +7,13 @@ import {
   getNotificationPrefs,
   type NotificationPrefs,
 } from "./notificationPrefs";
-import { formatGlucose, glucoseUnitLabel, LOW_FOLLOWUP_MINUTES } from "../glucose";
+import { formatGlucose, glucoseUnitLabel, hypoThreshold, LOW_FOLLOWUP_MINUTES } from "../glucose";
 import { getProfile, listProfiles } from "../db/profiles";
-import type { UserProfile } from "../db/types";
+import {
+  applyLegacyRemindersBridge,
+  listReminders,
+} from "../db/reminders";
+import type { Reminder, UserProfile } from "../db/types";
 import { insulinModeOf, insulinModeShowsBasal } from "../insulinMode";
 import {
   endPostMealActivity,
@@ -41,6 +45,12 @@ const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
 // build has no start recorded; it is derived from the end and the window it was
 // armed with.
 const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
+// Profile the running timer belongs to (audit finding B): a caregiver who
+// starts the countdown on one profile and switches to another must not have it
+// silently show/act as if it were the new profile's own timer. Absent on a
+// timer armed before this field existed - readPostMealTimerProfile treats that
+// the same as "no lock" (shows for whichever profile is active).
+const POSTMEAL_TIMER_PROFILE_KEY = "zerospike.postMealTimerProfile";
 // Fire times (epoch ms) of the pending ONE-OFF reminders whose copy is not
 // recoverable from anywhere else. The OS stores the literal text it was handed,
 // so switching language leaves an already-scheduled reminder speaking the old
@@ -283,6 +293,12 @@ export async function cancelBasalReminder(): Promise<void> {
   } catch {
     // not scheduled - ignore
   }
+  // Scheduling has moved to the reminders registry (schema v17): a basal
+  // reminder now lives under "zerospike-rem-<id>", not the fixed BASAL_ID
+  // above. app/settings/profile.tsx calls this the moment a profile stops
+  // showing basal insulin, so it has to reach whichever id space the pending
+  // notification actually lives in - see applyReminders.
+  await cancelReminderNotificationsOfType("basal");
 }
 
 /**
@@ -315,6 +331,10 @@ export async function cancelMedReminder(): Promise<void> {
   } catch {
     // not scheduled - ignore
   }
+  // See cancelBasalReminder above: app/settings/profile.tsx calls this when
+  // oral-medication tracking is turned off, and the reminder it means to take
+  // down now lives under "zerospike-rem-<id>".
+  await cancelReminderNotificationsOfType("med");
 }
 
 export async function scheduleGlucoseReminder(time: string): Promise<void> {
@@ -342,6 +362,215 @@ export async function cancelGlucoseReminder(): Promise<void> {
     await Notifications.cancelScheduledNotificationAsync(GLUCOSE_ID);
   } catch {
     // not scheduled - ignore
+  }
+  // See cancelBasalReminder above, for the same reason and the same id move.
+  await cancelReminderNotificationsOfType("glucose");
+}
+
+// ── Reminders registry (schema v17) ─────────────────────────────────────────
+// One table (lib/db/reminders.ts) now backs basal/med/glucose AND any number of
+// user-defined custom reminders. applyReminders below reads it and is what
+// applyNotificationPrefs actually calls; scheduleBasalReminder/scheduleMedReminder/
+// scheduleGlucoseReminder above stay in place (their fixed ids are still torn
+// down defensively - see cancelBasalReminder etc, and the bridge below) but are
+// no longer wired into the apply flow.
+
+/** Every reminder-registry notification carries this prefix, so a sweep can
+ *  always tell "ours, and not backed by a row" apart from anything else. */
+const REMINDER_ID_PREFIX = "zerospike-rem-";
+
+function reminderIdentifier(id: string): string {
+  return `${REMINDER_ID_PREFIX}${id}`;
+}
+
+/** The content for one reminder row. basal/med/glucose reuse the exact copy the
+ *  fixed-id schedulers above already use; a custom reminder gets the shared
+ *  "Reminder" title and the label the user gave it as the body. No route for a
+ *  custom tap: there is no screen for it yet (next wave), and an unrecognised
+ *  NotificationRoute is already a safe no-op on tap (see app/_layout.tsx). */
+function reminderContent(row: Reminder): Notifications.NotificationContentInput {
+  switch (row.type) {
+    case "basal":
+      return {
+        title: i18n.t("notifications.basalTitle"),
+        body: i18n.t("notifications.basalBody"),
+        data: { route: "basal" satisfies NotificationRoute },
+        ...reminderExtras,
+      };
+    case "med":
+      return {
+        title: i18n.t("notifications.medTitle"),
+        body: i18n.t("notifications.medBody"),
+        data: { route: "med" satisfies NotificationRoute },
+        ...reminderExtras,
+      };
+    case "glucose":
+      return {
+        title: i18n.t("notifications.glucoseTitle"),
+        body: i18n.t("notifications.glucoseBody"),
+        data: { route: "glucose" satisfies NotificationRoute },
+        ...reminderExtras,
+      };
+    case "custom":
+    default:
+      return {
+        title: i18n.t("notifications.customTitle"),
+        body: row.label ?? "",
+        ...reminderExtras,
+      };
+  }
+}
+
+async function scheduleReminderRow(row: Reminder): Promise<void> {
+  const { hour, minute } = parseHHMM(row.time);
+  await Notifications.scheduleNotificationAsync({
+    identifier: reminderIdentifier(row.id),
+    content: reminderContent(row),
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
+  });
+}
+
+async function cancelReminderIdentifier(identifier: string): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(identifier);
+  } catch {
+    // not scheduled - ignore
+  }
+}
+
+/** Cancels every currently-scheduled reminder-registry notification of one
+ *  type, whatever row(s) it came from. Used by cancelBasalReminder /
+ *  cancelMedReminder / cancelGlucoseReminder, which app/settings/profile.tsx
+ *  calls directly when a profile stops showing basal insulin or oral
+ *  medication - a live teardown, not a change to the stored row. */
+async function cancelReminderNotificationsOfType(
+  type: Reminder["type"]
+): Promise<void> {
+  try {
+    const rows = await listReminders();
+    for (const row of rows) {
+      if (row.type === type) await cancelReminderIdentifier(reminderIdentifier(row.id));
+    }
+  } catch {
+    // best-effort; a failed lookup must not throw out of a settings toggle
+  }
+}
+
+/**
+ * The one-time move of the legacy basal/med/glucose prefs into the reminders
+ * table (lib/db/remindersBridge.ts), run at most once per process AND at most
+ * once ever (app_meta-guarded - see bridgeLegacyReminders). The in-flight
+ * promise is cached (not just a boolean) so two calls to applyNotificationPrefs
+ * landing close together - app bootstrap and a profile switch, say - await the
+ * SAME attempt instead of racing two inserts of the same rows.
+ *
+ * When this call is the one that actually bridges, the pre-registry fixed-id
+ * notifications are cancelled: from here on the same reminder is scheduled
+ * under its new "zerospike-rem-<id>" identifier (by applyReminders, called
+ * right after this from applyNotificationPrefs), and leaving the old id armed
+ * would fire the same reminder twice.
+ */
+let remindersBridgePromise: Promise<void> | null = null;
+
+function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
+  if (!remindersBridgePromise) {
+    remindersBridgePromise = (async () => {
+      try {
+        const bridged = await applyLegacyRemindersBridge({
+          basal: prefs.basal,
+          basalTime: prefs.basalTime,
+          med: prefs.med,
+          medTime: prefs.medTime,
+          glucose: prefs.glucose,
+          glucoseTime: prefs.glucoseTime,
+        });
+        if (bridged) {
+          await Promise.all([
+            cancelBasalReminder(),
+            cancelMedReminder(),
+            cancelGlucoseReminder(),
+          ]);
+        }
+      } catch {
+        // best-effort: a failed bridge leaves the table empty and the legacy
+        // schedule untouched, which is never worse than doing nothing; the
+        // next launch tries again (remindersBridgePromise resets per process).
+      }
+    })();
+  }
+  return remindersBridgePromise;
+}
+
+/**
+ * Applies the reminders registry: every row in lib/db/reminders.ts, scheduled
+ * under "zerospike-rem-<id>" with a DAILY trigger, or cancelled when
+ * `prefs.enabled` is off, permission is missing, the row itself is disabled, or
+ * (basal/med only) the active profile's mode/oral-meds flag hides that surface
+ * (glucose and custom carry no such gate). Also sweeps any
+ * "zerospike-rem-"-prefixed notification that is still scheduled but no longer
+ * backed by a row (a deleted reminder), so nothing leaks.
+ *
+ * Called unconditionally from applyNotificationPrefs, before it branches on
+ * `prefs.enabled` / permission: this function does its own gating, so the
+ * caller does not have to duplicate it.
+ */
+/** The pre-registry fixed ids (see BASAL_ID/MED_ID/GLUCOSE_ID above), still
+ *  swept here defensively - see the note on the sweep below. */
+const LEGACY_FIXED_IDS: readonly string[] = [BASAL_ID, MED_ID, GLUCOSE_ID];
+
+export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
+  const granted = prefs.enabled && (await hasNotificationPermission());
+  const rows = await listReminders();
+
+  if (granted && rows.length > 0) await ensureAndroidChannel();
+
+  const [showsBasal, showsMeds] = granted
+    ? await Promise.all([activeProfileShowsBasal(), activeProfileShowsMeds()])
+    : [false, false];
+
+  const known = new Set<string>();
+  for (const row of rows) {
+    const identifier = reminderIdentifier(row.id);
+    known.add(identifier);
+    const gateOpen =
+      row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
+    if (granted && row.enabled === 1 && gateOpen) {
+      await scheduleReminderRow(row);
+    } else {
+      await cancelReminderIdentifier(identifier);
+    }
+  }
+
+  // A row that was deleted still has to have its notification cancelled - the
+  // delete itself (lib/db/reminders.ts) only removes the row, not the pending
+  // OS notification. getAllScheduledNotificationsAsync is the only way to find
+  // one that neither the loop above nor a normal cancel call would reach.
+  //
+  // The same pass also sweeps the pre-registry FIXED ids (BASAL_ID/MED_ID/
+  // GLUCOSE_ID): ensureRemindersBridged only cancels those the one time it
+  // actually performs the bridge, in a Promise.all that is not part of the
+  // same DB transaction as the bridge insert - a process killed between the
+  // two leaves the app_meta flag (and the seeded rows) committed but those
+  // three legacy notifications still armed, and since the bridge is guarded to
+  // run at most once ever, nothing would call cancelBasalReminder/etc again on
+  // its behalf. Once the registry is what applyReminders schedules from, none
+  // of these fixed ids should ever still be pending, so they are swept here
+  // unconditionally alongside the orphaned "zerospike-rem-" ones.
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of scheduled) {
+      if (n.identifier.startsWith(REMINDER_ID_PREFIX) && !known.has(n.identifier)) {
+        await cancelReminderIdentifier(n.identifier);
+      } else if (LEGACY_FIXED_IDS.includes(n.identifier)) {
+        await cancelReminderIdentifier(n.identifier);
+      }
+    }
+  } catch {
+    // best-effort sweep; a failed listing must never break the apply
   }
 }
 
@@ -579,10 +808,12 @@ async function activeProfileShowsMeds(): Promise<boolean> {
 }
 
 /**
- * Applies the saved preferences: schedules the basal/medication/glucose
- * reminders that are enabled and cancels the rest. With the master switch off (or permission
- * denied) it cancels everything it manages. Post-meal is event-driven (see
- * schedulePostMealReminder) so it is not touched here.
+ * Applies the saved preferences: schedules the reminders-registry rows
+ * (basal/medication/glucose/custom - see applyReminders) that are enabled and
+ * cancels the rest, plus the weekly summary and the idle nudge. With the
+ * master switch off (or permission denied) it cancels everything it manages.
+ * Post-meal is event-driven (see schedulePostMealReminder) so it is not
+ * touched here.
  *
  * NEVER prompts. This runs from background paths (app bootstrap, a profile
  * switch, a language change, a profile setting) where an OS permission dialog
@@ -596,15 +827,23 @@ export async function applyNotificationPrefs(
 ): Promise<void> {
   const p = prefs ?? (await getNotificationPrefs());
 
+  // One-time move of the pre-registry basal/med/glucose settings into the
+  // reminders table; a no-op after the first call, this process or any other
+  // (see ensureRemindersBridged).
+  await ensureRemindersBridged(p);
+
+  // applyReminders is unconditional and does its own gating (master switch,
+  // permission, each row's own enabled flag, the profile gates) - the single
+  // replacement for what used to be three separate schedule/cancel pairs here,
+  // now covering basal/med/glucose AND any custom reminder in one pass.
+  await applyReminders(p);
+
   // The master switch (and a revoked permission) also takes down the pending
   // post-meal check and its Live Activity. It is event-driven, so it is not
   // re-scheduled here - but leaving an armed one behind meant a user who turned
   // notifications OFF still got the countdown on their lock screen and the nudge
   // two hours later.
   if (!p.enabled) {
-    await cancelBasalReminder();
-    await cancelMedReminder();
-    await cancelGlucoseReminder();
     await cancelWeeklySummary();
     await cancelPostMealTimer();
     await cancelIdleReminder();
@@ -618,29 +857,11 @@ export async function applyNotificationPrefs(
 
   const granted = await hasNotificationPermission();
   if (!granted) {
-    await cancelBasalReminder();
-    await cancelMedReminder();
-    await cancelGlucoseReminder();
     await cancelWeeklySummary();
     await cancelPostMealTimer();
     await cancelIdleReminder();
     return;
   }
-
-  if (p.basal && (await activeProfileShowsBasal())) {
-    await scheduleBasalReminder(p.basalTime);
-  } else {
-    await cancelBasalReminder();
-  }
-
-  if (p.med && (await activeProfileShowsMeds())) {
-    await scheduleMedReminder(p.medTime);
-  } else {
-    await cancelMedReminder();
-  }
-
-  if (p.glucose) await scheduleGlucoseReminder(p.glucoseTime);
-  else await cancelGlucoseReminder();
 
   if (p.weekly) await scheduleWeeklySummary(p.weeklyDay, p.weeklyTime);
   else await cancelWeeklySummary();
@@ -717,6 +938,10 @@ async function schedulePostMealAt(opts: {
   endsAt?: number;
   /** Keep an already-running timer's start instead of `now`. */
   startedAt?: number;
+  /** Profile the timer belongs to (see POSTMEAL_TIMER_PROFILE_KEY). Omitted by
+   *  a re-arm that could not resolve one - the lock then stays open rather than
+   *  guessing an owner. */
+  profileId?: string;
 }): Promise<void> {
   const { minutes, windowMin = opts.minutes } = opts;
   await ensureAndroidChannel();
@@ -748,10 +973,19 @@ async function schedulePostMealAt(opts: {
   const endsAt = opts.endsAt ?? now + seconds * 1000;
   const startedAt = opts.startedAt ?? now;
   try {
-    await AsyncStorage.multiSet([
-      [POSTMEAL_TIMER_END_KEY, String(endsAt)],
-      [POSTMEAL_TIMER_START_KEY, String(startedAt)],
-    ]);
+    if (opts.profileId) {
+      await AsyncStorage.multiSet([
+        [POSTMEAL_TIMER_END_KEY, String(endsAt)],
+        [POSTMEAL_TIMER_START_KEY, String(startedAt)],
+        [POSTMEAL_TIMER_PROFILE_KEY, opts.profileId],
+      ]);
+    } else {
+      await AsyncStorage.multiSet([
+        [POSTMEAL_TIMER_END_KEY, String(endsAt)],
+        [POSTMEAL_TIMER_START_KEY, String(startedAt)],
+      ]);
+      await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
+    }
   } catch {
     // best-effort persistence
   }
@@ -808,10 +1042,11 @@ export async function getPostMealTimerEnd(): Promise<number | null> {
 export async function getPostMealTimerState(): Promise<PostMealTimerWindow | null> {
   const endsAt = await getPostMealTimerEnd();
   if (endsAt == null) return null;
+  const profileId = (await readPostMealTimerProfile()) ?? undefined;
   const startedAt = await readPostMealStart();
-  if (startedAt != null && startedAt < endsAt) return { startedAt, endsAt };
+  if (startedAt != null && startedAt < endsAt) return { startedAt, endsAt, profileId };
   const prefs = await getNotificationPrefs();
-  return { startedAt: derivePostMealStart(endsAt, prefs.postMealMinutes), endsAt };
+  return { startedAt: derivePostMealStart(endsAt, prefs.postMealMinutes), endsAt, profileId };
 }
 
 async function readPostMealStart(): Promise<number | null> {
@@ -820,6 +1055,14 @@ async function readPostMealStart(): Promise<number | null> {
     if (!raw) return null;
     const start = parseInt(raw, 10);
     return Number.isFinite(start) ? start : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readPostMealTimerProfile(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(POSTMEAL_TIMER_PROFILE_KEY);
   } catch {
     return null;
   }
@@ -837,6 +1080,7 @@ export async function completePostMealTimer(): Promise<void> {
     await AsyncStorage.multiRemove([
       POSTMEAL_TIMER_END_KEY,
       POSTMEAL_TIMER_START_KEY,
+      POSTMEAL_TIMER_PROFILE_KEY,
     ]);
   } catch {
     // best-effort
@@ -858,6 +1102,7 @@ export async function cancelPostMealTimer(): Promise<void> {
     await AsyncStorage.multiRemove([
       POSTMEAL_TIMER_END_KEY,
       POSTMEAL_TIMER_START_KEY,
+      POSTMEAL_TIMER_PROFILE_KEY,
     ]);
   } catch {
     // best-effort
@@ -880,7 +1125,8 @@ export async function schedulePostMealReminder(): Promise<void> {
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled || !prefs.postMeal) return;
   if (!(await ensureNotificationPermission())) return;
-  await schedulePostMealAt({ minutes: prefs.postMealMinutes });
+  const profile = await readActiveProfile();
+  await schedulePostMealAt({ minutes: prefs.postMealMinutes, profileId: profile?.id });
 }
 
 /**
@@ -894,7 +1140,8 @@ export async function startPostMealTimer(): Promise<number | null> {
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled) return null;
   if (!(await ensureNotificationPermission())) return null;
-  await schedulePostMealAt({ minutes: prefs.postMealMinutes });
+  const profile = await readActiveProfile();
+  await schedulePostMealAt({ minutes: prefs.postMealMinutes, profileId: profile?.id });
   return prefs.postMealMinutes;
 }
 
@@ -954,11 +1201,15 @@ export async function applyPostMealWindowChange(
       await cancelPostMealTimer();
       return "elapsed";
     }
+    // Preserve the running timer's own owner: a Settings change must not hand
+    // an already-armed timer to whichever profile happens to be active when the
+    // preference is edited.
     await schedulePostMealAt({
       minutes: next.remainingMs / 60_000,
       windowMin: nextWindowMin,
       endsAt: next.endsAt,
       startedAt: next.startedAt,
+      profileId: (await readPostMealTimerProfile()) ?? undefined,
     });
     return "retimed";
   } catch {
@@ -970,6 +1221,25 @@ export async function applyPostMealWindowChange(
 // ── User-initiated: re-measure follow-up after a low reading ────────────────
 
 const LOWFOLLOW_ID = "zerospike-low-followup";
+
+/**
+ * The threshold that decides whether a just-logged reading offers the low
+ * follow-up reminder (see maybeOfferLowFollowup in app/(tabs)/index.tsx).
+ *
+ * UX#1: this used to be its own separate setting (NotificationPrefs.lowThresholdMgdl,
+ * picked from a fixed list of mg/dL values), which could quietly disagree with the
+ * active profile's own low threshold - the number classifyGlucose (lib/glucose.ts)
+ * already uses to call a reading "low" everywhere else in the app. There is now
+ * exactly one low threshold; NotificationPrefs.lowThresholdMgdl is kept only so an
+ * already-stored value still parses, and is no longer read.
+ *
+ * An unreadable profile falls back to hypoThreshold's own default (70 mg/dL), for
+ * the same reason the other readActiveProfile() callers below do: a failed lookup
+ * must not silently withhold an offer the user would otherwise get.
+ */
+export async function lowFollowupThresholdMgdl(): Promise<number> {
+  return hypoThreshold((await readActiveProfile()) ?? {});
+}
 
 /**
  * Schedules a neutral 15-minute re-measure reminder. Offered (never automatic)
@@ -1052,6 +1322,7 @@ export async function rescheduleForLanguageChange(): Promise<void> {
         windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
         endsAt: running.endsAt,
         startedAt: running.startedAt,
+        profileId: running.profileId,
       });
     }
 

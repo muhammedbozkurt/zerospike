@@ -27,6 +27,13 @@ import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { hapticSelect } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
+import { sanitizeIntegerText } from "../lib/numberInput";
+
+/** Glycemic index clamp (UX#23): 0-110 covers the standard GI scale (pure
+ *  glucose = 100) with headroom, and keeps a mistyped value from reaching the
+ *  dose estimate as a wildly implausible number. */
+const GI_MIN = 0;
+const GI_MAX = 110;
 
 function AddFoodScreen() {
   const { t } = useTranslation();
@@ -94,10 +101,11 @@ function AddFoodScreen() {
     };
   }, [isProUser, isEdit]);
 
-  // Edit mode: prefill from the stored food. Only custom rows are editable;
-  // seeded catalog and cached barcode rows never reach here (guarded again in
-  // updateFood). Custom foods carry the same name in every language column,
-  // so name_tr is the canonical one.
+  // Edit mode: prefill from the stored food. Custom rows and cached barcode
+  // results (source "off") are editable; the seeded catalog never reaches
+  // here (guarded again in updateFood). Both write every language column to
+  // the same typed name on save (mirrors addCustomFood), so name_tr is read
+  // as the starting value either way.
   useEffect(() => {
     if (!isEdit || !foodId) {
       setFoodLoaded(true);
@@ -107,7 +115,7 @@ function AddFoodScreen() {
     (async () => {
       try {
         const f = await getFood(foodId);
-        if (!alive || !f || f.is_custom !== 1) return;
+        if (!alive || !f || (f.is_custom !== 1 && f.source !== "off")) return;
         setName(f.name_tr);
         setBrand(f.brand_name ?? "");
         setCarb(f.carb_100g);
@@ -150,17 +158,31 @@ function AddFoodScreen() {
     else router.replace("/(tabs)/food");
   }
 
+  /** Clamps GI to [0, 110] as the user types, instead of only at save - a
+   *  typed 999 used to sail straight through to parseInt with no ceiling. */
+  function onGiChange(text: string) {
+    const cleaned = sanitizeIntegerText(text);
+    if (cleaned === "") {
+      setGi("");
+      return;
+    }
+    const clamped = Math.min(GI_MAX, Math.max(GI_MIN, parseInt(cleaned, 10)));
+    setGi(String(clamped));
+  }
+
   async function save() {
     if (!valid) return;
 
     if (isEdit && foodId) {
-      // Barcode stays as stored; everything else follows the form.
+      // Barcode stays as stored; everything else follows the form. portion is
+      // written as entered - the Stepper's own min (1) is what keeps it off
+      // zero, not a silent `|| 100` here that used to also overwrite a real 0.
       await updateFood(foodId, {
         name: name.trim(),
         brand_name: brand.trim() || null,
         carb_100g: carb || 0,
         glycemic_index: parseInt(gi, 10) || 0,
-        portion_size_g: portion || 100,
+        portion_size_g: portion,
         custom_notes: notes.trim() || null,
         category,
       });
@@ -171,7 +193,10 @@ function AddFoodScreen() {
     }
 
     if (!allowed) {
-      router.replace({ pathname: "/paywall", params: { reason: "foods" } });
+      // push, not replace: the banner above already offers this same route,
+      // and a push here (defense in depth - the CTA below is disabled at the
+      // limit) keeps the typed form on the stack instead of destroying it.
+      router.push({ pathname: "/paywall", params: { reason: "foods" } });
       return;
     }
     await addCustomFood({
@@ -179,7 +204,7 @@ function AddFoodScreen() {
       brand_name: brand.trim() || null,
       carb_100g: carb || 0,
       glycemic_index: parseInt(gi, 10) || 0,
-      portion_size_g: portion || 100,
+      portion_size_g: portion,
       barcode: barcode ?? null,
       custom_notes: notes.trim() || null,
       category,
@@ -215,7 +240,7 @@ function AddFoodScreen() {
           <View style={contentColumn}>
             {allowed === false && !isEdit ? (
               <Pressable
-                onPress={() => router.replace({ pathname: "/paywall", params: { reason: "foods" } })}
+                onPress={() => router.push({ pathname: "/paywall", params: { reason: "foods" } })}
                 className="rounded-2xl p-4 mb-4 flex-row items-center active:opacity-80"
                 style={{
                   borderWidth: 1,
@@ -334,7 +359,7 @@ function AddFoodScreen() {
               ref={giRef}
               label={t("food.gi")}
               value={gi}
-              onChangeText={setGi}
+              onChangeText={onGiChange}
               keyboardType="number-pad"
               placeholder="0"
               returnKeyType="next"
@@ -348,7 +373,7 @@ function AddFoodScreen() {
                 onChange={setPortion}
                 step={5}
                 longStep={25}
-                min={0}
+                min={1}
                 max={2000}
                 decimals={0}
                 suffix={t("common.grams")}
@@ -367,7 +392,10 @@ function AddFoodScreen() {
             <View style={{ height: 12 }} />
             <GradientCTA
               label={isEdit ? t("common.save") : t("food.addFood")}
-              disabled={!valid}
+              // At the free-tier limit, the banner above is the one route to
+              // the paywall; Save goes inert instead of also silently routing
+              // there itself (which used to blindside a filled-in form).
+              disabled={!valid || (!isEdit && allowed === false)}
               onPress={save}
             />
           </View>

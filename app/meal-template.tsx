@@ -15,10 +15,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
-import { searchFoods } from "../lib/db/foods";
+import { countFoodsByCategory, listFoodsByCategory, searchFoods } from "../lib/db/foods";
+import { listFavoriteFoods } from "../lib/db/favorites";
 import { getJournal, type MealEntry } from "../lib/db/journal";
 import type { DateRange } from "../lib/insights";
-import { addMealLog, deleteMealRecord } from "../lib/db/logs";
+import { addMealLog, deleteMealRecord, getRecentMeals } from "../lib/db/logs";
 import {
   createTemplate,
   getTemplateWithItems,
@@ -41,8 +42,10 @@ import {
 } from "../lib/mealTemplates";
 import type { Food, MealSlot, MealTemplate } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
+import { CATEGORIES, type Category } from "../lib/db/categories";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { Field, Segmented } from "../components/ui";
+import { DirIcon } from "../components/DirIcon";
 import { Stepper } from "../components/Stepper";
 import { FoodRow } from "../components/FoodRow";
 import { FoodPlate } from "../components/FoodPlate";
@@ -151,6 +154,17 @@ function MealTemplateScreen() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Food[]>([]);
 
+  // Bulgu 4: the picker no longer opens blank. Favorites, recently-used foods
+  // and the category shelves (the same accessors the food tab's own landing
+  // grid reads from) give it something to tap on before a single letter is
+  // typed; the search path below is untouched.
+  const [pickerFavs, setPickerFavs] = useState<Food[]>([]);
+  const [pickerRecent, setPickerRecent] = useState<Food[]>([]);
+  const [pickerCatCounts, setPickerCatCounts] = useState<Record<string, number>>({});
+  const [pickerCategory, setPickerCategory] = useState<Category | null>(null);
+  const [pickerCategoryFoods, setPickerCategoryFoods] = useState<Food[]>([]);
+  const [pickerCategoryLoading, setPickerCategoryLoading] = useState(false);
+
   useEffect(() => {
     if (!activeProfile) return;
     let active = true;
@@ -229,6 +243,68 @@ function MealTemplateScreen() {
     };
   }, [query, lang]);
 
+  // The picker's default browse content, fetched once when it opens rather
+  // than on every keystroke - favorites and recents are small, and the
+  // category counts only change with the catalog itself.
+  useEffect(() => {
+    if (!searchOpen || !activeProfile) return;
+    let active = true;
+    void (async () => {
+      try {
+        const [favs, recentMeals, counts] = await Promise.all([
+          listFavoriteFoods(activeProfile.id),
+          getRecentMeals(activeProfile.id, 20),
+          countFoodsByCategory(),
+        ]);
+        if (!active) return;
+        setPickerFavs(favs);
+        const seen = new Set<string>();
+        const recentFoods: Food[] = [];
+        for (const r of recentMeals) {
+          if (r.food && !seen.has(r.food.id)) {
+            seen.add(r.food.id);
+            recentFoods.push(r.food);
+            if (recentFoods.length >= 8) break;
+          }
+        }
+        setPickerRecent(recentFoods);
+        setPickerCatCounts(counts);
+      } catch (err) {
+        logCrash(err, { screen: "meal-template", load: "picker" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [searchOpen, activeProfile]);
+
+  // One category's shelf, fetched only while it is open (drilled into from the
+  // picker's default category grid) - listFoodsByCategory is the same accessor
+  // the food tab's own drilled-in list reads from.
+  useEffect(() => {
+    if (!pickerCategory) {
+      setPickerCategoryFoods([]);
+      setPickerCategoryLoading(false);
+      return;
+    }
+    let active = true;
+    setPickerCategoryLoading(true);
+    void (async () => {
+      try {
+        const rows = await listFoodsByCategory(pickerCategory, lang);
+        if (active) setPickerCategoryFoods(rows);
+      } catch (err) {
+        logCrash(err, { screen: "meal-template", load: "pickerCategory" });
+        if (active) setPickerCategoryFoods([]);
+      } finally {
+        if (active) setPickerCategoryLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [pickerCategory, lang]);
+
   const totals = useMemo(() => resolvedTotals(items), [items]);
 
   const trimmedName = name.trim();
@@ -290,7 +366,22 @@ function MealTemplateScreen() {
     setSearchOpen(false);
     setQuery("");
     setResults([]);
+    setPickerCategory(null);
   }
+
+  // What the picker's list shows: a real search, a drilled-in category shelf,
+  // or the default browse (favorites + recents + category grid, in the header).
+  const pickerMode: "search" | "category" | "browse" = query.trim()
+    ? "search"
+    : pickerCategory
+      ? "category"
+      : "browse";
+  const pickerRows: Food[] =
+    pickerMode === "search"
+      ? results
+      : pickerMode === "category"
+        ? pickerCategoryFoods
+        : [];
 
   function toInputs(list: readonly ResolvedTemplateItem[]): NewTemplateItemInput[] {
     return list.map((item) => ({
@@ -809,16 +900,121 @@ function MealTemplateScreen() {
           </View>
           <FlatList
             {...keyboardAwareScrollProps}
-            data={results}
+            data={pickerRows}
             keyExtractor={(f) => f.id}
             initialNumToRender={12}
+            ListHeaderComponent={
+              pickerMode === "category" ? (
+                <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+                  <Pressable
+                    onPress={() => setPickerCategory(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t("common.back")}, ${t(`category.${pickerCategory}`)}`}
+                    className="flex-row items-center mb-3 active:opacity-80"
+                    style={{ minHeight: HIT_TARGET }}
+                  >
+                    <DirIcon name="chevron-back" size={20} color={THEME.accent} />
+                    <FoodPlate category={pickerCategory} size={28} radius={10} style={{ marginLeft: 6 }} />
+                    <Text
+                      style={{ color: THEME.ink, fontWeight: "800", fontSize: 15, marginLeft: 10 }}
+                      numberOfLines={1}
+                    >
+                      {t(`category.${pickerCategory}`)}
+                    </Text>
+                  </Pressable>
+                  {pickerCategoryLoading ? (
+                    <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 10 }}>
+                      {t("common.loading")}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : pickerMode === "browse" ? (
+                <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+                  {pickerFavs.length > 0 ? (
+                    <View style={{ marginBottom: 14 }}>
+                      <Text
+                        style={{
+                          color: THEME.muted,
+                          fontSize: 11,
+                          letterSpacing: 1.2,
+                          fontWeight: "800",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {upper(t("food.favorites"))}
+                      </Text>
+                      {pickerFavs.map((food) => (
+                        <FoodRow key={food.id} food={food} lang={lang} onPress={addFoodItem} />
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {pickerRecent.length > 0 ? (
+                    <View style={{ marginBottom: 14 }}>
+                      <Text
+                        style={{
+                          color: THEME.muted,
+                          fontSize: 11,
+                          letterSpacing: 1.2,
+                          fontWeight: "800",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {upper(t("food.recent"))}
+                      </Text>
+                      {pickerRecent.map((food) => (
+                        <FoodRow key={food.id} food={food} lang={lang} onPress={addFoodItem} />
+                      ))}
+                    </View>
+                  ) : null}
+
+                  <View style={{ marginBottom: 8 }}>
+                    <Text
+                      style={{
+                        color: THEME.muted,
+                        fontSize: 11,
+                        letterSpacing: 1.2,
+                        fontWeight: "800",
+                        marginBottom: 8,
+                      }}
+                    >
+                      {upper(t("food.categories"))}
+                    </Text>
+                    <View className="flex-row flex-wrap" style={{ marginHorizontal: -5 }}>
+                      {CATEGORIES.map((c) => (
+                        <View key={c} style={{ width: "33.333%", padding: 5 }}>
+                          <Pressable
+                            onPress={() => setPickerCategory(c)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${t(`category.${c}`)}, ${pickerCatCounts[c] ?? 0}`}
+                            className="rounded-2xl bg-glass border border-hair active:opacity-80"
+                            style={{ padding: 10, minHeight: 96 }}
+                          >
+                            <FoodPlate category={c} size={30} radius={11} />
+                            <Text
+                              style={{ color: THEME.ink, fontSize: 11, fontWeight: "700", marginTop: 8 }}
+                              numberOfLines={2}
+                            >
+                              {t(`category.${c}`)}
+                            </Text>
+                            <Text style={[TABULAR, { color: THEME.muted, fontSize: 10, marginTop: 2 }]}>
+                              {pickerCatCounts[c] ?? 0}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              ) : null
+            }
             renderItem={({ item }) => (
               <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
                 <FoodRow food={item} lang={lang} onPress={addFoodItem} />
               </View>
             )}
             ListEmptyComponent={
-              query.trim() ? (
+              pickerMode === "search" ? (
                 <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
                   <EmptyState compact icon="search-outline" title={t("food.noResults")} />
                 </View>

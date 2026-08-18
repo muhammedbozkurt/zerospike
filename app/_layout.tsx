@@ -1,8 +1,9 @@
 import "../global.css";
 import React, { useEffect, useRef, useState } from "react";
-import { LogBox, View } from "react-native";
+import { I18nManager, LogBox, View } from "react-native";
 import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams } from "expo-router";
 import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -16,15 +17,27 @@ import { isScreenshotMode, setScreenshotPlatform } from "../lib/screenshotMode";
 import { seedScreenshotData, ensureTrackingProfile } from "../lib/db/screenshotSeed";
 import { DEFAULT_PROFILE_ID, SCREENSHOT_TRACKING_PROFILE_ID } from "../lib/db/index";
 import { exportLogsPdf } from "../lib/services/report";
-import { SUPPORTED_LANGS } from "../lib/i18n";
+import { SUPPORTED_LANGS, isRTLLang } from "../lib/i18n";
 import type { Lang } from "../lib/db/types";
 
-import { AppProvider, useApp } from "../lib/store/AppContext";
-import { FeedbackProvider, FeedbackHost } from "../components/Feedback";
+import {
+  AppProvider,
+  useApp,
+  setRTLConfirmHandler,
+  reloadForDirectionChange,
+} from "../lib/store/AppContext";
+import { FeedbackProvider, FeedbackHost, useFeedback } from "../components/Feedback";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
+
+// One-shot guard for the startup RTL auto-reload below, persisted (not just an
+// in-memory ref) because Updates.reloadAsync() throws away the whole JS
+// context - an in-memory flag would not survive the very reload it is meant to
+// gate, and a mismatch that reload never actually fixes (a rare native/env
+// edge case) would otherwise retry forever on every cold start.
+const RTL_AUTO_RELOAD_KEY = "zerospike.rtlAutoReloadDone";
 
 // Keep the single native splash visible until the app is ready AND routing has
 // settled on the correct screen (see RootNavigator), so there is no dashboard
@@ -90,6 +103,54 @@ function RootNavigator() {
     scPlatform?: string;
     scOnboarding?: string;
   }>();
+  const { confirm } = useFeedback();
+
+  // AppContext.setLanguage lives in AppProvider, an ANCESTOR of FeedbackProvider
+  // in the tree below, so it cannot call useFeedback() itself. RootNavigator is
+  // a descendant of both, so it hands the live confirm function down through a
+  // small module-level bridge (see setRTLConfirmHandler in AppContext.tsx).
+  useEffect(() => {
+    setRTLConfirmHandler(confirm);
+    return () => setRTLConfirmHandler(null);
+  }, [confirm]);
+
+  // Startup RTL sync: the persisted language may not match I18nManager's
+  // current writing direction (a user declined the immediate restart last
+  // time setLanguage offered one, or the language was changed some other way).
+  // Runs ONCE per launch (rtlSyncDone), right after `ready` first flips true -
+  // never again later in the same session, so it never fights an in-session
+  // setLanguage call, which owns its own confirm+reload flow.
+  const rtlSyncDone = useRef(false);
+  useEffect(() => {
+    if (!ready || rtlSyncDone.current) return;
+    rtlSyncDone.current = true;
+    const targetRTL = isRTLLang(lang);
+    if (targetRTL === I18nManager.isRTL) {
+      // Matched: drop any stale attempt flag so a FUTURE mismatch (a new
+      // language choice) still gets its own one-shot auto-reload.
+      void AsyncStorage.removeItem(RTL_AUTO_RELOAD_KEY);
+      return;
+    }
+    // Store-screenshot: the capture pipeline drives its own relaunches on a
+    // deterministic schedule: an uninvited reload here would race that
+    // sequence. Only the direction FLAG gets fixed; no reload.
+    if (isScreenshotMode()) {
+      I18nManager.allowRTL(targetRTL);
+      I18nManager.forceRTL(targetRTL);
+      return;
+    }
+    void (async () => {
+      const already = await AsyncStorage.getItem(RTL_AUTO_RELOAD_KEY);
+      // Already tried once for this exact target and it still does not match -
+      // do not loop forever reloading; leave it for the next explicit language
+      // change instead.
+      if (already === String(targetRTL)) return;
+      await AsyncStorage.setItem(RTL_AUTO_RELOAD_KEY, String(targetRTL));
+      I18nManager.allowRTL(targetRTL);
+      I18nManager.forceRTL(targetRTL);
+      await reloadForDirectionChange();
+    })();
+  }, [ready, lang]);
 
   // Store-screenshot: ?scPlatform=android marks the shot as an ANDROID source
   // frame, so iOS-only chrome (the dashboard's Apple Health card) is left out of

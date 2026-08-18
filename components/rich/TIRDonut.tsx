@@ -80,8 +80,20 @@ export function TIRDonut({
           pointerEvents="none"
           style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}
         >
+          {/* Bidi: centerSuffixFirst already puts the sign on the right side
+              of centerValue for the language; pin the whole run LTR so an
+              RTL base paragraph direction cannot reorder it again (same
+              fix family as StatCard's suffix row). */}
           <Text
-            style={[TABULAR, { color: THEME.ink, fontSize: size * 0.22, fontWeight: "800" }]}
+            style={[
+              TABULAR,
+              {
+                color: THEME.ink,
+                fontSize: size * 0.22,
+                fontWeight: "800",
+                writingDirection: "ltr",
+              },
+            ]}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.7}

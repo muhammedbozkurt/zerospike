@@ -74,6 +74,31 @@ export async function listMeds(
   );
 }
 
+/**
+ * The medication form's "recent name" chips: a profile's distinct medication
+ * names, most-used first (ties broken by most-recently-taken), capped at
+ * `limit`. Blank/null names (an unnamed entry) never appear - there is nothing
+ * to offer as a chip. Read-only, and cheap: one GROUP BY over med_logs.
+ */
+export async function distinctMedNames(
+  profileId: string,
+  limit = 6
+): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ name: string }>(
+    `SELECT name FROM (
+       SELECT name, COUNT(*) AS cnt, MAX(taken_at) AS last_taken
+       FROM med_logs
+       WHERE profile_id = ? AND name IS NOT NULL AND name <> ''
+       GROUP BY name
+       ORDER BY cnt DESC, last_taken DESC
+       LIMIT ?
+     );`,
+    [profileId, limit]
+  );
+  return rows.map((r) => r.name);
+}
+
 export async function getMed(id: string): Promise<MedLog | null> {
   const db = await getDb();
   return db.getFirstAsync<MedLog>("SELECT * FROM med_logs WHERE id = ?;", [id]);

@@ -2,11 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
-import type { GlucoseUnit } from "../../lib/db/types";
-import { glucoseToDisplay, glucoseUnitLabel } from "../../lib/glucose";
-import { insulinModeOf, insulinModeShowsBasal } from "../../lib/insulinMode";
+import type { GlucoseUnit, Lang } from "../../lib/db/types";
 import {
   applyNotificationPrefs,
   applyPostMealWindowChange,
@@ -33,31 +32,43 @@ import { GLUCOSE_RICH, THEME } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
 
+/** Week-start day for the weekly-reminder day picker, by language: the app's
+ *  own weekday ids are 1=Sunday..7=Saturday (see lib/i18n weekdayShort_*), so
+ *  this is just that range rotated to start on each language's own first day
+ *  of the week - ar starts Saturday, ja/en start Sunday, every other bundle
+ *  starts Monday. */
+function weekOrder(l: Lang): number[] {
+  if (l === "ar") return [7, 1, 2, 3, 4, 5, 6];
+  if (l === "ja" || l === "en") return [1, 2, 3, 4, 5, 6, 7];
+  return [2, 3, 4, 5, 6, 7, 1];
+}
+
 /** Settings > Notifications. Moved from the single-scroll screen; behaviour is
- *  unchanged (permission row, master toggle, timers, thresholds, reliability). */
+ *  unchanged (permission row, master toggle, timers, thresholds, reliability).
+ *  2.1.0 wave 2b: the basal/med/glucose rows moved into their own reminders
+ *  hub (settings/reminders.tsx, one row for all of them plus any custom one),
+ *  and the low-follow-up threshold picker was dropped - that threshold is now
+ *  always the active profile's own low threshold from Profile (UX#1). */
 export default function NotificationSettings() {
   const { t } = useTranslation();
   const { activeProfile, lang } = useApp();
   const { contentColumn } = useLayout();
+  const router = useRouter();
 
-  // Starts unknown (not DEFAULT_PREFS): a user who turned the basal reminder
-  // off or moved the post-meal window would otherwise see the DEFAULTS drawn
-  // for one frame - wrong switch positions, not just an empty list - before
-  // the real stored prefs replace them.
+  // Starts unknown (not DEFAULT_PREFS): a user who moved the post-meal window
+  // would otherwise see the DEFAULTS drawn for one frame - wrong switch
+  // positions, not just an empty list - before the real stored prefs replace
+  // them.
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
   const [reliability, setReliability] = useState<ReminderReliability | null>(null);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [notifDenied, setNotifDenied] = useState(false);
-  const [openPicker, setOpenPicker] = useState<
-    "basal" | "med" | "glucose" | "weekly" | null
-  >(null);
+  const [openPicker, setOpenPicker] = useState<"weekly" | null>(null);
   // A post-meal timer is counting down right now. Only then does the delay note
   // have anything to describe, so it stays out of the way the rest of the time.
   const [postMealRunning, setPostMealRunning] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
-  const showsBasal = insulinModeShowsBasal(insulinModeOf(activeProfile));
-  const showsMeds = activeProfile?.oral_meds_enabled === 1;
 
   useEffect(() => {
     (async () => {
@@ -206,96 +217,11 @@ export default function NotificationSettings() {
 
           {prefs.enabled ? (
             <>
-              {showsBasal ? (
-                <Row
-                  icon="moon-outline"
-                  label={t("settings.reminderBasal")}
-                  right={
-                    <Switch
-                      value={prefs.basal}
-                      onValueChange={(v) => updatePrefs({ basal: v })}
-                      trackColor={{ true: THEME.accent, false: THEME.border }}
-                      thumbColor={THEME.ink}
-                    />
-                  }
-                />
-              ) : null}
-              {showsBasal && prefs.basal ? (
-                <>
-                  <Row
-                    icon="alarm-outline"
-                    label={t("settings.reminderTime")}
-                    value={prefs.basalTime}
-                    onPress={() => setOpenPicker((p) => (p === "basal" ? null : "basal"))}
-                  />
-                  <InlineTimePicker
-                    visible={openPicker === "basal"}
-                    value={prefs.basalTime}
-                    onChange={(v) => updatePrefs({ basalTime: v })}
-                    onClose={() => setOpenPicker(null)}
-                  />
-                </>
-              ) : null}
-
-              {showsMeds ? (
-                <Row
-                  icon="medical-outline"
-                  label={t("notifications.medReminderLabel")}
-                  right={
-                    <Switch
-                      value={prefs.med}
-                      onValueChange={(v) => updatePrefs({ med: v })}
-                      trackColor={{ true: THEME.accent, false: THEME.border }}
-                      thumbColor={THEME.ink}
-                    />
-                  }
-                />
-              ) : null}
-              {showsMeds && prefs.med ? (
-                <>
-                  <Row
-                    icon="alarm-outline"
-                    label={t("settings.reminderTime")}
-                    value={prefs.medTime}
-                    onPress={() => setOpenPicker((p) => (p === "med" ? null : "med"))}
-                  />
-                  <InlineTimePicker
-                    visible={openPicker === "med"}
-                    value={prefs.medTime}
-                    onChange={(v) => updatePrefs({ medTime: v })}
-                    onClose={() => setOpenPicker(null)}
-                  />
-                </>
-              ) : null}
-
               <Row
-                icon="water-outline"
-                label={t("settings.reminderGlucose")}
-                right={
-                  <Switch
-                    value={prefs.glucose}
-                    onValueChange={(v) => updatePrefs({ glucose: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
-                  />
-                }
+                icon="notifications-outline"
+                label={t("settings.remindersTitle")}
+                onPress={() => router.push("/settings/reminders")}
               />
-              {prefs.glucose ? (
-                <>
-                  <Row
-                    icon="alarm-outline"
-                    label={t("settings.reminderTime")}
-                    value={prefs.glucoseTime}
-                    onPress={() => setOpenPicker((p) => (p === "glucose" ? null : "glucose"))}
-                  />
-                  <InlineTimePicker
-                    visible={openPicker === "glucose"}
-                    value={prefs.glucoseTime}
-                    onChange={(v) => updatePrefs({ glucoseTime: v })}
-                    onClose={() => setOpenPicker(null)}
-                  />
-                </>
-              ) : null}
 
               <Row
                 icon="time-outline"
@@ -313,12 +239,14 @@ export default function NotificationSettings() {
                 <InlineConfigCard icon="time-outline">
                   <Text className="text-mut text-xs mb-2">{t("settings.postMealDelay")}</Text>
                   <Segmented
-                    options={[90, 120, 150].map((m) => ({
+                    options={[60, 90, 120, 150].map((m) => ({
                       value: String(m),
                       label: t("settings.minutes", { n: m }),
                     }))}
                     value={String(prefs.postMealMinutes)}
-                    onChange={(v) => updatePrefs({ postMealMinutes: Number(v) as 90 | 120 | 150 })}
+                    onChange={(v) =>
+                      updatePrefs({ postMealMinutes: Number(v) as 60 | 90 | 120 | 150 })
+                    }
                   />
                   {/* Only while a timer is actually counting down: otherwise the
                       note describes something that is not happening. */}
@@ -365,8 +293,8 @@ export default function NotificationSettings() {
                   <InlineConfigCard icon="calendar-outline">
                     <Text className="text-mut text-xs mb-2">{t("settings.reminderDay")}</Text>
                     <View className="flex-row justify-between">
-                      {/* Locale week start: Monday-first for tr/de/es/fr. */}
-                      {(lang === "en" ? [1, 2, 3, 4, 5, 6, 7] : [2, 3, 4, 5, 6, 7, 1]).map((d) => {
+                      {/* Locale week start: ar Saturday, ja/en Sunday, else Monday. */}
+                      {weekOrder(lang).map((d) => {
                         const on = prefs.weeklyDay === d;
                         return (
                           <Pressable
@@ -414,19 +342,11 @@ export default function NotificationSettings() {
                 }
               />
               {prefs.lowFollowup ? (
-                <InlineConfigCard icon="pulse-outline">
-                  <Text className="text-mut text-xs mb-2">
-                    {t("settings.lowThreshold")} ({glucoseUnitLabel(unit)})
+                <View className="bg-glass border border-hair rounded-2xl px-4 py-3 mb-2">
+                  <Text className="text-mut text-xs">
+                    {t("settings.lowFollowupThresholdNote")}
                   </Text>
-                  <Segmented
-                    options={[60, 65, 70, 75, 80].map((mgdl) => ({
-                      value: String(mgdl),
-                      label: String(glucoseToDisplay(mgdl, unit)),
-                    }))}
-                    value={String(prefs.lowThresholdMgdl)}
-                    onChange={(v) => updatePrefs({ lowThresholdMgdl: Number(v) })}
-                  />
-                </InlineConfigCard>
+                </View>
               ) : null}
             </>
           ) : null}

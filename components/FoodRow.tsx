@@ -6,8 +6,10 @@ import { useTranslation } from "react-i18next";
 import type { Food, Lang } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { num } from "../lib/format";
+import { emojiFor } from "../lib/foodMeta";
 import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME } from "../lib/theme/tokens";
-import { FoodPlate } from "./FoodPlate";
+import { categoryTileIcon, EMOJI_RENDERS } from "./FoodPlate";
+import { IconTile } from "./rich";
 
 interface Props {
   food: Food;
@@ -56,7 +58,17 @@ function FoodRowBase({
       className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
       style={{ minHeight: HIT_TARGET + 12 }}
     >
-      <FoodPlate category={food.category} size={40} radius={14} style={{ marginRight: 12 }} />
+      {/* A specific illustration per dish (lib/foodMeta emojiFor), not just
+          the shelf's icon - falls back to the category plate on its own when
+          nothing in the keyword table matches, same as every other surface. */}
+      <IconTile
+        emoji={EMOJI_RENDERS ? emojiFor(food.name_en, food.category) : undefined}
+        icon={categoryTileIcon(food.category)}
+        hero
+        size={40}
+        radius={14}
+        style={{ marginRight: 12 }}
+      />
 
       <View className="flex-1 pr-2">
         <View className="flex-row items-center">
@@ -86,18 +98,25 @@ function FoodRowBase({
               {food.brand_name}
             </Text>
           ) : null}
-          <View className="flex-row items-center">
-            <View
-              className="w-2 h-2 rounded-full mr-1.5"
-              style={{ backgroundColor: giColor(food.glycemic_index) }}
-            />
-            <Text style={[TABULAR, { color: THEME.muted, fontSize: 11 }]}>
-              {t("food.gi")} {food.glycemic_index}
-            </Text>
-          </View>
-          <Text style={[TABULAR, { color: THEME.muted, fontSize: 11 }]}>
-            {t("food.gl")} {food.glycemic_load}
-          </Text>
+          {/* GI/GL only mean something once a real glycemic index is on file -
+              zero is "not established", not "low" (see lib/db/seed.ts), so the
+              block and its color dot stay off rather than print a false zero. */}
+          {food.glycemic_index > 0 ? (
+            <>
+              <View className="flex-row items-center">
+                <View
+                  className="w-2 h-2 rounded-full mr-1.5"
+                  style={{ backgroundColor: giColor(food.glycemic_index) }}
+                />
+                <Text style={[TABULAR, { color: THEME.muted, fontSize: 11 }]}>
+                  {t("food.gi")} {food.glycemic_index}
+                </Text>
+              </View>
+              <Text style={[TABULAR, { color: THEME.muted, fontSize: 11 }]}>
+                {t("food.gl")} {food.glycemic_load}
+              </Text>
+            </>
+          ) : null}
         </View>
       </View>
 

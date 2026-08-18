@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  I18nManager,
   Image,
   Modal,
   Pressable,
@@ -45,6 +46,7 @@ import {
   checkDose,
   estimateInsulin,
   activeMealSlot,
+  mealSlotForHour,
   type InsulinWarning,
 } from "../lib/insulin";
 import { activeInsulinBreakdown } from "../lib/iob";
@@ -87,6 +89,7 @@ import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { Skeleton } from "../components/Skeleton";
+import { DirIcon } from "../components/DirIcon";
 import { formatTime, num, relativeDay } from "../lib/format";
 import {
   GLUCOSE_INPUT_CEILING,
@@ -479,6 +482,11 @@ function CalculatorScreen() {
   const [templateCtx, setTemplateCtx] = useState<TemplateWithItems | null>(null);
   const [portion, setPortion] = useState(100);
   const [slot, setSlot] = useState<MealSlot>(activeMealSlot());
+  // True only once the user has picked a slot pill themselves - gates the
+  // loggedAt-driven auto-suggest below so it never overrides a deliberate
+  // choice (edit mode is prefilled straight from the record and never runs
+  // that effect at all, see isEdit guard).
+  const [slotTouched, setSlotTouched] = useState(false);
   const [glucose, setGlucose] = useState("");
   const [doseText, setDoseText] = useState("");
   const [doseTouched, setDoseTouched] = useState(false);
@@ -609,6 +617,10 @@ function CalculatorScreen() {
       setTags(log.tags);
       setLoggedAt(new Date(log.logged_at));
       prefillLoggedAtRef.current = new Date(log.logged_at);
+      // The record's own hour, not "now": activeMealSlot() at mount would show
+      // whatever slot happens to be active while editing, not the one this
+      // meal was actually logged under.
+      setSlot(mealSlotForHour(new Date(log.logged_at).getHours()));
       setLinkedSugarLogId(log.sugar_log_id);
       // Prefill the region from whatever this meal's bolus row actually holds -
       // possibly set later from the Injection tab, and never to be overwritten by
@@ -628,7 +640,7 @@ function CalculatorScreen() {
         const reading = await getSugarLog(log.sugar_log_id);
         if (reading) {
           setGlucose(
-            String(
+            num(
               glucoseToDisplay(
                 reading.glucose_level_mgdl,
                 activeProfile?.glucose_unit ?? "mgdl"
@@ -647,6 +659,18 @@ function CalculatorScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, mealLogId]);
+
+  // New record only: once the user moves the logged-time picker off "now",
+  // the slot follows the picked hour - a 23:00 entry defaults to dinner
+  // instead of staying on whatever slot happened to be active when the
+  // screen opened. Never runs once the user has picked a slot pill
+  // themselves (slotTouched), and never in edit mode, which prefills the
+  // slot from the record's own hour above and must not have it overridden
+  // by a later logged-time correction.
+  useEffect(() => {
+    if (isEdit || slotTouched || !loggedAt) return;
+    setSlot(mealSlotForHour(loggedAt.getHours()));
+  }, [loggedAt, isEdit, slotTouched]);
 
   // Active insulin (IOB) from recent bolus doses, used to trim the correction
   // so a fresh dose doesn't stack on top of insulin that is still working.
@@ -714,6 +738,17 @@ function CalculatorScreen() {
   }
 
   const unit = activeProfile?.glucose_unit ?? "mgdl";
+
+  /** Shared by both glucose TextInputs below (loading skeleton and loaded
+   *  view - same `glucose` state, so one handler keeps them from drifting).
+   *  Only a REAL change marks the record dirty: an empty field sanitizing to
+   *  another empty string (e.g. a stray punctuation keystroke) must not raise
+   *  the close-button warning for input that never actually landed. */
+  function onGlucoseChange(s: string) {
+    const next = sanitizeNumberText(s, unit === "mmol");
+    if (next !== glucose) setDirty(true);
+    setGlucose(next);
+  }
 
   // ONE numeric normalizer for the whole app (lib/numberInput): a comma is a
   // decimal separator, not a digit to be dropped - "5,5" must stay 5.5 mmol/L
@@ -1160,7 +1195,7 @@ function CalculatorScreen() {
         }
       }
 
-      void noteLogAndMaybeReview();
+      void noteLogAndMaybeReview("log_meal");
       void noteJournalActivity();
       hapticSuccess();
       // Logging a meal NOW schedules the 2-hour post-meal glucose check reminder.
@@ -1253,7 +1288,10 @@ function CalculatorScreen() {
         <Segmented
           options={SLOTS.map((s) => ({ value: s, label: t(`slot.${s}`) }))}
           value={slot}
-          onChange={setSlot}
+          onChange={(v) => {
+            setSlot(v);
+            setSlotTouched(true);
+          }}
           className="mb-4"
         />
 
@@ -1315,7 +1353,7 @@ function CalculatorScreen() {
                 >
                   {siteSummaryLabel}
                 </Text>
-                <Ionicons name="chevron-forward-outline" size={16} color={THEME.muted} />
+                <DirIcon name="chevron-forward-outline" size={16} color={THEME.muted} />
               </Pressable>
               {siteTouched ? (
                 <Pressable
@@ -1379,6 +1417,7 @@ function CalculatorScreen() {
                 setSite(selection.site);
                 setPoint(selection.point);
                 setSiteTouched(true);
+                setDirty(true);
                 setSiteModalOpen(false);
               }}
             />
@@ -1542,6 +1581,11 @@ function CalculatorScreen() {
                 minimumTrackTintColor={THEME.accent}
                 maximumTrackTintColor={THEME.track}
                 thumbTintColor={THEME.accent}
+                // RTL: the library fills min->max left-to-right regardless of
+                // layout direction unless told otherwise; `inverted` flips the
+                // fill/thumb rendering only - value and onValueChange keep the
+                // same 0..500 meaning either way.
+                inverted={I18nManager.isRTL}
               />
             </GlassCard>
 
@@ -1557,7 +1601,7 @@ function CalculatorScreen() {
                 <View className="flex-row items-center" style={{ gap: 8 }}>
                   <TextInput
                     value={glucose}
-                    onChangeText={(s) => setGlucose(sanitizeNumberText(s, unit === "mmol"))}
+                    onChangeText={onGlucoseChange}
                     keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
                     placeholder="-"
                     placeholderTextColor="rgba(137,163,176,0.7)"
@@ -1801,6 +1845,11 @@ function CalculatorScreen() {
                   minimumTrackTintColor={THEME.accent}
                   maximumTrackTintColor={THEME.track}
                   thumbTintColor={THEME.accent}
+                  // RTL: the library fills min->max left-to-right regardless of
+                  // layout direction unless told otherwise; `inverted` flips the
+                  // fill/thumb rendering only - value and onValueChange keep the
+                  // same 0..500 meaning either way.
+                  inverted={I18nManager.isRTL}
                 />
               </>
             )}
@@ -1823,9 +1872,7 @@ function CalculatorScreen() {
               <View className="flex-row items-center" style={{ gap: 8 }}>
                 <TextInput
                   value={glucose}
-                  onChangeText={(s) =>
-                    setGlucose(sanitizeNumberText(s, unit === "mmol"))
-                  }
+                  onChangeText={onGlucoseChange}
                   keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
                   placeholder="-"
                   placeholderTextColor="rgba(137,163,176,0.7)"

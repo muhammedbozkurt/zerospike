@@ -77,10 +77,23 @@ function DownsellScreen() {
     }
   }, [offer, trigger]);
 
-  // Reached from the onboarding paywall, so complete onboarding on the way out.
+  // Reached from the onboarding paywall, so complete onboarding on the way out;
+  // onboarding always lands on the tabs root (there is nothing to go "back" to).
+  // An in-app trigger, though, opened this screen ON TOP of wherever the user
+  // already was, so leaving it returns there instead of resetting to the tabs
+  // root - falling back to that reset only if there is truly nothing to go back
+  // to (e.g. this screen was somehow the only one on the stack).
   async function goHome() {
-    if (trigger === "onboarding") await completeOnboarding();
-    router.replace("/(tabs)");
+    if (trigger === "onboarding") {
+      await completeOnboarding();
+      router.replace("/(tabs)");
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
   }
 
   function decline() {

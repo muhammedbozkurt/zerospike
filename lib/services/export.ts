@@ -58,6 +58,16 @@ function tagsLabel(tags: LogTag[]): string {
   return tags.map((tag) => i18n.t(`tags.${tag}`)).join(", ");
 }
 
+/** A medication row's Note cell: name and note share it (no dedicated note
+ *  column) as "name · note", or bare name when there is no note - unchanged
+ *  from every row exported before notes existed. */
+function medNoteCell(name: string | null, note: string | null): string {
+  const n = (name ?? "").trim();
+  const nt = (note ?? "").trim();
+  if (!nt) return n;
+  return n ? `${n} · ${nt}` : nt;
+}
+
 /**
  * Generates a real, fully-offline CSV of a profile's complete journal
  * (glucose + meal logs) and opens the native share sheet (WhatsApp, Email…).
@@ -189,9 +199,22 @@ export async function exportLogsCsv(
       );
     } else if (e.kind === "med") {
       // No dedicated column for a medication name: it rides in Note, the same
-      // slot a hand-typed remark would use in every other row kind.
+      // slot a hand-typed remark would use in every other row kind. A logged
+      // note joins it there too, as "name · note".
       rows.push(
-        line([date, time, i18n.t("export.typeMed"), "", "", "", "", "", "", e.name ?? "", ""])
+        line([
+          date,
+          time,
+          i18n.t("export.typeMed"),
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          medNoteCell(e.name, e.note),
+          "",
+        ])
       );
     }
   }

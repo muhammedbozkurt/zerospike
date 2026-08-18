@@ -2,6 +2,7 @@ import { getDb } from "./index";
 import { uuid } from "../uuid";
 import { foodName } from "./types";
 import { DEFAULT_FOOD_CATEGORY, type FoodCategory } from "./categories";
+import { queryExpansion, rankBoost } from "../foodMeta";
 import type { Food, Lang } from "./types";
 
 /** Free-tier custom-food cap. */
@@ -44,16 +45,27 @@ function defaultOrder(lang: Lang) {
  * Builds an FTS5 prefix MATCH query from raw user input. Each token becomes a
  * prefix term ("pi" → "pilav"), multi-word input ANDs the terms. Special FTS
  * syntax characters are stripped so user text can't break the query.
+ *
+ * `extraTerms` (lib/foodMeta queryExpansion, it/pt only) are OR'd onto the
+ * typed query as their own prefix terms, so "riso" also surfaces "rice" rows
+ * without displacing what the user actually typed - empty for every other
+ * language, so their query stays exactly what it always was.
  */
-function buildFtsQuery(input: string): string | null {
+function buildFtsQuery(input: string, extraTerms: readonly string[] = []): string | null {
   const tokens = input
     .toLowerCase()
     .replace(/["'()*:^.\-]/g, " ")
     .split(/\s+/)
     .map((t) => t.trim())
     .filter(Boolean);
-  if (tokens.length === 0) return null;
-  return tokens.map((t) => `${t}*`).join(" ");
+  const typed = tokens.map((t) => `${t}*`).join(" ");
+  const extra = extraTerms
+    .map((t) => t.toLowerCase().trim())
+    .filter(Boolean)
+    .map((t) => `${t}*`);
+  if (!typed && extra.length === 0) return null;
+  const clauses = [typed, ...extra].filter(Boolean);
+  return clauses.length > 1 ? clauses.map((c) => `(${c})`).join(" OR ") : clauses[0];
 }
 
 /**
@@ -80,8 +92,14 @@ export async function searchFoods(
 
   // Pull a wider candidate pool than `limit` so the JS re-rank has material.
   const pool = Math.max(limit * 4, 120);
+  // it/pt have no name column of their own (foodName falls back to English),
+  // so a query typed in Italian or Portuguese matches nothing on its own;
+  // this widens the CANDIDATE POOL only - the tier/localeCompare ranking
+  // below is unchanged, so search result ORDERING still behaves exactly as
+  // it did for every language, tr/en/de/es/fr included.
+  const expansionTerms = queryExpansion(trimmed, lang);
   let rows: Food[] = [];
-  const ftsQuery = buildFtsQuery(trimmed);
+  const ftsQuery = buildFtsQuery(trimmed, expansionTerms);
   if (ftsQuery) {
     try {
       rows = await db.getAllAsync<Food>(
@@ -98,13 +116,20 @@ export async function searchFoods(
   }
   if (rows.length === 0) {
     const like = `%${trimmed}%`;
+    const extraLikes = expansionTerms.map((t) => `%${t}%`);
+    const extraClause = extraLikes.map(() => "name_en LIKE ? OR aliases_json LIKE ?").join(" OR ");
     rows = await db.getAllAsync<Food>(
       `SELECT * FROM foods
          WHERE name_tr LIKE ? OR name_en LIKE ? OR name_de LIKE ?
             OR name_es LIKE ? OR name_fr LIKE ? OR aliases_json LIKE ?
             OR brand_name LIKE ?
+            ${extraClause ? `OR ${extraClause}` : ""}
        LIMIT ?;`,
-      [like, like, like, like, like, like, like, pool]
+      [
+        like, like, like, like, like, like, like,
+        ...extraLikes.flatMap((t) => [t, t]),
+        pool,
+      ]
     );
   }
 
@@ -174,14 +199,37 @@ export async function listCustomFoods(lang: Lang): Promise<Food[]> {
 }
 
 /**
+ * defaultOrder, with an extra sort key ahead of it: lib/foodMeta rankBoost
+ * floats a lang's everyday staples (bread, rice, kebab for tr; rice, sushi,
+ * miso for ja...) to the top of the shelf, so a category page opens on foods
+ * that locale actually reaches for first instead of strict alphabetical
+ * order. A stable sort, so within a boost tier the locale-aware alphabetical
+ * order underneath is untouched.
+ *
+ * Scoped to the category-shelf page only (below) - search result ordering
+ * and the plain custom-foods list keep using defaultOrder unboosted.
+ */
+function shelfOrder(lang: Lang) {
+  const base = defaultOrder(lang);
+  return (a: Food, b: Food) => {
+    const boost = rankBoost(b.name_en, lang) - rankBoost(a.name_en, lang);
+    return boost !== 0 ? boost : base(a, b);
+  };
+}
+
+/**
  * One category's page of catalog foods.
  *
  * Ordering and paging are SQL's (idx_foods_category serves the filter, the name
  * column gives the page a stable cut), then the page is re-sorted with the same
- * locale-aware comparator the full list used - expo-sqlite has no ICU collation,
- * so Turkish/French alphabetical order can only be settled in JS. A page holds
- * more rows than any seeded category, so the displayed order is unchanged from
- * when the whole catalog was sorted at once.
+ * locale-aware comparator the full list used, PLUS the staple boost above -
+ * expo-sqlite has no ICU collation, so Turkish/French alphabetical order can
+ * only be settled in JS, and the boost has to be a JS pass for the same reason
+ * it can't be an SQL ORDER BY. A page holds more rows than any seeded category
+ * today (scripts/seed.test.ts pins that invariant), so this reorders the
+ * shelf's WHOLE contents in practice; the boost is page-local by construction
+ * and would only stop covering a shelf if a category ever outgrew
+ * FOOD_PAGE_SIZE and needed a second page.
  */
 export async function listFoodsByCategory(
   category: string,
@@ -197,7 +245,7 @@ export async function listFoodsByCategory(
       LIMIT ? OFFSET ?;`,
     [category, limit, offset]
   );
-  return rows.sort(defaultOrder(lang));
+  return rows.sort(shelfOrder(lang));
 }
 
 export async function getFood(id: string): Promise<Food | null> {
@@ -401,11 +449,12 @@ export async function addCustomFood(input: NewFoodInput): Promise<Food> {
 export type FoodUpdate = Partial<NewFoodInput>;
 
 /**
- * Updates a custom food (is_custom = 1 only; seeded catalog rows and cached
- * barcode results stay read-only). A new name is written to every language
- * column and the aliases, mirroring addCustomFood; glycemic_load is recomputed
- * whenever carbs or GI change. The foods_au trigger keeps FTS in sync.
- * Returns the fresh row, or null if the id is missing or not custom.
+ * Updates a custom food or a cached barcode result (is_custom = 1, or
+ * source = 'off'; the seeded catalog stays read-only). A new name is written
+ * to every language column and the aliases, mirroring addCustomFood;
+ * glycemic_load is recomputed whenever carbs or GI change. The foods_au
+ * trigger keeps FTS in sync. Returns the fresh row, or null if the id is
+ * missing or not editable.
  */
 export async function updateFood(
   id: string,
@@ -413,7 +462,7 @@ export async function updateFood(
 ): Promise<Food | null> {
   const db = await getDb();
   const existing = await db.getFirstAsync<Food>(
-    "SELECT * FROM foods WHERE id = ? AND is_custom = 1;",
+    "SELECT * FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off');",
     [id]
   );
   if (!existing) return null;
@@ -468,14 +517,19 @@ export async function updateFood(
   if (fields.length > 0) {
     values.push(id);
     await db.runAsync(
-      `UPDATE foods SET ${fields.join(", ")} WHERE id = ? AND is_custom = 1;`,
+      `UPDATE foods SET ${fields.join(", ")} WHERE id = ? AND (is_custom = 1 OR source = 'off');`,
       values
     );
   }
   return getFood(id);
 }
 
+/** Deletes a custom food or a cached barcode result; the seeded catalog
+ *  (is_custom = 0, source not 'off') is never touched by this. */
 export async function deleteFood(id: string): Promise<void> {
   const db = await getDb();
-  await db.runAsync("DELETE FROM foods WHERE id = ? AND is_custom = 1;", [id]);
+  await db.runAsync(
+    "DELETE FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off');",
+    [id]
+  );
 }

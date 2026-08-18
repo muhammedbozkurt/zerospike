@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { I18nManager, Text, View } from "react-native";
 
 import { CHART } from "./theme";
 import { pct } from "../../lib/format";
@@ -31,6 +31,10 @@ export function TimeInRangeBar({
   highPct: number;
   labels: { low: string; inRange: string; high: string };
 }) {
+  // RTL EXEMPTION: low -> inRange -> high is a fixed severity progression, not
+  // a reading-direction list - the bar and its legend stay in that exact order
+  // under RTL instead of following RN's automatic row mirroring.
+  const rtl = I18nManager.isRTL;
   const segments: Segment[] = [
     { key: "low", label: labels.low, pct: lowPct, color: CHART.low },
     { key: "inRange", label: labels.inRange, pct: inRangePct, color: CHART.inRange },
@@ -39,7 +43,10 @@ export function TimeInRangeBar({
 
   return (
     <View>
-      <View className="h-7 rounded-lg overflow-hidden flex-row bg-glass">
+      <View
+        className="h-7 rounded-lg overflow-hidden bg-glass"
+        style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+      >
         {segments.map((s) =>
           s.pct > 0 ? (
             <View
@@ -64,7 +71,10 @@ export function TimeInRangeBar({
         )}
       </View>
 
-      <View className="flex-row justify-between mt-3">
+      <View
+        className="justify-between mt-3"
+        style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+      >
         {segments.map((s) => (
           <View key={s.key} className="flex-row items-center">
             <View

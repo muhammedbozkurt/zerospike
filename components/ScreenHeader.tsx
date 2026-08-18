@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { HIT_TARGET, THEME } from "../lib/theme/tokens";
-import { IconTile } from "./rich/IconTile";
+import { DirIcon } from "./DirIcon";
 
 /**
  * The mockup's sub-screen header: a leading icon-plate back action, then the
@@ -53,7 +53,24 @@ export function ScreenHeader({
             justifyContent: "center",
           }}
         >
-          <IconTile icon={backIcon} size={30} radius={10} tint={THEME.muted} />
+          {/* The plate is IconTile's look, reproduced by hand: IconTile only
+              renders a plain Ionicons glyph, which never flips in RTL, and
+              `backIcon` (chevron-back by default) is exactly the case DirIcon
+              exists for. */}
+          <View
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: THEME.glass,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <DirIcon name={backIcon} size={14} color={THEME.muted} />
+          </View>
         </Pressable>
       ) : null}
       <Text

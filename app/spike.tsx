@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 
 import { AppBackground, ConicAvatar, GlassCard, GradientCTA, withAlpha } from "../components/rich";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { DirIcon } from "../components/DirIcon";
 import { privacyUrl } from "../lib/legal";
 import { INPUT_TEXT, MODAL_TOP_PAD, THEME, glow, HIT_TARGET } from "../lib/theme/tokens";
 import { askSpike, isConfigured, type SpikeMessage } from "../lib/ai/spikeClient";
@@ -365,7 +366,7 @@ function SpikeScreen() {
       >
         <View className="flex-row items-center px-3 py-2" style={[{ gap: 8 }, contentColumn]}>
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-            <Ionicons name="chevron-back" size={26} color={THEME.muted} />
+            <DirIcon name="chevron-back" size={26} color={THEME.muted} />
           </Pressable>
           <ConicAvatar label="✦" size={24} />
           <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }}>

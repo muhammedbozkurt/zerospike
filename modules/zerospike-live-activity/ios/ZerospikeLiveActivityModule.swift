@@ -1,5 +1,6 @@
 import ActivityKit
 import ExpoModulesCore
+import WidgetKit
 
 // Starts and ends the post-meal Live Activity. Deliberately thin: JS already
 // owns WHEN the post-meal timer runs (lib/services/notifications.ts), so this
@@ -72,6 +73,25 @@ public class ZerospikeLiveActivityModule: Module {
       guard #available(iOS 16.2, *) else { return }
       for activity in Activity<PostMealAttributes>.activities {
         Task { await activity.end(dismissalPolicy: .immediate) }
+      }
+    }
+
+    /// Whether a zerospike WidgetKit widget (the glucose summary or Quick Add,
+    /// home screen or Lock Screen) is currently placed anywhere on the device.
+    /// `nil` - not `false` - on any WidgetKit error: the dashboard's setup row
+    /// reads that as "not checked yet", never as "the user removed it".
+    /// getCurrentConfigurations() only ever reports THIS app's own widgets, so
+    /// a non-empty list already means "installed", no kind filtering needed.
+    AsyncFunction("isWidgetInstalled") { () async -> Bool? in
+      await withCheckedContinuation { (continuation: CheckedContinuation<Bool?, Never>) in
+        WidgetCenter.shared.getCurrentConfigurations { result in
+          switch result {
+          case .success(let configurations):
+            continuation.resume(returning: !configurations.isEmpty)
+          case .failure:
+            continuation.resume(returning: nil)
+          }
+        }
       }
     }
   }

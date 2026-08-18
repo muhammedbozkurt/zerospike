@@ -17,13 +17,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { THEME, RADIUS } from "../lib/theme/tokens";
-import { IconTile, GradientCTA } from "./rich";
+import { IconTile, GradientCTA, withAlpha } from "./rich";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
+import { DirIcon } from "./DirIcon";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { useApp } from "../lib/store/AppContext";
 import { useFeedback } from "./Feedback";
-import { logMed } from "../lib/db/meds";
+import { distinctMedNames, logMed } from "../lib/db/meds";
 import { logEvent } from "../lib/analytics";
+import { noteJournalActivity } from "../lib/services/notifications";
 import { formatTime, relativeDay } from "../lib/format";
 
 interface QuickAddSheetProps {
@@ -68,16 +70,22 @@ export function QuickAddSheet({
   // by the deep-link/widget shortcut.
   const [step, setStep] = useState<"grid" | "med">("grid");
   const [medName, setMedName] = useState("");
+  const [medNote, setMedNote] = useState("");
   // null keeps the "log it as of now" default, same convention as the glucose
   // sheet; a Date is an explicit pick.
   const [medAt, setMedAt] = useState<Date | null>(null);
   const [medTimePickerOpen, setMedTimePickerOpen] = useState(false);
   const [savingMed, setSavingMed] = useState(false);
+  // Name-suggestion chips (Finding 7): the profile's most-used medication
+  // names, tap-to-fill. Empty until the fetch below resolves, so a fresh
+  // history renders no chip row rather than a flash of placeholders.
+  const [medChips, setMedChips] = useState<string[]>([]);
 
   useEffect(() => {
     if (!visible) return;
     setStep(openMedDirect ? "med" : "grid");
     setMedName("");
+    setMedNote("");
     setMedAt(null);
     setMedTimePickerOpen(false);
     setSavingMed(false);
@@ -90,6 +98,22 @@ export function QuickAddSheet({
     }).start();
   }, [visible, openMedDirect, anim]);
 
+  // Kept separate from the reset effect above so a profile switch mid-session
+  // cannot restart the sheet's open animation - it only ever refills the chips.
+  useEffect(() => {
+    if (!visible || !activeProfile) {
+      setMedChips([]);
+      return;
+    }
+    let cancelled = false;
+    void distinctMedNames(activeProfile.id).then((names) => {
+      if (!cancelled) setMedChips(names);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, activeProfile]);
+
   async function saveMed() {
     if (!activeProfile || savingMed) return;
     setSavingMed(true);
@@ -98,8 +122,10 @@ export function QuickAddSheet({
         profileId: activeProfile.id,
         takenAt: (medAt ?? new Date()).getTime(),
         name: medName.trim() || null,
+        note: medNote.trim() || null,
       });
       logEvent("log_added", { kind: "med", source: "manual" });
+      void noteJournalActivity();
       bumpData();
       hapticSuccess();
       toast(t("meds.took"), "success");
@@ -269,7 +295,7 @@ export function QuickAddSheet({
                     accessibilityLabel={t("common.back")}
                     style={{ padding: 4, marginLeft: -4 }}
                   >
-                    <Ionicons name="chevron-back" size={22} color={THEME.muted} />
+                    <DirIcon name="chevron-back" size={22} color={THEME.muted} />
                   </Pressable>
                   <Text
                     style={{
@@ -284,6 +310,47 @@ export function QuickAddSheet({
                     {t("meds.title")}
                   </Text>
                 </View>
+
+                {medChips.length > 0 ? (
+                  // One-tap fill, never a submit: picking a chip only writes
+                  // the name field below, so the time/note the user already
+                  // set (or is about to) survives the tap.
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      marginBottom: 10,
+                    }}
+                  >
+                    {medChips.map((name) => (
+                      <Pressable
+                        key={name}
+                        onPress={() => {
+                          hapticSelect();
+                          setMedName(name);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={name}
+                        style={{
+                          borderRadius: RADIUS.full,
+                          borderWidth: 1,
+                          borderColor: withAlpha(THEME.accent, 0.25),
+                          backgroundColor: THEME.glass,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <Text
+                          style={{ color: THEME.accent, fontSize: 12 }}
+                          numberOfLines={1}
+                        >
+                          {name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
 
                 <TextInput
                   value={medName}
@@ -338,6 +405,26 @@ export function QuickAddSheet({
                   locale={i18n.language}
                   onChange={setMedAt}
                   onClose={() => setMedTimePickerOpen(false)}
+                />
+
+                <TextInput
+                  value={medNote}
+                  onChangeText={setMedNote}
+                  placeholder={t("injection.notePlaceholder")}
+                  placeholderTextColor={THEME.muted}
+                  accessibilityLabel={t("injection.notePlaceholder")}
+                  returnKeyType="done"
+                  style={{
+                    borderRadius: RADIUS.md,
+                    borderWidth: 1,
+                    borderColor: THEME.border,
+                    backgroundColor: THEME.glass,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    color: THEME.ink,
+                    fontSize: 14,
+                    marginBottom: 14,
+                  }}
                 />
 
                 <GradientCTA label={t("meds.logCta")} disabled={savingMed} onPress={saveMed} />

@@ -47,6 +47,10 @@ struct QuickAddShortcut: Identifiable {
 struct QuickAddEntry: TimelineEntry {
   let date: Date
   let labels: LiveData.Labels?
+  /// The active in-app language from the snapshot (see LiveData.lang). `nil`
+  /// for a missing/undecoded snapshot, which keeps the widget on the device's
+  /// own layout direction rather than asserting one.
+  let lang: String?
   /// Mirrors the profile's insulin_mode from the snapshot. Defaults to true, so a
   /// snapshot written before the flag existed - or none at all - keeps the
   /// shortcut every build up to now showed.
@@ -121,6 +125,7 @@ struct QuickAddProvider: TimelineProvider {
     return QuickAddEntry(
       date: Date(),
       labels: data?.labels,
+      lang: data?.lang,
       usesInsulin: data?.usesInsulin ?? true,
       usesOralMeds: data?.usesOralMeds ?? false
     )
@@ -150,12 +155,19 @@ struct QuickAddWidgetView: View {
   }
 
   var body: some View {
-    switch family {
-    case .systemMedium:
-      mediumView
-    default:
-      smallView
+    Group {
+      switch family {
+      case .systemMedium:
+        mediumView
+      default:
+        smallView
+      }
     }
+    // Mirrors the app's OWN in-app language, not the device's system
+    // language, same as ZerospikeWidgetView in index.swift. No `lang` (older
+    // snapshot) leaves the environment untouched, i.e. the device's own
+    // direction.
+    .applyingLayoutDirection(layoutDirection(forLang: entry.lang))
   }
 
   /// Small: the primary shortcut (glucose) as one full-bleed identity tile, with

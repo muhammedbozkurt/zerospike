@@ -14,6 +14,7 @@ import { hapticSelect } from "../lib/haptics";
 import { GLUCOSE_RICH, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { upper } from "../lib/upper";
+import { DirIcon } from "./DirIcon";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 type ButtonSize = "lg" | "md" | "sm";
@@ -275,7 +276,7 @@ export function IconRow({
         </Text>
       ) : null}
       {onPress ? (
-        <Ionicons name="chevron-forward" size={18} color={THEME.muted} />
+        <DirIcon name="chevron-forward" size={18} color={THEME.muted} />
       ) : null}
     </>
   );

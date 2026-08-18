@@ -5,12 +5,10 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
+import { isolateLtr } from "../lib/format";
 import { updateProfile } from "../lib/db/profiles";
+import { syncBasalReminderRow } from "../lib/db/reminders";
 import { applyNotificationPrefs } from "../lib/services/notifications";
-import {
-  getNotificationPrefs,
-  setNotificationPrefs,
-} from "../lib/services/notificationPrefs";
 import {
   clampTarget,
   glucoseToDisplay,
@@ -20,12 +18,16 @@ import {
 } from "../lib/glucose";
 import { CARB_TARGET_BOUNDS, clampCarbTarget } from "../lib/insulin";
 import { insulinModeShowsBasal, insulinModeShowsBolus } from "../lib/insulinMode";
+import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G, isNoInsulinDiabetesType } from "../lib/diabetesDefaults";
+import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { RangeInput } from "../components/RangeInput";
 import { Stepper } from "../components/Stepper";
 import { InlineTimePicker } from "../components/InlineTimePicker";
+import { InsulinModeSection } from "../components/InsulinModeSection";
+import { Segmented } from "../components/ui";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
-import { FeedbackHost } from "../components/Feedback";
+import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { AppBackground, ConicAvatar, GradientCTA } from "../components/rich";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
@@ -56,12 +58,22 @@ function ProfileSetupScreen() {
   const router = useRouter();
   const { contentColumn } = useLayout();
   const { activeProfile, bumpData } = useApp();
+  const { toast } = useFeedback();
   // Glucose fields (targets, ISF) are stored in mg/dL but shown/entered in this
   // profile's unit, so a mmol household never sees mg/dL labels or writes mmol
-  // numbers into mg/dL columns.
-  const unit = activeProfile?.glucose_unit ?? "mgdl";
-  const showsBolus = insulinModeShowsBolus(activeProfile?.insulin_mode);
-  const showsBasal = insulinModeShowsBasal(activeProfile?.insulin_mode);
+  // numbers into mg/dL columns. Unlike the old read-only const, unit is now
+  // asked here too (Wave 2a), so it is state, with changeUnit() re-expressing
+  // whatever is already typed instead of silently reinterpreting it.
+  const [unit, setUnit] = useState<GlucoseUnit>(activeProfile?.glucose_unit ?? "mgdl");
+  const [diabetesType, setDiabetesType] = useState<DiabetesType>(
+    activeProfile?.diabetes_type ?? "unknown"
+  );
+  const [insulinMode, setInsulinMode] = useState<InsulinMode>(
+    activeProfile?.insulin_mode ?? "both"
+  );
+  const [oralMeds, setOralMeds] = useState(activeProfile?.oral_meds_enabled === 1);
+  const showsBolus = insulinModeShowsBolus(insulinMode);
+  const showsBasal = insulinModeShowsBasal(insulinMode);
 
   const [name, setName] = useState(
     activeProfile?.name ?? t("profiles.defaultName")
@@ -91,13 +103,66 @@ function ProfileSetupScreen() {
   const [carbMax, setCarbMax] = useState(
     String(activeProfile?.daily_carb_target_g ?? 200)
   );
+  // A prefilled ratio/target only becomes the user's own once they actually
+  // move the control on its row - same "touched" pattern onboarding uses, so
+  // picking a diabetes type never overwrites a value already hand-edited, and
+  // ratios_confirmed only turns on when the steppers were genuinely touched.
+  const [carbRatioTouched, setCarbRatioTouched] = useState(false);
+  const [isfTouched, setIsfTouched] = useState(false);
+  const [targetsTouched, setTargetsTouched] = useState(false);
+  const [carbRangeTouched, setCarbRangeTouched] = useState(false);
   const [basalTime, setBasalTime] = useState("22:00");
+  // Whether the user actually picked a time, vs. just seeing the "22:00"
+  // placeholder - gates whether save() overwrites the device's shared basal
+  // reminder time (see save()).
+  const [basalTimeTouched, setBasalTimeTouched] = useState(false);
   const [showTime, setShowTime] = useState(false);
   const [saving, setSaving] = useState(false);
 
   function n(v: string, fallback: number): number {
     const x = (parseDecimalText(v) ?? NaN);
     return Number.isFinite(x) && x > 0 ? x : fallback;
+  }
+
+  // Re-expresses whatever is already typed in the new unit; only the
+  // glucose-unit-dependent fields (targets, ISF) need converting, not the
+  // carb ratios (g of carb per unit of insulin) or the carb range (grams).
+  function changeUnit(next: GlucoseUnit) {
+    if (next === unit) return;
+    const convert = (text: string, fallbackMgdl: number) =>
+      String(
+        glucoseToDisplay(
+          glucoseFromDisplay(n(text, glucoseToDisplay(fallbackMgdl, unit)), unit),
+          next
+        )
+      );
+    setFastingMin(convert(fastingMin, 80));
+    setFastingMax(convert(fastingMax, 100));
+    setPostmealMin(convert(postmealMin, 80));
+    setPostmealMax(convert(postmealMax, 140));
+    setIsf(glucoseToDisplay(glucoseFromDisplay(isf, unit), next));
+    setUnit(next);
+  }
+
+  // Picking a diabetes type seeds the target-range (+ carb-range) defaults,
+  // per the Wave 2a matrix, only while the user hasn't hand-edited a value.
+  // prediabetes/none also force insulin_mode back to "none", the same way the
+  // insulin segment itself works once it re-hides.
+  function selectDiabetesType(next: DiabetesType) {
+    setDiabetesType(next);
+    if (isNoInsulinDiabetesType(next)) setInsulinMode("none");
+    if (!targetsTouched) {
+      const { fasting, postmeal } = TARGET_DEFAULTS_MGDL[next];
+      setFastingMin(String(glucoseToDisplay(fasting.min, unit)));
+      setFastingMax(String(glucoseToDisplay(fasting.max, unit)));
+      setPostmealMin(String(glucoseToDisplay(postmeal.min, unit)));
+      setPostmealMax(String(glucoseToDisplay(postmeal.max, unit)));
+    }
+    if (!carbRangeTouched) {
+      const carb = CARB_TARGET_DEFAULTS_G[next];
+      setCarbMin(String(carb.min));
+      setCarbMax(String(carb.max));
+    }
   }
 
   function rangeOk(minText: string, maxText: string): boolean {
@@ -141,6 +206,10 @@ function ProfileSetupScreen() {
     try {
       await updateProfile(activeProfile.id, {
         name: name.trim() || t("profiles.defaultName"),
+        glucose_unit: unit,
+        diabetes_type: diabetesType,
+        insulin_mode: insulinMode,
+        oral_meds_enabled: oralMeds ? 1 : 0,
         target_fasting_min: clampTarget(
           glucoseFromDisplay(n(fastingMin, glucoseToDisplay(80, unit)), unit)
         ),
@@ -159,21 +228,31 @@ function ProfileSetupScreen() {
         insulin_sensitivity_factor: glucoseFromDisplay(isf, unit),
         daily_carb_target_min_g: clampCarbTarget(n(carbMin, 160)),
         daily_carb_target_g: clampCarbTarget(n(carbMax, 200)),
-        // These are values the user has now explicitly entered for this profile,
-        // so they stop counting as defaults the app assumed on their behalf.
-        ratios_confirmed: showsBolus ? 1 : 0,
+        // Only counts as the user's own ratios once the steppers were actually
+        // touched (onboarding pattern) - walking past the prefilled defaults is
+        // not a confirmation.
+        ratios_confirmed: showsBolus && carbRatioTouched && isfTouched ? 1 : 0,
       });
-      // The time chosen here is a PREFERENCE, not a schedule: writing it through
-      // the saved prefs and re-applying them is what keeps the reminder honest.
-      // Scheduling directly armed a nightly nudge even with notifications turned
-      // off or permission denied, and left the stored basalTime pointing at a
-      // different hour than the reminder that was actually running.
-      if (showsBasal) {
-        const prefs = await getNotificationPrefs();
-        const next = { ...prefs, basal: true, basalTime };
-        await setNotificationPrefs(next);
-        await applyNotificationPrefs(next);
+      // The basal choice is written straight to the reminders registry, not the
+      // legacy prefs.basal/basalTime bridge (lib/db/remindersBridge.ts): that
+      // bridge only ever runs ONCE per device, and has almost always already
+      // fired by the time a second (or reset) profile reaches this screen -
+      // writing only the legacy prefs left this choice with no effect on any
+      // actual reminder. basalTime itself only overwrites an EXISTING row when
+      // the user actually picked one (see basalTimeTouched above): the schedule
+      // is shared across every profile on the device, so an untouched "22:00"
+      // placeholder must never clobber a time another profile already set. A
+      // full reminders table (MAX_REMINDERS) blocks only a brand NEW row - an
+      // existing basal row is always updated in place.
+      const basalSynced = await syncBasalReminderRow(
+        showsBasal,
+        basalTime,
+        basalTimeTouched
+      );
+      if (!basalSynced) {
+        toast(t("reminders.limitReached"), "error");
       }
+      await applyNotificationPrefs();
       bumpData();
       router.back();
     } finally {
@@ -181,7 +260,12 @@ function ProfileSetupScreen() {
     }
   }
 
-  const summary = [glucoseUnitLabel(unit), `${fastingMin}-${fastingMax}`].join(" · ");
+  // Bidi: writingDirection alone was verified NOT enough on-device for a
+  // hyphenated range under RTL (see insights.tsx's target-band fix); this
+  // string has no RTL script content at all, so the whole thing is isolated.
+  const summary = isolateLtr(
+    [glucoseUnitLabel(unit), `${fastingMin}-${fastingMax}`].join(" · ")
+  );
 
   return (
     <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
@@ -214,7 +298,12 @@ function ProfileSetupScreen() {
             className="rounded-full px-3 py-1"
             style={{ backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }}
           >
-            <Text style={{ color: THEME.muted, fontSize: 11 }}>{summary}</Text>
+            {/* Bidi: "mg/dL · 70-180" holds a hyphenated number range, which
+                reorders under RTL unless pinned LTR (same fix as insights'
+                target-band line). */}
+            <Text style={{ color: THEME.muted, fontSize: 11, writingDirection: "ltr" }}>
+              {summary}
+            </Text>
           </View>
           <Text
             style={{
@@ -240,13 +329,56 @@ function ProfileSetupScreen() {
           />
         </FormCard>
 
+        <FormCard icon="options-outline" title={t("settings.glucoseUnit")}>
+          <View className="px-4 py-3.5">
+            <Segmented
+              options={[
+                { value: "mgdl", label: "mg/dL" },
+                { value: "mmol", label: "mmol/L" },
+              ]}
+              value={unit}
+              onChange={(u: GlucoseUnit) => changeUnit(u)}
+            />
+          </View>
+        </FormCard>
+
+        <FormCard icon="medkit-outline" title={t("settings.diabetesType")}>
+          <View className="px-4 py-3.5">
+            <Segmented
+              options={(
+                ["type1", "type2", "gestational", "prediabetes", "none", "unknown"] as DiabetesType[]
+              ).map((d) => ({
+                value: d,
+                label: d === "unknown" ? t("onboarding.diabetes_other") : t(`onboarding.diabetes_${d}`),
+              }))}
+              value={diabetesType}
+              onChange={(d: DiabetesType) => selectDiabetesType(d)}
+            />
+            <Text className="text-mut text-xs mt-2 leading-4">{t("settings.diabetesTypeHint")}</Text>
+          </View>
+        </FormCard>
+
+        <InsulinModeSection
+          diabetesType={diabetesType}
+          insulinMode={insulinMode}
+          onChangeInsulinMode={setInsulinMode}
+          oralMeds={oralMeds}
+          onChangeOralMeds={setOralMeds}
+        />
+
         <RangeInput
           label={t("settings.fastingRange")}
           unit={glucoseUnitLabel(unit)}
           minText={fastingMin}
           maxText={fastingMax}
-          onChangeMin={setFastingMin}
-          onChangeMax={setFastingMax}
+          onChangeMin={(v) => {
+            setFastingMin(v);
+            setTargetsTouched(true);
+          }}
+          onChangeMax={(v) => {
+            setFastingMax(v);
+            setTargetsTouched(true);
+          }}
           axisMin={glucoseToDisplay(50, unit)}
           axisMax={glucoseToDisplay(250, unit)}
           minLabel={t("common.rangeMin")}
@@ -265,8 +397,14 @@ function ProfileSetupScreen() {
           unit={glucoseUnitLabel(unit)}
           minText={postmealMin}
           maxText={postmealMax}
-          onChangeMin={setPostmealMin}
-          onChangeMax={setPostmealMax}
+          onChangeMin={(v) => {
+            setPostmealMin(v);
+            setTargetsTouched(true);
+          }}
+          onChangeMax={(v) => {
+            setPostmealMax(v);
+            setTargetsTouched(true);
+          }}
           axisMin={glucoseToDisplay(50, unit)}
           axisMax={glucoseToDisplay(300, unit)}
           minLabel={t("common.rangeMin")}
@@ -285,8 +423,14 @@ function ProfileSetupScreen() {
           unit={t("common.grams")}
           minText={carbMin}
           maxText={carbMax}
-          onChangeMin={setCarbMin}
-          onChangeMax={setCarbMax}
+          onChangeMin={(v) => {
+            setCarbMin(v);
+            setCarbRangeTouched(true);
+          }}
+          onChangeMax={(v) => {
+            setCarbMax(v);
+            setCarbRangeTouched(true);
+          }}
           axisMin={0}
           axisMax={400}
           minLabel={t("common.rangeMin")}
@@ -313,7 +457,10 @@ function ProfileSetupScreen() {
                 <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
                 <Stepper
                   value={value}
-                  onChange={setter}
+                  onChange={(v) => {
+                    setter(v);
+                    setCarbRatioTouched(true);
+                  }}
                   step={0.5}
                   longStep={1}
                   min={1}
@@ -334,7 +481,10 @@ function ProfileSetupScreen() {
                 <Text className="text-mut text-xs mb-2">{t("settings.isfHint")}</Text>
                 <Stepper
                   value={isf}
-                  onChange={setIsf}
+                  onChange={(v) => {
+                    setIsf(v);
+                    setIsfTouched(true);
+                  }}
                   step={unit === "mmol" ? 0.1 : 1}
                   longStep={unit === "mmol" ? 0.5 : 5}
                   min={unit === "mmol" ? 0.5 : 5}
@@ -359,7 +509,10 @@ function ProfileSetupScreen() {
         <InlineTimePicker
           visible={showTime}
           value={basalTime}
-          onChange={setBasalTime}
+          onChange={(v) => {
+            setBasalTime(v);
+            setBasalTimeTouched(true);
+          }}
           onClose={() => setShowTime(false)}
         />
 

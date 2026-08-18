@@ -144,4 +144,9 @@ export function currentLang(): Lang {
   return (SUPPORTED_LANGS as string[]).includes(code) ? (code as Lang) : "tr";
 }
 
+/** Arabic is the only right-to-left locale the app supports. */
+export function isRTLLang(lang: string): boolean {
+  return lang === "ar";
+}
+
 export default i18n;

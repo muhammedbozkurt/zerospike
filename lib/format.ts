@@ -94,12 +94,55 @@ export function num(n: number): string {
 }
 
 /**
- * Where the percent sign goes, and whether it is spaced, is a LANGUAGE rule, not
- * a typing habit: Turkish writes "%92", English/Italian/Portuguese/Japanese/Arabic
- * "92%", German/French/Spanish "92 %". Every call site used to hand-write its own
- * sign, so one Turkish session showed both "%92" and "92%". These two helpers are
- * the only place the sign is ever produced.
+ * Unicode bidi isolate marks (LRI/PDI): wrapping a purely-LTR run (a date
+ * range, a number+sign pair) in these makes it render as one atomic
+ * left-to-right block no matter which way the surrounding paragraph
+ * resolves. Real-device RTL testing showed the RN `writingDirection` style
+ * prop is NOT reliable for this on its own - a "date - date" or "word
+ * number%" string still got its parts reordered under Arabic - so this is
+ * the string-level fix: it works regardless of how the native text view
+ * threads (or drops) the style prop.
  */
+const LRI = "⁦";
+const PDI = "⁩";
+
+/** Wraps `s` so it always renders as one LTR block (a date range, a
+ *  pre-joined "50%"), regardless of the surrounding writing direction. */
+export function isolateLtr(s: string): string {
+  return `${LRI}${s}${PDI}`;
+}
+
+/** Opens an LTR isolate around `s` without closing it - for smuggling the
+ *  boundary through an i18n template this code cannot edit, e.g.
+ *  `t("x", { min: openLtrIsolate(min), max: closeLtrIsolate(max) })` against
+ *  a fixed "{{min}}-{{max}}" template isolates "min-max" as one block even
+ *  though the literal "-" lives in the (untouched) translation string. */
+export function openLtrIsolate(s: string): string {
+  return `${LRI}${s}`;
+}
+
+/** Closes an LTR isolate opened with {@link openLtrIsolate}. */
+export function closeLtrIsolate(s: string): string {
+  return `${s}${PDI}`;
+}
+
+/**
+ * Strips embedded bidi control marks (LRM/RLM U+200E/U+200F, ALM U+061C) from
+ * `s`. Confirmed on-device root cause of the date-range chip bug: ICU's own
+ * "ar" date pattern inserts an RLM before every "/" separator (verified via
+ * `new Date(...).toLocaleDateString("ar-u-nu-latn")` -> "28‏/7‏/2026"),
+ * so ICU is already voting for local RTL runs INSIDE the string. Wrapping
+ * that in our own isolateLtr() is not enough - the embedded RLM still wins
+ * the bidi resolution inside the isolate and reorders the date's own digit
+ * groups. Only needed when a formatDate() output is being hand-composed into
+ * a larger string this file then re-isolates itself (as with the range chip
+ * below); a lone formatDate() call left to render on its own should keep its
+ * marks, since ICU put them there for exactly that unwrapped case.
+ */
+export function stripBidiMarks(s: string): string {
+  return s.replace(/[‎‏؜]/g, "");
+}
+
 export interface PctParts {
   /** The number alone, in the locale's digits and decimal mark. */
   number: string;

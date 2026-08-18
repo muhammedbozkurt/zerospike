@@ -32,6 +32,7 @@ import { V13_ADD_MEAL_TEMPLATE_ID, V13_CREATE } from "./v13Sql";
 import { V14_CREATE } from "./v14Sql";
 import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "./v15Sql";
 import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "./v16Sql";
+import { V17_CREATE } from "./v17Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -67,7 +68,8 @@ export type SchemaStamp =
   | 13
   | 14
   | 15
-  | 16;
+  | 16
+  | 17;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -368,5 +370,27 @@ export async function migrateToV16(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(V16_ADD_ORAL_MEDS_ENABLED);
     }
     await stampSchemaVersion(db, 16);
+  });
+}
+
+/**
+ * The v16 → v17 migration: the reminders registry (see ./v17Sql) - one table
+ * backing every scheduled local reminder, replacing the three separate
+ * boolean + "HH:MM" pairs NotificationPrefs used to carry for basal/med/glucose
+ * and adding room for user-defined custom ones.
+ *
+ * Create-only, exactly like v14/v16: no existing table is read, written or
+ * rebuilt, so nothing already stored or scheduled can be lost by it, and a
+ * re-run is a no-op. The one-time move of the pre-registry settings INTO this
+ * table (lib/db/remindersBridge.ts) is deliberately not part of this migration:
+ * it runs from lib/services/notifications.ts instead, so initDatabase() never
+ * grows a dependency on the notifications service.
+ */
+export async function migrateToV17(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const statement of V17_CREATE) {
+      await db.execAsync(statement);
+    }
+    await stampSchemaVersion(db, 17);
   });
 }

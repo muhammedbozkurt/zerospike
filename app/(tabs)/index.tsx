@@ -32,6 +32,7 @@ import type { LogTag, PeriodTag } from "../../lib/db/types";
 import {
   startPostMealTimer,
   scheduleLowFollowup,
+  lowFollowupThresholdMgdl,
   getPostMealTimerState,
   cancelPostMealTimer,
   completePostMealTimer,
@@ -55,7 +56,12 @@ import {
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { logCrash, logEvent } from "../../lib/analytics";
+import { isWidgetInstalled } from "../../modules/zerospike-live-activity";
 
+// Base keys below are scoped per profile ("<key>.<profileId>") via
+// readProfileFlag/writeProfileFlag - each used to be one value for the whole
+// device, so a caregiver switching profiles inherited whatever the PREVIOUS
+// profile had toggled or dismissed (audit findings A and dismiss-flag leak).
 const CGM_KEY = "zerospike.cgmSync";
 // Shown once to an existing free user who had auto-sync on before it became Pro.
 const HEALTH_PRO_NOTICE_KEY = "zerospike.healthProNoticeShown";
@@ -68,6 +74,27 @@ const WIDGET_TIP_KEY = "zerospike.widgetTipDismissed";
 // (Health, widget) are not done yet - this compact row carries them until the
 // user closes it.
 const FINISH_SETUP_KEY = "zerospike.finishSetupDismissed";
+
+/**
+ * Reads a boolean flag now kept per profile. The first read for ANY profile
+ * that finds no scoped value yet, but does find the old device-wide one,
+ * carries it over to THAT profile and deletes the global key - a one-time,
+ * lossless move; every read after that is purely per profile.
+ */
+async function readProfileFlag(baseKey: string, profileId: string): Promise<boolean> {
+  const scopedKey = `${baseKey}.${profileId}`;
+  const scoped = await AsyncStorage.getItem(scopedKey);
+  if (scoped != null) return scoped === "true";
+  const legacy = await AsyncStorage.getItem(baseKey);
+  if (legacy == null) return false;
+  await AsyncStorage.setItem(scopedKey, legacy);
+  await AsyncStorage.removeItem(baseKey);
+  return legacy === "true";
+}
+
+async function writeProfileFlag(baseKey: string, profileId: string, value: boolean): Promise<void> {
+  await AsyncStorage.setItem(`${baseKey}.${profileId}`, value ? "true" : "false");
+}
 // Name the health source explicitly in the UI (App Review guideline 2.5.1).
 const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
 // Journal paging. One slice is at most JOURNAL_PAGE rows AND at most
@@ -97,9 +124,10 @@ import { StatCard } from "../../components/StatCard";
 import { Sparkline } from "../../components/Sparkline";
 import { Button, SegmentedStat } from "../../components/ui";
 import { EmptyState } from "../../components/EmptyState";
+import { DirIcon } from "../../components/DirIcon";
 import Animated from "react-native-reanimated";
 import { listEntering, PressableScale } from "../../lib/theme/motion";
-import { RICH_BY_STATUS, THEME, TABULAR, RADIUS } from "../../lib/theme/tokens";
+import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS } from "../../lib/theme/tokens";
 import {
   AppBackground,
   GlassCard,
@@ -264,6 +292,10 @@ export default function DashboardScreen() {
   // resolves to a real boolean.
   const [cgmOn, setCgmOn] = useState<boolean | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // undefined = not checked yet, or this platform/build cannot say either way
+  // (no native module linked, a query error). The setup row's Widget item
+  // stays neutral in that case rather than claiming "not installed".
+  const [widgetInstalled, setWidgetInstalled] = useState<boolean | undefined>(undefined);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   // Set only by the "med" deep-link/widget shortcut below: makes the next
   // QuickAddSheet open land straight on its medication mini-form instead of
@@ -374,39 +406,57 @@ export default function DashboardScreen() {
   useEffect(() => {
     const s = params.sheet;
     if (!s || !activeProfile) return;
-    if (s === "med") {
-      setQuickAddMedDirect(true);
-      setQuickAddOpen(true);
-    } else {
-      setEditGlucose(null);
-      setInitialPeriod(s === "post_meal_2h" ? "post_meal_2h" : "fasting");
-      setSheetOpen(true);
-    }
-    router.setParams({ sheet: "" });
+    (async () => {
+      if (s === "med") {
+        setQuickAddMedDirect(true);
+        setQuickAddOpen(true);
+      } else if (s === "post_meal_2h") {
+        // Profile lock (B): a post-meal reminder tap only opens the 2h sheet
+        // when the running timer is actually this profile's own - a legacy
+        // timer with no recorded owner still opens it (see the card below).
+        const timer = await getPostMealTimerState();
+        if (timer && timer.profileId != null && timer.profileId !== activeProfile.id) {
+          router.setParams({ sheet: "" });
+          return;
+        }
+        setEditGlucose(null);
+        setInitialPeriod("post_meal_2h");
+        setSheetOpen(true);
+      } else {
+        setEditGlucose(null);
+        setInitialPeriod("fasting");
+        setSheetOpen(true);
+      }
+      router.setParams({ sheet: "" });
+    })();
   }, [params.sheet, activeProfile, router]);
 
   // Tap-to-edit is invisible until you know it: show a dismissible one-time
   // hint above the journal until the user closes it. The setup row next to it
-  // is read here too, so both dismissals resolve in one pass.
+  // is read here too, so both dismissals resolve in one pass. Re-runs on a
+  // profile switch: each profile keeps its own dismissal (see readProfileFlag).
   useEffect(() => {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
     (async () => {
       try {
         const [hint, setupDone] = await Promise.all([
-          AsyncStorage.getItem(EDIT_HINT_KEY),
-          AsyncStorage.getItem(FINISH_SETUP_KEY),
+          readProfileFlag(EDIT_HINT_KEY, profileId),
+          readProfileFlag(FINISH_SETUP_KEY, profileId),
         ]);
-        setShowEditHint(hint !== "true");
-        setShowFinishSetup(setupDone !== "true");
+        setShowEditHint(!hint);
+        setShowFinishSetup(!setupDone);
       } catch {
         // best-effort hint
       }
     })();
-  }, []);
+  }, [activeProfile?.id]);
 
   async function dismissEditHint() {
     setShowEditHint(false);
+    if (!activeProfile) return;
     try {
-      await AsyncStorage.setItem(EDIT_HINT_KEY, "true");
+      await writeProfileFlag(EDIT_HINT_KEY, activeProfile.id, true);
     } catch {
       // best-effort hint
     }
@@ -414,8 +464,9 @@ export default function DashboardScreen() {
 
   async function dismissFinishSetup() {
     setShowFinishSetup(false);
+    if (!activeProfile) return;
     try {
-      await AsyncStorage.setItem(FINISH_SETUP_KEY, "true");
+      await writeProfileFlag(FINISH_SETUP_KEY, activeProfile.id, true);
     } catch {
       // best-effort dismissal
     }
@@ -435,6 +486,15 @@ export default function DashboardScreen() {
     }, [refreshPostMealTimer])
   );
 
+  // The setup row's Widget item re-checks on every dashboard focus, the same
+  // moment a user actually comes back after placing (or removing) it - a
+  // plain mount-only check would miss both.
+  useFocusEffect(
+    useCallback(() => {
+      isWidgetInstalled().then(setWidgetInstalled);
+    }, [])
+  );
+
   // Coming back to the foreground: re-read the timer (it may have elapsed while
   // backgrounded; the service returns null for an elapsed end, which disarms).
   useEffect(() => {
@@ -451,10 +511,19 @@ export default function DashboardScreen() {
   useEffect(() => {
     // Health/CGM sync is iOS-only (Health Connect was removed for Play policy).
     if (Platform.OS !== "ios") return;
+    // Profile lock (A): nothing to key the preference off until the active
+    // profile has resolved.
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    // Reset to the skeleton state immediately on a profile switch: without this
+    // the card could flash the PREVIOUS profile's sync preference (and briefly
+    // let its toggle read as this profile's own) for one frame before the read
+    // below resolves.
+    setCgmOn(null);
     (async () => {
       let saved = false;
       try {
-        saved = (await AsyncStorage.getItem(CGM_KEY)) === "true";
+        saved = await readProfileFlag(CGM_KEY, profileId);
       } catch (err) {
         // A failed read must still resolve cgmOn to a real boolean: left at
         // null the Health card keeps its skeleton switch for good and
@@ -463,7 +532,7 @@ export default function DashboardScreen() {
       }
       if (isProUser) {
         setCgmOn(saved);
-        if (saved && activeProfile) runSync(false);
+        if (saved) runSync(false);
       } else {
         setCgmOn(false);
         if (saved) await maybeShowHealthProNotice();
@@ -670,6 +739,18 @@ export default function DashboardScreen() {
     void completePostMealTimer();
   }, []);
 
+  // Profile lock (B): a timer armed for a DIFFERENT profile (a caregiver
+  // switched away mid-countdown) renders as if none were running - the idle
+  // "started eating" CTA shows instead. The persisted timer itself is left
+  // alone, so it is picked back up the moment that other profile is active
+  // again. A timer with no recorded owner (armed before this lock existed)
+  // keeps showing everywhere, same as before.
+  const postMealTimerForProfile =
+    postMealTimer &&
+    (postMealTimer.profileId == null || postMealTimer.profileId === activeProfile?.id)
+      ? postMealTimer
+      : null;
+
   // Manual logging is unlimited on both tiers now, so there is no gate here.
   function openLogger(period: PeriodTag) {
     if (!activeProfile) return;
@@ -688,7 +769,7 @@ export default function DashboardScreen() {
       await refreshPostMealTimer();
       // First timer: tell the user the countdown also shows on the lock screen.
       try {
-        if ((await AsyncStorage.getItem(WIDGET_TIP_KEY)) !== "true") {
+        if (activeProfile && !(await readProfileFlag(WIDGET_TIP_KEY, activeProfile.id))) {
           setShowWidgetTip(true);
         }
       } catch {
@@ -701,8 +782,9 @@ export default function DashboardScreen() {
 
   async function dismissWidgetTip() {
     setShowWidgetTip(false);
+    if (!activeProfile) return;
     try {
-      await AsyncStorage.setItem(WIDGET_TIP_KEY, "true");
+      await writeProfileFlag(WIDGET_TIP_KEY, activeProfile.id, true);
     } catch {
       // best-effort tip
     }
@@ -751,7 +833,7 @@ export default function DashboardScreen() {
     void writeGlucoseToHealthIfEnabled(addedSugar);
     void noteJournalActivity();
     logEvent("log_added", { kind: "glucose", source: "manual" });
-    void noteLogAndMaybeReview();
+    void noteLogAndMaybeReview("log_glucose");
     hapticSuccess();
     // NOTHING is armed here. A reading is a measurement, not a meal: logging a
     // fasting or manual value used to start the post-meal countdown by itself, so
@@ -791,13 +873,15 @@ export default function DashboardScreen() {
     if (isNow) void maybeOfferLowFollowup(value);
   }
 
-  // Neutral, user-thresholded follow-up: after the user LOGS a low reading, offer
-  // (never force) a 15-minute re-measure reminder and a shortcut to reach an
-  // emergency contact. No diagnosis, no automatic alert.
+  // Neutral follow-up: after the user LOGS a reading below their own profile's
+  // low threshold, offer (never force) a 15-minute re-measure reminder and a
+  // shortcut to reach an emergency contact. No diagnosis, no automatic alert.
   async function maybeOfferLowFollowup(mgdl: number) {
     const prefs = await getNotificationPrefs();
-    if (!prefs.enabled || !prefs.lowFollowup || mgdl >= prefs.lowThresholdMgdl)
-      return;
+    if (!prefs.enabled || !prefs.lowFollowup) return;
+    // UX#1: one low threshold, not two that could disagree - always the active
+    // profile's own low threshold from Profile (see lowFollowupThresholdMgdl).
+    if (mgdl >= (await lowFollowupThresholdMgdl())) return;
     actionSheet({
       title: t("dashboard.lowFollowTitle", {
         value: formatGlucose(mgdl, unit),
@@ -826,7 +910,7 @@ export default function DashboardScreen() {
 
   async function toggleCgm(next: boolean) {
     setCgmOn(next);
-    await AsyncStorage.setItem(CGM_KEY, next ? "true" : "false");
+    if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, next);
     if (next) await runSync(true);
   }
 
@@ -1108,6 +1192,10 @@ export default function DashboardScreen() {
     icon: keyof typeof Ionicons.glyphMap;
     label: string;
     onPress: () => void;
+    // Real completion state where one exists (health/widget); undefined for a
+    // step that has none (log) or whose state has not resolved/could not be
+    // determined yet - the compact setup row below keeps those neutral.
+    done?: boolean;
   }[] = [
     {
       key: "log",
@@ -1124,6 +1212,7 @@ export default function DashboardScreen() {
             icon: "pulse" as keyof typeof Ionicons.glyphMap,
             label: HEALTH_NAME,
             onPress: openHealthFlow,
+            done: cgmOn == null ? undefined : cgmOn,
           },
         ]
       : []),
@@ -1132,12 +1221,19 @@ export default function DashboardScreen() {
       icon: "phone-portrait",
       label: t("dashboard.stepWidget"),
       onPress: () => router.push("/widget-guide"),
+      done: widgetInstalled,
     },
   ];
 
   // Same optional steps the first-run guide offered, minus the one the user has
   // already done (logging). Health stays off Android with the build.
   const setupShortcuts = startSteps.filter((s) => s.key !== "log");
+  // Both (or, on Android, the one) optional steps have a confirmed "done":
+  // the compact row below hides itself even if the user never tapped its
+  // close button. An unresolved/unknown step (done === undefined) never
+  // counts as complete, so the row never disappears on a guess.
+  const setupAllDone =
+    setupShortcuts.length > 0 && setupShortcuts.every((s) => s.done === true);
 
   const FirstRunGuide = (
     <>
@@ -1210,7 +1306,7 @@ export default function DashboardScreen() {
             >
               {step.label}
             </Text>
-            <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
+            <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
           </Pressable>
         ))}
         <GradientCTA
@@ -1354,9 +1450,9 @@ export default function DashboardScreen() {
           loudest action on a brand-new dashboard, ahead of logging anything. */}
       {isExistingUser ? (
       <GlassCard accent style={{ marginBottom: 12, paddingVertical: 12 }}>
-        {postMealTimer != null ? (
+        {postMealTimerForProfile != null ? (
           <PostMealCountdown
-            timer={postMealTimer}
+            timer={postMealTimerForProfile}
             onCancel={cancelEatingTimer}
             onElapsed={onPostMealElapsed}
           />
@@ -1476,7 +1572,7 @@ export default function DashboardScreen() {
         >
           <View className="flex-row items-center justify-between">
             <IconTile icon="stats-chart" size={28} radius={9} />
-            <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
+            <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
           </View>
           <Text
             numberOfLines={1}
@@ -1544,8 +1640,11 @@ export default function DashboardScreen() {
       ) : null}
 
       {/* Compact setup row: the first-run guide's optional steps survive the
-          first record instead of disappearing with it. Stays until closed. */}
-      {isExistingUser && showFinishSetup ? (
+          first record instead of disappearing with it. Stays until closed, OR
+          hides itself the moment every step it still shows is confirmed done
+          (setupAllDone) - the close button below still works independently,
+          same persisted flag as before. */}
+      {isExistingUser && showFinishSetup && !setupAllDone ? (
         <View className="flex-row items-start rounded-2xl border border-hair bg-glass px-3.5 py-3 mb-3">
           <View style={{ flex: 1 }}>
             <Text
@@ -1564,7 +1663,14 @@ export default function DashboardScreen() {
                   className="flex-row items-center rounded-full border border-hair bg-sheet px-3 py-1.5 active:opacity-80"
                   style={{ gap: 5 }}
                 >
-                  <Ionicons name={s.icon} size={12} color={THEME.accent} />
+                  {/* Ticked once its own state (health-sync / native widget
+                      detection) confirms it; an unresolved/unknown state
+                      (s.done === undefined) keeps the plain step icon. */}
+                  <Ionicons
+                    name={s.done ? "checkmark-circle" : s.icon}
+                    size={12}
+                    color={s.done ? GLUCOSE_RICH.target : THEME.accent}
+                  />
                   <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}>
                     {s.label}
                   </Text>

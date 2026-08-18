@@ -23,6 +23,10 @@ export interface PostMealTimerWindow {
   startedAt: number;
   /** epoch ms it is due. */
   endsAt: number;
+  /** Profile the timer was armed for. Absent on a timer persisted before this
+   *  field existed (or a device-wide demo seed) - such a timer is treated as
+   *  belonging to whichever profile is active (legacy compatibility). */
+  profileId?: string;
 }
 
 /**

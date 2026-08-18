@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { I18nManager, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -9,6 +9,7 @@ import { withAlpha } from "./rich/GlassCard";
 import { ScreenHeader } from "./ScreenHeader";
 import { GLUCOSE_RICH, THEME } from "../lib/theme/tokens";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
+import { DirIcon } from "./DirIcon";
 
 /**
  * The settings list row: a tinted icon plate, a label, and an optional value /
@@ -20,6 +21,7 @@ export function Row({
   label,
   value,
   onPress,
+  onLongPress,
   danger,
   right,
 }: {
@@ -27,13 +29,24 @@ export function Row({
   label: string;
   value?: string;
   onPress?: () => void;
+  onLongPress?: () => void;
   danger?: boolean;
   right?: React.ReactNode;
 }) {
+  // RTL: label's flex-1 box relies on LTR-left-aligned slack space to keep it
+  // clear of `value` - ml-3/mr-1 sit at the icon and chevron edges, not at
+  // this boundary, and RN's row mirroring cannot fix that because textAlign
+  // never auto-swaps (see components/form.tsx). Without this, label glues
+  // straight onto value under RTL ("<label>22:00"). Writing marginLeft here
+  // (RN auto-flips it to a physical marginRight under RTL, same trick as
+  // InjectionBodyMap's side badges) adds the missing gap only when it is
+  // actually missing, so LTR stays pixel-identical.
+  const rtl = I18nManager.isRTL;
   return (
     <Pressable
       onPress={onPress}
-      disabled={!onPress}
+      onLongPress={onLongPress}
+      disabled={!onPress && !onLongPress}
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={label}
       className={`flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 ${
@@ -59,11 +72,15 @@ export function Row({
         {label}
       </Text>
       {value ? (
-        <Text className="text-mut text-[13px] mr-1 font-medium" numberOfLines={2}>
+        <Text
+          className="text-mut text-[13px] mr-1 font-medium"
+          style={rtl ? { marginLeft: 8 } : undefined}
+          numberOfLines={2}
+        >
           {value}
         </Text>
       ) : null}
-      {right ?? (onPress ? <Ionicons name="chevron-forward" size={18} color={THEME.muted} /> : null)}
+      {right ?? (onPress ? <DirIcon name="chevron-forward" size={18} color={THEME.muted} /> : null)}
     </Pressable>
   );
 }

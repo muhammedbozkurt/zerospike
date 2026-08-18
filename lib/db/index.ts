@@ -12,11 +12,13 @@ import {
   migrateToV14,
   migrateToV15,
   migrateToV16,
+  migrateToV17,
   stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
 import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "./v14Sql";
 import { V16_CREATE } from "./v16Sql";
+import { V17_CREATE } from "./v17Sql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -31,7 +33,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -240,6 +242,15 @@ export async function initDatabase(): Promise<void> {
     await migrateToV16(db);
   }
 
+  // v16 → v17: the reminders registry - one table backing every scheduled local
+  // reminder (basal/med/glucose/custom), replacing the three separate boolean +
+  // "HH:MM" pairs NotificationPrefs used to carry. Create-only (see
+  // migrateToV17 + v17Sql); the one-time move of the pre-registry settings INTO
+  // this table runs from lib/services/notifications.ts, not from here.
+  if (currentVersion >= 1 && currentVersion < 17) {
+    await migrateToV17(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -411,6 +422,14 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   // Oral medication logging (schema v16), from the SAME statements the v15 → v16
   // migration runs, so a fresh install and a migrated one are the same shape.
   for (const statement of V16_CREATE) {
+    await db.execAsync(statement);
+  }
+
+  // The reminders registry (schema v17), from the SAME statements the v16 → v17
+  // migration runs, so a fresh install and a migrated one are the same shape. A
+  // fresh install never bridges anything (there is no legacy pref to carry): it
+  // simply starts with an empty table.
+  for (const statement of V17_CREATE) {
     await db.execAsync(statement);
   }
 

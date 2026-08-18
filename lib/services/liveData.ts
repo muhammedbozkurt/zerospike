@@ -1,11 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
-import i18n from "../i18n";
+import i18n, { currentLang } from "../i18n";
 import { getLatestSugarLog, getSugarAverageSince } from "../db/logs";
 import { getNotificationPrefs } from "./notificationPrefs";
-import { getPostMealTimerEnd } from "./notifications";
+import { getPostMealTimerState } from "./notifications";
 import { getProfile } from "../db/profiles";
+import { listReminders } from "../db/reminders";
 import { targetBandFor } from "../agpChart";
 import { hypoThreshold, VERY_HIGH_MGDL, formatGlucose } from "../glucose";
 import {
@@ -45,13 +46,16 @@ export const ANDROID_WIDGET_NAME = "Zerospike";
 /** The Android Quick Add widget's registered name (see app.json). */
 export const ANDROID_QUICK_ADD_WIDGET_NAME = "ZerospikeQuickAdd";
 
-export type ReminderKind = "postMeal" | "basal" | "med" | "glucose";
+export type ReminderKind = "postMeal" | "basal" | "med" | "glucose" | "custom";
 
 export interface LiveData {
   /** epoch ms this snapshot was computed. */
   updatedAt: number;
   /** Display unit, so native surfaces format without re-deriving it. */
   unit: GlucoseUnit;
+  /** The active in-app language (e.g. "ar"), so a native surface can mirror the
+   *  app's own writing direction instead of the device's system language. */
+  lang: string;
   /** Last logged reading in mg/dL (canonical storage unit), or null. */
   lastGlucoseMgdl: number | null;
   /** The last reading PRE-FORMATTED in the display unit and the active locale
@@ -150,13 +154,17 @@ export async function computeLiveData(
   // The five reads are independent of one another, so they go out together rather
   // than as a chain of awaits.
   const windowStart = new Date(now - AVG_WINDOW_DAYS * 86_400_000).toISOString();
-  const [latest, avgWindow, prefs, profile, postMealEnd] = await Promise.all([
+  const [latest, avgWindow, prefs, profile, postMealState, reminders] = await Promise.all([
     getLatestSugarLog(profileId),
     getSugarAverageSince(profileId, windowStart),
     getNotificationPrefs(),
     // The profile's own band, so the widget/watch colour matches the app exactly.
     getProfile(profileId),
-    getPostMealTimerEnd(),
+    getPostMealTimerState(),
+    // The reminders registry (schema v17): basal/med/glucose/custom all live
+    // here now, not in prefs.basal/med/glucose - see applyReminders in
+    // ./notifications.ts, which schedules from this same table.
+    listReminders(),
   ]);
   const avgGlucoseMgdl =
     avgWindow.avgMgdl != null ? Math.round(avgWindow.avgMgdl) : null;
@@ -167,29 +175,38 @@ export async function computeLiveData(
     high: targetBand.high,
     veryHigh: VERY_HIGH_MGDL,
   };
+  const tracksOralMeds = profile?.oral_meds_enabled === 1;
 
   const candidates: { at: number; kind: ReminderKind }[] = [];
 
-  if (postMealEnd && postMealEnd > now) {
-    candidates.push({ at: postMealEnd, kind: "postMeal" });
+  // Owner check (mirrors app/(tabs)/index.tsx's postMealTimerForProfile): a
+  // timer armed for a DIFFERENT profile must not surface on this profile's
+  // widget/Live Activity snapshot, or a caregiver who started a countdown on
+  // one profile and switched to another would see it announced as if it were
+  // the new profile's own. A timer with no recorded owner (armed before the
+  // lock existed) still surfaces everywhere, same as before.
+  if (
+    postMealState &&
+    postMealState.endsAt > now &&
+    (postMealState.profileId == null || postMealState.profileId === profileId)
+  ) {
+    candidates.push({ at: postMealState.endsAt, kind: "postMeal" });
   }
-  // The basal reminder is device-level preference AND per-profile mode, exactly
-  // like the scheduler's own gate (activeProfileShowsBasal in notifications.ts).
-  // Without the mode half the widget announced a night-insulin reminder that was
-  // never scheduled, on a snapshot whose own usesInsulin said false.
-  if (prefs.enabled && prefs.basal && insulinModeShowsBasal(insulinModeOf(profile))) {
-    candidates.push({ at: nextOccurrence(prefs.basalTime), kind: "basal" });
-  }
-  // Same two-part gate as the scheduler's activeProfileShowsMeds: device-level
-  // preference AND the per-profile pill flag. Stricter than the scheduler on an
-  // unreadable profile (it keeps the reminder, this drops the row) so the
-  // countdown can never contradict the same snapshot's own usesOralMeds.
-  const tracksOralMeds = profile?.oral_meds_enabled === 1;
-  if (prefs.enabled && prefs.med && tracksOralMeds) {
-    candidates.push({ at: nextOccurrence(prefs.medTime), kind: "med" });
-  }
-  if (prefs.enabled && prefs.glucose) {
-    candidates.push({ at: nextOccurrence(prefs.glucoseTime), kind: "glucose" });
+  // Same gates as applyReminders: the master switch, the row's own enabled
+  // flag, and (basal/med only) the active profile's mode/oral-meds flag.
+  // Without the basal mode half the widget announced a night-insulin reminder
+  // that was never scheduled, on a snapshot whose own usesInsulin said false;
+  // the med gate is stricter than the scheduler's on an unreadable profile (it
+  // keeps the reminder, this drops the row) so the countdown can never
+  // contradict the same snapshot's own usesOralMeds.
+  if (prefs.enabled) {
+    const showsBasal = insulinModeShowsBasal(insulinModeOf(profile));
+    for (const row of reminders) {
+      if (row.enabled !== 1) continue;
+      if (row.type === "basal" && !showsBasal) continue;
+      if (row.type === "med" && !tracksOralMeds) continue;
+      candidates.push({ at: nextOccurrence(row.time), kind: row.type });
+    }
   }
   candidates.sort((a, b) => a.at - b.at);
   const next = candidates[0] ?? null;
@@ -197,6 +214,7 @@ export async function computeLiveData(
   return {
     updatedAt: now,
     unit,
+    lang: currentLang(),
     lastGlucoseMgdl: latest?.glucose_level_mgdl ?? null,
     lastGlucoseDisplay: latest
       ? formatGlucose(latest.glucose_level_mgdl, unit)

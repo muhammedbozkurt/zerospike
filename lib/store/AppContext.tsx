@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { DevSettings, I18nManager } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { initDatabase } from "../db/index";
@@ -16,8 +17,56 @@ import {
   listProfiles,
 } from "../db/profiles";
 import type { UserProfile, Lang } from "../db/types";
-import { initI18n, setLanguage as i18nSetLanguage, currentLang } from "../i18n";
+import i18nInstance, {
+  initI18n,
+  setLanguage as i18nSetLanguage,
+  currentLang,
+  isRTLLang,
+} from "../i18n";
 import { isProCached, verifyProWithStore } from "../services/purchases";
+import { isScreenshotMode } from "../screenshotMode";
+
+/**
+ * The RTL restart confirm is the app's own themed dialog (components/Feedback),
+ * not a native Alert - but that provider is mounted BELOW AppProvider in
+ * app/_layout.tsx, so useFeedback() cannot be called from inside AppProvider
+ * itself (a context is only visible to its DESCENDANTS). RootNavigator - a
+ * descendant of both providers - registers the live confirm function here once
+ * it mounts, so setLanguage below can still show the real dialog.
+ */
+type RTLConfirmFn = (opts: { title: string; message: string }) => Promise<boolean>;
+let rtlConfirmHandler: RTLConfirmFn | null = null;
+export function setRTLConfirmHandler(fn: RTLConfirmFn | null): void {
+  rtlConfirmHandler = fn;
+}
+
+/**
+ * I18nManager.forceRTL only re-lays-out every native view with the new writing
+ * direction once the JS bundle is re-mounted from scratch - flipping the flag
+ * alone changes nothing on screen until that happens. expo-updates' reloadAsync
+ * does that reload without a full OS-level relaunch. The require is lazy (not a
+ * static import) because the native module can be absent from the binary
+ * entirely (not just unavailable at runtime, eg. Expo Go) - a static import
+ * throws at MODULE LOAD, crashing the whole app before this function is ever
+ * called. DevSettings is the fallback there and in some dev-client states. A
+ * final failure is swallowed rather than crashing - the direction still
+ * self-corrects on the next real launch (see the startup sync in
+ * app/_layout.tsx).
+ */
+export async function reloadForDirectionChange(): Promise<void> {
+  try {
+    const Updates = require("expo-updates");
+    await Updates.reloadAsync();
+    return;
+  } catch {
+    // expo-updates missing from the binary or unavailable (Expo Go / some dev-client states)
+  }
+  try {
+    DevSettings.reload();
+  } catch {
+    // no reload path available; the next launch's startup sync still fixes it
+  }
+}
 
 const ACTIVE_PROFILE_KEY = "zerospike.activeProfile";
 const ONBOARDED_KEY = "zerospike.onboarded";
@@ -153,6 +202,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setLanguage = useCallback(async (next: Lang) => {
+    const targetRTL = isRTLLang(next);
+    const directionChanged = targetRTL !== I18nManager.isRTL;
+
     await i18nSetLanguage(next);
     setLang(next);
     // A scheduled reminder keeps the literal text the OS was handed, so every
@@ -161,6 +213,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     void import("../services/notifications").then((m) =>
       m.rescheduleForLanguageChange()
     );
+
+    if (!directionChanged) return;
+
+    // Store-screenshot: the capture pipeline drives the language switch itself
+    // and has nobody to tap a confirm dialog, so the direction flips
+    // unconditionally. The reload still fires here (unlike the passive startup
+    // sync in app/_layout.tsx) - the pipeline expects the new direction on
+    // screen right after this call, and it manages its own relaunches around
+    // that, not around a reload it did not ask for.
+    if (isScreenshotMode()) {
+      I18nManager.allowRTL(targetRTL);
+      I18nManager.forceRTL(targetRTL);
+      await reloadForDirectionChange();
+      return;
+    }
+
+    const approved = rtlConfirmHandler
+      ? await rtlConfirmHandler({
+          title: i18nInstance.t("settings.rtlRestartTitle"),
+          message: i18nInstance.t("settings.rtlRestartBody"),
+        })
+      : false;
+    // Declined (or no host mounted yet to ask): the language choice is already
+    // saved above, and the startup sync in app/_layout.tsx corrects the
+    // direction on the next launch without asking again.
+    if (!approved) return;
+
+    I18nManager.allowRTL(targetRTL);
+    I18nManager.forceRTL(targetRTL);
+    await reloadForDirectionChange();
   }, []);
 
   const completeOnboarding = useCallback(async () => {

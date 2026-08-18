@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { I18nManager, Text, View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -64,6 +64,12 @@ export function StatCard({
 }: StatCardProps) {
   const valueColor = accent ?? THEME.ink;
   const glowColor = glow === true ? THEME.accent : typeof glow === "string" ? glow : undefined;
+  // RTL EXEMPTION: suffixFirst already places the sign on the correct side of
+  // the value (pctParts' own signFirst rule, e.g. Turkish "%92"); RN's
+  // automatic row mirroring would then swap that pair again under RTL and put
+  // the sign back on the wrong side, so this row's order is locked instead of
+  // following reading direction (same fix family as TimeInRangeBar).
+  const rtl = I18nManager.isRTL;
   const suffixNode = suffix ? (
     <Text
       className={`text-mut text-sm font-semibold mb-1 ${suffixFirst ? "mr-1" : "ml-1"}`}
@@ -96,7 +102,7 @@ export function StatCard({
         </Text>
       </View>
 
-      <View className="flex-row items-end">
+      <View className="items-end" style={{ flexDirection: rtl ? "row-reverse" : "row" }}>
         {suffixFirst ? suffixNode : null}
         {display !== undefined ? (
           <Text

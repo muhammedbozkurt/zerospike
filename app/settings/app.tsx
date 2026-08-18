@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../../lib/store/AppContext";
 import type { Lang } from "../../lib/db/types";
 import { applyNotificationPrefs } from "../../lib/services/notifications";
-import { presentCodeRedemption, restore } from "../../lib/services/purchases";
+import { getPlan, presentCodeRedemption, restore, type PlanId } from "../../lib/services/purchases";
 import { hasSpikeConsent, withdrawSpikeConsent } from "../../lib/services/spikeConsent";
 import { SectionLabel } from "../../components/ui";
 import { LanguagePicker } from "../../components/LanguagePicker";
@@ -26,6 +26,12 @@ export default function AppSettings() {
   const { contentColumn } = useLayout();
   const [restoring, setRestoring] = useState(false);
   const [spikeConsent, setSpikeConsent] = useState(false);
+  // Which plan unlocked Pro, so the "Pro active" row can open store subscription
+  // management for a monthly/annual subscriber but not for a lifetime purchase
+  // (there is no subscription to manage there). Starts null (unknown): until it
+  // resolves the row stays clickable, same as an indeterminate plan - it must
+  // never default to LOOKING locked while the read is still in flight.
+  const [proPlan, setProPlan] = useState<PlanId | null>(null);
 
   // Re-read on every focus, not just on mount: this screen stays mounted
   // under the stack while the user grants or withdraws consent on /spike, so
@@ -35,6 +41,13 @@ export default function AppSettings() {
       if (!spikeConfigured) return;
       void hasSpikeConsent().then(setSpikeConsent);
     }, [])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isProUser) return;
+      void getPlan().then(setProPlan);
+    }, [isProUser])
   );
 
   async function onWithdrawSpikeConsent() {
@@ -55,6 +68,16 @@ export default function AppSettings() {
     await setLanguage(next);
     // Reschedule so reminder text matches the new language.
     await applyNotificationPrefs();
+  }
+
+  // Opens the store's native subscription management page. Lifetime is a
+  // one-time purchase with nothing to manage there, so that row stays inert.
+  function onManageSubscription() {
+    const url =
+      Platform.OS === "android"
+        ? "https://play.google.com/store/account/subscriptions?package=com.greeneyeapp.zerospike"
+        : "https://apps.apple.com/account/subscriptions";
+    Linking.openURL(url);
   }
 
   async function onRedeemCode() {
@@ -106,6 +129,8 @@ export default function AppSettings() {
         <Row
           icon="checkmark-circle"
           label={t("settings.proActive")}
+          value={proPlan !== "lifetime" ? t("settings.manageSubscription") : undefined}
+          onPress={proPlan !== "lifetime" ? onManageSubscription : undefined}
           right={<Ionicons name="sparkles" size={18} color={THEME.accent} />}
         />
       ) : (

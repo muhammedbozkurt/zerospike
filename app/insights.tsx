@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  I18nManager,
   Platform,
   Pressable,
   ScrollView,
@@ -44,15 +45,22 @@ import {
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
 import { useLayout } from "../lib/useLayout";
 import { DateRangePicker, type PickedRange } from "../components/DateRangePicker";
-import { formatDate } from "../lib/format";
+import {
+  closeLtrIsolate,
+  formatDate,
+  isolateLtr,
+  openLtrIsolate,
+  stripBidiMarks,
+} from "../lib/format";
 import { isScreenshotMode } from "../lib/screenshotMode";
-import { maybeReviewOnWeeklyView } from "../lib/services/review";
+import { maybeRequestReview } from "../lib/services/review";
 import { ChartCard } from "../components/charts/ChartCard";
 import { HourlyChart } from "../components/charts/HourlyChart";
 import { TrendChart } from "../components/charts/TrendChart";
 import { CHART, CHART_HEIGHT } from "../components/charts/theme";
 import { StatCard } from "../components/StatCard";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { DirIcon } from "../components/DirIcon";
 import { Skeleton } from "../components/Skeleton";
 import { useFeedback } from "../components/Feedback";
 import { logEvent } from "../lib/analytics";
@@ -221,7 +229,13 @@ function InsightsSkeleton({
           {upper(t("insights.agpTitle"))}
         </Text>
         <Skeleton height={84} radius={RADIUS.md} />
-        <View className="flex-row justify-between mt-1">
+        {/* Hour axis: physically LTR always (00 -> 24 left to right), same
+            fixed-order lock as TimeInRangeBar - it mirrors the SVG curve
+            above, which never mirrors either. */}
+        <View
+          className="justify-between mt-1"
+          style={{ flexDirection: I18nManager.isRTL ? "row-reverse" : "row" }}
+        >
           {["00", "06", "12", "18", "24"].map((h) => (
             <Text key={h} style={{ color: THEME.muted, fontSize: 10 }}>
               {h}
@@ -333,6 +347,7 @@ export default function InsightsScreen() {
   const { activeProfile, isProUser } = useApp();
   const { isWide } = useLayout();
   const { actionSheet } = useFeedback();
+  const rtl = I18nManager.isRTL;
   // Tablet: the report is centred and capped instead of stretching edge to edge.
   const bodyColumn: ViewStyle | undefined = isWide
     ? { width: "100%", maxWidth: GRID_MAX_WIDTH, alignSelf: "center" }
@@ -556,7 +571,7 @@ export default function InsightsScreen() {
   // to last. Viewing it is one of the review-prompt triggers.
   const digest = useMemo(() => weeklyDigest(sugar, tirBand), [sugar, tirBand]);
   useEffect(() => {
-    if (isProUser && !loading && digest.length > 0) void maybeReviewOnWeeklyView();
+    if (isProUser && !loading && digest.length > 0) void maybeRequestReview("weekly_insights_view");
   }, [isProUser, loading, digest.length]);
   const weeklyText = (s: WeeklySentence): string => {
     const u = glucoseUnitLabel(unit);
@@ -621,22 +636,29 @@ export default function InsightsScreen() {
   });
   const hourlyEmpty = hourlyBars.every((b) => b.value == null);
 
+  // Locale-correct short "day.month" axis label (digit order, separator - all
+  // Intl's call, not a hand-written "GG.AA"): a plain toLocaleDateString runtime
+  // without full Intl falls back to the old hand-built form.
+  const shortDayMonth = (d: Date) => {
+    try {
+      return d.toLocaleDateString(formatLocale(), { day: "2-digit", month: "2-digit" });
+    } catch {
+      const two = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      return `${two(d.getDate())}.${two(d.getMonth() + 1)}`;
+    }
+  };
+
   // The window's first day, for the trend chart's left axis label.
   const windowStartLabel = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - (windowDays - 1));
-    const two = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    return `${two(d.getDate())}.${two(d.getMonth() + 1)}`;
+    return shortDayMonth(d);
   }, [windowDays]);
 
   // Trend chart axis: with a custom range the x-scale spans the range's own day
   // count and the labels come from the range's real ends (end = "Today" only when
   // it actually is today), so the last point reaches the right edge.
-  const shortDate = (ms: number) => {
-    const d = new Date(ms);
-    const two = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-    return `${two(d.getDate())}.${two(d.getMonth() + 1)}`;
-  };
+  const shortDate = (ms: number) => shortDayMonth(new Date(ms));
   const trendWindowDays = customRange ? rangeWindowDays(customRange) : windowDays;
   const trendStartLabel = customRange ? shortDate(customRange.start) : windowStartLabel;
   const endIsToday = customRange
@@ -660,9 +682,9 @@ export default function InsightsScreen() {
       : undefined;
   const tirTrend =
     trend.tirDelta != null
-      ? `${trend.tirDelta >= 0 ? "▲" : "▼"} ${Math.abs(
-          Math.round(trend.tirDelta)
-        )}% ${t("insights.vsPrevious")}`
+      ? `${trend.tirDelta >= 0 ? "▲" : "▼"} ${pct(
+          Math.abs(Math.round(trend.tirDelta))
+        )} ${t("insights.vsPrevious")}`
       : undefined;
 
   /** The mockup's header chip: the active window, opening the window picker. */
@@ -693,7 +715,9 @@ export default function InsightsScreen() {
           // only THEN shown a lock over the result. The option is already marked
           // Pro, so it goes where it actually leads.
           onPress: () =>
-            isProUser ? setRangePickerOpen(true) : router.push("/paywall"),
+            isProUser
+              ? setRangePickerOpen(true)
+              : router.push({ pathname: "/paywall", params: { reason: "insights" } }),
         },
       ],
     });
@@ -720,16 +744,24 @@ export default function InsightsScreen() {
             style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
           >
             {/* A custom range puts two dates in one chip next to the back arrow
-                and the title; on a narrow screen that overflowed. Same guard the
-                rest of this screen's labels use. */}
+                and the title; on a narrow screen that overflowed. Bidi: root
+                cause traced on-device - formatDate() under "ar" embeds its
+                OWN RLM marks before every "/" (ICU's ar date pattern, e.g.
+                "28‏/7‏/2026"), which still wins the bidi resolution INSIDE
+                our own isolateLtr() wrap and reorders the date's digit
+                groups; stripBidiMarks() clears those before we compose and
+                isolate the pair ourselves. writingDirection stays on as a
+                cheap extra (it did nothing on its own, but costs nothing). */}
             <Text
-              style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}
+              style={{ color: THEME.ink, fontSize: 11, fontWeight: "700", writingDirection: "ltr" }}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.8}
             >
               {customRange
-                ? `${formatDate(new Date(customRange.start).toISOString())} - ${formatDate(new Date(customRange.end).toISOString())}`
+                ? isolateLtr(
+                    `${stripBidiMarks(formatDate(new Date(customRange.start).toISOString()))} - ${stripBidiMarks(formatDate(new Date(customRange.end).toISOString()))}`
+                  )
                 : t("insights.windowDays", { n: windowDays })}
             </Text>
             <Ionicons
@@ -852,7 +884,23 @@ export default function InsightsScreen() {
                               ],
                             ] as const
                           ).map(([name, color, value]) => (
-                            <View key={name} className="flex-row items-center">
+                            // RTL EXEMPTION: dot -> label -> percent is a fixed
+                            // layout (percent pinned to the row's far edge via
+                            // the label's flex:1), not a reading-direction list.
+                            // Locked to physical-row order like TimeInRangeBar's
+                            // legend, because RN's automatic row mirroring alone
+                            // breaks it: the label's default (non-swapping,
+                            // see components/form.tsx) LEFT text alignment would
+                            // stay put while the row itself reversed, gluing the
+                            // percent straight onto the label with the dot left
+                            // stranded across the whole flex gap on the other
+                            // side - on-device this read "منخفض6%" with the dot
+                            // floating away from its own row.
+                            <View
+                              key={name}
+                              className="items-center"
+                              style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+                            >
                               <View
                                 style={{
                                   width: 8,
@@ -867,22 +915,54 @@ export default function InsightsScreen() {
                                   fontSize: 12,
                                   fontWeight: "700",
                                   flex: 1,
-                                  marginLeft: 8,
+                                  // RN auto-flips marginLeft/Right independently
+                                  // of the flexDirection lock above, so the key
+                                  // itself has to be pre-swapped (same trick as
+                                  // InjectionBodyMap's side badges) to keep
+                                  // landing on the dot's side.
+                                  [rtl ? "marginRight" : "marginLeft"]: 8,
                                 }}
                               >
                                 {name}
                               </Text>
-                              <Text style={[TABULAR, { color: THEME.muted, fontSize: 12 }]}>
-                                {pctText(value)}
+                              {/* Bidi: a bare "12%" can still get its sign
+                                  reordered under an RTL base paragraph
+                                  direction; pin it LTR like the other
+                                  number+sign pairs on this screen. */}
+                              <Text
+                                style={[
+                                  TABULAR,
+                                  { color: THEME.muted, fontSize: 12, writingDirection: "ltr" },
+                                ]}
+                              >
+                                {isolateLtr(pctText(value))}
                               </Text>
                             </View>
                           ))}
                         </View>
                       </View>
-                      <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 10 }}>
+                      {/* Bidi: "80-160 mg/dL" reads back to front under RTL
+                          (the hyphen splits it into two number runs that get
+                          reordered); writingDirection alone was verified NOT
+                          enough on-device. The locale string is a single
+                          fixed template ("{{word}} {{min}}-{{max}} {{unit}}",
+                          same shape in all 9 locales) this task cannot edit,
+                          so the LTR isolate is smuggled through it instead:
+                          opening it inside `min` and closing it inside `max`
+                          wraps "min-max" (hyphen included, since that literal
+                          "-" sits between the two placeholders in the
+                          template) as one atomic block, while the
+                          translated word stays outside it. */}
+                      <Text
+                        style={{
+                          color: THEME.muted,
+                          fontSize: 11,
+                          marginTop: 10,
+                        }}
+                      >
                         {t("glucose.bandLabel", {
-                          min: formatGlucose(band.low, unit),
-                          max: formatGlucose(band.high, unit),
+                          min: openLtrIsolate(formatGlucose(band.low, unit)),
+                          max: closeLtrIsolate(formatGlucose(band.high, unit)),
                           unit: u,
                         })}
                       </Text>
@@ -911,7 +991,14 @@ export default function InsightsScreen() {
                             targetBand={{ min: band.low, max: band.high }}
                             style={{ alignSelf: "stretch", width: "100%" }}
                           />
-                          <View className="flex-row justify-between mt-1">
+                          {/* Hour axis: physically LTR always (00 -> 24 left to
+                              right), same fixed-order lock as TimeInRangeBar -
+                              it mirrors the SVG curve above, which never
+                              mirrors either. */}
+                          <View
+                            className="justify-between mt-1"
+                            style={{ flexDirection: I18nManager.isRTL ? "row-reverse" : "row" }}
+                          >
                             {["00", "06", "12", "18", "24"].map((h) => (
                               <Text key={h} style={{ color: THEME.muted, fontSize: 10 }}>
                                 {h}
@@ -1490,7 +1577,9 @@ export default function InsightsScreen() {
                 {/* Free 7-day: nudge to Pro for the longer windows */}
                 {!premium ? (
                   <Pressable
-                    onPress={() => router.push("/paywall")}
+                    onPress={() =>
+                      router.push({ pathname: "/paywall", params: { reason: "insights" } })
+                    }
                     className="rounded-2xl p-4 mt-4 flex-row items-center active:opacity-80"
                     style={{
                       borderWidth: 1,
@@ -1510,7 +1599,7 @@ export default function InsightsScreen() {
                     >
                       {t("insights.freeUpsell")}
                     </Text>
-                    <Ionicons name="chevron-forward" size={16} color={BRAND} />
+                    <DirIcon name="chevron-forward" size={16} color={BRAND} />
                   </Pressable>
                 ) : null}
               </View>
@@ -1550,7 +1639,9 @@ export default function InsightsScreen() {
                     </Text>
                     <GradientCTA
                       label={t("paywall.cta")}
-                      onPress={() => router.push("/paywall")}
+                      onPress={() =>
+                        router.push({ pathname: "/paywall", params: { reason: "insights" } })
+                      }
                       style={{ alignSelf: "stretch" }}
                     />
                   </View>

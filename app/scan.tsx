@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, I18nManager, Linking, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
@@ -141,11 +141,14 @@ export default function ScanScreen() {
     </View>
   );
 
+  // RTL EXEMPTION: this sits over the camera viewfinder, not in reading flow -
+  // it must stay in the physical top-right corner. "right-5" (className) would
+  // auto-swap to the left under RTL, so the anchor is set by hand instead.
   const CloseButton = (
     <Pressable
       onPress={() => router.back()}
-      className="absolute right-5"
-      style={{ top: insets.top + 8 }}
+      className="absolute"
+      style={{ top: insets.top + 8, [I18nManager.isRTL ? "left" : "right"]: 20 }}
       hitSlop={10}
       accessibilityLabel={t("common.close")}
     >

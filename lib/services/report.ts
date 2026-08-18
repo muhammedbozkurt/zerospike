@@ -81,6 +81,16 @@ function periodLabel(tag: PeriodTag): string {
   return i18n.t(`period.${tag}`);
 }
 
+/** A medication row's printed Note cell: name and note share the one column
+ *  (the table's column set does not grow) as "name · note", or bare name when
+ *  there is no note - identical to every row logged before notes existed. */
+function medNoteCell(name: string | null, note: string | null): string {
+  const n = (name ?? "").trim();
+  const nt = (note ?? "").trim();
+  if (!nt) return n;
+  return n ? `${n} · ${nt}` : nt;
+}
+
 /** The A4 report's AGP plot area, in the SVG's own coordinate space. */
 const AGP_BOX: ChartBox = {
   width: 540,
@@ -757,7 +767,7 @@ export async function exportLogsPdf(
     .map((e) => {
       const { date, time } = fmtDateTime(e.logged_at);
       const m = e as Extract<typeof e, { kind: "med" }>;
-      return { date, time, name: m.name ?? "" };
+      return { date, time, name: medNoteCell(m.name, m.note) };
     });
 
   const meals = inWindow

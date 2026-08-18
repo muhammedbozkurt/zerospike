@@ -9,6 +9,7 @@ import { deleteProfile, listProfiles } from "../../lib/db/profiles";
 import { clearAllLogs } from "../../lib/db/index";
 import { exportLogsCsv } from "../../lib/services/export";
 import { exportLogsPdf } from "../../lib/services/report";
+import { maybeRequestReview } from "../../lib/services/review";
 import { INSIGHTS_WINDOWS } from "../../lib/insights";
 import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { setProOverride } from "../../lib/services/purchases";
@@ -20,6 +21,7 @@ import {
 import type { GlucoseUnit } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
+import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
 import { formatLocale } from "../../lib/format";
@@ -67,6 +69,7 @@ export default function DataSettings() {
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [rangePicker, setRangePicker] = useState<null | "pdf" | "csv">(null);
+  const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
@@ -89,7 +92,7 @@ export default function DataSettings() {
   function onExport() {
     if (!activeProfile) return;
     if (!isProUser) {
-      router.push("/paywall");
+      router.push({ pathname: "/paywall", params: { reason: "export" } });
       return;
     }
     actionSheet({
@@ -106,14 +109,18 @@ export default function DataSettings() {
     setExportingPdf(true);
     const res = await exportLogsPdf(activeProfile, days, range);
     setExportingPdf(false);
-    if (res.ok) toast(t("report.created"), "success");
-    else toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
+    if (res.ok) {
+      toast(t("report.created"), "success");
+      void maybeRequestReview("pdf_export_success");
+    } else {
+      toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
+    }
   }
 
   function onExportPdf() {
     if (!activeProfile) return;
     if (!isProUser) {
-      router.push("/paywall");
+      router.push({ pathname: "/paywall", params: { reason: "export" } });
       return;
     }
     actionSheet({
@@ -178,6 +185,18 @@ export default function DataSettings() {
     await setActiveProfileId(next.id);
     toast(t("profiles.switchedTo", { name: next.name }), "info");
     router.back();
+  }
+
+  // Opens the shared ProfileSwitcher sheet (same picker as the tab-bar pill);
+  // a free/single-profile user is routed to the paywall instead, mirroring the
+  // pill's own gating so this row never opens a switch list with nothing to
+  // switch to.
+  function onMultiProfilePress() {
+    if (!isProUser && profiles.length <= 1) {
+      router.push({ pathname: "/paywall", params: { reason: "profiles" } });
+      return;
+    }
+    setProfileSwitcherOpen(true);
   }
 
   async function onToggleSimPro(value: boolean) {
@@ -266,7 +285,12 @@ export default function DataSettings() {
         icon="people-outline"
         label={t("settings.multiProfile")}
         value={String(profiles.length)}
-        right={<View />}
+        onPress={onMultiProfilePress}
+      />
+      <ProfileSwitcher
+        hideTrigger
+        open={profileSwitcherOpen}
+        onOpenChange={setProfileSwitcherOpen}
       />
 
       <SectionLabel>{t("settings.dataSection")}</SectionLabel>

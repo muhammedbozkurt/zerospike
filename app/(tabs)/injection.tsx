@@ -16,6 +16,7 @@ import Animated from "react-native-reanimated";
 
 import { useApp } from "../../lib/store/AppContext";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
+import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { Stepper } from "../../components/Stepper";
 import { InlineDateTimePicker } from "../../components/InlineDateTimePicker";
@@ -394,7 +395,7 @@ export default function InjectionScreen() {
         logged_at: loggedAt.toISOString(),
       });
       logEvent("log_added", { kind: "insulin", source: "manual" });
-      void noteLogAndMaybeReview();
+      void noteLogAndMaybeReview("log_insulin");
       void noteJournalActivity();
       hapticSuccess();
       toast(t("injection.saved"), "success");
@@ -614,7 +615,7 @@ export default function InjectionScreen() {
             {inj.source === "calculator" ? ` · ${t("injection.fromCalculator")}` : ""}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
+        <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
       </Pressable>
     ),
     [onRowLongPress, t]
@@ -738,7 +739,7 @@ export default function InjectionScreen() {
           className="flex-row items-center justify-center rounded-xl py-2.5 mt-3"
           style={{ backgroundColor: withAlpha(THEME.accent, 0.15) }}
         >
-          <Ionicons name="arrow-forward-outline" size={16} color={THEME.accent} />
+          <DirIcon name="arrow-forward-outline" size={16} color={THEME.accent} />
           <Text style={{ color: THEME.accent, fontWeight: "700", marginLeft: 8, fontSize: 13 }}>
             {t("injection.useThisSite")}
           </Text>

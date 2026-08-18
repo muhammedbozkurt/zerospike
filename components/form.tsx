@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import {
   Animated,
   Easing,
+  I18nManager,
   Pressable,
   Text,
   TextInput,
@@ -11,6 +12,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { INPUT_TEXT, THEME } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
+import { DirIcon } from "./DirIcon";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -90,12 +92,22 @@ export function InputRow({
           {/* The row's caption and its unit are SIBLINGS of the field, so the
               field itself announced as an unlabelled text box holding a number.
               A caller can still override either. */}
+          {/* RTL: textAlign never auto-swaps (only Yoga's own left/right/margin
+              props do), so without this the field would stay right-aligned even
+              after the row itself mirrors, leaving the number stranded away
+              from its unit. Flipped by hand to stay flush against `suffix`;
+              writingDirection is pinned LTR too since this field only ever
+              holds digits and a decimal separator. */}
           <TextInput
             placeholderTextColor={THEME.muted}
             accessibilityLabel={suffix ? `${label}, ${suffix}` : label}
             accessibilityHint={hint}
-            className="text-right font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
-            style={[INPUT_TEXT, large ? { fontSize: 19 } : null]}
+            className="font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
+            style={[
+              INPUT_TEXT,
+              { textAlign: I18nManager.isRTL ? "left" : "right", writingDirection: "ltr" },
+              large ? { fontSize: 19 } : null,
+            ]}
             {...input}
           />
           {suffix ? (
@@ -138,7 +150,7 @@ export function ActionRow({
         ) : null}
         <Text className="flex-1 text-[15px] text-ink">{label}</Text>
         <Text className="text-ink font-semibold mr-1.5">{value}</Text>
-        <Ionicons name="chevron-forward" size={16} color={THEME.muted} />
+        <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
       </Pressable>
       {!last ? <View className="h-px bg-glass ml-4" /> : null}
     </View>

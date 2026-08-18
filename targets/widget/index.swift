@@ -73,6 +73,7 @@ extension LiveData {
   static let placeholderSample = LiveData(
     updatedAt: 0,
     unit: "mmol",
+    lang: nil,
     lastGlucoseMgdl: 101,
     lastGlucoseDisplay: "5.6",
     lastGlucoseAt: nil,
@@ -158,9 +159,28 @@ struct ZerospikeWidgetView: View {
         smallView
       }
     }
-    // Tapping the widget lands on the dashboard (scheme registered in app.json;
-    // expo-router resolves the root path to the journal).
-    .widgetURL(URL(string: "zerospike:///"))
+    .widgetURL(tapURL)
+    // Mirrors the app's OWN in-app language, not the device's system
+    // language: a user reading the app in Arabic sees the widget flip too,
+    // even on an English device, and vice versa. No `lang` (older snapshot)
+    // leaves the environment untouched, i.e. the device's own direction.
+    .applyingLayoutDirection(layoutDirection(forLang: entry.data?.lang))
+  }
+
+  /// Lock-screen accessories are glanced at mid-day far more than the home
+  /// screen tiles, so their tap jumps straight into the dashboard's glucose
+  /// quick-add sheet: `?sheet=glucose` is the exact deep link QuickAdd.swift's
+  /// glucose shortcut already uses and app/(tabs)/index.tsx's `sheet` param
+  /// reader already answers - no new param invented here. Home-screen families
+  /// keep the plain dashboard-open link (scheme registered in app.json;
+  /// expo-router resolves the root path to the journal).
+  private var tapURL: URL? {
+    switch family {
+    case .accessoryInline, .accessoryRectangular:
+      return URL(string: "zerospike:///?sheet=glucose")
+    default:
+      return URL(string: "zerospike:///")
+    }
   }
 
   /// Home-screen small: the pinned value, its context line, and the countdown
@@ -184,6 +204,9 @@ struct ZerospikeWidgetView: View {
           .font(.system(size: 11, weight: .medium))
           .foregroundColor(GlucoseColor.muted)
       }
+      // Locked LTR: a value+unit pair (e.g. "110 mg/dL") must keep the number
+      // before the unit even when the rest of the widget mirrors for RTL.
+      .environment(\.layoutDirection, .leftToRight)
       .padding(.top, 1)
 
       Text(metaLine)
@@ -225,6 +248,8 @@ struct ZerospikeWidgetView: View {
             .font(.system(size: 12, weight: .medium))
             .foregroundColor(GlucoseColor.muted)
         }
+        // Locked LTR, same reasoning as smallView's reading+unit pair above.
+        .environment(\.layoutDirection, .leftToRight)
         .padding(.top, 2)
 
         Text(metaLine)
@@ -263,6 +288,8 @@ struct ZerospikeWidgetView: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(GlucoseColor.muted)
             }
+            // Locked LTR, same reasoning as the pinned reading+unit pair above.
+            .environment(\.layoutDirection, .leftToRight)
           }
         }
 
@@ -328,7 +355,15 @@ struct ZerospikeWidgetView: View {
   /// in the system material, so an explicit cyan or mint is flattened to the same
   /// grey as everything else. What the OS does honour is the hierarchy, so the
   /// primary line stays `.primary` and everything under it uses `.secondary` and
-  /// lets the material separate them.
+  /// lets the material separate them. `AccessoryWidgetBackground()` stays out on
+  /// purpose - see WidgetGround above: on this exact family it prints a heavy grey
+  /// tray behind the text instead of the vibrant material the row is meant to sit
+  /// in, which hurts legibility rather than helping it.
+  ///
+  /// The reading also carries `.widgetAccentable()`: when the user picks a Lock
+  /// Screen tint, only marked content takes it, so the value keeps standing apart
+  /// from the secondary line even in that mode instead of the two flattening to
+  /// the same tint.
   private var rectangularView: some View {
     VStack(alignment: .leading, spacing: 2) {
       HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -338,10 +373,13 @@ struct ZerospikeWidgetView: View {
           .lineLimit(1)
           .minimumScaleFactor(0.6)
           .foregroundStyle(.primary)
+          .widgetAccentable()
         Text(entry.data?.unitLabel ?? "")
           .font(.system(size: 11, weight: .medium))
           .foregroundStyle(.secondary)
       }
+      // Locked LTR, same reasoning as the home-screen reading+unit pairs above.
+      .environment(\.layoutDirection, .leftToRight)
 
       if let due = entry.data?.nextReminderDate, due > entry.date {
         HStack(alignment: .center, spacing: 4) {
@@ -372,8 +410,12 @@ struct ZerospikeWidgetView: View {
 
   /// Lock-screen inline accessory: a single short string (OS-constrained to one
   /// line + an optional glyph), so just the pinned reading and its unit.
+  /// `.widgetAccentable()` for the same reason as the rectangular family's
+  /// reading: it picks up a user-chosen Lock Screen tint instead of the default
+  /// untinted rendering.
   private var inlineView: some View {
     Text("\(reading) \(entry.data?.unitLabel ?? "")")
+      .widgetAccentable()
   }
 }
 

@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { AppBackground, GlassCard } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { DirIcon } from "../components/DirIcon";
 import { FeedbackHost } from "../components/Feedback";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
@@ -144,7 +145,7 @@ function SourcesScreen() {
                 <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }}>
                   {ref.host}
                 </Text>
-                <Ionicons
+                <DirIcon
                   name="chevron-forward"
                   size={12}
                   color={THEME.accent}

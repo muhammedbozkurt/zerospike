@@ -26,6 +26,7 @@ import {
 import { getRotationCycleStart } from "../lib/rotationCycle";
 import { InjectionBodyMap } from "./InjectionBodyMap";
 import { Skeleton } from "./Skeleton";
+import { DirIcon } from "./DirIcon";
 import { checkDose } from "../lib/insulin";
 import { logCrash, logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
@@ -333,7 +334,7 @@ export function InjectionEditSheet({
                     style={{ marginLeft: -4 }}
                     className="p-1"
                   >
-                    <Ionicons name="chevron-back" size={22} color={THEME.muted} />
+                    <DirIcon name="chevron-back" size={22} color={THEME.muted} />
                   </Pressable>
                 ) : null}
                 <Text
@@ -508,7 +509,7 @@ export function InjectionEditSheet({
                       >
                         {siteSummaryLabel}
                       </Text>
-                      <Ionicons name="chevron-forward-outline" size={16} color={THEME.muted} />
+                      <DirIcon name="chevron-forward-outline" size={16} color={THEME.muted} />
                     </Pressable>
                     {hasSite ? (
                       <Pressable

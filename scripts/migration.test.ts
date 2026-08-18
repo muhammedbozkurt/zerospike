@@ -1,8 +1,8 @@
 /**
- * Schema v8/v9/v10/v11/v12/v13/v14/v15/v16 migration test.
+ * Schema v8/v9/v10/v11/v12/v13/v14/v15/v16/v17 migration test.
  *
  * Builds a real v7-shaped (or v8-shaped) database, seeds it with rows that
- * exercise the edge cases, runs the REAL migrateToV8..V16 functions from
+ * exercise the edge cases, runs the REAL migrateToV8..V17 functions from
  * lib/db/migrations.ts (R10 FAZ 4, no hand-copied re-implementation), and
  * asserts every row survives and every shape is correct.
  *
@@ -10,6 +10,8 @@
  * (execAsync / getAllAsync / withTransactionAsync); `adapt()` below is a thin
  * wrapper so those same functions run unmodified against node:sqlite's
  * synchronous DatabaseSync here: glue, not a second implementation.
+ * lib/db/remindersBridge.ts (the v17 legacy-reminders bridge) additionally
+ * calls getFirstAsync/runAsync, which adapt() also wraps for the same reason.
  *
  * Run: npx tsx scripts/migration.test.ts
  */
@@ -27,6 +29,7 @@ import {
   migrateToV14,
   migrateToV15,
   migrateToV16,
+  migrateToV17,
   stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
@@ -52,6 +55,12 @@ import {
 } from "../lib/db/v11Sql";
 import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "../lib/db/v15Sql";
 import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "../lib/db/v16Sql";
+import { V17_CREATE } from "../lib/db/v17Sql";
+import {
+  bridgeLegacyReminders,
+  REMINDERS_BRIDGE_KEY,
+  type LegacyReminderPrefs,
+} from "../lib/db/remindersBridge";
 
 let passed = 0;
 let failed = 0;
@@ -91,6 +100,14 @@ function adapt(db: DatabaseSync) {
     getAllAsync: async (sql: string, params: unknown[] = []) => {
       return db.prepare(sql).all(...(params as never[]));
     },
+    // Only bridgeLegacyReminders (lib/db/remindersBridge.ts) calls these two;
+    // none of the migrateToV* functions do.
+    getFirstAsync: async (sql: string, params: unknown[] = []) => {
+      return db.prepare(sql).get(...(params as never[]));
+    },
+    runAsync: async (sql: string, params: unknown[] = []) => {
+      db.prepare(sql).run(...(params as never[]));
+    },
     withTransactionAsync: async (fn: () => Promise<void>) => {
       db.exec("BEGIN;");
       try {
@@ -101,8 +118,9 @@ function adapt(db: DatabaseSync) {
         throw e;
       }
     },
-    // deno-lint/tsc: only the three members above are ever called by
-    // migrateToV8/V9/V10/V11; the rest of expo-sqlite's surface is unused here.
+    // deno-lint/tsc: only the members above are ever called by
+    // migrateToV8..V17 / bridgeLegacyReminders; the rest of expo-sqlite's
+    // surface is unused here.
   } as unknown as Parameters<typeof migrateToV8>[0];
 }
 
@@ -2193,7 +2211,8 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 16", /const SCHEMA_VERSION = 16;/.test(indexSrc));
+    // SCHEMA_VERSION itself has since moved past v16 (see M3, "SCHEMA_VERSION is
+    // 17"); this section only checks the v15 → v16 step and the fresh-install shape.
     ok(
       "the v15 → v16 step runs the real migration",
       /currentVersion < 16\)\s*\{\s*await migrateToV16\(db\);/.test(indexSrc)
@@ -2243,6 +2262,330 @@ async function main() {
     fresh.close();
   }
 
+  // ── M. v17 reminders registry ───────────────────────────────────────────────
+  section("M. v17 reminders registry: schema shape");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+
+    ok(
+      "reminders table exists",
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='reminders';")
+        .get() !== undefined
+    );
+    const cols = columns(db, "reminders");
+    for (const name of ["id", "type", "label", "time", "enabled", "sort", "created_at"]) {
+      ok(`reminders.${name} exists`, cols.has(name));
+    }
+    eq("type is NOT NULL", cols.get("type")?.notnull, 1);
+    eq("label is nullable", cols.get("label")?.notnull, 0);
+    eq("time is NOT NULL", cols.get("time")?.notnull, 1);
+    eq("enabled is NOT NULL", cols.get("enabled")?.notnull, 1);
+    eq("enabled defaults to 1", String(cols.get("enabled")?.dflt_value), "1");
+    eq("sort is NOT NULL", cols.get("sort")?.notnull, 1);
+    eq("sort defaults to 0", String(cols.get("sort")?.dflt_value), "0");
+    eq("created_at is NOT NULL", cols.get("created_at")?.notnull, 1);
+    // Device-level, not per-profile - like NotificationPrefs: no profile_id and
+    // no foreign key at all, unlike med_logs / injection_logs / meal_logs.
+    ok("reminders carries no profile_id column", !cols.has("profile_id"));
+    ok(
+      "and no foreign key",
+      (db.prepare("PRAGMA foreign_key_list(reminders);").all() as unknown[]).length === 0
+    );
+
+    ok("the sort index exists", indexNames(db).has("idx_reminders_sort"));
+
+    // The CHECK is enforced, not just documentation.
+    const insertType = (type: string) =>
+      !refused(
+        db,
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at)
+         VALUES ('${type}-row', '${type}', NULL, '08:00', 1, 0, 1);`
+      );
+    ok("type='glucose' is accepted", insertType("glucose"));
+    ok("type='med' is accepted", insertType("med"));
+    ok("type='basal' is accepted", insertType("basal"));
+    ok("type='custom' is accepted", insertType("custom"));
+    ok(
+      "an unknown type is refused",
+      refused(
+        db,
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at)
+         VALUES ('bogus-row', 'bogus', NULL, '08:00', 1, 0, 1);`
+      )
+    );
+    eq("four rows accepted, one refused", count(db, "reminders"), 4);
+
+    // A custom reminder's label is exactly what the user typed; the built-in
+    // three carry none (their copy comes from i18n at schedule time - see
+    // reminderContent in lib/services/notifications.ts).
+    db.exec("UPDATE reminders SET label = 'Vitamin D' WHERE id = 'custom-row';");
+    eq(
+      "a custom row keeps its label",
+      (
+        db.prepare("SELECT label AS l FROM reminders WHERE id='custom-row';").get() as {
+          l: string;
+        }
+      ).l,
+      "Vitamin D"
+    );
+    db.close();
+  }
+
+  section("M2. v17 idempotence");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at)
+       VALUES ('r1', 'basal', NULL, '22:00', 1, 0, 1753603200000);`
+    );
+
+    let reran = true;
+    try {
+      await migrateToV17(adapt(db));
+      await migrateToV17(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v17 threw: ${String(e)}`);
+    }
+    ok("v17 is safe to re-run", reran);
+    eq(
+      "re-running keeps exactly one copy of the sort index",
+      (
+        db
+          .prepare(
+            "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='index' AND name='idx_reminders_sort';"
+          )
+          .get() as { c: number }
+      ).c,
+      1
+    );
+    eq("re-running keeps the recorded row", count(db, "reminders"), 1);
+    eq(
+      "and its value intact",
+      (
+        db.prepare("SELECT time AS t FROM reminders WHERE id='r1';").get() as {
+          t: string;
+        }
+      ).t,
+      "22:00"
+    );
+    db.close();
+  }
+
+  section("M3. v17 statements and fresh-install equivalence");
+  {
+    ok(
+      "V17_CREATE declares reminders",
+      V17_CREATE.some((s) => /CREATE TABLE IF NOT EXISTS reminders/.test(s))
+    );
+    ok(
+      "V17_CREATE declares the sort index",
+      V17_CREATE.some((s) => /idx_reminders_sort/.test(s))
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 17", /const SCHEMA_VERSION = 17;/.test(indexSrc));
+    ok(
+      "the v16 → v17 step runs the real migration",
+      /currentVersion < 17\)\s*\{\s*await migrateToV17\(db\);/.test(indexSrc)
+    );
+    ok(
+      "and creates reminders from the same V17_CREATE statements",
+      /for \(const statement of V17_CREATE\)/.test(indexSrc)
+    );
+
+    // A migrated v16 database and a brand-new install end up with the identical
+    // reminders shape - the same test L3/I12 run for med_logs and app_meta.
+    const migrated = makeV15Database();
+    await migrateToV16(adapt(migrated));
+    await migrateToV17(adapt(migrated));
+
+    const fresh = new DatabaseSync(":memory:");
+    for (const statement of V17_CREATE) fresh.exec(statement);
+
+    eq(
+      "reminders has the same columns as a fresh install",
+      [...columns(migrated, "reminders").keys()].join(","),
+      [...columns(fresh, "reminders").keys()].join(",")
+    );
+    eq(
+      "reminders has the same DDL as a fresh install",
+      (
+        migrated
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reminders';")
+          .get() as { sql: string }
+      ).sql,
+      (
+        fresh
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reminders';")
+          .get() as { sql: string }
+      ).sql
+    );
+    ok(
+      "a fresh install also gets idx_reminders_sort",
+      indexNames(fresh).has("idx_reminders_sort")
+    );
+    migrated.close();
+    fresh.close();
+  }
+
+  // ── M4. The legacy-reminders bridge (lib/db/remindersBridge.ts) ─────────────
+  // The pure function itself, run against a node:sqlite scratch database exactly
+  // like every migrateToV* above - not a hand-copied re-implementation.
+  section("M4. the legacy-reminders bridge (remindersBridgedV1)");
+  {
+    const legacyPrefs = (
+      over: Partial<LegacyReminderPrefs> = {}
+    ): LegacyReminderPrefs => ({
+      basal: true,
+      basalTime: "22:00",
+      med: false,
+      medTime: "09:00",
+      glucose: true,
+      glucoseTime: "08:00",
+      ...over,
+    });
+
+    function makeBridgeDatabase(): DatabaseSync {
+      const db = new DatabaseSync(":memory:");
+      for (const statement of V14_CREATE) db.exec(statement);
+      for (const statement of V17_CREATE) db.exec(statement);
+      return db;
+    }
+
+    // Only the legacy reminders that were actually ON get a row, in order, with
+    // their legacy time carried over verbatim and no label (the built-in three
+    // get their copy from i18n, not from this table).
+    {
+      const db = makeBridgeDatabase();
+      const ids = ["seed-a", "seed-b", "seed-c"];
+      let n = 0;
+      const ran = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs(),
+        () => ids[n++],
+        () => 1_753_600_000_000
+      );
+      ok("the first run seeds the table", ran);
+      eq(
+        "only the two ON legacy reminders get a row (basal + glucose, not med)",
+        count(db, "reminders"),
+        2
+      );
+      const rows = db
+        .prepare(
+          "SELECT id, type, label, time, enabled, sort, created_at FROM reminders ORDER BY sort;"
+        )
+        .all() as {
+        id: string;
+        type: string;
+        label: string | null;
+        time: string;
+        enabled: number;
+        sort: number;
+        created_at: number;
+      }[];
+      eq("basal comes first, in legacy order", rows[0].type, "basal");
+      eq("with the legacy basalTime carried over", rows[0].time, "22:00");
+      eq("basal is enabled", rows[0].enabled, 1);
+      eq("basal has no label (i18n owns its copy)", rows[0].label, null);
+      eq("basal sorts at 0", rows[0].sort, 0);
+      eq(
+        "basal's created_at came from the injected clock",
+        rows[0].created_at,
+        1_753_600_000_000
+      );
+      eq("glucose comes second", rows[1].type, "glucose");
+      eq("with the legacy glucoseTime carried over", rows[1].time, "08:00");
+      eq("glucose sorts at 1, right after basal", rows[1].sort, 1);
+      ok("and med (which was OFF) never got a row", !rows.some((r) => r.type === "med"));
+
+      const flag = db.prepare(V14_READ_META).get(REMINDERS_BRIDGE_KEY) as
+        | { value: string }
+        | undefined;
+      eq("the bridge marks itself done", flag?.value, "true");
+
+      // Calling again - even with DIFFERENT prefs - must not seed a second time.
+      const ranAgain = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs({ med: true }),
+        () => "should-never-be-used",
+        () => 2_000_000_000_000
+      );
+      ok("a second call reports it did nothing", !ranAgain);
+      eq("and inserts no further rows", count(db, "reminders"), 2);
+      db.close();
+    }
+
+    // Nothing was ON: the bridge still runs exactly once and marks itself done,
+    // it just has nothing to seed.
+    {
+      const db = makeBridgeDatabase();
+      const ran = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs({ basal: false, med: false, glucose: false }),
+        () => "unused"
+      );
+      ok("a bridge with nothing ON still reports it ran", ran);
+      eq("and creates no row", count(db, "reminders"), 0);
+      const flag = db.prepare(V14_READ_META).get(REMINDERS_BRIDGE_KEY) as
+        | { value: string }
+        | undefined;
+      eq("but still marks itself done", flag?.value, "true");
+
+      const ranAgain = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs(),
+        () => "should-not-run"
+      );
+      ok("so a later call with real settings ON still does nothing", !ranAgain);
+      eq("the table stays empty", count(db, "reminders"), 0);
+      db.close();
+    }
+
+    // Atomicity: a failure part-way through must leave neither a seeded row
+    // without the flag (which would duplicate it on retry) nor the flag set
+    // without its rows.
+    {
+      const db = makeBridgeDatabase();
+      db.exec("BEGIN;");
+      try {
+        db.prepare(
+          `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at)
+           VALUES ('r1', 'basal', NULL, '22:00', 1, 0, 1);`
+        ).run();
+        throw new Error("simulated crash before the app_meta write");
+      } catch {
+        db.exec("ROLLBACK;");
+      }
+      eq("a crash mid-bridge leaves no row behind", count(db, "reminders"), 0);
+      ok(
+        "and the flag unset",
+        db.prepare(V14_READ_META).get(REMINDERS_BRIDGE_KEY) === undefined
+      );
+
+      // The real bridge, run afterwards, still works correctly.
+      let recoverN = 0;
+      const recoverIds = ["r1b", "r1c"];
+      const ran = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs(),
+        () => recoverIds[recoverN++]
+      );
+      ok("the real bridge recovers cleanly", ran);
+      eq("and seeds normally", count(db, "reminders"), 2);
+      db.close();
+    }
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -2256,7 +2599,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 16`, readUserVersion(db), 16);
+    eq(`v${start}: ends at 17`, readUserVersion(db), 17);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -2362,6 +2705,16 @@ async function main() {
         .get() !== undefined
     );
     eq(`v${start}: no medication logged yet`, count(db, "med_logs"), 0);
+    ok(
+      `v${start}: reminders table exists`,
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='reminders';")
+        .get() !== undefined
+    );
+    // The migration chain itself never bridges anything - lib/db/migrations.ts
+    // must not depend on the notifications service (see migrateToV17's own
+    // doc comment) - so a chain-only run always ends with an empty registry.
+    eq(`v${start}: no reminder seeded by the migration chain itself`, count(db, "reminders"), 0);
     if (start >= 14) {
       eq(
         `v${start}: the stored catalog version survives`,
@@ -2388,14 +2741,14 @@ async function main() {
     await runChain(db, { stampFinal: false });
 
     // Before the fix this read 8: nothing between the first step and that final
-    // line recorded anything, so the schema was v16 and the database said v8.
+    // line recorded anything, so the schema was v17 and the database said v8.
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      16
+      17
     );
 
-    // The user keeps using the app for weeks on that (v16) schema.
+    // The user keeps using the app for weeks on that (v17) schema.
     db.exec(
       `INSERT INTO injection_logs
          (id, profile_id, site, site_point, dose_units, insulin_type, meal_log_id,
@@ -2405,10 +2758,10 @@ async function main() {
     );
     db.exec("UPDATE injection_logs SET bolus_kind = 'correction' WHERE id = 'inj1';");
 
-    // Next cold start. It must pick up from 16, not replay v9 and v11.
+    // Next cold start. It must pick up from 17, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 16", readUserVersion(db), 16);
+    eq("the next launch still ends at 17", readUserVersion(db), 17);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -2506,7 +2859,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 16 again", readUserVersion(db), 16);
+    eq("the chain lands on 17 again", readUserVersion(db), 17);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -2634,6 +2987,12 @@ async function main() {
     await migrateToV16(adapt(v16db));
     eq("migrateToV16 stamps 16", readUserVersion(v16db), 16);
     v16db.close();
+
+    const v17db = makeV15Database();
+    await migrateToV16(adapt(v17db));
+    await migrateToV17(adapt(v17db));
+    eq("migrateToV17 stamps 17", readUserVersion(v17db), 17);
+    v17db.close();
 
     // The property the whole fix rests on: SQLite keeps user_version in the
     // database header, which is journalled, so a stamp written inside a
@@ -2992,14 +3351,14 @@ const CHAIN_CREATE_INJECTIONS = `
 /**
  * initDatabase()'s migration chain, in the same order and with the same guards.
  *
- * The v8 → v16 steps are the REAL exported functions (and therefore the REAL
+ * The v8 → v17 steps are the REAL exported functions (and therefore the REAL
  * stamps, which live inside their transactions). Only the pre-v8 steps, which are
  * inline DDL in lib/db/index.ts and cannot be imported without pulling in
  * expo-sqlite, are replayed here; K6 pins them against that file's source so this
  * copy cannot drift.
  *
  * `stampFinal: false` is the crash under test: the chain runs to the end and the
- * process dies before lib/db/index.ts's closing `PRAGMA user_version = 16`.
+ * process dies before lib/db/index.ts's closing `PRAGMA user_version = 17`.
  */
 async function runChain(
   db: DatabaseSync,
@@ -3064,8 +3423,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 14) await migrateToV14(target);
   if (currentVersion >= 1 && currentVersion < 15) await migrateToV15(target);
   if (currentVersion >= 1 && currentVersion < 16) await migrateToV16(target);
+  if (currentVersion >= 1 && currentVersion < 17) await migrateToV17(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 16;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 17;");
 }
 
 function count(db: DatabaseSync, table: string): number {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, Text, useWindowDimensions, View } from "react-native";
+import { I18nManager, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
@@ -489,8 +489,8 @@ const SURFACE_KEY_MAX_W = 96;
 const BADGE_INNER_X = 56;
 const BADGE_TOP_Y = 130;
 const BADGE_H = 15;
-/** Budgeted for the longest label, Turkish "Sağ"; a single letter just centres. */
-const BADGE_MAX_W = 30;
+/** Budgeted for the longest label, Arabic "يمين"; a single letter just centres. */
+const BADGE_MAX_W = 52;
 
 export function InjectionBodyMap({
   usage,
@@ -527,6 +527,12 @@ export function InjectionBodyMap({
   showRotationHint?: boolean;
 }) {
   const { t } = useTranslation();
+  // RTL EXEMPTION: this card is an anatomical body diagram. Left/right badges
+  // and the zoom header below are pinned to the SVG's fixed (never-mirrored)
+  // artwork, so every physical left/right style here is swapped back by hand
+  // to render byte-identical to LTR instead of following RN's automatic
+  // swapLeftAndRightInRTL flip.
+  const rtl = I18nManager.isRTL;
   const { width: winW, height: winH } = useWindowDimensions();
   // Silhouette scales with the screen width (capped) so it fills the card on both
   // a narrow phone and a wide tablet. Height follows the viewBox aspect, so it
@@ -554,11 +560,20 @@ export function InjectionBodyMap({
       borderColor: THEME.border,
       backgroundColor: withAlpha("#ffffff", 0.07),
     };
+    // Physical anchor, pre-swapped for RTL: RN flips left<->right automatically
+    // (swapLeftAndRightInRTL), so writing the opposite key here cancels that
+    // flip and the badge lands on the same physical side as LTR.
     return [
-      { key: "sideLeft" as const, style: { ...base, right: svgW - BADGE_INNER_X * scale } },
-      { key: "sideRight" as const, style: { ...base, left: (VB_W - BADGE_INNER_X) * scale } },
+      {
+        key: "sideLeft" as const,
+        style: { ...base, [rtl ? "left" : "right"]: svgW - BADGE_INNER_X * scale },
+      },
+      {
+        key: "sideRight" as const,
+        style: { ...base, [rtl ? "right" : "left"]: (VB_W - BADGE_INNER_X) * scale },
+      },
     ];
-  }, [svgW]);
+  }, [svgW, rtl]);
 
   const [openSite, setOpenSite] = useState<InjectionSite | null>(null);
   const fade = useSharedValue(1);
@@ -673,8 +688,11 @@ export function InjectionBodyMap({
       </View>
       <Text className="text-mut text-[11px] leading-4">{t("injectionMap.sub")}</Text>
 
-      {/* Fixed-height bar: the hint and the zoom header swap without moving the SVG. */}
-      <View style={{ height: 36, flexDirection: "row", alignItems: "center" }}>
+      {/* Fixed-height bar: the hint and the zoom header swap without moving the SVG.
+          RTL EXEMPTION: flexDirection is pre-reversed and the chevron stays a
+          plain (non-DirIcon) glyph so this row renders byte-identical to LTR,
+          matching the frozen silhouette below it instead of mirroring. */}
+      <View style={{ height: 36, flexDirection: rtl ? "row-reverse" : "row", alignItems: "center" }}>
         {open ? (
           <>
             <Pressable
@@ -691,7 +709,7 @@ export function InjectionBodyMap({
                 borderWidth: 1,
                 borderColor: THEME.border,
                 backgroundColor: withAlpha("#ffffff", 0.06),
-                marginRight: 10,
+                [rtl ? "marginLeft" : "marginRight"]: 10,
               }}
             >
               <Ionicons name="chevron-back" size={16} color={THEME.accent} />

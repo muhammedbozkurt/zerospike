@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { isScreenshotMode } from "../lib/screenshotMode";
 import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
+import { syncBasalReminderRow } from "../lib/db/reminders";
 import {
   applyNotificationPrefs,
   requestNotificationPermission,
@@ -34,6 +35,7 @@ import {
   glucoseUnitLabel,
   TARGET_RANGE_BOUNDS,
 } from "../lib/glucose";
+import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G } from "../lib/diabetesDefaults";
 import { RangeInput } from "../components/RangeInput";
 import { Stepper } from "../components/Stepper";
 import { logEvent } from "../lib/analytics";
@@ -62,17 +64,19 @@ const DEFAULT_CARB_RATIO = 10;
 const DEFAULT_ISF_MGDL = 40;
 
 // The ADA-shaped starting ranges, prefilled so nobody has to invent a number.
+// Also the generic mg/dL fallback used while parsing typed text, before any
+// diabetes answer has picked a matrix-specific default (see TARGET_DEFAULTS_MGDL).
 const DEFAULT_FASTING_RANGE = { min: 80, max: 130 };
 const DEFAULT_POSTMEAL_RANGE = { min: 80, max: 180 };
 
-// Tighter starting ranges for the undiagnosed tracking path ("none"): these are
-// plain reference bands, not a clinical target, since this user has no diagnosis
-// to target against.
-const NONE_FASTING_RANGE = { min: 70, max: 100 };
-const NONE_POSTMEAL_RANGE = { min: 70, max: 140 };
-
 const DIABETES_OPTIONS = ["type1", "type2", "gestational", "prediabetes", "none", "other"] as const;
 type DiabetesOption = (typeof DIABETES_OPTIONS)[number];
+
+// Post-meal check timer, asked on its own step (Wave 2a). 60 is the default only
+// for gestational, since a 1-hour post-meal check is the common gestational
+// pattern; every other answer defaults to 120.
+const POSTMEAL_MINUTE_OPTIONS = [60, 90, 120, 150] as const;
+type PostMealMinutes = (typeof POSTMEAL_MINUTE_OPTIONS)[number];
 
 // What the user tracks, asked as one question. Insulin and oral medication are
 // two independent flags on the profile, so the four answers below are just the
@@ -108,6 +112,7 @@ type StepId =
   | "carbRatio"
   | "isf"
   | "basal"
+  | "postMeal"
   | "widget"
   | "notify"
   | "disclaimer";
@@ -127,6 +132,12 @@ const DIABETES_STEP_IDX = BASE_STEPS.indexOf("diabetes");
  * so no profile or DB write ever happens. Double-locked behind isScreenshotMode()
  * (dev + env), so in a release build this returns null and the branch is dead.
  */
+// "other" (prefer not to say) and a skipped question both land on the DB's
+// "unknown" type - the one non-answer this screen can produce.
+function diabetesTypeOf(opt: DiabetesOption | null): DiabetesType {
+  return opt == null || opt === "other" ? "unknown" : opt;
+}
+
 function screenshotDiabetes(param?: string): DiabetesOption | null {
   if (!isScreenshotMode() || !param) return null;
   return (DIABETES_OPTIONS as readonly string[]).includes(param)
@@ -189,34 +200,43 @@ export default function OnboardingScreen() {
   );
   const [basalTime, setBasalTime] = useState("22:00");
   const [showTime, setShowTime] = useState(false);
+  // null until the user taps an option on the postMeal step, so the default
+  // (60 for gestational, 120 otherwise) keeps following the diabetes answer
+  // right up until it is actually touched - same pattern as targetsTouched.
+  const [postMealMinutes, setPostMealMinutes] = useState<PostMealMinutes | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [saving, setSaving] = useState(false);
   // The real outcome of the notification prompt, shown on the notify step so the
   // flow never advances as if permission was granted when it was not.
   const [notifyResult, setNotifyResult] = useState<NotificationPermission | null>(null);
 
-  // "none" (undiagnosed) forces the tracking-only path: any treatment answer
-  // picked before the user backed up and switched to "none" must not leak
-  // into the profile, so the effective value is re-derived every render
-  // instead of trusting the raw `treatment` state.
+  // "none" and "prediabetes" (Wave 2a matrix) both force the tracking-only
+  // path: any treatment answer picked before backing up and switching to one
+  // of them must not leak into the profile, so the effective value is
+  // re-derived every render instead of trusting the raw `treatment` state.
+  const isTwoWayTreatment = diabetes === "none" || diabetes === "prediabetes";
   const effectiveTreatment: TreatmentOption | null =
-    diabetes === "none" ? "none" : treatment;
+    isTwoWayTreatment ? "none" : treatment;
   const hasInsulin =
     effectiveTreatment === "insulin" || effectiveTreatment === "both";
-  const hasOralMeds =
-    diabetes === "none"
-      ? pillsOnly === true
-      : effectiveTreatment === "pills" || effectiveTreatment === "both";
+  const hasOralMeds = isTwoWayTreatment
+    ? pillsOnly === true
+    : effectiveTreatment === "pills" || effectiveTreatment === "both";
+  // The default follows the diabetes answer until the user actually taps a
+  // postMeal option; gestational's common post-meal check is 1 hour, everyone
+  // else's is 2.
+  const effectivePostMealMinutes: PostMealMinutes =
+    postMealMinutes ?? (diabetes === "gestational" ? 60 : 120);
 
-  // Branching flow: the "none" path swaps the four-way treatment question for a
-  // two-option pill question and skips the carb-ratio / ISF / basal-time trio
-  // (no insulin to compute for). Everyone gets the notification + disclaimer
-  // tail.
+  // Branching flow: the "none" / "prediabetes" path swaps the four-way treatment
+  // question for a two-option pill question and skips the carb-ratio / ISF /
+  // basal-time trio (no insulin to compute for). Everyone answers the postMeal
+  // timer question and gets the notification + disclaimer tail.
   const steps = useMemo<StepId[]>(() => {
-    const treatmentStep: StepId[] = diabetes === "none" ? ["pillsOnly"] : ["insulin"];
+    const treatmentStep: StepId[] = isTwoWayTreatment ? ["pillsOnly"] : ["insulin"];
     const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
-    return [...BASE_STEPS, ...treatmentStep, "targets", ...branch, "widget", "notify", "disclaimer"];
-  }, [diabetes, hasInsulin]);
+    return [...BASE_STEPS, ...treatmentStep, "targets", ...branch, "postMeal", "widget", "notify", "disclaimer"];
+  }, [isTwoWayTreatment, hasInsulin]);
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
   const step = steps[stepIdxClamped];
@@ -255,15 +275,14 @@ export default function OnboardingScreen() {
     setUnit(next);
   }
 
-  // Picking a diabetes answer also seeds the target-range defaults: "none"
-  // starts from the tighter tracking-only band, any other answer from the
-  // ADA-shaped band. Only while the user hasn't hand-edited a target value -
+  // Picking a diabetes answer also seeds the target-range defaults, per the
+  // Wave 2a matrix (type1/type2, gestational, and prediabetes/none/unknown each
+  // get their own band). Only while the user hasn't hand-edited a target value -
   // once touched, their own numbers are never overwritten.
   function selectDiabetes(opt: DiabetesOption) {
     setDiabetes(opt);
     if (targetsTouched) return;
-    const fasting = opt === "none" ? NONE_FASTING_RANGE : DEFAULT_FASTING_RANGE;
-    const postmeal = opt === "none" ? NONE_POSTMEAL_RANGE : DEFAULT_POSTMEAL_RANGE;
+    const { fasting, postmeal } = TARGET_DEFAULTS_MGDL[diabetesTypeOf(opt)];
     setFastingMin(String(glucoseToDisplay(fasting.min, unit)));
     setFastingMax(String(glucoseToDisplay(fasting.max, unit)));
     setPostmealMin(String(glucoseToDisplay(postmeal.min, unit)));
@@ -347,6 +366,8 @@ export default function OnboardingScreen() {
     try {
       // The quiz answers stop being dead data here: diabetes type and insulin
       // mode go onto the profile, which is what the rest of the app reads.
+      const dbDiabetesType = diabetesTypeOf(diabetes);
+      const carbDefaults = CARB_TARGET_DEFAULTS_G[dbDiabetesType];
       const patch: ProfileUpdate = {
         name: name.trim() || t("profiles.defaultName"),
         target_fasting_min: fastingMinMgdl,
@@ -354,9 +375,7 @@ export default function OnboardingScreen() {
         target_postmeal_min: postmealMinMgdl,
         target_postmeal_max: postmealMgdl,
         glucose_unit: unit,
-        diabetes_type: (diabetes === "other" || diabetes == null
-          ? "unknown"
-          : diabetes) as DiabetesType,
+        diabetes_type: dbDiabetesType,
         insulin_mode: (hasInsulin ? "both" : "none") as InsulinMode,
         // The pill surfaces (logging + the reminder row in Settings) stay hidden
         // until this is on. The reminder itself is NOT armed here: onboarding
@@ -368,6 +387,10 @@ export default function OnboardingScreen() {
         hypo_threshold_mgdl: clampHypoThreshold(
           activeProfile.hypo_threshold_mgdl ?? 70
         ),
+        // Daily carb-target default, per the type matrix (gestational's band is
+        // wider; every other type keeps the app-wide 160-200g band).
+        daily_carb_target_min_g: carbDefaults.min,
+        daily_carb_target_g: carbDefaults.max,
       };
       // Insulin math is only relevant to insulin users; leave the profile's
       // defaults untouched otherwise.
@@ -384,12 +407,19 @@ export default function OnboardingScreen() {
       await updateProfile(activeProfile.id, patch);
 
       // Reminder relevance follows insulin use (the basal reminder only applies
-      // to insulin users); post-meal tracking stays on for everyone.
+      // to insulin users); post-meal tracking stays on for everyone. The basal
+      // row is written straight to the reminders registry, not left to the
+      // one-time legacy-prefs bridge (lib/db/remindersBridge.ts): a process
+      // killed right after an earlier, abandoned onboarding attempt already
+      // consumed that one-time bridge, so a restarted onboarding choosing
+      // differently would otherwise have no way left to change it.
       await setNotificationPrefs({
         ...DEFAULT_PREFS,
         basal: hasInsulin,
         basalTime,
+        postMealMinutes: effectivePostMealMinutes,
       });
+      await syncBasalReminderRow(hasInsulin, basalTime, true);
       await applyNotificationPrefs();
 
       bumpData();
@@ -423,6 +453,8 @@ export default function OnboardingScreen() {
         return t("onboarding.qIsfHint");
       case "basal":
         return t("onboarding.qBasalHint");
+      case "postMeal":
+        return t("onboarding.qPostMealHint");
       default:
         return undefined;
     }
@@ -721,6 +753,26 @@ export default function OnboardingScreen() {
               onClose={() => setShowTime(false)}
             />
           </FadeSlideIn>
+        );
+
+      // Select-then-continue, like "unit": a type-appropriate default is
+      // already highlighted, so Continue works even if nothing is tapped.
+      case "postMeal":
+        return (
+          <View>
+            {POSTMEAL_MINUTE_OPTIONS.map((opt, i) => (
+              <FadeSlideIn key={opt} delay={optDelay(i)}>
+                <OptionCard
+                  label={t("settings.minutes", { n: opt })}
+                  selected={effectivePostMealMinutes === opt}
+                  onPress={() => {
+                    hapticSelect();
+                    setPostMealMinutes(opt);
+                  }}
+                />
+              </FadeSlideIn>
+            ))}
+          </View>
         );
 
       case "widget":

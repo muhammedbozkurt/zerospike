@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Pressable, Text, TextInput, View } from "react-native";
+import {
+  Animated,
+  BackHandler,
+  Easing,
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -10,11 +21,13 @@ import {
   searchFoods,
   deleteFood,
   countFoodsByCategory,
+  getFood,
   listCustomFoods,
   listFoodsByCategory,
 } from "../../lib/db/foods";
-import { captureFoodDeletion } from "../../lib/db/undo";
+import { type DeletionSnapshot } from "../../lib/db/undo";
 import { useUndoBatch } from "../../components/useUndoBatch";
+import { DirIcon } from "../../components/DirIcon";
 import {
   listFavoriteFoods,
   toggleFavorite as dbToggleFav,
@@ -54,12 +67,14 @@ import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import {
   AppBackground,
   GlassCard,
+  GradientCTA,
   IconTile,
   NeonProgressBar,
   withAlpha,
 } from "../../components/rich";
-import { formatDateKey, formatTime } from "../../lib/format";
-import { hapticSuccess } from "../../lib/haptics";
+import { InlineDateTimePicker } from "../../components/InlineDateTimePicker";
+import { formatDateKey, formatTime, relativeDay } from "../../lib/format";
+import { hapticSelect, hapticSuccess } from "../../lib/haptics";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../../lib/theme/tokens";
 import { mealSlotForHour } from "../../lib/insulin";
 import { useLayout } from "../../lib/useLayout";
@@ -135,6 +150,13 @@ function rowKeyExtractor(row: ListRow): string {
   return typeof row === "string" ? `band:${row}` : row.id;
 }
 
+/** Rows a long press may edit/delete: the user's own custom foods, and a
+ *  barcode result cached from Open Food Facts (source "off"). The seeded
+ *  catalog is neither, and stays read-only. */
+function isEditableFood(food: Food): boolean {
+  return food.is_custom === 1 || food.source === "off";
+}
+
 /** Section caption, one voice for every band on this screen. */
 function SectionHeading({
   label,
@@ -177,6 +199,196 @@ function ShowMoreButton({ label, onPress }: { label: string; onPress: () => void
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+/**
+ * Bulgu 3b: tapping a saved template opens THIS instead of writing the meal
+ * outright - what it contains, its total, and when it happened (defaulting to
+ * "now", the same convention every quick-add sheet uses), with one explicit
+ * Save. food.tsx is a tab (root view controller), so a plain absolute overlay
+ * presents cleanly here without the RN-Modal-over-modal problem the Feedback
+ * host works around (see QuickAddSheet, which is the same situation).
+ */
+function TemplateConfirmSheet({
+  entry,
+  saving,
+  onClose,
+  onConfirm,
+}: {
+  entry: TemplateWithItems;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: (when: Date) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const anim = useRef(new Animated.Value(0)).current;
+  // null = "now"; a Date is an explicit pick (same convention as the glucose
+  // and medication quick-add sheets).
+  const [at, setAt] = useState<Date | null>(null);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [anim]);
+
+  // Android hardware back closes the sheet instead of popping the tab under it
+  // (see QuickAddSheet for why this is needed on a plain absolute overlay).
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onClose]);
+
+  const shown = at ?? new Date();
+
+  return (
+    <View
+      style={[StyleSheet.absoluteFill, { zIndex: 200 }]}
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
+        <Pressable
+          style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.7)" }]}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel={t("common.cancel")}
+        />
+      </Animated.View>
+      <View style={{ flex: 1, justifyContent: "flex-end" }} pointerEvents="box-none">
+        <Animated.View
+          style={{
+            transform: [
+              {
+                translateY: anim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [40, 0],
+                }),
+              },
+            ],
+          }}
+        >
+          <Pressable
+            className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
+            style={{ backgroundColor: THEME.bg.g1, paddingBottom: insets.bottom + 20 }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View className="items-center mb-2">
+              <View className="w-10 h-1 rounded-full bg-hair" />
+            </View>
+
+            <Text
+              style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", marginBottom: 12 }}
+              numberOfLines={2}
+            >
+              {entry.template.name}
+            </Text>
+
+            <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
+              {upper(t("templates.items"))}
+            </Text>
+            {entry.items.length === 0 ? (
+              <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
+                <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+                  {t("templates.emptyItemsLog")}
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                {entry.items.map((item) => (
+                  <View
+                    key={item.id}
+                    className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 py-2.5 mb-2"
+                  >
+                    <FoodPlate
+                      category={item.category}
+                      size={32}
+                      radius={12}
+                      style={{ marginRight: 10 }}
+                    />
+                    <View className="flex-1 pr-2">
+                      <Text
+                        style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
+                        numberOfLines={1}
+                      >
+                        {item.name}
+                      </Text>
+                      {item.missingFood ? (
+                        <Text
+                          style={{ color: THEME.muted, fontSize: 10, marginTop: 1 }}
+                          numberOfLines={1}
+                        >
+                          {t("templates.missingFood")}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Text style={[TABULAR, { color: THEME.ink, fontSize: 13, fontWeight: "800" }]}>
+                      {Math.round(item.carbs_g)}
+                      <Text style={{ color: THEME.muted, fontSize: 10, fontWeight: "600" }}>
+                        {t("common.grams")}
+                      </Text>
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <View className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-3 mt-1">
+              <Text className="text-xs font-semibold tracking-wider text-mut">
+                {upper(t("templates.total"))}
+              </Text>
+              <Text style={[TABULAR, { color: THEME.accent, fontSize: 20, fontWeight: "800" }]}>
+                {Math.round(entry.carbs_g)}
+                <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}>
+                  {t("common.grams")}
+                </Text>
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => setTimePickerOpen((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={t("calculator.loggedTime")}
+              className="flex-row items-center rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-3"
+              style={{ minHeight: HIT_TARGET }}
+            >
+              <Ionicons name="time-outline" size={16} color={THEME.muted} />
+              <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                {relativeDay(shown.toISOString(), {
+                  today: t("common.today"),
+                  yesterday: t("common.yesterday"),
+                })}
+                {" · "}
+                {formatTime(shown.toISOString())}
+              </Text>
+            </Pressable>
+            <InlineDateTimePicker
+              visible={timePickerOpen}
+              value={shown}
+              max={new Date()}
+              locale={i18n.language}
+              onChange={setAt}
+              onClose={() => setTimePickerOpen(false)}
+            />
+
+            <GradientCTA
+              label={t("templates.logNow")}
+              disabled={saving || entry.items.length === 0}
+              onPress={() => onConfirm(shown)}
+            />
+          </Pressable>
+        </Animated.View>
+      </View>
+    </View>
   );
 }
 
@@ -433,7 +645,13 @@ export default function FoodScreen() {
       calculated_carbs_g: r.carbs_g,
       insulin_dose_units: 0,
     });
+    // Same side effects as every other one-tap meal write (template relog,
+    // calculator save): the post-meal reminder and the journal-activity signal
+    // used to fire for every path except this one.
+    logEvent("log_added", { kind: "meal", source: "recent" });
     hapticSuccess();
+    await schedulePostMealReminder();
+    void noteJournalActivity();
     bumpData();
     // One tap wrote a real journal entry with no confirmation and no way back; it
     // now carries the same undo as every other write (the calculator's save toast).
@@ -460,7 +678,12 @@ export default function FoodScreen() {
   }, [templates]);
 
   const showsDose = insulinModeShowsBolus(insulinModeOf(activeProfile));
-  const loggingTemplateRef = useRef(false);
+
+  // A tap on a saved template no longer logs it outright (Bulgu 3b): it opens
+  // this confirm sheet instead, so a stray tap on the list can no longer write
+  // a meal with nobody having looked at what it contains or when it happened.
+  const [confirmEntry, setConfirmEntry] = useState<TemplateWithItems | null>(null);
+  const [confirmSaving, setConfirmSaving] = useState(false);
 
   function openTemplate(templateId: string, mode?: "log" | "rename") {
     router.push({
@@ -470,29 +693,32 @@ export default function FoodScreen() {
   }
 
   /**
-   * ONE TAP = one meal row, and NO insulin. A tap here never writes an injection:
-   * an invisible bolus would keep active-insulin tracking wrong for hours, walk
-   * straight past the checkDose plausibility gate, and amount to an applied dose
-   * the user never approved. The dose route is the separate calculator action.
+   * ONE TAP (through the confirm sheet) = one meal row, and NO insulin. This
+   * never writes an injection: an invisible bolus would keep active-insulin
+   * tracking wrong for hours, walk straight past the checkDose plausibility
+   * gate, and amount to an applied dose the user never approved. The dose
+   * route is the separate calculator action.
    *
    * The carbs are read live at this moment (logTemplate → resolveItemCarbs), so a
    * corrected food value reaches the row instead of a frozen copy.
    */
-  async function logTemplateNow(entry: TemplateWithItems) {
-    // A row is one tap away from a real journal entry, so a stray double tap must
-    // not become two meals. The list itself carries no disabled state to key off.
-    if (!activeProfile || loggingTemplateRef.current) return;
-    loggingTemplateRef.current = true;
+  async function confirmLogTemplate(entry: TemplateWithItems, when: Date) {
+    // The sheet's own Save button is disabled while confirmSaving, so this is
+    // a second guard against a double-fire rather than the only one.
+    if (!activeProfile || confirmSaving) return;
+    setConfirmSaving(true);
     try {
       const { id, name, use_count: priorUse, last_used_at: priorAt } = entry.template;
       const meal = await logTemplate(activeProfile.id, id, {
         insulin_dose_units: 0,
+        logged_at: when.toISOString(),
       });
       logEvent("log_added", { kind: "meal", source: "template" });
       hapticSuccess();
       await schedulePostMealReminder();
       void noteJournalActivity();
       bumpData();
+      setConfirmEntry(null);
       toast(t("templates.logged", { name }), "success", {
         label: t("common.undo"),
         onPress: () => {
@@ -507,7 +733,7 @@ export default function FoodScreen() {
         },
       });
     } finally {
-      loggingTemplateRef.current = false;
+      setConfirmSaving(false);
     }
   }
 
@@ -616,17 +842,23 @@ export default function FoodScreen() {
   );
 
   // Delete immediately + accumulating 6-second undo (shared useUndoBatch). The
-  // custom food is captured first so undo re-inserts it verbatim.
+  // row is re-read first (not trusted from list state) so undo re-inserts it
+  // verbatim; lib/db/undo's captureFoodDeletion only ever snapshotted
+  // is_custom=1 rows, which would silently restore nothing for a barcode
+  // result (source "off"), so the snapshot is built here instead.
   async function onDeleteCustom(food: Food) {
-    if (!food.is_custom) return;
-    const snap = await captureFoodDeletion(food.id);
+    if (!isEditableFood(food)) return;
+    const fresh = (await getFood(food.id)) ?? food;
+    const snap: DeletionSnapshot = {
+      foods: [fresh as unknown as Record<string, string | number | null>],
+    };
     await deleteWithUndo(snap, () => deleteFood(food.id));
   }
 
-  // Long press on a custom food = edit/delete menu; seeded catalog and cached
-  // barcode rows are not the user's to edit, so they get no menu at all.
+  // Long press on a custom food or a cached barcode result (source "off") =
+  // edit/delete menu; the seeded catalog stays read-only and gets no menu.
   function onCustomLongPress(food: Food) {
-    if (!food.is_custom) return;
+    if (!isEditableFood(food)) return;
     actionSheet({
       title: foodName(food, lang),
       actions: [
@@ -849,7 +1081,7 @@ export default function FoodScreen() {
           className="flex-row items-center mb-3 active:opacity-80"
           style={{ minHeight: HIT_TARGET }}
         >
-          <Ionicons name="chevron-back" size={20} color={THEME.accent} />
+          <DirIcon name="chevron-back" size={20} color={THEME.accent} />
           {plateFor(selected, 30)}
           <Text
             style={{
@@ -1058,7 +1290,8 @@ export default function FoodScreen() {
                 <Pressable
                   key={entry.template.id}
                   onPress={() => {
-                    void logTemplateNow(entry);
+                    hapticSelect();
+                    setConfirmEntry(entry);
                   }}
                   onLongPress={() => onTemplateLongPress(entry)}
                   accessibilityRole="button"
@@ -1258,6 +1491,11 @@ export default function FoodScreen() {
   // (and the lost keyboard focus) this shape exists to avoid.
   const rows: readonly ListRow[] = mode === "grid" ? GRID_BANDS : listData;
 
+  // The drilled-in custom shelf, genuinely empty: not a search with nothing
+  // found, so it gets its own (favorites-like) empty state instead of "no
+  // results found".
+  const customShelfEmpty = mode === "list" && selected === "custom";
+
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
       <FlatList
@@ -1293,11 +1531,19 @@ export default function FoodScreen() {
             <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
               <EmptyState
                 compact
-                icon={selected === "favorites" ? "star-outline" : "search-outline"}
+                icon={
+                  selected === "favorites"
+                    ? "star-outline"
+                    : customShelfEmpty
+                      ? "create-outline"
+                      : "search-outline"
+                }
                 title={
                   selected === "favorites"
                     ? t("food.noFavorites")
-                    : t("food.noResults")
+                    : customShelfEmpty
+                      ? t("food.noCustomFoods")
+                      : t("food.noResults")
                 }
                 // Only under the "no results" title, and only in the four
                 // languages the catalogue carries no names in.
@@ -1308,9 +1554,15 @@ export default function FoodScreen() {
                     ? t("food.searchEnglishHint")
                     : undefined
                 }
-                actionLabel={mode === "search" ? t("food.addCustom") : undefined}
+                actionLabel={
+                  mode === "search" || customShelfEmpty
+                    ? t("food.addCustom")
+                    : undefined
+                }
                 onAction={
-                  mode === "search" ? () => router.push("/add-food") : undefined
+                  mode === "search" || customShelfEmpty
+                    ? () => router.push("/add-food")
+                    : undefined
                 }
               />
             </View>
@@ -1322,6 +1574,17 @@ export default function FoodScreen() {
         contentContainerStyle={{ paddingBottom: 28 }}
         showsVerticalScrollIndicator={false}
       />
+
+      {confirmEntry ? (
+        <TemplateConfirmSheet
+          entry={confirmEntry}
+          saving={confirmSaving}
+          onClose={() => setConfirmEntry(null)}
+          onConfirm={(when) => {
+            void confirmLogTemplate(confirmEntry, when);
+          }}
+        />
+      ) : null}
     </AppBackground>
   );
 }
