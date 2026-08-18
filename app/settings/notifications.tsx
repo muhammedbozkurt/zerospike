@@ -96,9 +96,16 @@ export default function NotificationSettings() {
       patch.postMealMinutes !== base.postMealMinutes
     ) {
       await applyPostMealWindowChange(patch.postMealMinutes, base.postMealMinutes);
-      // The next-reminder moment every glanceable surface shows just moved.
-      if (activeProfile) void syncLiveData(activeProfile.id, unit);
     }
+
+    // The moment every glanceable surface counts down to is derived from these
+    // preferences (master switch, basal/med/glucose toggles and their times, the
+    // post-meal window just re-armed above), so ANY save here can move it. One
+    // unconditional sync rather than a list of "which patch keys matter": that
+    // list drifts the day a reminder is added, and the widget then keeps showing
+    // a countdown to a reminder the user already turned off. Runs last so it
+    // reads the state applyNotificationPrefs and the window change left behind.
+    if (activeProfile) void syncLiveData(activeProfile.id, unit);
 
     const granted = await hasNotificationPermission();
     setNotifDenied(next.enabled && !granted);

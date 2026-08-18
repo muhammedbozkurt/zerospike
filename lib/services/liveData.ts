@@ -45,7 +45,7 @@ export const ANDROID_WIDGET_NAME = "Zerospike";
 /** The Android Quick Add widget's registered name (see app.json). */
 export const ANDROID_QUICK_ADD_WIDGET_NAME = "ZerospikeQuickAdd";
 
-export type ReminderKind = "postMeal" | "basal" | "glucose";
+export type ReminderKind = "postMeal" | "basal" | "med" | "glucose";
 
 export interface LiveData {
   /** epoch ms this snapshot was computed. */
@@ -180,6 +180,14 @@ export async function computeLiveData(
   if (prefs.enabled && prefs.basal && insulinModeShowsBasal(insulinModeOf(profile))) {
     candidates.push({ at: nextOccurrence(prefs.basalTime), kind: "basal" });
   }
+  // Same two-part gate as the scheduler's activeProfileShowsMeds: device-level
+  // preference AND the per-profile pill flag. Stricter than the scheduler on an
+  // unreadable profile (it keeps the reminder, this drops the row) so the
+  // countdown can never contradict the same snapshot's own usesOralMeds.
+  const tracksOralMeds = profile?.oral_meds_enabled === 1;
+  if (prefs.enabled && prefs.med && tracksOralMeds) {
+    candidates.push({ at: nextOccurrence(prefs.medTime), kind: "med" });
+  }
   if (prefs.enabled && prefs.glucose) {
     candidates.push({ at: nextOccurrence(prefs.glucoseTime), kind: "glucose" });
   }
@@ -200,7 +208,7 @@ export async function computeLiveData(
     nextReminderAt: next?.at ?? null,
     nextReminderKind: next?.kind ?? null,
     usesInsulin: insulinModeUsesInsulin(insulinModeOf(profile)),
-    usesOralMeds: profile?.oral_meds_enabled === 1,
+    usesOralMeds: tracksOralMeds,
     band,
     labels: {
       lastReading: i18n.t("widget.lastReading"),

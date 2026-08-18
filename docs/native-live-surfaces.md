@@ -25,7 +25,7 @@ advice: it reflects only what the user already logged.
   "lastGlucoseMgdl": 124,          // number | null (always stored mg/dL)
   "lastGlucoseAt": 1752990000000,  // epoch ms | null
   "nextReminderAt": 1753003600000, // epoch ms | null
-  "nextReminderKind": "postMeal"   // "postMeal" | "basal" | "glucose" | null
+  "nextReminderKind": "postMeal"   // "postMeal" | "basal" | "med" | "glucose" | null
 }
 ```
 
