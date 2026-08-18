@@ -23,28 +23,78 @@ F_BLACK = os.path.join(FONT_DIR, "Arial Black.ttf")
 F_BOLD = os.path.join(FONT_DIR, "Arial Bold.ttf")
 F_REG = os.path.join(FONT_DIR, "Arial.ttf")
 
+# Helvetica Neue carries no Arabic and no CJK glyphs (verified against the
+# 2.0.0 copy with fontTools: every ar/ja codepoint misses), so those two
+# languages need their own faces or the panels render as tofu boxes.
+HIRAGINO_W6 = "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"
+HIRAGINO_W3 = "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"
+# (face, ttc index) for the bold and regular weight of each non-Latin language
+LANG_FACES = {
+    "ja": {"bold": (HIRAGINO_W6, 0), "regular": (HIRAGINO_W3, 0)},
+    "ar": {"bold": (F_BOLD, 0), "regular": (F_REG, 0)},
+}
+# Languages whose glyphs must be handed to the shaper as whole runs. Manual
+# per-character tracking would disable Arabic joining and bidi reordering, and
+# spreads CJK apart; both are drawn with a single draw.text call instead.
+SHAPED_LANGS = frozenset({"ar", "ja"})
+# Languages that carry no spaces and so have to wrap per character.
+CHAR_WRAP_LANGS = frozenset({"ja"})
+# never left dangling at the start of a wrapped Japanese line (kinsoku shori)
+NO_LINE_START = "、。，．・：；！？」』）】》々ー゛゜"
+
 CREAM = (237, 235, 229)
 INK = (23, 23, 23)
 MUTED = (104, 104, 104)
 DEVICE_BEZEL_TOP = (26, 27, 30)
 DEVICE_BEZEL_BOTTOM = (6, 6, 8)
+# sampled from the app's own active tab-bar label in raw/iphone/tr/08-takip.png
+ACCENT = (46, 230, 255)
+BRAND_DARK = (4, 22, 29)
 
 
-def hn(size, index=HN_REGULAR):
+def hn(size, index=HN_REGULAR, lang=None):
+    faces = LANG_FACES.get(lang)
+    if faces:
+        weight = "bold" if index in (HN_BOLD, HN_COND_BOLD, HN_MEDIUM) else "regular"
+        path, face_index = faces[weight]
+        return ImageFont.truetype(path, size, index=face_index)
     return ImageFont.truetype(HN, size, index=index)
 
 
-def font(path_or_none, size, index=HN_REGULAR):
+def font(path_or_none, size, index=HN_REGULAR, lang=None):
     """Back-compat shim: old call sites pass an Arial .ttf path; new code should
     pass index=HN_*. If given one of the old Arial paths, map it to a sane HN
-    equivalent so nothing breaks."""
-    if path_or_none == F_BLACK:
-        return hn(size, HN_BOLD)
-    if path_or_none == F_BOLD:
-        return hn(size, HN_BOLD)
+    equivalent so nothing breaks. `lang` routes ar/ja to a face that actually
+    has their glyphs."""
+    if path_or_none in (F_BLACK, F_BOLD):
+        return hn(size, HN_BOLD, lang=lang)
     if path_or_none == F_REG:
-        return hn(size, HN_REGULAR)
-    return hn(size, index)
+        return hn(size, HN_REGULAR, lang=lang)
+    return hn(size, index, lang=lang)
+
+
+def tracking_for(lang, size, default_ratio=0.012):
+    """Arabic/CJK must not be tracked; see SHAPED_LANGS."""
+    return 0 if lang in SHAPED_LANGS else -size * default_ratio
+
+
+def fit_font(draw, text, max_w, size, index=HN_REGULAR, lang=None, min_ratio=0.62):
+    """Largest font <= `size` whose single line of `text` fits `max_w`.
+
+    The synthetic 03/06 scenes have fixed card and stat-box geometry, but the
+    label inside them is a translation: "Ort. glukoz" and "Geschatztes A1C (GMI)"
+    are the same slot. Without this the long ones run under the neighbouring
+    number instead of wrapping. Floors at min_ratio so a runaway string is
+    reported by the caller rather than shrunk to nothing."""
+    f = hn(size, index, lang=lang)
+    if not text or draw.textlength(text, font=f) <= max_w:
+        return f
+    lo = max(8, int(size * min_ratio))
+    for s in range(size - 1, lo - 1, -1):
+        f = hn(s, index, lang=lang)
+        if draw.textlength(text, font=f) <= max_w:
+            return f
+    return hn(lo, index, lang=lang)
 
 
 def emoji_img(ch, target_px):
@@ -68,6 +118,10 @@ def emoji_img(ch, target_px):
 def text_tracked_width(draw, text, f, tracking=0):
     if not text:
         return 0
+    if not tracking:
+        # one shaped run: correct for Arabic joining/bidi, and per-char summing
+        # would be wrong there anyway
+        return draw.textlength(text, font=f)
     total = 0
     for ch in text:
         total += draw.textlength(ch, font=f) + tracking
@@ -76,13 +130,37 @@ def text_tracked_width(draw, text, f, tracking=0):
 
 def draw_text_tracked(draw, xy, text, f, fill, tracking=0):
     x, y = xy
+    if not tracking:
+        draw.text((x, y), text, font=f, fill=fill)
+        return x + draw.textlength(text, font=f)
     for ch in text:
         draw.text((x, y), ch, font=f, fill=fill)
         x += draw.textlength(ch, font=f) + tracking
     return x
 
 
-def wrap_text_tracked(draw, text, f, max_w, tracking=0, max_lines=2):
+def _wrap_by_char(draw, text, f, max_w, tracking, max_lines):
+    lines, cur = [], ""
+    for ch in text:
+        if ch == "\n":
+            lines.append(cur)
+            cur = ""
+            continue
+        if cur and text_tracked_width(draw, cur + ch, f, tracking) > max_w and ch not in NO_LINE_START:
+            lines.append(cur)
+            cur = ch
+            if len(lines) >= max_lines:
+                return lines[:max_lines]
+        else:
+            cur += ch
+    if cur and len(lines) < max_lines:
+        lines.append(cur)
+    return lines[:max_lines]
+
+
+def wrap_text_tracked(draw, text, f, max_w, tracking=0, max_lines=2, lang=None):
+    if lang in CHAR_WRAP_LANGS:
+        return _wrap_by_char(draw, text, f, max_w, tracking, max_lines)
     words = text.split()
     lines, cur = [], ""
     for wd in words:
@@ -101,8 +179,15 @@ def wrap_text_tracked(draw, text, f, max_w, tracking=0, max_lines=2):
 
 
 # ---- back-compat plain wrappers (no tracking) ----
-def wrap_text(draw, text, f, max_w, max_lines=2):
-    return wrap_text_tracked(draw, text, f, max_w, tracking=0, max_lines=max_lines)
+def wrap_text(draw, text, f, max_w, max_lines=2, lang=None):
+    return wrap_text_tracked(draw, text, f, max_w, tracking=0, max_lines=max_lines, lang=lang)
+
+
+def _dropped(text, lines):
+    """True when wrapping had to throw copy away (max_lines hit). Compared
+    without whitespace so the joins introduced by wrapping do not count."""
+    squash = lambda s: "".join(s.split())
+    return len(squash("".join(lines))) < len(squash(text))
 
 
 def rounded_mask(size, radius):
@@ -122,6 +207,92 @@ def load_cropped_shot(path, crop_top, crop_bottom):
     sw, sh = shot.size
     cb = crop_bottom if crop_bottom is not None else sh
     return shot.crop((0, crop_top, sw, cb))
+
+
+def row_coverage(img, y, step=8, inset=10, thr=45):
+    """Fraction of a row covered by something other than the page background.
+
+    The margin pixel is always outside the app's cards, so comparing every
+    sample against it isolates card pixels. Counting them (rather than taking
+    the largest difference) is what catches a wide card whose fill barely
+    differs from the page: between two wrapped text lines its interior looks
+    flat, but it still spans most of the row."""
+    px = img.load()
+    ref = px[inset, y]
+    xs = range(inset, img.width - inset, step)
+    hits = sum(1 for x in xs if sum(abs(px[x, y][i] - ref[i]) for i in range(3)) > thr)
+    return hits / len(range(inset, img.width - inset, step))
+
+
+def snap_cut(img, preferred, tabbar_top, window=220, tol=0.02, run=10):
+    """Keep `preferred` when no element crosses it, else walk up to the first
+    gap wide enough to cut in. Returns (cut, ok).
+
+    The layout spec puts the canvas edge at the app tab bar's top border but
+    forbids bisecting the last visible element. Card counts shift with copy
+    length, so a row that is a clean gap in one language lands mid-card in
+    another - snapping per capture beats hand-tuning 9 constants per panel.
+
+    `run` consecutive clear rows are required, since the tab bar's own 1px
+    separator is bare background too and matching on it alone would cut a card
+    in half just above it. ok=False means the capture has no clean cut at all:
+    the last card runs off the screen, which needs a scroll fix in the capture
+    pass, not a different constant here."""
+    if row_coverage(img, preferred) <= tol:
+        return preferred, True
+    clear = 0
+    for y in range(min(preferred, tabbar_top), max(0, preferred - window), -1):
+        if row_coverage(img, y) <= tol:
+            clear += 1
+            if clear >= run:
+                return y + clear - 1, True
+        else:
+            clear = 0
+    return preferred, False
+
+
+def find_card_top(bottom_img, x=60, scan_from=1200, scan_to=2400, gap=30):
+    """The rotation-card scroll depth isn't perfectly reproducible run to run
+    (same drag can land at a different offset each time), so a fixed pixel
+    crop either duplicates content already shown in the top half or leaves a
+    gap. The background here is a soft gradient (drifts gradually with y), so
+    comparing each row against a LOCAL row `gap` px above it - rather than one
+    fixed reference - tells apart the card's real border (a sharp jump) from
+    that slow drift, and from thin one-off highlight lines (which fall back to
+    background within a few rows instead of staying elevated)."""
+    px = bottom_img.load()
+    for y in range(scan_from, scan_to):
+        c, ref = px[x, y], px[x, y - gap]
+        if abs(c[0] - ref[0]) + abs(c[1] - ref[1]) + abs(c[2] - ref[2]) > 15:
+            c2 = px[x, y + 60]
+            if abs(c2[0] - ref[0]) + abs(c2[1] - ref[1]) + abs(c2[2] - ref[2]) > 10:
+                return y
+    return scan_from
+
+
+def stitch_bodymap(raw_dir, top_crop, card_height, crop_top=0, scan_x=60, scan_from=1200):
+    """Legacy two-shot path: silhouette frame on top, rotation card scrolled
+    into a second frame, joined so both stay whole."""
+    top = load_cropped_shot(os.path.join(raw_dir, "02-bodymap-top.png"), crop_top, top_crop)
+    bottom_full = Image.open(os.path.join(raw_dir, "02-bodymap-bottom.png")).convert("RGB")
+    card_top = find_card_top(bottom_full, x=scan_x, scan_from=scan_from) - 28
+    card = bottom_full.crop((0, card_top, bottom_full.size[0], card_top + card_height))
+    stitched = Image.new("RGB", (top.size[0], top.size[1] + card.size[1]), (8, 14, 20))
+    stitched.paste(top, (0, 0))
+    stitched.paste(card, (0, top.size[1]))
+    return stitched
+
+
+def bodymap_shot(raw_dir, crop_top, single_crop_bottom, top_crop, card_height, **stitch_kw):
+    """Prefer the one-frame capture the 2.0.0 pipeline writes (whole map fits
+    on one screen now); fall back to the older two-shot stitch when only those
+    files exist. Returns None when neither is present."""
+    single = os.path.join(raw_dir, "02-bodymap.png")
+    if os.path.exists(single):
+        return load_cropped_shot(single, crop_top, single_crop_bottom)
+    if all(os.path.exists(os.path.join(raw_dir, f"02-bodymap-{h}.png")) for h in ("top", "bottom")):
+        return stitch_bodymap(raw_dir, top_crop, card_height, crop_top=crop_top, **stitch_kw)
+    return None
 
 
 def vertical_gradient(size, top, bottom):
@@ -215,29 +386,83 @@ def draw_chip_at(canvas, text, x, y, f_chip, emoji_ch=None, dot=None):
     return (x, y, w, h)
 
 
+def header_bottom(cfg):
+    """y the header block would end at, without drawing anything. Lets callers
+    pick a subtitle line budget that still leaves room for the chip."""
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    lang = cfg.get("lang")
+    max_text_w = cfg.get("text_w", int(cfg["canvas"][0] * 0.80))
+    f_head = hn(cfg["headline_size"], HN_BOLD, lang=lang)
+    f_sub = hn(cfg["sub_size"], HN_REGULAR, lang=lang)
+    tracking = cfg.get("headline_tracking", tracking_for(lang, cfg["headline_size"]))
+    head_lines = wrap_text_tracked(probe, cfg["headline"], f_head, max_text_w,
+                                   tracking=tracking, max_lines=2, lang=lang)
+    sub_lines = wrap_text(probe, cfg["sub"], f_sub, max_text_w,
+                          max_lines=cfg.get("sub_max_lines", 3), lang=lang)
+    y = cfg["headline_top"] + len(head_lines) * int(cfg["headline_size"] * 1.08)
+    y += int(cfg["headline_size"] * 0.20)
+    return y + len(sub_lines) * int(cfg["sub_size"] * 1.42)
+
+
+def fit_header_and_chip(cfg, chip_h, dev_y, gap, pad, max_sub_lines=3):
+    """Pick a subtitle line budget and a chip y that keep the chip on the cream
+    band, clear of both the subtitle and the device.
+
+    The 2.0.0 subtitles are two sentences, so the wordiest languages overflow a
+    3-line setting; and even at 2 lines the fixed `gap` can push the chip a
+    handful of pixels into the bezel. Rather than dropping the chip (the layout
+    spec requires it), it gets anchored to the bottom of the cream band.
+    Returns (sub_max_lines, chip_y, fits)."""
+    ceiling = dev_y - pad - chip_h
+    for n in range(max_sub_lines, 0, -1):
+        y = header_bottom(dict(cfg, sub_max_lines=n))
+        if y <= ceiling:
+            return n, min(y + gap, ceiling), True
+    return 1, ceiling, False
+
+
 def new_canvas_with_header(cfg):
-    """Draws cream bg + tracked headline + subtitle. Returns (canvas, draw, y_after_text)."""
+    """Draws cream bg + tracked headline + subtitle. Returns (canvas, draw, y_after_text).
+
+    cfg["lang"] (optional) selects the font family and disables manual tracking
+    for shaped scripts; without it behaviour is unchanged."""
     W, H = cfg["canvas"]
     canvas = Image.new("RGB", (W, H), CREAM)
     draw = ImageDraw.Draw(canvas)
 
+    lang = cfg.get("lang")
     margin_x = cfg["margin_x"]
     max_text_w = cfg.get("text_w", int(W * 0.80))
-    f_head = hn(cfg["headline_size"], HN_BOLD)
-    f_sub = hn(cfg["sub_size"], HN_REGULAR)
-    tracking = cfg.get("headline_tracking", -cfg["headline_size"] * 0.012)
+    f_head = hn(cfg["headline_size"], HN_BOLD, lang=lang)
+    f_sub = hn(cfg["sub_size"], HN_REGULAR, lang=lang)
+    tracking = cfg.get("headline_tracking", tracking_for(lang, cfg["headline_size"]))
 
-    lines = wrap_text_tracked(draw, cfg["headline"], f_head, max_text_w, tracking=tracking, max_lines=2)
+    lines = wrap_text_tracked(draw, cfg["headline"], f_head, max_text_w,
+                              tracking=tracking, max_lines=2, lang=lang)
     y = cfg["headline_top"]
     line_h = int(cfg["headline_size"] * 1.08)
     for ln in lines:
         draw_text_tracked(draw, (margin_x, y), ln, f_head, INK, tracking=tracking)
         y += line_h
     y += int(cfg["headline_size"] * 0.20)
-    sub_lines = wrap_text(draw, cfg["sub"], f_sub, max_text_w, max_lines=3)
+    sub_max = cfg.get("sub_max_lines", 3)
+    sub_lines = wrap_text(draw, cfg["sub"], f_sub, max_text_w, max_lines=sub_max, lang=lang)
     sub_line_h = int(cfg["sub_size"] * 1.42)
     for ln in sub_lines:
         draw.text((margin_x, y), ln, font=f_sub, fill=MUTED)
         y += sub_line_h
 
+    for label, src, got in (("headline", cfg["headline"], lines), ("subtitle", cfg["sub"], sub_lines)):
+        if _dropped(src, got):
+            print(f"  WARN [{lang}] {label} truncated: {src!r}")
+
     return canvas, draw, y
+
+
+def verify_output(path, expected_size):
+    """Store rule: PNG, no alpha, exact canvas size. Returns True when OK."""
+    with Image.open(path) as im:
+        ok = im.size == tuple(expected_size) and im.mode == "RGB"
+        if not ok:
+            print(f"  FAIL {path} size={im.size} mode={im.mode} expected={tuple(expected_size)}/RGB")
+    return ok

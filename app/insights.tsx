@@ -1471,6 +1471,22 @@ export default function InsightsScreen() {
                   </Text>
                 </Pressable>
 
+                {/* The terms on this screen (TIR, GMI) are exactly what Spike
+                    explains, so the question starts prefilled - not sent. */}
+                <Pressable
+                  onPress={() =>
+                    router.push({ pathname: "/spike", params: { ask: "suggest2" } })
+                  }
+                  className="flex-row items-center justify-center py-2"
+                  accessibilityRole="button"
+                  accessibilityLabel={t("spike.askSpike")}
+                >
+                  <Ionicons name="sparkles-outline" size={14} color={BRAND} />
+                  <Text style={{ color: BRAND, fontSize: 12, marginLeft: 6 }}>
+                    {t("spike.askSpike")}
+                  </Text>
+                </Pressable>
+
                 {/* Free 7-day: nudge to Pro for the longer windows */}
                 {!premium ? (
                   <Pressable

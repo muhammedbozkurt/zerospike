@@ -23,6 +23,8 @@ export interface DeletionSnapshot {
   meals?: Row[];
   injections?: Row[];
   foods?: Row[];
+  /** med_logs rows (schema v16). Named for the table, not for `meals` above. */
+  meds?: Row[];
 }
 
 async function insertRow(
@@ -41,12 +43,17 @@ async function insertRow(
 
 /** Captures the rows a delete of this journal entry will remove. */
 export async function captureDeletion(
-  kind: "glucose" | "meal" | "injection",
+  kind: "glucose" | "meal" | "injection" | "med",
   id: string
 ): Promise<DeletionSnapshot> {
   const db = await getDb();
   if (kind === "glucose") {
     return { sugar: await db.getAllAsync<Row>("SELECT * FROM sugar_logs WHERE id = ?;", [id]) };
+  }
+  if (kind === "med") {
+    return {
+      meds: await db.getAllAsync<Row>("SELECT * FROM med_logs WHERE id = ?;", [id]),
+    };
   }
   if (kind === "injection") {
     return {
@@ -98,4 +105,7 @@ export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
     );
   }
   for (const row of snap.injections ?? []) await insertRow(db, "injection_logs", row);
+  // Medication rows reference nothing but their profile, so their order in here
+  // does not matter; they go last to keep the linked tables above together.
+  for (const row of snap.meds ?? []) await insertRow(db, "med_logs", row);
 }

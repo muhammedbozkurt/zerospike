@@ -43,13 +43,20 @@ interface FeedRow {
   custom_food_name: string | null;
   glucose_level_mgdl: number | null;
   source: string | null;
+  note: string | null;
+  med_name: string | null;
 }
 
-/** A database shaped like the app's (v11) log tables, with `days` days of data:
- *  one reading + one meal at 08:00 and one injection at 09:00 each day. */
+/** A database shaped like the app's (v16) log tables, with `days` days of data:
+ *  one reading + one meal at 08:00 and one injection at 09:00 each day.
+ *  med_logs exists but starts EMPTY, so section D owns every medication row and
+ *  the counts the sections above assert stay exactly what they were. */
 function makeFeedDb(days: number): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   db.exec(`
+    CREATE TABLE med_logs (
+      id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, taken_at INTEGER NOT NULL,
+      name TEXT, note TEXT, created_at INTEGER NOT NULL);
     CREATE TABLE foods (
       id TEXT PRIMARY KEY NOT NULL, name_tr TEXT, name_en TEXT, name_de TEXT,
       name_es TEXT, name_fr TEXT, category TEXT);
@@ -193,6 +200,59 @@ function main() {
       "none of the limited rows are a calculator-sourced injection",
       tight.every((r) => r.source !== "calculator"),
       true
+    );
+    db.close();
+  }
+
+  section("D. the medication branch (schema v16)");
+  {
+    // med_logs stores epoch MILLISECONDS where every other log table stores ISO
+    // text. SQLite orders by type before value, so an unconverted integer
+    // timestamp sinks below every string one: the whole point of the branch's
+    // strftime() is that a medication entry lands in the day it happened.
+    const db = makeFeedDb(3);
+    const med = db.prepare("INSERT INTO med_logs VALUES (?, ?, ?, ?, ?, ?);");
+    med.run("d2", "p1", day("2026-07-02T08:30:00.000Z"), "Metformin", "kahvaltiyla", 1);
+    med.run("d3", "p1", day("2026-07-03T21:00:00.000Z"), null, null, 1);
+    // Another profile's entry, and a taken_at with milliseconds in it.
+    med.run("dx", "p2", day("2026-07-03T21:30:00.000Z"), "Baskasi", null, 1);
+    med.run("dms", "p1", day("2026-07-01T06:15:42.123Z"), "Erken", null, 1);
+
+    const all = feed(db, 100);
+    eq("medication entries join the feed", all.filter((r) => r.kind === "med").length, 3);
+    eq("another profile's medication never leaks in", all.some((r) => r.id === "dx"), false);
+    eq("the newest entry is now the evening medication", all[0].id, "d3");
+    // Interleaving is the regression: without the conversion every med row would
+    // sit in a block at one end of the feed instead of in its own day.
+    const order = all.map((r) => r.id).join(",");
+    eq(
+      "medication sorts chronologically among the other kinds",
+      order,
+      "d3,i3,s3,m3,i2,d2,s2,m2,i1,s1,m1,dms"
+    );
+    const d2 = all.find((r) => r.id === "d2")!;
+    eq("the stored epoch reads back as the same ISO instant", d2.logged_at, "2026-07-02T08:30:00.000Z");
+    eq("milliseconds survive the conversion", all.find((r) => r.id === "dms")!.logged_at, "2026-07-01T06:15:42.123Z");
+    eq("the name comes through", d2.med_name, "Metformin");
+    eq("so does the note", d2.note, "kahvaltiyla");
+    eq("an unnamed entry stays unnamed", all.find((r) => r.id === "d3")!.med_name, null);
+
+    // The range bounds for this branch are epoch numbers, not ISO strings: bound
+    // as text they would compare against an integer column and match nothing.
+    const oneDay = {
+      start: day("2026-07-02T00:00:00.000Z"),
+      end: day("2026-07-02T23:59:59.999Z"),
+    };
+    const inDay = feed(db, 500, oneDay);
+    eq("a ranged feed includes the day's medication", inDay.some((r) => r.id === "d2"), true);
+    eq("and only that day's entries", inDay.length, 4);
+    eq(
+      "a range outside it excludes medication too",
+      feed(db, 500, {
+        start: day("2025-01-01T00:00:00.000Z"),
+        end: day("2025-01-31T00:00:00.000Z"),
+      }).length,
+      0
     );
     db.close();
   }

@@ -1,4 +1,13 @@
-export type Lang = "tr" | "en" | "de" | "es" | "fr";
+export type Lang =
+  | "tr"
+  | "en"
+  | "de"
+  | "es"
+  | "fr"
+  | "it"
+  | "pt"
+  | "ar"
+  | "ja";
 
 /** Time-of-day meal slots that drive the active carb ratio. */
 export type MealSlot = "breakfast" | "lunch" | "dinner";
@@ -59,7 +68,7 @@ export function serializeTags(
 /** Diabetes type, collected in onboarding. Tone only: it NEVER enters any
  *  calculation (regulation rule). Kept on the profile so the copy the user reads
  *  can match what they told us. */
-export type DiabetesType = "type1" | "type2" | "gestational" | "prediabetes" | "unknown";
+export type DiabetesType = "type1" | "type2" | "gestational" | "prediabetes" | "unknown" | "none";
 
 /** Which insulin the user actually takes. Drives which surfaces are shown:
  *  "none" hides the whole injection/bolus apparatus. */
@@ -94,6 +103,10 @@ export interface UserProfile {
   basal_daily_units: number | null;
   basal_insulin_id: string | null;
   bolus_insulin_id: string | null;
+  /** 1 when the oral-medication surfaces are shown for this profile (schema
+   *  v16). Presentation flag: it decides what the user sees and never enters a
+   *  calculation - no dose, no insulin figure and no metric reads it. */
+  oral_meds_enabled: number; // 0 | 1
   created_at: string;
 }
 
@@ -212,8 +225,11 @@ export function foodName(food: Food, lang: Lang): string {
     case "fr":
       return food.name_fr || food.name_en || food.name_tr;
     case "tr":
-    default:
       return food.name_tr || food.name_en;
+    // it/pt/ar/ja have no name column in the catalogue: English is the neutral
+    // fallback, never Turkish (which the old default branch would have shown).
+    default:
+      return food.name_en || food.name_tr;
   }
 }
 
@@ -387,4 +403,27 @@ export interface Injection {
   source: string;
   logged_at: string;
   tags: LogTag[];
+}
+
+/* ── Oral medication logging (schema v16) ──────────────────────────────────
+ *
+ * A diary line, nothing more: the user writes down that they took something and
+ * when. The app stores no dose, no schedule and no substance list of its own, so
+ * it can neither tell anyone what to take nor claim anything about what they did.
+ */
+
+export interface MedLog {
+  id: string;
+  profile_id: string;
+  /** Epoch MILLISECONDS, not the ISO text the older log tables carry (see
+   *  ./v16Sql). The journal feed converts it so one union still sorts. */
+  taken_at: number;
+  /** What the user called it, or null: an entry with no name still records that
+   *  something was taken at a time. */
+  name: string | null;
+  note: string | null;
+  /** Epoch milliseconds, like taken_at. When the row was written, which is not
+   *  the same as when the medication was taken (a late entry backdates the
+   *  latter and never the former). */
+  created_at: number;
 }

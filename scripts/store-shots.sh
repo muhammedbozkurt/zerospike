@@ -20,7 +20,7 @@
 set -euo pipefail
 
 SCHEME="zerospike"
-LANGS=(tr en de es fr)
+LANGS=(tr en de es fr it pt ar ja)
 OUT="raw"
 
 # route key -> deep-link path+query (scLang is appended per language).
@@ -32,6 +32,8 @@ declare -a SHOTS=(
   "02-bodymap|/(tabs)/injection?segment=map&zoom=abdomen_left_upper"
   "04-food|/(tabs)/food"
   "05-insights|/insights?custom=1"
+  "07-spike|/spike"
+  "08-takip|/onboarding?scOnboarding=none"
 )
 # 03-widget: NOT a device capture (lock-screen + widget composite). If a Live
 # Activity screenshot is desired, capture it manually on the lock screen.
@@ -81,7 +83,7 @@ capture_for_device() { # $1 = device output dir label
       local path="${shot#*|}"
       local sep="?"; [[ "$path" == *"?"* ]] && sep="&"
       open_url "${SCHEME}://${path}${sep}scLang=${lang}"
-      sleep 1.8
+      sleep 3.5
       shoot "$devdir" "$lang" "$key"
     done
   done

@@ -5,10 +5,11 @@ import Foundation
 // so this shape arrives instead over WatchConnectivity's applicationContext
 // (modules/zerospike-watch-bridge on the phone) and is written here into a
 // SEPARATE, watch-local App Group shared only with the watch-widget
-// (complications) target. Kept field-identical to targets/widget/LiveData.swift
-// (the phone's lib/services/liveData.ts is the single source of the JSON
-// shape); duplicated rather than shared because this plugin links each
-// targets/<name> folder to exactly one Xcode target.
+// (complications) target. Duplicated rather than shared because this plugin
+// links each targets/<name> folder to exactly one Xcode target; stays
+// decode-compatible with the phone's LiveData (lib/services/liveData.ts, the
+// single source of the JSON shape) because JSONDecoder silently ignores any
+// JSON key this struct does not declare (e.g. usesInsulin).
 struct LiveData: Codable {
   let updatedAt: Double
   let unit: String

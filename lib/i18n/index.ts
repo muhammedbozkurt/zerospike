@@ -5,7 +5,17 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Lang } from "../db/types";
 import { setActiveLang } from "../lang";
 
-export const SUPPORTED_LANGS: Lang[] = ["tr", "en", "de", "es", "fr"];
+export const SUPPORTED_LANGS: Lang[] = [
+  "tr",
+  "en",
+  "de",
+  "es",
+  "fr",
+  "it",
+  "pt",
+  "ar",
+  "ja",
+];
 const LANG_STORAGE_KEY = "zerospike.lang";
 
 export const LANG_LABELS: Record<Lang, string> = {
@@ -14,6 +24,10 @@ export const LANG_LABELS: Record<Lang, string> = {
   de: "Deutsch",
   es: "Español",
   fr: "Français",
+  it: "Italiano",
+  pt: "Português (Brasil)",
+  ar: "العربية",
+  ja: "日本語",
 };
 
 /**
@@ -34,6 +48,10 @@ const LOCALE_LOADERS: Record<Lang, () => Bundle> = {
   de: () => require("./locales/de").default as Bundle,
   es: () => require("./locales/es").default as Bundle,
   fr: () => require("./locales/fr").default as Bundle,
+  it: () => require("./locales/it").default as Bundle,
+  pt: () => require("./locales/pt").default as Bundle,
+  ar: () => require("./locales/ar").default as Bundle,
+  ja: () => require("./locales/ja").default as Bundle,
 };
 
 const FALLBACK_LANG: Lang = "en";

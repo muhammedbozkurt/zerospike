@@ -1,7 +1,9 @@
 import Foundation
 
-// Same contract as targets/watch/LiveData.swift - kept field-identical to the
-// phone's lib/services/liveData.ts. Duplicated (not shared) because this
+// Same contract as targets/watch/LiveData.swift - stays decode-compatible with
+// the phone's LiveData (lib/services/liveData.ts, the single source of the
+// JSON shape) because JSONDecoder silently ignores any JSON key this struct
+// does not declare (e.g. usesInsulin). Duplicated (not shared) because this
 // plugin links each targets/<name> folder to exactly one Xcode target; this
 // target only ever READS the store (targets/watch's WCSessionDelegate is the
 // only writer).

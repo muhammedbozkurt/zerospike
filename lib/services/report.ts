@@ -25,6 +25,7 @@ import {
   LOW_FOLLOWUP_MINUTES,
 } from "../glucose";
 import { num, pct, formatDate, formatTime, formatDateKey } from "../format";
+import { insulinModeOf, insulinModeUsesInsulin } from "../insulinMode";
 import { GLUCOSE_COLORS, GLUCOSE_VERY_LOW } from "../theme/tokens";
 import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
@@ -165,14 +166,16 @@ const TIMELINE_DOSE_COLOR = "#2563eb";
  * bands draw with. The colour legend for what each glucose colour MEANS
  * already lives at the top of the report, so this only explains the shapes.
  */
-function buildTimelineLegend(tf: Tf): string {
+function buildTimelineLegend(tf: Tf, showDoses: boolean): string {
   const item = (glyph: string, label: string) =>
     `<span><svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">${glyph}</svg>${label}</span>`;
   return (
     `<div class="tlleg">` +
     item(`<circle cx="6" cy="6" r="${TIMELINE_DOT_R}" fill="${GLUCOSE_COLORS.normal}"/>`, tf("report.legendGlucose")) +
     item(`<text x="6" y="9" font-size="${TIMELINE_MEAL_FONT}" text-anchor="middle" fill="${BRAND}">&#9650;</text>`, tf("report.legendMeal")) +
-    item(`<circle cx="6" cy="6" r="${TIMELINE_DOSE_R}" fill="${TIMELINE_DOSE_COLOR}"/>`, tf("report.legendDose")) +
+    (showDoses
+      ? item(`<circle cx="6" cy="6" r="${TIMELINE_DOSE_R}" fill="${TIMELINE_DOSE_COLOR}"/>`, tf("report.legendDose"))
+      : "") +
     `</div>`
   );
 }
@@ -189,7 +192,9 @@ function buildTimeline(
   injections: Injection[],
   band: TargetBand,
   unit: GlucoseUnit,
-  tf: Tf
+  tf: Tf,
+  /** insulin_mode "none": the dose row and its legend glyph are not drawn. */
+  showDoses: boolean
 ): string {
   type Day = { readings: SugarLog[]; meals: MealLog[]; doses: Injection[] };
   const dayMap = new Map<string, Day>();
@@ -204,7 +209,9 @@ function buildTimeline(
   };
   for (const s of sugar) ensure(s.logged_at).readings.push(s);
   for (const m of meals) ensure(m.logged_at).meals.push(m);
-  for (const i of injections) if (i.dose_units && i.dose_units > 0) ensure(i.logged_at).doses.push(i);
+  if (showDoses) {
+    for (const i of injections) if (i.dose_units && i.dose_units > 0) ensure(i.logged_at).doses.push(i);
+  }
   const dayKeys = Array.from(dayMap.keys()).sort().reverse();
   if (dayKeys.length === 0) return "";
 
@@ -249,7 +256,7 @@ function buildTimeline(
       );
     })
     .join("");
-  return `<h2 class="pbreak">${tf("report.timelineTitle")}</h2><div class="cap">${tf("report.timelineCaption")}</div>${buildTimelineLegend(tf)}${bands}`;
+  return `<h2 class="pbreak">${tf("report.timelineTitle")}</h2><div class="cap">${tf("report.timelineCaption")}</div>${buildTimelineLegend(tf, showDoses)}${bands}`;
 }
 
 /** The events page: low events (+ follow-up), the highest five readings, and a
@@ -259,7 +266,9 @@ function buildEvents(
   insights: ReturnType<typeof computeInsights>,
   hypoThresh: number,
   unit: GlucoseUnit,
-  tf: Tf
+  tf: Tf,
+  /** insulin_mode "none": the basal/bolus dose bar is not drawn. */
+  showDoses: boolean
 ): string {
   const u = glucoseUnitLabel(unit);
   const byNewest = [...sugar].sort((a, b) => (a.logged_at < b.logged_at ? 1 : -1));
@@ -288,7 +297,7 @@ function buildEvents(
   const bb = insights.basalUnits + insights.bolusUnits;
   const basalPct = bb > 0 ? Math.round((insights.basalUnits / bb) * 100) : 0;
   const doseBar =
-    bb > 0
+    showDoses && bb > 0
       ? `<div class="tirbar"><div style="width:${basalPct}%;background:${BRAND}"></div><div style="width:${100 - basalPct}%;background:#f59e0b"></div></div>` +
         `<div class="tirleg"><span><i style="background:${BRAND}"></i>${tf("insights.basal")} ${esc(num(Math.round(insights.basalUnits * 10) / 10))}</span><span><i style="background:#f59e0b"></i>${tf("insights.bolus")} ${esc(num(Math.round(insights.bolusUnits * 10) / 10))}</span></div>`
       : "";
@@ -313,12 +322,22 @@ function buildHtml(
   tir: TirBreakdown,
   glucose: { date: string; time: string; value: string; period: string }[],
   injections: { date: string; time: string; site: string; dose: string }[],
+  meds: { date: string; time: string; name: string }[],
   meals: { date: string; time: string; food: string; carbs: string; dose: string }[]
 ): string {
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
   const u = glucoseUnitLabel(unit);
   // The band the caption states is the profile's own, matching the chart above.
   const reportBand = targetBandFor(profile);
+  // A profile with no insulin mode gets no insulin surface in the document it
+  // hands its doctor: no dose metrics, no injection table, no dose column. But
+  // mode changes must never hide already-logged data (lib/insulinMode), so the
+  // flag also fires when the reported range itself still holds injections.
+  const usesInsulin =
+    insulinModeUsesInsulin(insulinModeOf(profile)) || injections.length > 0;
+  // Same rule as usesInsulin above: the toggle, or (mode changes must never
+  // hide already-logged data) a medication row still sitting in this range.
+  const usesMeds = profile.oral_meds_enabled === 1 || meds.length > 0;
   const fmtG = (mgdl: number | null) =>
     mgdl == null ? "-" : `${formatGlucose(mgdl, unit)} ${u}`;
   // Cover shows the actual range; "generated" is the real current moment.
@@ -337,15 +356,19 @@ function buildHtml(
     [t("insights.variability"), fmtG(insights.glucoseSD)],
     [t("insights.cv"), insights.glucoseCV == null ? "-" : esc(pct(insights.glucoseCV))],
     [t("insights.lows"), String(insights.hypoCount)],
-    [t("insights.avgDose"), insights.avgDailyDose == null ? "-" : `${num(Math.round(insights.avgDailyDose * 10) / 10)} ${t("common.units")}`],
-    [
-      t("insights.basalBolus"),
-      insights.basalPct == null
-        ? "-"
-        : `${num(Math.round(insights.basalUnits * 10) / 10)} / ${num(Math.round(insights.bolusUnits * 10) / 10)} ${t("common.units")}`,
-    ],
-    [t("insights.injectionsCount"), String(insights.injectionCount)],
   ];
+  if (usesInsulin) {
+    summaryRows.push(
+      [t("insights.avgDose"), insights.avgDailyDose == null ? "-" : `${num(Math.round(insights.avgDailyDose * 10) / 10)} ${t("common.units")}`],
+      [
+        t("insights.basalBolus"),
+        insights.basalPct == null
+          ? "-"
+          : `${num(Math.round(insights.basalUnits * 10) / 10)} / ${num(Math.round(insights.bolusUnits * 10) / 10)} ${t("common.units")}`,
+      ],
+      [t("insights.injectionsCount"), String(insights.injectionCount)]
+    );
+  }
 
   const summaryTable = `
     <table>
@@ -416,24 +439,44 @@ function buildHtml(
       .join("")
   );
 
-  const injectionSection = section(
-    t("injection.title"),
-    `<tr><th>${t("export.colDate")}</th><th>${t("export.colTime")}</th><th>${t("export.colSite")}</th><th>${t("export.colInsulin")}</th></tr>`,
-    injections
-      .map(
-        (r) =>
-          `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td>${esc(r.site)}</td><td>${esc(r.dose)}</td></tr>`
+  const injectionSection = usesInsulin
+    ? section(
+        t("injection.title"),
+        `<tr><th>${t("export.colDate")}</th><th>${t("export.colTime")}</th><th>${t("export.colSite")}</th><th>${t("export.colInsulin")}</th></tr>`,
+        injections
+          .map(
+            (r) =>
+              `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td>${esc(r.site)}</td><td>${esc(r.dose)}</td></tr>`
+          )
+          .join("")
       )
-      .join("")
-  );
+    : "";
+
+  const medSection = usesMeds
+    ? section(
+        t("meds.title"),
+        `<tr><th>${t("export.colDate")}</th><th>${t("export.colTime")}</th><th>${t("export.colNote")}</th></tr>`,
+        meds
+          .map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td>${esc(r.name)}</td></tr>`)
+          .join("")
+      )
+    : "";
+  // Splices in as its own line only when non-empty, so a profile with no
+  // medication data at all gets the exact same HTML (and PDF) this report
+  // produced before the med section existed.
+  const medBlock = medSection ? `\n  ${medSection}` : "";
 
   const mealSection = section(
     t("report.meals"),
-    `<tr><th>${t("export.colDate")}</th><th>${t("export.colTime")}</th><th>${t("export.colFood")}</th><th>${t("export.colCarbs")}</th><th>${t("export.colInsulin")}</th></tr>`,
+    `<tr><th>${t("export.colDate")}</th><th>${t("export.colTime")}</th><th>${t("export.colFood")}</th><th>${t("export.colCarbs")}</th>${
+      usesInsulin ? `<th>${t("export.colInsulin")}</th>` : ""
+    }</tr>`,
     meals
       .map(
         (r) =>
-          `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td>${esc(r.food)}</td><td>${esc(r.carbs)}</td><td>${esc(r.dose)}</td></tr>`
+          `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td>${esc(r.food)}</td><td>${esc(r.carbs)}</td>${
+            usesInsulin ? `<td>${esc(r.dose)}</td>` : ""
+          }</tr>`
       )
       .join("")
   );
@@ -507,7 +550,7 @@ function buildHtml(
   ${eventsHtml}
 
   ${glucoseSection}
-  ${injectionSection}
+  ${injectionSection}${medBlock}
   ${mealSection}
 
   <div class="foot">
@@ -538,6 +581,8 @@ function splitJournalFeed(
   const sugar: SugarLog[] = [];
   const meals: MealLog[] = [];
   const injections: Injection[] = [];
+  // Medication entries (schema v16) pass through untouched: they feed none of the
+  // three metric tables, and no figure in this document is computed from them.
   for (const e of entries) {
     if (e.kind === "glucose") {
       sugar.push({
@@ -566,7 +611,7 @@ function splitJournalFeed(
         tags: e.tags,
         meal_template_id: null,
       });
-    } else {
+    } else if (e.kind === "injection") {
       injections.push({
         id: e.id,
         profile_id: profileId,
@@ -679,6 +724,14 @@ export async function exportLogsPdf(
       };
     });
 
+  const meds = inWindow
+    .filter((e) => e.kind === "med")
+    .map((e) => {
+      const { date, time } = fmtDateTime(e.logged_at);
+      const m = e as Extract<typeof e, { kind: "med" }>;
+      return { date, time, name: m.name ?? "" };
+    });
+
   const meals = inWindow
     .filter((e) => e.kind === "meal")
     .map((e) => {
@@ -695,8 +748,11 @@ export async function exportLogsPdf(
 
   // Daily timeline + events, from the raw in-range rows.
   const tf: Tf = (k, o) => esc(i18n.t(k, o));
-  const timelineHtml = buildTimeline(sugarInRange, mealsRaw, inj, reportBand, unit, tf);
-  const eventsHtml = buildEvents(sugarInRange, insights, hypoThreshold(profile), unit, tf);
+  // Same effective flag as buildHtml below: mode, or leftover injection data
+  // in this exact range (inj comes from the same getJournal fetch above).
+  const usesInsulin = insulinModeUsesInsulin(insulinModeOf(profile)) || inj.length > 0;
+  const timelineHtml = buildTimeline(sugarInRange, mealsRaw, inj, reportBand, unit, tf, usesInsulin);
+  const eventsHtml = buildEvents(sugarInRange, insights, hypoThreshold(profile), unit, tf, usesInsulin);
 
   const html = buildHtml(
     profile,
@@ -708,6 +764,7 @@ export async function exportLogsPdf(
     tir,
     glucose,
     injections,
+    meds,
     meals
   );
 

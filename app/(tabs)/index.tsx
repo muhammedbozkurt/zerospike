@@ -14,7 +14,7 @@ import { mealSlotForHour } from "../../lib/insulin";
 import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
-import { isScreenshotMode } from "../../lib/screenshotMode";
+import { isScreenshotMode, useScreenshotAndroidSource } from "../../lib/screenshotMode";
 import { insulinModeShowsBolus, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import {
   addSugarLog,
@@ -26,6 +26,7 @@ import {
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
 import { deleteInjection } from "../../lib/db/injections";
+import { deleteMed } from "../../lib/db/meds";
 import { captureDeletion } from "../../lib/db/undo";
 import type { LogTag, PeriodTag } from "../../lib/db/types";
 import {
@@ -227,6 +228,12 @@ export default function DashboardScreen() {
   const { contentColumn } = useLayout();
   const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
+  // Store-screenshot only: an Android store frame is captured on the iOS
+  // simulator (?scPlatform=android), and the Android build has no health sync at
+  // all - so the quick-access row drops the Health card and takes its Android
+  // shape. Always false in a normal build (dev + env double lock).
+  const androidSourceShot = useScreenshotAndroidSource();
+  const showsHealthCard = Platform.OS === "ios" && !androidSourceShot;
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   // The visible journal list only: same window, but with the calculator's own
@@ -253,12 +260,25 @@ export default function DashboardScreen() {
   const [cgmOn, setCgmOn] = useState<boolean | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  // Set only by the "med" deep-link/widget shortcut below: makes the next
+  // QuickAddSheet open land straight on its medication mini-form instead of
+  // the option grid. Cleared the moment the sheet closes, so the normal "+"
+  // CTA always opens on the grid.
+  const [quickAddMedDirect, setQuickAddMedDirect] = useState(false);
   const [showWidgetTip, setShowWidgetTip] = useState(false);
   // Journal: session-only kind filter + how many slices are revealed (one, plus
   // one per "show more" press). Stats below still read the full loaded feed, so
   // filtering/paging never skews them.
   const [filter, setFilter] = useState<"all" | "glucose" | "meal" | "injection">("all");
   const [journalPages, setJournalPages] = useState(1);
+  // Injection chip only exists in insulin modes that log injections; if the
+  // profile's mode changes to "none" while it's selected, fall back to "all"
+  // instead of leaving the list filtered on a kind with no chip.
+  useEffect(() => {
+    if (filter === "injection" && !insulinModeUsesInsulin(activeProfile?.insulin_mode)) {
+      setFilter("all");
+    }
+  }, [filter, activeProfile?.insulin_mode]);
   // SQL window (rows of the merged feed): decoupled from the visible slices so a
   // page-down is a pure in-memory slice. Widened by "show more" only when the
   // loaded feed is exhausted; 300 stays the stats-safe floor the hero/week tiles
@@ -329,15 +349,21 @@ export default function DashboardScreen() {
 
   // Deep-link with a `sheet` param: a reminder tap (app/_layout.tsx routes the
   // notification here) or the Quick Add widget's zerospike:///?sheet=glucose
-  // URL. Opens the glucose sheet on the requested period ("glucose" and any
-  // unknown value fall back to fasting), then clears the param so returning to
-  // this tab later doesn't reopen it.
+  // URL. "med" opens QuickAddSheet straight on its medication form; any other
+  // value opens the glucose sheet on the requested period ("glucose" and any
+  // unknown value fall back to fasting). Either way the param is cleared so
+  // returning to this tab later doesn't reopen it.
   useEffect(() => {
     const s = params.sheet;
     if (!s || !activeProfile) return;
-    setEditGlucose(null);
-    setInitialPeriod(s === "post_meal_2h" ? "post_meal_2h" : "fasting");
-    setSheetOpen(true);
+    if (s === "med") {
+      setQuickAddMedDirect(true);
+      setQuickAddOpen(true);
+    } else {
+      setEditGlucose(null);
+      setInitialPeriod(s === "post_meal_2h" ? "post_meal_2h" : "fasting");
+      setSheetOpen(true);
+    }
     router.setParams({ sheet: "" });
   }, [params.sheet, activeProfile, router]);
 
@@ -507,6 +533,10 @@ export default function DashboardScreen() {
         }
         continue;
       }
+      // Medication entries (schema v16) count toward the logging streak above and
+      // toward nothing else: no dose, no average and no in-range figure is
+      // computed from them.
+      if (e.kind !== "injection") continue;
       injections.push(e);
       if (inWeek) weekInjections++;
     }
@@ -805,6 +835,7 @@ export default function DashboardScreen() {
         // reading is deleted (undo included - undo re-adds without a mirror).
         void deleteGlucoseFromHealth(await deleteSugarLog(entry.id));
       } else if (entry.kind === "injection") await deleteInjection(entry.id);
+      else if (entry.kind === "med") await deleteMed(entry.id);
       else await deleteMealLog(entry.id);
     });
   }
@@ -816,9 +847,11 @@ export default function DashboardScreen() {
     } else if (entry.kind === "glucose") {
       setEditGlucose(entry);
       setSheetOpen(true);
-    } else {
+    } else if (entry.kind === "injection") {
       setEditInjection(entry);
     }
+    // A medication entry has no edit surface in v1 (see onEntryLongPress below,
+    // which leaves the "Edit" action off a med row's menu entirely).
   }
 
   // Meal rows with a computable response (lib/mealResponse.ts) get a small
@@ -849,13 +882,16 @@ export default function DashboardScreen() {
   // also offers "make a template out of this": the whole day+slot bucket it belongs
   // to becomes the items (groupMealsBySlot, resolved on the editor screen).
   function onEntryLongPress(entry: JournalEntry) {
-    const actions: SheetAction[] = [
-      {
+    const actions: SheetAction[] = [];
+    // A medication entry has no edit surface in v1 (see openEdit above): the
+    // menu offers only delete for it, not a dead "Edit" row.
+    if (entry.kind !== "med") {
+      actions.push({
         label: t("common.edit"),
         icon: "create-outline",
         onPress: () => openEdit(entry),
-      },
-    ];
+      });
+    }
     if (entry.kind === "meal") {
       actions.push({
         label: t("templates.fromMeal"),
@@ -1008,7 +1044,9 @@ export default function DashboardScreen() {
     { key: "all", label: t("dashboard.filterAll") },
     { key: "glucose", label: t("dashboard.quickAddGlucose") },
     { key: "meal", label: t("dashboard.quickAddFood") },
-    { key: "injection", label: t("dashboard.quickAddInjection") },
+    ...(insulinModeUsesInsulin(activeProfile?.insulin_mode)
+      ? [{ key: "injection" as const, label: t("dashboard.quickAddInjection") }]
+      : []),
   ];
 
   // Nothing logged yet: the dashboard is every number this app has, and all of
@@ -1393,7 +1431,7 @@ export default function DashboardScreen() {
           // Android has no Health card next to it, and a lone flex:1 card
           // stretched the full row width around a small icon and two short
           // lines. There it takes a card's width instead of the row's.
-          style={Platform.OS === "ios" ? { flex: 1 } : { width: 220, maxWidth: "100%" }}
+          style={showsHealthCard ? { flex: 1 } : { width: 220, maxWidth: "100%" }}
         >
           <View className="flex-row items-center justify-between">
             <IconTile icon="stats-chart" size={28} radius={9} />
@@ -1410,7 +1448,7 @@ export default function DashboardScreen() {
           </Text>
         </Pressable>
 
-        {Platform.OS === "ios" ? (
+        {showsHealthCard ? (
           <Pressable
             onPress={openHealthFlow}
             disabled={isProUser && syncing}
@@ -1616,8 +1654,13 @@ export default function DashboardScreen() {
 
       <QuickAddSheet
         visible={quickAddOpen}
-        onClose={() => setQuickAddOpen(false)}
+        onClose={() => {
+          setQuickAddOpen(false);
+          setQuickAddMedDirect(false);
+        }}
         showInjection={insulinModeUsesInsulin(activeProfile?.insulin_mode)}
+        showMed={activeProfile?.oral_meds_enabled === 1}
+        openMedDirect={quickAddMedDirect}
         onGlucose={() => openLogger("fasting")}
         onFood={() => router.navigate("/(tabs)/food")}
         onInjection={() =>

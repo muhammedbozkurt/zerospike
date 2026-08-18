@@ -61,11 +61,26 @@ export interface InjectionEntry {
   tags: LogTag[];
 }
 
-export type JournalEntry = GlucoseEntry | MealEntry | InjectionEntry;
+/**
+ * An oral medication entry (schema v16). `logged_at` is the ISO instant the
+ * union converts med_logs.taken_at into, so every kind in the feed speaks the
+ * same time format; the epoch value the row is stored under is Date.parse() of
+ * it, exactly. Carries no tags: the table has no tags column.
+ */
+export interface MedEntry {
+  kind: "med";
+  id: string;
+  logged_at: string;
+  /** What the user called it, or null (an unnamed entry is still an entry). */
+  name: string | null;
+  note: string | null;
+}
+
+export type JournalEntry = GlucoseEntry | MealEntry | InjectionEntry | MedEntry;
 
 /** One row of the union in ./journalSql: the columns of the table it came from. */
 interface FeedRow {
-  kind: "glucose" | "meal" | "injection";
+  kind: "glucose" | "meal" | "injection" | "med";
   id: string;
   logged_at: string;
   tags: string | null;
@@ -96,13 +111,16 @@ interface FeedRow {
   insulin_type: InsulinType | null;
   bolus_kind: string | null;
   note: string | null;
+  // med
+  med_name: string | null;
 }
 
 /**
- * Unified chronological feed of a profile's readings, meals and injections.
- * Meal names are resolved to the active language (or the custom name).
+ * Unified chronological feed of a profile's readings, meals, injections and
+ * medication entries. Meal names are resolved to the active language (or the
+ * custom name).
  *
- * ONE query, not three (see ./journalSql). Limiting each table separately meant
+ * ONE query, not four (see ./journalSql). Limiting each table separately meant
  * `limit` rows of every kind were read to display `limit` rows of the merged feed
  * (300 became up to 900), and the rows beyond the merged cut were fetched only to
  * be thrown away. The UNION is ordered and limited by SQLite, so `limit` means
@@ -161,6 +179,16 @@ export async function getJournal(
         note: r.note,
         source: r.source ?? "manual",
         tags: parseTags(r.tags),
+      };
+      return entry;
+    }
+    if (r.kind === "med") {
+      const entry: MedEntry = {
+        kind: "med",
+        id: r.id,
+        logged_at: r.logged_at,
+        name: r.med_name,
+        note: r.note,
       };
       return entry;
     }

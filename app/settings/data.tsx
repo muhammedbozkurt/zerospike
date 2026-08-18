@@ -10,6 +10,7 @@ import { clearAllLogs } from "../../lib/db/index";
 import { exportLogsCsv } from "../../lib/services/export";
 import { exportLogsPdf } from "../../lib/services/report";
 import { INSIGHTS_WINDOWS } from "../../lib/insights";
+import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { setProOverride } from "../../lib/services/purchases";
 import {
   getHealthWriteEnabled,
@@ -72,7 +73,13 @@ export default function DataSettings() {
   async function runCsv(range?: PickedRange) {
     if (!activeProfile) return;
     setExporting(true);
-    const res = await exportLogsCsv(activeProfile.id, activeProfile.name, unit, range);
+    const res = await exportLogsCsv(
+      activeProfile.id,
+      activeProfile.name,
+      unit,
+      range,
+      insulinModeUsesInsulin(insulinModeOf(activeProfile))
+    );
     setExporting(false);
     if (!res.ok) {
       toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");

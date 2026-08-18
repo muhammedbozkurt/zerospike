@@ -1,6 +1,6 @@
 import type { GlucoseUnit, PeriodTag, UserProfile } from "./db/types";
 import { GLUCOSE_COLORS } from "./theme/tokens";
-import { getActiveLang } from "./lang";
+import { formatLocale } from "./format";
 
 /* ── Units ─────────────────────────────────────────────────────────────────
  * Everything is stored in mg/dL. These helpers convert only at the display /
@@ -18,14 +18,14 @@ export function glucoseUnitLabel(unit: GlucoseUnit): string {
 /** mg/dL → the profile's unit as a display string (mmol shows 1 decimal), in the
  *  active locale's number format (mmol "5,5" in tr / de, "5.5" in en). */
 export function formatGlucose(mgdl: number, unit: GlucoseUnit): string {
-  const lang = getActiveLang();
+  const loc = formatLocale();
   try {
     return unit === "mmol"
-      ? (mgdl / MGDL_PER_MMOL).toLocaleString(lang, {
+      ? (mgdl / MGDL_PER_MMOL).toLocaleString(loc, {
           minimumFractionDigits: 1,
           maximumFractionDigits: 1,
         })
-      : Math.round(mgdl).toLocaleString(lang);
+      : Math.round(mgdl).toLocaleString(loc);
   } catch {
     return unit === "mmol"
       ? (mgdl / MGDL_PER_MMOL).toFixed(1)

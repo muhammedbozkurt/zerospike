@@ -8,6 +8,7 @@ import { getPostMealTimerEnd } from "./notifications";
 import { getProfile } from "../db/profiles";
 import { targetBandFor } from "../agpChart";
 import { hypoThreshold, VERY_HIGH_MGDL, formatGlucose } from "../glucose";
+import { insulinModeOf, insulinModeUsesInsulin } from "../insulinMode";
 import type { GlucoseUnit } from "../db/types";
 
 /**
@@ -66,6 +67,16 @@ export interface LiveData {
   /** epoch ms the next reminder is due, or null when none is pending. */
   nextReminderAt: number | null;
   nextReminderKind: ReminderKind | null;
+  /** Whether the active profile uses insulin at all (insulin_mode !== "none").
+   *  The Quick Add widgets hide their injection shortcut when it is false, so a
+   *  profile that hid every in-app injection surface is not offered one from the
+   *  home screen. Presentation only, exactly like lib/insulinMode.ts in the app. */
+  usesInsulin: boolean;
+  /** Whether the active profile tracks oral medication (oral_meds_enabled = 1).
+   *  Unlike `usesInsulin` this one defaults to HIDDEN on every surface: it is a
+   *  new shortcut, so a snapshot written before it existed must not grow a tile
+   *  on its own. Presentation only, same scope as the flag above. */
+  usesOralMeds: boolean;
   /** The profile's OWN colour band (mg/dL), so every native surface colours a
    *  reading the same way the app does instead of a fixed 70/180 rule. */
   band: {
@@ -98,6 +109,11 @@ export interface LiveData {
     addGlucose: string;
     addMeal: string;
     addInjection: string;
+    /** The medication tile's title. Carries the app's OWN `meds.entryLabel`
+     *  noun rather than an "Add ..." phrasing of its own: that string already
+     *  ships in every language the app does, so the tile cannot be the one
+     *  place a locale is missing. */
+    addMed: string;
   };
 }
 
@@ -175,6 +191,8 @@ export async function computeLiveData(
     avgWindowDays: AVG_WINDOW_DAYS,
     nextReminderAt: next?.at ?? null,
     nextReminderKind: next?.kind ?? null,
+    usesInsulin: insulinModeUsesInsulin(insulinModeOf(profile)),
+    usesOralMeds: profile?.oral_meds_enabled === 1,
     band,
     labels: {
       lastReading: i18n.t("widget.lastReading"),
@@ -189,6 +207,7 @@ export async function computeLiveData(
       addGlucose: i18n.t("widget.addGlucose"),
       addMeal: i18n.t("widget.addMeal"),
       addInjection: i18n.t("widget.addInjection"),
+      addMed: i18n.t("meds.entryLabel"),
     },
   };
 }

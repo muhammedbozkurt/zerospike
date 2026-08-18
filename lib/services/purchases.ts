@@ -339,6 +339,14 @@ export interface PlanMeta {
   /** A paid intro price (not a free trial), if any. */
   introPriceString: string | null;
   introPrice: number | null;
+  /**
+   * Free-trial length in days, read from the store's own offer (so an A/B on
+   * the trial length in RevenueCat/App Store Connect/Play Console never needs
+   * a code change). 0 when `hasFreeTrial` is false; falls back to
+   * FALLBACK_TRIAL_DAYS when a real trial exists but its length could not be
+   * parsed from the store data.
+   */
+  freeTrialDays: number;
 }
 export type OfferingPlans = Partial<Record<PlanId, PlanMeta>>;
 export interface OfferingsResult {
@@ -352,6 +360,47 @@ function planFromPackageType(t?: string): PlanId | null {
   if (t === "ANNUAL") return "annual";
   if (t === "LIFETIME") return "lifetime";
   return null;
+}
+
+// Used whenever a real trial exists but its length could not be read from the
+// store (missing/unparseable period data), so the paywall/reminder degrade to
+// the length this app has always shipped instead of breaking.
+const FALLBACK_TRIAL_DAYS = 7;
+
+function periodUnitToDays(unit?: string | null, count?: number | null): number | null {
+  if (!unit || !count || count <= 0) return null;
+  switch (unit) {
+    case "DAY":
+      return count;
+    case "WEEK":
+      return count * 7;
+    case "MONTH":
+      return count * 30;
+    case "YEAR":
+      return count * 365;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Free-trial length in days for a package's intro offer, read straight from
+ * the store: iOS carries it on `product.introPrice` (periodUnit /
+ * periodNumberOfUnits); Android has no such convenience field, so it is read
+ * from the matching subscriptionOption's `freePhase` billing period instead.
+ * Null when neither is present or parseable.
+ */
+function freeTrialDaysFromPackage(p: any): number | null {
+  const prod = p?.product;
+  if (!prod) return null;
+  if (Platform.OS === "ios") {
+    const intro = prod.introPrice;
+    return periodUnitToDays(intro?.periodUnit, intro?.periodNumberOfUnits);
+  }
+  const options: any[] = prod.subscriptionOptions ?? [];
+  const withFreePhase = options.find((o) => o?.freePhase) ?? prod.defaultOption;
+  const phase = withFreePhase?.freePhase;
+  return periodUnitToDays(phase?.billingPeriod?.unit, phase?.billingPeriod?.value);
 }
 
 function mapRcPackage(
@@ -382,6 +431,7 @@ function mapRcPackage(
       hasFreeTrial: isFreeTrial,
       introPriceString: intro && !isFreeTrial ? String(intro.priceString) : null,
       introPrice: intro && !isFreeTrial ? Number(intro.price) : null,
+      freeTrialDays: isFreeTrial ? freeTrialDaysFromPackage(p) ?? FALLBACK_TRIAL_DAYS : 0,
     },
   };
 }
@@ -391,9 +441,9 @@ function mapRcPackage(
 // loadOfferings returns status 'unavailable' so the paywall shows a retry state.
 function devFallbackPlans(): OfferingPlans {
   return {
-    monthly: { priceString: PRO_PRODUCTS.monthly.priceUSD, price: 4.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null },
-    annual: { priceString: PRO_PRODUCTS.annual.priceUSD, price: 29.99, currencyCode: "USD", hasFreeTrial: true, introPriceString: null, introPrice: null },
-    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 79.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null },
+    monthly: { priceString: PRO_PRODUCTS.monthly.priceUSD, price: 4.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
+    annual: { priceString: PRO_PRODUCTS.annual.priceUSD, price: 29.99, currencyCode: "USD", hasFreeTrial: true, introPriceString: null, introPrice: null, freeTrialDays: FALLBACK_TRIAL_DAYS },
+    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 79.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
   };
 }
 

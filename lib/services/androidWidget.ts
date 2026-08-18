@@ -31,6 +31,7 @@ const URI_DASHBOARD = "zerospike:///";
 const URI_ADD_GLUCOSE = "zerospike:///?sheet=glucose";
 const URI_ADD_MEAL = "zerospike:///food";
 const URI_ADD_INJECTION = "zerospike:///injection?compose=1";
+const URI_ADD_MED = "zerospike:///?sheet=med";
 
 /**
  * Pre-mixed tile colours.
@@ -53,6 +54,8 @@ const TILE = {
   meal: { fill: "#0c3029", border: "#115642" },
   /** #7c5cff @ 0.16 / 0.34. */
   injection: { fill: "#1b1a3a", border: "#2f2964" },
+  /** #ffa02a @ 0.16 / 0.34. */
+  med: { fill: "#302518", border: "#5c401b" },
   /** #2ee6ff @ 0.14 / 0.28 - the countdown pill on the glance widget. */
   countdown: { fill: "#0d2c35", border: "#134a56" },
 } as const;
@@ -62,6 +65,9 @@ const TILE_INK = {
   glucose: THEME.accent,
   meal: GLUCOSE_RICH.target,
   injection: THEME.violet,
+  // The one warm hue left once cyan, mint and violet are taken. This widget
+  // prints no reading, so the amber cannot be misread as a classification of one.
+  med: THEME.caution,
 } as const;
 
 /** The current dp footprint of a placed widget (subset of the library's
@@ -271,8 +277,20 @@ export function buildZerospikeWidget(
 
 /** The Quick Add shortcuts, labels straight from the localized snapshot. The
  *  English fallbacks only ever show before the app has written a snapshot,
- *  mirroring the iOS QuickAdd.swift policy. */
+ *  mirroring the iOS QuickAdd.swift policy.
+ *
+ *  The injection tile follows the profile's own insulin_mode: a profile with no
+ *  insulin has every in-app injection surface hidden, so offering one here would
+ *  be the single place that contradicts it. A snapshot written before the flag
+ *  existed carries no value, and the tile stays (the app's own default).
+ *
+ *  The medication tile reads the opposite way round: it is opt-in, so only an
+ *  explicit `true` shows it. A snapshot written before the flag existed must not
+ *  grow a fourth tile behind the user's back. Still a visibility flag only -
+ *  nothing here reads or interprets the user's data. */
 function quickAddShortcuts(data: LiveData | null) {
+  const usesInsulin = data?.usesInsulin !== false;
+  const usesOralMeds = data?.usesOralMeds === true;
   return [
     {
       key: "glucose",
@@ -300,16 +318,36 @@ function quickAddShortcuts(data: LiveData | null) {
       ink: TILE_INK.injection as ColorProp,
       tile: TILE.injection,
     },
-  ];
+    {
+      key: "med",
+      label: data?.labels?.addMed ?? "Medication",
+      uri: URI_ADD_MED,
+      weight: 3,
+      ink: TILE_INK.med as ColorProp,
+      tile: TILE.med,
+    },
+    // The weights are proportions, not widths, so dropping either optional tile
+    // leaves the rest sharing the full row at the same 4:3 emphasis, and showing
+    // both only narrows every tile by the same fraction.
+  ].filter((shortcut) => {
+    if (shortcut.key === "injection") return usesInsulin;
+    if (shortcut.key === "med") return usesOralMeds;
+    return true;
+  });
 }
 
-/** Builds the Quick Add widget: a titled row of three deep-link tiles into the
- *  logging flows. Purely navigational; nothing here interprets anything. */
+/** Builds the Quick Add widget: a titled row of two to four deep-link tiles into
+ *  the logging flows (see quickAddShortcuts for which of them a profile gets).
+ *  Purely navigational; nothing here interprets anything. */
 export function buildQuickAddWidget(
   data: LiveData | null,
   size?: WidgetSize
 ): React.JSX.Element {
   const compact = (size?.height ?? 70) < 60;
+  const shortcuts = quickAddShortcuts(data);
+  // A fourth tile takes its width out of the other three, so the gutters give
+  // back what they can before the labels have to.
+  const gutter = shortcuts.length > 3 ? 4 : 6;
   return React.createElement(
     FlexWidget,
     {
@@ -343,7 +381,7 @@ export function buildQuickAddWidget(
     React.createElement(
       FlexWidget,
       { style: { flexDirection: "row", flex: 1, width: "match_parent" } },
-      ...quickAddShortcuts(data).map((shortcut, i) =>
+      ...shortcuts.map((shortcut, i) =>
         React.createElement(
           FlexWidget,
           {
@@ -362,7 +400,7 @@ export function buildQuickAddWidget(
               borderWidth: 1,
               borderRadius: 14,
               paddingHorizontal: 4,
-              marginLeft: i === 0 ? 0 : 6,
+              marginLeft: i === 0 ? 0 : gutter,
             },
             clickAction: "OPEN_URI",
             clickActionData: { uri: shortcut.uri },

@@ -10,10 +10,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
+import { isScreenshotMode } from "../lib/screenshotMode";
 import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
 import {
   applyNotificationPrefs,
@@ -64,11 +65,20 @@ const DEFAULT_ISF_MGDL = 40;
 const DEFAULT_FASTING_RANGE = { min: 80, max: 130 };
 const DEFAULT_POSTMEAL_RANGE = { min: 80, max: 180 };
 
-const DIABETES_OPTIONS = ["type1", "type2", "gestational", "prediabetes", "other"] as const;
+// Tighter starting ranges for the undiagnosed tracking path ("none"): these are
+// plain reference bands, not a clinical target, since this user has no diagnosis
+// to target against.
+const NONE_FASTING_RANGE = { min: 70, max: 100 };
+const NONE_POSTMEAL_RANGE = { min: 70, max: 140 };
+
+const DIABETES_OPTIONS = ["type1", "type2", "gestational", "prediabetes", "none", "other"] as const;
 type DiabetesOption = (typeof DIABETES_OPTIONS)[number];
 
-const INSULIN_OPTIONS = ["basal", "bolus", "both", "none"] as const;
-type InsulinOption = (typeof INSULIN_OPTIONS)[number];
+// What the user tracks, asked as one question. Insulin and oral medication are
+// two independent flags on the profile, so the four answers below are just the
+// four combinations of them (see effectiveTreatment / hasInsulin / hasOralMeds).
+const TREATMENT_OPTIONS = ["insulin", "pills", "both", "none"] as const;
+type TreatmentOption = (typeof TREATMENT_OPTIONS)[number];
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -77,9 +87,9 @@ const UNIT_ICONS: Record<GlucoseUnit, IconName> = {
   mmol: "flask-outline",
 };
 
-const INSULIN_ICONS: Record<InsulinOption, IconName> = {
-  basal: "moon-outline",
-  bolus: "restaurant-outline",
+const TREATMENT_ICONS: Record<TreatmentOption, IconName> = {
+  insulin: "water-outline",
+  pills: "medkit-outline",
   both: "swap-horizontal-outline",
   none: "remove-circle-outline",
 };
@@ -101,15 +111,42 @@ type StepId =
   | "notify"
   | "disclaimer";
 
+// The fixed head of the quiz (everything after it branches on the answers).
+// Hoisted so the screenshot hook below can point at the diabetes question by
+// name instead of hard-coding an index that would drift if a step is inserted.
+const BASE_STEPS: StepId[] = ["name", "unit", "diabetes"];
+const DIABETES_STEP_IDX = BASE_STEPS.indexOf("diabetes");
+
+/**
+ * Store-screenshot ONLY: /onboarding?scOnboarding=<option> opens the quiz
+ * straight on the DIABETES question with `<option>` already selected, which is
+ * the 08 store panel. Purely a render shortcut - it seeds this screen's local
+ * state (phase / step / answer) exactly as a real tap would leave it for the
+ * instant before the auto-advance, and nothing else: Continue is never pressed,
+ * so no profile or DB write ever happens. Double-locked behind isScreenshotMode()
+ * (dev + env), so in a release build this returns null and the branch is dead.
+ */
+function screenshotDiabetes(param?: string): DiabetesOption | null {
+  if (!isScreenshotMode() || !param) return null;
+  return (DIABETES_OPTIONS as readonly string[]).includes(param)
+    ? (param as DiabetesOption)
+    : null;
+}
+
 export default function OnboardingScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { contentColumn } = useLayout();
   const router = useRouter();
   const { activeProfile, bumpData, completeOnboarding } = useApp();
+  const { scOnboarding } = useLocalSearchParams<{ scOnboarding?: string }>();
+  // Read once, into the initial state below, so the capture opens on the right
+  // step with no welcome frame in between (and a later re-render can never
+  // re-arm it behind the user).
+  const scDiabetes = screenshotDiabetes(scOnboarding);
 
-  const [phase, setPhase] = useState<Phase>("welcome");
-  const [stepIdx, setStepIdx] = useState(0);
+  const [phase, setPhase] = useState<Phase>(scDiabetes ? "quiz" : "welcome");
+  const [stepIdx, setStepIdx] = useState(scDiabetes ? DIABETES_STEP_IDX : 0);
 
   const [name, setName] = useState(
     activeProfile?.name ?? t("profiles.defaultName")
@@ -117,8 +154,8 @@ export default function OnboardingScreen() {
   const [unit, setUnit] = useState<GlucoseUnit>(
     activeProfile?.glucose_unit ?? "mgdl"
   );
-  const [diabetes, setDiabetes] = useState<DiabetesOption | null>(null);
-  const [insulin, setInsulin] = useState<InsulinOption | null>(null);
+  const [diabetes, setDiabetes] = useState<DiabetesOption | null>(scDiabetes);
+  const [treatment, setTreatment] = useState<TreatmentOption | null>(null);
   const [fastingMin, setFastingMin] = useState(
     String(glucoseToDisplay(activeProfile?.target_fasting_min ?? DEFAULT_FASTING_RANGE.min, unit))
   );
@@ -136,6 +173,9 @@ export default function OnboardingScreen() {
   // confirmation, so these stay false and ratios_confirmed stays 0.
   const [carbRatioTouched, setCarbRatioTouched] = useState(false);
   const [isfTouched, setIsfTouched] = useState(false);
+  // Same pattern for the target range: once the user edits a value by hand,
+  // switching the diabetes answer must never overwrite it again.
+  const [targetsTouched, setTargetsTouched] = useState(false);
   // Ratio + ISF are stepper-driven numbers (E.7); ISF is in the display unit.
   const [carbRatio, setCarbRatio] = useState(
     activeProfile?.carb_ratio_breakfast ?? DEFAULT_CARB_RATIO
@@ -151,16 +191,25 @@ export default function OnboardingScreen() {
   // flow never advances as if permission was granted when it was not.
   const [notifyResult, setNotifyResult] = useState<NotificationPermission | null>(null);
 
+  // "none" (undiagnosed) forces the tracking-only path: any treatment answer
+  // picked before the user backed up and switched to "none" must not leak
+  // into the profile, so the effective value is re-derived every render
+  // instead of trusting the raw `treatment` state.
+  const effectiveTreatment: TreatmentOption | null =
+    diabetes === "none" ? "none" : treatment;
   const hasInsulin =
-    insulin === "basal" || insulin === "bolus" || insulin === "both";
+    effectiveTreatment === "insulin" || effectiveTreatment === "both";
+  const hasOralMeds =
+    effectiveTreatment === "pills" || effectiveTreatment === "both";
 
-  // Branching flow: the carb-ratio / ISF / basal-time trio is only for insulin
-  // users. Everyone gets the notification + disclaimer tail.
+  // Branching flow: the treatment question and the carb-ratio / ISF / basal-time
+  // trio are skipped entirely on the "none" path (nothing to ask). Everyone
+  // gets the notification + disclaimer tail.
   const steps = useMemo<StepId[]>(() => {
-    const base: StepId[] = ["name", "unit", "diabetes", "insulin", "targets"];
+    const insulinStep: StepId[] = diabetes === "none" ? [] : ["insulin"];
     const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
-    return [...base, ...branch, "widget", "notify", "disclaimer"];
-  }, [hasInsulin]);
+    return [...BASE_STEPS, ...insulinStep, "targets", ...branch, "widget", "notify", "disclaimer"];
+  }, [diabetes, hasInsulin]);
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
   const step = steps[stepIdxClamped];
@@ -197,6 +246,21 @@ export default function OnboardingScreen() {
     // ISF is a number in the current display unit - convert it numerically.
     setIsf(glucoseToDisplay(glucoseFromDisplay(isf, unit), next));
     setUnit(next);
+  }
+
+  // Picking a diabetes answer also seeds the target-range defaults: "none"
+  // starts from the tighter tracking-only band, any other answer from the
+  // ADA-shaped band. Only while the user hasn't hand-edited a target value -
+  // once touched, their own numbers are never overwritten.
+  function selectDiabetes(opt: DiabetesOption) {
+    setDiabetes(opt);
+    if (targetsTouched) return;
+    const fasting = opt === "none" ? NONE_FASTING_RANGE : DEFAULT_FASTING_RANGE;
+    const postmeal = opt === "none" ? NONE_POSTMEAL_RANGE : DEFAULT_POSTMEAL_RANGE;
+    setFastingMin(String(glucoseToDisplay(fasting.min, unit)));
+    setFastingMax(String(glucoseToDisplay(fasting.max, unit)));
+    setPostmealMin(String(glucoseToDisplay(postmeal.min, unit)));
+    setPostmealMax(String(glucoseToDisplay(postmeal.max, unit)));
   }
 
   const next = () => setStepIdx((i) => Math.min(steps.length - 1, i + 1));
@@ -286,7 +350,11 @@ export default function OnboardingScreen() {
         diabetes_type: (diabetes === "other" || diabetes == null
           ? "unknown"
           : diabetes) as DiabetesType,
-        insulin_mode: (insulin ?? "none") as InsulinMode,
+        insulin_mode: (hasInsulin ? "both" : "none") as InsulinMode,
+        // The pill surfaces (logging + the reminder row in Settings) stay hidden
+        // until this is on. The reminder itself is NOT armed here: onboarding
+        // never asks for a time, so it is opened from notification settings.
+        oral_meds_enabled: hasOralMeds ? 1 : 0,
         // Not asked during onboarding (it has a safe default and the flow must
         // not grow a step), but it is written through the same clamp settings
         // uses so no path can seed an out-of-band threshold.
@@ -338,6 +406,10 @@ export default function OnboardingScreen() {
         return t("onboarding.qUnitHint");
       case "diabetes":
         return t("onboarding.qDiabetesHint");
+      case "targets":
+        return diabetes === "none"
+          ? t("onboarding.qTargetsHintTracking")
+          : undefined;
       case "carbRatio":
         return t("onboarding.qCarbRatioHint");
       case "isf":
@@ -470,29 +542,27 @@ export default function OnboardingScreen() {
                 <OptionCard
                   label={t(`onboarding.diabetes_${opt}`)}
                   selected={diabetes === opt}
-                  onPress={() => selectAndAdvance(() => setDiabetes(opt))}
+                  onPress={() => selectAndAdvance(() => selectDiabetes(opt))}
                 />
               </FadeSlideIn>
             ))}
           </View>
         );
 
-      // Binary in onboarding: "Do you use insulin?" Yes → both (carbRatio/isf/
-      // basal follow), No → none. The finer 4-way distinction stays in Settings,
-      // which is its only real consumer (tab visibility, IOB, calculator mode).
+      // One question, two flags: insulin answers map to insulin_mode "both" (the
+      // carbRatio/isf/basal branch follows), pill answers to oral_meds_enabled.
+      // The finer 4-way insulin distinction stays in Settings, which is its only
+      // real consumer (tab visibility, IOB, calculator mode).
       case "insulin":
         return (
           <View>
-            {([
-              ["both", "yes", "checkmark-circle-outline"],
-              ["none", "no", "remove-circle-outline"],
-            ] as const).map(([val, key, icon], i) => (
-              <FadeSlideIn key={val} delay={optDelay(i)}>
+            {TREATMENT_OPTIONS.map((opt, i) => (
+              <FadeSlideIn key={opt} delay={optDelay(i)}>
                 <OptionCard
-                  icon={icon}
-                  label={t(`onboarding.insulinUse_${key}`)}
-                  selected={insulin === val}
-                  onPress={() => selectAndAdvance(() => setInsulin(val))}
+                  icon={TREATMENT_ICONS[opt]}
+                  label={t(`onboarding.treatment_${opt}`)}
+                  selected={treatment === opt}
+                  onPress={() => selectAndAdvance(() => setTreatment(opt))}
                 />
               </FadeSlideIn>
             ))}
@@ -511,8 +581,14 @@ export default function OnboardingScreen() {
               unit={glucoseUnitLabel(unit)}
               minText={fastingMin}
               maxText={fastingMax}
-              onChangeMin={setFastingMin}
-              onChangeMax={setFastingMax}
+              onChangeMin={(v) => {
+                setFastingMin(v);
+                setTargetsTouched(true);
+              }}
+              onChangeMax={(v) => {
+                setFastingMax(v);
+                setTargetsTouched(true);
+              }}
               axisMin={glucoseToDisplay(50, unit)}
               axisMax={glucoseToDisplay(250, unit)}
               minLabel={t("common.rangeMin")}
@@ -532,8 +608,14 @@ export default function OnboardingScreen() {
               unit={glucoseUnitLabel(unit)}
               minText={postmealMin}
               maxText={postmealMax}
-              onChangeMin={setPostmealMin}
-              onChangeMax={setPostmealMax}
+              onChangeMin={(v) => {
+                setPostmealMin(v);
+                setTargetsTouched(true);
+              }}
+              onChangeMax={(v) => {
+                setPostmealMax(v);
+                setTargetsTouched(true);
+              }}
               axisMin={glucoseToDisplay(50, unit)}
               axisMax={glucoseToDisplay(300, unit)}
               minLabel={t("common.rangeMin")}

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import type { JournalEntry } from "../lib/db/journal";
@@ -294,6 +294,61 @@ function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, on
     );
   }
 
+  if (entry.kind === "med") {
+    const label = [
+      entry.name ? `${t("meds.entryLabel")} · ${entry.name}` : t("meds.entryLabel"),
+      formatTime(entry.logged_at),
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return (
+      <Row
+        accent={THEME.accent}
+        label={label}
+        onPress={() => onPress?.(entry)}
+        onLongPress={() => onLongPress?.(entry)}
+      >
+        {/* IconTile only carries Ionicons; a pill glyph lives in
+            MaterialCommunityIcons, so this tile matches IconTile's look by
+            hand instead of forcing "medical"/"medkit" onto a row that would
+            then read the same as the injection row above it. */}
+        <View
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 10,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: THEME.border,
+            backgroundColor: THEME.glass,
+            marginRight: 10,
+          }}
+        >
+          <MaterialCommunityIcons name="pill" size={16} color={THEME.accent} />
+        </View>
+        <View className="flex-1">
+          <Text
+            style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {entry.name ? `${t("meds.entryLabel")} · ${entry.name}` : t("meds.entryLabel")}
+          </Text>
+        </View>
+        <Text
+          style={{ color: THEME.muted, fontSize: 10, marginLeft: 6 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
+          {formatTime(entry.logged_at)}
+        </Text>
+      </Row>
+    );
+  }
+
   // meal entry: neutral (muted) accent, on-palette instead of slate hexes.
   const mealLabel = [
     entry.display_name,
@@ -301,9 +356,13 @@ function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, on
     t("journal.carbsLabel", {
       carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
     }),
-    t("journal.doseLabel", { dose: num(entry.insulin_dose_units) }),
+    entry.insulin_dose_units > 0
+      ? t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })
+      : null,
     formatTime(entry.logged_at),
-  ].join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ");
   return (
     <Row
       accent={THEME.muted}
@@ -348,8 +407,10 @@ function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, on
           {Math.round(entry.portion_g)} {t("common.grams")} ·{" "}
           {t("journal.carbsLabel", {
             carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
-          })}{" "}
-          · {t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })}
+          })}
+          {entry.insulin_dose_units > 0
+            ? ` · ${t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })}`
+            : ""}
         </Text>
         {entry.personal_note ? (
           <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>

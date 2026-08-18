@@ -47,13 +47,16 @@ export default function NotificationSettings() {
   const [reliability, setReliability] = useState<ReminderReliability | null>(null);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [notifDenied, setNotifDenied] = useState(false);
-  const [openPicker, setOpenPicker] = useState<"basal" | "glucose" | "weekly" | null>(null);
+  const [openPicker, setOpenPicker] = useState<
+    "basal" | "med" | "glucose" | "weekly" | null
+  >(null);
   // A post-meal timer is counting down right now. Only then does the delay note
   // have anything to describe, so it stays out of the way the rest of the time.
   const [postMealRunning, setPostMealRunning] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
   const showsBasal = insulinModeShowsBasal(insulinModeOf(activeProfile));
+  const showsMeds = activeProfile?.oral_meds_enabled === 1;
 
   useEffect(() => {
     (async () => {
@@ -212,6 +215,37 @@ export default function NotificationSettings() {
                     visible={openPicker === "basal"}
                     value={prefs.basalTime}
                     onChange={(v) => updatePrefs({ basalTime: v })}
+                    onClose={() => setOpenPicker(null)}
+                  />
+                </>
+              ) : null}
+
+              {showsMeds ? (
+                <Row
+                  icon="medical-outline"
+                  label={t("notifications.medReminderLabel")}
+                  right={
+                    <Switch
+                      value={prefs.med}
+                      onValueChange={(v) => updatePrefs({ med: v })}
+                      trackColor={{ true: THEME.accent, false: THEME.border }}
+                      thumbColor={THEME.ink}
+                    />
+                  }
+                />
+              ) : null}
+              {showsMeds && prefs.med ? (
+                <>
+                  <Row
+                    icon="alarm-outline"
+                    label={t("settings.reminderTime")}
+                    value={prefs.medTime}
+                    onPress={() => setOpenPicker((p) => (p === "med" ? null : "med"))}
+                  />
+                  <InlineTimePicker
+                    visible={openPicker === "med"}
+                    value={prefs.medTime}
+                    onChange={(v) => updatePrefs({ medTime: v })}
                     onClose={() => setOpenPicker(null)}
                   />
                 </>

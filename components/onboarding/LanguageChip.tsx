@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
@@ -34,6 +41,7 @@ function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
 export function LanguageChip() {
   const { t } = useTranslation();
   const { lang, setLanguage } = useApp();
+  const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
 
   async function select(next: Lang) {
@@ -82,32 +90,41 @@ export function LanguageChip() {
             <Text className="text-ink text-lg font-bold mb-3 px-1">
               {t("settings.language")}
             </Text>
-            {SUPPORTED_LANGS.map((l) => {
-              const active = l === lang;
-              return (
-                <Pressable
-                  key={l}
-                  onPress={() => select(l)}
-                  className={`flex-row items-center rounded-2xl px-3 py-2.5 mb-1.5 border ${
-                    active
-                      ? "bg-brand/10 border-brand/40"
-                      : "bg-glass border-transparent"
-                  }`}
-                >
-                  <CodeBadge code={l} active={active} />
-                  <Text
-                    className={`flex-1 ml-3 font-medium ${
-                      active ? "text-brand" : "text-ink"
+            <ScrollView
+              style={{ maxHeight: height * 0.5 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {SUPPORTED_LANGS.map((l) => {
+                const active = l === lang;
+                return (
+                  <Pressable
+                    key={l}
+                    onPress={() => select(l)}
+                    className={`flex-row items-center rounded-2xl px-3 py-2.5 mb-1.5 border ${
+                      active
+                        ? "bg-brand/10 border-brand/40"
+                        : "bg-glass border-transparent"
                     }`}
                   >
-                    {LANG_LABELS[l]}
-                  </Text>
-                  {active ? (
-                    <Ionicons name="checkmark-circle" size={20} color="#2ee6ff" />
-                  ) : null}
-                </Pressable>
-              );
-            })}
+                    <CodeBadge code={l} active={active} />
+                    <Text
+                      className={`flex-1 ml-3 font-medium ${
+                        active ? "text-brand" : "text-ink"
+                      }`}
+                    >
+                      {LANG_LABELS[l]}
+                    </Text>
+                    {active ? (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#2ee6ff"
+                      />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>

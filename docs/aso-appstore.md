@@ -1,4 +1,4 @@
-# zerospike App Store + Google Play ASO - Index (2026-07)
+# zerospike App Store + Google Play ASO - Index (2026-08, v1.7.0)
 
 This is the overview and rule set. The actual per-store, per-language copy lives in
 one file per language under `zerospike-store/aso/`:
@@ -58,14 +58,20 @@ Play. This is already applied in each language file.
   reminder). No Apple Watch app.
 - Injection site rotation tracker: body map, point-level rotation
   ("longest-unused point"), neutral absorption-speed education per region.
-- Food logging: ~562-food database, barcode scanning, carb tracking, quick add,
-  favorites. (Copy says "500+" to stay conservative.)
+- Food logging: 1152-food database, barcode scanning, carb tracking, quick add,
+  favorites. (Copy says "1000+" to stay conservative.)
 - Insights (Pro): Time in Range (TIR), Ambulatory Glucose Profile (AGP),
   GMI / estimated A1C, 30 and 90 day trends, weekly digest.
 - Doctor-ready PDF report for any date range.
 - Multiple profiles.
-- Apple Health sync (read of glucose only). No writing to Apple Health.
-- 5 languages: Turkish, English, German, Spanish, French.
+- Apple Health sync (Pro): read of glucose; optional user-enabled write-back of
+  manually logged readings (off by default, toggled in Settings).
+- Tracking without a diagnosis (1.7.0): an optional "No diagnosis" setup choice
+  hides all insulin surfaces and keeps a plain glucose and meal journal. Copy may
+  mention the in-app reference links (CDC prediabetes page, ADA risk test) but must
+  never imply screening, risk scoring or symptom assessment by the app.
+- 9 languages: Turkish, English, German, Spanish, French, Italian, Portuguese,
+  Arabic, Japanese (last four added in 2.0.0).
 - Pro subscription tier (monthly, yearly with 7-day trial, one-time lifetime).
 
 Note: the app also has an SOS/emergency-contact screen and a "Spike" help chat, but
@@ -78,8 +84,11 @@ zerospike is a personal diabetes logbook (wellness/tracking). It does not diagno
 treat or provide medical advice; any insulin figure shown is plain arithmetic from
 the user's own saved ratios, and every such screen carries a "not medical advice"
 disclaimer. All health data stays on the device: there is no account, no server and
-no upload. HealthKit is used read-only (blood glucose, insulin delivery, workouts) to
-display the user's own data in the journal; nothing is written back or shared. The
+no upload. HealthKit reads (blood glucose, insulin delivery, workouts) display the
+user's own data in the journal; manually logged glucose can optionally be written
+back to Health, only when the user turns this on in Settings, and nothing is shared.
+Setup includes an optional "No diagnosis" choice that simply hides insulin screens;
+the app never screens, scores risk or assesses symptoms. The
 SOS screen only opens the system dialer or a prefilled message composer containing
 the user's location; it never places calls or sends messages automatically. To review
 quickly: on a fresh install, complete the step-by-step setup (defaults are fine), then

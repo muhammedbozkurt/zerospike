@@ -68,7 +68,13 @@ export async function exportLogsCsv(
    *  the user actually reads, and names it in its own column. */
   unit: GlucoseUnit = "mgdl",
   /** Optional explicit range; when given, only entries inside it are exported. */
-  range?: DateRange
+  range?: DateRange,
+  /** The caller's insulin_mode signal (lib/insulinMode): false means the profile's
+   *  current mode is "none". Combined below with whether the exported range
+   *  itself still holds injection rows, so a profile that logged doses before
+   *  switching modes off does not lose that history from its export. Defaults
+   *  to today's shape for any caller that has no profile in hand. */
+  usesInsulin = true
 ): Promise<ExportResult> {
   const lang = currentLang();
   // The range goes into SQL, not a filter over the newest 5000 rows: an export of
@@ -76,6 +82,12 @@ export async function exportLogsCsv(
   // history than the limit, with nothing in the file saying so.
   const entries = await getJournal(profileId, lang, EXPORT_MAX_ROWS, range);
   if (entries.length === 0) return { ok: false, reason: "noData" };
+
+  // Mode changes must never hide already-logged data (lib/insulinMode): a
+  // profile that switched insulin_mode to "none" still gets the insulin/site
+  // columns when this exact range holds injection rows from before the switch.
+  const effectiveUsesInsulin =
+    usesInsulin || entries.some((e) => e.kind === "injection");
 
   // Locales whose decimal mark is a comma (tr/de/es/fr) get a ";" delimiter, a
   // comma decimal, and a leading `sep=;` hint so Excel splits columns correctly
@@ -99,14 +111,26 @@ export async function exportLogsCsv(
     i18n.t("export.colTags"),
   ];
 
-  const rows: string[] = [headers.map(esc).join(delim)];
+  // Index of the two insulin-only columns. Dropping them from the header AND
+  // from every row in one place is what keeps the sheet rectangular.
+  const INSULIN_COL = 6;
+  const SITE_COL = 8;
+  const line = (cells: (string | number | null | undefined)[]) =>
+    (effectiveUsesInsulin
+      ? cells
+      : cells.filter((_, i) => i !== INSULIN_COL && i !== SITE_COL)
+    )
+      .map(esc)
+      .join(delim);
+
+  const rows: string[] = [line(headers)];
 
   // entries are newest-first; export oldest-first for a natural reading order
   for (const e of [...entries].reverse()) {
     const { date, time } = fmtDate(e.logged_at);
     if (e.kind === "glucose") {
       rows.push(
-        [
+        line([
           date,
           time,
           `${i18n.t("export.typeGlucose")} · ${periodLabel(e.period_tag)}`,
@@ -120,13 +144,11 @@ export async function exportLogsCsv(
           "",
           "",
           tagsLabel(e.tags),
-        ]
-          .map(esc)
-          .join(delim)
+        ])
       );
     } else if (e.kind === "meal") {
       rows.push(
-        [
+        line([
           date,
           time,
           i18n.t("export.typeMeal"),
@@ -138,15 +160,12 @@ export async function exportLogsCsv(
           "",
           e.personal_note ?? "",
           tagsLabel(e.tags),
-        ]
-          .map(esc)
-          .join(delim)
+        ])
       );
-    } else {
-      // injection
+    } else if (e.kind === "injection") {
       const typeLabel = insulinTypeLabel(e.insulin_type);
       rows.push(
-        [
+        line([
           date,
           time,
           typeLabel
@@ -162,9 +181,13 @@ export async function exportLogsCsv(
             : i18n.t("injectionSite.unassigned"),
           e.note ?? "",
           tagsLabel(e.tags),
-        ]
-          .map(esc)
-          .join(delim)
+        ])
+      );
+    } else if (e.kind === "med") {
+      // No dedicated column for a medication name: it rides in Note, the same
+      // slot a hand-typed remark would use in every other row kind.
+      rows.push(
+        line([date, time, i18n.t("export.typeMed"), "", "", "", "", "", "", e.name ?? "", ""])
       );
     }
   }

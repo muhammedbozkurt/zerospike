@@ -1,11 +1,15 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   BackHandler,
   Easing,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,8 +17,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { THEME, RADIUS } from "../lib/theme/tokens";
-import { IconTile } from "./rich";
-import { hapticSelect } from "../lib/haptics";
+import { IconTile, GradientCTA } from "./rich";
+import { InlineDateTimePicker } from "./InlineDateTimePicker";
+import { hapticSelect, hapticSuccess } from "../lib/haptics";
+import { useApp } from "../lib/store/AppContext";
+import { useFeedback } from "./Feedback";
+import { logMed } from "../lib/db/meds";
+import { logEvent } from "../lib/analytics";
+import { formatTime, relativeDay } from "../lib/format";
 
 interface QuickAddSheetProps {
   visible: boolean;
@@ -24,6 +34,11 @@ interface QuickAddSheetProps {
   onInjection: () => void;
   /** Hide the injection card for a profile that takes no insulin. */
   showInjection?: boolean;
+  /** Show the medication card for a profile with oral-medication tracking on. */
+  showMed?: boolean;
+  /** Opens straight onto the medication entry step instead of the option grid
+   *  (the "med" notification deep-link and the widget's quick-add shortcut). */
+  openMedDirect?: boolean;
 }
 
 /**
@@ -40,13 +55,32 @@ export function QuickAddSheet({
   onFood,
   onInjection,
   showInjection = true,
+  showMed = false,
+  openMedDirect = false,
 }: QuickAddSheetProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { activeProfile, bumpData } = useApp();
+  const { toast } = useFeedback();
   const anim = useRef(new Animated.Value(0)).current;
+  // Which body the sheet shows: the option grid, or the medication mini-form
+  // (name + time + save) reached from the "Medication" card or opened directly
+  // by the deep-link/widget shortcut.
+  const [step, setStep] = useState<"grid" | "med">("grid");
+  const [medName, setMedName] = useState("");
+  // null keeps the "log it as of now" default, same convention as the glucose
+  // sheet; a Date is an explicit pick.
+  const [medAt, setMedAt] = useState<Date | null>(null);
+  const [medTimePickerOpen, setMedTimePickerOpen] = useState(false);
+  const [savingMed, setSavingMed] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
+    setStep(openMedDirect ? "med" : "grid");
+    setMedName("");
+    setMedAt(null);
+    setMedTimePickerOpen(false);
+    setSavingMed(false);
     anim.setValue(0);
     Animated.timing(anim, {
       toValue: 1,
@@ -54,7 +88,26 @@ export function QuickAddSheet({
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [visible, anim]);
+  }, [visible, openMedDirect, anim]);
+
+  async function saveMed() {
+    if (!activeProfile || savingMed) return;
+    setSavingMed(true);
+    try {
+      await logMed({
+        profileId: activeProfile.id,
+        takenAt: (medAt ?? new Date()).getTime(),
+        name: medName.trim() || null,
+      });
+      logEvent("log_added", { kind: "med", source: "manual" });
+      bumpData();
+      hapticSuccess();
+      toast(t("meds.took"), "success");
+      onClose();
+    } finally {
+      setSavingMed(false);
+    }
+  }
 
   /**
    * Android hardware back closes the sheet.
@@ -93,6 +146,22 @@ export function QuickAddSheet({
           },
         ]
       : []),
+    ...(showMed
+      ? [
+          {
+            key: "med",
+            icon: "medical-outline" as keyof typeof Ionicons.glyphMap,
+            label: t("meds.entryLabel"),
+            // Stays on this sheet: tapping opens the mini-form below instead
+            // of closing + navigating like the other three cards (see the
+            // onPress branch on the Pressable below).
+            onPress: () => {
+              hapticSelect();
+              setStep("med");
+            },
+          },
+        ]
+      : []),
   ];
 
   const select = (fn: () => void) => {
@@ -115,7 +184,11 @@ export function QuickAddSheet({
           accessibilityLabel={t("common.close")}
         />
       </Animated.View>
-      <View style={{ flex: 1, justifyContent: "flex-end" }} pointerEvents="box-none">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, justifyContent: "flex-end" }}
+        pointerEvents="box-none"
+      >
         <Animated.View
           style={{
             transform: [
@@ -150,42 +223,129 @@ export function QuickAddSheet({
                 }}
               />
             </View>
-            {/* The three cards carry their own labels, so the question above
-                them only repeated what they already say. */}
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-              {options.map((opt) => (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => select(opt.onPress)}
+            {step === "grid" ? (
+              // The cards carry their own labels, so a question above them
+              // would only repeat what they already say.
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                {options.map((opt) => (
+                  <Pressable
+                    key={opt.key}
+                    // "med" stays on this sheet (opens the form below) instead
+                    // of closing + navigating like the other cards.
+                    onPress={() => (opt.key === "med" ? opt.onPress() : select(opt.onPress))}
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: THEME.glass,
+                      borderWidth: 1,
+                      borderColor: THEME.border,
+                      borderRadius: RADIUS.lg,
+                      paddingVertical: 18,
+                      gap: 10,
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={opt.label}
+                  >
+                    <IconTile icon={opt.icon} size={48} radius={14} hero />
+                    <Text
+                      style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <View style={{ marginTop: 4 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 14 }}>
+                  <Pressable
+                    onPress={() => setStep("grid")}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("common.back")}
+                    style={{ padding: 4, marginLeft: -4 }}
+                  >
+                    <Ionicons name="chevron-back" size={22} color={THEME.muted} />
+                  </Pressable>
+                  <Text
+                    style={{
+                      color: THEME.ink,
+                      fontSize: 16,
+                      fontWeight: "800",
+                      flex: 1,
+                      textAlign: "center",
+                      marginRight: 26,
+                    }}
+                  >
+                    {t("meds.title")}
+                  </Text>
+                </View>
+
+                <TextInput
+                  value={medName}
+                  onChangeText={setMedName}
+                  placeholder={t("meds.nameOptional")}
+                  placeholderTextColor={THEME.muted}
+                  accessibilityLabel={t("meds.nameOptional")}
                   style={{
-                    flex: 1,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: THEME.glass,
+                    borderRadius: RADIUS.md,
                     borderWidth: 1,
                     borderColor: THEME.border,
-                    borderRadius: RADIUS.lg,
-                    paddingVertical: 18,
-                    gap: 10,
+                    backgroundColor: THEME.glass,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    color: THEME.ink,
+                    fontSize: 14,
+                    marginBottom: 12,
                   }}
-                  accessibilityRole="button"
-                  accessibilityLabel={opt.label}
+                />
+
+                <Pressable
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setMedTimePickerOpen((v) => !v);
+                  }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    borderRadius: RADIUS.md,
+                    borderWidth: 1,
+                    borderColor: THEME.border,
+                    backgroundColor: THEME.glass,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    marginBottom: 14,
+                  }}
                 >
-                  <IconTile icon={opt.icon} size={48} radius={14} hero />
-                  <Text
-                    style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.85}
-                  >
-                    {opt.label}
+                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
+                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                    {relativeDay((medAt ?? new Date()).toISOString(), {
+                      today: t("common.today"),
+                      yesterday: t("common.yesterday"),
+                    })}
+                    {" · "}
+                    {formatTime((medAt ?? new Date()).toISOString())}
                   </Text>
                 </Pressable>
-              ))}
-            </View>
+                <InlineDateTimePicker
+                  visible={medTimePickerOpen}
+                  value={medAt ?? new Date()}
+                  max={new Date()}
+                  locale={i18n.language}
+                  onChange={setMedAt}
+                  onClose={() => setMedTimePickerOpen(false)}
+                />
+
+                <GradientCTA label={t("meds.logCta")} disabled={savingMed} onPress={saveMed} />
+              </View>
+            )}
           </View>
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }

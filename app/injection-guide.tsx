@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 import {
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Pressable,
   ScrollView,
   Text,
   useWindowDimensions,
@@ -169,6 +170,19 @@ function InjectionGuideScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}>
+        {/* Rotation is the one question this deck raises most; the starter goes
+            into Spike's input prefilled, the user still sends it. */}
+        <Pressable
+          onPress={() => router.push({ pathname: "/spike", params: { ask: "suggest3" } })}
+          className="flex-row items-center justify-center py-2 mb-1"
+          accessibilityRole="button"
+          accessibilityLabel={t("spike.askSpike")}
+        >
+          <Ionicons name="sparkles-outline" size={14} color={THEME.accent} />
+          <Text style={{ color: THEME.accent, fontSize: 12, marginLeft: 6 }}>
+            {t("spike.askSpike")}
+          </Text>
+        </Pressable>
         <GradientCTA
           label={t("common.close")}
           variant="sub"

@@ -1,4 +1,13 @@
 
+## 2.0.0 paketi sonrasi (18 Agu 2026) - INSAN
+
+- [ ] Fiyat guncellemesi: docs/pricing-2026-08.md tablosu (ASC abonelik + lifetime, RevenueCat downsell urunu, Play). Mevcut abonelere "preserve price".
+- [ ] Cihaz QA: temiz kurulum onboarding (tani yok yolu + Insulin/Hap/Ikisi/Hicbiri sorusu), ilac hizli ekleme + gunluk satiri + hatirlatici, widget ilac kisayolu (iOS + Android; eski snapshot'ta gizli kalmali), 9 dilde dil secimi ve Arapca ekranlarin okunurlugu (RTL yok, LTR duzen bilincli).
+- [ ] Xcode: widget hedefi derle (QuickAdd.swift 4 kutucuk yerlesimi degisti), Dynamic Island/widget QA.
+- [ ] Store yuklemeleri: zerospike-store/aso/{9 dil}.md metinleri + zerospike-store/ gorselleri konsollara; yeni store dilleri ASC/Play'de aktive et (it, pt-BR, ar, ja).
+- [ ] Bilinen kalemler (2.0.1 adaylari): profil degisiminde bildirim tercihlerinin yeniden uygulanmamasi (basal+med), Arapca RTL duzen destegi, ilac not alani UI'i.
+- [x] Spike edge function deploy edildi (self-diagnosis satiri + mevcut max_tokens 500).
+
 ## Redesign: store oncesi kaldir
 - [x] app/design-gallery.tsx SIL (dev-only tasarim galerisi)
 - [x] app/_layout.tsx DEV_SCREENSHOT_ROUTE kancasini SIL (null-gated ama kalmasin)

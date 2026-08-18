@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "zerospikeは、食品のバーコードを読み取ったり、食事の写真を追加したりするためにカメラを使用します。",
+    "NSPhotoLibraryUsageDescription": "zerospikeは、食事の記録に写真を追加するために写真ライブラリにアクセスします。",
+    "NSHealthShareUsageDescription": "zerospikeは、記録やまとめに表示するために、ヘルスケアから血糖値、インスリン、アクティビティのデータを読み取ります。",
+    "NSHealthUpdateUsageDescription": "zerospikeは、設定でオンにした場合にかぎり、手入力した血糖値のみをヘルスケアに書き込みます。",
+    "NSLocationWhenInUseUsageDescription": "zerospikeは、SOS画面から送るメッセージに現在地を添えることができます。早く見つけてもらうために使用します。",
+    "NSContactsUsageDescription": "zerospikeは、SOS画面で使う緊急連絡先を、連絡先から選べるようにします。",
+    "NSMotionUsageDescription": "zerospikeはモーションデータを収集しません。アプリ内の位置情報コンポーネントがこの権限を参照しているためだけに必要で、動きが記録されることはありません。"
+  }
+}

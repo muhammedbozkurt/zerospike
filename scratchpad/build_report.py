@@ -3,8 +3,13 @@
 import sys, os, math, datetime
 sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image, ImageDraw, ImageFilter
-from compose import new_canvas_with_header, draw_chip_at, font, F_BOLD, measure_chip, hn, HN_BOLD, HN_MEDIUM, HN_REGULAR
-from i18n_copy import FRAME_COPY, REPORT_STRINGS, PROFILE_NAME
+from compose import (
+    new_canvas_with_header, draw_chip_at, font, F_BOLD, measure_chip, hn,
+    HN_BOLD, HN_MEDIUM, HN_REGULAR, fit_header_and_chip, fit_font, verify_output,
+)
+from i18n_copy import (
+    REPORT_STRINGS, PROFILE_NAME, LANGS, frame_copy, pct, num, fmt_date,
+)
 
 INK = (20, 20, 20)
 MUTED = (112, 112, 112)
@@ -24,16 +29,17 @@ def soft_shadow_paste(canvas, x, y, w, h, radius, blur, alpha=90, grow=10):
     canvas.paste(out, (0, 0))
 
 
-def draw_back_page(w, h, S=None):
+def draw_back_page(w, h, S=None, lang=None):
     if S is None:
         from i18n_copy import REPORT_STRINGS
         S = REPORT_STRINGS["tr"]
     page = Image.new("RGB", (w, h), (250, 249, 246))
     d = ImageDraw.Draw(page)
-    f_h = hn(int(h * 0.030), HN_BOLD)
-    f_sub = hn(int(h * 0.016), HN_REGULAR)
-    f_date = hn(int(h * 0.018), HN_REGULAR)
     pad = int(w * 0.06)
+    inner = w - 2 * pad
+    f_h = fit_font(d, S["back_title"], inner, int(h * 0.030), HN_BOLD, lang=lang)
+    f_sub = fit_font(d, S["back_caption"], inner, int(h * 0.016), HN_REGULAR, lang=lang)
+    f_date = hn(int(h * 0.018), HN_REGULAR)
     d.text((pad, int(h * 0.035)), S["back_title"], font=f_h, fill=INK)
     d.text((pad, int(h * 0.035) + int(h * 0.036)), S["back_caption"],
            font=f_sub, fill=MUTED)
@@ -45,7 +51,7 @@ def draw_back_page(w, h, S=None):
     dots = [1, 3, 5, 7, 9, 11, 13]
     for i in range(rows):
         y = int(h * 0.13) + i * row_h
-        dstr = (day0 - datetime.timedelta(days=i)).strftime("%d.%m.%Y")
+        dstr = fmt_date(day0 - datetime.timedelta(days=i), lang)
         d.text((pad, y), dstr, font=f_date, fill=MUTED)
         if i in dots:
             cx = pad + int(w * 0.24)
@@ -55,17 +61,20 @@ def draw_back_page(w, h, S=None):
     return page
 
 
-def stat_box(draw, x, y, w, h, value, label, accent):
+def stat_box(draw, x, y, w, h, value, label, accent, lang=None):
     draw.rounded_rectangle([x, y, x + w, y + h], radius=int(h * 0.14), outline=(232, 230, 224), width=2, fill=PAPER)
     draw.rounded_rectangle([x, y, x + max(5, int(w * 0.018)), y + h], radius=int(h * 0.03), fill=accent)
-    f_val = hn(int(h * 0.40), HN_BOLD)
-    f_lbl = hn(int(h * 0.175), HN_REGULAR)
     pad = int(w * 0.11)
+    inner = w - int(pad * 1.6)
+    # the value is digits + a percent sign, so it stays on Helvetica Neue; only
+    # the label is a translation and only the label can outgrow the box
+    f_val = fit_font(draw, value, inner, int(h * 0.40), HN_BOLD)
+    f_lbl = fit_font(draw, label, inner, int(h * 0.175), HN_REGULAR, lang=lang)
     draw.text((x + pad, y + int(h * 0.14)), value, font=f_val, fill=INK)
     draw.text((x + pad, y + int(h * 0.66)), label, font=f_lbl, fill=MUTED)
 
 
-def draw_front_page(w, h, data, S=None):
+def draw_front_page(w, h, data, S=None, lang=None):
     """Fewer, bigger elements - legible at store-thumbnail scale, not a crammed
     print-density report. Hero stats + AGP only; the exhaustive table a real
     export would have is not what a MARKETING screenshot needs."""
@@ -75,16 +84,25 @@ def draw_front_page(w, h, data, S=None):
     page = Image.new("RGB", (w, h), PAPER)
     d = ImageDraw.Draw(page)
     pad = int(w * 0.06)
+    inner = w - 2 * pad
     f_brand = hn(int(h * 0.020), HN_BOLD)
-    f_title = hn(int(h * 0.038), HN_BOLD)
-    f_meta = hn(int(h * 0.0155), HN_REGULAR)
-    f_sec = hn(int(h * 0.021), HN_BOLD)
-    f_small = hn(int(h * 0.0145), HN_REGULAR)
+    f_axis = hn(int(h * 0.0145), HN_REGULAR)
+
+    meta1 = f"{S['profile_label']}: {data['profile']}"
+    meta2 = f"{S['range_label']}: {data['range']}"
+    meta_w = inner * 0.62
+    f_meta = fit_font(d, max(meta1, meta2, key=len), meta_w, int(h * 0.0155), HN_REGULAR, lang=lang)
+    f_title = fit_font(d, S["title"], inner * 0.62, int(h * 0.038), HN_BOLD, lang=lang)
+    f_sec = fit_font(d, max(S["summary"], S["agp_title"], key=len), inner, int(h * 0.021), HN_BOLD, lang=lang)
+    f_small = fit_font(
+        d,
+        max(S["band_fmt"].format(**data), S["agp_caption_fmt"].format(**data),
+            S["footer_fmt"].format(**data), key=len),
+        inner, int(h * 0.0145), HN_REGULAR, lang=lang,
+    )
 
     d.text((pad, int(h * 0.030)), "zerospike", font=f_brand, fill=ACCENT)
-    meta1 = f"{S['profile_label']}: {data['profile']}"
     d.text((w - pad - d.textlength(meta1, font=f_meta), int(h * 0.027)), meta1, font=f_meta, fill=MUTED)
-    meta2 = f"{S['range_label']}: {data['range']}"
     d.text((w - pad - d.textlength(meta2, font=f_meta), int(h * 0.027) + int(h * 0.020)), meta2, font=f_meta, fill=MUTED)
 
     d.text((pad, int(h * 0.065)), S["title"], font=f_title, fill=INK)
@@ -98,12 +116,12 @@ def draw_front_page(w, h, data, S=None):
     bh = int(h * 0.115)
     boxes = [
         (f"{data['avg']}", S["avg_label"], ACCENT),
-        (f"{data['gmi']}%", S["gmi_label"], ACCENT),
-        (f"{data['tir']}%", S["inrange_label"], TARGET_G),
+        (data["gmi_pct"], S["gmi_label"], ACCENT),
+        (data["tir_pct"], S["inrange_label"], TARGET_G),
     ]
     for i, (val, lbl, ac) in enumerate(boxes):
         bx = pad + i * (bw + int(w * 0.025))
-        stat_box(d, bx, y, bw, bh, val, lbl, ac)
+        stat_box(d, bx, y, bw, bh, val, lbl, ac, lang=lang)
     y += bh + int(h * 0.030)
 
     band_txt = S["band_fmt"].format(**data)
@@ -118,7 +136,7 @@ def draw_front_page(w, h, data, S=None):
     for lbl, frac in [("300", 0.0), ("160", 0.62), ("80", 0.86)]:
         yy = chart_y0 + frac * chart_h
         d.line([(chart_x0, yy), (chart_x1, yy)], fill=(240, 238, 232), width=1)
-        d.text((chart_x0 - int(w * 0.014) - d.textlength(lbl, font=f_small), yy - int(h * 0.010)), lbl, font=f_small, fill=MUTED)
+        d.text((chart_x0 - int(w * 0.014) - d.textlength(lbl, font=f_axis), yy - int(h * 0.010)), lbl, font=f_axis, fill=MUTED)
 
     n = 24
     pts_mid, pts_lo, pts_hi = [], [], []
@@ -137,7 +155,7 @@ def draw_front_page(w, h, data, S=None):
     for i in range(0, n + 1, n // 4):
         xx = pts_mid[i][0]
         lbl = f"{i}:00"
-        d.text((xx - d.textlength(lbl, font=f_small) / 2, chart_y1 + int(h * 0.012)), lbl, font=f_small, fill=MUTED)
+        d.text((xx - d.textlength(lbl, font=f_axis) / 2, chart_y1 + int(h * 0.012)), lbl, font=f_axis, fill=MUTED)
     y = chart_y1 + int(h * 0.05)
     d.text((pad, y), S["agp_caption_fmt"].format(**data), font=f_small, fill=MUTED)
     y += int(h * 0.05)
@@ -148,21 +166,37 @@ def draw_front_page(w, h, data, S=None):
     return page
 
 
+RANGE_START = datetime.date(2026, 6, 24)
+RANGE_END = datetime.date(2026, 7, 24)
+
+
+def report_data(lang, avg=123, gmi=6.3, tir=74, n=126, median=113):
+    """The one seed-consistent dataset every canvas draws, with the numbers
+    already written in the target language's own conventions: Turkish "%74",
+    German "74 %", English "74%" (lib/format.pct), and the decimal comma /
+    date order the app's Intl calls would produce."""
+    return dict(
+        profile=PROFILE_NAME[lang],
+        range=f"{fmt_date(RANGE_START, lang)} - {fmt_date(RANGE_END, lang)}",
+        avg=avg, tir=tir, n=n, hours=8, median=median, inj=32,
+        gmi_pct=pct(gmi, lang, 1), tir_pct=pct(tir, lang),
+        lowp_pct=pct(6, lang), high_pct=pct(20, lang),
+        dose=num(11.8, lang, 1),
+    )
+
+
+OUT_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store/iphone-1284x2778"
+CANVAS = (1284, 2778)
+
+
 def build_all(lang):
-    OUT = f"/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store-r93/iphone-1284x2778/{lang}"
+    OUT = os.path.join(OUT_BASE, lang)
     os.makedirs(OUT, exist_ok=True)
-    CANVAS = (1284, 2778)
     BASE = dict(canvas=CANVAS, margin_x=64, headline_top=64, headline_size=84, sub_size=36,
                 chip_size=32, text_w=int(CANVAS[0] * 0.80))
-    headline, sub, chip_text = FRAME_COPY[lang]["06-report"]
+    headline, sub, chip_text = frame_copy(lang, "06-report")
     S = REPORT_STRINGS[lang]
-    cfg = dict(BASE, headline=headline, sub=sub)
-    canvas, draw, y_after = new_canvas_with_header(cfg)
-
-    f_chip = font(F_BOLD, cfg["chip_size"])
-    w_, h_, *_ = measure_chip(draw, chip_text, f_chip, "📄")
-    x_ = CANVAS[0] - cfg["margin_x"] - w_
-    draw_chip_at(canvas, chip_text, x_, y_after + 26, f_chip, emoji_ch="📄")
+    cfg = dict(BASE, headline=headline, sub=sub, lang=lang)
 
     page_w = int(CANVAS[0] * 0.70)
     page_h = int(page_w / 0.707)
@@ -171,21 +205,40 @@ def build_all(lang):
     back_x = front_x + int(page_w * 0.28)
     back_y = front_y - int(page_h * 0.065)
 
+    # no device here, so the chip's floor is the topmost sheet of paper
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    f_chip = font(F_BOLD, cfg["chip_size"], lang=lang)
+    chip_w, chip_h, *_ = measure_chip(probe, chip_text, f_chip, "📄")
+    cfg["sub_max_lines"], chip_y, fits = fit_header_and_chip(cfg, chip_h, back_y, 26, 8)
+    if not fits:
+        print(f"  WARN [{lang}] 06-report chip overlaps the header band")
+
+    canvas, draw, y_after = new_canvas_with_header(cfg)
+    draw_chip_at(canvas, chip_text, CANVAS[0] - cfg["margin_x"] - chip_w, chip_y, f_chip, emoji_ch="📄")
+
     soft_shadow_paste(canvas, back_x, back_y, page_w, page_h, radius=6, blur=26, alpha=70, grow=14)
-    back = draw_back_page(page_w, page_h, S=S)
-    canvas.paste(back, (back_x, back_y))
+    canvas.paste(draw_back_page(page_w, page_h, S=S, lang=lang), (back_x, back_y))
 
-    data = dict(profile=PROFILE_NAME[lang], range="24.06.2026 - 24.07.2026", created="24.07.2026 23:26",
-                avg=123, gmi="6.3", tir=74, sd=33, cv=27, low=11, vlow=0, lowp=6, high=20, vhigh=0,
-                n=126, hours=8, median=113, dose="11,8", inj=32)
     soft_shadow_paste(canvas, front_x, front_y, page_w, page_h, radius=6, blur=34, alpha=100, grow=18)
-    front = draw_front_page(page_w, page_h, data, S=S)
-    canvas.paste(front, (front_x, front_y))
+    canvas.paste(draw_front_page(page_w, page_h, report_data(lang), S=S, lang=lang), (front_x, front_y))
 
-    canvas.save(os.path.join(OUT, "06-report.png"))
-    print("wrote 06-report", canvas.size, "page", page_w, page_h, "aspect_wh", round(page_w / page_h, 3))
+    out_path = os.path.join(OUT, "06-report.png")
+    canvas.save(out_path)
+    print("wrote", out_path, canvas.size, "page", page_w, page_h, "aspect_wh", round(page_w / page_h, 3))
+    return [(out_path, CANVAS)]
+
+
+def main(argv):
+    langs = argv[1:] or list(LANGS)
+    if langs == ["all"]:
+        langs = list(LANGS)
+    written = []
+    for lang in langs:
+        written += build_all(lang)
+    bad = [p for p, size in written if not verify_output(p, size)]
+    print(f"{len(written)} file(s): {len(written) - len(bad)} OK, {len(bad)} FAIL")
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
-    lang = sys.argv[1] if len(sys.argv) > 1 else "tr"
-    build_all(lang)
+    sys.exit(main(sys.argv))

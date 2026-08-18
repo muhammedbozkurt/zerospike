@@ -23,13 +23,25 @@ struct LiveData: Codable {
   let nextReminderAt: Double?
   let nextReminderKind: String?
 
+  /// Whether the profile uses insulin at all (insulin_mode != "none"). Drives the
+  /// Quick Add injection shortcut, so the home screen matches what the app itself
+  /// shows. Optional: a snapshot written by an older app build carries no such
+  /// key, and callers then keep the shortcut (see QuickAdd.swift).
+  let usesInsulin: Bool?
+
+  /// Whether the profile tracks oral medication (oral_meds_enabled = 1). Drives
+  /// the Quick Add medication shortcut. Optional, and unlike `usesInsulin` the
+  /// missing value here means HIDDEN: an older snapshot must not grow a tile the
+  /// build that wrote it never had (see QuickAdd.swift).
+  let usesOralMeds: Bool?
+
   /// The profile's own colour band (mg/dL). Optional so a snapshot written by an
   /// older app build (before R7) still decodes; the widget then falls back to the
   /// population defaults.
   let band: Band?
 
   /// Localized strings the app resolved for us, so the widget never has to own
-  /// a second copy of the translations (the app ships five languages).
+  /// a second copy of the translations (the app ships nine languages).
   let labels: Labels?
 
   struct Band: Codable {
@@ -56,6 +68,9 @@ struct LiveData: Codable {
     let addGlucose: String?
     let addMeal: String?
     let addInjection: String?
+    /// The medication tile's title. Carries the app's own `meds.entryLabel`
+    /// noun, so the tile needs no translation of its own.
+    let addMed: String?
   }
 }
 

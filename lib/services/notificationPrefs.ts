@@ -11,6 +11,11 @@ export interface NotificationPrefs {
   enabled: boolean;
   basal: boolean;
   basalTime: string; // "HH:MM"
+  /** Daily oral-medication reminder. Off by default and never enabled by
+   *  onboarding: it is opened from notification settings, and only shows up
+   *  there once the active profile has oral_meds_enabled. */
+  med: boolean;
+  medTime: string; // "HH:MM"
   glucose: boolean;
   glucoseTime: string; // "HH:MM"
   postMeal: boolean;
@@ -34,6 +39,8 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   enabled: true,
   basal: true,
   basalTime: "22:00",
+  med: false,
+  medTime: "09:00",
   glucose: false,
   glucoseTime: "08:00",
   postMeal: true,

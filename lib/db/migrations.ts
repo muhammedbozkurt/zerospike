@@ -31,6 +31,7 @@ import { V12_INDEXES } from "./v12Sql";
 import { V13_ADD_MEAL_TEMPLATE_ID, V13_CREATE } from "./v13Sql";
 import { V14_CREATE } from "./v14Sql";
 import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "./v15Sql";
+import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "./v16Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -52,7 +53,21 @@ import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "./v15Sql";
  * interpolated: typing it this way is compile-time proof that a schema version
  * can only ever be one of these constants and never anything a user reaches.
  */
-export type SchemaStamp = 2 | 3 | 4 | 5 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
+export type SchemaStamp =
+  | 2
+  | 3
+  | 4
+  | 5
+  | 7
+  | 8
+  | 9
+  | 10
+  | 11
+  | 12
+  | 13
+  | 14
+  | 15
+  | 16;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -324,5 +339,34 @@ export async function migrateToV15(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(V15_ADD_BOLUS_KIND);
     }
     await stampSchemaVersion(db, 15);
+  });
+}
+
+/**
+ * The v15 → v16 migration: oral medication tracking. The med_logs table (what
+ * was taken and when) and user_profiles.oral_meds_enabled, the flag that decides
+ * whether those surfaces are shown. See ./v16Sql for the shape.
+ *
+ * Create-only plus ONE guarded ADD COLUMN, exactly like v13: no table is
+ * rebuilt, so no reading, meal or injection can be lost or rewritten by it. The
+ * column check is read BEFORE the transaction (like migrateToV8/V13/V15), so
+ * nothing inside it can throw a "duplicate column" that would leave a
+ * half-applied schema with user_version already advanced; a re-run, or an install
+ * that already has the column from a fresh v16 schema, is a no-op.
+ */
+export async function migrateToV16(db: SQLite.SQLiteDatabase): Promise<void> {
+  const profileCols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(user_profiles);"
+  );
+  const hasOralMeds = profileCols.some((c) => c.name === "oral_meds_enabled");
+
+  await db.withTransactionAsync(async () => {
+    for (const statement of V16_CREATE) {
+      await db.execAsync(statement);
+    }
+    if (!hasOralMeds) {
+      await db.execAsync(V16_ADD_ORAL_MEDS_ENABLED);
+    }
+    await stampSchemaVersion(db, 16);
   });
 }

@@ -1,21 +1,23 @@
 import SwiftUI
 import WidgetKit
 
-// The Quick Add widget: three shortcuts straight into the app's own logging
-// flows (a glucose reading, a meal, an injection), each a deep link the app
-// resolves. Purely navigational, same scope as every other glanceable surface:
-// nothing here measures, interprets or advises.
+// The Quick Add widget: shortcuts straight into the app's own logging flows (a
+// glucose reading, a meal, and - when the profile uses them - an injection and a
+// medication), each a deep link the app resolves. Purely navigational, same
+// scope as every other glanceable surface: nothing here measures, interprets or
+// advises.
 //
 // Each shortcut carries its own identity colour from the Midnight Monitor
-// palette (cyan for glucose, mint for a meal, violet for an injection). The tile
-// is a low-opacity wash of that colour plus a hairline of the same hue, so the
-// three targets are told apart before the label is read - rather than the flat
-// white-6% grey they used to share.
+// palette (cyan for glucose, mint for a meal, violet for an injection, amber for
+// a medication). The tile is a low-opacity wash of that colour plus a hairline
+// of the same hue, so the targets are told apart before the label is read -
+// rather than the flat white-6% grey they used to share.
 //
 // Labels arrive pre-localized in the shared snapshot (lib/services/liveData.ts,
-// widget.addGlucose / addMeal / addInjection); the literals below are gallery
-// fallbacks for a device where the app has not written a snapshot yet, same
-// policy as the hard-coded complication description.
+// widget.addGlucose / addMeal / addInjection and the app's own meds.entryLabel);
+// the literals below are gallery fallbacks for a device where the app has not
+// written a snapshot yet, same policy as the hard-coded complication
+// description.
 
 private enum QuickAddPalette {
   static let ink = Color(red: 0.9176, green: 0.9647, blue: 0.9804)       // #eaf6fa
@@ -24,6 +26,9 @@ private enum QuickAddPalette {
   static let glucose = Color(red: 0.1804, green: 0.9020, blue: 1.0)      // #2ee6ff accent
   static let meal = Color(red: 0.1333, green: 0.8902, blue: 0.6039)      // #22e39a target mint
   static let injection = Color(red: 0.4863, green: 0.3608, blue: 1.0)    // #7c5cff violet
+  /// #ffa02a - the one warm hue left once cyan, mint and violet are taken. This
+  /// widget prints no reading, so it cannot be misread as a classification.
+  static let med = Color(red: 1.0, green: 0.6275, blue: 0.1647)
 
   /// One place for the tile treatment, so all four tiles stay in step.
   static let tileFillOpacity = 0.16
@@ -42,15 +47,28 @@ struct QuickAddShortcut: Identifiable {
 struct QuickAddEntry: TimelineEntry {
   let date: Date
   let labels: LiveData.Labels?
+  /// Mirrors the profile's insulin_mode from the snapshot. Defaults to true, so a
+  /// snapshot written before the flag existed - or none at all - keeps the
+  /// shortcut every build up to now showed.
+  var usesInsulin: Bool = true
+  /// Mirrors the profile's oral_meds_enabled from the snapshot. Defaults to
+  /// FALSE, the other way round from the flag above: this shortcut is new, so a
+  /// snapshot written before it existed - or none at all - must keep the widget
+  /// exactly as the build that wrote it drew it.
+  var usesOralMeds: Bool = false
 
-  /// The three logging flows, in the order they are used. The first one is the
-  /// primary: it gets the large tile on medium and the whole widget on small.
+  /// The logging flows, in the order they are used. The first one is the primary:
+  /// it gets the large tile on medium and the whole widget on small. The
+  /// injection flow is only offered to a profile that uses insulin, and the
+  /// medication flow only to one that tracks medication, matching the app, which
+  /// hides those surfaces for the others.
   ///
   /// URLs are exactly the ones the app already answers: `?sheet=glucose` opens
-  /// the dashboard's glucose sheet, `/food` the food tab, `/injection?compose=1`
-  /// the injection tab's compose segment. No new parameters are invented here.
+  /// the dashboard's glucose sheet, `?sheet=med` its medication sheet, `/food`
+  /// the food tab, `/injection?compose=1` the injection tab's compose segment.
+  /// No new parameters are invented here.
   var shortcuts: [QuickAddShortcut] {
-    [
+    var items: [QuickAddShortcut] = [
       QuickAddShortcut(
         id: "glucose",
         icon: "drop.fill",
@@ -65,31 +83,61 @@ struct QuickAddEntry: TimelineEntry {
         tint: QuickAddPalette.meal,
         url: URL(string: "zerospike:///food")
       ),
-      QuickAddShortcut(
-        id: "injection",
-        icon: "syringe.fill",
-        label: labels?.addInjection ?? "Injection",
-        tint: QuickAddPalette.injection,
-        url: URL(string: "zerospike:///injection?compose=1")
-      ),
     ]
+    if usesInsulin {
+      items.append(
+        QuickAddShortcut(
+          id: "injection",
+          icon: "syringe.fill",
+          label: labels?.addInjection ?? "Injection",
+          tint: QuickAddPalette.injection,
+          url: URL(string: "zerospike:///injection?compose=1")
+        )
+      )
+    }
+    if usesOralMeds {
+      items.append(
+        QuickAddShortcut(
+          id: "med",
+          icon: "pills.fill",
+          label: labels?.addMed ?? "Medication",
+          tint: QuickAddPalette.med,
+          url: URL(string: "zerospike:///?sheet=med")
+        )
+      )
+    }
+    return items
   }
 }
 
 struct QuickAddProvider: TimelineProvider {
+  /// One read of the shared snapshot per entry, so the labels and the visibility
+  /// flags can never come from two different writes. A missing snapshot, a
+  /// snapshot that fails to decode, or one written before these flags existed all
+  /// land on the same answer: English fallbacks, the injection shortcut shown
+  /// (what every build up to now drew) and the medication one hidden.
+  private func currentEntry() -> QuickAddEntry {
+    let data = LiveDataStore.read()
+    return QuickAddEntry(
+      date: Date(),
+      labels: data?.labels,
+      usesInsulin: data?.usesInsulin ?? true,
+      usesOralMeds: data?.usesOralMeds ?? false
+    )
+  }
+
   func placeholder(in context: Context) -> QuickAddEntry {
-    QuickAddEntry(date: Date(), labels: LiveDataStore.read()?.labels)
+    currentEntry()
   }
 
   func getSnapshot(in context: Context, completion: @escaping (QuickAddEntry) -> Void) {
-    completion(QuickAddEntry(date: Date(), labels: LiveDataStore.read()?.labels))
+    completion(currentEntry())
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<QuickAddEntry>) -> Void) {
     // Nothing here is time-dependent; the app reloads every widget timeline
     // whenever it rewrites the snapshot (data or language change).
-    let entry = QuickAddEntry(date: Date(), labels: LiveDataStore.read()?.labels)
-    completion(Timeline(entries: [entry], policy: .never))
+    completion(Timeline(entries: [currentEntry()], policy: .never))
   }
 }
 
@@ -112,44 +160,55 @@ struct QuickAddWidgetView: View {
 
   /// Small: the primary shortcut (glucose) as one full-bleed identity tile, with
   /// the whole widget as the tap target.
+  @ViewBuilder
   private var smallView: some View {
-    let shortcut = entry.shortcuts[0]
-    return VStack(alignment: .leading, spacing: 0) {
-      HStack(alignment: .top, spacing: 0) {
-        iconBadge(shortcut.icon, tint: shortcut.tint, size: 40, corner: 13, glyph: 18)
-        Spacer(minLength: 0)
-        Image(systemName: "plus")
-          .font(.system(size: 14, weight: .heavy))
-          .foregroundColor(shortcut.tint)
+    // Never indexed blindly: the list is built from the snapshot, and an empty
+    // widget is a far better failure than a crashed one.
+    if let shortcut = entry.shortcuts.first {
+      VStack(alignment: .leading, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
+          iconBadge(shortcut.icon, tint: shortcut.tint, size: 40, corner: 13, glyph: 18)
+          Spacer(minLength: 0)
+          Image(systemName: "plus")
+            .font(.system(size: 14, weight: .heavy))
+            .foregroundColor(shortcut.tint)
+        }
+
+        Spacer(minLength: 8)
+
+        Text(eyebrow)
+          .font(.system(size: 9, weight: .bold))
+          .foregroundColor(QuickAddPalette.muted)
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+
+        Text(shortcut.label)
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundColor(QuickAddPalette.ink)
+          .lineLimit(2)
+          .minimumScaleFactor(0.7)
+          .fixedSize(horizontal: false, vertical: true)
       }
-
-      Spacer(minLength: 8)
-
-      Text(eyebrow)
-        .font(.system(size: 9, weight: .bold))
-        .foregroundColor(QuickAddPalette.muted)
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
-
-      Text(shortcut.label)
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundColor(QuickAddPalette.ink)
-        .lineLimit(2)
-        .minimumScaleFactor(0.7)
-        .fixedSize(horizontal: false, vertical: true)
+      .padding(12)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+      .background { tileFill(shortcut.tint, corner: 20) }
+      .overlay { tileStroke(shortcut.tint, corner: 20) }
+      .padding(4)
+      .widgetURL(shortcut.url)
     }
-    .padding(12)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    .background { tileFill(shortcut.tint, corner: 20) }
-    .overlay { tileStroke(shortcut.tint, corner: 20) }
-    .padding(4)
-    .widgetURL(shortcut.url)
   }
 
-  /// Medium: the primary tile on the left, the two secondary flows stacked on
-  /// the right. Each is its own Link target.
+  /// Medium: the primary tile on the left, the remaining flows stacked on the
+  /// right. Each is its own Link target. The stack is driven by the list rather
+  /// than by fixed indices, so it holds one row, two or three without changing
+  /// shape, and cannot be indexed past its end.
+  ///
+  /// Three rows only fit the medium family's height if they give something up, so
+  /// past two the secondary tiles switch to their dense measure rather than being
+  /// squeezed by the layout.
   private var mediumView: some View {
     let items = entry.shortcuts
+    let dense = items.count > 3
     return VStack(alignment: .leading, spacing: 6) {
       Text(eyebrow)
         .font(.system(size: 9, weight: .bold))
@@ -159,10 +218,13 @@ struct QuickAddWidgetView: View {
         .padding(.leading, 2)
 
       HStack(spacing: 8) {
-        linked(items[0]) { primaryTile(items[0]) }
-        VStack(spacing: 8) {
-          linked(items[1]) { rowTile(items[1]) }
-          linked(items[2]) { rowTile(items[2]) }
+        if let primary = items.first {
+          linked(primary) { primaryTile(primary) }
+        }
+        VStack(spacing: dense ? 5 : 8) {
+          ForEach(Array(items.dropFirst())) { item in
+            linked(item) { rowTile(item, dense: dense) }
+          }
         }
       }
     }
@@ -197,29 +259,37 @@ struct QuickAddWidgetView: View {
     .overlay { tileStroke(shortcut.tint, corner: 18) }
   }
 
-  /// A secondary shortcut: badge and label on one line, "+" trailing.
-  private func rowTile(_ shortcut: QuickAddShortcut) -> some View {
-    HStack(spacing: 8) {
-      iconBadge(shortcut.icon, tint: shortcut.tint, size: 28, corner: 9, glyph: 13)
+  /// A secondary shortcut: badge and label on one line, "+" trailing. `dense` is
+  /// the three-in-a-column measure: everything a step smaller, and the label held
+  /// to one line, so three of these sit in the height two used to.
+  private func rowTile(_ shortcut: QuickAddShortcut, dense: Bool = false) -> some View {
+    HStack(spacing: dense ? 6 : 8) {
+      iconBadge(
+        shortcut.icon,
+        tint: shortcut.tint,
+        size: dense ? 24 : 28,
+        corner: dense ? 8 : 9,
+        glyph: dense ? 11 : 13
+      )
 
       Text(shortcut.label)
-        .font(.system(size: 12, weight: .semibold))
+        .font(.system(size: dense ? 11 : 12, weight: .semibold))
         .foregroundColor(QuickAddPalette.ink)
-        .lineLimit(2)
+        .lineLimit(dense ? 1 : 2)
         .minimumScaleFactor(0.6)
         .fixedSize(horizontal: false, vertical: true)
 
       Spacer(minLength: 4)
 
       Image(systemName: "plus")
-        .font(.system(size: 11, weight: .heavy))
+        .font(.system(size: dense ? 10 : 11, weight: .heavy))
         .foregroundColor(shortcut.tint)
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
+    .padding(.horizontal, dense ? 8 : 10)
+    .padding(.vertical, dense ? 4 : 6)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    .background { tileFill(shortcut.tint, corner: 16) }
-    .overlay { tileStroke(shortcut.tint, corner: 16) }
+    .background { tileFill(shortcut.tint, corner: dense ? 14 : 16) }
+    .overlay { tileStroke(shortcut.tint, corner: dense ? 14 : 16) }
   }
 
   /// Wraps a tile in its deep link when it has one (Link works on medium; the
@@ -280,7 +350,7 @@ struct ZerospikeQuickAddWidget: Widget {
     // The shortcut labels drawn on the tiles ARE localized - they ride in on the
     // app's snapshot. Purely navigational wording; nothing here claims to measure.
     .configurationDisplayName("Quick add")
-    .description("Open a glucose, meal or injection entry in one tap.")
+    .description("Open a glucose, meal, injection or medication entry in one tap.")
     .supportedFamilies([.systemSmall, .systemMedium])
     .containerBackgroundRemovable(false)
   }

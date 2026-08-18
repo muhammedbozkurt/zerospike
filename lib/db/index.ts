@@ -11,10 +11,12 @@ import {
   migrateToV13,
   migrateToV14,
   migrateToV15,
+  migrateToV16,
   stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
 import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "./v14Sql";
+import { V16_CREATE } from "./v16Sql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -29,10 +31,15 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
+
+/** Stable id for the screenshot-only "tracking" panel profile (08-takip): a
+ *  second seeded account with insulin_mode "none" / diabetes_type "none".
+ *  Only ever created behind isScreenshotMode() - see ./screenshotSeed. */
+export const SCREENSHOT_TRACKING_PROFILE_ID = "00000000-0000-4000-8000-000000000002";
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -226,6 +233,13 @@ export async function initDatabase(): Promise<void> {
     await migrateToV15(db);
   }
 
+  // v15 → v16: oral medication tracking - the med_logs table and the
+  // user_profiles.oral_meds_enabled flag that shows its surfaces. Create-only
+  // plus one guarded ADD COLUMN, no table rebuilt (see migrateToV16 + v16Sql).
+  if (currentVersion >= 1 && currentVersion < 16) {
+    await migrateToV16(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -270,6 +284,9 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       basal_daily_units REAL,
       basal_insulin_id TEXT,
       bolus_insulin_id TEXT,
+      -- Oral medication surfaces on/off (schema v16), presentation only: see
+      -- ./v16Sql. Never an input to any calculation.
+      oral_meds_enabled INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
 
@@ -391,6 +408,12 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.execAsync(statement);
   }
 
+  // Oral medication logging (schema v16), from the SAME statements the v15 → v16
+  // migration runs, so a fresh install and a migrated one are the same shape.
+  for (const statement of V16_CREATE) {
+    await db.execAsync(statement);
+  }
+
   // Injection-site logging (shared with the v3 → v4 migration).
   await createInjectionSchema(db);
 }
@@ -508,6 +531,8 @@ function normalizeDiabetesType(raw: string | null): DiabetesType | null {
     case "gestational":
     case "prediabetes":
       return raw;
+    case "none":
+      return "none";
     case "other":
       return "unknown";
     default:
@@ -702,6 +727,7 @@ async function syncSeedCatalog(
  */
 export async function clearAllLogs(profileId: string): Promise<void> {
   const db = await getDb();
+  await db.runAsync("DELETE FROM med_logs WHERE profile_id = ?;", [profileId]);
   await db.runAsync("DELETE FROM injection_logs WHERE profile_id = ?;", [profileId]);
   await db.runAsync("DELETE FROM meal_logs WHERE profile_id = ?;", [profileId]);
   await db.runAsync("DELETE FROM sugar_logs WHERE profile_id = ?;", [profileId]);

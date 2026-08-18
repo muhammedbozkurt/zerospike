@@ -1,8 +1,8 @@
 /**
- * Schema v8/v9/v10/v11/v12/v13/v14 migration test.
+ * Schema v8/v9/v10/v11/v12/v13/v14/v15/v16 migration test.
  *
  * Builds a real v7-shaped (or v8-shaped) database, seeds it with rows that
- * exercise the edge cases, runs the REAL migrateToV8..V14 functions from
+ * exercise the edge cases, runs the REAL migrateToV8..V16 functions from
  * lib/db/migrations.ts (R10 FAZ 4, no hand-copied re-implementation), and
  * asserts every row survives and every shape is correct.
  *
@@ -26,6 +26,7 @@ import {
   migrateToV13,
   migrateToV14,
   migrateToV15,
+  migrateToV16,
   stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
@@ -50,6 +51,7 @@ import {
   V11_DROP_OLD,
 } from "../lib/db/v11Sql";
 import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "../lib/db/v15Sql";
+import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "../lib/db/v16Sql";
 
 let passed = 0;
 let failed = 0;
@@ -436,6 +438,60 @@ function makeV14FullDatabase(): DatabaseSync {
   db.exec(
     `INSERT INTO user_profiles (id, name, daily_carb_target_g, created_at)
      VALUES ('p1', 'Me', 200, '2026-01-01T00:00:00.000Z');`
+  );
+  return db;
+}
+
+/**
+ * A database shaped like a v15 install: every user_profiles column through v15
+ * (the insulin product catalog columns already present), and injection_logs with
+ * bolus_kind. Nothing v16 adds yet - no med_logs table, no oral_meds_enabled.
+ */
+function makeV15Database(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE user_profiles (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      insulin_sensitivity_factor REAL NOT NULL DEFAULT 40,
+      carb_ratio_breakfast REAL NOT NULL DEFAULT 10,
+      carb_ratio_lunch REAL NOT NULL DEFAULT 12,
+      carb_ratio_dinner REAL NOT NULL DEFAULT 12,
+      target_fasting_min INTEGER NOT NULL DEFAULT 80,
+      target_fasting_max INTEGER NOT NULL DEFAULT 100,
+      target_postmeal_min INTEGER NOT NULL DEFAULT 80,
+      target_postmeal_max INTEGER NOT NULL DEFAULT 140,
+      hypo_threshold_mgdl INTEGER NOT NULL DEFAULT 70,
+      daily_carb_target_g INTEGER NOT NULL DEFAULT 200,
+      daily_carb_target_min_g INTEGER NOT NULL DEFAULT 160,
+      glucose_unit TEXT NOT NULL DEFAULT 'mgdl',
+      diabetes_type TEXT NOT NULL DEFAULT 'unknown',
+      insulin_mode TEXT NOT NULL DEFAULT 'both',
+      ratios_confirmed INTEGER NOT NULL DEFAULT 0,
+      basal_daily_units REAL,
+      basal_insulin_id TEXT,
+      bolus_insulin_id TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE injection_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      site TEXT,
+      site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
+      dose_units REAL,
+      insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+      meal_log_id TEXT,
+      note TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
+      bolus_kind TEXT
+    );
+  `);
+  db.exec(
+    `INSERT INTO user_profiles
+       (id, name, daily_carb_target_g, basal_daily_units, basal_insulin_id, created_at)
+     VALUES ('p1', 'Me', 200, 20, 'glargine-u100', '2026-01-01T00:00:00.000Z');`
   );
   return db;
 }
@@ -1788,7 +1844,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    // SCHEMA_VERSION itself has since moved past v14 (see J3, "SCHEMA_VERSION is 15");
+    // SCHEMA_VERSION itself has since moved past v14 (see L3, "SCHEMA_VERSION is 16");
     // this section only checks the v13 → v14 step and the fresh-install shape.
     ok(
       "the v13 → v14 step runs the real migration",
@@ -1945,7 +2001,8 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 15", /const SCHEMA_VERSION = 15;/.test(indexSrc));
+    // SCHEMA_VERSION itself has since moved past v15 (see L3, "SCHEMA_VERSION is 16");
+    // this section only checks the v14 → v15 step and the fresh-install shape.
     ok(
       "the v14 → v15 step runs the real migration",
       /currentVersion < 15\)\s*\{\s*await migrateToV15\(db\);/.test(indexSrc)
@@ -1962,6 +2019,230 @@ async function main() {
     );
   }
 
+  // ── L. v16 oral medication tracking ─────────────────────────────────────────
+  section("L. v16 oral medication tracking");
+  {
+    const db = makeV15Database();
+    db.exec(
+      `INSERT INTO injection_logs
+         (id, profile_id, site, dose_units, insulin_type, source, logged_at, tags, bolus_kind)
+       VALUES ('i1', 'p1', 'abdomen_left', 6, 'bolus', 'manual', '2026-07-01T08:00:00.000Z', '[]', 'meal');`
+    );
+
+    await migrateToV16(adapt(db));
+
+    ok(
+      "med_logs table exists",
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='med_logs';")
+        .get() !== undefined
+    );
+    const medCols = columns(db, "med_logs");
+    for (const name of ["id", "profile_id", "taken_at", "name", "note", "created_at"]) {
+      ok(`med_logs.${name} exists`, medCols.has(name));
+    }
+    eq("taken_at is NOT NULL", medCols.get("taken_at")?.notnull, 1);
+    eq("name is nullable", medCols.get("name")?.notnull, 0);
+    eq("note is nullable", medCols.get("note")?.notnull, 0);
+    eq("created_at is NOT NULL", medCols.get("created_at")?.notnull, 1);
+    // No CHECK on name and no dose column at all: the app stores what the user
+    // writes and never names a substance, a dose or a schedule of its own.
+    ok("med_logs carries no dose column", !medCols.has("dose"));
+
+    const medFks = db.prepare("PRAGMA foreign_key_list(med_logs);").all() as {
+      from: string;
+    }[];
+    ok(
+      "med_logs.profile_id carries a foreign key",
+      medFks.some((f) => f.from === "profile_id")
+    );
+
+    const idx = indexNames(db);
+    ok("the per-profile feed index exists", idx.has("idx_med_profile"));
+    ok("the taken_at range index exists", idx.has("idx_med_taken_at"));
+
+    const profileCols = columns(db, "user_profiles");
+    ok("user_profiles gains oral_meds_enabled", profileCols.has("oral_meds_enabled"));
+    eq("oral_meds_enabled is NOT NULL", profileCols.get("oral_meds_enabled")?.notnull, 1);
+    eq(
+      "oral_meds_enabled defaults to 0",
+      String(profileCols.get("oral_meds_enabled")?.dflt_value),
+      "0"
+    );
+
+    // Existing rows survive untouched: v16 is create-only plus one guarded
+    // ADD COLUMN, so nothing already stored is read or rewritten.
+    const profile = db
+      .prepare("SELECT * FROM user_profiles WHERE id='p1';")
+      .get() as Record<string, unknown>;
+    eq("the existing profile survives v16", profile.name, "Me");
+    eq("its v15 columns are unchanged", profile.basal_insulin_id, "glargine-u100");
+    eq("its new flag defaults to off", profile.oral_meds_enabled, 0);
+
+    const injection = db
+      .prepare("SELECT * FROM injection_logs WHERE id='i1';")
+      .get() as Record<string, unknown>;
+    eq("the existing injection survives v16", injection.dose_units, 6);
+    eq("its bolus_kind is unchanged", injection.bolus_kind, "meal");
+
+    // The whole point of the migration: an entry can now be recorded, with or
+    // without a name (the fastest way to log is refusing nothing).
+    db.exec(
+      `INSERT INTO med_logs (id, profile_id, taken_at, name, note, created_at)
+       VALUES ('med1', 'p1', 1753603200000, 'Metformin', 'sabah', 1753603200000);`
+    );
+    eq(
+      "a medication entry can be stored",
+      (db.prepare("SELECT COUNT(*) AS c FROM med_logs;").get() as { c: number }).c,
+      1
+    );
+    ok(
+      "an entry with no name is still accepted",
+      !refused(
+        db,
+        `INSERT INTO med_logs (id, profile_id, taken_at, created_at)
+         VALUES ('med2', 'p1', 1753606800000, 1753606800000);`
+      )
+    );
+
+    // The foreign key actually does something: losing the profile takes its
+    // medication log with it, the same as every other per-profile table.
+    db.exec("PRAGMA foreign_keys = ON;");
+    db.exec("DELETE FROM user_profiles WHERE id = 'p1';");
+    eq(
+      "deleting a profile cascades its med_logs away",
+      (db.prepare("SELECT COUNT(*) AS c FROM med_logs;").get() as { c: number }).c,
+      0
+    );
+    db.close();
+  }
+
+  section("L2. v16 idempotence");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    db.exec(
+      `INSERT INTO med_logs (id, profile_id, taken_at, name, note, created_at)
+       VALUES ('med1', 'p1', 1753603200000, 'Metformin', NULL, 1753603200000);`
+    );
+    db.exec("UPDATE user_profiles SET oral_meds_enabled = 1 WHERE id = 'p1';");
+
+    let reran = true;
+    try {
+      await migrateToV16(adapt(db));
+      await migrateToV16(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v16 threw: ${String(e)}`);
+    }
+    ok("v16 is safe to re-run", reran);
+    eq(
+      "re-running does not duplicate user_profiles.oral_meds_enabled",
+      (db.prepare("PRAGMA table_info(user_profiles);").all() as { name: string }[]).filter(
+        (c) => c.name === "oral_meds_enabled"
+      ).length,
+      1
+    );
+    eq(
+      "re-running keeps the stored flag value",
+      (
+        db.prepare("SELECT oral_meds_enabled AS o FROM user_profiles WHERE id='p1';").get() as {
+          o: number;
+        }
+      ).o,
+      1
+    );
+    eq(
+      "re-running keeps the recorded entry",
+      (db.prepare("SELECT COUNT(*) AS c FROM med_logs;").get() as { c: number }).c,
+      1
+    );
+    eq(
+      "and its name intact",
+      (db.prepare("SELECT name AS n FROM med_logs WHERE id='med1';").get() as { n: string })
+        .n,
+      "Metformin"
+    );
+    eq(
+      "still exactly one profile",
+      (db.prepare("SELECT COUNT(*) AS c FROM user_profiles;").get() as { c: number }).c,
+      1
+    );
+    db.close();
+  }
+
+  section("L3. v16 statements and fresh-install equivalence");
+  {
+    ok(
+      "V16_ADD_ORAL_MEDS_ENABLED adds user_profiles.oral_meds_enabled",
+      /ALTER TABLE user_profiles ADD COLUMN oral_meds_enabled INTEGER NOT NULL DEFAULT 0;/.test(
+        V16_ADD_ORAL_MEDS_ENABLED
+      )
+    );
+    ok(
+      "V16_CREATE declares med_logs",
+      V16_CREATE.some((s) => /CREATE TABLE IF NOT EXISTS med_logs/.test(s))
+    );
+    ok(
+      "V16_CREATE declares both med_logs indexes",
+      V16_CREATE.some((s) => /idx_med_profile/.test(s)) &&
+        V16_CREATE.some((s) => /idx_med_taken_at/.test(s))
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 16", /const SCHEMA_VERSION = 16;/.test(indexSrc));
+    ok(
+      "the v15 → v16 step runs the real migration",
+      /currentVersion < 16\)\s*\{\s*await migrateToV16\(db\);/.test(indexSrc)
+    );
+    ok(
+      "a fresh install declares oral_meds_enabled itself",
+      /oral_meds_enabled INTEGER NOT NULL DEFAULT 0,/.test(indexSrc)
+    );
+    ok(
+      "and creates med_logs from the same V16_CREATE statements",
+      /for \(const statement of V16_CREATE\)/.test(indexSrc)
+    );
+
+    // A migrated v15 database and a brand-new install end up with the identical
+    // med_logs shape - the same test I6/I12 run for meal_templates and app_meta.
+    const migrated = makeV15Database();
+    await migrateToV16(adapt(migrated));
+
+    const fresh = new DatabaseSync(":memory:");
+    fresh.exec(
+      `CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL, created_at TEXT NOT NULL);`
+    );
+    for (const statement of V16_CREATE) fresh.exec(statement);
+
+    eq(
+      "med_logs has the same columns as a fresh install",
+      [...columns(migrated, "med_logs").keys()].join(","),
+      [...columns(fresh, "med_logs").keys()].join(",")
+    );
+    eq(
+      "med_logs has the same DDL as a fresh install",
+      (
+        migrated
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='med_logs';")
+          .get() as { sql: string }
+      ).sql,
+      (
+        fresh
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='med_logs';")
+          .get() as { sql: string }
+      ).sql
+    );
+    for (const name of ["idx_med_profile", "idx_med_taken_at"]) {
+      ok(`a fresh install also gets ${name}`, indexNames(fresh).has(name));
+    }
+    migrated.close();
+    fresh.close();
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -1975,7 +2256,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 15`, readUserVersion(db), 15);
+    eq(`v${start}: ends at 16`, readUserVersion(db), 16);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -1987,6 +2268,7 @@ async function main() {
     eq(`v${start}: fasting max`, p1.target_fasting_max, 105);
     eq(`v${start}: carb target`, p1.daily_carb_target_g, 210);
     eq(`v${start}: profile reaches the v15 columns`, p1.basal_insulin_id, null);
+    eq(`v${start}: profile reaches the v16 flag`, p1.oral_meds_enabled, 0);
 
     eq(`v${start}: all 3 readings survive`, count(db, "sugar_logs"), 3);
     const s1 = db.prepare("SELECT * FROM sugar_logs WHERE id='s1';").get() as Record<
@@ -2073,6 +2355,13 @@ async function main() {
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_meta';")
         .get() !== undefined
     );
+    ok(
+      `v${start}: med_logs exists`,
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='med_logs';")
+        .get() !== undefined
+    );
+    eq(`v${start}: no medication logged yet`, count(db, "med_logs"), 0);
     if (start >= 14) {
       eq(
         `v${start}: the stored catalog version survives`,
@@ -2099,14 +2388,14 @@ async function main() {
     await runChain(db, { stampFinal: false });
 
     // Before the fix this read 8: nothing between the first step and that final
-    // line recorded anything, so the schema was v15 and the database said v8.
+    // line recorded anything, so the schema was v16 and the database said v8.
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      15
+      16
     );
 
-    // The user keeps using the app for weeks on that (v15) schema.
+    // The user keeps using the app for weeks on that (v16) schema.
     db.exec(
       `INSERT INTO injection_logs
          (id, profile_id, site, site_point, dose_units, insulin_type, meal_log_id,
@@ -2116,10 +2405,10 @@ async function main() {
     );
     db.exec("UPDATE injection_logs SET bolus_kind = 'correction' WHERE id = 'inj1';");
 
-    // Next cold start. It must pick up from 15, not replay v9 and v11.
+    // Next cold start. It must pick up from 16, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 15", readUserVersion(db), 15);
+    eq("the next launch still ends at 16", readUserVersion(db), 16);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -2217,7 +2506,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 15 again", readUserVersion(db), 15);
+    eq("the chain lands on 16 again", readUserVersion(db), 16);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -2340,6 +2629,11 @@ async function main() {
     const v15db = makeV14FullDatabase();
     await migrateToV15(adapt(v15db));
     eq("migrateToV15 stamps 15", readUserVersion(v15db), 15);
+
+    const v16db = makeV15Database();
+    await migrateToV16(adapt(v16db));
+    eq("migrateToV16 stamps 16", readUserVersion(v16db), 16);
+    v16db.close();
 
     // The property the whole fix rests on: SQLite keeps user_version in the
     // database header, which is journalled, so a stamp written inside a
@@ -2698,14 +2992,14 @@ const CHAIN_CREATE_INJECTIONS = `
 /**
  * initDatabase()'s migration chain, in the same order and with the same guards.
  *
- * The v8 → v15 steps are the REAL exported functions (and therefore the REAL
+ * The v8 → v16 steps are the REAL exported functions (and therefore the REAL
  * stamps, which live inside their transactions). Only the pre-v8 steps, which are
  * inline DDL in lib/db/index.ts and cannot be imported without pulling in
  * expo-sqlite, are replayed here; K6 pins them against that file's source so this
  * copy cannot drift.
  *
  * `stampFinal: false` is the crash under test: the chain runs to the end and the
- * process dies before lib/db/index.ts's closing `PRAGMA user_version = 15`.
+ * process dies before lib/db/index.ts's closing `PRAGMA user_version = 16`.
  */
 async function runChain(
   db: DatabaseSync,
@@ -2769,8 +3063,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 13) await migrateToV13(target);
   if (currentVersion >= 1 && currentVersion < 14) await migrateToV14(target);
   if (currentVersion >= 1 && currentVersion < 15) await migrateToV15(target);
+  if (currentVersion >= 1 && currentVersion < 16) await migrateToV16(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 15;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 16;");
 }
 
 function count(db: DatabaseSync, table: string): number {

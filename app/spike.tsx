@@ -12,13 +12,15 @@ import {
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { AppBackground, ConicAvatar, GlassCard, GradientCTA, withAlpha } from "../components/rich";
+import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { privacyUrl } from "../lib/legal";
 import { INPUT_TEXT, MODAL_TOP_PAD, THEME, glow, HIT_TARGET } from "../lib/theme/tokens";
 import { askSpike, isConfigured, type SpikeMessage } from "../lib/ai/spikeClient";
+import { clearHistory, loadHistory, saveHistory } from "../lib/ai/spikeHistory";
 import {
   getSpikeUsage,
   noteSpikeMessage,
@@ -46,6 +48,10 @@ function SpikeScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { confirm } = useFeedback();
+  // `ask` prefills the input from the screen the user came from (insights,
+  // injection guide). It never sends: the message is the user's to spend.
+  const { ask } = useLocalSearchParams<{ ask?: string }>();
   // Tablet: the conversation keeps a readable column instead of running the full
   // width of an iPad. Undefined on phones, so nothing about that render changes.
   const { contentColumn } = useLayout();
@@ -82,11 +88,30 @@ function SpikeScreen() {
         setReady(true);
         return;
       }
-      setConsented(await hasSpikeConsent());
+      const granted = await hasSpikeConsent();
+      setConsented(granted);
+      // The stored thread only exists behind consent, and it is read only when
+      // consent still stands.
+      if (granted) setMessages(await loadHistory());
       setUsage(await getSpikeUsage(isProUser));
       setReady(true);
     })();
   }, [isProUser, screenshotChat, t]);
+
+  // Persist after every turn (question and reply alike), so leaving mid-answer
+  // or being killed in the background does not lose the thread. Never in
+  // screenshot mode: the mock chat must not overwrite a real one.
+  useEffect(() => {
+    if (!ready || screenshotChat || !consented) return;
+    void saveHistory(messages);
+  }, [messages, ready, screenshotChat, consented]);
+
+  useEffect(() => {
+    if (!ready || screenshotChat) return;
+    if (ask !== "suggest2" && ask !== "suggest3") return;
+    const question = ask === "suggest2" ? t("spike.suggest2") : t("spike.suggest3");
+    setInput((current) => (current.length > 0 ? current : question));
+  }, [ready, screenshotChat, ask, t]);
 
   useEffect(() => {
     logEvent("spike_opened");
@@ -140,6 +165,21 @@ function SpikeScreen() {
     if (sending || !isConfigured || messages.length === 0 || screenshotChat) return;
     hapticSelect();
     void runRequest(messages);
+  }
+
+  async function clearChat() {
+    if (sending || screenshotChat) return;
+    const ok = await confirm({
+      title: t("spike.clearChat"),
+      message: t("spike.clearChatConfirm"),
+      confirmLabel: t("common.delete"),
+      destructive: true,
+      icon: "trash-outline",
+    });
+    if (!ok) return;
+    setMessages([]);
+    setErrored(false);
+    await clearHistory();
   }
 
   if (!ready) {
@@ -258,6 +298,17 @@ function SpikeScreen() {
             {t("spike.title")}
           </Text>
           <View className="flex-1" />
+          {messages.length > 0 && !screenshotChat ? (
+            <Pressable
+              onPress={clearChat}
+              hitSlop={10}
+              className="p-1"
+              accessibilityRole="button"
+              accessibilityLabel={t("spike.clearChat")}
+            >
+              <Ionicons name="trash-outline" size={19} color={THEME.muted} />
+            </Pressable>
+          ) : null}
           {usage ? (
             <View
               className="rounded-full px-2.5 py-1"
@@ -290,12 +341,12 @@ function SpikeScreen() {
             </GlassCard>
           ) : null}
 
-          {/* An empty chat left the user to guess what can be asked. Two of the
-              existing neutral example questions become starters that fill the
-              input, so the first message costs one tap. */}
+          {/* An empty chat left the user to guess what can be asked. Three
+              neutral starters fill the input; sending stays the user's tap, so
+              a starter never spends an allowance the user did not mean to. */}
           {messages.length === 0 && effectiveConfigured && !exhausted && !screenshotChat ? (
             <View style={{ gap: 8, alignItems: "flex-start" }}>
-              {[t("spike.mockQuestion"), t("spike.mockQuestion2")].map((q) => (
+              {[t("spike.suggest1"), t("spike.suggest2"), t("spike.suggest3")].map((q) => (
                 <Pressable
                   key={q}
                   onPress={() => {
@@ -485,6 +536,9 @@ function SpikeScreen() {
         </View>
         </View>
       </KeyboardAvoidingView>
+      {/* Modal route: the root host cannot paint over this view controller, so
+          the clear-chat confirmation needs a host of its own. */}
+      <FeedbackHost />
     </AppBackground>
   );
 }

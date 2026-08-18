@@ -7,8 +7,9 @@ from PIL import Image, ImageDraw, ImageFont
 from compose import (
     new_canvas_with_header, draw_chip_at, draw_device, font, F_BOLD, measure_chip,
     hn, HN_BOLD, HN_MEDIUM, HN_ULTRALIGHT, HN_REGULAR, vertical_gradient,
+    fit_header_and_chip, fit_font, verify_output,
 )
-from i18n_copy import FRAME_COPY, WIDGET_STRINGS
+from i18n_copy import FRAME_COPY, WIDGET_STRINGS, LANGS, frame_copy
 
 THEME_G1 = (7, 13, 19)
 THEME_G2 = (16, 34, 44)
@@ -18,7 +19,10 @@ INK = (234, 246, 250)
 MUTED = (146, 170, 182)
 
 
-def lockscreen_scene(w, h, time_str, date_str, avg_value, timer_min, S=None):
+def lockscreen_scene(w, h, time_str, date_str, avg_value, timer_min, S=None, lang=None):
+    """`lang` routes only the TRANSLATED labels to a face that has their glyphs.
+    The clock, the reading and the countdown are digits, and keeping them on
+    Helvetica Neue is what preserves the iOS lock-screen look in ja/ar too."""
     if S is None:
         from i18n_copy import WIDGET_STRINGS
         S = WIDGET_STRINGS["tr"]
@@ -32,7 +36,7 @@ def lockscreen_scene(w, h, time_str, date_str, avg_value, timer_min, S=None):
     cbbox = draw.textbbox((0, clock_top), time_str, font=f_clock)
     draw.text(((w - cw) / 2, clock_top), time_str, font=f_clock, fill=(255, 255, 255))
 
-    f_date = hn(int(w * 0.044), HN_MEDIUM)
+    f_date = fit_font(draw, date_str, int(w * 0.86), int(w * 0.044), HN_MEDIUM, lang=lang)
     dw = draw.textlength(date_str, font=f_date)
     date_top = cbbox[3] + int(h * 0.02)
     draw.text(((w - dw) / 2, date_top), date_str, font=f_date, fill=MUTED)
@@ -48,14 +52,16 @@ def lockscreen_scene(w, h, time_str, date_str, avg_value, timer_min, S=None):
         [card_x0, card_y0, card_x0 + card_w, card_y0 + card_h], radius=int(w * 0.06),
         outline=(255, 255, 255, 30), width=1,
     )
-    f_lbl = hn(int(w * 0.026), HN_BOLD)
-    f_val = hn(int(w * 0.10), HN_BOLD)
-    f_sub = hn(int(w * 0.028), HN_REGULAR)
     pad = int(w * 0.045)
+    inner = card_w - 2 * pad
+    f_lbl = fit_font(draw, S["avg_glucose"], inner, int(w * 0.026), HN_BOLD, lang=lang)
+    f_val = hn(int(w * 0.10), HN_BOLD)
+    f_unit = hn(int(w * 0.028), HN_REGULAR)
+    f_sub = fit_font(draw, S["last7"], inner - int(w * 0.028), int(w * 0.028), HN_REGULAR, lang=lang)
     draw.text((card_x0 + pad, card_y0 + pad), S["avg_glucose"], font=f_lbl, fill=MUTED)
     draw.text((card_x0 + pad, card_y0 + pad + int(w * 0.05)), str(avg_value), font=f_val, fill=TARGET)
     vw = draw.textlength(str(avg_value), font=f_val)
-    draw.text((card_x0 + pad + vw + 8, card_y0 + pad + int(w * 0.05) + int(w * 0.062)), "mg/dL", font=f_sub, fill=MUTED)
+    draw.text((card_x0 + pad + vw + 8, card_y0 + pad + int(w * 0.05) + int(w * 0.062)), "mg/dL", font=f_unit, fill=MUTED)
     dot_y = card_y0 + card_h - pad - int(w * 0.028)
     draw.ellipse([card_x0 + pad, dot_y, card_x0 + pad + int(w * 0.018), dot_y + int(w * 0.018)], fill=TARGET)
     draw.text((card_x0 + pad + int(w * 0.028), dot_y - int(w * 0.007)), S["last7"], font=f_sub, fill=TARGET)
@@ -82,18 +88,25 @@ def lockscreen_scene(w, h, time_str, date_str, avg_value, timer_min, S=None):
     draw.line(pts, fill=(3, 24, 28), width=max(3, icon_size // 13), joint="curve")
 
     f_app = hn(int(w * 0.028), HN_BOLD)
-    f_title = hn(int(w * 0.040), HN_BOLD)
     tx = icon_x + icon_size + int(w * 0.03)
+
+    f_timerN = hn(int(w * 0.058), HN_BOLD)
+    f_timerU = hn(int(w * 0.024), HN_REGULAR, lang=lang)
+    tstr = str(timer_min)
+    tw = max(draw.textlength(tstr, font=f_timerN), draw.textlength(S["min_unit"], font=f_timerU))
+    right = la_x0 + la_w - int(w * 0.032)
+
+    # the title shares the row with the countdown, so it is measured against the
+    # gap that is actually left - "Blutzucker nach dem Essen" is three times the
+    # width of "Tokluk Sekeri" in the same slot
+    f_title = fit_font(draw, S["timer_title"], (right - tw) - tx - int(w * 0.02),
+                       int(w * 0.040), HN_BOLD, lang=lang)
     draw.text((tx, la_y0 + la_h * 0.17), "zerospike", font=f_app, fill=ACCENT)
     draw.text((tx, la_y0 + la_h * 0.47), S["timer_title"], font=f_title, fill=INK)
 
-    f_timerN = hn(int(w * 0.058), HN_BOLD)
-    f_timerU = hn(int(w * 0.024), HN_REGULAR)
-    tstr = str(timer_min)
-    tw = draw.textlength(tstr, font=f_timerN)
-    right = la_x0 + la_w - int(w * 0.032)
-    draw.text((right - tw, la_y0 + la_h * 0.15), tstr, font=f_timerN, fill=ACCENT)
-    draw.text((right - tw, la_y0 + la_h * 0.63), S["min_unit"], font=f_timerU, fill=MUTED)
+    draw.text((right - draw.textlength(tstr, font=f_timerN), la_y0 + la_h * 0.15), tstr, font=f_timerN, fill=ACCENT)
+    draw.text((right - draw.textlength(S["min_unit"], font=f_timerU), la_y0 + la_h * 0.63),
+              S["min_unit"], font=f_timerU, fill=MUTED)
 
     bar_y = la_y0 + la_h + int(h * 0.018)
     bar_h = max(4, int(w * 0.012))
@@ -111,18 +124,20 @@ def lockscreen_scene(w, h, time_str, date_str, avg_value, timer_min, S=None):
     return scene
 
 
+OUT_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store/iphone-1284x2778"
+CANVAS = (1284, 2778)
+
+
 def build_all(lang):
-    OUT = f"/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store-r93/iphone-1284x2778/{lang}"
+    OUT = os.path.join(OUT_BASE, lang)
     os.makedirs(OUT, exist_ok=True)
-    CANVAS = (1284, 2778)
     BASE = dict(
         canvas=CANVAS, margin_x=64, headline_top=64, headline_size=84, sub_size=36,
         chip_size=32, text_w=int(CANVAS[0] * 0.80),
     )
-    headline, sub, chip_text = FRAME_COPY[lang]["03-widget"]
+    headline, sub, chip_text = frame_copy(lang, "03-widget")
     S = WIDGET_STRINGS[lang]
-    cfg = dict(BASE, headline=headline, sub=sub)
-    canvas, draw, y_after = new_canvas_with_header(cfg)
+    cfg = dict(BASE, headline=headline, sub=sub, lang=lang)
 
     DEV_Y = 460
     DEV_X = 64
@@ -133,18 +148,38 @@ def build_all(lang):
     inner_w = DEV_W - 2 * BEZEL
     inner_h = SAFE_BOTTOM - DEV_Y - 2 * BEZEL
 
-    scene = lockscreen_scene(inner_w, inner_h, "09:41", S["date"], 123, 72, S=S)
+    # spec 3: the chip lives on the cream band only and may never touch the
+    # bezel, so the subtitle line budget and the chip y are solved together
+    from PIL import ImageDraw, Image
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    f_chip = font(F_BOLD, cfg["chip_size"], lang=lang)
+    chip_w, chip_h, *_ = measure_chip(probe, chip_text, f_chip, None)
+    cfg["sub_max_lines"], chip_y, fits = fit_header_and_chip(cfg, chip_h, DEV_Y, 26, 8)
+    if not fits:
+        print(f"  WARN [{lang}] 03-widget chip overlaps the header band")
+
+    canvas, draw, y_after = new_canvas_with_header(cfg)
+    scene = lockscreen_scene(inner_w, inner_h, "09:41", S["date"], 123, 72, S=S, lang=lang)
     draw_device(canvas, scene, DEV_X, DEV_Y, DEV_W, BEZEL, RADIUS)
+    draw_chip_at(canvas, chip_text, CANVAS[0] - cfg["margin_x"] - chip_w, chip_y, f_chip, dot=(46, 230, 255))
 
-    f_chip = font(F_BOLD, cfg["chip_size"])
-    w, h, *_ = measure_chip(draw, chip_text, f_chip, None)
-    x = CANVAS[0] - cfg["margin_x"] - w
-    draw_chip_at(canvas, chip_text, x, y_after + 26, f_chip, dot=(46, 230, 255))
+    out_path = os.path.join(OUT, "03-widget.png")
+    canvas.save(out_path)
+    print("wrote", out_path, canvas.size)
+    return [(out_path, CANVAS)]
 
-    canvas.save(os.path.join(OUT, "03-widget.png"))
-    print("wrote 03-widget", canvas.size)
+
+def main(argv):
+    langs = argv[1:] or list(LANGS)
+    if langs == ["all"]:
+        langs = list(LANGS)
+    written = []
+    for lang in langs:
+        written += build_all(lang)
+    bad = [p for p, size in written if not verify_output(p, size)]
+    print(f"{len(written)} file(s): {len(written) - len(bad)} OK, {len(bad)} FAIL")
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
-    lang = sys.argv[1] if len(sys.argv) > 1 else "tr"
-    build_all(lang)
+    sys.exit(main(sys.argv))

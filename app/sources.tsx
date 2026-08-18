@@ -62,6 +62,18 @@ const REFERENCES: { labelKey: string; org: string; url: string; host: string }[]
     url: "https://diabetesjournals.org/care/article/41/11/2275/36593/Glucose-Management-Indicator-GMI-A-New-Term-for",
     host: "diabetesjournals.org",
   },
+  {
+    org: "Centers for Disease Control and Prevention (CDC)",
+    labelKey: "sources.refs.cdcPrediabetes",
+    url: "https://www.cdc.gov/prediabetes/",
+    host: "cdc.gov",
+  },
+  {
+    org: "American Diabetes Association (ADA)",
+    labelKey: "sources.refs.adaDiabetesRiskTest",
+    url: "https://diabetes.org/diabetes-risk-test",
+    host: "diabetes.org",
+  },
 ];
 
 function SourcesScreen() {

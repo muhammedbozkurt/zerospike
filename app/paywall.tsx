@@ -45,8 +45,8 @@ import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 
-/** Default free-trial length for the annual plan (RC intro offer). */
-const TRIAL_DAYS = 7;
+/** Used only if the annual plan's own offering data has no trial length. */
+const FALLBACK_TRIAL_DAYS = 7;
 
 /**
  * A plan row in the mockup's 08 composition: the plan name and its terms on the
@@ -183,6 +183,9 @@ function PaywallScreen() {
 
   const plans = offer?.plans ?? {};
   const annualTrial = plans.annual?.hasFreeTrial ?? false;
+  // Store-reported trial length (RC intro offer), so an A/B on the trial
+  // length never needs a code change; falls back to the shipped default.
+  const trialDays = plans.annual?.freeTrialDays || FALLBACK_TRIAL_DAYS;
 
   useEffect(() => {
     if (!offer) return;
@@ -272,7 +275,7 @@ function PaywallScreen() {
         logEvent("purchase_completed", { tier: plan });
         if (plan === "annual" && annualTrial) {
           logEvent("trial_started", { tier: "annual" });
-          scheduleTrialEndingReminder(TRIAL_DAYS).catch(() => {});
+          scheduleTrialEndingReminder(trialDays).catch(() => {});
         }
         hapticSuccess();
         // Success, or an already-owned recovery ("this is already yours").
@@ -319,7 +322,7 @@ function PaywallScreen() {
   const ctaTrial = plan === "annual" && annualTrial;
   const selectedPrice = priceStr(plan);
   const ctaLabel = ctaTrial
-    ? t("paywall.ctaTrial")
+    ? t("paywall.ctaTrial", { days: trialDays })
     : selectedPrice
       ? `${t("paywall.cta")} · ${selectedPrice}${ctaPeriod}`
       : t("paywall.cta");
@@ -476,7 +479,9 @@ function PaywallScreen() {
                 onSelect={() => selectPlan("annual")}
                 name={t("paywall.planAnnual")}
                 desc={
-                  annualTrial ? t("paywall.annualTrialDesc") : t("paywall.annualDesc")
+                  annualTrial
+                    ? t("paywall.annualTrialDesc", { days: trialDays })
+                    : t("paywall.annualDesc")
                 }
                 foot={
                   annualPerMonth

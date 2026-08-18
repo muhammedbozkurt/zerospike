@@ -26,6 +26,8 @@ Her cihazda: tam ekran KIRPILMAMIS cekim; iOS `simctl status_bar` 09:41 tam pil;
 | Android telefon | Pixel_8 EMULATOR | 1080x1920+ | 1080x1920 |
 | Android tablet | **Pixel_Tablet EMULATOR — ZORUNLU. Telefon raw'i tablet kanvasina koymak KESINLIKLE YASAK (onceki tur hatasi)** | tablet dogal | tablet10: 1600x2560, tablet7: 1080x1920 (ayni tablet raw'indan) |
 
+Not: iPhone kompozit kanvas 1284x2778 (2026-08 App Store Connect kabul listesi: 1242x2688, 2688x1242, 1284x2778, 2778x1284). store-screenshots-plan.md'deki 1320x2868 talebi guncel degil.
+
 ## 3. KOMPOZIT SABLON — ORTAK KURALLAR (tum cihazlar)
 - Yapi (padscanner): sicak krem zemin; SOL USTTE buyuk baslik (2 satir alani) + 2 SATIR altyazi (kisa altyazi yasak); altinda GERCEK cihaz cercevesi; cihaz DIK (egim yok); yanlarda >=%8 nefes.
 - Ekran: cerceve icinde KIRPILMAMIS goruntu, status bar gorunur.
@@ -47,6 +49,7 @@ Her cihazda: tam ekran KIRPILMAMIS cekim; iOS `simctl status_bar` 09:41 tam pil;
 | 05-insights | TIR donut + AGP (cizgi 0-24 tam) + GMI/ORT kartlari | AGP sag kenara degiyor olmali |
 | 06-report | (cihazsiz) kapak + cizelge sayfasi | bolum 3 kurali |
 | 07-spike | Spike sohbet ekrani: 2 mesajlik notr ornek sohbet + yanit altindaki disclaimer satiri gorunur + giris alani | K4 mock durumu; DOZ ICEREN METIN YASAK; disclaimer kirpilmaz |
+| 08-takip | Insulinsiz dashboard: 3 sekmeli tab bar (enjeksiyon sekmesi yok); IOB satiri YOK | scenario=tracking; insulin_mode=none / diabetes_type=none profili; baslik/altyazi metinleri TBD |
 
 ### iPAD (genis; ICERIK ZATEN SIGAR — iPhone scroll/kirpma MANTIGI UYGULANMAZ)
 - Genel: iPad cercevesi (ince esit bezel, ada yok; ust kamera noktasi, alt home-indicator). Kesim yine tab bar ust siniri; ama iPad layout'unda cogu ekran TEK sayfada biter — scroll hilesi gerekmez.
@@ -66,7 +69,7 @@ Her cihazda: tam ekran KIRPILMAMIS cekim; iOS `simctl status_bar` 09:41 tam pil;
 - tablet10 kanvasi 1600x2560; tablet7 ayni raw'dan 1080x1920 kanvas (oran 9:16 kesin).
 
 ## 5. METINLER
-- Basliklar (TR): 01 "Tek bakista gunun" · 02 "Her bolge haritada" · 03 "Sayac kilit ekraninda" · 04 "Saniyeler icinde ogun" · 05 "Egilimlerini gor" · 06 "Doktora hazir rapor" · 07 "Sorulara Spike yanit verir" (altyazi ikinci satiri MUTLAKA: tibbi tavsiye vermedigini soyleyen notr cumle). EN esdegerleri onceki setten; de/es/fr ayni kalipta notr ceviri.
+- Basliklar (TR): 01 "Tek bakista gunun" · 02 "Her bolge haritada" · 03 "Sayac kilit ekraninda" · 04 "Saniyeler icinde ogun" · 05 "Egilimlerini gor" · 06 "Doktora hazir rapor" · 07 "Sorulara Spike yanit verir" (altyazi ikinci satiri MUTLAKA: tibbi tavsiye vermedigini soyleyen notr cumle) · 08 TBD (baslik/altyazi metinleri sonra eklenecek). EN esdegerleri onceki setten; de/es/fr ayni kalipta notr ceviri.
 - Altyazilar 2 SATIR, dolu; iddia dili yasak ("control/lower/prevent" yok); "insulin calculator" HICBIR metinde yok.
 - Cipler: 01 "🔥 12 gun seri" · 02 "Bolge rotasyonu" · 03 "Tokluk sayaci acik" · 04 "562 besin" · 05 "30 & 90 gun" · 06 "PDF disa aktar" · 07 "Spike AI" (dil basina yerel).
 
@@ -76,7 +79,7 @@ Goz: HER kompoziti goruntu olarak ac ve bak; kare basina teslim raporunda "silue
 
 ## 7. SIRA (tek oturum, minimum gidis-gelis)
 1. K1+K2 kod -> gateler -> Android + iOS raw etkilenenler icin taze build.
-2. TUM cihazlarin TR setleri once: iPhone TR 7 + iPad TR 7 + Android telefon TR 7 + tablet TR 7 = 28 kare -> TEK TOPLU KONTROL icin kullaniciya kontakt sayfasi goster ve DUR (tek onay noktasi).
+2. TUM cihazlarin TR setleri once: iPhone TR 8 + iPad TR 8 + Android telefon TR 8 + tablet TR 8 = 32 kare -> TEK TOPLU KONTROL icin kullaniciya kontakt sayfasi goster ve DUR (tek onay noktasi).
 3. Onaydan sonra kalan 4 dil tum cihazlarda DURMADAN; dogrulama + dil basina kontakt sayfalari.
 4. Feature graphic + store icon (mevcutlar korunur; degisiklik gerekmiyorsa dokunma).
-5. Teslim: eksiksizlik tablosu (5 dil x 7 kare x [iphone, ipad, android-phone, tablet7, tablet10] = 175), dogrulama ciktilari, kare basina goz-kontrol satirlari, `zerospike-store/OKU-BENI.md` guncel.
+5. Teslim: eksiksizlik tablosu (5 dil x 8 kare x [iphone, ipad, android-phone, tablet7, tablet10] = 200), dogrulama ciktilari, kare basina goz-kontrol satirlari, `zerospike-store/OKU-BENI.md` guncel.

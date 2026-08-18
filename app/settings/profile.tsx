@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Switch, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -15,6 +15,12 @@ import {
 } from "../../lib/glucose";
 import { CARB_TARGET_BOUNDS, clampCarbTarget } from "../../lib/insulin";
 import { insulinModeOf, insulinModeShowsBasal, insulinModeShowsBolus } from "../../lib/insulinMode";
+import {
+  applyNotificationPrefs,
+  cancelBasalReminder,
+  cancelMedReminder,
+  hasNotificationPermission,
+} from "../../lib/services/notifications";
 import { productsByCategory } from "../../lib/insulinCatalog";
 import { parseDecimalText } from "../../lib/numberInput";
 import { Segmented } from "../../components/ui";
@@ -24,6 +30,7 @@ import { Stepper } from "../../components/Stepper";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
+import { THEME } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 
 /**
@@ -76,6 +83,7 @@ export default function ProfileSettings() {
   const insulinMode = insulinModeOf(activeProfile);
   const showsBolus = insulinModeShowsBolus(insulinMode);
   const showsBasal = insulinModeShowsBasal(insulinMode);
+  const oralMeds = activeProfile?.oral_meds_enabled === 1;
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -103,6 +111,33 @@ export default function ProfileSettings() {
     if (!activeProfile) return;
     await updateProfile(activeProfile.id, patch);
     bumpData();
+  }
+
+  /**
+   * The nightly basal reminder belongs to the insulin mode, not only to the
+   * notification preference: leaving one armed after a switch to a mode without
+   * long-acting insulin keeps an insulin nudge on a screen that no longer shows
+   * insulin anywhere. Switching back re-arms it from the saved preferences.
+   *
+   * Non-prompting: changing a profile setting must not raise an OS dialog, so
+   * the re-apply only runs once permission is already granted.
+   */
+  async function persistInsulinMode(m: InsulinMode) {
+    if (m === insulinMode) return;
+    await persist({ insulin_mode: m });
+    if (!insulinModeShowsBasal(m)) await cancelBasalReminder();
+    else if (await hasNotificationPermission()) await applyNotificationPrefs();
+  }
+
+  /**
+   * Turning oral-medication tracking OFF also takes down its daily reminder,
+   * for the same reason the basal one follows the insulin mode: the surface it
+   * belongs to is gone. Turning it back ON does NOT arm one - the user opens it
+   * from notification settings, where the time lives.
+   */
+  async function persistOralMeds(on: boolean) {
+    await persist({ oral_meds_enabled: on ? 1 : 0 });
+    if (!on) await cancelMedReminder();
   }
 
   // Saving a ratio is the user telling us this IS their number, so it clears the
@@ -189,7 +224,21 @@ export default function ProfileSettings() {
               label: t(`onboarding.insulin_${m}`),
             }))}
             value={insulinMode}
-            onChange={(m: InsulinMode) => persist({ insulin_mode: m })}
+            onChange={(m: InsulinMode) => persistInsulinMode(m)}
+          />
+        </View>
+      </FormCard>
+
+      <FormCard icon="medical-outline" title={t("meds.toggleLabel")}>
+        <View className="px-4 py-3.5 flex-row items-center">
+          <View className="flex-1 pr-3">
+            <Text className="text-mut text-xs leading-4">{t("meds.toggleHint")}</Text>
+          </View>
+          <Switch
+            value={oralMeds}
+            onValueChange={(v) => void persistOralMeds(v)}
+            trackColor={{ true: THEME.accent, false: THEME.border }}
+            thumbColor={THEME.ink}
           />
         </View>
       </FormCard>
@@ -198,7 +247,7 @@ export default function ProfileSettings() {
         <View className="px-4 py-3.5">
           <Segmented
             options={(
-              ["type1", "type2", "gestational", "prediabetes", "unknown"] as DiabetesType[]
+              ["type1", "type2", "gestational", "prediabetes", "none", "unknown"] as DiabetesType[]
             ).map((d) => ({
               value: d,
               label: d === "unknown" ? t("onboarding.diabetes_other") : t(`onboarding.diabetes_${d}`),

@@ -31,6 +31,12 @@ export function journalFeedArgs(
       );
     }
   }
+  // The med branch, last in the union. Its bounds are epoch MILLISECONDS, not
+  // ISO text: med_logs.taken_at is an INTEGER column (schema v16), and SQLite
+  // compares an integer against a string by type before value, so ISO bounds
+  // here would silently match no medication row at all.
+  args.push(profileId);
+  if (range) args.push(range.start, range.end);
   args.push(limit);
   return args;
 }
@@ -39,6 +45,14 @@ export function journalFeedArgs(
  * `withRange` must match the args built above. `ord` reproduces the old merge
  * order for entries sharing a timestamp (a meal save writes its reading and the
  * meal at the same instant), so the feed reads exactly as it did before.
+ *
+ * The med branch (schema v16) is the one table whose time column is not ISO text
+ * but epoch milliseconds, so it is converted to that same ISO instant INSIDE the
+ * union. Without the conversion nothing sorts: SQLite orders by type first, so
+ * every integer timestamp would sink below every string one and medication
+ * entries would sit in a block at the end of the feed instead of in the day they
+ * belong to. `%f` is seconds with the fraction, which makes the produced string
+ * byte-identical to the `Date#toISOString()` the other three branches store.
  *
  * `excludeCalculatorInjections` drops the bolus row a meal save auto-writes
  * (injection_logs.source = 'calculator') from the injection branch, so the
@@ -72,7 +86,7 @@ export function journalFeedSql(
               NULL AS name_fr, NULL AS category,
               NULL AS site, NULL AS site_point, NULL AS dose_units,
               NULL AS insulin_type, NULL AS bolus_kind, NULL AS note,
-              s.healthkit_uuid AS healthkit_uuid
+              s.healthkit_uuid AS healthkit_uuid, NULL AS med_name
          FROM sugar_logs s
         WHERE s.profile_id = ?${bounds("s.logged_at")}
        UNION ALL
@@ -84,7 +98,7 @@ export function journalFeedSql(
               m.photo_uri_local, m.personal_note,
               f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr, f.category,
               NULL, NULL, NULL, NULL, NULL, NULL,
-              NULL
+              NULL, NULL
          FROM meal_logs m LEFT JOIN foods f ON f.id = m.food_id
         WHERE m.profile_id = ?${bounds("m.logged_at")}
        UNION ALL
@@ -94,9 +108,21 @@ export function journalFeedSql(
               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
               NULL, NULL, NULL, NULL, NULL, NULL,
               i.site, i.site_point, i.dose_units, i.insulin_type, i.bolus_kind, i.note,
-              NULL
+              NULL, NULL
          FROM injection_logs i
         WHERE i.profile_id = ?${bounds("i.logged_at")}${notCalculator}
+       UNION ALL
+       SELECT 'med', d.id,
+              strftime('%Y-%m-%dT%H:%M:%fZ', d.taken_at / 1000.0, 'unixepoch'),
+              NULL,
+              3,
+              NULL, NULL, NULL,
+              NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+              NULL, NULL, NULL, NULL, NULL, NULL,
+              NULL, NULL, NULL, NULL, NULL, d.note,
+              NULL, d.name
+         FROM med_logs d
+        WHERE d.profile_id = ?${withRange ? " AND d.taken_at BETWEEN ? AND ?" : ""}
      )
      ORDER BY logged_at DESC, ord
      LIMIT ?;`;

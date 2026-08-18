@@ -81,6 +81,8 @@ extension LiveData {
     avgWindowDays: 7,
     nextReminderAt: nil,
     nextReminderKind: nil,
+    usesInsulin: nil,
+    usesOralMeds: nil,
     band: nil,
     labels: nil
   )

@@ -126,13 +126,19 @@ export async function searchFoods(
     .slice(0, limit);
 }
 
-/** The name column SQLite orders a page by, per active language. */
+/** The name column SQLite orders a page by, per active language. The catalogue
+ *  only carries five name columns, so it/pt/ar/ja page on the English one - the
+ *  same name foodName() shows them - and the JS re-sort below settles the rest. */
 const NAME_COLUMN: Record<Lang, string> = {
   tr: "name_tr",
   en: "name_en",
   de: "name_de",
   es: "name_es",
   fr: "name_fr",
+  it: "name_en",
+  pt: "name_en",
+  ar: "name_en",
+  ja: "name_en",
 };
 
 /** How many rows one category page pulls. Must stay comfortably above the

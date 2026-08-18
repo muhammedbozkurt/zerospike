@@ -9,9 +9,21 @@
 
 import { getActiveLang } from "./lang";
 
-function locale(): string {
-  return getActiveLang();
+/** The BCP-47 tag every Intl call in the app formats with. Exported because
+ *  lib/glucose formats the one number that matters most and must not resolve
+ *  the locale differently from every other surface. */
+export function formatLocale(): string {
+  const lang = getActiveLang();
+  // The Arabic bundle is written with Western digits throughout, but Intl's
+  // default numbering system for "ar" is Eastern Arabic (١٢٣), so a screen would
+  // mix the two: a translated label next to an Intl-formatted number. The -u-nu-latn
+  // extension pins the digits without touching any other Arabic convention.
+  return lang.slice(0, 2) === "ar" ? "ar-u-nu-latn" : lang;
 }
+
+/** Languages that write the decimal mark as a comma (used only in the no-Intl
+ *  fallback below; with Intl the locale data decides). */
+const COMMA_DECIMAL = ["tr", "de", "es", "fr", "it", "pt"];
 
 function two(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
@@ -20,7 +32,7 @@ function two(n: number): string {
 export function formatTime(iso: string): string {
   const d = new Date(iso);
   try {
-    return d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(formatLocale(), { hour: "2-digit", minute: "2-digit" });
   } catch {
     return `${two(d.getHours())}:${two(d.getMinutes())}`;
   }
@@ -36,7 +48,7 @@ export function formatDateKey(iso: string): string {
 export function formatDate(iso: string): string {
   const d = new Date(iso);
   try {
-    return d.toLocaleDateString(locale());
+    return d.toLocaleDateString(formatLocale());
   } catch {
     return `${two(d.getDate())}.${two(d.getMonth() + 1)}.${d.getFullYear()}`;
   }
@@ -46,7 +58,7 @@ export function formatDate(iso: string): string {
 export function formatWeekday(iso: string): string {
   const d = new Date(iso);
   try {
-    return d.toLocaleDateString(locale(), { weekday: "long" });
+    return d.toLocaleDateString(formatLocale(), { weekday: "long" });
   } catch {
     return "";
   }
@@ -72,7 +84,7 @@ export function relativeDay(
 export function num(n: number): string {
   const rounded = Number.isInteger(n) ? n : Math.round(n * 100) / 100;
   try {
-    return rounded.toLocaleString(locale(), { maximumFractionDigits: 2 });
+    return rounded.toLocaleString(formatLocale(), { maximumFractionDigits: 2 });
   } catch {
     return `${rounded}`;
   }
@@ -80,10 +92,10 @@ export function num(n: number): string {
 
 /**
  * Where the percent sign goes, and whether it is spaced, is a LANGUAGE rule, not
- * a typing habit: Turkish writes "%92", English "92%", German/French/Spanish
- * "92 %". Every call site used to hand-write its own sign, so one Turkish session
- * showed both "%92" and "92%". These two helpers are the only place the sign is
- * ever produced.
+ * a typing habit: Turkish writes "%92", English/Italian/Portuguese/Japanese/Arabic
+ * "92%", German/French/Spanish "92 %". Every call site used to hand-write its own
+ * sign, so one Turkish session showed both "%92" and "92%". These two helpers are
+ * the only place the sign is ever produced.
  */
 export interface PctParts {
   /** The number alone, in the locale's digits and decimal mark. */
@@ -99,7 +111,7 @@ export interface PctParts {
 export function pctParts(value: number, decimals = 0): PctParts {
   const safe = Number.isFinite(value) ? value : 0;
   try {
-    const parts = new Intl.NumberFormat(locale(), {
+    const parts = new Intl.NumberFormat(formatLocale(), {
       style: "percent",
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
@@ -121,11 +133,13 @@ export function pctParts(value: number, decimals = 0): PctParts {
   } catch {
     // no full Intl, fall through to the table below
   }
-  const lang = locale().slice(0, 2);
+  const lang = formatLocale().slice(0, 2);
   const raw = safe.toFixed(decimals);
-  const number = lang === "en" ? raw : raw.replace(".", ",");
+  const number = COMMA_DECIMAL.includes(lang) ? raw.replace(".", ",") : raw;
   if (lang === "tr") return { number, sign: "%", signFirst: true };
-  return { number, sign: lang === "en" ? "%" : " %", signFirst: false };
+  // Only de/fr/es space the sign; en/it/pt/ja/ar write it tight to the number.
+  const spaced = lang === "de" || lang === "fr" || lang === "es";
+  return { number, sign: spaced ? " %" : "%", signFirst: false };
 }
 
 /** A percentage in the active language's own convention. `value` is 0..100. */
@@ -142,7 +156,7 @@ export function pct(value: number, decimals = 0): string {
  */
 export function money(amount: number, currencyCode: string): string {
   try {
-    return new Intl.NumberFormat(locale(), {
+    return new Intl.NumberFormat(formatLocale(), {
       style: "currency",
       currency: currencyCode,
     }).format(amount);

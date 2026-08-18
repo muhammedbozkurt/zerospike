@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { clearHistory } from "../ai/spikeHistory";
 
 /**
  * Spike consent gate - fail-closed (Apple 5.1.1). Until the user explicitly
@@ -23,10 +24,13 @@ export async function grantSpikeConsent(): Promise<void> {
   }
 }
 
+/** Withdrawing takes the stored chat with it: leaving a readable transcript
+ *  behind after the user revoked consent is not what "withdraw" means. */
 export async function withdrawSpikeConsent(): Promise<void> {
   try {
     await AsyncStorage.removeItem(CONSENT_KEY);
   } catch {
     // best-effort
   }
+  await clearHistory();
 }

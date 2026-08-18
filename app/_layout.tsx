@@ -12,8 +12,9 @@ import * as SplashScreen from "expo-splash-screen";
 import * as FileSystem from "expo-file-system/legacy";
 
 import type { NotificationRoute } from "../lib/services/notifications";
-import { isScreenshotMode } from "../lib/screenshotMode";
-import { seedScreenshotData } from "../lib/db/screenshotSeed";
+import { isScreenshotMode, setScreenshotPlatform } from "../lib/screenshotMode";
+import { seedScreenshotData, ensureTrackingProfile } from "../lib/db/screenshotSeed";
+import { DEFAULT_PROFILE_ID, SCREENSHOT_TRACKING_PROFILE_ID } from "../lib/db/index";
 import { exportLogsPdf } from "../lib/services/report";
 import { SUPPORTED_LANGS } from "../lib/i18n";
 import type { Lang } from "../lib/db/types";
@@ -64,6 +65,9 @@ function routeForNotification(
     case "basal":
       router.navigate("/(tabs)/injection");
       break;
+    case "med":
+      router.navigate({ pathname: "/(tabs)", params: { sheet: "med" } });
+      break;
     case "weekly":
       router.navigate("/insights");
       break;
@@ -76,10 +80,26 @@ function routeForNotification(
 }
 
 function RootNavigator() {
-  const { ready, onboarded, isProUser, activeProfile, completeOnboarding, bumpData, lang, setLanguage, refreshPro } = useApp();
+  const { ready, onboarded, isProUser, activeProfile, completeOnboarding, bumpData, lang, setLanguage, refreshPro, setActiveProfileId } = useApp();
   const segments = useSegments();
   const router = useRouter();
-  const globalParams = useGlobalSearchParams<{ scLang?: string; scReport?: string }>();
+  const globalParams = useGlobalSearchParams<{
+    scLang?: string;
+    scReport?: string;
+    scenario?: string;
+    scPlatform?: string;
+    scOnboarding?: string;
+  }>();
+
+  // Store-screenshot: ?scPlatform=android marks the shot as an ANDROID source
+  // frame, so iOS-only chrome (the dashboard's Apple Health card) is left out of
+  // it. Written on EVERY param change, not only when the value is present: the
+  // helper clears the flag for scPlatform=ios and for a link with no param at
+  // all, so the next frame of the pass is never captured in Android dress.
+  // Double-locked inside the helper; ignored in a normal build.
+  useEffect(() => {
+    setScreenshotPlatform(globalParams.scPlatform);
+  }, [globalParams.scPlatform]);
 
   // Store-screenshot: any deep-link may carry ?scLang=xx to switch the in-app
   // language before a capture pass. Double-locked; ignored in a normal build.
@@ -90,6 +110,26 @@ function RootNavigator() {
       void setLanguage(sc as Lang);
     }
   }, [globalParams.scLang, lang, setLanguage]);
+
+  // Store-screenshot: ?scenario=tracking switches the active profile to the
+  // insulin-free "tracking" panel (08-takip), get-or-create at a stable id so
+  // it survives the cold relaunch a language switch does. With no `scenario`,
+  // hand back to the default profile whenever it is the one still active - the
+  // NEXT deep-link in a capture pass carries no scenario, so without this it
+  // would shoot straight over the tracking profile by accident. Double-locked;
+  // ignored in a normal build.
+  useEffect(() => {
+    if (!isScreenshotMode() || !ready || !activeProfile) return;
+    const scenario = globalParams.scenario;
+    (async () => {
+      if (scenario === "tracking") {
+        const id = await ensureTrackingProfile();
+        if (activeProfile.id !== id) await setActiveProfileId(id);
+      } else if (activeProfile.id === SCREENSHOT_TRACKING_PROFILE_ID) {
+        await setActiveProfileId(DEFAULT_PROFILE_ID);
+      }
+    })();
+  }, [ready, activeProfile, globalParams.scenario, setActiveProfileId]);
 
   // Store-screenshot: skip onboarding so deep-links land straight on the real
   // tabs. A default profile always exists (getDefaultProfile bootstrap), so the
@@ -128,10 +168,13 @@ function RootNavigator() {
   // the double lock (dev + env) is on. Idempotent (marker key) + a ran-ref so a
   // data refresh never re-triggers it.
   // Re-run per LANGUAGE (not once per session): scLang flips `lang` a beat AFTER
-  // mount, and the meal names must re-materialise in the new locale. Keyed on the
-  // seeded language so a data refresh (same lang) never re-seeds, but a language
-  // switch always does. seedScreenshotData itself early-returns when the DB marker
-  // already matches, so a redundant call is cheap.
+  // mount, and the meal names must re-materialise in the new locale. Keyed on
+  // profile+language (not language alone - the scenario switch above can flip
+  // `activeProfile` with no language change, and each profile needs its own
+  // first-pass seed the ref must not mistake for already done) so a data refresh
+  // never re-seeds, but a profile or language switch always does.
+  // seedScreenshotData itself early-returns when the DB marker already matches,
+  // so a redundant call is cheap.
   const seededLangRef = useRef<string | null>(null);
   useEffect(() => {
     if (!ready || !activeProfile || !isScreenshotMode()) return;
@@ -142,10 +185,13 @@ function RootNavigator() {
     const sc = globalParams.scLang;
     const seedLang: Lang =
       sc && (SUPPORTED_LANGS as string[]).includes(sc) ? (sc as Lang) : lang;
-    if (seededLangRef.current === seedLang) return;
-    seededLangRef.current = seedLang;
+    const seedKey = `${activeProfile.id}:${seedLang}`;
+    if (seededLangRef.current === seedKey) return;
+    seededLangRef.current = seedKey;
     (async () => {
-      await seedScreenshotData(activeProfile.id, seedLang);
+      const variant =
+        activeProfile.id === SCREENSHOT_TRACKING_PROFILE_ID ? "tracking" : undefined;
+      await seedScreenshotData(activeProfile.id, seedLang, variant);
       // The seed flips the Pro override; refresh the context so Pro-only surfaces
       // (Insights) render unlocked in this same session, not just after a restart.
       await refreshPro();
@@ -254,10 +300,24 @@ function RootNavigator() {
     prevOnboardedRef.current = onboarded;
     if (prevOnboarded === false && onboarded === true) completedRef.current = true;
   }
+  // Store-screenshot: /onboarding?scOnboarding=<answer> captures a single quiz
+  // question with that answer already highlighted (the 08 panel). Screenshot mode
+  // completes onboarding on launch, so `onboarded` is true and the re-entry guard
+  // below would bounce the deep-link straight back to the tabs - this is the one
+  // param allowed past it. Derived from the LIVE param, so the very next link of
+  // the pass (which carries no scOnboarding) restores the guard. The screen it
+  // opens is render-only: onboarding.tsx seeds its own local state from the param
+  // and writes nothing. Double-locked; a dead branch in any release build.
+  const screenshotOnboarding = isScreenshotMode() && !!globalParams.scOnboarding;
+
   // Block an already-onboarded user from re-entering /onboarding, but leave the
   // active reveal alone (it completed in-place this session, before the paywall).
   const blockedReentry =
-    ready && onboarded && inOnboarding && !completedRef.current;
+    ready &&
+    onboarded &&
+    inOnboarding &&
+    !completedRef.current &&
+    !screenshotOnboarding;
 
   const settled = ready && !needsOnboarding && !blockedReentry;
 

@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
+import { Redirect, useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 import Animated from "react-native-reanimated";
 
@@ -53,6 +53,7 @@ import {
 } from "../../lib/db/injections";
 import { captureDeletion } from "../../lib/db/undo";
 import { checkDose } from "../../lib/insulin";
+import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { noteJournalActivity } from "../../lib/services/notifications";
@@ -764,6 +765,14 @@ export default function InjectionScreen() {
       </View>
     </Pressable>
   );
+
+  // Second line of defence: the tab is already hidden for a profile that does not
+  // use insulin, but the route itself stays reachable (deep link, widget, an old
+  // navigation entry). Placed after every hook so a mode change mid-session
+  // cannot change the hook order.
+  if (!insulinModeUsesInsulin(insulinModeOf(activeProfile))) {
+    return <Redirect href="/(tabs)" />;
+  }
 
   return (
     <AppBackground style={{ paddingTop: insets.top }}>

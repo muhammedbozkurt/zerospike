@@ -8,6 +8,9 @@ import {
   type NotificationPrefs,
 } from "./notificationPrefs";
 import { formatGlucose, glucoseUnitLabel, LOW_FOLLOWUP_MINUTES } from "../glucose";
+import { getProfile, listProfiles } from "../db/profiles";
+import type { UserProfile } from "../db/types";
+import { insulinModeOf, insulinModeShowsBasal } from "../insulinMode";
 import {
   endPostMealActivity,
   startPostMealActivity,
@@ -19,6 +22,7 @@ import {
 } from "../postMealTimer";
 
 const BASAL_ID = "zerospike-basal-reminder";
+const MED_ID = "zerospike-med-reminder";
 const GLUCOSE_ID = "zerospike-glucose-reminder";
 const WEEKLY_ID = "zerospike-weekly-summary";
 const TRIAL_ID = "zerospike-trial-ending";
@@ -50,6 +54,9 @@ const ONEOFF_ENDS_KEY = "zerospike.oneOffReminderEnds";
 // language change) can rewrite the copy without sliding the reminder forward.
 const IDLE_ID = "zerospike-idle-reminder";
 const IDLE_END_KEY = "zerospike.idleReminderEnd";
+// Mirrors AppContext's ACTIVE_PROFILE_KEY: the schedulers run outside React, so
+// they resolve the active profile the same way the app bootstrap does.
+const ACTIVE_PROFILE_KEY = "zerospike.activeProfile";
 
 // Foreground presentation: show banners while the app is open.
 Notifications.setNotificationHandler({
@@ -102,6 +109,7 @@ const reminderExtras = { ...androidChannel, ...IOS_TIME_SENSITIVE };
 export type NotificationRoute =
   | "postMeal"
   | "basal"
+  | "med"
   | "glucose"
   | "weekly"
   | "lowFollowup"
@@ -272,6 +280,38 @@ export async function scheduleBasalReminder(time: string): Promise<void> {
 export async function cancelBasalReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(BASAL_ID);
+  } catch {
+    // not scheduled - ignore
+  }
+}
+
+/**
+ * Daily oral-medication reminder. Neutral copy: it says the user asked to be
+ * reminded, never what to take, how much, or when it is "due".
+ */
+export async function scheduleMedReminder(time: string): Promise<void> {
+  await ensureAndroidChannel();
+  await cancelMedReminder();
+  const { hour, minute } = parseHHMM(time);
+  await Notifications.scheduleNotificationAsync({
+    identifier: MED_ID,
+    content: {
+      title: i18n.t("notifications.medTitle"),
+      body: i18n.t("notifications.medBody"),
+      data: { route: "med" satisfies NotificationRoute },
+      ...reminderExtras,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
+  });
+}
+
+export async function cancelMedReminder(): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(MED_ID);
   } catch {
     // not scheduled - ignore
   }
@@ -472,8 +512,59 @@ async function rememberOneOffEnd(kind: OneOffKind, endsAt: number): Promise<void
 }
 
 /**
- * Applies the saved preferences: schedules the basal/glucose reminders that are
- * enabled and cancels the rest. With the master switch off (or permission
+ * The profile the schedulers work against. Read here rather than passed in, so
+ * every path that re-applies preferences - Settings, onboarding, the language
+ * change - resolves it the same way the app bootstrap does.
+ */
+async function readActiveProfile(): Promise<UserProfile | null> {
+  const savedId = await AsyncStorage.getItem(ACTIVE_PROFILE_KEY);
+  return (
+    (savedId ? await getProfile(savedId) : null) ??
+    (await listProfiles())[0] ??
+    null
+  );
+}
+
+/**
+ * Whether the active profile's insulin mode includes long-acting insulin.
+ *
+ * The basal reminder is one of two scheduled surfaces tied to a per-profile
+ * flag, while the preference behind it is device-level and defaults to ON. A
+ * profile that says "no insulin" (or one switched to it later) would otherwise
+ * keep a nightly insulin nudge armed with every insulin surface in the app
+ * hidden.
+ *
+ * An unreadable profile keeps today's behaviour: a failed lookup must not
+ * silently drop a reminder the user asked for.
+ */
+async function activeProfileShowsBasal(): Promise<boolean> {
+  try {
+    return insulinModeShowsBasal(insulinModeOf(await readActiveProfile()));
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Same guard for the oral-medication reminder: the preference is device-level,
+ * the flag it belongs to is per-profile, so a profile that does not track pills
+ * must not keep a daily pill nudge armed with every pill surface hidden.
+ *
+ * An unreadable profile keeps the reminder, for the reason above: a failed
+ * lookup must not silently drop one the user turned on.
+ */
+async function activeProfileShowsMeds(): Promise<boolean> {
+  try {
+    const profile = await readActiveProfile();
+    return profile == null || profile.oral_meds_enabled === 1;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Applies the saved preferences: schedules the basal/medication/glucose
+ * reminders that are enabled and cancels the rest. With the master switch off (or permission
  * denied) it cancels everything it manages. Post-meal is event-driven (see
  * schedulePostMealReminder) so it is not touched here.
  */
@@ -489,6 +580,7 @@ export async function applyNotificationPrefs(
   // two hours later.
   if (!p.enabled) {
     await cancelBasalReminder();
+    await cancelMedReminder();
     await cancelGlucoseReminder();
     await cancelWeeklySummary();
     await cancelPostMealTimer();
@@ -499,6 +591,7 @@ export async function applyNotificationPrefs(
   const granted = await ensureNotificationPermission();
   if (!granted) {
     await cancelBasalReminder();
+    await cancelMedReminder();
     await cancelGlucoseReminder();
     await cancelWeeklySummary();
     await cancelPostMealTimer();
@@ -506,8 +599,17 @@ export async function applyNotificationPrefs(
     return;
   }
 
-  if (p.basal) await scheduleBasalReminder(p.basalTime);
-  else await cancelBasalReminder();
+  if (p.basal && (await activeProfileShowsBasal())) {
+    await scheduleBasalReminder(p.basalTime);
+  } else {
+    await cancelBasalReminder();
+  }
+
+  if (p.med && (await activeProfileShowsMeds())) {
+    await scheduleMedReminder(p.medTime);
+  } else {
+    await cancelMedReminder();
+  }
 
   if (p.glucose) await scheduleGlucoseReminder(p.glucoseTime);
   else await cancelGlucoseReminder();

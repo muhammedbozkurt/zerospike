@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "1.6.1",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
@@ -11,7 +11,11 @@
       "tr": "./ios-locales/tr.json",
       "de": "./ios-locales/de.json",
       "fr": "./ios-locales/fr.json",
-      "es": "./ios-locales/es.json"
+      "es": "./ios-locales/es.json",
+      "it": "./ios-locales/it.json",
+      "pt": "./ios-locales/pt.json",
+      "ar": "./ios-locales/ar.json",
+      "ja": "./ios-locales/ja.json"
     },
     "backgroundColor": "#000000",
     "splash": {
@@ -26,7 +30,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "49",
+      "buildNumber": "50",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
@@ -43,7 +47,11 @@
           "tr",
           "de",
           "fr",
-          "es"
+          "es",
+          "it",
+          "pt",
+          "ar",
+          "ja"
         ],
         "NSSupportsLiveActivities": true,
         "NSMotionUsageDescription": "zerospike does not collect motion data. A location component in the app references this permission; your movement is never tracked."
@@ -56,7 +64,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 45,
+      "versionCode": 46,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
