@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw
 from compose import (
     new_canvas_with_header, draw_chip_at, draw_device, font, F_BOLD, measure_chip,
     hn, HN_BOLD, HN_MEDIUM, HN_REGULAR, vertical_gradient,
-    fit_header_and_chip, fit_font, verify_output,
+    fit_header_and_chip, fit_font, verify_output, align_for,
 )
 
 THEME_G1 = (7, 13, 19)
@@ -129,7 +129,7 @@ def build_all(lang):
                 chip_size=27, text_w=int(CANVAS[0] * 0.80))
     headline, sub, chip_text = frame_copy(lang, "03-widget", platform="android")
     WS = WIDGET_STRINGS[lang]
-    cfg = dict(BASE, headline=headline, sub=sub, lang=lang)
+    cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
 
     DEV_Y = 388
     BEZEL = 13
@@ -156,7 +156,8 @@ def build_all(lang):
     r = 8
     d2.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(3, 3, 4))
 
-    draw_chip_at(canvas, chip_text, CANVAS[0] - cfg["margin_x"] - chip_w, chip_y, f_chip, dot=(46, 230, 255))
+    chip_x = (CANVAS[0] - chip_w) // 2 if cfg["align"] == "center" else CANVAS[0] - cfg["margin_x"] - chip_w
+    draw_chip_at(canvas, chip_text, chip_x, chip_y, f_chip, dot=(46, 230, 255))
 
     out_path = os.path.join(OUT, "03-widget.png")
     canvas.save(out_path)

@@ -83,7 +83,12 @@ def build(lang):
     y += 5 + 26
 
     for ln in tag_lines:
-        draw_text_tracked(draw, (TEXT_X, y), ln, f_tag, TAGLINE_INK, tracking=tag_tracking)
+        # ar centers each tagline line within the text column (icon block stays
+        # put); every other language keeps the left-anchored TEXT_X, unchanged
+        tx = TEXT_X
+        if lang == "ar":
+            tx = TEXT_X + (max_w - text_tracked_width(draw, ln, f_tag, tag_tracking)) // 2
+        draw_text_tracked(draw, (tx, y), ln, f_tag, TAGLINE_INK, tracking=tag_tracking)
         y += tag_line_h
 
     os.makedirs(OUT_DIR, exist_ok=True)

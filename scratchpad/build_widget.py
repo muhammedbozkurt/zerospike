@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 from compose import (
     new_canvas_with_header, draw_chip_at, draw_device, font, F_BOLD, measure_chip,
     hn, HN_BOLD, HN_MEDIUM, HN_ULTRALIGHT, HN_REGULAR, vertical_gradient,
-    fit_header_and_chip, fit_font, verify_output,
+    fit_header_and_chip, fit_font, verify_output, align_for,
 )
 from i18n_copy import FRAME_COPY, WIDGET_STRINGS, LANGS, frame_copy
 
@@ -137,7 +137,7 @@ def build_all(lang):
     )
     headline, sub, chip_text = frame_copy(lang, "03-widget")
     S = WIDGET_STRINGS[lang]
-    cfg = dict(BASE, headline=headline, sub=sub, lang=lang)
+    cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
 
     DEV_Y = 460
     DEV_X = 64
@@ -161,7 +161,8 @@ def build_all(lang):
     canvas, draw, y_after = new_canvas_with_header(cfg)
     scene = lockscreen_scene(inner_w, inner_h, "09:41", S["date"], 123, 72, S=S, lang=lang)
     draw_device(canvas, scene, DEV_X, DEV_Y, DEV_W, BEZEL, RADIUS)
-    draw_chip_at(canvas, chip_text, CANVAS[0] - cfg["margin_x"] - chip_w, chip_y, f_chip, dot=(46, 230, 255))
+    chip_x = (CANVAS[0] - chip_w) // 2 if cfg["align"] == "center" else CANVAS[0] - cfg["margin_x"] - chip_w
+    draw_chip_at(canvas, chip_text, chip_x, chip_y, f_chip, dot=(46, 230, 255))
 
     out_path = os.path.join(OUT, "03-widget.png")
     canvas.save(out_path)

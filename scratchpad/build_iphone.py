@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image
 from compose import (
     new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
-    measure_chip, bodymap_shot, fit_header_and_chip, verify_output, snap_cut,
+    measure_chip, bodymap_shot, fit_header_and_chip, verify_output, snap_cut, align_for,
 )
 from i18n_copy import FRAME_COPY, CHIP_EMOJI, LANGS, PANELS_2_0_0
 
@@ -85,7 +85,10 @@ def place_device_and_chips(cfg, shot_img, chips, dev_w=None):
     dev_box = draw_device(canvas, shot_img, dev_x, DEV_Y, dev_w, BEZEL, RADIUS)
     for ch in chips:
         w, h, *_ = measure_chip(draw, ch["text"], f_chip, ch.get("emoji"))
-        x = CANVAS[0] - cfg["margin_x"] - w
+        if cfg.get("align") == "center":
+            x = (CANVAS[0] - w) // 2
+        else:
+            x = CANVAS[0] - cfg["margin_x"] - w
         draw_chip_at(canvas, ch["text"], x, cy, f_chip, emoji_ch=ch.get("emoji"), dot=ch.get("dot"))
         cy += h + 20
     return canvas, dev_box
@@ -145,7 +148,7 @@ def build_all(lang):
             print(f"SKIP {lang}/{key}: raw capture missing")
             continue
         headline, sub, chip_text = copy[key]
-        cfg = dict(BASE, headline=headline, sub=sub, lang=lang)
+        cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
         written.append(frame(out_dir, key, cfg, [{"text": chip_text, "emoji": CHIP_EMOJI[key]}], shot))
     return written
 

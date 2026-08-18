@@ -386,6 +386,12 @@ def draw_chip_at(canvas, text, x, y, f_chip, emoji_ch=None, dot=None):
     return (x, y, w, h)
 
 
+def align_for(lang):
+    """Only ar centers the header/chip block; every other language keeps the
+    left-anchored layout byte-identical."""
+    return "center" if lang == "ar" else "left"
+
+
 def header_bottom(cfg):
     """y the header block would end at, without drawing anything. Lets callers
     pick a subtitle line budget that still leaves room for the chip."""
@@ -431,6 +437,7 @@ def new_canvas_with_header(cfg):
     draw = ImageDraw.Draw(canvas)
 
     lang = cfg.get("lang")
+    align = cfg.get("align", "left")
     margin_x = cfg["margin_x"]
     max_text_w = cfg.get("text_w", int(W * 0.80))
     f_head = hn(cfg["headline_size"], HN_BOLD, lang=lang)
@@ -442,14 +449,18 @@ def new_canvas_with_header(cfg):
     y = cfg["headline_top"]
     line_h = int(cfg["headline_size"] * 1.08)
     for ln in lines:
-        draw_text_tracked(draw, (margin_x, y), ln, f_head, INK, tracking=tracking)
+        # centered per line (not block) so Arabic's natural ragged edge reads
+        # right; left stays pinned at margin_x, unchanged from before `align` existed
+        line_x = (W - text_tracked_width(draw, ln, f_head, tracking)) // 2 if align == "center" else margin_x
+        draw_text_tracked(draw, (line_x, y), ln, f_head, INK, tracking=tracking)
         y += line_h
     y += int(cfg["headline_size"] * 0.20)
     sub_max = cfg.get("sub_max_lines", 3)
     sub_lines = wrap_text(draw, cfg["sub"], f_sub, max_text_w, max_lines=sub_max, lang=lang)
     sub_line_h = int(cfg["sub_size"] * 1.42)
     for ln in sub_lines:
-        draw.text((margin_x, y), ln, font=f_sub, fill=MUTED)
+        line_x = (W - draw.textlength(ln, font=f_sub)) // 2 if align == "center" else margin_x
+        draw.text((line_x, y), ln, font=f_sub, fill=MUTED)
         y += sub_line_h
 
     for label, src, got in (("headline", cfg["headline"], lines), ("subtitle", cfg["sub"], sub_lines)):

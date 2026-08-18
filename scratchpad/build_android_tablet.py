@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image, ImageDraw
 from compose import (
     new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
-    measure_chip, fit_header_and_chip, verify_output,
+    measure_chip, fit_header_and_chip, verify_output, align_for,
 )
 from i18n_copy import FRAME_COPY, CHIP_EMOJI, LANGS, PANELS_2_0_0
 import build_ipad as ipad
@@ -109,7 +109,7 @@ def build_for_canvas(lang, spec, sources, out_dir):
             continue
         headline, sub, chip_text = copy[key]
         chips = [{"text": chip_text, "emoji": CHIP_EMOJI[key]}]
-        cfg = dict(BASE, headline=headline, sub=sub, lang=lang)
+        cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
         f_chip = font(F_BOLD, cfg["chip_size"], lang=lang)
         chip_h = measure_chip(probe, chip_text, f_chip, CHIP_EMOJI[key])[1]
         gap = int(margin_x * 0.4)
@@ -129,7 +129,10 @@ def build_for_canvas(lang, spec, sources, out_dir):
         cy = cy0
         for ch in chips:
             w, h, *_ = measure_chip(draw, ch["text"], f_chip, ch.get("emoji"))
-            x = W - cfg["margin_x"] - w
+            if cfg.get("align") == "center":
+                x = (W - w) // 2
+            else:
+                x = W - cfg["margin_x"] - w
             draw_chip_at(canvas, ch["text"], x, cy, f_chip, emoji_ch=ch.get("emoji"), dot=ch.get("dot"))
             cy += h + int(margin_x * 0.35)
 

@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image, ImageDraw
 from compose import (
     new_canvas_with_header, draw_chip_at, font, F_BOLD, measure_chip,
-    fit_header_and_chip, verify_output,
+    fit_header_and_chip, verify_output, align_for,
 )
 from build_report import draw_back_page, draw_front_page, soft_shadow_paste, report_data
 from i18n_copy import REPORT_STRINGS, LANGS, frame_copy
@@ -21,7 +21,7 @@ def build_all(lang):
                 sub_size=int(36 * SCALE), chip_size=int(32 * SCALE), text_w=int(CANVAS[0] * 0.80))
     headline, sub, chip_text = frame_copy(lang, "06-report")
     S = REPORT_STRINGS[lang]
-    cfg = dict(BASE, headline=headline, sub=sub, lang=lang)
+    cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
 
     page_w = int(CANVAS[0] * 0.60)
     page_h = int(page_w / 0.707)
@@ -43,7 +43,8 @@ def build_all(lang):
         print(f"  WARN [{lang}] 06-report chip overlaps the header band")
 
     canvas, draw, y_after = new_canvas_with_header(cfg)
-    draw_chip_at(canvas, chip_text, CANVAS[0] - cfg["margin_x"] - chip_w, chip_y, f_chip, emoji_ch="📄")
+    chip_x = (CANVAS[0] - chip_w) // 2 if cfg["align"] == "center" else CANVAS[0] - cfg["margin_x"] - chip_w
+    draw_chip_at(canvas, chip_text, chip_x, chip_y, f_chip, emoji_ch="📄")
 
     soft_shadow_paste(canvas, back_x, back_y, page_w, page_h, radius=6, blur=int(26 * SCALE), alpha=70, grow=int(14 * SCALE))
     canvas.paste(draw_back_page(page_w, page_h, S=S, lang=lang), (back_x, back_y))
