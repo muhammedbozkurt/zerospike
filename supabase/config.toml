@@ -1,0 +1,7 @@
+# Function gateway ayarlari. ai-ask-spike anonim erisimlidir: client Authorization
+# gondermez, fonksiyon kendi cift kademeli limitini uygular. verify_jwt asla acilmamali;
+# 2026-08-18'de bayraksiz bir deploy bunu varsayilana dondurup canli Spike'i kirdi.
+project_id = "zerospike"
+
+[functions.ai-ask-spike]
+verify_jwt = false

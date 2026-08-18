@@ -149,14 +149,21 @@ function SpikeScreen() {
     }
   }
 
-  async function send() {
-    const text = input.trim();
+  // Shared by the input's send button and the empty-state suggestion chips:
+  // both go through the same guards (consent already required to reach this
+  // screen, daily limit, in-flight request), so a chip can never bypass them.
+  async function sendText(raw: string) {
+    const text = raw.trim();
     if (!text || sending || !isConfigured || exhausted || screenshotChat) return;
     hapticSelect();
     const next: SpikeMessage[] = [...messages, { role: "user", content: text }];
     setMessages(next);
     setInput("");
     await runRequest(next);
+  }
+
+  async function send() {
+    await sendText(input);
   }
 
   // Retry the last (failed) exchange. The user turn is still the tail of
@@ -342,16 +349,16 @@ function SpikeScreen() {
           ) : null}
 
           {/* An empty chat left the user to guess what can be asked. Three
-              neutral starters fill the input; sending stays the user's tap, so
-              a starter never spends an allowance the user did not mean to. */}
+              neutral starters send straight away, through the same guards as
+              the input's send button; they vanish the instant messages fills,
+              so a starter can't be tapped again while its reply is pending. */}
           {messages.length === 0 && effectiveConfigured && !exhausted && !screenshotChat ? (
             <View style={{ gap: 8, alignItems: "flex-start" }}>
               {[t("spike.suggest1"), t("spike.suggest2"), t("spike.suggest3")].map((q) => (
                 <Pressable
                   key={q}
                   onPress={() => {
-                    hapticSelect();
-                    setInput(q);
+                    void sendText(q);
                   }}
                   accessibilityRole="button"
                   accessibilityLabel={q}

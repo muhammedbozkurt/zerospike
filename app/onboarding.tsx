@@ -103,6 +103,7 @@ type StepId =
   | "unit"
   | "diabetes"
   | "insulin"
+  | "pillsOnly"
   | "targets"
   | "carbRatio"
   | "isf"
@@ -156,6 +157,9 @@ export default function OnboardingScreen() {
   );
   const [diabetes, setDiabetes] = useState<DiabetesOption | null>(scDiabetes);
   const [treatment, setTreatment] = useState<TreatmentOption | null>(null);
+  // The undiagnosed path's own answer (see the pillsOnly step): kept apart from
+  // `treatment` so switching diabetes answers never mixes the two.
+  const [pillsOnly, setPillsOnly] = useState<boolean | null>(null);
   const [fastingMin, setFastingMin] = useState(
     String(glucoseToDisplay(activeProfile?.target_fasting_min ?? DEFAULT_FASTING_RANGE.min, unit))
   );
@@ -200,15 +204,18 @@ export default function OnboardingScreen() {
   const hasInsulin =
     effectiveTreatment === "insulin" || effectiveTreatment === "both";
   const hasOralMeds =
-    effectiveTreatment === "pills" || effectiveTreatment === "both";
+    diabetes === "none"
+      ? pillsOnly === true
+      : effectiveTreatment === "pills" || effectiveTreatment === "both";
 
-  // Branching flow: the treatment question and the carb-ratio / ISF / basal-time
-  // trio are skipped entirely on the "none" path (nothing to ask). Everyone
-  // gets the notification + disclaimer tail.
+  // Branching flow: the "none" path swaps the four-way treatment question for a
+  // two-option pill question and skips the carb-ratio / ISF / basal-time trio
+  // (no insulin to compute for). Everyone gets the notification + disclaimer
+  // tail.
   const steps = useMemo<StepId[]>(() => {
-    const insulinStep: StepId[] = diabetes === "none" ? [] : ["insulin"];
+    const treatmentStep: StepId[] = diabetes === "none" ? ["pillsOnly"] : ["insulin"];
     const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
-    return [...BASE_STEPS, ...insulinStep, "targets", ...branch, "widget", "notify", "disclaimer"];
+    return [...BASE_STEPS, ...treatmentStep, "targets", ...branch, "widget", "notify", "disclaimer"];
   }, [diabetes, hasInsulin]);
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
@@ -569,6 +576,25 @@ export default function OnboardingScreen() {
           </View>
         );
 
+      // The undiagnosed path's own treatment question: only oral medication is
+      // on the table here, so it is two options instead of four. Insulin stays
+      // off entirely (insulin_mode "none" either way).
+      case "pillsOnly":
+        return (
+          <View>
+            {([true, false] as const).map((yes, i) => (
+              <FadeSlideIn key={String(yes)} delay={optDelay(i)}>
+                <OptionCard
+                  icon={yes ? TREATMENT_ICONS.pills : TREATMENT_ICONS.none}
+                  label={yes ? t("onboarding.treatment_pills") : t("onboarding.pillsNo")}
+                  selected={pillsOnly === yes}
+                  onPress={() => selectAndAdvance(() => setPillsOnly(yes))}
+                />
+              </FadeSlideIn>
+            ))}
+          </View>
+        );
+
       // Targets are RANGES. The same band control the settings screen uses, so
       // the two never drift apart, prefilled with the standard starting ranges.
       // The low threshold is deliberately NOT asked here: it has a safe default
@@ -842,7 +868,7 @@ export default function OnboardingScreen() {
   // ── Per-step footer ────────────────────────────────────────────────────────
   function renderFooter(): React.ReactNode {
     // Single-select steps auto-advance and have no footer.
-    if (step === "insulin") return null;
+    if (step === "insulin" || step === "pillsOnly") return null;
 
     if (step === "notify") {
       // Before asking: the prompt trigger. After a result: a plain Continue, so

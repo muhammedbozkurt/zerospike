@@ -64,6 +64,10 @@ const EDIT_HINT_KEY = "zerospike.editHintDismissed";
 // One-time tip shown after the first meal timer: the countdown also appears on
 // the lock screen / Dynamic Island (points at the widget guide).
 const WIDGET_TIP_KEY = "zerospike.widgetTipDismissed";
+// The first-run guide is gone once anything is logged, but its optional steps
+// (Health, widget) are not done yet - this compact row carries them until the
+// user closes it.
+const FINISH_SETUP_KEY = "zerospike.finishSetupDismissed";
 // Name the health source explicitly in the UI (App Review guideline 2.5.1).
 const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
 // Journal paging. One slice is at most JOURNAL_PAGE rows AND at most
@@ -252,6 +256,7 @@ export default function DashboardScreen() {
   const [editGlucose, setEditGlucose] = useState<GlucoseEntry | null>(null);
   const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
   const [showEditHint, setShowEditHint] = useState(false);
+  const [showFinishSetup, setShowFinishSetup] = useState(false);
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
   // null = the persisted AsyncStorage preference has not been read yet. A Pro
   // user who had sync ON must never see the switch commit to OFF for one frame
@@ -368,11 +373,17 @@ export default function DashboardScreen() {
   }, [params.sheet, activeProfile, router]);
 
   // Tap-to-edit is invisible until you know it: show a dismissible one-time
-  // hint above the journal until the user closes it.
+  // hint above the journal until the user closes it. The setup row next to it
+  // is read here too, so both dismissals resolve in one pass.
   useEffect(() => {
     (async () => {
       try {
-        setShowEditHint((await AsyncStorage.getItem(EDIT_HINT_KEY)) !== "true");
+        const [hint, setupDone] = await Promise.all([
+          AsyncStorage.getItem(EDIT_HINT_KEY),
+          AsyncStorage.getItem(FINISH_SETUP_KEY),
+        ]);
+        setShowEditHint(hint !== "true");
+        setShowFinishSetup(setupDone !== "true");
       } catch {
         // best-effort hint
       }
@@ -385,6 +396,15 @@ export default function DashboardScreen() {
       await AsyncStorage.setItem(EDIT_HINT_KEY, "true");
     } catch {
       // best-effort hint
+    }
+  }
+
+  async function dismissFinishSetup() {
+    setShowFinishSetup(false);
+    try {
+      await AsyncStorage.setItem(FINISH_SETUP_KEY, "true");
+    } catch {
+      // best-effort dismissal
     }
   }
 
@@ -1098,6 +1118,10 @@ export default function DashboardScreen() {
     },
   ];
 
+  // Same optional steps the first-run guide offered, minus the one the user has
+  // already done (logging). Health stays off Android with the build.
+  const setupShortcuts = startSteps.filter((s) => s.key !== "log");
+
   const FirstRunGuide = (
     <>
       {/* The hero ring, empty: same shape and size the first reading will take,
@@ -1500,6 +1524,46 @@ export default function DashboardScreen() {
           </Pressable>
         ) : null}
       </View>
+      ) : null}
+
+      {/* Compact setup row: the first-run guide's optional steps survive the
+          first record instead of disappearing with it. Stays until closed. */}
+      {isExistingUser && showFinishSetup ? (
+        <View className="flex-row items-start rounded-2xl border border-hair bg-glass px-3.5 py-3 mb-3">
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}
+              numberOfLines={1}
+            >
+              {t("dashboard.finishSetupTitle")}
+            </Text>
+            <View className="flex-row items-center flex-wrap" style={{ gap: 6, marginTop: 8 }}>
+              {setupShortcuts.map((s) => (
+                <Pressable
+                  key={s.key}
+                  onPress={s.onPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={s.label}
+                  className="flex-row items-center rounded-full border border-hair bg-sheet px-3 py-1.5 active:opacity-80"
+                  style={{ gap: 5 }}
+                >
+                  <Ionicons name={s.icon} size={12} color={THEME.accent} />
+                  <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}>
+                    {s.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <Pressable
+            onPress={dismissFinishSetup}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.close")}
+          >
+            <Ionicons name="close" size={16} color={THEME.muted} />
+          </Pressable>
+        </View>
       ) : null}
 
       {isExistingUser ? (

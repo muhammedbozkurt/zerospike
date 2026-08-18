@@ -50,7 +50,7 @@ import i18n from "../i18n";
 // Bump the version suffix whenever the seeded STORY changes (reading spread,
 // colours, etc.) so an already-seeded screenshot build re-materialises cleanly on
 // next cold launch instead of keeping stale data.
-const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v13";
+const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v14";
 
 /** Per-profile marker key: v8 assumed a single seeded profile, so one global key
  *  was enough. With the tracking profile added, each profile needs its own
@@ -62,6 +62,9 @@ function seedMarkerKey(profileId: string): string {
 
 const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
 const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
+// Mirrors app/(tabs)/index.tsx: the dashboard's "finish setting up" row is a
+// nudge for a real user and has no place in a store frame.
+const FINISH_SETUP_DISMISSED_KEY = "zerospike.finishSetupDismissed";
 
 /** Deterministic pseudo-random in [0,1) so the seed is stable across runs. */
 function rng(seed: number): number {
@@ -214,6 +217,8 @@ export async function seedScreenshotData(
       for (const inj of await getInjections(profileId)) await deleteInjection(inj.id);
       for (const m of await listMealLogs(profileId)) await deleteMealLog(m.id);
       for (const m of await listMeds(profileId)) await deleteMed(m.id);
+
+      await AsyncStorage.setItem(FINISH_SETUP_DISMISSED_KEY, "true");
 
       // Pro + explicit range targets for a full-featured account.
       await setProOverride(true);
