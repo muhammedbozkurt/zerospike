@@ -6,7 +6,11 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { updateProfile } from "../lib/db/profiles";
-import { scheduleBasalReminder } from "../lib/services/notifications";
+import { applyNotificationPrefs } from "../lib/services/notifications";
+import {
+  getNotificationPrefs,
+  setNotificationPrefs,
+} from "../lib/services/notificationPrefs";
 import {
   clampTarget,
   glucoseToDisplay,
@@ -159,7 +163,17 @@ function ProfileSetupScreen() {
         // so they stop counting as defaults the app assumed on their behalf.
         ratios_confirmed: showsBolus ? 1 : 0,
       });
-      if (showsBasal) await scheduleBasalReminder(basalTime);
+      // The time chosen here is a PREFERENCE, not a schedule: writing it through
+      // the saved prefs and re-applying them is what keeps the reminder honest.
+      // Scheduling directly armed a nightly nudge even with notifications turned
+      // off or permission denied, and left the stored basalTime pointing at a
+      // different hour than the reminder that was actually running.
+      if (showsBasal) {
+        const prefs = await getNotificationPrefs();
+        const next = { ...prefs, basal: true, basalTime };
+        await setNotificationPrefs(next);
+        await applyNotificationPrefs(next);
+      }
       bumpData();
       router.back();
     } finally {

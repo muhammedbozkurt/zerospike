@@ -5,6 +5,7 @@ import { getJournal } from "../db/journal";
 import { currentLang } from "../i18n";
 import type { GlucoseUnit, InsulinType, LogTag, PeriodTag } from "../db/types";
 import { formatGlucose, glucoseUnitLabel } from "../glucose";
+import { COMMA_DECIMAL } from "../format";
 import type { DateRange } from "../insights";
 
 export type ExportResult =
@@ -89,10 +90,13 @@ export async function exportLogsCsv(
   const effectiveUsesInsulin =
     usesInsulin || entries.some((e) => e.kind === "injection");
 
-  // Locales whose decimal mark is a comma (tr/de/es/fr) get a ";" delimiter, a
-  // comma decimal, and a leading `sep=;` hint so Excel splits columns correctly
-  // instead of pasting every row into one cell. English keeps the "," format.
-  const decimalComma = lang !== "en";
+  // Locales whose decimal mark is a comma (tr/de/es/fr/it/pt) get a ";"
+  // delimiter, a comma decimal, and a leading `sep=;` hint so Excel splits
+  // columns correctly instead of pasting every row into one cell. en/ja/ar write
+  // the dot, so they keep the "," format - and the list is lib/format's own, the
+  // same one the Intl-formatted glucose column is written from, so a file can
+  // never carry a dotted reading in a comma-decimal sheet.
+  const decimalComma = COMMA_DECIMAL.includes(lang);
   const delim = decimalComma ? ";" : ",";
   const esc = (v: string | number | null | undefined) => csvEscape(v, delim);
   const cnum = (n: number) => csvNum(n, decimalComma);

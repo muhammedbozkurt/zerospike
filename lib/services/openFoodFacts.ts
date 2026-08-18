@@ -19,9 +19,9 @@ const ENDPOINT = "https://world.openfoodfacts.org/api/v3/product";
 
 /**
  * Only what the calculator and the food list need; the full product record is
- * large. The five per-language names let a cached product read correctly
- * whatever language the app is in, and `categories_tags` is what a shelf is
- * guessed from. Everything else stays on the server.
+ * large. One per-language name per app language lets a cached product read
+ * correctly whatever language the app is in, and `categories_tags` is what a
+ * shelf is guessed from. Everything else stays on the server.
  */
 const FIELDS = [
   "product_name",
@@ -30,6 +30,10 @@ const FIELDS = [
   "product_name_de",
   "product_name_es",
   "product_name_fr",
+  "product_name_it",
+  "product_name_pt",
+  "product_name_ar",
+  "product_name_ja",
   "brands",
   "categories_tags",
   "nutriments",

@@ -503,6 +503,12 @@ function CalculatorScreen() {
   // The reading an already-saved meal is attached to, so an edit updates that
   // row instead of silently leaving a stale value behind it.
   const [linkedSugarLogId, setLinkedSugarLogId] = useState<string | null>(null);
+  // Edit mode: the meal's logged_at exactly as prefilled, so save can tell a
+  // real user edit of the time apart from the picker simply holding what it
+  // was loaded with. Only the linked reading's own logged_at needs this - it
+  // can legitimately differ from the meal's, and must not be dragged along
+  // just because the meal itself got saved.
+  const prefillLoggedAtRef = useRef<Date | null>(null);
 
   // Optional region for the bolus row this screen writes (see renderDetails'
   // site picker below). `site`/`point` are only meaningful once `siteTouched`
@@ -602,6 +608,7 @@ function CalculatorScreen() {
       setPhoto(log.photo_uri_local);
       setTags(log.tags);
       setLoggedAt(new Date(log.logged_at));
+      prefillLoggedAtRef.current = new Date(log.logged_at);
       setLinkedSugarLogId(log.sugar_log_id);
       // Prefill the region from whatever this meal's bolus row actually holds -
       // possibly set later from the Injection tab, and never to be overwritten by
@@ -987,10 +994,21 @@ function CalculatorScreen() {
         // A corrected glucose value belongs on the reading this meal is already
         // attached to, not on a second row. Clearing the field leaves the
         // reading alone: a measurement is not deleted because a field went blank.
+        //
+        // logged_at is included only when the user actually moved the time
+        // picker off what it was prefilled with. The reading's own logged_at
+        // can legitimately differ from the meal's (it may have been taken a
+        // few minutes apart), and every save - even one that only touched the
+        // dose or a tag - passed through here with the untouched prefill value
+        // and overwrote it to match the meal every time.
+        const loggedAtChanged =
+          loggedAt != null &&
+          prefillLoggedAtRef.current != null &&
+          loggedAt.getTime() !== prefillLoggedAtRef.current.getTime();
         if (linkedSugarLogId && glucoseMgdl != null) {
           await updateSugarLog(linkedSugarLogId, {
             glucose_level_mgdl: glucoseMgdl,
-            ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
+            ...(loggedAtChanged ? { logged_at: loggedIso } : {}),
           });
           // A previously mirrored reading must not keep its stale value in
           // Apple Health after a correction here.

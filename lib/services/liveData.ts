@@ -8,7 +8,11 @@ import { getPostMealTimerEnd } from "./notifications";
 import { getProfile } from "../db/profiles";
 import { targetBandFor } from "../agpChart";
 import { hypoThreshold, VERY_HIGH_MGDL, formatGlucose } from "../glucose";
-import { insulinModeOf, insulinModeUsesInsulin } from "../insulinMode";
+import {
+  insulinModeOf,
+  insulinModeShowsBasal,
+  insulinModeUsesInsulin,
+} from "../insulinMode";
 import type { GlucoseUnit } from "../db/types";
 
 /**
@@ -169,7 +173,11 @@ export async function computeLiveData(
   if (postMealEnd && postMealEnd > now) {
     candidates.push({ at: postMealEnd, kind: "postMeal" });
   }
-  if (prefs.enabled && prefs.basal) {
+  // The basal reminder is device-level preference AND per-profile mode, exactly
+  // like the scheduler's own gate (activeProfileShowsBasal in notifications.ts).
+  // Without the mode half the widget announced a night-insulin reminder that was
+  // never scheduled, on a snapshot whose own usesInsulin said false.
+  if (prefs.enabled && prefs.basal && insulinModeShowsBasal(insulinModeOf(profile))) {
     candidates.push({ at: nextOccurrence(prefs.basalTime), kind: "basal" });
   }
   if (prefs.enabled && prefs.glucose) {

@@ -21,13 +21,23 @@ const MAX_CARB_100G = 100;
 /** A serving larger than this is data we do not trust as a default portion. */
 const MAX_SERVING_G = 2000;
 
-/** The product name in each of the app's five languages. */
+/**
+ * The product name in each of the app's languages.
+ *
+ * The catalogue table has name columns for the first five only; it/pt/ar/ja are
+ * stored as search aliases instead (lib/db/foods cacheBarcodeFood), so a scan
+ * made in Italian is still findable by its Italian name later.
+ */
 export interface OffNames {
   tr: string;
   en: string;
   de: string;
   es: string;
   fr: string;
+  it: string;
+  pt: string;
+  ar: string;
+  ja: string;
 }
 
 export interface OffProduct {
@@ -468,13 +478,18 @@ export function mapOffCategory(rawTags: unknown): FoodCategory {
   return "other";
 }
 
-/** The five per-language product name fields, in column order. */
+/** The per-language product name fields, in column order (the five with their
+ *  own catalogue column first, then the four that become aliases). */
 const NAME_FIELDS: readonly [keyof OffNames, string][] = [
   ["tr", "product_name_tr"],
   ["en", "product_name_en"],
   ["de", "product_name_de"],
   ["es", "product_name_es"],
   ["fr", "product_name_fr"],
+  ["it", "product_name_it"],
+  ["pt", "product_name_pt"],
+  ["ar", "product_name_ar"],
+  ["ja", "product_name_ja"],
 ];
 
 /**
@@ -513,7 +528,7 @@ export function parseOffProduct(barcode: string, raw: unknown): OffProduct | nul
   const portionG =
     serving !== null && serving > 0 && serving <= MAX_SERVING_G ? serving : 100;
 
-  const names = { tr: name, en: name, de: name, es: name, fr: name } as OffNames;
+  const names = {} as OffNames;
   for (const [lang, field] of NAME_FIELDS) {
     names[lang] = trimmedString(product[field]) ?? name;
   }

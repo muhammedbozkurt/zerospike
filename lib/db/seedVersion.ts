@@ -41,6 +41,32 @@ export function seedNameKey(name: string): string {
 }
 
 /**
+ * English names that changed between catalog releases, old name first. The
+ * top-up matches purely on name_en (selectMissingFoods below), so a rename in
+ * lib/db/seed.ts looks, to an install that predates it, exactly like the old
+ * food got deleted and a new one got added: it still has a row named
+ * "Gingerbread", the catalog now ships "Gingerbread cookie", the names do not
+ * match, and the top-up inserts the "new" food as a permanent duplicate.
+ *
+ * Every rename EVER made to an `en:` field belongs here, added in the same
+ * commit as the rename. HUMAN-TODO.md carries the pre-commit tripwire for
+ * this (`git diff HEAD -- lib/db/seed.ts | grep '^-' | grep 'en:'`): any old
+ * `en:` name the diff removes must either reappear unchanged elsewhere in the
+ * catalog or get an entry here.
+ */
+const RENAMED_EN: Readonly<Record<string, string>> = {
+  Gingerbread: "Gingerbread cookie",
+};
+
+/** RENAMED_EN, keyed and valued the same way names are compared (seedNameKey). */
+const RENAMED_EN_KEYS: ReadonlyMap<string, string> = new Map(
+  Object.entries(RENAMED_EN).map(([oldName, newName]) => [
+    seedNameKey(oldName),
+    seedNameKey(newName),
+  ])
+);
+
+/**
  * Which catalog foods a database does not have yet: the top-up's entire
  * decision, kept pure so it can be tested against a real database without the
  * native SQLite module (scripts/migration.test.ts).
@@ -50,6 +76,10 @@ export function seedNameKey(name: string): string {
  * typed in a food we are only now shipping should keep theirs and should not end
  * up looking at two rows with the same name. Nothing here decides to overwrite
  * anything; the caller only ever INSERTs what comes back.
+ *
+ * An existing row carrying a since-renamed name (RENAMED_EN) also marks the
+ * NEW name as known, so a rename never reads as a missing food on an install
+ * that still has the old one.
  */
 export function selectMissingFoods(
   catalog: readonly SeedFood[],
@@ -58,7 +88,10 @@ export function selectMissingFoods(
   const known = new Set<string>();
   for (const name of existingNames) {
     const key = seedNameKey(name ?? "");
-    if (key) known.add(key);
+    if (!key) continue;
+    known.add(key);
+    const renamedTo = RENAMED_EN_KEYS.get(key);
+    if (renamedTo) known.add(renamedTo);
   }
   return catalog.filter((f) => !known.has(seedNameKey(f.en)));
 }

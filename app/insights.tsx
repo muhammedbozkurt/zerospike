@@ -56,7 +56,7 @@ import { ScreenHeader } from "../components/ScreenHeader";
 import { Skeleton } from "../components/Skeleton";
 import { useFeedback } from "../components/Feedback";
 import { logEvent } from "../lib/analytics";
-import { num, pct, pctParts } from "../lib/format";
+import { formatLocale, num, pct, pctParts } from "../lib/format";
 import {
   AppBackground,
   GlassCard,
@@ -330,7 +330,7 @@ export default function InsightsScreen() {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
-  const { activeProfile, isProUser, lang } = useApp();
+  const { activeProfile, isProUser } = useApp();
   const { isWide } = useLayout();
   const { actionSheet } = useFeedback();
   // Tablet: the report is centred and capped instead of stretching edge to edge.
@@ -1566,7 +1566,7 @@ export default function InsightsScreen() {
         maxDate={new Date()}
         initialStart={customRange ? new Date(customRange.start) : new Date(Date.now() - 30 * 86_400_000)}
         initialEnd={customRange ? new Date(customRange.end) : new Date()}
-        locale={lang}
+        locale={formatLocale()}
         onCancel={() => setRangePickerOpen(false)}
         onConfirm={(r: PickedRange) => {
           setRangePickerOpen(false);

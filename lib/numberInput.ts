@@ -17,17 +17,39 @@ import type { GlucoseUnit } from "./db/types";
  */
 
 /**
+ * A character's value as a Western digit, or null when it is not a digit at all.
+ *
+ * An Arabic keyboard types ٠١٢٣ (Eastern Arabic) and a Persian one ۰۱۲۳, and
+ * those are the SAME numbers - the app just writes them in Latin digits
+ * everywhere (lib/format pins Intl to -u-nu-latn). Dropping them left the field
+ * empty after a full reading was typed, which reads as an app that refuses
+ * input rather than one that transliterates it. Every other character behaves
+ * exactly as before.
+ */
+function latinDigit(ch: string): string | null {
+  if (ch >= "0" && ch <= "9") return ch;
+  const code = ch.charCodeAt(0);
+  if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660);
+  if (code >= 0x06f0 && code <= 0x06f9) return String(code - 0x06f0);
+  return null;
+}
+
+/**
  * Digits plus AT MOST ONE decimal separator. The separator the user typed is
  * preserved (a comma stays a comma) so the field still reads naturally in
- * locales that write 5,5; parseDecimalText handles the conversion.
+ * locales that write 5,5; parseDecimalText handles the conversion. U+066B
+ * (Arabic decimal separator, "٫") counts as a separator too. Any other
+ * non-digit - including U+066C, the Arabic thousands separator - is dropped
+ * like before.
  */
 export function sanitizeDecimalText(raw: string): string {
   let out = "";
   let hasSeparator = false;
   for (const ch of raw) {
-    if (ch >= "0" && ch <= "9") {
-      out += ch;
-    } else if ((ch === "." || ch === ",") && !hasSeparator) {
+    const digit = latinDigit(ch);
+    if (digit !== null) {
+      out += digit;
+    } else if ((ch === "." || ch === "," || ch === "٫") && !hasSeparator) {
       hasSeparator = true;
       out += ch;
     }
@@ -38,7 +60,10 @@ export function sanitizeDecimalText(raw: string): string {
 /** Digits only, for fields that store whole numbers (mg/dL, grams). */
 export function sanitizeIntegerText(raw: string): string {
   let out = "";
-  for (const ch of raw) if (ch >= "0" && ch <= "9") out += ch;
+  for (const ch of raw) {
+    const digit = latinDigit(ch);
+    if (digit !== null) out += digit;
+  }
   return out;
 }
 
@@ -47,13 +72,14 @@ export function sanitizeNumberText(raw: string, decimals: boolean): string {
 }
 
 /**
- * Text to number. Comma and dot both read as the decimal separator and a second
- * separator is ignored. Returns null for an empty or unparseable field: what an
- * EMPTY field means belongs to the caller, so no screen can quietly substitute a
- * computed value for something the user cleared.
+ * Text to number. Comma, dot, and U+066B (Arabic decimal separator) all read as
+ * the decimal separator and a second separator is ignored. Returns null for an
+ * empty or unparseable field: what an EMPTY field means belongs to the caller,
+ * so no screen can quietly substitute a computed value for something the user
+ * cleared.
  */
 export function parseDecimalText(raw: string): number | null {
-  const cleaned = sanitizeDecimalText(raw).replace(",", ".");
+  const cleaned = sanitizeDecimalText(raw).replace(/[,٫]/, ".");
   if (cleaned === "" || cleaned === ".") return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;

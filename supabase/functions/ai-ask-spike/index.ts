@@ -16,8 +16,10 @@
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 // Cheapest tier that still follows the scoped-refusal rules reliably. The scope
-// is narrow (app help + general education), so a nano-class model is enough.
-const MODEL = "gpt-4.1-nano";
+// is narrow (app help + general education). nano degenerated into repetition
+// loops in Turkish (2026-08-18), so mini is the floor; with max_tokens 220 the
+// per-message cost stays negligible.
+const MODEL = "gpt-4.1-mini";
 const MAX_MESSAGES = 16; // trailing chat window the client may send
 const MAX_CHARS = 1500; // per message, defensive cap
 
@@ -79,7 +81,7 @@ Absolute rules - never break these:
 - Do not claim to see the user's data. You do not have their glucose, meal, or insulin records.
 - If the message suggests a medical emergency (e.g. severe hypo symptoms, loss of consciousness, DKA symptoms), respond with ONE calm sentence encouraging them to contact a healthcare professional or local emergency services - no panic, no step-by-step medical instructions.
 - If they ask whether they might have diabetes or prediabetes, or ask you to interpret their symptoms or readings as a diagnosis, never assess or estimate their risk. In one warm sentence explain that only a healthcare professional can answer that, and offer to help them keep a clear log to share at that visit.
-- Keep answers short, warm and neutral. When something needs a clinical decision, point to their healthcare professional.
+- Keep answers SHORT: two or three sentences for most questions, never more than about 80 words. Answer only what was asked. Never repeat a sentence or restate an earlier answer, and do not add closing filler such as offers of further help. Stay warm and neutral, and when something needs a clinical decision, point to their healthcare professional.
 
 STAY IN SCOPE - refuse everything else:
 - You ONLY talk about (a) using the zerospike app and (b) general diabetes education. Anything else (recipes and cooking instructions, general nutrition plans, news, jokes, coding, homework, travel, other apps, any unrelated topic) gets ONE kind sentence in the user's language saying you can only help with zerospike and general diabetes education - then stop. Do not answer the off-topic part even partially.
@@ -130,35 +132,70 @@ function utcDayKey(now: number): string {
   return new Date(now).toISOString().slice(0, 10);
 }
 
+function supabaseServiceCreds(): { url: string; key: string } | null {
+  // deno-lint-ignore no-explicit-any
+  const url = (globalThis as any).Deno?.env?.get?.("SUPABASE_URL");
+  // deno-lint-ignore no-explicit-any
+  const key = (globalThis as any).Deno?.env?.get?.("SUPABASE_SERVICE_ROLE_KEY");
+  return url && key ? { url, key } : null;
+}
+
 /**
- * Atomically increments today's count for this device and reports whether it
- * is still within the tier's cap. Fails OPEN (returns ok) if the DB round trip
- * itself fails - a Supabase hiccup must not take Spike down, the IP + local
- * caps still bound the damage either way.
+ * Read-only: reports whether this device is still within the tier's cap,
+ * WITHOUT spending a message. Checked before the OpenAI call so a caller who
+ * is already at the cap never reaches it; the actual spend is recorded by
+ * recordDailyUsage() only after a reply is successfully returned, so an
+ * upstream failure never burns a slot the user didn't get a reply for.
+ *
+ * Fails OPEN (returns ok) if the DB round trip itself fails - a Supabase
+ * hiccup must not take Spike down, the IP + local caps still bound the
+ * damage either way.
  */
-async function withinDailyCap(deviceId: string, tier: string, now: number): Promise<boolean> {
-  // deno-lint-ignore no-explicit-any
-  const supabaseUrl = (globalThis as any).Deno?.env?.get?.("SUPABASE_URL");
-  // deno-lint-ignore no-explicit-any
-  const serviceKey = (globalThis as any).Deno?.env?.get?.("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) return true;
+async function isWithinDailyCap(deviceId: string, tier: string, now: number): Promise<boolean> {
+  const creds = supabaseServiceCreds();
+  if (!creds) return true;
 
   const cap = tier === "pro" ? PRO_DAILY_CAP : FREE_DAILY_CAP;
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/increment_spike_usage`, {
+    const res = await fetch(
+      `${creds.url}/rest/v1/spike_usage?device_id=eq.${encodeURIComponent(deviceId)}&day=eq.${utcDayKey(now)}&select=count`,
+      {
+        headers: { apikey: creds.key, Authorization: `Bearer ${creds.key}` },
+      }
+    );
+    if (!res.ok) return true;
+    const rows = (await res.json()) as Array<{ count: number }>;
+    const count = rows[0]?.count ?? 0;
+    return count < cap;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Atomically increments today's count for this device. Called only after a
+ * reply has been successfully generated, so the spend always tracks a
+ * message the user actually received. Best-effort: two near-simultaneous
+ * requests from the same device can each pass isWithinDailyCap() before
+ * either increments, letting the cap be exceeded by a small margin under
+ * concurrency - accepted, since the atomic RPC still prevents a lost update
+ * and the IP-based hourly limit bounds the worst case.
+ */
+async function recordDailyUsage(deviceId: string, now: number): Promise<void> {
+  const creds = supabaseServiceCreds();
+  if (!creds) return;
+  try {
+    await fetch(`${creds.url}/rest/v1/rpc/increment_spike_usage`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
+        apikey: creds.key,
+        Authorization: `Bearer ${creds.key}`,
       },
       body: JSON.stringify({ p_device_id: deviceId, p_day: utcDayKey(now) }),
     });
-    if (!res.ok) return true;
-    const count = (await res.json()) as number;
-    return typeof count === "number" && count <= cap;
   } catch {
-    return true;
+    // best-effort - a failed increment only under-counts, never blocks a reply
   }
 }
 
@@ -177,7 +214,7 @@ async function withinDailyCap(deviceId: string, tier: string, now: number): Prom
 
   const deviceId = (req.headers.get("x-device-id") ?? "unknown").slice(0, 100);
   const tier = req.headers.get("x-tier") === "pro" ? "pro" : "free";
-  if (!(await withinDailyCap(deviceId, tier, Date.now()))) {
+  if (!(await isWithinDailyCap(deviceId, tier, Date.now()))) {
     return json({ error: "daily_limit" }, 429);
   }
 
@@ -211,7 +248,8 @@ async function withinDailyCap(deviceId: string, tier: string, now: number): Prom
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.4,
-        max_tokens: 500,
+        max_tokens: 220,
+        frequency_penalty: 0.5,
         messages: [
           { role: "system", content: `${SYSTEM_PROMPT}\n\n${langLine}` },
           ...messages,
@@ -223,6 +261,10 @@ async function withinDailyCap(deviceId: string, tier: string, now: number): Prom
     const data = await res.json();
     const reply: string = data?.choices?.[0]?.message?.content?.trim() ?? "";
     if (!reply) return json({ error: "empty_reply" }, 502);
+    // Spend the day's slot only now that the user is actually getting a
+    // reply - an upstream failure above returns before this, so it never
+    // costs the caller part of their daily allowance.
+    await recordDailyUsage(deviceId, Date.now());
     return json({ reply });
   } catch {
     return json({ error: "upstream" }, 502);

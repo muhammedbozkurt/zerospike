@@ -232,13 +232,24 @@ function buildAliases(names: string[]): string {
   return JSON.stringify([...seen]);
 }
 
-/** A name per language, as Open Food Facts reports them. */
+/**
+ * A name per language, as Open Food Facts reports them.
+ *
+ * The table has a column for the first five. The rest are optional because the
+ * catalogue has no column to put them in: they are folded into aliases_json,
+ * which FTS and the LIKE fallback both search, so an Italian or Japanese user
+ * finds a scanned product by the name their own shelf prints.
+ */
 export interface FoodNames {
   tr: string;
   en: string;
   de: string;
   es: string;
   fr: string;
+  it?: string;
+  pt?: string;
+  ar?: string;
+  ja?: string;
 }
 
 /**
@@ -284,7 +295,20 @@ export async function cacheBarcodeFood(input: {
     es: pick(input.names?.es),
     fr: pick(input.names?.fr),
   };
-  const aliases = buildAliases([name, names.tr, names.en, names.de, names.es, names.fr]);
+  // The four column-less languages ride along as aliases; buildAliases lowercases
+  // and dedupes, so a product that only ever had one name still stores one entry.
+  const aliases = buildAliases([
+    name,
+    names.tr,
+    names.en,
+    names.de,
+    names.es,
+    names.fr,
+    input.names?.it ?? "",
+    input.names?.pt ?? "",
+    input.names?.ar ?? "",
+    input.names?.ja ?? "",
+  ]);
 
   await db.runAsync(
     `INSERT INTO foods

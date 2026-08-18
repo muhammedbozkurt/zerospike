@@ -274,7 +274,7 @@ export default function DashboardScreen() {
   // Journal: session-only kind filter + how many slices are revealed (one, plus
   // one per "show more" press). Stats below still read the full loaded feed, so
   // filtering/paging never skews them.
-  const [filter, setFilter] = useState<"all" | "glucose" | "meal" | "injection">("all");
+  const [filter, setFilter] = useState<"all" | "glucose" | "meal" | "injection" | "med">("all");
   const [journalPages, setJournalPages] = useState(1);
   // Injection chip only exists in insulin modes that log injections; if the
   // profile's mode changes to "none" while it's selected, fall back to "all"
@@ -284,6 +284,19 @@ export default function DashboardScreen() {
       setFilter("all");
     }
   }, [filter, activeProfile?.insulin_mode]);
+  // Med chip stays visible once meds exist even after oral meds is turned off
+  // (so past entries stay reachable); only drop the filter to "all" once both
+  // the setting is off AND no med entries remain, matching the chip's own
+  // visibility condition below.
+  useEffect(() => {
+    if (
+      filter === "med" &&
+      activeProfile?.oral_meds_enabled !== 1 &&
+      !journalEntries.some((e) => e.kind === "med")
+    ) {
+      setFilter("all");
+    }
+  }, [filter, activeProfile?.oral_meds_enabled, journalEntries]);
   // SQL window (rows of the merged feed): decoupled from the visible slices so a
   // page-down is a pure in-memory slice. Widened by "show more" only when the
   // loaded feed is exhausted; 300 stays the stats-safe floor the hero/week tiles
@@ -783,7 +796,8 @@ export default function DashboardScreen() {
   // emergency contact. No diagnosis, no automatic alert.
   async function maybeOfferLowFollowup(mgdl: number) {
     const prefs = await getNotificationPrefs();
-    if (!prefs.lowFollowup || mgdl >= prefs.lowThresholdMgdl) return;
+    if (!prefs.enabled || !prefs.lowFollowup || mgdl >= prefs.lowThresholdMgdl)
+      return;
     actionSheet({
       title: t("dashboard.lowFollowTitle", {
         value: formatGlucose(mgdl, unit),
@@ -1066,6 +1080,9 @@ export default function DashboardScreen() {
     { key: "meal", label: t("dashboard.quickAddFood") },
     ...(insulinModeUsesInsulin(activeProfile?.insulin_mode)
       ? [{ key: "injection" as const, label: t("dashboard.quickAddInjection") }]
+      : []),
+    ...(activeProfile?.oral_meds_enabled === 1 || journalEntries.some((e) => e.kind === "med")
+      ? [{ key: "med" as const, label: t("meds.entryLabel") }]
       : []),
   ];
 

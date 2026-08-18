@@ -132,12 +132,17 @@ export default function ProfileSettings() {
   /**
    * Turning oral-medication tracking OFF also takes down its daily reminder,
    * for the same reason the basal one follows the insulin mode: the surface it
-   * belongs to is gone. Turning it back ON does NOT arm one - the user opens it
-   * from notification settings, where the time lives.
+   * belongs to is gone. Turning it back ON re-applies the saved preferences, so
+   * a reminder the user had already set up comes back with it - exactly what the
+   * insulin-mode branch above does. It never arms a NEW one: the med reminder is
+   * off by default and its time lives in notification settings.
+   *
+   * Non-prompting, same as above.
    */
   async function persistOralMeds(on: boolean) {
     await persist({ oral_meds_enabled: on ? 1 : 0 });
     if (!on) await cancelMedReminder();
+    else if (await hasNotificationPermission()) await applyNotificationPrefs();
   }
 
   // Saving a ratio is the user telling us this IS their number, so it clears the

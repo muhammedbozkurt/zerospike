@@ -17,11 +17,7 @@ import {
 } from "../db/profiles";
 import type { UserProfile, Lang } from "../db/types";
 import { initI18n, setLanguage as i18nSetLanguage, currentLang } from "../i18n";
-import {
-  isPro as readIsPro,
-  isProCached,
-  verifyProWithStore,
-} from "../services/purchases";
+import { isProCached, verifyProWithStore } from "../services/purchases";
 
 const ACTIVE_PROFILE_KEY = "zerospike.activeProfile";
 const ONBOARDED_KEY = "zerospike.onboarded";
@@ -124,16 +120,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applyProfileList, applyActiveProfile]);
 
+  /**
+   * Re-checks the entitlement against the store. `null` means the store could not
+   * be reached, which is NOT "not subscribed": demoting on it would drop a real
+   * Pro user to free (and fire the win-back offer at them) the moment they are
+   * offline, so an unverifiable answer leaves the current flag standing. Same
+   * rule as the launch path below.
+   */
   const refreshPro = useCallback(async () => {
-    setIsProUser(await readIsPro());
+    const verified = await verifyProWithStore();
+    if (verified != null) setIsProUser(verified);
   }, []);
 
   const setActiveProfileId = useCallback(async (id: string) => {
     const p = await getProfile(id);
-    if (p) {
-      setActiveProfile(p);
-      await AsyncStorage.setItem(ACTIVE_PROFILE_KEY, id);
-    }
+    if (!p) return;
+    setActiveProfile(p);
+    await AsyncStorage.setItem(ACTIVE_PROFILE_KEY, id);
+    // The two device-level surfaces resolve the profile themselves from the key
+    // just written, so both were left describing the PREVIOUS profile until
+    // something else happened to refresh them: reminders gated on the profile
+    // (basal / medication) stayed armed for the profile that was switched away
+    // from, and the widget / watch kept its numbers. Backgrounded on purpose -
+    // the switch itself must stay instant - and safe to fire here because
+    // applyNotificationPrefs no longer prompts.
+    void import("../services/notifications").then((m) =>
+      m.applyNotificationPrefs()
+    );
+    void import("../services/liveData").then((m) =>
+      m.syncLiveData(p.id, p.glucose_unit)
+    );
   }, []);
 
   const setLanguage = useCallback(async (next: Lang) => {
@@ -188,6 +204,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setOnboarded(onboardedFlag);
       setIsProUser(pro);
       setReady(true);
+
+      // Re-apply the reminder plan once per launch, now that the active profile
+      // is settled: the schedulers gate on things that can change while the app
+      // is closed (the master switch, the profile's insulin mode, a revoked
+      // permission), so a reminder armed by an older build could survive with
+      // every surface it belongs to gone. Permission-guarded: with no permission
+      // there is nothing scheduled to correct, and this must never be the path
+      // that raises an OS dialog on launch. Onboarded-guarded too: someone who
+      // quit mid-onboarding has no saved prefs yet, and applying the defaults
+      // here would arm reminders before onboarding ever offered that choice.
+      void import("../services/notifications").then(async (m) => {
+        if (onboardedFlag && (await m.hasNotificationPermission()))
+          await m.applyNotificationPrefs();
+      });
 
       // Now that the app is on screen, verify the entitlement against the store
       // and correct the flag if the cache was stale. `null` means the store could

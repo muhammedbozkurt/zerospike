@@ -21,9 +21,12 @@ export function formatLocale(): string {
   return lang.slice(0, 2) === "ar" ? "ar-u-nu-latn" : lang;
 }
 
-/** Languages that write the decimal mark as a comma (used only in the no-Intl
- *  fallback below; with Intl the locale data decides). */
-const COMMA_DECIMAL = ["tr", "de", "es", "fr", "it", "pt"];
+/** Languages that write the decimal mark as a comma. Used in the no-Intl
+ *  fallback below (with Intl the locale data decides), and exported because the
+ *  CSV export has to pick its delimiter from the SAME list: a hand-kept "every
+ *  language except English" rule put comma decimals into the Japanese and Arabic
+ *  files, whose numbers are written with a dot. */
+export const COMMA_DECIMAL = ["tr", "de", "es", "fr", "it", "pt"];
 
 function two(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;

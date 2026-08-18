@@ -13,6 +13,7 @@ import {
   getPostMealTimerEnd,
   hasNotificationPermission,
   getNotificationPermission,
+  requestNotificationPermission,
   checkReminderReliability,
   remindersMayBeLimited,
   type NotificationPermission,
@@ -75,6 +76,15 @@ export default function NotificationSettings() {
     const next = { ...base, ...patch };
     setPrefs(next);
     await setNotificationPrefs(next);
+
+    // Asking for permission belongs to an explicit user action, and this screen
+    // is one of the two that qualify: applyNotificationPrefs itself is silent
+    // now (it also runs on launch and on a profile switch), so turning a
+    // reminder ON here is where the OS dialog is raised. A choice already made
+    // comes back without a second dialog, so this can never nag.
+    if (next.enabled && Object.values(patch).some((v) => v === true)) {
+      await requestNotificationPermission();
+    }
     await applyNotificationPrefs(next);
 
     // A running timer belongs to a meal that already happened, so a new window

@@ -273,11 +273,23 @@ function buildEvents(
   const u = glucoseUnitLabel(unit);
   const byNewest = [...sugar].sort((a, b) => (a.logged_at < b.logged_at ? 1 : -1));
   const hypos = byNewest.filter((s) => s.glucose_level_mgdl < hypoThresh);
-  const followUp = (s: SugarLog) =>
-    sugar.find((x) => {
-      const dt = (new Date(x.logged_at).getTime() - new Date(s.logged_at).getTime()) / 60000;
-      return dt > 0 && dt <= LOW_FOLLOWUP_MINUTES;
-    });
+  // The re-check a low is read against is the FIRST reading inside the window,
+  // not any reading inside it: `sugar` arrives newest-first, so find() returned
+  // the LATEST one, and a low followed by two readings printed the second - a
+  // number taken up to 15 minutes after the one that actually answered it.
+  const followUp = (s: SugarLog): SugarLog | undefined => {
+    const from = new Date(s.logged_at).getTime();
+    let best: SugarLog | undefined;
+    let bestDt = Infinity;
+    for (const x of sugar) {
+      const dt = (new Date(x.logged_at).getTime() - from) / 60000;
+      if (dt > 0 && dt <= LOW_FOLLOWUP_MINUTES && dt < bestDt) {
+        bestDt = dt;
+        best = x;
+      }
+    }
+    return best;
+  };
   const hypoRows = hypos
     .slice(0, 20)
     .map((s) => {
@@ -347,6 +359,22 @@ function buildHtml(
   const generated = new Date();
 
   const t = (k: string, o?: Record<string, unknown>) => esc(i18n.t(k, o));
+
+  // Arabic is the one bundle written right-to-left, and a PDF has no viewer to
+  // guess for it: without `dir` the tables came out left-aligned with the labels
+  // and their values on the wrong sides of the row. Only the text directions flip;
+  // the SVG charts are geometry (hour 0 stays on the left, as a clock reads) and
+  // are left exactly as drawn. Both strings below are EMPTY in every other
+  // language, so those documents are byte for byte the ones produced before.
+  const rtl = currentLang().slice(0, 2) === "ar";
+  const dirAttr = rtl ? ' dir="rtl"' : "";
+  const rtlCss = rtl
+    ? `
+  [dir="rtl"] th, [dir="rtl"] td { text-align: right; }
+  [dir="rtl"] td.v { text-align: left; }
+  [dir="rtl"] .head .info { text-align: left; }
+  [dir="rtl"] .tirleg i { margin-right: 0; margin-left: 4px; }`
+    : "";
 
   // Summary rows (label, value) - labels and values reuse existing i18n.
   const summaryRows: [string, string][] = [
@@ -482,7 +510,7 @@ function buildHtml(
   );
 
   return `<!DOCTYPE html>
-<html lang="${currentLang()}">
+<html lang="${currentLang()}"${dirAttr}>
 <head>
 <meta charset="utf-8" />
 <style>
@@ -519,10 +547,10 @@ function buildHtml(
   .bandhead { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
   .bandhead .bd { font-weight: 700; color: #222; }
   .pbreak { page-break-before: always; }
-  .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }
+  .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }${rtlCss}
 </style>
 </head>
-<body>
+<body${dirAttr}>
   <div class="head">
     <div>
       <div class="brand">zerospike</div>

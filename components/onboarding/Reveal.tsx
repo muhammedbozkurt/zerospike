@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { GLUCOSE_RICH, TABULAR, THEME } from "../../lib/theme/tokens";
+import { pct } from "../../lib/format";
 import { upper } from "../../lib/upper";
 import { FadeSlideIn, useCountUp } from "./motion";
 import { computeAgp } from "../../lib/agp";
@@ -189,7 +190,7 @@ export function Reveal({
               <GlucoseChip
                 status="normal"
                 dot={false}
-                label={`${t("insights.timeInRange")} ${tir}%`}
+                label={`${t("insights.timeInRange")} ${pct(tir)}`}
               />
             </View>
             <GradientAreaChart

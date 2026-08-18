@@ -38,6 +38,32 @@ import { useLayout } from "../lib/useLayout";
 import { logEvent } from "../lib/analytics";
 import { isScreenshotMode } from "../lib/screenshotMode";
 
+// ── Typewriter ──────────────────────────────────────────────────────────────
+// Purely visual: the reply is stored (and persisted) whole the moment it
+// arrives, and only the rendered slice grows. Nothing downstream - history,
+// retry, the request window - ever sees a half message.
+const TYPE_STEP_WORDS = 2;
+const TYPE_INTERVAL_MS = 35;
+
+function wordCount(text: string): number {
+  return text.match(/\S+/g)?.length ?? 0;
+}
+
+/** Prefix of `text` up to the end of its `count`-th word, whitespace intact. */
+function wordPrefix(text: string, count: number): string {
+  if (count <= 0) return "";
+  const re = /\S+/g;
+  let seen = 0;
+  let end = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    seen += 1;
+    end = m.index + m[0].length;
+    if (seen >= count) break;
+  }
+  return text.slice(0, end);
+}
+
 /**
  * Spike - the in-app assistant. Two states behind one route: a fail-closed
  * consent gate (Apple 5.1.1) stating the data boundary, then the chat. Every
@@ -65,6 +91,42 @@ function SpikeScreen() {
   const [usage, setUsage] = useState<SpikeUsage | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const { isProUser } = useApp();
+
+  // Which message is still being revealed, and how many of its words are on
+  // screen. null = nothing animating, every bubble renders its full content.
+  const [typing, setTyping] = useState<{ index: number; count: number } | null>(null);
+  const typeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopTyping() {
+    if (typeTimer.current != null) {
+      clearInterval(typeTimer.current);
+      typeTimer.current = null;
+    }
+  }
+
+  function startTyping(index: number, text: string) {
+    stopTyping();
+    const total = wordCount(text);
+    if (total <= TYPE_STEP_WORDS) {
+      setTyping(null);
+      return;
+    }
+    let shown = TYPE_STEP_WORDS;
+    setTyping({ index, count: shown });
+    typeTimer.current = setInterval(() => {
+      shown += TYPE_STEP_WORDS;
+      if (shown >= total) {
+        stopTyping();
+        setTyping(null);
+        return;
+      }
+      setTyping({ index, count: shown });
+    }, TYPE_INTERVAL_MS);
+  }
+
+  // Leaving mid-animation (back, or the modal being dismissed) must not leave a
+  // timer ticking against an unmounted screen.
+  useEffect(() => stopTyping, []);
 
   // K4: store-screenshot mode renders the chat with no backend, no consent
   // round-trip, and a fixed neutral 2-message example - never in a release
@@ -138,7 +200,10 @@ function SpikeScreen() {
     setSending(true);
     try {
       const reply = await askSpike(history, i18n.language, isProUser ? "pro" : "free");
+      // Stored whole; `history` is exactly the array being appended to, so its
+      // length is the new reply's index. Screenshot mode never reaches here.
       setMessages((m) => [...m, { role: "assistant", content: reply }]);
+      startTyping(history.length, reply);
       setUsage(await noteSpikeMessage(isProUser));
     } catch (e) {
       if (e instanceof Error && e.message === "daily_limit") setServerExhausted(true);
@@ -184,6 +249,8 @@ function SpikeScreen() {
       icon: "trash-outline",
     });
     if (!ok) return;
+    stopTyping();
+    setTyping(null);
     setMessages([]);
     setErrored(false);
     await clearHistory();
@@ -413,7 +480,9 @@ function SpikeScreen() {
                   glow(THEME.accent, 18, 0.25),
                 ]}
               >
-                <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19 }}>{m.content}</Text>
+                <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19 }}>
+                  {typing && typing.index === i ? wordPrefix(m.content, typing.count) : m.content}
+                </Text>
                 <View
                   style={{
                     marginTop: 6,

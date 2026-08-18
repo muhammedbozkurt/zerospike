@@ -22,6 +22,7 @@ import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
+import { formatLocale } from "../../lib/format";
 import { THEME } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 
@@ -60,7 +61,6 @@ export default function DataSettings() {
     refreshPro,
     refreshProfiles,
     setActiveProfileId,
-    lang,
   } = useApp();
   const { contentColumn } = useLayout();
 
@@ -226,7 +226,7 @@ export default function DataSettings() {
           maxDate={new Date()}
           initialStart={new Date(Date.now() - 30 * 86_400_000)}
           initialEnd={new Date()}
-          locale={lang}
+          locale={formatLocale()}
           onCancel={() => setRangePicker(null)}
           onConfirm={(range: PickedRange) => {
             const mode = rangePicker;

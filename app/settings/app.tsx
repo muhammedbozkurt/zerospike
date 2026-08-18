@@ -1,13 +1,14 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Linking, Platform, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
 import type { Lang } from "../../lib/db/types";
 import { applyNotificationPrefs } from "../../lib/services/notifications";
 import { presentCodeRedemption, restore } from "../../lib/services/purchases";
+import { hasSpikeConsent, withdrawSpikeConsent } from "../../lib/services/spikeConsent";
 import { SectionLabel } from "../../components/ui";
 import { LanguagePicker } from "../../components/LanguagePicker";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
@@ -20,10 +21,35 @@ import { useLayout } from "../../lib/useLayout";
 export default function AppSettings() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { toast } = useFeedback();
+  const { toast, confirm } = useFeedback();
   const { lang, setLanguage, isProUser, refreshPro } = useApp();
   const { contentColumn } = useLayout();
   const [restoring, setRestoring] = useState(false);
+  const [spikeConsent, setSpikeConsent] = useState(false);
+
+  // Re-read on every focus, not just on mount: this screen stays mounted
+  // under the stack while the user grants or withdraws consent on /spike, so
+  // a plain mount-only read would leave the row stale on the way back.
+  useFocusEffect(
+    useCallback(() => {
+      if (!spikeConfigured) return;
+      void hasSpikeConsent().then(setSpikeConsent);
+    }, [])
+  );
+
+  async function onWithdrawSpikeConsent() {
+    const ok = await confirm({
+      title: t("spike.withdraw"),
+      message: t("spike.withdrawConfirm"),
+      confirmLabel: t("common.confirm"),
+      destructive: true,
+      icon: "close-circle-outline",
+    });
+    if (!ok) return;
+    await withdrawSpikeConsent();
+    setSpikeConsent(false);
+    toast(t("common.done"), "success");
+  }
 
   async function onChangeLang(next: Lang) {
     await setLanguage(next);
@@ -64,6 +90,14 @@ export default function AppSettings() {
         <>
           <SectionLabel>{t("spike.title")}</SectionLabel>
           <Row icon="sparkles-outline" label={t("spike.settingsRow")} onPress={() => router.push("/spike")} />
+          {spikeConsent ? (
+            <Row
+              icon="close-circle-outline"
+              label={t("spike.withdraw")}
+              onPress={onWithdrawSpikeConsent}
+              danger
+            />
+          ) : null}
         </>
       ) : null}
 

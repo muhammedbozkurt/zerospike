@@ -512,6 +512,22 @@ async function rememberOneOffEnd(kind: OneOffKind, endsAt: number): Promise<void
 }
 
 /**
+ * Drops a one-off's remembered fire moment. Cancelling without this left the
+ * record behind, and rescheduleForLanguageChange re-arms anything still recorded
+ * as pending - which would have resurrected a reminder the user just turned off.
+ */
+async function forgetOneOffEnd(kind: OneOffKind): Promise<void> {
+  try {
+    const all = await readOneOffEnds();
+    if (all[kind] == null) return;
+    delete all[kind];
+    await AsyncStorage.setItem(ONEOFF_ENDS_KEY, JSON.stringify(all));
+  } catch {
+    // best-effort
+  }
+}
+
+/**
  * The profile the schedulers work against. Read here rather than passed in, so
  * every path that re-applies preferences - Settings, onboarding, the language
  * change - resolves it the same way the app bootstrap does.
@@ -567,6 +583,13 @@ async function activeProfileShowsMeds(): Promise<boolean> {
  * reminders that are enabled and cancels the rest. With the master switch off (or permission
  * denied) it cancels everything it manages. Post-meal is event-driven (see
  * schedulePostMealReminder) so it is not touched here.
+ *
+ * NEVER prompts. This runs from background paths (app bootstrap, a profile
+ * switch, a language change, a profile setting) where an OS permission dialog
+ * would appear out of nowhere, so it only READS the permission. Asking is left
+ * to the explicit user actions that earn it: the onboarding notification step,
+ * the notification settings screen, and logging or starting a meal
+ * (schedulePostMealReminder and startPostMealTimer prompt on their own path).
  */
 export async function applyNotificationPrefs(
   prefs?: NotificationPrefs
@@ -585,10 +608,15 @@ export async function applyNotificationPrefs(
     await cancelWeeklySummary();
     await cancelPostMealTimer();
     await cancelIdleReminder();
+    // The two one-offs are armed outside the preference screen (a low reading,
+    // a started trial), so nothing else took them down: turning notifications
+    // OFF still let a re-measure nudge and a trial reminder arrive days later.
+    await cancelLowFollowup();
+    await cancelTrialReminder();
     return;
   }
 
-  const granted = await ensureNotificationPermission();
+  const granted = await hasNotificationPermission();
   if (!granted) {
     await cancelBasalReminder();
     await cancelMedReminder();
@@ -652,6 +680,20 @@ export async function scheduleTrialEndingReminder(trialDays: number): Promise<vo
     },
   });
   await rememberOneOffEnd("trial", Date.now() + fireInDays * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Takes the trial reminder down. The reminder only makes sense while a trial is
+ * still running towards its first charge, so a completed purchase (or the master
+ * switch going off) must not leave a "your trial ends soon" nudge armed.
+ */
+export async function cancelTrialReminder(): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(TRIAL_ID);
+  } catch {
+    // nothing pending
+  }
+  await forgetOneOffEnd("trial");
 }
 
 // ── Event-driven: post-meal check ──────────────────────────────────────────
@@ -932,9 +974,16 @@ const LOWFOLLOW_ID = "zerospike-low-followup";
 /**
  * Schedules a neutral 15-minute re-measure reminder. Offered (never automatic)
  * after the user logs a reading below their own threshold. Copy is descriptive,
- * with no diagnosis or alarm wording. Returns false if permission is denied.
+ * with no diagnosis or alarm wording. Returns false when the master switch is
+ * off or permission is denied.
+ *
+ * The master switch is checked here because this is the one scheduler reached
+ * without going through applyNotificationPrefs: an explicit tap must still not
+ * arm a reminder for someone who turned every notification off.
  */
 export async function scheduleLowFollowup(): Promise<boolean> {
+  const prefs = await getNotificationPrefs();
+  if (!prefs.enabled) return false;
   if (!(await ensureNotificationPermission())) return false;
   await ensureAndroidChannel();
   try {
@@ -958,6 +1007,16 @@ export async function scheduleLowFollowup(): Promise<boolean> {
   });
   await rememberOneOffEnd("lowFollowup", Date.now() + LOW_FOLLOWUP_MINUTES * 60_000);
   return true;
+}
+
+/** Takes a pending re-measure reminder down and forgets its fire moment. */
+export async function cancelLowFollowup(): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(LOWFOLLOW_ID);
+  } catch {
+    // nothing pending
+  }
+  await forgetOneOffEnd("lowFollowup");
 }
 
 // ── Language change ─────────────────────────────────────────────────────────

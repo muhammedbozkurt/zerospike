@@ -42,7 +42,7 @@ import {
   noteJournalActivity,
 } from "../../lib/services/notifications";
 import { logCrash, logEvent } from "../../lib/analytics";
-import type { Food, MealSlot } from "../../lib/db/types";
+import type { Food, Lang, MealSlot } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
 import { CATEGORIES, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
@@ -66,6 +66,14 @@ import { useLayout } from "../../lib/useLayout";
 import { upper } from "../../lib/upper";
 
 type Selection = Category | "favorites" | "custom";
+
+/**
+ * The languages the catalogue carries no name column for: lib/db/types foodName
+ * shows them the English name, so a search typed in Italian, Portuguese, Arabic
+ * or Japanese matches nothing the user did not add themselves. An empty result
+ * in those four says WHY, instead of reading as an empty catalogue.
+ */
+const ENGLISH_SEARCH_LANGS: readonly Lang[] = ["it", "pt", "ar", "ja"];
 
 /**
  * The landing grid is DATA, not a header. Every mode renders the same FlatList
@@ -1290,6 +1298,15 @@ export default function FoodScreen() {
                   selected === "favorites"
                     ? t("food.noFavorites")
                     : t("food.noResults")
+                }
+                // Only under the "no results" title, and only in the four
+                // languages the catalogue carries no names in.
+                subtitle={
+                  selected !== "favorites" &&
+                  mode === "search" &&
+                  ENGLISH_SEARCH_LANGS.includes(lang)
+                    ? t("food.searchEnglishHint")
+                    : undefined
                 }
                 actionLabel={mode === "search" ? t("food.addCustom") : undefined}
                 onAction={

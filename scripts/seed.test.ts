@@ -16,7 +16,11 @@ import { join } from "node:path";
 
 import { SEED_FOODS, type SeedFood } from "../lib/db/seed";
 import { CATEGORIES } from "../lib/db/categories";
-import { SEED_CATALOG_VERSION } from "../lib/db/seedVersion";
+import {
+  SEED_CATALOG_VERSION,
+  selectMissingFoods,
+  seedNameKey,
+} from "../lib/db/seedVersion";
 
 /* Source-pinned rather than imported: lib/db/foods.ts pulls in expo-sqlite and
  * react-native, which this Node harness cannot load. */
@@ -322,6 +326,58 @@ none(
     [...counts.entries()]
       .filter(([, n]) => n >= FOOD_PAGE_SIZE)
       .map(([cat, n]) => `${cat}: ${n}`)
+  );
+}
+
+console.log("\nI. the top-up survives an English rename (RENAMED_EN)");
+
+{
+  // Simulates an install sitting on the pre-1.6.0, 562-food catalog: the same
+  // "an install's rows are the first N entries of today's array" fixture the
+  // top-up tests in scripts/migration.test.ts use, except the English name of
+  // one food has since changed. "Gingerbread" was renamed to "Gingerbread
+  // cookie" (lib/db/seedVersion.ts RENAMED_EN); an install from that catalog
+  // still has a row named "Gingerbread", not the new name. Without the
+  // RENAMED_EN mapping, selectMissingFoods would read the new name as absent
+  // and the top-up would insert a permanent duplicate (git show c745277).
+  const OLD_CATALOG_SIZE = 562;
+  const oldSlice = SEED_FOODS.slice(0, OLD_CATALOG_SIZE);
+  ok(
+    "fixture premise: the renamed food predates the simulated 562-food slice",
+    oldSlice.some((f) => f.en === "Gingerbread cookie")
+  );
+  const oldInstallNames = oldSlice.map((f) =>
+    f.en === "Gingerbread cookie" ? "Gingerbread" : f.en
+  );
+
+  const missing = selectMissingFoods(SEED_FOODS, oldInstallNames);
+
+  ok(
+    "Gingerbread cookie is NOT proposed for an install that still has it under its old name",
+    !missing.some((f) => f.en === "Gingerbread cookie")
+  );
+  ok(
+    "the old name itself is not proposed either (it is not a catalog entry)",
+    !missing.some((f) => f.en === "Gingerbread")
+  );
+  ok(
+    "top-up still reaches every food genuinely added since the old catalog",
+    missing.length === SEED_FOODS.length - oldInstallNames.length
+  );
+
+  // After a simulated top-up (old rows + whatever got inserted), no food name
+  // exists twice - the failure mode this whole section exists to catch.
+  none(
+    "no food key appears twice after a simulated top-up over the renamed food",
+    (() => {
+      const seen = new Set<string>();
+      const dupes: string[] = [];
+      for (const key of [...oldInstallNames, ...missing.map((f) => f.en)].map(seedNameKey)) {
+        if (seen.has(key)) dupes.push(key);
+        else seen.add(key);
+      }
+      return dupes;
+    })()
   );
 }
 

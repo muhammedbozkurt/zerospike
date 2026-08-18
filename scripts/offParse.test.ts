@@ -37,6 +37,38 @@ function eq(name: string, actual: unknown, expected: unknown): void {
   }
 }
 
+/** The shape every `names` assertion compares against: one entry per app
+ *  language, in NAME_FIELDS order, so a language quietly dropped from that list
+ *  fails a test rather than silently costing that locale its own name. */
+function allNames(n: {
+  tr: string;
+  en: string;
+  de: string;
+  es: string;
+  fr: string;
+  it: string;
+  pt: string;
+  ar: string;
+  ja: string;
+}) {
+  return n;
+}
+
+/** Every language reading the same name: the single-name product's shape. */
+function sameName(name: string) {
+  return allNames({
+    tr: name,
+    en: name,
+    de: name,
+    es: name,
+    fr: name,
+    it: name,
+    pt: name,
+    ar: name,
+    ja: name,
+  });
+}
+
 console.log("barcode shape");
 
 eq("EAN-13 is a product barcode", isProductBarcode("3017624010701"), true);
@@ -67,7 +99,7 @@ const nutella = {
 eq("a complete product parses", parseOffProduct("3017624010701", nutella), {
   barcode: "3017624010701",
   name: "Nutella",
-  names: { tr: "Nutella", en: "Nutella", de: "Nutella", es: "Nutella", fr: "Nutella" },
+  names: sameName("Nutella"),
   brand: "Ferrero",
   category: "sweets",
   carb100g: 57.5,
@@ -85,7 +117,7 @@ eq(
   {
     barcode: "40084022",
     name: "Test",
-    names: { tr: "Test", en: "Test", de: "Test", es: "Test", fr: "Test" },
+    names: sameName("Test"),
     brand: null,
     category: "other",
     carb100g: 12.5,
@@ -195,16 +227,50 @@ const multi = {
   product_name_es: "Pan integral",
   nutriments: { carbohydrates_100g: 41 },
 };
-eq("every translated name is kept", parseOffProduct("40084022", multi)?.names, {
-  tr: "Tam buğday ekmeği",
-  en: "Wholemeal bread",
-  de: "Vollkornbrot",
-  es: "Pan integral",
-  fr: "Pain complet",
-});
+eq(
+  "every translated name is kept",
+  parseOffProduct("40084022", multi)?.names,
+  allNames({
+    tr: "Tam buğday ekmeği",
+    en: "Wholemeal bread",
+    de: "Vollkornbrot",
+    es: "Pan integral",
+    fr: "Pain complet",
+    // No it/pt/ar/ja on this product: they fall back to the main name.
+    it: "Vollkornbrot",
+    pt: "Vollkornbrot",
+    ar: "Vollkornbrot",
+    ja: "Vollkornbrot",
+  })
+);
+
+// The four languages the catalogue has no column for are parsed all the same;
+// lib/db/foods stores them as search aliases so the scan is findable in them.
+eq(
+  "the column-less languages are kept too",
+  parseOffProduct("40084022", {
+    product_name: "Rice",
+    product_name_it: "Riso",
+    product_name_pt: "Arroz",
+    product_name_ar: "أرز",
+    product_name_ja: "米",
+    nutriments: { carbohydrates_100g: 80 },
+  })?.names,
+  allNames({
+    tr: "Rice",
+    en: "Rice",
+    de: "Rice",
+    es: "Rice",
+    fr: "Rice",
+    it: "Riso",
+    pt: "Arroz",
+    ar: "أرز",
+    ja: "米",
+  })
+);
 
 // A missing or blank translation falls back to the product's main name, which is
-// exactly what a single-name product used to get in all five columns.
+// exactly what a single-name product used to get in every column.
 eq(
   "a missing translation falls back to the main name",
   parseOffProduct("40084022", {
@@ -214,7 +280,7 @@ eq(
     product_name_fr: "",
     nutriments: { carbohydrates_100g: 4 },
   })?.names,
-  { tr: "Ayran", en: "Ayran", de: "Ayran", es: "Ayran", fr: "Ayran" }
+  sameName("Ayran")
 );
 
 // A product whose only name is a translated one is still a named product.
@@ -233,13 +299,7 @@ eq(
     product_name_tr: "Sade yoğurt",
     nutriments: { carbohydrates_100g: 5 },
   })?.names,
-  {
-    tr: "Sade yoğurt",
-    en: "Sade yoğurt",
-    de: "Sade yoğurt",
-    es: "Sade yoğurt",
-    fr: "Sade yoğurt",
-  }
+  sameName("Sade yoğurt")
 );
 // Names are not nutrition: a non-string in a name field is ignored, never coerced.
 eq(
@@ -248,9 +308,10 @@ eq(
     product_name: "Su",
     product_name_de: 42,
     product_name_fr: { a: 1 },
+    product_name_ja: ["米"],
     nutriments: { carbohydrates_100g: 0 },
   })?.names,
-  { tr: "Su", en: "Su", de: "Su", es: "Su", fr: "Su" }
+  sameName("Su")
 );
 
 console.log("\ncategory tags map to a shelf");

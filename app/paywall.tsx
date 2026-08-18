@@ -27,6 +27,7 @@ import {
   purchasePro,
   restore,
   loadOfferings,
+  getDownsellOffer,
   type OfferingsResult,
   PlanId,
 } from "../lib/services/purchases";
@@ -37,13 +38,17 @@ import {
   type DownsellTrigger,
 } from "../lib/services/downsell";
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
-import { scheduleTrialEndingReminder } from "../lib/services/notifications";
+import {
+  cancelTrialReminder,
+  scheduleTrialEndingReminder,
+} from "../lib/services/notifications";
 import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
+import { insulinModeUsesInsulin } from "../lib/insulinMode";
 
 /** Used only if the annual plan's own offering data has no trial length. */
 const FALLBACK_TRIAL_DAYS = 7;
@@ -161,7 +166,7 @@ function PaywallScreen() {
   }>();
   const context: DownsellTrigger =
     ctxParam === "onboarding" ? "onboarding" : "inapp";
-  const { refreshPro, completeOnboarding } = useApp();
+  const { refreshPro, completeOnboarding, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<PlanId>("annual");
@@ -232,15 +237,27 @@ function PaywallScreen() {
 
   // Downsell trigger, shared by an explicit dismiss and a cancelled purchase:
   // first time always, then a single 7-day re-armed retry, capped at 2 lifetime
-  // shows. Falls back to exit when the cap is reached.
+  // shows. An active Pro/trial user is never shown a discount on their own
+  // subscription, and a lifetime show is only spent once a REAL discount is
+  // confirmed to exist - never on an empty offering. Falls back to exit
+  // otherwise.
   async function triggerDownsell() {
-    const state = await getDownsellState();
-    if (canShowDownsell(state, Date.now())) {
-      await recordDownsellShown(context, Date.now());
-      router.replace({ pathname: "/downsell", params: { trigger: context } });
+    if (isProUser) {
+      await exit();
       return;
     }
-    await exit();
+    const state = await getDownsellState();
+    if (!canShowDownsell(state, Date.now())) {
+      await exit();
+      return;
+    }
+    const offer = await getDownsellOffer();
+    if (!offer.hasRealDiscount) {
+      await exit();
+      return;
+    }
+    await recordDownsellShown(context, Date.now());
+    router.replace({ pathname: "/downsell", params: { trigger: context } });
   }
 
   async function dismiss() {
@@ -274,8 +291,17 @@ function PaywallScreen() {
       if (res.ok) {
         logEvent("purchase_completed", { tier: plan });
         if (plan === "annual" && annualTrial) {
+          // A fresh trial starts: schedule its own ending reminder. Scheduling
+          // uses the same fixed identifier as cancelTrialReminder, so it already
+          // replaces any stale one on its own - calling cancel here too would
+          // race the two un-awaited calls and risk cancelling the one just armed.
           logEvent("trial_started", { tier: "annual" });
           scheduleTrialEndingReminder(trialDays).catch(() => {});
+        } else {
+          // No trial in this purchase (lifetime, monthly, or a non-trial annual):
+          // any trial-ending reminder left over from an earlier trial must not
+          // survive a completed purchase.
+          cancelTrialReminder().catch(() => {});
         }
         hapticSuccess();
         // Success, or an already-owned recovery ("this is already yours").
@@ -300,6 +326,9 @@ function PaywallScreen() {
       const result = await restore();
       await refreshPro();
       if (result === "restored") {
+        // A restored entitlement is already paid (lifetime or subscription): any
+        // trial-ending reminder from an earlier trial no longer applies.
+        cancelTrialReminder().catch(() => {});
         hapticSuccess();
         toast(t("paywall.restored"), "success");
         await exit();
@@ -320,6 +349,10 @@ function PaywallScreen() {
         ? t("paywall.perYear")
         : ` ${t("paywall.perOnce")}`;
   const ctaTrial = plan === "annual" && annualTrial;
+  // scheduleTrialEndingReminder skips scheduling entirely once trialDays leaves
+  // no room before its 2-day lead (trialDays <= 2), so the "we'll remind you"
+  // note must not promise a reminder that is never actually armed.
+  const trialReminderArmed = trialDays > 2;
   const selectedPrice = priceStr(plan);
   const ctaLabel = ctaTrial
     ? t("paywall.ctaTrial", { days: trialDays })
@@ -415,14 +448,18 @@ function PaywallScreen() {
 
           {/* Benefits: a single, focused list (at most 4 rows). Health sync is
               iOS-only (Health Connect removed for Play policy), so on Android it
-              drops off and an injection benefit fills the slot. */}
+              drops off and an injection benefit fills the slot. The injection
+              benefit itself only applies to a profile that actually doses, so an
+              insulin-free / undiagnosed user never sees it. */}
           <GlassCard style={{ paddingVertical: 16, marginBottom: 16 }}>
             {[
               ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
               t("paywall.featureInsights"),
               t("paywall.featureFamily"),
               t("paywall.featurePdf"),
-              t("paywall.featureInjection"),
+              ...(insulinModeUsesInsulin(activeProfile?.insulin_mode)
+                ? [t("paywall.featureInjection")]
+                : []),
             ]
               .slice(0, 4)
               .map((text, i, arr) => (
@@ -505,7 +542,7 @@ function PaywallScreen() {
               <View className="h-2" />
               <GradientCTA label={ctaLabel} disabled={busy} onPress={buy} />
 
-              {ctaTrial ? (
+              {ctaTrial && trialReminderArmed ? (
                 <Text
                   style={{
                     color: THEME.muted,
