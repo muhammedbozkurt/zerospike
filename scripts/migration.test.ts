@@ -1,8 +1,8 @@
 /**
- * Schema v8/v9/v10/v11/v12/v13/v14/v15/v16/v17 migration test.
+ * Schema v8/v9/v10/v11/v12/v13/v14/v15/v16/v17/v18 migration test.
  *
  * Builds a real v7-shaped (or v8-shaped) database, seeds it with rows that
- * exercise the edge cases, runs the REAL migrateToV8..V17 functions from
+ * exercise the edge cases, runs the REAL migrateToV8..V18 functions from
  * lib/db/migrations.ts (R10 FAZ 4, no hand-copied re-implementation), and
  * asserts every row survives and every shape is correct.
  *
@@ -30,6 +30,7 @@ import {
   migrateToV15,
   migrateToV16,
   migrateToV17,
+  migrateToV18,
   stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
@@ -56,6 +57,7 @@ import {
 import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "../lib/db/v15Sql";
 import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "../lib/db/v16Sql";
 import { V17_CREATE } from "../lib/db/v17Sql";
+import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "../lib/db/v18Sql";
 import {
   bridgeLegacyReminders,
   REMINDERS_BRIDGE_KEY,
@@ -119,7 +121,7 @@ function adapt(db: DatabaseSync) {
       }
     },
     // deno-lint/tsc: only the members above are ever called by
-    // migrateToV8..V17 / bridgeLegacyReminders; the rest of expo-sqlite's
+    // migrateToV8..V18 / bridgeLegacyReminders; the rest of expo-sqlite's
     // surface is unused here.
   } as unknown as Parameters<typeof migrateToV8>[0];
 }
@@ -2392,7 +2394,8 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 17", /const SCHEMA_VERSION = 17;/.test(indexSrc));
+    // SCHEMA_VERSION itself has since moved past v17 (see N3, "SCHEMA_VERSION is
+    // 18"); this section only checks the v16 → v17 step and the fresh-install shape.
     ok(
       "the v16 → v17 step runs the real migration",
       /currentVersion < 17\)\s*\{\s*await migrateToV17\(db\);/.test(indexSrc)
@@ -2584,6 +2587,272 @@ async function main() {
       eq("and seeds normally", count(db, "reminders"), 2);
       db.close();
     }
+  }
+
+  // ── N. v18 meds registry ────────────────────────────────────────────────────
+  // Every case below builds a v17-shaped database with makeV15Database + the
+  // REAL migrateToV16/V17, so migrateToV18 (the meds table's own step) runs
+  // against exactly what a real install has at that point - including med_logs.
+  section("N. v18 meds registry: schema shape");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+
+    ok(
+      "meds table exists",
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='meds';")
+        .get() !== undefined
+    );
+    const cols = columns(db, "meds");
+    for (const name of ["id", "profile_id", "name", "last_used_at", "created_at"]) {
+      ok(`meds.${name} exists`, cols.has(name));
+    }
+    eq("profile_id is NOT NULL", cols.get("profile_id")?.notnull, 1);
+    eq("name is NOT NULL", cols.get("name")?.notnull, 1);
+    eq("last_used_at is NOT NULL", cols.get("last_used_at")?.notnull, 1);
+    eq("created_at is NOT NULL", cols.get("created_at")?.notnull, 1);
+
+    ok("the profile index exists", indexNames(db).has("idx_meds_profile"));
+
+    // The foreign key to user_profiles, ON DELETE CASCADE like med_logs.
+    const fks = db.prepare("PRAGMA foreign_key_list(meds);").all() as {
+      table: string;
+      from: string;
+      to: string;
+      on_delete: string;
+    }[];
+    eq("meds has exactly one foreign key", fks.length, 1);
+    ok(
+      "it references user_profiles.id and cascades on delete",
+      fks[0]?.table === "user_profiles" &&
+        fks[0]?.from === "profile_id" &&
+        fks[0]?.to === "id" &&
+        fks[0]?.on_delete === "CASCADE"
+    );
+
+    // The UNIQUE(profile_id, name) constraint is enforced, not just documented.
+    db.exec(
+      `INSERT INTO meds (id, profile_id, name, last_used_at, created_at)
+       VALUES ('m1', 'p1', 'Metformin', 1, 1);`
+    );
+    ok(
+      "the same name twice for the same profile is refused",
+      refused(
+        db,
+        `INSERT INTO meds (id, profile_id, name, last_used_at, created_at)
+         VALUES ('m2', 'p1', 'Metformin', 2, 2);`
+      )
+    );
+    ok(
+      "the same name for a DIFFERENT profile is accepted (not globally unique)",
+      !refused(
+        db,
+        `INSERT INTO user_profiles (id, name, created_at) VALUES ('p2', 'Someone else', '2026-01-01T00:00:00.000Z');
+         INSERT INTO meds (id, profile_id, name, last_used_at, created_at)
+         VALUES ('m3', 'p2', 'Metformin', 3, 3);`
+      )
+    );
+    db.close();
+  }
+
+  section("N2. v18 idempotence (table + stamp)");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+    db.exec(
+      `INSERT INTO meds (id, profile_id, name, last_used_at, created_at)
+       VALUES ('m1', 'p1', 'Metformin', 1000, 1000);`
+    );
+
+    let reran = true;
+    try {
+      await migrateToV18(adapt(db));
+      await migrateToV18(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v18 threw: ${String(e)}`);
+    }
+    ok("v18 is safe to re-run", reran);
+    eq(
+      "re-running keeps exactly one copy of the profile index",
+      (
+        db
+          .prepare(
+            "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='index' AND name='idx_meds_profile';"
+          )
+          .get() as { c: number }
+      ).c,
+      1
+    );
+    eq("re-running keeps the recorded row", count(db, "meds"), 1);
+    eq(
+      "and its value intact",
+      (
+        db.prepare("SELECT last_used_at AS t FROM meds WHERE id='m1';").get() as {
+          t: number;
+        }
+      ).t,
+      1000
+    );
+    eq("migrateToV18 stamps 18", readUserVersion(db), 18);
+    db.close();
+  }
+
+  section("N3. v18 statements and fresh-install equivalence");
+  {
+    ok(
+      "V18_CREATE declares meds",
+      V18_CREATE.some((s) => /CREATE TABLE IF NOT EXISTS meds/.test(s))
+    );
+    ok(
+      "V18_CREATE declares the profile index",
+      V18_CREATE.some((s) => /idx_meds_profile/.test(s))
+    );
+    ok(
+      "V18_SEED_FROM_MED_LOGS reads distinct names from med_logs",
+      /FROM med_logs/.test(V18_SEED_FROM_MED_LOGS) &&
+        /GROUP BY profile_id, name/.test(V18_SEED_FROM_MED_LOGS)
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 18", /const SCHEMA_VERSION = 18;/.test(indexSrc));
+    ok(
+      "the v17 → v18 step runs the real migration",
+      /currentVersion < 18\)\s*\{\s*await migrateToV18\(db\);/.test(indexSrc)
+    );
+    ok(
+      "and creates meds from the same V18_CREATE statements",
+      /for \(const statement of V18_CREATE\)/.test(indexSrc)
+    );
+
+    // A migrated v17 database and a brand-new install end up with the identical
+    // meds shape - the same test M3/L3 run for reminders and med_logs. The fresh
+    // install never seeds anything (there is no med_logs history yet), so only
+    // the DDL is compared here.
+    const migrated = makeV15Database();
+    await migrateToV16(adapt(migrated));
+    await migrateToV17(adapt(migrated));
+    await migrateToV18(adapt(migrated));
+
+    const fresh = new DatabaseSync(":memory:");
+    fresh.exec(
+      `CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL, created_at TEXT NOT NULL);`
+    );
+    for (const statement of V18_CREATE) fresh.exec(statement);
+
+    eq(
+      "meds has the same columns as a fresh install",
+      [...columns(migrated, "meds").keys()].join(","),
+      [...columns(fresh, "meds").keys()].join(",")
+    );
+    eq(
+      "meds has the same DDL as a fresh install",
+      (
+        migrated
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='meds';")
+          .get() as { sql: string }
+      ).sql,
+      (
+        fresh
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='meds';")
+          .get() as { sql: string }
+      ).sql
+    );
+    ok(
+      "a fresh install also gets idx_meds_profile",
+      indexNames(fresh).has("idx_meds_profile")
+    );
+    migrated.close();
+    fresh.close();
+  }
+
+  section("N4. v18 seeds from med_logs' distinct names");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+
+    // A second profile, so the seed's GROUP BY profile_id, name is exercised
+    // (not just profile_id, name across one profile).
+    db.exec(
+      `INSERT INTO user_profiles (id, name, created_at) VALUES ('p2', 'Someone else', '2026-01-01T00:00:00.000Z');`
+    );
+
+    // p1: 'Metformin' logged three times (taken_at 1000, 2000, 3000 - the seed
+    // must pick 3000, not the first or a random one) and 'Insulin patch' once.
+    // A blank name and a NULL name must never become a seed row. p2: the SAME
+    // name 'Metformin' the first profile used, which must seed its OWN row
+    // (the unique constraint is per profile, not global).
+    db.exec(`
+      INSERT INTO med_logs (id, profile_id, taken_at, name, note, created_at) VALUES
+        ('ml1', 'p1', 1000, 'Metformin', NULL, 1000),
+        ('ml2', 'p1', 3000, 'Metformin', NULL, 3000),
+        ('ml3', 'p1', 2000, 'Metformin', NULL, 2000),
+        ('ml4', 'p1', 4000, 'Insulin patch', NULL, 4000),
+        ('ml5', 'p1', 5000, '', NULL, 5000),
+        ('ml6', 'p1', 6000, NULL, NULL, 6000),
+        ('ml7', 'p2', 7000, 'Metformin', NULL, 7000);
+    `);
+
+    await migrateToV18(adapt(db));
+
+    eq(
+      "exactly three seed rows (two distinct names for p1, one for p2)",
+      count(db, "meds"),
+      3
+    );
+    const p1Metformin = db
+      .prepare("SELECT last_used_at AS t FROM meds WHERE profile_id='p1' AND name='Metformin';")
+      .get() as { t: number } | undefined;
+    ok("p1's Metformin row exists", p1Metformin !== undefined);
+    eq(
+      "and last_used_at is the MOST RECENT taken_at (3000), not the first or last inserted",
+      p1Metformin?.t,
+      3000
+    );
+    const p1Patch = db
+      .prepare("SELECT last_used_at AS t FROM meds WHERE profile_id='p1' AND name='Insulin patch';")
+      .get() as { t: number } | undefined;
+    eq("p1's single-entry name seeds too", p1Patch?.t, 4000);
+    ok(
+      "the blank name never became a seed row",
+      db.prepare("SELECT 1 FROM meds WHERE name='';").get() === undefined
+    );
+    const p2Metformin = db
+      .prepare("SELECT last_used_at AS t FROM meds WHERE profile_id='p2' AND name='Metformin';")
+      .get() as { t: number } | undefined;
+    ok("p2 gets its own Metformin row (per-profile, not global)", p2Metformin !== undefined);
+    eq("with its own last_used_at", p2Metformin?.t, 7000);
+
+    // Double-run idempotency of the SEEDING statement itself: migrateToV18
+    // stamps 18 in the SAME transaction as the seed (see its own doc comment
+    // in ./migrations.ts), so in the real app this can only ever run again
+    // before that transaction has committed - i.e. against the exact same
+    // med_logs, never after a user has acted on the result. Re-running it here
+    // pins exactly that: the same med_logs in, no new or duplicate rows out.
+    await migrateToV18(adapt(db));
+    await migrateToV18(adapt(db));
+    eq("re-running the seed step inserts no duplicate rows", count(db, "meds"), 3);
+    eq(
+      "and every value is still exactly what the first run computed",
+      (
+        db
+          .prepare(
+            "SELECT last_used_at AS t FROM meds WHERE profile_id='p1' AND name='Metformin';"
+          )
+          .get() as { t: number }
+      ).t,
+      3000
+    );
+    db.close();
   }
 
   // ── K. The chain end to end, and the interruption it used to lose data to ──

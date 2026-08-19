@@ -33,6 +33,7 @@ import { V14_CREATE } from "./v14Sql";
 import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "./v15Sql";
 import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "./v16Sql";
 import { V17_CREATE } from "./v17Sql";
+import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "./v18Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -69,7 +70,8 @@ export type SchemaStamp =
   | 14
   | 15
   | 16
-  | 17;
+  | 17
+  | 18;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -392,5 +394,35 @@ export async function migrateToV17(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(statement);
     }
     await stampSchemaVersion(db, 17);
+  });
+}
+
+/**
+ * The v17 → v18 migration: the meds registry (see ./v18Sql) - a per-profile
+ * list of medication names the user has already typed, most-recently-used
+ * first, so a repeat entry is a tap instead of retyping (lib/db/meds.ts). Two
+ * parts, both idempotent, in ONE transaction: the create-only DDL (identical
+ * to what a fresh install runs), then a one-time backfill of that list from
+ * med_logs' distinct names (V18_SEED_FROM_MED_LOGS - INSERT OR IGNORE against
+ * the table's own UNIQUE(profile_id, name) constraint, so a re-run - or a kill
+ * between this step and its stamp - inserts nothing a first run already did).
+ *
+ * The stamp lands in the SAME transaction as the seed (stampSchemaVersion's own
+ * per-step-commit rule, see the top of this file), so in practice this step
+ * runs at most once per install: nothing the user does afterwards (renaming or
+ * deleting a saved name through app/settings/medications.tsx) can be followed
+ * by a second real run of this function - only by a re-run of the whole
+ * transaction from before ANY of it, including the seed, committed.
+ *
+ * No med_logs row is read twice into a duplicate, and no existing table is
+ * altered or rebuilt, so nothing already stored can be lost by it.
+ */
+export async function migrateToV18(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const statement of V18_CREATE) {
+      await db.execAsync(statement);
+    }
+    await db.execAsync(V18_SEED_FROM_MED_LOGS);
+    await stampSchemaVersion(db, 18);
   });
 }

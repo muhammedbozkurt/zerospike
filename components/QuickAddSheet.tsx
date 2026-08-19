@@ -23,7 +23,7 @@ import { DirIcon } from "./DirIcon";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { useApp } from "../lib/store/AppContext";
 import { useFeedback } from "./Feedback";
-import { distinctMedNames, logMed } from "../lib/db/meds";
+import { listSavedMeds, logMed, upsertMedUse } from "../lib/db/meds";
 import { logEvent } from "../lib/analytics";
 import { noteJournalActivity } from "../lib/services/notifications";
 import { formatTime, relativeDay } from "../lib/format";
@@ -76,10 +76,16 @@ export function QuickAddSheet({
   const [medAt, setMedAt] = useState<Date | null>(null);
   const [medTimePickerOpen, setMedTimePickerOpen] = useState(false);
   const [savingMed, setSavingMed] = useState(false);
-  // Name-suggestion chips (Finding 7): the profile's most-used medication
-  // names, tap-to-fill. Empty until the fetch below resolves, so a fresh
-  // history renders no chip row rather than a flash of placeholders.
+  // Saved-medication chips (schema v18 registry, lib/db/meds.ts): the profile's
+  // own list, most-recently-used first, tap-to-fill. Empty until the fetch
+  // below resolves, so a fresh list renders no chip row rather than a flash of
+  // placeholders (and stays empty for a profile that has never saved one).
   const [medChips, setMedChips] = useState<string[]>([]);
+  // Whether the name field has already been pre-filled for THIS sheet open, so
+  // the chips effect below (which also re-runs on a profile switch while the
+  // sheet stays open) only ever pre-fills once and never overwrites what the
+  // user has since typed.
+  const prefilledMedNameRef = useRef(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -89,6 +95,7 @@ export function QuickAddSheet({
     setMedAt(null);
     setMedTimePickerOpen(false);
     setSavingMed(false);
+    prefilledMedNameRef.current = false;
     anim.setValue(0);
     Animated.timing(anim, {
       toValue: 1,
@@ -99,15 +106,25 @@ export function QuickAddSheet({
   }, [visible, openMedDirect, anim]);
 
   // Kept separate from the reset effect above so a profile switch mid-session
-  // cannot restart the sheet's open animation - it only ever refills the chips.
+  // cannot restart the sheet's open animation - it only ever refills the chips
+  // (and, once, pre-fills the name field).
   useEffect(() => {
     if (!visible || !activeProfile) {
       setMedChips([]);
       return;
     }
     let cancelled = false;
-    void distinctMedNames(activeProfile.id).then((names) => {
-      if (!cancelled) setMedChips(names);
+    void listSavedMeds(activeProfile.id).then((rows) => {
+      if (cancelled) return;
+      const names = rows.map((r) => r.name);
+      setMedChips(names);
+      // Pre-fills the last-used medication so logging a repeat entry needs no
+      // typing at all; the user can still clear or change it (see
+      // prefilledMedNameRef above for why this only ever fires once per open).
+      if (!prefilledMedNameRef.current && names.length > 0) {
+        prefilledMedNameRef.current = true;
+        setMedName(names[0]);
+      }
     });
     return () => {
       cancelled = true;
@@ -118,12 +135,15 @@ export function QuickAddSheet({
     if (!activeProfile || savingMed) return;
     setSavingMed(true);
     try {
+      const trimmedName = medName.trim();
+      const takenAt = (medAt ?? new Date()).getTime();
       await logMed({
         profileId: activeProfile.id,
-        takenAt: (medAt ?? new Date()).getTime(),
-        name: medName.trim() || null,
+        takenAt,
+        name: trimmedName || null,
         note: medNote.trim() || null,
       });
+      if (trimmedName) await upsertMedUse(activeProfile.id, trimmedName, takenAt);
       logEvent("log_added", { kind: "med", source: "manual" });
       void noteJournalActivity();
       bumpData();

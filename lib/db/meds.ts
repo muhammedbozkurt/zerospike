@@ -1,6 +1,6 @@
 import { getDb } from "./index";
 import { uuid } from "../uuid";
-import type { MedLog } from "./types";
+import type { MedLog, SavedMed } from "./types";
 import type { DateRange } from "../insights";
 
 /**
@@ -74,31 +74,6 @@ export async function listMeds(
   );
 }
 
-/**
- * The medication form's "recent name" chips: a profile's distinct medication
- * names, most-used first (ties broken by most-recently-taken), capped at
- * `limit`. Blank/null names (an unnamed entry) never appear - there is nothing
- * to offer as a chip. Read-only, and cheap: one GROUP BY over med_logs.
- */
-export async function distinctMedNames(
-  profileId: string,
-  limit = 6
-): Promise<string[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<{ name: string }>(
-    `SELECT name FROM (
-       SELECT name, COUNT(*) AS cnt, MAX(taken_at) AS last_taken
-       FROM med_logs
-       WHERE profile_id = ? AND name IS NOT NULL AND name <> ''
-       GROUP BY name
-       ORDER BY cnt DESC, last_taken DESC
-       LIMIT ?
-     );`,
-    [profileId, limit]
-  );
-  return rows.map((r) => r.name);
-}
-
 export async function getMed(id: string): Promise<MedLog | null> {
   const db = await getDb();
   return db.getFirstAsync<MedLog>("SELECT * FROM med_logs WHERE id = ?;", [id]);
@@ -132,4 +107,99 @@ export async function updateMed(
     ]);
   }
   return getMed(id);
+}
+
+/* ── Saved medication names (schema v18) ───────────────────────────────────
+ *
+ * A per-profile "my medications" list: names the user has already typed once
+ * into the form above, most-recently-used first, so a repeat entry is a tap
+ * instead of retyping (components/QuickAddSheet.tsx, components/MedEditSheet.tsx,
+ * app/settings/medications.tsx). Backed by the "meds" table (schema v18, see
+ * ./v18Sql), which is COMPLETELY SEPARATE from med_logs above: renaming or
+ * deleting a saved name here never rewrites or deletes a single past diary
+ * entry - see renameMed/deleteSavedMed below.
+ *
+ * Named distinctly from the med_logs functions above (listSavedMeds /
+ * deleteSavedMed rather than listMeds / deleteMed) so importing both sections
+ * in the same file - the medication form needs to log an entry AND remember
+ * its name - never collides.
+ */
+
+export async function listSavedMeds(profileId: string): Promise<SavedMed[]> {
+  const db = await getDb();
+  return db.getAllAsync<SavedMed>(
+    "SELECT * FROM meds WHERE profile_id = ? ORDER BY last_used_at DESC;",
+    [profileId]
+  );
+}
+
+export async function getSavedMed(id: string): Promise<SavedMed | null> {
+  const db = await getDb();
+  return db.getFirstAsync<SavedMed>("SELECT * FROM meds WHERE id = ?;", [id]);
+}
+
+/**
+ * Records that `name` was just used: saves it if the profile has never saved
+ * it before, or just bumps last_used_at (the sort key listSavedMeds reads) if
+ * it has. Called after every medication entry is logged or edited - see
+ * components/QuickAddSheet.tsx and components/MedEditSheet.tsx. A blank name
+ * is a no-op: there is nothing worth remembering as a shortcut.
+ *
+ * `at` defaults to now, but the callers above always pass the entry's own
+ * taken_at instead - a backdated entry should sort the saved name by when it
+ * was actually taken, the same value the schema v18 migration seeds
+ * last_used_at from (see V18_SEED_FROM_MED_LOGS in ./v18Sql).
+ */
+export async function upsertMedUse(
+  profileId: string,
+  name: string,
+  at: number = Date.now()
+): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const db = await getDb();
+  const existing = await db.getFirstAsync<{ id: string }>(
+    "SELECT id FROM meds WHERE profile_id = ? AND name = ?;",
+    [profileId, trimmed]
+  );
+  if (existing) {
+    await db.runAsync("UPDATE meds SET last_used_at = ? WHERE id = ?;", [
+      at,
+      existing.id,
+    ]);
+    return;
+  }
+  await db.runAsync(
+    `INSERT INTO meds (id, profile_id, name, last_used_at, created_at)
+     VALUES (?, ?, ?, ?, ?);`,
+    [uuid(), profileId, trimmed, at, at]
+  );
+}
+
+/**
+ * Renames a saved medication (app/settings/medications.tsx). Returns the
+ * fresh row, or null if it is gone. A blank name is rejected (returns the
+ * row unchanged) rather than saving an empty shortcut. Past med_logs entries
+ * keep whatever name they were written with - this only relabels the
+ * shortcut, never rewrites history.
+ *
+ * Can throw on the table's own UNIQUE(profile_id, name) constraint if the new
+ * name collides with another saved medication of the same profile; the
+ * caller is expected to catch that and tell the user (see
+ * app/settings/medications.tsx).
+ */
+export async function renameMed(id: string, name: string): Promise<SavedMed | null> {
+  const trimmed = name.trim();
+  if (!trimmed) return getSavedMed(id);
+  const db = await getDb();
+  await db.runAsync("UPDATE meds SET name = ? WHERE id = ?;", [trimmed, id]);
+  return getSavedMed(id);
+}
+
+/** Removes a saved medication from the list (app/settings/medications.tsx).
+ *  Past med_logs entries that used its name are untouched - deleting a
+ *  shortcut is not deleting history. */
+export async function deleteSavedMed(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM meds WHERE id = ?;", [id]);
 }

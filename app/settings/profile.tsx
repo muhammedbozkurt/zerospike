@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
 import { updateProfile } from "../../lib/db/profiles";
@@ -31,7 +32,7 @@ import { RangeInput } from "../../components/RangeInput";
 import { Stepper } from "../../components/Stepper";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { InsulinModeSection } from "../../components/InsulinModeSection";
-import { SettingsScaffold } from "../../components/settingsUi";
+import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
 import { useFeedback } from "../../components/Feedback";
 import { useLayout } from "../../lib/useLayout";
@@ -46,6 +47,7 @@ export default function ProfileSettings() {
   const { activeProfile, bumpData } = useApp();
   const { columnPad } = useLayout();
   const { confirm } = useFeedback();
+  const router = useRouter();
 
   // activeProfile is already in context by the time this screen mounts (see
   // profile-setup.tsx for the same pattern), so every field is seeded straight
@@ -286,6 +288,16 @@ export default function ProfileSettings() {
         oralMeds={oralMeds}
         onChangeOralMeds={(v) => void persistOralMeds(v)}
       />
+
+      {/* Shortcut into the reminders hub, visible only while pill tracking is
+          on - it is where the med reminder this links to actually lives. */}
+      {oralMeds ? (
+        <Row
+          icon="alarm-outline"
+          label={t("meds.setupReminderLink")}
+          onPress={() => router.push("/settings/reminders")}
+        />
+      ) : null}
 
       <FormCard icon="medkit-outline" title={t("settings.diabetesType")}>
         <View className="px-4 py-3.5">

@@ -174,6 +174,31 @@ export async function applyLegacyRemindersBridge(
 }
 
 /**
+ * Collapses accidental duplicate "basal" rows into one. type=basal is meant to
+ * stay a singleton (see syncBasalReminderRow below), but a legacy-bridge race
+ * during onboarding could seed a second one before that bridge learned to
+ * check for an existing row (see ./remindersBridge.ts) - and a device that
+ * already has the duplicate needs to self-heal without going through
+ * onboarding again. Keeps the OLDEST row (by created_at, ties broken by sort)
+ * exactly as it is - its time and enabled state are never touched here - and
+ * deletes every other basal row. A no-op, and cheap, once at most one exists.
+ */
+export async function dedupeBasalReminderRows(): Promise<void> {
+  const rows = await listReminders();
+  const basalRows = rows.filter((r) => r.type === "basal");
+  if (basalRows.length <= 1) return;
+  const [, ...extra] = [...basalRows].sort(
+    (a, b) => a.created_at - b.created_at || a.sort - b.sort
+  );
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (const row of extra) {
+      await db.runAsync("DELETE FROM reminders WHERE id = ?;", [row.id]);
+    }
+  });
+}
+
+/**
  * Creates or updates the registry's single basal row to match a profile
  * setup's choice - app/onboarding.tsx and app/profile-setup.tsx both used to
  * hand this off to the legacy prefs.basal/basalTime bridge instead
@@ -195,6 +220,7 @@ export async function syncBasalReminderRow(
   time: string,
   timeTouched: boolean
 ): Promise<boolean> {
+  await dedupeBasalReminderRows();
   const rows = await listReminders();
   const basalRow = rows.find((r) => r.type === "basal") ?? null;
 

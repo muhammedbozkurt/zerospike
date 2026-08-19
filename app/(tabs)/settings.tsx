@@ -26,7 +26,7 @@ export default function SettingsHub() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isProUser } = useApp();
+  const { activeProfile, isProUser } = useApp();
   // Tablet: hub title and rows share one centred column instead of full-width
   // rows with a lone chevron at the far edge. No-op padding on phones.
   const { columnPad } = useLayout();
@@ -57,6 +57,13 @@ export default function SettingsHub() {
         showsVerticalScrollIndicator={false}
       >
         <Row icon="person-outline" label={t("settings.hubProfile")} onPress={go("/settings/profile")} />
+        {activeProfile?.oral_meds_enabled === 1 ? (
+          <Row
+            icon="medical-outline"
+            label={t("settings.hubMedications")}
+            onPress={go("/settings/medications")}
+          />
+        ) : null}
         <Row
           icon="notifications-outline"
           label={t("settings.notificationsSection")}

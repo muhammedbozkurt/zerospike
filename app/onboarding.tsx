@@ -16,7 +16,11 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { isScreenshotMode } from "../lib/screenshotMode";
 import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
-import { syncBasalReminderRow } from "../lib/db/reminders";
+import {
+  createReminder,
+  syncBasalReminderRow,
+  updateReminder,
+} from "../lib/db/reminders";
 import {
   applyNotificationPrefs,
   requestNotificationPermission,
@@ -115,6 +119,7 @@ type StepId =
   | "postMeal"
   | "widget"
   | "notify"
+  | "medReminder"
   | "disclaimer";
 
 // The fixed head of the quiz (everything after it branches on the answers).
@@ -200,6 +205,15 @@ export default function OnboardingScreen() {
   );
   const [basalTime, setBasalTime] = useState("22:00");
   const [showTime, setShowTime] = useState(false);
+  // The optional pill-reminder step (medReminder): a plain 08:00 default, its
+  // own picker toggle, and the id of the row once "Kur" actually creates one -
+  // kept so tapping "Kur" again after navigating back UPDATES that same row
+  // instead of creating a second one (the exact duplicate-row shape this wave
+  // also fixes for the basal reminder - see lib/db/reminders.ts).
+  const [medReminderTime, setMedReminderTime] = useState("08:00");
+  const [showMedTime, setShowMedTime] = useState(false);
+  const [medReminderId, setMedReminderId] = useState<string | null>(null);
+  const [savingMedReminder, setSavingMedReminder] = useState(false);
   // null until the user taps an option on the postMeal step, so the default
   // (60 for gestational, 120 otherwise) keeps following the diabetes answer
   // right up until it is actually touched - same pattern as targetsTouched.
@@ -235,8 +249,22 @@ export default function OnboardingScreen() {
   const steps = useMemo<StepId[]>(() => {
     const treatmentStep: StepId[] = isTwoWayTreatment ? ["pillsOnly"] : ["insulin"];
     const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
-    return [...BASE_STEPS, ...treatmentStep, "targets", ...branch, "postMeal", "widget", "notify", "disclaimer"];
-  }, [isTwoWayTreatment, hasInsulin]);
+    // Offered only to whoever tracks pills (the "pills" or "both" answer):
+    // insulin-only users have nothing to set up here, and it never blocks
+    // finishing - "Simdi degil" always moves on with no reminder created.
+    const medReminderStep: StepId[] = hasOralMeds ? ["medReminder"] : [];
+    return [
+      ...BASE_STEPS,
+      ...treatmentStep,
+      "targets",
+      ...branch,
+      "postMeal",
+      "widget",
+      "notify",
+      ...medReminderStep,
+      "disclaimer",
+    ];
+  }, [isTwoWayTreatment, hasInsulin, hasOralMeds]);
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
   const step = steps[stepIdxClamped];
@@ -455,9 +483,40 @@ export default function OnboardingScreen() {
         return t("onboarding.qBasalHint");
       case "postMeal":
         return t("onboarding.qPostMealHint");
+      case "medReminder":
+        return t("onboarding.qMedReminderHint");
       default:
         return undefined;
     }
+  }
+
+  // "Kur": writes (or, on a second visit, updates) the single med reminder row
+  // straight to the registry - the same direct-write pattern basal already
+  // uses - then asks for notification permission (existing onboarding
+  // pattern, see nextFromNotify above). Never blocks Continue: a failed write
+  // (or a denied permission) still advances, since the reminder can always be
+  // set up later from Settings > Reminders.
+  async function setupMedReminder() {
+    if (savingMedReminder) return;
+    setSavingMedReminder(true);
+    try {
+      if (medReminderId) {
+        await updateReminder(medReminderId, { time: medReminderTime, enabled: true });
+      } else {
+        const row = await createReminder({
+          type: "med",
+          time: medReminderTime,
+          enabled: true,
+        });
+        setMedReminderId(row.id);
+      }
+      await requestNotificationPermission();
+    } catch {
+      // best-effort - Settings > Reminders is always there to try again
+    } finally {
+      setSavingMedReminder(false);
+    }
+    next();
   }
 
   const optDelay = (i: number) => ENTRANCE_STAGGER_MS * 2 + i * 50;
@@ -901,6 +960,35 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
+      // Optional, skippable: offered only to a pill-tracking answer (see
+      // hasOralMeds in the steps list above). "Kur" writes the row directly
+      // to the reminders registry (setupMedReminder), matching the pattern
+      // the basal reminder already uses.
+      case "medReminder":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <Pressable
+              onPress={() => setShowMedTime((s) => !s)}
+              style={{ minHeight: 60 }}
+              className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 active:opacity-80"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="medkit-outline" size={20} color={THEME.accent} />
+                <Text className="text-ink text-base ml-3">
+                  {t("onboarding.medReminderTime")}
+                </Text>
+              </View>
+              <Text className="text-ink text-lg font-semibold">{medReminderTime}</Text>
+            </Pressable>
+            <InlineTimePicker
+              visible={showMedTime}
+              value={medReminderTime}
+              onChange={setMedReminderTime}
+              onClose={() => setShowMedTime(false)}
+            />
+          </FadeSlideIn>
+        );
+
       case "disclaimer":
         return (
           <FadeSlideIn delay={optDelay(0)}>
@@ -946,6 +1034,24 @@ export default function OnboardingScreen() {
           loading={saving}
           onPress={finishToReveal}
         />
+      );
+    }
+
+    // Two explicit paths, neither of which blocks finishing onboarding: "Kur"
+    // writes the reminder and moves on, "Simdi degil" just moves on.
+    if (step === "medReminder") {
+      return (
+        <View>
+          <Button
+            label={t("onboarding.medReminderSetup")}
+            size="lg"
+            loading={savingMedReminder}
+            onPress={setupMedReminder}
+          />
+          <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
+            <Text className="text-mut font-medium">{t("onboarding.medReminderSkip")}</Text>
+          </Pressable>
+        </View>
       );
     }
 

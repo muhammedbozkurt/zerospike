@@ -471,3 +471,21 @@ export interface Reminder {
    *  ever range-queried against a reading or a meal. */
   created_at: number;
 }
+
+/* ── Saved medication names (schema v18) ───────────────────────────────────
+ *
+ * A per-profile "my medications" list: names the user has already typed once,
+ * most-recently-used first, so a repeat entry is a tap instead of retyping.
+ * Completely separate from MedLog above - renaming or deleting a saved name
+ * never rewrites or deletes a single past diary entry. See lib/db/meds.ts for
+ * the accessors (listSavedMeds, upsertMedUse, renameMed, deleteSavedMed).
+ */
+
+export interface SavedMed {
+  id: string;
+  profile_id: string;
+  name: string;
+  /** Epoch milliseconds, like MedLog.taken_at. What listSavedMeds orders by. */
+  last_used_at: number;
+  created_at: number;
+}

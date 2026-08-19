@@ -7,7 +7,7 @@ import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
-import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
+import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry, MedEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
 import { bolusProfileFor, basalProfileFor, insulinProductById } from "../../lib/insulinCatalog";
 import { mealSlotForHour } from "../../lib/insulin";
@@ -118,6 +118,7 @@ import { QuickAddSheet } from "../../components/QuickAddSheet";
 import { useUndoBatch } from "../../components/useUndoBatch";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
+import { MedEditSheet } from "../../components/MedEditSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback, type SheetAction } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
@@ -283,6 +284,7 @@ export default function DashboardScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editGlucose, setEditGlucose] = useState<GlucoseEntry | null>(null);
   const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
+  const [editMed, setEditMed] = useState<MedEntry | null>(null);
   const [showEditHint, setShowEditHint] = useState(false);
   const [showFinishSetup, setShowFinishSetup] = useState(false);
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
@@ -967,9 +969,9 @@ export default function DashboardScreen() {
       setSheetOpen(true);
     } else if (entry.kind === "injection") {
       setEditInjection(entry);
+    } else if (entry.kind === "med") {
+      setEditMed(entry);
     }
-    // A medication entry has no edit surface in v1 (see onEntryLongPress below,
-    // which leaves the "Edit" action off a med row's menu entirely).
   }
 
   // Meal rows with a computable response (lib/mealResponse.ts) get a small
@@ -1001,15 +1003,11 @@ export default function DashboardScreen() {
   // to becomes the items (groupMealsBySlot, resolved on the editor screen).
   function onEntryLongPress(entry: JournalEntry) {
     const actions: SheetAction[] = [];
-    // A medication entry has no edit surface in v1 (see openEdit above): the
-    // menu offers only delete for it, not a dead "Edit" row.
-    if (entry.kind !== "med") {
-      actions.push({
-        label: t("common.edit"),
-        icon: "create-outline",
-        onPress: () => openEdit(entry),
-      });
-    }
+    actions.push({
+      label: t("common.edit"),
+      icon: "create-outline",
+      onPress: () => openEdit(entry),
+    });
     if (entry.kind === "meal") {
       actions.push({
         label: t("templates.fromMeal"),
@@ -1874,6 +1872,16 @@ export default function DashboardScreen() {
         onClose={() => setEditInjection(null)}
         onSaved={() => {
           setEditInjection(null);
+          bumpData();
+        }}
+      />
+
+      <MedEditSheet
+        visible={editMed != null}
+        med={editMed}
+        onClose={() => setEditMed(null)}
+        onSaved={() => {
+          setEditMed(null);
           bumpData();
         }}
       />

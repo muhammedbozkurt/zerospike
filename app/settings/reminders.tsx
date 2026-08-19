@@ -117,6 +117,19 @@ export default function RemindersScreen() {
     if (activeProfile) void syncLiveData(activeProfile.id, unit);
   }
 
+  /**
+   * The permission banner's tap target - mirrors settings/notifications.tsx's
+   * retryPermission: try the OS prompt again first (it only actually shows one
+   * when the OS still can), and only fall back to system settings once that
+   * comes back permanently denied. A denial the OS was still willing to
+   * re-prompt for used to go straight to system settings on every tap here too.
+   */
+  async function retryPermission() {
+    const result = await requestNotificationPermission();
+    setPermission(result);
+    if (result === "deniedPermanently") Linking.openSettings();
+  }
+
   function openEditor(row: Reminder) {
     if (editingId === row.id) {
       // Belt and suspenders alongside the Field's own onBlur: closing the
@@ -214,7 +227,7 @@ export default function RemindersScreen() {
 
         {permission && permission !== "granted" ? (
           <Pressable
-            onPress={() => Linking.openSettings()}
+            onPress={() => void retryPermission()}
             className="rounded-2xl px-4 py-3 mb-3"
             style={{
               borderWidth: 1,
@@ -223,7 +236,9 @@ export default function RemindersScreen() {
             }}
           >
             <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
-              {t("notifications.permissionDenied")}
+              {permission === "deniedPermanently"
+                ? t("notifications.permissionDeniedPermanently")
+                : t("notifications.permissionDenied")}
             </Text>
             <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
               {t("settings.openSystemSettings")}

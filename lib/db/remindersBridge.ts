@@ -57,10 +57,32 @@ export async function bridgeLegacyReminders(
   ]);
   if (already) return false;
 
+  // A row of a given type may already exist by the time this runs: onboarding
+  // (app/onboarding.tsx) and profile setup (app/profile-setup.tsx) both write
+  // the basal row straight to the registry (syncBasalReminderRow, see
+  // ./reminders.ts) BEFORE they call applyNotificationPrefs, which is what
+  // triggers this bridge on a device that has never run it. Seeding "basal"
+  // again here from the very same legacy prefs those callers just wrote would
+  // duplicate the row they already created. Checked per-type rather than
+  // short-circuiting the whole bridge, so a genuinely fresh install with real
+  // legacy glucose/med prefs (upgrade path) still gets the types that have no
+  // row yet.
+  const existingTypes = new Set(
+    (
+      await db.getAllAsync<{ type: string }>("SELECT DISTINCT type FROM reminders;")
+    ).map((r) => r.type)
+  );
+
   const seeds: { type: "basal" | "med" | "glucose"; time: string }[] = [];
-  if (prefs.basal) seeds.push({ type: "basal", time: prefs.basalTime });
-  if (prefs.med) seeds.push({ type: "med", time: prefs.medTime });
-  if (prefs.glucose) seeds.push({ type: "glucose", time: prefs.glucoseTime });
+  if (prefs.basal && !existingTypes.has("basal")) {
+    seeds.push({ type: "basal", time: prefs.basalTime });
+  }
+  if (prefs.med && !existingTypes.has("med")) {
+    seeds.push({ type: "med", time: prefs.medTime });
+  }
+  if (prefs.glucose && !existingTypes.has("glucose")) {
+    seeds.push({ type: "glucose", time: prefs.glucoseTime });
+  }
 
   // One transaction: either every seeded row lands together with the flag that
   // says bridging happened, or none of it does - a kill mid-way must not leave

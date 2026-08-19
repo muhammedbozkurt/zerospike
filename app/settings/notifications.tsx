@@ -125,6 +125,24 @@ export default function NotificationSettings() {
     setPostMealRunning((await getPostMealTimerEnd()) != null);
   }
 
+  /**
+   * The permission row/banner's tap target. Tries the OS prompt again first -
+   * requestNotificationPermission only actually raises it when the OS still
+   * can (undetermined, or Android's one extra chance before a refusal is
+   * final) - and falls back to system settings only once the outcome is
+   * permanently denied. Replaces jumping straight to system settings on every
+   * tap regardless of state, which is what left a still-askable Android user
+   * with no way back to the prompt and nothing to find in system settings.
+   */
+  async function retryPermission() {
+    const result = await requestNotificationPermission();
+    setPermission(result);
+    if (result === "deniedPermanently") Linking.openSettings();
+    const granted = result === "granted";
+    setNotifDenied((prefs?.enabled ?? false) && !granted);
+    setReliability(await checkReminderReliability());
+  }
+
   return (
     <SettingsScaffold title={t("settings.notificationsSection")}>
       <View style={columnPad()}>
@@ -133,7 +151,7 @@ export default function NotificationSettings() {
           icon={permission === "granted" ? "notifications" : "notifications-off-outline"}
           label={t("settings.notifPermissionRow")}
           value={t(`settings.notifPerm_${permission}`)}
-          onPress={permission === "granted" ? undefined : () => Linking.openSettings()}
+          onPress={permission === "granted" ? undefined : () => void retryPermission()}
           right={
             permission === "granted" ? (
               <Ionicons name="checkmark-circle" size={18} color={GLUCOSE_RICH.target} />
@@ -176,7 +194,7 @@ export default function NotificationSettings() {
 
           {prefs.enabled && notifDenied ? (
             <Pressable
-              onPress={() => Linking.openSettings()}
+              onPress={() => void retryPermission()}
               className="rounded-2xl px-4 py-3 mb-2"
               style={{
                 borderWidth: 1,
@@ -185,7 +203,9 @@ export default function NotificationSettings() {
               }}
             >
               <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
-                {t("notifications.permissionDenied")}
+                {permission === "deniedPermanently"
+                  ? t("notifications.permissionDeniedPermanently")
+                  : t("notifications.permissionDenied")}
               </Text>
               <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
                 {t("settings.openSystemSettings")}

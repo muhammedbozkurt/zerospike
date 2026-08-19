@@ -11,6 +11,7 @@ import { formatGlucose, glucoseUnitLabel, hypoThreshold, LOW_FOLLOWUP_MINUTES } 
 import { getProfile, listProfiles } from "../db/profiles";
 import {
   applyLegacyRemindersBridge,
+  dedupeBasalReminderRows,
   listReminders,
 } from "../db/reminders";
 import type { Reminder, UserProfile } from "../db/types";
@@ -79,22 +80,63 @@ Notifications.setNotificationHandler({
 });
 
 /**
- * Ensures the Android "reminders" channel exists, named from i18n. Called on
- * every schedule (not cached) so the channel name follows the app language;
- * re-calling with the same id updates the name in place.
+ * Android channel ids. Channels are IMMUTABLE once created - importance,
+ * sound and vibration can never be changed on an existing id, only the
+ * display NAME can - so giving the reminders channel a custom sound (see
+ * assets/sounds/reminder.wav) meant moving to a new id rather than updating
+ * "reminders" in place. Named constants so the cleanup below and the
+ * reliability check (checkReminderReliability) can't drift from what
+ * ensureAndroidChannel actually creates.
  */
-async function ensureAndroidChannel(): Promise<void> {
+const REMINDER_CHANNEL_ID = "reminders-v2";
+const LEGACY_REMINDER_CHANNEL_ID = "reminders";
+
+/**
+ * Ensures the Android reminders channel exists, named from i18n and carrying
+ * the custom reminder.wav sound. Called on every schedule (not cached) so the
+ * channel name follows the app language; re-calling with the same id updates
+ * the name in place (sound/importance cannot change post-creation, but they
+ * are already right from the id's first creation).
+ *
+ * Also called EAGERLY on app launch (see app/_layout.tsx), before any
+ * reminder is ever scheduled and regardless of OS permission: a channel that
+ * is only created the first time something gets scheduled left system
+ * Settings > App > Notifications showing no entry at all for a user who
+ * denied the permission (or never reached the prompt) - see the permission
+ * flow fixed below.
+ */
+export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== "android") return;
-  await Notifications.setNotificationChannelAsync("reminders", {
+  await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
     name: i18n.t("notifications.channelName"),
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: "#22d3ee",
+    sound: "reminder.wav",
   });
+  // One-time-per-device sweep of the old sound-less channel. Harmless to
+  // retry on every call (deleting an already-gone channel is a no-op), and
+  // this is the only path that runs early enough (app launch) to also catch
+  // a device that never schedules anything after upgrading.
+  try {
+    await Notifications.deleteNotificationChannelAsync(LEGACY_REMINDER_CHANNEL_ID);
+  } catch {
+    // never existed on this device - ignore
+  }
 }
 
 const androidChannel =
-  Platform.OS === "android" ? { channelId: "reminders" } : {};
+  Platform.OS === "android" ? { channelId: REMINDER_CHANNEL_ID } : {};
+
+/**
+ * Custom sound (assets/sounds/reminder.wav), wired through the
+ * expo-notifications config plugin's `sounds` array. iOS reads the filename
+ * straight off the notification content; Android's sound is fixed at
+ * channel-creation time above, and a content-level sound field there is
+ * ignored on API 26+ (this app's minSdkVersion), so nothing else is needed
+ * for Android beyond the channelId.
+ */
+const iosSound = Platform.OS === "ios" ? { sound: "reminder.wav" as const } : {};
 
 // iOS Time-Sensitive interruption level: a time-based reminder breaks through
 // Focus / silent and surfaces prominently, while staying a NEUTRAL reminder.
@@ -107,8 +149,10 @@ const IOS_TIME_SENSITIVE =
   Platform.OS === "ios" ? { interruptionLevel: "timeSensitive" as const } : {};
 
 /** Content extras for a time-based reminder (Android high-importance channel +
- *  iOS Time-Sensitive). Used by the actionable reminders, not the weekly nudge. */
-const reminderExtras = { ...androidChannel, ...IOS_TIME_SENSITIVE };
+ *  the custom sound + iOS Time-Sensitive). Used by the actionable reminders;
+ *  the weekly nudge and other non-time-sensitive ones add androidChannel and
+ *  iosSound directly instead (see each scheduler below). */
+const reminderExtras = { ...androidChannel, ...iosSound, ...IOS_TIME_SENSITIVE };
 
 /**
  * Route hint carried in every notification's content.data. app/_layout.tsx reads
@@ -129,15 +173,23 @@ export type NotificationRoute =
 /**
  * The real outcome of asking for notification permission, so the UI can tell the
  * truth instead of pretending a denied prompt was granted:
- *  - granted:      the user allowed notifications
- *  - denied:       the user (or a prior choice) said no
- *  - undetermined: never asked / the prompt was dismissed without a choice
- *  - unavailable:  we could not ask at all (the probe itself threw). This is
- *                  reported honestly rather than being swallowed as a false.
+ *  - granted:           the user allowed notifications
+ *  - denied:            the user said no, but the OS will still show its own
+ *                        prompt again if asked (canAskAgain=true - Android's
+ *                        one extra chance before a refusal becomes permanent)
+ *  - deniedPermanently: the user said no and the OS will NOT prompt again
+ *                        (canAskAgain=false - iOS after its single ask, or
+ *                        Android's second refusal / "don't ask again"). Only
+ *                        this state has to route through system settings.
+ *  - undetermined:      never asked / the prompt was dismissed without a choice
+ *  - unavailable:       we could not ask at all (the probe itself threw). This
+ *                        is reported honestly rather than being swallowed as a
+ *                        false.
  */
 export type NotificationPermission =
   | "granted"
   | "denied"
+  | "deniedPermanently"
   | "undetermined"
   | "unavailable";
 
@@ -146,6 +198,16 @@ export type NotificationPermission =
  * a probe that fails is reported as "unavailable" (not silently as a denial), so
  * onboarding and Settings can show an accurate status and a route into system
  * settings.
+ *
+ * Only calls the native prompt when the OS can actually still show one
+ * (undetermined, or denied with canAskAgain=true). A denial that has already
+ * lost that chance would make requestPermissionsAsync return the same denied
+ * status with no dialog at all, so reading canAskAgain first - rather than
+ * calling it unconditionally like before - is not just an optimisation: it is
+ * what tells "the OS will still ask again" apart from "only system settings can
+ * fix this" for the caller. Without that split, retrying from Settings after an
+ * Android first refusal silently skipped the native prompt Android was still
+ * willing to show and jumped straight to the system settings screen instead.
  */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   try {
@@ -158,13 +220,12 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
     await ensureAndroidChannel();
 
     const settings = await Notifications.getPermissionsAsync();
-    let status = settings.status;
-    if (status !== "granted") {
-      const req = await Notifications.requestPermissionsAsync();
-      status = req.status;
-    }
-    if (status === "granted") return "granted";
-    if (status === "denied") return "denied";
+    if (settings.status === "granted") return "granted";
+    if (settings.status === "denied" && !settings.canAskAgain) return "deniedPermanently";
+
+    const req = await Notifications.requestPermissionsAsync();
+    if (req.status === "granted") return "granted";
+    if (req.status === "denied") return req.canAskAgain ? "denied" : "deniedPermanently";
     return "undetermined";
   } catch {
     return "unavailable";
@@ -188,14 +249,17 @@ export async function hasNotificationPermission(): Promise<boolean> {
 
 /**
  * Reads the current permission WITHOUT prompting, for a status row that is shown
- * independently of the app's own notification toggle. Same four honest states as
- * the request path.
+ * independently of the app's own notification toggle. Same five honest states as
+ * the request path, including the canAskAgain-derived split between a denial the
+ * OS will still prompt for and one only system settings can undo.
  */
 export async function getNotificationPermission(): Promise<NotificationPermission> {
   try {
     const settings = await Notifications.getPermissionsAsync();
     if (settings.status === "granted") return "granted";
-    if (settings.status === "denied") return "denied";
+    if (settings.status === "denied") {
+      return settings.canAskAgain ? "denied" : "deniedPermanently";
+    }
     return "undetermined";
   } catch {
     return "unavailable";
@@ -250,7 +314,7 @@ export async function checkReminderReliability(): Promise<ReminderReliability> {
     result.permissionMissing = !(await hasNotificationPermission());
     if (Platform.OS !== "android") return result;
 
-    const channel = await Notifications.getNotificationChannelAsync("reminders");
+    const channel = await Notifications.getNotificationChannelAsync(REMINDER_CHANNEL_ID);
     if (channel && channel.importance < Notifications.AndroidImportance.DEFAULT) {
       result.channelLimited = true;
     }
@@ -523,6 +587,11 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
 const LEGACY_FIXED_IDS: readonly string[] = [BASAL_ID, MED_ID, GLUCOSE_ID];
 
 export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
+  // Self-heals a device that already has two "basal" rows (see
+  // dedupeBasalReminderRows in lib/db/reminders.ts) on every apply pass, not
+  // just the onboarding/profile-setup paths that call syncBasalReminderRow -
+  // this is what actually reaches a device that already shipped the bug.
+  await dedupeBasalReminderRows();
   const granted = prefs.enabled && (await hasNotificationPermission());
   const rows = await listReminders();
 
@@ -589,6 +658,7 @@ export async function scheduleWeeklySummary(
       body: i18n.t("notifications.weeklyBody"),
       data: { route: "weekly" satisfies NotificationRoute },
       ...androidChannel,
+      ...iosSound,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
@@ -669,6 +739,7 @@ export async function scheduleIdleReminder(keepFireAt?: number): Promise<void> {
       body: i18n.t("notifications.idleBody"),
       data: { route: "idle" satisfies NotificationRoute },
       ...androidChannel,
+      ...iosSound,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -893,6 +964,7 @@ export async function scheduleTrialEndingReminder(trialDays: number): Promise<vo
       body: i18n.t("notifications.trialBody"),
       data: { route: "trial" satisfies NotificationRoute },
       ...androidChannel,
+      ...iosSound,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -1349,6 +1421,7 @@ export async function rescheduleForLanguageChange(): Promise<void> {
         body: i18n.t("notifications.trialBody"),
         data: { route: "trial" satisfies NotificationRoute },
         ...androidChannel,
+        ...iosSound,
       });
       if (ok) kept.trial = ends.trial;
     }

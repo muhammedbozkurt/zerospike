@@ -12,7 +12,10 @@ import * as SplashScreen from "expo-splash-screen";
 
 import * as FileSystem from "expo-file-system/legacy";
 
-import type { NotificationRoute } from "../lib/services/notifications";
+import {
+  ensureAndroidChannel,
+  type NotificationRoute,
+} from "../lib/services/notifications";
 import { isScreenshotMode, setScreenshotPlatform } from "../lib/screenshotMode";
 import { seedScreenshotData, ensureTrackingProfile } from "../lib/db/screenshotSeed";
 import { DEFAULT_PROFILE_ID, SCREENSHOT_TRACKING_PROFILE_ID } from "../lib/db/index";
@@ -52,6 +55,16 @@ if (isScreenshotMode()) LogBox.ignoreAllLogs(true);
 // Attach Firebase (Analytics + Crashlytics) as the analytics sink once, before
 // any screen renders. No-op in dev; every event still mirrors to the console.
 initAnalyticsSink();
+
+// Register the Android reminders channel on every cold start, unconditionally -
+// no permission check, no onboarding check, before any reminder is ever
+// scheduled. applyNotificationPrefs() (called later, from AppContext's launch
+// effect) only reaches ensureAndroidChannel() when permission is already
+// granted, so a user who denied the prompt (or never reached it) never got a
+// channel created at all: system Settings > App > Notifications showed no entry
+// to turn on, which read as the app having nothing to configure there. No-op on
+// iOS (see ensureAndroidChannel).
+void ensureAndroidChannel();
 
 /**
  * Where each reminder should land when tapped. Post-meal/glucose/low-followup all
