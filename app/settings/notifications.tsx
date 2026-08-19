@@ -52,7 +52,7 @@ function weekOrder(l: Lang): number[] {
 export default function NotificationSettings() {
   const { t } = useTranslation();
   const { activeProfile, lang } = useApp();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const router = useRouter();
 
   // Starts unknown (not DEFAULT_PREFS): a user who moved the post-meal window
@@ -127,7 +127,7 @@ export default function NotificationSettings() {
 
   return (
     <SettingsScaffold title={t("settings.notificationsSection")}>
-      <View style={contentColumn}>
+      <View style={columnPad()}>
       {permission ? (
         <Row
           icon={permission === "granted" ? "notifications" : "notifications-off-outline"}

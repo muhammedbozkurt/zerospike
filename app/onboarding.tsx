@@ -148,7 +148,7 @@ function screenshotDiabetes(param?: string): DiabetesOption | null {
 export default function OnboardingScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const router = useRouter();
   const { activeProfile, bumpData, completeOnboarding } = useApp();
   const { scOnboarding } = useLocalSearchParams<{ scOnboarding?: string }>();
@@ -480,8 +480,8 @@ export default function OnboardingScreen() {
           the content column so the chip stays over the copy on a tablet instead
           of drifting to the far edge of the screen. */}
       <View
-        className="px-6 pt-2 pb-2 flex-row items-center justify-between"
-        style={contentColumn}
+        className="pt-2 pb-2 flex-row items-center justify-between"
+        style={columnPad(24)}
       >
         {onBack ? (
           <Pressable onPress={onBack} hitSlop={10} className="pr-3 py-1">
@@ -494,8 +494,8 @@ export default function OnboardingScreen() {
       </View>
 
       <View
-        className="flex-1 px-6"
-        style={{ paddingBottom: insets.bottom + 16, ...contentColumn }}
+        className="flex-1"
+        style={{ paddingBottom: insets.bottom + 16, ...columnPad(24) }}
       >
         {phase === "welcome" ? (
           <Welcome

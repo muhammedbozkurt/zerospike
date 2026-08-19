@@ -23,13 +23,13 @@ export default function AboutSettings() {
   const { t } = useTranslation();
   const router = useRouter();
   const { activeProfile } = useApp();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const usesInsulin = insulinModeUsesInsulin(insulinModeOf(activeProfile));
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
   return (
     <SettingsScaffold title={t("settings.aboutSection")}>
-      <View style={contentColumn}>
+      <View style={columnPad()}>
       {usesInsulin ? (
         <>
           <SectionLabel>{t("injection.title")}</SectionLabel>

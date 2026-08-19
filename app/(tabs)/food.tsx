@@ -400,8 +400,8 @@ export default function FoodScreen() {
   const { actionSheet, confirm, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
   // Tablets get more columns and a capped reading column; a phone render is
-  // untouched (contentColumn is undefined below the wide threshold).
-  const { isWide, contentColumn } = useLayout();
+  // untouched (columnPad reduces to the plain inset below the wide threshold).
+  const { isWide, columnPad } = useLayout();
   const gridColumns = isWide ? 4 : 3;
 
   const [query, setQuery] = useState("");
@@ -998,7 +998,7 @@ export default function FoodScreen() {
   // block are FlatList rows now, so a focus reload can no longer change the
   // header's height while the list is scrolled.
   const HeaderTop = (
-    <View style={[{ paddingHorizontal: 16, paddingTop: 4 }, contentColumn]}>
+    <View style={[{ paddingTop: 4 }, columnPad(16)]}>
       {/* Title row: the screen's name and its one add action, in every mode -
           a search that finds nothing is exactly where "add it yourself" belongs. */}
       <View className="flex-row items-center justify-between mb-3">
@@ -1509,7 +1509,7 @@ export default function FoodScreen() {
         // false trades a little memory for never handing back a blank recycled cell.
         removeClippedSubviews={false}
         renderItem={({ item }) => (
-          <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+          <View style={columnPad(16)}>
             {typeof item === "string" ? (
               renderGridBand(item)
             ) : (
@@ -1528,7 +1528,7 @@ export default function FoodScreen() {
         // an empty category/favourites shelf or a search that found nothing.
         ListEmptyComponent={
           !categoryLoading && !searchPending ? (
-            <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+            <View style={columnPad(16)}>
               <EmptyState
                 compact
                 icon={

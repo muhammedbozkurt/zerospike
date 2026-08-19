@@ -59,7 +59,7 @@ const DEFAULT_ADD_TIME = "08:00";
 export default function RemindersScreen() {
   const { t } = useTranslation();
   const { activeProfile } = useApp();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const { confirm, toast } = useFeedback();
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
@@ -207,7 +207,7 @@ export default function RemindersScreen() {
 
   return (
     <SettingsScaffold title={t("settings.remindersTitle")}>
-      <View style={contentColumn}>
+      <View style={columnPad()}>
         <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
           {t("settings.remindersHint")}
         </Text>

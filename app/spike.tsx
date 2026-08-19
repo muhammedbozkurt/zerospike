@@ -81,7 +81,7 @@ function SpikeScreen() {
   const { ask } = useLocalSearchParams<{ ask?: string }>();
   // Tablet: the conversation keeps a readable column instead of running the full
   // width of an iPad. Undefined on phones, so nothing about that render changes.
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
 
   const [ready, setReady] = useState(false);
   const [consented, setConsented] = useState(false);
@@ -285,10 +285,9 @@ function SpikeScreen() {
             flexGrow: 1,
             alignItems: "center",
             justifyContent: "center",
-            paddingHorizontal: 24,
             paddingVertical: 24,
             gap: 14,
-            ...(contentColumn ?? {}),
+            ...columnPad(24),
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -364,7 +363,7 @@ function SpikeScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
-        <View className="flex-row items-center px-3 py-2" style={[{ gap: 8 }, contentColumn]}>
+        <View className="flex-row items-center py-2" style={[{ gap: 8 }, columnPad(12)]}>
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
             <DirIcon name="chevron-back" size={26} color={THEME.muted} />
           </Pressable>
@@ -399,10 +398,10 @@ function SpikeScreen() {
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={{
-            padding: 14,
+            paddingTop: 14,
             paddingBottom: 20,
             gap: 10,
-            ...(contentColumn ?? {}),
+            ...columnPad(14),
           }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -542,7 +541,7 @@ function SpikeScreen() {
 
         {/* Allowance spent: a neutral card, not a failed send. */}
         {exhausted ? (
-          <View style={contentColumn}>
+          <View style={columnPad()}>
           <GlassCard accent style={{ marginHorizontal: 12, marginBottom: 8 }}>
             <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
               {t("spike.limitTitle")}
@@ -566,7 +565,7 @@ function SpikeScreen() {
           </View>
         ) : null}
 
-        <View style={contentColumn}>
+        <View style={columnPad()}>
         <View
           className="flex-row items-center mx-3 mb-2 px-3"
           style={{

@@ -257,7 +257,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string }>();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
   // Store-screenshot only: an Android store frame is captured on the iOS
@@ -1811,13 +1811,13 @@ export default function DashboardScreen() {
           ) : null
         }
         contentContainerStyle={{
-          paddingHorizontal: 16,
           // No floating CTA during first run, so the list does not have to
           // scroll clear of one.
           paddingBottom: isFirstRun ? 24 : CTA_CLEARANCE,
           // Tablet: one centred reading column instead of a stretched phone
-          // layout. Undefined on phones, so the narrow render is unchanged.
-          ...(contentColumn ?? {}),
+          // layout. Reduces to the plain 16 inset on phones, so the narrow
+          // render is unchanged.
+          ...columnPad(16),
         }}
         showsVerticalScrollIndicator={false}
       />
@@ -1827,10 +1827,10 @@ export default function DashboardScreen() {
           than putting two identical CTAs on an otherwise empty screen. */}
       {!isFirstRun ? (
         <View
-          className="absolute left-0 right-0 bottom-0 px-4 pt-2"
+          className="absolute left-0 right-0 bottom-0 pt-2"
           style={{ paddingBottom: CTA_BOTTOM }}
         >
-          <View style={contentColumn}>
+          <View style={columnPad(16)}>
             <GradientCTA
               label={`＋ ${t("dashboard.addRecord")}`}
               onPress={() => setQuickAddOpen(true)}

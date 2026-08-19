@@ -56,7 +56,7 @@ function ProfileSetupScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const { activeProfile, bumpData } = useApp();
   const { toast } = useFeedback();
   // Glucose fields (targets, ISF) are stored in mg/dL but shown/entered in this
@@ -279,9 +279,9 @@ function ProfileSetupScreen() {
       <ScrollView
         {...keyboardAwareScrollProps}
         contentContainerStyle={{
-          padding: 16,
+          paddingTop: 16,
           paddingBottom: insets.bottom + 28,
-          ...(contentColumn ?? {}),
+          ...columnPad(16),
         }}
         showsVerticalScrollIndicator={false}
       >

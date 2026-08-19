@@ -64,7 +64,7 @@ export default function DataSettings() {
     refreshProfiles,
     setActiveProfileId,
   } = useApp();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
 
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -256,7 +256,7 @@ export default function DataSettings() {
         />
       }
     >
-      <View style={contentColumn}>
+      <View style={columnPad()}>
       <Row
         icon="document-text-outline"
         label={t("settings.exportCsv")}

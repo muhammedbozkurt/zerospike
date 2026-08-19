@@ -141,7 +141,7 @@ export default function InjectionScreen() {
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
   const { confirm, actionSheet, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
 
   // Which of the three faces is showing. State (form values, selected site) lives
   // at the component level, so switching segments never loses anything.
@@ -844,13 +844,13 @@ export default function InjectionScreen() {
           removeClippedSubviews={false}
           ListEmptyComponent={historyEmptyComponent}
           ListFooterComponent={historyFooterComponent}
-          contentContainerStyle={[{ paddingBottom: insets.bottom + 32, paddingTop: 4 }, contentColumn]}
+          contentContainerStyle={[{ paddingBottom: insets.bottom + 32, paddingTop: 4 }, columnPad()]}
           showsVerticalScrollIndicator={false}
         />
       ) : (
         <ScrollView
           {...keyboardAwareScrollProps}
-          contentContainerStyle={[{ padding: 16, paddingBottom: insets.bottom + 32 }, contentColumn]}
+          contentContainerStyle={[{ paddingTop: 16, paddingBottom: insets.bottom + 32 }, columnPad(16)]}
           showsVerticalScrollIndicator={false}
         >
           {segment === "map" ? (

@@ -45,7 +45,7 @@ function AddFoodScreen() {
   }>();
   const { isProUser, bumpData } = useApp();
   const { toast } = useFeedback();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
 
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
@@ -218,7 +218,7 @@ function AddFoodScreen() {
     <AppBackground>
       <View className="flex-1" style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
         {/* Header (mockup 04: close, centred title, balancing spacer) */}
-        <View style={contentColumn}>
+        <View style={columnPad()}>
           <ScreenHeader
             title={isEdit ? t("food.editCustom") : t("food.addCustom")}
             onBack={() => router.back()}
@@ -233,11 +233,11 @@ function AddFoodScreen() {
           showsVerticalScrollIndicator={false}
         >
           {checkingLimit ? (
-            <View style={[contentColumn, { paddingTop: 60, alignItems: "center" }]}>
+            <View style={[columnPad(), { paddingTop: 60, alignItems: "center" }]}>
               <ActivityIndicator color={THEME.accent} />
             </View>
           ) : (
-          <View style={contentColumn}>
+          <View style={columnPad()}>
             {allowed === false && !isEdit ? (
               <Pressable
                 onPress={() => router.push({ pathname: "/paywall", params: { reason: "foods" } })}

@@ -23,7 +23,7 @@ export default function AppSettings() {
   const router = useRouter();
   const { toast, confirm } = useFeedback();
   const { lang, setLanguage, isProUser, refreshPro } = useApp();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const [restoring, setRestoring] = useState(false);
   const [spikeConsent, setSpikeConsent] = useState(false);
   // Which plan unlocked Pro, so the "Pro active" row can open store subscription
@@ -105,7 +105,7 @@ export default function AppSettings() {
 
   return (
     <SettingsScaffold title={t("settings.appSection")}>
-      <View style={contentColumn}>
+      <View style={columnPad()}>
       <SectionLabel>{t("settings.language")}</SectionLabel>
       <LanguagePicker value={lang} onChange={onChangeLang} />
 

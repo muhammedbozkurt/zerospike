@@ -176,7 +176,7 @@ export default function MealResponseScreen() {
   const router = useRouter();
   const { mealId } = useLocalSearchParams<{ mealId?: string }>();
   const { activeProfile, isProUser, lang } = useApp();
-  const { isWide, contentColumn } = useLayout();
+  const { isWide, columnPad } = useLayout();
 
   const [loading, setLoading] = useState(true);
   const [meal, setMeal] = useState<MealLog | null>(null);
@@ -295,7 +295,7 @@ export default function MealResponseScreen() {
 
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
-      <View style={contentColumn}>
+      <View style={columnPad()}>
         <ScreenHeader title={t("mealResponse.title")} onBack={() => router.back()} />
       </View>
 
@@ -304,7 +304,7 @@ export default function MealResponseScreen() {
           contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
-          <View style={[{ padding: 16 }, contentColumn]}>
+          <View style={[{ paddingVertical: 16 }, columnPad(16)]}>
             <MealResponseSkeleton isWide={isWide} />
           </View>
         </ScrollView>
@@ -319,7 +319,7 @@ export default function MealResponseScreen() {
           contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
-          <View style={[{ padding: 16 }, contentColumn]}>
+          <View style={[{ paddingVertical: 16 }, columnPad(16)]}>
             {/* Meal summary */}
             <View className="flex-row items-center mb-5">
               {food ? (

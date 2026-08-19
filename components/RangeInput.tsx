@@ -75,7 +75,7 @@ export function RangeInput({
   maxLabel: string;
   decimals?: boolean;
 }) {
-  const { isWide, contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const navigation = useNavigation();
 
   /** The low thumb can sit inside the native back-swipe zone, so a horizontal
@@ -329,7 +329,7 @@ export function RangeInput({
     <GlassCard
       glow={hasBand && !showsError ? GLUCOSE_RICH.target : undefined}
       radius={RADIUS.xl}
-      style={[{ marginBottom: 12, padding: 14 }, isWide ? contentColumn : undefined]}
+      style={[{ marginBottom: 12, paddingVertical: 14 }, columnPad(14)]}
     >
       <Text
         style={{

@@ -44,7 +44,7 @@ import { useLayout } from "../../lib/useLayout";
 export default function ProfileSettings() {
   const { t } = useTranslation();
   const { activeProfile, bumpData } = useApp();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const { confirm } = useFeedback();
 
   // activeProfile is already in context by the time this screen mounts (see
@@ -252,7 +252,7 @@ export default function ProfileSettings() {
 
   return (
     <SettingsScaffold title={t("onboarding.secProfile")}>
-      <View style={contentColumn}>
+      <View style={columnPad()}>
       <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
         <InputRow
           icon="text-outline"

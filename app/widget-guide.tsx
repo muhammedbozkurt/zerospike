@@ -62,7 +62,7 @@ function WidgetGuideScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
   const ios = Platform.OS === "ios";
   const liveOn = isLiveActivityAvailable();
 
@@ -80,9 +80,9 @@ function WidgetGuideScreen() {
         />
         <ScrollView
           contentContainerStyle={{
-            padding: 16,
+            paddingTop: 16,
             paddingBottom: insets.bottom + 32,
-            ...(contentColumn ?? {}),
+            ...columnPad(16),
           }}
           showsVerticalScrollIndicator={false}
         >

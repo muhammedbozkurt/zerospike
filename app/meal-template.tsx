@@ -129,7 +129,7 @@ function MealTemplateScreen() {
   }>();
   const { activeProfile, lang, bumpData } = useApp();
   const { toast } = useFeedback();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
 
   const isEdit = typeof templateId === "string" && templateId.length > 0;
   const isLog = isEdit && mode === "log";
@@ -559,7 +559,7 @@ function MealTemplateScreen() {
           paddingTop: Math.max(insets.top, MODAL_TOP_PAD),
         }}
       >
-        <View style={contentColumn}>
+        <View style={columnPad()}>
           <ScreenHeader
             title={title}
             onBack={() => router.back()}
@@ -577,7 +577,7 @@ function MealTemplateScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+          <View style={columnPad(16)}>
             {prefilled ? (
               <View
                 className="flex-row items-start rounded-2xl px-3.5 py-3 mb-3"
@@ -856,7 +856,7 @@ function MealTemplateScreen() {
           ]}
         >
           <AppBackgroundFill />
-          <View style={contentColumn}>
+          <View style={columnPad()}>
             <ScreenHeader
               title={t("templates.addItem")}
               onBack={closeSearch}
@@ -864,7 +864,7 @@ function MealTemplateScreen() {
               accessibilityLabel={t("common.close")}
             />
           </View>
-          <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+          <View style={columnPad(16)}>
             <View
               className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 mb-3"
               style={{ minHeight: 52 }}
@@ -905,7 +905,7 @@ function MealTemplateScreen() {
             initialNumToRender={12}
             ListHeaderComponent={
               pickerMode === "category" ? (
-                <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+                <View style={columnPad(16)}>
                   <Pressable
                     onPress={() => setPickerCategory(null)}
                     accessibilityRole="button"
@@ -929,7 +929,7 @@ function MealTemplateScreen() {
                   ) : null}
                 </View>
               ) : pickerMode === "browse" ? (
-                <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+                <View style={columnPad(16)}>
                   {pickerFavs.length > 0 ? (
                     <View style={{ marginBottom: 14 }}>
                       <Text
@@ -1009,13 +1009,13 @@ function MealTemplateScreen() {
               ) : null
             }
             renderItem={({ item }) => (
-              <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+              <View style={columnPad(16)}>
                 <FoodRow food={item} lang={lang} onPress={addFoodItem} />
               </View>
             )}
             ListEmptyComponent={
               pickerMode === "search" ? (
-                <View style={[{ paddingHorizontal: 16 }, contentColumn]}>
+                <View style={columnPad(16)}>
                   <EmptyState compact icon="search-outline" title={t("food.noResults")} />
                 </View>
               ) : null

@@ -81,7 +81,7 @@ function SourcesScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { contentColumn } = useLayout();
+  const { columnPad } = useLayout();
 
   return (
     <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
@@ -94,9 +94,8 @@ function SourcesScreen() {
 
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: 16,
           paddingBottom: insets.bottom + 32,
-          ...(contentColumn ?? {}),
+          ...columnPad(16),
         }}
         showsVerticalScrollIndicator={false}
       >
