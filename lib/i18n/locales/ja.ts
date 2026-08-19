@@ -338,6 +338,7 @@ const ja: TranslationSchema = {
     manageHint: "よく使う名前を保存しておくと、記録がワンタップで済みます。",
     empty: "保存されたお薬はまだありません。下から追加してください。",
     addSavedTitle: "お薬を追加",
+    editSavedTitle: "お薬を編集",
     savedNamePlaceholder: "お薬の名前",
     deleteSavedConfirm: "「{{name}}」を削除しますか？記録した内容は履歴に残ります。",
     duplicateName: "この名前のお薬はすでに保存されています。",

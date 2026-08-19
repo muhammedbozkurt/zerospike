@@ -12,10 +12,10 @@ import {
   upsertMedUse,
 } from "../../lib/db/meds";
 import type { SavedMed } from "../../lib/db/types";
-import { Field } from "../../components/ui";
-import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
+import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { SavedMedEditSheet } from "../../components/SavedMedEditSheet";
 import { useFeedback } from "../../components/Feedback";
-import { GradientCTA, withAlpha } from "../../components/rich";
+import { withAlpha } from "../../components/rich";
 import { HIT_TARGET, THEME } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 
@@ -35,15 +35,13 @@ export default function MedicationsScreen() {
   const [meds, setMeds] = useState<SavedMed[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  // The row currently showing its inline rename Field (the built-in cancel/blur
-  // commits it), mirroring app/settings/reminders.tsx's own "one open at a
-  // time" editingId pattern.
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-
-  const [adding, setAdding] = useState(false);
-  const [addName, setAddName] = useState("");
-  const [savingAdd, setSavingAdd] = useState(false);
+  // The one sheet used for both "add" and "edit": sheetTarget null means add
+  // (a blank form), set means edit (prefilled, plus the Sil action). Nothing
+  // is written to the DB until Kaydet is pressed inside the sheet - closing it
+  // any other way (X, backdrop, Vazgeç) discards whatever was typed.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetTarget, setSheetTarget] = useState<SavedMed | null>(null);
+  const [sheetSaving, setSheetSaving] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!activeProfile) {
@@ -70,26 +68,13 @@ export default function MedicationsScreen() {
   );
 
   function openEditor(row: SavedMed) {
-    if (editingId === row.id) {
-      void commitRename(row);
-      setEditingId(null);
-      return;
-    }
-    setEditingId(row.id);
-    setEditName(row.name);
+    setSheetTarget(row);
+    setSheetOpen(true);
   }
 
-  async function commitRename(row: SavedMed) {
-    const trimmed = editName.trim();
-    if (!trimmed || trimmed === row.name) return;
-    try {
-      await renameMed(row.id, trimmed);
-      await refresh();
-    } catch {
-      // The table's own UNIQUE(profile_id, name) constraint - the new name
-      // already belongs to another saved medication on this profile.
-      toast(t("meds.duplicateName"), "error");
-    }
+  function openAdd() {
+    setSheetTarget(null);
+    setSheetOpen(true);
   }
 
   async function confirmDelete(row: SavedMed) {
@@ -99,32 +84,53 @@ export default function MedicationsScreen() {
       destructive: true,
     });
     if (!ok) return;
-    if (editingId === row.id) setEditingId(null);
     await deleteSavedMed(row.id);
     await refresh();
   }
 
-  function resetAddForm() {
-    setAdding(false);
-    setAddName("");
-  }
-
-  async function submitAdd() {
-    if (!activeProfile || savingAdd) return;
-    const trimmed = addName.trim();
-    if (!trimmed) return;
-    setSavingAdd(true);
+  // Shared by both sheet modes: sheetTarget set = rename, null = add a new
+  // saved name. Stays open (sheetOpen untouched) on a duplicate-name failure
+  // so the user can see the toast and fix the name; otherwise closes on save.
+  async function saveSheet(name: string) {
+    if (sheetSaving) return;
+    setSheetSaving(true);
     try {
-      await upsertMedUse(activeProfile.id, trimmed, Date.now());
+      if (sheetTarget) {
+        if (name !== sheetTarget.name) {
+          try {
+            await renameMed(sheetTarget.id, name);
+          } catch {
+            // The table's own UNIQUE(profile_id, name) constraint - the new
+            // name already belongs to another saved medication on this profile.
+            toast(t("meds.duplicateName"), "error");
+            return;
+          }
+        }
+      } else {
+        if (!activeProfile) return;
+        await upsertMedUse(activeProfile.id, name, Date.now());
+      }
       await refresh();
-      resetAddForm();
+      setSheetOpen(false);
     } finally {
-      setSavingAdd(false);
+      setSheetSaving(false);
     }
   }
 
   return (
-    <SettingsScaffold title={t("meds.manageTitle")}>
+    <SettingsScaffold
+      title={t("meds.manageTitle")}
+      overlay={
+        <SavedMedEditSheet
+          visible={sheetOpen}
+          editingName={sheetTarget?.name ?? null}
+          saving={sheetSaving}
+          onClose={() => setSheetOpen(false)}
+          onSave={saveSheet}
+          onDelete={sheetTarget ? () => void confirmDelete(sheetTarget) : undefined}
+        />
+      }
+    >
       <View style={columnPad()}>
         <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
           {t("meds.manageHint")}
@@ -157,72 +163,33 @@ export default function MedicationsScreen() {
           </View>
         ) : (
           meds.map((row) => (
-            <React.Fragment key={row.id}>
-              <Row
-                icon="medical-outline"
-                label={row.name}
-                onPress={() => openEditor(row)}
-                onLongPress={() => void confirmDelete(row)}
-              />
-              {editingId === row.id ? (
-                <InlineConfigCard icon="medical-outline">
-                  <Field
-                    value={editName}
-                    onChangeText={setEditName}
-                    onBlur={() => void commitRename(row)}
-                    placeholder={t("meds.savedNamePlaceholder")}
-                    autoFocus
-                  />
-                </InlineConfigCard>
-              ) : null}
-            </React.Fragment>
+            <Row
+              key={row.id}
+              icon="medical-outline"
+              label={row.name}
+              onPress={() => openEditor(row)}
+              onLongPress={() => void confirmDelete(row)}
+            />
           ))
         )}
 
-        {adding ? (
-          <>
-            <InlineConfigCard icon="add-circle-outline">
-              <Field
-                value={addName}
-                onChangeText={setAddName}
-                placeholder={t("meds.savedNamePlaceholder")}
-                autoFocus
-              />
-            </InlineConfigCard>
-            <GradientCTA
-              label={t("meds.addSavedTitle")}
-              onPress={submitAdd}
-              disabled={savingAdd || !addName.trim()}
-              style={{ marginTop: 4, marginBottom: 10 }}
-            />
-            <Pressable
-              onPress={resetAddForm}
-              accessibilityRole="button"
-              className="items-center py-1 mb-2"
-              style={{ minHeight: HIT_TARGET }}
-            >
-              <Text style={{ color: THEME.muted, fontSize: 13 }}>{t("common.cancel")}</Text>
-            </Pressable>
-          </>
-        ) : (
-          <Pressable
-            onPress={() => setAdding(true)}
-            accessibilityRole="button"
-            accessibilityLabel={t("meds.addSavedTitle")}
-            className="flex-row items-center justify-center rounded-2xl py-3.5 mb-2 active:opacity-80"
-            style={{
-              borderWidth: 1,
-              borderStyle: "dashed",
-              borderColor: THEME.border,
-              minHeight: HIT_TARGET + 8,
-            }}
-          >
-            <Ionicons name="add" size={18} color={THEME.accent} />
-            <Text style={{ color: THEME.accent, marginLeft: 8, fontSize: 13, fontWeight: "700" }}>
-              {t("meds.addSavedTitle")}
-            </Text>
-          </Pressable>
-        )}
+        <Pressable
+          onPress={openAdd}
+          accessibilityRole="button"
+          accessibilityLabel={t("meds.addSavedTitle")}
+          className="flex-row items-center justify-center rounded-2xl py-3.5 mb-2 active:opacity-80"
+          style={{
+            borderWidth: 1,
+            borderStyle: "dashed",
+            borderColor: THEME.border,
+            minHeight: HIT_TARGET + 8,
+          }}
+        >
+          <Ionicons name="add" size={18} color={THEME.accent} />
+          <Text style={{ color: THEME.accent, marginLeft: 8, fontSize: 13, fontWeight: "700" }}>
+            {t("meds.addSavedTitle")}
+          </Text>
+        </Pressable>
       </View>
     </SettingsScaffold>
   );

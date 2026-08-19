@@ -338,6 +338,7 @@ const ar: TranslationSchema = {
     manageHint: "احفظ الأسماء التي تستخدمها كثيرًا حتى يصبح التسجيل بلمسة واحدة.",
     empty: "لا توجد أدوية محفوظة بعد. أضف دواءً من الأسفل.",
     addSavedTitle: "إضافة دواء",
+    editSavedTitle: "تعديل الدواء",
     savedNamePlaceholder: "اسم الدواء",
     deleteSavedConfirm: "هل تحذف \"{{name}}\"؟ تبقى السجلات التي سجّلتها به في دفترك.",
     duplicateName: "لديك دواء بهذا الاسم بالفعل.",

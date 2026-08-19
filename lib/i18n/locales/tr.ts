@@ -336,6 +336,7 @@ const tr = {
     manageHint: "Sık kullandığınız isimleri kaydedin, kayıt tek dokunuşla olsun.",
     empty: "Henüz kayıtlı ilaç yok. Aşağıdan ekleyin.",
     addSavedTitle: "İlaç ekle",
+    editSavedTitle: "İlacı düzenle",
     savedNamePlaceholder: "İlaç adı",
     deleteSavedConfirm: "\"{{name}}\" silinsin mi? Bu ilaçla kaydedilen kayıtlar günlüğünüzde kalır.",
     duplicateName: "Bu adda bir ilacınız zaten var.",

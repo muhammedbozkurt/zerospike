@@ -17,13 +17,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { THEME, RADIUS } from "../lib/theme/tokens";
-import { IconTile, GradientCTA, withAlpha } from "./rich";
+import { IconTile, GradientCTA } from "./rich";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { DirIcon } from "./DirIcon";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { useApp } from "../lib/store/AppContext";
 import { useFeedback } from "./Feedback";
-import { listSavedMeds, logMed, upsertMedUse } from "../lib/db/meds";
+import { logMed, upsertMedUse } from "../lib/db/meds";
+import { MedNamePicker } from "./MedNamePicker";
 import { logEvent } from "../lib/analytics";
 import { noteJournalActivity } from "../lib/services/notifications";
 import { formatTime, relativeDay } from "../lib/format";
@@ -76,16 +77,6 @@ export function QuickAddSheet({
   const [medAt, setMedAt] = useState<Date | null>(null);
   const [medTimePickerOpen, setMedTimePickerOpen] = useState(false);
   const [savingMed, setSavingMed] = useState(false);
-  // Saved-medication chips (schema v18 registry, lib/db/meds.ts): the profile's
-  // own list, most-recently-used first, tap-to-fill. Empty until the fetch
-  // below resolves, so a fresh list renders no chip row rather than a flash of
-  // placeholders (and stays empty for a profile that has never saved one).
-  const [medChips, setMedChips] = useState<string[]>([]);
-  // Whether the name field has already been pre-filled for THIS sheet open, so
-  // the chips effect below (which also re-runs on a profile switch while the
-  // sheet stays open) only ever pre-fills once and never overwrites what the
-  // user has since typed.
-  const prefilledMedNameRef = useRef(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -95,7 +86,6 @@ export function QuickAddSheet({
     setMedAt(null);
     setMedTimePickerOpen(false);
     setSavingMed(false);
-    prefilledMedNameRef.current = false;
     anim.setValue(0);
     Animated.timing(anim, {
       toValue: 1,
@@ -104,32 +94,6 @@ export function QuickAddSheet({
       useNativeDriver: true,
     }).start();
   }, [visible, openMedDirect, anim]);
-
-  // Kept separate from the reset effect above so a profile switch mid-session
-  // cannot restart the sheet's open animation - it only ever refills the chips
-  // (and, once, pre-fills the name field).
-  useEffect(() => {
-    if (!visible || !activeProfile) {
-      setMedChips([]);
-      return;
-    }
-    let cancelled = false;
-    void listSavedMeds(activeProfile.id).then((rows) => {
-      if (cancelled) return;
-      const names = rows.map((r) => r.name);
-      setMedChips(names);
-      // Pre-fills the last-used medication so logging a repeat entry needs no
-      // typing at all; the user can still clear or change it (see
-      // prefilledMedNameRef above for why this only ever fires once per open).
-      if (!prefilledMedNameRef.current && names.length > 0) {
-        prefilledMedNameRef.current = true;
-        setMedName(names[0]);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, activeProfile]);
 
   async function saveMed() {
     if (!activeProfile || savingMed) return;
@@ -331,64 +295,10 @@ export function QuickAddSheet({
                   </Text>
                 </View>
 
-                {medChips.length > 0 ? (
-                  // One-tap fill, never a submit: picking a chip only writes
-                  // the name field below, so the time/note the user already
-                  // set (or is about to) survives the tap.
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      flexWrap: "wrap",
-                      gap: 8,
-                      marginBottom: 10,
-                    }}
-                  >
-                    {medChips.map((name) => (
-                      <Pressable
-                        key={name}
-                        onPress={() => {
-                          hapticSelect();
-                          setMedName(name);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={name}
-                        style={{
-                          borderRadius: RADIUS.full,
-                          borderWidth: 1,
-                          borderColor: withAlpha(THEME.accent, 0.25),
-                          backgroundColor: THEME.glass,
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                        }}
-                      >
-                        <Text
-                          style={{ color: THEME.accent, fontSize: 12 }}
-                          numberOfLines={1}
-                        >
-                          {name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-
-                <TextInput
+                <MedNamePicker
+                  profileId={activeProfile?.id ?? null}
                   value={medName}
-                  onChangeText={setMedName}
-                  placeholder={t("meds.nameOptional")}
-                  placeholderTextColor={THEME.muted}
-                  accessibilityLabel={t("meds.nameOptional")}
-                  style={{
-                    borderRadius: RADIUS.md,
-                    borderWidth: 1,
-                    borderColor: THEME.border,
-                    backgroundColor: THEME.glass,
-                    paddingHorizontal: 14,
-                    paddingVertical: 12,
-                    color: THEME.ink,
-                    fontSize: 14,
-                    marginBottom: 12,
-                  }}
+                  onChange={setMedName}
                 />
 
                 <Pressable

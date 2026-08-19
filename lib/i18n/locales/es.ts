@@ -338,6 +338,7 @@ const es: TranslationSchema = {
     manageHint: "Guarde los nombres que usa a menudo, para que el registro sea de un toque.",
     empty: "Todavía no hay medicamentos guardados. Añada uno abajo.",
     addSavedTitle: "Añadir medicamento",
+    editSavedTitle: "Editar medicamento",
     savedNamePlaceholder: "Nombre del medicamento",
     deleteSavedConfirm: "¿Eliminar \"{{name}}\"? Las entradas registradas con él permanecen en su diario.",
     duplicateName: "Ya tiene un medicamento con este nombre.",

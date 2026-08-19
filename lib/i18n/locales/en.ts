@@ -338,6 +338,7 @@ const en: TranslationSchema = {
     manageHint: "Save the names you use often, so logging is one tap.",
     empty: "No saved medications yet. Add one below.",
     addSavedTitle: "Add medication",
+    editSavedTitle: "Edit medication",
     savedNamePlaceholder: "Medication name",
     deleteSavedConfirm: "Delete \"{{name}}\"? The entries you logged with it stay in your journal.",
     duplicateName: "You already have a medication with this name.",

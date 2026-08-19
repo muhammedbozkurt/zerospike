@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { updateMed, upsertMedUse } from "../lib/db/meds";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
+import { MedNamePicker } from "./MedNamePicker";
 import { useApp } from "../lib/store/AppContext";
 import { hapticSuccess } from "../lib/haptics";
 import { logEvent } from "../lib/analytics";
@@ -200,13 +201,10 @@ export function MedEditSheet({
                 onClose={() => setTimePickerOpen(false)}
               />
 
-              <TextInput
+              <MedNamePicker
+                profileId={activeProfile?.id ?? null}
                 value={name}
-                onChangeText={setName}
-                placeholder={t("meds.nameOptional")}
-                placeholderTextColor={THEME.muted}
-                accessibilityLabel={t("meds.nameOptional")}
-                style={[inputStyle, { marginBottom: 16 }]}
+                onChange={setName}
               />
 
               <FieldLabel>{t("common.note")}</FieldLabel>

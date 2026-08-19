@@ -338,6 +338,7 @@ const de: TranslationSchema = {
     manageHint: "Speichern Sie Namen, die Sie oft verwenden, damit die Erfassung nur einen Tipp braucht.",
     empty: "Noch keine gespeicherten Medikamente. Fügen Sie unten eines hinzu.",
     addSavedTitle: "Medikament hinzufügen",
+    editSavedTitle: "Medikament bearbeiten",
     savedNamePlaceholder: "Name des Medikaments",
     deleteSavedConfirm: "\"{{name}}\" löschen? Die damit erfassten Einträge bleiben in Ihrem Tagebuch.",
     duplicateName: "Sie haben bereits ein Medikament mit diesem Namen.",
