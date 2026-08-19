@@ -90,6 +90,10 @@ Notifications.setNotificationHandler({
  */
 const REMINDER_CHANNEL_ID = "reminders-v2";
 const LEGACY_REMINDER_CHANNEL_ID = "reminders";
+// High-priority channel for the low-value follow-up measurement reminder only
+// (see scheduleLowFollowup) - every other reminder stays on REMINDER_CHANNEL_ID.
+// Same immutability rule applies: importance/sound are fixed at creation.
+const FOLLOWUP_CHANNEL_ID = "followup-v1";
 
 /**
  * Ensures the Android reminders channel exists, named from i18n and carrying
@@ -114,6 +118,17 @@ export async function ensureAndroidChannel(): Promise<void> {
     lightColor: "#22d3ee",
     sound: "reminder.wav",
   });
+  // Separate MAX-importance (heads-up) channel for the low-value follow-up
+  // measurement reminder only - see scheduleLowFollowup. Not bypassDnd: it
+  // does not skip Do Not Disturb, only surfaces prominently when notifications
+  // are allowed through.
+  await Notifications.setNotificationChannelAsync(FOLLOWUP_CHANNEL_ID, {
+    name: i18n.t("notifications.channelName"),
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: "#22d3ee",
+    sound: "reminder.wav",
+  });
   // One-time-per-device sweep of the old sound-less channel. Harmless to
   // retry on every call (deleting an already-gone channel is a no-op), and
   // this is the only path that runs early enough (app launch) to also catch
@@ -128,6 +143,12 @@ export async function ensureAndroidChannel(): Promise<void> {
 const androidChannel =
   Platform.OS === "android" ? { channelId: REMINDER_CHANNEL_ID } : {};
 
+/** Android channel for the low-value follow-up measurement reminder only (see
+ *  FOLLOWUP_CHANNEL_ID / scheduleLowFollowup) - every other reminder keeps
+ *  androidChannel above. */
+const followupAndroidChannel =
+  Platform.OS === "android" ? { channelId: FOLLOWUP_CHANNEL_ID } : {};
+
 /**
  * Custom sound (assets/sounds/reminder.wav), wired through the
  * expo-notifications config plugin's `sounds` array. iOS reads the filename
@@ -138,21 +159,31 @@ const androidChannel =
  */
 const iosSound = Platform.OS === "ios" ? { sound: "reminder.wav" as const } : {};
 
-// iOS Time-Sensitive interruption level: a time-based reminder breaks through
-// Focus / silent and surfaces prominently, while staying a NEUTRAL reminder.
-// This is NOT a critical alert (no com.apple.developer.usernotifications.critical
+// iOS Time-Sensitive interruption level: breaks through Focus / silent and
+// surfaces prominently, while staying a NEUTRAL reminder. This is NOT a
+// critical alert (no com.apple.developer.usernotifications.critical
 // entitlement - that carries medical-device risk and is deliberately avoided).
 // Time-Sensitive needs the com.apple.developer.usernotifications.time-sensitive
-// entitlement to break Focus; without it iOS silently downgrades to 'active', so
-// adding this field is always safe. See docs/native-live-surfaces.md.
+// entitlement to break Focus; without it iOS silently downgrades to 'active'.
+// Scoped to ONLY the low-value follow-up measurement reminder (see
+// lowFollowupExtras below) - every other reminder deliberately stays at the
+// default level. See docs/native-live-surfaces.md.
 const IOS_TIME_SENSITIVE =
   Platform.OS === "ios" ? { interruptionLevel: "timeSensitive" as const } : {};
 
-/** Content extras for a time-based reminder (Android high-importance channel +
- *  the custom sound + iOS Time-Sensitive). Used by the actionable reminders;
- *  the weekly nudge and other non-time-sensitive ones add androidChannel and
- *  iosSound directly instead (see each scheduler below). */
-const reminderExtras = { ...androidChannel, ...iosSound, ...IOS_TIME_SENSITIVE };
+/** Content extras for a regular scheduled reminder (Android reminders-v2
+ *  channel + the custom sound). Used by most schedulers below; the low-value
+ *  follow-up measurement reminder uses lowFollowupExtras instead. */
+const reminderExtras = { ...androidChannel, ...iosSound };
+
+/** Content extras for the low-value follow-up measurement reminder only: its
+ *  own high-priority Android channel (FOLLOWUP_CHANNEL_ID) + the custom sound
+ *  + iOS Time-Sensitive. No other reminder uses this. */
+const lowFollowupExtras = {
+  ...followupAndroidChannel,
+  ...iosSound,
+  ...IOS_TIME_SENSITIVE,
+};
 
 /**
  * Route hint carried in every notification's content.data. app/_layout.tsx reads
@@ -1339,7 +1370,7 @@ export async function scheduleLowFollowup(): Promise<boolean> {
       title: i18n.t("notifications.lowFollowTitle"),
       body: i18n.t("notifications.lowFollowBody"),
       data: { route: "lowFollowup" satisfies NotificationRoute },
-      ...reminderExtras,
+      ...lowFollowupExtras,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -1409,7 +1440,7 @@ export async function rescheduleForLanguageChange(): Promise<void> {
           title: i18n.t("notifications.lowFollowTitle"),
           body: i18n.t("notifications.lowFollowBody"),
           data: { route: "lowFollowup" satisfies NotificationRoute },
-          ...reminderExtras,
+          ...lowFollowupExtras,
         }
       );
       if (ok) kept.lowFollowup = ends.lowFollowup;
