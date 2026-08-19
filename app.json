@@ -18,11 +18,6 @@
       "ja": "./ios-locales/ja.json"
     },
     "backgroundColor": "#000000",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#04161d"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -169,7 +164,18 @@
             }
           ]
         }
-      ]
+      ],
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#04161d"
+        }
+      ],
+      "expo-sqlite",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
