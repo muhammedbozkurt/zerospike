@@ -9,16 +9,19 @@
 
 import { getActiveLang } from "./lang";
 
+// The Arabic bundle is written with Western digits throughout, but Intl's
+// default numbering system for "ar" is Eastern Arabic (١٢٣), so a screen would
+// mix the two: a translated label next to an Intl-formatted number. The -u-nu-latn
+// extension pins the digits without touching any other Arabic convention.
+function localeTagFor(lang: string): string {
+  return lang.slice(0, 2) === "ar" ? "ar-u-nu-latn" : lang;
+}
+
 /** The BCP-47 tag every Intl call in the app formats with. Exported because
  *  lib/glucose formats the one number that matters most and must not resolve
  *  the locale differently from every other surface. */
 export function formatLocale(): string {
-  const lang = getActiveLang();
-  // The Arabic bundle is written with Western digits throughout, but Intl's
-  // default numbering system for "ar" is Eastern Arabic (١٢٣), so a screen would
-  // mix the two: a translated label next to an Intl-formatted number. The -u-nu-latn
-  // extension pins the digits without touching any other Arabic convention.
-  return lang.slice(0, 2) === "ar" ? "ar-u-nu-latn" : lang;
+  return localeTagFor(getActiveLang());
 }
 
 /** Languages that write the decimal mark as a comma. Used in the no-Intl
@@ -36,6 +39,23 @@ export function formatTime(iso: string): string {
   const d = new Date(iso);
   try {
     return d.toLocaleTimeString(formatLocale(), { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return `${two(d.getHours())}:${two(d.getMinutes())}`;
+  }
+}
+
+/**
+ * A clock time (HH:MM), formatted against an EXPLICIT language rather than the
+ * app's ambient active-language state. For a surface that renders outside the
+ * app's own JS lifecycle - the Android widget's headless task handler wakes on
+ * its own schedule and may never have run the app's i18n init in that process -
+ * `getActiveLang()` cannot be trusted there. Callers instead pass the language
+ * already carried in their own data snapshot (see LiveData.lang).
+ */
+export function formatTimeForLang(ms: number, lang: string): string {
+  const d = new Date(ms);
+  try {
+    return d.toLocaleTimeString(localeTagFor(lang), { hour: "2-digit", minute: "2-digit" });
   } catch {
     return `${two(d.getHours())}:${two(d.getMinutes())}`;
   }

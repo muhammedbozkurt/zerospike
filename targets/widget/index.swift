@@ -111,6 +111,15 @@ struct ZerospikeProvider: TimelineProvider {
       let date = Calendar.current.date(byAdding: .minute, value: minute, to: now) ?? now
       entries.append(ZerospikeEntry(date: date, data: data))
     }
+    // The countdown pill's `Text(due, style: .timer)` has no "stop": once `due`
+    // passes it counts up, and the pill only disappears once an entry with
+    // `date >= due` is selected (the `due > entry.date` guard in the view). On
+    // the minute-boundary entries above that could be up to 60s after `due`. An
+    // entry landing on `due` itself closes that window immediately.
+    if let due = data?.nextReminderDate, due > now, due < (entries.last?.date ?? now) {
+      entries.append(ZerospikeEntry(date: due, data: data))
+      entries.sort { $0.date < $1.date }
+    }
     completion(Timeline(entries: entries, policy: .atEnd))
   }
 }

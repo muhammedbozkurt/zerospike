@@ -37,6 +37,14 @@ sessiz modu deler, sistem erteleme/durdurma arayuzu.
   kapatilinca alarm iptal edilir, bildirim planlamasina geri doner.
 - Onboarding'e eklenmez (sadelik); kesif Hatirlatici Merkezi'nden.
 
+## Ek aday: tokluk sayaci AlarmKit timer'i
+AlarmKit alarm yaninda TIMER da destekler. Tokluk sayaci kullanici-baslatmali
+sabit sureli bir zamanlayici oldugundan AlarmKit timer'ina birebir adaydir:
+sure dolunca gercek alarm arayuzu, Live Activity'ye ek degil YERINE degil,
+birlikte degerlendirilir (LA gorsel, timer ses/tam-ekran). Ayni "Alarm olarak
+cal" opt-in mantigina baglanir; deger-tetiklemeli olmadigi icin regulasyon
+cizgisine takilmaz. 2.2.0 tasariminda karara baglanacak.
+
 ## Teknik plan
 - Yeni native modul: modules/zerospike-alarmkit (expo-modules-core Swift moduli;
   zerospike-live-activity ornek alinir). API: isAvailable(), getAuthorization(),

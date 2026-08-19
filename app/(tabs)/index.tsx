@@ -499,12 +499,17 @@ export default function DashboardScreen() {
 
   // Coming back to the foreground: re-read the timer (it may have elapsed while
   // backgrounded; the service returns null for an elapsed end, which disarms).
+  // Also re-publish the live-surface snapshot right away rather than waiting on
+  // dataVersion: the widget/Live Activity/watch can otherwise keep showing an
+  // elapsed reminder for a while after the app itself has already moved on.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") refreshPostMealTimer();
+      if (state !== "active") return;
+      refreshPostMealTimer();
+      if (profileId) void syncLiveData(profileId, glucoseUnit);
     });
     return () => sub.remove();
-  }, [refreshPostMealTimer]);
+  }, [refreshPostMealTimer, profileId, glucoseUnit]);
 
   // Restore the persisted sync preference, and silently re-sync on open so new
   // Health readings keep flowing in without re-toggling the switch. Auto-sync is

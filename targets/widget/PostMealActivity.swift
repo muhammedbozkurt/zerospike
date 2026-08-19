@@ -13,6 +13,10 @@ import WidgetKit
 @available(iOS 16.2, *)
 struct PostMealAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
+    /// When the timer was armed. Kept in sync with the module's own copy of
+    /// this struct (modules/zerospike-live-activity/ios) - ActivityKit decodes
+    /// by field name across the two targets, so they must match exactly.
+    var startedAt: Date
     /// When the post-meal check is due.
     var endsAt: Date
     /// Last logged reading, already formatted in the user's unit (or nil).
@@ -30,6 +34,16 @@ private let accent = Color(red: 0.1804, green: 0.9020, blue: 1.0)      // #2ee6f
 private let ink = Color(red: 0.9176, green: 0.9647, blue: 0.9804)      // #eaf6fa
 private let muted = Color(red: 0.5373, green: 0.6392, blue: 0.6902)    // #89a3b0
 private let background = Color(red: 0.0314, green: 0.0549, blue: 0.0784) // #080e14
+
+/// A closed range `Text(timerInterval:)` can render safely, even if a
+/// persisted state ever violated the start-before-end invariant (never
+/// expected in practice: the JS side always derives `endsAt` as `startedAt`
+/// plus a window of at least a minute). `ClosedRange` traps if its lower bound
+/// is after its upper one.
+@available(iOS 16.2, *)
+private func timerRange(_ state: PostMealAttributes.ContentState) -> ClosedRange<Date> {
+  min(state.startedAt, state.endsAt)...state.endsAt
+}
 
 /// The timer glyph on its accent ground, shared by the lock-screen card and the
 /// Dynamic Island's expanded leading region.
@@ -88,14 +102,16 @@ struct PostMealActivityWidget: Widget {
             .minimumScaleFactor(0.8)
           // Capped, not fixed: a timer Text asks for the widest string it could
           // ever show, and unchecked it would crowd the reading pill out of the
-          // row. The cap still fits "1:59:59" at this size.
-          Text(context.state.endsAt, style: .timer)
+          // row. The cap still fits "1:59:59" at this size. Bounded to
+          // startedAt...endsAt (rather than the open-ended `.timer` style) so it
+          // freezes at 0:00 once due, instead of counting up past it.
+          Text(timerInterval: timerRange(context.state), countsDown: true)
             .font(.system(size: 22, weight: .bold, design: .rounded))
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             .frame(maxWidth: 96, alignment: .leading)
-            .foregroundColor(accent)
+            .foregroundColor(context.isStale ? muted : accent)
         }
 
         Spacer(minLength: 8)
@@ -108,10 +124,15 @@ struct PostMealActivityWidget: Widget {
       .padding(.vertical, 12)
       .activityBackgroundTint(background)
       .activitySystemActionForegroundColor(accent)
+      // Once the countdown has actually elapsed (staleDate passed - see the
+      // module's `start`), the whole card fades: the same "done" look everywhere
+      // this activity renders, with no new copy needed.
+      .opacity(context.isStale ? 0.55 : 1)
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
           timerBadge(size: 30, corner: 10, glyph: 14)
+            .opacity(context.isStale ? 0.55 : 1)
         }
         DynamicIslandExpandedRegion(.center) {
           Text(context.attributes.title)
@@ -119,19 +140,21 @@ struct PostMealActivityWidget: Widget {
             .foregroundColor(muted)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
+            .opacity(context.isStale ? 0.55 : 1)
         }
         DynamicIslandExpandedRegion(.trailing) {
           // 64pt only fits "59:59"; a fresh two-hour timer reads "1:59:59" and
           // was losing its tail. 72pt covers that, the scale factor covers the
-          // rest.
-          Text(context.state.endsAt, style: .timer)
+          // rest. Bounded to startedAt...endsAt so it freezes at 0:00 instead of
+          // counting up past it.
+          Text(timerInterval: timerRange(context.state), countsDown: true)
             .font(.system(size: 17, weight: .bold, design: .rounded))
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             .multilineTextAlignment(.trailing)
             .frame(minWidth: 72, alignment: .trailing)
-            .foregroundColor(accent)
+            .foregroundColor(context.isStale ? muted : accent)
         }
         DynamicIslandExpandedRegion(.bottom) {
           if let reading = context.state.lastReading {
@@ -140,27 +163,30 @@ struct PostMealActivityWidget: Widget {
               Spacer(minLength: 0)
             }
             .padding(.top, 2)
+            .opacity(context.isStale ? 0.55 : 1)
           }
         }
       } compactLeading: {
         Image(systemName: "timer")
           .font(.system(size: 13, weight: .semibold))
-          .foregroundColor(accent)
+          .foregroundColor(context.isStale ? muted : accent)
       } compactTrailing: {
         // The compact region is tight, so this stays the narrowest box that can
         // still print "1:59:59" - and scales rather than clips if it cannot.
-        Text(context.state.endsAt, style: .timer)
+        // Bounded to startedAt...endsAt, same reasoning as the two Text views
+        // above.
+        Text(timerInterval: timerRange(context.state), countsDown: true)
           .font(.system(size: 13, weight: .semibold, design: .rounded))
           .monospacedDigit()
           .lineLimit(1)
           .minimumScaleFactor(0.6)
           .multilineTextAlignment(.trailing)
           .frame(maxWidth: 54)
-          .foregroundColor(accent)
+          .foregroundColor(context.isStale ? muted : accent)
       } minimal: {
         Image(systemName: "timer")
           .font(.system(size: 13, weight: .semibold))
-          .foregroundColor(accent)
+          .foregroundColor(context.isStale ? muted : accent)
       }
       // The hairline around the island while the activity is live: the brand
       // cyan, so the pill reads as ours at a glance.

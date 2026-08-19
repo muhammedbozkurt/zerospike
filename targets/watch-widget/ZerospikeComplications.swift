@@ -70,10 +70,21 @@ struct ComplicationProvider: TimelineProvider {
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<ComplicationEntry>) -> Void) {
-    let entry = ComplicationEntry(date: Date(), data: LiveDataStore.read())
+    let now = Date()
+    let data = LiveDataStore.read()
+    let entry = ComplicationEntry(date: now, data: data)
     // The watch app calls WidgetCenter.reloadAllTimelines() on every incoming
     // applicationContext, so this policy is only a safety net between pushes.
-    let nextRefresh = Date().addingTimeInterval(15 * 60)
+    // When a reminder is due sooner than that, refresh right at `due` instead:
+    // the fresh entry's own `date` then fails the `due > entry.date` guard
+    // below immediately, dropping the countdown pill (and its open-ended
+    // `Text(due, style: .timer)`, which would otherwise count up past it)
+    // instead of leaving it up to 15 more minutes.
+    let fallback = now.addingTimeInterval(15 * 60)
+    var nextRefresh = fallback
+    if let due = data?.nextReminderDate, due > now, due < fallback {
+      nextRefresh = due
+    }
     completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
   }
 }

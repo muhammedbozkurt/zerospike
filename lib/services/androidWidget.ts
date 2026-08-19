@@ -10,6 +10,7 @@ import { readLiveData, ANDROID_QUICK_ADD_WIDGET_NAME, type LiveData } from "./li
 import { MGDL_PER_MMOL } from "../glucose";
 import { GLUCOSE_RICH, THEME } from "../theme/tokens";
 import { VERY_HIGH_MGDL } from "../glucose";
+import { formatTimeForLang } from "../format";
 
 /**
  * The Android home-screen widgets: the glance widget (last reading + time left
@@ -138,15 +139,20 @@ function unitLabel(data: LiveData | null): string {
   return data?.unit === "mmol" ? "mmol/L" : "mg/dL";
 }
 
-/** "1:23" / "12:04" style remaining time; empty when nothing is pending. */
-function remainingLabel(data: LiveData | null, now = Date.now()): string {
+/**
+ * The next reminder's target clock time (e.g. "12:30"), in the snapshot's own
+ * language - an ABSOLUTE time, not a countdown. Android only redraws this
+ * widget periodically (see app.json's updatePeriodMillis, and the OS itself
+ * floors that period at 30 min regardless of what is requested), so the view
+ * is a static bitmap of whatever text was last built: a "X min left" countdown
+ * would read wrong for most of that window, including after the reminder time
+ * has already passed and the widget has not redrawn yet. A clock time stays
+ * true no matter how long it has sat unrendered.
+ */
+function nextReminderTimeLabel(data: LiveData | null, now = Date.now()): string {
   const at = data?.nextReminderAt;
   if (at == null || at <= now) return "";
-  const totalMinutes = Math.floor((at - now) / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  return hours > 0 ? `${hours}:${pad(minutes)}` : `${minutes}`;
+  return formatTimeForLang(at, data?.lang ?? "en");
 }
 
 /** Builds the glance widget tree from a snapshot. Pure, so it is easy to reason
@@ -155,7 +161,7 @@ export function buildZerospikeWidget(
   data: LiveData | null,
   size?: WidgetSize
 ): React.JSX.Element {
-  const remaining = remainingLabel(data);
+  const remaining = nextReminderTimeLabel(data);
   const s = sizesFor(size);
   const metaText =
     data?.avgGlucoseMgdl == null
@@ -233,7 +239,7 @@ export function buildZerospikeWidget(
             maxLines: 1,
             style: { fontSize: s.label, fontWeight: "bold", color: THEME.muted as ColorProp },
           }),
-          // The countdown as its own pill, matching the iOS small family: the
+          // The target time as its own pill, matching the iOS small family: the
           // fill and the hairline are the accent pre-mixed over the ground (see
           // TILE), because rgba is not parseable here.
           React.createElement(

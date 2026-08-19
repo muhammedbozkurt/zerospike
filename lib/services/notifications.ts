@@ -1103,6 +1103,7 @@ async function schedulePostMealAt(opts: {
   const snapshot = await readLiveData();
   startPostMealActivity({
     endsAt,
+    startedAt,
     title: i18n.t("widget.timerTitle"),
     lastReading:
       snapshot?.lastGlucoseMgdl != null
@@ -1173,10 +1174,12 @@ async function readPostMealTimerProfile(): Promise<string | null> {
 
 /**
  * The countdown reached its end: clear the persisted timer and take the Live
- * Activity down. Nothing ended it before, so the lock-screen countdown sat at
- * 00:00 until iOS eventually expired it hours later - or until the user armed
- * another timer. The notification itself has already fired, so it is not
- * cancelled here.
+ * Activity down. Nothing else ends it: the `timerInterval` freezes the display
+ * at 0:00 and `staleDate` only dims it (see PostMealActivity.swift), it does
+ * not dismiss it, so without this call the card would sit on the lock screen
+ * frozen and faded until the user opened the app, or the OS eventually expired
+ * it hours later, or another timer got armed. The notification itself has
+ * already fired, so it is not cancelled here.
  */
 export async function completePostMealTimer(): Promise<void> {
   try {

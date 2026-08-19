@@ -15,6 +15,7 @@ interface LiveActivityNativeModule {
   isAvailable(): boolean;
   start(
     endsAtMs: number,
+    startedAtMs: number,
     title: string,
     lastReading: string | null,
     unitLabel: string
@@ -37,11 +38,15 @@ export function isLiveActivityAvailable(): boolean {
 }
 
 /**
- * Shows (or updates) the post-meal countdown. `endsAt` is epoch ms, matching the
- * timer the notification service persists. Returns whether anything was shown.
+ * Shows (or updates) the post-meal countdown. `endsAt` / `startedAt` are epoch
+ * ms, matching the timer the notification service persists - both ride along
+ * so the native side can render a bounded `timerInterval` (freezes at 0:00)
+ * instead of an open-ended one (counts up past it). Returns whether anything
+ * was shown.
  */
 export function startPostMealActivity(options: {
   endsAt: number;
+  startedAt: number;
   title: string;
   lastReading?: string | null;
   unitLabel: string;
@@ -50,6 +55,7 @@ export function startPostMealActivity(options: {
     return (
       native?.start(
         options.endsAt,
+        options.startedAt,
         options.title,
         options.lastReading ?? null,
         options.unitLabel

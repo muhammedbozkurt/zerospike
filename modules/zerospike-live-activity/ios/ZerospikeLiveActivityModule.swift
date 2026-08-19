@@ -16,6 +16,11 @@ import WidgetKit
 @available(iOS 16.2, *)
 struct PostMealAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
+    /// When the timer was armed. Mirrored from the JS side (lib/postMealTimer.ts)
+    /// so the widget extension can render a bounded `timerInterval` that freezes
+    /// at 0:00 once `endsAt` passes, instead of the open-ended `.timer` style
+    /// (which has no "stop" and counts up past it).
+    var startedAt: Date
     var endsAt: Date
     var lastReading: String?
     var unitLabel: String
@@ -36,29 +41,37 @@ public class ZerospikeLiveActivityModule: Module {
       return false
     }
 
-    /// Starts (or updates) the post-meal countdown. `endsAtMs` is epoch ms, the
-    /// same clock the JS timer uses.
-    Function("start") { (endsAtMs: Double, title: String, lastReading: String?, unitLabel: String) -> Bool in
+    /// Starts (or updates) the post-meal countdown. `endsAtMs` / `startedAtMs`
+    /// are epoch ms, the same clock the JS timer uses.
+    Function("start") { (endsAtMs: Double, startedAtMs: Double, title: String, lastReading: String?, unitLabel: String) -> Bool in
       guard #available(iOS 16.2, *) else { return false }
       guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
 
+      let endsAt = Date(timeIntervalSince1970: endsAtMs / 1000)
       let state = PostMealAttributes.ContentState(
-        endsAt: Date(timeIntervalSince1970: endsAtMs / 1000),
+        startedAt: Date(timeIntervalSince1970: startedAtMs / 1000),
+        endsAt: endsAt,
         lastReading: lastReading,
         unitLabel: unitLabel
       )
+      // Stale from the instant the countdown reaches zero: the widget extension
+      // dims the card on `context.isStale` instead of leaving it looking live
+      // (and, before the timerInterval change below, counting up past 0:00)
+      // until this module's own `end()` call - or an app foreground - takes it
+      // down.
+      let content = ActivityContent(state: state, staleDate: endsAt)
 
       // One activity at a time: re-arming the timer updates the running one
       // rather than stacking a second countdown on the lock screen.
       if let running = Activity<PostMealAttributes>.activities.first {
-        Task { await running.update(using: state) }
+        Task { await running.update(content) }
         return true
       }
 
       do {
         _ = try Activity.request(
           attributes: PostMealAttributes(title: title),
-          contentState: state,
+          content: content,
           pushType: nil
         )
         return true
