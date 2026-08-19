@@ -58,6 +58,10 @@ import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { noteJournalActivity } from "../../lib/services/notifications";
+import {
+  injectionMapFlipNoticeSeen,
+  markInjectionMapFlipNoticeSeen,
+} from "../../lib/services/injectionMapNotice";
 import { formatTime, num, relativeDay } from "../../lib/format";
 import {
   groupInjectionsByDay,
@@ -293,6 +297,29 @@ export default function InjectionScreen() {
     setSegment("save");
     router.setParams({ compose: "" });
   }, [params.compose, router]);
+
+  // One-time notice for the injection map's self-view -> observer-view flip
+  // (components/InjectionBodyMap.tsx SIDE CONVENTION note): a profile that
+  // already has injection history had the old left-on-left layout memorised,
+  // so opening MAP shows one short toast the first time, then never again (flag
+  // in lib/services/injectionMapNotice.ts). A fresh install has no history to
+  // reorient from, so `history` staying empty just keeps this effect waiting -
+  // checkedRef is only latched once a real (loaded, non-empty) history read has
+  // decided the outcome, so a profile that logs its first entry later still
+  // gets evaluated on its next visit to MAP instead of being silently skipped.
+  const flipNoticeChecked = useRef(false);
+  useEffect(() => {
+    if (segment !== "map") return;
+    if (flipNoticeChecked.current) return;
+    if (!historyLoaded || history.length === 0) return;
+    if (isScreenshotMode()) return;
+    flipNoticeChecked.current = true;
+    (async () => {
+      if (await injectionMapFlipNoticeSeen()) return;
+      toast(t("injectionMap.flipNotice"), "info");
+      await markInjectionMapFlipNoticeSeen();
+    })();
+  }, [segment, historyLoaded, history, t, toast]);
 
   // Store-screenshot navigation: ?segment=map opens the heat map (the 02-bodymap
   // shot). Only honoured behind the double lock; ignored in a normal build.

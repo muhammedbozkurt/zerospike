@@ -89,13 +89,21 @@ const VB_ASPECT = VB_W / VB_H;
  * The eight regions, hand-fitted to BODY_PATH so no box crosses the silhouette
  * edge and no two boxes touch.
  *
- * SIDE CONVENTION - SELF VIEW. The silhouette IS the user, seen the way they
- * look down at their own body: the user's own LEFT side is drawn on the LEFT of
- * the picture. Nothing is mirrored anywhere, so a box's position and its label
- * always name the SAME thing, the user's own body side. The buttocks sit on the
- * far face of that same body and follow the same rule - there is no second flip
- * for them. injectionMap.selfViewNote says this in words under the map, and the
- * two side badges mark it on the picture itself.
+ * SIDE CONVENTION - OBSERVER VIEW. The silhouette faces the user, the way
+ * another person standing opposite them would: the user's own LEFT side is
+ * drawn on the RIGHT of the picture (and vice versa) - a full mirror flip of a
+ * self-view body map. Every region keeps its SEMANTIC site id from
+ * lib/db/types.ts (thigh_left is still, and only ever, the user's own left
+ * thigh - stored rows are never touched by this), but its box below sits at its
+ * mirror partner's SCREEN position: abdomen_left draws in what used to be
+ * abdomen_right's box, and so on for every left/right pair. So a box's position
+ * and its label deliberately do NOT name the same physical side any more -
+ * that split is the whole point of an observer-view diagram. The buttocks sit
+ * on the far face of that same body and follow the identical left/right screen
+ * flip - there is no second flip for them. injectionMap.selfViewNote says this
+ * in words under the map, and the two side badges mark the user's actual side
+ * on the picture, each now pinned to the same screen half as its own left/right
+ * boxes (badges and boxes moved together - see the `badges` useMemo below).
  *
  * Buttocks are drawn on the hip line of the single silhouette, the usual
  * simplification on a one-face injection diagram, and carry surface: "back" so
@@ -106,25 +114,32 @@ const VB_ASPECT = VB_W / VB_H;
  * silhouette edge is 1.72 units (upper arm) and the tightest gap between two
  * boxes is 4 units. The arm boxes in particular are narrow because the limb
  * tapers - their bottom end has to fit the arm where it is NARROWEST, not where
- * the plate starts.
+ * the plate starts. (Both facts are about the physical boxes, which are exact
+ * left/right mirror pairs - relabelling which site sits in which box does not
+ * change either measurement.)
  */
 const REGIONS: readonly Region[] = [
-  { site: "abdomen_left", layout: "row", surface: "front", box: [90.5, 202, 26.5, 26], rx: 8 },
-  { site: "abdomen_right", layout: "row", surface: "front", box: [123, 202, 26.5, 26], rx: 8 },
-  { site: "thigh_left", layout: "column", surface: "front", box: [92.5, 265, 19, 46], rx: 9.5 },
-  { site: "thigh_right", layout: "column", surface: "front", box: [128.5, 265, 19, 46], rx: 9.5 },
-  { site: "arm_left", layout: "column", surface: "front", box: [62.5, 152.5, 9, 32], rx: 4.5 },
-  { site: "arm_right", layout: "column", surface: "front", box: [168.5, 152.5, 9, 32], rx: 4.5 },
-  { site: "buttock_left", layout: "grid", surface: "back", box: [87.5, 232, 26, 28], rx: 8 },
-  { site: "buttock_right", layout: "grid", surface: "back", box: [126.5, 232, 26, 28], rx: 8 },
+  { site: "abdomen_left", layout: "row", surface: "front", box: [123, 202, 26.5, 26], rx: 8 },
+  { site: "abdomen_right", layout: "row", surface: "front", box: [90.5, 202, 26.5, 26], rx: 8 },
+  { site: "thigh_left", layout: "column", surface: "front", box: [128.5, 265, 19, 46], rx: 9.5 },
+  { site: "thigh_right", layout: "column", surface: "front", box: [92.5, 265, 19, 46], rx: 9.5 },
+  { site: "arm_left", layout: "column", surface: "front", box: [168.5, 152.5, 9, 32], rx: 4.5 },
+  { site: "arm_right", layout: "column", surface: "front", box: [62.5, 152.5, 9, 32], rx: 4.5 },
+  { site: "buttock_left", layout: "grid", surface: "back", box: [126.5, 232, 26, 28], rx: 8 },
+  { site: "buttock_right", layout: "grid", surface: "back", box: [87.5, 232, 26, 28], rx: 8 },
 ];
 
 /**
  * Invisible touch-target padding, rebalanced for the boxes above. Pads are
- * viewBox-LITERAL directions, not anatomical ones. 44pt is 42.24 viewBox units
- * at the narrowest supported width (winW 320 -> svgW 250), and every padded rect
- * was checked against every other box and padded rect: no pair overlaps and the
- * tightest gap is 1 unit.
+ * viewBox-LITERAL directions, not anatomical ones, so each site's left/right
+ * pair was mirrored along with its box above: a site whose box moved from the
+ * screen's left half to its right half gets its own left/right pad values
+ * swapped too, so the padding still points outward (onto empty background)
+ * and inward (toward the torso) exactly as before - only the site LABEL on
+ * each physical pad shape changed, not the shape itself. 44pt is 42.24
+ * viewBox units at the narrowest supported width (winW 320 -> svgW 250), and
+ * every padded rect was checked against every other box and padded rect: no
+ * pair overlaps and the tightest gap is 1 unit.
  *
  *  - arm (9 x 32 drawn): 26 units outward onto empty background, 8 inward, and
  *    4/7 vertically -> 43 x 43 units, over 44pt both ways. The outward pad stops
@@ -146,14 +161,14 @@ interface HitPad {
 }
 
 const HIT_PAD: Partial<Record<InjectionSite, HitPad>> = {
-  arm_left: { left: 26, right: 8, top: 4, bottom: 7 },
-  arm_right: { left: 8, right: 26, top: 4, bottom: 7 },
-  thigh_left: { left: 17, right: 7 },
-  thigh_right: { left: 7, right: 17 },
-  abdomen_left: { left: 9, right: 2.5, top: 14, bottom: 2 },
-  abdomen_right: { left: 2.5, right: 9, top: 14, bottom: 2 },
-  buttock_left: { left: 14, right: 3, bottom: 2 },
-  buttock_right: { left: 3, right: 14, bottom: 2 },
+  arm_left: { left: 8, right: 26, top: 4, bottom: 7 },
+  arm_right: { left: 26, right: 8, top: 4, bottom: 7 },
+  thigh_left: { left: 7, right: 17 },
+  thigh_right: { left: 17, right: 7 },
+  abdomen_left: { left: 2.5, right: 9, top: 14, bottom: 2 },
+  abdomen_right: { left: 9, right: 2.5, top: 14, bottom: 2 },
+  buttock_left: { left: 3, right: 14, bottom: 2 },
+  buttock_right: { left: 14, right: 3, bottom: 2 },
 };
 
 /** The region's box, grown by HIT_PAD if it has one; otherwise the box itself
@@ -484,7 +499,9 @@ const SURFACE_KEY_MAX_W = 96;
  * grows, 4.1 units above the padded arm hit rect and 8.1 above the arm plate at
  * that same width (both open up as the map grows, since the badge height is a
  * fixed pt value), and clear of the frequency legend column on the left at every
- * width down to winW 320.
+ * width down to winW 320. Both anchors are still just x=56 and x=184 under the
+ * observer-view flip; only WHICH badge key (sideLeft/sideRight) is assigned to
+ * which anchor changed - see the `badges` useMemo below.
  */
 const BADGE_INNER_X = 56;
 const BADGE_TOP_Y = 130;
@@ -562,15 +579,25 @@ export function InjectionBodyMap({
     };
     // Physical anchor, pre-swapped for RTL: RN flips left<->right automatically
     // (swapLeftAndRightInRTL), so writing the opposite key here cancels that
-    // flip and the badge lands on the same physical side as LTR.
+    // flip and the badge lands on the same physical side as LTR - this trick is
+    // unchanged by the observer-view flip below, it still guarantees each
+    // badge's PHYSICAL position is identical whether I18nManager.isRTL is true
+    // or false.
+    //
+    // OBSERVER VIEW: sideLeft names the user's own left side, which the
+    // mirrored silhouette (see the SIDE CONVENTION note above REGIONS) now
+    // draws on the RIGHT of the picture, so sideLeft takes the anchor formula
+    // that used to belong to sideRight, and sideRight takes sideLeft's old
+    // formula. Only which KEY owns which formula moved; the formulas
+    // themselves, and the RTL-cancelling trick inside them, are untouched.
     return [
       {
         key: "sideLeft" as const,
-        style: { ...base, [rtl ? "left" : "right"]: svgW - BADGE_INNER_X * scale },
+        style: { ...base, [rtl ? "right" : "left"]: (VB_W - BADGE_INNER_X) * scale },
       },
       {
         key: "sideRight" as const,
-        style: { ...base, [rtl ? "right" : "left"]: (VB_W - BADGE_INNER_X) * scale },
+        style: { ...base, [rtl ? "left" : "right"]: svgW - BADGE_INNER_X * scale },
       },
     ];
   }, [svgW, rtl]);
@@ -818,12 +845,15 @@ export function InjectionBodyMap({
               const [bx, by, bw, bh] = r.box;
               const [hx, hy, hw, hh] = hitBoxFor(r);
               // While a region is zoomed, its neighbours are backdrop only. Their
-              // padded hit rects reach into the zoomed viewBox (thigh_right's
-              // starts at x=121.5, inside thigh_left's zoom which ends at 123.5) and,
-              // drawn later, answered taps meant for the open region's edge or for
-              // "back to body". Dropping the handler AND the invisible rect lets
-              // those taps fall through to the silhouette, which returns to the
-              // full view. Nothing overlaps in the full view, so it is unchanged.
+              // padded hit rects reach into the zoomed viewBox (thigh_left's
+              // starts at x=121.5, inside thigh_right's zoom which ends at 123.5 -
+              // the physical boxes are unchanged by the observer-view flip above,
+              // only which site label sits in which box, so the numbers are the
+              // same as before with the two site names swapped) and, drawn later,
+              // answered taps meant for the open region's edge or for "back to
+              // body". Dropping the handler AND the invisible rect lets those taps
+              // fall through to the silhouette, which returns to the full view.
+              // Nothing overlaps in the full view, so it is unchanged.
               const inert = open != null && !isOpen;
               return (
                 <G

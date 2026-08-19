@@ -961,7 +961,9 @@ const fr: TranslationSchema = {
     sideRight: "D",
     rotationHint: "Rotation",
     selfViewNote:
-      "La carte est présentée comme lorsque vous vous regardez : votre côté gauche est à gauche.",
+      "La carte vous montre comme si quelqu'un vous faisait face : votre côté gauche apparaît à droite.",
+    flipNotice:
+      "Orientation de la carte mise à jour : elle vous fait désormais face, votre côté gauche est à droite.",
   },
   spike: {
     title: "Spike",

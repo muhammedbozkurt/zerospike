@@ -961,7 +961,9 @@ const es: TranslationSchema = {
     sideRight: "D",
     rotationHint: "Rotación",
     selfViewNote:
-      "El mapa se muestra como cuando usted se mira: su lado izquierdo queda a la izquierda.",
+      "El mapa se muestra como si alguien estuviera frente a usted: su lado izquierdo aparece a la derecha.",
+    flipNotice:
+      "Se actualizó la orientación del mapa: ahora queda frente a usted, su lado izquierdo está a la derecha.",
   },
   spike: {
     title: "Spike",

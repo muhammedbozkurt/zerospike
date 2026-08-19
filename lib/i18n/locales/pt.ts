@@ -960,7 +960,10 @@ const pt: TranslationSchema = {
     sideLeft: "E",
     sideRight: "D",
     rotationHint: "Rodízio",
-    selfViewNote: "O mapa é mostrado como você se vê: seu lado esquerdo fica à esquerda.",
+    selfViewNote:
+      "O mapa mostra você como se alguém estivesse à sua frente: seu lado esquerdo aparece à direita.",
+    flipNotice:
+      "Orientação do mapa atualizada: agora ela fica de frente para você, seu lado esquerdo está à direita.",
   },
   spike: {
     title: "Spike",
