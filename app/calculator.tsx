@@ -83,7 +83,7 @@ import type { Food, InjectionSite, LogTag, MealSlot, SitePoint } from "../lib/db
 import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
 import { Stepper } from "../components/Stepper";
-import { EMOJI_RENDERS } from "../components/FoodPlate";
+import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
 import { Tooltip } from "../components/Tooltip";
 import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
@@ -1749,9 +1749,12 @@ function CalculatorScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 28 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Food identity, kept compact so the read-outs stay the hero */}
+          {/* Food identity, kept compact so the read-outs stay the hero. Same
+              per-dish plate as the catalogue's own browse row (FoodRow) -
+              emojiFor over the category fallback - so a food does not change
+              appearance between picking it and logging it. */}
           <View className="flex-row items-center mb-3">
-            <IconTile emoji={EMOJI_RENDERS ? "🍽️" : undefined} icon="restaurant-outline" size={34} radius={11} hero style={{ marginRight: 10 }} />
+            <FoodIconTile food={food} size={34} radius={11} style={{ marginRight: 10 }} />
             <View className="flex-1">
               <Text style={{ color: THEME.ink, fontSize: 15, fontWeight: "800" }} numberOfLines={1}>
                 {foodName(food, lang)}

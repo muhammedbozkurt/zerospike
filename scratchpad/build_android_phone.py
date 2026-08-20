@@ -12,7 +12,7 @@ from compose import (
     new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
     measure_chip, bodymap_shot, fit_header_and_chip, verify_output, align_for,
 )
-from i18n_copy import FRAME_COPY, CHIP_EMOJI, LANGS, PANELS_2_0_0
+from i18n_copy import LANGS, PANELS_2_0_0, chips_for
 import build_iphone as iphone
 
 RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/iphone"
@@ -154,16 +154,15 @@ def build_all(lang):
         print(f"SKIP {lang}: no raw dir {raw_dir}")
         return []
     os.makedirs(out_dir, exist_ok=True)
-    copy = FRAME_COPY[lang]
     written = []
     for key in PANELS_2_0_0:
         shot = load_shot(raw_dir_for(lang, key), key)
         if shot is None:
             print(f"SKIP {lang}/{key}: raw capture missing")
             continue
-        headline, sub, chip_text = copy[key]
+        headline, sub, chips = chips_for(lang, key)
         cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
-        written.append(frame(out_dir, key, cfg, [{"text": chip_text, "emoji": CHIP_EMOJI[key]}], shot))
+        written.append(frame(out_dir, key, cfg, chips, shot))
     return written
 
 

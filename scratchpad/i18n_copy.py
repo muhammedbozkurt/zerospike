@@ -155,9 +155,12 @@ def _split_chip(chip):
 
 for _panel, _by_lang in _TEXTS["panels"].items():
     for _lang, _entry in _by_lang.items():
-        FRAME_COPY.setdefault(_lang, {})[_panel] = (
-            _entry["title"], _entry["subtitle"], _split_chip(_entry["chip"]),
-        )
+        _copy_tuple = (_entry["title"], _entry["subtitle"], _split_chip(_entry["chip"]))
+        # 09-reminders is the only panel with a second chip so far (a real-alarm
+        # note + a med-picker note); every other panel's tuple stays 3-long.
+        if _entry.get("chip2"):
+            _copy_tuple = _copy_tuple + (_split_chip(_entry["chip2"]),)
+        FRAME_COPY.setdefault(_lang, {})[_panel] = _copy_tuple
 
 FEATURE_TAGLINE = dict(_TEXTS["featureGraphicTagline"])
 
@@ -167,47 +170,76 @@ LANGS = tuple(_TEXTS["panels"]["01-ring"].keys())
 CHIP_EMOJI = {
     "01-ring": "🔥", "02-bodymap": "🔄", "03-widget": None,  # dot, not emoji
     "04-food": "🍽", "05-insights": "📊", "06-report": "📄", "07-spike": "✨",
-    "08-takip": "📋",
+    "08-takip": "📋", "09-reminders": "⏰",
 }
+
+# 09-reminders' second chip (the medication-picker note) gets its own glyph;
+# every other panel has just the one CHIP_EMOJI above.
+CHIP2_EMOJI = {"09-reminders": "💊"}
+
+
+def chips_for(lang, key):
+    """(headline, sub, chips) for a panel - chips is a list of 1 or 2 chip
+    dicts ({"text", "emoji"}), ready for compose.draw_chip_at. Centralises the
+    "does this panel carry a second chip" check so every build script's loop
+    stays a single call instead of re-deriving the chip list by hand."""
+    entry = FRAME_COPY[lang][key]
+    chips = [{"text": entry[2], "emoji": CHIP_EMOJI[key]}]
+    if len(entry) > 3 and entry[3]:
+        chips.append({"text": entry[3], "emoji": CHIP2_EMOJI.get(key)})
+    return entry[0], entry[1], chips
+
 
 # device-captured panels this round; 03-widget/06-report keep their 5-language
 # 1.x composites and are not rebuilt here
-PANELS_2_0_0 = ("01-ring", "02-bodymap", "04-food", "05-insights", "07-spike", "08-takip")
+PANELS_2_0_0 = ("01-ring", "02-bodymap", "04-food", "05-insights", "07-spike", "08-takip", "09-reminders")
 
 WIDGET_STRINGS = {
     "tr": dict(avg_glucose="ORT. GLUKOZ", last7="Son 7 gün", ongoing="zerospike · devam eden",
-               timer_title="Tokluk Şekeri", min_left="{n} dk kaldı", min_unit="dk", date="26 Temmuz Pazar"),
+               timer_title="Tokluk Şekeri", min_unit="dk", date="26 Temmuz Pazar",
+               next_reminder="Sonraki hatırlatıcı", next_reminder_time="12:30"),
     "en": dict(avg_glucose="AVG GLUCOSE", last7="Last 7 days", ongoing="zerospike · ongoing",
-               timer_title="Post-meal glucose", min_left="{n} min left", min_unit="min", date="Sunday, July 26"),
+               timer_title="Post-meal glucose", min_unit="min", date="Sunday, July 26",
+               next_reminder="Next reminder", next_reminder_time="12:30 PM"),
     "de": dict(avg_glucose="Ø GLUKOSE", last7="Letzte 7 Tage", ongoing="zerospike · läuft",
-               timer_title="Blutzucker nach dem Essen", min_left="noch {n} Min.", min_unit="Min.", date="Sonntag, 26. Juli"),
+               timer_title="Blutzucker nach dem Essen", min_unit="Min.", date="Sonntag, 26. Juli",
+               next_reminder="Nächste Erinnerung", next_reminder_time="12:30"),
     "es": dict(avg_glucose="GLUCOSA MEDIA", last7="Últimos 7 días", ongoing="zerospike · en curso",
-               timer_title="Glucosa posprandial", min_left="quedan {n} min", min_unit="min", date="domingo, 26 de julio"),
+               timer_title="Glucosa posprandial", min_unit="min", date="domingo, 26 de julio",
+               next_reminder="Próximo recordatorio", next_reminder_time="12:30"),
     "fr": dict(avg_glucose="GLYCÉMIE MOY.", last7="7 derniers jours", ongoing="zerospike · en cours",
-               timer_title="Glycémie après repas", min_left="{n} min restantes", min_unit="min", date="dimanche 26 juillet"),
+               timer_title="Glycémie après repas", min_unit="min", date="dimanche 26 juillet",
+               next_reminder="Prochain rappel", next_reminder_time="12:30"),
     # it/pt/ar/ja: every label below is the app's own widget string from
     # lib/i18n/locales/<lang>.ts (avgGlucose uppercased, avgWindow at n=7,
-    # timerTitle, remaining at {{time}}="72 <minuteShort>", minuteShort), and the
-    # date is Intl weekday/month/day for that locale on 2026-07-26. Only
-    # `ongoing` is not app copy - it is Android's own notification-shade label,
-    # which the app never ships a string for.
+    # timerTitle, widget.nextReminder), and the date is Intl weekday/month/day
+    # for that locale on 2026-07-26. Only `ongoing` is not app copy - it is
+    # Android's own notification-shade label, which the app never ships a
+    # string for. next_reminder_time is this file's own Intl render of a demo
+    # target time (12:30, see lib/format.formatTimeForLang) for the Android
+    # widget mock (2.1.0 switched it from a countdown to a target clock time -
+    # see lib/services/androidWidget.ts's nextReminderTimeLabel).
     # Two deliberate deviations from a literal template render:
     #  - ar last7: widget.avgWindow is "آخر {{n}} يوم", which at n=7 reads as a
     #    singular ("last 7 day"). Arabic 3-10 takes the plural, so the panel uses
     #    أيام. The app string itself still needs the plural fix.
-    #  - ar/ja min_unit + min_left keep the app's own short forms (د / 分).
+    #  - ar/ja min_unit keeps the app's own short form (د / 分).
     "it": dict(avg_glucose="GLICEMIA MEDIA", last7="Ultimi 7 giorni", ongoing="zerospike · in corso",
-               timer_title="Glicemia post-prandiale", min_left="Mancano {n} min", min_unit="min",
-               date="domenica 26 luglio"),
+               timer_title="Glicemia post-prandiale", min_unit="min",
+               date="domenica 26 luglio",
+               next_reminder="Prossimo promemoria", next_reminder_time="12:30"),
     "pt": dict(avg_glucose="GLICEMIA MÉDIA", last7="Últimos 7 dias", ongoing="zerospike · em andamento",
-               timer_title="Glicemia pós-refeição", min_left="faltam {n} min", min_unit="min",
-               date="domingo, 26 de julho"),
+               timer_title="Glicemia pós-refeição", min_unit="min",
+               date="domingo, 26 de julho",
+               next_reminder="Próximo lembrete", next_reminder_time="12:30"),
     "ar": dict(avg_glucose="متوسط سكر الدم", last7="آخر 7 أيام", ongoing="zerospike · جارٍ",
-               timer_title="سكر الدم بعد الوجبة", min_left="بقي {n} د", min_unit="د",
-               date="الأحد، 26 يوليو"),
+               timer_title="سكر الدم بعد الوجبة", min_unit="د",
+               date="الأحد، 26 يوليو",
+               next_reminder="التذكير التالي", next_reminder_time="12:30 م"),
     "ja": dict(avg_glucose="平均血糖値", last7="直近7日", ongoing="zerospike · 実行中",
-               timer_title="食後血糖", min_left="残り{n}分", min_unit="分",
-               date="7月26日日曜日"),
+               timer_title="食後血糖", min_unit="分",
+               date="7月26日日曜日",
+               next_reminder="次のリマインダー", next_reminder_time="12:30"),
 }
 
 REPORT_STRINGS = {

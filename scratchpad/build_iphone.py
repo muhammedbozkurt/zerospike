@@ -6,7 +6,7 @@ from compose import (
     new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
     measure_chip, bodymap_shot, fit_header_and_chip, verify_output, snap_cut, align_for,
 )
-from i18n_copy import FRAME_COPY, CHIP_EMOJI, LANGS, PANELS_2_0_0
+from i18n_copy import LANGS, PANELS_2_0_0, chips_for
 
 RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/iphone"
 OUT_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store/iphone-1284x2778"
@@ -38,17 +38,29 @@ CROP_BOTTOM = {
     # (Continue + the skip link, which end ~2676) and the iOS home indicator
     # (~2829). Snapped per capture, so a longer footer just pulls the cut up.
     "08-takip": 2760,
+    # Settings > Reminders: no tab bar (a pushed stack screen, same as
+    # onboarding above), and unlike every other panel its content does NOT run
+    # down near the bottom - just a hint line, 3 short rows (glucose/med/basal)
+    # and the dashed "add" row, all near the top, with the rest of the screen
+    # empty. ESTIMATE (no raw capture exists yet - see component heights in
+    # components/settingsUi.tsx's Row/SettingsScaffold): header + hint + 3
+    # rows + add row lands around y~1350-1450 in this 2868-tall raw capture;
+    # 1560 leaves a few hundred px of buffer so a longer DE/FR label wrapping
+    # to 2 lines still clears. Snapped per capture like the others - re-tighten
+    # this constant once a real capture exists instead of trusting the guess.
+    "09-reminders": 1560,
 }
 # Panels whose last element moves with copy length (a card list, or onboarding's
 # pinned footer), so the cut row has to be found per capture. The rest cut at a
 # fixed anchor on purpose: 01-ring at the floating "+ kayit ekle" button's bottom
 # edge (it hovers over the list, so no gap ever opens under it), and
 # 02-bodymap/07-spike just under the full-width map card and chat composer.
-SNAP_PANELS = {"04-food", "05-insights", "08-takip"}
+SNAP_PANELS = {"04-food", "05-insights", "08-takip", "09-reminders"}
 # Upper bound on where the snap walk may START, per panel. Default is the app tab
-# bar's top border; onboarding has NO tab bar (it runs edge to edge under the home
-# indicator), so it bounds the walk with its own preferred row instead.
-SNAP_START = {"08-takip": None}
+# bar's top border; onboarding and the reminders settings screen have NO tab bar
+# (both are pushed stack screens, edge to edge under the home indicator), so they
+# bound the walk with their own preferred row instead.
+SNAP_START = {"08-takip": None, "09-reminders": None}
 # far enough up to clear the whole trailing card when it overflows the screen;
 # for onboarding, far enough to drop the whole footer (button + skip link) when
 # the preferred row lands inside it - the button is never cut in half
@@ -139,7 +151,6 @@ def build_all(lang):
         print(f"SKIP {lang}: no raw dir {raw_dir}")
         return []
     os.makedirs(out_dir, exist_ok=True)
-    copy = FRAME_COPY[lang]
     written = []
     for key in PANELS_2_0_0:
         shot = load_shot(raw_dir, key, lang)
@@ -147,9 +158,9 @@ def build_all(lang):
             # captures for the newer languages are still being written
             print(f"SKIP {lang}/{key}: raw capture missing")
             continue
-        headline, sub, chip_text = copy[key]
+        headline, sub, chips = chips_for(lang, key)
         cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
-        written.append(frame(out_dir, key, cfg, [{"text": chip_text, "emoji": CHIP_EMOJI[key]}], shot))
+        written.append(frame(out_dir, key, cfg, chips, shot))
     return written
 
 

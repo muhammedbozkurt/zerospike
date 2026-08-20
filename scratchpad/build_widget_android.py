@@ -18,7 +18,7 @@ INK = (234, 246, 250)
 MUTED = (146, 170, 182)
 
 
-def lockscreen_scene_android(w, h, time_str, date_str, avg_value, timer_min, S=None, lang=None):
+def lockscreen_scene_android(w, h, time_str, date_str, avg_value, S=None, lang=None):
     """See build_widget.lockscreen_scene for why `lang` reaches only the
     translated labels and never the digits."""
     if S is None:
@@ -63,23 +63,23 @@ def lockscreen_scene_android(w, h, time_str, date_str, avg_value, timer_min, S=N
     tx = icon_x + icon_size + int(w * 0.035)
     bar_x0, bar_x1 = tx, n_x0 + n_w - int(w * 0.03)
 
-    # "noch 72 Min." / "残り72分" share the top row with the app line, and the
-    # title owns the row under it, so both are measured against what is left
-    tstr = S["min_left"].format(n=timer_min)
+    # The Android widget shows the next reminder's target clock TIME, not a
+    # countdown (2.1.0 - see lib/services/androidWidget.ts's
+    # nextReminderTimeLabel: Android only redraws this periodically, so a
+    # "X min left" string goes stale; an absolute time stays true). "12:30"
+    # shares the top row with the app line, and the "next reminder" label
+    # owns the row under it - same slot the old countdown/title pair used.
+    tstr = S["next_reminder_time"]
     f_timer = fit_font(draw, tstr, (bar_x1 - tx) * 0.45, int(w * 0.030), HN_BOLD, lang=lang)
     timer_w = draw.textlength(tstr, font=f_timer)
     f_app = fit_font(draw, S["ongoing"], (bar_x1 - tx) - timer_w - int(w * 0.02),
                      int(w * 0.028), HN_BOLD, lang=lang)
-    f_title = fit_font(draw, S["timer_title"], bar_x1 - tx, int(w * 0.036), HN_BOLD, lang=lang)
+    f_title = fit_font(draw, S["next_reminder"], bar_x1 - tx, int(w * 0.036), HN_BOLD, lang=lang)
     draw.text((tx, n_y0 + int(w * 0.028)), S["ongoing"], font=f_app, fill=ACCENT)
-    draw.text((tx, n_y0 + int(w * 0.028) + int(w * 0.045)), S["timer_title"], font=f_title, fill=INK)
-
-    bar_y = n_y0 + n_h - int(w * 0.055)
-    bar_h = max(4, int(w * 0.012))
-    draw.rounded_rectangle([bar_x0, bar_y, bar_x1, bar_y + bar_h], radius=bar_h // 2, fill=(28, 42, 50))
-    frac = 0.30
-    draw.rounded_rectangle([bar_x0, bar_y, bar_x0 + int((bar_x1 - bar_x0) * frac), bar_y + bar_h],
-                            radius=bar_h // 2, fill=ACCENT)
+    draw.text((tx, n_y0 + int(w * 0.028) + int(w * 0.045)), S["next_reminder"], font=f_title, fill=INK)
+    # No progress bar here any more: a bar reads as "elapsed/remaining
+    # fraction", which made sense for a countdown but not for a fixed future
+    # clock time - the app's own widget draws no such bar for this label either.
     draw.text((bar_x1 - timer_w, n_y0 + int(w * 0.028)), tstr, font=f_timer, fill=MUTED)
 
     # Material home-screen widget card, below
@@ -147,7 +147,7 @@ def build_all(lang):
         print(f"  WARN [{lang}] 03-widget chip overlaps the header band")
 
     canvas, draw, y_after = new_canvas_with_header(cfg)
-    scene = lockscreen_scene_android(inner_w, inner_h, "9:41", WS["date"], 123, 72, S=WS, lang=lang)
+    scene = lockscreen_scene_android(inner_w, inner_h, "9:41", WS["date"], 123, S=WS, lang=lang)
     dev_x = (CANVAS[0] - DEV_W) // 2
     draw_device(canvas, scene, dev_x, DEV_Y, DEV_W, BEZEL, RADIUS)
     d2 = ImageDraw.Draw(canvas)

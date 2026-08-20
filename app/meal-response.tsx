@@ -27,7 +27,7 @@ import { mealSlotForHour } from "../lib/insulin";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { Skeleton } from "../components/Skeleton";
 import { StatCard } from "../components/StatCard";
-import { EMOJI_RENDERS, FoodPlate } from "../components/FoodPlate";
+import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
 import { AppBackground, GlassCard, GradientAreaChart, IconTile } from "../components/rich";
 import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
@@ -323,8 +323,12 @@ export default function MealResponseScreen() {
             {/* Meal summary */}
             <View className="flex-row items-center mb-5">
               {food ? (
-                <FoodPlate
-                  category={food.category}
+                // Same per-dish plate as the catalogue's own browse row
+                // (FoodRow) and the calculator's food card, so a meal's
+                // response header does not show a different picture for the
+                // exact food that was logged.
+                <FoodIconTile
+                  food={food}
                   size={46}
                   radius={15}
                   style={{ marginRight: 12 }}

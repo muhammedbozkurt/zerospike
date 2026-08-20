@@ -4,10 +4,11 @@ import { addSugarLog, listSugarLogs, deleteSugarLog } from "./logs";
 import { addMealLog, listMealLogs, deleteMealLog } from "./logs";
 import { logInjection, getInjections, deleteInjection } from "./injections";
 import { logMed, listMeds, deleteMed } from "./meds";
+import { createReminder, listReminders } from "./reminders";
 import { getProfile, updateProfile } from "./profiles";
 import { getDb, defaultProfileName, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
 import { SELECTABLE_SITES, SITE_POINTS } from "./types";
-import type { InsulinType, Lang, PeriodTag, SitePoint } from "./types";
+import type { InsulinType, Lang, PeriodTag, ReminderType, SitePoint } from "./types";
 import { setProOverride } from "../services/purchases";
 import i18n from "../i18n";
 
@@ -155,6 +156,41 @@ async function seedMeals(profileId: string, lang: Lang, variant?: "tracking"): P
       insulin_dose_units: variant === "tracking" ? 0 : Math.round((meals[i].carbs / 10) * 2) / 2,
       logged_at: at(0, mealHours[i], 15),
     });
+  }
+}
+
+/**
+ * Store-screenshot only (09-reminders panel): glucose/med/basal rows so the
+ * Reminders settings screen shows a populated list instead of the empty
+ * state, with the med row's alarm_enabled=1 so the AlarmKit badge (see
+ * app/settings/reminders.tsx's alarm icon) is visible too. Idempotent PER
+ * TYPE - checked against whatever the profile already has - so a re-run
+ * (language switch, cold relaunch) never duplicates a row, and a profile that
+ * already carries one of these (e.g. from the legacy-prefs bridge) is left
+ * alone rather than getting a second. No custom-type row: its label would
+ * need translating into all 9 languages for no shot-composition gain.
+ * Basal is skipped on the insulin-free tracking profile (variant "tracking"),
+ * which has no basal UI at all - the same gating the injection seed above
+ * already applies for that variant.
+ */
+async function seedReminders(profileId: string, variant?: "tracking"): Promise<void> {
+  const existing = await listReminders(profileId);
+  const hasType = (t: ReminderType) => existing.some((r) => r.type === t);
+  if (!hasType("glucose")) {
+    await createReminder({ type: "glucose", time: "08:00", enabled: true, profileId });
+  }
+  if (!hasType("med")) {
+    await createReminder({
+      type: "med",
+      label: "Metformin",
+      time: "20:10",
+      enabled: true,
+      alarmEnabled: true,
+      profileId,
+    });
+  }
+  if (variant !== "tracking" && !hasType("basal")) {
+    await createReminder({ type: "basal", time: "22:00", enabled: true, profileId });
   }
 }
 
@@ -331,6 +367,9 @@ export async function seedScreenshotData(
         name: "Metformin",
         note: null,
       });
+
+      // 09-reminders panel: glucose/med/basal rows (see seedReminders above).
+      await seedReminders(profileId, variant);
     }
 
     // Meals carry localized names -> always (re)materialise them in `lang`.

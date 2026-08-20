@@ -12,7 +12,7 @@ from compose import (
     new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
     measure_chip, fit_header_and_chip, verify_output, align_for,
 )
-from i18n_copy import FRAME_COPY, CHIP_EMOJI, LANGS, PANELS_2_0_0
+from i18n_copy import LANGS, PANELS_2_0_0, chips_for
 import build_ipad as ipad
 
 RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/ipad"
@@ -86,7 +86,6 @@ def build_for_canvas(lang, spec, sources, out_dir):
                 chip_size=spec["chip_size"], text_w=int(W * 0.80))
     dev_w_std = W - 2 * margin_x
     safe_bottom = H - int(H * 0.008)
-    copy = FRAME_COPY[lang]
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     written = []
 
@@ -107,14 +106,15 @@ def build_for_canvas(lang, spec, sources, out_dir):
         if raw_path is None:
             print(f"SKIP {lang}/{spec['name']}/{key}: raw capture missing")
             continue
-        headline, sub, chip_text = copy[key]
-        chips = [{"text": chip_text, "emoji": CHIP_EMOJI[key]}]
+        headline, sub, chips = chips_for(lang, key)
         cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
         f_chip = font(F_BOLD, cfg["chip_size"], lang=lang)
-        chip_h = measure_chip(probe, chip_text, f_chip, CHIP_EMOJI[key])[1]
+        chip_stack_gap = int(margin_x * 0.35)
+        chip_h = max(measure_chip(probe, c["text"], f_chip, c.get("emoji"))[1] for c in chips)
+        total_h = len(chips) * chip_h + (len(chips) - 1) * chip_stack_gap
         gap = int(margin_x * 0.4)
         cfg["sub_max_lines"], cy0, fits = fit_header_and_chip(
-            cfg, chip_h, dev_y, gap, int(margin_x * 0.15))
+            cfg, total_h, dev_y, gap, int(margin_x * 0.15))
         if not fits:
             print(f"  WARN [{lang}] chip overlaps the header band")
 
@@ -134,7 +134,7 @@ def build_for_canvas(lang, spec, sources, out_dir):
             else:
                 x = W - cfg["margin_x"] - w
             draw_chip_at(canvas, ch["text"], x, cy, f_chip, emoji_ch=ch.get("emoji"), dot=ch.get("dot"))
-            cy += h + int(margin_x * 0.35)
+            cy += h + chip_stack_gap
 
         out_path = os.path.join(out_dir, f"{key}.png")
         canvas.save(out_path)

@@ -6,7 +6,7 @@ from compose import (
     new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
     measure_chip, fit_header_and_chip, verify_output, snap_cut, align_for,
 )
-from i18n_copy import FRAME_COPY, CHIP_EMOJI, LANGS, PANELS_2_0_0
+from i18n_copy import LANGS, PANELS_2_0_0, chips_for
 
 RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/ipad"
 OUT_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store/ipad-2064x2752"
@@ -37,10 +37,17 @@ CROP_BOTTOM = {
     # (Continue + the skip link, which end ~2650) and the home indicator (~2726).
     # Snapped per capture, so a longer footer just pulls the cut up.
     "08-takip": 2690,
+    # Settings > Reminders: no tab bar, content (hint + 3 rows + add row) sits
+    # near the top with a lot of empty space under it. ESTIMATE, scaled from
+    # build_iphone's own 1560/2868 guess by this file's raw height (2752) - see
+    # build_iphone.CROP_BOTTOM["09-reminders"] for the full reasoning and the
+    # note to re-tighten once a real capture exists.
+    "09-reminders": 1500,
 }
-SNAP_PANELS = {"04-food", "05-insights", "08-takip"}
-# see build_iphone.SNAP_START - onboarding has no tab bar to bound the walk with
-SNAP_START = {"08-takip": None}
+SNAP_PANELS = {"04-food", "05-insights", "08-takip", "09-reminders"}
+# see build_iphone.SNAP_START - onboarding and the reminders settings screen
+# have no tab bar to bound the walk with
+SNAP_START = {"08-takip": None, "09-reminders": None}
 SNAP_WINDOW = 340
 
 
@@ -114,17 +121,16 @@ def build_all(lang):
         print(f"SKIP {lang}: no raw dir {raw_dir}")
         return []
     os.makedirs(out_dir, exist_ok=True)
-    copy = FRAME_COPY[lang]
     written = []
     for key in PANELS_2_0_0:
         raw_path = os.path.join(raw_dir, f"{key}.png")
         if not os.path.exists(raw_path):
             print(f"SKIP {lang}/{key}: raw capture missing")
             continue
-        headline, sub, chip_text = copy[key]
+        headline, sub, chips = chips_for(lang, key)
         cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
         shot = load_cropped_shot(raw_path, 0, cut_for(raw_path, key))
-        written.append(frame(out_dir, key, cfg, [{"text": chip_text, "emoji": CHIP_EMOJI[key]}], shot))
+        written.append(frame(out_dir, key, cfg, chips, shot))
     return written
 
 

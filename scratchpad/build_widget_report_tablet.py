@@ -65,7 +65,7 @@ def build_all(lang):
             print(f"  WARN [{lang}] {cfg_['name']} 03-widget chip overlaps the header band")
 
         canvas, draw, y_after = new_canvas_with_header(cfg)
-        scene = lockscreen_scene_android(inner_w, inner_h, "9:41", WS["date"], 123, 72, S=WS, lang=lang)
+        scene = lockscreen_scene_android(inner_w, inner_h, "9:41", WS["date"], 123, S=WS, lang=lang)
         draw_device(canvas, scene, dev_x, DEV_Y, dev_w, BEZEL, RADIUS)
         d2 = ImageDraw.Draw(canvas)
         cx = dev_x + dev_w // 2

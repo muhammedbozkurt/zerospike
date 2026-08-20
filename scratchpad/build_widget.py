@@ -94,7 +94,13 @@ def lockscreen_scene(w, h, time_str, date_str, avg_value, timer_min, S=None, lan
     f_timerU = hn(int(w * 0.024), HN_REGULAR, lang=lang)
     tstr = str(timer_min)
     tw = max(draw.textlength(tstr, font=f_timerN), draw.textlength(S["min_unit"], font=f_timerU))
-    right = la_x0 + la_w - int(w * 0.032)
+    # ar's minute-unit glyph ("د") renders with more ink than draw.textlength's
+    # advance-width measurement accounts for (RTL glyph metrics), which was
+    # clipping its trailing edge against the card's right inset. A small
+    # ar-only trailing pad widens that column's budget; every other language's
+    # `right` - and so its pixels - stays byte-identical (pad 0).
+    RIGHT_TRAILING_PAD = {"ar": 0.014}
+    right = la_x0 + la_w - int(w * 0.032) - int(w * RIGHT_TRAILING_PAD.get(lang, 0))
 
     # the title shares the row with the countdown, so it is measured against the
     # gap that is actually left - "Blutzucker nach dem Essen" is three times the
