@@ -130,8 +130,14 @@ export default function ProfileSettings() {
   async function persistInsulinMode(m: InsulinMode) {
     if (m === insulinMode) return;
     await persist({ insulin_mode: m });
-    if (!insulinModeShowsBasal(m)) await cancelBasalReminder();
-    else if (await hasNotificationPermission()) await applyNotificationPrefs();
+    if (!insulinModeShowsBasal(m)) {
+      await cancelBasalReminder();
+      // Belt-and-suspenders with the cancel call above: applyNotificationPrefs
+      // re-derives the schedule from the now-persisted mode and sweeps any
+      // basal alarm too (see applyReminders), so this can never leave one
+      // ringing on an insulin mode that no longer shows basal at all.
+      await applyNotificationPrefs();
+    } else if (await hasNotificationPermission()) await applyNotificationPrefs();
   }
 
   /**
@@ -146,8 +152,13 @@ export default function ProfileSettings() {
    */
   async function persistOralMeds(on: boolean) {
     await persist({ oral_meds_enabled: on ? 1 : 0 });
-    if (!on) await cancelMedReminder();
-    else if (await hasNotificationPermission()) await applyNotificationPrefs();
+    if (!on) {
+      await cancelMedReminder();
+      // Same belt-and-suspenders as persistInsulinMode above: re-apply so the
+      // now-persisted oral_meds_enabled=0 also sweeps a med alarm, not only
+      // the notification half.
+      await applyNotificationPrefs();
+    } else if (await hasNotificationPermission()) await applyNotificationPrefs();
   }
 
   // Saving a ratio is the user telling us this IS their number, so it clears the

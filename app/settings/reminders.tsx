@@ -167,9 +167,21 @@ export default function RemindersScreen() {
       await afterChange();
       hapticSuccess();
       setSheetOpen(false);
-    } catch {
+    } catch (e) {
       hapticWarning();
-      toast(t("reminders.limitReached"), "error");
+      // createReminder is the only call above that can actually throw (a full
+      // table - see MAX_REMINDERS in lib/db/reminders.ts); anything else (a
+      // write failure, afterChange's own re-read) is not the limit and must
+      // not be misreported as one. No other locale key fits a generic save
+      // failure here, so that case stays a silent log with the sheet left
+      // open, rather than a wrong toast telling the user their list is full.
+      const isLimitError =
+        !editingReminder && e instanceof Error && e.message.includes("reminders reached");
+      if (isLimitError) {
+        toast(t("reminders.limitReached"), "error");
+      } else {
+        console.error("reminder save failed", e);
+      }
     } finally {
       setSheetSaving(false);
     }

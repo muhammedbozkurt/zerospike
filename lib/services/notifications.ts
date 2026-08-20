@@ -584,7 +584,13 @@ async function cancelReminderNotificationsOfType(
   try {
     const rows = await listReminders();
     for (const row of rows) {
-      if (row.type === type) await cancelReminderIdentifier(reminderIdentifier(row.id));
+      if (row.type !== type) continue;
+      await cancelReminderIdentifier(reminderIdentifier(row.id));
+      // A row can be firing as a real AlarmKit alarm instead of a notification
+      // (applyReminders' useAlarm branch) - a profile-screen teardown (basal
+      // insulin off, oral meds off) has to take that down too, or the alarm
+      // keeps ringing on a surface the profile no longer shows.
+      await cancelAlarm(alarmIdentifier(row.id));
     }
   } catch {
     // best-effort; a failed lookup must not throw out of a settings toggle

@@ -18,6 +18,7 @@ import { isScreenshotMode } from "../lib/screenshotMode";
 import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
 import {
   createReminder,
+  listReminders,
   syncBasalReminderRow,
   updateReminder,
 } from "../lib/db/reminders";
@@ -262,9 +263,11 @@ export default function OnboardingScreen() {
     // finishing - "Simdi degil" always moves on with no reminder created.
     const medReminderStep: StepId[] = hasOralMeds ? ["medReminder"] : [];
     // The glucose-measurement reminder (C8): offered on every path, unlike
-    // medReminder above. On the pill path it sits right after medReminder (the
-    // two reminder setups back to back); everywhere else it sits right before
-    // the notification step.
+    // medReminder above. Always AFTER notify: its own "Kur" button fires the
+    // OS permission prompt right away (see setupGlucoseReminder), and that
+    // must never happen before the notify step's own on-screen rationale has
+    // been shown. After medReminder on the pill path too, so the two reminder
+    // setups sit back to back.
     const glucoseReminderStep: StepId[] = ["glucoseReminder"];
     return [
       ...BASE_STEPS,
@@ -273,10 +276,9 @@ export default function OnboardingScreen() {
       ...branch,
       "postMeal",
       "widget",
-      ...(hasOralMeds ? [] : glucoseReminderStep),
       "notify",
       ...medReminderStep,
-      ...(hasOralMeds ? glucoseReminderStep : []),
+      ...glucoseReminderStep,
       "disclaimer",
     ];
   }, [isTwoWayTreatment, hasInsulin, hasOralMeds]);
@@ -533,8 +535,22 @@ export default function OnboardingScreen() {
     if (savingMedReminder) return;
     setSavingMedReminder(true);
     try {
-      if (medReminderId) {
-        await updateReminder(medReminderId, { time: medReminderTime, enabled: true });
+      // A killed-and-restarted onboarding attempt loses medReminderId along
+      // with every other component state, but the row an earlier "Kur" tap
+      // already wrote to this profile is still there - update THAT one
+      // instead of writing a second "med" row (the same singleton discipline
+      // syncBasalReminderRow already applies to basal). Only the label-less/
+      // generic row counts: a med reminder the user later names for a
+      // specific medication in Settings must never be silently repurposed.
+      const existingId =
+        medReminderId ??
+        (await listReminders()).find(
+          (r) => r.type === "med" && !(r.label && r.label.trim())
+        )?.id ??
+        null;
+      if (existingId) {
+        await updateReminder(existingId, { time: medReminderTime, enabled: true });
+        setMedReminderId(existingId);
       } else {
         const row = await createReminder({
           type: "med",
@@ -559,8 +575,16 @@ export default function OnboardingScreen() {
     if (savingGlucoseReminder) return;
     setSavingGlucoseReminder(true);
     try {
-      if (glucoseReminderId) {
-        await updateReminder(glucoseReminderId, { time: glucoseReminderTime, enabled: true });
+      // Same restarted-onboarding guard as setupMedReminder above; a glucose
+      // row carries no label at all, so any existing "glucose" row already on
+      // the active profile is the one an earlier "Kur" tap wrote.
+      const existingId =
+        glucoseReminderId ??
+        (await listReminders()).find((r) => r.type === "glucose")?.id ??
+        null;
+      if (existingId) {
+        await updateReminder(existingId, { time: glucoseReminderTime, enabled: true });
+        setGlucoseReminderId(existingId);
       } else {
         const row = await createReminder({
           type: "glucose",

@@ -3268,6 +3268,68 @@ async function main() {
     }
   }
 
+  // ── O6. deleteProfile cascades its reminders rows (schema v19) ─────────────
+  // reminders.profile_id carries no foreign key (see O. above), so
+  // lib/db/profiles.ts's deleteProfile runs its own DELETE FROM reminders
+  // alongside DELETE FROM user_profiles. deleteProfile itself opens a real
+  // expo-sqlite database this node:sqlite-backed test cannot import, so this
+  // drives the exact same statement pair directly against a v19-shaped table.
+  section("O6. deleteProfile cascades its reminders rows (schema v19)");
+  {
+    const db = new DatabaseSync(":memory:");
+    db.exec(
+      `CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);`
+    );
+    for (const statement of V17_CREATE) db.exec(statement);
+    for (const col of V19_REMINDERS_COLUMNS) {
+      db.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+    }
+    db.exec(
+      `INSERT INTO user_profiles (id, name, created_at) VALUES
+         ('p1', 'Me', '2026-01-01T00:00:00.000Z'),
+         ('p2', 'Kid', '2026-01-02T00:00:00.000Z');`
+    );
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id) VALUES
+         ('r1', 'basal', NULL, '22:00', 1, 0, 1, 'p1'),
+         ('r2', 'glucose', NULL, '08:00', 1, 1, 2, 'p1'),
+         ('r3', 'custom', 'Su iç', '12:00', 1, 0, 3, 'p2');`
+    );
+
+    // The exact statement pair deleteProfile now runs.
+    db.exec("DELETE FROM reminders WHERE profile_id = 'p1';");
+    db.exec("DELETE FROM user_profiles WHERE id = 'p1';");
+
+    eq(
+      "the deleted profile's own reminders are gone",
+      (
+        db.prepare("SELECT COUNT(*) AS c FROM reminders WHERE profile_id='p1';").get() as {
+          c: number;
+        }
+      ).c,
+      0
+    );
+    eq(
+      "the other profile's reminder is untouched",
+      (
+        db.prepare("SELECT COUNT(*) AS c FROM reminders WHERE profile_id='p2';").get() as {
+          c: number;
+        }
+      ).c,
+      1
+    );
+    eq(
+      "the profile row itself is gone",
+      (
+        db.prepare("SELECT COUNT(*) AS c FROM user_profiles WHERE id='p1';").get() as {
+          c: number;
+        }
+      ).c,
+      0
+    );
+    db.close();
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {

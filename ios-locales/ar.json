@@ -6,7 +6,7 @@
     "NSHealthUpdateUsageDescription": "يكتب zerospike قراءات سكر الدم التي تدخلها يدويًا إلى Apple Health، وذلك فقط عند تفعيل الخيار في الإعدادات.",
     "NSLocationWhenInUseUsageDescription": "يستطيع zerospike إرفاق موقعك الحالي برسالة ترسلها من شاشة SOS، ليصل إليك أحد بسرعة أكبر.",
     "NSContactsUsageDescription": "يتيح لك zerospike اختيار جهة اتصال للطوارئ من جهات اتصالك لاستخدامها في شاشة SOS.",
-    "NSAlarmKitUsageDescription": "يستخدم zerospike تطبيق AlarmKit لتشغيل تذكير قمت بإعداده كمنبّه حقيقي، وذلك فقط للتذكيرات التي تُفعّل فيها هذا الخيار.",
+    "NSAlarmKitUsageDescription": "يستخدم zerospike AlarmKit لتشغيل تذكير قمت بإعداده كمنبّه حقيقي، وذلك فقط للتذكيرات التي تُفعّل فيها هذا الخيار.",
     "NSMotionUsageDescription": "لا يجمع zerospike بيانات الحركة. هذا الإذن مطلوب فقط لأن أحد مكونات تحديد الموقع في التطبيق يشير إليه؛ ولا تُتتبع حركتك أبدًا."
   }
 }

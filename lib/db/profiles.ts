@@ -125,13 +125,20 @@ export async function updateProfile(
   return (await getProfile(id))!;
 }
 
-/** Deletes a profile and (via cascades) its logs. Never deletes the last one. */
+/** Deletes a profile and (via cascades) its logs. Never deletes the last one.
+ *
+ *  reminders is the one profile-scoped table with no foreign key on
+ *  profile_id (schema v19 - see lib/db/reminders.ts's own ownership note), so
+ *  it is not covered by ON DELETE CASCADE like sugar_logs/meal_logs/etc: this
+ *  runs its own DELETE first, or a deleted profile's reminders would sit in
+ *  the table forever, orphaned, with nothing left to ever read or clear them. */
 export async function deleteProfile(id: string): Promise<boolean> {
   const db = await getDb();
   const count = await db.getFirstAsync<{ c: number }>(
     "SELECT COUNT(*) AS c FROM user_profiles;"
   );
   if ((count?.c ?? 0) <= 1) return false;
+  await db.runAsync("DELETE FROM reminders WHERE profile_id = ?;", [id]);
   await db.runAsync("DELETE FROM user_profiles WHERE id = ?;", [id]);
   return true;
 }

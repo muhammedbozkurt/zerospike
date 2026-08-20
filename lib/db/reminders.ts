@@ -201,10 +201,12 @@ export interface ReminderUpdate {
   enabled?: boolean;
   /** 2.2.0's A1 (AlarmKit) opt-in - see reminders.alarm_enabled (schema v19)
    *  and applyReminders in lib/services/notifications.ts, which is what
-   *  actually turns this into a real alarm vs. a plain notification. Written
-   *  by components/ReminderEditSheet.tsx's "Play as alarm" row, which only
-   *  ever exists on iOS 26+ (see isAlarmKitAvailable) - every other platform
-   *  simply never sends this field, so the column stays 0 there. */
+   *  actually turns this into a real alarm vs. a plain notification. Set by
+   *  components/ReminderEditSheet.tsx's "Play as alarm" row, which only ever
+   *  renders on iOS 26+ (see isAlarmKitAvailable) - every other platform
+   *  still sends this field on every save, just always `false`
+   *  (`alarmKitAvailable && alarmEnabled` in the sheet's submit), so the
+   *  column stays 0 there. */
   alarmEnabled?: boolean;
 }
 

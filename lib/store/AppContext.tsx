@@ -291,14 +291,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // is settled: the schedulers gate on things that can change while the app
       // is closed (the master switch, the profile's insulin mode, a revoked
       // permission), so a reminder armed by an older build could survive with
-      // every surface it belongs to gone. Permission-guarded: with no permission
-      // there is nothing scheduled to correct, and this must never be the path
-      // that raises an OS dialog on launch. Onboarded-guarded too: someone who
-      // quit mid-onboarding has no saved prefs yet, and applying the defaults
-      // here would arm reminders before onboarding ever offered that choice.
+      // every surface it belongs to gone. Unconditional on permission:
+      // applyNotificationPrefs only READS it, never prompts, so this can never
+      // raise an OS dialog on launch - and a REVOKED permission still has to
+      // reach this call, since AlarmKit alarm delivery does not depend on the
+      // notification permission at all (see applyReminders' useAlarm branch).
+      // Gating this on hasNotificationPermission(), as before, silently skipped
+      // the alarm teardown for exactly that user. Onboarded-guarded still:
+      // someone who quit mid-onboarding has no saved prefs yet, and applying
+      // the defaults here would arm reminders before onboarding ever offered
+      // that choice.
       void import("../services/notifications").then(async (m) => {
-        if (onboardedFlag && (await m.hasNotificationPermission()))
-          await m.applyNotificationPrefs();
+        if (onboardedFlag) await m.applyNotificationPrefs();
       });
 
       // Now that the app is on screen, verify the entitlement against the store

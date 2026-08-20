@@ -56,15 +56,19 @@ private func saveIdMap(_ map: [String: String]) {
 /// behind - the same "same fixed identifier replaces the pending one" contract
 /// every notification scheduler in lib/services/notifications.ts already
 /// keeps, adapted to AlarmKit's UUID-only identity.
-private func uuidForIdentity(_ id: String) -> UUID {
+///
+/// Also reports whether THIS call minted the entry (vs. reusing one already in
+/// the map), so a caller whose schedule attempt then fails can decide whether
+/// to roll a freshly-created entry back - see scheduleDailyAlarm below.
+private func uuidForIdentity(_ id: String) -> (uuid: UUID, wasFresh: Bool) {
   var map = loadIdMap()
   if let existing = map[id], let uuid = UUID(uuidString: existing) {
-    return uuid
+    return (uuid, false)
   }
   let fresh = UUID()
   map[id] = fresh.uuidString
   saveIdMap(map)
-  return fresh
+  return (fresh, true)
 }
 
 private func forgetIdentity(_ id: String) {
@@ -175,7 +179,7 @@ public class ZerospikeAlarmKitModule: Module {
       guard #available(iOS 26.0, *) else { return false }
       guard AlarmManager.shared.authorizationState == .authorized else { return false }
 
-      let uuid = uuidForIdentity(id)
+      let (uuid, wasFresh) = uuidForIdentity(id)
       try? await AlarmManager.shared.cancel(id: uuid)
 
       let time = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
@@ -208,29 +212,44 @@ public class ZerospikeAlarmKitModule: Module {
         _ = try await AlarmManager.shared.schedule(id: uuid, configuration: configuration)
         return true
       } catch {
+        // A freshly minted identity that never actually got scheduled must not
+        // linger in the map: the next attempt for this SAME id would otherwise
+        // skip straight to cancel+schedule against a UUID AlarmKit never held
+        // anything under, instead of minting a clean one. An identity that
+        // already existed before this call (a re-arm) is left alone - AlarmKit
+        // still had whatever the cancel() above just removed scheduled under
+        // it a moment ago, so retrying the SAME id on the next attempt is
+        // correct, not stale.
+        if wasFresh { forgetIdentity(id) }
         return false
       }
     }
 
-    /// Cancels the alarm behind JS's own `id` string, and forgets the identity
-    /// mapping either way (an id AlarmKit no longer recognizes - the user
-    /// cleared it from the system Alarms app, say - must not be retried
-    /// forever). `cancel(id:)`, not `stop(id:)`: a public AlarmKit forum report
-    /// found while researching this module notes `stop` only resets a
-    /// SCHEDULED (non-timer) alarm back to `.scheduled` rather than removing
-    /// it, while `cancel` is what actually deletes it - exactly the "gone for
-    /// good" behavior a deleted/disabled reminder row needs. Returns whether an
-    /// id was actually known here, for symmetry with the JS-side
-    /// cancelReminderIdentifier's own best-effort/no-throw contract.
+    /// Cancels the alarm behind JS's own `id` string. `cancel(id:)`, not
+    /// `stop(id:)`: a public AlarmKit forum report found while researching this
+    /// module notes `stop` only resets a SCHEDULED (non-timer) alarm back to
+    /// `.scheduled` rather than removing it, while `cancel` is what actually
+    /// deletes it - exactly the "gone for good" behavior a deleted/disabled
+    /// reminder row needs. Returns whether an id was actually known here, for
+    /// symmetry with the JS-side cancelReminderIdentifier's own best-effort/
+    /// no-throw contract.
+    ///
+    /// The identity mapping is only forgotten once AlarmKit confirms the
+    /// cancel - not upfront: forgetting it first and then having the cancel
+    /// call fail would leave AlarmKit still holding the alarm under a UUID no
+    /// string id points to any more, permanently unreachable from JS (it can
+    /// never again appear in listScheduledAlarmIds, so the orphan sweep in
+    /// applyReminders would never find it either). The unknown-id branch above
+    /// never had anything to forget, so it is unaffected by this move.
     AsyncFunction("cancelAlarm") { (id: String) -> Bool in
       guard #available(iOS 26.0, *) else { return false }
       let map = loadIdMap()
       guard let uuidString = map[id], let uuid = UUID(uuidString: uuidString) else {
         return false
       }
-      forgetIdentity(id)
       do {
         try await AlarmManager.shared.cancel(id: uuid)
+        forgetIdentity(id)
         return true
       } catch {
         return false

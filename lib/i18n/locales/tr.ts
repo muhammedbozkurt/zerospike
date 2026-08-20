@@ -809,7 +809,7 @@ const tr = {
     weeklyCompareEmpty: "Bu hafta ve geçen hafta için ölçüm kaydettikçe dolacak.",
     bestDayStreaksTitle: "En iyi gün ve seriler",
     bestDayLabel: "En iyi gün",
-    bestDayEmpty: "Yeterli ölçümü olan bir gün oldukça dolacak.",
+    bestDayEmpty: "Bir günün yeterli ölçümü kaydedildikçe dolacak.",
     streakTargetLabel: "Hedefte gün serisi",
     streakLoggingLabel: "Kayıt serisi",
     streakLongest: "En uzun: {{n}}",

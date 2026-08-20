@@ -826,7 +826,7 @@ const ar: TranslationSchema = {
     cvTrendTitle: "التشتت عبر الزمن (CV)",
     cvTrendSub: "التشتت الأسبوعي (CV)، نقطة واحدة لكل أسبوع تقويمي.",
     heatStripTitle: "فترات 3 ساعات",
-    heatStripSub: "متوسط سكر الدم لكل فترة 3 ساعات، مجمّعة عبر الفترة الزمنية.",
+    heatStripSub: "متوسط سكر الدم لكل فترة 3 ساعات، مجمّعة عبر الفترة.",
     heatStripSparseNote: "الفترات الأفتح لونًا تحتوي على قراءات قليلة جدًا لتكون موثوقة.",
     chartP595Legend: "نطاق 5-95%",
   },

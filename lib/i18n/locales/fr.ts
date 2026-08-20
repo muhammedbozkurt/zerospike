@@ -127,7 +127,7 @@ const fr: TranslationSchema = {
     qGlucoseReminder: "Voulez-vous configurer un rappel de mesure ?",
     qGlucoseReminderTracking: "Voulez-vous configurer un rappel pour votre habitude de mesure ?",
     qGlucoseReminderHint: "Facultatif ; vous pouvez aussi le configurer à tout moment dans les Réglages.",
-    qGlucoseReminderHintTracking: "Soutient une habitude de mesure régulière ; facultatif, vous pouvez aussi le configurer à tout moment dans les Réglages.",
+    qGlucoseReminderHintTracking: "Soutient une habitude de mesure régulière et reste facultatif ; vous pouvez aussi le configurer à tout moment dans les Réglages.",
     glucoseReminderTime: "Heure du rappel de mesure",
     glucoseReminderSetup: "Configurer",
     glucoseReminderSkip: "Pas maintenant",

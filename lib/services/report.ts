@@ -816,7 +816,11 @@ function buildHtml(
   .pbreak { page-break-before: always; }
   .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }
   .kpi .kd { font-size: 10px; color: #777; margin-top: 4px; }
-  .heatstrip { display: flex; gap: 4px; margin: 4px 0 12px; }
+  /* Physically LTR always (00 -> 24 left to right), same fixed-order lock as
+     app/insights.tsx's own heat strip: a clock, not a reading-direction list.
+     Without this, [dir="rtl"] on <body> (Arabic) flips the flex order and
+     puts hour 0 on the right. */
+  .heatstrip { display: flex; gap: 4px; margin: 4px 0 12px; direction: ltr; }
   .hbcell { flex: 1; border-radius: 6px; padding: 6px 2px; text-align: center; color: #1a1a1a; }
   .hbcell .hbv { font-size: 11px; font-weight: 700; }
   .hbcell .hbl { font-size: 8px; opacity: .75; margin-top: 2px; }${rtlCss}

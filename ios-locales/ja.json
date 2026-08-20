@@ -6,7 +6,7 @@
     "NSHealthUpdateUsageDescription": "zerospikeは、設定でオンにした場合にかぎり、手入力した血糖値のみをヘルスケアに書き込みます。",
     "NSLocationWhenInUseUsageDescription": "zerospikeは、SOS画面から送るメッセージに現在地を添えることができます。早く見つけてもらうために使用します。",
     "NSContactsUsageDescription": "zerospikeは、SOS画面で使う緊急連絡先を、連絡先から選べるようにします。",
-    "NSAlarmKitUsageDescription": "zerospikeは、AlarmKitを使用して、設定したリマインダーをこの機能をオンにした場合にかぎり本物のアラームとして鳴らします。",
+    "NSAlarmKitUsageDescription": "zerospikeは、この機能をオンにした場合にかぎり、設定したリマインダーをAlarmKitで本物のアラームとして鳴らします。",
     "NSMotionUsageDescription": "zerospikeはモーションデータを収集しません。アプリ内の位置情報コンポーネントがこの権限を参照しているためだけに必要で、動きが記録されることはありません。"
   }
 }
