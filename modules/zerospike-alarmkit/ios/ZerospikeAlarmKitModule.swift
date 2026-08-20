@@ -35,6 +35,16 @@ import SwiftUI
 // `swiftc -parse` (syntax only) was run here; a real device/simulator build is
 // still required before shipping - see the module's own report note.
 
+/// AlarmAttributes is generic over an app-supplied AlarmMetadata payload that
+/// rides along to the alarm UI. zerospike's alarms carry nothing beyond the
+/// title/stop button already in the presentation, so this is the minimal
+/// conforming type (AlarmMetadata refines Codable & Hashable; an empty struct
+/// synthesizes both). The first real Xcode 26 build proved there is no
+/// SDK-provided empty metadata type ("cannot find type 'EmptyMetadata'"), so
+/// the app defines its own, as Apple's samples do.
+@available(iOS 26.0, *)
+struct ZerospikeAlarmMetadata: AlarmMetadata {}
+
 /// UserDefaults key for the identity map (JS string id -> AlarmKit UUID
 /// string). Plain UserDefaults, not the shared App Group store: only the main
 /// app process ever schedules or reads a zerospike alarm, unlike LiveData
@@ -199,7 +209,7 @@ public class ZerospikeAlarmKitModule: Module {
         title: LocalizedStringResource(stringLiteral: label),
         stopButton: stopButton
       )
-      let attributes = AlarmAttributes<EmptyMetadata>(
+      let attributes = AlarmAttributes<ZerospikeAlarmMetadata>(
         presentation: AlarmPresentation(alert: alert),
         tintColor: alarmTint
       )
