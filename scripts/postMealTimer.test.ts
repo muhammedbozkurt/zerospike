@@ -16,7 +16,10 @@ import {
   formatPostMealRemaining,
   postMealElapsedFraction,
   retimePostMealWindow,
+  decidePostMealAutoStart,
+  restartPostMealWindowAt,
   POST_MEAL_MIN_SCHEDULE_MS,
+  POST_MEAL_AUTO_START_TOLERANCE_MS,
 } from "../lib/postMealTimer";
 
 let passed = 0;
@@ -142,6 +145,139 @@ section("G. countdown formatting is unchanged");
   eq("under a minute switches to seconds", formatPostMealRemaining(59_000).seconds, true);
   eq("zero", formatPostMealRemaining(0).value, 0);
   eq("negative clamps", formatPostMealRemaining(-5_000).value, 0);
+}
+
+section("H. decidePostMealAutoStart - a running timer is never touched by a meal log");
+{
+  // (a) SIFIRLAMA KURALI: a timer already running is left alone, no matter how
+  // close or far the new meal's own logged_at is - even a meal logged exactly
+  // "now" must not restart it.
+  eq(
+    "active timer, meal logged right now",
+    decidePostMealAutoStart({ timerActive: true, loggedAtMs: START, now: START }),
+    "active"
+  );
+  eq(
+    "active timer, meal backdated by hours",
+    decidePostMealAutoStart({ timerActive: true, loggedAtMs: START - 3 * 60 * MIN, now: START }),
+    "active"
+  );
+  eq(
+    "active timer, meal logged slightly in the future (clock skew)",
+    decidePostMealAutoStart({ timerActive: true, loggedAtMs: START + MIN, now: START }),
+    "active"
+  );
+}
+
+section("H. decidePostMealAutoStart - idle, logged close to now: starts as before");
+{
+  // (b) no timer running: a meal logged right now arms it, same as the
+  // pre-existing auto-start behaviour.
+  eq(
+    "idle, logged this instant",
+    decidePostMealAutoStart({ timerActive: false, loggedAtMs: START, now: START }),
+    "start"
+  );
+  eq(
+    "idle, logged a few seconds ago (save latency)",
+    decidePostMealAutoStart({ timerActive: false, loggedAtMs: START - 5_000, now: START }),
+    "start"
+  );
+  eq(
+    "idle, exactly at the tolerance boundary still starts",
+    decidePostMealAutoStart({
+      timerActive: false,
+      loggedAtMs: START - POST_MEAL_AUTO_START_TOLERANCE_MS,
+      now: START,
+    }),
+    "start"
+  );
+  eq("tolerance constant", POST_MEAL_AUTO_START_TOLERANCE_MS, 5 * MIN);
+}
+
+section("H. decidePostMealAutoStart - idle, but the record is backdated: no auto-start");
+{
+  // (d) writing up an earlier meal (last night's dinner, logged today) must not
+  // arm a countdown that fires relative to right now.
+  eq(
+    "idle, one second past the tolerance",
+    decidePostMealAutoStart({
+      timerActive: false,
+      loggedAtMs: START - POST_MEAL_AUTO_START_TOLERANCE_MS - 1_000,
+      now: START,
+    }),
+    "backdated"
+  );
+  eq(
+    "idle, logged hours ago",
+    decidePostMealAutoStart({ timerActive: false, loggedAtMs: START - 6 * 60 * MIN, now: START }),
+    "backdated"
+  );
+  // A timer already running always wins over a backdated record too - "active"
+  // is checked first, so there is nothing left to decide about how old the
+  // meal is.
+  eq(
+    "active timer beats a backdated record",
+    decidePostMealAutoStart({ timerActive: true, loggedAtMs: START - 6 * 60 * MIN, now: START }),
+    "active"
+  );
+}
+
+section("I. restartPostMealWindowAt - the deliberate reset (button + dashboard action)");
+{
+  // (c) "Yemeğe başladım" (and the dashboard's "restart for this meal" action)
+  // always re-anchors to the GIVEN moment and computes a brand new window from
+  // it - it does not carry over an old timer's own remaining time. An old timer
+  // armed at START (120 min window, 90 min already gone - only 30 min left on
+  // IT) is superseded by a newer meal logged 5 min ago: restarting from that
+  // newer meal's own moment leaves ~115 min, not the old timer's 30.
+  const oldMealStart = START;
+  const newMealStart = START + 85 * MIN;
+  const now = START + 90 * MIN;
+  const r = restartPostMealWindowAt({ startedAt: newMealStart, windowMin: 120, now });
+  eq("kind", r.kind, "restarted");
+  if (r.kind === "restarted") {
+    eq("starts at the NEW meal's own moment", r.startedAt, newMealStart);
+    eq("ends a full window after the new anchor", r.endsAt, newMealStart + 120 * MIN);
+    eq("~115 min left, not the old timer's 30", r.remainingMs / MIN, 115);
+  }
+  // What the OLD timer alone would have had left, for contrast.
+  const oldTimerRemaining = (oldMealStart + 120 * MIN - now) / MIN;
+  eq("old timer's own remaining was only 30 min", oldTimerRemaining, 30);
+
+  // A settings-driven retime instead (unchanged behaviour, section A/B): the
+  // anchor stays put and only the ELAPSED time against it is preserved - a
+  // fundamentally different operation from restarting at a new anchor above.
+  const preserving = retimePostMealWindow({
+    startedAt: oldMealStart,
+    currentEndsAt: oldMealStart + 120 * MIN,
+    nextWindowMin: 150,
+    now,
+  });
+  if (preserving.kind === "retimed") {
+    eq("retime keeps the OLD anchor", preserving.startedAt, oldMealStart);
+    eq("retime keeps only what the old window has left", preserving.remainingMs / MIN, 60);
+  }
+
+  // Anchoring far enough in the past that the fresh window is already spent:
+  // closed out, same floor rule as retimePostMealWindow.
+  const stale = restartPostMealWindowAt({
+    startedAt: START,
+    windowMin: 90,
+    now: START + 90 * MIN,
+  });
+  eq("anchored past its own window: elapsed", stale.kind, "elapsed");
+
+  eq(
+    "30 s short of the schedule floor: elapsed",
+    restartPostMealWindowAt({ startedAt: START, windowMin: 90, now: START + 89.5 * MIN }).kind,
+    "elapsed"
+  );
+  eq(
+    "exactly at the floor still restarts",
+    restartPostMealWindowAt({ startedAt: START, windowMin: 90, now: START + 89 * MIN }).kind,
+    "restarted"
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -15,6 +15,7 @@ import {
   migrateToV17,
   migrateToV18,
   migrateToV19,
+  migrateToV20,
   stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
@@ -23,6 +24,7 @@ import { V16_CREATE } from "./v16Sql";
 import { V17_CREATE } from "./v17Sql";
 import { V18_CREATE } from "./v18Sql";
 import { V19_REMINDERS_COLUMNS } from "./v19Sql";
+import { V20_FOODS_COLUMNS } from "./v20Sql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -37,7 +39,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 20;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -272,6 +274,13 @@ export async function initDatabase(): Promise<void> {
     await migrateToV19(db);
   }
 
+  // v19 → v20: foods.emoji - the user's own icon for a food they can edit
+  // (app/add-food.tsx's emoji grid). One guarded ADD COLUMN, no table
+  // rebuilt (see migrateToV20 + ./v20Sql).
+  if (currentVersion >= 1 && currentVersion < 20) {
+    await migrateToV20(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -399,6 +408,16 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_meal_food ON meal_logs (food_id);
     CREATE INDEX IF NOT EXISTS idx_favorites_food ON favorites (food_id);
   `);
+
+  // The user's own icon for an editable food (schema v20, see ./v20Sql).
+  // Applied unconditionally - not the guarded form migrateToV20 uses -
+  // because the table was just created by the block above and can never
+  // already have it; a fresh install therefore runs the exact same ALTER
+  // statement, in the exact same order, that a migrated install's
+  // migrateToV20 does, and ends up with byte-identical foods DDL either way.
+  for (const col of V20_FOODS_COLUMNS) {
+    await db.execAsync(`ALTER TABLE foods ADD COLUMN ${col.name} ${col.type};`);
+  }
 
   // FTS5 across all five language columns + aliases, keyed by the food UUID.
   // Typing "rice", "reis" or "pilav" all match the same row.

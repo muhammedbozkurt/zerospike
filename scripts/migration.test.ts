@@ -32,6 +32,7 @@ import {
   migrateToV17,
   migrateToV18,
   migrateToV19,
+  migrateToV20,
   stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
@@ -60,6 +61,7 @@ import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "../lib/db/v16Sql";
 import { V17_CREATE } from "../lib/db/v17Sql";
 import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "../lib/db/v18Sql";
 import { V19_REMINDERS_COLUMNS } from "../lib/db/v19Sql";
+import { V20_FOODS_COLUMNS } from "../lib/db/v20Sql";
 import {
   adoptOrphanReminders,
   bridgeLegacyReminders,
@@ -2735,8 +2737,8 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    // SCHEMA_VERSION itself has since moved past v18 (see O3, "SCHEMA_VERSION
-    // is 19"); this section only checks the v17 → v18 step and the meds shape.
+    // SCHEMA_VERSION itself has since moved past v18 (see P3, "SCHEMA_VERSION
+    // is 20"); this section only checks the v17 → v18 step and the meds shape.
     ok(
       "the v17 → v18 step runs the real migration",
       /currentVersion < 18\)\s*\{\s*await migrateToV18\(db\);/.test(indexSrc)
@@ -2994,7 +2996,9 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 19", /const SCHEMA_VERSION = 19;/.test(indexSrc));
+    // SCHEMA_VERSION itself has since moved past v19 (see P3, "SCHEMA_VERSION
+    // is 20"); this section only checks the v18 → v19 step and the reminders
+    // shape.
     ok(
       "the v18 → v19 step runs the real migration",
       /currentVersion < 19\)\s*\{\s*await migrateToV19\(db\);/.test(indexSrc)
@@ -3328,6 +3332,159 @@ async function main() {
       0
     );
     db.close();
+  }
+
+  // ── P. v20 foods.emoji ──────────────────────────────────────────────────
+  // The foods table's shape has not changed since v1/v6 (see makeV14Database),
+  // so unlike O above there is nothing to chain through first: a v14-shaped
+  // foods table already has exactly what a real v19 install's foods table
+  // has, and migrateToV20 is exercised directly against it - the same
+  // M-pattern used for v15/v17/v19 (schema shape, idempotence, statements +
+  // fresh-install equivalence), scoped to the one table this step touches.
+  section("P. v20 foods.emoji: schema shape");
+  {
+    const db = makeV14Database(3);
+    const seededBefore = count(db, "foods");
+
+    // A pre-v20 custom row, written with exactly the pre-v20 column list (no
+    // emoji column yet).
+    db.exec(
+      `INSERT INTO foods
+        (id, name_tr, name_en, name_de, name_es, name_fr, category,
+         carb_100g, glycemic_index, glycemic_load, portion_size_g,
+         is_custom, source, barcode, created_at)
+       VALUES ('custom-1', 'Ev yemeğim', 'My homemade dish', 'Mein Hausgericht',
+               'Mi plato casero', 'Mon plat maison', 'dishes',
+               20, 50, 10, 250, 1, NULL, NULL, '2026-01-01T00:00:00.000Z');`
+    );
+
+    await migrateToV20(adapt(db));
+
+    const cols = columns(db, "foods");
+    ok("foods.emoji exists", cols.has("emoji"));
+    eq("emoji is nullable", cols.get("emoji")?.notnull, 0);
+    eq("emoji has no default", cols.get("emoji")?.dflt_value, null);
+    eq("emoji is TEXT-typed", cols.get("emoji")?.type, "TEXT");
+
+    // Every pre-existing row - seeded or custom - backfills to NULL, exactly
+    // as SQLite's ALTER TABLE ADD COLUMN promises for a nullable column with
+    // no default: the seeded catalogue is never editable so it can never
+    // reach app/add-food.tsx's picker, and an existing custom food simply
+    // keeps showing the same lib/foodMeta emojiFor match it always has until
+    // its owner opens it and picks one (see resolveFoodEmoji).
+    eq(
+      "emoji backfills to NULL on the seeded rows",
+      (db.prepare("SELECT COUNT(*) AS c FROM foods WHERE emoji IS NOT NULL;").get() as {
+        c: number;
+      }).c,
+      0
+    );
+    const custom = db
+      .prepare("SELECT * FROM foods WHERE id='custom-1';")
+      .get() as Record<string, unknown>;
+    eq("the pre-v20 custom row survives v20", custom.name_en, "My homemade dish");
+    eq("its new emoji backfills to NULL", custom.emoji, null);
+    eq(
+      "no row was lost or gained - the 3 seeded rows plus the 1 custom row",
+      count(db, "foods"),
+      seededBefore + 1
+    );
+
+    // The column accepts a real value with no CHECK stopping it (same
+    // "ADD COLUMN cannot carry a CHECK without a rebuild" reasoning as v15's
+    // bolus_kind / v19's alarm_enabled - see J and O above).
+    ok(
+      "emoji accepts a value",
+      !refused(db, "UPDATE foods SET emoji = '🍲' WHERE id='custom-1';")
+    );
+    db.close();
+  }
+
+  section("P2. v20 idempotence");
+  {
+    const db = makeV14Database(0);
+    await migrateToV20(adapt(db));
+    db.exec(
+      `INSERT INTO foods
+        (id, name_tr, name_en, category, carb_100g, is_custom, emoji, created_at)
+       VALUES ('f1', 'Elma', 'Apple', 'fruits', 14, 1, '🍏', '2026-01-01T00:00:00.000Z');`
+    );
+
+    let reran = true;
+    try {
+      await migrateToV20(adapt(db));
+      await migrateToV20(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v20 threw: ${String(e)}`);
+    }
+    ok("v20 is safe to re-run", reran);
+    eq(
+      "re-running does not duplicate foods.emoji",
+      (db.prepare("PRAGMA table_info(foods);").all() as { name: string }[]).filter(
+        (c) => c.name === "emoji"
+      ).length,
+      1
+    );
+    eq("still exactly one food", count(db, "foods"), 1);
+    eq(
+      "re-running keeps the stored emoji intact",
+      (db.prepare("SELECT emoji AS e FROM foods WHERE id='f1';").get() as { e: string | null })
+        .e,
+      "🍏"
+    );
+    eq("migrateToV20 stamps 20", readUserVersion(db), 20);
+    db.close();
+  }
+
+  // Unlike O3 (reminders, built from the shared V17_CREATE constant), foods
+  // has no shared CREATE constant to build a byte-identical "fresh" database
+  // from - its CREATE TABLE is inlined in lib/db/index.ts's createSchemaV1
+  // alongside four other tables, hand-mirrored (not imported) by this file's
+  // own makeV14Database. So this follows the SAME pattern J3 (v15's
+  // user_profiles columns, also constant-less) uses instead of O3's DDL-text
+  // comparison: read the real source and assert it declares the fresh-install
+  // ALTER loop itself, rather than build a second copy of the CREATE TABLE
+  // text by hand and risk the comparison only proving two hand-typed strings
+  // agree with each other.
+  section("P3. v20 statements and fresh-install equivalence");
+  {
+    eq(
+      "V20_FOODS_COLUMNS adds exactly the one documented column",
+      V20_FOODS_COLUMNS.map((c) => c.name).join(","),
+      "emoji"
+    );
+    ok(
+      "emoji is a plain nullable TEXT with no default",
+      V20_FOODS_COLUMNS.find((c) => c.name === "emoji")?.type === "TEXT"
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 20", /const SCHEMA_VERSION = 20;/.test(indexSrc));
+    ok(
+      "the v19 → v20 step runs the real migration",
+      /currentVersion < 20\)\s*\{\s*await migrateToV20\(db\);/.test(indexSrc)
+    );
+    ok(
+      "a fresh install applies the same V20_FOODS_COLUMNS list, unconditionally",
+      /for \(const col of V20_FOODS_COLUMNS\)\s*\{\s*\n\s*await db\.execAsync\(`ALTER TABLE foods ADD COLUMN \$\{col\.name\} \$\{col\.type\};`\);/.test(
+        indexSrc
+      )
+    );
+    // The unconditional ALTER loop has to run AFTER the block that CREATEs
+    // foods (it would fail against a table that does not exist yet) and
+    // BEFORE syncSeedCatalog's INSERTs (../index.ts) reach the seeded rows -
+    // an ordering check, since the presence check above cannot see WHERE in
+    // the function the loop sits.
+    const createIdx = indexSrc.indexOf("CREATE TABLE IF NOT EXISTS foods");
+    const alterIdx = indexSrc.indexOf("for (const col of V20_FOODS_COLUMNS)");
+    ok(
+      "the fresh-install ALTER runs after foods is created",
+      createIdx !== -1 && alterIdx !== -1 && alterIdx > createIdx
+    );
   }
 
   // ── K. The chain end to end, and the interruption it used to lose data to ──

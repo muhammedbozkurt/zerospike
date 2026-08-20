@@ -156,6 +156,7 @@ function foodFromMeal(log: {
     custom_notes: null,
     is_custom: 1,
     source: null,
+    emoji: null,
     created_at: log.logged_at,
   };
 }
@@ -192,6 +193,7 @@ function foodFromTemplate(loaded: TemplateWithItems): Food {
     custom_notes: null,
     is_custom: 1,
     source: null,
+    emoji: null,
     created_at: loaded.template.created_at,
   };
 }
@@ -1198,19 +1200,19 @@ function CalculatorScreen() {
       void noteLogAndMaybeReview("log_meal");
       void noteJournalActivity();
       hapticSuccess();
-      // Logging a meal NOW schedules the 2-hour post-meal glucose check reminder.
-      // A backdated entry does not: the countdown would start from this moment
-      // rather than from the meal, so writing up last night's dinner armed a
-      // check for two hours from now and overwrote a timer already running.
+      // Logging a meal asks the post-meal service to schedule the 2-hour glucose
+      // check; schedulePostMealReminder (lib/services/notifications.ts) makes the
+      // actual call, in one place for every meal-logging path: a running timer is
+      // left untouched, and an idle one only arms for a record close to now - a
+      // backdated entry (writing up last night's dinner) does not start a
+      // countdown relative to right now for a meal that already happened.
       // Best effort on purpose: scheduleNotificationAsync throws on a device
       // that refuses the schedule, and an unavailable REMINDER must never cost
       // the user a saved MEAL or trap them in this modal.
-      if (loggedAt == null) {
-        try {
-          await schedulePostMealReminder();
-        } catch (err) {
-          logCrash(err, { screen: "calculator", step: "postMealReminder" });
-        }
+      try {
+        await schedulePostMealReminder(loggedAt);
+      } catch (err) {
+        logCrash(err, { screen: "calculator", step: "postMealReminder" });
       }
       bumpData();
 
@@ -1751,8 +1753,8 @@ function CalculatorScreen() {
         >
           {/* Food identity, kept compact so the read-outs stay the hero. Same
               per-dish plate as the catalogue's own browse row (FoodRow) -
-              emojiFor over the category fallback - so a food does not change
-              appearance between picking it and logging it. */}
+              resolveFoodEmoji's food.emoji-over-emojiFor priority - so a food
+              does not change appearance between picking it and logging it. */}
           <View className="flex-row items-center mb-3">
             <FoodIconTile food={food} size={34} radius={11} style={{ marginRight: 10 }} />
             <View className="flex-1">

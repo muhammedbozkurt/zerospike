@@ -97,3 +97,74 @@ export function postMealElapsedFraction(
   if (total <= 0) return 1;
   return Math.min(1, Math.max(0, (now - window.startedAt) / total));
 }
+
+/**
+ * How far behind "now" a meal record can be and still count as "just ate" for
+ * the AUTO-START decision below. The gap between a tap and the row actually
+ * landing (a slow device, a retry) is seconds, never minutes - anything past
+ * this really was logged for an earlier meal on purpose.
+ */
+export const POST_MEAL_AUTO_START_TOLERANCE_MS = 5 * 60_000;
+
+/**
+ * What logging a MEAL should do to the post-meal timer, decided in exactly one
+ * place so every call site (calculator save, template confirm, the QuickAdd
+ * meal form, a one-tap relog) asks the same question instead of each guessing
+ * at it with its own if:
+ *
+ * - "active": a timer is already running. It is left exactly where it is - the
+ *   meal that triggered this decision may be a second helping eaten mid-
+ *   countdown, and restarting the clock for every bite would mean the "2 hours
+ *   after eating" reminder never actually lands 2 hours after the FIRST bite.
+ *   (See restartPostMealWindowAt for the deliberate, user-initiated way to move
+ *   the anchor instead.)
+ * - "backdated": idle, but the record is not close to now (logging last night's
+ *   dinner today). Arming a countdown that fires relative to right now, for a
+ *   meal that already happened, would be a nudge about nothing.
+ * - "start": idle and the record is close to now - arm it, same as always.
+ */
+export type PostMealAutoStartDecision = "active" | "backdated" | "start";
+
+export function decidePostMealAutoStart(input: {
+  /** A timer is already running; its own window does not matter here. */
+  timerActive: boolean;
+  /** epoch ms the meal was actually logged at. */
+  loggedAtMs: number;
+  /** epoch ms "now" (when the auto-start check runs). */
+  now: number;
+}): PostMealAutoStartDecision {
+  if (input.timerActive) return "active";
+  if (input.now - input.loggedAtMs > POST_MEAL_AUTO_START_TOLERANCE_MS) return "backdated";
+  return "start";
+}
+
+/** Re-arming a timer from a given moment (see restartPostMealWindowAt) instead
+ *  of from "now": either it lands with time left, or that much window has
+ *  already passed and there is nothing left to count down. */
+export type PostMealRestart =
+  | { kind: "restarted"; startedAt: number; endsAt: number; remainingMs: number }
+  | { kind: "elapsed"; startedAt: number; endsAt: number };
+
+/**
+ * Arms a fresh window starting at `startedAt` rather than at "now": the
+ * dashboard's "restart for this meal" action anchors the countdown to the meal
+ * that was just logged, not to the moment the user tapped the action.
+ *
+ * Shares the scheduler-floor handling with retimePostMealWindow (under
+ * POST_MEAL_MIN_SCHEDULE_MS counts as over, not rounded up to a minute) but
+ * starts clean from `startedAt` instead of re-measuring an already-running
+ * timer's own start.
+ */
+export function restartPostMealWindowAt(input: {
+  startedAt: number;
+  windowMin: number;
+  now: number;
+}): PostMealRestart {
+  const { startedAt, windowMin, now } = input;
+  const endsAt = startedAt + Math.round(windowMin * 60_000);
+  const remainingMs = endsAt - now;
+  if (remainingMs < POST_MEAL_MIN_SCHEDULE_MS) {
+    return { kind: "elapsed", startedAt, endsAt };
+  }
+  return { kind: "restarted", startedAt, endsAt, remainingMs };
+}

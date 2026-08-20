@@ -21,7 +21,7 @@ type EmojiRule = readonly [string, string];
  * "bread"), and a short, collision-prone word ("pea", "corn") has to sit below
  * every longer word that contains it ("peanut", "pear", "popcorn").
  */
-const EMOJI_RULES: readonly EmojiRule[] = [
+export const EMOJI_RULES: readonly EmojiRule[] = [
   // ── collision guards - specific compounds ahead of the generic word they
   //    would otherwise be swallowed by, AND ahead of any rule that targets the
   //    same emoji as the food's own category default (a match that lands on
@@ -270,8 +270,10 @@ const EMOJI_RULES: readonly EmojiRule[] = [
   ["mac and cheese", "🍝"],
   ["orzo", "🍝"],
   ["pasta", "🍝"],
+  ["spätzle", "🍝"], // German egg noodle, same spelling in de/fr/es
   ["minestrone", "🥣"],
   ["tiramisu", "🍮"],
+  ["pavlova", "🍮"], // meringue + cream + fruit dessert
   ["panna cotta", "🍮"],
   ["gelato", "🍨"],
   ["kulfi", "🍨"],
@@ -407,6 +409,7 @@ const EMOJI_RULES: readonly EmojiRule[] = [
   ["roll", "🥖"],
   ["crumpet", "🥞"],
   ["pancake", "🥞"],
+  ["kaiserschmarrn", "🥞"],
   ["waffle", "🧇"],
   ["crepe", "🥞"],
   ["crêpe", "🥞"],
@@ -540,6 +543,8 @@ const EMOJI_RULES: readonly EmojiRule[] = [
   ["mulberr", "🫐"],
   ["gooseberr", "🫐"],
   ["elderberr", "🫐"],
+  ["chokeberry", "🫐"],
+  ["greengage", "🍇"], // a plum variety
   ["nectarine", "🍑"],
   ["apricot", "🍑"],
   ["cherr", "🍒"],
@@ -619,6 +624,7 @@ const EMOJI_RULES: readonly EmojiRule[] = [
   ["bresaola", "🍖"],
   ["tripe", "🍖"],
   ["ham", "🍖"],
+  ["pastrami", "🍖"],
   ["chorizo", "🌭"],
   ["bratwurst", "🌭"],
   ["sausage", "🌭"],
@@ -663,6 +669,8 @@ const EMOJI_RULES: readonly EmojiRule[] = [
   ["labneh", "🥣"],
   ["butter", "🧈"],
   ["ghee", "🧈"],
+  ["quark", "🥣"], // German curd cheese, same spelling in fr/es
+  ["crème fraîche", "🥣"],
   ["cream", "🥣"],
   ["milk", "🍼"],
 
@@ -775,6 +783,158 @@ const EMOJI_RULES: readonly EmojiRule[] = [
   ["lemonade", "🍋"],
   ["water", "💧"],
 
+  // ── localized everyday words (tr/de/es/fr/it/pt/ar/ja) ──────────────────
+  // Everything above this line is matched almost exclusively against
+  // ENGLISH text (name_en, always what FoodRow/FoodPlate pass in). This
+  // block exists for the ONE path that is not English: a custom food
+  // (app/add-food.tsx), where name_en holds whatever the user actually
+  // typed, in whatever language the app is running in. Measuring the seed
+  // catalogue's tr/de/es/fr columns against the table above showed a large
+  // gap there (~55-65% falling to the category default) even though the
+  // catalogue itself is fine (~1% on name_en) - this section closes part of
+  // that gap for the nine UI languages, without touching a single English
+  // match above: everything here is appended AFTER every English/proper-
+  // noun rule, so it only ever fires once nothing above already resolved
+  // the name, and it can never steal a match from the table above it.
+  //
+  // Ordering rule inside this block is the same as the rest of the file:
+  // a compound that would otherwise be swallowed by a shorter word this
+  // block ALSO defines sits in the guard group first (e.g. Spanish
+  // "aguacate" ahead of "agua", so avocado does not read as a glass of
+  // water). Every guard below was checked against the real seed catalogue
+  // (scripts/seed.test.ts's own SEED_FOODS) before being added.
+
+  // -- collision guards for this block's own generic words ----------------
+  ["pomme de terre", "🥔"], // ahead of "pomme" (apple)
+  ["pois chiche", "🫘"], // ahead of "pois" (pea) - singular also matches the plural
+  ["chou-fleur", "🥦"], // ahead of "chou" (cabbage, see vegetables below)
+  ["sütlaç", "🍮"], // ahead of "süt" (milk) - Turkish rice pudding
+  ["ıspanak", "🥬"], // ahead of "pan" (bread) - Turkish spinach, dotless ı
+  ["ispanak", "🥬"], // same word, dotted-i spelling as it appears after .toLowerCase()
+  ["pancar", "🥕"], // ahead of "pan" - Turkish beetroot (closest EN rule: beetroot)
+  ["panais", "🥕"], // ahead of "pan" - French parsnip
+  ["pankek", "🥞"], // ahead of "pan" and "kek" - Turkish pancake
+  ["laitue", "🥬"], // ahead of "lait" (milk) - French lettuce
+  ["domuz", "🥓"], // ahead of "muz" (banana) - Turkish pork
+  ["kruvasan", "🥐"], // ahead of "uva" (grape) - Turkish croissant
+  ["keşkek", "🍖"], // ahead of "kek" (cake) - Turkish wheat/meat porridge
+  ["keks", "🍪"], // ahead of "kek" - German biscuit
+  ["poireau", "🥬"], // ahead of "poire" (pear) - French leek
+  ["massepain", "🍬"], // ahead of "pain" (bread) - French marzipan
+  ["escalope", "🍖"], // ahead of "pan" - a breaded escalope is meat, not bread
+  ["col rizada", "🥬"], // ahead of "riz" (rice) - Spanish kale
+  ["agua saborizada", "💧"], // ahead of "riz" - Spanish flavored water
+  ["aguacate", "🥑"], // ahead of "agua" (water) - Spanish avocado
+  ["aguaturma", "🌿"], // ahead of "agua" - Spanish Jerusalem artichoke
+  ["granatapfel", "🍇"], // ahead of "nata" (cream) - German pomegranate
+  ["pastel de carne", "🍖"], // ahead of "pastel" (cake) - Spanish meat pie, not dessert
+  ["wassermelone", "🍉"], // ahead of "wasser" (water) - German watermelon
+  ["salatalık", "🥒"], // ahead of "salata" (salad) - Turkish cucumber
+  ["hackfleisch", "🥩"], // ahead of "fleisch" (meat) - German ground meat
+
+  // -- proteins -------------------------------------------------------------
+  ["tavuk", "🍗"], ["hähnchen", "🍗"], ["pollo", "🍗"], ["poulet", "🍗"],
+  ["frango", "🍗"], ["دجاج", "🍗"], ["鶏肉", "🍗"],
+  ["dana", "🥩"], ["rind", "🥩"], ["ternera", "🥩"], ["bœuf", "🥩"], ["manzo", "🥩"],
+  ["kuzu", "🥩"], ["lamm", "🥩"], ["cordero", "🥩"], ["agneau", "🥩"], ["agnello", "🥩"],
+  ["cordeiro", "🥩"], ["لحم غنم", "🥩"], ["羊肉", "🥩"],
+  ["schwein", "🥓"], ["cerdo", "🥓"], ["porc", "🥓"], ["maiale", "🥓"], ["porco", "🥓"],
+  ["لحم خنزير", "🥓"], ["豚肉", "🥓"],
+  ["balık", "🐟"], ["fisch", "🐟"], ["pescado", "🐟"], ["poisson", "🐟"], ["pesce", "🐟"],
+  ["peixe", "🐟"], ["سمك", "🐟"], ["魚", "🐟"], ["lachs", "🐟"], ["thunfisch", "🐟"],
+  ["yumurta", "🥚"], ["huevo", "🥚"], ["œuf", "🥚"], ["uovo", "🥚"], ["ovo", "🥚"],
+  ["بيضة", "🥚"], ["たまご", "🥚"],
+  ["carne", "🍖"], ["viande", "🍖"], ["fleisch", "🍖"],
+
+  // -- dairy ------------------------------------------------------------------
+  ["süt", "🍼"], ["milch", "🍼"], ["leche", "🍼"], ["lait", "🍼"], ["leite", "🍼"],
+  ["peynir", "🧀"], ["käse", "🧀"], ["queso", "🧀"], ["queijo", "🧀"], ["جبن", "🧀"], ["チーズ", "🧀"],
+  ["yoğurt", "🥣"], ["joghurt", "🥣"], ["yogur", "🥣"], ["yaourt", "🥣"], ["iogurte", "🥣"],
+  ["زبادي", "🥣"], ["ヨーグルト", "🥣"],
+  ["tereyağı", "🧈"], ["mantequilla", "🧈"], ["beurre", "🧈"], ["burro", "🧈"],
+  ["manteiga", "🧈"], ["زبدة", "🧈"], ["バター", "🧈"],
+  ["krema", "🥣"], ["nata", "🥣"], ["crème", "🥣"],
+
+  // -- grains / starches --------------------------------------------------
+  ["pirinç", "🍚"], ["reis", "🍚"], ["arroz", "🍚"], ["riz", "🍚"], ["riso", "🍚"],
+  ["أرز", "🍚"], ["米", "🍚"], ["ご飯", "🍚"],
+  ["ekmek", "🥖"], ["brot", "🥖"], ["pan", "🥖"], ["pain", "🥖"], ["pane", "🥖"],
+  ["pão", "🥖"], ["خبز", "🥖"], ["パン", "🥖"],
+  ["makarna", "🍝"], ["nudeln", "🍝"], ["pâtes", "🍝"],
+  ["erişte", "🍜"], ["nouilles", "🍜"], ["fideos", "🍜"],
+  ["patates", "🥔"], ["kartoffel", "🥔"], ["patata", "🥔"], ["batata", "🥔"],
+  ["mısır", "🌽"], ["mais", "🌽"], ["maíz", "🌽"], ["maïs", "🌽"], ["milho", "🌽"],
+  ["yulaf", "🥣"], ["avena", "🥣"], ["avoine", "🥣"],
+  ["buğday", "🌾"], ["trigo", "🌾"], ["harina", "🌾"], ["farine", "🌾"],
+
+  // -- legumes ----------------------------------------------------------------
+  ["mercimek", "🫘"], ["linsen", "🫘"], ["lentejas", "🫘"], ["lentilles", "🫘"],
+  ["lenticchie", "🫘"], ["عدس", "🫘"], ["レンズ豆", "🫘"],
+  ["nohut", "🫘"], ["kichererbsen", "🫘"], ["garbanzos", "🫘"], ["ceci", "🫘"],
+  ["حمص", "🫘"], ["ひよこ豆", "🫘"],
+  ["fasulye", "🫘"], ["bohnen", "🫘"], ["alubias", "🫘"], ["frijoles", "🫘"],
+  ["judías", "🫘"], ["haricots", "🫘"], ["fagioli", "🫘"], ["feijão", "🫘"], ["فاصوليا", "🫘"],
+  ["bezelye", "🫛"], ["erbsen", "🫛"], ["guisantes", "🫛"], ["pois", "🫛"],
+  ["بازلاء", "🫛"], ["えんどう豆", "🫛"],
+
+  // -- vegetables ---------------------------------------------------------
+  ["domates", "🍅"], ["tomate", "🍅"], ["pomodoro", "🍅"], ["طماطم", "🍅"],
+  ["soğan", "🧅"], ["zwiebel", "🧅"], ["cebolla", "🧅"], ["oignon", "🧅"],
+  ["cipolla", "🧅"], ["بصل", "🧅"], ["玉ねぎ", "🧅"],
+  ["sarımsak", "🧄"], ["knoblauch", "🧄"], ["aglio", "🧄"], ["ثوم", "🧄"], ["にんにく", "🧄"],
+  ["havuç", "🥕"], ["karotte", "🥕"], ["zanahoria", "🥕"], ["carotte", "🥕"],
+  ["جزر", "🥕"], ["にんじん", "🥕"],
+  ["spinat", "🥬"], ["espinaca", "🥬"], ["épinards", "🥬"], ["spinaci", "🥬"],
+  ["espinafre", "🥬"], ["سبانخ", "🥬"], ["ほうれん草", "🥬"],
+  ["salata", "🥗"],
+  ["biber", "🫑"], ["paprika", "🫑"], ["poivron", "🫑"], ["peperone", "🫑"],
+  ["pimentão", "🫑"], ["فلفل", "🫑"], ["ピーマン", "🫑"],
+  ["mantar", "🍄"], ["pilz", "🍄"], ["funghi", "🍄"], ["cogumelo", "🍄"],
+  ["فطر", "🍄"], ["きのこ", "🍄"],
+  ["bal kabağı", "🎃"], ["calabaza", "🎃"],
+  ["brokoli", "🥦"], ["brokkoli", "🥦"],
+  ["melanzana", "🍆"], ["berinjela", "🍆"],
+  ["zucchina", "🥒"], ["courgette", "🥒"], ["abobrinha", "🥒"], ["pepino", "🥒"], ["gurke", "🥒"],
+
+  // -- fruits -----------------------------------------------------------------
+  ["elma", "🍏"], ["manzana", "🍏"], ["pomme", "🍏"], ["apfel", "🍏"], ["mela", "🍏"],
+  ["تفاح", "🍏"], ["りんご", "🍏"],
+  ["muz", "🍌"], ["plátano", "🍌"], ["banane", "🍌"], ["موز", "🍌"], ["バナナ", "🍌"],
+  ["portakal", "🍊"], ["naranja", "🍊"], ["arancia", "🍊"], ["برتقال", "🍊"], ["オレンジ", "🍊"],
+  ["ananas", "🍍"], ["أناناس", "🍍"], ["パイナップル", "🍍"], ["piña", "🍍"],
+  ["üzüm", "🍇"], ["uva", "🍇"], ["عنب", "🍇"], ["ぶどう", "🍇"], ["incir", "🍇"],
+  ["coco", "🥥"],
+  ["çilek", "🍓"], ["fresa", "🍓"], ["fraise", "🍓"], ["fragola", "🍓"], ["morango", "🍓"],
+  ["فراولة", "🍓"], ["いちご", "🍓"],
+  ["şeftali", "🍑"], ["melocotón", "🍑"], ["pêche", "🍑"], ["pesca", "🍑"],
+  ["pêssego", "🍑"], ["خوخ", "🍑"], ["もも", "🍑"],
+  ["kayısı", "🍑"], ["albaricoque", "🍑"], ["abricot", "🍑"], ["مشمش", "🍑"], ["あんず", "🍑"],
+  ["armut", "🍐"], ["pera", "🍐"], ["poire", "🍐"], ["كمثرى", "🍐"],
+  ["limon", "🍋"], ["limón", "🍋"], ["citron", "🍋"], ["limone", "🍋"], ["limão", "🍋"],
+  ["ليمون", "🍋"], ["レモン", "🍋"],
+  ["cereja", "🍒"],
+  ["badem", "🌰"], ["mandel", "🌰"], ["almendra", "🌰"], ["amande", "🌰"], ["mandorle", "🌰"],
+  ["amêndoa", "🌰"], ["لوز", "🌰"], ["アーモンド", "🌰"],
+  ["fındık", "🌰"], ["haselnuss", "🌰"], ["avellana", "🌰"], ["noisette", "🌰"],
+  ["nocciole", "🌰"], ["avelã", "🌰"], ["くるみ", "🌰"],
+  ["kestane", "🌰"], ["kastanie", "🌰"], ["châtaigne", "🌰"],
+
+  // -- sweets -----------------------------------------------------------------
+  ["çikolata", "🍫"], ["chocolat", "🍫"], ["schokolade", "🍫"], ["cioccolato", "🍫"],
+  ["شوكولاتة", "🍫"], ["チョコレート", "🍫"],
+  ["miel", "🍯"], ["honig", "🍯"], ["mel", "🍯"], ["عسل", "🍯"], ["はちみつ", "🍯"],
+  ["kek", "🧁"], ["gâteau", "🧁"], ["pastel", "🧁"], ["torta", "🧁"], ["كعكة", "🧁"], ["ケーキ", "🧁"],
+  ["bisküvi", "🍪"], ["galleta", "🍪"], ["بسكويت", "🍪"], ["クッキー", "🍪"],
+  ["dondurma", "🍨"], ["helado", "🍨"], ["glace", "🍨"], ["آيس كريم", "🍨"], ["アイスクリーム", "🍨"],
+
+  // -- beverages --------------------------------------------------------------
+  ["çay", "🍵"], ["tee", "🍵"], ["thé", "🍵"], ["chá", "🍵"], ["شاي", "🍵"], ["お茶", "🍵"],
+  ["kahve", "☕"], ["kaffee", "☕"], ["café", "☕"], ["قهوة", "☕"], ["コーヒー", "☕"],
+  ["bira", "🍺"], ["bier", "🍺"], ["cerveza", "🍺"], ["cerveja", "🍺"], ["بيرة", "🍺"], ["ビール", "🍺"],
+  ["şarap", "🍷"], ["vin", "🍷"], ["vino", "🍷"], ["vinho", "🍷"], ["نبيذ", "🍷"], ["ワイン", "🍷"],
+  ["jus", "🧃"], ["saft", "🧃"], ["zumo", "🧃"], ["meyve suyu", "🧃"], ["عصير", "🧃"], ["ジュース", "🧃"],
+  ["agua", "💧"], ["wasser", "💧"], ["água", "💧"], ["ماء", "💧"],
+
   // ── low-priority generic catch-alls (checked last on purpose) ──────────
   ["frozen", "🧊"],
 ];
@@ -795,6 +955,64 @@ export function emojiFor(nameEn: string, category: string): string {
   }
   return categoryEmoji(category);
 }
+
+/**
+ * The ONE place that decides which plate a specific, already-stored food
+ * draws: the user's own pick (`food.emoji`, schema v20 - see lib/db/v20Sql)
+ * if there is one, else the same emojiFor(name_en, category) chain every
+ * surface has always shown. Every screen that draws a per-dish plate for a
+ * REAL row (FoodRow's browse list, FoodPlate's FoodIconTile) reads through
+ * this instead of calling emojiFor directly, so a food's icon can never read
+ * differently on one surface than another.
+ *
+ * Takes a structural slice rather than the full `Food` row so a synthetic
+ * stand-in (a typed-name meal, a meal template - see app/calculator.tsx
+ * foodFromMeal/foodFromTemplate) still works: those always carry `emoji:
+ * null` today (nothing synthetic is ever user-edited through
+ * app/add-food.tsx), which falls straight through to emojiFor, unchanged
+ * from before this function existed.
+ */
+export function resolveFoodEmoji(food: {
+  name_en: string;
+  category: string;
+  emoji?: string | null;
+}): string {
+  return food.emoji || emojiFor(food.name_en, food.category);
+}
+
+/**
+ * The compact grid app/add-food.tsx offers for a food the user can edit
+ * (custom, or a cached barcode result - see the isEditableFood rule in
+ * app/(tabs)/food.tsx): about forty everyday food emoji, one or a few per
+ * shelf so no single picture dominates the grid, for a quick specific pick
+ * without asking the user to search a full system emoji keyboard. "Temizle"
+ * in that screen clears the stored choice back to this file's own
+ * emojiFor/category match - it does not remove a row from this list.
+ */
+export const FOOD_EMOJI_PICKER_OPTIONS: readonly string[] = [
+  // fruits
+  "🍏", "🍌", "🍊", "🍓",
+  // vegetables
+  "🍅", "🥦", "🥕", "🥬", "🫑",
+  // grains / bakery
+  "🍞", "🥐", "🍚", "🥯",
+  // legumes
+  "🫘", "🫛",
+  // dairy
+  "🧀", "🥛", "🧈", "🥣",
+  // protein
+  "🍗", "🥩", "🥓", "🐟", "🥚",
+  // dishes / fastfood
+  "🍕", "🌮", "🥪", "🍔", "🍜",
+  // sweets
+  "🍫", "🍪", "🧁", "🍨",
+  // nuts
+  "🥜", "🌰",
+  // beverages
+  "☕", "🍵", "🍺", "🧃",
+  // other
+  "💧",
+];
 
 /**
  * Per-language "everyday staple" keyword lists, matched against the English

@@ -19,6 +19,7 @@ import {
   type FoodCategory,
 } from "../lib/db/categories";
 import { categoryTileIcon } from "../components/FoodPlate";
+import { FOOD_EMOJI_PICKER_OPTIONS } from "../lib/foodMeta";
 import { canAddCustomFood } from "../lib/guardrails";
 import { logCrash } from "../lib/analytics";
 import { Field } from "../components/ui";
@@ -59,6 +60,17 @@ function AddFoodScreen() {
   // scanned food used to land on the unclassified shelf and so every one of
   // them showed the same picture.
   const [category, setCategory] = useState<FoodCategory>(DEFAULT_FOOD_CATEGORY);
+  // The user's own icon (schema v20). null = no override yet, which shows
+  // lib/foodMeta's own emojiFor/category match everywhere this food is drawn
+  // (see resolveFoodEmoji) - same as every food before this field existed.
+  const [emoji, setEmoji] = useState<string | null>(null);
+  // Whether the emoji grid (and, in principle, the rest of this form) applies
+  // to the loaded row: always true on the add path (a food about to be
+  // created is always editable), and set false in edit mode only if the
+  // loaded row turns out not to be one the isEditableFood rule
+  // (app/(tabs)/food.tsx) would ever have let the user reach this screen
+  // for - defense in depth, not a path normal navigation takes.
+  const [editable, setEditable] = useState(true);
   // null = not checked yet. Starting at true (or false) draws a guess before
   // the DB has answered; a user over the free limit would see the form with no
   // banner for a frame, then have it shove the fields down once it appears.
@@ -115,7 +127,11 @@ function AddFoodScreen() {
     (async () => {
       try {
         const f = await getFood(foodId);
-        if (!alive || !f || (f.is_custom !== 1 && f.source !== "off")) return;
+        if (!alive || !f) return;
+        if (f.is_custom !== 1 && f.source !== "off") {
+          setEditable(false);
+          return;
+        }
         setName(f.name_tr);
         setBrand(f.brand_name ?? "");
         setCarb(f.carb_100g);
@@ -123,6 +139,7 @@ function AddFoodScreen() {
         setPortion(f.portion_size_g);
         setNotes(f.custom_notes ?? "");
         setLoadedBarcode(f.barcode);
+        setEmoji(f.emoji);
         // A row written before this field existed (or by a migration's backfill)
         // can hold anything at all, so it is narrowed rather than trusted.
         setCategory(isFoodCategory(f.category) ? f.category : DEFAULT_FOOD_CATEGORY);
@@ -185,6 +202,7 @@ function AddFoodScreen() {
         portion_size_g: portion,
         custom_notes: notes.trim() || null,
         category,
+        emoji,
       });
       bumpData();
       toast(t("food.saved"), "success");
@@ -208,6 +226,7 @@ function AddFoodScreen() {
       barcode: barcode ?? null,
       custom_notes: notes.trim() || null,
       category,
+      emoji,
     });
     bumpData();
     toast(t("food.saved"), "success");
@@ -340,6 +359,69 @@ function AddFoodScreen() {
                 })}
               </View>
             </View>
+
+            {/* Emoji: a specific icon override for a food the user can edit
+                (isEditableFood, app/(tabs)/food.tsx) - the category picture
+                above stays the default everywhere until one is picked here.
+                "Temizle" clears back to that default instead of deleting
+                the food; hidden entirely once the loaded row turns out not
+                to be editable (defense in depth, see `editable` above). */}
+            {editable ? (
+              <View className="mb-4">
+                <View className="flex-row items-center justify-between mb-2">
+                  <Text className="text-sm font-medium text-mut">
+                    {t("food.emoji")}
+                  </Text>
+                  {emoji ? (
+                    <Pressable
+                      onPress={() => {
+                        hapticSelect();
+                        setEmoji(null);
+                      }}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("food.emojiClear")}
+                    >
+                      <Text
+                        style={{ color: THEME.accent, fontSize: 12, fontWeight: "700" }}
+                      >
+                        {t("food.emojiClear")}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                  {FOOD_EMOJI_PICKER_OPTIONS.map((option) => {
+                    const active = option === emoji;
+                    return (
+                      <Pressable
+                        key={option}
+                        onPress={() => {
+                          hapticSelect();
+                          setEmoji(active ? null : option);
+                        }}
+                        hitSlop={2}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={`${t("food.emoji")} ${option}`}
+                        className="items-center justify-center rounded-2xl active:opacity-80"
+                        style={{
+                          width: HIT_TARGET,
+                          height: HIT_TARGET,
+                          borderWidth: 1,
+                          borderColor: active ? THEME.accent : THEME.border,
+                          backgroundColor: active
+                            ? withAlpha(THEME.accent, 0.16)
+                            : THEME.glass,
+                        }}
+                      >
+                        <Text style={{ fontSize: 20 }}>{option}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
             <View className="mb-3">
               <Text className="text-sm font-medium text-mut mb-1.5">{t("food.carbs")}</Text>

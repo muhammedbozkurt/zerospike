@@ -35,6 +35,7 @@ import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "./v16Sql";
 import { V17_CREATE } from "./v17Sql";
 import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "./v18Sql";
 import { V19_REMINDERS_COLUMNS } from "./v19Sql";
+import { V20_FOODS_COLUMNS } from "./v20Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -73,7 +74,8 @@ export type SchemaStamp =
   | 16
   | 17
   | 18
-  | 19;
+  | 19
+  | 20;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -461,5 +463,38 @@ export async function migrateToV19(db: SQLite.SQLiteDatabase): Promise<void> {
       );
     }
     await stampSchemaVersion(db, 19);
+  });
+}
+
+/**
+ * The v19 → v20 migration: one column on the food catalogue (see ./v20Sql) -
+ * `emoji`, the user's own icon for a food they can edit (app/add-food.tsx's
+ * emoji grid). One guarded ADD COLUMN, exactly like v15/v16/v19: no table is
+ * rebuilt and no row is read or rewritten, so an interrupted run cannot cost
+ * a food and a re-run is a no-op. The column check runs BEFORE the
+ * transaction (like migrateToV8/V13/V15/V16/V19), so nothing inside it can
+ * throw a "duplicate column" that would leave a half-applied schema with
+ * user_version already advanced.
+ *
+ * Every existing row (seeded or custom) starts at NULL: the seeded catalogue
+ * never sets it (a seeded row is never editable), and an existing custom food
+ * simply shows the same emojiFor match it always has until its owner opens it
+ * and picks one - see resolveFoodEmoji in lib/foodMeta for the one place that
+ * decides between the two.
+ */
+export async function migrateToV20(db: SQLite.SQLiteDatabase): Promise<void> {
+  const cols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(foods);"
+  );
+  const present = new Set(cols.map((c) => c.name));
+  const missing = V20_FOODS_COLUMNS.filter((c) => !present.has(c.name));
+
+  await db.withTransactionAsync(async () => {
+    for (const col of missing) {
+      await db.execAsync(
+        `ALTER TABLE foods ADD COLUMN ${col.name} ${col.type};`
+      );
+    }
+    await stampSchemaVersion(db, 20);
   });
 }

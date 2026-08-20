@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { Food, Lang } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { num } from "../lib/format";
-import { emojiFor } from "../lib/foodMeta";
+import { resolveFoodEmoji } from "../lib/foodMeta";
 import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME } from "../lib/theme/tokens";
 import { categoryTileIcon, EMOJI_RENDERS } from "./FoodPlate";
 import { IconTile } from "./rich";
@@ -58,11 +58,12 @@ function FoodRowBase({
       className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
       style={{ minHeight: HIT_TARGET + 12 }}
     >
-      {/* A specific illustration per dish (lib/foodMeta emojiFor), not just
-          the shelf's icon - falls back to the category plate on its own when
-          nothing in the keyword table matches, same as every other surface. */}
+      {/* The user's own emoji pick if there is one, else a specific
+          illustration per dish (lib/foodMeta emojiFor) - not just the
+          shelf's icon. See resolveFoodEmoji for the one place this priority
+          is decided, shared with FoodIconTile below. */}
       <IconTile
-        emoji={EMOJI_RENDERS ? emojiFor(food.name_en, food.category) : undefined}
+        emoji={EMOJI_RENDERS ? resolveFoodEmoji(food) : undefined}
         icon={categoryTileIcon(food.category)}
         hero
         size={40}

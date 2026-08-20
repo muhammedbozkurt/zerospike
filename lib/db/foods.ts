@@ -397,6 +397,10 @@ export interface NewFoodInput {
   brand_name?: string | null;
   barcode?: string | null;
   custom_notes?: string | null;
+  /** The user's own icon (schema v20), from app/add-food.tsx's emoji grid.
+   *  Omitted or null keeps the column at its NULL default, which falls
+   *  through to lib/foodMeta emojiFor's own match (see resolveFoodEmoji). */
+  emoji?: string | null;
 }
 
 /**
@@ -419,8 +423,8 @@ export async function addCustomFood(input: NewFoodInput): Promise<Food> {
     `INSERT INTO foods
       (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
        category, barcode, carb_100g, glycemic_index, glycemic_load,
-       portion_size_g, brand_name, custom_notes, is_custom, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?);`,
+       portion_size_g, brand_name, custom_notes, is_custom, emoji, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);`,
     [
       id,
       name,
@@ -437,6 +441,7 @@ export async function addCustomFood(input: NewFoodInput): Promise<Food> {
       input.portion_size_g ?? 100,
       input.brand_name?.trim() || null,
       input.custom_notes?.trim() || null,
+      input.emoji?.trim() || null,
       now,
     ]
   );
@@ -512,6 +517,14 @@ export async function updateFood(
   if (patch.custom_notes !== undefined) {
     fields.push("custom_notes = ?");
     values.push(patch.custom_notes?.trim() || null);
+  }
+  // Explicit null (not just omitted) is how app/add-food.tsx's "clear" button
+  // reverts to lib/foodMeta's own emojiFor/category match - see
+  // resolveFoodEmoji - so this checks `!== undefined`, same as every other
+  // nullable field above.
+  if (patch.emoji !== undefined) {
+    fields.push("emoji = ?");
+    values.push(patch.emoji?.trim() || null);
   }
 
   if (fields.length > 0) {

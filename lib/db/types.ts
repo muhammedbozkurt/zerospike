@@ -130,6 +130,12 @@ export interface Food {
   /** null for the seeded catalog and for the user's own foods; 'off' for a
    *  barcode result cached from Open Food Facts. */
   source: string | null;
+  /** The user's own icon (schema v20), picked from app/add-food.tsx's emoji
+   *  grid. Only ever set on a food they can edit (custom, or source 'off');
+   *  null for the whole seeded catalogue forever, and null on any editable
+   *  food until its owner picks one. See lib/foodMeta resolveFoodEmoji for
+   *  the one place that decides food.emoji vs the emojiFor keyword match. */
+  emoji: string | null;
   created_at: string;
 }
 

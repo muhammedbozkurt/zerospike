@@ -31,6 +31,7 @@ import { captureDeletion } from "../../lib/db/undo";
 import type { LogTag, PeriodTag } from "../../lib/db/types";
 import {
   startPostMealTimer,
+  restartPostMealTimerAt,
   scheduleLowFollowup,
   lowFollowupThresholdMgdl,
   getPostMealTimerState,
@@ -758,6 +759,50 @@ export default function DashboardScreen() {
       ? postMealTimer
       : null;
 
+  // The "restart for this meal" action's own visibility: a meal logged AFTER
+  // the running timer's own anchor exists (schedulePostMealReminder leaves an
+  // already-active timer untouched per decidePostMealAutoStart, so that newer
+  // meal never moved the countdown on its own - this is how the user moves it
+  // themselves). No separate storage: `entries` is the same feed the journal
+  // list already reads, newest first, so the first qualifying row is the one
+  // to offer. Cleared the moment the timer itself is cleared or completes.
+  const postMealRestartCandidate = useMemo(() => {
+    if (!postMealTimerForProfile) return null;
+    const startedAtMs = postMealTimerForProfile.startedAt;
+    for (const e of entries) {
+      if (e.kind === "meal" && new Date(e.logged_at).getTime() > startedAtMs) return e;
+    }
+    return null;
+  }, [entries, postMealTimerForProfile]);
+
+  // Always-visible shortcut on the running countdown card: the same one-tap
+  // entry point the "+" add-record sheet's own food card uses (see the
+  // QuickAddSheet onFood prop below) - logging a meal never has to mean
+  // touching the timer first.
+  function logMealFromCountdown() {
+    hapticSelect();
+    router.navigate("/(tabs)/food");
+  }
+
+  // Re-anchors the running timer to a meal logged while it was already
+  // counting down, instead of the meal's own auto-start being a no-op forever.
+  // Non-prompting (see restartPostMealTimerAt): the user already has a timer
+  // running, so this never raises a fresh permission dialog.
+  async function restartPostMealForEntry(entry: MealEntry) {
+    if (!activeProfile) return;
+    const outcome = await restartPostMealTimerAt(new Date(entry.logged_at), activeProfile.id);
+    if (outcome === "idle") return;
+    hapticSuccess();
+    await refreshPostMealTimer();
+    void syncLiveData(activeProfile.id, glucoseUnit);
+    if (outcome === "elapsed") {
+      setPostMealTimer(null);
+      toast(t("dashboard.postMealRestartElapsed"), "info");
+    } else {
+      toast(t("dashboard.postMealRestarted"), "success");
+    }
+  }
+
   // Manual logging is unlimited on both tiers now, so there is no gate here.
   function openLogger(period: PeriodTag) {
     if (!activeProfile) return;
@@ -1458,6 +1503,9 @@ export default function DashboardScreen() {
             timer={postMealTimerForProfile}
             onCancel={cancelEatingTimer}
             onElapsed={onPostMealElapsed}
+            onLogMeal={logMealFromCountdown}
+            restartEntry={postMealRestartCandidate}
+            onRestart={restartPostMealForEntry}
           />
         ) : (
           <View className="flex-row items-center justify-between">
@@ -1904,10 +1952,19 @@ function PostMealCountdown({
   timer,
   onCancel,
   onElapsed,
+  onLogMeal,
+  restartEntry,
+  onRestart,
 }: {
   timer: PostMealTimerWindow;
   onCancel: () => void;
   onElapsed: () => void;
+  /** Always-visible shortcut to the meal-logging entry point. */
+  onLogMeal: () => void;
+  /** The newer meal record to re-anchor onto, or null while none qualifies -
+   *  its own presence is what shows/hides the "restart for this meal" action. */
+  restartEntry: MealEntry | null;
+  onRestart: (entry: MealEntry) => void;
 }) {
   const { t } = useTranslation();
   const [now, setNow] = useState(() => Date.now());
@@ -1982,6 +2039,41 @@ function PostMealCountdown({
             <Ionicons name="close" size={15} color={THEME.muted} />
           </Pressable>
         </View>
+      </View>
+      {/* Two small actions, stacked in their own row so the tight header row
+          above (title + countdown + cancel) never has to squeeze them in and
+          overflow. "Log a meal" stays up the whole time the timer runs; the
+          restart action only joins it while a newer meal record qualifies. */}
+      <View className="flex-row items-center flex-wrap" style={{ gap: 16, marginBottom: 10 }}>
+        <Pressable
+          onPress={onLogMeal}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t("dashboard.postMealLogMeal")}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+        >
+          <Ionicons name="restaurant-outline" size={13} color={THEME.accent} />
+          <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>
+            {t("dashboard.postMealLogMeal")}
+          </Text>
+        </Pressable>
+        {restartEntry ? (
+          <Pressable
+            onPress={() => onRestart(restartEntry)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("dashboard.postMealRestart")}
+            style={{ flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 }}
+          >
+            <Ionicons name="refresh" size={13} color={THEME.muted} />
+            <Text
+              style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}
+              numberOfLines={1}
+            >
+              {t("dashboard.postMealRestart")}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
       <View style={{ height: 6, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden" }}>
         <View

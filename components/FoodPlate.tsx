@@ -5,7 +5,7 @@ import * as Device from "expo-device";
 
 import { CATEGORY_ICON, categoryEmoji } from "../lib/db/categories";
 import type { Food } from "../lib/db/types";
-import { emojiFor } from "../lib/foodMeta";
+import { resolveFoodEmoji } from "../lib/foodMeta";
 import { IconTile } from "./rich/IconTile";
 
 /* Current iOS simulator runtimes ship without a color emoji font (see
@@ -63,27 +63,30 @@ export function FoodPlate({ category, size = 40, radius = 14, style }: FoodPlate
 }
 
 interface FoodIconTileProps {
-  /** The specific dish this tile illustrates - only `name_en` and `category`
-   *  are read, so a catalogue row, a barcode result or the synthetic Food a
-   *  screen builds for a template/typed-name entry all work unchanged. */
-  food: Pick<Food, "name_en" | "category">;
+  /** The specific dish this tile illustrates - only `name_en`, `category`
+   *  and (optionally) `emoji` are read, so a catalogue row, a barcode result
+   *  or the synthetic Food a screen builds for a template/typed-name entry
+   *  all work unchanged (the synthetic ones simply carry no `emoji`, same as
+   *  before this field existed). */
+  food: Pick<Food, "name_en" | "category"> & { emoji?: Food["emoji"] };
   size?: number;
   radius?: number;
   style?: StyleProp<ViewStyle>;
 }
 
 /**
- * The plate for ONE specific, already-selected food - the catalogue's
- * per-dish icon (lib/foodMeta emojiFor) over the same categoryTileIcon
- * fallback FoodPlate uses, so a dish FoodRow already illustrates specifically
- * (the browse list) looks the same everywhere the user is shown that exact
- * food again (the calculator's food card, a meal response's summary), not
- * just its shelf's generic plate.
+ * The plate for ONE specific, already-selected food - the user's own emoji
+ * pick if there is one, else the catalogue's per-dish icon (lib/foodMeta
+ * emojiFor), over the same categoryTileIcon fallback FoodPlate uses. See
+ * resolveFoodEmoji (lib/foodMeta) for the one place that priority is
+ * decided, shared with FoodRow's browse list, so a dish looks the same
+ * everywhere the user is shown that exact food again (the calculator's food
+ * card, a meal response's summary), not just its shelf's generic plate.
  */
 export function FoodIconTile({ food, size = 40, radius = 14, style }: FoodIconTileProps) {
   return (
     <IconTile
-      emoji={EMOJI_RENDERS ? emojiFor(food.name_en, food.category) : undefined}
+      emoji={EMOJI_RENDERS ? resolveFoodEmoji(food) : undefined}
       icon={categoryTileIcon(food.category)}
       hero
       size={size}

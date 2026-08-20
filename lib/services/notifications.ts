@@ -31,6 +31,8 @@ import { shouldUseAlarm } from "../alarmSelect";
 import {
   derivePostMealStart,
   retimePostMealWindow,
+  decidePostMealAutoStart,
+  restartPostMealWindowAt,
   type PostMealTimerWindow,
 } from "../postMealTimer";
 
@@ -1318,6 +1320,18 @@ export async function cancelPostMealTimer(): Promise<void> {
   endPostMealActivity();
 }
 
+/** What a meal log's call to schedulePostMealReminder actually did. */
+export type PostMealAutoStartResult =
+  /** Armed a fresh countdown, same as always. */
+  | "started"
+  /** A timer was already running: left untouched (see decidePostMealAutoStart -
+   *  the meal that triggered this call may be a second bite mid-countdown). */
+  | "active"
+  /** Idle, but the record is not close to now (a backdated entry): nothing armed. */
+  | "backdated"
+  /** The master switch, the postMeal toggle, or permission said no. */
+  | "off";
+
 /**
  * Auto post-meal reminder, armed when a MEAL is logged.
  *
@@ -1326,15 +1340,35 @@ export async function cancelPostMealTimer(): Promise<void> {
  * post-meal countdown the user never asked for. The timer has exactly two
  * deliberate sources - this (a meal record) and the "I started eating" button.
  *
+ * `loggedAt` is the moment the MEAL actually happened (null/omitted = "now",
+ * the same convention every caller already uses for "the user left the time
+ * picker untouched"). Every call site passes it through unconditionally and
+ * lets decidePostMealAutoStart (lib/postMealTimer.ts) make the call, rather
+ * than each guessing with its own if: a timer already running is left alone,
+ * and an idle timer only arms for a record close to now - a backdated entry
+ * (writing up last night's dinner) must not start a countdown relative to
+ * right now for a meal that already happened.
+ *
  * Honors the saved preference (enabled + postMeal toggle), and no-ops if
  * disabled or permission is denied.
  */
-export async function schedulePostMealReminder(): Promise<void> {
+export async function schedulePostMealReminder(
+  loggedAt?: Date | number | null
+): Promise<PostMealAutoStartResult> {
   const prefs = await getNotificationPrefs();
-  if (!prefs.enabled || !prefs.postMeal) return;
-  if (!(await ensureNotificationPermission())) return;
+  if (!prefs.enabled || !prefs.postMeal) return "off";
+  const loggedAtMs =
+    loggedAt == null ? Date.now() : loggedAt instanceof Date ? loggedAt.getTime() : loggedAt;
+  const decision = decidePostMealAutoStart({
+    timerActive: (await getPostMealTimerEnd()) != null,
+    loggedAtMs,
+    now: Date.now(),
+  });
+  if (decision !== "start") return decision;
+  if (!(await ensureNotificationPermission())) return "off";
   const profile = await readActiveProfile();
   await schedulePostMealAt({ minutes: prefs.postMealMinutes, profileId: profile?.id });
+  return "started";
 }
 
 /**
@@ -1351,6 +1385,50 @@ export async function startPostMealTimer(): Promise<number | null> {
   const profile = await readActiveProfile();
   await schedulePostMealAt({ minutes: prefs.postMealMinutes, profileId: profile?.id });
   return prefs.postMealMinutes;
+}
+
+/**
+ * Dashboard "restart for this meal": a running timer is re-anchored to a
+ * SPECIFIC meal's own moment instead of to now. The deliberate, user-initiated
+ * counterpart to schedulePostMealReminder's "active" no-op - that call leaves an
+ * already-running timer untouched on purpose, and this is how the user moves
+ * the anchor themselves when the newer meal is the one they actually want the
+ * 2-hour check measured from.
+ *
+ * Non-prompting like a Settings change (applyPostMealWindowChange): the user
+ * already granted permission once to have a timer running at all, so this never
+ * raises the OS dialog again - it only re-arms with what is already granted.
+ */
+export async function restartPostMealTimerAt(
+  loggedAt: Date | number,
+  profileId?: string
+): Promise<PostMealWindowChange> {
+  try {
+    const prefs = await getNotificationPrefs();
+    if (!prefs.enabled) return "idle";
+    if (!(await hasNotificationPermission())) return "idle";
+    const startedAt = loggedAt instanceof Date ? loggedAt.getTime() : loggedAt;
+    const next = restartPostMealWindowAt({
+      startedAt,
+      windowMin: prefs.postMealMinutes,
+      now: Date.now(),
+    });
+    if (next.kind === "elapsed") {
+      await cancelPostMealTimer();
+      return "elapsed";
+    }
+    await schedulePostMealAt({
+      minutes: next.remainingMs / 60_000,
+      windowMin: prefs.postMealMinutes,
+      endsAt: next.endsAt,
+      startedAt: next.startedAt,
+      profileId: profileId ?? (await readActiveProfile())?.id,
+    });
+    return "retimed";
+  } catch {
+    // The running timer keeps its old anchor; nothing is lost.
+    return "idle";
+  }
 }
 
 /** What a post-meal window change did to the running timer. */

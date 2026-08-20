@@ -715,7 +715,10 @@ export default function FoodScreen() {
       });
       logEvent("log_added", { kind: "meal", source: "template" });
       hapticSuccess();
-      await schedulePostMealReminder();
+      // `when` carries the sheet's own time pick straight through: a running
+      // timer is left untouched and a backdated pick does not start a fresh one
+      // (see decidePostMealAutoStart, lib/postMealTimer.ts).
+      await schedulePostMealReminder(when);
       void noteJournalActivity();
       bumpData();
       setConfirmEntry(null);
