@@ -61,6 +61,7 @@ const ja: TranslationSchema = {
       gmi: "グルコース管理指標(GMI)",
       cdcPrediabetes: "境界型糖尿病について(CDC)",
       adaDiabetesRiskTest: "糖尿病リスクチェック(ADA)",
+      acogGestational: "妊娠糖尿病の患者向け情報(ACOG)",
     },
   },
   onboarding: {

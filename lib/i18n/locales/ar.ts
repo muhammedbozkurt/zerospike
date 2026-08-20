@@ -61,6 +61,7 @@ const ar: TranslationSchema = {
       gmi: "مؤشر إدارة الغلوكوز (GMI)",
       cdcPrediabetes: "عن مقدمات السكري (CDC)",
       adaDiabetesRiskTest: "اختبار خطر الإصابة بالسكري (ADA)",
+      acogGestational: "معلومات للمريضات عن سكري الحمل (ACOG)",
     },
   },
   onboarding: {

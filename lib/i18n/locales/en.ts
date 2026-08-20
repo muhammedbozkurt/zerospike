@@ -61,6 +61,7 @@ const en: TranslationSchema = {
       gmi: "Glucose Management Indicator (GMI)",
       cdcPrediabetes: "About prediabetes (CDC)",
       adaDiabetesRiskTest: "Diabetes risk test (ADA)",
+      acogGestational: "Patient information about gestational diabetes (ACOG)",
     },
   },
   onboarding: {

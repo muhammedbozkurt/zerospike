@@ -66,7 +66,7 @@ const REFERENCES: { labelKey: string; org: string; url: string; host: string }[]
   {
     org: "Centers for Disease Control and Prevention (CDC)",
     labelKey: "sources.refs.cdcPrediabetes",
-    url: "https://www.cdc.gov/prediabetes/",
+    url: "https://www.cdc.gov/diabetes/prevention-type-2/prediabetes-prevent-type-2.html",
     host: "cdc.gov",
   },
   {
@@ -74,6 +74,12 @@ const REFERENCES: { labelKey: string; org: string; url: string; host: string }[]
     labelKey: "sources.refs.adaDiabetesRiskTest",
     url: "https://diabetes.org/diabetes-risk-test",
     host: "diabetes.org",
+  },
+  {
+    org: "American College of Obstetricians and Gynecologists (ACOG)",
+    labelKey: "sources.refs.acogGestational",
+    url: "https://www.acog.org/womens-health/faqs/gestational-diabetes",
+    host: "acog.org",
   },
 ];
 

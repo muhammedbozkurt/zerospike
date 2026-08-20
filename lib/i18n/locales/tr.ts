@@ -59,6 +59,7 @@ const tr = {
       gmi: "Glukoz Yönetim Göstergesi (GMI)",
       cdcPrediabetes: "Prediyabet hakkında (CDC)",
       adaDiabetesRiskTest: "Diyabet risk testi (ADA)",
+      acogGestational: "Gestasyonel diyabet hakkında hasta bilgisi (ACOG)",
     },
   },
   onboarding: {

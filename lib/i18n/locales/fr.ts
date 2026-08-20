@@ -61,6 +61,7 @@ const fr: TranslationSchema = {
       gmi: "Indicateur de gestion du glucose (GMI)",
       cdcPrediabetes: "À propos du prédiabète (CDC)",
       adaDiabetesRiskTest: "Test de risque de diabète (ADA)",
+      acogGestational: "Informations aux patientes sur le diabète gestationnel (ACOG)",
     },
   },
   onboarding: {

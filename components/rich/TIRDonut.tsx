@@ -44,7 +44,10 @@ export function TIRDonut({
 }: TIRDonutProps) {
   const cx = size / 2;
   const cy = size / 2;
-  const r = (size - strokeWidth) / 2;
+  // Glow segments draw at strokeWidth + 2 (below); the radius must budget for
+  // that THICKEST stroke or the ring's outer edge lands 1px outside the SVG on
+  // all four tangent points and gets flat-clipped there.
+  const r = (size - (strokeWidth + 2)) / 2;
   const c = 2 * Math.PI * r;
   let acc = 0;
 

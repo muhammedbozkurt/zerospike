@@ -1,14 +1,21 @@
 import { currentLang } from "./i18n";
 
 /**
- * Language-aware legal links on greeneyeapp.com.
- * The site hosts Turkish at /legal/... and other languages at /en/legal/...
- * So Turkish users open the TR pages; everyone else opens the EN pages.
+ * Language-aware legal/support links on greeneyeapp.com.
+ * The site hosts Turkish at the root (/legal/..., /zerospike/support), and
+ * localized pages for de, fr and es at /<lang>/legal/..., /<lang>/zerospike/support.
+ * Every other supported language (it, pt, ar, ja) has no localized page, so it
+ * falls back to the English pages at /en/legal/..., /en/zerospike/support.
  */
 const BASE = "https://greeneyeapp.com";
 
+const LOCALIZED_LANGS = new Set(["de", "fr", "es"]);
+
 function prefix(): string {
-  return currentLang() === "tr" ? "/legal" : "/en/legal";
+  const lang = currentLang();
+  if (lang === "tr") return "/legal";
+  if (LOCALIZED_LANGS.has(lang)) return `/${lang}/legal`;
+  return "/en/legal";
 }
 
 export function privacyUrl(): string {
@@ -20,7 +27,7 @@ export function termsUrl(): string {
 }
 
 export function supportUrl(): string {
-  // Support lives at /<app>/support (TR) and /en/<app>/support (others),
-  // matching the sibling apps, not under /legal/.
-  return `${BASE}${currentLang() === "tr" ? "" : "/en"}/zerospike/support`;
+  const lang = currentLang();
+  const supportPrefix = lang === "tr" ? "" : LOCALIZED_LANGS.has(lang) ? `/${lang}` : "/en";
+  return `${BASE}${supportPrefix}/zerospike/support`;
 }
