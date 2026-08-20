@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   View,
@@ -18,6 +20,11 @@ import { InlineTimePicker } from "./InlineTimePicker";
 import { MedNamePicker } from "./MedNamePicker";
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { GradientCTA } from "./rich/GradientCTA";
+import {
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+  requestAlarmAuthorization,
+} from "../modules/zerospike-alarmkit";
 
 const inputStyle = {
   borderRadius: RADIUS.md,
@@ -46,6 +53,12 @@ export interface ReminderSavePayload {
    *  custom (required, so this is never blank when type is "custom") and
    *  med (optional - null means the generic "İlaç" label). */
   label: string | null;
+  /** 2.2.0's A1 (AlarmKit) opt-in - see ReminderUpdate.alarmEnabled in
+   *  lib/db/reminders.ts. Always false on a device/OS where AlarmKit does not
+   *  exist (the row below is never even shown there), and only ever true once
+   *  the user has actually been asked and granted the AlarmKit permission -
+   *  see the "Play as alarm" row below. */
+  alarmEnabled: boolean;
 }
 
 /**
@@ -125,6 +138,15 @@ export function ReminderEditSheet({
   const [customLabel, setCustomLabel] = useState("");
   const [medName, setMedName] = useState("");
 
+  // "Play as alarm" (2.2.0's A1) - the row itself only ever renders when
+  // AlarmKit exists on this OS (iOS 26+); this is a plain sync native call
+  // (like isLiveActivityAvailable), so it needs no effect/loading state of its
+  // own and cannot change while the sheet is open.
+  const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
+  const [alarmEnabled, setAlarmEnabled] = useState(false);
+  const [alarmDenied, setAlarmDenied] = useState(false);
+  const [alarmBusy, setAlarmBusy] = useState(false);
+
   useEffect(() => {
     if (!visible) return;
     if (editingReminder) {
@@ -132,15 +154,49 @@ export function ReminderEditSheet({
       setTime(editingReminder.time);
       setCustomLabel(editingReminder.type === "custom" ? editingReminder.label ?? "" : "");
       setMedName(editingReminder.type === "med" ? editingReminder.label ?? "" : "");
+      setAlarmEnabled(editingReminder.alarm_enabled === 1);
     } else {
       setType(typeOptions[0]?.value ?? "glucose");
       setTime(DEFAULT_TIME);
       setCustomLabel("");
       setMedName("");
+      setAlarmEnabled(false);
     }
     setTimePickerOpen(false);
+    setAlarmDenied(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, editingReminder?.id]);
+
+  /**
+   * Turning the switch ON is the explicit user action that earns the AlarmKit
+   * permission prompt - mirrors requestNotificationPermission's own "only an
+   * explicit action prompts" rule (see app/settings/reminders.tsx's
+   * toggleEnabled). Already-granted skips straight to enabling; a fresh denial
+   * (or one from an earlier session) leaves the switch off and shows the
+   * system-settings hint instead of silently doing nothing. Turning it back
+   * OFF never touches the permission at all.
+   */
+  async function onToggleAlarm(value: boolean) {
+    if (!value) {
+      setAlarmEnabled(false);
+      setAlarmDenied(false);
+      return;
+    }
+    setAlarmBusy(true);
+    try {
+      let status = getAlarmAuthorizationStatus();
+      if (status !== "authorized") status = await requestAlarmAuthorization();
+      if (status === "authorized") {
+        setAlarmEnabled(true);
+        setAlarmDenied(false);
+      } else {
+        setAlarmEnabled(false);
+        setAlarmDenied(true);
+      }
+    } finally {
+      setAlarmBusy(false);
+    }
+  }
 
   const trimmedCustom = customLabel.trim();
   const canSave = !saving && (type !== "custom" || trimmedCustom.length > 0);
@@ -149,7 +205,7 @@ export function ReminderEditSheet({
     if (!canSave) return;
     const label =
       type === "custom" ? trimmedCustom : type === "med" ? medName.trim() || null : null;
-    void onSave({ type, time, label });
+    void onSave({ type, time, label, alarmEnabled: alarmKitAvailable && alarmEnabled });
   }
 
   return (
@@ -248,6 +304,41 @@ export function ReminderEditSheet({
                   autoFillFirst={false}
                   emptyLabel={t("meds.nameOptional")}
                 />
+              ) : null}
+
+              {alarmKitAvailable ? (
+                <View style={{ marginTop: 4, marginBottom: 18 }}>
+                  <View
+                    className="flex-row items-center justify-between"
+                    style={inputStyle}
+                  >
+                    <View className="flex-row items-center" style={{ flex: 1, marginRight: 8 }}>
+                      <Ionicons name="alarm" size={16} color={THEME.muted} />
+                      <Text
+                        style={{ color: THEME.ink, marginLeft: 8, fontSize: 14, flexShrink: 1 }}
+                      >
+                        {t("reminders.playAsAlarm")}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={alarmEnabled}
+                      onValueChange={(v) => void onToggleAlarm(v)}
+                      disabled={alarmBusy}
+                      trackColor={{ true: THEME.accent, false: THEME.border }}
+                      thumbColor={THEME.ink}
+                    />
+                  </View>
+                  {alarmDenied ? (
+                    <Pressable onPress={() => Linking.openSettings()} className="mt-2 px-1">
+                      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+                        {t("reminders.alarmPermissionDenied")}{" "}
+                        <Text style={{ color: THEME.accent, fontWeight: "700" }}>
+                          {t("settings.openSystemSettings")}
+                        </Text>
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               ) : null}
 
               <GradientCTA

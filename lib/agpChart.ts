@@ -82,6 +82,9 @@ export interface AgpGeometry {
   targetBand: { x: number; y: number; width: number; height: number };
   /** p75 left-to-right, then p25 right-to-left. Empty below two hours. */
   iqrPolygon: Point[];
+  /** p95 left-to-right, then p5 right-to-left - the wider outer band around
+   *  iqrPolygon. Same emptiness rule (below two hours). */
+  p595Polygon: Point[];
   /** The median curve. A single point still renders as a dot. */
   medianLine: Point[];
   yTicks: { value: number; y: number }[];
@@ -145,6 +148,17 @@ export function buildAgpGeometry(
       ]
     : [];
 
+  const p595Polygon: Point[] = wide
+    ? [
+        { x: plotLeft, y: y(first.p95) },
+        ...bands.map((b) => ({ x: x(b.hour), y: y(b.p95) })),
+        { x: plotRight, y: y(last.p95) },
+        { x: plotRight, y: y(last.p05) },
+        ...[...bands].reverse().map((b) => ({ x: x(b.hour), y: y(b.p05) })),
+        { x: plotLeft, y: y(first.p05) },
+      ]
+    : [];
+
   return {
     targetBand: {
       x: plotLeft,
@@ -153,6 +167,7 @@ export function buildAgpGeometry(
       height: y(band.low) - y(band.high),
     },
     iqrPolygon,
+    p595Polygon,
     medianLine,
     yTicks: agpYTicks(band).map((value) => ({ value, y: y(value) })),
     xTicks: AGP_X_TICKS.map((hour) => ({ hour, x: x(hour) })),

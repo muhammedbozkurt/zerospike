@@ -6,6 +6,7 @@
     "NSHealthUpdateUsageDescription": "zerospike grava no Apple Saúde as medições de glicemia que você digita manualmente, somente quando você ativa essa opção em Configurações.",
     "NSLocationWhenInUseUsageDescription": "zerospike pode anexar sua localização atual a uma mensagem enviada pela tela SOS, para que alguém encontre você mais rápido.",
     "NSContactsUsageDescription": "zerospike permite escolher um contato de emergência da sua lista de contatos para a tela SOS.",
+    "NSAlarmKitUsageDescription": "zerospike usa o AlarmKit para que um lembrete que você criar também possa tocar como um alarme de verdade, somente para os lembretes em que você ativa essa opção.",
     "NSMotionUsageDescription": "zerospike não coleta dados de movimento. Um componente de localização do app faz referência a esta permissão; seu movimento nunca é rastreado."
   }
 }

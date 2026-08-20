@@ -4,7 +4,16 @@ import type { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 
 import { GLUCOSE_RICH, THEME, glow } from "../../lib/theme/tokens";
-import { seriesPaths } from "./svgGeom";
+import { pathsFromPoints, ribbonPath, seriesPoints } from "./svgGeom";
+
+/** One shaded ribbon layered behind the line (a percentile band): `upper`/
+ *  `lower` must be the SAME length as `data`, one value per point. */
+export interface GradientAreaBand {
+  upper: number[];
+  lower: number[];
+  color?: string;
+  opacity?: number;
+}
 
 interface GradientAreaChartProps {
   data: number[];
@@ -18,6 +27,12 @@ interface GradientAreaChartProps {
   /** Draw a translucent target band. Values are in the same domain as `data`;
    *  the band is placed by min/max of `data` like the line. */
   targetBand?: { min: number; max: number };
+  /** Extra shaded ribbons behind the line/area (e.g. p25-p75 then p5-p95 -
+   *  widest first so a narrower one draws on top of it). When present, the
+   *  chart's Y-domain stretches to fit every band's values too, not just
+   *  `data`'s own min/max, so the line and its ribbons never disagree about
+   *  where a value sits (see seriesPoints). */
+  bands?: GradientAreaBand[];
   /** Soft colored glow under the line (default true). */
   lineGlow?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -39,6 +54,7 @@ export function GradientAreaChart({
   height = 76,
   color = THEME.accent,
   targetBand,
+  bands,
   lineGlow = true,
   style,
 }: GradientAreaChartProps) {
@@ -55,19 +71,54 @@ export function GradientAreaChart({
           if (lw && lw !== measured) setMeasured(lw);
         }
       : undefined;
-  const { line, area } = useMemo(
-    () => (w > 0 ? seriesPaths(data, w, height) : { line: "", area: "" }),
-    [data, w, height]
-  );
+
+  // Y-domain: `data`'s own min/max, stretched to also fit every band's values
+  // when bands are given - so the median line and its percentile ribbons are
+  // never independently min/max-fit (which would make them visually disagree
+  // about where a value sits). With no bands this is byte-identical to the
+  // domain seriesPaths would have picked on its own.
+  const domain = useMemo(() => {
+    if (!data.length) return null;
+    let min = Math.min(...data);
+    let max = Math.max(...data);
+    for (const b of bands ?? []) {
+      for (const v of b.upper) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      for (const v of b.lower) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+    return { min, max };
+  }, [data, bands]);
+
+  const { line, area } = useMemo(() => {
+    if (w <= 0 || !domain) return { line: "", area: "" };
+    const pts = seriesPoints(data, w, height, domain.min, domain.max);
+    return pathsFromPoints(pts, w, height);
+  }, [data, w, height, domain]);
+
+  const bandPaths = useMemo(() => {
+    if (w <= 0 || !domain || !bands || bands.length === 0) return [];
+    return bands.map((b) => ({
+      d: ribbonPath(
+        seriesPoints(b.upper, w, height, domain.min, domain.max),
+        seriesPoints(b.lower, w, height, domain.min, domain.max)
+      ),
+      color: b.color ?? color,
+      opacity: b.opacity ?? 0.15,
+    }));
+  }, [bands, w, height, domain, color]);
+
   const gid = `area-${w}-${height}`;
 
   let bandRect: { y: number; h: number } | null = null;
-  if (w > 0 && targetBand && data.length) {
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const span = max - min || 1;
+  if (w > 0 && targetBand && domain) {
+    const span = domain.max - domain.min || 1;
     const pad = 3;
-    const yFor = (v: number) => pad + (1 - (v - min) / span) * (height - pad * 2);
+    const yFor = (v: number) => pad + (1 - (v - domain.min) / span) * (height - pad * 2);
     const yTop = yFor(targetBand.max);
     const yBot = yFor(targetBand.min);
     bandRect = { y: Math.min(yTop, yBot), h: Math.abs(yBot - yTop) };
@@ -89,6 +140,9 @@ export function GradientAreaChart({
           {bandRect ? (
             <Rect x="0" y={bandRect.y} width={w} height={bandRect.h} fill={GLUCOSE_RICH.target} opacity={0.12} />
           ) : null}
+          {bandPaths.map((b, i) =>
+            b.d ? <Path key={i} d={b.d} fill={b.color} opacity={b.opacity} /> : null
+          )}
           {area ? <Path d={area} fill={`url(#${gid})`} /> : null}
           {line ? <Path d={line} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" /> : null}
         </Svg>

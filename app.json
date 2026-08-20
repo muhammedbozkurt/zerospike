@@ -37,6 +37,7 @@
         "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you enter by hand to Apple Health, only when you turn this on in Settings.",
         "NSLocationWhenInUseUsageDescription": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster.",
         "NSContactsUsageDescription": "zerospike lets you pick an emergency contact from your contacts for the SOS screen.",
+        "NSAlarmKitUsageDescription": "zerospike uses AlarmKit so a reminder you set up can also ring as a real alarm, only for the reminders where you turn this on.",
         "CFBundleLocalizations": [
           "en",
           "tr",

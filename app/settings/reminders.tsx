@@ -255,12 +255,29 @@ export default function RemindersScreen() {
               onPress={() => openEditSheet(row)}
               onLongPress={() => void confirmDelete(row)}
               right={
-                <Switch
-                  value={row.enabled === 1}
-                  onValueChange={(v) => void toggleEnabled(row, v)}
-                  trackColor={{ true: THEME.accent, false: THEME.border }}
-                  thumbColor={THEME.ink}
-                />
+                <View className="flex-row items-center">
+                  {row.alarm_enabled === 1 ? (
+                    // Small, ONLY visual, distinguishing mark for a row that
+                    // rings as a real AlarmKit alarm instead of a plain
+                    // notification (2.2.0's A1) - never the row's own tap
+                    // target, applyReminders is still the single source of
+                    // truth for whether an alarm actually gets armed (OS
+                    // version, authorization).
+                    <Ionicons
+                      name="alarm"
+                      size={14}
+                      color={THEME.accent}
+                      style={{ marginRight: 8 }}
+                      accessibilityLabel={t("reminders.playAsAlarm")}
+                    />
+                  ) : null}
+                  <Switch
+                    value={row.enabled === 1}
+                    onValueChange={(v) => void toggleEnabled(row, v)}
+                    trackColor={{ true: THEME.accent, false: THEME.border }}
+                    thumbColor={THEME.ink}
+                  />
+                </View>
               }
             />
           ))

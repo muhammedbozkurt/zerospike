@@ -136,6 +136,11 @@ export interface NewReminderInput {
   time: string;
   /** Defaults to on, matching the column's own DEFAULT 1. */
   enabled?: boolean;
+  /** 2.2.0's A1 (AlarmKit) opt-in - see ReminderUpdate.alarmEnabled above.
+   *  Defaults to off, matching the column's own DEFAULT 0: a brand new
+   *  reminder never starts as a real alarm on its own, the user has to reach
+   *  for the switch (which is what earns the AlarmKit permission prompt). */
+  alarmEnabled?: boolean;
   /** The row's owner (schema v19). Optional and resolved from the active
    *  profile when omitted (see resolveProfileId) - every caller written before
    *  profile scoping landed never passes this, and keeps compiling and
@@ -172,8 +177,8 @@ export async function createReminder(
     [profileId]
   );
   await db.runAsync(
-    `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+    `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.type,
@@ -183,6 +188,7 @@ export async function createReminder(
       next?.next ?? 0,
       Date.now(),
       profileId,
+      input.alarmEnabled ? 1 : 0,
     ]
   );
   return (await getReminder(id))!;
@@ -193,6 +199,13 @@ export interface ReminderUpdate {
   label?: string | null;
   time?: string;
   enabled?: boolean;
+  /** 2.2.0's A1 (AlarmKit) opt-in - see reminders.alarm_enabled (schema v19)
+   *  and applyReminders in lib/services/notifications.ts, which is what
+   *  actually turns this into a real alarm vs. a plain notification. Written
+   *  by components/ReminderEditSheet.tsx's "Play as alarm" row, which only
+   *  ever exists on iOS 26+ (see isAlarmKitAvailable) - every other platform
+   *  simply never sends this field, so the column stays 0 there. */
+  alarmEnabled?: boolean;
 }
 
 /** Partial update of a reminder. Returns the fresh row, or null if it is gone. */
@@ -218,6 +231,10 @@ export async function updateReminder(
   if (patch.enabled !== undefined) {
     fields.push("enabled = ?");
     values.push(patch.enabled ? 1 : 0);
+  }
+  if (patch.alarmEnabled !== undefined) {
+    fields.push("alarm_enabled = ?");
+    values.push(patch.alarmEnabled ? 1 : 0);
   }
   if (fields.length > 0) {
     values.push(id);

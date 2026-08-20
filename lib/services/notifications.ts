@@ -21,6 +21,14 @@ import {
   startPostMealActivity,
 } from "../../modules/zerospike-live-activity";
 import {
+  cancelAlarm,
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+  listScheduledAlarmIds,
+  scheduleDailyAlarm,
+} from "../../modules/zerospike-alarmkit";
+import { shouldUseAlarm } from "../alarmSelect";
+import {
   derivePostMealStart,
   retimePostMealWindow,
   type PostMealTimerWindow,
@@ -478,6 +486,34 @@ function reminderIdentifier(id: string): string {
   return `${REMINDER_ID_PREFIX}${id}`;
 }
 
+/** Every AlarmKit alarm this app schedules carries this prefix (2.2.0's A1),
+ *  the exact same convention as REMINDER_ID_PREFIX above - see
+ *  modules/zerospike-alarmkit, which only ever sees this already-prefixed
+ *  string and applies no naming convention of its own. */
+const ALARM_ID_PREFIX = "zerospike-alarm-";
+
+function alarmIdentifier(id: string): string {
+  return `${ALARM_ID_PREFIX}${id}`;
+}
+
+/** The alarm's own on-screen title - just the text, unlike reminderContent
+ *  below (which also carries Android channel/sound extras an AlarmKit alarm
+ *  has no use for). Same copy per type as the notification path, so switching
+ *  "Play as alarm" on or off never changes what a reminder is called. */
+function reminderAlarmLabel(row: Reminder): string {
+  switch (row.type) {
+    case "basal":
+      return i18n.t("notifications.basalTitle");
+    case "med":
+      return i18n.t("notifications.medTitle");
+    case "glucose":
+      return i18n.t("notifications.glucoseTitle");
+    case "custom":
+    default:
+      return row.label && row.label.trim() ? row.label : i18n.t("notifications.customTitle");
+  }
+}
+
 /** The content for one reminder row. basal/med/glucose reuse the exact copy the
  *  fixed-id schedulers above already use; a custom reminder gets the shared
  *  "Reminder" title and the label the user gave it as the body. No route for a
@@ -622,6 +658,14 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
  * code) any row that belongs to a DIFFERENT profile, since `known` below is
  * built only from the rows this pass just listed for the active one.
  *
+ * 2.2.0's A1: an otherwise-active row with alarm_enabled=1 gets a real AlarmKit
+ * alarm ("zerospike-alarm-<id>") INSTEAD of the notification, but only once
+ * shouldUseAlarm (lib/alarmSelect.ts) also confirms AlarmKit is available AND
+ * authorized - never both at once, and never on a row this pass would not
+ * otherwise have scheduled at all. The alarm side gets the exact same orphan
+ * sweep as the notification side, off listScheduledAlarmIds() instead of
+ * getAllScheduledNotificationsAsync().
+ *
  * Called unconditionally from applyNotificationPrefs, before it branches on
  * `prefs.enabled` / permission: this function does its own gating, so the
  * caller does not have to duplicate it.
@@ -657,16 +701,68 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   const showsBasal = granted && insulinModeShowsBasal(insulinModeOf(profile));
   const showsMeds = granted && (profile == null || profile.oral_meds_enabled === 1);
 
+  // AlarmKit (2.2.0's A1): resolved ONCE per pass, same as `granted` above -
+  // every row below shares the exact same OS/authorization snapshot rather
+  // than each re-checking it. `alarmAuthorized` folds `alarmKitAvailable` in
+  // so a row can never read as "authorized" on a device that has no AlarmKit
+  // at all (getAlarmAuthorizationStatus() already reports "unavailable"
+  // there, but this keeps the two checks from ever being able to disagree).
+  const alarmKitAvailable = isAlarmKitAvailable();
+  const alarmAuthorized =
+    alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized";
+
   const known = new Set<string>();
+  const knownAlarms = new Set<string>();
   for (const row of rows) {
     const identifier = reminderIdentifier(row.id);
+    const alarmId = alarmIdentifier(row.id);
     known.add(identifier);
     const gateOpen =
       row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
-    if (granted && row.enabled === 1 && gateOpen) {
+    const rowActive = granted && row.enabled === 1 && gateOpen;
+
+    const useAlarm =
+      rowActive &&
+      shouldUseAlarm({
+        alarmEnabled: row.alarm_enabled === 1,
+        alarmKitAvailable,
+        alarmAuthorized,
+      });
+
+    if (useAlarm) {
+      // Real alarm INSTEAD of the notification - never both (see
+      // docs/alarmkit-2.2.0.md's "cift teslim olmaz"). A failed schedule
+      // (an OS-side AlarmKit error; authorization being revoked mid-flight
+      // instead routes through the `rowActive`-but-not-`useAlarm` branch
+      // below, which explicitly cancels the alarm) falls back to the plain
+      // notification rather than lose the reminder outright - safe from a
+      // double delivery either way, since ZerospikeAlarmKitModule.swift
+      // always cancels whatever was previously armed under this SAME id
+      // before attempting the new schedule, win or lose.
+      const { hour, minute } = parseHHMM(row.time);
+      const armed = await scheduleDailyAlarm({
+        id: alarmId,
+        hour,
+        minute,
+        label: reminderAlarmLabel(row),
+        stopLabel: i18n.t("reminders.alarmStopButton"),
+      });
+      if (armed) {
+        knownAlarms.add(alarmId);
+        await cancelReminderIdentifier(identifier);
+      } else {
+        await scheduleReminderRow(row);
+      }
+    } else if (rowActive) {
       await scheduleReminderRow(row);
+      // Covers the alarm-toggled-off case: a row that used to opt in already
+      // has an alarm armed under `alarmId`, and turning the switch back off
+      // must take it down and fall back to the notification just scheduled
+      // above - best-effort, a "nothing pending" cancel is the common case.
+      await cancelAlarm(alarmId);
     } else {
       await cancelReminderIdentifier(identifier);
+      await cancelAlarm(alarmId);
     }
   }
 
@@ -696,6 +792,18 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
     }
   } catch {
     // best-effort sweep; a failed listing must never break the apply
+  }
+
+  // Orphaned-alarm sweep (2.2.0's A1), the exact same pattern as the
+  // notification sweep above: any "zerospike-alarm-" id AlarmKit still holds
+  // that this pass did NOT just arm for the active profile - a deleted row, a
+  // row whose "Play as alarm" switch was turned off, or (what makes a profile
+  // switch clean up the other profile's alarms with no extra code) any row
+  // belonging to a different profile. listScheduledAlarmIds() (and cancelAlarm
+  // below) are no-ops when AlarmKit is unavailable, so this never needs its
+  // own guard for that case.
+  for (const alarmId of listScheduledAlarmIds()) {
+    if (!knownAlarms.has(alarmId)) await cancelAlarm(alarmId);
   }
 }
 

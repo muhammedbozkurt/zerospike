@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
 import { updateProfile } from "../../lib/db/profiles";
@@ -32,7 +31,7 @@ import { RangeInput } from "../../components/RangeInput";
 import { Stepper } from "../../components/Stepper";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { InsulinModeSection } from "../../components/InsulinModeSection";
-import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
 import { useFeedback } from "../../components/Feedback";
 import { useLayout } from "../../lib/useLayout";
@@ -46,8 +45,7 @@ export default function ProfileSettings() {
   const { t } = useTranslation();
   const { activeProfile, bumpData } = useApp();
   const { columnPad } = useLayout();
-  const { confirm } = useFeedback();
-  const router = useRouter();
+  const { confirm, actionSheet } = useFeedback();
 
   // activeProfile is already in context by the time this screen mounts (see
   // profile-setup.tsx for the same pattern), so every field is seeded straight
@@ -200,12 +198,16 @@ export default function ProfileSettings() {
   }
 
   /**
-   * Changing diabetes type is a two-step confirm (Wave 2a): first that visible
-   * sections will follow the new type (records are never touched), then a
-   * separate offer to reset the target-range defaults for it. Switching into
-   * prediabetes/none also switches off insulin_mode, the same way the insulin
-   * segment itself does, since those two types never show insulin controls;
-   * that side effect is called out in the first dialog's body rather than
+   * Changing diabetes type is a three-step flow (Wave 2a, +treatment question
+   * in 2.2.0 B7): first that visible sections will follow the new type
+   * (records are never touched), then a separate offer to reset the
+   * target-range defaults for it, then - for every type that can show
+   * insulin controls - the same insulin/pills question onboarding asks, so
+   * insulin_mode/oral_meds_enabled are never left stale after a type switch.
+   * Switching into prediabetes/none skips that third step entirely and
+   * instead switches off insulin_mode itself, the same way the insulin
+   * segment does, since those two types never show insulin controls; that
+   * side effect is called out in the first dialog's body rather than
    * happening silently.
    */
   async function handleDiabetesTypeChange(next: DiabetesType) {
@@ -229,27 +231,85 @@ export default function ProfileSettings() {
       confirmLabel: t("settings.useDefaults"),
       cancelLabel: t("settings.keepValues"),
     });
-    if (!wantsDefaults) return;
-
-    const { fasting, postmeal } = TARGET_DEFAULTS_MGDL[next];
-    const patch: Record<string, number> = {
-      target_fasting_min: fasting.min,
-      target_fasting_max: fasting.max,
-      target_postmeal_min: postmeal.min,
-      target_postmeal_max: postmeal.max,
-    };
-    setFastingMin(num(glucoseToDisplay(fasting.min, unit)));
-    setFastingMax(num(glucoseToDisplay(fasting.max, unit)));
-    setPostmealMin(num(glucoseToDisplay(postmeal.min, unit)));
-    setPostmealMax(num(glucoseToDisplay(postmeal.max, unit)));
-    if (next === "gestational") {
-      const carb = CARB_TARGET_DEFAULTS_G.gestational;
-      patch.daily_carb_target_min_g = carb.min;
-      patch.daily_carb_target_g = carb.max;
-      setCarbMin(String(carb.min));
-      setCarbMax(String(carb.max));
+    if (wantsDefaults) {
+      const { fasting, postmeal } = TARGET_DEFAULTS_MGDL[next];
+      const patch: Record<string, number> = {
+        target_fasting_min: fasting.min,
+        target_fasting_max: fasting.max,
+        target_postmeal_min: postmeal.min,
+        target_postmeal_max: postmeal.max,
+      };
+      setFastingMin(num(glucoseToDisplay(fasting.min, unit)));
+      setFastingMax(num(glucoseToDisplay(fasting.max, unit)));
+      setPostmealMin(num(glucoseToDisplay(postmeal.min, unit)));
+      setPostmealMax(num(glucoseToDisplay(postmeal.max, unit)));
+      if (next === "gestational") {
+        const carb = CARB_TARGET_DEFAULTS_G.gestational;
+        patch.daily_carb_target_min_g = carb.min;
+        patch.daily_carb_target_g = carb.max;
+        setCarbMin(String(carb.min));
+        setCarbMax(String(carb.max));
+      }
+      await persist(patch);
     }
-    await persist(patch);
+
+    // Third step: type1/type2/gestational/unknown can all show insulin
+    // controls, so - unlike the two no-insulin types above - the switch must
+    // not leave insulin_mode/oral_meds_enabled sitting on whatever the
+    // PREVIOUS type happened to leave behind. Asking here, right at the type
+    // change, is also why InsulinModeSection's own "choose one" hint now
+    // rarely shows: it only surfaces if this question is left unanswered.
+    if (!isNoInsulinDiabetesType(next)) askTreatmentQuestion();
+  }
+
+  /**
+   * Same four-way question onboarding asks (icons + copy reused verbatim, see
+   * TREATMENT_OPTIONS in app/onboarding.tsx), presented as an action sheet so
+   * it matches the app's other single-pick modals. Dismissing it without an
+   * answer (backdrop tap, Android back) leaves insulin_mode/oral_meds_enabled
+   * exactly as they were - the same "no answer, no change" rule the two
+   * confirms above follow.
+   */
+  function askTreatmentQuestion() {
+    actionSheet({
+      title: t("onboarding.qInsulin"),
+      actions: [
+        {
+          label: t("onboarding.treatment_insulin"),
+          icon: "water-outline",
+          onPress: () => void applyTreatmentAnswer(true, false),
+        },
+        {
+          label: t("onboarding.treatment_pills"),
+          icon: "medkit-outline",
+          onPress: () => void applyTreatmentAnswer(false, true),
+        },
+        {
+          label: t("onboarding.treatment_both"),
+          icon: "swap-horizontal-outline",
+          onPress: () => void applyTreatmentAnswer(true, true),
+        },
+        {
+          label: t("onboarding.treatment_none"),
+          icon: "remove-circle-outline",
+          onPress: () => void applyTreatmentAnswer(false, false),
+        },
+      ],
+    });
+  }
+
+  /**
+   * Maps the answer to insulin_mode + oral_meds_enabled through the existing
+   * persist paths (persistInsulinMode keeps the basal-reminder-cancel logic;
+   * oral gets the same reminder-cancel treatment via persistOralMeds).
+   * Coarse on purpose: any insulin answer becomes insulin_mode "both", the
+   * same mapping onboarding uses - the basal/bolus split stays a
+   * Settings-only refinement via the segmented control below. Either half is
+   * skipped when the answer already matches what is saved.
+   */
+  async function applyTreatmentAnswer(hasInsulinAnswer: boolean, hasOralAnswer: boolean) {
+    await persistInsulinMode(hasInsulinAnswer ? "both" : "none");
+    if (hasOralAnswer !== oralMeds) await persistOralMeds(hasOralAnswer);
   }
 
   return (
@@ -288,16 +348,6 @@ export default function ProfileSettings() {
         oralMeds={oralMeds}
         onChangeOralMeds={(v) => void persistOralMeds(v)}
       />
-
-      {/* Shortcut into the reminders hub, visible only while pill tracking is
-          on - it is where the med reminder this links to actually lives. */}
-      {oralMeds ? (
-        <Row
-          icon="alarm-outline"
-          label={t("meds.setupReminderLink")}
-          onPress={() => router.push("/settings/reminders")}
-        />
-      ) : null}
 
       <FormCard icon="medkit-outline" title={t("settings.diabetesType")}>
         <View className="px-4 py-3.5">

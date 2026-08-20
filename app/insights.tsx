@@ -19,9 +19,11 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { listSugarLogs, listMealLogs } from "../lib/db/logs";
 import { getInjections } from "../lib/db/injections";
+import { getFood } from "../lib/db/foods";
 import { readHealthSummary, type HealthSummary } from "../lib/services/health";
-import type { Injection, MealLog, SugarLog } from "../lib/db/types";
-import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
+import type { Injection, Lang, MealLog, SugarLog } from "../lib/db/types";
+import { foodName } from "../lib/db/types";
+import { formatGlucose, glucoseUnitLabel, VERY_HIGH_MGDL } from "../lib/glucose";
 import { targetBandFor } from "../lib/agpChart";
 import { AGP_MIN_READINGS, computeAgp } from "../lib/agp";
 import {
@@ -36,12 +38,23 @@ import {
   GMI_MIN_SPAN_DAYS,
   INSIGHTS_WINDOW_DAYS,
   INSIGHTS_WINDOWS,
+  rangeFromWindow,
   rangeWindowDays,
   type DateRange,
   type DayKind,
   type InsightPattern,
   type WeeklySentence,
 } from "../lib/insights";
+import {
+  weekAnchorForLang,
+  weeklyComparison,
+  hourBandAverages,
+  bestDayAndStreaks,
+  DAY_IN_TARGET_TIR_PCT,
+  mealResponseSummary,
+  cvTrend,
+  CV_TREND_MIN_WEEKS,
+} from "../lib/insightsPro";
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
 import { useLayout } from "../lib/useLayout";
 import { DateRangePicker, type PickedRange } from "../components/DateRangePicker";
@@ -59,6 +72,7 @@ import { HourlyChart } from "../components/charts/HourlyChart";
 import { TrendChart } from "../components/charts/TrendChart";
 import { CHART, CHART_HEIGHT } from "../components/charts/theme";
 import { StatCard } from "../components/StatCard";
+import { Sparkline } from "../components/Sparkline";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { DirIcon } from "../components/DirIcon";
 import { Skeleton } from "../components/Skeleton";
@@ -124,6 +138,30 @@ function CardGrid({
 function Seg({ pct, color }: { pct: number; color: string }) {
   if (pct <= 0) return null;
   return <View style={{ width: `${pct}%`, backgroundColor: color }} className="h-full" />;
+}
+
+/** "0" -> "00", "13" -> "13". Only for the heat strip's hour labels (00-24),
+ *  which are physical clock digits, never translated - see lib/format's own
+ *  private `two()` for the same rule applied to dates/times. */
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+/**
+ * Bucket color for the hour-band heat strip, mirroring lib/glucose.ts's
+ * classifyGlucose boundaries (low / in-range / elevated up to +25% over the
+ * band ceiling / veryHigh at the fixed clinical threshold) without needing a
+ * PeriodTag + full TargetProfile - a 3-hour pooled AVERAGE is not a single
+ * reading classified against a meal-specific range, just a value read
+ * against the profile's own day-wide band (same `band` the AGP/hourly charts
+ * already shade against).
+ */
+function heatColor(avg: number, band: { low: number; high: number }): string {
+  if (avg < band.low) return GLUCOSE_RICH.low;
+  if (avg <= band.high) return GLUCOSE_RICH.target;
+  if (avg >= VERY_HIGH_MGDL) return GLUCOSE_RICH.veryHigh;
+  if (avg <= band.high * 1.25) return GLUCOSE_RICH.high;
+  return GLUCOSE_RICH.wellAbove;
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -340,7 +378,7 @@ function InsightsSkeleton({
  * measured against the user's OWN target band, not a fixed 70-180 rectangle.
  */
 export default function InsightsScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
@@ -687,6 +725,166 @@ export default function InsightsScreen() {
         )} ${t("insights.vsPrevious")}`
       : undefined;
 
+  // ── D10: Pro insight sections (wave 2, lib/insightsPro.ts) ────────────────
+  //
+  // Each card below picks its OWN natural lookback rather than inheriting the
+  // window/custom-range picker above, matching the one sibling card that
+  // already exists on this screen (the "This week" digest a few lines down,
+  // which also ignores `windowDays`): a streak or a week-over-week
+  // comparison is either "as of right now" or it is not the thing its name
+  // says it is - a "day-in-target streak" scoped to a user's currently
+  // selected 7-day view would just always read as "7", which is not a
+  // streak. Only the hour-band strip and the meal-response summary are
+  // scoped to the active window/range, because they are direct analogues of
+  // cards that already are (the hourly bar chart above, and "meals in this
+  // report" respectively). The AGP percentile ribbons need no scope decision
+  // of their own at all - they reuse the SAME `agp` computed above them.
+  const lang = (i18n.language || "en").slice(0, 2) as Lang;
+  const weekAnchor = useMemo(() => weekAnchorForLang(lang), [lang]);
+
+  // a) This calendar week vs. the previous full week.
+  const weeklyCompare = useMemo(
+    () => weeklyComparison(sugar, Date.now(), weekAnchor, tirBand),
+    [sugar, tirBand, weekAnchor]
+  );
+  const weekDeltaText = (delta: number | null, fmt: (abs: number) => string): string | undefined => {
+    if (delta == null) return undefined;
+    if (Math.round(delta) === 0) return t("insights.chartNoChange");
+    return `${delta >= 0 ? "▲" : "▼"} ${fmt(Math.abs(delta))} ${t("insights.vsPrevious")}`;
+  };
+
+  // b) Hour-of-day heat strip: hourBandAverages does no date filtering of its
+  // own (see its docstring), unlike computeAgp/bestDayAndStreaks below, so the
+  // active window/range is applied here first - the same readings the hourly
+  // bar chart above is already scoped to, just pooled into 3h bands instead
+  // of 4 fixed dayparts.
+  const activeRange = useMemo<DateRange>(
+    () => range ?? rangeFromWindow(windowDays),
+    [range, windowDays]
+  );
+  const readingsInActiveWindow = useMemo(
+    () =>
+      sugar.filter((r) => {
+        const ms = new Date(r.logged_at).getTime();
+        return Number.isFinite(ms) && ms >= activeRange.start && ms <= activeRange.end;
+      }),
+    [sugar, activeRange]
+  );
+  const hourBands = useMemo(
+    () => hourBandAverages(readingsInActiveWindow, trendWindowDays),
+    [readingsInActiveWindow, trendWindowDays]
+  );
+
+  // c) AGP percentile ribbons: `agp` above already carries p05/p25/p75/p95 per
+  // band (computeAgp - the exact function insightsPro's agpPercentiles wraps,
+  // see that module's own docstring), and it is already scoped to the active
+  // window/custom range, so this only reshapes it - no second computeAgp call
+  // and no loss of custom-range support the range-less agpPercentiles would
+  // have meant.
+  const agpBands = useMemo(() => {
+    if (agp.bands.length < 2) return undefined;
+    return [
+      {
+        upper: agp.bands.map((b) => b.p95),
+        lower: agp.bands.map((b) => b.p05),
+        color: CHART.band,
+        opacity: 0.1,
+      },
+      {
+        upper: agp.bands.map((b) => b.p75),
+        lower: agp.bands.map((b) => b.p25),
+        color: CHART.band,
+        opacity: 0.22,
+      },
+    ];
+  }, [agp]);
+
+  // d) Best day + streaks: own default 30-day lookback (bestDayAndStreaks
+  // does its own date filtering), independent of the window picker for the
+  // same "a streak is as of today" reason as the weekly comparison above.
+  const bestStreaks = useMemo(
+    () => bestDayAndStreaks(sugar, tirBand, Date.now()),
+    [sugar, tirBand]
+  );
+
+  // e) Meal response summary: meals scoped to the active window (so the card
+  // matches "meals in this report"), but readings passed WIDE (unfiltered) so
+  // a meal near the window's edge still has its baseline/lookback readings to
+  // draw from - mirrors how mealResponseSummary's own caller contract expects
+  // "every reading the meal might draw from", not just in-window ones.
+  const mealsInActiveWindow = useMemo(
+    () =>
+      meals.filter((m) => {
+        const ms = new Date(m.logged_at).getTime();
+        return Number.isFinite(ms) && ms >= activeRange.start && ms <= activeRange.end;
+      }),
+    [meals, activeRange]
+  );
+  const mealSummary = useMemo(
+    () => mealResponseSummary(mealsInActiveWindow, sugar),
+    [mealsInActiveWindow, sugar]
+  );
+  // Meal names are user data (custom_food_name) or the localized catalogue
+  // name (lib/db/foods getFood + lib/db/types foodName) - resolved here
+  // rather than added to insightsPro.ts, which stays DB/app-free. At most two
+  // lookups (best + worst), same getFood() the meal-response screen already
+  // uses for the same purpose.
+  const mealNameIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (mealSummary.best) ids.add(mealSummary.best.mealId);
+    if (mealSummary.worst) ids.add(mealSummary.worst.mealId);
+    return Array.from(ids);
+  }, [mealSummary]);
+  const [mealNames, setMealNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    if (mealNameIds.length === 0) {
+      setMealNames({});
+      return;
+    }
+    (async () => {
+      const resolved = await Promise.all(
+        mealNameIds.map(async (id): Promise<[string, string]> => {
+          const meal = meals.find((m) => m.id === id);
+          if (!meal) return [id, "-"];
+          const custom = meal.custom_food_name?.trim();
+          if (custom) return [id, custom];
+          if (!meal.food_id) return [id, "-"];
+          try {
+            const food = await getFood(meal.food_id);
+            return [id, food ? foodName(food, lang) : "-"];
+          } catch {
+            return [id, "-"];
+          }
+        })
+      );
+      if (!alive) return;
+      setMealNames(Object.fromEntries(resolved));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [mealNameIds, meals, lang]);
+  const deltaGlucoseText = (v: number) =>
+    `${v >= 0 ? "+" : "-"}${fmtG(Math.abs(Math.round(v)))} ${u}`;
+
+  // f) CV trend: own default ~10-week lookback, independent of the window
+  // picker for the same reason as (a)/(d).
+  const cvWeeks = useMemo(() => cvTrend(sugar, Date.now(), weekAnchor), [sugar, weekAnchor]);
+  const cvNonNull = useMemo(
+    () => cvWeeks.weeks.filter((w): w is typeof w & { cv: number } => w.cv != null),
+    [cvWeeks]
+  );
+  const cvSparklineData = useMemo(() => cvNonNull.map((w) => w.cv), [cvNonNull]);
+  const lastCv = cvNonNull.length ? cvNonNull[cvNonNull.length - 1].cv : null;
+  const cvDeltaText =
+    cvNonNull.length >= 2
+      ? weekDeltaText(
+          cvNonNull[cvNonNull.length - 1].cv - cvNonNull[cvNonNull.length - 2].cv,
+          (n) => pct(Math.round(n))
+        )
+      : undefined;
+
   /** The mockup's header chip: the active window, opening the window picker. */
   function openWindowPicker() {
     actionSheet({
@@ -989,6 +1187,11 @@ export default function InsightsScreen() {
                             data={agpCurve}
                             height={84}
                             targetBand={{ min: band.low, max: band.high }}
+                            // D10c: p25-p75/p5-p95 shading is part of the Pro
+                            // insights package, same as every other card below -
+                            // a free user (or the locked/blurred preview) sees
+                            // the plain median curve exactly as before.
+                            bands={premium ? agpBands : undefined}
                             style={{ alignSelf: "stretch", width: "100%" }}
                           />
                           {/* Hour axis: physically LTR always (00 -> 24 left to
@@ -1005,6 +1208,46 @@ export default function InsightsScreen() {
                               </Text>
                             ))}
                           </View>
+                          {premium && agpBands ? (
+                            <View
+                              className="flex-row flex-wrap mt-2"
+                              style={{ gap: 10, flexDirection: rtl ? "row-reverse" : "row" }}
+                            >
+                              {(
+                                [
+                                  { label: t("insights.chartMedianLegend"), color: CHART.line, opacity: 1 },
+                                  { label: t("insights.chartIqrLegend"), color: CHART.band, opacity: 0.4 },
+                                  { label: t("insights.chartP595Legend"), color: CHART.band, opacity: 0.2 },
+                                  { label: t("insights.chartTargetLegend"), color: GREEN, opacity: 0.4 },
+                                ] as const
+                              ).map((entry) => (
+                                <View
+                                  key={entry.label}
+                                  className="items-center"
+                                  style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+                                >
+                                  <View
+                                    style={{
+                                      width: 8,
+                                      height: 8,
+                                      borderRadius: 3,
+                                      backgroundColor: entry.color,
+                                      opacity: entry.opacity,
+                                    }}
+                                  />
+                                  <Text
+                                    style={{
+                                      color: THEME.muted,
+                                      fontSize: 10,
+                                      [rtl ? "marginRight" : "marginLeft"]: 5,
+                                    }}
+                                  >
+                                    {entry.label}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : null}
                           <Text
                             style={{
                               color: THEME.muted,
@@ -1087,6 +1330,54 @@ export default function InsightsScreen() {
                     </React.Fragment>
                   ) : null}
 
+                  {/* D10a: this calendar week vs the previous full week - TIR/avg/CV, delta arrows */}
+                  {hasReadings && premium ? (
+                    <GlassCard key="weeklyCompare" style={{ marginTop: 12 }}>
+                      <Text style={{ color: THEME.ink, fontWeight: "800" }}>
+                        {t("insights.weeklyCompareTitle")}
+                      </Text>
+                      {weeklyCompare.currentReadingCount === 0 &&
+                      weeklyCompare.previousReadingCount === 0 ? (
+                        <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 8 }}>
+                          {t("insights.weeklyCompareEmpty")}
+                        </Text>
+                      ) : (
+                        <View className="flex-row mt-3" style={{ gap: 8 }}>
+                          <StatCard
+                            glass
+                            label={t("insights.timeInRange")}
+                            display={pctNum(weeklyCompare.tir.current)}
+                            suffix={weeklyCompare.tir.current == null ? undefined : PCT_SIGN.sign}
+                            suffixFirst={PCT_SIGN.signFirst}
+                            accent={GREEN}
+                            footnote={weekDeltaText(weeklyCompare.tir.delta, (n) => pct(Math.round(n)))}
+                            style={{ flex: 1 }}
+                          />
+                          <StatCard
+                            glass
+                            label={t("insights.avgGlucose")}
+                            display={fmtG(weeklyCompare.avg.current)}
+                            suffix={u}
+                            footnote={weekDeltaText(
+                              weeklyCompare.avg.delta,
+                              (n) => `${fmtG(Math.round(n))} ${u}`
+                            )}
+                            style={{ flex: 1 }}
+                          />
+                          <StatCard
+                            glass
+                            label={t("insights.cv")}
+                            display={pctNum(weeklyCompare.cv.current)}
+                            suffix={weeklyCompare.cv.current == null ? undefined : PCT_SIGN.sign}
+                            suffixFirst={PCT_SIGN.signFirst}
+                            footnote={weekDeltaText(weeklyCompare.cv.delta, (n) => pct(Math.round(n)))}
+                            style={{ flex: 1 }}
+                          />
+                        </View>
+                      )}
+                    </GlassCard>
+                  ) : null}
+
                   {/* Weekly digest (Pro): this week vs last, in sentences */}
                   {hasReadings && isProUser && digest.length > 0 ? (
                       <GlassCard key="digest" accent style={{ marginTop: 12 }}>
@@ -1121,6 +1412,74 @@ export default function InsightsScreen() {
                         ))}
                       </GlassCard>
                     ) : null}
+
+                  {/* D10d: best single day (by TIR) in the last 30 days, plus a
+                      day-in-target streak and a plain logging streak */}
+                  {hasReadings && premium ? (
+                    <GlassCard key="bestDayStreaks" style={{ marginTop: 12 }}>
+                      <Text style={{ color: THEME.ink, fontWeight: "800" }}>
+                        {t("insights.bestDayStreaksTitle")}
+                      </Text>
+                      {bestStreaks.bestDay ? (
+                        <View className="flex-row items-center mt-3">
+                          <IconTile icon="trophy-outline" size={38} radius={12} hero />
+                          <View className="flex-1 ml-3">
+                            <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                              {t("insights.bestDayLabel")}
+                            </Text>
+                            <Text style={{ color: THEME.ink, fontWeight: "800", marginTop: 2 }}>
+                              {formatDate(
+                                new Date(`${bestStreaks.bestDay.day}T12:00:00`).toISOString()
+                              )}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: rtl ? "flex-start" : "flex-end" }}>
+                            <Text style={{ color: GREEN, fontWeight: "800" }}>
+                              {pctText(bestStreaks.bestDay.tir)}
+                            </Text>
+                            <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                              {fmtG(bestStreaks.bestDay.avg)} {u}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 8 }}>
+                          {t("insights.bestDayEmpty")}
+                        </Text>
+                      )}
+                      <View className="flex-row mt-3" style={{ gap: 8 }}>
+                        <StatCard
+                          glass
+                          label={t("insights.streakTargetLabel")}
+                          display={String(bestStreaks.targetDayStreak.current)}
+                          footnote={t("insights.streakLongest", {
+                            n: bestStreaks.targetDayStreak.longest,
+                          })}
+                          style={{ flex: 1 }}
+                        />
+                        <StatCard
+                          glass
+                          label={t("insights.streakLoggingLabel")}
+                          display={String(bestStreaks.loggingStreak.current)}
+                          footnote={t("insights.streakLongest", {
+                            n: bestStreaks.loggingStreak.longest,
+                          })}
+                          style={{ flex: 1 }}
+                        />
+                      </View>
+                      <Text
+                        style={{
+                          color: THEME.muted,
+                          fontSize: 11,
+                          lineHeight: 16,
+                          marginTop: 8,
+                          paddingHorizontal: 6,
+                        }}
+                      >
+                        {t("insights.streaksNote", { pct: pct(DAY_IN_TARGET_TIR_PCT) })}
+                      </Text>
+                    </GlassCard>
+                  ) : null}
 
                   {/* Daily average over the window, with a neutral delta chip */}
                   {hasReadings && premium ? (
@@ -1210,6 +1569,77 @@ export default function InsightsScreen() {
                       </GlassCard>
                     ) : null}
 
+                  {/* D10e: average glucose change after a meal - lowest/highest
+                      AVERAGE CHANGE by the user's own meal name, never "best"/"worst" food */}
+                  {hasReadings && premium ? (
+                    <GlassCard key="mealResponse" style={{ marginTop: 12 }}>
+                      <Text style={{ color: THEME.ink, fontWeight: "800" }}>
+                        {t("insights.mealResponseTitle")}
+                      </Text>
+                      <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+                        {t("insights.mealResponseSub")}
+                      </Text>
+                      {mealSummary.deltaSampleSize === 0 ? (
+                        <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 8 }}>
+                          {t("insights.mealResponseEmpty")}
+                        </Text>
+                      ) : (
+                        <>
+                          <View className="mt-3">
+                            <StatCard
+                              glass
+                              label={t("insights.mealResponseAvgLabel")}
+                              display={
+                                mealSummary.avgDelta == null
+                                  ? "-"
+                                  : deltaGlucoseText(mealSummary.avgDelta)
+                              }
+                              footnote={t("insights.mealResponseSampleNote", {
+                                n: mealSummary.deltaSampleSize,
+                              })}
+                            />
+                          </View>
+                          {mealSummary.best ? (
+                            <View className="flex-row items-center mt-3">
+                              <View className="flex-1">
+                                <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                                  {t("insights.mealResponseLowest")}
+                                </Text>
+                                <Text
+                                  style={{ color: THEME.ink, fontWeight: "700", marginTop: 2 }}
+                                  numberOfLines={1}
+                                >
+                                  {mealNames[mealSummary.best.mealId] ?? "-"}
+                                </Text>
+                              </View>
+                              <Text style={[TABULAR, { color: THEME.ink, fontWeight: "800" }]}>
+                                {deltaGlucoseText(mealSummary.best.delta as number)}
+                              </Text>
+                            </View>
+                          ) : null}
+                          {mealSummary.worst && mealSummary.worst !== mealSummary.best ? (
+                            <View className="flex-row items-center mt-2">
+                              <View className="flex-1">
+                                <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                                  {t("insights.mealResponseHighest")}
+                                </Text>
+                                <Text
+                                  style={{ color: THEME.ink, fontWeight: "700", marginTop: 2 }}
+                                  numberOfLines={1}
+                                >
+                                  {mealNames[mealSummary.worst.mealId] ?? "-"}
+                                </Text>
+                              </View>
+                              <Text style={[TABULAR, { color: THEME.ink, fontWeight: "800" }]}>
+                                {deltaGlucoseText(mealSummary.worst.delta as number)}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </>
+                      )}
+                    </GlassCard>
+                  ) : null}
+
                   {/* Period averages, variability and lows */}
                   {hasReadings && premium ? (
                       <React.Fragment key="vitals">
@@ -1270,6 +1700,49 @@ export default function InsightsScreen() {
                       </React.Fragment>
                   ) : null}
 
+                  {/* D10f: weekly %CV mini trend - a Sparkline (the app's existing
+                      mini-chart pattern), plus the current value and a two-point delta */}
+                  {hasReadings && premium ? (
+                    <GlassCard key="cvTrend" style={{ marginTop: 12 }}>
+                      <View className="flex-row items-center justify-between">
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: THEME.ink, fontWeight: "800" }}>
+                            {t("insights.cvTrendTitle")}
+                          </Text>
+                          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+                            {t("insights.cvTrendSub")}
+                          </Text>
+                        </View>
+                        {cvSparklineData.length > 1 ? (
+                          <Sparkline
+                            data={cvSparklineData}
+                            width={80}
+                            height={28}
+                            color={BRAND}
+                            showLast
+                            fill={false}
+                          />
+                        ) : null}
+                      </View>
+                      {cvNonNull.length < CV_TREND_MIN_WEEKS ? (
+                        <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 8 }}>
+                          {t("insights.chartNeedMore")}
+                        </Text>
+                      ) : (
+                        <View className="flex-row items-end mt-3" style={{ gap: 8 }}>
+                          <Text style={[TABULAR, { color: THEME.ink, fontSize: 22, fontWeight: "800" }]}>
+                            {pctText(lastCv)}
+                          </Text>
+                          {cvDeltaText ? (
+                            <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 3 }}>
+                              {cvDeltaText}
+                            </Text>
+                          ) : null}
+                        </View>
+                      )}
+                    </GlassCard>
+                  ) : null}
+
                   {/* Average by time of day */}
                   {hasReadings && premium ? (
                         <ChartCard
@@ -1289,6 +1762,78 @@ export default function InsightsScreen() {
                             />
                           )}
                         </ChartCard>
+                  ) : null}
+
+                  {/* D10b: finer-grained companion to the 4-slice chart above -
+                      8 bands of 3h, colored by the existing glucose color scale */}
+                  {hasReadings && premium ? (
+                    <GlassCard key="heatStrip" style={{ marginTop: 12 }}>
+                      <Text style={{ color: THEME.ink, fontWeight: "800" }}>
+                        {t("insights.heatStripTitle")}
+                      </Text>
+                      <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2, marginBottom: 10 }}>
+                        {t("insights.heatStripSub")}
+                      </Text>
+                      {hourBands.every((b) => b.n === 0) ? (
+                        <Text style={{ color: THEME.muted, fontSize: 12 }}>
+                          {t("insights.chartNeedMore")}
+                        </Text>
+                      ) : (
+                        <>
+                          {/* Physically LTR always (00 -> 24 left to right), same
+                              fixed-order lock as the AGP hour axis above - a heat
+                              strip is a clock, not a reading-direction list. */}
+                          <View
+                            style={{ flexDirection: I18nManager.isRTL ? "row-reverse" : "row", gap: 4 }}
+                          >
+                            {hourBands.map((b) => (
+                              <View
+                                key={b.startHour}
+                                style={{
+                                  flex: 1,
+                                  borderRadius: 8,
+                                  paddingVertical: 8,
+                                  alignItems: "center",
+                                  backgroundColor: b.avg == null ? THEME.track : heatColor(b.avg, band),
+                                  opacity: b.avg != null && b.sparse ? 0.4 : 1,
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    TABULAR,
+                                    {
+                                      color: b.avg == null ? THEME.muted : "#0b1220",
+                                      fontSize: 11,
+                                      fontWeight: "800",
+                                    },
+                                  ]}
+                                >
+                                  {b.avg == null ? "-" : fmtG(b.avg)}
+                                </Text>
+                                <Text
+                                  style={[
+                                    TABULAR,
+                                    {
+                                      color: b.avg == null ? THEME.muted : "rgba(11,18,32,0.7)",
+                                      fontSize: 8,
+                                      marginTop: 2,
+                                      writingDirection: "ltr",
+                                    },
+                                  ]}
+                                >
+                                  {pad2(b.startHour)}-{pad2(b.endHour)}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                          {hourBands.some((b) => b.avg != null && b.sparse) ? (
+                            <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 8 }}>
+                              {t("insights.heatStripSparseNote")}
+                            </Text>
+                          ) : null}
+                        </>
+                      )}
+                    </GlassCard>
                   ) : null}
 
                   {/* ── Patterns (descriptive observations) ───────────────── */}

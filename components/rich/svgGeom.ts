@@ -44,6 +44,73 @@ export function glucoseFraction(mgdl: number, lo = 40, hi = 300): number {
   return clamp((mgdl - lo) / (hi - lo));
 }
 
+/** A series scaled into a `width` x `height` box, one point per value, evenly
+ *  spaced on x. `domainMin`/`domainMax` are the Y-axis range the values are
+ *  normalized against - split out from {@link seriesPaths} so a second series
+ *  (a percentile ribbon's upper/lower edge) can share the exact same Y-scale
+ *  as the primary line instead of being independently min/max-fit, which
+ *  would make the two visually disagree about where a value sits. */
+export function seriesPoints(
+  data: number[],
+  width: number,
+  height: number,
+  domainMin: number,
+  domainMax: number,
+  pad = 3
+): { x: number; y: number }[] {
+  if (!data || data.length === 0) return [];
+  const span = domainMax - domainMin || 1;
+  const n = data.length;
+  const stepX = n > 1 ? (width - pad * 2) / (n - 1) : 0;
+  const px = (i: number) => pad + i * stepX;
+  const py = (v: number) => pad + (1 - (v - domainMin) / span) * (height - pad * 2);
+  return data.map((v, i) => ({ x: px(i), y: n > 1 ? py(v) : height / 2 }));
+}
+
+/** Catmull-Rom-to-Bezier smoothed path through `pts` (a soft curve, not a
+ *  zigzag) - the line half of {@link seriesPaths}, pulled out so a ribbon's
+ *  upper/lower edges can be smoothed with the identical formula the median
+ *  line uses. Needs at least one point; a single point renders as a dot (a
+ *  zero-length "line"). */
+function smoothPath(pts: { x: number; y: number }[]): string {
+  if (pts.length === 0) return "";
+  if (pts.length === 1) return `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+/** Line + closed-area path through already-scaled `pts` (see {@link
+ *  seriesPoints}) - the shared second half of {@link seriesPaths}, exposed so
+ *  a caller that needs several series on ONE shared Y-domain (a median line
+ *  plus its percentile ribbons) can compute points with an explicit domain
+ *  and still get the identical curve-building/area-closing logic. */
+export function pathsFromPoints(
+  pts: { x: number; y: number }[],
+  width: number,
+  height: number,
+  pad = 3
+): { line: string; area: string } {
+  if (pts.length < 2) {
+    const y = pts[0]?.y ?? height / 2;
+    const line = `M${pad},${y.toFixed(1)} L${width - pad},${y.toFixed(1)}`;
+    return { line, area: `${line} L${width - pad},${height - pad} L${pad},${height - pad} Z` };
+  }
+  const line = smoothPath(pts);
+  const area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${height - pad} L${pts[0].x.toFixed(1)},${height - pad} Z`;
+  return { line, area };
+}
+
 /**
  * Build a smooth-ish SVG path (line and, optionally, a closed area) through a
  * numeric series scaled into a `width` x `height` box. Uses Catmull-Rom to
@@ -58,31 +125,29 @@ export function seriesPaths(
   if (!data || data.length === 0) return { line: "", area: "" };
   const min = Math.min(...data);
   const max = Math.max(...data);
-  const span = max - min || 1;
-  const n = data.length;
-  const stepX = n > 1 ? (width - pad * 2) / (n - 1) : 0;
-  const px = (i: number) => pad + i * stepX;
-  const py = (v: number) => pad + (1 - (v - min) / span) * (height - pad * 2);
-  const pts = data.map((v, i) => ({ x: px(i), y: n > 1 ? py(v) : height / 2 }));
+  const pts = seriesPoints(data, width, height, min, max, pad);
+  return pathsFromPoints(pts, width, height, pad);
+}
 
-  if (pts.length < 2) {
-    const y = pts[0]?.y ?? height / 2;
-    const line = `M${pad},${y.toFixed(1)} L${width - pad},${y.toFixed(1)}`;
-    return { line, area: `${line} L${width - pad},${height - pad} L${pad},${height - pad} Z` };
-  }
-
-  let line = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] ?? pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] ?? p2;
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
-    line += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
-  }
-  const area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${height - pad} L${pts[0].x.toFixed(1)},${height - pad} Z`;
-  return { line, area };
+/**
+ * A closed, smoothed ribbon between two same-length series (e.g. a p25-p75
+ * percentile band): the upper edge left-to-right, then the lower edge
+ * right-to-left, both smoothed with the same Catmull-Rom curve the median
+ * line uses so the ribbon reads as one soft shape rather than a line paired
+ * with a jagged fill. `upper`/`lower` must already share the caller's chosen
+ * Y-domain (see {@link seriesPoints}) so the ribbon lines up with whatever
+ * line is drawn over it.
+ */
+export function ribbonPath(
+  upper: { x: number; y: number }[],
+  lower: { x: number; y: number }[]
+): string {
+  if (upper.length === 0 || lower.length === 0) return "";
+  const top = smoothPath(upper);
+  const bottomReversed = [...lower].reverse();
+  // Continue the path from the upper curve's end into the lower curve's
+  // (reversed) end with a straight line, then smooth back along it.
+  const bottom = smoothPath(bottomReversed);
+  // bottom starts with its own "M"; replace it with "L" to keep one single path.
+  return `${top} L${bottomReversed[0].x.toFixed(1)},${bottomReversed[0].y.toFixed(1)} ${bottom.replace(/^M[^ ]+/, "")} Z`;
 }

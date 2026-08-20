@@ -9,7 +9,7 @@ import {
   rangeWindowDays,
   type DateRange,
 } from "../insights";
-import { computeAgp, type Agp } from "../agp";
+import { AGP_MIN_READINGS, computeAgp, type Agp } from "../agp";
 import {
   buildAgpGeometry,
   pointsAttr,
@@ -31,6 +31,27 @@ import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
 import { EXPORT_MAX_ROWS, type ExportResult } from "./export";
+import {
+  weeklyComparison,
+  weekAnchorForLang,
+  hourBandAverages,
+  bestDayAndStreaks,
+  DAY_IN_TARGET_TIR_PCT,
+  mealResponseSummary,
+  cvTrend,
+  type CvWeekPoint,
+} from "../insightsPro";
+
+/**
+ * D10g: the same Pro insight sections app/insights.tsx renders (weekly
+ * comparison, hour-of-day heat strip, best day + streaks, meal response
+ * summary, CV trend) also become PDF sections here, each gated on the
+ * report's own date range/data carrying enough basis for it - see the
+ * individual build*Html functions below for the exact thresholds. All of
+ * them call straight into lib/insightsPro.ts, the same pure calculation
+ * layer the screen uses, so the numbers in the document and on the phone
+ * never drift apart.
+ */
 
 /**
  * Generates a printable A4 PDF report (HTML → PDF via expo-print) of a profile's
@@ -144,6 +165,9 @@ function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
     `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">` +
     `<rect x="${g.targetBand.x}" y="${f1(g.targetBand.y)}" width="${f1(g.targetBand.width)}" height="${f1(g.targetBand.height)}" fill="#10b981" fill-opacity="0.1"/>` +
     yTicks +
+    // Wider 5-95% band drawn first (lighter), then the 25-75% band on top of
+    // it (darker) - same layering as the app's AGP percentile ribbons.
+    (hasCurve ? `<polygon points="${pointsAttr(g.p595Polygon)}" fill="#22d3ee" fill-opacity="0.09"/>` : "") +
     (hasCurve ? `<polygon points="${pointsAttr(g.iqrPolygon)}" fill="#22d3ee" fill-opacity="0.18"/>` : "") +
     (hasCurve ? `<polyline points="${pointsAttr(g.medianLine)}" fill="none" stroke="#0891b2" stroke-width="2"/>` : "") +
     dots +
@@ -334,6 +358,234 @@ function buildEvents(
   return `<h2 class="pbreak">${tf("report.eventsTitle")}</h2>${hypoSection}${topSection}${doseSection}`;
 }
 
+/** A KPI tile identical in shape to buildHtml's own `.kpi` cards, plus an
+ *  optional third "delta" line (`.kd`) - shared by every D10 section below so
+ *  they read as one family with the report's existing headline KPIs. */
+function kpiTile(label: string, value: string, color: string, delta?: string): string {
+  return (
+    `<div class="kpi" style="border-top-color:${color}">` +
+    `<div class="kv">${value}</div><div class="kl">${label}</div>` +
+    (delta ? `<div class="kd">${delta}</div>` : "") +
+    `</div>`
+  );
+}
+
+/** Signed "+N unit" / "-N unit", the print equivalent of the app's own
+ *  avgDeltaChip - never a bare number, so a positive/negative change is never
+ *  ambiguous on paper. */
+function signedGlucose(mgdl: number, unit: GlucoseUnit): string {
+  const u = glucoseUnitLabel(unit);
+  return `${mgdl >= 0 ? "+" : "-"}${formatGlucose(Math.abs(mgdl), unit)} ${u}`;
+}
+
+/** Weekly comparison (D10a): this calendar week (so far) vs. the previous
+ *  full week - TIR / average / CV. Only printed when the report's own range
+ *  both covers at least two weeks AND actually reaches "now" (the section is
+ *  inherently about the CURRENT week, so a report of a past date range would
+ *  otherwise print a comparison outside its own stated period). */
+function buildWeeklyCompareHtml(
+  readings: SugarLog[],
+  range: DateRange,
+  band: TargetBand,
+  unit: GlucoseUnit,
+  tf: Tf
+): string {
+  const endsNow = Math.abs(Date.now() - range.end) <= 26 * 3_600_000;
+  if (!endsNow || rangeWindowDays(range) < 14) return "";
+  const wc = weeklyComparison(readings, Date.now(), weekAnchorForLang(currentLang()), {
+    low: band.low,
+    high: band.high,
+  });
+  if (wc.currentReadingCount === 0 && wc.previousReadingCount === 0) return "";
+  const vsPrev = tf("insights.vsPrevious");
+  const tiles =
+    kpiTile(
+      tf("insights.timeInRange"),
+      wc.tir.current == null ? "-" : esc(pct(wc.tir.current)),
+      GLUCOSE_COLORS.normal,
+      wc.tir.delta == null
+        ? undefined
+        : `${wc.tir.delta >= 0 ? "+" : "-"}${esc(pct(Math.abs(wc.tir.delta)))} ${vsPrev}`
+    ) +
+    kpiTile(
+      tf("insights.avgGlucose"),
+      wc.avg.current == null ? "-" : `${esc(formatGlucose(wc.avg.current, unit))} ${esc(glucoseUnitLabel(unit))}`,
+      BRAND,
+      wc.avg.delta == null ? undefined : `${esc(signedGlucose(wc.avg.delta, unit))} ${vsPrev}`
+    ) +
+    kpiTile(
+      tf("insights.cv"),
+      wc.cv.current == null ? "-" : esc(pct(wc.cv.current)),
+      BRAND,
+      wc.cv.delta == null
+        ? undefined
+        : `${wc.cv.delta >= 0 ? "+" : "-"}${esc(pct(Math.abs(wc.cv.delta)))} ${vsPrev}`
+    );
+  return `<h2>${tf("insights.weeklyCompareTitle")}</h2><div class="kpis">${tiles}</div>`;
+}
+
+/** Hour-of-day heat strip (D10b): mean glucose per 3-hour block, pooled over
+ *  the report's range. Gated on AGP_MIN_READINGS - the same "is this pooled
+ *  view even meaningful" floor the AGP chart itself already uses. */
+function buildHourBandHtml(
+  readings: SugarLog[],
+  days: number,
+  band: TargetBand,
+  unit: GlucoseUnit,
+  tf: Tf
+): string {
+  if (readings.length < AGP_MIN_READINGS) return "";
+  const bandsArr = hourBandAverages(readings, days);
+  if (bandsArr.every((b) => b.n === 0)) return "";
+  const cells = bandsArr
+    .map((b) => {
+      const label = `${two(b.startHour)}-${two(b.endHour)}`;
+      if (b.avg == null) {
+        return `<div class="hbcell" style="background:#e5e7eb"><div class="hbv">-</div><div class="hbl">${label}</div></div>`;
+      }
+      const style = `background:${dotColor(b.avg, band)}${b.sparse ? ";opacity:0.45" : ""}`;
+      return `<div class="hbcell" style="${style}"><div class="hbv">${esc(formatGlucose(b.avg, unit))}</div><div class="hbl">${label}</div></div>`;
+    })
+    .join("");
+  return (
+    `<h2>${tf("insights.heatStripTitle")}</h2><div class="cap">${tf("insights.heatStripSub")}</div>` +
+    `<div class="heatstrip">${cells}</div>`
+  );
+}
+
+/** Best day + streaks (D10d): the single best-TIR day in the last 30 days, a
+ *  day-in-target streak and a plain logging streak. Gated on the report range
+ *  being at least a week (a streak over less than that is not informative)
+ *  and on there being SOMETHING to show (skipped outright otherwise, rather
+ *  than printing an all-zero section). */
+function buildBestDayHtml(
+  readings: SugarLog[],
+  range: DateRange,
+  band: TargetBand,
+  unit: GlucoseUnit,
+  tf: Tf
+): string {
+  if (rangeWindowDays(range) < 7) return "";
+  const bs = bestDayAndStreaks(readings, { low: band.low, high: band.high }, Date.now());
+  if (!bs.bestDay && bs.targetDayStreak.longest === 0 && bs.loggingStreak.longest === 0) return "";
+  const u = glucoseUnitLabel(unit);
+  const bestTile = bs.bestDay
+    ? kpiTile(
+        tf("insights.bestDayLabel"),
+        esc(fmtDay(new Date(`${bs.bestDay.day}T12:00:00`))),
+        GLUCOSE_COLORS.normal,
+        `${esc(pct(bs.bestDay.tir))} ${tf("insights.timeInRange")} &middot; ${esc(formatGlucose(bs.bestDay.avg, unit))} ${esc(u)}`
+      )
+    : "";
+  const tiles =
+    bestTile +
+    kpiTile(
+      tf("insights.streakTargetLabel"),
+      String(bs.targetDayStreak.current),
+      BRAND,
+      tf("insights.streakLongest", { n: bs.targetDayStreak.longest })
+    ) +
+    kpiTile(
+      tf("insights.streakLoggingLabel"),
+      String(bs.loggingStreak.current),
+      BRAND,
+      tf("insights.streakLongest", { n: bs.loggingStreak.longest })
+    );
+  const note = `<div class="cap">${tf("insights.streaksNote", { pct: pct(DAY_IN_TARGET_TIR_PCT) })}</div>`;
+  return `<h2>${tf("insights.bestDayStreaksTitle")}</h2><div class="kpis">${tiles}</div>${note}`;
+}
+
+/** Below this many meals with a computable delta, "lowest vs. highest" is one
+ *  or two data points dressed up as a comparison. */
+const MEAL_RESPONSE_PDF_MIN_SAMPLE = 3;
+
+/** Meal response summary (D10e): average glucose change after a meal, plus
+ *  the lowest- and highest-change meals BY NAME (the user's own logged meal
+ *  names - never "good"/"bad", only "lowest"/"highest average change"). */
+function buildMealResponseHtml(
+  meals: MealLog[],
+  readings: SugarLog[],
+  mealNames: Map<string, string>,
+  unit: GlucoseUnit,
+  tf: Tf
+): string {
+  const ms = mealResponseSummary(meals, readings);
+  if (ms.deltaSampleSize < MEAL_RESPONSE_PDF_MIN_SAMPLE) return "";
+  const avgTile = kpiTile(
+    tf("insights.mealResponseAvgLabel"),
+    ms.avgDelta == null ? "-" : esc(signedGlucose(ms.avgDelta, unit)),
+    BRAND,
+    tf("insights.mealResponseSampleNote", { n: ms.deltaSampleSize })
+  );
+  const row = (label: string, entry: typeof ms.best) =>
+    entry
+      ? `<tr><td>${label}</td><td>${esc(mealNames.get(entry.mealId) ?? "-")}</td><td class="v">${esc(signedGlucose(entry.delta as number, unit))}</td></tr>`
+      : "";
+  const rows = row(tf("insights.mealResponseLowest"), ms.best) + row(tf("insights.mealResponseHighest"), ms.worst);
+  const table = rows ? `<table><tbody>${rows}</tbody></table>` : "";
+  return (
+    `<h2>${tf("insights.mealResponseTitle")}</h2><div class="cap">${tf("insights.mealResponseSub")}</div>` +
+    `<div class="kpis">${avgTile}</div>${table}`
+  );
+}
+
+/** Weeks of history the CV trend needs before a line means anything more than
+ *  "not much data yet" (matches the "8-12 weeks" range lib/insightsPro.ts's
+ *  cvTrend docstring itself calls out). */
+const CV_TREND_PDF_MIN_WEEKS = 8;
+const CV_TREND_PDF_MAX_WEEKS = 12;
+
+/** CV trend (D10f): a small inline-SVG line of weekly glucose variability
+ *  (%CV), one point per calendar week - the print equivalent of the app's
+ *  Sparkline. Weeks with no basis for a CV (fewer than 2 readings) are simply
+ *  skipped when drawing the line, exactly like a gap in the app's own chart. */
+function buildCvTrendHtml(readings: SugarLog[], range: DateRange, tf: Tf): string {
+  const weeksAvail = Math.floor(rangeWindowDays(range) / 7);
+  if (weeksAvail < CV_TREND_PDF_MIN_WEEKS) return "";
+  const weeks = Math.min(weeksAvail, CV_TREND_PDF_MAX_WEEKS);
+  const trend = cvTrend(readings, Date.now(), weekAnchorForLang(currentLang()), weeks);
+  const withCv = trend.weeks.filter(
+    (w): w is CvWeekPoint & { cv: number } => w.cv != null
+  );
+  if (withCv.length === 0) return "";
+
+  const W = 300;
+  const H = 60;
+  const padL = 8;
+  const padR = 8;
+  const padT = 8;
+  const padB = 8;
+  const vals = withCv.map((w) => w.cv);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max - min || 1;
+  const n = trend.weeks.length;
+  const stepX = n > 1 ? (W - padL - padR) / (n - 1) : 0;
+  const xFor = (i: number) => padL + i * stepX;
+  const yFor = (v: number) => padT + (1 - (v - min) / span) * (H - padT - padB);
+
+  let path = "";
+  trend.weeks.forEach((w, i) => {
+    if (w.cv == null) return;
+    path += `${path ? "L" : "M"}${xFor(i).toFixed(1)},${yFor(w.cv).toFixed(1)} `;
+  });
+  const dots = trend.weeks
+    .map((w, i) =>
+      w.cv == null ? "" : `<circle cx="${xFor(i).toFixed(1)}" cy="${yFor(w.cv).toFixed(1)}" r="2.2" fill="#0891b2"/>`
+    )
+    .join("");
+  const svg =
+    `<svg viewBox="0 0 ${W} ${H}" width="260" height="${H}" xmlns="http://www.w3.org/2000/svg">` +
+    `<path d="${path.trim()}" fill="none" stroke="#0891b2" stroke-width="2"/>${dots}</svg>`;
+
+  const last = withCv[withCv.length - 1];
+  const prev = withCv.length > 1 ? withCv[withCv.length - 2] : null;
+  const deltaLine = prev
+    ? `<div class="cap">${last.cv - prev.cv >= 0 ? "+" : "-"}${esc(pct(Math.abs(last.cv - prev.cv)))} ${tf("insights.vsPrevious")}</div>`
+    : "";
+  return `<h2>${tf("insights.cvTrendTitle")}</h2><div class="cap">${tf("insights.cvTrendSub")}</div>${svg}${deltaLine}`;
+}
+
 function buildHtml(
   profile: UserProfile,
   range: DateRange,
@@ -345,7 +597,12 @@ function buildHtml(
   glucose: { date: string; time: string; value: string; period: string }[],
   injections: { date: string; time: string; site: string; dose: string }[],
   meds: { date: string; time: string; name: string }[],
-  meals: { date: string; time: string; food: string; carbs: string; dose: string }[]
+  meals: { date: string; time: string; food: string; carbs: string; dose: string }[],
+  /** D10g: the weekly-compare / hour-band / best-day / meal-response / CV-
+   *  trend sections, already built and concatenated (each "" when the range
+   *  or the data does not clear its own threshold - see report.ts's build*Html
+   *  functions), so this stays a single optional splice into the template. */
+  proInsightsHtml = ""
 ): string {
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
   const u = glucoseUnitLabel(unit);
@@ -557,7 +814,12 @@ function buildHtml(
   .bandhead { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
   .bandhead .bd { font-weight: 700; color: #222; }
   .pbreak { page-break-before: always; }
-  .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }${rtlCss}
+  .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }
+  .kpi .kd { font-size: 10px; color: #777; margin-top: 4px; }
+  .heatstrip { display: flex; gap: 4px; margin: 4px 0 12px; }
+  .hbcell { flex: 1; border-radius: 6px; padding: 6px 2px; text-align: center; color: #1a1a1a; }
+  .hbcell .hbv { font-size: 11px; font-weight: 700; }
+  .hbcell .hbl { font-size: 8px; opacity: .75; margin-top: 2px; }${rtlCss}
 </style>
 </head>
 <body${dirAttr}>
@@ -579,6 +841,8 @@ function buildHtml(
   ${tirBar ? `<div class="cap">${t("insights.timeInRange")}</div>${tirBar}` : ""}
 
   ${agpSvg ? `<h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(reportBand.low, unit)), high: esc(formatGlucose(reportBand.high, unit)) })}</div>` : ""}
+
+  ${proInsightsHtml}
 
   <h2>${t("report.summary")}</h2>
   ${summaryTable}
@@ -792,6 +1056,20 @@ export async function exportLogsPdf(
   const timelineHtml = buildTimeline(sugarInRange, mealsRaw, inj, reportBand, unit, tf, usesInsulin);
   const eventsHtml = buildEvents(sugarInRange, insights, hypoThreshold(profile), unit, tf, usesInsulin);
 
+  // D10g: meal display names, already resolved by the journal feed (the same
+  // names printed in the meals table below) - keyed by id so
+  // buildMealResponseHtml can print the lowest/highest-change meal BY NAME
+  // without a second query.
+  const mealNameById = new Map<string, string>();
+  for (const e of inWindow) if (e.kind === "meal") mealNameById.set(e.id, e.display_name);
+
+  const proInsightsHtml =
+    buildWeeklyCompareHtml(sugarInRange, r, reportBand, unit, tf) +
+    buildHourBandHtml(sugarInRange, effectiveDays, reportBand, unit, tf) +
+    buildBestDayHtml(sugarInRange, r, reportBand, unit, tf) +
+    buildCvTrendHtml(sugarInRange, r, tf) +
+    buildMealResponseHtml(mealsRaw, sugarInRange, mealNameById, unit, tf);
+
   const html = buildHtml(
     profile,
     r,
@@ -803,7 +1081,8 @@ export async function exportLogsPdf(
     glucose,
     injections,
     meds,
-    meals
+    meals,
+    proInsightsHtml
   );
 
   const { uri } = await Print.printToFileAsync({ html });
