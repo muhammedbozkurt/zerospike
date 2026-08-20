@@ -190,7 +190,8 @@ public class ZerospikeAlarmKitModule: Module {
       guard AlarmManager.shared.authorizationState == .authorized else { return false }
 
       let (uuid, wasFresh) = uuidForIdentity(id)
-      try? await AlarmManager.shared.cancel(id: uuid)
+      // Xcode 26 gercegi: cancel(id:) senkron bir throwing fonksiyon, async degil.
+      try? AlarmManager.shared.cancel(id: uuid)
 
       let time = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
       let recurrence = Alarm.Schedule.Relative.Recurrence.weekly([
@@ -258,7 +259,7 @@ public class ZerospikeAlarmKitModule: Module {
         return false
       }
       do {
-        try await AlarmManager.shared.cancel(id: uuid)
+        try AlarmManager.shared.cancel(id: uuid)
         forgetIdentity(id)
         return true
       } catch {
@@ -270,14 +271,16 @@ public class ZerospikeAlarmKitModule: Module {
     /// scheduled AND that AlarmKit still actually holds - the two-way check the
     /// orphan sweep in applyReminders needs, mirroring how it already reads
     /// getAllScheduledNotificationsAsync() for the "zerospike-rem-" prefix.
-    /// `AlarmManager.shared.alarms` is a plain synchronous `[Alarm]` property
-    /// (confirmed by the BleepingSwift sample, which returns it directly with
-    /// no `await`), covering only alarms THIS app created - no prefix filtering
-    /// needed on AlarmKit's own side, only against this module's own map.
+    /// `AlarmManager.shared.alarms` is a synchronous `[Alarm]` property whose
+    /// ACCESS CAN THROW (Xcode 26 compile fact; the BleepingSwift sample's plain
+    /// read predated that). A throw here degrades to "nothing scheduled", which
+    /// makes the JS orphan sweep a no-op for this pass instead of failing it -
+    /// covering only alarms THIS app created, checked against this module's map.
     Function("listScheduledAlarmIds") { () -> [String] in
       guard #available(iOS 26.0, *) else { return [] }
       let map = loadIdMap()
-      let liveUuids = Set(AlarmManager.shared.alarms.map { $0.id.uuidString })
+      let live = (try? AlarmManager.shared.alarms) ?? []
+      let liveUuids = Set(live.map { $0.id.uuidString })
       return map.compactMap { key, value in liveUuids.contains(value) ? key : nil }
     }
   }
