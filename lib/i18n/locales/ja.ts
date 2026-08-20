@@ -364,6 +364,7 @@ const ja: TranslationSchema = {
     typeMed: "お薬",
     typeBasal: "基礎インスリン",
     typeCustom: "カスタム",
+    demoCustomLabel: "夕方の散歩",
     labelPlaceholder: "リマインダーの内容",
     empty: "リマインダーがまだありません。下から追加してください。",
     limitReached: "リマインダーは最大10件まで追加できます。",

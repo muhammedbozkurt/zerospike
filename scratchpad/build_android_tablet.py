@@ -9,10 +9,19 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image, ImageDraw
 from compose import (
-    new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
+    new_canvas_with_header, draw_device, load_cropped_shot, font, F_BOLD,
     measure_chip, fit_header_and_chip, verify_output, align_for,
+    pad_to_height, layout_chips, draw_chips,
 )
-from i18n_copy import LANGS, PANELS_2_0_0, chips_for
+from i18n_copy import LANGS, PANELS_2_0_0 as _ALL_PANELS, chips_for
+
+# Lets a single panel be re-rendered on its own (env var, comma-separated
+# panel keys) without touching the other 6 - needed once 09-reminders gets
+# a fresh raw capture pass (permission banner hidden, list seeded fuller)
+# and only it needs to be rebuilt across all 9 languages.
+import os as _os
+_filter = _os.environ.get("PANEL_FILTER")
+PANELS_2_0_0 = tuple(p for p in _ALL_PANELS if p in _filter.split(",")) if _filter else _ALL_PANELS
 import build_ipad as ipad
 
 RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/ipad"
@@ -38,6 +47,23 @@ STATUS_BAND = 112
 # identical source frames, so the cuts (and their per-capture snapping) come
 # straight from the iPad build rather than being kept in sync by hand
 CROP_BOTTOM = ipad.CROP_BOTTOM
+
+# --- fixed device frame -----------------------------------------------------
+# Same reasoning as build_android_phone.py: the fixed content height for this
+# canvas is the iPad build's own TARGET_CROP_H minus STATUS_CROP. Standard
+# panels resolve to ipad.TARGET_CROP_H via ipad.cut_for/ipad.CROP_BOTTOM
+# already, so cropping STATUS_CROP off their top lands on CONTENT_H for free;
+# iPad needed no PAD_PANELS (every standard panel's real content reaches
+# ipad.TARGET_CROP_H without padding), so neither does this canvas. 08-takip
+# (ipad.EXCEPTION_PANELS) still needs its own crop_top, deeper than iPad's by
+# STATUS_CROP, to additionally clear the status bar.
+CONTENT_H = ipad.TARGET_CROP_H - STATUS_CROP
+EXCEPTION_PANELS = ipad.EXCEPTION_PANELS
+
+# iPhone-baseline (1284px, see build_iphone.CHIP_DEV_GAP) minimum chip-to-
+# device gap, scaled by each canvas's own width below.
+IPHONE_W = 1284
+CHIP_DEV_GAP_BASE = 24
 
 CANVASES = [
     # tablet10: matches the raw capture's own native width exactly
@@ -85,14 +111,8 @@ def build_for_canvas(lang, spec, sources, out_dir):
                 headline_size=spec["headline_size"], sub_size=spec["sub_size"],
                 chip_size=spec["chip_size"], text_w=int(W * 0.80))
     dev_w_std = W - 2 * margin_x
-    safe_bottom = H - int(H * 0.008)
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     written = []
-
-    def dev_w_for_content(shot_img):
-        cw, ch = shot_img.size
-        inner_h_max = (safe_bottom - dev_y) - 2 * bezel
-        return max(250, min(dev_w_std, int(inner_h_max * cw / ch + 2 * bezel)))
 
     def add_punch_hole(canvas, dev_x, dw):
         d = ImageDraw.Draw(canvas)
@@ -110,35 +130,29 @@ def build_for_canvas(lang, spec, sources, out_dir):
         cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
         f_chip = font(F_BOLD, cfg["chip_size"], lang=lang)
         chip_stack_gap = int(margin_x * 0.35)
-        chip_h = max(measure_chip(probe, c["text"], f_chip, c.get("emoji"))[1] for c in chips)
-        total_h = len(chips) * chip_h + (len(chips) - 1) * chip_stack_gap
+        available_w = W - 2 * margin_x
+        orientation, block_w, block_h, boxes = layout_chips(probe, chips, f_chip, available_w, gap_y=chip_stack_gap)
         gap = int(margin_x * 0.4)
+        chip_dev_gap = round(CHIP_DEV_GAP_BASE * W / IPHONE_W)
         cfg["sub_max_lines"], cy0, fits = fit_header_and_chip(
-            cfg, total_h, dev_y, gap, int(margin_x * 0.15))
+            cfg, block_h, dev_y, gap, chip_dev_gap)
         if not fits:
             print(f"  WARN [{lang}] chip overlaps the header band")
 
-        shot = with_status_band(load_cropped_shot(raw_path, STATUS_CROP, ipad.cut_for(raw_path, key)))
-        dw = dev_w_for_content(shot)
+        bottom = ipad.cut_for(raw_path, key)
+        top = max(0, bottom - CONTENT_H) if key in EXCEPTION_PANELS else STATUS_CROP
+        shot = with_status_band(load_cropped_shot(raw_path, top, bottom))
+        dw = dev_w_std
         dev_x = (W - dw) // 2
 
         canvas, draw, y_after = new_canvas_with_header(cfg)
-        draw_device(canvas, shot, dev_x, dev_y, dw, bezel, radius)
+        dev_box = draw_device(canvas, shot, dev_x, dev_y, dw, bezel, radius)
         add_punch_hole(canvas, dev_x, dw)
-
-        cy = cy0
-        for ch in chips:
-            w, h, *_ = measure_chip(draw, ch["text"], f_chip, ch.get("emoji"))
-            if cfg.get("align") == "center":
-                x = (W - w) // 2
-            else:
-                x = W - cfg["margin_x"] - w
-            draw_chip_at(canvas, ch["text"], x, cy, f_chip, emoji_ch=ch.get("emoji"), dot=ch.get("dot"))
-            cy += h + chip_stack_gap
+        draw_chips(canvas, draw, chips, cfg, f_chip, cy0, orientation, boxes, gap_y=chip_stack_gap)
 
         out_path = os.path.join(out_dir, f"{key}.png")
         canvas.save(out_path)
-        print("wrote", out_path, canvas.size, "dev_w", dw, "content", shot.size)
+        print("wrote", out_path, canvas.size, "dev_box", dev_box, "content", shot.size)
         written.append((out_path, spec["size"]))
     return written
 

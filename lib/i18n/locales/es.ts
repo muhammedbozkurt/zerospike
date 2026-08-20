@@ -364,6 +364,7 @@ const es: TranslationSchema = {
     typeMed: "Medicamento",
     typeBasal: "Insulina basal",
     typeCustom: "Personal",
+    demoCustomLabel: "Paseo nocturno",
     labelPlaceholder: "Texto del recordatorio",
     empty: "Todavía no hay recordatorios. Añada uno abajo.",
     limitReached: "Puede añadir hasta 10 recordatorios.",

@@ -9,10 +9,19 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image, ImageDraw
 from compose import (
-    new_canvas_with_header, draw_device, draw_chip_at, load_cropped_shot, font, F_BOLD,
+    new_canvas_with_header, draw_device, load_cropped_shot, font, F_BOLD,
     measure_chip, bodymap_shot, fit_header_and_chip, verify_output, align_for,
+    pad_to_height, layout_chips, draw_chips,
 )
-from i18n_copy import LANGS, PANELS_2_0_0, chips_for
+from i18n_copy import LANGS, PANELS_2_0_0 as _ALL_PANELS, chips_for
+
+# Lets a single panel be re-rendered on its own (env var, comma-separated
+# panel keys) without touching the other 6 - needed once 09-reminders gets
+# a fresh raw capture pass (permission banner hidden, list seeded fuller)
+# and only it needs to be rebuilt across all 9 languages.
+import os as _os
+_filter = _os.environ.get("PANEL_FILTER")
+PANELS_2_0_0 = tuple(p for p in _ALL_PANELS if p in _filter.split(",")) if _filter else _ALL_PANELS
 import build_iphone as iphone
 
 RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/iphone"
@@ -54,14 +63,28 @@ BODYMAP_TOP_CROP = iphone.BODYMAP_TOP_CROP
 BODYMAP_CARD_HEIGHT = iphone.BODYMAP_CARD_HEIGHT
 CROP_BOTTOM = iphone.CROP_BOTTOM
 
+# --- fixed device frame -----------------------------------------------------
+# Same reasoning as build_iphone/build_ipad: dev_w is now a canvas-wide
+# constant (DEV_W_STD, no more dev_w_for_content), and every shot handed to
+# draw_device is exactly this canvas's fixed content height, so dev_h falls
+# out identical for all 7 panels x 9 languages. The fixed content height here
+# is the iPhone build's own TARGET_CROP_H minus STATUS_CROP: standard panels
+# (01-ring, 02-bodymap, 09-reminders) already resolve to iphone.TARGET_CROP_H
+# via iphone.cut_for/iphone.CROP_BOTTOM, so cropping STATUS_CROP off their top
+# lands on this value for free. 04-food/05-insights (iphone.PAD_PANELS) need
+# their own padding call here too, since their real safe crop is still
+# shorter than target after the status-bar crop. 07-spike/08-takip
+# (iphone.EXCEPTION_PANELS) need their own crop_top - the iPhone build's own
+# crop_top already sacrifices the top of the screen to protect the composer/
+# footer, and Android needs to additionally clear the status bar, so its
+# crop_top is deeper than iPhone's by STATUS_CROP.
+CONTENT_H = iphone.TARGET_CROP_H - STATUS_CROP
+PAD_PANELS = iphone.PAD_PANELS
+EXCEPTION_PANELS = iphone.EXCEPTION_PANELS
 
-def dev_w_for_content(shot_img, dev_y=DEV_Y, dev_w_cap=DEV_W_STD):
-    cw, ch = shot_img.size
-    budget_h = SAFE_BOTTOM - dev_y
-    inner_h_max = budget_h - 2 * BEZEL
-    inner_w_needed = inner_h_max * cw / ch
-    dev_w = int(inner_w_needed + 2 * BEZEL)
-    return max(250, min(dev_w_cap, dev_w))
+# See build_iphone.CHIP_DEV_GAP - same fixed minimum, scaled by this canvas's
+# own width relative to the iPhone canvas (1284px) it's baselined against.
+CHIP_DEV_GAP = round(iphone.CHIP_DEV_GAP * CANVAS[0] / iphone.CANVAS[0])
 
 
 def add_punch_hole(canvas, dev_x, dev_y, dev_w):
@@ -73,37 +96,27 @@ def add_punch_hole(canvas, dev_x, dev_y, dev_w):
     d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(40, 40, 44), width=1)
 
 
-def place_device_and_chips(cfg, shot_img, chips, dev_w=None):
+def place_device_and_chips(cfg, shot_img, chips):
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     f_chip = font(F_BOLD, cfg["chip_size"], lang=cfg.get("lang"))
-    chip_h = max([measure_chip(probe, c["text"], f_chip, c.get("emoji"))[1] for c in chips] or [0])
-    total_h = len(chips) * chip_h + (len(chips) - 1) * 14
-    sub_lines, cy, fits = fit_header_and_chip(cfg, total_h, DEV_Y, 18, 6)
+    available_w = CANVAS[0] - 2 * cfg["margin_x"]
+    orientation, block_w, block_h, boxes = layout_chips(probe, chips, f_chip, available_w, gap_y=14)
+    sub_lines, cy, fits = fit_header_and_chip(cfg, block_h, DEV_Y, 18, CHIP_DEV_GAP)
     if not fits:
         print(f"  WARN [{cfg.get('lang')}] chip overlaps the header band")
     cfg = dict(cfg, sub_max_lines=sub_lines)
 
     canvas, draw, y_after = new_canvas_with_header(cfg)
-    if dev_w is None:
-        dev_w = DEV_W_STD
+    dev_w = DEV_W_STD
     dev_x = (CANVAS[0] - dev_w) // 2
     dev_box = draw_device(canvas, shot_img, dev_x, DEV_Y, dev_w, BEZEL, RADIUS)
     add_punch_hole(canvas, dev_x, DEV_Y, dev_w)
-    for ch in chips:
-        w, h, *_ = measure_chip(draw, ch["text"], f_chip, ch.get("emoji"))
-        if cfg.get("align") == "center":
-            x = (CANVAS[0] - w) // 2
-        else:
-            x = CANVAS[0] - cfg["margin_x"] - w
-        draw_chip_at(canvas, ch["text"], x, cy, f_chip, emoji_ch=ch.get("emoji"), dot=ch.get("dot"))
-        cy += h + 14
+    draw_chips(canvas, draw, chips, cfg, f_chip, cy, orientation, boxes, gap_y=14)
     return canvas, dev_box
 
 
-def frame(out_dir, key, cfg, chips, shot, dev_w=None):
-    if dev_w is None:
-        dev_w = dev_w_for_content(shot)
-    canvas, dev_box = place_device_and_chips(cfg, shot, chips, dev_w=dev_w)
+def frame(out_dir, key, cfg, chips, shot):
+    canvas, dev_box = place_device_and_chips(cfg, shot, chips)
     out_path = os.path.join(out_dir, f"{key}.png")
     canvas.save(out_path)
     print("wrote", out_path, canvas.size, "dev_box", dev_box, "content", shot.size)
@@ -128,8 +141,22 @@ def load_shot(raw_dir, key):
         path = os.path.join(raw_dir, f"{key}.png")
         if not os.path.exists(path):
             return None
-        shot = load_cropped_shot(path, STATUS_CROP, iphone.cut_for(path, key))
-    return with_status_band(shot) if shot is not None else None
+        bottom = iphone.cut_for(path, key)
+        if key in EXCEPTION_PANELS:
+            # Android needs to additionally clear the status bar on top of
+            # iPhone's own composer/footer-preserving crop_top, so it can't
+            # just reuse iPhone's crop_top - re-derive it from this canvas's
+            # own fixed content height instead.
+            top = max(0, bottom - CONTENT_H)
+        else:
+            top = STATUS_CROP
+        shot = load_cropped_shot(path, top, bottom)
+    if shot is None:
+        return None
+    shot = with_status_band(shot)
+    if key in PAD_PANELS:
+        shot = pad_to_height(shot, CONTENT_H + STATUS_BAND)
+    return shot
 
 
 def raw_dir_for(lang, key):

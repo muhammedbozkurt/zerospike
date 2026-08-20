@@ -364,6 +364,7 @@ const de: TranslationSchema = {
     typeMed: "Medikament",
     typeBasal: "Basalinsulin",
     typeCustom: "Eigen",
+    demoCustomLabel: "Abendspaziergang",
     labelPlaceholder: "Erinnerungstext",
     empty: "Noch keine Erinnerungen. Fügen Sie unten eine hinzu.",
     limitReached: "Sie können bis zu 10 Erinnerungen hinzufügen.",

@@ -364,6 +364,7 @@ const it: TranslationSchema = {
     typeMed: "Farmaco",
     typeBasal: "Insulina basale",
     typeCustom: "Personalizzato",
+    demoCustomLabel: "Passeggiata serale",
     labelPlaceholder: "Testo del promemoria",
     empty: "Ancora nessun promemoria. Ne aggiunga uno qui sotto.",
     limitReached: "Può aggiungere fino a 10 promemoria.",

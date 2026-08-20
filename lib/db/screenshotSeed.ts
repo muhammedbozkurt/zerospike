@@ -4,7 +4,7 @@ import { addSugarLog, listSugarLogs, deleteSugarLog } from "./logs";
 import { addMealLog, listMealLogs, deleteMealLog } from "./logs";
 import { logInjection, getInjections, deleteInjection } from "./injections";
 import { logMed, listMeds, deleteMed } from "./meds";
-import { createReminder, listReminders } from "./reminders";
+import { createReminder, listReminders, updateReminder } from "./reminders";
 import { getProfile, updateProfile } from "./profiles";
 import { getDb, defaultProfileName, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
 import { SELECTABLE_SITES, SITE_POINTS } from "./types";
@@ -160,26 +160,39 @@ async function seedMeals(profileId: string, lang: Lang, variant?: "tracking"): P
 }
 
 /**
- * Store-screenshot only (09-reminders panel): glucose/med/basal rows so the
- * Reminders settings screen shows a populated list instead of the empty
- * state, with the med row's alarm_enabled=1 so the AlarmKit badge (see
- * app/settings/reminders.tsx's alarm icon) is visible too. Idempotent PER
- * TYPE - checked against whatever the profile already has - so a re-run
- * (language switch, cold relaunch) never duplicates a row, and a profile that
- * already carries one of these (e.g. from the legacy-prefs bridge) is left
- * alone rather than getting a second. No custom-type row: its label would
- * need translating into all 9 languages for no shot-composition gain.
+ * Store-screenshot only (09-reminders panel): six rows so the Reminders
+ * settings screen shows a full, lived-in list instead of the empty state -
+ * two glucose checks, two medications (one named + alarm_enabled=1 for the
+ * AlarmKit badge - see app/settings/reminders.tsx's alarm icon -, one left
+ * unlabeled so the generic localized "Medication" name is what renders,
+ * exercising that fallback), one basal, and one custom row for a neutral,
+ * non-medical routine (an evening walk). Idempotent per (type, time) pair -
+ * checked against whatever the profile already has - so a re-run (language
+ * switch, cold relaunch) never duplicates a row, and a profile that already
+ * carries one of these (e.g. from the legacy-prefs bridge) is left alone
+ * rather than getting a second.
+ *
+ * The custom row's label is fetched via i18n.t at the CALLER's `lang` (see
+ * relabelCustomReminder below for how it stays correct across later language
+ * switches, since creation only ever happens once per profile).
+ *
  * Basal is skipped on the insulin-free tracking profile (variant "tracking"),
  * which has no basal UI at all - the same gating the injection seed above
- * already applies for that variant.
+ * already applies for that variant - so that variant's list is five rows,
+ * still well under MAX_REMINDERS (10).
  */
-async function seedReminders(profileId: string, variant?: "tracking"): Promise<void> {
+async function seedReminders(profileId: string, lang: Lang, variant?: "tracking"): Promise<void> {
   const existing = await listReminders(profileId);
-  const hasType = (t: ReminderType) => existing.some((r) => r.type === t);
-  if (!hasType("glucose")) {
+  const has = (t: ReminderType, time: string) =>
+    existing.some((r) => r.type === t && r.time === time);
+
+  if (!has("glucose", "08:00")) {
     await createReminder({ type: "glucose", time: "08:00", enabled: true, profileId });
   }
-  if (!hasType("med")) {
+  if (!has("glucose", "18:00")) {
+    await createReminder({ type: "glucose", time: "18:00", enabled: true, profileId });
+  }
+  if (!has("med", "20:10")) {
     await createReminder({
       type: "med",
       label: "Metformin",
@@ -189,8 +202,41 @@ async function seedReminders(profileId: string, variant?: "tracking"): Promise<v
       profileId,
     });
   }
-  if (variant !== "tracking" && !hasType("basal")) {
+  if (!has("med", "12:00")) {
+    await createReminder({ type: "med", time: "12:00", enabled: true, profileId });
+  }
+  if (variant !== "tracking" && !has("basal", "22:00")) {
     await createReminder({ type: "basal", time: "22:00", enabled: true, profileId });
+  }
+  if (!has("custom", "19:00")) {
+    await createReminder({
+      type: "custom",
+      label: i18n.t("reminders.demoCustomLabel", { lng: lang }) as string,
+      time: "19:00",
+      enabled: true,
+      profileId,
+    });
+  }
+}
+
+/**
+ * Store-screenshot only: keeps the custom reminder's label in the ACTIVE
+ * locale on every seed pass. seedReminders (above) only ever CREATES its rows
+ * once, on the profile's first pass, so without this the custom row would
+ * freeze on whichever language happened to be active that first time - wrong
+ * in the other 8 on every later scLang relaunch. Mirrors seedMeals just below
+ * (also called unconditionally, every pass): meal names carry the same
+ * per-language re-materialisation, this just updates in place instead of
+ * delete+recreate since there is exactly one custom row (seedReminders is
+ * idempotent per (type, time)). A no-op once the label already matches.
+ */
+async function relabelCustomReminder(profileId: string, lang: Lang): Promise<void> {
+  const rows = await listReminders(profileId);
+  const custom = rows.find((r) => r.type === "custom");
+  if (!custom) return;
+  const label = i18n.t("reminders.demoCustomLabel", { lng: lang }) as string;
+  if (custom.label !== label) {
+    await updateReminder(custom.id, { label });
   }
 }
 
@@ -368,12 +414,17 @@ export async function seedScreenshotData(
         note: null,
       });
 
-      // 09-reminders panel: glucose/med/basal rows (see seedReminders above).
-      await seedReminders(profileId, variant);
+      // 09-reminders panel: glucose/med/basal/custom rows (see seedReminders
+      // above; created once, first pass only).
+      await seedReminders(profileId, lang, variant);
     }
 
     // Meals carry localized names -> always (re)materialise them in `lang`.
     await seedMeals(profileId, lang, variant);
+    // Same reasoning, one row instead of a full re-materialisation: the custom
+    // reminder's label must track `lang` on every pass too (see
+    // relabelCustomReminder above).
+    await relabelCustomReminder(profileId, lang);
 
     await AsyncStorage.setItem(markerKey, lang);
   } catch {

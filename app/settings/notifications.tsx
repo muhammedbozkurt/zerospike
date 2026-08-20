@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
+import { isScreenshotMode } from "../../lib/screenshotMode";
 import type { GlucoseUnit, Lang } from "../../lib/db/types";
 import {
   applyNotificationPrefs,
@@ -192,7 +193,13 @@ export default function NotificationSettings() {
             }
           />
 
-          {prefs.enabled && notifDenied ? (
+          {/* Store screenshots must never show a "permission not granted"
+              banner (App Store 2.3.3 - a store frame has to look like a real,
+              working account), regardless of the simulator's actual OS
+              permission state - hence the isScreenshotMode() gate ahead of
+              the real condition rather than instead of it. Real users never
+              hit this branch. */}
+          {!isScreenshotMode() && prefs.enabled && notifDenied ? (
             <Pressable
               onPress={() => void retryPermission()}
               className="rounded-2xl px-4 py-3 mb-2"

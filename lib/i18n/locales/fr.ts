@@ -364,6 +364,7 @@ const fr: TranslationSchema = {
     typeMed: "Médicament",
     typeBasal: "Insuline basale",
     typeCustom: "Personnalisé",
+    demoCustomLabel: "Promenade du soir",
     labelPlaceholder: "Texte du rappel",
     empty: "Aucun rappel pour le moment. Ajoutez-en un ci-dessous.",
     limitReached: "Vous pouvez ajouter jusqu'à 10 rappels.",

@@ -362,6 +362,7 @@ const tr = {
     typeMed: "İlaç",
     typeBasal: "Bazal insülin",
     typeCustom: "Özel",
+    demoCustomLabel: "Akşam yürüyüşü",
     labelPlaceholder: "Hatırlatıcı metni",
     empty: "Henüz hatırlatıcı yok. Aşağıdan ekleyin.",
     limitReached: "En fazla 10 hatırlatıcı ekleyebilirsiniz.",

@@ -364,6 +364,7 @@ const en: TranslationSchema = {
     typeMed: "Medication",
     typeBasal: "Basal insulin",
     typeCustom: "Custom",
+    demoCustomLabel: "Evening walk",
     labelPlaceholder: "Reminder text",
     empty: "No reminders yet. Add one below.",
     limitReached: "You can add up to 10 reminders.",

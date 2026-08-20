@@ -209,6 +209,26 @@ def load_cropped_shot(path, crop_top, crop_bottom):
     return shot.crop((0, crop_top, sw, cb))
 
 
+def pad_to_height(shot, target_h):
+    """Extend a shot downward to exactly target_h by repeating its own last
+    row, column by column (so a horizontal gradient carries through) - the
+    same technique with_status_band uses at the top. For device-rect
+    uniformity every panel's shot must be exactly the canvas's fixed content
+    height; a few panels' safe (card-free) crop is naturally shorter than
+    that, so the shortfall is filled with the shot's own trailing background
+    color rather than showing more content, which would risk cutting into a
+    card. No-op (returns shot unchanged) if it is already tall enough."""
+    w, h = shot.size
+    if h >= target_h:
+        return shot
+    band_h = target_h - h
+    out = Image.new("RGB", (w, target_h))
+    out.paste(shot, (0, 0))
+    band = shot.crop((0, h - 1, w, h)).resize((w, band_h))
+    out.paste(band, (0, h))
+    return out
+
+
 def row_coverage(img, y, step=8, inset=10, thr=45):
     """Fraction of a row covered by something other than the page background.
 
@@ -354,6 +374,52 @@ def measure_chip(draw, text, f_chip, emoji_ch=None, chip_h_px=None):
     extra = (e_size + 14) if emoji_ch else 0
     w = int(tw + pad_x * 2 + extra)
     return w, h, pad_x, pad_y, extra
+
+
+def layout_chips(draw, chips, f_chip, available_w, gap_y, gap_x=20):
+    """Decide whether a panel's chips sit side by side or stacked.
+
+    Two-chip panels (09-reminders) were always stacked, which on the
+    narrower canvases pushed the chip block tall enough to collide with the
+    subtitle. Chips read fine side by side too, so: measure them, and if the
+    row fits the same width budget the header text wraps to, lay them out
+    horizontally; otherwise fall back to the original vertical stack.
+    Returns (orientation, block_w, block_h, boxes) where boxes is the
+    (w, h) of each chip in `chips` order, and block_h is what the caller
+    should feed fit_header_and_chip as the chip band's height."""
+    boxes = [measure_chip(draw, c["text"], f_chip, c.get("emoji"))[:2] for c in chips]
+    if not boxes:
+        return "horizontal", 0, 0, boxes
+    if len(boxes) == 1:
+        w, h = boxes[0]
+        return "horizontal", w, h, boxes
+    total_w = sum(w for w, h in boxes) + gap_x * (len(boxes) - 1)
+    max_h = max(h for w, h in boxes)
+    if total_w <= available_w:
+        return "horizontal", total_w, max_h, boxes
+    max_w = max(w for w, h in boxes)
+    total_h = sum(h for w, h in boxes) + gap_y * (len(boxes) - 1)
+    return "vertical", max_w, total_h, boxes
+
+
+def draw_chips(canvas, draw, chips, cfg, f_chip, cy, orientation, boxes, gap_y, gap_x=20):
+    """Draw chips per the layout_chips() decision, right-anchored to the
+    margin (or centered for align="center") exactly like the old single-chip
+    and stacked-chip placements did."""
+    W = cfg["canvas"][0]
+    align_center = cfg.get("align") == "center"
+    if orientation == "horizontal":
+        block_w = sum(w for w, h in boxes) + gap_x * (len(boxes) - 1)
+        x = (W - block_w) // 2 if align_center else W - cfg["margin_x"] - block_w
+        for ch, (w, h) in zip(chips, boxes):
+            draw_chip_at(canvas, ch["text"], x, cy, f_chip, emoji_ch=ch.get("emoji"), dot=ch.get("dot"))
+            x += w + gap_x
+    else:
+        y = cy
+        for ch, (w, h) in zip(chips, boxes):
+            x = (W - w) // 2 if align_center else W - cfg["margin_x"] - w
+            draw_chip_at(canvas, ch["text"], x, y, f_chip, emoji_ch=ch.get("emoji"), dot=ch.get("dot"))
+            y += h + gap_y
 
 
 def draw_chip_at(canvas, text, x, y, f_chip, emoji_ch=None, dot=None):

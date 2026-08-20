@@ -364,6 +364,7 @@ const pt: TranslationSchema = {
     typeMed: "Medicamento",
     typeBasal: "Insulina basal",
     typeCustom: "Personalizado",
+    demoCustomLabel: "Caminhada noturna",
     labelPlaceholder: "Texto do lembrete",
     empty: "Nenhum lembrete ainda. Adicione um abaixo.",
     limitReached: "Você pode adicionar até 10 lembretes.",

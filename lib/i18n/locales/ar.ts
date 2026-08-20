@@ -364,6 +364,7 @@ const ar: TranslationSchema = {
     typeMed: "دواء",
     typeBasal: "الإنسولين القاعدي",
     typeCustom: "مخصص",
+    demoCustomLabel: "المشي المسائي",
     labelPlaceholder: "نص التذكير",
     empty: "لا توجد تذكيرات بعد. أضف تذكيرًا من الأسفل.",
     limitReached: "يمكنك إضافة حتى 10 تذكيرات.",
