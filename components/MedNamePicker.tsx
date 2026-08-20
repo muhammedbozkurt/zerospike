@@ -26,12 +26,27 @@ export function MedNamePicker({
   profileId,
   value,
   onChange,
+  autoFillFirst = true,
+  emptyLabel,
 }: {
   profileId: string | null | undefined;
   /** The selected medication name; empty/null while nothing has resolved yet
    *  (new profile, first load, or a genuinely empty registry). */
   value: string | null;
   onChange: (name: string) => void;
+  /** Whether an empty `value` auto-fills with the most recently used saved
+   *  name once the list loads (see the effect below) - the log-entry forms'
+   *  existing behavior, and the default so neither keeps compiling and acting
+   *  exactly as before this prop existed. components/ReminderEditSheet.tsx
+   *  passes false: there, an empty value is a deliberate choice (the row
+   *  falls back to the generic "İlaç" label), not something still waiting to
+   *  be filled in. */
+  autoFillFirst?: boolean;
+  /** Shown in the trigger row instead of the loading caption once `loaded` is
+   *  true but `value` is still empty and autoFillFirst is false - otherwise
+   *  that caption never gets replaced, since nothing else ever fills `value`
+   *  in for that caller. Unused when autoFillFirst is true. */
+  emptyLabel?: string;
 }) {
   const { t } = useTranslation();
   const [meds, setMeds] = useState<SavedMed[]>([]);
@@ -59,13 +74,14 @@ export function MedNamePicker({
   // Mirrors the old chip pre-fill (QuickAddSheet used to fill the name field
   // with the most-recent chip as soon as it arrived): fires once the list is
   // in, but only while the caller holds no value yet, so it never clobbers an
-  // edit form's existing name or a choice the user already made here.
+  // edit form's existing name or a choice the user already made here. Skipped
+  // entirely when autoFillFirst is false (see the prop doc above).
   useEffect(() => {
-    if (loaded && meds.length > 0 && !value) {
+    if (autoFillFirst && loaded && meds.length > 0 && !value) {
       onChange(meds[0].name);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, meds, value]);
+  }, [autoFillFirst, loaded, meds, value]);
 
   const known = value ? meds.some((m) => m.name === value) : true;
   // A name the caller already holds but that the registry no longer has - an
@@ -143,6 +159,13 @@ export function MedNamePicker({
     );
   }
 
+  // Once loaded, an empty value is either "still waiting to auto-fill" (the
+  // log-entry forms) or a deliberate choice (autoFillFirst false) - the latter
+  // shows emptyLabel instead of a loading caption that would otherwise never
+  // get replaced.
+  const displayText =
+    value || (loaded && !autoFillFirst ? (emptyLabel ?? t("common.loading")) : t("common.loading"));
+
   return (
     <View style={{ marginBottom: 14 }}>
       <Pressable
@@ -150,7 +173,7 @@ export function MedNamePicker({
         disabled={!loaded}
         accessibilityRole="button"
         accessibilityLabel={t("meds.entryLabel")}
-        accessibilityValue={{ text: value || t("common.loading") }}
+        accessibilityValue={{ text: displayText }}
         className="flex-row items-center"
         style={{
           borderRadius: RADIUS.md,
@@ -167,7 +190,7 @@ export function MedNamePicker({
           style={{ color: THEME.ink, marginLeft: 8, fontSize: 14, flex: 1 }}
           numberOfLines={1}
         >
-          {value || t("common.loading")}
+          {displayText}
         </Text>
         <Ionicons name="chevron-down" size={16} color={THEME.muted} />
       </Pressable>

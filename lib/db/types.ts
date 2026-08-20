@@ -470,6 +470,16 @@ export interface Reminder {
   /** Epoch milliseconds, unlike the older log tables' ISO text: nothing here is
    *  ever range-queried against a reading or a meal. */
   created_at: number;
+  /** The reminder's owner (schema v19). NULL only for a row that predates
+   *  profile scoping and has not yet been adopted by adoptOrphanReminders
+   *  (lib/db/remindersBridge.ts) - see lib/db/reminders.ts for the one-time,
+   *  RUNTIME hand-off (never a schema migration, which cannot know which
+   *  profile is "active"). No foreign key: see ./v19Sql. */
+  profile_id: string | null;
+  /** 1 when this reminder should also ring as a real (AlarmKit) alarm (schema
+   *  v19, 2.2.0's A4). No UI reads or writes this yet in this wave - the
+   *  AlarmKit wave (2.2.0's A1) is what turns it into an actual opt-in. */
+  alarm_enabled: number; // 0 | 1
 }
 
 /* ── Saved medication names (schema v18) ───────────────────────────────────

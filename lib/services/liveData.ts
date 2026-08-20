@@ -163,8 +163,11 @@ export async function computeLiveData(
     getPostMealTimerState(),
     // The reminders registry (schema v17): basal/med/glucose/custom all live
     // here now, not in prefs.basal/med/glucose - see applyReminders in
-    // ./notifications.ts, which schedules from this same table.
-    listReminders(),
+    // ./notifications.ts, which schedules from this same table. Explicitly
+    // scoped to THIS profile (schema v19): computeLiveData is always called
+    // for one specific profile, so it is passed straight through rather than
+    // relying on listReminders' own active-profile fallback to agree with it.
+    listReminders(profileId),
   ]);
   const avgGlucoseMgdl =
     avgWindow.avgMgdl != null ? Math.round(avgWindow.avgMgdl) : null;

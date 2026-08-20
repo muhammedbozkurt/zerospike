@@ -239,11 +239,14 @@ function ProfileSetupScreen() {
       // fired by the time a second (or reset) profile reaches this screen -
       // writing only the legacy prefs left this choice with no effect on any
       // actual reminder. basalTime itself only overwrites an EXISTING row when
-      // the user actually picked one (see basalTimeTouched above): the schedule
-      // is shared across every profile on the device, so an untouched "22:00"
-      // placeholder must never clobber a time another profile already set. A
-      // full reminders table (MAX_REMINDERS) blocks only a brand NEW row - an
-      // existing basal row is always updated in place.
+      // the user actually picked one (see basalTimeTouched above): each profile
+      // keeps its OWN basal row since schema v19 (lib/db/reminders.ts), so this
+      // now guards only against an untouched "22:00" placeholder clobbering a
+      // time THIS profile already set for itself. syncBasalReminderRow resolves
+      // "this profile" from the active profile - already this one, since
+      // AppContext's setActiveProfileId writes it before this screen ever
+      // opens. A full reminders table (MAX_REMINDERS, per profile) blocks only
+      // a brand NEW row - an existing basal row is always updated in place.
       const basalSynced = await syncBasalReminderRow(
         showsBasal,
         basalTime,

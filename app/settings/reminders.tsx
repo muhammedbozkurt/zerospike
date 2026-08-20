@@ -20,11 +20,10 @@ import {
   type NotificationPermission,
 } from "../../lib/services/notifications";
 import { syncLiveData } from "../../lib/services/liveData";
-import { Field, Segmented } from "../../components/ui";
-import { InlineTimePicker } from "../../components/InlineTimePicker";
-import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
+import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { ReminderEditSheet, type ReminderSavePayload } from "../../components/ReminderEditSheet";
 import { useFeedback } from "../../components/Feedback";
-import { GradientCTA, withAlpha } from "../../components/rich";
+import { withAlpha } from "../../components/rich";
 import { GLUCOSE_RICH, HIT_TARGET, THEME } from "../../lib/theme/tokens";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 import { useLayout } from "../../lib/useLayout";
@@ -45,16 +44,20 @@ function reminderIcon(type: ReminderType): keyof typeof Ionicons.glyphMap {
   }
 }
 
-const DEFAULT_ADD_TIME = "08:00";
-
 /**
- * Settings > Reminders hub (2.1.0 wave 2b): every reminder the reminders
- * registry backs (lib/db/reminders.ts), in one list, replacing the old fixed
- * basal/med/glucose rows that used to live directly on the notifications
- * screen. Add / edit / delete all write straight to that table; applyReminders
- * (lib/services/notifications.ts) is what actually turns a row into a
- * scheduled OS notification, so every mutation here re-applies preferences and
- * re-syncs the widget the same way the notifications screen already does.
+ * Settings > Reminders hub (2.1.0 wave 2b; modal editor added 2.2.0's A2/A3):
+ * every reminder the reminders registry backs (lib/db/reminders.ts), in one
+ * list, replacing the old fixed basal/med/glucose rows that used to live
+ * directly on the notifications screen. The list itself is already
+ * profile-scoped (schema v19 - listReminders defaults to the active profile),
+ * so this screen only ever shows and edits ONE profile's rows.
+ *
+ * Add / edit both go through components/ReminderEditSheet.tsx - a modal, not
+ * an inline card/row editor - and write straight to the table only on its own
+ * Kaydet; applyReminders (lib/services/notifications.ts) is what actually
+ * turns a row into a scheduled OS notification, so every mutation here
+ * re-applies preferences and re-syncs the widget the same way the
+ * notifications screen already does.
  */
 export default function RemindersScreen() {
   const { t } = useTranslation();
@@ -70,18 +73,10 @@ export default function RemindersScreen() {
   const [loaded, setLoaded] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
 
-  // The row currently showing its inline time (+ label) editor, and the label
-  // draft for it - mirrors InlineTimePicker's own "one open at a time" pattern
-  // from the notifications screen (openPicker there).
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editLabel, setEditLabel] = useState("");
-
-  const [adding, setAdding] = useState(false);
-  const [addType, setAddType] = useState<ReminderType>("glucose");
-  const [addTime, setAddTime] = useState(DEFAULT_ADD_TIME);
-  const [addTimePickerOpen, setAddTimePickerOpen] = useState(false);
-  const [addLabel, setAddLabel] = useState("");
-  const [savingAdd, setSavingAdd] = useState(false);
+  // The sheet is shared by add and edit: null editingReminder means "adding".
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
+  const [sheetSaving, setSheetSaving] = useState(false);
 
   /** The row's own label: the user's text for custom/med (falling back to the
    *  type name when a med reminder was never given one), and the type name for
@@ -108,7 +103,7 @@ export default function RemindersScreen() {
 
   /** Re-reads the table, re-applies the schedule, and re-syncs the widget - the
    *  same three steps the notifications screen runs after every change, now
-   *  shared by every mutation below (add, time, label, toggle, delete). */
+   *  shared by every mutation below (save, toggle, delete). */
   async function afterChange() {
     const [list, perm] = await Promise.all([listReminders(), getNotificationPermission()]);
     setReminders(list);
@@ -130,30 +125,14 @@ export default function RemindersScreen() {
     if (result === "deniedPermanently") Linking.openSettings();
   }
 
-  function openEditor(row: Reminder) {
-    if (editingId === row.id) {
-      // Belt and suspenders alongside the Field's own onBlur: closing the
-      // panel by tapping the row again must not lose a label edit the user
-      // never explicitly blurred out of.
-      void commitEditLabel(row);
-      setEditingId(null);
-      return;
-    }
-    setEditingId(row.id);
-    setEditLabel(row.label ?? "");
+  function openAddSheet() {
+    setEditingReminder(null);
+    setSheetOpen(true);
   }
 
-  async function commitEditLabel(row: Reminder) {
-    if (row.type !== "custom" && row.type !== "med") return;
-    const trimmed = editLabel.trim();
-    if (trimmed === (row.label ?? "")) return;
-    await updateReminder(row.id, { label: trimmed || null });
-    await afterChange();
-  }
-
-  async function changeTime(row: Reminder, time: string) {
-    await updateReminder(row.id, { time });
-    await afterChange();
+  function openEditSheet(row: Reminder) {
+    setEditingReminder(row);
+    setSheetOpen(true);
   }
 
   async function toggleEnabled(row: Reminder, value: boolean) {
@@ -172,54 +151,49 @@ export default function RemindersScreen() {
     });
     if (!ok) return;
     hapticWarning();
-    if (editingId === row.id) setEditingId(null);
     await deleteReminder(row.id);
     await afterChange();
   }
 
-  const typeOptions: { value: ReminderType; label: string }[] = [
-    { value: "glucose", label: t("reminders.typeGlucose") },
-    ...(showsMeds ? [{ value: "med" as ReminderType, label: t("reminders.typeMed") }] : []),
-    ...(showsBasal ? [{ value: "basal" as ReminderType, label: t("reminders.typeBasal") }] : []),
-    { value: "custom", label: t("reminders.typeCustom") },
-  ];
-
-  const atLimit = reminders.length >= MAX_REMINDERS;
-  const addLabelRequired = addType === "custom";
-  const addBlocked = savingAdd || (addLabelRequired && !addLabel.trim());
-
-  function resetAddForm() {
-    setAdding(false);
-    setAddType("glucose");
-    setAddTime(DEFAULT_ADD_TIME);
-    setAddTimePickerOpen(false);
-    setAddLabel("");
-  }
-
-  async function submitAdd() {
-    if (atLimit || addBlocked) return;
-    setSavingAdd(true);
+  async function saveSheet(input: ReminderSavePayload) {
+    setSheetSaving(true);
     try {
-      const usesLabel = addType === "custom" || addType === "med";
-      await createReminder({
-        type: addType,
-        label: usesLabel && addLabel.trim() ? addLabel.trim() : null,
-        time: addTime,
-      });
-      await requestNotificationPermission();
+      if (editingReminder) {
+        await updateReminder(editingReminder.id, input);
+      } else {
+        await createReminder(input);
+        await requestNotificationPermission();
+      }
       await afterChange();
       hapticSuccess();
-      resetAddForm();
+      setSheetOpen(false);
     } catch {
       hapticWarning();
       toast(t("reminders.limitReached"), "error");
     } finally {
-      setSavingAdd(false);
+      setSheetSaving(false);
     }
   }
 
+  const atLimit = reminders.length >= MAX_REMINDERS;
+
   return (
-    <SettingsScaffold title={t("settings.remindersTitle")}>
+    <SettingsScaffold
+      title={t("settings.remindersTitle")}
+      overlay={
+        <ReminderEditSheet
+          visible={sheetOpen}
+          editingReminder={editingReminder}
+          showsBasal={showsBasal}
+          showsMeds={showsMeds}
+          profileId={activeProfile?.id}
+          saving={sheetSaving}
+          onClose={() => setSheetOpen(false)}
+          onSave={saveSheet}
+          onDelete={editingReminder ? () => void confirmDelete(editingReminder) : undefined}
+        />
+      }
+    >
       <View style={columnPad()}>
         <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
           {t("settings.remindersHint")}
@@ -273,48 +247,22 @@ export default function RemindersScreen() {
           </View>
         ) : (
           reminders.map((row) => (
-            <React.Fragment key={row.id}>
-              <Row
-                icon={reminderIcon(row.type)}
-                label={reminderRowLabel(row)}
-                value={row.time}
-                onPress={() => openEditor(row)}
-                onLongPress={() => void confirmDelete(row)}
-                right={
-                  <Switch
-                    value={row.enabled === 1}
-                    onValueChange={(v) => void toggleEnabled(row, v)}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
-                  />
-                }
-              />
-              {editingId === row.id ? (
-                <InlineConfigCard icon={reminderIcon(row.type)}>
-                  {row.type === "custom" || row.type === "med" ? (
-                    <Field
-                      value={editLabel}
-                      onChangeText={setEditLabel}
-                      onBlur={() => void commitEditLabel(row)}
-                      placeholder={
-                        row.type === "custom"
-                          ? t("reminders.labelPlaceholder")
-                          : t("meds.nameOptional")
-                      }
-                    />
-                  ) : null}
-                  <InlineTimePicker
-                    visible
-                    value={row.time}
-                    onChange={(v) => void changeTime(row, v)}
-                    onClose={() => {
-                      void commitEditLabel(row);
-                      setEditingId(null);
-                    }}
-                  />
-                </InlineConfigCard>
-              ) : null}
-            </React.Fragment>
+            <Row
+              key={row.id}
+              icon={reminderIcon(row.type)}
+              label={reminderRowLabel(row)}
+              value={row.time}
+              onPress={() => openEditSheet(row)}
+              onLongPress={() => void confirmDelete(row)}
+              right={
+                <Switch
+                  value={row.enabled === 1}
+                  onValueChange={(v) => void toggleEnabled(row, v)}
+                  trackColor={{ true: THEME.accent, false: THEME.border }}
+                  thumbColor={THEME.ink}
+                />
+              }
+            />
           ))
         )}
 
@@ -322,61 +270,9 @@ export default function RemindersScreen() {
           <Text style={{ color: THEME.muted, fontSize: 12, textAlign: "center", marginTop: 4 }}>
             {t("reminders.limitReached")}
           </Text>
-        ) : adding ? (
-          <>
-            <InlineConfigCard icon="add-circle-outline">
-              <Segmented
-                options={typeOptions}
-                value={addType}
-                onChange={(v) => {
-                  setAddType(v);
-                  if (v !== "custom" && v !== "med") setAddLabel("");
-                }}
-              />
-              {addType === "custom" || addType === "med" ? (
-                <Field
-                  value={addLabel}
-                  onChangeText={setAddLabel}
-                  placeholder={
-                    addType === "custom"
-                      ? t("reminders.labelPlaceholder")
-                      : t("meds.nameOptional")
-                  }
-                  style={{ marginTop: 12 }}
-                  autoFocus
-                />
-              ) : null}
-            </InlineConfigCard>
-            <Row
-              icon="alarm-outline"
-              label={t("settings.reminderTime")}
-              value={addTime}
-              onPress={() => setAddTimePickerOpen((v) => !v)}
-            />
-            <InlineTimePicker
-              visible={addTimePickerOpen}
-              value={addTime}
-              onChange={setAddTime}
-              onClose={() => setAddTimePickerOpen(false)}
-            />
-            <GradientCTA
-              label={t("reminders.addTitle")}
-              onPress={submitAdd}
-              disabled={addBlocked}
-              style={{ marginTop: 4, marginBottom: 10 }}
-            />
-            <Pressable
-              onPress={resetAddForm}
-              accessibilityRole="button"
-              className="items-center py-1 mb-2"
-              style={{ minHeight: HIT_TARGET }}
-            >
-              <Text style={{ color: THEME.muted, fontSize: 13 }}>{t("common.cancel")}</Text>
-            </Pressable>
-          </>
         ) : (
           <Pressable
-            onPress={() => setAdding(true)}
+            onPress={openAddSheet}
             accessibilityRole="button"
             accessibilityLabel={t("reminders.addTitle")}
             className="flex-row items-center justify-center rounded-2xl py-3.5 mb-2 active:opacity-80"

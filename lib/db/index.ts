@@ -14,6 +14,7 @@ import {
   migrateToV16,
   migrateToV17,
   migrateToV18,
+  migrateToV19,
   stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
@@ -21,6 +22,7 @@ import { V14_CREATE, V14_READ_META, V14_WRITE_META } from "./v14Sql";
 import { V16_CREATE } from "./v16Sql";
 import { V17_CREATE } from "./v17Sql";
 import { V18_CREATE } from "./v18Sql";
+import { V19_REMINDERS_COLUMNS } from "./v19Sql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -35,7 +37,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -261,6 +263,15 @@ export async function initDatabase(): Promise<void> {
     await migrateToV18(db);
   }
 
+  // v18 → v19: reminders.profile_id (ownership; NULL until the runtime,
+  // one-time hand-off - see adoptOrphanReminders in ./remindersBridge.ts) and
+  // reminders.alarm_enabled (2.2.0's AlarmKit opt-in flag, unused by any UI in
+  // this wave). Two guarded ADD COLUMNs, no table rebuilt (see migrateToV19 +
+  // ./v19Sql).
+  if (currentVersion >= 1 && currentVersion < 19) {
+    await migrateToV19(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -449,6 +460,19 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   // from): it simply starts with an empty table.
   for (const statement of V18_CREATE) {
     await db.execAsync(statement);
+  }
+
+  // The profile-ownership + AlarmKit opt-in columns on reminders (schema v19,
+  // see ./v19Sql). Applied unconditionally - not the guarded form migrateToV19
+  // uses - because the table was just created by the V17_CREATE loop above and
+  // can never already have them; a fresh install therefore runs the exact same
+  // ALTER statements, in the exact same order, that a migrated install's
+  // migrateToV19 does, and ends up with byte-identical reminders DDL either
+  // way. A fresh reminders table starts empty, so there is nothing to hand off
+  // to a profile (unlike a migrated table's pre-v19 rows - see
+  // adoptOrphanReminders in ./remindersBridge.ts).
+  for (const col of V19_REMINDERS_COLUMNS) {
+    await db.execAsync(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
   }
 
   // Injection-site logging (shared with the v3 → v4 migration).

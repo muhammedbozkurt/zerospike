@@ -120,6 +120,7 @@ type StepId =
   | "widget"
   | "notify"
   | "medReminder"
+  | "glucoseReminder"
   | "disclaimer";
 
 // The fixed head of the quiz (everything after it branches on the answers).
@@ -214,6 +215,13 @@ export default function OnboardingScreen() {
   const [showMedTime, setShowMedTime] = useState(false);
   const [medReminderId, setMedReminderId] = useState<string | null>(null);
   const [savingMedReminder, setSavingMedReminder] = useState(false);
+  // The optional glucose-measurement reminder step (glucoseReminder, C8): same
+  // shape as medReminder above, offered on every path this time (not just the
+  // pill-tracking answer).
+  const [glucoseReminderTime, setGlucoseReminderTime] = useState("08:00");
+  const [showGlucoseTime, setShowGlucoseTime] = useState(false);
+  const [glucoseReminderId, setGlucoseReminderId] = useState<string | null>(null);
+  const [savingGlucoseReminder, setSavingGlucoseReminder] = useState(false);
   // null until the user taps an option on the postMeal step, so the default
   // (60 for gestational, 120 otherwise) keeps following the diabetes answer
   // right up until it is actually touched - same pattern as targetsTouched.
@@ -253,6 +261,11 @@ export default function OnboardingScreen() {
     // insulin-only users have nothing to set up here, and it never blocks
     // finishing - "Simdi degil" always moves on with no reminder created.
     const medReminderStep: StepId[] = hasOralMeds ? ["medReminder"] : [];
+    // The glucose-measurement reminder (C8): offered on every path, unlike
+    // medReminder above. On the pill path it sits right after medReminder (the
+    // two reminder setups back to back); everywhere else it sits right before
+    // the notification step.
+    const glucoseReminderStep: StepId[] = ["glucoseReminder"];
     return [
       ...BASE_STEPS,
       ...treatmentStep,
@@ -260,8 +273,10 @@ export default function OnboardingScreen() {
       ...branch,
       "postMeal",
       "widget",
+      ...(hasOralMeds ? [] : glucoseReminderStep),
       "notify",
       ...medReminderStep,
+      ...(hasOralMeds ? glucoseReminderStep : []),
       "disclaimer",
     ];
   }, [isTwoWayTreatment, hasInsulin, hasOralMeds]);
@@ -485,9 +500,27 @@ export default function OnboardingScreen() {
         return t("onboarding.qPostMealHint");
       case "medReminder":
         return t("onboarding.qMedReminderHint");
+      case "glucoseReminder":
+        return isTwoWayTreatment
+          ? t("onboarding.qGlucoseReminderHintTracking")
+          : t("onboarding.qGlucoseReminderHint");
       default:
         return undefined;
     }
+  }
+
+  // Title per step. Every step but glucoseReminder derives its key from the
+  // step id itself (onboarding.q<Step>); glucoseReminder is the one step whose
+  // wording branches on the diabetes answer (C8: a routine framing for
+  // insulin/type paths, a habit framing for the prediabetes/undiagnosed path),
+  // so it needs its own pair of title keys instead of the generic template.
+  function titleFor(s: StepId): string {
+    if (s === "glucoseReminder") {
+      return isTwoWayTreatment
+        ? t("onboarding.qGlucoseReminderTracking")
+        : t("onboarding.qGlucoseReminder");
+    }
+    return t(`onboarding.q${s[0].toUpperCase()}${s.slice(1)}`);
   }
 
   // "Kur": writes (or, on a second visit, updates) the single med reminder row
@@ -515,6 +548,32 @@ export default function OnboardingScreen() {
       // best-effort - Settings > Reminders is always there to try again
     } finally {
       setSavingMedReminder(false);
+    }
+    next();
+  }
+
+  // "Kur" for the glucose-measurement reminder (C8): same direct-write /
+  // update-in-place discipline as setupMedReminder above, so a second visit
+  // updates the same row instead of creating a duplicate.
+  async function setupGlucoseReminder() {
+    if (savingGlucoseReminder) return;
+    setSavingGlucoseReminder(true);
+    try {
+      if (glucoseReminderId) {
+        await updateReminder(glucoseReminderId, { time: glucoseReminderTime, enabled: true });
+      } else {
+        const row = await createReminder({
+          type: "glucose",
+          time: glucoseReminderTime,
+          enabled: true,
+        });
+        setGlucoseReminderId(row.id);
+      }
+      await requestNotificationPermission();
+    } catch {
+      // best-effort - Settings > Reminders is always there to try again
+    } finally {
+      setSavingGlucoseReminder(false);
     }
     next();
   }
@@ -582,7 +641,7 @@ export default function OnboardingScreen() {
           <QuizStep
             key={step}
             progress={progress}
-            title={t(`onboarding.q${step[0].toUpperCase()}${step.slice(1)}`)}
+            title={titleFor(step)}
             hint={hintFor(step)}
             footer={renderFooter()}
           >
@@ -989,9 +1048,48 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
+      // Optional, skippable, offered on every path (C8). "Kur" writes the row
+      // directly to the reminders registry (setupGlucoseReminder), same
+      // pattern as medReminder above.
+      case "glucoseReminder":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <Pressable
+              onPress={() => setShowGlucoseTime((s) => !s)}
+              style={{ minHeight: 60 }}
+              className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 active:opacity-80"
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="speedometer-outline" size={20} color={THEME.accent} />
+                <Text className="text-ink text-base ml-3">
+                  {t("onboarding.glucoseReminderTime")}
+                </Text>
+              </View>
+              <Text className="text-ink text-lg font-semibold">{glucoseReminderTime}</Text>
+            </Pressable>
+            <InlineTimePicker
+              visible={showGlucoseTime}
+              value={glucoseReminderTime}
+              onChange={setGlucoseReminderTime}
+              onClose={() => setShowGlucoseTime(false)}
+            />
+          </FadeSlideIn>
+        );
+
       case "disclaimer":
         return (
           <FadeSlideIn delay={optDelay(0)}>
+            {/* C9: the prediabetes/undiagnosed path gets a single neutral
+                pointer to the in-app Sources screen, shown before the
+                disclaimer banner itself. */}
+            {isTwoWayTreatment ? (
+              <View className="flex-row items-start rounded-2xl border border-hair bg-glass p-4 mb-4">
+                <Ionicons name="information-circle-outline" size={18} color={THEME.accent} />
+                <Text className="text-mut text-sm leading-6 ml-3 flex-1">
+                  {t("onboarding.sourcesHintTracking")}
+                </Text>
+              </View>
+            ) : null}
             <DisclaimerBanner full />
             <View className="mt-4">
               <AcceptCheck
@@ -1050,6 +1148,22 @@ export default function OnboardingScreen() {
           />
           <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
             <Text className="text-mut font-medium">{t("onboarding.medReminderSkip")}</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    if (step === "glucoseReminder") {
+      return (
+        <View>
+          <Button
+            label={t("onboarding.glucoseReminderSetup")}
+            size="lg"
+            loading={savingGlucoseReminder}
+            onPress={setupGlucoseReminder}
+          />
+          <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
+            <Text className="text-mut font-medium">{t("onboarding.glucoseReminderSkip")}</Text>
           </Pressable>
         </View>
       );

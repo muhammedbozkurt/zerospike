@@ -575,14 +575,23 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
   if (!remindersBridgePromise) {
     remindersBridgePromise = (async () => {
       try {
-        const bridged = await applyLegacyRemindersBridge({
-          basal: prefs.basal,
-          basalTime: prefs.basalTime,
-          med: prefs.med,
-          medTime: prefs.medTime,
-          glucose: prefs.glucose,
-          glucoseTime: prefs.glucoseTime,
-        });
+        // Schema v19: whoever seeded rows here owns them. Resolved the same
+        // way applyReminders below resolves its own profile, so a row this
+        // bridge creates (only possible the very first time it ever runs, on
+        // a device with no reminders row at all yet) is never left orphaned
+        // for adoptOrphanReminders to have to pick up later.
+        const profile = await readActiveProfile().catch(() => null);
+        const bridged = await applyLegacyRemindersBridge(
+          {
+            basal: prefs.basal,
+            basalTime: prefs.basalTime,
+            med: prefs.med,
+            medTime: prefs.medTime,
+            glucose: prefs.glucose,
+            glucoseTime: prefs.glucoseTime,
+          },
+          profile?.id
+        );
         if (bridged) {
           await Promise.all([
             cancelBasalReminder(),
@@ -601,13 +610,17 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
 }
 
 /**
- * Applies the reminders registry: every row in lib/db/reminders.ts, scheduled
+ * Applies the reminders registry: ONLY the active profile's rows in
+ * lib/db/reminders.ts (schema v19 - see that file's own doc comment), scheduled
  * under "zerospike-rem-<id>" with a DAILY trigger, or cancelled when
  * `prefs.enabled` is off, permission is missing, the row itself is disabled, or
  * (basal/med only) the active profile's mode/oral-meds flag hides that surface
  * (glucose and custom carry no such gate). Also sweeps any
  * "zerospike-rem-"-prefixed notification that is still scheduled but no longer
- * backed by a row (a deleted reminder), so nothing leaks.
+ * backed by a row FOR THIS PROFILE - a deleted reminder, or (this is what makes
+ * a profile switch remove the other profile's notifications with no extra
+ * code) any row that belongs to a DIFFERENT profile, since `known` below is
+ * built only from the rows this pass just listed for the active one.
  *
  * Called unconditionally from applyNotificationPrefs, before it branches on
  * `prefs.enabled` / permission: this function does its own gating, so the
@@ -618,19 +631,31 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
 const LEGACY_FIXED_IDS: readonly string[] = [BASAL_ID, MED_ID, GLUCOSE_ID];
 
 export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
-  // Self-heals a device that already has two "basal" rows (see
-  // dedupeBasalReminderRows in lib/db/reminders.ts) on every apply pass, not
-  // just the onboarding/profile-setup paths that call syncBasalReminderRow -
-  // this is what actually reaches a device that already shipped the bug.
-  await dedupeBasalReminderRows();
+  // Resolved ONCE and reused for the profile id, the basal gate and the meds
+  // gate below, instead of three independent (and previously redundant)
+  // profile lookups. An unreadable active profile leaves whatever is already
+  // scheduled untouched rather than risk tearing every reminder down over a
+  // transient AsyncStorage/DB failure.
+  let profile: UserProfile | null;
+  try {
+    profile = await readActiveProfile();
+  } catch {
+    return;
+  }
+  const profileId = profile?.id;
+
+  // Self-heals a device that already has two "basal" rows for this profile
+  // (see dedupeBasalReminderRows in lib/db/reminders.ts) on every apply pass,
+  // not just the onboarding/profile-setup paths that call syncBasalReminderRow
+  // - this is what actually reaches a device that already shipped the bug.
+  await dedupeBasalReminderRows(profileId);
   const granted = prefs.enabled && (await hasNotificationPermission());
-  const rows = await listReminders();
+  const rows = await listReminders(profileId);
 
   if (granted && rows.length > 0) await ensureAndroidChannel();
 
-  const [showsBasal, showsMeds] = granted
-    ? await Promise.all([activeProfileShowsBasal(), activeProfileShowsMeds()])
-    : [false, false];
+  const showsBasal = granted && insulinModeShowsBasal(insulinModeOf(profile));
+  const showsMeds = granted && (profile == null || profile.oral_meds_enabled === 1);
 
   const known = new Set<string>();
   for (const row of rows) {
@@ -870,43 +895,6 @@ async function readActiveProfile(): Promise<UserProfile | null> {
     (await listProfiles())[0] ??
     null
   );
-}
-
-/**
- * Whether the active profile's insulin mode includes long-acting insulin.
- *
- * The basal reminder is one of two scheduled surfaces tied to a per-profile
- * flag, while the preference behind it is device-level and defaults to ON. A
- * profile that says "no insulin" (or one switched to it later) would otherwise
- * keep a nightly insulin nudge armed with every insulin surface in the app
- * hidden.
- *
- * An unreadable profile keeps today's behaviour: a failed lookup must not
- * silently drop a reminder the user asked for.
- */
-async function activeProfileShowsBasal(): Promise<boolean> {
-  try {
-    return insulinModeShowsBasal(insulinModeOf(await readActiveProfile()));
-  } catch {
-    return true;
-  }
-}
-
-/**
- * Same guard for the oral-medication reminder: the preference is device-level,
- * the flag it belongs to is per-profile, so a profile that does not track pills
- * must not keep a daily pill nudge armed with every pill surface hidden.
- *
- * An unreadable profile keeps the reminder, for the reason above: a failed
- * lookup must not silently drop one the user turned on.
- */
-async function activeProfileShowsMeds(): Promise<boolean> {
-  try {
-    const profile = await readActiveProfile();
-    return profile == null || profile.oral_meds_enabled === 1;
-  } catch {
-    return true;
-  }
 }
 
 /**

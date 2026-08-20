@@ -31,6 +31,7 @@ import {
   migrateToV16,
   migrateToV17,
   migrateToV18,
+  migrateToV19,
   stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
@@ -58,9 +59,12 @@ import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "../lib/db/v15Sql";
 import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "../lib/db/v16Sql";
 import { V17_CREATE } from "../lib/db/v17Sql";
 import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "../lib/db/v18Sql";
+import { V19_REMINDERS_COLUMNS } from "../lib/db/v19Sql";
 import {
+  adoptOrphanReminders,
   bridgeLegacyReminders,
   REMINDERS_BRIDGE_KEY,
+  REMINDERS_PROFILE_SCOPE_KEY,
   type LegacyReminderPrefs,
 } from "../lib/db/remindersBridge";
 
@@ -2461,6 +2465,14 @@ async function main() {
       const db = new DatabaseSync(":memory:");
       for (const statement of V14_CREATE) db.exec(statement);
       for (const statement of V17_CREATE) db.exec(statement);
+      // bridgeLegacyReminders is only ever called (lib/db/reminders.ts's
+      // applyLegacyRemindersBridge, from lib/services/notifications.ts) once
+      // the app's own database has already run the full migration chain, so
+      // the reminders table it sees always has schema v19's profile_id column
+      // by then - this scratch db matches that real precondition.
+      for (const col of V19_REMINDERS_COLUMNS) {
+        db.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+      }
       return db;
     }
 
@@ -2723,7 +2735,8 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 18", /const SCHEMA_VERSION = 18;/.test(indexSrc));
+    // SCHEMA_VERSION itself has since moved past v18 (see O3, "SCHEMA_VERSION
+    // is 19"); this section only checks the v17 → v18 step and the meds shape.
     ok(
       "the v17 → v18 step runs the real migration",
       /currentVersion < 18\)\s*\{\s*await migrateToV18\(db\);/.test(indexSrc)
@@ -2853,6 +2866,406 @@ async function main() {
       3000
     );
     db.close();
+  }
+
+  // ── O. v19 reminders.profile_id + reminders.alarm_enabled ──────────────────
+  // Every case below builds a v18-shaped database with makeV15Database + the
+  // REAL migrateToV16/V17/V18, so migrateToV19 (this step's own ALTERs) runs
+  // against exactly what a real install has at that point - including whatever
+  // rows already sat in the reminders table (the M-pattern used for v15/v17).
+  section("O. v19 reminders: schema shape");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+
+    // A pre-v19 row, written with exactly the v17/v18 column list (no
+    // profile_id, no alarm_enabled - those columns do not exist yet).
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at)
+       VALUES ('legacy-basal', 'basal', NULL, '22:00', 1, 0, 1753600000000);`
+    );
+
+    await migrateToV19(adapt(db));
+
+    const cols = columns(db, "reminders");
+    ok("reminders.profile_id exists", cols.has("profile_id"));
+    eq("profile_id is nullable", cols.get("profile_id")?.notnull, 0);
+    eq("profile_id has no default", cols.get("profile_id")?.dflt_value, null);
+    ok("reminders.alarm_enabled exists", cols.has("alarm_enabled"));
+    eq("alarm_enabled is NOT NULL", cols.get("alarm_enabled")?.notnull, 1);
+    eq("alarm_enabled defaults to 0", String(cols.get("alarm_enabled")?.dflt_value), "0");
+
+    // No foreign key: unlike med_logs/meds/injection_logs, profile_id here
+    // carries no FK (see ./v19Sql's own ownership note).
+    ok(
+      "profile_id carries no foreign key",
+      (db.prepare("PRAGMA foreign_key_list(reminders);").all() as unknown[]).length === 0
+    );
+
+    // The pre-existing row survives untouched, and its two new columns
+    // BACKFILL exactly as SQLite's ALTER TABLE ADD COLUMN promises: NULL for
+    // the nullable one, the declared default for the NOT NULL one.
+    const legacy = db
+      .prepare("SELECT * FROM reminders WHERE id='legacy-basal';")
+      .get() as Record<string, unknown>;
+    eq("the pre-v19 row survives v19", legacy.time, "22:00");
+    eq("its type is unchanged", legacy.type, "basal");
+    eq("its new profile_id backfills to NULL (orphaned, not yet adopted)", legacy.profile_id, null);
+    eq("its new alarm_enabled backfills to 0", legacy.alarm_enabled, 0);
+
+    // Both columns accept real values with no CHECK stopping them (same
+    // "ADD COLUMN cannot carry a CHECK without a rebuild" reasoning as v15's
+    // bolus_kind - see J above).
+    ok(
+      "profile_id accepts a value",
+      !refused(db, "UPDATE reminders SET profile_id = 'p1' WHERE id='legacy-basal';")
+    );
+    ok(
+      "alarm_enabled accepts 1",
+      !refused(db, "UPDATE reminders SET alarm_enabled = 1 WHERE id='legacy-basal';")
+    );
+    db.close();
+  }
+
+  section("O2. v19 idempotence");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+    await migrateToV19(adapt(db));
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled)
+       VALUES ('r1', 'glucose', NULL, '08:00', 1, 0, 1, 'p1', 0);`
+    );
+
+    let reran = true;
+    try {
+      await migrateToV19(adapt(db));
+      await migrateToV19(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v19 threw: ${String(e)}`);
+    }
+    ok("v19 is safe to re-run", reran);
+    for (const col of ["profile_id", "alarm_enabled"]) {
+      eq(
+        `re-running does not duplicate reminders.${col}`,
+        (db.prepare("PRAGMA table_info(reminders);").all() as { name: string }[]).filter(
+          (c) => c.name === col
+        ).length,
+        1
+      );
+    }
+    eq("still exactly one reminder", count(db, "reminders"), 1);
+    eq(
+      "re-running keeps the stored profile_id intact",
+      (
+        db.prepare("SELECT profile_id AS p FROM reminders WHERE id='r1';").get() as {
+          p: string | null;
+        }
+      ).p,
+      "p1"
+    );
+    eq("migrateToV19 stamps 19", readUserVersion(db), 19);
+    db.close();
+  }
+
+  section("O3. v19 statements and fresh-install equivalence");
+  {
+    eq(
+      "V19_REMINDERS_COLUMNS adds exactly the two documented columns",
+      V19_REMINDERS_COLUMNS.map((c) => c.name).join(","),
+      "profile_id,alarm_enabled"
+    );
+    ok(
+      "profile_id is a plain nullable TEXT with no default",
+      V19_REMINDERS_COLUMNS.find((c) => c.name === "profile_id")?.type === "TEXT"
+    );
+    ok(
+      "alarm_enabled is NOT NULL DEFAULT 0",
+      V19_REMINDERS_COLUMNS.find((c) => c.name === "alarm_enabled")?.type ===
+        "INTEGER NOT NULL DEFAULT 0"
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 19", /const SCHEMA_VERSION = 19;/.test(indexSrc));
+    ok(
+      "the v18 → v19 step runs the real migration",
+      /currentVersion < 19\)\s*\{\s*await migrateToV19\(db\);/.test(indexSrc)
+    );
+    ok(
+      "and applies the same V19_REMINDERS_COLUMNS list on a fresh install",
+      /for \(const col of V19_REMINDERS_COLUMNS\)/.test(indexSrc)
+    );
+
+    // A migrated v18 database and a brand-new install end up with the
+    // identical reminders shape - the same test O/M3/N3 pattern, but here both
+    // paths reach it through the SAME ALTER statements (not a shared CREATE),
+    // since createSchemaV1 replays V19_REMINDERS_COLUMNS unconditionally right
+    // after building the table from V17_CREATE (see lib/db/index.ts) - so the
+    // DDL text itself should also match exactly, column-for-column, in the
+    // same order.
+    const migrated = makeV15Database();
+    await migrateToV16(adapt(migrated));
+    await migrateToV17(adapt(migrated));
+    await migrateToV18(adapt(migrated));
+    await migrateToV19(adapt(migrated));
+
+    const fresh = new DatabaseSync(":memory:");
+    for (const statement of V17_CREATE) fresh.exec(statement);
+    for (const col of V19_REMINDERS_COLUMNS) {
+      fresh.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+    }
+
+    eq(
+      "reminders has the same columns as a fresh install",
+      [...columns(migrated, "reminders").keys()].join(","),
+      [...columns(fresh, "reminders").keys()].join(",")
+    );
+    eq(
+      "reminders has the same DDL as a fresh install",
+      (
+        migrated
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reminders';")
+          .get() as { sql: string }
+      ).sql,
+      (
+        fresh
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reminders';")
+          .get() as { sql: string }
+      ).sql
+    );
+    migrated.close();
+    fresh.close();
+  }
+
+  // ── O4. bridgeLegacyReminders now scopes its seeds to a profile (v19) ──────
+  section("O4. the legacy-reminders bridge assigns profile_id to what it seeds");
+  {
+    const legacyPrefs = (
+      over: Partial<LegacyReminderPrefs> = {}
+    ): LegacyReminderPrefs => ({
+      basal: true,
+      basalTime: "22:00",
+      med: false,
+      medTime: "09:00",
+      glucose: true,
+      glucoseTime: "08:00",
+      ...over,
+    });
+
+    function makeV19BridgeDatabase(): DatabaseSync {
+      const db = new DatabaseSync(":memory:");
+      for (const statement of V14_CREATE) db.exec(statement);
+      for (const statement of V17_CREATE) db.exec(statement);
+      for (const col of V19_REMINDERS_COLUMNS) {
+        db.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+      }
+      return db;
+    }
+
+    // A fresh v19 install bridging for the first time: every seeded row
+    // carries the active profile it was given, not NULL.
+    {
+      const db = makeV19BridgeDatabase();
+      const ids = ["seed-a", "seed-b"];
+      let n = 0;
+      const ran = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs(),
+        () => ids[n++],
+        () => 1_753_600_000_000,
+        "p1"
+      );
+      ok("the bridge still runs", ran);
+      const rows = db
+        .prepare("SELECT type, profile_id AS p FROM reminders ORDER BY sort;")
+        .all() as { type: string; p: string | null }[];
+      eq("basal and glucose are seeded", rows.length, 2);
+      ok(
+        "every seeded row carries the given profile - none orphaned",
+        rows.every((r) => r.p === "p1")
+      );
+      db.close();
+    }
+
+    // The per-type dedupe check is scoped to the SAME profile it is given: a
+    // basal row already written for profile p1 (by syncBasalReminderRow,
+    // before the bridge ever runs - see ./reminders.ts) must block a
+    // duplicate when the bridge is asked to seed for p1 too.
+    {
+      const db = makeV19BridgeDatabase();
+      db.exec(
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id)
+         VALUES ('own-basal', 'basal', NULL, '21:00', 1, 0, 1, 'p1');`
+      );
+      const ran = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs({ glucose: false }),
+        () => "should-not-run-basal",
+        undefined,
+        "p1"
+      );
+      ok("the bridge still runs (the flag was never set on this scratch db)", ran);
+      eq(
+        "p1's own pre-existing basal row blocks the duplicate - no new row",
+        count(db, "reminders"),
+        1
+      );
+      db.close();
+    }
+
+    // ...but must NOT block a DIFFERENT profile from getting its own row: the
+    // dedupe check is scoped per profile, not global (mirrors the meds
+    // table's own per-profile UNIQUE constraint reasoning - see N above).
+    {
+      const db = makeV19BridgeDatabase();
+      db.exec(
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id)
+         VALUES ('own-basal', 'basal', NULL, '21:00', 1, 0, 1, 'p1');`
+      );
+      const ran = await bridgeLegacyReminders(
+        adapt(db),
+        legacyPrefs({ glucose: false }),
+        () => "p2-basal-seed",
+        undefined,
+        "p2"
+      );
+      ok("the bridge runs for the second profile", ran);
+      eq("p2 gets its own basal row alongside p1's", count(db, "reminders"), 2);
+      const p2Row = db
+        .prepare("SELECT profile_id AS p FROM reminders WHERE id='p2-basal-seed';")
+        .get() as { p: string | null } | undefined;
+      eq("and it is owned by p2, not p1", p2Row?.p, "p2");
+      db.close();
+    }
+  }
+
+  // ── O5. One-time profile-scope adoption (adoptOrphanReminders, v19) ────────
+  section("O5. adoptOrphanReminders: one-time hand-off of orphaned rows");
+  {
+    function makeAdoptionDatabase(): DatabaseSync {
+      const db = new DatabaseSync(":memory:");
+      for (const statement of V14_CREATE) db.exec(statement);
+      for (const statement of V17_CREATE) db.exec(statement);
+      for (const col of V19_REMINDERS_COLUMNS) {
+        db.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+      }
+      return db;
+    }
+
+    // The core case: a device that has used the app since before v19 has real
+    // rows with profile_id NULL (the ALTER's backfill). The first call with a
+    // resolvable active profile adopts every one of them.
+    {
+      const db = makeAdoptionDatabase();
+      db.exec(
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id) VALUES
+           ('leg-basal', 'basal', NULL, '22:00', 1, 0, 1, NULL),
+           ('leg-med', 'med', NULL, '09:00', 1, 1, 2, NULL),
+           ('leg-custom', 'custom', 'Su iç', '12:00', 0, 2, 3, NULL);`
+      );
+
+      const ran = await adoptOrphanReminders(adapt(db), "p1");
+      ok("the first call (with a profile) adopts and confirms", ran);
+      const owners = db.prepare("SELECT DISTINCT profile_id AS p FROM reminders;").all() as {
+        p: string | null;
+      }[];
+      eq("every orphaned row now belongs to the same one profile", owners.length, 1);
+      eq("and it is the profile that was given", owners[0]?.p, "p1");
+      const flag = db.prepare(V14_READ_META).get(REMINDERS_PROFILE_SCOPE_KEY) as
+        | { value: string }
+        | undefined;
+      eq("the adoption marks itself done", flag?.value, "true");
+
+      // A LATER call - even with a DIFFERENT profile - must not reassign
+      // anything: the hand-off is a one-time event, not an ongoing sync.
+      const ranAgain = await adoptOrphanReminders(adapt(db), "p2");
+      ok("a second call reports the flag is (still) set", ranAgain);
+      const stillOwner = db
+        .prepare("SELECT profile_id AS p FROM reminders WHERE id='leg-basal';")
+        .get() as { p: string | null };
+      eq("rows already adopted into p1 stay with p1, never move to p2", stillOwner.p, "p1");
+      db.close();
+    }
+
+    // No active profile yet: the hand-off must not guess, and must leave
+    // itself retryable - the flag stays unset and the rows stay NULL.
+    {
+      const db = makeAdoptionDatabase();
+      db.exec(
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id)
+         VALUES ('leg-glucose', 'glucose', NULL, '08:00', 1, 0, 1, NULL);`
+      );
+      const ran = await adoptOrphanReminders(adapt(db), null);
+      ok("a call with no active profile reports it could not run", !ran);
+      eq(
+        "the row stays orphaned",
+        (
+          db.prepare("SELECT profile_id AS p FROM reminders WHERE id='leg-glucose';").get() as {
+            p: string | null;
+          }
+        ).p,
+        null
+      );
+      ok(
+        "and the flag stays unset, so a later call (once a profile exists) retries",
+        db.prepare(V14_READ_META).get(REMINDERS_PROFILE_SCOPE_KEY) === undefined
+      );
+
+      // The real hand-off, run afterwards once a profile is resolvable, still
+      // works correctly - nothing about the failed first attempt got stuck.
+      const ranNow = await adoptOrphanReminders(adapt(db), "p1");
+      ok("the real hand-off recovers cleanly once a profile exists", ranNow);
+      eq(
+        "and adopts the row that was waiting",
+        (
+          db.prepare("SELECT profile_id AS p FROM reminders WHERE id='leg-glucose';").get() as {
+            p: string | null;
+          }
+        ).p,
+        "p1"
+      );
+      db.close();
+    }
+
+    // A mixed table (some rows already owned - created after v19 by
+    // createReminder - some still orphaned from before it): only the NULL
+    // ones are touched, so an already-correct ownership is never overwritten.
+    {
+      const db = makeAdoptionDatabase();
+      db.exec(
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id) VALUES
+           ('owned-by-p2', 'glucose', NULL, '07:00', 1, 0, 1, 'p2'),
+           ('orphan', 'basal', NULL, '22:00', 1, 1, 2, NULL);`
+      );
+      await adoptOrphanReminders(adapt(db), "p1");
+      eq(
+        "a row that already had an owner keeps it",
+        (
+          db.prepare("SELECT profile_id AS p FROM reminders WHERE id='owned-by-p2';").get() as {
+            p: string | null;
+          }
+        ).p,
+        "p2"
+      );
+      eq(
+        "only the orphaned row is adopted, into the active profile",
+        (
+          db.prepare("SELECT profile_id AS p FROM reminders WHERE id='orphan';").get() as {
+            p: string | null;
+          }
+        ).p,
+        "p1"
+      );
+      db.close();
+    }
   }
 
   // ── K. The chain end to end, and the interruption it used to lose data to ──

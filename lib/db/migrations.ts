@@ -34,6 +34,7 @@ import { V15_ADD_BOLUS_KIND, V15_PROFILE_COLUMNS } from "./v15Sql";
 import { V16_ADD_ORAL_MEDS_ENABLED, V16_CREATE } from "./v16Sql";
 import { V17_CREATE } from "./v17Sql";
 import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "./v18Sql";
+import { V19_REMINDERS_COLUMNS } from "./v19Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -71,7 +72,8 @@ export type SchemaStamp =
   | 15
   | 16
   | 17
-  | 18;
+  | 18
+  | 19;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -424,5 +426,40 @@ export async function migrateToV18(db: SQLite.SQLiteDatabase): Promise<void> {
     }
     await db.execAsync(V18_SEED_FROM_MED_LOGS);
     await stampSchemaVersion(db, 18);
+  });
+}
+
+/**
+ * The v18 → v19 migration: two columns on the reminders registry (see
+ * ./v19Sql) - profile_id (who owns a row; NULL for every row that predates
+ * this step) and alarm_enabled (the 2.2.0 AlarmKit opt-in flag; unused by any
+ * UI in this wave). Two guarded ADD COLUMNs, exactly like v15/v16: no table is
+ * rebuilt and no row is read or rewritten, so an interrupted run cannot cost a
+ * reminder and a re-run is a no-op. The column check is read BEFORE the
+ * transaction (like migrateToV8/V13/V15/V16), so nothing inside it can throw a
+ * "duplicate column" that would leave a half-applied schema with user_version
+ * already advanced.
+ *
+ * Deliberately does NOT assign the newly-NULL profile_id anywhere: which
+ * profile is "active" is an application-level fact this dependency-free file
+ * cannot know (see the top of this file), so that one-time hand-off is a
+ * RUNTIME step instead (adoptOrphanReminders in ./remindersBridge.ts, driven
+ * from lib/db/reminders.ts / lib/services/notifications.ts) - never part of
+ * this migration.
+ */
+export async function migrateToV19(db: SQLite.SQLiteDatabase): Promise<void> {
+  const cols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(reminders);"
+  );
+  const present = new Set(cols.map((c) => c.name));
+  const missing = V19_REMINDERS_COLUMNS.filter((c) => !present.has(c.name));
+
+  await db.withTransactionAsync(async () => {
+    for (const col of missing) {
+      await db.execAsync(
+        `ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`
+      );
+    }
+    await stampSchemaVersion(db, 19);
   });
 }
