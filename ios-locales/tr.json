@@ -6,7 +6,7 @@
     "NSHealthUpdateUsageDescription": "zerospike, yalnızca elle girdiğiniz kan şekeri ölçümlerini, Ayarlar'da bu seçeneği açtığınızda Apple Sağlık'a yazar.",
     "NSLocationWhenInUseUsageDescription": "zerospike, SOS ekranından gönderdiğiniz mesaja anlık konumunuzu ekleyebilir; böylece size daha hızlı ulaşılabilir.",
     "NSContactsUsageDescription": "zerospike, SOS ekranı için rehberinizden acil durum kişisi seçmenizi sağlar.",
-    "NSAlarmKitUsageDescription": "zerospike, kurduğunuz bir hatırlatıcının gerçek bir alarm olarak da çalabilmesi için AlarmKit kullanır; bu yalnızca o hatırlatıcı için bu seçeneği açtığınızda geçerlidir.",
+    "NSAlarmKitUsageDescription": "zerospike, kurduğunuz hatırlatıcıların ve başlattığınız tokluk sayacının gerçek alarm olarak çalabilmesi için AlarmKit kullanır. İstediğinizi dilediğiniz an bildirime çevirebilirsiniz.",
     "NSMotionUsageDescription": "zerospike hareket verisi toplamaz. Bu izin, uygulamadaki bir konum bileşeninin hareket API'lerine başvurması nedeniyle gereklidir; hareketiniz asla izlenmez."
   }
 }

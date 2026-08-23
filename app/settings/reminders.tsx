@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
@@ -21,6 +21,12 @@ import {
   type NotificationPermission,
 } from "../../lib/services/notifications";
 import { syncLiveData } from "../../lib/services/liveData";
+import { alarmModeOf } from "../../lib/alarmSelect";
+import {
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+  requestAlarmAuthorization,
+} from "../../modules/zerospike-alarmkit";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { ReminderEditSheet, type ReminderSavePayload } from "../../components/ReminderEditSheet";
 import { useFeedback } from "../../components/Feedback";
@@ -43,6 +49,71 @@ function reminderIcon(type: ReminderType): keyof typeof Ionicons.glyphMap {
     default:
       return "chatbubble-ellipses-outline";
   }
+}
+
+/** The three things a delivery badge can say: a working alarm, an alarm the
+ *  device is not (yet) allowed to ring, or a plain notification. */
+type BadgeMode = "alarm" | "alarmPending" | "notification";
+
+/** The delivery badge itself. Only the "alarm" state is drawn in the accent
+ *  colour: "alarmPending" is an intent the device cannot honour yet, so it must
+ *  not look like the working thing - the alarm icon carries what the row is set
+ *  to, the muted treatment carries that it is not ringing yet. */
+function ModeBadge({ mode, onPress }: { mode: BadgeMode; onPress: () => void }) {
+  const { t } = useTranslation();
+  const live = mode === "alarm";
+  const tint = live ? THEME.accent : THEME.muted;
+  const label = t(
+    mode === "alarm"
+      ? "reminders.modeAlarm"
+      : mode === "alarmPending"
+        ? "reminders.modeAlarmPending"
+        : "reminders.modeNotification"
+  );
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="rounded-full px-2.5 py-1 mr-2"
+      style={{
+        borderWidth: 1,
+        borderColor: live ? THEME.accent : THEME.border,
+        backgroundColor: live ? withAlpha(THEME.accent, 0.14) : "transparent",
+        // The pending label is the longest of the three, and the row's own
+        // label is the flex-1 box that would otherwise pay for it: let the
+        // badge give way instead of squeezing "Bazal insulin" to nothing.
+        flexShrink: 1,
+      }}
+    >
+      <View className="flex-row items-center">
+        <Ionicons
+          name={
+            mode === "notification"
+              ? "notifications-outline"
+              : live
+                ? "alarm"
+                : "alarm-outline"
+          }
+          size={12}
+          color={tint}
+        />
+        <Text
+          numberOfLines={1}
+          style={{
+            color: tint,
+            fontSize: 11,
+            fontWeight: "700",
+            marginLeft: 4,
+            flexShrink: 1,
+          }}
+        >
+          {label}
+        </Text>
+      </View>
+    </Pressable>
+  );
 }
 
 /**
@@ -73,6 +144,16 @@ export default function RemindersScreen() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
+
+  // Delivery badge (2.3.0's A). alarm_enabled is kept platform-independently
+  // (see lib/db/reminders.ts), so a row can read 1 on a device that cannot ring
+  // it: the two facts below are what tell a stored intent apart from a working
+  // alarm (see badgeModeOf), and the badge is hidden outright where AlarmKit
+  // does not exist.
+  const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
+  const [alarmAuthorized, setAlarmAuthorized] = useState(
+    () => isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized"
+  );
 
   // The sheet is shared by add and edit: null editingReminder means "adding".
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -109,8 +190,79 @@ export default function RemindersScreen() {
     const [list, perm] = await Promise.all([listReminders(), getNotificationPermission()]);
     setReminders(list);
     setPermission(perm);
+    setAlarmAuthorized(
+      alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized"
+    );
     await applyNotificationPrefs();
     if (activeProfile) void syncLiveData(activeProfile.id, unit);
+  }
+
+  /** The AlarmKit authorization every badge is read against. A store frame has
+   *  to look like a real, working account (App Store 2.3.3), and the simulator
+   *  that captures it has granted nothing. */
+  const alarmGranted = isScreenshotMode() ? true : alarmAuthorized;
+
+  /** What the badge says, in three states rather than two.
+   *
+   *  The stored intent (alarm_enabled, schema v21) is what it SHOWS and what a
+   *  tap flips - drawing the delivery reality instead meant that on a device
+   *  which never granted the AlarmKit permission every badge read
+   *  "Notification" while nearly every row was in fact stored as an alarm, so a
+   *  tap could only ever try to switch to the alarm and there was no way left to
+   *  record the opposite choice at all.
+   *
+   *  The reality is not dropped, it is a state of its own: an alarm-intent row
+   *  that this device cannot ring reads "Alarm (needs permission)" - which is
+   *  still alarmModeOf, the same three-way AND applyReminders arms from, so the
+   *  badge can never claim a working alarm the row would not get. */
+  function badgeModeOf(row: Reminder): BadgeMode {
+    if (row.alarm_enabled !== 1) return "notification";
+    return alarmModeOf({
+      alarmEnabled: true,
+      alarmKitAvailable,
+      alarmAuthorized: alarmGranted,
+    }) === "alarm"
+      ? "alarm"
+      : "alarmPending";
+  }
+
+  /** Any row that wants an alarm this device will not ring - what the hint
+   *  under the header is for. */
+  const anyAlarmPending = reminders.some((r) => badgeModeOf(r) === "alarmPending");
+
+  /** Raises the AlarmKit dialog when the OS is still willing to ask, and points
+   *  at system settings once it is not. Mirrors ReminderEditSheet's own switch. */
+  async function askAlarmPermission() {
+    let status = getAlarmAuthorizationStatus();
+    if (status !== "authorized") status = await requestAlarmAuthorization();
+    setAlarmAuthorized(status === "authorized");
+    if (status === "denied") Linking.openSettings();
+  }
+
+  /**
+   * The badge's tap: flips this ONE reminder's stored delivery intent and
+   * records that the choice is the user's own (alarm_user_set, schema v21) so
+   * no later default change can move it back.
+   *
+   * The permission is asked for where it is actually needed and nowhere else:
+   * a row already stored as an alarm on an unauthorized device has nothing to
+   * flip - the badge says what the user wants and the hint says why it still
+   * arrives as a notification - so the tap is the way to grant what is missing.
+   * Turning the intent ON asks too, since that is the explicit user action that
+   * earns the dialog. Turning it OFF asks nothing: a notification needs no
+   * alarm permission, and a refusal must never be able to swallow the choice
+   * the user just made.
+   */
+  async function toggleAlarmMode(row: Reminder) {
+    const intended = row.alarm_enabled === 1;
+    if (intended && !alarmGranted) {
+      await askAlarmPermission();
+      await afterChange();
+      return;
+    }
+    if (!intended) await askAlarmPermission();
+    await updateReminder(row.id, { alarmEnabled: !intended, alarmUserSet: true });
+    await afterChange();
   }
 
   /**
@@ -210,6 +362,11 @@ export default function RemindersScreen() {
       <View style={columnPad()}>
         <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
           {t("settings.remindersHint")}
+          {alarmKitAvailable ? ` ${t("reminders.modeHint")}` : ""}
+          {/* The one place that says why a row set to "Alarm" still arrives as
+              a notification - the same sentence the edit sheet uses for the
+              same state, rather than a second wording for one fact. */}
+          {anyAlarmPending ? ` ${t("reminders.alarmPermissionHint")}` : ""}
         </Text>
 
         {/* Store screenshots must never show a "permission not granted" banner
@@ -274,19 +431,13 @@ export default function RemindersScreen() {
               onLongPress={() => void confirmDelete(row)}
               right={
                 <View className="flex-row items-center">
-                  {row.alarm_enabled === 1 ? (
-                    // Small, ONLY visual, distinguishing mark for a row that
-                    // rings as a real AlarmKit alarm instead of a plain
-                    // notification (2.2.0's A1) - never the row's own tap
-                    // target, applyReminders is still the single source of
-                    // truth for whether an alarm actually gets armed (OS
-                    // version, authorization).
-                    <Ionicons
-                      name="alarm"
-                      size={14}
-                      color={THEME.accent}
-                      style={{ marginRight: 8 }}
-                      accessibilityLabel={t("reminders.playAsAlarm")}
+                  {alarmKitAvailable ? (
+                    // What this reminder is SET to, and the one-tap way to
+                    // change it (2.3.0's A). See badgeModeOf: the accent state
+                    // is the only one that promises a real alarm.
+                    <ModeBadge
+                      mode={badgeModeOf(row)}
+                      onPress={() => void toggleAlarmMode(row)}
                     />
                   ) : null}
                   <Switch

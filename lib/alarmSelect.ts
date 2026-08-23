@@ -1,17 +1,20 @@
 /**
- * The one decision that turns a reminder row into a real (AlarmKit) alarm
- * instead of a plain notification (2.2.0's A1 - see docs/alarmkit-2.2.0.md).
- * Pure and dependency-free, exactly like lib/postMealTimer.ts, so
- * scripts/alarmSelect.test.ts can exercise it under plain Node without any
+ * The alarm-facing decisions, kept pure: which delivery a reminder gets
+ * (shouldUseAlarm / alarmModeOf, 2.2.0's A1 - see docs/alarmkit-2.2.0.md) and
+ * whether the one-time upgrade tour may open (shouldOpenAlarmTour, 2.3.0's D).
+ * Dependency-free, exactly like lib/postMealTimer.ts, so
+ * scripts/alarmSelect.test.ts can exercise them under plain Node without any
  * Expo/React Native runtime - and so applyReminders in
  * lib/services/notifications.ts and any other future caller share ONE
  * definition instead of re-deriving the same three-way AND.
  *
- * All three inputs are resolved by the caller, never by this function: it has
- * no clock, no storage and no native calls of its own.
+ * Every input is resolved by the caller, never by these functions: they have
+ * no clock, no storage and no native calls of their own.
  */
 export interface AlarmSelectionInput {
-  /** The row's own opt-in (reminders.alarm_enabled = 1, schema v19). */
+  /** The stored delivery preference - reminders.alarm_enabled = 1 (schema v19,
+   *  default-on since v21) for a reminder row, NotificationPrefs.postMealAlarm
+   *  for the post-meal countdown. */
   alarmEnabled: boolean;
   /** modules/zerospike-alarmkit's isAlarmKitAvailable() - the OS itself
    *  supports AlarmKit (iOS 26+) and the native module is linked. */
@@ -33,4 +36,54 @@ export interface AlarmSelectionInput {
  */
 export function shouldUseAlarm(input: AlarmSelectionInput): boolean {
   return input.alarmEnabled && input.alarmKitAvailable && input.alarmAuthorized;
+}
+
+/** How a row will actually be delivered, as a name a UI can draw. Exists so a
+ *  badge can never claim "Alarm" for a row that would in fact ring as a
+ *  notification: it reads the SAME three-way AND as shouldUseAlarm rather than
+ *  looking at the stored preference alone (which is deliberately kept even on
+ *  a device with no AlarmKit - see lib/db/reminders.ts). */
+export function alarmModeOf(
+  input: AlarmSelectionInput
+): "alarm" | "notification" {
+  return shouldUseAlarm(input) ? "alarm" : "notification";
+}
+
+/** Everything the one-time alarm tour (app/alarm-tour.tsx, 2.3.0's D) is
+ *  allowed to depend on, resolved by app/_layout.tsx. */
+export interface AlarmTourGateInput {
+  /** The route gate in app/_layout.tsx has finished deciding the first screen. */
+  routeSettled: boolean;
+  /** The PERSISTED onboarding flag (AppContext's `onboarded`), never "the user
+   *  happens not to be on /onboarding right now": the route gate reports
+   *  settled the moment it has redirected INTO the onboarding flow, so
+   *  `routeSettled` alone is true for someone who has not onboarded at all. */
+  onboarded: boolean;
+  /** isScreenshotMode() - a store capture must never be interrupted by it. */
+  screenshotMode: boolean;
+  /** modules/zerospike-alarmkit's isAlarmKitAvailable(). */
+  alarmKitAvailable: boolean;
+  /** hasSeenAlarmTour() - once ever, and completeOnboarding marks it seen so a
+   *  fresh install is covered by onboarding instead. */
+  tourSeen: boolean;
+  /** How many reminder rows the active profile has: with none, the tour would
+   *  announce a change to someone it did not change anything for. */
+  reminderCount: number;
+}
+
+/**
+ * Whether the upgrade tour may be pushed on this launch. Deliberately narrow -
+ * see each field above - and gathered into one predicate so a missing
+ * condition is a test failure rather than something only a half-finished
+ * install would ever reveal.
+ */
+export function shouldOpenAlarmTour(input: AlarmTourGateInput): boolean {
+  return (
+    input.routeSettled &&
+    input.onboarded &&
+    !input.screenshotMode &&
+    input.alarmKitAvailable &&
+    !input.tourSeen &&
+    input.reminderCount > 0
+  );
 }

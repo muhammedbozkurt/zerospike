@@ -34,6 +34,12 @@ interface AlarmKitNativeModule {
     label: string,
     stopLabel: string
   ): Promise<boolean>;
+  scheduleCountdownTimer(
+    id: string,
+    seconds: number,
+    title: string,
+    stopLabel: string
+  ): Promise<boolean>;
   cancelAlarm(id: string): Promise<boolean>;
   listScheduledAlarmIds(): string[];
 }
@@ -106,6 +112,38 @@ export async function scheduleDailyAlarm(options: {
         options.hour,
         options.minute,
         options.label,
+        options.stopLabel
+      )) ?? false
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Starts a one-shot countdown alarm that rings in `seconds` - the post-meal
+ * timer (2.3.0's B). Same contract as scheduleDailyAlarm above in every
+ * respect: caller-owned identity string, already-localized copy, false (never
+ * a throw) when AlarmKit is missing, unauthorized or refuses the schedule, so
+ * lib/services/notifications.ts can fall straight back to the notification +
+ * Live Activity countdown it has always used.
+ *
+ * Cancelled through the SAME cancelAlarm below, and visible to the same
+ * listScheduledAlarmIds: the native module keeps one identity map for both
+ * kinds of alarm.
+ */
+export async function scheduleCountdownTimer(options: {
+  id: string;
+  seconds: number;
+  title: string;
+  stopLabel: string;
+}): Promise<boolean> {
+  try {
+    return (
+      (await native?.scheduleCountdownTimer(
+        options.id,
+        options.seconds,
+        options.title,
         options.stopLabel
       )) ?? false
     );

@@ -36,6 +36,11 @@ import { V17_CREATE } from "./v17Sql";
 import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "./v18Sql";
 import { V19_REMINDERS_COLUMNS } from "./v19Sql";
 import { V20_FOODS_COLUMNS } from "./v20Sql";
+import {
+  V21_DEFAULT_TO_ALARM,
+  V21_MARK_EXPLICIT_CHOICE,
+  V21_REMINDERS_COLUMNS,
+} from "./v21Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -75,7 +80,8 @@ export type SchemaStamp =
   | 17
   | 18
   | 19
-  | 20;
+  | 20
+  | 21;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -496,5 +502,46 @@ export async function migrateToV20(db: SQLite.SQLiteDatabase): Promise<void> {
       );
     }
     await stampSchemaVersion(db, 20);
+  });
+}
+
+/**
+ * The v20 → v21 migration: reminders.alarm_user_set plus the two UPDATEs that
+ * make the AlarmKit delivery the default (see ./v21Sql for the full reasoning,
+ * including why the order of those two statements is load-bearing).
+ *
+ * One guarded ADD COLUMN, exactly like v15/v16/v19/v20 - no table is rebuilt.
+ * The two UPDATEs that follow rewrite only the two alarm flags and never touch
+ * a row's time, label, order or ownership, so an interrupted run cannot cost a
+ * reminder. The column check runs BEFORE the transaction (like
+ * migrateToV8/V13/V15/V16/V19/V20), so nothing inside it can throw a "duplicate
+ * column" that would leave a half-applied schema with user_version already
+ * advanced.
+ *
+ * Re-running is inert even without the user_version guard (which a downgrade
+ * to an older build and back can defeat - see K4): both UPDATEs are tied to the
+ * run that actually ADDS the column, i.e. the single moment the old default was
+ * still in force. Replaying them later would re-read rows the app itself has
+ * since written and mistake the new default for a user's own pick, quietly
+ * making every one of them immune to any future default change.
+ */
+export async function migrateToV21(db: SQLite.SQLiteDatabase): Promise<void> {
+  const cols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(reminders);"
+  );
+  const present = new Set(cols.map((c) => c.name));
+  const missing = V21_REMINDERS_COLUMNS.filter((c) => !present.has(c.name));
+
+  await db.withTransactionAsync(async () => {
+    for (const col of missing) {
+      await db.execAsync(
+        `ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`
+      );
+    }
+    if (missing.length > 0) {
+      await db.execAsync(V21_MARK_EXPLICIT_CHOICE);
+      await db.execAsync(V21_DEFAULT_TO_ALARM);
+    }
+    await stampSchemaVersion(db, 21);
   });
 }

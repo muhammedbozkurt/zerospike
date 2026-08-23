@@ -109,9 +109,14 @@ export async function bridgeLegacyReminders(
   await db.withTransactionAsync(async () => {
     for (let i = 0; i < seeds.length; i++) {
       const seed = seeds[i];
+      // alarm_enabled = 1 spells out the same default createReminder writes
+      // (schema v21): a row the bridge seeds is a reminder the user really had
+      // on, and it must not arrive as a notification while every other row on
+      // the device rings. alarm_user_set is left at its column default (0) -
+      // this is the app's default, not the user's own pick.
       await db.runAsync(
-        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id)
-         VALUES (?, ?, NULL, ?, 1, ?, ?, ?);`,
+        `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled)
+         VALUES (?, ?, NULL, ?, 1, ?, ?, ?, 1);`,
         [makeId(), seed.type, seed.time, i, now(), profileId]
       );
     }

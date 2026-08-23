@@ -22,6 +22,15 @@ export interface NotificationPrefs {
   /** Post-meal check delay in minutes (drives both the auto reminder and the
    *  "I started eating" timer). */
   postMealMinutes: 60 | 90 | 120 | 150;
+  /** Whether the post-meal countdown runs as a real (AlarmKit) timer that rings
+   *  at the end, rather than as a notification. On by default, the same as the
+   *  reminders registry's own delivery default (schema v21) - a device without
+   *  AlarmKit, or without the permission, silently keeps the notification (see
+   *  shouldUseAlarm in lib/alarmSelect.ts), so the default costs nothing there.
+   *  Turning it off also takes the app's own Live Activity card back: AlarmKit
+   *  draws its own countdown, and two countdown cards must never sit on the
+   *  lock screen at once (see schedulePostMealAt). */
+  postMealAlarm: boolean;
   /** Weekly summary nudge, at a user-chosen day + time. */
   weekly: boolean;
   weeklyDay: number; // expo-notifications weekday: 1 = Sunday ... 7 = Saturday
@@ -50,6 +59,7 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   glucoseTime: "08:00",
   postMeal: true,
   postMealMinutes: 120,
+  postMealAlarm: true,
   weekly: false,
   weeklyDay: 1,
   weeklyTime: "20:00",

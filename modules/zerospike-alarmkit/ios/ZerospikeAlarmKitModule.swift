@@ -24,7 +24,8 @@ import SwiftUI
 // post-meal countdown.
 //
 // API surface below (isAvailable/getAuthorizationStatus/requestAuthorization/
-// scheduleDailyAlarm/cancelAlarm/listScheduledAlarmIds) and every AlarmKit call
+// scheduleDailyAlarm/scheduleCountdownTimer/cancelAlarm/listScheduledAlarmIds)
+// and every AlarmKit call
 // inside each function is sourced from, and cross-checked against, multiple
 // independent 2026 AlarmKit references (WWDC25 session 230, Apple's own
 // "Scheduling an alarm with AlarmKit" doc, and real compiling Swift samples in
@@ -231,6 +232,70 @@ public class ZerospikeAlarmKitModule: Module {
         // still had whatever the cancel() above just removed scheduled under
         // it a moment ago, so retrying the SAME id on the next attempt is
         // correct, not stale.
+        if wasFresh { forgetIdentity(id) }
+        return false
+      }
+    }
+
+    /// Starts (or restarts) a one-shot COUNTDOWN alarm of `seconds` - the
+    /// post-meal timer (2.3.0's B), the only non-daily alarm zerospike has.
+    /// Everything around the call is deliberately identical to
+    /// scheduleDailyAlarm above: the same identity map, the same
+    /// cancel-then-schedule re-arm, the same brand tint, the same
+    /// never-throw/return-false contract, and the same "JS hands in already
+    /// localized copy" rule (`title` is notifications.postmealTitle,
+    /// `stopLabel` is reminders.alarmStopButton). Because the identity map is
+    /// shared, cancelAlarm/listScheduledAlarmIds already cover this timer and
+    /// no timer-specific counterpart exists.
+    ///
+    /// The only structural difference is the configuration: a countdown alarm
+    /// carries `Alarm.CountdownDuration` instead of an `Alarm.Schedule`, and
+    /// AlarmKit requires a countdown PRESENTATION alongside the alert one (the
+    /// alert is what the system shows when the countdown reaches zero; the
+    /// countdown presentation is the live card it draws while it runs). Only
+    /// `preAlert` is set - `postAlert` would be the "snooze"-style repeat after
+    /// the alert, which this timer does not have.
+    ///
+    /// Xcode 26 note: unlike the daily path, these countdown API names have
+    /// never been compiled in this repo (this sandbox has no iOS 26 SDK).
+    /// Expect the same kind of first-build correction 2.2.0 needed for
+    /// `cancel(id:)` and `alarms`. Nothing else depends on it compiling to
+    /// behave: a `false` from here puts the post-meal check straight back on
+    /// the notification + Live Activity path it has always used.
+    AsyncFunction("scheduleCountdownTimer") {
+      (id: String, seconds: Double, title: String, stopLabel: String) -> Bool in
+      guard #available(iOS 26.0, *) else { return false }
+      guard AlarmManager.shared.authorizationState == .authorized else { return false }
+      guard seconds > 0 else { return false }
+
+      let (uuid, wasFresh) = uuidForIdentity(id)
+      try? AlarmManager.shared.cancel(id: uuid)
+
+      let stopButton = AlarmButton(
+        text: LocalizedStringResource(stringLiteral: stopLabel),
+        textColor: .white,
+        systemImageName: "stop.fill"
+      )
+      let alert = AlarmPresentation.Alert(
+        title: LocalizedStringResource(stringLiteral: title),
+        stopButton: stopButton
+      )
+      let countdown = AlarmPresentation.Countdown(
+        title: LocalizedStringResource(stringLiteral: title)
+      )
+      let attributes = AlarmAttributes<ZerospikeAlarmMetadata>(
+        presentation: AlarmPresentation(alert: alert, countdown: countdown),
+        tintColor: alarmTint
+      )
+      let configuration = AlarmManager.AlarmConfiguration(
+        countdownDuration: Alarm.CountdownDuration(preAlert: seconds, postAlert: nil),
+        attributes: attributes
+      )
+
+      do {
+        _ = try await AlarmManager.shared.schedule(id: uuid, configuration: configuration)
+        return true
+      } catch {
         if wasFresh { forgetIdentity(id) }
         return false
       }

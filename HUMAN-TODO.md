@@ -1,4 +1,33 @@
 
+## 2.3.0 paketi sonrasi (23 Agu 2026) - INSAN
+
+- [ ] Xcode 26 derleme (native modul degisti, prebuild + build SART): yeni
+      `scheduleCountdownTimer` icindeki AlarmKit countdown adlari bu ortamda hic
+      derlenmedi. Kontrol edilecekler: `Alarm.CountdownDuration(preAlert:postAlert:)`,
+      `AlarmPresentation.Countdown(title:)` (pauseButton parametresi zorunlu
+      cikarsa eklenmeli, o zaman 9 dilde "duraklat" metni de gerekir),
+      `AlarmPresentation(alert:countdown:)`, `AlarmManager.AlarmConfiguration(countdownDuration:attributes:)`.
+      Hata verirse modulun sozlesmesi geregi tek sonuc `false` doner ve tokluk
+      sayaci eski bildirim + Live Activity yoluna duser, uygulama bozulmaz.
+- [ ] Cihaz QA: docs/plan-2.3.0.md bolum 10 (18 senaryo), ozellikle 9b sistem
+      sayac kartinin gorunumu (kabul edilemezse geri alma tek satir:
+      DEFAULT_PREFS.postMealAlarm = false).
+- [ ] GELECEK (bu turda kod DEGISTIRILMEDI, yalniz not): taze kurulumun ALTER
+      penceresi. lib/db/index.ts:507-520 createSchemaV1 icinde v19 ve v21
+      kolonlarini KOSULSUZ `ALTER TABLE reminders ADD COLUMN` ile ekliyor
+      (v19'dan beri boyle). Tablo hemen ustte yaratildigi icin normalde
+      guvenli, ama kurulum tam bu araliktan sonra ve `PRAGMA user_version`
+      damgasindan once olurse (crash, kullanicinin uygulamayi oldurmesi, disk
+      hatasi) sonraki acilista createSchemaV1 bastan kosar: `CREATE TABLE IF
+      NOT EXISTS` tabloyu atlar, ALTER'lar ise "duplicate column name" ile
+      patlar ve initDatabase hep ayni yerde kalir. Cozum adaylari: (a) ayni
+      kolon eklemelerini migrateToV19/V21'in kullandigi "eksikse ekle" guardli
+      formuna cevirmek, (b) tum createSchemaV1'i tek transaction icine almak.
+      Sahada gorulmus bir vaka yok; 2.4.0 adayi.
+- [ ] Store: zerospike-store/aso/{9 dil}.md "What's New" 2.3.0 bloklari ve
+      review-notes-en.md konsollara; app.json 2.3.0 / iOS build 61 / Android
+      versionCode 58.
+
 ## 2.0.0 paketi sonrasi (18 Agu 2026) - INSAN
 
 - [ ] Fiyat guncellemesi: docs/pricing-2026-08.md tablosu (ASC abonelik + lifetime, RevenueCat downsell urunu, Play). Mevcut abonelere "preserve price".

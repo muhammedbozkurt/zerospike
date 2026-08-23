@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
@@ -9,7 +9,9 @@ import { isScreenshotMode } from "../../lib/screenshotMode";
 import type { GlucoseUnit, Lang } from "../../lib/db/types";
 import {
   applyNotificationPrefs,
+  applyPostMealAlarmModeChange,
   applyPostMealWindowChange,
+  cancelPostMealTimer,
   getPostMealTimerEnd,
   hasNotificationPermission,
   getNotificationPermission,
@@ -26,6 +28,11 @@ import {
   setNotificationPrefs,
   type NotificationPrefs,
 } from "../../lib/services/notificationPrefs";
+import {
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+  requestAlarmAuthorization,
+} from "../../modules/zerospike-alarmkit";
 import { Segmented } from "../../components/ui";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
@@ -68,6 +75,13 @@ export default function NotificationSettings() {
   // A post-meal timer is counting down right now. Only then does the delay note
   // have anything to describe, so it stays out of the way the rest of the time.
   const [postMealRunning, setPostMealRunning] = useState(false);
+  // The post-meal delivery choice (2.3.0's B) exists only where AlarmKit does
+  // (iOS 26+); everywhere else the countdown is always a notification and the
+  // row would be a promise the OS cannot keep. A plain sync native call, like
+  // the same check in components/ReminderEditSheet.tsx.
+  const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
+  const [alarmDenied, setAlarmDenied] = useState(false);
+  const [alarmBusy, setAlarmBusy] = useState(false);
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
@@ -110,6 +124,19 @@ export default function NotificationSettings() {
       await applyPostMealWindowChange(patch.postMealMinutes, base.postMealMinutes);
     }
 
+    // Turning the post-meal check OFF has to take a countdown that is already
+    // running down with it - the alarm above all, which otherwise rings hours
+    // later for a feature the user just switched off, but also the pending
+    // notification, the lock-screen card and the dashboard countdown. The
+    // master switch already does this inside applyNotificationPrefs; this one
+    // cannot, because that function only ever sees the CURRENT preference and
+    // would then also kill a countdown started by hand from the dashboard
+    // ("I started eating" deliberately ignores this toggle). Only the
+    // transition off means "stop the one that is running".
+    if (patch.postMeal === false && base.postMeal) {
+      await cancelPostMealTimer();
+    }
+
     // The moment every glanceable surface counts down to is derived from these
     // preferences (master switch, basal/med/glucose toggles and their times, the
     // post-meal window just re-armed above), so ANY save here can move it. One
@@ -123,6 +150,36 @@ export default function NotificationSettings() {
     setNotifDenied(next.enabled && !granted);
     setPermission(await getNotificationPermission());
     setReliability(await checkReminderReliability());
+    setPostMealRunning((await getPostMealTimerEnd()) != null);
+  }
+
+  /**
+   * Post-meal delivery switch. Turning it ON is the explicit action that earns
+   * the AlarmKit prompt (same rule, and same denied-then-system-settings
+   * fallback, as the per-reminder switch in components/ReminderEditSheet.tsx);
+   * a refusal leaves the preference off rather than storing a choice the OS
+   * would silently ignore. A countdown already running is re-armed in the new
+   * mode without moving its end - see applyPostMealAlarmModeChange.
+   */
+  async function togglePostMealAlarm(value: boolean) {
+    if (value) {
+      setAlarmBusy(true);
+      try {
+        let status = getAlarmAuthorizationStatus();
+        if (status !== "authorized") status = await requestAlarmAuthorization();
+        if (status !== "authorized") {
+          setAlarmDenied(true);
+          return;
+        }
+        setAlarmDenied(false);
+      } finally {
+        setAlarmBusy(false);
+      }
+    } else {
+      setAlarmDenied(false);
+    }
+    await updatePrefs({ postMealAlarm: value });
+    await applyPostMealAlarmModeChange();
     setPostMealRunning((await getPostMealTimerEnd()) != null);
   }
 
@@ -281,6 +338,42 @@ export default function NotificationSettings() {
                     <Text className="text-mut text-xs mt-2">
                       {t("settings.postMealDelayRunningNote")}
                     </Text>
+                  ) : null}
+
+                  {alarmKitAvailable ? (
+                    <View
+                      className="mt-3 pt-3"
+                      style={{ borderTopWidth: 1, borderTopColor: THEME.border }}
+                    >
+                      <View className="flex-row items-center justify-between">
+                        <Text
+                          className="text-ink text-sm flex-1"
+                          style={{ marginRight: 10 }}
+                        >
+                          {t("settings.postMealAlarm")}
+                        </Text>
+                        <Switch
+                          value={prefs.postMealAlarm}
+                          onValueChange={(v) => void togglePostMealAlarm(v)}
+                          disabled={alarmBusy}
+                          trackColor={{ true: THEME.accent, false: THEME.border }}
+                          thumbColor={THEME.ink}
+                        />
+                      </View>
+                      <Text className="text-mut text-xs mt-1">
+                        {t("settings.postMealAlarmHint")}
+                      </Text>
+                      {alarmDenied ? (
+                        <Pressable onPress={() => Linking.openSettings()} className="mt-2">
+                          <Text className="text-mut text-xs">
+                            {t("reminders.alarmPermissionDenied")}{" "}
+                            <Text style={{ color: THEME.accent, fontWeight: "700" }}>
+                              {t("settings.openSystemSettings")}
+                            </Text>
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
                   ) : null}
                 </InlineConfigCard>
               ) : null}

@@ -6,7 +6,7 @@
     "NSHealthUpdateUsageDescription": "zerospike écrit dans Apple Santé uniquement les glycémies que vous saisissez manuellement, lorsque vous activez cette option dans les Réglages.",
     "NSLocationWhenInUseUsageDescription": "zerospike peut joindre votre position actuelle à un message envoyé depuis l'écran SOS, pour qu'on vous retrouve plus vite.",
     "NSContactsUsageDescription": "zerospike vous laisse choisir un contact d'urgence dans vos contacts pour l'écran SOS.",
-    "NSAlarmKitUsageDescription": "zerospike utilise AlarmKit pour qu'un rappel que vous créez puisse aussi sonner comme une vraie alarme, uniquement pour les rappels où vous activez cette option.",
+    "NSAlarmKitUsageDescription": "zerospike utilise AlarmKit pour que les rappels que vous créez et le minuteur post-repas que vous lancez puissent sonner comme de vraies alarmes. Vous pouvez à tout moment les rebasculer en notification.",
     "NSMotionUsageDescription": "zerospike ne collecte aucune donnée de mouvement. Cette autorisation n'existe que parce qu'un composant de localisation de l'app référence les API de mouvement; vos déplacements ne sont jamais suivis."
   }
 }

@@ -33,6 +33,7 @@ import {
   migrateToV18,
   migrateToV19,
   migrateToV20,
+  migrateToV21,
   stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
@@ -62,6 +63,11 @@ import { V17_CREATE } from "../lib/db/v17Sql";
 import { V18_CREATE, V18_SEED_FROM_MED_LOGS } from "../lib/db/v18Sql";
 import { V19_REMINDERS_COLUMNS } from "../lib/db/v19Sql";
 import { V20_FOODS_COLUMNS } from "../lib/db/v20Sql";
+import {
+  V21_DEFAULT_TO_ALARM,
+  V21_MARK_EXPLICIT_CHOICE,
+  V21_REMINDERS_COLUMNS,
+} from "../lib/db/v21Sql";
 import {
   adoptOrphanReminders,
   bridgeLegacyReminders,
@@ -2996,8 +3002,8 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    // SCHEMA_VERSION itself has since moved past v19 (see P3, "SCHEMA_VERSION
-    // is 20"); this section only checks the v18 → v19 step and the reminders
+    // SCHEMA_VERSION itself has since moved past v19 (see Q3, "SCHEMA_VERSION
+    // is 21"); this section only checks the v18 → v19 step and the reminders
     // shape.
     ok(
       "the v18 → v19 step runs the real migration",
@@ -3463,7 +3469,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 20", /const SCHEMA_VERSION = 20;/.test(indexSrc));
+    // SCHEMA_VERSION itself is asserted in Q3, where the newest step lives.
     ok(
       "the v19 → v20 step runs the real migration",
       /currentVersion < 20\)\s*\{\s*await migrateToV20\(db\);/.test(indexSrc)
@@ -3487,6 +3493,251 @@ async function main() {
     );
   }
 
+  section("Q. v21 reminders.alarm_user_set: schema shape");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+    await migrateToV19(adapt(db));
+
+    // Two pre-v21 rows: one whose owner reached for 2.2.0's "Play as alarm"
+    // switch, one that was never touched (indistinguishable, in the database,
+    // from one deliberately left off - see ./v21Sql).
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled)
+       VALUES ('chose-alarm', 'glucose', NULL, '08:00', 1, 0, 1753600000000, 'p1', 1),
+              ('untouched',   'basal',   NULL, '22:00', 1, 1, 1753600000001, 'p1', 0);`
+    );
+
+    await migrateToV21(adapt(db));
+
+    const cols = columns(db, "reminders");
+    ok("reminders.alarm_user_set exists", cols.has("alarm_user_set"));
+    eq("alarm_user_set is NOT NULL", cols.get("alarm_user_set")?.notnull, 1);
+    eq(
+      "alarm_user_set defaults to 0",
+      String(cols.get("alarm_user_set")?.dflt_value),
+      "0"
+    );
+    eq("alarm_user_set is INTEGER-typed", cols.get("alarm_user_set")?.type, "INTEGER");
+
+    const chose = db
+      .prepare("SELECT * FROM reminders WHERE id='chose-alarm';")
+      .get() as Record<string, unknown>;
+    eq("the row that opted in keeps its time", chose.time, "08:00");
+    eq("and is marked as the user's own choice", chose.alarm_user_set, 1);
+    eq("and stays an alarm", chose.alarm_enabled, 1);
+
+    const untouched = db
+      .prepare("SELECT * FROM reminders WHERE id='untouched';")
+      .get() as Record<string, unknown>;
+    eq("the untouched row keeps its time", untouched.time, "22:00");
+    eq("and is NOT marked as a user choice", untouched.alarm_user_set, 0);
+    eq("and is converted to the new default", untouched.alarm_enabled, 1);
+
+    eq("no reminder was lost or gained", count(db, "reminders"), 2);
+    ok(
+      "alarm_user_set accepts a value",
+      !refused(db, "UPDATE reminders SET alarm_user_set = 1 WHERE id='untouched';")
+    );
+    db.close();
+  }
+
+  section("Q2. v21 idempotence");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+    await migrateToV19(adapt(db));
+    await migrateToV21(adapt(db));
+
+    // Exactly what the per-row badge writes when the user switches a row that
+    // v21 had just converted BACK to a notification.
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled, alarm_user_set)
+       VALUES ('back-to-notif', 'glucose', NULL, '08:00', 1, 0, 1, 'p1', 0, 1);`
+    );
+
+    let reran = true;
+    try {
+      await migrateToV21(adapt(db));
+      await migrateToV21(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v21 threw: ${String(e)}`);
+    }
+    ok("v21 is safe to re-run", reran);
+    eq(
+      "re-running does not duplicate reminders.alarm_user_set",
+      (db.prepare("PRAGMA table_info(reminders);").all() as { name: string }[]).filter(
+        (c) => c.name === "alarm_user_set"
+      ).length,
+      1
+    );
+    eq("still exactly one reminder", count(db, "reminders"), 1);
+    // The whole point of the marker: a re-run (or a future default change)
+    // must never undo a choice the user has already made.
+    const row = db
+      .prepare("SELECT * FROM reminders WHERE id='back-to-notif';")
+      .get() as Record<string, unknown>;
+    eq("a row switched back stays a notification", row.alarm_enabled, 0);
+    eq("and stays marked as the user's choice", row.alarm_user_set, 1);
+    eq("migrateToV21 stamps 21", readUserVersion(db), 21);
+    db.close();
+  }
+
+  section("Q3. v21 statements and fresh-install equivalence");
+  {
+    eq(
+      "V21_REMINDERS_COLUMNS adds exactly the one documented column",
+      V21_REMINDERS_COLUMNS.map((c) => c.name).join(","),
+      "alarm_user_set"
+    );
+    ok(
+      "alarm_user_set is NOT NULL DEFAULT 0",
+      V21_REMINDERS_COLUMNS.find((c) => c.name === "alarm_user_set")?.type ===
+        "INTEGER NOT NULL DEFAULT 0"
+    );
+    // The two UPDATEs read and write the flags in the one order that keeps
+    // 2.2.0's only trace of intent (see ./v21Sql): mark first, convert second.
+    ok(
+      "the marking statement keys off alarm_enabled",
+      /UPDATE reminders SET alarm_user_set = 1 WHERE alarm_enabled = 1;/.test(
+        V21_MARK_EXPLICIT_CHOICE
+      )
+    );
+    ok(
+      "the conversion statement skips every marked row",
+      /UPDATE reminders SET alarm_enabled = 1 WHERE alarm_user_set = 0;/.test(
+        V21_DEFAULT_TO_ALARM
+      )
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 21", /const SCHEMA_VERSION = 21;/.test(indexSrc));
+    ok(
+      "the v20 → v21 step runs the real migration",
+      /currentVersion < 21\)\s*\{\s*await migrateToV21\(db\);/.test(indexSrc)
+    );
+    ok(
+      "and applies the same V21_REMINDERS_COLUMNS list on a fresh install",
+      /for \(const col of V21_REMINDERS_COLUMNS\)/.test(indexSrc)
+    );
+    ok(
+      "a fresh install replays both UPDATEs too, in the same order",
+      /await db\.execAsync\(V21_MARK_EXPLICIT_CHOICE\);\s*\n\s*await db\.execAsync\(V21_DEFAULT_TO_ALARM\);/.test(
+        indexSrc
+      )
+    );
+    const migrationsSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "migrations.ts"),
+      "utf8"
+    );
+    ok(
+      "the migrating path runs them only when it actually adds the column",
+      /if \(missing\.length > 0\) \{\s*\n\s*await db\.execAsync\(V21_MARK_EXPLICIT_CHOICE\);/.test(
+        migrationsSrc
+      )
+    );
+
+    // Same DDL-text comparison O3 uses: both paths reach the reminders shape
+    // through the SAME ALTER statements on top of the SAME V17_CREATE table.
+    const migrated = makeV15Database();
+    await migrateToV16(adapt(migrated));
+    await migrateToV17(adapt(migrated));
+    await migrateToV18(adapt(migrated));
+    await migrateToV19(adapt(migrated));
+    await migrateToV21(adapt(migrated));
+
+    const fresh = new DatabaseSync(":memory:");
+    for (const statement of V17_CREATE) fresh.exec(statement);
+    for (const col of V19_REMINDERS_COLUMNS) {
+      fresh.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+    }
+    for (const col of V21_REMINDERS_COLUMNS) {
+      fresh.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+    }
+    fresh.exec(V21_MARK_EXPLICIT_CHOICE);
+    fresh.exec(V21_DEFAULT_TO_ALARM);
+
+    eq(
+      "reminders has the same columns as a fresh install",
+      [...columns(migrated, "reminders").keys()].join(","),
+      [...columns(fresh, "reminders").keys()].join(",")
+    );
+    eq(
+      "reminders has the same DDL as a fresh install",
+      (
+        migrated
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reminders';")
+          .get() as { sql: string }
+      ).sql,
+      (
+        fresh
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reminders';")
+          .get() as { sql: string }
+      ).sql
+    );
+    // On the fresh path the table is empty, so the two UPDATEs can only ever
+    // be a no-op - the property that lets both paths share one statement list.
+    eq("the fresh path's UPDATEs touched nothing", count(fresh, "reminders"), 0);
+    migrated.close();
+    fresh.close();
+  }
+
+  section("Q4. v21 default conversion, and what it must never overwrite");
+  {
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+    await migrateToV19(adapt(db));
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled)
+       VALUES ('was-on',  'glucose', NULL, '08:00', 1, 0, 1, 'p1', 1),
+              ('was-off', 'med',     NULL, '09:00', 0, 1, 2, 'p1', 0);`
+    );
+
+    await migrateToV21(adapt(db));
+
+    const pair = (id: string): string => {
+      const r = db
+        .prepare("SELECT alarm_enabled AS a, alarm_user_set AS u FROM reminders WHERE id = ?;")
+        .get(id) as { a: number; u: number };
+      return `${r.a},${r.u}`;
+    };
+    eq("a row that was already an alarm becomes (1,1)", pair("was-on"), "1,1");
+    eq("a row that was not becomes (1,0)", pair("was-off"), "1,0");
+    // A disabled row is still converted: `enabled` and the delivery mode are
+    // independent, and applyReminders never arms a disabled row either way.
+    eq(
+      "the disabled row stays disabled",
+      (db.prepare("SELECT enabled AS e FROM reminders WHERE id='was-off';").get() as {
+        e: number;
+      }).e,
+      0
+    );
+
+    // Rows written AFTER the migration (createReminder's own default, and a
+    // user who switched one back) must survive a second run untouched.
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled, alarm_user_set)
+       VALUES ('new-default', 'custom', 'Yürüyüş', '19:00', 1, 2, 3, 'p1', 1, 0),
+              ('user-notif',  'custom', 'Su',      '15:00', 1, 3, 4, 'p1', 0, 1);`
+    );
+    await migrateToV21(adapt(db));
+    eq("a row born with the new default is unchanged", pair("new-default"), "1,0");
+    eq("a row the user switched back is unchanged", pair("user-notif"), "0,1");
+    eq("and the marked row from before is still marked", pair("was-on"), "1,1");
+    eq("no reminder was lost or gained", count(db, "reminders"), 4);
+    db.close();
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -3500,7 +3751,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 17`, readUserVersion(db), 17);
+    eq(`v${start}: ends at 21`, readUserVersion(db), 21);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -3642,14 +3893,14 @@ async function main() {
     await runChain(db, { stampFinal: false });
 
     // Before the fix this read 8: nothing between the first step and that final
-    // line recorded anything, so the schema was v17 and the database said v8.
+    // line recorded anything, so the schema was current and the database said v8.
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      17
+      21
     );
 
-    // The user keeps using the app for weeks on that (v17) schema.
+    // The user keeps using the app for weeks on that (fully migrated) schema.
     db.exec(
       `INSERT INTO injection_logs
          (id, profile_id, site, site_point, dose_units, insulin_type, meal_log_id,
@@ -3659,10 +3910,10 @@ async function main() {
     );
     db.exec("UPDATE injection_logs SET bolus_kind = 'correction' WHERE id = 'inj1';");
 
-    // Next cold start. It must pick up from 17, not replay v9 and v11.
+    // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 17", readUserVersion(db), 17);
+    eq("the next launch still ends at 21", readUserVersion(db), 21);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -3760,7 +4011,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 17 again", readUserVersion(db), 17);
+    eq("the chain lands on 21 again", readUserVersion(db), 21);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -4252,14 +4503,14 @@ const CHAIN_CREATE_INJECTIONS = `
 /**
  * initDatabase()'s migration chain, in the same order and with the same guards.
  *
- * The v8 → v17 steps are the REAL exported functions (and therefore the REAL
+ * The v8 → v21 steps are the REAL exported functions (and therefore the REAL
  * stamps, which live inside their transactions). Only the pre-v8 steps, which are
  * inline DDL in lib/db/index.ts and cannot be imported without pulling in
  * expo-sqlite, are replayed here; K6 pins them against that file's source so this
  * copy cannot drift.
  *
  * `stampFinal: false` is the crash under test: the chain runs to the end and the
- * process dies before lib/db/index.ts's closing `PRAGMA user_version = 17`.
+ * process dies before lib/db/index.ts's closing `PRAGMA user_version = 21`.
  */
 async function runChain(
   db: DatabaseSync,
@@ -4325,8 +4576,12 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 15) await migrateToV15(target);
   if (currentVersion >= 1 && currentVersion < 16) await migrateToV16(target);
   if (currentVersion >= 1 && currentVersion < 17) await migrateToV17(target);
+  if (currentVersion >= 1 && currentVersion < 18) await migrateToV18(target);
+  if (currentVersion >= 1 && currentVersion < 19) await migrateToV19(target);
+  if (currentVersion >= 1 && currentVersion < 20) await migrateToV20(target);
+  if (currentVersion >= 1 && currentVersion < 21) await migrateToV21(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 17;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 21;");
 }
 
 function count(db: DatabaseSync, table: string): number {

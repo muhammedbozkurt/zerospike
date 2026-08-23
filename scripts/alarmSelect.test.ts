@@ -16,7 +16,13 @@
 declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void };
 
-import { shouldUseAlarm, type AlarmSelectionInput } from "../lib/alarmSelect";
+import {
+  alarmModeOf,
+  shouldOpenAlarmTour,
+  shouldUseAlarm,
+  type AlarmSelectionInput,
+  type AlarmTourGateInput,
+} from "../lib/alarmSelect";
 
 let passed = 0;
 let failed = 0;
@@ -101,6 +107,152 @@ section("D. authorized-but-unavailable can never happen upstream, but must still
     shouldUseAlarm({ alarmEnabled: true, alarmKitAvailable: false, alarmAuthorized: true }),
     false
   );
+}
+
+section("E. alarmModeOf agrees with shouldUseAlarm in all 8 combinations");
+{
+  // The badge in app/settings/reminders.tsx draws from alarmModeOf while
+  // applyReminders arms from shouldUseAlarm; a divergence between the two would
+  // show a row labelled "Alarm" that in fact arrives as a notification.
+  for (const alarmEnabled of [true, false]) {
+    for (const alarmKitAvailable of [true, false]) {
+      for (const alarmAuthorized of [true, false]) {
+        const input: AlarmSelectionInput = {
+          alarmEnabled,
+          alarmKitAvailable,
+          alarmAuthorized,
+        };
+        eq(
+          `mode enabled=${alarmEnabled} available=${alarmKitAvailable} authorized=${alarmAuthorized}`,
+          alarmModeOf(input),
+          shouldUseAlarm(input) ? "alarm" : "notification"
+        );
+      }
+    }
+  }
+  eq(
+    "all three true is the only 'alarm'",
+    alarmModeOf({ alarmEnabled: true, alarmKitAvailable: true, alarmAuthorized: true }),
+    "alarm"
+  );
+}
+
+section("F. the post-meal caller shares the exact same three-way AND");
+{
+  // 2.3.0's B: schedulePostMealAt passes NotificationPrefs.postMealAlarm as
+  // `alarmEnabled` instead of a row's column - deliberately no second decision
+  // function, so the countdown can never disagree with the reminders it sits
+  // next to.
+  const postMealAlarm = true;
+  eq(
+    "preference on, AlarmKit there and authorized -> timer",
+    shouldUseAlarm({
+      alarmEnabled: postMealAlarm,
+      alarmKitAvailable: true,
+      alarmAuthorized: true,
+    }),
+    true
+  );
+  eq(
+    "preference turned off -> notification, whatever the device can do",
+    shouldUseAlarm({
+      alarmEnabled: false,
+      alarmKitAvailable: true,
+      alarmAuthorized: true,
+    }),
+    false
+  );
+  eq(
+    "preference on but no AlarmKit -> notification",
+    shouldUseAlarm({
+      alarmEnabled: postMealAlarm,
+      alarmKitAvailable: false,
+      alarmAuthorized: false,
+    }),
+    false
+  );
+}
+
+section("G. an unauthorized device never reads as 'alarm', however the row is stored");
+{
+  // 2.3.0 stores the preference platform-independently (see lib/db/reminders.ts):
+  // an Android or iOS < 26 row genuinely carries alarm_enabled = 1. The badge in
+  // app/settings/reminders.tsx shows that stored intent, but only this helper
+  // decides whether it may be drawn as a WORKING alarm - anything short of all
+  // three is the "needs permission" state, never the promise of one.
+  eq(
+    "stored preference on, permission never granted",
+    alarmModeOf({ alarmEnabled: true, alarmKitAvailable: true, alarmAuthorized: false }),
+    "notification"
+  );
+  eq(
+    "stored preference on, no AlarmKit at all (Android / iOS < 26)",
+    alarmModeOf({ alarmEnabled: true, alarmKitAvailable: false, alarmAuthorized: false }),
+    "notification"
+  );
+}
+
+section("H. the one-time tour gate (2.3.0's D)");
+{
+  // The upgrade tour is for someone whose EXISTING reminders changed delivery.
+  // Everything else - a fresh install, a device with no AlarmKit, a user who
+  // has seen it, a profile with no reminders, a store capture - must not see it.
+  const upgrader: AlarmTourGateInput = {
+    routeSettled: true,
+    onboarded: true,
+    screenshotMode: false,
+    alarmKitAvailable: true,
+    tourSeen: false,
+    reminderCount: 3,
+  };
+  eq("the upgrading user opens it", shouldOpenAlarmTour(upgrader), true);
+
+  // The regression this gate exists for: the route gate in app/_layout.tsx
+  // reports SETTLED the moment it has redirected into /onboarding, so "settled"
+  // is true for someone who has not onboarded at all - an install whose
+  // onboarding was killed halfway got the tour pushed on top of it on the next
+  // launch. Only the persisted flag says onboarding is really done.
+  eq(
+    "settled but not onboarded (onboarding killed halfway) stays closed",
+    shouldOpenAlarmTour({ ...upgrader, onboarded: false }),
+    false
+  );
+  eq(
+    "routing has not settled yet",
+    shouldOpenAlarmTour({ ...upgrader, routeSettled: false }),
+    false
+  );
+  eq(
+    "completed onboarding marks it seen, so a fresh install stops here",
+    shouldOpenAlarmTour({ ...upgrader, tourSeen: true }),
+    false
+  );
+  eq(
+    "no AlarmKit (Android / iOS < 26): nothing changed, nothing to explain",
+    shouldOpenAlarmTour({ ...upgrader, alarmKitAvailable: false }),
+    false
+  );
+  eq(
+    "no reminders: the tour would announce a change to nobody",
+    shouldOpenAlarmTour({ ...upgrader, reminderCount: 0 }),
+    false
+  );
+  eq(
+    "store capture is never interrupted",
+    shouldOpenAlarmTour({ ...upgrader, screenshotMode: true }),
+    false
+  );
+
+  // Exhaustive: every single condition is load-bearing on its own, so flipping
+  // any one of them away from the opening combination must close the gate.
+  const keys = [
+    "routeSettled",
+    "onboarded",
+    "alarmKitAvailable",
+  ] as const;
+  for (const key of keys) {
+    eq(`${key} alone closes it`, shouldOpenAlarmTour({ ...upgrader, [key]: false }), false);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

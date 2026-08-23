@@ -34,6 +34,10 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
+import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
+import { shouldOpenAlarmTour } from "../lib/alarmSelect";
+import { isAlarmKitAvailable } from "../modules/zerospike-alarmkit";
+import { listReminders } from "../lib/db/reminders";
 
 // One-shot guard for the startup RTL auto-reload below, persisted (not just an
 // in-memory ref) because Updates.reloadAsync() throws away the whole JS
@@ -407,6 +411,47 @@ function RootNavigator() {
     return () => cancelAnimationFrame(frame);
   }, [settled, revealed]);
 
+  // One-time alarm tour (2.3.0's D), for the UPGRADING user whose existing
+  // reminders now ring as real alarms. Every condition lives in
+  // shouldOpenAlarmTour (lib/alarmSelect.ts) rather than in a chain of early
+  // returns here, so the gate is testable under plain Node.
+  //
+  // `onboarded` is part of it, and is the reason this is not driven by `settled`
+  // alone: the route gate above reports settled the moment it has redirected
+  // INTO /onboarding (needsOnboarding goes false because the user is now in the
+  // flow), so an install whose onboarding was killed halfway used to get the
+  // tour pushed on top of the onboarding it had not finished. The flag, not the
+  // current route, is the only thing that says onboarding is actually done.
+  // A completed one is covered by onboarding itself and stops at `tourSeen`,
+  // because completeOnboarding marks the tour seen (lib/store/AppContext.tsx) -
+  // which is also why no version comparison is needed here.
+  //
+  // Marked seen BEFORE the push, exactly like the winback above, so an
+  // interrupted tour cannot come back. The two reads below are one AsyncStorage
+  // get and one small query, once per launch, after routing has settled.
+  const alarmTourHandled = useRef(false);
+  useEffect(() => {
+    if (!settled || !onboarded || alarmTourHandled.current) return;
+    alarmTourHandled.current = true;
+    (async () => {
+      try {
+        const open = shouldOpenAlarmTour({
+          routeSettled: settled,
+          onboarded,
+          screenshotMode: isScreenshotMode(),
+          alarmKitAvailable: isAlarmKitAvailable(),
+          tourSeen: await hasSeenAlarmTour(),
+          reminderCount: (await listReminders()).length,
+        });
+        if (!open) return;
+        await markAlarmTourSeen();
+        router.push("/alarm-tour");
+      } catch {
+        // best-effort; the feature works without ever being explained
+      }
+    })();
+  }, [settled, onboarded, router]);
+
   // While loading, render nothing so the native splash stays on screen.
   if (!ready) return null;
 
@@ -434,6 +479,10 @@ function RootNavigator() {
       />
       <Stack.Screen
         name="winback"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="alarm-tour"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen

@@ -6,7 +6,7 @@
     "NSHealthUpdateUsageDescription": "zerospike schreibt nur die von Ihnen manuell erfassten Blutzuckerwerte in Apple Health, wenn Sie das in den Einstellungen aktivieren.",
     "NSLocationWhenInUseUsageDescription": "zerospike kann Ihren aktuellen Standort an eine Nachricht anhängen, die Sie über den SOS-Bildschirm senden, damit Sie schneller gefunden werden.",
     "NSContactsUsageDescription": "zerospike lässt Sie für den SOS-Bildschirm einen Notfallkontakt aus Ihren Kontakten auswählen.",
-    "NSAlarmKitUsageDescription": "zerospike verwendet AlarmKit, damit eine von Ihnen eingerichtete Erinnerung auch als echter Alarm klingeln kann, nur für die Erinnerungen, bei denen Sie das aktivieren.",
+    "NSAlarmKitUsageDescription": "zerospike verwendet AlarmKit, damit die von Ihnen eingerichteten Erinnerungen und der von Ihnen gestartete Timer nach dem Essen als echte Alarme klingeln können. Sie können jeden davon wieder auf eine Mitteilung umstellen.",
     "NSMotionUsageDescription": "zerospike erfasst keine Bewegungsdaten. Diese Berechtigung ist nur erforderlich, weil eine Ortungskomponente der App auf Bewegungs-APIs verweist; Ihre Bewegung wird nie verfolgt."
   }
 }

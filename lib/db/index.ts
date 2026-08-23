@@ -16,6 +16,7 @@ import {
   migrateToV18,
   migrateToV19,
   migrateToV20,
+  migrateToV21,
   stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
@@ -25,6 +26,11 @@ import { V17_CREATE } from "./v17Sql";
 import { V18_CREATE } from "./v18Sql";
 import { V19_REMINDERS_COLUMNS } from "./v19Sql";
 import { V20_FOODS_COLUMNS } from "./v20Sql";
+import {
+  V21_DEFAULT_TO_ALARM,
+  V21_MARK_EXPLICIT_CHOICE,
+  V21_REMINDERS_COLUMNS,
+} from "./v21Sql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -39,7 +45,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 21;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -281,6 +287,14 @@ export async function initDatabase(): Promise<void> {
     await migrateToV20(db);
   }
 
+  // v20 → v21: reminders.alarm_user_set (whether the user themselves picked how
+  // a reminder is delivered) plus the two UPDATEs that make the alarm the
+  // default for every row they never picked for. One guarded ADD COLUMN, no
+  // table rebuilt (see migrateToV21 + ./v21Sql).
+  if (currentVersion >= 1 && currentVersion < 21) {
+    await migrateToV21(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -493,6 +507,19 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   for (const col of V19_REMINDERS_COLUMNS) {
     await db.execAsync(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
   }
+
+  // The "the user picked this themselves" marker (schema v21, see ./v21Sql),
+  // applied the same unconditional way as the v19 columns above. The two
+  // UPDATEs migrateToV21 runs after it are replayed here too, against a table
+  // that was just created and is therefore empty: they are a guaranteed no-op,
+  // and running them anyway keeps the fresh-install and migrated paths a single
+  // sequence of statements rather than two that have to be kept in agreement by
+  // hand.
+  for (const col of V21_REMINDERS_COLUMNS) {
+    await db.execAsync(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+  }
+  await db.execAsync(V21_MARK_EXPLICIT_CHOICE);
+  await db.execAsync(V21_DEFAULT_TO_ALARM);
 
   // Injection-site logging (shared with the v3 → v4 migration).
   await createInjectionSchema(db);

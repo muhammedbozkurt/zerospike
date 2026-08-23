@@ -31,6 +31,11 @@ import {
   DEFAULT_PREFS,
   setNotificationPrefs,
 } from "../lib/services/notificationPrefs";
+import {
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+  requestAlarmAuthorization,
+} from "../modules/zerospike-alarmkit";
 import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import {
   clampHypoThreshold,
@@ -291,6 +296,14 @@ export default function OnboardingScreen() {
     advancingRef.current = false;
   }, [stepIdxClamped, phase]);
 
+  // At most one AlarmKit prompt per onboarding run, however many reminder
+  // steps the user actually sets up (see ensureAlarmAuthorizationOnce).
+  const alarmAskedRef = useRef(false);
+  // The alarm framing only appears where AlarmKit exists (iOS 26+); anywhere
+  // else the reminder is a notification and saying otherwise would be a
+  // promise the OS cannot keep.
+  const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
+
   // Preserve the original analytics events. Log the current quiz step, or the
   // welcome / reveal phase name.
   useEffect(() => {
@@ -525,6 +538,30 @@ export default function OnboardingScreen() {
     return t(`onboarding.q${s[0].toUpperCase()}${s.slice(1)}`);
   }
 
+  /**
+   * Asks for the AlarmKit permission ONCE per onboarding run, and only from a
+   * step that has just written a real reminder row: the dialog is meaningless
+   * before there is something for it to ring, and a user who takes the "Not
+   * now" path out of both reminder steps never sees it at all. Runs right
+   * after the notification prompt, so the two system dialogs arrive together
+   * rather than one now and one out of nowhere later.
+   *
+   * Never blocks and never throws out: a refusal (or no AlarmKit at all)
+   * simply leaves the reminder arriving as a notification, and the row's own
+   * badge in Settings > Reminders can ask again whenever the user wants.
+   */
+  async function ensureAlarmAuthorizationOnce() {
+    if (alarmAskedRef.current) return;
+    alarmAskedRef.current = true;
+    try {
+      if (!isAlarmKitAvailable()) return;
+      if (getAlarmAuthorizationStatus() !== "notDetermined") return;
+      await requestAlarmAuthorization();
+    } catch {
+      // best-effort; the reminder still exists either way
+    }
+  }
+
   // "Kur": writes (or, on a second visit, updates) the single med reminder row
   // straight to the registry - the same direct-write pattern basal already
   // uses - then asks for notification permission (existing onboarding
@@ -553,6 +590,10 @@ export default function OnboardingScreen() {
         setMedReminderId(existingId);
       } else {
         const row = await createReminder({
+          // Spelled out rather than left to the default: this is the app
+          // setting a delivery on the user's behalf, and alarmUserSet is
+          // deliberately NOT sent - they have not chosen anything yet.
+          alarmEnabled: true,
           type: "med",
           time: medReminderTime,
           enabled: true,
@@ -560,6 +601,7 @@ export default function OnboardingScreen() {
         setMedReminderId(row.id);
       }
       await requestNotificationPermission();
+      await ensureAlarmAuthorizationOnce();
     } catch {
       // best-effort - Settings > Reminders is always there to try again
     } finally {
@@ -587,6 +629,9 @@ export default function OnboardingScreen() {
         setGlucoseReminderId(existingId);
       } else {
         const row = await createReminder({
+          // Same as setupMedReminder above: the app's own default, not a
+          // choice the user made (so no alarmUserSet).
+          alarmEnabled: true,
           type: "glucose",
           time: glucoseReminderTime,
           enabled: true,
@@ -594,6 +639,7 @@ export default function OnboardingScreen() {
         setGlucoseReminderId(row.id);
       }
       await requestNotificationPermission();
+      await ensureAlarmAuthorizationOnce();
     } catch {
       // best-effort - Settings > Reminders is always there to try again
     } finally {
@@ -1069,6 +1115,11 @@ export default function OnboardingScreen() {
               onChange={setMedReminderTime}
               onClose={() => setShowMedTime(false)}
             />
+            {alarmKitAvailable ? (
+              <Text className="text-mut text-sm leading-5 mt-3">
+                {t("onboarding.alarmNote")}
+              </Text>
+            ) : null}
           </FadeSlideIn>
         );
 
@@ -1097,6 +1148,11 @@ export default function OnboardingScreen() {
               onChange={setGlucoseReminderTime}
               onClose={() => setShowGlucoseTime(false)}
             />
+            {alarmKitAvailable ? (
+              <Text className="text-mut text-sm leading-5 mt-3">
+                {t("onboarding.alarmNote")}
+              </Text>
+            ) : null}
           </FadeSlideIn>
         );
 

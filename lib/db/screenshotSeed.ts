@@ -162,11 +162,11 @@ async function seedMeals(profileId: string, lang: Lang, variant?: "tracking"): P
 /**
  * Store-screenshot only (09-reminders panel): six rows so the Reminders
  * settings screen shows a full, lived-in list instead of the empty state -
- * two glucose checks, two medications (one named + alarm_enabled=1 for the
- * AlarmKit badge - see app/settings/reminders.tsx's alarm icon -, one left
- * unlabeled so the generic localized "Medication" name is what renders,
- * exercising that fallback), one basal, and one custom row for a neutral,
- * non-medical routine (an evening walk). Idempotent per (type, time) pair -
+ * two glucose checks, two medications (one named, one left unlabeled so the
+ * generic localized "Medication" name is what renders, exercising that
+ * fallback - and that second one is also the only row kept on the notification
+ * side, so both delivery badges appear in the list), one basal, and one custom
+ * row for a neutral, non-medical routine (an evening walk). Idempotent per (type, time) pair -
  * checked against whatever the profile already has - so a re-run (language
  * switch, cold relaunch) never duplicates a row, and a profile that already
  * carries one of these (e.g. from the legacy-prefs bridge) is left alone
@@ -203,7 +203,16 @@ async function seedReminders(profileId: string, lang: Lang, variant?: "tracking"
     });
   }
   if (!has("med", "12:00")) {
-    await createReminder({ type: "med", time: "12:00", enabled: true, profileId });
+    // The one row deliberately left on the notification side, so the panel
+    // shows BOTH delivery badges (see modeOf in app/settings/reminders.tsx)
+    // instead of a column of identical ones.
+    await createReminder({
+      type: "med",
+      time: "12:00",
+      enabled: true,
+      alarmEnabled: false,
+      profileId,
+    });
   }
   if (variant !== "tracking" && !has("basal", "22:00")) {
     await createReminder({ type: "basal", time: "22:00", enabled: true, profileId });

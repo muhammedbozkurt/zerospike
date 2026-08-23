@@ -25,6 +25,7 @@ import {
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
   listScheduledAlarmIds,
+  scheduleCountdownTimer,
   scheduleDailyAlarm,
 } from "../../modules/zerospike-alarmkit";
 import { shouldUseAlarm } from "../alarmSelect";
@@ -498,6 +499,13 @@ function alarmIdentifier(id: string): string {
   return `${ALARM_ID_PREFIX}${id}`;
 }
 
+/** The post-meal countdown's own alarm identity (2.3.0's B). Same prefix as
+ *  every reminder row's alarm, but a FIXED suffix rather than a row id - the
+ *  countdown is a single device-wide timer, exactly like POSTMEAL_ID is on the
+ *  notification side. applyReminders' orphan sweep skips it for that reason:
+ *  no reminder row will ever claim it. */
+const POSTMEAL_ALARM_ID = `${ALARM_ID_PREFIX}postmeal`;
+
 /** The alarm's own on-screen title - just the text, unlike reminderContent
  *  below (which also carries Android channel/sound extras an AlarmKit alarm
  *  has no use for). Same copy per type as the notification path, so switching
@@ -674,6 +682,13 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
  * sweep as the notification side, off listScheduledAlarmIds() instead of
  * getAllScheduledNotificationsAsync().
  *
+ * 2.3.0: alarm_enabled is now the DEFAULT for every row (schema v21), so on an
+ * authorized iOS 26 device the alarm branch is the ordinary case and the
+ * notification branch is what a user opted into. The logic below is unchanged
+ * by that - the same three-way AND, the same never-both rule, the same
+ * fallback to a notification whenever anything is missing - only how many rows
+ * take which branch has moved.
+ *
  * Called unconditionally from applyNotificationPrefs, before it branches on
  * `prefs.enabled` / permission: this function does its own gating, so the
  * caller does not have to duplicate it.
@@ -760,6 +775,14 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
         await cancelReminderIdentifier(identifier);
       } else {
         await scheduleReminderRow(row);
+        // Symmetry with the two branches below: this row is now delivered by a
+        // notification, so anything still armed under its alarm id has to go.
+        // The orphan sweep at the end would normally catch it, but that sweep
+        // depends on listScheduledAlarmIds(), which degrades to an empty list
+        // when AlarmKit's own read throws (see the module) - and the one thing
+        // that must never happen is the same reminder both ringing and
+        // dropping a notification.
+        await cancelAlarm(alarmId);
       }
     } else if (rowActive) {
       await scheduleReminderRow(row);
@@ -810,7 +833,15 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   // belonging to a different profile. listScheduledAlarmIds() (and cancelAlarm
   // below) are no-ops when AlarmKit is unavailable, so this never needs its
   // own guard for that case.
+  //
+  // The post-meal countdown is the ONE alarm this sweep must keep its hands
+  // off: it shares the "zerospike-alarm-" prefix but belongs to no reminder
+  // row, so `knownAlarms` can never contain it and an unguarded sweep would
+  // silently kill a running timer on the next apply pass (a profile switch, a
+  // settings save, app launch). Its own lifecycle is entirely in
+  // schedulePostMealAt / cancelPostMealTimer / completePostMealTimer.
   for (const alarmId of listScheduledAlarmIds()) {
+    if (alarmId === POSTMEAL_ALARM_ID) continue;
     if (!knownAlarms.has(alarmId)) await cancelAlarm(alarmId);
   }
 }
@@ -1018,8 +1049,9 @@ async function readActiveProfile(): Promise<UserProfile | null> {
  * (basal/medication/glucose/custom - see applyReminders) that are enabled and
  * cancels the rest, plus the weekly summary and the idle nudge. With the
  * master switch off (or permission denied) it cancels everything it manages.
- * Post-meal is event-driven (see schedulePostMealReminder) so it is not
- * touched here.
+ * Post-meal is event-driven (see schedulePostMealReminder), so nothing is ever
+ * ARMED for it here - only an already-running window has its delivery
+ * reconciled (see reconcilePostMealDelivery).
  *
  * NEVER prompts. This runs from background paths (app bootstrap, a profile
  * switch, a language change, a profile setting) where an OS permission dialog
@@ -1068,6 +1100,12 @@ export async function applyNotificationPrefs(
     await cancelIdleReminder();
     return;
   }
+
+  // A countdown that is already running gets its delivery re-checked against
+  // what this device can do right now - the one post-meal thing this function
+  // touches, and only ever to keep an existing window deliverable. Placed here
+  // so it inherits the permission just proved above.
+  await reconcilePostMealDelivery(p);
 
   if (p.weekly) await scheduleWeeklySummary(p.weeklyDay, p.weeklyTime);
   else await cancelWeeklySummary();
@@ -1135,6 +1173,17 @@ export async function cancelTrialReminder(): Promise<void> {
  * is left of it, which must not renumber the reminder. `endsAt` / `startedAt`
  * likewise preserve a running timer's own moments so a re-arm never slides the
  * countdown.
+ *
+ * 2.3.0's B: with NotificationPrefs.postMealAlarm on (the default) and AlarmKit
+ * available AND authorized - the same shouldUseAlarm three-way AND applyReminders
+ * uses, never a second decision of its own - the countdown is armed as a real
+ * AlarmKit timer instead, and neither the notification nor the app's own Live
+ * Activity is started: AlarmKit draws its own countdown card, and two of them on
+ * the lock screen would be worse than either alone. Everything else is
+ * unchanged - the same persisted keys, the same end moment, the same dashboard
+ * card - so the timer's surface is the only thing that moves. A timer that fails
+ * to arm for any reason falls back to the existing path, so the countdown is
+ * never lost.
  */
 async function schedulePostMealAt(opts: {
   /** Minutes from now the reminder should fire. */
@@ -1149,29 +1198,60 @@ async function schedulePostMealAt(opts: {
    *  a re-arm that could not resolve one - the lock then stays open rather than
    *  guessing an owner. */
   profileId?: string;
+  /** Floor for the OS trigger, in seconds. 60 by default, because a FRESH
+   *  countdown is never worth arming for less than a minute. A re-arm that only
+   *  moves the DELIVERY of an already-running window (applyPostMealAlarmModeChange,
+   *  reconcilePostMealDelivery) passes 1 instead: those keep the end moment they
+   *  were given, so rounding what is left up to a minute would fire after the
+   *  countdown already read 0 - and skipping them outright, as the mode change
+   *  used to, left the last minute of a window with no delivery at all. */
+  minSeconds?: number;
 }): Promise<void> {
-  const { minutes, windowMin = opts.minutes } = opts;
+  const { minutes, windowMin = opts.minutes, minSeconds = 60 } = opts;
   await ensureAndroidChannel();
   try {
     await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
   } catch {
     // nothing pending
   }
-  const seconds = Math.max(60, Math.round(minutes * 60));
-  await Notifications.scheduleNotificationAsync({
-    identifier: POSTMEAL_ID,
-    content: {
-      title: i18n.t("notifications.postmealTitle"),
-      body: i18n.t("notifications.postmealBody", { n: Math.round(windowMin) }),
-      data: { route: "postMeal" satisfies NotificationRoute },
-      ...reminderExtras,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+  const seconds = Math.max(minSeconds, Math.round(minutes * 60));
+
+  const prefs = await getNotificationPrefs();
+  const alarmKitAvailable = isAlarmKitAvailable();
+  const armedAsAlarm =
+    shouldUseAlarm({
+      alarmEnabled: prefs.postMealAlarm,
+      alarmKitAvailable,
+      alarmAuthorized:
+        alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
+    }) &&
+    (await scheduleCountdownTimer({
+      id: POSTMEAL_ALARM_ID,
       seconds,
-      repeats: false,
-    },
-  });
+      title: i18n.t("notifications.postmealTitle"),
+      stopLabel: i18n.t("reminders.alarmStopButton"),
+    }));
+
+  if (!armedAsAlarm) {
+    await Notifications.scheduleNotificationAsync({
+      identifier: POSTMEAL_ID,
+      content: {
+        title: i18n.t("notifications.postmealTitle"),
+        body: i18n.t("notifications.postmealBody", { n: Math.round(windowMin) }),
+        data: { route: "postMeal" satisfies NotificationRoute },
+        ...reminderExtras,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds,
+        repeats: false,
+      },
+    });
+    // Collects a timer left behind by the alarm mode being switched off (or by
+    // a device that has since lost the AlarmKit permission) - the counterpart
+    // of applyReminders' own "rowActive but not useAlarm" cancel.
+    await cancelAlarm(POSTMEAL_ALARM_ID);
+  }
   // Persist the timer so the dashboard button can count down and disable itself,
   // and so a window changed in Settings can be re-measured from the meal. Only
   // reached once permission is granted (callers gate on it), so it never writes
@@ -1203,6 +1283,14 @@ async function schedulePostMealAt(opts: {
   // Live Activities are unavailable or the module is not linked.
   // Imported lazily: liveData reads the pending timer from this module, and a
   // module-scope import here would close that cycle.
+  //
+  // Skipped entirely in alarm mode, where AlarmKit's countdown is already on
+  // the lock screen: the end call takes down a card an earlier notification-mode
+  // arm may have left up, so switching modes mid-countdown never stacks two.
+  if (armedAsAlarm) {
+    endPostMealActivity();
+    return;
+  }
   const { readLiveData } = await import("./liveData");
   const snapshot = await readLiveData();
   startPostMealActivity({
@@ -1284,6 +1372,16 @@ async function readPostMealTimerProfile(): Promise<string | null> {
  * frozen and faded until the user opened the app, or the OS eventually expired
  * it hours later, or another timer got armed. The notification itself has
  * already fired, so it is not cancelled here.
+ *
+ * The AlarmKit timer (2.3.0's B) is deliberately NOT cancelled here either,
+ * and for a stronger reason: "the countdown reached its end" is the exact
+ * moment the alarm is supposed to be ringing. This runs from a plain read of
+ * the stored end (getPostMealTimerEnd) and from the dashboard's own tick, both
+ * of which can land while the alarm is still on screen - cancelling would
+ * silence the one delivery the user chose. Nothing leaks: the identity is
+ * reused (cancel-then-schedule) by the next arm, and applyReminders' orphan
+ * sweep skips this id by design. cancelPostMealTimer is where an alarm really
+ * does have to be taken down, because there the user ended the window early.
  */
 export async function completePostMealTimer(): Promise<void> {
   try {
@@ -1301,6 +1399,11 @@ export async function completePostMealTimer(): Promise<void> {
 /**
  * Cancels a pending post-meal reminder and clears its timer. Used for early
  * completion: once the user logs their 2-hour reading the nudge is unnecessary.
+ *
+ * Takes down BOTH deliveries unconditionally (2.3.0's B): whichever one this
+ * countdown was armed with, cancelling the other is a no-op, and an early
+ * reading must never leave an alarm behind to ring at a moment the app already
+ * considers finished.
  */
 export async function cancelPostMealTimer(): Promise<void> {
   try {
@@ -1308,6 +1411,7 @@ export async function cancelPostMealTimer(): Promise<void> {
   } catch {
     // nothing pending
   }
+  await cancelAlarm(POSTMEAL_ALARM_ID);
   try {
     await AsyncStorage.multiRemove([
       POSTMEAL_TIMER_END_KEY,
@@ -1504,6 +1608,122 @@ export async function applyPostMealWindowChange(
   }
 }
 
+/**
+ * Re-arms a RUNNING post-meal countdown after its DELIVERY mode changed in
+ * Settings (alarm <-> notification, 2.3.0's B), keeping the exact same start
+ * and end: only the surface it rings on moves. Without this, a mode changed
+ * mid-countdown would only take effect on the next meal, leaving the user
+ * looking at a card the switch says should not be there.
+ *
+ * applyPostMealWindowChange cannot stand in for it: called with the window it
+ * already has, retimePostMealWindow reports "unchanged" and never re-arms.
+ *
+ * The last minute of a window is re-armed like any other (minSeconds: 1): the
+ * end moment does not move here, so what is left is scheduled for exactly what
+ * it is. Skipping it, as this used to, meant a switch to the notification with
+ * 40 s to go cancelled the alarm and armed nothing in its place - no
+ * notification, and no Live Activity either.
+ *
+ * The two directions need DIFFERENT permissions, and asking for the wrong one
+ * is why a switch could silently do nothing: an alarm is delivered by AlarmKit,
+ * so switching TO it depends on the AlarmKit authorization (shouldUseAlarm's own
+ * three-way AND, resolved below) and not on the notification permission at all.
+ * Only the notification direction needs that permission - and without it there
+ * is nothing to arm, so the alarm is simply taken down and the countdown
+ * finishes silently rather than ringing after the switch said it should not.
+ *
+ * Never reports "elapsed": it moves no end moment.
+ */
+export async function applyPostMealAlarmModeChange(): Promise<PostMealWindowChange> {
+  try {
+    const running = await getPostMealTimerState();
+    if (running == null) return "idle";
+    const now = Date.now();
+    const prefs = await getNotificationPrefs();
+    const alarmKitAvailable = isAlarmKitAvailable();
+    const toAlarm = shouldUseAlarm({
+      alarmEnabled: prefs.postMealAlarm,
+      alarmKitAvailable,
+      alarmAuthorized:
+        alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
+    });
+    if (!toAlarm && !(await hasNotificationPermission())) {
+      await cancelAlarm(POSTMEAL_ALARM_ID);
+      return "retimed";
+    }
+    await schedulePostMealAt({
+      minutes: (running.endsAt - now) / 60_000,
+      windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
+      endsAt: running.endsAt,
+      startedAt: running.startedAt,
+      profileId: running.profileId,
+      minSeconds: 1,
+    });
+    return "retimed";
+  } catch {
+    // The running countdown keeps the mode it was armed with; nothing is lost.
+    return "idle";
+  }
+}
+
+/**
+ * Puts a RUNNING post-meal countdown back on a delivery that can still reach
+ * the user, without moving its end.
+ *
+ * schedulePostMealAt decides alarm-vs-notification ONCE, when the countdown is
+ * armed, and that decision can stop being true while the window is still
+ * running: the user revokes the AlarmKit permission in system settings (or the
+ * app is relaunched on a device where it was revoked while closed). The alarm
+ * is gone, no notification was ever scheduled because the arm chose the alarm
+ * instead, and a 2-hour window then ends in silence. This is the reconciliation
+ * for exactly that: it re-arms what is LEFT of the window as a notification and
+ * brings our own Live Activity back with it (schedulePostMealAt does both, plus
+ * the cancel of the dead alarm id).
+ *
+ * ONE direction only. A pending notification is left exactly where it is, even
+ * on a device that could now ring an alarm instead: re-arming it "upwards"
+ * would mean cancelling a notification and arming an alarm on the strength of a
+ * decision the countdown was not started with, and any slip between the two is
+ * the one thing that must never happen (see the never-both rule in
+ * applyReminders). The pending-notification check below is also what makes this
+ * safe to run on every apply pass - with a notification already armed there is
+ * nothing to do, so it can never stack a second delivery onto the same window.
+ *
+ * Runs only with the notification permission already proved by the caller.
+ */
+async function reconcilePostMealDelivery(prefs: NotificationPrefs): Promise<void> {
+  try {
+    const running = await getPostMealTimerState();
+    if (running == null) return;
+    const remainingMs = running.endsAt - Date.now();
+    if (remainingMs <= 0) return;
+
+    const alarmKitAvailable = isAlarmKitAvailable();
+    const canRingAsAlarm = shouldUseAlarm({
+      alarmEnabled: prefs.postMealAlarm,
+      alarmKitAvailable,
+      alarmAuthorized:
+        alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
+    });
+    // The alarm this window was armed with is still deliverable: leave it be.
+    if (canRingAsAlarm) return;
+
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    if (scheduled.some((n) => n.identifier === POSTMEAL_ID)) return;
+
+    await schedulePostMealAt({
+      minutes: remainingMs / 60_000,
+      windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
+      endsAt: running.endsAt,
+      startedAt: running.startedAt,
+      profileId: running.profileId,
+      minSeconds: 1,
+    });
+  } catch {
+    // best-effort: the countdown keeps whatever it was armed with.
+  }
+}
+
 // ── User-initiated: re-measure follow-up after a low reading ────────────────
 
 const LOWFOLLOW_ID = "zerospike-low-followup";
@@ -1587,6 +1807,11 @@ export async function cancelLowFollowup(): Promise<void> {
  * the post-meal check a user had running while they changed the setting. The
  * recurring ones are simply re-applied from the saved preferences; the one-off
  * ones are re-armed for the REMAINING time so their fire moment does not move.
+ *
+ * This reaches the AlarmKit surfaces too, with no extra step: applyReminders
+ * re-arms every row's alarm with freshly translated copy, and the post-meal
+ * re-arm below goes through schedulePostMealAt, which is also what owns the
+ * countdown timer's title and stop button.
  *
  * Best-effort and never throws: a failure leaves the old (still working, just
  * old-language) reminders in place.

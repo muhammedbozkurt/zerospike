@@ -482,10 +482,17 @@ export interface Reminder {
    *  RUNTIME hand-off (never a schema migration, which cannot know which
    *  profile is "active"). No foreign key: see ./v19Sql. */
   profile_id: string | null;
-  /** 1 when this reminder should also ring as a real (AlarmKit) alarm (schema
-   *  v19, 2.2.0's A4). No UI reads or writes this yet in this wave - the
-   *  AlarmKit wave (2.2.0's A1) is what turns it into an actual opt-in. */
+  /** 1 when this reminder should ring as a real (AlarmKit) alarm rather than
+   *  arrive as a notification (schema v19; the DEFAULT since v21). A stored
+   *  PREFERENCE, not a platform fact: a row on Android or iOS < 26 can carry 1
+   *  too, and whether it actually becomes an alarm is decided at runtime by
+   *  shouldUseAlarm (lib/alarmSelect.ts). */
   alarm_enabled: number; // 0 | 1
+  /** 1 once the USER themselves chose between alarm and notification for this
+   *  row (schema v21, see ./v21Sql). 0 for everything the app wrote on their
+   *  behalf - onboarding, the legacy bridge, the v21 default - which is what
+   *  lets a default change skip the rows somebody already decided about. */
+  alarm_user_set: number; // 0 | 1
 }
 
 /* ── Saved medication names (schema v18) ───────────────────────────────────

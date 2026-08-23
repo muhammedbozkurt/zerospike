@@ -53,12 +53,16 @@ export interface ReminderSavePayload {
    *  custom (required, so this is never blank when type is "custom") and
    *  med (optional - null means the generic "İlaç" label). */
   label: string | null;
-  /** 2.2.0's A1 (AlarmKit) opt-in - see ReminderUpdate.alarmEnabled in
-   *  lib/db/reminders.ts. Always false on a device/OS where AlarmKit does not
-   *  exist (the row below is never even shown there), and only ever true once
-   *  the user has actually been asked and granted the AlarmKit permission -
-   *  see the "Play as alarm" row below. */
+  /** How the reminder should be delivered - see ReminderUpdate.alarmEnabled in
+   *  lib/db/reminders.ts. Stored as the user's PREFERENCE, independent of what
+   *  this device can do: a phone with no AlarmKit (where the row below is not
+   *  even drawn) still saves the default, so moving to iOS 26 later starts
+   *  ringing without every reminder having to be edited again. */
   alarmEnabled: boolean;
+  /** Only sent once the switch below has actually been touched (schema v21's
+   *  alarm_user_set): saving a sheet the user never opened that row on must
+   *  not count as them choosing the delivery. */
+  alarmUserSet?: boolean;
 }
 
 /**
@@ -143,9 +147,16 @@ export function ReminderEditSheet({
   // (like isLiveActivityAvailable), so it needs no effect/loading state of its
   // own and cannot change while the sheet is open.
   const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
-  const [alarmEnabled, setAlarmEnabled] = useState(false);
+  const [alarmEnabled, setAlarmEnabled] = useState(true);
   const [alarmDenied, setAlarmDenied] = useState(false);
   const [alarmBusy, setAlarmBusy] = useState(false);
+  // Whether the user touched the switch during THIS sheet session - what
+  // decides if the save records a deliberate choice (schema v21).
+  const [alarmTouched, setAlarmTouched] = useState(false);
+  // The AlarmKit permission is still missing while the switch sits on: the
+  // reminder will be saved as an alarm and simply arrive as a notification
+  // until it is granted, so the sheet says so instead of implying it will ring.
+  const [alarmAuthorized, setAlarmAuthorized] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -160,10 +171,16 @@ export function ReminderEditSheet({
       setTime(DEFAULT_TIME);
       setCustomLabel("");
       setMedName("");
-      setAlarmEnabled(false);
+      // A brand-new reminder is born as an alarm (schema v21's default), the
+      // same way it is born enabled.
+      setAlarmEnabled(true);
     }
     setTimePickerOpen(false);
     setAlarmDenied(false);
+    setAlarmTouched(false);
+    setAlarmAuthorized(
+      alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized"
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, editingReminder?.id]);
 
@@ -177,6 +194,7 @@ export function ReminderEditSheet({
    * OFF never touches the permission at all.
    */
   async function onToggleAlarm(value: boolean) {
+    setAlarmTouched(true);
     if (!value) {
       setAlarmEnabled(false);
       setAlarmDenied(false);
@@ -188,9 +206,11 @@ export function ReminderEditSheet({
       if (status !== "authorized") status = await requestAlarmAuthorization();
       if (status === "authorized") {
         setAlarmEnabled(true);
+        setAlarmAuthorized(true);
         setAlarmDenied(false);
       } else {
         setAlarmEnabled(false);
+        setAlarmAuthorized(false);
         setAlarmDenied(true);
       }
     } finally {
@@ -205,7 +225,17 @@ export function ReminderEditSheet({
     if (!canSave) return;
     const label =
       type === "custom" ? trimmedCustom : type === "med" ? medName.trim() || null : null;
-    void onSave({ type, time, label, alarmEnabled: alarmKitAvailable && alarmEnabled });
+    // The preference is saved as-is, without folding this device's AlarmKit
+    // availability in: it is what the user wants, not what this phone can do
+    // today (see lib/db/reminders.ts). shouldUseAlarm decides the rest at
+    // schedule time.
+    void onSave({
+      type,
+      time,
+      label,
+      alarmEnabled,
+      ...(alarmTouched ? { alarmUserSet: true } : {}),
+    });
   }
 
   return (
@@ -337,6 +367,23 @@ export function ReminderEditSheet({
                         </Text>
                       </Text>
                     </Pressable>
+                  ) : alarmEnabled && !alarmAuthorized ? (
+                    // Switch on, permission not (yet) granted: the row below is
+                    // the only place that says why it will still arrive as a
+                    // notification for now.
+                    <Text
+                      className="mt-2 px-1"
+                      style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}
+                    >
+                      {t("reminders.alarmPermissionHint")}
+                    </Text>
+                  ) : !isEdit ? (
+                    <Text
+                      className="mt-2 px-1"
+                      style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}
+                    >
+                      {t("reminders.alarmDefaultHint")}
+                    </Text>
                   ) : null}
                 </View>
               ) : null}

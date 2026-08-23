@@ -24,6 +24,7 @@ import i18nInstance, {
   isRTLLang,
 } from "../i18n";
 import { isProCached, verifyProWithStore } from "../services/purchases";
+import { markAlarmTourSeen } from "../services/alarmTour";
 import { isScreenshotMode } from "../screenshotMode";
 
 /**
@@ -247,6 +248,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const completeOnboarding = useCallback(async () => {
     await AsyncStorage.setItem(ONBOARDED_KEY, "true");
+    // Onboarding already showed the alarm framing and asked for the
+    // permission, so the upgrade tour (app/alarm-tour.tsx) has nothing left to
+    // tell this user. Marking it here is also what keeps that tour from
+    // needing to compare app versions to tell a new install from an upgrade.
+    await markAlarmTourSeen();
     setOnboarded(true);
   }, []);
 
@@ -293,11 +299,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // permission), so a reminder armed by an older build could survive with
       // every surface it belongs to gone. Unconditional on permission:
       // applyNotificationPrefs only READS it, never prompts, so this can never
-      // raise an OS dialog on launch - and a REVOKED permission still has to
-      // reach this call, since AlarmKit alarm delivery does not depend on the
-      // notification permission at all (see applyReminders' useAlarm branch).
-      // Gating this on hasNotificationPermission(), as before, silently skipped
-      // the alarm teardown for exactly that user. Onboarded-guarded still:
+      // raise an OS dialog on launch - and a REVOKED permission is exactly the
+      // case that has to reach this call, because applyReminders is what TAKES
+      // an already-armed alarm down: without the notification permission its
+      // `granted` gate turns every row into the cancel branch (alarm delivery
+      // is gated on that permission too - a known limit, see
+      // docs/plan-2.3.0.md section 14). Gating this on hasNotificationPermission()
+      // itself, as before, skipped that teardown entirely and left yesterday's
+      // alarms ringing. Onboarded-guarded still:
       // someone who quit mid-onboarding has no saved prefs yet, and applying
       // the defaults here would arm reminders before onboarding ever offered
       // that choice.

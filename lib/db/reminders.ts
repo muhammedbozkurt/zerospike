@@ -33,6 +33,18 @@ import {
  * identifier scheme - lives in lib/services/notifications.ts (applyReminders),
  * which now also resolves and passes the active profile through to every call
  * here so the whole apply pass works off exactly one profile's rows.
+ *
+ * DELIVERY (schema v19 `alarm_enabled`, default-on since v21): the column is
+ * the user's stored PREFERENCE, never a statement about the device. An Android
+ * or iOS < 26 row carries 1 just like any other, and shouldUseAlarm
+ * (lib/alarmSelect.ts) is what decides at RUNTIME whether that preference can
+ * actually be honoured - so a phone that later moves to iOS 26 starts ringing
+ * without any row having to be rewritten (the AlarmKit permission is still
+ * asked for separately). `alarm_user_set` (schema v21) records whether the
+ * preference is the user's own choice or something the app defaulted for them;
+ * only the two surfaces the user can actually touch (the badge in
+ * app/settings/reminders.tsx, the switch in components/ReminderEditSheet.tsx)
+ * ever set it.
  */
 
 /** The most reminders a user can keep at once, PER PROFILE (schema v19; a
@@ -136,11 +148,18 @@ export interface NewReminderInput {
   time: string;
   /** Defaults to on, matching the column's own DEFAULT 1. */
   enabled?: boolean;
-  /** 2.2.0's A1 (AlarmKit) opt-in - see ReminderUpdate.alarmEnabled above.
-   *  Defaults to off, matching the column's own DEFAULT 0: a brand new
-   *  reminder never starts as a real alarm on its own, the user has to reach
-   *  for the switch (which is what earns the AlarmKit permission prompt). */
+  /** How this reminder should be delivered - see ReminderUpdate.alarmEnabled
+   *  below. Defaults to ON (2.3.0): a new reminder is born as an alarm, the
+   *  same way `enabled` is born on, and the user turns it into a plain
+   *  notification if they prefer. The column's own DEFAULT stays 0 because
+   *  every INSERT here writes the value explicitly; nothing reaches the
+   *  column default. */
   alarmEnabled?: boolean;
+  /** Whether the value above is the USER's own choice (schema v21). Only the
+   *  two surfaces they can touch pass this; onboarding and every internal
+   *  writer leave it out, so their rows stay eligible for a future default
+   *  change. */
+  alarmUserSet?: boolean;
   /** The row's owner (schema v19). Optional and resolved from the active
    *  profile when omitted (see resolveProfileId) - every caller written before
    *  profile scoping landed never passes this, and keeps compiling and
@@ -177,8 +196,8 @@ export async function createReminder(
     [profileId]
   );
   await db.runAsync(
-    `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled, alarm_user_set)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.type,
@@ -188,7 +207,8 @@ export async function createReminder(
       next?.next ?? 0,
       Date.now(),
       profileId,
-      input.alarmEnabled ? 1 : 0,
+      input.alarmEnabled === false ? 0 : 1,
+      input.alarmUserSet ? 1 : 0,
     ]
   );
   return (await getReminder(id))!;
@@ -199,15 +219,17 @@ export interface ReminderUpdate {
   label?: string | null;
   time?: string;
   enabled?: boolean;
-  /** 2.2.0's A1 (AlarmKit) opt-in - see reminders.alarm_enabled (schema v19)
-   *  and applyReminders in lib/services/notifications.ts, which is what
-   *  actually turns this into a real alarm vs. a plain notification. Set by
-   *  components/ReminderEditSheet.tsx's "Play as alarm" row, which only ever
-   *  renders on iOS 26+ (see isAlarmKitAvailable) - every other platform
-   *  still sends this field on every save, just always `false`
-   *  (`alarmKitAvailable && alarmEnabled` in the sheet's submit), so the
-   *  column stays 0 there. */
+  /** How this reminder should be delivered - see reminders.alarm_enabled
+   *  (schema v19, default-on since v21) and applyReminders in
+   *  lib/services/notifications.ts, which is what actually turns the preference
+   *  into a real alarm vs. a plain notification. Stored platform-independently:
+   *  a device with no AlarmKit still saves the preference as-is (see this
+   *  file's own header note). */
   alarmEnabled?: boolean;
+  /** Marks the value above as the USER's own choice (schema v21). Sent only by
+   *  the per-row badge (app/settings/reminders.tsx) and the sheet's own switch
+   *  once it has been touched. */
+  alarmUserSet?: boolean;
 }
 
 /** Partial update of a reminder. Returns the fresh row, or null if it is gone. */
@@ -237,6 +259,10 @@ export async function updateReminder(
   if (patch.alarmEnabled !== undefined) {
     fields.push("alarm_enabled = ?");
     values.push(patch.alarmEnabled ? 1 : 0);
+  }
+  if (patch.alarmUserSet !== undefined) {
+    fields.push("alarm_user_set = ?");
+    values.push(patch.alarmUserSet ? 1 : 0);
   }
   if (fields.length > 0) {
     values.push(id);

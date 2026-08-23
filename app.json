@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "zerospike",
@@ -25,7 +25,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "59",
+      "buildNumber": "61",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
@@ -37,7 +37,7 @@
         "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you enter by hand to Apple Health, only when you turn this on in Settings.",
         "NSLocationWhenInUseUsageDescription": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster.",
         "NSContactsUsageDescription": "zerospike lets you pick an emergency contact from your contacts for the SOS screen.",
-        "NSAlarmKitUsageDescription": "zerospike uses AlarmKit so a reminder you set up can also ring as a real alarm, only for the reminders where you turn this on.",
+        "NSAlarmKitUsageDescription": "zerospike uses AlarmKit so the reminders you set up, and the post-meal countdown you start, can ring as real alarms. You can switch any of them back to a notification.",
         "CFBundleLocalizations": [
           "en",
           "tr",
@@ -61,7 +61,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 56,
+      "versionCode": 58,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
