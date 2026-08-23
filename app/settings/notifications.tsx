@@ -82,6 +82,15 @@ export default function NotificationSettings() {
   const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
   const [alarmDenied, setAlarmDenied] = useState(false);
   const [alarmBusy, setAlarmBusy] = useState(false);
+  // The AlarmKit authorization behind the switch. The preference defaults to ON
+  // (2.3.0's B) and is stored device-independently, so on a phone that never
+  // granted the permission the switch sits on while the countdown in fact
+  // arrives as a notification - the same gap the per-row badge in
+  // app/settings/reminders.tsx opens its third state for. Read once on mount,
+  // like the same check there.
+  const [alarmAuthorized, setAlarmAuthorized] = useState(
+    () => isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized"
+  );
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
@@ -167,6 +176,7 @@ export default function NotificationSettings() {
       try {
         let status = getAlarmAuthorizationStatus();
         if (status !== "authorized") status = await requestAlarmAuthorization();
+        setAlarmAuthorized(status === "authorized");
         if (status !== "authorized") {
           setAlarmDenied(true);
           return;
@@ -363,7 +373,13 @@ export default function NotificationSettings() {
                       <Text className="text-mut text-xs mt-1">
                         {t("settings.postMealAlarmHint")}
                       </Text>
-                      {alarmDenied ? (
+                      {/* Also shown when the switch is simply ON without the
+                          permission (the default on an upgrading phone that
+                          never granted it), not only right after a refusal:
+                          otherwise the row promised an alarm the OS would not
+                          ring, with nothing on screen saying why. */}
+                      {!isScreenshotMode() &&
+                      (alarmDenied || (prefs.postMealAlarm && !alarmAuthorized)) ? (
                         <Pressable onPress={() => Linking.openSettings()} className="mt-2">
                           <Text className="text-mut text-xs">
                             {t("reminders.alarmPermissionDenied")}{" "}

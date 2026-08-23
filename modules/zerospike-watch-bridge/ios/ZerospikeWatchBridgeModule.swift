@@ -32,10 +32,19 @@ public class ZerospikeWatchBridgeModule: Module {
     /// Pushes the latest LiveData JSON. `updateApplicationContext` keeps only
     /// the MOST RECENT payload (older, undelivered ones are replaced), which
     /// matches "the watch always shows the last snapshot", not a message log.
+    ///
+    /// The pairing guard is not just an optimization: on a simulator (or any
+    /// iPhone with no watch), updateApplicationContext throws
+    /// WCErrorCodeDeviceNotPaired and WatchConnectivity logs the failure itself,
+    /// once per sync, for a push that could never have landed. Skipping it
+    /// silently changes nothing else - JS already re-pushes on every snapshot
+    /// change, so a watch paired later is served by the very next sync with no
+    /// queue of its own.
     Function("pushLiveData") { (json: String) -> Bool in
       guard WCSession.isSupported() else { return false }
       let session = WCSession.default
       guard session.activationState == .activated else { return false }
+      guard session.isPaired, session.isWatchAppInstalled else { return false }
       do {
         try session.updateApplicationContext(["liveData": json])
         return true
