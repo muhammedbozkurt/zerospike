@@ -55,9 +55,8 @@ const POSTMEAL_ID = "zerospike-postmeal-reminder";
 const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
 // The moment that same timer was ARMED. Persisted alongside the end so a window
 // length changed in Settings can be re-measured from the meal instead of from
-// the settings change (see applyPostMealWindowChange). A timer armed by an older
-// build has no start recorded; it is derived from the end and the window it was
-// armed with.
+// the settings change. A timer armed by an older build has no start recorded;
+// it is derived from the end and the fixed window (POST_MEAL_WINDOW_MIN).
 const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
 // Profile the running timer belongs to (audit finding B): a caregiver who
 // starts the countdown on one profile and switches to another must not have it
@@ -1128,6 +1127,15 @@ export async function applyNotificationPrefs(
     return;
   }
 
+  // A running countdown that belongs to ANOTHER profile has no business on
+  // this profile's lock screen: the dashboard card already hides it, and the
+  // Live Activity was the one surface still telling the other profile's story.
+  // Only the card is taken down - the countdown itself, its stored end and its
+  // alarm stay exactly as they are, because the two hours belong to the MEAL
+  // and to whoever ate it, not to whoever is holding the phone now (see the
+  // known limits in docs/plan-2.3.0.md).
+  await hidePostMealActivityForOtherProfile();
+
   // A countdown that is already running gets its delivery re-checked against
   // what this device can do right now - the one post-meal thing this function
   // touches, and only ever to keep an existing window deliverable. Placed here
@@ -1380,7 +1388,6 @@ export async function getPostMealTimerState(): Promise<PostMealTimerWindow | nul
   const profileId = (await readPostMealTimerProfile()) ?? undefined;
   const startedAt = await readPostMealStart();
   if (startedAt != null && startedAt < endsAt) return { startedAt, endsAt, profileId };
-  const prefs = await getNotificationPrefs();
   return { startedAt: derivePostMealStart(endsAt, POST_MEAL_WINDOW_MIN), endsAt, profileId };
 }
 
@@ -1573,9 +1580,9 @@ export async function startPostMealTimer(
  * the anchor themselves when the newer meal is the one they actually want the
  * 2-hour check measured from.
  *
- * Non-prompting like a Settings change (applyPostMealWindowChange): the user
- * already granted permission once to have a timer running at all, so this never
- * raises the OS dialog again - it only re-arms with what is already granted.
+ * Non-prompting: the user already granted permission once to have a timer
+ * running at all, so this never raises the OS dialog again - it only re-arms
+ * with what is already granted.
  */
 export async function restartPostMealTimerAt(
   loggedAt: Date | number,
@@ -1625,8 +1632,6 @@ export type PostMealWindowChange =
  * mid-countdown would only take effect on the next meal, leaving the user
  * looking at a card the switch says should not be there.
  *
- * applyPostMealWindowChange cannot stand in for it: called with the window it
- * already has, retimePostMealWindow reports "unchanged" and never re-arms.
  *
  * The last minute of a window is re-armed like any other (minSeconds: 1): the
  * end moment does not move here, so what is left is scheduled for exactly what
@@ -1673,6 +1678,26 @@ export async function applyPostMealAlarmModeChange(): Promise<PostMealWindowChan
   } catch {
     // The running countdown keeps the mode it was armed with; nothing is lost.
     return "idle";
+  }
+}
+
+/**
+ * Takes the branded countdown card down when the ACTIVE profile is not the one
+ * the countdown belongs to (2.3.0's P4).
+ *
+ * Deliberately one-way and card-only. The window itself is a property of the
+ * meal, so switching profiles must not cancel it or move its end; the owner
+ * gets it back - card included - on their next apply pass, because that pass
+ * re-arms the Live Activity through schedulePostMealAt.
+ */
+async function hidePostMealActivityForOtherProfile(): Promise<void> {
+  try {
+    const running = await getPostMealTimerState();
+    if (running == null || running.profileId == null) return;
+    const active = await readActiveProfile();
+    if (active?.id && active.id !== running.profileId) endPostMealActivity();
+  } catch {
+    // best-effort: at worst the card stays a little longer than it should
   }
 }
 

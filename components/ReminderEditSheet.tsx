@@ -25,6 +25,7 @@ import {
   isAlarmKitAvailable,
   requestAlarmAuthorization,
 } from "../modules/zerospike-alarmkit";
+import { reminderLabelFields, resolveReminderLabel } from "../lib/reminderLabel";
 
 const inputStyle = {
   borderRadius: RADIUS.md,
@@ -141,6 +142,10 @@ export function ReminderEditSheet({
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [customLabel, setCustomLabel] = useState("");
   const [medName, setMedName] = useState("");
+  // Measurement rows carry a name too since 2.3.0's G16 (the ready-made layout
+  // names them after the part of the day). Optional, exactly like a medication
+  // name: left blank, the row falls back to the plain type label.
+  const [glucoseName, setGlucoseName] = useState("");
 
   // "Play as alarm" (2.2.0's A1) - the row itself only ever renders when
   // AlarmKit exists on this OS (iOS 26+); this is a plain sync native call
@@ -163,14 +168,22 @@ export function ReminderEditSheet({
     if (editingReminder) {
       setType(editingReminder.type);
       setTime(editingReminder.time);
-      setCustomLabel(editingReminder.type === "custom" ? editingReminder.label ?? "" : "");
-      setMedName(editingReminder.type === "med" ? editingReminder.label ?? "" : "");
+      // EVERY type's own name is loaded, not just custom/med: a measurement
+      // row created by the ready-made layout carries one ("Morning glucose
+      // check"), and reading only two types meant opening such a row to change
+      // its time and saving it back with label = null - the rename the plan
+      // promises, silently undone by the save it was made through.
+      const fields = reminderLabelFields(editingReminder.type, editingReminder.label);
+      setCustomLabel(fields.custom);
+      setMedName(fields.med);
+      setGlucoseName(fields.glucose);
       setAlarmEnabled(editingReminder.alarm_enabled === 1);
     } else {
       setType(typeOptions[0]?.value ?? "glucose");
       setTime(DEFAULT_TIME);
       setCustomLabel("");
       setMedName("");
+      setGlucoseName("");
       // A brand-new reminder is born as an alarm (schema v21's default), the
       // same way it is born enabled.
       setAlarmEnabled(true);
@@ -204,15 +217,14 @@ export function ReminderEditSheet({
     try {
       let status = getAlarmAuthorizationStatus();
       if (status !== "authorized") status = await requestAlarmAuthorization();
-      if (status === "authorized") {
-        setAlarmEnabled(true);
-        setAlarmAuthorized(true);
-        setAlarmDenied(false);
-      } else {
-        setAlarmEnabled(false);
-        setAlarmAuthorized(false);
-        setAlarmDenied(true);
-      }
+      // The switch stays ON either way: what it records is the user's CHOICE,
+      // and a refused permission does not unmake it (the same rule the list's
+      // own mark follows - the row reads "alarm, not allowed yet" and starts
+      // ringing the moment the permission is granted). Only the hint below
+      // changes, so the screen still says why it is not ringing today.
+      setAlarmEnabled(true);
+      setAlarmAuthorized(status === "authorized");
+      setAlarmDenied(status !== "authorized");
     } finally {
       setAlarmBusy(false);
     }
@@ -223,8 +235,14 @@ export function ReminderEditSheet({
 
   function submit() {
     if (!canSave) return;
-    const label =
-      type === "custom" ? trimmedCustom : type === "med" ? medName.trim() || null : null;
+    // One expression, every type that can hold a name. `null` only where the
+    // user really left it blank - which is what makes the row show its type
+    // name again, rather than an accident of which types this line remembers.
+    const label = resolveReminderLabel(type, {
+      custom: customLabel,
+      med: medName,
+      glucose: glucoseName,
+    });
     // The preference is saved as-is, without folding this device's AlarmKit
     // availability in: it is what the user wants, not what this phone can do
     // today (see lib/db/reminders.ts). shouldUseAlarm decides the rest at
@@ -333,6 +351,16 @@ export function ReminderEditSheet({
                   onChange={setMedName}
                   autoFillFirst={false}
                   emptyLabel={t("meds.nameOptional")}
+                />
+              ) : type === "glucose" ? (
+                <TextInput
+                  value={glucoseName}
+                  onChangeText={setGlucoseName}
+                  placeholder={t("reminders.namePlaceholderOptional")}
+                  placeholderTextColor={THEME.muted}
+                  accessibilityLabel={t("reminders.namePlaceholderOptional")}
+                  returnKeyType="done"
+                  style={[inputStyle, { marginBottom: 18 }]}
                 />
               ) : null}
 

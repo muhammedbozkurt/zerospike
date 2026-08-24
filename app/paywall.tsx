@@ -225,6 +225,16 @@ function PaywallScreen() {
     annual && annual.price > 0
       ? money(annual.price / 12, annual.currencyCode)
       : null;
+  // What the one-off costs in years of the annual plan, from the STORE's own
+  // two prices - never a written-down number, because both move per country,
+  // per currency and per promotion. Rounded to a half year (2, 2.5, 3), which
+  // is as precise as an anchor should be. Absent whenever either price is
+  // missing, so the line disappears rather than anchoring against nothing.
+  const lifetime = plans.lifetime;
+  const lifetimeYears =
+    lifetime && annual && annual.price > 0 && lifetime.price > 0
+      ? Math.round((lifetime.price / annual.price) * 2) / 2
+      : null;
 
   function selectPlan(p: PlanId) {
     hapticSelect();
@@ -293,11 +303,16 @@ function PaywallScreen() {
             ? { title: t("paywall.limitTitleRotation"), body: t("paywall.limitBodyRotation") }
             : reason === "mealResponse"
               ? { title: t("paywall.limitTitleMealResponse"), body: t("paywall.limitBodyMealResponse") }
-              : reason === "insights"
-                ? { title: t("paywall.limitTitleInsights") }
-                : reason === "export"
-                  ? { title: t("paywall.limitTitleExport") }
-                  : null;
+              : reason === "spike"
+                ? {
+                    title: t("paywall.limitTitleSpike"),
+                    body: t("paywall.limitBodySpike"),
+                  }
+                : reason === "insights"
+                  ? { title: t("paywall.limitTitleInsights") }
+                  : reason === "export"
+                    ? { title: t("paywall.limitTitleExport") }
+                    : null;
 
   async function buy() {
     if (busy) return;
@@ -307,13 +322,13 @@ function PaywallScreen() {
       await refreshPro();
       const feedback = purchaseToastFor(res);
       if (res.ok) {
-        logEvent("purchase_completed", { tier: plan });
+        logEvent("purchase_completed", { tier: plan, source: reason ?? "direct" });
         if (plan === "annual" && annualTrial) {
           // A fresh trial starts: schedule its own ending reminder. Scheduling
           // uses the same fixed identifier as cancelTrialReminder, so it already
           // replaces any stale one on its own - calling cancel here too would
           // race the two un-awaited calls and risk cancelling the one just armed.
-          logEvent("trial_started", { tier: "annual" });
+          logEvent("trial_started", { tier: "annual", source: reason ?? "direct" });
           scheduleTrialEndingReminder(trialDays).catch(() => {});
         } else {
           // No trial in this purchase (lifetime, monthly, or a non-trial annual):
@@ -430,9 +445,25 @@ function PaywallScreen() {
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero: one compact glow card, the value stated in a single line */}
+          {/* Hero: what Pro IS, then the privacy line under it. The card used
+              to open with the privacy sentence alone, which answered a question
+              nobody had asked yet - the offer has to be stated before it is
+              qualified. Neither line is a health claim: both describe where
+              things are kept, not what they will do for anyone. */}
           <GlassCard glow style={{ alignItems: "center", paddingVertical: 16, marginBottom: 14 }}>
             <Text style={{ fontSize: 30 }}>📄</Text>
+            <Text
+              style={{
+                color: THEME.ink,
+                fontSize: 14,
+                fontWeight: "700",
+                lineHeight: 20,
+                textAlign: "center",
+                marginTop: 8,
+              }}
+            >
+              {t("paywall.heroValue")}
+            </Text>
             <Text
               style={{
                 color: THEME.muted,
@@ -563,8 +594,16 @@ function PaywallScreen() {
                 onSelect={() => selectPlan("lifetime")}
                 name={t("paywall.planLifetime")}
                 desc={t("paywall.lifetimeDesc")}
+                foot={
+                  lifetimeYears != null
+                    ? t("paywall.lifetimeAnchor", {
+                        years: isolateLtr(String(lifetimeYears)),
+                      })
+                    : undefined
+                }
                 price={priceStr("lifetime")}
                 period={t("paywall.perOnce")}
+                badge={t("paywall.lifetimeBadge")}
               />
 
               <View className="h-2" />

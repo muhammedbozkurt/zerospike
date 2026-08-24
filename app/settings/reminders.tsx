@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
@@ -15,10 +15,10 @@ import {
 } from "../../lib/db/reminders";
 import type { GlucoseUnit, Reminder, ReminderType } from "../../lib/db/types";
 import { insulinModeOf, insulinModeShowsBasal } from "../../lib/insulinMode";
+import { listProfiles } from "../../lib/db/profiles";
 import {
   applyNotificationPrefs,
   getNotificationPermission,
-  getPostMealTimerState,
   requestNotificationPermission,
   type NotificationPermission,
 } from "../../lib/services/notifications";
@@ -26,7 +26,6 @@ import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { syncLiveData } from "../../lib/services/liveData";
 import { alarmModeOf } from "../../lib/alarmSelect";
 import { buildUpcoming } from "../../lib/upcomingReminders";
-import { postMealWindowForProfile } from "../../lib/postMealTimer";
 import {
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
@@ -218,12 +217,6 @@ export default function RemindersScreen() {
   const showsBasal = insulinModeShowsBasal(insulinModeOf(activeProfile));
   const showsMeds = activeProfile?.oral_meds_enabled === 1;
 
-  // Mirrored so `reload` can stay a stable useCallback (the focus effect
-  // depends on it) while still reading the CURRENT profile for the post-meal
-  // timer's ownership check.
-  const activeProfileIdRef = useRef<string | null>(activeProfile?.id ?? null);
-  activeProfileIdRef.current = activeProfile?.id ?? null;
-
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
@@ -244,8 +237,7 @@ export default function RemindersScreen() {
   // times, and a per-second clock would re-render the whole list to move
   // nothing. It is re-sampled on every refresh and on screen focus.
   const [masterEnabled, setMasterEnabled] = useState(true);
-  const [postMealEndsAt, setPostMealEndsAt] = useState<number | null>(null);
-  const [postMealAlarm, setPostMealAlarm] = useState(false);
+  const [profileCount, setProfileCount] = useState(1);
   const [nowTs, setNowTs] = useState(() => Date.now());
 
   // The sheet is shared by add and edit: null editingReminder means "adding".
@@ -273,21 +265,16 @@ export default function RemindersScreen() {
    *  AlarmKit authorization, which the user can change from system settings
    *  without this screen ever unmounting. */
   const reload = useCallback(async () => {
-    const [list, perm, prefs, timer] = await Promise.all([
+    const [list, perm, prefs, profiles] = await Promise.all([
       listReminders(),
       getNotificationPermission(),
       getNotificationPrefs(),
-      getPostMealTimerState(),
+      listProfiles(),
     ]);
+    setProfileCount(profiles.length);
     setReminders(list);
     setPermission(perm);
     setMasterEnabled(prefs.enabled);
-    setPostMealAlarm(prefs.postMealAlarm);
-    // Profile lock, the same rule the dashboard card applies: a countdown armed
-    // for a DIFFERENT profile (a caregiver switched away mid-window) is not
-    // this profile's business and must not appear in its list. A timer with no
-    // recorded owner predates the lock and still shows everywhere.
-    setPostMealEndsAt(postMealWindowForProfile(timer, activeProfileIdRef.current)?.endsAt ?? null);
     setNowTs(Date.now());
     setAlarmAuthorized(isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized");
   }, []);
@@ -366,8 +353,6 @@ export default function RemindersScreen() {
         showsMeds,
         alarmKitAvailable,
         alarmAuthorized: alarmGranted,
-        postMealEndsAt,
-        postMealAlarm,
       }),
     [
       reminders,
@@ -378,8 +363,6 @@ export default function RemindersScreen() {
       showsMeds,
       alarmKitAvailable,
       alarmGranted,
-      postMealEndsAt,
-      postMealAlarm,
     ]
   );
 
@@ -531,6 +514,11 @@ export default function RemindersScreen() {
               a notification - the same sentence the edit sheet uses for the
               same state, rather than a second wording for one fact. */}
           {anyAlarmPending ? ` ${t("reminders.alarmPermissionHint")}` : ""}
+          {/* Only with a second profile: reminders are per profile and the
+              inactive one's are silent, which is deliberate but was written
+              down nowhere the user could see. Saying it on a single-profile
+              device would only raise a question nobody has. */}
+          {profileCount > 1 ? ` ${t("reminders.profileScopeNote")}` : ""}
         </Text>
 
         {/* Store screenshots must never show a "permission not granted" banner

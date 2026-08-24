@@ -134,7 +134,11 @@ export default function AppSettings() {
           right={<Ionicons name="sparkles" size={18} color={THEME.accent} />}
         />
       ) : (
-        <Row icon="sparkles-outline" label={t("settings.goPro")} onPress={() => router.push("/paywall")} />
+        <Row
+          icon="sparkles-outline"
+          label={t("settings.goPro")}
+          onPress={() => router.push({ pathname: "/paywall", params: { reason: "settings" } })}
+        />
       )}
       {!isProUser ? (
         <Row icon="pricetag-outline" label={t("settings.redeemCode")} onPress={onRedeemCode} />

@@ -557,7 +557,9 @@ function SpikeScreen() {
             {!isProUser ? (
               <GradientCTA
                 label={t("spike.limitCta")}
-                onPress={() => router.push("/paywall")}
+                onPress={() =>
+                  router.push({ pathname: "/paywall", params: { reason: "spike" } })
+                }
                 style={{ marginTop: 12 }}
               />
             ) : null}

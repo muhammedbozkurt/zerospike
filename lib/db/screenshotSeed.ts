@@ -62,6 +62,7 @@ function seedMarkerKey(profileId: string): string {
 }
 
 const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
+const POSTMEAL_TIMER_PROFILE_KEY = "zerospike.postMealTimerProfile";
 const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
 // Mirrors app/(tabs)/index.tsx: the dashboard's "finish setting up" row is a
 // nudge for a real user and has no place in a store frame.
@@ -292,6 +293,11 @@ export async function seedScreenshotData(
       [POSTMEAL_TIMER_END_KEY, String(timerEnd)],
       [POSTMEAL_TIMER_START_KEY, String(timerEnd - 120 * 60 * 1000)],
     ]);
+    // The owner key is CLEARED, never carried over: a seeded countdown belongs
+    // to whichever profile the capture is pointing at, and an owner left behind
+    // by an earlier seed (or by a real timer on the same simulator) would make
+    // the profile lock hide the very card the frame is meant to show.
+    await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
 
     const markerKey = seedMarkerKey(profileId);
     const seededLang = await AsyncStorage.getItem(markerKey);

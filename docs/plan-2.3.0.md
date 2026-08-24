@@ -470,6 +470,18 @@ karar:
 
 ## 14. Bilinen sinirlar (denetimden cikti; aksi belirtilmedikce DEGISTIRILMEDI)
 
+- **[P4] Pasif profilde tokluk sayaci: kart susar, sayac susmaz**: profil
+  degistiginde markali Live Activity karti indirilir (pano karti zaten
+  gizliyordu), ama sayacin kendisi, saklanan bitisi ve alarmi SAHIP icin kurulu
+  kalir. Bilincli: iki saat yemege ve onu yiyene aittir, telefonu o an tutana
+  degil. Sahip profile geri donuldugunde kart bir sonraki apply pass'inde geri
+  gelir. Sahip-olmayan profilde tokluk deep link'ine dokunmak artik sessiz
+  olmuyor, kisa bir bilgi mesaji cikiyor.
+- **[2.4.0 adayi, bu turda DOKUNULMADI] Apple Saglik profil ayrimi tanimiyor**:
+  Health yazimi ve icgorulerdeki Apple Saglik karti cihaz-genelidir; coklu
+  profilde bir profilin verisi digerinin ekraninda gorunebilir. Duzeltmesi
+  davranis ve riza degisikligi gerektirir (hangi profilin verisi yaziliyor,
+  kullanicidan yeniden izin/onay), bu yuzden ayri bir tur.
 - **Alarm teslimi hala bildirim iznine bagli**: applyReminders'in `granted`
   kapisi (prefs.enabled + OS bildirim izni) 2.2.0'dan devralindi ve madde 9
   geregi dokunulmadi. Sonuc: iOS 26'da AlarmKit iznini verip bildirim iznini

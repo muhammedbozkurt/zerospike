@@ -76,10 +76,12 @@ function PlanRow({
   icon,
   label,
   mode,
+  wantsAlarm,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   mode?: "alarm" | "notification" | null;
+  wantsAlarm?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -89,8 +91,12 @@ function PlanRow({
         {label}
       </Text>
       {mode ? (
+        // Three states, as everywhere else: a working alarm, an alarm this
+        // device cannot ring yet (the permission was refused or never asked),
+        // and a plain notification. `wantsAlarm` is the stored intent, `mode`
+        // is what will really happen.
         <Ionicons
-          name={mode === "alarm" ? "alarm" : "notifications-outline"}
+          name={mode === "alarm" ? "alarm" : wantsAlarm ? "alarm-outline" : "notifications-outline"}
           size={13}
           color={mode === "alarm" ? THEME.accent : THEME.muted}
           accessibilityLabel={
@@ -332,6 +338,7 @@ export function Reveal({
                 icon={PLAN_ICONS[item.kind]}
                 label={planLabel(item)}
                 mode={item.mode}
+                wantsAlarm={item.wantsAlarm}
               />
             ))}
           </GlassCard>

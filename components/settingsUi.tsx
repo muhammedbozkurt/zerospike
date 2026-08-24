@@ -137,7 +137,15 @@ export function SettingsScaffold({
   return (
     <AppBackground>
       <View className="flex-1" style={{ paddingTop: insets.top }}>
-        <ScreenHeader title={title} onBack={() => router.back()} />
+        <ScreenHeader
+          title={title}
+          // A settings page can be reached by deep link with no history behind
+          // it (a widget, a notification, an alarm's "Open"); back() would then
+          // do nothing and strand the user on a leaf page.
+          onBack={() =>
+            router.canGoBack() ? router.back() : router.replace("/(tabs)/settings")
+          }
+        />
         <ScrollView
           {...keyboardAwareScrollProps}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}

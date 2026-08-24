@@ -2147,6 +2147,37 @@ export default function InsightsScreen() {
                     <DirIcon name="chevron-forward" size={16} color={BRAND} />
                   </Pressable>
                 ) : null}
+
+                {/* The doctor-ready PDF, offered where the summaries it is made
+                    of are actually being read - the same locked-row shape as
+                    the window nudge above, with its own paywall source so the
+                    two can be told apart. */}
+                {!premium ? (
+                  <Pressable
+                    onPress={() =>
+                      router.push({ pathname: "/paywall", params: { reason: "export" } })
+                    }
+                    className="rounded-2xl p-4 mt-2 flex-row items-center active:opacity-80"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: withAlpha(BRAND, 0.3),
+                      backgroundColor: withAlpha(BRAND, 0.1),
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("insights.reportUpsellTitle")}
+                  >
+                    <Ionicons name="document-text-outline" size={18} color={BRAND} />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={{ color: BRAND, fontSize: 13, fontWeight: "600" }}>
+                        {t("insights.reportUpsellTitle")}
+                      </Text>
+                      <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+                        {t("insights.reportUpsellBody")}
+                      </Text>
+                    </View>
+                    <DirIcon name="chevron-forward" size={16} color={BRAND} />
+                  </Pressable>
+                ) : null}
               </View>
 
               {/* Locked (free 30/90): blurred preview + unlock card */}

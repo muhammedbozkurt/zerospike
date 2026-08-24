@@ -70,11 +70,23 @@ export default function SettingsHub() {
           value={permission ? t(`settings.notifPerm_${permission}`) : undefined}
           onPress={go("/settings/notifications")}
         />
+        {/* Its own entry, UNCONDITIONALLY. The only other way in is a row on the
+            notifications screen that is itself hidden while the master switch
+            is off - so a user who turned notifications off had no route left to
+            the reminders they had already set up, not even to look at them. */}
+        <Row
+          icon="alarm-outline"
+          label={t("settings.remindersTitle")}
+          onPress={go("/settings/reminders")}
+        />
         <Row icon="server-outline" label={t("settings.hubData")} onPress={go("/settings/data")} />
         <Row
           icon="phone-portrait-outline"
           label={t("settings.appSection")}
-          value={isProUser ? t("settings.proActive") : undefined}
+          // A free user's row was blank here, which is the one place the
+          // offer is actually looked for; the existing "Go Pro" label is
+          // reused rather than a second wording for one thing.
+          value={isProUser ? t("settings.proActive") : t("settings.goPro")}
           onPress={go("/settings/app")}
         />
         <Row icon="information-circle-outline" label={t("settings.hubAbout")} onPress={go("/settings/about")} />

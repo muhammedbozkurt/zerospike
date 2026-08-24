@@ -3738,6 +3738,55 @@ async function main() {
     db.close();
   }
 
+  section("Q5. v21 applies the same rule to EVERY profile's rows");
+  {
+    // v21 is deliberately profile-blind (see ./v21Sql): the default change is a
+    // device-wide release decision, not something one profile can be left out
+    // of. A caregiver device with two profiles has to come out the other side
+    // with both profiles' rows converted, and both profiles' explicit choices
+    // preserved.
+    const db = makeV15Database();
+    await migrateToV16(adapt(db));
+    await migrateToV17(adapt(db));
+    await migrateToV18(adapt(db));
+    await migrateToV19(adapt(db));
+    db.exec(
+      `INSERT INTO reminders (id, type, label, time, enabled, sort, created_at, profile_id, alarm_enabled)
+       VALUES ('p1-chose', 'glucose', NULL, '08:00', 1, 0, 1, 'p1', 1),
+              ('p1-plain',  'basal',   NULL, '22:00', 1, 1, 2, 'p1', 0),
+              ('p2-chose', 'med',     NULL, '09:00', 1, 0, 3, 'p2', 1),
+              ('p2-plain',  'glucose', NULL, '13:00', 1, 1, 4, 'p2', 0),
+              ('orphan',    'glucose', NULL, '20:00', 1, 2, 5, NULL, 0);`
+    );
+
+    await migrateToV21(adapt(db));
+
+    const pair = (id: string): string => {
+      const r = db
+        .prepare("SELECT alarm_enabled AS a, alarm_user_set AS u FROM reminders WHERE id = ?;")
+        .get(id) as { a: number; u: number };
+      return `${r.a},${r.u}`;
+    };
+    eq("p1's own choice is marked and kept", pair("p1-chose"), "1,1");
+    eq("p1's untouched row is converted", pair("p1-plain"), "1,0");
+    eq("p2's own choice is marked and kept", pair("p2-chose"), "1,1");
+    eq("p2's untouched row is converted", pair("p2-plain"), "1,0");
+    // A row that predates profile scoping (profile_id NULL, adopted at runtime
+    // by adoptOrphanReminders) is treated exactly like any other.
+    eq("an unowned row is converted too", pair("orphan"), "1,0");
+    eq("every row survives", count(db, "reminders"), 5);
+    eq(
+      "and each keeps its owner",
+      (
+        db
+          .prepare("SELECT COUNT(*) AS c FROM reminders WHERE profile_id = 'p2';")
+          .get() as { c: number }
+      ).c,
+      2
+    );
+    db.close();
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {

@@ -55,6 +55,11 @@ export interface RevealPlanItem {
    *  applyReminders arms with - so a device that cannot ring an alarm never
    *  claims one here. null for the two items that are not reminder rows. */
   mode: "alarm" | "notification" | null;
+  /** Whether the row is STORED as an alarm, whatever this device can honour.
+   *  With `mode`, this is what tells "set to alarm but not allowed yet" apart
+   *  from "set to notification" - the same three states the reminders list
+   *  draws. false for the two items that are not reminder rows. */
+  wantsAlarm: boolean;
   /** The post-meal window, in minutes; only ever set on that item. */
   minutes?: number;
 }
@@ -98,6 +103,7 @@ export function buildRevealPlan(input: {
           alarmKitAvailable,
           alarmAuthorized,
         }),
+        wantsAlarm: row.alarm_enabled === 1,
       });
     }
   }
@@ -112,6 +118,7 @@ export function buildRevealPlan(input: {
       label: null,
       time: null,
       mode: null,
+      wantsAlarm: false,
       ...(input.postMealMinutes != null ? { minutes: input.postMealMinutes } : {}),
     });
   }
@@ -122,6 +129,7 @@ export function buildRevealPlan(input: {
       label: null,
       time: null,
       mode: null,
+      wantsAlarm: false,
     });
   }
 

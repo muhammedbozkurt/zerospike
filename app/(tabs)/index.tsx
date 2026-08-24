@@ -386,6 +386,8 @@ export default function DashboardScreen() {
   activeProfileRef.current = activeProfile;
   const activeProfileIdRef = useRef<string | null>(activeProfile?.id ?? null);
   activeProfileIdRef.current = activeProfile?.id ?? null;
+  const glucoseUnitRef = useRef(activeProfile?.glucose_unit ?? "mgdl");
+  glucoseUnitRef.current = activeProfile?.glucose_unit ?? "mgdl";
 
   const refreshPostMealTimer = useCallback(async () => {
     setPostMealTimer(await getPostMealTimerState());
@@ -419,8 +421,11 @@ export default function DashboardScreen() {
           alarmKitAvailable,
           alarmAuthorized:
             alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
-          postMealEndsAt: owned?.endsAt ?? null,
-          postMealAlarm: prefs.postMealAlarm,
+          // Deliberately NOT passing the running countdown: it has its own
+          // card right above this line, and repeating it here made the same
+          // fact appear twice on one screen. The reminders screen does not
+          // list it either.
+          postMealEndsAt: null,
         })
       );
     } catch {
@@ -503,6 +508,10 @@ export default function DashboardScreen() {
         // timer with no recorded owner still opens it (see the card below).
         const timer = await getPostMealTimerState();
         if (timer && timer.profileId != null && timer.profileId !== activeProfile.id) {
+          // Say so rather than dying silently: the notification, the widget or
+          // the alarm that led here is real, it just belongs to whoever was
+          // using the app when the meal happened.
+          toast(t("dashboard.postMealOtherProfile"), "info");
           router.setParams({ sheet: "" });
           return;
         }
@@ -809,6 +818,13 @@ export default function DashboardScreen() {
   // out of the way instead of implying they should be dosing.
   const showsInsulin = insulinModeShowsBolus(activeProfile?.insulin_mode);
 
+  /** Whether the next reminder is STORED as an alarm, whatever this device can
+   *  do about it - what tells "not allowed yet" from "set to notification". */
+  const nextReminderWantsAlarm =
+    nextReminder != null &&
+    nextReminder.kind === "reminder" &&
+    (nextReminderRows.find((r) => r.id === nextReminder.id)?.alarm_enabled === 1);
+
   /** What the next-reminder line reads. A reminder shows its own NAME (preset
    *  rows are named after their part of the day; an older, unnamed row falls
    *  back to its type) and its stored "HH:MM" - the same two strings Settings >
@@ -858,8 +874,18 @@ export default function DashboardScreen() {
   // also closes the lock-screen countdown (the notification has just fired).
   const onPostMealElapsed = useCallback(() => {
     setPostMealTimer(null);
-    void completePostMealTimer();
-  }, []);
+    void (async () => {
+      await completePostMealTimer();
+      // The countdown was on the widget, the watch face and the "next" line
+      // too: restartPostMealForEntry already refreshes all three, and ending
+      // one has to do the same or those surfaces keep counting to a moment
+      // that has passed.
+      await refreshNextReminder();
+      const id = activeProfileIdRef.current;
+      if (id) void syncLiveData(id, glucoseUnitRef.current);
+      bumpData();
+    })();
+  }, [refreshNextReminder, bumpData]);
 
   // Profile lock (B): a timer armed for a DIFFERENT profile (a caregiver
   // switched away mid-countdown) renders as if none were running - the idle
@@ -965,6 +991,7 @@ export default function DashboardScreen() {
       toast(t("dashboard.toklukSet", { n: outcome.minutesLeft }), "success");
       await refreshPostMealTimer();
       await refreshNextReminder();
+      if (activeProfile) void syncLiveData(activeProfile.id, glucoseUnit);
       // First timer: tell the user the countdown also shows on the lock screen.
       try {
         if (activeProfile && !(await readProfileFlag(WIDGET_TIP_KEY, activeProfile.id))) {
@@ -1134,6 +1161,9 @@ export default function DashboardScreen() {
   async function cancelEatingTimer() {
     await cancelPostMealTimer();
     setPostMealTimer(null);
+    await refreshNextReminder();
+    if (activeProfile) void syncLiveData(activeProfile.id, glucoseUnit);
+    bumpData();
     hapticWarning();
   }
 
@@ -1789,8 +1819,19 @@ export default function DashboardScreen() {
           className="items-center mb-3 active:opacity-70"
         >
           <View className="flex-row items-center justify-center" style={{ gap: 6 }}>
+            {/* Three states, the same vocabulary the reminders list uses: a
+                working alarm (accent `alarm`), an alarm this device is not
+                allowed to ring yet (muted `alarm-outline`), or a notification.
+                `mode` already folds the permission in, so the stored intent is
+                what tells the second case from the third. */}
             <Ionicons
-              name={nextReminder.mode === "alarm" ? "alarm" : "notifications-outline"}
+              name={
+                nextReminder.mode === "alarm"
+                  ? "alarm"
+                  : nextReminderWantsAlarm
+                    ? "alarm-outline"
+                    : "notifications-outline"
+              }
               size={12}
               color={nextReminder.mode === "alarm" ? THEME.accent : THEME.muted}
             />

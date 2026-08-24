@@ -98,7 +98,10 @@ function AlarmTourScreen() {
   function onCta() {
     if (stepIdx === 0) return setStepIdx(1);
     if (stepIdx === 1) return void askPermission();
-    router.back();
+    // Dismiss the modal first, but only when there is something under it: this
+    // route is pushed from the launch flow, and a back() with nothing behind it
+    // is a no-op that would leave the tour sitting over the destination.
+    if (router.canGoBack()) router.back();
     router.push("/settings/reminders");
   }
 

@@ -172,8 +172,11 @@ export function postMealElapsedFraction(
 /**
  * How far behind "now" a meal record can be and still count as "just ate" for
  * the AUTO-START decision below. The gap between a tap and the row actually
- * landing (a slow device, a retry) is seconds, never minutes - anything past
-
+ * landing (a slow device, a retry) is seconds, never minutes; anything past
+ * this is a meal being written up after the fact, and starting a countdown
+ * from now for a meal that already happened would put the check in the wrong
+ * place. Such a record arms nothing, and the user can still start one himself
+ * (the dashboard's own "I started eating a while ago").
  */
 export const POST_MEAL_AUTO_START_TOLERANCE_MS = 5 * 60_000;
 

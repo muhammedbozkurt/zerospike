@@ -507,7 +507,12 @@ export default function OnboardingScreen() {
   }
 
   function goToPaywall() {
-    router.replace({ pathname: "/paywall", params: { context: "onboarding" } });
+    // `context` drives the downsell cascade; `reason` is the analytics source,
+    // so paywall_view can be read per entry point instead of as one lump.
+    router.replace({
+      pathname: "/paywall",
+      params: { context: "onboarding", reason: "onboarding" },
+    });
   }
 
   // Optional subtitle per step (the title is derived from the step id). Steps

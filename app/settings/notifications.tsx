@@ -298,11 +298,16 @@ export default function NotificationSettings() {
                   />
                 }
               />
-              {/* No length picker (2.3.0's G15): the window is a fixed two
+              {/* Deliberately NOT behind prefs.postMeal: that switch only
+                  decides whether logging a meal ARMS the countdown by itself,
+                  while the dashboard button starts one either way - so the
+                  window and its delivery apply to every user and hiding them
+                  here left the alarm choice unreachable for anyone who had
+                  turned the automatic start off.
+                  No length picker (2.3.0's G15): the window is a fixed two
                   hours, so the only thing left to choose here is how it is
                   delivered. "I started eating late" is answered on the
                   dashboard, where the meal actually is. */}
-                {prefs.postMeal ? (
                 <InlineConfigCard icon="time-outline">
                   <Text className="text-mut text-xs mb-2">
                     {t("settings.postMealFixedNote", { n: POST_MEAL_WINDOW_MIN })}
@@ -347,7 +352,6 @@ export default function NotificationSettings() {
                     </View>
                   ) : null}
                 </InlineConfigCard>
-              ) : null}
 
               <Row
                 icon="journal-outline"

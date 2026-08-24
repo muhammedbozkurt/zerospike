@@ -10,6 +10,10 @@ import { clearAllLogs } from "../../lib/db/index";
 import { exportLogsCsv } from "../../lib/services/export";
 import { exportLogsPdf } from "../../lib/services/report";
 import { maybeRequestReview } from "../../lib/services/review";
+import {
+  cancelPostMealTimer,
+  getPostMealTimerState,
+} from "../../lib/services/notifications";
 import { INSIGHTS_WINDOWS } from "../../lib/insights";
 import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { setProOverride } from "../../lib/services/purchases";
@@ -149,6 +153,10 @@ export default function DataSettings() {
     });
     if (!ok) return;
     await clearAllLogs(activeProfile.id);
+    // The countdown was armed for a meal in the history that was just erased:
+    // leaving it running would ring for a record the user asked to be gone.
+    const runningTimer = await getPostMealTimerState();
+    if (runningTimer?.profileId === activeProfile.id) await cancelPostMealTimer();
     bumpData();
     toast(t("settings.clearLogsDone", { name: activeProfile.name }), "success");
   }
@@ -167,10 +175,18 @@ export default function DataSettings() {
       icon: "person-remove-outline",
     });
     if (!ok) return;
+    // Read BEFORE the delete: afterwards there is no way to tell whether the
+    // countdown belonged to the profile that just went.
+    const runningTimer = await getPostMealTimerState();
     const deleted = await deleteProfile(activeProfile.id);
     if (!deleted) {
       toast(t("profiles.cannotDeleteLast"), "error");
       return;
+    }
+    // Its owner no longer exists, so nothing can ever act on it again: the
+    // alarm, the notification, the stored end and the lock-screen card all go.
+    if (runningTimer?.profileId === activeProfile.id) {
+      await cancelPostMealTimer();
     }
     // The app cannot stay pointed at a row that no longer exists: every screen
     // would read an empty history and write logs keyed to a deleted profile.
@@ -260,6 +276,7 @@ export default function DataSettings() {
       <Row
         icon="document-text-outline"
         label={t("settings.exportCsv")}
+        sub={t("settings.exportCsvSub")}
         onPress={onExport}
         right={
           exporting ? (
@@ -272,6 +289,7 @@ export default function DataSettings() {
       <Row
         icon="newspaper-outline"
         label={t("settings.exportPdf")}
+        sub={t("settings.exportPdfSub")}
         onPress={onExportPdf}
         right={
           exportingPdf ? (

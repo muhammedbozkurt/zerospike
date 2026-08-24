@@ -109,7 +109,7 @@ function routeForNotification(
       router.navigate("/insights");
       break;
     case "trial":
-      router.navigate("/paywall");
+      router.navigate({ pathname: "/paywall", params: { reason: "trial_reminder" } });
       break;
     default:
       break;

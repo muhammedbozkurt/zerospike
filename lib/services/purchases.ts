@@ -62,9 +62,9 @@ export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
   lifetime: {
     id: "lifetime",
     productId: "zerospike_lifetime", // $rc_lifetime (non-consumable)
-    priceUSD: "$79.99",
-    priceEUR: "€79,99",
-    priceTRY: "₺2.399,99",
+    priceUSD: "$109.99",
+    priceEUR: "€109,99",
+    priceTRY: "₺2.499,99",
   },
 };
 
@@ -439,11 +439,14 @@ function mapRcPackage(
 // Dev-only placeholder plans (hardcoded USD, annual carries the intended 7-day
 // trial). NEVER rendered in release: when the real offering can't load,
 // loadOfferings returns status 'unavailable' so the paywall shows a retry state.
+// Kept in step with docs/pricing-2026-08.md - the paywall now DERIVES figures
+// from these prices (the lifetime anchor), so a stale placeholder would show a
+// wrong ratio in every dev build and screenshot.
 function devFallbackPlans(): OfferingPlans {
   return {
     monthly: { priceString: PRO_PRODUCTS.monthly.priceUSD, price: 4.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
     annual: { priceString: PRO_PRODUCTS.annual.priceUSD, price: 29.99, currencyCode: "USD", hasFreeTrial: true, introPriceString: null, introPrice: null, freeTrialDays: FALLBACK_TRIAL_DAYS },
-    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 79.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
+    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 109.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
   };
 }
 

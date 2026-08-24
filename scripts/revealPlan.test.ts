@@ -140,6 +140,24 @@ section("E. the delivery mark never over-promises");
     alarmAuthorized: false,
   });
   eq("nothing claims an alarm", older.every((i) => i.mode === "notification"), true);
+  // The stored intent rides along, so the screen can tell "not allowed yet"
+  // from "set to notification" - the two share the same `mode`.
+  const pending = buildRevealPlan({
+    rows: [row({ alarm_enabled: 1 })],
+    postMeal: false,
+    lowFollowup: false,
+    alarmKitAvailable: true,
+    alarmAuthorized: false,
+  })[0];
+  eq("pending: delivered as a notification", pending?.mode, "notification");
+  eq("pending: but stored as an alarm", pending?.wantsAlarm, true);
+  eq(
+    "a notification row wants no alarm",
+    buildRevealPlan({ rows: [row({ alarm_enabled: 0 })], postMeal: false, lowFollowup: false, ...AUTHORIZED })[0]
+      ?.wantsAlarm,
+    false
+  );
+
   // A row stored as a notification says so on any device.
   eq(
     "a notification row is a notification",

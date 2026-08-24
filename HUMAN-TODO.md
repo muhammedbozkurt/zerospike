@@ -63,6 +63,13 @@
       karakter altinda) ve review-notes-en.md (3994/4000) konsollara;
       app.json 2.3.0 / iOS build 61 / Android versionCode 58 (build henuz
       alinmadi, numaralar bilerek artirilmadi).
+- [ ] 2.4.0 ADAYI (bu turda kod DEGISTIRILMEDI): Apple Saglik profil ayrimi
+      tanimiyor. Health yazimi ve icgorulerdeki Apple Saglik karti
+      cihaz-genelidir; coklu profil kullaniyorsaniz bir profilin verisi
+      digerinin ekraninda gorunebilir. Duzeltmesi davranis + riza degisikligi
+      gerektiriyor (hangi profilin verisi yaziliyor, kullanicidan yeniden
+      onay), bu yuzden ayri bir tura birakildi. Bkz. docs/plan-2.3.0.md
+      bolum 14.
 - [ ] Store gorselleri: docs/store-screenshots-plan.md bolum 7 (09-reminders
       karesi "Siradaki" karti + rozetlerle yeniden, onboarding karesi artik
       tokluk suresi sormuyor). 9 dil.

@@ -4,7 +4,7 @@ import { Platform } from "react-native";
 import i18n, { currentLang } from "../i18n";
 import { getLatestSugarLog, getSugarAverageSince } from "../db/logs";
 import { getNotificationPrefs } from "./notificationPrefs";
-import { getPostMealTimerState } from "./notifications";
+import { getPostMealTimerState, hasNotificationPermission } from "./notifications";
 import { getProfile } from "../db/profiles";
 import { listReminders } from "../db/reminders";
 import { targetBandFor } from "../agpChart";
@@ -202,7 +202,11 @@ export async function computeLiveData(
   // the med gate is stricter than the scheduler's on an unreadable profile (it
   // keeps the reminder, this drops the row) so the countdown can never
   // contradict the same snapshot's own usesOralMeds.
-  if (prefs.enabled) {
+  // The SAME gate applyReminders schedules behind (master switch AND the OS
+  // permission): without the permission nothing is armed at all, and a widget
+  // or watch face still counting down to it was telling a story the phone had
+  // no way of finishing.
+  if (prefs.enabled && (await hasNotificationPermission())) {
     const showsBasal = insulinModeShowsBasal(insulinModeOf(profile));
     for (const row of reminders) {
       if (row.enabled !== 1) continue;
