@@ -3,7 +3,6 @@ import { Modal, Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
-import { Segmented } from "./ui";
 import { Stepper } from "./Stepper";
 import { GradientCTA } from "./rich/GradientCTA";
 import {
@@ -12,6 +11,7 @@ import {
   POST_MEAL_LATE_MAX_MIN,
   POST_MEAL_WINDOW_MIN,
 } from "../lib/postMealTimer";
+import { hapticSelect } from "../lib/haptics";
 import { GLUCOSE_RICH, HIT_TARGET, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 
@@ -23,6 +23,59 @@ const PRESETS = [5, 10, 15, 20, 30] as const;
 /** The custom control's step. Coarse enough to sweep the whole range without a
  *  keyboard, fine enough to land on a real answer. */
 const CUSTOM_STEP = 5;
+
+/**
+ * The five offsets, as one row of EQUAL chips.
+ *
+ * Not the shared Segmented (2.3.0's G17): that one sizes each chip to its own
+ * text and wraps, and five content-sized chips add up to more than a 375pt
+ * screen leaves inside this sheet - so the last one dropped alone onto a second
+ * line. Equal flex-basis puts all five on one line at any width instead of
+ * relying on the labels staying short, and the text scales down rather than
+ * wrapping in the language where it does not.
+ */
+function LateChips({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (minutes: number) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View className="flex-row" style={{ gap: 6 }}>
+      {PRESETS.map((m) => {
+        const active = m === value;
+        const label = t("dashboard.postMealLateChip", { n: m });
+        return (
+          <Pressable
+            key={m}
+            onPress={() => {
+              if (!active) hapticSelect();
+              onChange(m);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={label}
+            className={`flex-1 rounded-full items-center justify-center border ${
+              active ? "bg-brand border-brand" : "bg-glass border-hair"
+            }`}
+            style={{ paddingVertical: 8, paddingHorizontal: 2, minHeight: 36 }}
+          >
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+              className={`text-sm font-medium ${active ? "text-black" : "text-mut"}`}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 /**
  * "When did you start eating?" (2.3.0's G15).
@@ -118,14 +171,10 @@ export function PostMealLateSheet({
             {t("dashboard.postMealLateHint", { n: POST_MEAL_WINDOW_MIN })}
           </Text>
 
-          <Segmented
-            options={PRESETS.map((m) => ({
-              value: String(m),
-              label: t("dashboard.postMealLateChip", { n: m }),
-            }))}
-            value={activeChip != null ? String(activeChip) : ""}
-            onChange={(v) => {
-              setMinutesAgo(clampPostMealLateMinutes(Number(v)));
+          <LateChips
+            value={activeChip ?? -1}
+            onChange={(m) => {
+              setMinutesAgo(clampPostMealLateMinutes(m));
               setCustomOpen(false);
             }}
           />
