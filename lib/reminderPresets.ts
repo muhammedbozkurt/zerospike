@@ -110,3 +110,73 @@ export function presetFor(type: DiabetesType): ReminderPreset[] {
     bucket: dayBucketOf(time),
   }));
 }
+
+/**
+ * Exactly what "Set up this plan" writes, as data: one row per previewed time,
+ * named after its part of the day.
+ *
+ * Split out of setUpReminderPlan (lib/services/reminderPlan.ts) so the shape of
+ * the rows is pinned by scripts/reminderPresets.test.ts under plain Node - the
+ * screen that offers this now exists twice (onboarding and profile setup), and
+ * the two must produce identical rows for the first profile and the fifth.
+ *
+ * `alarmEnabled` is spelled out because this is the app arming a delivery on
+ * the user's behalf. There is deliberately NO alarmUserSet field: that column
+ * (schema v21) records that the USER chose a delivery, and walking through a
+ * ready-made layout is not that choice - createReminder writes 0 for an absent
+ * one, which is what keeps a later default change free to move these rows.
+ */
+export interface ReminderPlanRow {
+  type: "glucose";
+  time: string;
+  label: string;
+  enabled: true;
+  alarmEnabled: true;
+  /** The owner, carried EXPLICITLY rather than left to createReminder's
+   *  active-profile fallback. The layout is offered on a screen that opens
+   *  right after a profile switch, so "whichever profile is active when this
+   *  row is inserted" is a moving target: a switch landing mid-write would
+   *  file the rest of the layout under the wrong profile. */
+  profileId?: string;
+}
+
+export function planRowsToWrite(
+  rows: ReminderPreset[],
+  labelFor: (bucket: DayBucket) => string,
+  profileId?: string
+): ReminderPlanRow[] {
+  return rows.map((preset) => ({
+    type: "glucose",
+    time: preset.time,
+    label: labelFor(preset.bucket),
+    enabled: true,
+    alarmEnabled: true,
+    ...(profileId ? { profileId } : {}),
+  }));
+}
+
+/**
+ * Which of a profile's EXISTING rows the layout replaces: the measurement rows,
+ * and only those.
+ *
+ * Replace, not merge - a user who removed 12:30 from the preview must not end
+ * up with it anyway from an earlier attempt. The basal row
+ * (syncBasalReminderRow), the medication row and anything custom belong to
+ * other intents and are never touched; on a profile added later that matters
+ * more than it did in onboarding, because those rows may well already exist.
+ *
+ * `profileId` is a second, independent lock on top of the caller already
+ * having asked for one profile's rows: a DELETE takes a globally unique id, so
+ * a list that turned out to hold another profile's rows (an active-profile
+ * switch racing the read) would delete reminders belonging to someone the user
+ * was not even editing. A row whose owner is unknown is left alone rather than
+ * assumed to be ours.
+ */
+export function planRowsToReplace<
+  T extends { id: string; type: string; profile_id?: string | null },
+>(existing: readonly T[], profileId?: string): string[] {
+  return existing
+    .filter((r) => r.type === "glucose")
+    .filter((r) => profileId == null || r.profile_id === profileId)
+    .map((r) => r.id);
+}

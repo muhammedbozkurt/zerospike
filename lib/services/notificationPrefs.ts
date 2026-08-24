@@ -34,7 +34,9 @@ export interface NotificationPrefs {
    *  draws its own countdown, and two countdown cards must never sit on the
    *  lock screen at once (see schedulePostMealAt). */
   postMealAlarm: boolean;
-  /** Weekly summary nudge, at a user-chosen day + time. */
+  /** Weekly summary nudge, at a user-chosen day + time. On by default; a stored
+   *  `false` from someone who turned it off always wins, see
+   *  getNotificationPrefs' merge order. */
   weekly: boolean;
   weeklyDay: number; // expo-notifications weekday: 1 = Sunday ... 7 = Saturday
   weeklyTime: string; // "HH:MM"
@@ -63,6 +65,13 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   postMeal: true,
   postMealMinutes: 120,
   postMealAlarm: true,
+  // OFF as the fallback, deliberately. This object is also what fills in a
+  // field MISSING from an already-stored blob (see the merge in
+  // getNotificationPrefs), so defaulting it on would silently opt in every
+  // existing install whose saved preferences predate the field - a weekly
+  // notification nobody asked for. New users get it on instead from the full
+  // blob onboarding writes (app/onboarding.tsx's finishToReveal), which is the
+  // only place that can mean "this user chose nothing yet".
   weekly: false,
   weeklyDay: 1,
   weeklyTime: "20:00",

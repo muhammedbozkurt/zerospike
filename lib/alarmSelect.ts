@@ -69,6 +69,11 @@ export interface AlarmTourGateInput {
   /** How many reminder rows the active profile has: with none, the tour would
    *  announce a change to someone it did not change anything for. */
   reminderCount: number;
+  /** NotificationPrefs.enabled - the app's own master reminder switch. */
+  notificationsEnabled: boolean;
+  /** getNotificationPermission() === "granted" - the OS actually lets anything
+   *  reach the user. */
+  notificationPermission: boolean;
 }
 
 /**
@@ -76,6 +81,14 @@ export interface AlarmTourGateInput {
  * see each field above - and gathered into one predicate so a missing
  * condition is a test failure rather than something only a half-finished
  * install would ever reveal.
+ *
+ * The last two conditions are DELIVERY REALITY, not preference: with the master
+ * switch off or the OS permission missing, nothing reaches this user at all, so
+ * a tour explaining that their reminders now ring as alarms would describe
+ * something that is not happening. It is also why app/_layout.tsx must not mark
+ * the tour seen when this returns false (see hasSeenAlarmTour): the very same
+ * user becomes the tour's real audience the moment they turn notifications back
+ * on, and a consumed flag would have silently taken it away from them.
  */
 export function shouldOpenAlarmTour(input: AlarmTourGateInput): boolean {
   return (
@@ -84,6 +97,8 @@ export function shouldOpenAlarmTour(input: AlarmTourGateInput): boolean {
     !input.screenshotMode &&
     input.alarmKitAvailable &&
     !input.tourSeen &&
-    input.reminderCount > 0
+    input.reminderCount > 0 &&
+    input.notificationsEnabled &&
+    input.notificationPermission
   );
 }

@@ -61,7 +61,7 @@ export default function NotificationSettings() {
   const { columnPad } = useLayout();
   const router = useRouter();
 
-  // Starts unknown (not DEFAULT_PREFS): a user who moved the post-meal window
+  // Starts unknown (not DEFAULT_PREFS): a user who turned any of these off
   // would otherwise see the DEFAULTS drawn for one frame - wrong switch
   // positions, not just an empty list - before the real stored prefs replace
   // them.
@@ -118,12 +118,12 @@ export default function NotificationSettings() {
     await applyNotificationPrefs(next);
 
     // The moment every glanceable surface counts down to is derived from these
-    // preferences (master switch, basal/med/glucose toggles and their times, the
-    // post-meal window just re-armed above), so ANY save here can move it. One
+    // preferences (master switch, basal/med/glucose toggles and their times, and
+    // the post-meal countdown's delivery), so ANY save here can move it. One
     // unconditional sync rather than a list of "which patch keys matter": that
     // list drifts the day a reminder is added, and the widget then keeps showing
     // a countdown to a reminder the user already turned off. Runs last so it
-    // reads the state applyNotificationPrefs and the window change left behind.
+    // reads the state applyNotificationPrefs and the re-arm above left behind.
     if (activeProfile) void syncLiveData(activeProfile.id, unit);
 
     const granted = await hasNotificationPermission();

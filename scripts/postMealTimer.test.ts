@@ -310,5 +310,68 @@ section("K. postMealWindowForProfile - whose countdown is this");
   ok("returns the SAME object, not a clone", postMealWindowForProfile(owned, "p1") === owned);
 }
 
+section("N. logging a meal mid-countdown vs. pressing 'restart for this meal'");
+{
+  // The contract behind 2.3.0's G15 card, pinned end to end rather than one
+  // helper at a time: a RUNNING countdown is re-measured only when the user
+  // asks for it. Reported as "logging a meal seems to reset the remaining time
+  // to 120" - what the two paths do to `endsAt` is the whole difference, so
+  // both are asserted on the same running window.
+  const now = START;
+  const armed = startPostMealLate({ minutesAgo: 0, now });
+  ok("the scenario starts with a running timer", armed.kind === "start");
+  if (armed.kind !== "start") throw new Error("unreachable");
+  const running = { startedAt: armed.startedAt, endsAt: armed.endsAt };
+
+  // 40 minutes in, the user logs a meal. Every meal-logging path in the app
+  // funnels into schedulePostMealReminder, which asks this and does NOTHING
+  // else when the answer is "active" (lib/services/notifications.ts).
+  const mealAt = now + 40 * MIN;
+  eq(
+    "a meal logged mid-countdown is not an auto-start",
+    decidePostMealAutoStart({ timerActive: true, loggedAtMs: mealAt, now: mealAt }),
+    "active"
+  );
+  // Which is what makes these three true: nothing moved, so the card is still
+  // counting the ORIGINAL window and is 1/3 of the way along it.
+  eq("the end did not move", running.endsAt, armed.endsAt);
+  eq("the start did not move", running.startedAt, now);
+  eq("80 minutes are left, not 120", (running.endsAt - mealAt) / MIN, 80);
+  eq("and the bar is a third full", postMealElapsedFraction(running, mealAt), 1 / 3);
+
+  // Only the explicit action re-anchors it, and it re-anchors to the MEAL, not
+  // to the moment the button was pressed: the card offers this exactly because
+  // the meal above deliberately did not move anything.
+  const restarted = restartPostMealWindowAt({
+    startedAt: mealAt,
+    windowMin: POST_MEAL_WINDOW_MIN,
+    now: mealAt + 5 * MIN,
+  });
+  eq("restart arms", restarted.kind, "restarted");
+  if (restarted.kind === "restarted") {
+    ok("the end DID move", restarted.endsAt !== running.endsAt);
+    eq("to a full window after the meal", restarted.endsAt, mealAt + POST_MEAL_WINDOW_MIN * MIN);
+    eq("anchored to the meal, not to the tap", restarted.startedAt, mealAt);
+    eq("so 115 minutes are left, not 120", restarted.remainingMs / MIN, 115);
+  }
+
+  // The window is fixed, so end minus start is POST_MEAL_WINDOW_MIN on every
+  // path - which is why the card draws the feature name alone and lets the
+  // live countdown carry the number (the bracketed "(120 min)" beside a "120
+  // min" countdown was the same fact printed twice).
+  eq("fresh window span", (armed.endsAt - armed.startedAt) / MIN, POST_MEAL_WINDOW_MIN);
+  const late = startPostMealLate({ minutesAgo: 45, now });
+  if (late.kind === "start") {
+    eq("backdated window span", (late.endsAt - late.startedAt) / MIN, POST_MEAL_WINDOW_MIN);
+  }
+  if (restarted.kind === "restarted") {
+    eq(
+      "restarted window span",
+      (restarted.endsAt - restarted.startedAt) / MIN,
+      POST_MEAL_WINDOW_MIN
+    );
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

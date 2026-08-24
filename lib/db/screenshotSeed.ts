@@ -286,8 +286,9 @@ export async function seedScreenshotData(
     // already-seeded early-return) so each capture - even a same-language relaunch
     // - shows the same healthy ~72m remaining (a partially-filled bar) instead of
     // a stale countdown that has ticked down or expired. No OS permission needed.
-    // The start is seeded too (48 min behind), so the elapsed bar is drawn from
-    // the timer's own window rather than from whatever delay is configured.
+    // The start is seeded too (120 min behind the end, so 48 min already
+    // elapsed), because the bar and its "x min window" label are both drawn
+    // from the timer's OWN start/end pair, not from POST_MEAL_WINDOW_MIN.
     const timerEnd = Date.now() + 72 * 60 * 1000;
     await AsyncStorage.multiSet([
       [POSTMEAL_TIMER_END_KEY, String(timerEnd)],

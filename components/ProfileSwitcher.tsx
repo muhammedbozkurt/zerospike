@@ -83,6 +83,7 @@ export function ProfileSwitcher({
     if (!isProUser) return; // backstop; entry is gated in handleAddPress
     const trimmed = name.trim();
     if (!trimmed) return;
+    const previousProfileId = activeProfile?.id ?? null;
     const p = await createProfile({ name: trimmed });
     await refreshProfiles();
     await setActiveProfileId(p.id);
@@ -91,7 +92,22 @@ export function ProfileSwitcher({
     setAdding(false);
     setOpen(false);
     // Let the user set this profile's own targets instead of silent defaults.
-    router.push("/profile-setup");
+    //
+    // The switch above has to happen BEFORE the screen opens - targets,
+    // reminders and the measurement layout it offers are all profile-scoped -
+    // which is exactly why the two params below matter: closing that screen
+    // without saving used to leave the device on a nameless, never-configured
+    // profile with no way to tell it apart from a real one. `created` marks
+    // this as a draft and `previousProfileId` says where to go back to, so
+    // cancelling a creation deletes the draft and restores the profile that was
+    // active a moment ago (see discardDraftRef in app/profile-setup.tsx).
+    router.push({
+      pathname: "/profile-setup",
+      params: {
+        created: "1",
+        ...(previousProfileId ? { previousProfileId } : {}),
+      },
+    });
   }
 
   return (

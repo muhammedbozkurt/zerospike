@@ -23,6 +23,7 @@ export type AnalyticsEventName =
   | "downsell_skipped_no_discount"
   | "winback_view"
   | "trial_started"
+  | "trial_reminder_opened"
   | "purchase_completed"
   | "tokluk_timer_started"
   | "sos_opened"

@@ -14,8 +14,10 @@ import * as FileSystem from "expo-file-system/legacy";
 
 import {
   ensureAndroidChannel,
+  getNotificationPermission,
   type NotificationRoute,
 } from "../lib/services/notifications";
+import { getNotificationPrefs } from "../lib/services/notificationPrefs";
 import { isScreenshotMode, setScreenshotPlatform } from "../lib/screenshotMode";
 import { seedScreenshotData, ensureTrackingProfile } from "../lib/db/screenshotSeed";
 import { DEFAULT_PROFILE_ID, SCREENSHOT_TRACKING_PROFILE_ID } from "../lib/db/index";
@@ -31,6 +33,7 @@ import {
 } from "../lib/store/AppContext";
 import { FeedbackProvider, FeedbackHost, useFeedback } from "../components/Feedback";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { logEvent } from "../lib/analytics";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
@@ -74,7 +77,7 @@ void ensureAndroidChannel();
  * Where each reminder should land when tapped. Post-meal/glucose/low-followup all
  * open the dashboard with the right period sheet pre-armed (index.tsx reads the
  * `sheet` param); basal goes to the injection tab, weekly to Insights, trial to
- * the paywall. Called both from the live response listener and the cold-start
+ * Settings > App. Called both from the live response listener and the cold-start
  * getLastNotificationResponseAsync path.
  */
 function routeForNotification(
@@ -109,7 +112,11 @@ function routeForNotification(
       router.navigate("/insights");
       break;
     case "trial":
-      router.navigate({ pathname: "/paywall", params: { reason: "trial_reminder" } });
+      // The reminder exists so a trial can be stopped before it converts, and
+      // the paywall it used to open cannot do that - only the store's own
+      // subscription management can, which is what Settings > App links to.
+      logEvent("trial_reminder_opened");
+      router.navigate("/settings/app");
       break;
     default:
       break;
@@ -476,29 +483,56 @@ function RootNavigator() {
   // which is also why no version comparison is needed here.
   //
   // Marked seen BEFORE the push, exactly like the winback above, so an
-  // interrupted tour cannot come back. The two reads below are one AsyncStorage
-  // get and one small query, once per launch, after routing has settled.
-  const alarmTourHandled = useRef(false);
+  // interrupted tour cannot come back - but ONLY on the launch that really
+  // opens it. A gate that closed for a reason which can still change (the
+  // master switch or the OS permission being off, see shouldOpenAlarmTour)
+  // leaves the flag untouched, so the tour is still there for that user the
+  // day they turn notifications on. The reads below are one AsyncStorage get,
+  // one small query and the two delivery reads, after routing has settled.
+  //
+  // Re-evaluated on every foreground, not once per launch. The gate can close
+  // for a reason that changes WITHIN a session - the user opens Settings, turns
+  // notifications on, comes back - and a once-per-launch check meant they had
+  // to quit and relaunch to be told about a feature they had just enabled.
+  // Re-running is safe because `tourSeen` is what guarantees the tour opens
+  // once ever: the ref below only stops two evaluations overlapping.
+  const alarmTourRunning = useRef(false);
   useEffect(() => {
-    if (!settled || !onboarded || alarmTourHandled.current) return;
-    alarmTourHandled.current = true;
-    (async () => {
+    if (!settled || !onboarded) return;
+    const evaluate = async () => {
+      if (alarmTourRunning.current) return;
+      alarmTourRunning.current = true;
       try {
+        const [tourSeen, rows, prefs, permission] = await Promise.all([
+          hasSeenAlarmTour(),
+          listReminders(),
+          getNotificationPrefs(),
+          getNotificationPermission(),
+        ]);
         const open = shouldOpenAlarmTour({
           routeSettled: settled,
           onboarded,
           screenshotMode: isScreenshotMode(),
           alarmKitAvailable: isAlarmKitAvailable(),
-          tourSeen: await hasSeenAlarmTour(),
-          reminderCount: (await listReminders()).length,
+          tourSeen,
+          reminderCount: rows.length,
+          notificationsEnabled: prefs.enabled,
+          notificationPermission: permission === "granted",
         });
         if (!open) return;
         await markAlarmTourSeen();
         router.push("/alarm-tour");
       } catch {
         // best-effort; the feature works without ever being explained
+      } finally {
+        alarmTourRunning.current = false;
       }
-    })();
+    };
+    void evaluate();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void evaluate();
+    });
+    return () => sub.remove();
   }, [settled, onboarded, router]);
 
   // While loading, render nothing so the native splash stays on screen.

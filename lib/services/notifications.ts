@@ -53,10 +53,12 @@ const POSTMEAL_ID = "zerospike-postmeal-reminder";
 // service on every successful schedule (button OR the automatic paths) so the
 // countdown always matches the real notification.
 const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
-// The moment that same timer was ARMED. Persisted alongside the end so a window
-// length changed in Settings can be re-measured from the meal instead of from
-// the settings change. A timer armed by an older build has no start recorded;
-// it is derived from the end and the fixed window (POST_MEAL_WINDOW_MIN).
+// The moment that same timer was ARMED. Persisted alongside the end so the
+// elapsed bar and the "x min window" label are drawn from the timer's OWN span
+// rather than re-derived from the fixed window, which is what keeps a
+// backdated start ("I started eating a while ago") honest. A timer armed by an
+// older build has no start recorded; it is derived from the end and the fixed
+// window (POST_MEAL_WINDOW_MIN).
 const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
 // Profile the running timer belongs to (audit finding B): a caregiver who
 // starts the countdown on one profile and switches to another must not have it
@@ -1375,12 +1377,13 @@ export async function getPostMealTimerEnd(): Promise<number | null> {
 
 /**
  * The active timer's own start AND end, or null when none is pending. The start
- * is what makes the elapsed part of the window knowable: the progress bar reads
- * it instead of assuming the timer was armed with the CURRENT preference, and a
- * window change re-measures from it.
+ * is what makes the elapsed part of the window knowable: the progress bar and
+ * the "x min window" label both read the pair, instead of assuming every timer
+ * spans POST_MEAL_WINDOW_MIN - which a backdated start ("I started eating a
+ * while ago") deliberately does not.
  *
  * A timer armed before the start was persisted falls back to the end minus the
- * saved window, which is exactly where it must have begun.
+ * fixed window, which is exactly where it must have begun.
  */
 export async function getPostMealTimerState(): Promise<PostMealTimerWindow | null> {
   const endsAt = await getPostMealTimerEnd();
@@ -1517,9 +1520,8 @@ export async function schedulePostMealReminder(
   if (decision !== "start") return decision;
   if (!(await ensureNotificationPermission())) return "off";
   const profile = await readActiveProfile();
-  // The automatic path always uses the saved window, so it is never a one-off:
-  // stated here rather than left to whatever an earlier timer's teardown
-  // happened to clear.
+  // The automatic path always arms the full fixed window from now; only the
+  // "a while ago" sheet ever starts one part-way through.
   await schedulePostMealAt({
     minutes: POST_MEAL_WINDOW_MIN,
     profileId: profile?.id,
@@ -1587,7 +1589,7 @@ export async function startPostMealTimer(
 export async function restartPostMealTimerAt(
   loggedAt: Date | number,
   profileId?: string
-): Promise<PostMealWindowChange> {
+): Promise<PostMealRetimeResult> {
   try {
     const prefs = await getNotificationPrefs();
     if (!prefs.enabled) return "idle";
@@ -1616,8 +1618,10 @@ export async function restartPostMealTimerAt(
   }
 }
 
-/** What a post-meal window change did to the running timer. */
-export type PostMealWindowChange =
+/** What a re-timing did to the running post-meal countdown. Shared by the two
+ *  callers that can touch a window already in flight: restartPostMealTimerAt
+ *  (which moves its end) and applyPostMealAlarmModeChange (which does not). */
+export type PostMealRetimeResult =
   /** No timer was running; only future ones use the new window. */
   | "idle"
   /** A timer is running and now ends at the re-measured moment. */
@@ -1631,7 +1635,6 @@ export type PostMealWindowChange =
  * and end: only the surface it rings on moves. Without this, a mode changed
  * mid-countdown would only take effect on the next meal, leaving the user
  * looking at a card the switch says should not be there.
- *
  *
  * The last minute of a window is re-armed like any other (minSeconds: 1): the
  * end moment does not move here, so what is left is scheduled for exactly what
@@ -1649,7 +1652,7 @@ export type PostMealWindowChange =
  *
  * Never reports "elapsed": it moves no end moment.
  */
-export async function applyPostMealAlarmModeChange(): Promise<PostMealWindowChange> {
+export async function applyPostMealAlarmModeChange(): Promise<PostMealRetimeResult> {
   try {
     const running = await getPostMealTimerState();
     if (running == null) return "idle";

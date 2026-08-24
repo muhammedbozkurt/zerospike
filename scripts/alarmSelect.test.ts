@@ -204,6 +204,8 @@ section("H. the one-time tour gate (2.3.0's D)");
     alarmKitAvailable: true,
     tourSeen: false,
     reminderCount: 3,
+    notificationsEnabled: true,
+    notificationPermission: true,
   };
   eq("the upgrading user opens it", shouldOpenAlarmTour(upgrader), true);
 
@@ -249,10 +251,71 @@ section("H. the one-time tour gate (2.3.0's D)");
     "routeSettled",
     "onboarded",
     "alarmKitAvailable",
+    "notificationsEnabled",
+    "notificationPermission",
   ] as const;
   for (const key of keys) {
     eq(`${key} alone closes it`, shouldOpenAlarmTour({ ...upgrader, [key]: false }), false);
   }
+}
+
+section("I. delivery reality: nothing reaches the user, nothing to explain (2.3.0's F8)");
+{
+  // The tour's whole claim is "your reminders now ring as alarms". With the
+  // app's master switch off, or the OS permission missing, NOTHING reaches this
+  // user at all, so the claim is simply untrue for them - and unlike a device
+  // with no AlarmKit, that is a state which can flip back tomorrow.
+  const upgrader: AlarmTourGateInput = {
+    routeSettled: true,
+    onboarded: true,
+    screenshotMode: false,
+    alarmKitAvailable: true,
+    tourSeen: false,
+    reminderCount: 3,
+    notificationsEnabled: true,
+    notificationPermission: true,
+  };
+  eq(
+    "master reminder switch off",
+    shouldOpenAlarmTour({ ...upgrader, notificationsEnabled: false }),
+    false
+  );
+  eq(
+    "OS notification permission not granted",
+    shouldOpenAlarmTour({ ...upgrader, notificationPermission: false }),
+    false
+  );
+  eq(
+    "both off",
+    shouldOpenAlarmTour({
+      ...upgrader,
+      notificationsEnabled: false,
+      notificationPermission: false,
+    }),
+    false
+  );
+
+  // The four combinations of the two delivery inputs: only both-on opens, and
+  // the row with rows/AlarmKit/tourSeen all still in the opening position is
+  // the one app/_layout.tsx must NOT consume the seen-flag for (it re-checks on
+  // the next launch, so the user who grants permission later still gets it).
+  for (const notificationsEnabled of [true, false]) {
+    for (const notificationPermission of [true, false]) {
+      eq(
+        `enabled=${notificationsEnabled} permission=${notificationPermission}`,
+        shouldOpenAlarmTour({ ...upgrader, notificationsEnabled, notificationPermission }),
+        notificationsEnabled && notificationPermission
+      );
+    }
+  }
+
+  // Screenshot mode stays independent of the two new inputs: a capture is
+  // refused for its own reason, not because the simulator granted nothing.
+  eq(
+    "screenshot capture is still refused with delivery fully on",
+    shouldOpenAlarmTour({ ...upgrader, screenshotMode: true }),
+    false
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

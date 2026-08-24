@@ -18,7 +18,6 @@ import { isScreenshotMode } from "../lib/screenshotMode";
 import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
 import {
   createReminder,
-  deleteReminder,
   listReminders,
   syncBasalReminderRow,
   updateReminder,
@@ -35,9 +34,16 @@ import {
 import {
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
-  requestAlarmAuthorization,
 } from "../modules/zerospike-alarmkit";
-import { presetFor, type DayBucket, type ReminderPreset } from "../lib/reminderPresets";
+import {
+  ensureAlarmAuthorizationOnce,
+  setUpReminderPlan,
+} from "../lib/services/reminderPlan";
+import { presetFor, type ReminderPreset } from "../lib/reminderPresets";
+import {
+  ReminderPlanPreview,
+  usePresetLabel,
+} from "../components/ReminderPlanPreview";
 import { buildRevealPlan, type RevealPlanItem } from "../lib/revealPlan";
 import { POST_MEAL_WINDOW_MIN } from "../lib/postMealTimer";
 import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
@@ -294,13 +300,14 @@ export default function OnboardingScreen() {
     advancingRef.current = false;
   }, [stepIdxClamped, phase]);
 
-  // At most one AlarmKit prompt per onboarding run, however many reminder
-  // steps the user actually sets up (see ensureAlarmAuthorizationOnce).
-  const alarmAskedRef = useRef(false);
   // The alarm framing only appears where AlarmKit exists (iOS 26+); anywhere
   // else the reminder is a notification and saying otherwise would be a
-  // promise the OS cannot keep.
+  // promise the OS cannot keep. The prompt itself is asked at most once per
+  // app run, from the device-level lock in lib/services/reminderPlan.ts -
+  // shared with profile setup, which is the other place that writes reminders
+  // on the user's behalf.
   const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
+  const presetLabel = usePresetLabel();
 
   // Preserve the original analytics events. Log the current quiz step, or the
   // welcome / reveal phase name.
@@ -473,6 +480,13 @@ export default function OnboardingScreen() {
         ...DEFAULT_PREFS,
         basal: hasInsulin,
         basalTime,
+        // The weekly summary starts ON for a brand-new user, and only here: a
+        // full blob written at the end of onboarding is the one moment the app
+        // knows it is choosing for someone who has chosen nothing. Turning it
+        // on in DEFAULT_PREFS instead would have flipped it on for every
+        // existing install too, since that object also backfills fields absent
+        // from an older stored blob (lib/services/notificationPrefs.ts).
+        weekly: true,
       });
       await syncBasalReminderRow(hasInsulin, basalTime, true);
       await applyNotificationPrefs();
@@ -550,30 +564,6 @@ export default function OnboardingScreen() {
     return t(`onboarding.q${s[0].toUpperCase()}${s.slice(1)}`);
   }
 
-  /**
-   * Asks for the AlarmKit permission ONCE per onboarding run, and only from a
-   * step that has just written a real reminder row: the dialog is meaningless
-   * before there is something for it to ring, and a user who takes the "Not
-   * now" path out of both reminder steps never sees it at all. Runs right
-   * after the notification prompt, so the two system dialogs arrive together
-   * rather than one now and one out of nowhere later.
-   *
-   * Never blocks and never throws out: a refusal (or no AlarmKit at all)
-   * simply leaves the reminder arriving as a notification, and the row's own
-   * badge in Settings > Reminders can ask again whenever the user wants.
-   */
-  async function ensureAlarmAuthorizationOnce() {
-    if (alarmAskedRef.current) return;
-    alarmAskedRef.current = true;
-    try {
-      if (!isAlarmKitAvailable()) return;
-      if (getAlarmAuthorizationStatus() !== "notDetermined") return;
-      await requestAlarmAuthorization();
-    } catch {
-      // best-effort; the reminder still exists either way
-    }
-  }
-
   // "Kur": writes (or, on a second visit, updates) the single med reminder row
   // straight to the registry - the same direct-write pattern basal already
   // uses - then asks for notification permission (existing onboarding
@@ -623,83 +613,24 @@ export default function OnboardingScreen() {
   }
 
   /**
-   * A preset row's REAL name, from the part of the day its time falls in (see
-   * dayBucketOf). Written into the row, not derived at read time: the user can
-   * rename it afterwards like any other reminder, and a language change must not
-   * silently rewrite a name they have since made their own - the same rule the
-   * screenshot seed's custom row already follows.
-   */
-  function presetLabel(bucket: DayBucket): string {
-    switch (bucket) {
-      case "morning":
-        return t("reminders.presetMorning");
-      case "lateMorning":
-        return t("reminders.presetLateMorning");
-      case "midday":
-        return t("reminders.presetMidday");
-      case "afternoon":
-        return t("reminders.presetAfternoon");
-      case "evening":
-        return t("reminders.presetEvening");
-      case "night":
-      default:
-        return t("reminders.presetNight");
-    }
-  }
-
-  /**
-   * "Set up this plan" (2.3.0's K2-E): writes the previewed measurement layout
-   * straight to the registry, then asks for the two permissions - notification
-   * first, alarm right after (see ensureAlarmAuthorizationOnce). The order
-   * matters: the dialogs are only meaningful once rows actually exist, and
-   * "Not now" writes nothing and asks for nothing at all.
+   * "Set up this plan" (2.3.0's K2-E). The write, the replace-not-merge rule
+   * and the two permission prompts all live in setUpReminderPlan
+   * (lib/services/reminderPlan.ts), shared with app/profile-setup.tsx so a
+   * profile added later gets the exact same layout and the exact same asks.
+   * "Not now" writes nothing and asks for nothing at all: it is plain `next()`
+   * in the footer below.
    *
-   * REPLACES rather than merges: every existing measurement row is deleted
-   * first. In the onboarding context those rows can only come from an earlier,
-   * abandoned run of this very step (nothing else creates a glucose reminder
-   * before setup is finished), so keeping them would leave a half-old layout
-   * mixed with the new one - a user who removed 12:30 from the preview would
-   * still end up with it. Skipping by time, which is what this did before,
-   * merged the two instead of replacing.
-   *
-   * Rows that no longer fit under MAX_REMINDERS stop the loop (createReminder
-   * throws once the list is full) - finishing onboarding is never blocked by
-   * that.
+   * The profile is passed explicitly for the same reason profile setup does it,
+   * even though onboarding cannot switch profiles: it is the one write here
+   * that is also reachable from a screen that can, and a single call shape
+   * keeps the two from drifting. The outcome is deliberately not surfaced -
+   * finishing onboarding is never blocked by a reminder that did not land.
    */
   async function setupReminderPlan() {
     if (savingPlan) return;
     setSavingPlan(true);
-    let wrote = false;
     try {
-      const existing = await listReminders();
-      for (const row of existing) {
-        if (row.type === "glucose") await deleteReminder(row.id);
-      }
-      for (const preset of planRows) {
-        try {
-          await createReminder({
-            type: "glucose",
-            time: preset.time,
-            label: presetLabel(preset.bucket),
-            enabled: true,
-            // The app's own default, not a choice the user made, so
-            // alarmUserSet is deliberately NOT sent (schema v21).
-            alarmEnabled: true,
-          });
-          wrote = true;
-        } catch {
-          // A full list (MAX_REMINDERS) is the only real case here, and once it
-          // is full every further row would throw too: stop rather than retry
-          // the same failure for each remaining time.
-          break;
-        }
-      }
-      if (wrote) {
-        await requestNotificationPermission();
-        await ensureAlarmAuthorizationOnce();
-      }
-    } catch {
-      // best-effort - Settings > Reminders is always there to try again
+      await setUpReminderPlan(planRows, presetLabel, activeProfile?.id);
     } finally {
       setSavingPlan(false);
     }
@@ -1033,9 +964,12 @@ export default function OnboardingScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text className="text-mut text-[11px] font-bold">zerospike</Text>
+                  {/* Mirrors the real running card, which shows the feature
+                      name alone next to the live countdown (the window length
+                      is fixed, so printing it here too was the same number
+                      twice). */}
                   <Text className="text-ink text-sm font-bold" numberOfLines={1}>
-                    {t("dashboard.quickPostMealTitle")}{" "}
-                    {t("dashboard.quickPostMealWindow", { n: 120 })}
+                    {t("dashboard.quickPostMealTitle")}
                   </Text>
                 </View>
                 <Text style={{ color: THEME.accent, fontSize: 18, fontWeight: "800" }}>1:12</Text>
@@ -1167,39 +1101,11 @@ export default function OnboardingScreen() {
       case "reminderPlan":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            {planRows.map((preset) => (
-              <View
-                key={preset.time}
-                className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 mb-2"
-                style={{ minHeight: 56 }}
-              >
-                <View className="flex-row items-center" style={{ flex: 1, marginRight: 8 }}>
-                  <Ionicons name="water-outline" size={18} color={THEME.accent} />
-                  <Text className="text-ink text-base ml-3 flex-1" numberOfLines={1}>
-                    {presetLabel(preset.bucket)}
-                  </Text>
-                </View>
-                <View className="flex-row items-center" style={{ gap: 12 }}>
-                  <Text className="text-ink text-lg font-semibold">{preset.time}</Text>
-                  <Pressable
-                    onPress={() => {
-                      hapticSelect();
-                      setRemovedPlanTimes((prev) => [...prev, preset.time]);
-                    }}
-                    hitSlop={12}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("onboarding.planRemoveA11y")}
-                  >
-                    <Ionicons name="close" size={18} color={THEME.muted} />
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-            {alarmKitAvailable && planRows.length > 0 ? (
-              <Text className="text-mut text-sm leading-5 mt-2">
-                {t("onboarding.alarmNote")}
-              </Text>
-            ) : null}
+            <ReminderPlanPreview
+              rows={planRows}
+              onRemove={(time) => setRemovedPlanTimes((prev) => [...prev, time])}
+              alarmKitAvailable={alarmKitAvailable}
+            />
           </FadeSlideIn>
         );
 

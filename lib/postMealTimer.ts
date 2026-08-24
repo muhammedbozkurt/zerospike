@@ -224,15 +224,6 @@ export type PostMealRestart =
  * dashboard's "restart for this meal" action anchors the countdown to the meal
  * that was just logged, not to the moment the user tapped the action.
  *
- * Shares the scheduler-floor handling with retimePostMealWindow (under
- * POST_MEAL_MIN_SCHEDULE_MS counts as over, not rounded up to a minute) but
- * starts clean from `startedAt` instead of re-measuring an already-running
-
-/**
- * Arms a fresh window starting at `startedAt` rather than at "now": the
- * dashboard's "restart for this meal" action anchors the countdown to the meal
- * that was just logged, not to the moment the user tapped the action.
- *
  * Shares the scheduler floor with startPostMealLate (under
  * POST_MEAL_MIN_SCHEDULE_MS counts as over, not rounded up to a minute) but
  * starts clean from `startedAt` instead of measuring back from now.

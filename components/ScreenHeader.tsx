@@ -22,12 +22,19 @@ export function ScreenHeader({
   title,
   onBack,
   backIcon = "chevron-back",
+  backDisabled,
   right,
   accessibilityLabel,
 }: {
   title: string;
   onBack?: () => void;
   backIcon?: keyof typeof Ionicons.glyphMap;
+  /** Temporarily inert, for a screen that is mid-write (app/profile-setup.tsx
+   *  while a save or a reminder-plan setup runs). Kept RENDERED rather than
+   *  dropped: passing no `onBack` removes the plate entirely and shifts the
+   *  title, which reads as the screen changing rather than as one control
+   *  being busy. */
+  backDisabled?: boolean;
   right?: React.ReactNode;
   accessibilityLabel?: string;
 }) {
@@ -39,10 +46,12 @@ export function ScreenHeader({
     <View className="flex-row items-center px-4 py-3">
       {onBack ? (
         <Pressable
-          onPress={onBack}
+          onPress={backDisabled ? undefined : onBack}
+          disabled={backDisabled}
           hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel={backLabel}
+          accessibilityState={{ disabled: !!backDisabled }}
           // The plate itself is 30pt; the host guarantees the 44pt target.
           style={{
             marginRight: 3,
@@ -51,6 +60,7 @@ export function ScreenHeader({
             minHeight: HIT_TARGET,
             alignItems: "center",
             justifyContent: "center",
+            opacity: backDisabled ? 0.4 : 1,
           }}
         >
           {/* The plate is IconTile's look, reproduced by hand: IconTile only

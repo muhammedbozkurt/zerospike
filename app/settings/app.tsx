@@ -7,7 +7,14 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../../lib/store/AppContext";
 import type { Lang } from "../../lib/db/types";
 import { applyNotificationPrefs } from "../../lib/services/notifications";
-import { getPlan, presentCodeRedemption, restore, type PlanId } from "../../lib/services/purchases";
+import {
+  getPlan,
+  getTrialStatus,
+  presentCodeRedemption,
+  restore,
+  type PlanId,
+  type TrialStatus,
+} from "../../lib/services/purchases";
 import { hasSpikeConsent, withdrawSpikeConsent } from "../../lib/services/spikeConsent";
 import { SectionLabel } from "../../components/ui";
 import { LanguagePicker } from "../../components/LanguagePicker";
@@ -32,6 +39,9 @@ export default function AppSettings() {
   // resolves the row stays clickable, same as an indeterminate plan - it must
   // never default to LOOKING locked while the read is still in flight.
   const [proPlan, setProPlan] = useState<PlanId | null>(null);
+  // Null means "no answer yet / store unreachable", which is NOT the same as
+  // "no trial": the line is only drawn on a positive answer.
+  const [trial, setTrial] = useState<TrialStatus | null>(null);
 
   // Re-read on every focus, not just on mount: this screen stays mounted
   // under the stack while the user grants or withdraws consent on /spike, so
@@ -47,6 +57,7 @@ export default function AppSettings() {
     useCallback(() => {
       if (!isProUser) return;
       void getPlan().then(setProPlan);
+      void getTrialStatus().then(setTrial);
     }, [isProUser])
   );
 
@@ -103,6 +114,16 @@ export default function AppSettings() {
     }
   }
 
+  const onTrial = trial?.active === true;
+  const trialLine = !onTrial
+    ? undefined
+    : trial.daysLeft != null
+      ? t("settings.trialDaysLeft", { count: trial.daysLeft })
+      : t("settings.trialActive");
+  // A running trial always converts into a subscription, so the way to stop it
+  // has to be reachable even while getPlan has not resolved which plan it is.
+  const canManage = onTrial || proPlan !== "lifetime";
+
   return (
     <SettingsScaffold title={t("settings.appSection")}>
       <View style={columnPad()}>
@@ -129,8 +150,9 @@ export default function AppSettings() {
         <Row
           icon="checkmark-circle"
           label={t("settings.proActive")}
-          value={proPlan !== "lifetime" ? t("settings.manageSubscription") : undefined}
-          onPress={proPlan !== "lifetime" ? onManageSubscription : undefined}
+          sub={trialLine}
+          value={canManage ? t("settings.manageSubscription") : undefined}
+          onPress={canManage ? onManageSubscription : undefined}
           right={<Ionicons name="sparkles" size={18} color={THEME.accent} />}
         />
       ) : (

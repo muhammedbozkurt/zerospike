@@ -150,6 +150,60 @@ export async function getPlan(): Promise<PlanId | null> {
   }
 }
 
+/** Whether Pro is currently running as a free trial, and how much is left. */
+export interface TrialStatus {
+  active: boolean;
+  /** Whole days remaining, rounded UP, so the last partial day still reads as a
+   *  day the user has. Null when the store reported no expiry at all. */
+  daysLeft: number | null;
+}
+
+const NO_TRIAL: TrialStatus = { active: false, daysLeft: null };
+
+function daysUntil(iso: unknown): number | null {
+  if (typeof iso !== "string" || iso === "") return null;
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  return Math.ceil((ms - Date.now()) / 86400000);
+}
+
+/**
+ * The free-trial state as the STORE sees it, or null when the store could not be
+ * read at all (offline, SDK not configured, request failed) - the same
+ * "unreachable is not an answer" distinction verifyProWithStore draws, so the UI
+ * can stay silent instead of claiming there is no trial.
+ *
+ * Only periodType TRIAL counts. INTRO is a discounted PAID period, not a free
+ * trial, and must never be presented as one.
+ */
+export async function getTrialStatus(): Promise<TrialStatus | null> {
+  if (DEBUG_MOCK_PURCHASES) {
+    // No real entitlement exists on a dev build, so this mirrors
+    // devFallbackPlans: annual is the plan that carries the trial there, and a
+    // mock purchase of it is the only state in which the trial row is reviewable.
+    try {
+      const pro = (await AsyncStorage.getItem(PRO_KEY)) === "true";
+      const plan = await AsyncStorage.getItem(PLAN_KEY);
+      if (!pro || plan !== "annual") return NO_TRIAL;
+      return { active: true, daysLeft: FALLBACK_TRIAL_DAYS };
+    } catch {
+      return null;
+    }
+  }
+  try {
+    await ensureConfigured();
+    const info = await rc().getCustomerInfo();
+    const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
+    if (!ent) return NO_TRIAL;
+    if (String(ent.periodType ?? "").toUpperCase() !== "TRIAL") return NO_TRIAL;
+    const left = daysUntil(ent.expirationDate);
+    if (left !== null && left <= 0) return NO_TRIAL;
+    return { active: true, daysLeft: left };
+  } catch {
+    return null;
+  }
+}
+
 /** Why a purchase attempt did not activate Pro. */
 export type PurchaseErrorClass = "cancelled" | "alreadyOwned" | "storeError";
 

@@ -409,18 +409,29 @@ export default function DashboardScreen() {
       ]);
       const alarmKitAvailable = isAlarmKitAvailable();
       const owned = postMealWindowForProfile(timer, activeProfileIdRef.current);
+      // A store frame has to look like a real, working account (App Store
+      // 2.3.3) and the simulator that captures it has granted nothing, so both
+      // permission reads are forced open in screenshot mode - the SAME gate,
+      // on the same two facts, as app/settings/reminders.tsx (alarmGranted /
+      // notifGranted). Without it the dashboard's line and the reminders
+      // screen's "Coming up" card disagreed in the very captures meant to show
+      // them side by side. The stored master switch is deliberately NOT gated
+      // here or there: the seed sets it like any other preference.
+      const notifGranted = isScreenshotMode() ? true : permission === "granted";
+      const alarmGranted = isScreenshotMode()
+        ? true
+        : alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized";
       setNextReminderRows(rows);
       setNextReminder(
         nextUpcoming({
           rows,
           now: Date.now(),
           windowMs: 24 * 60 * 60 * 1000,
-          granted: prefs.enabled && permission === "granted",
+          granted: prefs.enabled && notifGranted,
           showsBasal: insulinModeShowsBasal(insulinModeOf(activeProfileRef.current)),
           showsMeds: activeProfileRef.current?.oral_meds_enabled === 1,
           alarmKitAvailable,
-          alarmAuthorized:
-            alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
+          alarmAuthorized: alarmGranted,
           // Deliberately NOT passing the running countdown: it has its own
           // card right above this line, and repeating it here made the same
           // fact appear twice on one screen. The reminders screen does not
@@ -575,8 +586,8 @@ export default function DashboardScreen() {
     void refreshNextReminder();
   }, [refreshPostMealTimer, refreshNextReminder, dataVersion]);
 
-  // Also on focus: the post-meal window label must pick up a delay changed in
-  // Settings without waiting for a data change or an app restart.
+  // Also on focus: a timer started (or ended) away from this screen must show
+  // up without waiting for a data change or an app restart.
   useFocusEffect(
     useCallback(() => {
       refreshPostMealTimer();
@@ -825,13 +836,18 @@ export default function DashboardScreen() {
     nextReminder.kind === "reminder" &&
     (nextReminderRows.find((r) => r.id === nextReminder.id)?.alarm_enabled === 1);
 
-  /** What the next-reminder line reads. A reminder shows its own NAME (preset
-   *  rows are named after their part of the day; an older, unnamed row falls
-   *  back to its type) and its stored "HH:MM" - the same two strings Settings >
-   *  Reminders shows, so the surfaces cannot disagree. */
+  /** What the next-reminder line reads: the TIME first, then the reminder's own
+   *  NAME (preset rows are named after their part of the day; an older, unnamed
+   *  row falls back to its type) - the same two strings Settings > Reminders
+   *  shows, so the surfaces cannot disagree.
+   *
+   *  Time first because it is the half that must survive: the strip clips to
+   *  one line, and with the name leading, a long translated name ("Erinnerung
+   *  an das Basalinsulin") pushed the actual time off the end, leaving a line
+   *  about a reminder with no when. */
   function nextReminderLabel(item: UpcomingItem): string {
     if (item.kind === "postMeal") {
-      return `${t("reminders.upcomingPostMeal")} · ${formatTimeForLang(item.at, lang)}`;
+      return `${formatTimeForLang(item.at, lang)} · ${t("reminders.upcomingPostMeal")}`;
     }
     const row = nextReminderRows.find((r) => r.id === item.id);
     const name =
@@ -846,7 +862,7 @@ export default function DashboardScreen() {
                   ? "reminders.typeCustom"
                   : "reminders.typeGlucose"
           );
-    return row ? `${name} · ${row.time}` : name;
+    return row ? `${row.time} · ${name}` : name;
   }
 
   // "What is this based on?" explanation for the compact active-insulin line:
@@ -950,17 +966,17 @@ export default function DashboardScreen() {
     setSheetOpen(true);
   }
 
-  // "I started eating": arms the post-meal check timer (dedupes with the meal-log
-  // auto reminder via a shared notification id). `minutes` is only passed by the
-  // duration sheet (2.3.0's K2-C); the primary button keeps using the saved
-  // window, so the common case is still one tap.
+  // "I started eating": arms the post-meal check timer (dedupes with the
+  // meal-log auto reminder via a shared notification id). `minutesAgo` is only
+  // passed by the "a while ago" sheet (2.3.0's G15); the primary button arms
+  // from now, so the common case is still one tap.
   //
   // ONE arm at a time, across BOTH entry points: the pill and the sheet's own
   // "Start" can otherwise overlap (the sheet closes on the next render, the
   // pill is still on screen underneath it), and two arms racing would leave the
-  // stored window, the one-off flag and the armed delivery describing two
-  // different countdowns. A ref, not state, because the second tap has to see
-  // the guard on the SAME tick it happens.
+  // persisted start/end pair and the armed delivery describing two different
+  // countdowns. A ref, not state, because the second tap has to see the guard
+  // on the SAME tick it happens.
   async function startedEating(minutesAgo = 0) {
     if (startingTimerRef.current) return;
     startingTimerRef.current = true;
@@ -1792,54 +1808,100 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
-      {/* Active insulin (IOB): a compact contextual line, only when working and
-          only for users who actually take a mealtime insulin. */}
-      {iob > 0 && showsInsulin ? (
-        <View className="items-center mb-3">
-          <View className="flex-row items-center justify-center" style={{ gap: 6 }}>
-            <Ionicons name="hourglass-outline" size={12} color={THEME.accent} />
-            <Text style={{ color: THEME.muted, fontSize: 11 }}>
-              {t("dashboard.activeInsulin")}: {num(iob)} {t("common.units")}
-            </Text>
-            <Tooltip text={iobTooltipText} size={13} />
-          </View>
-        </View>
-      ) : null}
+      {/* Context strip: active insulin (IOB) and the next reminder (2.3.0's
+          G18), the two facts that qualify what the card above is showing.
+          Drawn as ONE bordered strip of up to two segments rather than two
+          centred micro-lines: as centred 11px text they read as debug output
+          dropped under the card, and two of them stacked read as a list of
+          nothing in particular. Each segment is a labelled value the same shape
+          as every other tile on this screen (quiet label, then the number), so
+          they belong to the layout instead of floating in it.
 
-      {/* The next reminder (2.3.0's G18): one quiet line, the same weight as the
-          active-insulin line above it, and only when there IS one - no
-          reminders, no permission, or nothing within the day and it is not
-          drawn at all. Tapping goes to the place it can be changed. */}
-      {nextReminder ? (
-        <Pressable
-          onPress={() => router.push("/settings/reminders")}
-          accessibilityRole="button"
-          accessibilityLabel={t("dashboard.nextReminderA11y")}
-          hitSlop={8}
-          className="items-center mb-3 active:opacity-70"
-        >
-          <View className="flex-row items-center justify-center" style={{ gap: 6 }}>
-            {/* Three states, the same vocabulary the reminders list uses: a
-                working alarm (accent `alarm`), an alarm this device is not
-                allowed to ring yet (muted `alarm-outline`), or a notification.
-                `mode` already folds the permission in, so the stored intent is
-                what tells the second case from the third. */}
-            <Ionicons
-              name={
-                nextReminder.mode === "alarm"
-                  ? "alarm"
-                  : nextReminderWantsAlarm
-                    ? "alarm-outline"
-                    : "notifications-outline"
-              }
-              size={12}
-              color={nextReminder.mode === "alarm" ? THEME.accent : THEME.muted}
-            />
-            <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11 }}>
-              {nextReminderLabel(nextReminder)}
-            </Text>
-          </View>
-        </Pressable>
+          Either half can be absent - no mealtime insulin working, no reminder
+          in the next day - and the strip then holds a single full-width
+          segment, which stays balanced because the content is left-aligned
+          inside it rather than centred. With neither, nothing is drawn at all.
+
+          The labels sit on their own line above the values on purpose: the long
+          translations ("Aktives Insulin", "Insuline active") do not fit beside a
+          value on one line at this width, and every string here is single-line
+          clipped rather than allowed to reflow the strip. */}
+      {(iob > 0 && showsInsulin) || nextReminder ? (
+        <View className="flex-row rounded-2xl bg-glass border border-hair mb-3 overflow-hidden">
+          {iob > 0 && showsInsulin ? (
+            <View className="flex-1 px-3 justify-center" style={{ minHeight: 46, paddingVertical: 8 }}>
+              <View className="flex-row items-center" style={{ gap: 5 }}>
+                <Ionicons name="hourglass-outline" size={11} color={THEME.accent} />
+                <Text
+                  numberOfLines={1}
+                  style={{ color: THEME.muted, fontSize: 10, flexShrink: 1 }}
+                >
+                  {t("dashboard.activeInsulin")}
+                </Text>
+                {/* The existing "what is this based on?" explanation, kept
+                    exactly where it was: on the IOB half, not on the strip. */}
+                <Tooltip text={iobTooltipText} size={12} />
+              </View>
+              <Text
+                numberOfLines={1}
+                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", marginTop: 2 }}
+              >
+                {num(iob)} {t("common.units")}
+              </Text>
+            </View>
+          ) : null}
+
+          {iob > 0 && showsInsulin && nextReminder ? (
+            <View style={{ width: 1, backgroundColor: THEME.border, marginVertical: 8 }} />
+          ) : null}
+
+          {nextReminder ? (
+            <Pressable
+              onPress={() => router.push("/settings/reminders")}
+              accessibilityRole="button"
+              accessibilityLabel={t("dashboard.nextReminderA11y")}
+              className="flex-1 px-3 justify-center active:opacity-70"
+              style={{ minHeight: 46, paddingVertical: 8 }}
+            >
+              <View className="flex-row items-center" style={{ gap: 5 }}>
+                {/* Three states, the same vocabulary the reminders list uses: a
+                    working alarm (accent `alarm`), an alarm this device is not
+                    allowed to ring yet (muted `alarm-outline`), or a
+                    notification. `mode` already folds the permission in, so the
+                    stored intent is what tells the second case from the third. */}
+                <Ionicons
+                  name={
+                    nextReminder.mode === "alarm"
+                      ? "alarm"
+                      : nextReminderWantsAlarm
+                        ? "alarm-outline"
+                        : "notifications-outline"
+                  }
+                  size={11}
+                  color={nextReminder.mode === "alarm" ? THEME.accent : THEME.muted}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={{ color: THEME.muted, fontSize: 10, flexShrink: 1 }}
+                >
+                  {t("dashboard.nextReminder")}
+                </Text>
+              </View>
+              {/* Time-first (see nextReminderLabel) AND allowed to shrink: on
+                  a narrow screen the longest names in de/fr/es still overrun
+                  half a strip, and shrinking keeps the whole line readable
+                  instead of ending it in an ellipsis. */}
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", marginTop: 2 }}
+              >
+                {nextReminderLabel(nextReminder)}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
       {/* Quick access: Insights + Health sync, promoted from the old list footer
@@ -2244,10 +2306,9 @@ function PostMealCountdown({
 
   const remainingMs = Math.max(0, end - now);
   const countdown = formatPostMealRemaining(remainingMs);
-  // Both the label and the bar read the RUNNING timer's own window, so a window
-  // shortened mid-countdown is described honestly instead of against the length
-  // the timer happened to be armed with.
-  const windowMin = Math.max(1, Math.round((end - timer.startedAt) / 60_000));
+  // The bar reads the RUNNING timer's own start/end pair, which is what makes a
+  // backdated start ("I started eating a while ago") arrive already part-way
+  // along instead of empty.
   const progress = postMealElapsedFraction(timer, now);
 
   return (
@@ -2259,8 +2320,11 @@ function PostMealCountdown({
             style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", flex: 1 }}
             numberOfLines={1}
           >
-            {t("dashboard.quickPostMealTitle")}{" "}
-            {t("dashboard.quickPostMealWindow", { n: windowMin })}
+            {/* The feature name alone. The window length used to be appended
+                here in brackets, but it is fixed at POST_MEAL_WINDOW_MIN and
+                the live countdown sits immediately to the right, so it read as
+                the same number twice on one row. */}
+            {t("dashboard.quickPostMealTitle")}
           </Text>
         </View>
         <View className="flex-row items-center" style={{ gap: 10 }}>
