@@ -363,12 +363,13 @@ Mevcut ve YENIDEN KULLANILAN anahtarlar (yeni metin yazilmaz):
 9. Tokluk: Ayarlar'da "Alarm olarak" acik iken (VARSAYILAN) "Yemeye basladim"
    -> sure sonunda gercek alarm; bildirim GELMIYOR; kilit ekraninda iki ayri
    sayac karti gorunmuyor.
-9b. Sistem sayac kartinin gorunumu: kilit ekraninda ve Dynamic Island'da
-   AlarmKit'in kendi countdown karti okunakli, marka rengi (tint) dogru,
-   basligi dogru dilde. Kabul edilemez gorunurse geri alma tek satir
-   (DEFAULT_PREFS.postMealAlarm = false) ve bizim markali kartimiz geri gelir.
-9c. Alarm modu KAPALIYKEN (kullanici bildirime cevirdiginde) eski akis aynen:
-   markali PostMealActivity karti + bildirim, sayac ayni anda bitiyor.
+9b. **[KAPSAM 2 / K2-F ile degisti]** Sistem sayac karti ARTIK YOK. Alarm
+   modunda kilit ekraninda ve Dynamic Island'da yalnizca BIZIM markali
+   PostMealActivity kartimiz gorunur; AlarmKit'in kendi geri sayim karti hic
+   cikmaz. Bkz. bolum 15.10 madde 19.
+9c. Alarm modu KAPALIYKEN (kullanici bildirime cevirdiginde) akis aynen:
+   markali PostMealActivity karti + bildirim, sayac ayni anda bitiyor. Alarm
+   modunda tek fark teslimdir: ayni kart, sonunda bildirim yerine alarm.
 10. Tokluk alarm modu acikken sayaci elle iptal / erken olcum kaydi ->
     alarm da iptal oluyor, sure sonunda hicbir sey calmiyor.
 11. Tokluk sayaci calisirken modu Ayarlar'dan degistirmek: kalan sure ayni
@@ -475,11 +476,19 @@ karar:
   reddeden kullanicida hicbir hatirlatici calmaz. Varsayilan alarm oldugu icin
   bu kapi artik daha gorunur; 2.4.0 adayi olarak not.
 - **Yalniz bazal hatirlatici kuran yeni kullanici onboarding'de AlarmKit izni
-  gormez**: izin yalniz medReminder/glucoseReminder "Kur" akislarinda isteniyor
-  (karar 0.C). Bazal satiri finishToReveal icinde syncBasalReminderRow ile
-  yaziliyor, oraya sistem diyalogu koymak tamamlama animasyonunun ortasina
-  denk gelirdi. Satir alarm olarak kayitli kalir, bildirim olarak gelir,
-  Ayarlar > Hatirlaticilar rozetine dokunmak izni ister.
+  gormez**: izin yalniz medReminder ve reminderPlan ("Duzeni kur") akislarinda
+  isteniyor (karar 0.C, Kapsam 2'de glucoseReminder adiminin yerini reminderPlan
+  aldi). Bazal satiri finishToReveal icinde syncBasalReminderRow ile yaziliyor,
+  oraya sistem diyalogu koymak tamamlama animasyonunun ortasina denk gelirdi.
+  Satir alarm olarak kayitli kalir, bildirim olarak gelir, Ayarlar >
+  Hatirlaticilar rozetine dokunmak izni ister.
+- **[KAPSAM 2 / R12 kapandi] Widget glukoz kisayolu**: `?sheet=glucose` artik
+  app/(tabs)/index.tsx'te ACIKCA taniniyor ve formu, uygulama ici hizli ekleme
+  dugmesiyle ayni tek sabitten (`DEFAULT_LOG_PERIOD`) aciyor; deep link tarafi
+  degismedi. Tanimlanmayan bir `sheet` degeri artik hicbir form acmiyor
+  (eskiden else kolu her degeri "aclik" formuna ceviriyordu). Varsayilan hala
+  "fasting", ama tek yerde ve iki yuzey icin ayni; degistirilecekse o sabit
+  degisir.
 - **Rozet iki dar durumda gercegi soylemez**: rozet artik SAKLANAN niyeti
   gosteriyor ve yetkisiz cihazda "Alarm (izin gerekli)" diye ucuncu bir durum
   aciyor (denetim sonrasi duzeltme), ama (a) ana bildirim anahtari kapaliyken
@@ -500,3 +509,450 @@ karar:
   sayac ve saklanan bitis ani calismaya devam eder, sure sonunda hicbir sey
   calmaz ve sayac normal sekilde kapanir. Ters yon guvenli: uygulamadan iptal
   (cancelPostMealTimer) alarmi da indirir. Cihaz QA maddesi 18.
+  **[KAPSAM 2 / K2-F ILE DUSTU]**: countdown timer'i tek seferlik sabit alarma
+  cevrildigi icin ortada bir sistem sayac karti kalmiyor, dolayisiyla bu sinirin
+  dayanagi da yok. Bolum 15.6.
+
+# KAPSAM 2 (onay: 2026-08-24, build alinmadan kapsam genislemesi)
+
+Yukaridaki 1-14. bolumler UYGULANDI (84d1b15 + e3e4a14) ve build beklerken
+kapsam buyudu. Asagisi onun UZERINE gelir: uygulanmis maddelere dokunulmaz,
+DEGISEN davranislar **[DEGISIM]** etiketiyle isaretlenir. Is maddesi numaralari
+31'den devam eder. Bolum 1'deki sert sinirlar aynen gecerlidir ve Kapsam 2'de
+hicbiri gevsetilmez.
+
+## 15.0 Kritik tasarim kararlari (Kapsam 2 ozeti)
+
+- **K2-A / kaynak**: yaklasan liste OS kuyruklarindan degil, reminders
+  TABLOSUNDAN hesaplanir (saf modul), teslim ikonu `alarmModeOf`'tan gelir;
+  kapsam kullanicinin kurdugu satirlar + calisan tokluk sayacidir, haftalik ozet
+  ve bos gunluk bilincli olarak DISARIDA.
+- **K2-B / alarm dokunusu**: AlarmKit alarmina ikinci dugme (`secondaryButtonBehavior:
+  .custom` + `secondaryIntent`) eklenip App Group uzerinden rota birakilarak
+  ilgili ekrana dusulur; Xcode 26'da derlenmezse sinir olarak yazilir ve alarm
+  bugunku gibi yalniz "Durdur" ile kapanir.
+- **K2-C / sure secici**: birincil buton varsayilan pencereyi (120) kullanir,
+  ikincil kucuk buton tek seferlik sure secer (cip 60/90/120/150/180 + serbest
+  15 dk adim); secim AYARI DEGISTIRMEZ, yalniz o sayaci kurar.
+- **K2-D / onboarding**: tokluk sorusu tamamen kalkar, herkes 120 ile baslar,
+  gestasyonelin sessiz 60 turetmesi de kalkar (soru yokken kullaniciya
+  gosterilmeyen bir tibbi cikarim olurdu), pencere ayari Ayarlar'da kalir.
+- **K2-E / hazir duzen**: onboarding'in tek saatlik "olcum hatirlaticisi" adimi
+  (2.2.0 C8) yerini tani tipine gore hazirlanmis 2-4 satirlik ONIZLEMELI duzene
+  birakir; ekranda tip adi ve siklik onerisi dili GECMEZ, cerceve "baslangic
+  icin hazir bir duzen"dir; izin anlari bu adima taşinir.
+- **K2-F / LA politikasi [DEGISIM]**: Apple'in sistem geri sayim karti
+  istenmiyor; countdown timer kaldirilir, yerine bitis anina kurulan TEK
+  SEFERLIK sabit AlarmKit alarmi gelir ve markali PostMealActivity HER modda
+  yasar; alarm yalniz ses ve tam ekran teslimi ekler.
+
+## 15.1 K2-A. Yaklasan hatirlaticilar gorunumu
+
+31. **lib/upcomingReminders.ts (yeni, saf modul)**: `nextOccurrenceAt(hhmm,
+    now)` (bugunun saati gectiyse yarina taşir) ve `buildUpcoming(input):
+    UpcomingItem[]`. `UpcomingItem = { kind: "reminder" | "postMeal"; id: string;
+    at: number; mode: "alarm" | "notification"; type?: ReminderType; label?: string }`.
+    Girdiler cagirandan gelir: satirlar, `now`, `windowMs` (24 saat), kapilar
+    (`granted`, `showsBasal`, `showsMeds`), AlarmKit ucusu (`alarmKitAvailable`,
+    `alarmAuthorized`) ve calisan tokluk sayacinin bitisi. Saat/lokal yok,
+    lib/postMealTimer.ts ve lib/alarmSelect.ts ile ayni bagimsizlik sozlesmesi.
+32. **Kaynak karari (gerekce)**: hesap TABLODAN yapilir, `getAllScheduledNotificationsAsync()`
+    + `listScheduledAlarmIds()` cifti kullanilmaz. Sebepler: (a)
+    `listScheduledAlarmIds()` yalniz kimlik dondurur, saat tasimaz
+    (modules/zerospike-alarmkit/index.ts:132), yani alarm satirlarinin ne zaman
+    calacagi oradan OGRENILEMEZ; (b) expo'nun DAILY tetikleyicisinin okunan
+    sekli platforma gore degisir, ayni ekrani iki platformda ayni gostermek
+    icin yeniden normalize etmek gerekirdi; (c) tablo zaten applyReminders'in
+    tek dogruluk kaynagi, ayni kapilarla hesaplanan liste ile gercek teslim
+    arasinda ikinci bir gercek olusmaz; (d) saf hesap Node testine girer.
+    Teslim ikonu satirdan degil `alarmModeOf` (lib/alarmSelect.ts:44) uzerinden
+    alinir, boylece liste yetkisiz cihazda "alarm" iddia edemez.
+33. **Kapsam karari (gerekce)**: listeye YALNIZ kullanicinin kurdugu hatirlatici
+    satirlari ve calisan tokluk sayaci girer. Haftalik ozet, bos gunluk, deneme
+    ve dusuk-sonrasi takip DISARIDA: ilk ucu kullanicinin kurdugu hatirlatici
+    degil uygulamanin kendi durum bildirimidir, dordunculeri listeye koymak ise
+    deger-tetiklemeli bir teslimi "yaklasan alarm" gibi gostermek olur ve bolum
+    1'deki cizgiyi bulanikltirir.
+34. **components/settingsUi.tsx**: `Row`'a opsiyonel `sub?: string` eklenir
+    (etiketin altinda tek satir, `THEME.muted`). Mevcut cagiranlar etkilenmez.
+35. **app/settings/reminders.tsx**: (a) liste basina "Siradaki" karti,
+    onumuzdeki 24 saatin birlesik listesi, en fazla 6 satir + kalan sayisi;
+    her satirda saat, tur adi ve teslim ikonu (`alarm` / `notifications-outline`);
+    (b) her hatirlatici satirinda `sub` ile "siradaki: bugun 22:00". Kart
+    bildirim izni yokken GIZLENIR (mevcut izin banner'i zaten o durumu
+    anlatiyor) ve satirlar zaten kapali olan hatirlaticilari icermez.
+36. **Tazeleme**: kart `afterChange()` ve ekran odaginda yeniden hesaplanir;
+    surekli tick YOK (saatler oturum icinde sabit). Gece yarisi "bugun/yarin"
+    etiketinin kaymasi kabul edilen sinirdir, bir sonraki odakta duzelir.
+37. **Bicimleme**: satir saatleri tabloda zaten "HH:MM" olarak duruyor ve ekranda
+    bugun de oyle gosteriliyor, aynen kullanilir; tokluk sayaci girdisi epoch
+    oldugu icin `formatTimeForLang` (lib/format.ts:55) ile bicimlenir. Gun
+    etiketi `reminders.nextToday` / `reminders.nextTomorrow`.
+
+## 15.2 K2-B. Deep link denetimi ve tamamlama
+
+Denetim ciktisi (ONCE = denetim ani, SONRA = 2026-08-24 uygulamasi):
+
+| Yuzey | ONCE | SONRA |
+| --- | --- | --- |
+| Bildirim rotalari (postMeal/glucose/basal/med/weekly/trial/lowFollowup) | Var, app/_layout.tsx:80-108 | Degismedi |
+| Ozel (custom) hatirlatici bildirimi | **Rota YOK** | `route: "custom"` -> pano, SHEET'SIZ (notifications.ts reminderContent + _layout `case "custom"`) |
+| Bos gunluk (idle) bildirimi | Pano + aclik olcum sheet'i | **[DEGISIM]** pano, SHEET'SIZ (_layout `case "idle"`, custom ile ayni kol) |
+| QuickAdd iOS widget | Tam ama 4 literal URL | `DeepLinks.addGlucose/addMeal/addInjection/addMed` (QuickAdd.swift:81/88/98/109) |
+| Ana iOS widget | systemSmall/Medium yalniz `zerospike:///` | **[DEGISIM]** her aile `DeepLinks.addGlucose` (index.swift `tapURL`) |
+| PostMealActivity (kilit ekrani + Dynamic Island) | **Deep link YOK** | `.widgetURL(DeepLinks.postMeal2h)` iki yerde: kart govdesi + DynamicIsland (keylineTint'in yaninda) |
+| Android QuickAdd widget | Tam | Degismedi |
+| Android ana widget | Kok view `URI_DASHBOARD` | **[DEGISIM]** `URI_ADD_GLUCOSE` (androidWidget.ts, iOS ile simetri); `URI_DASHBOARD` sabiti tamamen kalkti |
+| AlarmKit alarmi | Yalniz sistem "Durdur" | "Ac" ikinci dugmesi -> `ZerospikeAlarmOpenIntent` App Group'a rota yazar, `takePendingAlarmRoute()` + _layout AppState "active" ayni `routeForNotification`a verir |
+| Scheme sabiti | Swift'te 6 literal | `targets/widget/DeepLinks.swift` (6 sabit), JS tarafi androidWidget.ts ile birebir ayni metinler |
+| watchOS complication | URL tasiyamaz | Degismedi (madde 45b, kabul edilen sinir) |
+
+38. **lib/services/notifications.ts**: `NotificationRoute` birligine `"custom"`
+    eklenir ve `reminderContent`'in custom kolu `data: { route: "custom" }`
+    yazar. app/_layout.tsx'te `case "custom"` panoyu SHEET ACMADAN acar: ozel
+    hatirlaticinin ne hakkinda oldugunu uygulama bilmez, bir kayit formunu
+    varsaymak yanlis olur.
+39. **[DEGISIM] Bos gunluk rotasi**: `case "idle"` bugun `sheet: "glucose"` ile
+    aclik olcum formunu aciyor (app/_layout.tsx:92-94); panoya SHEET'SIZ
+    yonlendirmeye cevrilir. Gerekce: nudge "gunlugunuz bos" diyor, ne
+    ekleyecegini kullanici secer (glukoz / yemek / ilac); sabit bir form
+    varsayim uretir. Diger rotalar aynen kalir.
+40. **targets/widget/DeepLinks.swift (yeni)**: tek yerde `static let` sabitleri
+    (`dashboard`, `addGlucose`, `addMeal`, `addInjection`, `addMed`,
+    `postMeal2h`), JS tarafindaki lib/services/androidWidget.ts:31-35 ile
+    birebir ayni metinler. QuickAdd.swift, index.swift ve PostMealActivity.swift
+    literal yerine buradan okur.
+41. **targets/widget/PostMealActivity.swift**: kilit ekrani icerigine
+    `.widgetURL(DeepLinks.postMeal2h)` ve Dynamic Island genisletilmis bolgesine
+    ayni hedef. Boylece sayac kartina dokunmak tokluk olcum sheet'ini acar
+    (altyapi hazir: app/(tabs)/index.tsx:415-428).
+42. **targets/widget/index.swift**: `tapURL`'in systemSmall/Medium kolu
+    `DeepLinks.addGlucose` olur (accessory ile ayni). Gerekce: widget bir
+    kayit kisayolu; "sadece uygulamayi ac" davranisi accessory ile tutarsizdi.
+43. **lib/services/androidWidget.ts:190-191**: ana widget kok view'inin
+    `clickActionData.uri` degeri `URI_ADD_GLUCOSE` olur (iOS ile simetri).
+44. **AlarmKit alarm dokunusu (arastirma sonucu, uygulanacak tasarim)**:
+    `AlarmPresentation.Alert(title:stopButton:secondaryButton:secondaryButtonBehavior:)`
+    ile ikinci dugme eklenir, davranis `.custom`, ve
+    `AlarmManager.AlarmConfiguration(..., secondaryIntent:)` bir `LiveActivityIntent`
+    alir. iOS 26'da `openAppWhenRun` KULLANILMAZ (deprecated), yerine
+    `static var supportedModes: IntentModes = .foreground(.immediate)`.
+    Uygulama: modules/zerospike-alarmkit/ios/ZerospikeAlarmOpenIntent.swift
+    (yeni) `perform()` icinde App Group UserDefaults'a
+    (`group.com.greeneyeapp.zerospike`, targets/widget/LiveData.swift:84 ile
+    ayni) `zerospike.pendingAlarmRoute` yazar ve uygulamayi one getirir. Modulun
+    `scheduleDailyAlarm` / `scheduleOneShotAlarm` imzalarina `route: String`
+    eklenir (hatirlatici turunden turetilir: basal/med/glucose/custom, tokluk
+    icin postMeal). JS'e yeni senkron `takePendingAlarmRoute(): string | null`
+    (okur ve siler), app/_layout.tsx AppState "active" gecisinde okuyup mevcut
+    `routeForNotification`'a verir. Yeni i18n: `reminders.alarmOpenButton`.
+45. **Sinir (K2-B kapsaminda kabul edilen)**: (a) ikinci dugme API'si Xcode
+    26'da bu sekilde derlenmezse alarm bugunku gibi yalniz "Durdur" tasir,
+    uygulama acilmaz, HUMAN-TODO maddesi olur ve baska hicbir sey bozulmaz
+    (modulun asla-throw-etmez sozlesmesi); (b) watchOS complication'lari
+    (targets/watch-widget) URL tasiyamaz, dokunma yalniz saat uygulamasini
+    acar; (c) onboarding tamamlanmamis kullanicida cold-start deep link'i
+    onboarding yonlendirmesine takilir (app/_layout.tsx:353-360), widget
+    ancak kurulumdan sonra eklenebildigi icin gercekte ulasilmaz, degistirilmez.
+
+## 15.3 K2-C. Tokluk cift buton ve sure secici
+
+46. **lib/postMealTimer.ts**: saf `clampPostMealMinutes(n: number): number`
+    (tam sayiya yuvarlar, 5-360 araligina kirpar). Tek dogrulama noktasi.
+47. **components/PostMealDurationSheet.tsx (yeni)**: alt sayfa (ReminderEditSheet
+    ile ayni Modal dili). Icerik: cip sirasi 60/90/120/150/180 (mevcut
+    `Segmented`), altinda "Ozel" acilinca 15 dk adimli artir/azalt kontrolu ve
+    "Baslat" CTA. **UX gerekcesi**: karar tek bir sayidan ibaret, ayri ekran
+    fazla; cipler vakalarin buyuk cogunlugunu tek dokunusta karsilar, serbest
+    secenek 45 veya 180+ calisan kullanicilari disarida birakmamak icin var,
+    15 dk adim ise klavye acmadan makul araligi tarar.
+48. **app/(tabs)/index.tsx (yemek karti, 1499-1550 civari)**: birincil
+    "Yemege basladim" pill'i AYNEN kalir ve `prefs.postMealMinutes` (varsayilan
+    120) ile calisir; saginda DAHA KUCUK ikincil ikon buton (`timer-outline`,
+    `accessibilityLabel = dashboard.postMealCustomA11y`) sure secici sayfayi
+    acar. Sayac calisirken ikisi de gizlidir (mevcut davranis).
+49. **lib/services/notifications.ts**: `startPostMealTimer(minutes?: number)`
+    opsiyonel parametre alir; verilmezse bugunku gibi `prefs.postMealMinutes`.
+    Deger `clampPostMealMinutes`'tan gecer.
+50. **Tek seferlik sure ile ayar catismasi**: yeni AsyncStorage anahtari
+    `zerospike.postMealTimerCustom`. Sure secicisinden kurulan sayac bunu
+    yazar; `applyPostMealWindowChange` (Ayarlar'daki pencere degisimi) bayrak
+    varken calisan sayaci YENIDEN OLCMEZ ve "idle" doner; `cancelPostMealTimer`
+    ile `completePostMealTimer` bayragi siler. Gerekce: 180 dk'lik bilincli bir
+    secim, Ayarlar'da pencere 90'a cekildiginde sessizce 90'a inmemeli.
+51. **Ayarlar penceresi kalir**: app/settings/notifications.tsx'teki 60/90/120/150
+    secici ve `postMealDelayRunningNote` aynen durur; varsayilan
+    `DEFAULT_PREFS.postMealMinutes = 120` degismez.
+
+## 15.4 K2-D. Onboarding'den tokluk adimi kaldirilir
+
+52. **app/onboarding.tsx**: `StepId` birliginden `"postMeal"` (satir 125),
+    `steps` dizisinden (satir 282), `POSTMEAL_MINUTE_OPTIONS` / `PostMealMinutes`
+    (88-89), `postMealMinutes` state'i (234), `effectivePostMealMinutes` (256)
+    ve adimin render kolu (948-960) ile ipucu kolu (514) kaldirilir.
+53. **[DEGISIM] Gestasyonel 60 dk sessiz turetmesi kalkar**: soru ekrandan
+    kalkinca `diabetes === "gestational" ? 60 : 120` kullaniciya hic
+    gosterilmeyen bir tibbi cikarima donusurdu. Herkes 120 ile baslar, Ayarlar
+    tek dokunusla degistirir. Geri istenirse tek satir.
+54. **Profil kaydi**: onboarding'in bildirim tercihlerine `postMealMinutes`
+    yazmasi (satir 478) kaldirilir; `DEFAULT_PREFS` zaten 120.
+55. **Adim sayaci ve analitik**: `progress` steps.length'ten turedigi icin
+    kendiliginden duzelir; `onboarding_step` olayi artik "postMeal" degeri
+    uretmez (gecmis veri korunur, yeni akista bos kalir). Adim sayisi her yolda
+    bir azalir, K2-E ile birlikte net degisim: postMeal ve glucoseReminder
+    cikar, reminderPlan girer (bir adim net azalma).
+56. **i18n temizligi**: `onboarding.qPostMeal` ve `onboarding.qPostMealHint`
+    9 dilden silinir (kullanilmayan anahtar i18n-check'i kirmaz, ama semada
+    olu metin birakmayiz).
+
+## 15.5 K2-E. Tani tipine gore hazir hatirlatici duzeni
+
+57. **lib/reminderPresets.ts (yeni, saf modul)**: `presetFor(type: DiabetesType):
+    { type: "glucose"; time: string }[]`. Tipler lib/db/types.ts:71'deki
+    birlikten: `type1 | type2 | gestational | prediabetes | unknown | none`.
+    Yalniz OLCUM satiri uretir: bazal satirini `syncBasalReminderRow`, ilac
+    satirini medReminder adimi zaten yonetiyor, ikisini burada tekrar uretmek
+    cift satir demek olurdu.
+
+    | Tip | Saatler | Satir |
+    | --- | --- | --- |
+    | type1 | 07:30, 12:30, 18:30, 22:30 | 4 |
+    | gestational | 07:30, 10:00, 14:00, 20:30 | 4 |
+    | type2 | 08:00, 13:00, 21:00 | 3 |
+    | prediabetes | 08:00, 13:00, 20:00 | 3 |
+    | unknown / none | 08:00, 13:00, 20:00 | 3 |
+
+    Saatler notr saat dilimleridir; hicbiri "kahvaltidan 2 saat sonra" gibi bir
+    klinik cerceveye baglanmaz ve ekranda oyle anlatilmaz. En kalabalik duzen
+    4 satir, bazal + ilac ile birlikte bile MAX_REMINDERS = 10 tavaninin
+    altinda.
+58. **[DEGISIM] app/onboarding.tsx / adim degisimi**: 2.2.0'in tek saatlik
+    `glucoseReminder` adimi (C8, satir 573 `setupGlucoseReminder`) KALDIRILIR,
+    yerine `reminderPlan` adimi gelir. Gerekce: kullaniciya once tek bir olcum
+    saati sordurup hemen ardindan 3-4 satirlik bir duzen gostermek ayni seyi iki
+    kez sormaktir. `medReminder` adimi aynen kalir (ilac ayri bir tur).
+59. **Onizleme ekrani (`reminderPlan`)**: aktif profilin tani tipine gore
+    `presetFor` ciktisinin listesi, her satirda saat + "Olcum"
+    (`reminders.typeGlucose`) ve satir basina kaldirma (X). Ekranda tip adi
+    GECMEZ. Iki eylem: `onboarding.planSetup` ("Duzeni kur") ve
+    `onboarding.planSkip` ("Simdi degil"). Saat duzenleme onizlemede YOK:
+    Hatirlaticilarim ekrani zaten tam duzenleyici, onboarding'de ayni
+    kontrolleri tekrar cizmek adimi sisirir; kaldirma ise "kurulunca kalabalik
+    olur" endisesini yerinde cozer.
+60. **[DEGISIM] Izin ani buraya taşinir (karar 0.C guncellemesi)**: "Duzeni kur"
+    once satirlari yazar (`createReminder({ type: "glucose", time, enabled: true,
+    alarmEnabled: true })`, `alarmUserSet` GONDERILMEZ), sonra
+    `requestNotificationPermission()`, sonra `ensureAlarmAuthorizationOnce()`.
+    "Simdi degil" hicbir satir yazmaz ve hicbir izin istemez. medReminder
+    adimindaki mevcut izin akisi aynen durur; iki adimda da ayni tek-sefer
+    kilidi gecerli.
+61. **Yeniden calisan onboarding korumasi**: duzen kurulmadan once o profilin
+    mevcut satirlari okunur; ayni saatte bir `glucose` satiri varsa o satir
+    ATLANIR, tavan asilirsa kalan satirlar sessizce yazilmaz (mevcut
+    `setupGlucoseReminder`'daki "ayni satiri guncelle" disiplininin duzene
+    genellenmis hali).
+62. **Regulasyon (K2-E'nin sert kurali)**: "size onerilen olcum sikligi",
+    "gunde N kez olcum yapin", "doktorunuzun onerdigi" ve benzeri hicbir ifade
+    kullanilmaz. Tek cerceve: "Baslangic icin hazir bir duzen. Saatleri
+    degistirebilir, hatirlaticilari silebilirsiniz."
+
+## 15.6 K2-F. LA politikasi degisiyor: countdown yerine tek seferlik alarm
+
+63. **[DEGISIM] modules/zerospike-alarmkit/ios/ZerospikeAlarmKitModule.swift**:
+    `scheduleCountdownTimer` (satir 265-300 civari) ve `AlarmPresentation.Countdown`
+    kullanimi tamamen KALDIRILIR. Yerine `AsyncFunction("scheduleOneShotAlarm")
+    { (id: String, epochSeconds: Double, label: String, stopLabel: String,
+    route: String) -> Bool }`: `Alarm.Schedule.fixed(Date(timeIntervalSince1970:))`
+    ve `scheduleDailyAlarm` ile AYNI `AlarmPresentation.Alert` govdesi (countdown
+    sunumu yok, dolayisiyla sistem geri sayim karti da yok). Kimlik haritasi,
+    cancel-then-schedule ve sessiz degradasyon aynen paylasilir.
+64. **[DEGISIM] modules/zerospike-alarmkit/index.ts**: `scheduleCountdownTimer`
+    sarmalayicisi silinir, `scheduleOneShotAlarm({ id, atMs, label, stopLabel,
+    route })` eklenir (`atMs` iceride saniyeye cevrilir).
+65. **[DEGISIM] lib/services/notifications.ts / schedulePostMealAt**:
+    (a) `endsAt` / `startedAt` hesabi alarm kolundan ONCE'ye alinir (bugun 1259-1261'de
+    sonra hesaplaniyor), cunku tek seferlik alarm tam olarak `endsAt`'e kurulur;
+    (b) alarm kolu `scheduleOneShotAlarm` cagirir; (c) **bugunku 1290-1293'teki
+    `if (armedAsAlarm) { endPostMealActivity(); return; }` blogu SILINIR**:
+    `startPostMealActivity` artik her iki modda da calisir. Bildirim yalniz
+    bildirim modunda kurulur, `cancelAlarm(POSTMEAL_ALARM_ID)` karsi-kol
+    temizligi aynen durur. Cift teslim kurali degismez: ayni pencerede ya alarm
+    ya bildirim, hicbir zaman ikisi.
+66. **[DEGISIM] reconcilePostMealDelivery (1694-1725)**: mantik aynen kalir
+    (yetki kaybinda kalan sureyi bildirime cevirir), yalniz "Live Activity'yi
+    geri getirir" gerekcesi gecersizlesir ve doc yorumu duzeltilir: LA zaten
+    ayakta, uzlastirma artik SADECE teslimi tasir.
+67. **applyPostMealAlarmModeChange (1637-1667)**: imza ve mantik degismez,
+    `minSeconds: 1` korunur; artik mod degisimi LA'yi hic etkilemedigi icin
+    gecis gozle gorulur sekilde daha sakin.
+68. **[DEGISIM] Bolum 14 sinirlari**: "Sistem sayac kartindan yapilan iptal
+    dinlenmiyor" maddesi DUSER (ortada sistem karti yok). "Tokluk alarm
+    kimliginin tek toplayicisi bir sonraki kurulum" maddesi AYNEN gecerli
+    kalir (kimlik ve supurge davranisi degismedi).
+69. **[DEGISIM] HUMAN-TODO.md**: countdown dogrulama maddeleri
+    (`Alarm.CountdownDuration`, `AlarmPresentation.Countdown`,
+    `AlarmPresentation(alert:countdown:)`, `AlarmConfiguration(countdownDuration:)`)
+    DUSER. Yerine iki madde: `Alarm.Schedule.fixed(_:)` ile tek seferlik alarm,
+    ve K2-B'nin `secondaryButton` / `secondaryIntent` / `supportedModes:
+    .foreground(.immediate)` ucusu. Ikisi de basarisiz olursa sonuc `false`
+    ve bugunku bildirim yoluna dusme.
+70. **[DEGISIM] Cihaz QA**: bolum 10'un 9. senaryosu (sistem sayac kartinin
+    gorunumu) yerine "alarm modunda BIZIM kartimiz gorunur, sistemin geri
+    sayim karti HIC gorunmez" senaryosu gecer (bolum 15.9).
+
+## 15.7 i18n anahtarlari (Kapsam 2, 9 dil)
+
+Hitap kurallari CLAUDE.md'deki gibi; her dilde tek ve resmi hitap.
+
+| Anahtar | en | tr |
+| --- | --- | --- |
+| reminders.upcomingTitle | Coming up | Sıradaki |
+| reminders.upcomingEmpty | Nothing in the next 24 hours. | Önümüzdeki 24 saatte bir şey yok. |
+| reminders.upcomingMore | +{{n}} more | +{{n}} tane daha |
+| reminders.nextToday | next: today {{time}} | sıradaki: bugün {{time}} |
+| reminders.nextTomorrow | next: tomorrow {{time}} | sıradaki: yarın {{time}} |
+| reminders.upcomingPostMeal | Post-meal timer | Tokluk sayacı |
+| reminders.alarmOpenButton | Open | Aç |
+| dashboard.postMealCustomA11y | Start a timer with a different length | Farklı süreyle sayaç başlat |
+| dashboard.postMealCustomTitle | How long? | Ne kadar sürsün? |
+| dashboard.postMealCustomHint | This applies to this meal only; your saved setting stays as it is. | Bu yalnızca bu öğün için geçerlidir, kayıtlı ayarınız olduğu gibi kalır. |
+| dashboard.postMealCustomOther | Custom | Özel |
+| dashboard.postMealCustomStart | Start | Başlat |
+| onboarding.qReminderPlan | A ready-made reminder set | Hazır bir hatırlatıcı düzeni |
+| onboarding.qReminderPlanHint | A starting point, nothing more. You can change the times or remove any of them later. | Yalnızca bir başlangıç. Saatleri sonradan değiştirebilir, dilediğinizi silebilirsiniz. |
+| onboarding.planSetup | Set up this plan | Düzeni kur |
+| onboarding.planSkip | Not now | Şimdi değil |
+| onboarding.planRemoveA11y | Remove this reminder | Bu hatırlatıcıyı kaldır |
+
+Yeniden kullanilanlar (yeni metin yazilmaz): `reminders.typeGlucose`,
+`reminders.modeAlarm`, `reminders.modeNotification`, `settings.minutes`,
+`notifications.postmealTitle`, `reminders.alarmStopButton`,
+`onboarding.alarmNote`.
+
+Silinenler (9 dil): `onboarding.qPostMeal`, `onboarding.qPostMealHint`,
+`onboarding.qGlucoseReminder`, `onboarding.qGlucoseReminderTracking`,
+`onboarding.qGlucoseReminderHint`, `onboarding.qGlucoseReminderHintTracking`
+(K2-D ve K2-E adimlari kalktigi icin).
+
+## 15.8 Store metinlerine etki
+
+71. **What's New 2.3.0 (zerospike-store/aso/{9 dil}.md)**: uc satir. (a)
+    "Kurdugunuz hatirlaticilar iOS 26'da gercek alarm olarak calabilir." (b)
+    "Kuruluma hazir bir hatirlatici duzeni ve yaklasan hatirlaticilar gorunumu."
+    (c) "Tokluk sayacini istediginiz sureyle baslatin." Regulasyon suzgeci:
+    "onerilen siklik" yok, "uyari" yok.
+72. **review-notes-en.md reviewer steps**: (a) onboarding artik post-meal
+    suresini SORMAZ; (b) onboarding sonunda bir ONIZLEME ekrani vardir ("Set up
+    this plan" / "Not now"), hicbir sey kullanici onaylamadan kurulmaz; (c) tum
+    alarmlar kullanicinin kurdugu sabit saatli hatirlaticilar veya kullanicinin
+    kendi baslattigi tokluk sayacinin bitisidir; (d) deger-tetiklemeli hicbir
+    alarm yoktur, dusuk-sonrasi takip bilerek bildirimdir; (e) Critical Alerts
+    kullanilmaz; (f) her hatirlatici tek tek bildirime cevrilebilir.
+73. **ASO uzun aciklama**: "yaklasan hatirlaticilar" ve "hazir duzen" cumleleri
+    eklenir, ayni suzgecten gecer.
+74. **Gorsel borcu**: 09-reminders paneli artik "Siradaki" kartini ve mod
+    rozetini gosterir, 9 dilde yeniden uretilir; onboarding panelinde tokluk
+    sorusu varsa o panel de degisir (kayit: docs/store-screenshots-plan.md).
+
+## 15.9 Testler (Kapsam 2)
+
+75. **scripts/upcomingReminders.test.ts (yeni)**: saatin bugun mu yarin mi
+    oldugunun sinir vakalari (tam simdi, bir dakika once, bir dakika sonra),
+    24 saat penceresi disinda kalan satirlarin dislanmasi, siralama, kapali
+    satir / kapali kapi (basal-med gorunurlugu) filtreleri, mod alaninin
+    `alarmModeOf` ile ayni cikmasi, tokluk girdisinin dogru yere yerlesmesi.
+76. **scripts/reminderPresets.test.ts (yeni)**: her tip icin satir sayisi ve
+    saatler, saatlerin "HH:MM" bicimi, tiplerin tamaminin kapsanmasi
+    (DiabetesType birligi uzerinde exhaustive), en kalabalik duzenin
+    MAX_REMINDERS altinda kalmasi, ayni saatin iki kez uretilmemesi.
+77. **scripts/postMealTimer.test.ts genisler**: `clampPostMealMinutes` alt/ust
+    sinir, ondalik yuvarlama, gecersiz girdi.
+78. **scripts/alarmSelect.test.ts**: DEGISMEZ (mod karari ayni tek tanim).
+79. **scripts/migration.test.ts**: DEGISMEZ, Kapsam 2 sema degistirmez (yeni
+    kalici alan yok; tek seferlik sure bayragi AsyncStorage'da).
+80. **Kapilar**: `npm run typecheck` (i18n-check dahil) + `npm run i18n:check` +
+    tum `scripts/*.test.ts`.
+
+## 15.10 Cihaz QA eklemeleri (bolum 10'un ustune)
+
+19. Alarm modunda tokluk sayaci: BIZIM kilit ekrani kartimiz gorunur, sistemin
+    geri sayim karti gorunmez; sure sonunda gercek alarm calar.
+20. Kilit ekrani kartina / Dynamic Island'a dokunmak tokluk olcum sheet'ini
+    acar.
+21. Alarm ekranindaki "Ac" dugmesi uygulamayi ilgili ekranda acar (derlenmezse
+    HUMAN-TODO sinirina duser: yalniz "Durdur" gorunur). Iki durumda da
+    denenir: (a) uygulama tamamen kapaliyken, (b) uygulama ARKA PLANDA acikken
+    - ikincisinde rota bir saniyelik tek tekrarla yakalanir (app/_layout.tsx),
+    yani dugmeye basar basmaz degil, en gec bir saniye icinde dogru ekran
+    acilmalidir. Onboarding'i bitirmemis bir kurulumda birikmis rota sonradan
+    surpriz yonlendirme YAPMAMALIDIR (completeOnboarding onu tuketip atar).
+22. Sure secici: 180 dk ile baslatilan sayac calisirken Ayarlar'dan pencere
+    90'a cekilir, sayac 180'de kalir.
+23. Ozel hatirlatici bildirimine dokunmak panoyu acar (form acmadan).
+24. Bos gunluk bildirimine dokunmak panoyu acar (aclik formu ACILMAZ).
+25. Ana widget'a (iOS ve Android) dokunmak glukoz ekleme formunu acar.
+26. Hatirlaticilar ekrani: "Siradaki" karti dogru saatleri ve dogru teslim
+    ikonlarini gosterir; bir satiri bildirime cevirince ikon aninda degisir.
+27. Onboarding: tokluk sorusu YOK; hazir duzen onizlemesi geliyor, bir satiri
+    kaldirip "Duzeni kur" denince yalniz kalanlar kuruluyor ve izinler o anda
+    isteniyor; "Simdi degil" hicbir satir ve hicbir izin uretmiyor.
+28. Onboarding'i yarida kesip yeniden baslatmak duzeni ikilemiyor: ikinci turda
+    "Duzeni kur" once bu profilin TUM olcum hatirlaticilarini siliyor, sonra
+    onizlemedeki satirlari yaziyor. Test edilecek asil hal: ilk turda 4 satirlik
+    duzeni kur, uygulamayi oldur, yeniden basla, onizlemeden bir satiri kaldirip
+    kur -> Hatirlaticilarim'da tam olarak 3 olcum satiri olmali (eski 4'ten
+    kalan tek fazla satir da olmamali). Bazal ve ilac satirlari bu silmeden
+    etkilenmez.
+
+## 15.10b Uygulama notu: "Siradaki" kartinda saat bicimi
+
+Kart, hatirlatici satirlari icin satirin KENDI sakli "HH:MM" metnini basiyor
+(ekranin geri kalaninda gorunen degerle ayni olsun diye) ve tokluk sayacinin
+epoch bitisini de ayni bicimde yaziyor. Yani kart 12 saatlik yerel bicimi
+kullanan dillerde de 24 saatlik okunuyor. Bilincli: madde 37 satir saatlerinin
+oldugu gibi kullanilmasini istiyor, `formatTimeForLang` ise en icin "10:30 PM"
+uretiyor ve tek dar kolonda iki farkli saat bicimi yan yana gelirdi. Bu ekranda
+zaten her saat degeri "HH:MM" (satirin `value` alani, duzenleme sayfasi).
+Degistirilecekse ikisi birden degismeli.
+
+## 15.11 Riskler (Kapsam 2)
+
+- **R8. Tek seferlik alarm sistem "Alarmlar" listesinde gorunebilir**: AlarmKit
+  alarmlari sistemce yonetilir; tokluk alarminin orada bir satir olarak
+  gorunmesi olasidir. Zararsiz ama beklenmedik; QA maddesi 19 ile gozlenir.
+- **R9. `secondaryIntent` / `supportedModes` ucusu derlenmeyebilir**: iOS 26'da
+  `openAppWhenRun` deprecated ve yerine gecen API bu ortamda derlenemedi.
+  Azaltma: dugme opsiyonel, basarisizlikta alarm yalniz "Durdur" tasir.
+- **R10. Hazir duzen "cok fazla hatirlatici" hissi yaratabilir**: 4 satirlik
+  duzen + bazal + ilac gunde 6 teslim demek. Azaltma: onizlemede satir
+  kaldirma, notr cerceve metni, Hatirlaticilarim'da toplu gorunurluk.
+- **R11. Preset regulasyon algisi**: tani tipine gore satir uretmek "onerilen
+  siklik" gibi okunabilir. Azaltma: madde 62'deki dil kurali, ekranda tip
+  adinin hic gecmemesi, review notunda acik beyan (madde 72b).
+- **R12. Widget tiklama hedefinin degismesi**: ana widget artik dogrudan form
+  aciyor; "sadece uygulamayi acmak isteyen" kullanici icin davranis degisikligi.
+  Azaltma: form kapatilabilir ve arkasinda pano duruyor; accessory ile tutarli
+  hale geldi.
+- **R13. Yaklasan liste ile gercek teslim arasinda sapma**: liste tablodan
+  hesaplaniyor, OS kuyrugundan degil; OS bir bildirimi dusurduyse liste yine de
+  gosterir. Azaltma: mevcut `checkReminderReliability` karti ayni ekranda duruyor,
+  liste "kurulu duzen" olarak konumlaniyor, "OS kuyrugu" olarak degil.
+
+## 15.12 Dalga sirasi (dosya cakismasiz)
+
+- **W1**: K2-F (native tek seferlik alarm + LA politikasi). Once yapilir, cunku
+  halihazirda commit'lenmis kodu geri alir ve W2-W3 onun uzerine biner.
+  Dosyalar: modules/zerospike-alarmkit/**, lib/services/notifications.ts,
+  HUMAN-TODO.md.
+- **W2**: K2-A (lib/upcomingReminders.ts + components/settingsUi.tsx +
+  app/settings/reminders.tsx) ve K2-B (app/_layout.tsx, notifications.ts rota
+  birligi, targets/widget/**, lib/services/androidWidget.ts,
+  modules/zerospike-alarmkit AppIntent). Iki is farkli dosyalarda, paralel
+  gidebilir; notifications.ts'e iki dalganin da dokundugu tek nokta rota
+  birligi, W1 bittikten sonra ele alinir.
+- **W3**: K2-C (app/(tabs)/index.tsx + components/PostMealDurationSheet.tsx +
+  lib/postMealTimer.ts) ve ardindan K2-D + K2-E (ikisi de app/onboarding.tsx,
+  ARDISIK: once adim kaldirma, sonra reminderPlan) + lib/reminderPresets.ts.
+- **W4**: 9 dil stringleri (yeni + silinen), store/review metinleri, gorsel
+  borcu kaydi, HUMAN-TODO guncellemesi, kapilar, surum/build numaralari,
+  commit. Build, cihaz QA ve store yuklemesi kullanicida.

@@ -24,7 +24,7 @@ import SwiftUI
 // post-meal countdown.
 //
 // API surface below (isAvailable/getAuthorizationStatus/requestAuthorization/
-// scheduleDailyAlarm/scheduleCountdownTimer/cancelAlarm/listScheduledAlarmIds)
+// scheduleDailyAlarm/scheduleOneShotAlarm/cancelAlarm/listScheduledAlarmIds)
 // and every AlarmKit call
 // inside each function is sourced from, and cross-checked against, multiple
 // independent 2026 AlarmKit references (WWDC25 session 230, Apple's own
@@ -93,6 +93,49 @@ private func forgetIdentity(_ id: String) {
 /// THEME.accent in lib/theme/tokens.ts), so the system alarm screen's tint
 /// matches the rest of the app instead of AlarmKit's own default.
 private let alarmTint = Color(red: 34.0 / 255, green: 211.0 / 255, blue: 238.0 / 255)
+
+/// The alarm screen itself, built ONCE for both schedulers (2.3.0's K2-B).
+/// Both kinds of zerospike alarm - the daily reminder and the one-shot end of a
+/// post-meal window - show the same two controls, so they share one builder
+/// rather than two copies that could drift apart.
+///
+/// The second button is what makes a ringing alarm lead somewhere:
+/// `.custom` behavior runs ZerospikeAlarmOpenIntent, which parks `route` in the
+/// shared App Group and brings the app forward (see that file). Nothing else in
+/// this module depends on it - if these two parameters do not compile against
+/// the real iOS 26 SDK, dropping `secondaryButton`/`secondaryButtonBehavior`
+/// here and `secondaryIntent` at the two call sites restores the 2.2.0
+/// stop-only alarm with no other change.
+///
+/// All three labels arrive already localized from JS: this module owns no copy
+/// (same rule as PostMealAttributes.title in modules/zerospike-live-activity).
+@available(iOS 26.0, *)
+private func zerospikeAlarmAttributes(
+  label: String,
+  stopLabel: String,
+  openLabel: String
+) -> AlarmAttributes<ZerospikeAlarmMetadata> {
+  let stopButton = AlarmButton(
+    text: LocalizedStringResource(stringLiteral: stopLabel),
+    textColor: .white,
+    systemImageName: "stop.fill"
+  )
+  let openButton = AlarmButton(
+    text: LocalizedStringResource(stringLiteral: openLabel),
+    textColor: .white,
+    systemImageName: "arrow.up.right"
+  )
+  let alert = AlarmPresentation.Alert(
+    title: LocalizedStringResource(stringLiteral: label),
+    stopButton: stopButton,
+    secondaryButton: openButton,
+    secondaryButtonBehavior: .custom
+  )
+  return AlarmAttributes<ZerospikeAlarmMetadata>(
+    presentation: AlarmPresentation(alert: alert),
+    tintColor: alarmTint
+  )
+}
 
 public class ZerospikeAlarmKitModule: Module {
   public func definition() -> ModuleDefinition {
@@ -186,7 +229,10 @@ public class ZerospikeAlarmKitModule: Module {
     /// enough for a v1, and a custom AppIntent-backed snooze is real extra
     /// surface (see the module's own report note).
     AsyncFunction("scheduleDailyAlarm") {
-      (id: String, hour: Int, minute: Int, label: String, stopLabel: String) -> Bool in
+      (
+        id: String, hour: Int, minute: Int, label: String, stopLabel: String,
+        openLabel: String, route: String
+      ) -> Bool in
       guard #available(iOS 26.0, *) else { return false }
       guard AlarmManager.shared.authorizationState == .authorized else { return false }
 
@@ -202,22 +248,15 @@ public class ZerospikeAlarmKitModule: Module {
         Alarm.Schedule.Relative(time: time, repeats: recurrence)
       )
 
-      let stopButton = AlarmButton(
-        text: LocalizedStringResource(stringLiteral: stopLabel),
-        textColor: .white,
-        systemImageName: "stop.fill"
-      )
-      let alert = AlarmPresentation.Alert(
-        title: LocalizedStringResource(stringLiteral: label),
-        stopButton: stopButton
-      )
-      let attributes = AlarmAttributes<ZerospikeAlarmMetadata>(
-        presentation: AlarmPresentation(alert: alert),
-        tintColor: alarmTint
+      let attributes = zerospikeAlarmAttributes(
+        label: label,
+        stopLabel: stopLabel,
+        openLabel: openLabel
       )
       let configuration = AlarmManager.AlarmConfiguration(
         schedule: schedule,
-        attributes: attributes
+        attributes: attributes,
+        secondaryIntent: ZerospikeAlarmOpenIntent(route: route)
       )
 
       do {
@@ -237,59 +276,50 @@ public class ZerospikeAlarmKitModule: Module {
       }
     }
 
-    /// Starts (or restarts) a one-shot COUNTDOWN alarm of `seconds` - the
-    /// post-meal timer (2.3.0's B), the only non-daily alarm zerospike has.
-    /// Everything around the call is deliberately identical to
-    /// scheduleDailyAlarm above: the same identity map, the same
-    /// cancel-then-schedule re-arm, the same brand tint, the same
-    /// never-throw/return-false contract, and the same "JS hands in already
-    /// localized copy" rule (`title` is notifications.postmealTitle,
-    /// `stopLabel` is reminders.alarmStopButton). Because the identity map is
-    /// shared, cancelAlarm/listScheduledAlarmIds already cover this timer and
-    /// no timer-specific counterpart exists.
+    /// Schedules (or re-arms) a ONE-SHOT alarm at an absolute moment - the end
+    /// of a post-meal window (2.3.0's K2-F), the only non-daily alarm zerospike
+    /// has. Structurally the same call as scheduleDailyAlarm above with the
+    /// schedule swapped for `Alarm.Schedule.fixed(_:)`: the same identity map,
+    /// the same cancel-then-schedule re-arm, the same brand tint, the same
+    /// alert-only presentation, the same never-throw/return-false contract and
+    /// the same "JS hands in already localized copy" rule (`label` is
+    /// notifications.postmealTitle, `stopLabel` is reminders.alarmStopButton).
+    /// Because the identity map is shared, cancelAlarm/listScheduledAlarmIds
+    /// already cover this alarm and no timer-specific counterpart exists.
     ///
-    /// The only structural difference is the configuration: a countdown alarm
-    /// carries `Alarm.CountdownDuration` instead of an `Alarm.Schedule`, and
-    /// AlarmKit requires a countdown PRESENTATION alongside the alert one (the
-    /// alert is what the system shows when the countdown reaches zero; the
-    /// countdown presentation is the live card it draws while it runs). Only
-    /// `preAlert` is set - `postAlert` would be the "snooze"-style repeat after
-    /// the alert, which this timer does not have.
+    /// Deliberately NOT a countdown alarm, which is what this used to be:
+    /// AlarmKit's `countdownDuration` makes the system draw its own countdown
+    /// card, and that card replaces zerospike's branded PostMealActivity Live
+    /// Activity while it runs. An alert-only fixed alarm adds only what the
+    /// alarm is actually wanted for - sound and a full-screen delivery at the
+    /// end - and leaves the app's own card exactly as it is in both modes.
     ///
-    /// Xcode 26 note: unlike the daily path, these countdown API names have
-    /// never been compiled in this repo (this sandbox has no iOS 26 SDK).
-    /// Expect the same kind of first-build correction 2.2.0 needed for
-    /// `cancel(id:)` and `alarms`. Nothing else depends on it compiling to
-    /// behave: a `false` from here puts the post-meal check straight back on
-    /// the notification + Live Activity path it has always used.
-    AsyncFunction("scheduleCountdownTimer") {
-      (id: String, seconds: Double, title: String, stopLabel: String) -> Bool in
+    /// `epochSeconds` is the moment the window ENDS. JS owns that arithmetic
+    /// (it already persists the end for the dashboard and the Live Activity);
+    /// this module has no clock of its own.
+    AsyncFunction("scheduleOneShotAlarm") {
+      (
+        id: String, epochSeconds: Double, label: String, stopLabel: String,
+        openLabel: String, route: String
+      ) -> Bool in
       guard #available(iOS 26.0, *) else { return false }
       guard AlarmManager.shared.authorizationState == .authorized else { return false }
-      guard seconds > 0 else { return false }
+      guard epochSeconds > 0 else { return false }
 
       let (uuid, wasFresh) = uuidForIdentity(id)
       try? AlarmManager.shared.cancel(id: uuid)
 
-      let stopButton = AlarmButton(
-        text: LocalizedStringResource(stringLiteral: stopLabel),
-        textColor: .white,
-        systemImageName: "stop.fill"
-      )
-      let alert = AlarmPresentation.Alert(
-        title: LocalizedStringResource(stringLiteral: title),
-        stopButton: stopButton
-      )
-      let countdown = AlarmPresentation.Countdown(
-        title: LocalizedStringResource(stringLiteral: title)
-      )
-      let attributes = AlarmAttributes<ZerospikeAlarmMetadata>(
-        presentation: AlarmPresentation(alert: alert, countdown: countdown),
-        tintColor: alarmTint
+      let schedule = Alarm.Schedule.fixed(Date(timeIntervalSince1970: epochSeconds))
+
+      let attributes = zerospikeAlarmAttributes(
+        label: label,
+        stopLabel: stopLabel,
+        openLabel: openLabel
       )
       let configuration = AlarmManager.AlarmConfiguration(
-        countdownDuration: Alarm.CountdownDuration(preAlert: seconds, postAlert: nil),
-        attributes: attributes
+        schedule: schedule,
+        attributes: attributes,
+        secondaryIntent: ZerospikeAlarmOpenIntent(route: route)
       )
 
       do {
@@ -330,6 +360,22 @@ public class ZerospikeAlarmKitModule: Module {
       } catch {
         return false
       }
+    }
+
+    /// Reads (and clears) the route an alarm's "Open" button left behind - see
+    /// ZerospikeAlarmOpenIntent. Read-once on purpose: the app consumes it on
+    /// its next foreground transition, and a value left in place would re-route
+    /// the user on every later launch.
+    ///
+    /// No iOS 26 guard: an App Group read is harmless on any OS, and the key
+    /// simply never exists where AlarmKit does not.
+    Function("takePendingAlarmRoute") { () -> String? in
+      guard let defaults = UserDefaults(suiteName: zerospikeAlarmAppGroup),
+            let route = defaults.string(forKey: zerospikeAlarmRouteKey),
+            !route.isEmpty
+      else { return nil }
+      defaults.removeObject(forKey: zerospikeAlarmRouteKey)
+      return route
     }
 
     /// The JS-string ids ("zerospike-alarm-<reminderId>") this module has

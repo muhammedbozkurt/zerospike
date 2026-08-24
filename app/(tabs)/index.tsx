@@ -42,6 +42,7 @@ import {
 import {
   formatPostMealRemaining,
   postMealElapsedFraction,
+  postMealWindowForProfile,
   type PostMealTimerWindow,
 } from "../../lib/postMealTimer";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
@@ -71,6 +72,12 @@ const EDIT_HINT_KEY = "zerospike.editHintDismissed";
 // One-time tip shown after the first meal timer: the countdown also appears on
 // the lock screen / Dynamic Island (points at the widget guide).
 const WIDGET_TIP_KEY = "zerospike.widgetTipDismissed";
+
+/** Which period a plain "log a glucose reading" action starts on, for the
+ *  in-app quick add AND for the widget/notification links that mean the same
+ *  thing. One constant so those two can never drift into labelling the same
+ *  action differently; the user can change it in the sheet either way. */
+const DEFAULT_LOG_PERIOD: PeriodTag = "fasting";
 // The first-run guide is gone once anything is logged, but its optional steps
 // (Health, widget) are not done yet - this compact row carries them until the
 // user closes it.
@@ -120,6 +127,7 @@ import { useUndoBatch } from "../../components/useUndoBatch";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { MedEditSheet } from "../../components/MedEditSheet";
+import { PostMealDurationSheet } from "../../components/PostMealDurationSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback, type SheetAction } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
@@ -346,6 +354,13 @@ export default function DashboardScreen() {
   const [postMealTimer, setPostMealTimer] = useState<PostMealTimerWindow | null>(null);
   // The preference (90/120/150), for the idle CTA's label only.
   const [postMealWindowMin, setPostMealWindowMin] = useState(120);
+  // The one-off length picker (2.3.0's K2-C), opened from the small button
+  // beside the primary "I started eating" pill.
+  const [durationSheetOpen, setDurationSheetOpen] = useState(false);
+  // An arm is in flight: the ref is the actual guard (see startedEating), the
+  // state only greys the two buttons out while it runs.
+  const startingTimerRef = useRef(false);
+  const [startingTimer, setStartingTimer] = useState(false);
 
   const refreshPostMealTimer = useCallback(async () => {
     setPostMealTimer(await getPostMealTimerState());
@@ -401,11 +416,18 @@ export default function DashboardScreen() {
   }, [profileId, glucoseUnit, dataVersion]);
 
   // Deep-link with a `sheet` param: a reminder tap (app/_layout.tsx routes the
-  // notification here) or the Quick Add widget's zerospike:///?sheet=glucose
-  // URL. "med" opens QuickAddSheet straight on its medication form; any other
-  // value opens the glucose sheet on the requested period ("glucose" and any
-  // unknown value fall back to fasting). Either way the param is cleared so
-  // returning to this tab later doesn't reopen it.
+  // notification here), a widget tap, or the Live Activity card. Each accepted
+  // value is matched EXPLICITLY:
+  //   "med"           the medication form (QuickAddSheet)
+  //   "post_meal_2h"  the glucose sheet on the post-meal period
+  //   "glucose"       the glucose sheet exactly as the in-app quick add opens
+  //                   it (DEFAULT_LOG_PERIOD, the same constant that button
+  //                   uses) - it used to land in the catch-all below and be
+  //                   forced to "fasting" from here, so a widget tap at 3pm
+  //                   pre-labelled the reading as a fasting one.
+  // Anything else opens NOTHING: an unrecognised value is a bug or a stale
+  // link, and guessing a form for it is how the wrong period gets recorded.
+  // The param is always cleared, so returning to this tab never reopens it.
   useEffect(() => {
     const s = params.sheet;
     if (!s || !activeProfile) return;
@@ -425,9 +447,9 @@ export default function DashboardScreen() {
         setEditGlucose(null);
         setInitialPeriod("post_meal_2h");
         setSheetOpen(true);
-      } else {
+      } else if (s === "glucose") {
         setEditGlucose(null);
-        setInitialPeriod("fasting");
+        setInitialPeriod(DEFAULT_LOG_PERIOD);
         setSheetOpen(true);
       }
       router.setParams({ sheet: "" });
@@ -753,11 +775,10 @@ export default function DashboardScreen() {
   // alone, so it is picked back up the moment that other profile is active
   // again. A timer with no recorded owner (armed before this lock existed)
   // keeps showing everywhere, same as before.
-  const postMealTimerForProfile =
-    postMealTimer &&
-    (postMealTimer.profileId == null || postMealTimer.profileId === activeProfile?.id)
-      ? postMealTimer
-      : null;
+  const postMealTimerForProfile = postMealWindowForProfile(
+    postMealTimer,
+    activeProfile?.id
+  );
 
   // The "restart for this meal" action's own visibility: a meal logged AFTER
   // the running timer's own anchor exists (schedulePostMealReminder leaves an
@@ -811,9 +832,35 @@ export default function DashboardScreen() {
   }
 
   // "I started eating": arms the post-meal check timer (dedupes with the meal-log
-  // auto reminder via a shared notification id).
-  async function startedEating() {
-    const minutes = await startPostMealTimer();
+  // auto reminder via a shared notification id). `minutes` is only passed by the
+  // duration sheet (2.3.0's K2-C); the primary button keeps using the saved
+  // window, so the common case is still one tap.
+  //
+  // ONE arm at a time, across BOTH entry points: the pill and the sheet's own
+  // "Start" can otherwise overlap (the sheet closes on the next render, the
+  // pill is still on screen underneath it), and two arms racing would leave the
+  // stored window, the one-off flag and the armed delivery describing two
+  // different countdowns. A ref, not state, because the second tap has to see
+  // the guard on the SAME tick it happens.
+  async function startedEating(minutes?: number) {
+    if (startingTimerRef.current) return;
+    startingTimerRef.current = true;
+    setStartingTimer(true);
+    setDurationSheetOpen(false);
+    try {
+      const started = await startPostMealTimer(minutes);
+      await finishStartedEating(started);
+    } catch {
+      // startPostMealTimer arms nothing when it throws (schedulePostMealAt rolls
+      // its own write back), so the countdown is simply not started.
+      toast(t("dashboard.toklukNeedsPerm"), "info");
+    } finally {
+      startingTimerRef.current = false;
+      setStartingTimer(false);
+    }
+  }
+
+  async function finishStartedEating(minutes: number | null) {
     if (minutes != null) {
       logEvent("tokluk_timer_started");
       hapticSuccess();
@@ -1530,21 +1577,46 @@ export default function DashboardScreen() {
                 </Text>
               </View>
             </View>
-            <PressableScale
-              onPress={startedEating}
-              accessibilityRole="button"
-              accessibilityLabel={t("dashboard.startedEating")}
-              style={{
-                backgroundColor: THEME.accent,
-                borderRadius: RADIUS.full,
-                paddingHorizontal: 16,
-                paddingVertical: 9,
-              }}
-            >
-              <Text style={{ color: "#00171c", fontWeight: "800", fontSize: 13 }}>
-                {t("dashboard.startedEating")}
-              </Text>
-            </PressableScale>
+            <View className="flex-row items-center" style={{ gap: 6 }}>
+              <PressableScale
+                onPress={() => void startedEating()}
+                disabled={startingTimer}
+                accessibilityRole="button"
+                accessibilityLabel={t("dashboard.startedEating")}
+                style={{
+                  backgroundColor: THEME.accent,
+                  borderRadius: RADIUS.full,
+                  paddingHorizontal: 16,
+                  paddingVertical: 9,
+                  opacity: startingTimer ? 0.6 : 1,
+                }}
+              >
+                <Text style={{ color: "#00171c", fontWeight: "800", fontSize: 13 }}>
+                  {t("dashboard.startedEating")}
+                </Text>
+              </PressableScale>
+              {/* The one-off length (2.3.0's K2-C). Deliberately smaller and
+                  quieter than the pill beside it: the usual window is one tap,
+                  and this is the exception. */}
+              <Pressable
+                onPress={() => setDurationSheetOpen(true)}
+                disabled={startingTimer}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t("dashboard.postMealCustomA11y")}
+                className="items-center justify-center active:opacity-70"
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: RADIUS.full,
+                  borderWidth: 1,
+                  borderColor: THEME.border,
+                  opacity: startingTimer ? 0.6 : 1,
+                }}
+              >
+                <Ionicons name="timer-outline" size={16} color={THEME.accent} />
+              </Pressable>
+            </View>
           </View>
         )}
       </GlassCard>
@@ -1899,7 +1971,7 @@ export default function DashboardScreen() {
         showInjection={insulinModeUsesInsulin(activeProfile?.insulin_mode)}
         showMed={activeProfile?.oral_meds_enabled === 1}
         openMedDirect={quickAddMedDirect}
-        onGlucose={() => openLogger("fasting")}
+        onGlucose={() => openLogger(DEFAULT_LOG_PERIOD)}
         onFood={() => router.navigate("/(tabs)/food")}
         onInjection={() =>
           router.navigate({ pathname: "/(tabs)/injection", params: { compose: "1" } })
@@ -1937,6 +2009,13 @@ export default function DashboardScreen() {
           setEditMed(null);
           bumpData();
         }}
+      />
+
+      <PostMealDurationSheet
+        visible={durationSheetOpen}
+        defaultMinutes={postMealWindowMin}
+        onClose={() => setDurationSheetOpen(false)}
+        onStart={(minutes) => void startedEating(minutes)}
       />
     </AppBackground>
   );

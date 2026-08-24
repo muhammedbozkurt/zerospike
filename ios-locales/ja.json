@@ -1,5 +1,6 @@
 {
   "ios": {
+    "CFBundleDisplayName": "zerospike",
     "NSCameraUsageDescription": "zerospikeは、食品のバーコードを読み取ったり、食事の写真を追加したりするためにカメラを使用します。",
     "NSPhotoLibraryUsageDescription": "zerospikeは、食事の記録に写真を追加するために写真ライブラリにアクセスします。",
     "NSHealthShareUsageDescription": "zerospikeは、記録やまとめに表示するために、ヘルスケアから血糖値、インスリン、アクティビティのデータを読み取ります。",

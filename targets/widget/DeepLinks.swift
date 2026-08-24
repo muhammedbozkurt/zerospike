@@ -1,0 +1,25 @@
+import Foundation
+
+/// Every deep link the iOS widget extension can open, in ONE place (2.3.0's
+/// K2-B). The strings are byte-identical to the JS side's own list in
+/// lib/services/androidWidget.ts (URI_ADD_GLUCOSE ... URI_ADD_MED) and are
+/// resolved by expo-router against the "zerospike" scheme registered in
+/// app.json; app/(tabs)/index.tsx is what reads the `sheet` parameter.
+///
+/// Before this, the same six URLs were retyped as literals across QuickAdd,
+/// the main widget and the Live Activity, which is how the Live Activity ended
+/// up with no link at all and the main widget with one that disagreed with its
+/// own accessory families.
+enum DeepLinks {
+  /// The plain app-open link. Nothing points at it since the main widget's tap
+  /// became a logging shortcut; kept because it is the scheme's own root and
+  /// the fallback any future surface would reach for.
+  static let dashboard = URL(string: "zerospike:///")!
+  static let addGlucose = URL(string: "zerospike:///?sheet=glucose")!
+  static let addMeal = URL(string: "zerospike:///food")!
+  static let addInjection = URL(string: "zerospike:///injection?compose=1")!
+  static let addMed = URL(string: "zerospike:///?sheet=med")!
+  /// The post-meal reading sheet - the same target the post-meal notification
+  /// routes to (NotificationRoute "postMeal" in app/_layout.tsx).
+  static let postMeal2h = URL(string: "zerospike:///?sheet=post_meal_2h")!
+}

@@ -18,6 +18,7 @@ import { isScreenshotMode } from "../lib/screenshotMode";
 import { updateProfile, type ProfileUpdate } from "../lib/db/profiles";
 import {
   createReminder,
+  deleteReminder,
   listReminders,
   syncBasalReminderRow,
   updateReminder,
@@ -36,6 +37,7 @@ import {
   isAlarmKitAvailable,
   requestAlarmAuthorization,
 } from "../modules/zerospike-alarmkit";
+import { presetFor } from "../lib/reminderPresets";
 import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import {
   clampHypoThreshold,
@@ -82,12 +84,6 @@ const DEFAULT_POSTMEAL_RANGE = { min: 80, max: 180 };
 const DIABETES_OPTIONS = ["type1", "type2", "gestational", "prediabetes", "none", "other"] as const;
 type DiabetesOption = (typeof DIABETES_OPTIONS)[number];
 
-// Post-meal check timer, asked on its own step (Wave 2a). 60 is the default only
-// for gestational, since a 1-hour post-meal check is the common gestational
-// pattern; every other answer defaults to 120.
-const POSTMEAL_MINUTE_OPTIONS = [60, 90, 120, 150] as const;
-type PostMealMinutes = (typeof POSTMEAL_MINUTE_OPTIONS)[number];
-
 // What the user tracks, asked as one question. Insulin and oral medication are
 // two independent flags on the profile, so the four answers below are just the
 // four combinations of them (see effectiveTreatment / hasInsulin / hasOralMeds).
@@ -122,11 +118,10 @@ type StepId =
   | "carbRatio"
   | "isf"
   | "basal"
-  | "postMeal"
   | "widget"
   | "notify"
   | "medReminder"
-  | "glucoseReminder"
+  | "reminderPlan"
   | "disclaimer";
 
 // The fixed head of the quiz (everything after it branches on the answers).
@@ -221,17 +216,22 @@ export default function OnboardingScreen() {
   const [showMedTime, setShowMedTime] = useState(false);
   const [medReminderId, setMedReminderId] = useState<string | null>(null);
   const [savingMedReminder, setSavingMedReminder] = useState(false);
-  // The optional glucose-measurement reminder step (glucoseReminder, C8): same
-  // shape as medReminder above, offered on every path this time (not just the
-  // pill-tracking answer).
-  const [glucoseReminderTime, setGlucoseReminderTime] = useState("08:00");
-  const [showGlucoseTime, setShowGlucoseTime] = useState(false);
-  const [glucoseReminderId, setGlucoseReminderId] = useState<string | null>(null);
-  const [savingGlucoseReminder, setSavingGlucoseReminder] = useState(false);
-  // null until the user taps an option on the postMeal step, so the default
-  // (60 for gestational, 120 otherwise) keeps following the diabetes answer
-  // right up until it is actually touched - same pattern as targetsTouched.
-  const [postMealMinutes, setPostMealMinutes] = useState<PostMealMinutes | null>(null);
+  // The ready-made measurement layout (reminderPlan, 2.3.0's K2-E), which
+  // replaced the single-time glucoseReminder step. Only REMOVALS are stored, by
+  // TIME, so the layout keeps following the diabetes answer if the user walks
+  // back and changes it - the same "derived until touched" shape targetsTouched
+  // uses. A removed time that also appears in the new answer's layout stays
+  // removed, which is the reading that matches what the user actually did
+  // ("not at 07:30") rather than "not that row".
+  const [removedPlanTimes, setRemovedPlanTimes] = useState<string[]>([]);
+  const [savingPlan, setSavingPlan] = useState(false);
+  const planTimes = useMemo(
+    () =>
+      presetFor(diabetesTypeOf(diabetes))
+        .map((r) => r.time)
+        .filter((time) => !removedPlanTimes.includes(time)),
+    [diabetes, removedPlanTimes]
+  );
   const [accepted, setAccepted] = useState(false);
   const [saving, setSaving] = useState(false);
   // The real outcome of the notification prompt, shown on the notify step so the
@@ -250,16 +250,10 @@ export default function OnboardingScreen() {
   const hasOralMeds = isTwoWayTreatment
     ? pillsOnly === true
     : effectiveTreatment === "pills" || effectiveTreatment === "both";
-  // The default follows the diabetes answer until the user actually taps a
-  // postMeal option; gestational's common post-meal check is 1 hour, everyone
-  // else's is 2.
-  const effectivePostMealMinutes: PostMealMinutes =
-    postMealMinutes ?? (diabetes === "gestational" ? 60 : 120);
-
   // Branching flow: the "none" / "prediabetes" path swaps the four-way treatment
   // question for a two-option pill question and skips the carb-ratio / ISF /
-  // basal-time trio (no insulin to compute for). Everyone answers the postMeal
-  // timer question and gets the notification + disclaimer tail.
+  // basal-time trio (no insulin to compute for). Everyone gets the widget,
+  // notification, reminder-layout and disclaimer tail.
   const steps = useMemo<StepId[]>(() => {
     const treatmentStep: StepId[] = isTwoWayTreatment ? ["pillsOnly"] : ["insulin"];
     const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
@@ -267,23 +261,22 @@ export default function OnboardingScreen() {
     // insulin-only users have nothing to set up here, and it never blocks
     // finishing - "Simdi degil" always moves on with no reminder created.
     const medReminderStep: StepId[] = hasOralMeds ? ["medReminder"] : [];
-    // The glucose-measurement reminder (C8): offered on every path, unlike
-    // medReminder above. Always AFTER notify: its own "Kur" button fires the
-    // OS permission prompt right away (see setupGlucoseReminder), and that
-    // must never happen before the notify step's own on-screen rationale has
-    // been shown. After medReminder on the pill path too, so the two reminder
-    // setups sit back to back.
-    const glucoseReminderStep: StepId[] = ["glucoseReminder"];
+    // The ready-made measurement layout (K2-E), offered on every path, unlike
+    // medReminder above. Always AFTER notify: setting it up fires the OS
+    // permission prompts right away (see setupReminderPlan), and that must
+    // never happen before the notify step's own on-screen rationale has been
+    // shown. After medReminder on the pill path too, so the two reminder setups
+    // sit back to back.
+    const reminderPlanStep: StepId[] = ["reminderPlan"];
     return [
       ...BASE_STEPS,
       ...treatmentStep,
       "targets",
       ...branch,
-      "postMeal",
       "widget",
       "notify",
       ...medReminderStep,
-      ...glucoseReminderStep,
+      ...reminderPlanStep,
       "disclaimer",
     ];
   }, [isTwoWayTreatment, hasInsulin, hasOralMeds]);
@@ -475,7 +468,6 @@ export default function OnboardingScreen() {
         ...DEFAULT_PREFS,
         basal: hasInsulin,
         basalTime,
-        postMealMinutes: effectivePostMealMinutes,
       });
       await syncBasalReminderRow(hasInsulin, basalTime, true);
       await applyNotificationPrefs();
@@ -511,30 +503,20 @@ export default function OnboardingScreen() {
         return t("onboarding.qIsfHint");
       case "basal":
         return t("onboarding.qBasalHint");
-      case "postMeal":
-        return t("onboarding.qPostMealHint");
       case "medReminder":
         return t("onboarding.qMedReminderHint");
-      case "glucoseReminder":
-        return isTwoWayTreatment
-          ? t("onboarding.qGlucoseReminderHintTracking")
-          : t("onboarding.qGlucoseReminderHint");
+      case "reminderPlan":
+        return t("onboarding.qReminderPlanHint");
       default:
         return undefined;
     }
   }
 
-  // Title per step. Every step but glucoseReminder derives its key from the
-  // step id itself (onboarding.q<Step>); glucoseReminder is the one step whose
-  // wording branches on the diabetes answer (C8: a routine framing for
-  // insulin/type paths, a habit framing for the prediabetes/undiagnosed path),
-  // so it needs its own pair of title keys instead of the generic template.
+  // Title per step, derived from the step id itself (onboarding.q<Step>). The
+  // reminder layout deliberately has ONE title for every path: its wording must
+  // not vary with the diabetes answer, because that is exactly the kind of
+  // type-specific framing K2-E keeps off this screen.
   function titleFor(s: StepId): string {
-    if (s === "glucoseReminder") {
-      return isTwoWayTreatment
-        ? t("onboarding.qGlucoseReminderTracking")
-        : t("onboarding.qGlucoseReminder");
-    }
     return t(`onboarding.q${s[0].toUpperCase()}${s.slice(1)}`);
   }
 
@@ -610,40 +592,60 @@ export default function OnboardingScreen() {
     next();
   }
 
-  // "Kur" for the glucose-measurement reminder (C8): same direct-write /
-  // update-in-place discipline as setupMedReminder above, so a second visit
-  // updates the same row instead of creating a duplicate.
-  async function setupGlucoseReminder() {
-    if (savingGlucoseReminder) return;
-    setSavingGlucoseReminder(true);
+  /**
+   * "Set up this plan" (2.3.0's K2-E): writes the previewed measurement layout
+   * straight to the registry, then asks for the two permissions - notification
+   * first, alarm right after (see ensureAlarmAuthorizationOnce). The order
+   * matters: the dialogs are only meaningful once rows actually exist, and
+   * "Not now" writes nothing and asks for nothing at all.
+   *
+   * REPLACES rather than merges: every existing measurement row is deleted
+   * first. In the onboarding context those rows can only come from an earlier,
+   * abandoned run of this very step (nothing else creates a glucose reminder
+   * before setup is finished), so keeping them would leave a half-old layout
+   * mixed with the new one - a user who removed 12:30 from the preview would
+   * still end up with it. Skipping by time, which is what this did before,
+   * merged the two instead of replacing.
+   *
+   * Rows that no longer fit under MAX_REMINDERS stop the loop (createReminder
+   * throws once the list is full) - finishing onboarding is never blocked by
+   * that.
+   */
+  async function setupReminderPlan() {
+    if (savingPlan) return;
+    setSavingPlan(true);
+    let wrote = false;
     try {
-      // Same restarted-onboarding guard as setupMedReminder above; a glucose
-      // row carries no label at all, so any existing "glucose" row already on
-      // the active profile is the one an earlier "Kur" tap wrote.
-      const existingId =
-        glucoseReminderId ??
-        (await listReminders()).find((r) => r.type === "glucose")?.id ??
-        null;
-      if (existingId) {
-        await updateReminder(existingId, { time: glucoseReminderTime, enabled: true });
-        setGlucoseReminderId(existingId);
-      } else {
-        const row = await createReminder({
-          // Same as setupMedReminder above: the app's own default, not a
-          // choice the user made (so no alarmUserSet).
-          alarmEnabled: true,
-          type: "glucose",
-          time: glucoseReminderTime,
-          enabled: true,
-        });
-        setGlucoseReminderId(row.id);
+      const existing = await listReminders();
+      for (const row of existing) {
+        if (row.type === "glucose") await deleteReminder(row.id);
       }
-      await requestNotificationPermission();
-      await ensureAlarmAuthorizationOnce();
+      for (const time of planTimes) {
+        try {
+          await createReminder({
+            type: "glucose",
+            time,
+            enabled: true,
+            // The app's own default, not a choice the user made, so
+            // alarmUserSet is deliberately NOT sent (schema v21).
+            alarmEnabled: true,
+          });
+          wrote = true;
+        } catch {
+          // A full list (MAX_REMINDERS) is the only real case here, and once it
+          // is full every further row would throw too: stop rather than retry
+          // the same failure for each remaining time.
+          break;
+        }
+      }
+      if (wrote) {
+        await requestNotificationPermission();
+        await ensureAlarmAuthorizationOnce();
+      }
     } catch {
       // best-effort - Settings > Reminders is always there to try again
     } finally {
-      setSavingGlucoseReminder(false);
+      setSavingPlan(false);
     }
     next();
   }
@@ -943,26 +945,6 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
-      // Select-then-continue, like "unit": a type-appropriate default is
-      // already highlighted, so Continue works even if nothing is tapped.
-      case "postMeal":
-        return (
-          <View>
-            {POSTMEAL_MINUTE_OPTIONS.map((opt, i) => (
-              <FadeSlideIn key={opt} delay={optDelay(i)}>
-                <OptionCard
-                  label={t("settings.minutes", { n: opt })}
-                  selected={effectivePostMealMinutes === opt}
-                  onPress={() => {
-                    hapticSelect();
-                    setPostMealMinutes(opt);
-                  }}
-                />
-              </FadeSlideIn>
-            ))}
-          </View>
-        );
-
       case "widget":
         return (
           <FadeSlideIn delay={optDelay(0)}>
@@ -1123,33 +1105,41 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
-      // Optional, skippable, offered on every path (C8). "Kur" writes the row
-      // directly to the reminders registry (setupGlucoseReminder), same
-      // pattern as medReminder above.
-      case "glucoseReminder":
+      // Optional, skippable, offered on every path (2.3.0's K2-E). A PREVIEW:
+      // nothing is written until "Set up this plan", and any line can be
+      // removed first. No diabetes type is ever named here, and no frequency is
+      // ever framed as advice - see lib/reminderPresets.ts.
+      case "reminderPlan":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <Pressable
-              onPress={() => setShowGlucoseTime((s) => !s)}
-              style={{ minHeight: 60 }}
-              className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 active:opacity-80"
-            >
-              <View className="flex-row items-center">
-                <Ionicons name="speedometer-outline" size={20} color={THEME.accent} />
-                <Text className="text-ink text-base ml-3">
-                  {t("onboarding.glucoseReminderTime")}
-                </Text>
+            {planTimes.map((time, i) => (
+              <View
+                key={time}
+                className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 mb-2"
+                style={{ minHeight: 56 }}
+              >
+                <View className="flex-row items-center">
+                  <Ionicons name="water-outline" size={18} color={THEME.accent} />
+                  <Text className="text-ink text-base ml-3">{t("reminders.typeGlucose")}</Text>
+                </View>
+                <View className="flex-row items-center" style={{ gap: 12 }}>
+                  <Text className="text-ink text-lg font-semibold">{time}</Text>
+                  <Pressable
+                    onPress={() => {
+                      hapticSelect();
+                      setRemovedPlanTimes((prev) => [...prev, time]);
+                    }}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("onboarding.planRemoveA11y")}
+                  >
+                    <Ionicons name="close" size={18} color={THEME.muted} />
+                  </Pressable>
+                </View>
               </View>
-              <Text className="text-ink text-lg font-semibold">{glucoseReminderTime}</Text>
-            </Pressable>
-            <InlineTimePicker
-              visible={showGlucoseTime}
-              value={glucoseReminderTime}
-              onChange={setGlucoseReminderTime}
-              onClose={() => setShowGlucoseTime(false)}
-            />
-            {alarmKitAvailable ? (
-              <Text className="text-mut text-sm leading-5 mt-3">
+            ))}
+            {alarmKitAvailable && planTimes.length > 0 ? (
+              <Text className="text-mut text-sm leading-5 mt-2">
                 {t("onboarding.alarmNote")}
               </Text>
             ) : null}
@@ -1233,17 +1223,21 @@ export default function OnboardingScreen() {
       );
     }
 
-    if (step === "glucoseReminder") {
+    if (step === "reminderPlan") {
       return (
         <View>
-          <Button
-            label={t("onboarding.glucoseReminderSetup")}
-            size="lg"
-            loading={savingGlucoseReminder}
-            onPress={setupGlucoseReminder}
-          />
+          {/* Removing every line leaves nothing to set up, so the primary
+              action steps aside rather than writing an empty plan. */}
+          {planTimes.length > 0 ? (
+            <Button
+              label={t("onboarding.planSetup")}
+              size="lg"
+              loading={savingPlan}
+              onPress={setupReminderPlan}
+            />
+          ) : null}
           <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
-            <Text className="text-mut font-medium">{t("onboarding.glucoseReminderSkip")}</Text>
+            <Text className="text-mut font-medium">{t("onboarding.planSkip")}</Text>
           </Pressable>
         </View>
       );

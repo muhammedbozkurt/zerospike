@@ -78,14 +78,14 @@ struct QuickAddEntry: TimelineEntry {
         icon: "drop.fill",
         label: labels?.addGlucose ?? "Glucose",
         tint: QuickAddPalette.glucose,
-        url: URL(string: "zerospike:///?sheet=glucose")
+        url: DeepLinks.addGlucose
       ),
       QuickAddShortcut(
         id: "meal",
         icon: "fork.knife",
         label: labels?.addMeal ?? "Meal",
         tint: QuickAddPalette.meal,
-        url: URL(string: "zerospike:///food")
+        url: DeepLinks.addMeal
       ),
     ]
     if usesInsulin {
@@ -95,7 +95,7 @@ struct QuickAddEntry: TimelineEntry {
           icon: "syringe.fill",
           label: labels?.addInjection ?? "Injection",
           tint: QuickAddPalette.injection,
-          url: URL(string: "zerospike:///injection?compose=1")
+          url: DeepLinks.addInjection
         )
       )
     }
@@ -106,7 +106,7 @@ struct QuickAddEntry: TimelineEntry {
           icon: "pills.fill",
           label: labels?.addMed ?? "Medication",
           tint: QuickAddPalette.med,
-          url: URL(string: "zerospike:///?sheet=med")
+          url: DeepLinks.addMed
         )
       )
     }

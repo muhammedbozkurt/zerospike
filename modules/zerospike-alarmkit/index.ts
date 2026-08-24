@@ -32,17 +32,27 @@ interface AlarmKitNativeModule {
     hour: number,
     minute: number,
     label: string,
-    stopLabel: string
+    stopLabel: string,
+    openLabel: string,
+    route: string
   ): Promise<boolean>;
-  scheduleCountdownTimer(
+  scheduleOneShotAlarm(
     id: string,
-    seconds: number,
-    title: string,
-    stopLabel: string
+    epochSeconds: number,
+    label: string,
+    stopLabel: string,
+    openLabel: string,
+    route: string
   ): Promise<boolean>;
   cancelAlarm(id: string): Promise<boolean>;
   listScheduledAlarmIds(): string[];
+  takePendingAlarmRoute(): string | null;
 }
+
+/** Where an alarm's "Open" button should land - the same vocabulary as
+ *  NotificationRoute in lib/services/notifications.ts, so a tapped alarm and a
+ *  tapped notification are routed by the same code. */
+export type AlarmRoute = "postMeal" | "basal" | "med" | "glucose" | "custom";
 
 const native = requireOptionalNativeModule<AlarmKitNativeModule>(
   "ZerospikeAlarmKit"
@@ -89,9 +99,12 @@ export async function requestAlarmAuthorization(): Promise<AlarmAuthorizationSta
  * caller's own fully-formed identity string (see alarmIdentifier in
  * lib/services/notifications.ts, mirroring that file's own
  * "zerospike-rem-<id>" notification identifiers) - this module carries no
- * naming convention of its own. `label`/`stopLabel` must already be
+ * naming convention of its own. `label`/`stopLabel`/`openLabel` must already be
  * localized: this module owns no copy, exactly like startPostMealActivity's
  * `title` in modules/zerospike-live-activity.
+ *
+ * `route` is where the alarm's "Open" button lands (2.3.0's K2-B), read back by
+ * takePendingAlarmRoute below once the app comes forward.
  *
  * Returns false (never throws) on anything that stops the alarm from being
  * set: no AlarmKit, not authorized, or an AlarmKit-side scheduling error - the
@@ -104,6 +117,8 @@ export async function scheduleDailyAlarm(options: {
   minute: number;
   label: string;
   stopLabel: string;
+  openLabel: string;
+  route: AlarmRoute;
 }): Promise<boolean> {
   try {
     return (
@@ -112,7 +127,9 @@ export async function scheduleDailyAlarm(options: {
         options.hour,
         options.minute,
         options.label,
-        options.stopLabel
+        options.stopLabel,
+        options.openLabel,
+        options.route
       )) ?? false
     );
   } catch {
@@ -121,30 +138,37 @@ export async function scheduleDailyAlarm(options: {
 }
 
 /**
- * Starts a one-shot countdown alarm that rings in `seconds` - the post-meal
- * timer (2.3.0's B). Same contract as scheduleDailyAlarm above in every
- * respect: caller-owned identity string, already-localized copy, false (never
- * a throw) when AlarmKit is missing, unauthorized or refuses the schedule, so
- * lib/services/notifications.ts can fall straight back to the notification +
- * Live Activity countdown it has always used.
+ * Schedules a one-shot alarm for an absolute moment (`atMs`, epoch
+ * milliseconds) - the end of a post-meal window (2.3.0's K2-F). Same contract
+ * as scheduleDailyAlarm above in every respect: caller-owned identity string,
+ * already-localized copy, false (never a throw) when AlarmKit is missing,
+ * unauthorized or refuses the schedule, so lib/services/notifications.ts can
+ * fall straight back to the notification it has always used.
+ *
+ * Alert-only on purpose - no AlarmKit countdown surface, so the app's own
+ * PostMealActivity card stays on the lock screen in both delivery modes.
  *
  * Cancelled through the SAME cancelAlarm below, and visible to the same
  * listScheduledAlarmIds: the native module keeps one identity map for both
  * kinds of alarm.
  */
-export async function scheduleCountdownTimer(options: {
+export async function scheduleOneShotAlarm(options: {
   id: string;
-  seconds: number;
-  title: string;
+  atMs: number;
+  label: string;
   stopLabel: string;
+  openLabel: string;
+  route: AlarmRoute;
 }): Promise<boolean> {
   try {
     return (
-      (await native?.scheduleCountdownTimer(
+      (await native?.scheduleOneShotAlarm(
         options.id,
-        options.seconds,
-        options.title,
-        options.stopLabel
+        options.atMs / 1000,
+        options.label,
+        options.stopLabel,
+        options.openLabel,
+        options.route
       )) ?? false
     );
   } catch {
@@ -172,5 +196,21 @@ export function listScheduledAlarmIds(): string[] {
     return native?.listScheduledAlarmIds() ?? [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * The route left behind by an alarm's "Open" button, or null when none is
+ * waiting (2.3.0's K2-B). READ-ONCE: the native side clears the key as it
+ * hands the value over, so a route can only ever be acted on for the
+ * foreground transition it belongs to. Synchronous, like every other read
+ * here, so app/_layout.tsx can call it straight from an AppState listener.
+ */
+export function takePendingAlarmRoute(): AlarmRoute | null {
+  try {
+    const route = native?.takePendingAlarmRoute() ?? null;
+    return route ? (route as AlarmRoute) : null;
+  } catch {
+    return null;
   }
 }

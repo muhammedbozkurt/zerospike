@@ -37,6 +37,47 @@ export interface PostMealTimerWindow {
 export const POST_MEAL_MIN_SCHEDULE_MS = 60_000;
 
 /**
+ * The one rule for "is this running countdown THIS profile's business".
+ *
+ * A caregiver who starts a countdown on one profile and switches to another
+ * must not see it presented as the new profile's own - not on the dashboard
+ * card, not in the reminders screen's upcoming list, not on the post-meal deep
+ * link. The timer itself is left alone either way, so it reappears the moment
+ * its owner is active again.
+ *
+ * A timer with NO recorded owner predates the lock (or came from a seed) and
+ * belongs to whoever is looking, exactly as it did before.
+ */
+export function postMealWindowForProfile(
+  timer: PostMealTimerWindow | null,
+  activeProfileId: string | null | undefined
+): PostMealTimerWindow | null {
+  if (timer == null) return null;
+  if (timer.profileId == null) return timer;
+  return timer.profileId === activeProfileId ? timer : null;
+}
+
+/** The range a one-off post-meal countdown may be started with (2.3.0's K2-C).
+ *  Wider than the saved preference's own 60/90/120/150 list on purpose: the
+ *  one-off picker exists precisely for the meal that does not fit it. */
+export const POST_MEAL_MIN_MINUTES = 5;
+export const POST_MEAL_MAX_MINUTES = 360;
+
+/**
+ * The single validation point for a hand-picked countdown length. Anything the
+ * duration sheet or a caller hands in becomes a whole number of minutes inside
+ * the supported range; a non-number falls back to the low end rather than
+ * arming a NaN countdown that would never fire.
+ */
+export function clampPostMealMinutes(n: number): number {
+  if (!Number.isFinite(n)) return POST_MEAL_MIN_MINUTES;
+  const rounded = Math.round(n);
+  if (rounded < POST_MEAL_MIN_MINUTES) return POST_MEAL_MIN_MINUTES;
+  if (rounded > POST_MEAL_MAX_MINUTES) return POST_MEAL_MAX_MINUTES;
+  return rounded;
+}
+
+/**
  * Where a running timer started, for a timer persisted before the start moment
  * was recorded: it can only be recovered from the end and the window it was
  * armed with.

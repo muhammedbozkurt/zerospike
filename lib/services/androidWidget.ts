@@ -27,8 +27,8 @@ import { formatTimeForLang } from "../format";
  */
 
 /** Deep links the widgets open (scheme registered in app.json; expo-router
- *  resolves the paths). Kept identical to the iOS widgetURL/Link targets. */
-const URI_DASHBOARD = "zerospike:///";
+ *  resolves the paths). Kept identical, string for string, to the iOS side's
+ *  own list in targets/widget/DeepLinks.swift. */
 const URI_ADD_GLUCOSE = "zerospike:///?sheet=glucose";
 const URI_ADD_MEAL = "zerospike:///food";
 const URI_ADD_INJECTION = "zerospike:///injection?compose=1";
@@ -188,7 +188,10 @@ export function buildZerospikeWidget(
         padding: s.padding,
       },
       clickAction: "OPEN_URI",
-      clickActionData: { uri: URI_DASHBOARD },
+      // The main widget is a logging shortcut, so its root tap opens the
+      // glucose quick-add sheet rather than just the app (2.3.0's K2-B) - the
+      // same target the iOS twin's tapURL now uses (targets/widget/index.swift).
+      clickActionData: { uri: URI_ADD_GLUCOSE },
     },
     React.createElement(
       FlexWidget,

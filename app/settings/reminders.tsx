@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -17,11 +18,15 @@ import { insulinModeOf, insulinModeShowsBasal } from "../../lib/insulinMode";
 import {
   applyNotificationPrefs,
   getNotificationPermission,
+  getPostMealTimerState,
   requestNotificationPermission,
   type NotificationPermission,
 } from "../../lib/services/notifications";
+import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { syncLiveData } from "../../lib/services/liveData";
 import { alarmModeOf } from "../../lib/alarmSelect";
+import { buildUpcoming, type UpcomingItem } from "../../lib/upcomingReminders";
+import { postMealWindowForProfile } from "../../lib/postMealTimer";
 import {
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
@@ -31,7 +36,8 @@ import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { ReminderEditSheet, type ReminderSavePayload } from "../../components/ReminderEditSheet";
 import { useFeedback } from "../../components/Feedback";
 import { withAlpha } from "../../components/rich";
-import { GLUCOSE_RICH, HIT_TARGET, THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME } from "../../lib/theme/tokens";
+import { upper } from "../../lib/upper";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 import { useLayout } from "../../lib/useLayout";
 
@@ -50,6 +56,11 @@ function reminderIcon(type: ReminderType): keyof typeof Ionicons.glyphMap {
       return "chatbubble-ellipses-outline";
   }
 }
+
+/** How far the "Coming up" card looks ahead, and how many lines it draws
+ *  before collapsing the rest into a "+N more" count. */
+const UPCOMING_WINDOW_MS = 24 * 60 * 60 * 1000;
+const UPCOMING_MAX = 6;
 
 /** The three things a delivery badge can say: a working alarm, an alarm the
  *  device is not (yet) allowed to ring, or a plain notification. */
@@ -141,6 +152,12 @@ export default function RemindersScreen() {
   const showsBasal = insulinModeShowsBasal(insulinModeOf(activeProfile));
   const showsMeds = activeProfile?.oral_meds_enabled === 1;
 
+  // Mirrored so `reload` can stay a stable useCallback (the focus effect
+  // depends on it) while still reading the CURRENT profile for the post-meal
+  // timer's ownership check.
+  const activeProfileIdRef = useRef<string | null>(activeProfile?.id ?? null);
+  activeProfileIdRef.current = activeProfile?.id ?? null;
+
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
@@ -154,6 +171,16 @@ export default function RemindersScreen() {
   const [alarmAuthorized, setAlarmAuthorized] = useState(
     () => isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized"
   );
+
+  // What the "Coming up" card needs beyond the rows themselves (2.3.0's K2-A):
+  // the master switch, a running post-meal window and its own delivery
+  // preference. `nowTs` is sampled, not ticked - the card lists fixed daily
+  // times, and a per-second clock would re-render the whole list to move
+  // nothing. It is re-sampled on every refresh and on screen focus.
+  const [masterEnabled, setMasterEnabled] = useState(true);
+  const [postMealEndsAt, setPostMealEndsAt] = useState<number | null>(null);
+  const [postMealAlarm, setPostMealAlarm] = useState(false);
+  const [nowTs, setNowTs] = useState(() => Date.now());
 
   // The sheet is shared by add and edit: null editingReminder means "adding".
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -174,25 +201,48 @@ export default function RemindersScreen() {
     return t("reminders.typeGlucose");
   }
 
-  useEffect(() => {
-    (async () => {
-      const [list, perm] = await Promise.all([listReminders(), getNotificationPermission()]);
-      setReminders(list);
-      setPermission(perm);
-      setLoaded(true);
-    })();
+  /** Everything the screen draws from, re-read in one pass. Also re-samples the
+   *  AlarmKit authorization, which the user can change from system settings
+   *  without this screen ever unmounting. */
+  const reload = useCallback(async () => {
+    const [list, perm, prefs, timer] = await Promise.all([
+      listReminders(),
+      getNotificationPermission(),
+      getNotificationPrefs(),
+      getPostMealTimerState(),
+    ]);
+    setReminders(list);
+    setPermission(perm);
+    setMasterEnabled(prefs.enabled);
+    setPostMealAlarm(prefs.postMealAlarm);
+    // Profile lock, the same rule the dashboard card applies: a countdown armed
+    // for a DIFFERENT profile (a caregiver switched away mid-window) is not
+    // this profile's business and must not appear in its list. A timer with no
+    // recorded owner predates the lock and still shows everywhere.
+    setPostMealEndsAt(postMealWindowForProfile(timer, activeProfileIdRef.current)?.endsAt ?? null);
+    setNowTs(Date.now());
+    setAlarmAuthorized(isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized");
   }, []);
+
+  useEffect(() => {
+    void reload().then(() => setLoaded(true));
+  }, [reload]);
+
+  // Coming back from another SCREEN (the dashboard, having started a countdown)
+  // has to redraw both the badges and the "Coming up" card. A return from
+  // SYSTEM settings is not a focus change and is not caught here - see the
+  // known limits in docs/plan-2.3.0.md section 14.
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
 
   /** Re-reads the table, re-applies the schedule, and re-syncs the widget - the
    *  same three steps the notifications screen runs after every change, now
    *  shared by every mutation below (save, toggle, delete). */
   async function afterChange() {
-    const [list, perm] = await Promise.all([listReminders(), getNotificationPermission()]);
-    setReminders(list);
-    setPermission(perm);
-    setAlarmAuthorized(
-      alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized"
-    );
+    await reload();
     await applyNotificationPrefs();
     if (activeProfile) void syncLiveData(activeProfile.id, unit);
   }
@@ -229,6 +279,79 @@ export default function RemindersScreen() {
   /** Any row that wants an alarm this device will not ring - what the hint
    *  under the header is for. */
   const anyAlarmPending = reminders.some((r) => badgeModeOf(r) === "alarmPending");
+
+  /** Store frames must look like a working account (App Store 2.3.3), the same
+   *  reasoning as `alarmGranted` above. */
+  const notifGranted = isScreenshotMode() ? true : permission === "granted";
+
+  /** The next 24 hours, computed from the SAME rows and gates applyReminders
+   *  schedules from (see lib/upcomingReminders.ts for why this is derived from
+   *  the table rather than read back from the OS queues). */
+  const upcoming = useMemo(
+    () =>
+      buildUpcoming({
+        rows: reminders,
+        now: nowTs,
+        windowMs: UPCOMING_WINDOW_MS,
+        granted: masterEnabled && notifGranted,
+        showsBasal,
+        showsMeds,
+        alarmKitAvailable,
+        alarmAuthorized: alarmGranted,
+        postMealEndsAt,
+        postMealAlarm,
+      }),
+    [
+      reminders,
+      nowTs,
+      masterEnabled,
+      notifGranted,
+      showsBasal,
+      showsMeds,
+      alarmKitAvailable,
+      alarmGranted,
+      postMealEndsAt,
+      postMealAlarm,
+    ]
+  );
+
+  const rowById = useMemo(
+    () => new Map(reminders.map((r) => [r.id, r])),
+    [reminders]
+  );
+
+  /** One clock format for the whole card. A reminder shows its own stored
+   *  "HH:MM" - the exact string its row displays, so the two can never
+   *  disagree - and the countdown's end, which is an epoch moment, is written
+   *  the same way rather than through the locale formatter: a card that mixed
+   *  "22:30" with "10:30 PM" in one narrow column would read as two different
+   *  kinds of time, and every other clock value on this screen is HH:MM. */
+  function upcomingTime(item: UpcomingItem): string {
+    const row = rowById.get(item.id);
+    if (item.kind === "reminder" && row) return row.time;
+    const d = new Date(item.at);
+    const two = (n: number) => String(n).padStart(2, "0");
+    return `${two(d.getHours())}:${two(d.getMinutes())}`;
+  }
+
+  function upcomingName(item: UpcomingItem): string {
+    if (item.kind === "postMeal") return t("reminders.upcomingPostMeal");
+    const row = rowById.get(item.id);
+    return row ? reminderRowLabel(row) : t("reminders.typeGlucose");
+  }
+
+  /** The one-line "next: today 22:00" under a row's own label. Only drawn for a
+   *  row this pass actually put in the upcoming list, so a disabled row (or one
+   *  behind a closed profile gate) silently has none. */
+  function nextLineFor(row: Reminder): string | undefined {
+    const item = upcoming.find((i) => i.kind === "reminder" && i.id === row.id);
+    if (!item) return undefined;
+    const tomorrow = new Date(nowTs);
+    tomorrow.setHours(24, 0, 0, 0);
+    return t(item.at >= tomorrow.getTime() ? "reminders.nextTomorrow" : "reminders.nextToday", {
+      time: row.time,
+    });
+  }
 
   /** Raises the AlarmKit dialog when the OS is still willing to ask, and points
    *  at system settings once it is not. Mirrors ReminderEditSheet's own switch. */
@@ -395,6 +518,74 @@ export default function RemindersScreen() {
           </Pressable>
         ) : null}
 
+        {/* "Coming up" (2.3.0's K2-A). Hidden without the notification
+            permission: the banner right above already explains that state, and
+            a list of times nothing will actually deliver would contradict it. */}
+        {loaded && notifGranted ? (
+          <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-3">
+            <Text
+              style={{
+                color: THEME.muted,
+                fontSize: 11,
+                fontWeight: "800",
+                letterSpacing: 0.4,
+                marginBottom: upcoming.length > 0 ? 8 : 0,
+              }}
+            >
+              {upper(t("reminders.upcomingTitle"))}
+            </Text>
+            {upcoming.length === 0 ? (
+              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+                {t("reminders.upcomingEmpty")}
+              </Text>
+            ) : (
+              <>
+                {upcoming.slice(0, UPCOMING_MAX).map((item) => (
+                  <View
+                    key={`${item.kind}-${item.id}`}
+                    className="flex-row items-center"
+                    style={{ paddingVertical: 3 }}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        color: THEME.ink,
+                        fontSize: 13,
+                        fontWeight: "700",
+                        width: 58,
+                        ...TABULAR,
+                      }}
+                    >
+                      {upcomingTime(item)}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={{ color: THEME.ink, fontSize: 13, flex: 1, opacity: 0.9 }}
+                    >
+                      {upcomingName(item)}
+                    </Text>
+                    <Ionicons
+                      name={item.mode === "alarm" ? "alarm" : "notifications-outline"}
+                      size={13}
+                      color={item.mode === "alarm" ? THEME.accent : THEME.muted}
+                      accessibilityLabel={t(
+                        item.mode === "alarm"
+                          ? "reminders.modeAlarm"
+                          : "reminders.modeNotification"
+                      )}
+                    />
+                  </View>
+                ))}
+                {upcoming.length > UPCOMING_MAX ? (
+                  <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 4 }}>
+                    {t("reminders.upcomingMore", { n: upcoming.length - UPCOMING_MAX })}
+                  </Text>
+                ) : null}
+              </>
+            )}
+          </View>
+        ) : null}
+
         {!loaded ? (
           <>
             {[0, 1, 2].map((i) => (
@@ -426,6 +617,7 @@ export default function RemindersScreen() {
               key={row.id}
               icon={reminderIcon(row.type)}
               label={reminderRowLabel(row)}
+              sub={nextLineFor(row)}
               value={row.time}
               onPress={() => openEditSheet(row)}
               onLongPress={() => void confirmDelete(row)}

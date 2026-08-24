@@ -25,6 +25,7 @@ import i18nInstance, {
 } from "../i18n";
 import { isProCached, verifyProWithStore } from "../services/purchases";
 import { markAlarmTourSeen } from "../services/alarmTour";
+import { takePendingAlarmRoute } from "../../modules/zerospike-alarmkit";
 import { isScreenshotMode } from "../screenshotMode";
 
 /**
@@ -248,6 +249,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const completeOnboarding = useCallback(async () => {
     await AsyncStorage.setItem(ONBOARDED_KEY, "true");
+    // Drop any route an alarm's "Open" button parked WHILE onboarding was still
+    // running (the reminder layout is created a step before the end, so its
+    // alarms can already exist). app/_layout.tsx only consumes routes once
+    // onboarding is done, and a route that has been waiting since then would
+    // fire as a surprise navigation the moment the flow completes - away from
+    // the reveal the user is looking at.
+    takePendingAlarmRoute();
     // Onboarding already showed the alarm framing and asked for the
     // permission, so the upgrade tour (app/alarm-tour.tsx) has nothing left to
     // tell this user. Marking it here is also what keeps that tour from

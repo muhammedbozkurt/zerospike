@@ -1,6 +1,6 @@
 import "../global.css";
 import React, { useEffect, useRef, useState } from "react";
-import { I18nManager, LogBox, View } from "react-native";
+import { AppState, I18nManager, LogBox, View } from "react-native";
 import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams } from "expo-router";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -36,7 +36,7 @@ import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
-import { isAlarmKitAvailable } from "../modules/zerospike-alarmkit";
+import { isAlarmKitAvailable, takePendingAlarmRoute } from "../modules/zerospike-alarmkit";
 import { listReminders } from "../lib/db/reminders";
 
 // One-shot guard for the startup RTL auto-reload below, persisted (not just an
@@ -89,8 +89,15 @@ function routeForNotification(
     case "lowFollowup":
       router.navigate({ pathname: "/(tabs)", params: { sheet: "fasting" } });
       break;
+    // The empty-journal nudge and a user's own custom reminder both open the
+    // dashboard and NOTHING else (2.3.0's K2-B). "Your journal is empty" is
+    // about anything the user might record - a reading, a meal, a medication -
+    // so pre-opening the fasting-glucose form, as this used to, answered a
+    // question the nudge never asked; a custom reminder the app never saw the
+    // text of has even less to go on.
     case "idle":
-      router.navigate({ pathname: "/(tabs)", params: { sheet: "glucose" } });
+    case "custom":
+      router.navigate("/(tabs)");
       break;
     case "basal":
       router.navigate("/(tabs)/injection");
@@ -312,6 +319,48 @@ function RootNavigator() {
         // no launching notification, nothing to route
       }
     })();
+  }, [ready, onboarded, router]);
+
+  // The alarm counterpart of the two effects above (2.3.0's K2-B). An AlarmKit
+  // alarm rings with the app not running and hands nothing to JS: its "Open"
+  // button instead parks a route in the shared App Group
+  // (ZerospikeAlarmOpenIntent) and brings the app forward, so the pickup point
+  // is the foreground transition rather than a notification response. Read-once
+  // on the native side, so a route can never be replayed on a later launch, and
+  // routed through the SAME routeForNotification a tapped notification uses.
+  // Checked on mount too: the transition that started the app can land before
+  // this listener is attached.
+  //
+  // Each foreground transition also gets ONE delayed retry: the intent runs in
+  // its own process and can still be writing the App Group value as the app
+  // comes to the front, and a first read that finds nothing must not lose the
+  // tap. Anything the retry finds is a route the immediate read missed, never a
+  // second copy - the native read clears the key as it hands it over.
+  useEffect(() => {
+    if (!ready || !onboarded) return;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const consume = (): boolean => {
+      const route = takePendingAlarmRoute();
+      if (!route) return false;
+      routeForNotification(route, router);
+      return true;
+    };
+    const consumeWithRetry = () => {
+      if (retry) clearTimeout(retry);
+      if (consume()) return;
+      retry = setTimeout(() => {
+        retry = null;
+        consume();
+      }, 1000);
+    };
+    consumeWithRetry();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") consumeWithRetry();
+    });
+    return () => {
+      if (retry) clearTimeout(retry);
+      sub.remove();
+    };
   }, [ready, onboarded, router]);
 
   const prevProRef = useRef<boolean | null>(null);

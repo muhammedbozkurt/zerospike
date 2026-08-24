@@ -1,5 +1,6 @@
 {
   "ios": {
+    "CFBundleDisplayName": "zerospike",
     "NSCameraUsageDescription": "يستخدم zerospike الكاميرا لمسح باركود الأطعمة وإضافة صور الوجبات.",
     "NSPhotoLibraryUsageDescription": "يصل zerospike إلى مكتبة صورك لإضافة صور إلى دفتر وجباتك.",
     "NSHealthShareUsageDescription": "يقرأ zerospike بيانات سكر الدم والإنسولين ودقائق النشاط من Apple Health لعرضها في دفترك وملخصاتك.",

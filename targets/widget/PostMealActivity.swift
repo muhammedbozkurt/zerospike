@@ -122,6 +122,12 @@ struct PostMealActivityWidget: Widget {
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 12)
+      // Tapping the card opens the post-meal reading sheet (2.3.0's K2-B) -
+      // the same target the post-meal notification routes to, so the countdown
+      // ends in the same place however the user gets there. This card had no
+      // link at all before, which made the one surface showing the timer the
+      // one surface that could not act on it.
+      .widgetURL(DeepLinks.postMeal2h)
       .activityBackgroundTint(background)
       .activitySystemActionForegroundColor(accent)
       // Once the countdown has actually elapsed (staleDate passed - see the
@@ -188,6 +194,11 @@ struct PostMealActivityWidget: Widget {
           .font(.system(size: 13, weight: .semibold))
           .foregroundColor(context.isStale ? muted : accent)
       }
+      // Same destination as the lock-screen card's own widgetURL above: the
+      // expanded island carries it here, next to keylineTint, because that is
+      // where the modifier applies to the whole Dynamic Island presentation
+      // rather than to one region of it.
+      .widgetURL(DeepLinks.postMeal2h)
       // The hairline around the island while the activity is live: the brand
       // cyan, so the pill reads as ours at a glance.
       .keylineTint(accent)

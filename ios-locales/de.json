@@ -1,5 +1,6 @@
 {
   "ios": {
+    "CFBundleDisplayName": "zerospike",
     "NSCameraUsageDescription": "zerospike nutzt Ihre Kamera, um Lebensmittel-Barcodes zu scannen und Mahlzeitenfotos hinzuzufügen.",
     "NSPhotoLibraryUsageDescription": "zerospike greift auf Ihre Fotomediathek zu, um Fotos zu Ihrem Mahlzeiten-Tagebuch hinzuzufügen.",
     "NSHealthShareUsageDescription": "zerospike liest Ihre Blutzucker-, Insulin- und Aktivitätsdaten aus Apple Health, um sie in Ihrem Tagebuch und in Übersichten anzuzeigen.",

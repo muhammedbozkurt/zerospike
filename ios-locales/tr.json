@@ -1,5 +1,6 @@
 {
   "ios": {
+    "CFBundleDisplayName": "zerospike",
     "NSCameraUsageDescription": "zerospike, kameranızı yiyecek barkodlarını taramak ve öğün fotoğrafları eklemek için kullanır.",
     "NSPhotoLibraryUsageDescription": "zerospike, öğün günlüğünüze fotoğraf eklemek için fotoğraf arşivinize erişir.",
     "NSHealthShareUsageDescription": "zerospike; kan şekeri, insülin verisi ve aktif dakika bilgilerinizi günlüğünüzde ve özetlerde gösterebilmek için Apple Sağlık'tan okur.",

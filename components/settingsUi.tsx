@@ -19,6 +19,7 @@ import { DirIcon } from "./DirIcon";
 export function Row({
   icon,
   label,
+  sub,
   value,
   onPress,
   onLongPress,
@@ -27,6 +28,9 @@ export function Row({
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  /** One quiet line under the label (e.g. "next: today 22:00"). Optional, so
+   *  every existing caller renders exactly as before. */
+  sub?: string;
   value?: string;
   onPress?: () => void;
   onLongPress?: () => void;
@@ -64,13 +68,20 @@ export function Row({
       >
         <Ionicons name={icon} size={18} color={danger ? GLUCOSE_RICH.low : THEME.accent} />
       </View>
-      <Text
-        className="flex-1 ml-3 text-[15px] font-semibold"
-        style={{ color: danger ? GLUCOSE_RICH.low : THEME.ink }}
-        numberOfLines={2}
-      >
-        {label}
-      </Text>
+      <View className="flex-1 ml-3">
+        <Text
+          className="text-[15px] font-semibold"
+          style={{ color: danger ? GLUCOSE_RICH.low : THEME.ink }}
+          numberOfLines={2}
+        >
+          {label}
+        </Text>
+        {sub ? (
+          <Text className="text-mut text-[12px] mt-0.5" numberOfLines={1}>
+            {sub}
+          </Text>
+        ) : null}
+      </View>
       {value ? (
         <Text
           className="text-mut text-[13px] mr-1 font-medium"

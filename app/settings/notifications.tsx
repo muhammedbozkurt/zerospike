@@ -13,6 +13,7 @@ import {
   applyPostMealWindowChange,
   cancelPostMealTimer,
   getPostMealTimerEnd,
+  isPostMealWindowCustom,
   hasNotificationPermission,
   getNotificationPermission,
   requestNotificationPermission,
@@ -75,6 +76,12 @@ export default function NotificationSettings() {
   // A post-meal timer is counting down right now. Only then does the delay note
   // have anything to describe, so it stays out of the way the rest of the time.
   const [postMealRunning, setPostMealRunning] = useState(false);
+  // ...and whether THAT timer was started with a hand-picked length (2.3.0's
+  // K2-C). The picker on this card sets the SAVED window, which such a timer
+  // deliberately ignores (see applyPostMealWindowChange), so the note under it
+  // has to say something different or it would describe a re-measure that will
+  // not happen.
+  const [postMealCustom, setPostMealCustom] = useState(false);
   // The post-meal delivery choice (2.3.0's B) exists only where AlarmKit does
   // (iOS 26+); everywhere else the countdown is always a notification and the
   // row would be a promise the OS cannot keep. A plain sync native call, like
@@ -103,6 +110,7 @@ export default function NotificationSettings() {
       setPermission(await getNotificationPermission());
       setReliability(await checkReminderReliability());
       setPostMealRunning((await getPostMealTimerEnd()) != null);
+    setPostMealCustom(await isPostMealWindowCustom());
     })();
   }, []);
 
@@ -160,6 +168,7 @@ export default function NotificationSettings() {
     setPermission(await getNotificationPermission());
     setReliability(await checkReminderReliability());
     setPostMealRunning((await getPostMealTimerEnd()) != null);
+    setPostMealCustom(await isPostMealWindowCustom());
   }
 
   /**
@@ -191,6 +200,7 @@ export default function NotificationSettings() {
     await updatePrefs({ postMealAlarm: value });
     await applyPostMealAlarmModeChange();
     setPostMealRunning((await getPostMealTimerEnd()) != null);
+    setPostMealCustom(await isPostMealWindowCustom());
   }
 
   /**
@@ -346,7 +356,11 @@ export default function NotificationSettings() {
                       note describes something that is not happening. */}
                   {postMealRunning ? (
                     <Text className="text-mut text-xs mt-2">
-                      {t("settings.postMealDelayRunningNote")}
+                      {/* Two static calls, not one dynamic key: this way
+                          scripts/i18n-check.js can see both. */}
+                      {postMealCustom
+                        ? t("settings.postMealDelayCustomNote")
+                        : t("settings.postMealDelayRunningNote")}
                     </Text>
                   ) : null}
 

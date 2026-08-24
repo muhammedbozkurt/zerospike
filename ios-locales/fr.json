@@ -1,5 +1,6 @@
 {
   "ios": {
+    "CFBundleDisplayName": "zerospike",
     "NSCameraUsageDescription": "zerospike utilise votre caméra pour scanner les codes-barres des aliments et ajouter des photos de repas.",
     "NSPhotoLibraryUsageDescription": "zerospike accède à votre photothèque pour ajouter des photos à votre journal de repas.",
     "NSHealthShareUsageDescription": "zerospike lit vos glycémies, vos données d'insuline et vos minutes actives depuis Apple Santé pour les afficher dans votre journal et vos résumés.",

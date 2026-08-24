@@ -67,3 +67,22 @@ R6'da silinen DEV_SCREENSHOT_ROUTE/design-gallery YERINE temiz, env-gated mekani
 4. Feature graphic + store icon uret.
 5. Dogrulama scriptini calistir, `zerospike-store/` teslim et.
 6. Screenshot modu kancalarini temizleme karari: env-gated oldugu icin kodda kalabilir (release'e sizmiyor); HUMAN-TODO'ya "store yuklemesi oncesi son kontrol" maddesi.
+
+## 7. 2.3.0 gorsel borcu (Kapsam 2, kayit: 2026-08-24)
+
+Kod tarafi bitti, cekim/kompozit insanda. Degisen kareler:
+
+- **09-reminders**: ekranin ustune "Siradaki" karti (onumuzdeki 24 saat) ve satir
+  basi Alarm/Bildirim rozeti geldi, ayrica her satirin altinda "siradaki: bugun
+  22:00" satiri var. 9 dilde yeniden uretilmeli. Tohum (lib/db/screenshotSeed.ts)
+  bir satiri bilerek bildirimde tutuyor, boylece iki rozet de karede gorunur.
+- **Onboarding karesi**: tokluk suresi sorusu KALKTI (K2-D). O soruyu gosteren
+  bir kare varsa artik gecersiz; yerine hazir hatirlatici duzeni onizlemesi
+  (reminderPlan adimi) cekilebilir. Ekranda tani tipi adi GECMEZ, bu yuzden
+  kare her dil icin ayni cerceveyi tasir.
+- **Pano (01/03 civari)**: yemek kartindaki birincil "Yemege basladim" pill'inin
+  yaninda kucuk sure secici dugmesi var. Mevcut kareler hala dogru ama dugme
+  yeni; yeniden cekilirse ikisi birlikte gorunur.
+
+Regulasyon suzgeci degismedi: karelerde "onerilen olcum sikligi" ya da tani
+tipine ozel bir cerceve OLMAZ.

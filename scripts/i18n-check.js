@@ -55,6 +55,19 @@ function listSourceFiles(dir) {
 }
 
 /**
+ * Localizable Info.plist keys that are NOT permission strings but still have to
+ * exist in every generated .lproj/InfoPlist.strings.
+ *
+ * CFBundleDisplayName is here because of a real device finding (2.3.0): once
+ * CFBundleLocalizations declares nine languages, iOS resolves the app's name
+ * per locale, and a localized Info.plist that does not carry the name resolves
+ * to nothing - system surfaces then fall back to the bundle identifier. That is
+ * what put "com.greeneyeapp.zerospike" on the AlarmKit alarm screen. Same
+ * string in every language: it is a brand name, not a word to translate.
+ */
+const LOCALIZED_INFO_PLIST_KEYS = ["CFBundleDisplayName"];
+
+/**
  * app.json ios.infoPlist vs. ios-locales/*.json. Returns a list of problem lines
  * (empty when the two key sets agree for every declared locale).
  */
@@ -65,12 +78,21 @@ function checkIosLocales() {
   const locales = cfg.locales || {};
 
   const expected = Object.keys(infoPlist)
-    .filter((k) => k.endsWith("UsageDescription"))
+    .filter(
+      (k) => k.endsWith("UsageDescription") || LOCALIZED_INFO_PLIST_KEYS.includes(k)
+    )
     .sort();
 
-  if (expected.length === 0) {
+  if (!expected.some((k) => k.endsWith("UsageDescription"))) {
     problems.push("app.json ios.infoPlist declares no *UsageDescription keys");
     return problems;
+  }
+  for (const key of LOCALIZED_INFO_PLIST_KEYS) {
+    if (!expected.includes(key)) {
+      problems.push(
+        `app.json ios.infoPlist is missing ${key}, which every ios-locales file has to carry`
+      );
+    }
   }
   if (Object.keys(locales).length === 0) {
     problems.push("app.json declares no expo.locales, so no permission prompt is localized");

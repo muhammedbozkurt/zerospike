@@ -31,6 +31,7 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
+        "CFBundleDisplayName": "zerospike",
         "NSCameraUsageDescription": "zerospike uses your camera to scan food barcodes and add meal photos.",
         "NSPhotoLibraryUsageDescription": "zerospike accesses your photo library to add photos to your meal journal.",
         "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries.",

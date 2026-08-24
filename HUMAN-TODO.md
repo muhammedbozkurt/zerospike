@@ -1,17 +1,51 @@
 
 ## 2.3.0 paketi sonrasi (23 Agu 2026) - INSAN
 
-- [ ] Xcode 26 derleme (native modul degisti, prebuild + build SART): yeni
-      `scheduleCountdownTimer` icindeki AlarmKit countdown adlari bu ortamda hic
-      derlenmedi. Kontrol edilecekler: `Alarm.CountdownDuration(preAlert:postAlert:)`,
-      `AlarmPresentation.Countdown(title:)` (pauseButton parametresi zorunlu
-      cikarsa eklenmeli, o zaman 9 dilde "duraklat" metni de gerekir),
-      `AlarmPresentation(alert:countdown:)`, `AlarmManager.AlarmConfiguration(countdownDuration:attributes:)`.
-      Hata verirse modulun sozlesmesi geregi tek sonuc `false` doner ve tokluk
-      sayaci eski bildirim + Live Activity yoluna duser, uygulama bozulmaz.
-- [ ] Cihaz QA: docs/plan-2.3.0.md bolum 10 (18 senaryo), ozellikle 9b sistem
-      sayac kartinin gorunumu (kabul edilemezse geri alma tek satir:
-      DEFAULT_PREFS.postMealAlarm = false).
+- [ ] Xcode 26 derleme (native modul degisti, prebuild + build SART). Bu
+      ortamda iOS 26 SDK yok, asagidaki iki ucus hic derlenmedi:
+      (a) `Alarm.Schedule.fixed(Date)` ile tek seferlik alarm
+      (`scheduleOneShotAlarm`, tokluk penceresinin bitisi). Derlenmezse modul
+      `false` doner ve tokluk sayaci bildirim yoluna duser; markali Live
+      Activity karti zaten her iki modda da ayakta, hicbir sey kaybolmaz.
+      (b) K2-B alarm ekrani ikinci dugmesi:
+      `AlarmPresentation.Alert(..., secondaryButton:secondaryButtonBehavior:)`,
+      `AlarmManager.AlarmConfiguration(..., secondaryIntent:)` ve
+      `ZerospikeAlarmOpenIntent`in `static var supportedModes: IntentModes =
+      .foreground(.immediate)` satiri (iOS 26'da `openAppWhenRun` deprecated).
+      Derlenmezse: bu uc noktayi cikarip alarmi yalniz "Durdur" ile birakin,
+      geri kalan her sey calismaya devam eder (JS tarafinda okunmayan bir rota
+      kalir, zararsiz).
+      (c) `ZerospikeAlarmOpenIntent` HANGI hedefte derlenmeli? Su an
+      modules/zerospike-alarmkit/ios altinda, yani ANA UYGULAMA hedefinde
+      (expo modul kaynaklari oraya girer). AlarmKit'in `secondaryIntent`
+      olarak verilen bir AppIntent'i alarm ekranindan calistirirken onu ana
+      binary'de bulabildigini bu ortamda dogrulayamadim; Apple ornekleri
+      intent'i widget/extension hedefinde tutuyor olabilir. Xcode'da: intent
+      hedef uyeligi (Target Membership) ana uygulamada mi, alarm ekranindan
+      "Ac"a basinca `perform()` gercekten kosuyor mu (App Group'a
+      `zerospike.pendingAlarmRoute` yaziliyor mu) kontrol edin. Extension
+      hedefine tasinmasi gerekirse dosya oldugu gibi tasinabilir: App Group
+      sabitleri (`zerospikeAlarmAppGroup`) zaten widget hedefindeki
+      LiveData.swift ile ayni.
+- [ ] Cihaz QA: docs/plan-2.3.0.md bolum 10 (18 senaryo) + bolum 15.10
+      (Kapsam 2, 19-28. senaryolar). Ozellikle: alarm modunda BIZIM kilit
+      ekrani kartimiz gorunmeli, sistemin geri sayim karti HIC gorunmemeli
+      (madde 19); alarm ekranindaki "Ac" dugmesi (madde 21, derlenmezse
+      yukaridaki (b) sinirina duser); 180 dk ile baslatilan sayac Ayarlar'dan
+      pencere degistirilince 180'de kalmali (madde 22).
+- [ ] Alarm ekraninda UYGULAMA ADI: cihaz QA'sinda "com.greeneyeapp.zerospike"
+      goruluyordu. Sebep, CFBundleLocalizations 9 dil ilan ederken uretilen
+      .lproj/InfoPlist.strings dosyalarinda CFBundleDisplayName bulunmamasiydi;
+      sistem yerellestirilmis adi bulamayinca bundle id'ye dusuyordu. 8
+      ios-locales/*.json ve app.json'a "zerospike" olarak eklendi
+      (i18n-check artik her dilde bu anahtari zorunlu tutuyor). PREBUILD +
+      yeni build sonrasi dogrulanacak: alarm ekraninda, sistem Ayarlar >
+      Bildirimler/Alarmlar listesinde ve ana ekranda ad "zerospike"
+      gorunmeli - Turkce, Arapca ve Japonca cihazda ayrica bakin.
+- [ ] Widget dokunma hedefi DEGISTI: iOS ana widget'inin (systemSmall/Medium)
+      ve Android ana widget'inin koku artik uygulamayi acmak yerine glukoz
+      ekleme formunu aciyor; Live Activity / Dynamic Island karti da tokluk
+      olcum sheet'ini aciyor. Cihazda dogrulanmali (QA 25 ve 20).
 - [ ] GELECEK (bu turda kod DEGISTIRILMEDI, yalniz not): taze kurulumun ALTER
       penceresi. lib/db/index.ts:507-520 createSchemaV1 icinde v19 ve v21
       kolonlarini KOSULSUZ `ALTER TABLE reminders ADD COLUMN` ile ekliyor
@@ -24,9 +58,14 @@
       kolon eklemelerini migrateToV19/V21'in kullandigi "eksikse ekle" guardli
       formuna cevirmek, (b) tum createSchemaV1'i tek transaction icine almak.
       Sahada gorulmus bir vaka yok; 2.4.0 adayi.
-- [ ] Store: zerospike-store/aso/{9 dil}.md "What's New" 2.3.0 bloklari ve
-      review-notes-en.md konsollara; app.json 2.3.0 / iOS build 61 / Android
-      versionCode 58.
+- [ ] Store: zerospike-store/aso/{9 dil}.md "What's New" + uzun aciklama
+      guncellemeleri, google-play-extras/whats-new-2.3.0.md (9 dil, 500
+      karakter altinda) ve review-notes-en.md (3994/4000) konsollara;
+      app.json 2.3.0 / iOS build 61 / Android versionCode 58 (build henuz
+      alinmadi, numaralar bilerek artirilmadi).
+- [ ] Store gorselleri: docs/store-screenshots-plan.md bolum 7 (09-reminders
+      karesi "Siradaki" karti + rozetlerle yeniden, onboarding karesi artik
+      tokluk suresi sormuyor). 9 dil.
 
 ## 2.0.0 paketi sonrasi (18 Agu 2026) - INSAN
 

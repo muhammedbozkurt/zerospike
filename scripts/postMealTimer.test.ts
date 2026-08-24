@@ -20,6 +20,10 @@ import {
   restartPostMealWindowAt,
   POST_MEAL_MIN_SCHEDULE_MS,
   POST_MEAL_AUTO_START_TOLERANCE_MS,
+  clampPostMealMinutes,
+  postMealWindowForProfile,
+  POST_MEAL_MIN_MINUTES,
+  POST_MEAL_MAX_MINUTES,
 } from "../lib/postMealTimer";
 
 let passed = 0;
@@ -278,6 +282,48 @@ section("I. restartPostMealWindowAt - the deliberate reset (button + dashboard a
     restartPostMealWindowAt({ startedAt: START, windowMin: 90, now: START + 89 * MIN }).kind,
     "restarted"
   );
+}
+
+section("J. clampPostMealMinutes - the one gate a hand-picked length passes");
+{
+  // 2.3.0's K2-C: the duration sheet and startPostMealTimer(minutes) both route
+  // through this, so a length can never reach the scheduler unrounded or out of
+  // range whichever surface picked it.
+  eq("a chip value passes through", clampPostMealMinutes(90), 90);
+  eq("the low bound is kept", clampPostMealMinutes(POST_MEAL_MIN_MINUTES), POST_MEAL_MIN_MINUTES);
+  eq("the high bound is kept", clampPostMealMinutes(POST_MEAL_MAX_MINUTES), POST_MEAL_MAX_MINUTES);
+  eq("below the low bound clamps up", clampPostMealMinutes(1), POST_MEAL_MIN_MINUTES);
+  eq("zero clamps up", clampPostMealMinutes(0), POST_MEAL_MIN_MINUTES);
+  eq("negative clamps up", clampPostMealMinutes(-45), POST_MEAL_MIN_MINUTES);
+  eq("above the high bound clamps down", clampPostMealMinutes(1000), POST_MEAL_MAX_MINUTES);
+  eq("a fraction rounds to the nearest minute", clampPostMealMinutes(89.4), 89);
+  eq("and rounds half up", clampPostMealMinutes(89.5), 90);
+  // A NaN would arm a countdown that can never fire; the floor is the only safe
+  // answer, and it is deliberately not 0.
+  eq("NaN falls back to the low bound", clampPostMealMinutes(NaN), POST_MEAL_MIN_MINUTES);
+  eq("Infinity falls back to the low bound", clampPostMealMinutes(Infinity), POST_MEAL_MIN_MINUTES);
+  ok("the range covers every settings preset", POST_MEAL_MIN_MINUTES <= 60 && POST_MEAL_MAX_MINUTES >= 150);
+}
+
+section("K. postMealWindowForProfile - whose countdown is this");
+{
+  // The rule the dashboard card, the reminders screen's upcoming list and the
+  // post-meal deep link all read, so a caregiver never sees one profile's
+  // countdown presented as another's (2.3.0's K2-A brought the third caller).
+  const owned = { startedAt: START, endsAt: START + 90 * MIN, profileId: "p1" };
+  const orphan = { startedAt: START, endsAt: START + 90 * MIN };
+
+  eq("its owner sees it", postMealWindowForProfile(owned, "p1"), owned);
+  eq("another profile does not", postMealWindowForProfile(owned, "p2"), null);
+  eq("no active profile at all does not", postMealWindowForProfile(owned, null), null);
+  eq("nor undefined", postMealWindowForProfile(owned, undefined), null);
+  // A timer with no recorded owner predates the lock: it stays visible to
+  // whoever is looking, exactly as it did before.
+  eq("an unowned timer shows for anyone", postMealWindowForProfile(orphan, "p2"), orphan);
+  eq("and with no active profile", postMealWindowForProfile(orphan, null), orphan);
+  eq("no timer, nothing to show", postMealWindowForProfile(null, "p1"), null);
+  // Never a copy: callers compare identity to decide whether to re-render.
+  ok("returns the SAME object, not a clone", postMealWindowForProfile(owned, "p1") === owned);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

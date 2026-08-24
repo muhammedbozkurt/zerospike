@@ -176,21 +176,16 @@ struct ZerospikeWidgetView: View {
     .applyingLayoutDirection(layoutDirection(forLang: entry.data?.lang))
   }
 
-  /// Lock-screen accessories are glanced at mid-day far more than the home
-  /// screen tiles, so their tap jumps straight into the dashboard's glucose
-  /// quick-add sheet: `?sheet=glucose` is the exact deep link QuickAdd.swift's
-  /// glucose shortcut already uses and app/(tabs)/index.tsx's `sheet` param
-  /// reader already answers - no new param invented here. Home-screen families
-  /// keep the plain dashboard-open link (scheme registered in app.json;
-  /// expo-router resolves the root path to the journal).
-  private var tapURL: URL? {
-    switch family {
-    case .accessoryInline, .accessoryRectangular:
-      return URL(string: "zerospike:///?sheet=glucose")
-    default:
-      return URL(string: "zerospike:///")
-    }
-  }
+  /// Every family taps into the dashboard's glucose quick-add sheet (2.3.0's
+  /// K2-B). A widget is a logging shortcut, and the home-screen tiles used to
+  /// be the one surface that only opened the app - so the same widget behaved
+  /// differently depending on where it was placed, and the shortest path to
+  /// recording a reading was the one place that did not offer it. The link is
+  /// DeepLinks.addGlucose, the same constant QuickAdd's glucose shortcut uses,
+  /// answered by app/(tabs)/index.tsx's `sheet` param reader. The sheet is
+  /// dismissable and the dashboard sits behind it, so nothing is lost for
+  /// someone who only wanted the app open.
+  private var tapURL: URL? { DeepLinks.addGlucose }
 
   /// Home-screen small: the pinned value, its context line, and the countdown
   /// pill pinned to the bottom.
