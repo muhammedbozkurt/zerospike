@@ -23,12 +23,61 @@ import type { DiabetesType } from "./db/types";
  *
  * The busiest layout is four rows, so even together with a basal row and a
  * medication row it stays under MAX_REMINDERS (10, lib/db/reminders.ts).
+ *
+ * Every layout's times also land in DIFFERENT parts of the day (see
+ * dayBucketOf): the rows are named after that, so two times sharing a bucket
+ * would produce two rows with the same name. scripts/reminderPresets.test.ts
+ * pins that for all five layouts.
  */
 export interface ReminderPreset {
   type: "glucose";
   /** "HH:MM", the exact format lib/db/reminders.ts stores and applyReminders
    *  parses. */
   time: string;
+  /** Which part of the day the time falls in. The screen turns this into the
+   *  row's REAL name ("Morning glucose check"), so a three-line layout does not
+   *  arrive as three rows all called "Glucose check" - see dayBucketOf. */
+  bucket: DayBucket;
+}
+
+/**
+ * The parts of the day a preset reminder can be named after. Plain clock
+ * ranges, deliberately not tied to meals: naming a reminder "before breakfast"
+ * would frame it as a measurement instruction, which this app does not give.
+ *
+ *   05:00-09:29  morning
+ *   09:30-11:29  lateMorning
+ *   11:30-13:59  midday
+ *   14:00-17:59  afternoon
+ *   18:00-21:59  evening
+ *   22:00-04:59  night     (wraps past midnight)
+ */
+export type DayBucket =
+  | "morning"
+  | "lateMorning"
+  | "midday"
+  | "afternoon"
+  | "evening"
+  | "night";
+
+/** Minutes since midnight, tolerant of a malformed string the same way
+ *  parseHHMM in lib/services/notifications.ts is. */
+function minutesOf(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map((n) => parseInt(n, 10));
+  const hour = Number.isFinite(h) ? h : 0;
+  const minute = Number.isFinite(m) ? m : 0;
+  return hour * 60 + minute;
+}
+
+export function dayBucketOf(hhmm: string): DayBucket {
+  const t = minutesOf(hhmm);
+  if (t >= 5 * 60 && t <= 9 * 60 + 29) return "morning";
+  if (t >= 9 * 60 + 30 && t <= 11 * 60 + 29) return "lateMorning";
+  if (t >= 11 * 60 + 30 && t <= 13 * 60 + 59) return "midday";
+  if (t >= 14 * 60 && t <= 17 * 60 + 59) return "afternoon";
+  if (t >= 18 * 60 && t <= 21 * 60 + 59) return "evening";
+  // 22:00 through 04:59, wrapping past midnight.
+  return "night";
 }
 
 const FOUR_TIMES = ["07:30", "12:30", "18:30", "22:30"];
@@ -55,5 +104,9 @@ function presetTimes(type: DiabetesType): string[] {
 }
 
 export function presetFor(type: DiabetesType): ReminderPreset[] {
-  return presetTimes(type).map((time) => ({ type: "glucose", time }));
+  return presetTimes(type).map((time) => ({
+    type: "glucose",
+    time,
+    bucket: dayBucketOf(time),
+  }));
 }

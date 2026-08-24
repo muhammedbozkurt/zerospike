@@ -3,8 +3,9 @@
  * scripts/calc.test.ts.
  *
  * The property under test: the post-meal window belongs to the MEAL, not to the
- * moment the user changed the preference. Shortening 120 to 90 with 10 minutes
- * behind must leave 80 minutes, not 90 and not the old 120.
+ * moment the user pressed anything. The window itself is a fixed two hours
+ * (2.3.0's G15), so what has to be right is WHERE it starts - a user logging 30
+ * minutes late gets 90 minutes left, anchored to the meal.
  *
  * Run: npx tsx scripts/postMealTimer.test.ts
  */
@@ -15,15 +16,18 @@ import {
   derivePostMealStart,
   formatPostMealRemaining,
   postMealElapsedFraction,
-  retimePostMealWindow,
   decidePostMealAutoStart,
   restartPostMealWindowAt,
   POST_MEAL_MIN_SCHEDULE_MS,
   POST_MEAL_AUTO_START_TOLERANCE_MS,
   clampPostMealMinutes,
+  clampPostMealLateMinutes,
   postMealWindowForProfile,
+  startPostMealLate,
   POST_MEAL_MIN_MINUTES,
   POST_MEAL_MAX_MINUTES,
+  POST_MEAL_LATE_MAX_MIN,
+  POST_MEAL_WINDOW_MIN,
 } from "../lib/postMealTimer";
 
 let passed = 0;
@@ -48,84 +52,7 @@ const MIN = 60_000;
 /** Fixed clock, so nothing here depends on when the suite runs. */
 const START = 1_800_000_000_000;
 
-/** A timer armed at START for `windowMin`, re-measured `elapsedMin` in. */
-function retime(windowMin: number, elapsedMin: number, nextWindowMin: number) {
-  return retimePostMealWindow({
-    startedAt: START,
-    currentEndsAt: START + windowMin * MIN,
-    nextWindowMin,
-    now: START + elapsedMin * MIN,
-  });
-}
-
 console.log("zerospike post-meal timer test");
-
-section("A. shortening the window keeps the elapsed time");
-{
-  // The reported bug: 120 min timer, 10 min in, moved to 90 -> 80 min left.
-  const r = retime(120, 10, 90);
-  eq("kind", r.kind, "retimed");
-  if (r.kind === "retimed") {
-    eq("start is untouched", r.startedAt, START);
-    eq("ends 90 min after the meal", r.endsAt, START + 90 * MIN);
-    eq("80 min left", r.remainingMs / MIN, 80);
-  }
-}
-
-section("B. lengthening the window");
-{
-  const r = retime(90, 10, 150);
-  eq("kind", r.kind, "retimed");
-  if (r.kind === "retimed") {
-    eq("ends 150 min after the meal", r.endsAt, START + 150 * MIN);
-    eq("140 min left", r.remainingMs / MIN, 140);
-  }
-  // A window lengthened past its old end must revive the countdown, not resume
-  // from the moment of the change.
-  const late = retime(90, 85, 120);
-  eq("late lengthen retimes", late.kind, "retimed");
-  if (late.kind === "retimed") eq("35 min left", late.remainingMs / MIN, 35);
-}
-
-section("C. more elapsed than the new window: the timer is over");
-{
-  // 120 min timer, 100 min in, moved to 90: the moment it described has passed.
-  const r = retime(120, 100, 90);
-  eq("kind", r.kind, "elapsed");
-  if (r.kind === "elapsed") eq("end is in the past", r.endsAt < START + 100 * MIN, true);
-
-  // Exactly on the boundary counts as over too - nothing is fired for it.
-  eq("exact boundary", retime(120, 90, 90).kind, "elapsed");
-
-  // Under the scheduler floor: cannot be placed at its real moment, so it is
-  // closed out rather than rounded up to a minute.
-  eq("30 s short of the floor", retime(120, 89.5, 90).kind, "elapsed");
-  eq("floor constant", POST_MEAL_MIN_SCHEDULE_MS, 60_000);
-  eq("exactly at the floor still schedules", retime(120, 89, 90).kind, "retimed");
-}
-
-section("D. the same window is a no-op");
-{
-  const r = retime(120, 10, 120);
-  eq("kind", r.kind, "unchanged");
-  if (r.kind === "unchanged") eq("end is where it was", r.endsAt, START + 120 * MIN);
-}
-
-section("E. a timer with no recorded start");
-{
-  // Persisted before the start moment was stored: it is recovered from the end
-  // and the window the timer was armed with, so re-timing behaves identically.
-  const endsAt = START + 120 * MIN;
-  eq("derived start", derivePostMealStart(endsAt, 120), START);
-  const r = retimePostMealWindow({
-    startedAt: derivePostMealStart(endsAt, 120),
-    currentEndsAt: endsAt,
-    nextWindowMin: 90,
-    now: START + 10 * MIN,
-  });
-  eq("kind", r.kind, "retimed");
-  if (r.kind === "retimed") eq("80 min left", r.remainingMs / MIN, 80);
-}
 
 section("F. elapsed fraction reads the timer's own window");
 {
@@ -249,22 +176,8 @@ section("I. restartPostMealWindowAt - the deliberate reset (button + dashboard a
   const oldTimerRemaining = (oldMealStart + 120 * MIN - now) / MIN;
   eq("old timer's own remaining was only 30 min", oldTimerRemaining, 30);
 
-  // A settings-driven retime instead (unchanged behaviour, section A/B): the
-  // anchor stays put and only the ELAPSED time against it is preserved - a
-  // fundamentally different operation from restarting at a new anchor above.
-  const preserving = retimePostMealWindow({
-    startedAt: oldMealStart,
-    currentEndsAt: oldMealStart + 120 * MIN,
-    nextWindowMin: 150,
-    now,
-  });
-  if (preserving.kind === "retimed") {
-    eq("retime keeps the OLD anchor", preserving.startedAt, oldMealStart);
-    eq("retime keeps only what the old window has left", preserving.remainingMs / MIN, 60);
-  }
-
   // Anchoring far enough in the past that the fresh window is already spent:
-  // closed out, same floor rule as retimePostMealWindow.
+  // closed out, the same floor rule startPostMealLate applies.
   const stale = restartPostMealWindowAt({
     startedAt: START,
     windowMin: 90,
@@ -284,11 +197,11 @@ section("I. restartPostMealWindowAt - the deliberate reset (button + dashboard a
   );
 }
 
-section("J. clampPostMealMinutes - the one gate a hand-picked length passes");
+section("J. clampPostMealMinutes - the one gate a countdown length passes");
 {
-  // 2.3.0's K2-C: the duration sheet and startPostMealTimer(minutes) both route
-  // through this, so a length can never reach the scheduler unrounded or out of
-  // range whichever surface picked it.
+  // 2.3.0's G15: the window is fixed, so what this now guards is the REMAINING
+  // time a late start arms - never under five minutes, never more than the
+  // window itself.
   eq("a chip value passes through", clampPostMealMinutes(90), 90);
   eq("the low bound is kept", clampPostMealMinutes(POST_MEAL_MIN_MINUTES), POST_MEAL_MIN_MINUTES);
   eq("the high bound is kept", clampPostMealMinutes(POST_MEAL_MAX_MINUTES), POST_MEAL_MAX_MINUTES);
@@ -296,13 +209,84 @@ section("J. clampPostMealMinutes - the one gate a hand-picked length passes");
   eq("zero clamps up", clampPostMealMinutes(0), POST_MEAL_MIN_MINUTES);
   eq("negative clamps up", clampPostMealMinutes(-45), POST_MEAL_MIN_MINUTES);
   eq("above the high bound clamps down", clampPostMealMinutes(1000), POST_MEAL_MAX_MINUTES);
+  eq("the high bound IS the window", POST_MEAL_MAX_MINUTES, POST_MEAL_WINDOW_MIN);
   eq("a fraction rounds to the nearest minute", clampPostMealMinutes(89.4), 89);
   eq("and rounds half up", clampPostMealMinutes(89.5), 90);
   // A NaN would arm a countdown that can never fire; the floor is the only safe
   // answer, and it is deliberately not 0.
   eq("NaN falls back to the low bound", clampPostMealMinutes(NaN), POST_MEAL_MIN_MINUTES);
   eq("Infinity falls back to the low bound", clampPostMealMinutes(Infinity), POST_MEAL_MIN_MINUTES);
-  ok("the range covers every settings preset", POST_MEAL_MIN_MINUTES <= 60 && POST_MEAL_MAX_MINUTES >= 150);
+  ok(
+    "the range is exactly five minutes up to the whole window",
+    POST_MEAL_MIN_MINUTES === 5 && POST_MEAL_MAX_MINUTES === POST_MEAL_WINDOW_MIN
+  );
+}
+
+section("L. clampPostMealLateMinutes - how far back the meal may be moved");
+{
+  eq("a chip value passes through", clampPostMealLateMinutes(15), 15);
+  eq("zero is allowed (the ordinary tap)", clampPostMealLateMinutes(0), 0);
+  eq("negative clamps to zero: the meal cannot be ahead", clampPostMealLateMinutes(-5), 0);
+  eq("the far end is kept", clampPostMealLateMinutes(POST_MEAL_LATE_MAX_MIN), POST_MEAL_LATE_MAX_MIN);
+  eq("past it clamps back", clampPostMealLateMinutes(500), POST_MEAL_LATE_MAX_MIN);
+  ok(
+    "the range reaches PAST the window, so 'too late' is reachable",
+    POST_MEAL_LATE_MAX_MIN > POST_MEAL_WINDOW_MIN
+  );
+  eq("a fraction rounds", clampPostMealLateMinutes(12.6), 13);
+  eq("NaN is treated as no delay", clampPostMealLateMinutes(NaN), 0);
+}
+
+section("M. startPostMealLate - the window belongs to the MEAL");
+{
+  // The ordinary tap: nothing is backdated, the full window is ahead.
+  const now = START;
+  const fresh = startPostMealLate({ minutesAgo: 0, now });
+  eq("fresh: armed", fresh.kind, "start");
+  if (fresh.kind === "start") {
+    eq("starts now", fresh.startedAt, now);
+    eq("ends a full window later", fresh.endsAt, now + POST_MEAL_WINDOW_MIN * MIN);
+    eq("the whole window is left", fresh.remainingMs / MIN, POST_MEAL_WINDOW_MIN);
+  }
+
+  // Logging 30 minutes late: the check still lands two hours after the MEAL,
+  // which is 90 minutes from now - not 120.
+  const late = startPostMealLate({ minutesAgo: 30, now });
+  eq("late: armed", late.kind, "start");
+  if (late.kind === "start") {
+    eq("the start is backdated to the meal", late.startedAt, now - 30 * MIN);
+    eq("the end is a window after the MEAL", late.endsAt, now - 30 * MIN + POST_MEAL_WINDOW_MIN * MIN);
+    eq("so 90 minutes are left, not 120", late.remainingMs / MIN, 90);
+    // The progress bar and the Live Activity read the same pair, so all three
+    // agree about how much of the window is already behind.
+    eq("elapsed fraction matches the real meal", postMealElapsedFraction(late, now), 0.25);
+  }
+
+  // The last minute that still arms, and the first that does not.
+  const edge = startPostMealLate({ minutesAgo: POST_MEAL_WINDOW_MIN - 1, now });
+  eq("one minute of window left still arms", edge.kind, "start");
+  if (edge.kind === "start") eq("with that one minute", edge.remainingMs / MIN, 1);
+
+  // Past the window there is nothing to count: no timer, and the screen says so.
+  eq("exactly a window ago: over", startPostMealLate({ minutesAgo: 120, now }).kind, "elapsed");
+  eq("longer ago: over", startPostMealLate({ minutesAgo: 125, now }).kind, "elapsed");
+  eq("much longer ago: over", startPostMealLate({ minutesAgo: 600, now }).kind, "elapsed");
+  // Under the scheduler floor counts as over, the same rule every other
+  // re-timing in this file uses.
+  eq(
+    "119.5 minutes ago rounds to the whole window: over",
+    startPostMealLate({ minutesAgo: 119.5, now }).kind,
+    "elapsed"
+  );
+  eq(
+    "the far end of the input range is over too",
+    startPostMealLate({ minutesAgo: POST_MEAL_LATE_MAX_MIN, now }).kind,
+    "elapsed"
+  );
+  // A garbage input can never arm a NaN countdown.
+  const bad = startPostMealLate({ minutesAgo: NaN, now });
+  eq("NaN behaves like no delay", bad.kind, "start");
+  if (bad.kind === "start") eq("full window", bad.remainingMs / MIN, POST_MEAL_WINDOW_MIN);
 }
 
 section("K. postMealWindowForProfile - whose countdown is this");

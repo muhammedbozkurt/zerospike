@@ -19,11 +19,14 @@ export interface NotificationPrefs {
   glucose: boolean;
   glucoseTime: string; // "HH:MM"
   postMeal: boolean;
-  /** Post-meal check delay in minutes (drives both the auto reminder and the
-   *  "I started eating" timer). */
+  /** @deprecated 2.3.0's G15: the post-meal window is FIXED at
+   *  POST_MEAL_WINDOW_MIN (lib/postMealTimer.ts) and no screen offers to change
+   *  it - what the user adjusts now is how long ago the meal began. Kept only so
+   *  an already-stored value still parses, the same way lowThresholdMgdl is; no
+   *  longer read anywhere. */
   postMealMinutes: 60 | 90 | 120 | 150;
-  /** Whether the post-meal countdown runs as a real (AlarmKit) timer that rings
-   *  at the end, rather than as a notification. On by default, the same as the
+  /** Whether the post-meal countdown rings a real (AlarmKit) alarm at the end
+   *  rather than arriving as a notification. On by default, the same as the
    *  reminders registry's own delivery default (schema v21) - a device without
    *  AlarmKit, or without the permission, silently keeps the notification (see
    *  shouldUseAlarm in lib/alarmSelect.ts), so the default costs nothing there.

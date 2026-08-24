@@ -38,11 +38,13 @@ import {
   cancelPostMealTimer,
   completePostMealTimer,
   noteJournalActivity,
+  type PostMealStartOutcome,
 } from "../../lib/services/notifications";
 import {
   formatPostMealRemaining,
   postMealElapsedFraction,
   postMealWindowForProfile,
+  POST_MEAL_WINDOW_MIN,
   type PostMealTimerWindow,
 } from "../../lib/postMealTimer";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
@@ -127,7 +129,7 @@ import { useUndoBatch } from "../../components/useUndoBatch";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { MedEditSheet } from "../../components/MedEditSheet";
-import { PostMealDurationSheet } from "../../components/PostMealDurationSheet";
+import { PostMealLateSheet } from "../../components/PostMealLateSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback, type SheetAction } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
@@ -352,11 +354,9 @@ export default function DashboardScreen() {
   // current preference. The live ticking label lives in <PostMealCountdown> so it
   // never re-renders this screen's journal list.
   const [postMealTimer, setPostMealTimer] = useState<PostMealTimerWindow | null>(null);
-  // The preference (90/120/150), for the idle CTA's label only.
-  const [postMealWindowMin, setPostMealWindowMin] = useState(120);
-  // The one-off length picker (2.3.0's K2-C), opened from the small button
+  // "I started eating a while ago" (2.3.0's G15), opened from the small button
   // beside the primary "I started eating" pill.
-  const [durationSheetOpen, setDurationSheetOpen] = useState(false);
+  const [lateSheetOpen, setLateSheetOpen] = useState(false);
   // An arm is in flight: the ref is the actual guard (see startedEating), the
   // state only greys the two buttons out while it runs.
   const startingTimerRef = useRef(false);
@@ -364,7 +364,6 @@ export default function DashboardScreen() {
 
   const refreshPostMealTimer = useCallback(async () => {
     setPostMealTimer(await getPostMealTimerState());
-    setPostMealWindowMin((await getNotificationPrefs()).postMealMinutes);
   }, []);
 
   const load = useCallback(async () => {
@@ -842,14 +841,13 @@ export default function DashboardScreen() {
   // stored window, the one-off flag and the armed delivery describing two
   // different countdowns. A ref, not state, because the second tap has to see
   // the guard on the SAME tick it happens.
-  async function startedEating(minutes?: number) {
+  async function startedEating(minutesAgo = 0) {
     if (startingTimerRef.current) return;
     startingTimerRef.current = true;
     setStartingTimer(true);
-    setDurationSheetOpen(false);
+    setLateSheetOpen(false);
     try {
-      const started = await startPostMealTimer(minutes);
-      await finishStartedEating(started);
+      await finishStartedEating(await startPostMealTimer(minutesAgo));
     } catch {
       // startPostMealTimer arms nothing when it throws (schedulePostMealAt rolls
       // its own write back), so the countdown is simply not started.
@@ -860,11 +858,17 @@ export default function DashboardScreen() {
     }
   }
 
-  async function finishStartedEating(minutes: number | null) {
-    if (minutes != null) {
+  async function finishStartedEating(outcome: PostMealStartOutcome) {
+    if (outcome.kind === "elapsed") {
+      // Nothing was armed: the meal is older than the window. Say so and leave
+      // the user on the dashboard, where the reading is one tap away.
+      toast(t("dashboard.postMealLatePassed", { n: POST_MEAL_WINDOW_MIN }), "info");
+      return;
+    }
+    if (outcome.kind === "started") {
       logEvent("tokluk_timer_started");
       hapticSuccess();
-      toast(t("dashboard.toklukSet", { n: minutes }), "success");
+      toast(t("dashboard.toklukSet", { n: outcome.minutesLeft }), "success");
       await refreshPostMealTimer();
       // First timer: tell the user the countdown also shows on the lock screen.
       try {
@@ -1573,7 +1577,7 @@ export default function DashboardScreen() {
                   style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}
                   numberOfLines={1}
                 >
-                  {t("dashboard.quickPostMealWindow", { n: postMealWindowMin })}
+                  {t("dashboard.quickPostMealWindow", { n: POST_MEAL_WINDOW_MIN })}
                 </Text>
               </View>
             </View>
@@ -1599,11 +1603,11 @@ export default function DashboardScreen() {
                   quieter than the pill beside it: the usual window is one tap,
                   and this is the exception. */}
               <Pressable
-                onPress={() => setDurationSheetOpen(true)}
+                onPress={() => setLateSheetOpen(true)}
                 disabled={startingTimer}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={t("dashboard.postMealCustomA11y")}
+                accessibilityLabel={t("dashboard.postMealLateA11y")}
                 className="items-center justify-center active:opacity-70"
                 style={{
                   width: 34,
@@ -1614,7 +1618,9 @@ export default function DashboardScreen() {
                   opacity: startingTimer ? 0.6 : 1,
                 }}
               >
-                <Ionicons name="timer-outline" size={16} color={THEME.accent} />
+                {/* "I am logging this late", not "pick a length": a clock
+                    turning back reads as the meal already having happened. */}
+                <Ionicons name="time-outline" size={16} color={THEME.accent} />
               </Pressable>
             </View>
           </View>
@@ -2011,11 +2017,14 @@ export default function DashboardScreen() {
         }}
       />
 
-      <PostMealDurationSheet
-        visible={durationSheetOpen}
-        defaultMinutes={postMealWindowMin}
-        onClose={() => setDurationSheetOpen(false)}
-        onStart={(minutes) => void startedEating(minutes)}
+      <PostMealLateSheet
+        visible={lateSheetOpen}
+        onClose={() => setLateSheetOpen(false)}
+        onStart={(minutesAgo) => void startedEating(minutesAgo)}
+        onAddReading={() => {
+          setLateSheetOpen(false);
+          openLogger("post_meal_2h");
+        }}
       />
     </AppBackground>
   );

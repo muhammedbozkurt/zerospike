@@ -37,7 +37,9 @@ import {
   isAlarmKitAvailable,
   requestAlarmAuthorization,
 } from "../modules/zerospike-alarmkit";
-import { presetFor } from "../lib/reminderPresets";
+import { presetFor, type DayBucket, type ReminderPreset } from "../lib/reminderPresets";
+import { buildRevealPlan, type RevealPlanItem } from "../lib/revealPlan";
+import { POST_MEAL_WINDOW_MIN } from "../lib/postMealTimer";
 import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import {
   clampHypoThreshold,
@@ -225,13 +227,16 @@ export default function OnboardingScreen() {
   // ("not at 07:30") rather than "not that row".
   const [removedPlanTimes, setRemovedPlanTimes] = useState<string[]>([]);
   const [savingPlan, setSavingPlan] = useState(false);
-  const planTimes = useMemo(
+  const planRows = useMemo<ReminderPreset[]>(
     () =>
-      presetFor(diabetesTypeOf(diabetes))
-        .map((r) => r.time)
-        .filter((time) => !removedPlanTimes.includes(time)),
+      presetFor(diabetesTypeOf(diabetes)).filter(
+        (r) => !removedPlanTimes.includes(r.time)
+      ),
     [diabetes, removedPlanTimes]
   );
+  // What the reveal card lists at the end, built from the rows that were
+  // REALLY written (see lib/revealPlan.ts). Empty until finishToReveal fills it.
+  const [revealPlan, setRevealPlan] = useState<RevealPlanItem[]>([]);
   const [accepted, setAccepted] = useState(false);
   const [saving, setSaving] = useState(false);
   // The real outcome of the notification prompt, shown on the notify step so the
@@ -472,6 +477,26 @@ export default function OnboardingScreen() {
       await syncBasalReminderRow(hasInsulin, basalTime, true);
       await applyNotificationPrefs();
 
+      // The closing card describes what was ACTUALLY set up, so it is built
+      // here - after every row this flow can create exists - rather than from
+      // the answers. A user who chose "Not now" simply has no measurement line.
+      try {
+        const alarmKit = isAlarmKitAvailable();
+        setRevealPlan(
+          buildRevealPlan({
+            rows: await listReminders(),
+            postMeal: DEFAULT_PREFS.postMeal,
+            lowFollowup: DEFAULT_PREFS.lowFollowup,
+            postMealMinutes: POST_MEAL_WINDOW_MIN,
+            alarmKitAvailable: alarmKit,
+            alarmAuthorized:
+              alarmKit && getAlarmAuthorizationStatus() === "authorized",
+          })
+        );
+      } catch {
+        // best-effort: the card simply shows nothing rather than a wrong list
+      }
+
       bumpData();
       await completeOnboarding();
       logEvent("onboarding_done", {});
@@ -593,6 +618,31 @@ export default function OnboardingScreen() {
   }
 
   /**
+   * A preset row's REAL name, from the part of the day its time falls in (see
+   * dayBucketOf). Written into the row, not derived at read time: the user can
+   * rename it afterwards like any other reminder, and a language change must not
+   * silently rewrite a name they have since made their own - the same rule the
+   * screenshot seed's custom row already follows.
+   */
+  function presetLabel(bucket: DayBucket): string {
+    switch (bucket) {
+      case "morning":
+        return t("reminders.presetMorning");
+      case "lateMorning":
+        return t("reminders.presetLateMorning");
+      case "midday":
+        return t("reminders.presetMidday");
+      case "afternoon":
+        return t("reminders.presetAfternoon");
+      case "evening":
+        return t("reminders.presetEvening");
+      case "night":
+      default:
+        return t("reminders.presetNight");
+    }
+  }
+
+  /**
    * "Set up this plan" (2.3.0's K2-E): writes the previewed measurement layout
    * straight to the registry, then asks for the two permissions - notification
    * first, alarm right after (see ensureAlarmAuthorizationOnce). The order
@@ -620,11 +670,12 @@ export default function OnboardingScreen() {
       for (const row of existing) {
         if (row.type === "glucose") await deleteReminder(row.id);
       }
-      for (const time of planTimes) {
+      for (const preset of planRows) {
         try {
           await createReminder({
             type: "glucose",
-            time,
+            time: preset.time,
+            label: presetLabel(preset.bucket),
             enabled: true,
             // The app's own default, not a choice the user made, so
             // alarmUserSet is deliberately NOT sent (schema v21).
@@ -703,8 +754,7 @@ export default function OnboardingScreen() {
             fastingMgdl={fastingMgdl}
             postmealMinMgdl={postmealMinMgdl}
             postmealMgdl={postmealMgdl}
-            hasInsulin={hasInsulin}
-            basalTime={basalTime}
+            plan={revealPlan}
             onContinue={goToPaywall}
           />
         ) : null}
@@ -1112,22 +1162,24 @@ export default function OnboardingScreen() {
       case "reminderPlan":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            {planTimes.map((time, i) => (
+            {planRows.map((preset) => (
               <View
-                key={time}
+                key={preset.time}
                 className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 mb-2"
                 style={{ minHeight: 56 }}
               >
-                <View className="flex-row items-center">
+                <View className="flex-row items-center" style={{ flex: 1, marginRight: 8 }}>
                   <Ionicons name="water-outline" size={18} color={THEME.accent} />
-                  <Text className="text-ink text-base ml-3">{t("reminders.typeGlucose")}</Text>
+                  <Text className="text-ink text-base ml-3 flex-1" numberOfLines={1}>
+                    {presetLabel(preset.bucket)}
+                  </Text>
                 </View>
                 <View className="flex-row items-center" style={{ gap: 12 }}>
-                  <Text className="text-ink text-lg font-semibold">{time}</Text>
+                  <Text className="text-ink text-lg font-semibold">{preset.time}</Text>
                   <Pressable
                     onPress={() => {
                       hapticSelect();
-                      setRemovedPlanTimes((prev) => [...prev, time]);
+                      setRemovedPlanTimes((prev) => [...prev, preset.time]);
                     }}
                     hitSlop={12}
                     accessibilityRole="button"
@@ -1138,7 +1190,7 @@ export default function OnboardingScreen() {
                 </View>
               </View>
             ))}
-            {alarmKitAvailable && planTimes.length > 0 ? (
+            {alarmKitAvailable && planRows.length > 0 ? (
               <Text className="text-mut text-sm leading-5 mt-2">
                 {t("onboarding.alarmNote")}
               </Text>
@@ -1228,7 +1280,7 @@ export default function OnboardingScreen() {
         <View>
           {/* Removing every line leaves nothing to set up, so the primary
               action steps aside rather than writing an empty plan. */}
-          {planTimes.length > 0 ? (
+          {planRows.length > 0 ? (
             <Button
               label={t("onboarding.planSetup")}
               size="lg"

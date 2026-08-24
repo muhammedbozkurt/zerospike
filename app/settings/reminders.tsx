@@ -32,7 +32,7 @@ import {
   isAlarmKitAvailable,
   requestAlarmAuthorization,
 } from "../../modules/zerospike-alarmkit";
-import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { SettingsScaffold } from "../../components/settingsUi";
 import { ReminderEditSheet, type ReminderSavePayload } from "../../components/ReminderEditSheet";
 import { useFeedback } from "../../components/Feedback";
 import { withAlpha } from "../../components/rich";
@@ -87,7 +87,7 @@ function ModeBadge({ mode, onPress }: { mode: BadgeMode; onPress: () => void }) 
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={label}
-      className="rounded-full px-2.5 py-1 mr-2"
+      className="rounded-full px-2.5 py-1"
       style={{
         borderWidth: 1,
         borderColor: live ? THEME.accent : THEME.border,
@@ -122,6 +122,96 @@ function ModeBadge({ mode, onPress }: { mode: BadgeMode; onPress: () => void }) 
         >
           {label}
         </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * One reminder in the list, in TWO layers (2.3.0's G16).
+ *
+ * The single-line version put the name, the time, the delivery badge and the
+ * on/off switch on one row, and the three longest of those fought for the same
+ * space: a German or French name next to "Alarm (needs permission)" squeezed
+ * both to ellipses. Splitting it lets each line breathe - name and time on top,
+ * the quiet "next: today 22:00" and the badge underneath - while the switch
+ * stays vertically centred on the right, where it was.
+ *
+ * The whole row is still one tap target (edit) and one long-press (delete); the
+ * badge and the switch are the two islands inside it that answer separately,
+ * both at least HIT_TARGET tall.
+ */
+function ReminderRow({
+  row,
+  label,
+  next,
+  badge,
+  onPress,
+  onLongPress,
+  onToggleMode,
+  onToggleEnabled,
+}: {
+  row: Reminder;
+  label: string;
+  next?: string;
+  /** null where AlarmKit does not exist: no badge is drawn at all there. */
+  badge: BadgeMode | null;
+  onPress: () => void;
+  onLongPress: () => void;
+  onToggleMode: () => void;
+  onToggleEnabled: (value: boolean) => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-2.5 mb-2 active:opacity-80"
+      style={{ minHeight: HIT_TARGET + 16 }}
+    >
+      <View
+        className="w-9 h-9 rounded-xl items-center justify-center"
+        style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
+      >
+        <Ionicons name={reminderIcon(row.type)} size={18} color={THEME.accent} />
+      </View>
+
+      <View className="flex-1 ml-3" style={{ gap: 3 }}>
+        <View className="flex-row items-center">
+          <Text
+            numberOfLines={1}
+            style={{ color: THEME.ink, fontSize: 15, fontWeight: "600", flex: 1 }}
+          >
+            {label}
+          </Text>
+          <Text
+            style={[TABULAR, { color: THEME.ink, fontSize: 14, fontWeight: "700", marginLeft: 8 }]}
+          >
+            {row.time}
+          </Text>
+        </View>
+        {next || badge ? (
+          <View className="flex-row items-center">
+            {next ? (
+              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 12, flex: 1 }}>
+                {next}
+              </Text>
+            ) : (
+              <View style={{ flex: 1 }} />
+            )}
+            {badge ? <ModeBadge mode={badge} onPress={onToggleMode} /> : null}
+          </View>
+        ) : null}
+      </View>
+
+      <View className="ml-2">
+        <Switch
+          value={row.enabled === 1}
+          onValueChange={onToggleEnabled}
+          trackColor={{ true: THEME.accent, false: THEME.border }}
+          thumbColor={THEME.ink}
+        />
       </View>
     </Pressable>
   );
@@ -191,12 +281,14 @@ export default function RemindersScreen() {
    *  type name when a med reminder was never given one), and the type name for
    *  glucose/basal - those two carry no per-row label at all. */
   function reminderRowLabel(row: Reminder): string {
-    if (row.type === "custom") {
-      return row.label && row.label.trim() ? row.label : t("reminders.typeCustom");
-    }
-    if (row.type === "med") {
-      return row.label && row.label.trim() ? row.label : t("reminders.typeMed");
-    }
+    // A row's OWN name wins for every type that can carry one. Measurement rows
+    // created by the ready-made layout are named after their part of the day
+    // (lib/reminderPresets), so a three-line layout no longer arrives as three
+    // rows all called "Glucose check"; an older, unnamed row still falls back to
+    // the type name exactly as before.
+    if (row.label && row.label.trim() && row.type !== "basal") return row.label;
+    if (row.type === "custom") return t("reminders.typeCustom");
+    if (row.type === "med") return t("reminders.typeMed");
     if (row.type === "basal") return t("reminders.typeBasal");
     return t("reminders.typeGlucose");
   }
@@ -613,33 +705,16 @@ export default function RemindersScreen() {
           </View>
         ) : (
           reminders.map((row) => (
-            <Row
+            <ReminderRow
               key={row.id}
-              icon={reminderIcon(row.type)}
+              row={row}
               label={reminderRowLabel(row)}
-              sub={nextLineFor(row)}
-              value={row.time}
+              next={nextLineFor(row)}
+              badge={alarmKitAvailable ? badgeModeOf(row) : null}
               onPress={() => openEditSheet(row)}
               onLongPress={() => void confirmDelete(row)}
-              right={
-                <View className="flex-row items-center">
-                  {alarmKitAvailable ? (
-                    // What this reminder is SET to, and the one-tap way to
-                    // change it (2.3.0's A). See badgeModeOf: the accent state
-                    // is the only one that promises a real alarm.
-                    <ModeBadge
-                      mode={badgeModeOf(row)}
-                      onPress={() => void toggleAlarmMode(row)}
-                    />
-                  ) : null}
-                  <Switch
-                    value={row.enabled === 1}
-                    onValueChange={(v) => void toggleEnabled(row, v)}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
-                  />
-                </View>
-              }
+              onToggleMode={() => void toggleAlarmMode(row)}
+              onToggleEnabled={(v) => void toggleEnabled(row, v)}
             />
           ))
         )}

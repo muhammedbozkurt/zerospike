@@ -31,11 +31,11 @@ import {
 } from "../../modules/zerospike-alarmkit";
 import { shouldUseAlarm } from "../alarmSelect";
 import {
-  clampPostMealMinutes,
   derivePostMealStart,
-  retimePostMealWindow,
   decidePostMealAutoStart,
   restartPostMealWindowAt,
+  startPostMealLate,
+  POST_MEAL_WINDOW_MIN,
   type PostMealTimerWindow,
 } from "../postMealTimer";
 
@@ -65,13 +65,6 @@ const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
 // timer armed before this field existed - readPostMealTimerProfile treats that
 // the same as "no lock" (shows for whichever profile is active).
 const POSTMEAL_TIMER_PROFILE_KEY = "zerospike.postMealTimerProfile";
-// Set only while the RUNNING countdown was started with a hand-picked length
-// (the duration sheet, 2.3.0's K2-C) rather than with the saved window. A
-// deliberate 180 minutes must not silently become 90 because the preference was
-// edited in the meantime, so applyPostMealWindowChange leaves such a timer
-// alone. Cleared whenever the countdown ends, is cancelled, or is replaced by
-// one started the ordinary way.
-const POSTMEAL_TIMER_CUSTOM_KEY = "zerospike.postMealTimerCustom";
 // Fire times (epoch ms) of the pending ONE-OFF reminders whose copy is not
 // recoverable from anywhere else. The OS stores the literal text it was handed,
 // so switching language leaves an already-scheduled reminder speaking the old
@@ -1239,10 +1232,6 @@ async function schedulePostMealAt(opts: {
    *  countdown already read 0 - and skipping them outright, as the mode change
    *  used to, left the last minute of a window with no delivery at all. */
   minSeconds?: number;
-  /** Whether this countdown's length was hand-picked for one meal (the
-   *  duration sheet, 2.3.0's K2-C). Omitted by every RE-ARM of a running
-   *  timer, which keeps whatever is already stored. */
-  custom?: boolean;
 }): Promise<void> {
   const { minutes, windowMin = opts.minutes, minSeconds = 60 } = opts;
   await ensureAndroidChannel();
@@ -1260,19 +1249,12 @@ async function schedulePostMealAt(opts: {
   const endsAt = opts.endsAt ?? now + seconds * 1000;
   const startedAt = opts.startedAt ?? now;
 
-  // Persist the whole timer - end, start, owner AND whether its length was
-  // hand-picked - in ONE write, BEFORE anything is armed. Two reasons: the four
-  // values describe a single countdown and a reader must never catch a mix of
-  // an old one and a new one; and the flag decided which timer this is, so
-  // writing it after the schedule left a window where a settings change could
-  // re-measure a countdown that was in fact a one-off. `custom` defaults to
-  // whatever is already stored, so the re-arm paths (mode change, language,
-  // reconciliation) carry the running timer's own nature across untouched.
-  const custom = opts.custom ?? (await isPostMealCustomWindow());
+  // Persist the whole timer - end, start and owner - in ONE write, BEFORE
+  // anything is armed: the three values describe a single countdown, and a
+  // reader must never catch a mix of an old one and a new one.
   const entries: [string, string][] = [
     [POSTMEAL_TIMER_END_KEY, String(endsAt)],
     [POSTMEAL_TIMER_START_KEY, String(startedAt)],
-    [POSTMEAL_TIMER_CUSTOM_KEY, custom ? "1" : "0"],
   ];
   if (opts.profileId) entries.push([POSTMEAL_TIMER_PROFILE_KEY, opts.profileId]);
   try {
@@ -1330,7 +1312,6 @@ async function schedulePostMealAt(opts: {
         POSTMEAL_TIMER_END_KEY,
         POSTMEAL_TIMER_START_KEY,
         POSTMEAL_TIMER_PROFILE_KEY,
-        POSTMEAL_TIMER_CUSTOM_KEY,
       ]);
     } catch {
       // best-effort rollback
@@ -1400,7 +1381,7 @@ export async function getPostMealTimerState(): Promise<PostMealTimerWindow | nul
   const startedAt = await readPostMealStart();
   if (startedAt != null && startedAt < endsAt) return { startedAt, endsAt, profileId };
   const prefs = await getNotificationPrefs();
-  return { startedAt: derivePostMealStart(endsAt, prefs.postMealMinutes), endsAt, profileId };
+  return { startedAt: derivePostMealStart(endsAt, POST_MEAL_WINDOW_MIN), endsAt, profileId };
 }
 
 async function readPostMealStart(): Promise<number | null> {
@@ -1420,28 +1401,6 @@ async function readPostMealTimerProfile(): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Whether the running countdown was started with a hand-picked length.
- *
- * Written as "1"/"0" rather than present/absent so it can ride along in
- * schedulePostMealAt's single multiSet; a timer armed before this key existed
- * has nothing stored and reads false, which is what it was.
- */
-async function isPostMealCustomWindow(): Promise<boolean> {
-  try {
-    return (await AsyncStorage.getItem(POSTMEAL_TIMER_CUSTOM_KEY)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/** The same fact, for the screen that has to explain it (Settings shows a
- *  different note while a one-off countdown is running, because the saved
- *  window it offers does not apply to that timer). */
-export async function isPostMealWindowCustom(): Promise<boolean> {
-  return isPostMealCustomWindow();
 }
 
 /**
@@ -1469,7 +1428,6 @@ export async function completePostMealTimer(): Promise<void> {
       POSTMEAL_TIMER_END_KEY,
       POSTMEAL_TIMER_START_KEY,
       POSTMEAL_TIMER_PROFILE_KEY,
-      POSTMEAL_TIMER_CUSTOM_KEY,
     ]);
   } catch {
     // best-effort
@@ -1498,7 +1456,6 @@ export async function cancelPostMealTimer(): Promise<void> {
       POSTMEAL_TIMER_END_KEY,
       POSTMEAL_TIMER_START_KEY,
       POSTMEAL_TIMER_PROFILE_KEY,
-      POSTMEAL_TIMER_CUSTOM_KEY,
     ]);
   } catch {
     // best-effort
@@ -1557,35 +1514,55 @@ export async function schedulePostMealReminder(
   // stated here rather than left to whatever an earlier timer's teardown
   // happened to clear.
   await schedulePostMealAt({
-    minutes: prefs.postMealMinutes,
+    minutes: POST_MEAL_WINDOW_MIN,
     profileId: profile?.id,
-    custom: false,
   });
   return "started";
 }
 
 /**
+ * What the "I started eating" action did. */
+export type PostMealStartOutcome =
+  /** Armed, with `minutesLeft` of the window still ahead. */
+  | { kind: "started"; minutesLeft: number }
+  /** The meal was long enough ago that the window is already over: nothing is
+   *  armed, and the screen offers to record the reading instead. */
+  | { kind: "elapsed" }
+  /** The master switch or the OS permission said no. */
+  | { kind: "off" };
+
+/**
  * "I started eating" timer: an explicit user action, so it schedules the
  * post-meal check regardless of the auto-reminder toggle (still needs the master
  * switch on + permission). Shares POSTMEAL_ID, so pressing again just renews it.
- * Returns the minutes it was scheduled for, or null when notifications are off
- * or permission is denied.
  *
- * `minutes` is the one-off length picked in the duration sheet (2.3.0's K2-C),
- * clamped through the single validation point in lib/postMealTimer.ts. Omitted,
- * it is the saved window as always. A one-off length also records itself
- * (POSTMEAL_TIMER_CUSTOM_KEY) so a later change to the SAVED window cannot
- * quietly re-measure a countdown the user deliberately picked a length for.
+ * `minutesAgo` is how long ago the meal actually began (2.3.0's G15) - 0 for the
+ * ordinary tap, a real number when the user is logging late. The window itself
+ * is always POST_MEAL_WINDOW_MIN: the start moment is BACKDATED and the end
+ * stays two hours after the meal, so a countdown started 30 minutes late runs
+ * for 90 and lands where the check belongs. startPostMealLate owns that
+ * arithmetic (and the "already over" answer); this only arms what it returns.
  */
-export async function startPostMealTimer(minutes?: number): Promise<number | null> {
+export async function startPostMealTimer(
+  minutesAgo = 0
+): Promise<PostMealStartOutcome> {
   const prefs = await getNotificationPrefs();
-  if (!prefs.enabled) return null;
-  if (!(await ensureNotificationPermission())) return null;
+  if (!prefs.enabled) return { kind: "off" };
+  if (!(await ensureNotificationPermission())) return { kind: "off" };
+  const next = startPostMealLate({ minutesAgo, now: Date.now() });
+  if (next.kind === "elapsed") return { kind: "elapsed" };
   const profile = await readActiveProfile();
-  const custom = minutes != null;
-  const windowMin = custom ? clampPostMealMinutes(minutes) : prefs.postMealMinutes;
-  await schedulePostMealAt({ minutes: windowMin, profileId: profile?.id, custom });
-  return windowMin;
+  await schedulePostMealAt({
+    minutes: next.remainingMs / 60_000,
+    windowMin: POST_MEAL_WINDOW_MIN,
+    endsAt: next.endsAt,
+    startedAt: next.startedAt,
+    profileId: profile?.id,
+    // A backdated start can leave under a minute of the FIRST minute; the end
+    // is real and must not be rounded forward.
+    minSeconds: 1,
+  });
+  return { kind: "started", minutesLeft: Math.round(next.remainingMs / 60_000) };
 }
 
 /**
@@ -1611,7 +1588,7 @@ export async function restartPostMealTimerAt(
     const startedAt = loggedAt instanceof Date ? loggedAt.getTime() : loggedAt;
     const next = restartPostMealWindowAt({
       startedAt,
-      windowMin: prefs.postMealMinutes,
+      windowMin: POST_MEAL_WINDOW_MIN,
       now: Date.now(),
     });
     if (next.kind === "elapsed") {
@@ -1620,16 +1597,10 @@ export async function restartPostMealTimerAt(
     }
     await schedulePostMealAt({
       minutes: next.remainingMs / 60_000,
-      windowMin: prefs.postMealMinutes,
+      windowMin: POST_MEAL_WINDOW_MIN,
       endsAt: next.endsAt,
       startedAt: next.startedAt,
       profileId: profileId ?? (await readActiveProfile())?.id,
-      // Re-anchoring uses the SAVED window, so whatever one-off length the
-      // countdown may have been started with is gone (2.3.0's K2-C). Carrying
-      // the flag over would keep a now-ordinary countdown permanently exempt
-      // from applyPostMealWindowChange - and from its own "no permission, take
-      // the stale timer down" safety.
-      custom: false,
     });
     return "retimed";
   } catch {
@@ -1646,77 +1617,6 @@ export type PostMealWindowChange =
   | "retimed"
   /** More than the new window had already passed: the timer was closed out. */
   | "elapsed";
-
-/**
- * Re-measures a RUNNING post-meal timer after the user changes the window length
- * in Settings.
- *
- * The window belongs to the meal, not to the moment the preference changed: with
- * 10 min behind a 120 min timer, moving to 90 leaves 80 min - it does not leave
- * the countdown sitting on the old 120. The reminder is re-scheduled for the new
- * moment (which also renumbers its copy) and the Live Activity is restarted on
- * the new end, so the lock-screen countdown never disagrees with the app.
- *
- * When more than the new window has already passed the timer is over: the
- * pending reminder and the Live Activity are taken down and NOTHING fires. A
- * nudge arriving the instant a preference is changed would be noise, and the
- * moment it was meant to describe is gone.
- *
- * `previousWindowMin` is only needed for a timer armed before the start moment
- * was persisted; it recovers where that timer began.
- *
- * A countdown started with a HAND-PICKED length (the duration sheet, 2.3.0's
- * K2-C) is left alone entirely: that length was chosen for this one meal, and
- * silently pulling a deliberate 180 minutes down to a newly-saved 90 would undo
- * a decision the user made minutes ago. Only the saved window moves; the next
- * ordinary countdown uses it.
- */
-export async function applyPostMealWindowChange(
-  nextWindowMin: number,
-  previousWindowMin?: number
-): Promise<PostMealWindowChange> {
-  try {
-    const endsAt = await getPostMealTimerEnd();
-    if (endsAt == null) return "idle";
-    if (await isPostMealCustomWindow()) return "idle";
-    const startedAt =
-      (await readPostMealStart()) ??
-      derivePostMealStart(endsAt, previousWindowMin ?? nextWindowMin);
-
-    const next = retimePostMealWindow({
-      startedAt,
-      currentEndsAt: endsAt,
-      nextWindowMin,
-      now: Date.now(),
-    });
-    if (next.kind === "unchanged") return "retimed";
-    if (next.kind === "elapsed") {
-      await cancelPostMealTimer();
-      return "elapsed";
-    }
-    // Non-prompting: a settings toggle must not raise an OS dialog. Without
-    // permission there is nothing to re-arm, so the stale timer is taken down
-    // rather than left pointing at the old moment.
-    if (!(await hasNotificationPermission())) {
-      await cancelPostMealTimer();
-      return "elapsed";
-    }
-    // Preserve the running timer's own owner: a Settings change must not hand
-    // an already-armed timer to whichever profile happens to be active when the
-    // preference is edited.
-    await schedulePostMealAt({
-      minutes: next.remainingMs / 60_000,
-      windowMin: nextWindowMin,
-      endsAt: next.endsAt,
-      startedAt: next.startedAt,
-      profileId: (await readPostMealTimerProfile()) ?? undefined,
-    });
-    return "retimed";
-  } catch {
-    // The running timer keeps its old moment; nothing is lost.
-    return "idle";
-  }
-}
 
 /**
  * Re-arms a RUNNING post-meal countdown after its DELIVERY mode changed in

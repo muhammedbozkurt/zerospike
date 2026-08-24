@@ -10,10 +10,7 @@ import type { GlucoseUnit, Lang } from "../../lib/db/types";
 import {
   applyNotificationPrefs,
   applyPostMealAlarmModeChange,
-  applyPostMealWindowChange,
   cancelPostMealTimer,
-  getPostMealTimerEnd,
-  isPostMealWindowCustom,
   hasNotificationPermission,
   getNotificationPermission,
   requestNotificationPermission,
@@ -34,7 +31,7 @@ import {
   isAlarmKitAvailable,
   requestAlarmAuthorization,
 } from "../../modules/zerospike-alarmkit";
-import { Segmented } from "../../components/ui";
+import { POST_MEAL_WINDOW_MIN } from "../../lib/postMealTimer";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
 import { GLUCOSE_RICH, THEME } from "../../lib/theme/tokens";
@@ -73,15 +70,7 @@ export default function NotificationSettings() {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [notifDenied, setNotifDenied] = useState(false);
   const [openPicker, setOpenPicker] = useState<"weekly" | null>(null);
-  // A post-meal timer is counting down right now. Only then does the delay note
-  // have anything to describe, so it stays out of the way the rest of the time.
-  const [postMealRunning, setPostMealRunning] = useState(false);
-  // ...and whether THAT timer was started with a hand-picked length (2.3.0's
-  // K2-C). The picker on this card sets the SAVED window, which such a timer
-  // deliberately ignores (see applyPostMealWindowChange), so the note under it
-  // has to say something different or it would describe a re-measure that will
-  // not happen.
-  const [postMealCustom, setPostMealCustom] = useState(false);
+
   // The post-meal delivery choice (2.3.0's B) exists only where AlarmKit does
   // (iOS 26+); everywhere else the countdown is always a notification and the
   // row would be a promise the OS cannot keep. A plain sync native call, like
@@ -109,9 +98,7 @@ export default function NotificationSettings() {
       setNotifDenied(p.enabled && !granted);
       setPermission(await getNotificationPermission());
       setReliability(await checkReminderReliability());
-      setPostMealRunning((await getPostMealTimerEnd()) != null);
-    setPostMealCustom(await isPostMealWindowCustom());
-    })();
+      })();
   }, []);
 
   async function updatePrefs(patch: Partial<NotificationPrefs>) {
@@ -130,30 +117,6 @@ export default function NotificationSettings() {
     }
     await applyNotificationPrefs(next);
 
-    // A running timer belongs to a meal that already happened, so a new window
-    // length is measured from THAT meal: the elapsed part is kept and only the
-    // remaining time is re-derived. Without this the countdown, the reminder and
-    // the lock-screen activity all stayed on the length the timer was armed with.
-    if (
-      patch.postMealMinutes != null &&
-      patch.postMealMinutes !== base.postMealMinutes
-    ) {
-      await applyPostMealWindowChange(patch.postMealMinutes, base.postMealMinutes);
-    }
-
-    // Turning the post-meal check OFF has to take a countdown that is already
-    // running down with it - the alarm above all, which otherwise rings hours
-    // later for a feature the user just switched off, but also the pending
-    // notification, the lock-screen card and the dashboard countdown. The
-    // master switch already does this inside applyNotificationPrefs; this one
-    // cannot, because that function only ever sees the CURRENT preference and
-    // would then also kill a countdown started by hand from the dashboard
-    // ("I started eating" deliberately ignores this toggle). Only the
-    // transition off means "stop the one that is running".
-    if (patch.postMeal === false && base.postMeal) {
-      await cancelPostMealTimer();
-    }
-
     // The moment every glanceable surface counts down to is derived from these
     // preferences (master switch, basal/med/glucose toggles and their times, the
     // post-meal window just re-armed above), so ANY save here can move it. One
@@ -167,8 +130,6 @@ export default function NotificationSettings() {
     setNotifDenied(next.enabled && !granted);
     setPermission(await getNotificationPermission());
     setReliability(await checkReminderReliability());
-    setPostMealRunning((await getPostMealTimerEnd()) != null);
-    setPostMealCustom(await isPostMealWindowCustom());
   }
 
   /**
@@ -199,8 +160,6 @@ export default function NotificationSettings() {
     }
     await updatePrefs({ postMealAlarm: value });
     await applyPostMealAlarmModeChange();
-    setPostMealRunning((await getPostMealTimerEnd()) != null);
-    setPostMealCustom(await isPostMealWindowCustom());
   }
 
   /**
@@ -339,36 +298,18 @@ export default function NotificationSettings() {
                   />
                 }
               />
-              {prefs.postMeal ? (
+              {/* No length picker (2.3.0's G15): the window is a fixed two
+                  hours, so the only thing left to choose here is how it is
+                  delivered. "I started eating late" is answered on the
+                  dashboard, where the meal actually is. */}
+                {prefs.postMeal ? (
                 <InlineConfigCard icon="time-outline">
-                  <Text className="text-mut text-xs mb-2">{t("settings.postMealDelay")}</Text>
-                  <Segmented
-                    options={[60, 90, 120, 150].map((m) => ({
-                      value: String(m),
-                      label: t("settings.minutes", { n: m }),
-                    }))}
-                    value={String(prefs.postMealMinutes)}
-                    onChange={(v) =>
-                      updatePrefs({ postMealMinutes: Number(v) as 60 | 90 | 120 | 150 })
-                    }
-                  />
-                  {/* Only while a timer is actually counting down: otherwise the
-                      note describes something that is not happening. */}
-                  {postMealRunning ? (
-                    <Text className="text-mut text-xs mt-2">
-                      {/* Two static calls, not one dynamic key: this way
-                          scripts/i18n-check.js can see both. */}
-                      {postMealCustom
-                        ? t("settings.postMealDelayCustomNote")
-                        : t("settings.postMealDelayRunningNote")}
-                    </Text>
-                  ) : null}
+                  <Text className="text-mut text-xs mb-2">
+                    {t("settings.postMealFixedNote", { n: POST_MEAL_WINDOW_MIN })}
+                  </Text>
 
                   {alarmKitAvailable ? (
-                    <View
-                      className="mt-3 pt-3"
-                      style={{ borderTopWidth: 1, borderTopColor: THEME.border }}
-                    >
+                    <View className="mt-1">
                       <View className="flex-row items-center justify-between">
                         <Text
                           className="text-ink text-sm flex-1"

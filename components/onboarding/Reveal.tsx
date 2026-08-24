@@ -16,6 +16,7 @@ import { GlucoseChip } from "../rich/GlucoseChip";
 import { GradientAreaChart } from "../rich/GradientAreaChart";
 import { GradientCTA } from "../rich/GradientCTA";
 import { IconTile } from "../rich/IconTile";
+import type { RevealPlanItem, RevealPlanKind } from "../../lib/revealPlan";
 
 // Cascade timing (ms): a gentle staggered reveal.
 const D_LABEL = 0;
@@ -64,23 +65,52 @@ function RangeEnd({
   );
 }
 
+/**
+ * One line of the plan card. `mode` is only set for real reminder rows: it says
+ * how they will be DELIVERED, drawn from the same decision applyReminders arms
+ * with (see lib/revealPlan.ts), so a device that cannot ring an alarm shows the
+ * notification mark instead. The check mark stays what it always was: this is
+ * set up.
+ */
 function PlanRow({
   icon,
   label,
+  mode,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  mode?: "alarm" | "notification" | null;
 }) {
+  const { t } = useTranslation();
   return (
     <View className="flex-row items-center py-1.5">
       <IconTile icon={icon} size={26} radius={9} />
-      <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 10, flex: 1 }}>
+      <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 10, flex: 1 }} numberOfLines={2}>
         {label}
       </Text>
+      {mode ? (
+        <Ionicons
+          name={mode === "alarm" ? "alarm" : "notifications-outline"}
+          size={13}
+          color={mode === "alarm" ? THEME.accent : THEME.muted}
+          accessibilityLabel={
+            mode === "alarm" ? t("reminders.modeAlarm") : t("reminders.modeNotification")
+          }
+          style={{ marginRight: 8 }}
+        />
+      ) : null}
       <Ionicons name="checkmark-circle" size={16} color={GLUCOSE_RICH.target} />
     </View>
   );
 }
+
+const PLAN_ICONS: Record<RevealPlanKind, keyof typeof Ionicons.glyphMap> = {
+  glucose: "water-outline",
+  med: "medical-outline",
+  basal: "moon-outline",
+  postMeal: "restaurant-outline",
+  lowFollowup: "pulse-outline",
+};
 
 /**
  * The reveal, rebuilt to the mockup's B02 composition: a small "ready for you"
@@ -98,8 +128,7 @@ export function Reveal({
   fastingMgdl,
   postmealMinMgdl,
   postmealMgdl,
-  hasInsulin,
-  basalTime,
+  plan,
   onContinue,
   saving,
 }: {
@@ -108,12 +137,37 @@ export function Reveal({
   fastingMgdl: number;
   postmealMinMgdl: number;
   postmealMgdl: number;
-  hasInsulin: boolean;
-  basalTime: string;
+  /** What was ACTUALLY set up, built by lib/revealPlan.ts from the rows that
+   *  now exist - not a fixed list. A user who skipped the reminder layout has
+   *  no measurement line here, and one who accepted it sees their own times. */
+  plan: RevealPlanItem[];
   onContinue: () => void;
   saving?: boolean;
 }) {
   const { t } = useTranslation();
+
+  /** The line's text: the reminder's OWN name when it has one (every preset row
+   *  is named after its part of the day - see lib/reminderPresets), the type's
+   *  generic name otherwise, then the row's stored "HH:MM" - the same string
+   *  Settings > Reminders shows, so the two can never disagree. */
+  function planLabel(item: RevealPlanItem): string {
+    if (item.kind === "postMeal") {
+      return item.minutes != null
+        ? `${t("onboarding.planPostMeal")} · ${t("settings.minutes", { n: item.minutes })}`
+        : t("onboarding.planPostMeal");
+    }
+    if (item.kind === "lowFollowup") return t("onboarding.planLowFollow");
+    const name =
+      item.label ??
+      t(
+        item.kind === "med"
+          ? "reminders.typeMed"
+          : item.kind === "basal"
+            ? "reminders.typeBasal"
+            : "reminders.typeGlucose"
+      );
+    return item.time ? `${name} · ${item.time}` : name;
+  }
 
   const { curve, tir, band } = useMemo(() => {
     const readings = demoSugar();
@@ -193,9 +247,16 @@ export function Reveal({
                 label={`${t("insights.timeInRange")} ${pct(tir)}`}
               />
             </View>
+            {/* No fixed width: the card's inner width is what this has to fill.
+                It used to draw a 300pt canvas inside a container the style
+                below stretched to 100%, so on any device whose card is
+                narrower than 300pt (a 375pt screen, once the column and card
+                padding are taken off) the curve ran past the right edge and
+                was cut off there. Measured instead, the series is SCALED to
+                fit - seriesPoints already insets both ends by 3pt, so the
+                stroke's round caps sit inside the canvas symmetrically. */}
             <GradientAreaChart
               data={curve}
-              width={300}
               height={84}
               targetBand={band}
               style={{ alignSelf: "stretch", width: "100%" }}
@@ -265,14 +326,14 @@ export function Reveal({
             >
               {upper(t("onboarding.revealPlanTitle"))}
             </Text>
-            <PlanRow icon="restaurant-outline" label={t("onboarding.planPostMeal")} />
-            <PlanRow icon="pulse-outline" label={t("onboarding.planLowFollow")} />
-            {hasInsulin ? (
+            {plan.map((item) => (
               <PlanRow
-                icon="moon-outline"
-                label={`${t("onboarding.planBasal")} · ${basalTime}`}
+                key={item.id}
+                icon={PLAN_ICONS[item.kind]}
+                label={planLabel(item)}
+                mode={item.mode}
               />
-            ) : null}
+            ))}
           </GlassCard>
         </FadeSlideIn>
       </ScrollView>

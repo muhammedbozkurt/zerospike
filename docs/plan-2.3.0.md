@@ -655,7 +655,32 @@ Denetim ciktisi (ONCE = denetim ani, SONRA = 2026-08-24 uygulamasi):
     onboarding yonlendirmesine takilir (app/_layout.tsx:353-360), widget
     ancak kurulumdan sonra eklenebildigi icin gercekte ulasilmaz, degistirilmez.
 
-## 15.3 K2-C. Tokluk cift buton ve sure secici
+## 15.3 K2-C. Tokluk cift buton ve GECIKME TELAFISI
+
+> **[DEGISIM 2026-08-24 / G15, kullanici karari]** Bu bolumun ilk hali "sure
+> secici" idi (60/90/120/150/180 cipleri, serbest sure, kalici pencere ayari).
+> Kullanici karari: pencere HER ZAMAN 120 dakika, degistirilemez. Ikincil
+> butonun tek isi gecikme telafisidir: "yemege basladigimi kaydetmeyi unuttum,
+> X dakika gecti". Sayac 120 - X dakikaya kurulur ve `startedAt` GERIYE yazilir,
+> boylece Live Activity, ilerleme cubugu ve olcum ani fizyolojik olarak dogru
+> kalir. X >= 120 ise sayac KURULMAZ, kisa aciklama gosterilir ve kullanici
+> dogrudan olcum kaydina yonlendirilir.
+>
+> Sonuclar: (a) Ayarlar'daki 60/90/120/150 secicisi KALKTI, yerine tek satirlik
+> "olcum her zaman yemekten 120 dk sonradir" notu geldi; (b)
+> `applyPostMealWindowChange` ve `retimePostMealWindow` artik ulasilamaz oldugu
+> icin SILINDI; (c) ozel-sure bayragi (`POSTMEAL_TIMER_CUSTOM_KEY`) da silindi -
+> tek okuyucusu (b)'ydi ve pencere degisemedigine gore koruyacak bir sey
+> kalmadi; (d) `NotificationPrefs.postMealMinutes` artik OKUNMUYOR,
+> `lowThresholdMgdl` gibi yalniz saklanmis degerin ayristirilabilmesi icin
+> duruyor; tek gercek `POST_MEAL_WINDOW_MIN = 120`.
+>
+> Saf mantik: `startPostMealLate({ minutesAgo, now })` (lib/postMealTimer.ts) ve
+> `clampPostMealLateMinutes` (0-240; 240'a kadar cikar ki "cok gec" durumu
+> KULLANICI ICIN ULASILABILIR olsun). Sheet: components/PostMealLateSheet.tsx
+> (5/10/15/20/30 dk once cipleri + 5 dk adimli serbest secim).
+
+### 15.3.1 Ilk hali (uygulanmadi, kayit icin)
 
 46. **lib/postMealTimer.ts**: saf `clampPostMealMinutes(n: number): number`
     (tam sayiya yuvarlar, 5-360 araligina kirpar). Tek dogrulama noktasi.
@@ -886,8 +911,12 @@ Silinenler (9 dil): `onboarding.qPostMeal`, `onboarding.qPostMealHint`,
     yani dugmeye basar basmaz degil, en gec bir saniye icinde dogru ekran
     acilmalidir. Onboarding'i bitirmemis bir kurulumda birikmis rota sonradan
     surpriz yonlendirme YAPMAMALIDIR (completeOnboarding onu tuketip atar).
-22. Sure secici: 180 dk ile baslatilan sayac calisirken Ayarlar'dan pencere
-    90'a cekilir, sayac 180'de kalir.
+22. **[G15 ile degisti]** Gecikme telafisi: pano yemek kartindaki kucuk saat
+    dugmesi "Yemege ne zaman basladiniz?" sayfasini acar. (a) "10 dk once" ->
+    sayac 110 dk kurulur, kilit ekrani karti ve ilerleme cubugu yemegin gercek
+    anindan sayar; (b) serbest secimle 125 dk once -> sayac KURULMAZ, "pencere
+    gecti" aciklamasi ve "Olcumu kaydet" eylemi gorunur; (c) Ayarlar'da artik
+    pencere suresi secici YOKTUR, yerinde tek satirlik sabit-120 notu vardir.
 23. Ozel hatirlatici bildirimine dokunmak panoyu acar (form acmadan).
 24. Bos gunluk bildirimine dokunmak panoyu acar (aclik formu ACILMAZ).
 25. Ana widget'a (iOS ve Android) dokunmak glukoz ekleme formunu acar.
@@ -896,6 +925,19 @@ Silinenler (9 dil): `onboarding.qPostMeal`, `onboarding.qPostMealHint`,
 27. Onboarding: tokluk sorusu YOK; hazir duzen onizlemesi geliyor, bir satiri
     kaldirip "Duzeni kur" denince yalniz kalanlar kuruluyor ve izinler o anda
     isteniyor; "Simdi degil" hicbir satir ve hicbir izin uretmiyor.
+27b. **[G16]** Hazir duzenin satirlari GUNE GORE adlandirilir: type2'de
+    "Sabah olcumu / Ogle olcumu / Aksam olcumu". Onizlemede, kurulum sonrasi
+    Hatirlaticilarim listesinde, "Siradaki" kartinda ve onboarding kapanis
+    kartinda ayni ad gorunur. Hicbir sablon icinde ayni ad iki kez cikmaz.
+27c. **[G16]** Hatirlatici satiri iki katmanli: ust satirda ad + saat, alt
+    satirda "siradaki: ..." ve teslim rozeti, sagda dikey ortali anahtar.
+    Almanca ve Fransizcada tasma/kirpma olmamali.
+27d. **[G13]** Onboarding kapanis karti ("Kayit planiniz") gercekten kurulan
+    satirlari listeler: duzeni kuran kullanici kendi olcum satirlarini
+    saatleriyle gorur, "Simdi degil" diyen hicbir olcum satiri gormez. Alarm
+    modundaki satirlarda alarm ikonu, degilse bildirim ikonu cikar.
+27e. **[G14]** Ayni ekrandaki "Ornek veri" grafigi kartin icine tam sigar,
+    saginda kirpilma olmaz (dar cihazlarda da).
 28. Onboarding'i yarida kesip yeniden baslatmak duzeni ikilemiyor: ikinci turda
     "Duzeni kur" once bu profilin TUM olcum hatirlaticilarini siliyor, sonra
     onizlemedeki satirlari yaziyor. Test edilecek asil hal: ilk turda 4 satirlik
