@@ -14,6 +14,7 @@ declare const process: { exit: (code: number) => void };
 
 import {
   buildUpcoming,
+  nextUpcoming,
   nextOccurrenceAt,
   type UpcomingInput,
   type UpcomingReminderRow,
@@ -281,6 +282,53 @@ section("H. rows carry what the caller needs to name them");
   eq("kind marks it a reminder", items[0]?.kind, "reminder");
   const postMeal = buildUpcoming(input({ postMealEndsAt: NOW + MIN }))[0];
   eq("the countdown carries no reminder type", postMeal?.type, undefined);
+}
+
+section("I. nextUpcoming - the single item the dashboard line shows");
+{
+  // Nothing set up: the dashboard shows no line at all rather than an empty one.
+  eq("no rows, no countdown -> null", nextUpcoming(input()), null);
+
+  // Permission (or the master switch) off: the reminders are not going to
+  // arrive, so the line must not claim they will.
+  const rows = [row({ id: "a", time: "12:00" }), row({ id: "b", time: "18:00" })];
+  eq("gated off -> null", nextUpcoming(input({ rows, granted: false })), null);
+
+  // The ordinary case: the soonest reminder, with everything the line draws.
+  const first = nextUpcoming(input({ rows }));
+  eq("the soonest one", first?.id, "a");
+  eq("carries its type", first?.type, "glucose");
+  eq("and its delivery", first?.mode, "alarm");
+  eq("and its moment", first?.at, local(12, 0));
+
+  // A running post-meal countdown that ends before the next reminder takes the
+  // line, exactly as it takes the top of the list.
+  const withTimer = nextUpcoming(
+    input({ rows, postMealEndsAt: NOW + 30 * MIN, postMealAlarm: true })
+  );
+  eq("the countdown wins when it is sooner", withTimer?.kind, "postMeal");
+  eq("with its own delivery", withTimer?.mode, "alarm");
+
+  // ...and does not when it is not.
+  eq(
+    "a later countdown does not displace the reminder",
+    nextUpcoming(input({ rows, postMealEndsAt: NOW + 8 * HOUR }))?.id,
+    "a"
+  );
+
+  // The countdown alone still fills the line (it needs no reminder rows).
+  eq(
+    "a countdown with no reminders at all",
+    nextUpcoming(input({ postMealEndsAt: NOW + 30 * MIN }))?.kind,
+    "postMeal"
+  );
+
+  // Same head as the list: one computation, two surfaces.
+  eq(
+    "identical to buildUpcoming's first item",
+    nextUpcoming(input({ rows, postMealEndsAt: NOW + 30 * MIN }))?.id,
+    buildUpcoming(input({ rows, postMealEndsAt: NOW + 30 * MIN }))[0]?.id
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -920,8 +920,13 @@ Silinenler (9 dil): `onboarding.qPostMeal`, `onboarding.qPostMealHint`,
 23. Ozel hatirlatici bildirimine dokunmak panoyu acar (form acmadan).
 24. Bos gunluk bildirimine dokunmak panoyu acar (aclik formu ACILMAZ).
 25. Ana widget'a (iOS ve Android) dokunmak glukoz ekleme formunu acar.
-26. Hatirlaticilar ekrani: "Siradaki" karti dogru saatleri ve dogru teslim
-    ikonlarini gosterir; bir satiri bildirime cevirince ikon aninda degisir.
+26. **[G18 ile degisti]** Hatirlaticilar ekraninda "Siradaki" KARTI YOK
+    (listenin hemen ustunde ayni bilgiyi tekrarliyordu). Her satir: sol ikon,
+    ad, altinda "08:00 · yarin" ve kucuk teslim isareti, sagda yalniz anahtar.
+    Isarete dokununca alarm <-> bildirim aninda degisir (dokunma alani 44pt+).
+    Sirada olan is artik PANODA tek satirdir: "Sabah olcumu · 08:00" + isaret,
+    dokununca Hatirlaticilarim'a gider; hatirlatici yoksa ya da izin/ana
+    anahtar kapaliysa o satir HIC cizilmez.
 27. Onboarding: tokluk sorusu YOK; hazir duzen onizlemesi geliyor, bir satiri
     kaldirip "Duzeni kur" denince yalniz kalanlar kuruluyor ve izinler o anda
     isteniyor; "Simdi degil" hicbir satir ve hicbir izin uretmiyor.

@@ -128,6 +128,18 @@ export function nextOccurrenceAt(hhmm: string, now: number): number {
  * hides the whole card when that permission is missing, which is a display
  * decision the caller owns.
  */
+/**
+ * Just the next thing, or null when there is none (2.3.0's G18).
+ *
+ * The dashboard shows ONE line, so it asks for one item rather than taking a
+ * whole list and dropping all but its head - and it gets the same gates,
+ * ordering and delivery decision the reminders screen uses, because it is the
+ * same computation.
+ */
+export function nextUpcoming(input: UpcomingInput): UpcomingItem | null {
+  return buildUpcoming(input)[0] ?? null;
+}
+
 export function buildUpcoming(input: UpcomingInput): UpcomingItem[] {
   const {
     rows,

@@ -25,7 +25,7 @@ import {
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { syncLiveData } from "../../lib/services/liveData";
 import { alarmModeOf } from "../../lib/alarmSelect";
-import { buildUpcoming, type UpcomingItem } from "../../lib/upcomingReminders";
+import { buildUpcoming } from "../../lib/upcomingReminders";
 import { postMealWindowForProfile } from "../../lib/postMealTimer";
 import {
   getAlarmAuthorizationStatus,
@@ -37,7 +37,6 @@ import { ReminderEditSheet, type ReminderSavePayload } from "../../components/Re
 import { useFeedback } from "../../components/Feedback";
 import { withAlpha } from "../../components/rich";
 import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME } from "../../lib/theme/tokens";
-import { upper } from "../../lib/upper";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 import { useLayout } from "../../lib/useLayout";
 
@@ -57,94 +56,82 @@ function reminderIcon(type: ReminderType): keyof typeof Ionicons.glyphMap {
   }
 }
 
-/** How far the "Coming up" card looks ahead, and how many lines it draws
- *  before collapsing the rest into a "+N more" count. */
+/** How far ahead a row's "today / tomorrow" mark looks. Same day-long window
+ *  the dashboard's own next-reminder line uses. */
 const UPCOMING_WINDOW_MS = 24 * 60 * 60 * 1000;
-const UPCOMING_MAX = 6;
 
-/** The three things a delivery badge can say: a working alarm, an alarm the
+/** The three things the delivery mark can say: a working alarm, an alarm the
  *  device is not (yet) allowed to ring, or a plain notification. */
 type BadgeMode = "alarm" | "alarmPending" | "notification";
 
-/** The delivery badge itself. Only the "alarm" state is drawn in the accent
- *  colour: "alarmPending" is an intent the device cannot honour yet, so it must
- *  not look like the working thing - the alarm icon carries what the row is set
- *  to, the muted treatment carries that it is not ringing yet. */
-function ModeBadge({ mode, onPress }: { mode: BadgeMode; onPress: () => void }) {
+/**
+ * The delivery mark: an ICON, not a labelled pill (2.3.0's G18).
+ *
+ * The pill spelled the mode out ("Alarm", "Alarm (needs permission)") on every
+ * single row, which is the same word repeated down the whole list and, in the
+ * longer languages, the widest thing on the row. The icon says it in the place
+ * the eye already checks, and the header line above the list is where the
+ * meaning is explained once.
+ *
+ * Still TAPPABLE, and deliberately so: switching a reminder between alarm and
+ * notification is the one control 2.3.0's default change made necessary (a user
+ * who does not want the new behaviour has to be able to undo it), and the edit
+ * sheet route costs three taps and a save for what is one tap here. `hitSlop`
+ * carries the touch target past 44pt without making the mark itself big.
+ *
+ * Only the live alarm is drawn in the accent colour: "alarmPending" is an
+ * intent the device cannot honour yet, so it must not look like the working
+ * thing - the outline icon carries what the row is set to, the muted treatment
+ * carries that it is not ringing yet.
+ */
+function ModeMark({ mode, onPress }: { mode: BadgeMode; onPress: () => void }) {
   const { t } = useTranslation();
   const live = mode === "alarm";
-  const tint = live ? THEME.accent : THEME.muted;
-  const label = t(
-    mode === "alarm"
-      ? "reminders.modeAlarm"
-      : mode === "alarmPending"
-        ? "reminders.modeAlarmPending"
-        : "reminders.modeNotification"
-  );
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={8}
+      hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
       accessibilityRole="button"
-      accessibilityLabel={label}
-      className="rounded-full px-2.5 py-1"
-      style={{
-        borderWidth: 1,
-        borderColor: live ? THEME.accent : THEME.border,
-        backgroundColor: live ? withAlpha(THEME.accent, 0.14) : "transparent",
-        // The pending label is the longest of the three, and the row's own
-        // label is the flex-1 box that would otherwise pay for it: let the
-        // badge give way instead of squeezing "Bazal insulin" to nothing.
-        flexShrink: 1,
-      }}
+      accessibilityLabel={t(
+        mode === "alarm"
+          ? "reminders.modeAlarm"
+          : mode === "alarmPending"
+            ? "reminders.modeAlarmPending"
+            : "reminders.modeNotification"
+      )}
+      className="px-1"
     >
-      <View className="flex-row items-center">
-        <Ionicons
-          name={
-            mode === "notification"
-              ? "notifications-outline"
-              : live
-                ? "alarm"
-                : "alarm-outline"
-          }
-          size={12}
-          color={tint}
-        />
-        <Text
-          numberOfLines={1}
-          style={{
-            color: tint,
-            fontSize: 11,
-            fontWeight: "700",
-            marginLeft: 4,
-            flexShrink: 1,
-          }}
-        >
-          {label}
-        </Text>
-      </View>
+      <Ionicons
+        name={
+          mode === "notification"
+            ? "notifications-outline"
+            : live
+              ? "alarm"
+              : "alarm-outline"
+        }
+        size={15}
+        color={live ? THEME.accent : THEME.muted}
+      />
     </Pressable>
   );
 }
 
 /**
- * One reminder in the list, in TWO layers (2.3.0's G16).
+ * One reminder in the list (2.3.0's G18).
  *
- * The single-line version put the name, the time, the delivery badge and the
- * on/off switch on one row, and the three longest of those fought for the same
- * space: a German or French name next to "Alarm (needs permission)" squeezed
- * both to ellipses. Splitting it lets each line breathe - name and time on top,
- * the quiet "next: today 22:00" and the badge underneath - while the switch
- * stays vertically centred on the right, where it was.
+ * Three zones, nothing else: the type icon, the reminder's own NAME with its
+ * time and delivery mark under it, and the on/off switch. The previous version
+ * put the time on the title line and a labelled mode pill on the second one,
+ * which meant four competing pieces of text per row; the name is the thing
+ * being scanned for, so it gets the line to itself.
  *
- * The whole row is still one tap target (edit) and one long-press (delete); the
- * badge and the switch are the two islands inside it that answer separately,
- * both at least HIT_TARGET tall.
+ * The subline reads "08:00 · tomorrow" - the day only when it is worth saying,
+ * and without repeating the word "next" on every row.
  */
 function ReminderRow({
   row,
   label,
-  next,
+  day,
   badge,
   onPress,
   onLongPress,
@@ -153,8 +140,10 @@ function ReminderRow({
 }: {
   row: Reminder;
   label: string;
-  next?: string;
-  /** null where AlarmKit does not exist: no badge is drawn at all there. */
+  /** "today" / "tomorrow", already localized; absent for a row this pass would
+   *  not schedule at all (disabled, or behind a closed profile gate). */
+  day?: string;
+  /** null where AlarmKit does not exist: no mark is drawn at all there. */
   badge: BadgeMode | null;
   onPress: () => void;
   onLongPress: () => void;
@@ -168,7 +157,7 @@ function ReminderRow({
       accessibilityRole="button"
       accessibilityLabel={label}
       className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-2.5 mb-2 active:opacity-80"
-      style={{ minHeight: HIT_TARGET + 16 }}
+      style={{ minHeight: HIT_TARGET + 12 }}
     >
       <View
         className="w-9 h-9 rounded-xl items-center justify-center"
@@ -177,32 +166,19 @@ function ReminderRow({
         <Ionicons name={reminderIcon(row.type)} size={18} color={THEME.accent} />
       </View>
 
-      <View className="flex-1 ml-3" style={{ gap: 3 }}>
-        <View className="flex-row items-center">
-          <Text
-            numberOfLines={1}
-            style={{ color: THEME.ink, fontSize: 15, fontWeight: "600", flex: 1 }}
-          >
-            {label}
+      <View className="flex-1 ml-3" style={{ gap: 2 }}>
+        <Text
+          numberOfLines={1}
+          style={{ color: THEME.ink, fontSize: 15, fontWeight: "600" }}
+        >
+          {label}
+        </Text>
+        <View className="flex-row items-center" style={{ gap: 6 }}>
+          <Text style={[TABULAR, { color: THEME.muted, fontSize: 12 }]}>
+            {day ? `${row.time} · ${day}` : row.time}
           </Text>
-          <Text
-            style={[TABULAR, { color: THEME.ink, fontSize: 14, fontWeight: "700", marginLeft: 8 }]}
-          >
-            {row.time}
-          </Text>
+          {badge ? <ModeMark mode={badge} onPress={onToggleMode} /> : null}
         </View>
-        {next || badge ? (
-          <View className="flex-row items-center">
-            {next ? (
-              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 12, flex: 1 }}>
-                {next}
-              </Text>
-            ) : (
-              <View style={{ flex: 1 }} />
-            )}
-            {badge ? <ModeBadge mode={badge} onPress={onToggleMode} /> : null}
-          </View>
-        ) : null}
       </View>
 
       <View className="ml-2">
@@ -407,42 +383,15 @@ export default function RemindersScreen() {
     ]
   );
 
-  const rowById = useMemo(
-    () => new Map(reminders.map((r) => [r.id, r])),
-    [reminders]
-  );
-
-  /** One clock format for the whole card. A reminder shows its own stored
-   *  "HH:MM" - the exact string its row displays, so the two can never
-   *  disagree - and the countdown's end, which is an epoch moment, is written
-   *  the same way rather than through the locale formatter: a card that mixed
-   *  "22:30" with "10:30 PM" in one narrow column would read as two different
-   *  kinds of time, and every other clock value on this screen is HH:MM. */
-  function upcomingTime(item: UpcomingItem): string {
-    const row = rowById.get(item.id);
-    if (item.kind === "reminder" && row) return row.time;
-    const d = new Date(item.at);
-    const two = (n: number) => String(n).padStart(2, "0");
-    return `${two(d.getHours())}:${two(d.getMinutes())}`;
-  }
-
-  function upcomingName(item: UpcomingItem): string {
-    if (item.kind === "postMeal") return t("reminders.upcomingPostMeal");
-    const row = rowById.get(item.id);
-    return row ? reminderRowLabel(row) : t("reminders.typeGlucose");
-  }
-
-  /** The one-line "next: today 22:00" under a row's own label. Only drawn for a
-   *  row this pass actually put in the upcoming list, so a disabled row (or one
-   *  behind a closed profile gate) silently has none. */
-  function nextLineFor(row: Reminder): string | undefined {
+  /** Which DAY a row's next occurrence falls on, or undefined for a row this
+   *  pass would not schedule at all (disabled, or behind a closed profile
+   *  gate). Just the day: the time is right next to it on the row. */
+  function dayFor(row: Reminder): string | undefined {
     const item = upcoming.find((i) => i.kind === "reminder" && i.id === row.id);
     if (!item) return undefined;
     const tomorrow = new Date(nowTs);
     tomorrow.setHours(24, 0, 0, 0);
-    return t(item.at >= tomorrow.getTime() ? "reminders.nextTomorrow" : "reminders.nextToday", {
-      time: row.time,
-    });
+    return t(item.at >= tomorrow.getTime() ? "reminders.dayTomorrow" : "reminders.dayToday");
   }
 
   /** Raises the AlarmKit dialog when the OS is still willing to ask, and points
@@ -610,74 +559,6 @@ export default function RemindersScreen() {
           </Pressable>
         ) : null}
 
-        {/* "Coming up" (2.3.0's K2-A). Hidden without the notification
-            permission: the banner right above already explains that state, and
-            a list of times nothing will actually deliver would contradict it. */}
-        {loaded && notifGranted ? (
-          <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-3">
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 11,
-                fontWeight: "800",
-                letterSpacing: 0.4,
-                marginBottom: upcoming.length > 0 ? 8 : 0,
-              }}
-            >
-              {upper(t("reminders.upcomingTitle"))}
-            </Text>
-            {upcoming.length === 0 ? (
-              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
-                {t("reminders.upcomingEmpty")}
-              </Text>
-            ) : (
-              <>
-                {upcoming.slice(0, UPCOMING_MAX).map((item) => (
-                  <View
-                    key={`${item.kind}-${item.id}`}
-                    className="flex-row items-center"
-                    style={{ paddingVertical: 3 }}
-                  >
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        color: THEME.ink,
-                        fontSize: 13,
-                        fontWeight: "700",
-                        width: 58,
-                        ...TABULAR,
-                      }}
-                    >
-                      {upcomingTime(item)}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      style={{ color: THEME.ink, fontSize: 13, flex: 1, opacity: 0.9 }}
-                    >
-                      {upcomingName(item)}
-                    </Text>
-                    <Ionicons
-                      name={item.mode === "alarm" ? "alarm" : "notifications-outline"}
-                      size={13}
-                      color={item.mode === "alarm" ? THEME.accent : THEME.muted}
-                      accessibilityLabel={t(
-                        item.mode === "alarm"
-                          ? "reminders.modeAlarm"
-                          : "reminders.modeNotification"
-                      )}
-                    />
-                  </View>
-                ))}
-                {upcoming.length > UPCOMING_MAX ? (
-                  <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 4 }}>
-                    {t("reminders.upcomingMore", { n: upcoming.length - UPCOMING_MAX })}
-                  </Text>
-                ) : null}
-              </>
-            )}
-          </View>
-        ) : null}
-
         {!loaded ? (
           <>
             {[0, 1, 2].map((i) => (
@@ -709,7 +590,7 @@ export default function RemindersScreen() {
               key={row.id}
               row={row}
               label={reminderRowLabel(row)}
-              next={nextLineFor(row)}
+              day={dayFor(row)}
               badge={alarmKitAvailable ? badgeModeOf(row) : null}
               onPress={() => openEditSheet(row)}
               onLongPress={() => void confirmDelete(row)}

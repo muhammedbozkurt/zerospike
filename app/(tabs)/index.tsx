@@ -15,7 +15,12 @@ import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
 import { isScreenshotMode, useScreenshotAndroidSource } from "../../lib/screenshotMode";
-import { insulinModeShowsBolus, insulinModeUsesInsulin } from "../../lib/insulinMode";
+import {
+  insulinModeOf,
+  insulinModeShowsBasal,
+  insulinModeShowsBolus,
+  insulinModeUsesInsulin,
+} from "../../lib/insulinMode";
 import {
   addSugarLog,
   updateSugarLog,
@@ -28,7 +33,13 @@ import { useLayout } from "../../lib/useLayout";
 import { deleteInjection } from "../../lib/db/injections";
 import { deleteMed } from "../../lib/db/meds";
 import { captureDeletion } from "../../lib/db/undo";
-import type { LogTag, PeriodTag } from "../../lib/db/types";
+import type { LogTag, PeriodTag, Reminder } from "../../lib/db/types";
+import { listReminders } from "../../lib/db/reminders";
+import { nextUpcoming, type UpcomingItem } from "../../lib/upcomingReminders";
+import {
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+} from "../../modules/zerospike-alarmkit";
 import {
   startPostMealTimer,
   restartPostMealTimerAt,
@@ -37,6 +48,7 @@ import {
   getPostMealTimerState,
   cancelPostMealTimer,
   completePostMealTimer,
+  getNotificationPermission,
   noteJournalActivity,
   type PostMealStartOutcome,
 } from "../../lib/services/notifications";
@@ -148,7 +160,7 @@ import {
   GradientCTA,
   IconTile,
 } from "../../components/rich";
-import { formatDate, formatDateKey, formatTime, formatWeekday, relativeDay, num, pct } from "../../lib/format";
+import { formatDate, formatDateKey, formatTime, formatTimeForLang, formatWeekday, relativeDay, num, pct } from "../../lib/format";
 import {
   formatGlucose,
   glucoseUnitLabel,
@@ -357,13 +369,64 @@ export default function DashboardScreen() {
   // "I started eating a while ago" (2.3.0's G15), opened from the small button
   // beside the primary "I started eating" pill.
   const [lateSheetOpen, setLateSheetOpen] = useState(false);
+  // The next thing that will actually reach the user (2.3.0's G18). null when
+  // there is nothing to say - no reminder set up, the master switch or the OS
+  // permission off, or nothing inside the next day - and the line is then not
+  // drawn at all rather than drawn empty.
+  const [nextReminder, setNextReminder] = useState<UpcomingItem | null>(null);
+  const [nextReminderRows, setNextReminderRows] = useState<Reminder[]>([]);
   // An arm is in flight: the ref is the actual guard (see startedEating), the
   // state only greys the two buttons out while it runs.
   const startingTimerRef = useRef(false);
   const [startingTimer, setStartingTimer] = useState(false);
 
+  // Mirrored so the callback below can stay stable (it is called from effects
+  // and from every mutation) while still reading the CURRENT profile.
+  const activeProfileRef = useRef(activeProfile);
+  activeProfileRef.current = activeProfile;
+  const activeProfileIdRef = useRef<string | null>(activeProfile?.id ?? null);
+  activeProfileIdRef.current = activeProfile?.id ?? null;
+
   const refreshPostMealTimer = useCallback(async () => {
     setPostMealTimer(await getPostMealTimerState());
+  }, []);
+
+  /**
+   * The dashboard's own next-reminder line. Reads the SAME rows, gates and
+   * delivery decision the reminders screen does (lib/upcomingReminders.ts), so
+   * the two surfaces can never disagree about what is coming - and the profile
+   * lock applies to the countdown here exactly as it does there.
+   */
+  const refreshNextReminder = useCallback(async () => {
+    try {
+      const [rows, prefs, permission, timer] = await Promise.all([
+        listReminders(),
+        getNotificationPrefs(),
+        getNotificationPermission(),
+        getPostMealTimerState(),
+      ]);
+      const alarmKitAvailable = isAlarmKitAvailable();
+      const owned = postMealWindowForProfile(timer, activeProfileIdRef.current);
+      setNextReminderRows(rows);
+      setNextReminder(
+        nextUpcoming({
+          rows,
+          now: Date.now(),
+          windowMs: 24 * 60 * 60 * 1000,
+          granted: prefs.enabled && permission === "granted",
+          showsBasal: insulinModeShowsBasal(insulinModeOf(activeProfileRef.current)),
+          showsMeds: activeProfileRef.current?.oral_meds_enabled === 1,
+          alarmKitAvailable,
+          alarmAuthorized:
+            alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
+          postMealEndsAt: owned?.endsAt ?? null,
+          postMealAlarm: prefs.postMealAlarm,
+        })
+      );
+    } catch {
+      // best-effort: the line simply stays hidden
+      setNextReminder(null);
+    }
   }, []);
 
   const load = useCallback(async () => {
@@ -500,14 +563,19 @@ export default function DashboardScreen() {
   // this screen or a meal logged elsewhere both bump dataVersion).
   useEffect(() => {
     refreshPostMealTimer();
-  }, [refreshPostMealTimer, dataVersion]);
+    void refreshNextReminder();
+  }, [refreshPostMealTimer, refreshNextReminder, dataVersion]);
 
   // Also on focus: the post-meal window label must pick up a delay changed in
   // Settings without waiting for a data change or an app restart.
   useFocusEffect(
     useCallback(() => {
       refreshPostMealTimer();
-    }, [refreshPostMealTimer])
+      // Also the next-reminder line: a reminder added, renamed, switched off or
+      // switched between alarm and notification in Settings has to show here
+      // the moment the user comes back.
+      void refreshNextReminder();
+    }, [refreshPostMealTimer, refreshNextReminder])
   );
 
   // The setup row's Widget item re-checks on every dashboard focus, the same
@@ -528,10 +596,11 @@ export default function DashboardScreen() {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
       refreshPostMealTimer();
+      void refreshNextReminder();
       if (profileId) void syncLiveData(profileId, glucoseUnit);
     });
     return () => sub.remove();
-  }, [refreshPostMealTimer, profileId, glucoseUnit]);
+  }, [refreshPostMealTimer, refreshNextReminder, profileId, glucoseUnit]);
 
   // Restore the persisted sync preference, and silently re-sync on open so new
   // Health readings keep flowing in without re-toggling the switch. Auto-sync is
@@ -740,6 +809,30 @@ export default function DashboardScreen() {
   // out of the way instead of implying they should be dosing.
   const showsInsulin = insulinModeShowsBolus(activeProfile?.insulin_mode);
 
+  /** What the next-reminder line reads. A reminder shows its own NAME (preset
+   *  rows are named after their part of the day; an older, unnamed row falls
+   *  back to its type) and its stored "HH:MM" - the same two strings Settings >
+   *  Reminders shows, so the surfaces cannot disagree. */
+  function nextReminderLabel(item: UpcomingItem): string {
+    if (item.kind === "postMeal") {
+      return `${t("reminders.upcomingPostMeal")} · ${formatTimeForLang(item.at, lang)}`;
+    }
+    const row = nextReminderRows.find((r) => r.id === item.id);
+    const name =
+      row?.label && row.label.trim()
+        ? row.label
+        : t(
+            item.type === "med"
+              ? "reminders.typeMed"
+              : item.type === "basal"
+                ? "reminders.typeBasal"
+                : item.type === "custom"
+                  ? "reminders.typeCustom"
+                  : "reminders.typeGlucose"
+          );
+    return row ? `${name} · ${row.time}` : name;
+  }
+
   // "What is this based on?" explanation for the compact active-insulin line:
   // names the selected bolus product and its typical duration, or says a
   // generic profile is in use, plus any still-active basal kept apart from
@@ -814,6 +907,7 @@ export default function DashboardScreen() {
     if (outcome === "idle") return;
     hapticSuccess();
     await refreshPostMealTimer();
+    await refreshNextReminder();
     void syncLiveData(activeProfile.id, glucoseUnit);
     if (outcome === "elapsed") {
       setPostMealTimer(null);
@@ -870,6 +964,7 @@ export default function DashboardScreen() {
       hapticSuccess();
       toast(t("dashboard.toklukSet", { n: outcome.minutesLeft }), "success");
       await refreshPostMealTimer();
+      await refreshNextReminder();
       // First timer: tell the user the countdown also shows on the lock screen.
       try {
         if (activeProfile && !(await readProfileFlag(WIDGET_TIP_KEY, activeProfile.id))) {
@@ -1679,6 +1774,31 @@ export default function DashboardScreen() {
             <Tooltip text={iobTooltipText} size={13} />
           </View>
         </View>
+      ) : null}
+
+      {/* The next reminder (2.3.0's G18): one quiet line, the same weight as the
+          active-insulin line above it, and only when there IS one - no
+          reminders, no permission, or nothing within the day and it is not
+          drawn at all. Tapping goes to the place it can be changed. */}
+      {nextReminder ? (
+        <Pressable
+          onPress={() => router.push("/settings/reminders")}
+          accessibilityRole="button"
+          accessibilityLabel={t("dashboard.nextReminderA11y")}
+          hitSlop={8}
+          className="items-center mb-3 active:opacity-70"
+        >
+          <View className="flex-row items-center justify-center" style={{ gap: 6 }}>
+            <Ionicons
+              name={nextReminder.mode === "alarm" ? "alarm" : "notifications-outline"}
+              size={12}
+              color={nextReminder.mode === "alarm" ? THEME.accent : THEME.muted}
+            />
+            <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11 }}>
+              {nextReminderLabel(nextReminder)}
+            </Text>
+          </View>
+        </Pressable>
       ) : null}
 
       {/* Quick access: Insights + Health sync, promoted from the old list footer
