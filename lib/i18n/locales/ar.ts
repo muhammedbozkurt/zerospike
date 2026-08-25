@@ -414,6 +414,8 @@ const ar: TranslationSchema = {
   },
   journal: {
     showMore: "عرض المزيد",
+    seeAll: "عرض السجل كاملاً",
+    title: "السجل",
     carbsLabel: "{{carbs}} g كربوهيدرات",
     doseLabel: "{{dose}} وحدة",
     deleteEntry: "هل تريد حذف هذا السجل؟",

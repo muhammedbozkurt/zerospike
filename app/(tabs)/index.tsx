@@ -10,8 +10,6 @@ import { useApp } from "../../lib/store/AppContext";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry, MedEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
 import { bolusProfileFor, basalProfileFor, insulinProductById } from "../../lib/insulinCatalog";
-import { mealSlotForHour } from "../../lib/insulin";
-import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
 import { isScreenshotMode, useScreenshotAndroidSource } from "../../lib/screenshotMode";
@@ -23,16 +21,10 @@ import {
 } from "../../lib/insulinMode";
 import {
   addSugarLog,
-  updateSugarLog,
-  deleteSugarLog,
-  deleteMealLog,
   getSugarLog,
   setSugarLogHealthUuid,
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
-import { deleteInjection } from "../../lib/db/injections";
-import { deleteMed } from "../../lib/db/meds";
-import { captureDeletion } from "../../lib/db/undo";
 import type { LogTag, PeriodTag, Reminder } from "../../lib/db/types";
 import { listReminders } from "../../lib/db/reminders";
 import { nextUpcoming, type UpcomingItem } from "../../lib/upcomingReminders";
@@ -121,14 +113,11 @@ async function writeProfileFlag(baseKey: string, profileId: string, value: boole
 }
 // Name the health source explicitly in the UI (App Review guideline 2.5.1).
 const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
-// Journal paging. One slice is at most JOURNAL_PAGE rows AND at most
-// JOURNAL_WINDOW_DAYS of history - whichever boundary is reached first. The list
-// no longer grows by itself as you scroll: every further slice is an explicit
-// "show more" press, and the button disappears once the feed is exhausted.
-const JOURNAL_PAGE = 50;
-const JOURNAL_WINDOW_DAYS = 14;
-// How much wider the SQL window gets when a page-down runs past the loaded feed.
-const JOURNAL_LOAD_STEP = 250;
+// The dashboard shows a PREVIEW of the journal, not the journal: the last
+// couple of days and at most a screenful of rows (JOURNAL_PREVIEW_LIMITS,
+// lib/journalSlice.ts). It deliberately does not grow in place - the old "show
+// more" kept extending a list inside a page that was already scrolling - and
+// hands off to app/journal.tsx instead, where paging has a screen of its own.
 // The floating "add record" CTA sits above the tab bar, and the tab bar already
 // carries the device's safe-area inset - adding insets.bottom on top of it only
 // left a dead band (same correction as the food tab).
@@ -139,13 +128,29 @@ import { Tooltip } from "../../components/Tooltip";
 import { Skeleton } from "../../components/Skeleton";
 import { JournalItem } from "../../components/JournalItem";
 import { QuickAddSheet } from "../../components/QuickAddSheet";
-import { useUndoBatch } from "../../components/useUndoBatch";
+import {
+  JournalDayHeader,
+  JournalDisclaimerNote,
+  JournalEmptyFilter,
+  JournalFilterChips,
+  JournalPanelBottom,
+  JournalPanelTop,
+  journalPanelSide,
+  type JournalFilter,
+  type JournalSection,
+} from "../../components/JournalPanel";
+import { useJournalRows } from "../../components/useJournalRows";
+import {
+  JOURNAL_PREVIEW_LIMITS,
+  nextJournalCut,
+} from "../../lib/journalSlice";
+import { applyGlucoseCorrection } from "../../lib/services/glucoseEdit";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
 import { MedEditSheet } from "../../components/MedEditSheet";
 import { PostMealLateSheet } from "../../components/PostMealLateSheet";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
-import { useFeedback, type SheetAction } from "../../components/Feedback";
+import { useFeedback } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
 import { Sparkline } from "../../components/Sparkline";
 import { Button, SegmentedStat } from "../../components/ui";
@@ -173,7 +178,6 @@ import {
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 import { upper } from "../../lib/upper";
 
-type JournalSection = { title: string; dateLabel: string; data: JournalEntry[] };
 
 const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
 
@@ -185,83 +189,6 @@ const NO_POST_MEAL_ACTIONS: PostMealCardActions = {
   restartMealId: null,
 };
 
-/**
- * The dashboard's journal is ONE container, painted across four separately
- * rendered pieces of the same SectionList: the header's title + filter chips
- * close the top, each day separator and each row carry the sides, and the
- * footer closes the bottom. It cannot be a single wrapping <View> without
- * giving up virtualization, which on a long feed is not a trade worth making.
- *
- * Opaque (THEME.sheet) rather than the usual translucent glass, because the day
- * separators are STICKY: rows scroll underneath them, and anything see-through
- * would show the feed sliding past behind the date.
- */
-const JOURNAL_PANEL_BG = THEME.sheet;
-const JOURNAL_PANEL_PAD = 12;
-
-/** The sides, carried by every piece between the top and the bottom. */
-const journalPanelSide = {
-  backgroundColor: JOURNAL_PANEL_BG,
-  borderLeftWidth: 1,
-  borderRightWidth: 1,
-  borderColor: THEME.border,
-} as const;
-
-/**
- * Re-mirrors an EDITED reading into Apple Health: the stale sample is revoked and
- * the corrected value/time written in its place (HealthKit has no update), then
- * the new UUID is recorded on the row - or cleared when the write did not land,
- * so the row never points at a sample that no longer exists.
- *
- * Only touches rows that were actually mirrored, and only while the write toggle
- * is on: with the mirror switched off the old sample stays where it is and its
- * link is kept, so a later delete can still revoke it. Best-effort throughout -
- * the local edit is already saved and a mirror failure must never surface.
- */
-async function remirrorEditedGlucose(
-  previous: GlucoseEntry,
-  mgdl: number,
-  loggedAt: Date | null
-): Promise<void> {
-  try {
-    if (!previous.healthkit_uuid || Platform.OS !== "ios") return;
-    if (!(await getHealthWriteEnabled())) return;
-    const dateIso = (loggedAt ?? new Date(previous.logged_at)).toISOString();
-    const uuid = await updateGlucoseInHealth(previous.healthkit_uuid, mgdl, dateIso);
-    // Same orphan guard as writeGlucoseToHealthIfEnabled: if the row was
-    // deleted while the rewrite was in flight, revoke the fresh sample instead
-    // of leaving it unlinked in the user's Health app.
-    if (uuid && !(await getSugarLog(previous.id))) {
-      await deleteGlucoseFromHealth(uuid);
-      return;
-    }
-    await setSugarLogHealthUuid(previous.id, uuid);
-  } catch {
-    // best-effort mirror: never blocks or reports back to the edit flow
-  }
-}
-
-/**
- * End index of the next journal slice, walking the newest-first feed from
- * `from`: stops at JOURNAL_PAGE rows, or as soon as a row is older than
- * JOURNAL_WINDOW_DAYS before the slice's newest row - whichever comes first.
- *
- * The day window is anchored on the slice's own newest row rather than on "now",
- * so a user who has not logged for a month still opens on their last two weeks
- * of records instead of on an empty list with a button under it.
- */
-function nextJournalCut(list: JournalEntry[], from: number): number {
-  if (from >= list.length) return from;
-  const oldest =
-    new Date(list[from].logged_at).getTime() - JOURNAL_WINDOW_DAYS * 86_400_000;
-  let i = from;
-  while (i < list.length && i - from < JOURNAL_PAGE) {
-    if (new Date(list[i].logged_at).getTime() < oldest) break;
-    i++;
-  }
-  // A slice always advances, so a sparse feed can never stall the button.
-  return Math.max(i, from + 1);
-}
 
 /**
  * Hero placeholder, shown only while the first feed read is still in flight
@@ -363,8 +290,7 @@ export default function DashboardScreen() {
   // Journal: session-only kind filter + how many slices are revealed (one, plus
   // one per "show more" press). Stats below still read the full loaded feed, so
   // filtering/paging never skews them.
-  const [filter, setFilter] = useState<"all" | "glucose" | "meal" | "injection" | "med">("all");
-  const [journalPages, setJournalPages] = useState(1);
+  const [filter, setFilter] = useState<JournalFilter>("all");
   // Injection chip only exists in insulin modes that log injections; if the
   // profile's mode changes to "none" while it's selected, fall back to "all"
   // instead of leaving the list filtered on a kind with no chip.
@@ -390,7 +316,9 @@ export default function DashboardScreen() {
   // page-down is a pure in-memory slice. Widened by "show more" only when the
   // loaded feed is exhausted; 300 stays the stats-safe floor the hero/week tiles
   // read.
-  const [loadLimit, setLoadLimit] = useState(300);
+  // Fixed: the preview never widens its own SQL window - the full journal
+  // screen owns paging now (app/journal.tsx).
+  const [loadLimit] = useState(300);
   // Post-meal reminder countdown: the pending nudge's own start + end (epoch ms).
   // Armed by the "I started eating" button or by logging a meal (both persist the
   // timer in the service). Carrying the START too is what lets the card describe
@@ -1095,18 +1023,10 @@ export default function DashboardScreen() {
     setSheetOpen(false);
 
     if (editGlucose) {
-      // Correcting an existing reading: no reminders, no review nudge.
-      await updateSugarLog(editGlucose.id, {
-        glucose_level_mgdl: value,
-        period_tag: period,
-        tags,
-        ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
-      });
-      // H2: keep the Apple Health mirror honest. A corrected reading whose
-      // mirrored sample still carried the old value made the two disagree, and
-      // HealthKit has no "update", so the helper revokes and rewrites. Only for
-      // rows that were actually mirrored; fire-and-forget, never blocks the edit.
-      void remirrorEditedGlucose(editGlucose, value, loggedAt);
+      // Correcting an existing reading: no reminders, no review nudge. Shared
+      // with the full journal screen, which offers the same edit on the same
+      // row (lib/services/glucoseEdit.ts).
+      await applyGlucoseCorrection(editGlucose, value, period, tags, loggedAt);
       setEditGlucose(null);
       logEvent("log_edited", { kind: "glucose" });
       hapticSuccess();
@@ -1269,109 +1189,32 @@ export default function DashboardScreen() {
     }
   }
 
-  // Delete immediately (no blocking confirm) with a 6-second, accumulating undo
-  // (shared useUndoBatch: consecutive deletes collapse into one "N deleted"
-  // toast). Each snapshot restores the entry with every linked row it took with
-  // it (a meal's calculator bolus, etc. - see captureDeletion).
-  const deleteEntryWithUndo = useUndoBatch(bumpData);
-
-  async function deleteWithUndo(entry: JournalEntry) {
-    const snap = await captureDeletion(entry.kind, entry.id);
-    await deleteEntryWithUndo(snap, async () => {
-      if (entry.kind === "glucose") {
-        // H3: revoke the mirrored Apple Health sample (best-effort) when the local
-        // reading is deleted (undo included - undo re-adds without a mirror).
-        void deleteGlucoseFromHealth(await deleteSugarLog(entry.id));
-      } else if (entry.kind === "injection") await deleteInjection(entry.id);
-      else if (entry.kind === "med") await deleteMed(entry.id);
-      else await deleteMealLog(entry.id);
-    });
-  }
-
-  // Tap = correct the entry, each kind through its own edit flow.
-  function openEdit(entry: JournalEntry) {
-    if (entry.kind === "meal") {
-      router.push({ pathname: "/calculator", params: { mealLogId: entry.id } });
-    } else if (entry.kind === "glucose") {
+  // Every row behaviour - tap to correct, long press for the menu, delete with
+  // an undo toast, the meal-response chevron - comes from ONE hook shared with
+  // the full journal screen (components/useJournalRows.tsx), so a row cannot
+  // behave differently depending on which of the two it was tapped on. The
+  // glucose sheet stays here because this screen also logs NEW readings through
+  // it; what the two share is the correction itself.
+  const journalRows = useJournalRows({
+    entries,
+    onChanged: bumpData,
+    onEditGlucose: (entry) => {
       setEditGlucose(entry);
       setSheetOpen(true);
-    } else if (entry.kind === "injection") {
-      setEditInjection(entry);
-    } else if (entry.kind === "med") {
-      setEditMed(entry);
-    }
-  }
-
-  // Meal rows with a computable response (lib/mealResponse.ts) get a small
-  // additive chevron (JournalItem) that opens it instead of the edit flow.
-  // Recomputed from the already-loaded feed, no extra query.
-  //
-  // One pass, via mealIdsWithResponse: running the full response builder per meal
-  // re-filtered every reading and re-parsed its timestamp for each one, so a feed
-  // with 60 meals and 200 readings did 12 000 Date constructions to decide which
-  // rows get an icon. The set it returns is identical (see the parity test in
-  // scripts/mealResponse.test.ts).
-  const mealResponseIds = useMemo(() => {
-    if (!activeProfile) return new Set<string>();
-    const readings: GlucoseEntry[] = [];
-    const meals: MealEntry[] = [];
-    for (const e of entries) {
-      if (e.kind === "glucose") readings.push(e);
-      else if (e.kind === "meal") meals.push(e);
-    }
-    return mealIdsWithResponse(meals, readings);
-  }, [entries, activeProfile]);
-
-  function openMealResponse(entry: JournalEntry) {
-    router.push({ pathname: "/meal-response", params: { mealId: entry.id } });
-  }
-
-  // Long press = edit/delete menu (the built-in cancel row closes it). A meal row
-  // also offers "make a template out of this": the whole day+slot bucket it belongs
-  // to becomes the items (groupMealsBySlot, resolved on the editor screen).
-  function onEntryLongPress(entry: JournalEntry) {
-    const actions: SheetAction[] = [];
-    actions.push({
-      label: t("common.edit"),
-      icon: "create-outline",
-      onPress: () => openEdit(entry),
-    });
-    if (entry.kind === "meal") {
-      actions.push({
-        label: t("templates.fromMeal"),
-        icon: "bookmark-outline",
-        onPress: () =>
-          router.push({
-            pathname: "/meal-template",
-            params: {
-              fromDay: formatDateKey(entry.logged_at),
-              fromSlot: mealSlotForHour(new Date(entry.logged_at).getHours()),
-            },
-          }),
-      });
-    }
-    actions.push({
-      label: t("common.delete"),
-      icon: "trash-outline",
-      destructive: true,
-      onPress: () => {
-        void deleteWithUndo(entry);
-      },
-    });
-    actionSheet({ actions });
-  }
+    },
+  });
 
   // Journal display: apply the kind filter, cut it at the revealed slices, group
   // by day. Memoized so re-renders that do not touch the feed (countdowns, sheet
   // state) reuse the same section objects and the SectionList can bail out.
-  const { filteredEntries, displayEntries, journalSections } = useMemo(() => {
+  const { journalSections } = useMemo(() => {
     const filtered =
       filter === "all"
         ? journalEntries
         : journalEntries.filter((e) => e.kind === filter);
-    let cut = 0;
-    for (let p = 0; p < journalPages; p++) cut = nextJournalCut(filtered, cut);
-    const display = filtered.slice(0, cut);
+    // ONE slice, always: the preview does not page. Reaching further into the
+    // journal is a screen, not a button that grows this list.
+    const display = filtered.slice(0, nextJournalCut(filtered, 0, JOURNAL_PREVIEW_LIMITS));
     const sections: JournalSection[] = [];
     const byKey = new Map<string, JournalEntry[]>();
     for (const e of display) {
@@ -1395,45 +1238,22 @@ export default function DashboardScreen() {
       }
       arr.push(e);
     }
-    return { filteredEntries: filtered, displayEntries: display, journalSections: sections };
-  }, [journalEntries, filter, journalPages, t]);
+    return { journalSections: sections };
+  }, [journalEntries, filter, t]);
 
-  // "Show more" is offered while the loaded feed still has rows to reveal, or
-  // while the SQL window came back full (so the DB may hold older records). Both
-  // false = the journal really is at its end and the button goes away. Reads
-  // `journalEntries` (not `entries`): that is the feed this window's fullness
-  // actually describes, now that the two queries can return different counts
-  // for the same LIMIT.
-  const canShowMore =
-    displayEntries.length < filteredEntries.length ||
-    journalEntries.length >= loadLimit;
-
-  function showMoreJournal() {
+  /** The preview always hands off to the full screen, carrying whatever filter
+   *  the user is looking at so tapping through never silently widens it back to
+   *  everything. Offered whenever the preview is showing anything at all: the
+   *  point of the action is "there is a whole journal behind this", which is
+   *  true even when the last two days happen to be all there is. */
+  function openFullJournal() {
     hapticSelect();
-    if (displayEntries.length < filteredEntries.length) {
-      // Rows are already in memory: revealing the next slice is a pure slice.
-      setJournalPages((p) => p + 1);
-    } else if (journalEntries.length >= loadLimit) {
-      // Loaded window exhausted and the query filled it: widen the window once
-      // and advance with it. When the DB is drained the length check stops this.
-      setLoadLimit((l) => l + JOURNAL_LOAD_STEP);
-      setJournalPages((p) => p + 1);
-    }
+    router.push({
+      pathname: "/journal",
+      ...(filter !== "all" ? { params: { filter } } : {}),
+    });
   }
 
-  // Row actions behind a ref so renderItem keeps ONE identity across renders:
-  // list cells then only re-render when the feed itself changes.
-  const rowActionsRef = useRef({ openEdit, onEntryLongPress, openMealResponse });
-  rowActionsRef.current = { openEdit, onEntryLongPress, openMealResponse };
-  const onRowPress = useCallback((e: JournalEntry) => rowActionsRef.current.openEdit(e), []);
-  const onRowLongPress = useCallback(
-    (e: JournalEntry) => rowActionsRef.current.onEntryLongPress(e),
-    []
-  );
-  const onRowOpenResponse = useCallback(
-    (e: JournalEntry) => rowActionsRef.current.openMealResponse(e),
-    []
-  );
 
   const renderItem = useCallback(
     ({ item, index }: { item: JournalEntry; index: number }) =>
@@ -1443,10 +1263,10 @@ export default function DashboardScreen() {
             <JournalItem
               entry={item}
               profile={activeProfile}
-              onPress={onRowPress}
-              onLongPress={onRowLongPress}
-              hasResponse={item.kind === "meal" && mealResponseIds.has(item.id)}
-              onOpenResponse={onRowOpenResponse}
+              onPress={journalRows.onRowPress}
+              onLongPress={journalRows.onRowLongPress}
+              hasResponse={item.kind === "meal" && journalRows.mealResponseIds.has(item.id)}
+              onOpenResponse={journalRows.onRowOpenResponse}
               // `index` is the position WITHIN the day section, so the first row
               // after a day separator skips its divider - the separator is
               // already the break.
@@ -1456,7 +1276,13 @@ export default function DashboardScreen() {
           </Animated.View>
         </View>
       ) : null,
-    [activeProfile, mealResponseIds, onRowPress, onRowLongPress, onRowOpenResponse]
+    [
+      activeProfile,
+      journalRows.mealResponseIds,
+      journalRows.onRowPress,
+      journalRows.onRowLongPress,
+      journalRows.onRowOpenResponse,
+    ]
   );
 
   // Day separator. Inside the panel it is a SECTION BREAK rather than a pill on
@@ -1468,33 +1294,11 @@ export default function DashboardScreen() {
   // combinations (de "Gestern", pt "Ontem" plus a long date) need the second
   // line at large accessibility text sizes.
   const renderSectionHeader = useCallback(
-    ({ section }: { section: JournalSection }) => (
-      <View
-        style={{
-          ...journalPanelSide,
-          flexDirection: "row",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 6,
-          paddingHorizontal: JOURNAL_PANEL_PAD,
-          paddingTop: 12,
-          paddingBottom: 6,
-        }}
-      >
-        <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
-          {upper(section.title)}
-        </Text>
-        {section.dateLabel !== section.title ? (
-          <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
-            {section.dateLabel}
-          </Text>
-        ) : null}
-      </View>
-    ),
+    ({ section }: { section: JournalSection }) => <JournalDayHeader section={section} />,
     []
   );
 
-  const FILTER_CHIPS: { key: typeof filter; label: string }[] = [
+  const FILTER_CHIPS: { key: JournalFilter; label: string }[] = [
     { key: "all", label: t("dashboard.filterAll") },
     { key: "glucose", label: t("dashboard.quickAddGlucose") },
     { key: "meal", label: t("dashboard.quickAddFood") },
@@ -2154,70 +1958,31 @@ export default function DashboardScreen() {
           differ now that the calculator's own bolus row is filtered out of the
           former - so the container is never opened without rows to close it. */}
       {journalEntries.length > 0 ? (
-        <View
-          style={{
-            ...journalPanelSide,
-            borderTopWidth: 1,
-            borderTopLeftRadius: RADIUS.lg,
-            borderTopRightRadius: RADIUS.lg,
-            paddingHorizontal: JOURNAL_PANEL_PAD,
-            paddingTop: 12,
-          }}
-        >
-        <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
-          {upper(t("dashboard.history"))}
-        </Text>
+        <JournalPanelTop title={t("dashboard.history")}>
+          <JournalFilterChips
+            chips={FILTER_CHIPS}
+            value={filter}
+            onChange={setFilter}
+          />
 
-        {/* Filter chips: unchanged behaviour, now inside the container. They
-            wrap rather than overflow, which is what keeps the longest
-            translated set (de/pt) on the panel instead of off the screen. */}
-        <View className="flex-row flex-wrap" style={{ gap: 6 }}>
-          {FILTER_CHIPS.map((c) => {
-            const on = filter === c.key;
-            return (
+          {/* One-time tap-to-edit discoverability hint, inside the panel top so
+              it reads as part of the journal rather than a page-level notice. */}
+          {showEditHint ? (
+            <View className="flex-row items-center rounded-xl border border-hair bg-glass px-3 py-2.5 mt-2">
+              <Ionicons name="create-outline" size={14} color={THEME.accent} />
+              <Text className="text-mut text-xs ml-2 flex-1">
+                {t("journal.editHint")}
+              </Text>
               <Pressable
-                key={c.key}
-                onPress={() => {
-                  hapticSelect();
-                  setFilter(c.key);
-                  setJournalPages(1);
-                }}
-                hitSlop={6}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-                accessibilityLabel={c.label}
-                className={`rounded-full px-3 py-1.5 border ${
-                  on ? "bg-brand border-brand" : "bg-glass border-hair"
-                }`}
+                onPress={dismissEditHint}
+                hitSlop={10}
+                accessibilityLabel={t("common.close")}
               >
-                <Text
-                  className={`text-xs font-semibold ${on ? "text-black" : "text-mut"}`}
-                >
-                  {c.label}
-                </Text>
+                <Ionicons name="close" size={16} color={THEME.muted} />
               </Pressable>
-            );
-          })}
-        </View>
-
-        {/* One-time tap-to-edit discoverability hint, inside the panel top so
-            it reads as part of the journal rather than a page-level notice. */}
-        {showEditHint ? (
-          <View className="flex-row items-center rounded-xl border border-hair bg-glass px-3 py-2.5 mt-2">
-            <Ionicons name="create-outline" size={14} color={THEME.accent} />
-            <Text className="text-mut text-xs ml-2 flex-1">
-              {t("journal.editHint")}
-            </Text>
-            <Pressable
-              onPress={dismissEditHint}
-              hitSlop={10}
-              accessibilityLabel={t("common.close")}
-            >
-              <Ionicons name="close" size={16} color={THEME.muted} />
-            </Pressable>
-          </View>
-        ) : null}
-        </View>
+            </View>
+          ) : null}
+        </JournalPanelTop>
       ) : null}
     </View>
   );
@@ -2236,37 +2001,20 @@ export default function DashboardScreen() {
         ListFooterComponent={
           journalEntries.length > 0 ? (
             <View>
-              {/* Closes the panel opened by the header. "Show more" belongs to
-                  the journal, so it lives inside; the medical notice does not,
-                  so it sits below on the page - it speaks for the whole app,
-                  not for this list. */}
-              <View
-                style={{
-                  ...journalPanelSide,
-                  borderBottomWidth: 1,
-                  borderBottomLeftRadius: RADIUS.lg,
-                  borderBottomRightRadius: RADIUS.lg,
-                  paddingHorizontal: JOURNAL_PANEL_PAD,
-                  paddingTop: canShowMore ? 4 : 12,
-                  paddingBottom: canShowMore ? 12 : 4,
-                }}
-              >
-                {canShowMore ? (
-                  <Button
-                    label={t("journal.showMore")}
-                    variant="secondary"
-                    onPress={showMoreJournal}
-                    className="border border-hair"
-                    icon={<Ionicons name="chevron-down" size={16} color={THEME.ink} />}
-                  />
-                ) : null}
-              </View>
-              <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-3">
-                <Ionicons name="medical-outline" size={15} color="#f59e0b" />
-                <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
-                  {t("disclaimer.short")}
-                </Text>
-              </View>
+              {/* Closes the panel opened by the header, with the one action
+                  that belongs to the journal: the whole of it, on its own
+                  screen. The medical notice sits below on the page - it speaks
+                  for the app, not for this list. */}
+              <JournalPanelBottom>
+                <Button
+                  label={t("journal.seeAll")}
+                  variant="secondary"
+                  onPress={openFullJournal}
+                  className="border border-hair"
+                  icon={<Ionicons name="arrow-forward" size={16} color={THEME.ink} />}
+                />
+              </JournalPanelBottom>
+              <JournalDisclaimerNote />
             </View>
           ) : null
         }
@@ -2277,31 +2025,9 @@ export default function DashboardScreen() {
         // this slot only speaks for an empty filter.
         ListEmptyComponent={
           filter !== "all" ? (
-            // Inside the panel too: the footer below still closes it, so the
-            // empty state sits in the same container the rows would have.
-            <View
-              style={{ ...journalPanelSide, alignItems: "center", paddingVertical: 40 }}
-            >
-              <Ionicons name="funnel-outline" size={32} color={THEME.muted} />
-              <Text className="text-mut text-center mt-3 px-8">
-                {t("dashboard.emptyFilter")}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  hapticSelect();
-                  setFilter("all");
-                  setJournalPages(1);
-                }}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={t("dashboard.filterAll")}
-                className="mt-3 rounded-full border border-hair bg-glass px-3.5 py-1.5"
-              >
-                <Text className="text-xs font-semibold text-mut">
-                  {t("dashboard.filterAll")}
-                </Text>
-              </Pressable>
-            </View>
+            <JournalEmptyFilter
+              onClearFilter={() => setFilter("all")}
+            />
           ) : null
         }
         contentContainerStyle={{

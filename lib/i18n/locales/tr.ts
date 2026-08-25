@@ -412,6 +412,8 @@ const tr = {
   },
   journal: {
     showMore: "Daha fazla göster",
+    seeAll: "Tüm günlüğü görün",
+    title: "Günlük",
     carbsLabel: "{{carbs}} g karbonhidrat",
     doseLabel: "{{dose}} ünite",
     deleteEntry: "Bu kaydı silmek istediğinize emin misiniz?",

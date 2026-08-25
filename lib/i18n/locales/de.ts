@@ -414,6 +414,8 @@ const de: TranslationSchema = {
   },
   journal: {
     showMore: "Mehr anzeigen",
+    seeAll: "Sehen Sie das vollständige Tagebuch",
+    title: "Tagebuch",
     carbsLabel: "{{carbs}} g KH",
     doseLabel: "{{dose}} Einheiten",
     deleteEntry: "Möchten Sie diesen Eintrag wirklich löschen?",

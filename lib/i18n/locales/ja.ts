@@ -414,6 +414,8 @@ const ja: TranslationSchema = {
   },
   journal: {
     showMore: "もっと見る",
+    seeAll: "記録をすべて表示する",
+    title: "記録",
     carbsLabel: "炭水化物 {{carbs}} g",
     doseLabel: "{{dose}}単位",
     deleteEntry: "この記録を削除しますか？",
