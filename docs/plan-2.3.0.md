@@ -482,11 +482,24 @@ karar:
   profilde bir profilin verisi digerinin ekraninda gorunebilir. Duzeltmesi
   davranis ve riza degisikligi gerektirir (hangi profilin verisi yaziliyor,
   kullanicidan yeniden izin/onay), bu yuzden ayri bir tur.
-- **Alarm teslimi hala bildirim iznine bagli**: applyReminders'in `granted`
-  kapisi (prefs.enabled + OS bildirim izni) 2.2.0'dan devralindi ve madde 9
-  geregi dokunulmadi. Sonuc: iOS 26'da AlarmKit iznini verip bildirim iznini
-  reddeden kullanicida hicbir hatirlatici calmaz. Varsayilan alarm oldugu icin
-  bu kapi artik daha gorunur; 2.4.0 adayi olarak not.
+- **[COZULDU - Kapsam 3, K3-2]** ~~Alarm teslimi hala bildirim iznine bagli~~:
+  applyReminders'in duz `granted` kapisi (prefs.enabled + OS bildirim izni)
+  kaldirildi. Kapi artik satir-mekanizma bazli (lib/alarmSelect.ts'te
+  `reminderDelivery`): ana anahtar herkes icin sart, alarm-modlu satir yalniz
+  AlarmKit yetkisi ister, bildirim-modlu satir yalniz bildirim izni ister.
+  AlarmKit iznini verip bildirimi reddeden kullanicinin alarmlari artik calar.
+  Ayrinti icin bolum 17.
+- **Health yazma izninin devri "o an aktif profil"e yapilir (K3-5, X8)**:
+  cihaz-duzeyi `zerospike.healthWriteEnabled` anahtari acik olan bir kurulum
+  guncellendiginde, ilk okumada bu tercih O ANDA AKTIF olan profile devredilir
+  ve eski anahtar silinir. Aile cihazinda bu yanlis profile denk gelebilir:
+  ornegin ebeveyn kendi olcumlerini Apple Saglik'a yaziyorken, guncellemeden
+  sonra uygulamayi ilk kez cocuk profili aktifken acarsa, yazma izni cocuk
+  profiline gecer ve ebeveynin sonraki olcumleri Health'e YAZILMAZ.
+  Sessiz veri sizintisi degil (yanlis yone yazmaz, yalniz yazmayi durdurur) ve
+  Ayarlar > Veri'den tek dokunusla duzeltilebilir. Daha dogrusu her profile
+  ayri ayri sormak olurdu, ama bu guncelleme aninda dokuz dilde yeni bir riza
+  akisi demektir; 2.4.0 adayi olarak not.
 - **Yalniz bazal hatirlatici kuran yeni kullanici onboarding'de AlarmKit izni
   gormez**: izin yalniz medReminder ve reminderPlan ("Duzeni kur") akislarinda
   isteniyor (karar 0.C, Kapsam 2'de glucoseReminder adiminin yerini reminderPlan
@@ -1015,3 +1028,237 @@ Degistirilecekse ikisi birden degismeli.
 - **W4**: 9 dil stringleri (yeni + silinen), store/review metinleri, gorsel
   borcu kaydi, HUMAN-TODO guncellemesi, kapilar, surum/build numaralari,
   commit. Build, cihaz QA ve store yuklemesi kullanicida.
+
+---
+
+# KAPSAM 3 (onay: 2026-08-25, build alinmadan ikinci kapsam genislemesi)
+
+## 16.0 Kilit ekrani widget'lari
+
+Karar: kilit ekrani accessory aileleri 2.3.0'a girer. Gerekce, ana ekran
+widget'i ile ayni: bir gunluk uygulamasinda en kisa yol "uygulamayi ac"
+degildir, ve tokluk sayaci zaten kilit ekraninda (Live Activity) yasiyor.
+Eksik olan, SAYAC CALISMIYORKEN kilit ekraninin hicbir sey soylememesiydi.
+
+Onemli tespit: `accessoryInline` ve `accessoryRectangular` aileleri hedefte
+ZATEN destekleniyordu (targets/widget/index.swift, supportedFamilies). Bu
+kapsamda yapilan is uc parca:
+
+1. Anlik goruntuye (snapshot) SIRADAKI HATIRLATICININ KIMLIGI eklendi. Onceden
+   yalniz `nextReminderAt` + `nextReminderKind` vardi, yani kilit ekrani
+   "birsey" oldugunu soyleyebiliyordu ama hangisi oldugunu soyleyemiyordu.
+2. `accessoryCircular` ailesi eklendi.
+3. Uc ailenin de neyi one cikaracagi tek bir karara baglandi (`leadState`).
+
+### 16.1 Snapshot genislemesi (lib/services/liveData.ts)
+
+`computeLiveData` kendi aday dongusunu BIRAKTI ve `nextUpcoming`
+(lib/upcomingReminders.ts) cagiriyor. Ayni kapi seti, ayni siralama, ayni
+teslim karari: hatirlaticilar ekrani, pano "Siradaki" satiri ve widget artik
+tek fonksiyondan besleniyor. Onceki elle yazilmis dongu, widget'in uygulamanin
+kendisinin listelemeyecegi bir hatirlaticiyi duyurabilmesinin yoluydu.
+
+Yeni alanlar (hepsi EK, hicbir mevcut alan degismedi; watch ve watch-widget
+decoder'lari aynen calisir):
+
+| alan | tip | anlam |
+|---|---|---|
+| `nextReminderLabel` | `string \| null` | Satirin kullanici adi, yoksa tip ismi; JS'te lokalize edilir |
+| `nextReminderMode` | `"alarm" \| "notification" \| null` | Gercek teslim (alarmSelect'in uclu VE'si), kayitli sutun degil |
+| `postMealEndsAt` | `number \| null` | CALISAN tokluk penceresinin bitisi, ayri alan |
+
+`postMealEndsAt` neden ayri: kilit ekrani ailelerinde calisan sayac, daha erken
+gelen gunluk bir hatirlaticinin ONUNE gecer. Siralama bu karari vermez (ve
+vermemeli: hatirlaticilar ekrani dogru siralamayi gostermeye devam eder), o
+yuzden widget'in bu bilgiye ayri erisimi olmali.
+
+Bos-birakma kurali K3-2 ile satir-mekanizma bazina indi (bolum 17.0): ANA
+ANAHTAR kapaliysa `nextUpcoming` null doner ve siradaki alanlarin hepsi bos
+gider, calisan tokluk sayaci dahil. OS bildirim izninin yoklugu tek basina
+bosaltmaz: alarm-modlu satir AlarmKit ile teslim edilir ve kilit ekraninda
+gorunmeye devam eder, bildirim-modlu satir ise kaybolur.
+
+### 16.2 Aile basina ne gosterilir
+
+Uc aile de ayni `leadState` karari uzerinden calisir:
+calisan tokluk sayaci > isimli siradaki hatirlatici > son/ortalama olcum.
+
+| aile | 1. oncelik (sayac calisiyor) | 2. oncelik (siradaki var) | 3. (hicbiri) |
+|---|---|---|---|
+| `accessoryInline` | timer simgesi + kalan | mekanizma simgesi + ad + saat | olcum + birim, o da yoksa "zerospike" |
+| `accessoryRectangular` | ust satir kalan sure, alt satir olcum | ust satir ad + saat + mekanizma simgesi, alt satir olcum | buyuk olcum + etiket |
+| `accessoryCircular` | kalan sure + timer simgesi | (olcum) | olcum + damla simgesi |
+
+Ana ekran (`systemSmall` / `systemMedium`): mevcut duzen korundu, geri sayim
+hapinin USTUNE hatirlaticinin ADI eklendi (mekanizma simgesi + ad, tek satir).
+Medium'da eski jenerik "Siradaki hatirlatici" basligi, snapshot ad tasiyorsa
+onun yerini alir; eski snapshot'ta baslik geri duser.
+
+### 16.3 Deep link'ler
+
+`widgetURL` gosterilen seye gore degisir (eskiden her ailede sabit
+`addGlucose` idi):
+
+| gosterilen | hedef |
+|---|---|
+| calisan tokluk sayaci | `DeepLinks.postMeal2h` |
+| siradaki hatirlatici | `DeepLinks.reminders` (YENI sabit, `zerospike:///settings/reminders`) |
+| olcum | `DeepLinks.addGlucose` |
+
+### 16.4 Gizlilik karari (privacySensitive)
+
+KARAR: glukoz DEGERI `.privacySensitive()` isaretlenir, hatirlaticinin ADI ve
+SAATI isaretlenmez.
+
+Gerekce: deger bir saglik olcumudur ve Apple'in bu veri sinifi icin kendi
+yonlendirmesi kilitliyken gizlemektir; kullanici isterse Ayarlar > Face ID ve
+Parola > Hassas Icerigi Goster ile acar. Hatirlatici adi ve saati ise bir
+TAKVIM bilgisidir, olcum degil: onu da gizlemek, kilit ekranindaki karonun tum
+amacini ("siradaki hatirlaticiniz 08:00'de") tam da en ise yarayacagi anda bos
+birakirdi ve kullanicinin olcumleri hakkinda hicbir sey aciga vurmaz.
+
+### 16.5 Testler
+
+- `scripts/upcomingReminders.test.ts` bolum J: teslim mekanizmasi alani
+  (alarm/notification, izin yokken dusus), izin/anahtar kapaliyken siradaki
+  alanlarin bosalmasi, calisan sayacin bu kapidan muaf olmasi, adlandirma icin
+  gereken `label` + `type` tasinmasi, ve siralamanin sayaci one ALMADIGI (yani
+  `postMealEndsAt` alaninin neden gerektigi).
+- `swiftc -parse` her Swift dosyasinda.
+
+### 16.6 Cihaz QA (bolum 10 ve 15.10'un ustune)
+
+3 aile x kilitli/kilitsiz + bos durumlar:
+
+1. **inline, kilitli**: sayac calisiyorken kalan sure gorunur; deger
+   gosteriliyorsa REDACTED (gri blok) olur, hatirlatici adi olmaz.
+2. **inline, kilitsiz**: uc durumun ucu de okunur.
+3. **inline, hicbir veri yok**: "zerospike" yazar, bos/tire olmaz.
+4. **rectangular, sayac calisiyor**: ust satir kalan sure, alt satir olcum
+   (kilitliyken alt satir redacted).
+5. **rectangular, sadece hatirlatici**: ad + saat + dogru simge (AlarmKit izni
+   VARSA `alarm`, yoksa `bell` - izni sistemden geri alip dogrulayin).
+6. **rectangular, hicbiri**: buyuk olcum + etiket, eski davranis.
+7. **circular, sayac calisiyor**: kalan sure + timer simgesi.
+8. **circular, sayac yok**: birimsiz sayi + damla; kilitliyken redacted.
+9. **Deep link'ler**: her ailede uc durumun her birine dokunun, sirasiyla
+   tokluk olcum sayfasi / Ayarlar > Hatirlaticilarim / glukoz ekleme sayfasi
+   acilmali.
+10. **Bos-birakma (K3-2 sonrasi)**: (a) ANA ANAHTARI kapatin - kilit
+    ekranindaki hatirlatici satiri VE calisan tokluk sayaci kaybolmali;
+    (b) yalniz OS bildirim iznini reddedin - alarm-modlu satir kalmali,
+    bildirim-modlu satir kaybolmali.
+11. **Dil**: uygulamayi Arapca yapin, kilit ekrani karolarinin yonu donmeli
+    (snapshot'taki `lang`), ad ve saat Arapca gelmeli.
+12. **Eski snapshot**: uygulamayi guncelleyip widget'i yeniden yuklemeden
+    once eklenmis bir karonun cokmedigini dogrulayin (tum yeni alanlar
+    optional; ad yoksa geri sayim tek basina cizilir).
+
+---
+
+# KAPSAM 3 - K3 paketi (onay: 2026-08-25)
+
+## 17.0 K3-2. Alarm teslimi bildirim izninden ayrildi
+
+Sorun: `applyReminders` tek duz kapiya bakiyordu, `granted = prefs.enabled &&
+hasNotificationPermission()`. Bir AlarmKit alarmini AlarmKit teslim eder,
+bildirim sistemi degil. Dolayisiyla alarm iznini VERIP bildirim iznini
+reddeden kullanicida hicbir hatirlatici kurulmuyordu, ustelik Ayarlar >
+Hatirlaticilarim ekrani o satirlarin yanina "Alarm" rozeti cizmeye devam
+ediyordu: arayuz ile teslim birbirini yalanliyordu.
+
+Yeni kural tek yerde, `reminderDelivery` (lib/alarmSelect.ts):
+
+1. ANA ANAHTAR (prefs.enabled) herkes icin sart. Kullanicinin kendi "hayir"i.
+2. Alarm-modlu satir YALNIZ AlarmKit yetkisi ister.
+3. Bildirim-modlu satir YALNIZ bildirim izni ister.
+4. Alarm isteyen ama cihazin calamayacagi satir bildirime duser; bu dusus
+   yalniz bildirim izni varsa mumkundur.
+5. Hicbiri tutmuyorsa `"none"`: o tur satir icin HICBIR SEY kurulmaz, ve
+   arayuz bunu soylemek zorundadir.
+
+### Davranis matrisi
+
+| ana anahtar | satir modu | AlarmKit yetkisi | bildirim izni | sonuc |
+|---|---|---|---|---|
+| kapali | herhangi | herhangi | herhangi | none |
+| acik | alarm | var | var | **alarm** |
+| acik | alarm | var | YOK | **alarm** (duzelen durum) |
+| acik | alarm | yok | var | notification (dusus) |
+| acik | alarm | yok | yok | none |
+| acik | bildirim | herhangi | var | notification |
+| acik | bildirim | herhangi | yok | **none** |
+
+Tokluk sayaci ayni kurala tabi: `applyNotificationPrefs` icinde bildirim izni
+yokken sayac artik kosulsuz iptal EDILMEZ, yalniz alarm olarak da calamiyorsa
+iptal edilir.
+
+Dokunulan yuzeyler (hepsi ayni fonksiyondan besleniyor):
+
+- `lib/services/notifications.ts` applyReminders: `masterEnabled` +
+  `notificationPermission` ayrildi, `showsBasal`/`showsMeds` saf gorunurluk
+  kapisina indi, satir karari `reminderDelivery`.
+- `lib/upcomingReminders.ts`: `granted` alani `masterEnabled` +
+  `notificationPermission` olarak ikiye ayrildi; hem satir hem tokluk ogesi
+  ayni karardan geciyor. Cagiranlar: pano satiri, hatirlaticilar ekrani,
+  `lib/services/liveData.ts` (widget/watch anlik goruntusu).
+- `app/settings/reminders.tsx`: yeni `"blocked"` rozet durumu (satir acik,
+  profil kapisi acik, ama bu turda hicbir sey kurulmuyor) + ikinci ipucu
+  cumlesi. Alarm ipucu ile ayni cumleyi paylasmiyor cunku cozumu farkli
+  (bildirim izni, alarm izni degil).
+- `lib/alarmSelect.ts` tur kapisi: `alarmAuthorized` girdisi eklendi.
+  Bildirimi reddedip alarm iznini veren kullanici turun TAM hedef kitlesidir.
+
+Yeni i18n anahtarlari (9 dil): `reminders.modeBlocked`,
+`reminders.notifPermissionHint`.
+
+## 17.1 K3-1 / K3-6. Live Activity: canli guncelleme + yaris
+
+- **K3-1**: `ZerospikeLiveActivityModule`'e `update(lastReading, unitLabel)`
+  eklendi. Karttaki son olcum, sayac kurulurken donduruluyordu: pencere
+  icinde olcum kaydetmek, duzeltmek veya silmek kilit ekraninda uygulamanin
+  artik katilmadigi bir sayi birakiyordu. Tek cagri noktasi `syncLiveData`
+  (lib/services/liveData.ts): her yazma yolu (kayit, duzenleme, silme, geri
+  al) `bumpData` uzerinden zaten oraya varir, panonun saniyelik tick'i ise
+  varmaz. Asla BASLATMAZ: olcum yemek degildir.
+- **K3-6**: `start` / `end` / `update` uc modul fonksiyonu da `AsyncFunction`
+  oldu ve ActivityKit'i gercekten `await` ediyor. Onceden `Function` idiler ve
+  isi detached `Task`'a atip hemen donuyorlardi, yani JS islerin ne zaman
+  indigini bilemiyordu: start-end-start dizisi (yemek kaydet, iptal et,
+  yeniden kaydet) ActivityKit'e herhangi bir sirada varabiliyordu. JS
+  tarafinda tek kuyruk (`enqueue`, modules/zerospike-live-activity/index.ts)
+  cagri SIRASINI garantiler; her halka kendi hatasini yutar, boylece tek bir
+  kotu cagri oturumun kalanini kilitleyemez.
+
+## 17.2 K3-4. Taze kurulum ALTER penceresi
+
+`createSchemaV1` tablolari kurup ardindan v19/v20/v21 kolonlarini ALTER ile
+ekliyordu, "az once kurdugum tabloda bu kolon olamaz" gerekcesiyle. Dogru -
+kurulum yarida OLDURULENE kadar. Ikinci acilista ayni yol bastan calisir, tum
+CREATE'ler "IF NOT EXISTS" no-op olur, ilk korumasiz ALTER "duplicate column
+name" atar ve veritabani bir daha ASLA kurulumunu bitiremez.
+
+Cozum: `missingColumns(db, table, wanted)` (lib/db/migrations.ts) - migrasyonlarin
+zaten kullandigi kolon-varlik korumasinin ortak hali. Taze kurulum yolu artik
+ayni korumayi kullaniyor, yani yol yeniden oynatilabilir.
+
+Test: `scripts/migration.test.ts` bolum R - yarida olmus kurulum ikinci
+acilista atmadan tamamlanir, kolonlar tam bir kez lands, korumasiz tekrar hala
+atar (regresyonun kaniti), temiz tablo yine tum kolonlari alir.
+
+## 17.3 K3 cihaz QA eklemeleri
+
+1. **K3-2 alarm-only kullanici**: bildirim iznini REDDEDIN, AlarmKit iznini
+   VERIN. Alarm-modlu hatirlaticilar calmali; bildirim-modlu satirlarda
+   "Kurulmadi" rozeti ve ikinci ipucu cumlesi gorunmeli.
+2. **K3-2 bildirim-only kullanici**: AlarmKit iznini reddedin, bildirimi
+   verin. Her satir bildirim olarak gelmeli, alarm-niyetli satirlar
+   "Alarm (izin)" rozetinde kalmali.
+3. **K3-2 ana anahtar**: kapatildiginda her iki mekanizma da susmali, tokluk
+   sayaci dahil.
+4. **K3-2 tokluk**: bildirim izni yokken tokluk alarm tercihi ACIKKEN sayac
+   ayakta kalmali; tercih kapaliyken iptal olmali.
+5. **K3-1**: sayac calisirken bir olcum kaydedin/duzeltin/silin - kilit
+   ekranindaki kartin sayisi degismeli, sayacin BITISI degismemeli.
+6. **K3-6**: yemek kaydedin, hemen iptal edin, hemen tekrar kaydedin. Kilit
+   ekraninda tek ve dogru sayac kalmali (ne hayalet ne eksik).

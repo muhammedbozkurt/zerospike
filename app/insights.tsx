@@ -20,7 +20,11 @@ import { useApp } from "../lib/store/AppContext";
 import { listSugarLogs, listMealLogs } from "../lib/db/logs";
 import { getInjections } from "../lib/db/injections";
 import { getFood } from "../lib/db/foods";
-import { readHealthSummary, type HealthSummary } from "../lib/services/health";
+import {
+  getHealthSyncEnabled,
+  readHealthSummary,
+  type HealthSummary,
+} from "../lib/services/health";
 import type { Injection, Lang, MealLog, SugarLog } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { formatGlucose, glucoseUnitLabel, VERY_HIGH_MGDL } from "../lib/glucose";
@@ -555,6 +559,7 @@ export default function InsightsScreen() {
     () => isProUser && Platform.OS === "ios"
   );
   const [healthSettled, setHealthSettled] = useState(false);
+  const healthProfileId = activeProfile?.id ?? null;
   useEffect(() => {
     // The Health summary is windowDays-based; a custom range would mislabel it,
     // so it is simply hidden while a custom range is active.
@@ -582,22 +587,43 @@ export default function InsightsScreen() {
       setHealth(null);
       setHealthSettled(true);
     }, HEALTH_TIMEOUT_MS);
-    readHealthSummary(windowDays)
-      .then((h) => {
-        if (alive && !settled) setHealth(h);
+    // One Health account serves the whole device, so this card is only about
+    // the ACTIVE profile: it is read at all only while that profile has Health
+    // sync switched on, never off another profile's connection.
+    void getHealthSyncEnabled(healthProfileId)
+      .then((syncOn) => {
+        if (!alive || settled) return;
+        if (!syncOn) {
+          settled = true;
+          clearTimeout(timer);
+          setHealth(null);
+          setHealthSettled(true);
+          return;
+        }
+        return readHealthSummary(windowDays)
+          .then((h) => {
+            if (alive && !settled) setHealth(h);
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (!alive || settled) return;
+            settled = true;
+            clearTimeout(timer);
+            setHealthSettled(true);
+          });
       })
-      .catch(() => {})
-      .finally(() => {
+      .catch(() => {
         if (!alive || settled) return;
         settled = true;
         clearTimeout(timer);
+        setHealth(null);
         setHealthSettled(true);
       });
     return () => {
       alive = false;
       clearTimeout(timer);
     };
-  }, [isProUser, windowDays, customRange]);
+  }, [isProUser, windowDays, customRange, healthProfileId]);
 
   // The SQLite data (readings/meals/injections) is the report; Health is
   // read-only supporting detail from a separate, slower native query. Gating

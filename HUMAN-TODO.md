@@ -1,6 +1,53 @@
 
 ## 2.3.0 paketi sonrasi (23 Agu 2026) - INSAN
 
+### K3 paketi (Kapsam 3, 25 Agu 2026)
+
+- [ ] **Xcode: Live Activity modulu async'e gecti.** `start`, `end` ve YENI
+      `update` artik `AsyncFunction`. `npx expo prebuild` sonrasi
+      ZerospikeLiveActivityModule.swift'in derlendigini ve JS tarafinda
+      `startPostMealActivity(...)` cagrisinin bir Promise dondurdugunu
+      dogrulayin (mevcut cagiranlar await etmiyor, bu kasitli).
+- [ ] **K3-6 yaris testi cihazda.** Yemek kaydet -> hemen iptal et -> hemen
+      tekrar kaydet. Kilit ekraninda TEK ve dogru sayac kalmali. Eskiden
+      hayalet sayac veya hic sayac kalmayabiliyordu.
+- [ ] **K3-1 canli guncelleme.** Sayac calisirken bir olcum kaydedin,
+      duzeltin ve silin: karttaki sayi her seferinde degismeli, sayacin
+      BITISI degismemeli.
+- [ ] **K3-2 izin matrisi (docs/plan-2.3.0.md 17.0).** En az iki senaryo:
+      (a) bildirim REDDEDILDI + AlarmKit VERILDI -> alarm-modlu satirlar
+      calmali, bildirim-modlu satirlar "Kurulmadi" rozeti almali;
+      (b) AlarmKit reddedildi + bildirim verildi -> hepsi bildirim olarak
+      gelmeli. Ana anahtari kapatinca ikisi de susmali.
+- [ ] **K3-5 Health profil ayrimi.** Iki profille: p1'de Health yazmayi acin,
+      p2'ye gecip olcum kaydedin - Apple Saglik'a YAZILMAMALI. p1'e donup
+      kaydedin - yazilmali. Guncellemeden once cihaz-duzeyi anahtari acik olan
+      bir kurulumda, ilk acilista aktif profile devrettigini dogrulayin.
+
+### Kilit ekrani widget'lari (Kapsam 3, 25 Agu 2026)
+
+- [ ] **Xcode: accessory ailelerinin hedefte derlendigini dogrula.**
+      `targets/widget/index.swift` artik `.accessoryCircular` da destekliyor
+      (`.accessoryInline` ve `.accessoryRectangular` zaten vardi). `npx expo
+      prebuild` sonrasi widget extension hedefinin Deployment Target'inin
+      **iOS 16.4** oldugunu ve uc accessory ailesinin de derlendigini kontrol
+      edin. Circular ailesi iOS 16.0+; deployment target dusurulmemeli.
+- [ ] **Widget galerisinde uc sekli de gor.** Kilit ekrani > Ozellestir >
+      saatin altindaki alan: zerospike'in inline, rectangular ve circular
+      seceneklerinin UCU de listede gorunmeli. Yalniz ikisi cikiyorsa
+      supportedFamilies build'e girmemis demektir.
+- [ ] **privacySensitive davranisini cihazda dogrula.** Kilitliyken glukoz
+      degeri gri bloga donmeli, hatirlatici adi ve saati OKUNUR kalmali
+      (docs/plan-2.3.0.md 16.4). Ayarlar > Face ID ve Parola > Hassas Icerigi
+      Goster acikken deger de gorunur olmali.
+- [ ] **Deep link'ler.** Uc ailede de karoya dokunun: calisan sayac tokluk
+      olcum sayfasini, isimli hatirlatici Ayarlar > Hatirlaticilarim'i, olcum
+      glukoz ekleme sayfasini acmali. `zerospike:///settings/reminders`
+      rotasinin gercekten cozuldugunu ilk kez burada dogruluyoruz.
+- [ ] **Eski snapshot dayanikliligi.** Guncellemeden ONCE eklenmis bir karonun
+      guncelleme sonrasi (widget'i kaldirip yeniden eklemeden) cokmedigini
+      dogrulayin.
+
 - [ ] Xcode 26 derleme (native modul degisti, prebuild + build SART). Bu
       ortamda iOS 26 SDK yok, asagidaki iki ucus hic derlenmedi:
       (a) `Alarm.Schedule.fixed(Date)` ile tek seferlik alarm
@@ -46,18 +93,12 @@
       ve Android ana widget'inin koku artik uygulamayi acmak yerine glukoz
       ekleme formunu aciyor; Live Activity / Dynamic Island karti da tokluk
       olcum sheet'ini aciyor. Cihazda dogrulanmali (QA 25 ve 20).
-- [ ] GELECEK (bu turda kod DEGISTIRILMEDI, yalniz not): taze kurulumun ALTER
-      penceresi. lib/db/index.ts:507-520 createSchemaV1 icinde v19 ve v21
-      kolonlarini KOSULSUZ `ALTER TABLE reminders ADD COLUMN` ile ekliyor
-      (v19'dan beri boyle). Tablo hemen ustte yaratildigi icin normalde
-      guvenli, ama kurulum tam bu araliktan sonra ve `PRAGMA user_version`
-      damgasindan once olurse (crash, kullanicinin uygulamayi oldurmesi, disk
-      hatasi) sonraki acilista createSchemaV1 bastan kosar: `CREATE TABLE IF
-      NOT EXISTS` tabloyu atlar, ALTER'lar ise "duplicate column name" ile
-      patlar ve initDatabase hep ayni yerde kalir. Cozum adaylari: (a) ayni
-      kolon eklemelerini migrateToV19/V21'in kullandigi "eksikse ekle" guardli
-      formuna cevirmek, (b) tum createSchemaV1'i tek transaction icine almak.
-      Sahada gorulmus bir vaka yok; 2.4.0 adayi.
+- [x] KAPANDI (Kapsam 3, K3-4): taze kurulumun ALTER penceresi. createSchemaV1
+      artik v19/v20/v21 kolonlarini ortak `missingColumns` korumasi arkasinda
+      ekliyor (secenek (a)), yani yarida olen bir kurulum ikinci acilista
+      "duplicate column name" ile patlamadan tamamlaniyor. Regresyon
+      scripts/migration.test.ts bolum R ile pinlendi. Cihazda ek dogrulama
+      gerekmiyor.
 - [ ] Store: zerospike-store/aso/{9 dil}.md "What's New" + uzun aciklama
       guncellemeleri, google-play-extras/whats-new-2.3.0.md (9 dil, 500
       karakter altinda) ve review-notes-en.md (3994/4000) konsollara;

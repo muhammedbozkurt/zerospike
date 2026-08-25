@@ -95,6 +95,14 @@ function WidgetGuideScreen() {
           {ios ? (
             <Section icon="lock-closed-outline" title={t("widgetGuide.lockTitle")}>
               <Steps text={t("widgetGuide.lockStepsIos")} />
+              {/* What the three lock-screen shapes actually show, so the user
+                  can pick one instead of adding whichever the gallery offers
+                  first. */}
+              <Text
+                style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginTop: 8 }}
+              >
+                {t("widgetGuide.lockShapes")}
+              </Text>
             </Section>
           ) : null}
 

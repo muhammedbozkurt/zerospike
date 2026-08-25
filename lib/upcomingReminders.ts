@@ -1,4 +1,4 @@
-import { alarmModeOf } from "./alarmSelect";
+import { reminderDelivery } from "./alarmSelect";
 import type { ReminderType } from "./db/types";
 
 /**
@@ -60,9 +60,14 @@ export interface UpcomingInput {
   /** How far ahead to look. A day on the reminders screen - see the DST note
    *  on `horizonOf` below for why "a day" is not always 24 hours. */
   windowMs: number;
-  /** Master switch AND OS notification permission, already resolved - the same
-   *  `granted` applyReminders computes. False empties the reminder side. */
-  granted: boolean;
+  /** NotificationPrefs.enabled - the app's own master switch. The user's own
+   *  "no", so it empties the reminder side on its own. */
+  masterEnabled: boolean;
+  /** getNotificationPermission() === "granted". Since K3-2 this no longer
+   *  empties the list by itself: a row set to ring as an ALARM is delivered by
+   *  AlarmKit and does not need it, so the two facts are now applied per row,
+   *  per mechanism (see reminderDelivery in ./alarmSelect.ts). */
+  notificationPermission: boolean;
   /** The active profile's basal / oral-meds visibility gates, exactly as
    *  applyReminders applies them. */
   showsBasal: boolean;
@@ -123,10 +128,10 @@ export function nextOccurrenceAt(hhmm: string, now: number): number {
  * an "upcoming alarm" would blur exactly the line this app is not allowed to
  * blur (see the hard limits at the top of docs/plan-2.3.0.md).
  *
- * The post-meal item ignores `granted` on purpose: an alarm-delivered
- * countdown does not need the notification permission to ring. The screen
- * hides the whole card when that permission is missing, which is a display
- * decision the caller owns.
+ * Since K3-2 the post-meal item goes through the SAME per-row delivery
+ * decision as the rows: the master switch takes it down with everything else,
+ * while a missing notification permission only takes it down when it is not
+ * set to ring as an alarm.
  */
 /**
  * Just the next thing, or null when there is none (2.3.0's G18).
@@ -145,7 +150,8 @@ export function buildUpcoming(input: UpcomingInput): UpcomingItem[] {
     rows,
     now,
     windowMs,
-    granted,
+    masterEnabled,
+    notificationPermission,
     showsBasal,
     showsMeds,
     alarmKitAvailable,
@@ -156,40 +162,50 @@ export function buildUpcoming(input: UpcomingInput): UpcomingItem[] {
   const until = horizonOf(now, windowMs);
   const items: UpcomingItem[] = [];
 
-  if (granted) {
-    for (const row of rows) {
-      if (row.enabled !== 1) continue;
-      const gateOpen =
-        row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
-      if (!gateOpen) continue;
-      const at = nextOccurrenceAt(row.time, now);
-      if (!Number.isFinite(at) || at > until) continue;
-      items.push({
-        kind: "reminder",
-        id: row.id,
-        at,
-        mode: alarmModeOf({
-          alarmEnabled: row.alarm_enabled === 1,
-          alarmKitAvailable,
-          alarmAuthorized,
-        }),
-        type: row.type,
-        label: row.label,
-      });
-    }
+  for (const row of rows) {
+    // The SAME per-row, per-mechanism decision applyReminders arms from, so
+    // this list can never show a reminder the scheduler is not arming (or hide
+    // one it is): an alarm-mode row survives a missing notification permission,
+    // a notification-mode row does not.
+    const delivery = reminderDelivery({
+      masterEnabled,
+      rowEnabled: row.enabled === 1,
+      visibilityGateOpen:
+        row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true,
+      alarmEnabled: row.alarm_enabled === 1,
+      alarmKitAvailable,
+      alarmAuthorized,
+      notificationPermission,
+    });
+    if (delivery === "none") continue;
+    const at = nextOccurrenceAt(row.time, now);
+    if (!Number.isFinite(at) || at > until) continue;
+    items.push({
+      kind: "reminder",
+      id: row.id,
+      at,
+      mode: delivery,
+      type: row.type,
+      label: row.label,
+    });
   }
 
   if (postMealEndsAt != null && postMealEndsAt > now && postMealEndsAt <= until) {
-    items.push({
-      kind: "postMeal",
-      id: "postMeal",
-      at: postMealEndsAt,
-      mode: alarmModeOf({
-        alarmEnabled: postMealAlarm,
-        alarmKitAvailable,
-        alarmAuthorized,
-      }),
+    // The running countdown follows the same rule, minus the row flags: it is
+    // the app's own timer, already armed, so only the master switch and its own
+    // delivery decide whether it can still reach the user.
+    const delivery = reminderDelivery({
+      masterEnabled,
+      rowEnabled: true,
+      visibilityGateOpen: true,
+      alarmEnabled: postMealAlarm,
+      alarmKitAvailable,
+      alarmAuthorized,
+      notificationPermission,
     });
+    if (delivery !== "none") {
+      items.push({ kind: "postMeal", id: "postMeal", at: postMealEndsAt, mode: delivery });
+    }
   }
 
   // Ties broken by id so the order is stable across re-renders (two reminders

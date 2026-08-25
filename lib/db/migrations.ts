@@ -487,7 +487,35 @@ export async function migrateToV19(db: SQLite.SQLiteDatabase): Promise<void> {
  * simply shows the same emojiFor match it always has until its owner opens it
  * and picks one - see resolveFoodEmoji in lib/foodMeta for the one place that
  * decides between the two.
+ *
+ * (The v20 migration itself is below missingColumns.)
  */
+
+/**
+ * The columns of `table` that are NOT there yet, out of `wanted`.
+ *
+ * One guard, used by the migrations AND by the fresh-install path in
+ * ./index.ts. The fresh-install path used to apply its ALTERs unconditionally
+ * on the reasoning that the table had just been created and could not already
+ * have them - which is true right up until an install is KILLED partway
+ * through. On the next launch that path runs again from the top, the CREATEs
+ * are all "IF NOT EXISTS" no-ops, and the first unguarded ALTER then throws
+ * "duplicate column name" on a database that will never finish setting itself
+ * up. Asking first costs one PRAGMA per table and makes the whole path
+ * replayable.
+ */
+export async function missingColumns(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  wanted: readonly { name: string; type: string }[]
+): Promise<{ name: string; type: string }[]> {
+  const cols = await db.getAllAsync<{ name: string }>(
+    `PRAGMA table_info(${table});`
+  );
+  const present = new Set(cols.map((c) => c.name));
+  return wanted.filter((c) => !present.has(c.name));
+}
+
 export async function migrateToV20(db: SQLite.SQLiteDatabase): Promise<void> {
   const cols = await db.getAllAsync<{ name: string }>(
     "PRAGMA table_info(foods);"

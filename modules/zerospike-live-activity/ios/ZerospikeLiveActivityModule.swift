@@ -43,7 +43,15 @@ public class ZerospikeLiveActivityModule: Module {
 
     /// Starts (or updates) the post-meal countdown. `endsAtMs` / `startedAtMs`
     /// are epoch ms, the same clock the JS timer uses.
-    Function("start") { (endsAtMs: Double, startedAtMs: Double, title: String, lastReading: String?, unitLabel: String) -> Bool in
+    ///
+    /// ASYNC, and it really does await ActivityKit (K3-6). This used to be a
+    /// synchronous `Function` that kicked off a detached `Task` and returned
+    /// immediately, so JS had no way to know when the work had actually landed:
+    /// a start-end-start sequence (log a meal, cancel, log again) could be
+    /// applied by ActivityKit in any order, leaving a cancelled countdown on the
+    /// lock screen or no countdown at all. Now the promise resolves after the
+    /// activity call completes, and the JS side chains the calls on one queue.
+    AsyncFunction("start") { (endsAtMs: Double, startedAtMs: Double, title: String, lastReading: String?, unitLabel: String) async -> Bool in
       guard #available(iOS 16.2, *) else { return false }
       guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
 
@@ -64,7 +72,7 @@ public class ZerospikeLiveActivityModule: Module {
       // One activity at a time: re-arming the timer updates the running one
       // rather than stacking a second countdown on the lock screen.
       if let running = Activity<PostMealAttributes>.activities.first {
-        Task { await running.update(content) }
+        await running.update(content)
         return true
       }
 
@@ -80,12 +88,38 @@ public class ZerospikeLiveActivityModule: Module {
       }
     }
 
+    /// Refreshes ONLY the reading shown on a running countdown, leaving its
+    /// start and end exactly where they are (K3-1).
+    ///
+    /// The card carries the last reading the user logged, and it was frozen at
+    /// whatever that was when the timer was armed: logging a reading, correcting
+    /// one, or deleting one during the two-hour window left the lock screen
+    /// showing a number the app no longer agreed with. Returns false when there
+    /// is nothing running - this never STARTS an activity, because a reading is
+    /// not a meal.
+    AsyncFunction("update") { (lastReading: String?, unitLabel: String) async -> Bool in
+      guard #available(iOS 16.2, *) else { return false }
+      guard let running = Activity<PostMealAttributes>.activities.first else { return false }
+
+      let previous = running.content.state
+      let state = PostMealAttributes.ContentState(
+        startedAt: previous.startedAt,
+        endsAt: previous.endsAt,
+        lastReading: lastReading,
+        unitLabel: unitLabel
+      )
+      await running.update(ActivityContent(state: state, staleDate: previous.endsAt))
+      return true
+    }
+
     /// Ends every running post-meal activity (the timer elapsed, the user logged
-    /// their reading early, or they cancelled it).
-    Function("end") { () -> Void in
+    /// their reading early, or they cancelled it). Async for the same reason
+    /// `start` is: the caller has to be able to wait for the teardown before
+    /// arming the next countdown.
+    AsyncFunction("end") { () async -> Void in
       guard #available(iOS 16.2, *) else { return }
       for activity in Activity<PostMealAttributes>.activities {
-        Task { await activity.end(dismissalPolicy: .immediate) }
+        await activity.end(dismissalPolicy: .immediate)
       }
     }
 

@@ -29,7 +29,7 @@ import {
   scheduleOneShotAlarm,
   type AlarmRoute,
 } from "../../modules/zerospike-alarmkit";
-import { shouldUseAlarm } from "../alarmSelect";
+import { reminderDelivery, shouldUseAlarm } from "../alarmSelect";
 import { reminderAlarmTitle } from "../reminderLabel";
 import {
   derivePostMealStart,
@@ -744,15 +744,27 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   // not just the onboarding/profile-setup paths that call syncBasalReminderRow
   // - this is what actually reaches a device that already shipped the bug.
   await dedupeBasalReminderRows(profileId);
-  const granted = prefs.enabled && (await hasNotificationPermission());
+  // K3-2: the master switch and the OS notification permission are no longer
+  // one flat gate. The master switch is the user's own "no" and still applies to
+  // everything; the notification permission only decides whether a row that is
+  // delivered as a NOTIFICATION can be armed. An alarm is delivered by AlarmKit,
+  // so a user who granted the alarm permission and refused notifications used to
+  // have every reminder silently dropped here.
+  const masterEnabled = prefs.enabled;
+  const notificationPermission = await hasNotificationPermission();
   const rows = await listReminders(profileId);
 
-  if (granted && rows.length > 0) await ensureAndroidChannel();
+  if (masterEnabled && notificationPermission && rows.length > 0) {
+    await ensureAndroidChannel();
+  }
 
-  const showsBasal = granted && insulinModeShowsBasal(insulinModeOf(profile));
-  const showsMeds = granted && (profile == null || profile.oral_meds_enabled === 1);
+  // Pure VISIBILITY gates now (does this profile use basal insulin / oral
+  // meds), with no permission folded in - the delivery decision below applies
+  // that per row, per mechanism.
+  const showsBasal = insulinModeShowsBasal(insulinModeOf(profile));
+  const showsMeds = profile == null || profile.oral_meds_enabled === 1;
 
-  // AlarmKit (2.2.0's A1): resolved ONCE per pass, same as `granted` above -
+  // AlarmKit (2.2.0's A1): resolved ONCE per pass, same as the two gates above -
   // every row below shares the exact same OS/authorization snapshot rather
   // than each re-checking it. `alarmAuthorized` folds `alarmKitAvailable` in
   // so a row can never read as "authorized" on a device that has no AlarmKit
@@ -770,15 +782,21 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
     known.add(identifier);
     const gateOpen =
       row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
-    const rowActive = granted && row.enabled === 1 && gateOpen;
-
-    const useAlarm =
-      rowActive &&
-      shouldUseAlarm({
-        alarmEnabled: row.alarm_enabled === 1,
-        alarmKitAvailable,
-        alarmAuthorized,
-      });
+    // ONE decision, shared with every surface that draws this row
+    // (lib/alarmSelect.ts): "none" means nothing is armed for it this pass,
+    // which the reminders screen says out loud rather than leaving it looking
+    // scheduled.
+    const delivery = reminderDelivery({
+      masterEnabled,
+      rowEnabled: row.enabled === 1,
+      visibilityGateOpen: gateOpen,
+      alarmEnabled: row.alarm_enabled === 1,
+      alarmKitAvailable,
+      alarmAuthorized,
+      notificationPermission,
+    });
+    const rowActive = delivery !== "none";
+    const useAlarm = delivery === "alarm";
 
     if (useAlarm) {
       // Real alarm INSTEAD of the notification - never both (see
@@ -1125,9 +1143,21 @@ export async function applyNotificationPrefs(
 
   const granted = await hasNotificationPermission();
   if (!granted) {
+    // Everything here is delivered as a NOTIFICATION and cannot survive without
+    // the permission - except the post-meal countdown, which follows the same
+    // per-mechanism rule as the reminder rows (K3-2): with its alarm preference
+    // on and AlarmKit authorized it rings through AlarmKit, so cancelling it
+    // here would take away a working countdown from a user who deliberately
+    // chose alarms over notifications.
     await cancelWeeklySummary();
-    await cancelPostMealTimer();
     await cancelIdleReminder();
+    const alarmKit = isAlarmKitAvailable();
+    const postMealRingsAsAlarm = shouldUseAlarm({
+      alarmEnabled: p.postMealAlarm,
+      alarmKitAvailable: alarmKit,
+      alarmAuthorized: alarmKit && getAlarmAuthorizationStatus() === "authorized",
+    });
+    if (!postMealRingsAsAlarm) await cancelPostMealTimer();
     return;
   }
 

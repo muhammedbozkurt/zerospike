@@ -19,6 +19,10 @@ enum DeepLinks {
   static let addMeal = URL(string: "zerospike:///food")!
   static let addInjection = URL(string: "zerospike:///injection?compose=1")!
   static let addMed = URL(string: "zerospike:///?sheet=med")!
+  /// The reminders screen (Settings > My reminders), where an upcoming
+  /// reminder can actually be changed. Resolved by expo-router against the
+  /// same route the in-app "next reminder" line pushes.
+  static let reminders = URL(string: "zerospike:///settings/reminders")!
   /// The post-meal reading sheet - the same target the post-meal notification
   /// routes to (NotificationRoute "postMeal" in app/_layout.tsx).
   static let postMeal2h = URL(string: "zerospike:///?sheet=post_meal_2h")!

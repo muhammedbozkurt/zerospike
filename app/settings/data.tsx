@@ -220,9 +220,11 @@ export default function DataSettings() {
     await refreshPro();
   }
 
-  // H4/H5: opt-in "write my manual readings to Apple Health", default OFF. The
-  // write (share) permission is requested at POINT OF USE - here, when the toggle
-  // is switched on - never at onboarding. If it is denied, the toggle stays off.
+  // H4/H5: opt-in "write my manual readings to Apple Health", default OFF, and
+  // per profile - one Health account serves the device, so this switch says
+  // whether THIS profile's readings go there. The write (share) permission is
+  // requested at POINT OF USE - here, when the toggle is switched on - never at
+  // onboarding. If it is denied, the toggle stays off.
   const [healthWrite, setHealthWrite] = useState(false);
   // AsyncStorage read, so the real value cannot be known on the first render. A
   // non-Pro user with the mirror already on must never see the section vanish
@@ -230,23 +232,40 @@ export default function DataSettings() {
   // pending state instead of committing to shown/hidden.
   const [healthWriteLoaded, setHealthWriteLoaded] = useState(false);
   const [healthDetailsOpen, setHealthDetailsOpen] = useState(false);
+  const healthWriteProfileId = activeProfile?.id ?? null;
   useEffect(() => {
-    void getHealthWriteEnabled().then((v) => {
+    if (!healthWriteProfileId) {
+      // No profile to scope the switch to, so it can only be off - settling it
+      // here keeps the pending row from hanging on its spinner forever.
+      setHealthWrite(false);
+      setHealthWriteLoaded(true);
+      return;
+    }
+    // Switching profiles must not leave the previous profile's answer on screen
+    // while this read is in flight.
+    setHealthWriteLoaded(false);
+    let alive = true;
+    void getHealthWriteEnabled(healthWriteProfileId).then((v) => {
+      if (!alive) return;
       setHealthWrite(v);
       setHealthWriteLoaded(true);
     });
-  }, []);
+    return () => {
+      alive = false;
+    };
+  }, [healthWriteProfileId]);
   async function onToggleHealthWrite(value: boolean) {
+    if (!healthWriteProfileId) return;
     if (value) {
       const granted = await requestHealthWritePermission();
       if (!granted) {
         toast(t("settings.healthWriteDenied"), "error");
         return;
       }
-      await setHealthWriteEnabled(true);
+      await setHealthWriteEnabled(true, healthWriteProfileId);
       setHealthWrite(true);
     } else {
-      await setHealthWriteEnabled(false);
+      await setHealthWriteEnabled(false, healthWriteProfileId);
       setHealthWrite(false);
     }
   }

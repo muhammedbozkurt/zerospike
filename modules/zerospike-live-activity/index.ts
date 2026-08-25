@@ -19,9 +19,33 @@ interface LiveActivityNativeModule {
     title: string,
     lastReading: string | null,
     unitLabel: string
-  ): boolean;
-  end(): void;
+  ): Promise<boolean>;
+  update(lastReading: string | null, unitLabel: string): Promise<boolean>;
+  end(): Promise<void>;
   isWidgetInstalled(): Promise<boolean | null>;
+}
+
+/**
+ * ONE queue for every activity call (K3-6).
+ *
+ * ActivityKit's own start/update/end are async, and the module used to fire
+ * them from detached Tasks and return immediately - so a start-end-start
+ * sequence (log a meal, cancel it, log another) reached ActivityKit in
+ * whatever order those tasks happened to finish in. The observable failure was
+ * a cancelled countdown left on the lock screen, or a fresh one that never
+ * appeared because a stale `end` landed after it.
+ *
+ * The native side now awaits properly; this chain is the other half, so the
+ * ORDER those awaited calls are issued in is the order the caller wrote them.
+ * Every link swallows its own failure, so one bad call can never wedge the
+ * queue for the rest of the session.
+ */
+let activityQueue: Promise<unknown> = Promise.resolve();
+
+function enqueue<T>(work: () => Promise<T>, fallback: T): Promise<T> {
+  const next = activityQueue.then(work, work).catch(() => fallback);
+  activityQueue = next;
+  return next;
 }
 
 const native = requireOptionalNativeModule<LiveActivityNativeModule>(
@@ -50,29 +74,45 @@ export function startPostMealActivity(options: {
   title: string;
   lastReading?: string | null;
   unitLabel: string;
-}): boolean {
-  try {
-    return (
-      native?.start(
+}): Promise<boolean> {
+  return enqueue(
+    async () =>
+      (await native?.start(
         options.endsAt,
         options.startedAt,
         options.title,
         options.lastReading ?? null,
         options.unitLabel
-      ) ?? false
-    );
-  } catch {
-    return false;
-  }
+      )) ?? false,
+    false
+  );
 }
 
-/** Ends the countdown (elapsed, cancelled, or the reading was logged early). */
-export function endPostMealActivity(): void {
-  try {
-    native?.end();
-  } catch {
-    // best-effort; a stale activity expires on its own
-  }
+/**
+ * Refreshes the reading on a RUNNING countdown without moving its end (K3-1).
+ *
+ * Never starts one: a glucose reading is not a meal, and the countdown has
+ * exactly two deliberate sources (see schedulePostMealReminder). Resolves false
+ * when nothing is running, which is the normal case.
+ */
+export function updatePostMealActivityReading(options: {
+  lastReading?: string | null;
+  unitLabel: string;
+}): Promise<boolean> {
+  return enqueue(
+    async () =>
+      (await native?.update(options.lastReading ?? null, options.unitLabel)) ?? false,
+    false
+  );
+}
+
+/** Ends the countdown (elapsed, cancelled, or the reading was logged early).
+ *  Returns a promise so a caller that is about to arm a NEW countdown can wait
+ *  for the teardown; the existing fire-and-forget callers are unaffected. */
+export function endPostMealActivity(): Promise<void> {
+  return enqueue(async () => {
+    await native?.end();
+  }, undefined);
 }
 
 /** Mirrors ANDROID_WIDGET_NAME / ANDROID_QUICK_ADD_WIDGET_NAME in

@@ -49,6 +49,61 @@ export function alarmModeOf(
   return shouldUseAlarm(input) ? "alarm" : "notification";
 }
 
+/**
+ * Whether a reminder row will be delivered AT ALL this pass, and by which
+ * mechanism (2.3.0's K3-2).
+ *
+ * The gate used to be one flat "granted" = master switch AND OS notification
+ * permission, applied before anything else. That was wrong for alarms: an
+ * AlarmKit alarm is delivered by AlarmKit, not by the notification system, so a
+ * user who granted the alarm permission and refused notifications had every
+ * reminder silently dropped - and the app cheerfully drew "Alarm" badges next
+ * to rows it was not arming.
+ *
+ * The rule is now per row, per mechanism:
+ *   - the MASTER switch is required for everyone; it is the user's own "no".
+ *   - an alarm-mode row needs the ALARM authorization, and nothing else.
+ *   - a notification-mode row needs the NOTIFICATION permission, and nothing else.
+ *   - a row that wants an alarm on a device that cannot ring one falls back to
+ *     the notification, which is why the permission is still consulted for it.
+ *
+ * "none" means this pass arms nothing for the row - which the UI has to say out
+ * loud rather than leave looking scheduled.
+ */
+export type ReminderDelivery = "alarm" | "notification" | "none";
+
+export interface ReminderDeliveryInput {
+  /** NotificationPrefs.enabled - the app's own master switch. */
+  masterEnabled: boolean;
+  /** The row's own `enabled` column. */
+  rowEnabled: boolean;
+  /** The basal / oral-meds visibility gate for this row's type; always true
+   *  for the types that have none. */
+  visibilityGateOpen: boolean;
+  /** reminders.alarm_enabled = 1 (or NotificationPrefs.postMealAlarm). */
+  alarmEnabled: boolean;
+  alarmKitAvailable: boolean;
+  alarmAuthorized: boolean;
+  /** getNotificationPermission() === "granted". */
+  notificationPermission: boolean;
+}
+
+export function reminderDelivery(input: ReminderDeliveryInput): ReminderDelivery {
+  if (!input.masterEnabled || !input.rowEnabled || !input.visibilityGateOpen) {
+    return "none";
+  }
+  if (
+    shouldUseAlarm({
+      alarmEnabled: input.alarmEnabled,
+      alarmKitAvailable: input.alarmKitAvailable,
+      alarmAuthorized: input.alarmAuthorized,
+    })
+  ) {
+    return "alarm";
+  }
+  return input.notificationPermission ? "notification" : "none";
+}
+
 /** Everything the one-time alarm tour (app/alarm-tour.tsx, 2.3.0's D) is
  *  allowed to depend on, resolved by app/_layout.tsx. */
 export interface AlarmTourGateInput {
@@ -71,9 +126,13 @@ export interface AlarmTourGateInput {
   reminderCount: number;
   /** NotificationPrefs.enabled - the app's own master reminder switch. */
   notificationsEnabled: boolean;
-  /** getNotificationPermission() === "granted" - the OS actually lets anything
-   *  reach the user. */
+  /** getNotificationPermission() === "granted". */
   notificationPermission: boolean;
+  /** The AlarmKit authorization (K3-2). An alarm is delivered by AlarmKit, not
+   *  by the notification system, so a user who granted THIS and refused
+   *  notifications still gets their reminders - and is exactly the audience the
+   *  tour is for. Optional so an older caller keeps the previous behaviour. */
+  alarmAuthorized?: boolean;
 }
 
 /**
@@ -99,6 +158,9 @@ export function shouldOpenAlarmTour(input: AlarmTourGateInput): boolean {
     !input.tourSeen &&
     input.reminderCount > 0 &&
     input.notificationsEnabled &&
-    input.notificationPermission
+    // Either mechanism reaching the user is enough (K3-2): the tour explains
+    // that reminders now RING, and an alarm-authorized user gets that whether
+    // or not they ever allowed notifications.
+    (input.notificationPermission || input.alarmAuthorized === true)
   );
 }

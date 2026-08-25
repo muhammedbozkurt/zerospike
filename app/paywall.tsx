@@ -170,12 +170,18 @@ function PaywallScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { reason, context: ctxParam } = useLocalSearchParams<{
+  const { reason, context: ctxParam, focus: focusParam } = useLocalSearchParams<{
     reason?: string;
     context?: string;
+    focus?: string;
   }>();
   const context: DownsellTrigger =
     ctxParam === "onboarding" ? "onboarding" : "inapp";
+  // Onboarding hands over the answer that decides which single benefit line
+  // leads the list. Both lines describe a feature; neither says anything about
+  // the person reading it.
+  const focus: "insulin" | "tracking" =
+    focusParam === "insulin" ? "insulin" : "tracking";
   const { refreshPro, completeOnboarding, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
   const [busy, setBusy] = useState(false);
@@ -207,8 +213,12 @@ function PaywallScreen() {
     logEvent("paywall_view", {
       source: reason ?? "direct",
       trial_eligible: annualTrial,
+      context,
+      // Only meaningful for the onboarding entry point; clean() drops it
+      // elsewhere rather than logging a value nothing was personalised on.
+      focus: context === "onboarding" ? focus : undefined,
     });
-  }, [offer, reason, annualTrial]);
+  }, [offer, reason, annualTrial, context, focus]);
 
   // null, not "": a missing store price must never render as an empty gap where
   // the billed amount belongs.
@@ -503,6 +513,35 @@ function PaywallScreen() {
               benefit itself only applies to a profile that actually doses, so an
               insulin-free / undiagnosed user never sees it. */}
           <GlassCard style={{ paddingVertical: 16, marginBottom: 16 }}>
+            {/* Coming out of onboarding the list opens with the one line that
+                matches the quiz answer, lit so it reads as the lead rather than
+                a fifth bullet. Every other entry point keeps the plain list. */}
+            {context === "onboarding" ? (
+              <View
+                className="flex-row items-center rounded-xl px-3 py-2 mb-3"
+                style={{
+                  borderWidth: 1,
+                  borderColor: withAlpha(THEME.accent, 0.35),
+                  backgroundColor: withAlpha(THEME.accent, 0.1),
+                }}
+              >
+                <Ionicons name="sparkles" size={16} color={THEME.accent} />
+                <Text
+                  style={{
+                    color: THEME.ink,
+                    flex: 1,
+                    marginLeft: 10,
+                    fontSize: 13,
+                    fontWeight: "700",
+                    lineHeight: 18,
+                  }}
+                >
+                  {focus === "insulin"
+                    ? t("paywall.focusInsulin")
+                    : t("paywall.focusTracking")}
+                </Text>
+              </View>
+            ) : null}
             {[
               ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
               t("paywall.featureInsights"),

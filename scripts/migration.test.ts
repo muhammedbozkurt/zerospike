@@ -34,6 +34,7 @@ import {
   migrateToV19,
   migrateToV20,
   migrateToV21,
+  missingColumns,
   stampSchemaVersion,
 } from "../lib/db/migrations";
 import { V13_CREATE } from "../lib/db/v13Sql";
@@ -3011,14 +3012,14 @@ async function main() {
     );
     ok(
       "and applies the same V19_REMINDERS_COLUMNS list on a fresh install",
-      /for \(const col of V19_REMINDERS_COLUMNS\)/.test(indexSrc)
+      /missingColumns\(db, "reminders", V19_REMINDERS_COLUMNS\)/.test(indexSrc)
     );
 
     // A migrated v18 database and a brand-new install end up with the
     // identical reminders shape - the same test O/M3/N3 pattern, but here both
     // paths reach it through the SAME ALTER statements (not a shared CREATE),
-    // since createSchemaV1 replays V19_REMINDERS_COLUMNS unconditionally right
-    // after building the table from V17_CREATE (see lib/db/index.ts) - so the
+    // since createSchemaV1 replays V19_REMINDERS_COLUMNS (behind the K3-4
+    // column guard) right after building the table from V17_CREATE - so the
     // DDL text itself should also match exactly, column-for-column, in the
     // same order.
     const migrated = makeV15Database();
@@ -3475,8 +3476,10 @@ async function main() {
       /currentVersion < 20\)\s*\{\s*await migrateToV20\(db\);/.test(indexSrc)
     );
     ok(
-      "a fresh install applies the same V20_FOODS_COLUMNS list, unconditionally",
-      /for \(const col of V20_FOODS_COLUMNS\)\s*\{\s*\n\s*await db\.execAsync\(`ALTER TABLE foods ADD COLUMN \$\{col\.name\} \$\{col\.type\};`\);/.test(
+      // Guarded by missingColumns since K3-4, so a fresh install killed
+      // partway through can replay this path (see section R).
+      "a fresh install applies the same V20_FOODS_COLUMNS list, guarded",
+      /for \(const col of await missingColumns\(db, "foods", V20_FOODS_COLUMNS\)\)\s*\{\s*\n\s*await db\.execAsync\(`ALTER TABLE foods ADD COLUMN \$\{col\.name\} \$\{col\.type\};`\);/.test(
         indexSrc
       )
     );
@@ -3486,7 +3489,9 @@ async function main() {
     // an ordering check, since the presence check above cannot see WHERE in
     // the function the loop sits.
     const createIdx = indexSrc.indexOf("CREATE TABLE IF NOT EXISTS foods");
-    const alterIdx = indexSrc.indexOf("for (const col of V20_FOODS_COLUMNS)");
+    const alterIdx = indexSrc.indexOf(
+      'for (const col of await missingColumns(db, "foods", V20_FOODS_COLUMNS))'
+    );
     ok(
       "the fresh-install ALTER runs after foods is created",
       createIdx !== -1 && alterIdx !== -1 && alterIdx > createIdx
@@ -3626,7 +3631,7 @@ async function main() {
     );
     ok(
       "and applies the same V21_REMINDERS_COLUMNS list on a fresh install",
-      /for \(const col of V21_REMINDERS_COLUMNS\)/.test(indexSrc)
+      /missingColumns\(db, "reminders", V21_REMINDERS_COLUMNS\)/.test(indexSrc)
     );
     ok(
       "a fresh install replays both UPDATEs too, in the same order",
@@ -4244,6 +4249,75 @@ async function main() {
       "the final stamp is still there for the fresh-install path",
       /await db\.execAsync\(`PRAGMA user_version = \$\{SCHEMA_VERSION\};`\);/.test(indexSrc)
     );
+  }
+
+  section("R. a fresh install killed PARTWAY through can finish on the next launch");
+  {
+    // K3-4. createSchemaV1 (lib/db/index.ts) builds the tables and then applies
+    // the v19/v20/v21 columns as ALTERs, on the reasoning that a table it just
+    // created cannot already have them. True - right up until the process is
+    // killed between the CREATE and the final stamp. The next launch re-enters
+    // the same path, every CREATE is an "IF NOT EXISTS" no-op, and an UNGUARDED
+    // ALTER then throws "duplicate column name" on a database that can now never
+    // finish setting itself up. The shared guard (missingColumns) is what makes
+    // the whole path replayable.
+    const half = new DatabaseSync(":memory:");
+    half.exec(V17_CREATE.join("\n"));
+    // Died right here: the v19 columns landed, the v21 ones and the stamp did not.
+    for (const col of V19_REMINDERS_COLUMNS) {
+      half.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+    }
+
+    // Second launch: the same loops run again, now asking first.
+    let threw = false;
+    try {
+      for (const col of await missingColumns(adapt(half), "reminders", V19_REMINDERS_COLUMNS)) {
+        half.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+      }
+      for (const col of await missingColumns(adapt(half), "reminders", V21_REMINDERS_COLUMNS)) {
+        half.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+      }
+    } catch {
+      threw = true;
+    }
+    ok("the replay does not throw", !threw);
+
+    const cols = (half.prepare("PRAGMA table_info(reminders);").all() as {
+      name: string;
+    }[]).map((c) => c.name);
+    eq("profile_id landed exactly once", cols.filter((c) => c === "profile_id").length, 1);
+    eq("alarm_enabled landed exactly once", cols.filter((c) => c === "alarm_enabled").length, 1);
+    eq(
+      "and the v21 column the first launch never reached is there now",
+      cols.filter((c) => c === "alarm_user_set").length,
+      1
+    );
+
+    // The unguarded form is what used to happen, pinned so the regression
+    // cannot come back silently.
+    let unguardedThrew = false;
+    try {
+      half.exec("ALTER TABLE reminders ADD COLUMN profile_id TEXT;");
+    } catch {
+      unguardedThrew = true;
+    }
+    ok("an unguarded repeat still throws, which is the bug being fixed", unguardedThrew);
+    half.close();
+
+    // A genuinely fresh table still gets every column, so the guard cannot
+    // quietly skip the real work.
+    const clean = new DatabaseSync(":memory:");
+    clean.exec(V17_CREATE.join("\n"));
+    for (const col of await missingColumns(adapt(clean), "reminders", V19_REMINDERS_COLUMNS)) {
+      clean.exec(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
+    }
+    const cleanCols = (clean.prepare("PRAGMA table_info(reminders);").all() as {
+      name: string;
+    }[]).map((c) => c.name);
+    for (const col of V19_REMINDERS_COLUMNS) {
+      ok(`a clean table still gets ${col.name}`, cleanCols.includes(col.name));
+    }
+    clean.close();
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -54,6 +54,10 @@ import {
   type PostMealTimerWindow,
 } from "../../lib/postMealTimer";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
+import {
+  markDay7DownsellShown,
+  shouldShowDay7Downsell,
+} from "../../lib/services/downsell";
 import { syncLiveData } from "../../lib/services/liveData";
 import {
   importHealthGlucose,
@@ -387,7 +391,8 @@ export default function DashboardScreen() {
           rows,
           now: Date.now(),
           windowMs: 24 * 60 * 60 * 1000,
-          granted: prefs.enabled && notifGranted,
+          masterEnabled: prefs.enabled,
+          notificationPermission: notifGranted,
           showsBasal: insulinModeShowsBasal(insulinModeOf(activeProfileRef.current)),
           showsMeds: activeProfileRef.current?.oral_meds_enabled === 1,
           alarmKitAvailable,
@@ -565,6 +570,23 @@ export default function DashboardScreen() {
     useCallback(() => {
       isWidgetInstalled().then(setWidgetInstalled);
     }, [])
+  );
+
+  // Day-7 downsell: every gate (the lifetime cap, a real discount existing, the
+  // seven days themselves) lives in lib/services/downsell.ts - this is only the
+  // trigger. The ref stops a double focus from racing two pushes; `push`, not
+  // `replace`, is deliberate, so back returns to the dashboard.
+  const day7CheckedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (day7CheckedRef.current || isProUser) return;
+      day7CheckedRef.current = true;
+      void (async () => {
+        if (!(await shouldShowDay7Downsell())) return;
+        await markDay7DownsellShown();
+        router.push({ pathname: "/downsell", params: { trigger: "day7" } });
+      })();
+    }, [isProUser, router])
   );
 
   // Coming back to the foreground: re-read the timer (it may have elapsed while

@@ -59,8 +59,18 @@ export async function remirrorEditedGlucose(
   try {
     if (!previous.healthkit_uuid || Platform.OS !== "ios") return;
     if (!(await getHealthWriteEnabled())) return;
+    // Read the stored row first, for its OWNER (X7): the mirror is per profile,
+    // and the corrected reading has to be checked against the profile it
+    // actually belongs to rather than whichever one happens to be active.
+    const stored = await getSugarLog(previous.id);
+    if (!stored) return;
     const dateIso = (loggedAt ?? new Date(previous.logged_at)).toISOString();
-    const uuid = await updateGlucoseInHealth(previous.healthkit_uuid, mgdl, dateIso);
+    const uuid = await updateGlucoseInHealth(
+      previous.healthkit_uuid,
+      mgdl,
+      dateIso,
+      stored.profile_id
+    );
     // Same orphan guard as writeGlucoseToHealthIfEnabled: if the row was
     // deleted while the rewrite was in flight, revoke the fresh sample instead
     // of leaving it unlinked in the user's Health app.

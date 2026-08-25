@@ -29,6 +29,24 @@ struct LiveData: Codable {
   let nextReminderAt: Double?
   let nextReminderKind: String?
 
+  /// What the next reminder is CALLED, already localized by the app (the user's
+  /// own row name, or the plain type noun). Optional so a snapshot written by an
+  /// older app build still decodes; the lock-screen families then lead with the
+  /// generic "next reminder" heading and the plain COUNTDOWN, which is exactly
+  /// what they drew before this field existed (see `hasReminderName`).
+  let nextReminderLabel: String?
+
+  /// How that reminder will actually be delivered: "alarm" or "notification",
+  /// from the same three-way AND applyReminders arms with. Optional for the same
+  /// reason; a missing value draws the bell rather than promising an alarm.
+  let nextReminderMode: String?
+
+  /// End of a RUNNING post-meal window. Carried separately from
+  /// `nextReminderAt` because the lock-screen families give a ticking countdown
+  /// the top line even when a daily reminder is due sooner. Optional: an older
+  /// snapshot simply has no running timer to promote.
+  let postMealEndsAt: Double?
+
   /// Whether the profile uses insulin at all (insulin_mode != "none"). Drives the
   /// Quick Add injection shortcut, so the home screen matches what the app itself
   /// shows. Optional: a snapshot written by an older app build carries no such
@@ -130,6 +148,19 @@ extension LiveData {
   var nextReminderDate: Date? {
     guard let at = nextReminderAt else { return nil }
     return Date(timeIntervalSince1970: at / 1000)
+  }
+
+  /// End of the running post-meal window, when one is counting down.
+  var postMealEndsDate: Date? {
+    guard let at = postMealEndsAt else { return nil }
+    return Date(timeIntervalSince1970: at / 1000)
+  }
+
+  /// The SF Symbol for how the next reminder will reach the user. A missing or
+  /// unrecognised mode draws the bell: an alarm glyph is a promise the OS has
+  /// to keep, so it is only drawn when the app said so out loud.
+  var nextReminderGlyph: String {
+    nextReminderMode == "alarm" ? "alarm" : "bell"
   }
 }
 

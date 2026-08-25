@@ -176,6 +176,10 @@ export default function NotificationSettings() {
     setPermission(result);
     if (result === "deniedPermanently") Linking.openSettings();
     const granted = result === "granted";
+    // X6: actually ARM what the badge is about to call scheduled. Granting the
+    // permission changes what applyReminders can deliver, and without this pass
+    // the rows only became real on the next unrelated write.
+    if (granted) await applyNotificationPrefs();
     setNotifDenied((prefs?.enabled ?? false) && !granted);
     setReliability(await checkReminderReliability());
   }

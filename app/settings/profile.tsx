@@ -137,7 +137,13 @@ export default function ProfileSettings() {
       // basal alarm too (see applyReminders), so this can never leave one
       // ringing on an insulin mode that no longer shows basal at all.
       await applyNotificationPrefs();
-    } else if (await hasNotificationPermission()) await applyNotificationPrefs();
+    } else {
+      // K3-2: unconditional. The delivery decision belongs to applyReminders
+      // (per row, per mechanism), so gating this on the NOTIFICATION permission
+      // meant a user who granted only the alarm permission never got their
+      // basal/med reminders re-armed when they turned the mode back on.
+      await applyNotificationPrefs();
+    }
   }
 
   /**
@@ -158,7 +164,13 @@ export default function ProfileSettings() {
       // now-persisted oral_meds_enabled=0 also sweeps a med alarm, not only
       // the notification half.
       await applyNotificationPrefs();
-    } else if (await hasNotificationPermission()) await applyNotificationPrefs();
+    } else {
+      // K3-2: unconditional. The delivery decision belongs to applyReminders
+      // (per row, per mechanism), so gating this on the NOTIFICATION permission
+      // meant a user who granted only the alarm permission never got their
+      // basal/med reminders re-armed when they turned the mode back on.
+      await applyNotificationPrefs();
+    }
   }
 
   // Saving a ratio is the user telling us this IS their number, so it clears the

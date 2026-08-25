@@ -17,6 +17,7 @@ import {
   migrateToV19,
   migrateToV20,
   migrateToV21,
+  missingColumns,
   stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
@@ -423,13 +424,13 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_favorites_food ON favorites (food_id);
   `);
 
-  // The user's own icon for an editable food (schema v20, see ./v20Sql).
-  // Applied unconditionally - not the guarded form migrateToV20 uses -
-  // because the table was just created by the block above and can never
-  // already have it; a fresh install therefore runs the exact same ALTER
-  // statement, in the exact same order, that a migrated install's
-  // migrateToV20 does, and ends up with byte-identical foods DDL either way.
-  for (const col of V20_FOODS_COLUMNS) {
+  // The user's own icon for an editable food (schema v20, see ./v20Sql). Same
+  // statement, in the same order, that a migrated install's migrateToV20 runs,
+  // so both paths end up with byte-identical foods DDL - and behind the same
+  // column guard (missingColumns), so an install KILLED partway through this
+  // function can replay it on the next launch instead of dying on a duplicate
+  // column forever.
+  for (const col of await missingColumns(db, "foods", V20_FOODS_COLUMNS)) {
     await db.execAsync(`ALTER TABLE foods ADD COLUMN ${col.name} ${col.type};`);
   }
 
@@ -496,26 +497,24 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   }
 
   // The profile-ownership + AlarmKit opt-in columns on reminders (schema v19,
-  // see ./v19Sql). Applied unconditionally - not the guarded form migrateToV19
-  // uses - because the table was just created by the V17_CREATE loop above and
-  // can never already have them; a fresh install therefore runs the exact same
-  // ALTER statements, in the exact same order, that a migrated install's
-  // migrateToV19 does, and ends up with byte-identical reminders DDL either
-  // way. A fresh reminders table starts empty, so there is nothing to hand off
-  // to a profile (unlike a migrated table's pre-v19 rows - see
-  // adoptOrphanReminders in ./remindersBridge.ts).
-  for (const col of V19_REMINDERS_COLUMNS) {
+  // see ./v19Sql). The same ALTER statements, in the same order, that a
+  // migrated install's migrateToV19 runs, so both paths end up with
+  // byte-identical reminders DDL - and behind the same column guard, so a
+  // half-finished install can replay this. A fresh reminders table starts
+  // empty, so there is nothing to hand off to a profile (unlike a migrated
+  // table's pre-v19 rows - see adoptOrphanReminders in ./remindersBridge.ts).
+  for (const col of await missingColumns(db, "reminders", V19_REMINDERS_COLUMNS)) {
     await db.execAsync(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
   }
 
   // The "the user picked this themselves" marker (schema v21, see ./v21Sql),
-  // applied the same unconditional way as the v19 columns above. The two
-  // UPDATEs migrateToV21 runs after it are replayed here too, against a table
-  // that was just created and is therefore empty: they are a guaranteed no-op,
-  // and running them anyway keeps the fresh-install and migrated paths a single
+  // behind the same guard as the v19 columns above. The two UPDATEs
+  // migrateToV21 runs after it are replayed here too, against a table that was
+  // just created and is therefore empty: they are a guaranteed no-op, and
+  // running them anyway keeps the fresh-install and migrated paths a single
   // sequence of statements rather than two that have to be kept in agreement by
-  // hand.
-  for (const col of V21_REMINDERS_COLUMNS) {
+  // hand. Both are idempotent, so a replay after a killed install is harmless.
+  for (const col of await missingColumns(db, "reminders", V21_REMINDERS_COLUMNS)) {
     await db.execAsync(`ALTER TABLE reminders ADD COLUMN ${col.name} ${col.type};`);
   }
   await db.execAsync(V21_MARK_EXPLICIT_CHOICE);

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -24,7 +24,7 @@ import {
 } from "../../lib/services/notifications";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import { syncLiveData } from "../../lib/services/liveData";
-import { alarmModeOf } from "../../lib/alarmSelect";
+import { alarmModeOf, reminderDelivery } from "../../lib/alarmSelect";
 import { buildUpcoming } from "../../lib/upcomingReminders";
 import {
   getAlarmAuthorizationStatus,
@@ -61,7 +61,18 @@ const UPCOMING_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** The three things the delivery mark can say: a working alarm, an alarm the
  *  device is not (yet) allowed to ring, or a plain notification. */
-type BadgeMode = "alarm" | "alarmPending" | "notification";
+// "blocked" is K3-2's new state: the row is switched on and its profile gate
+// is open, but this pass arms NOTHING for it - a notification-mode row on a
+// device that never allowed notifications. It used to draw the plain
+// notification badge and look perfectly scheduled.
+type BadgeMode =
+  | "alarm"
+  | "alarmPending"
+  | "notification"
+  /** Nothing armed because the OS permission is missing. */
+  | "blocked"
+  /** Nothing armed because the app's OWN master switch is off. */
+  | "masterOff";
 
 /**
  * The delivery mark: an ICON, not a labelled pill (2.3.0's G18).
@@ -96,17 +107,21 @@ function ModeMark({ mode, onPress }: { mode: BadgeMode; onPress: () => void }) {
           ? "reminders.modeAlarm"
           : mode === "alarmPending"
             ? "reminders.modeAlarmPending"
-            : "reminders.modeNotification"
+            : mode === "blocked" || mode === "masterOff"
+              ? "reminders.modeBlocked"
+              : "reminders.modeNotification"
       )}
       className="px-1"
     >
       <Ionicons
         name={
-          mode === "notification"
-            ? "notifications-outline"
-            : live
-              ? "alarm"
-              : "alarm-outline"
+          mode === "blocked" || mode === "masterOff"
+            ? "notifications-off-outline"
+            : mode === "notification"
+              ? "notifications-outline"
+              : live
+                ? "alarm"
+                : "alarm-outline"
         }
         size={15}
         color={live ? THEME.accent : THEME.muted}
@@ -209,6 +224,7 @@ function ReminderRow({
  */
 export default function RemindersScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const { activeProfile } = useApp();
   const { columnPad } = useLayout();
   const { confirm, toast } = useFeedback();
@@ -307,6 +323,11 @@ export default function RemindersScreen() {
    *  that captures it has granted nothing. */
   const alarmGranted = isScreenshotMode() ? true : alarmAuthorized;
 
+  /** Store frames must look like a working account (App Store 2.3.3), the same
+   *  reasoning as `alarmGranted` above. Declared HERE, above badgeModeOf, because
+   *  that function reads it. */
+  const notifGranted = isScreenshotMode() ? true : permission === "granted";
+
   /** What the badge says, in three states rather than two.
    *
    *  The stored intent (alarm_enabled, schema v21) is what it SHOWS and what a
@@ -321,6 +342,28 @@ export default function RemindersScreen() {
    *  still alarmModeOf, the same three-way AND applyReminders arms from, so the
    *  badge can never claim a working alarm the row would not get. */
   function badgeModeOf(row: Reminder): BadgeMode {
+    // K3-2: before anything else, will this pass arm the row at all? The same
+    // decision applyReminders makes, so the badge and the scheduler can never
+    // disagree about whether a reminder exists.
+    const gateOpen =
+      row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
+    const delivery = reminderDelivery({
+      masterEnabled,
+      rowEnabled: row.enabled === 1,
+      visibilityGateOpen: gateOpen,
+      alarmEnabled: row.alarm_enabled === 1,
+      alarmKitAvailable,
+      alarmAuthorized: alarmGranted,
+      notificationPermission: notifGranted,
+    });
+    if (delivery === "none" && row.enabled === 1 && gateOpen) {
+      // WHY nothing is armed decides what to tell the user, and the two causes
+      // need opposite fixes: the app's own master switch is one tap away in
+      // Settings > Notifications, while a refused OS permission can only be
+      // changed in system settings. Saying "allow notifications" to someone who
+      // simply turned the app's own switch off sends them to the wrong place.
+      return masterEnabled ? "blocked" : "masterOff";
+    }
     if (row.alarm_enabled !== 1) return "notification";
     return alarmModeOf({
       alarmEnabled: true,
@@ -335,9 +378,10 @@ export default function RemindersScreen() {
    *  under the header is for. */
   const anyAlarmPending = reminders.some((r) => badgeModeOf(r) === "alarmPending");
 
-  /** Store frames must look like a working account (App Store 2.3.3), the same
-   *  reasoning as `alarmGranted` above. */
-  const notifGranted = isScreenshotMode() ? true : permission === "granted";
+  /** Any row this pass will not arm at all, split by CAUSE - the two hints
+   *  below send the user to two different places. */
+  const anyBlocked = reminders.some((r) => badgeModeOf(r) === "blocked");
+  const anyMasterOff = reminders.some((r) => badgeModeOf(r) === "masterOff");
 
   /** The next 24 hours, computed from the SAME rows and gates applyReminders
    *  schedules from (see lib/upcomingReminders.ts for why this is derived from
@@ -348,7 +392,8 @@ export default function RemindersScreen() {
         rows: reminders,
         now: nowTs,
         windowMs: UPCOMING_WINDOW_MS,
-        granted: masterEnabled && notifGranted,
+        masterEnabled,
+        notificationPermission: notifGranted,
         showsBasal,
         showsMeds,
         alarmKitAvailable,
@@ -423,6 +468,11 @@ export default function RemindersScreen() {
     const result = await requestNotificationPermission();
     setPermission(result);
     if (result === "deniedPermanently") Linking.openSettings();
+    // X6: granting the permission changes what applyReminders can deliver, so
+    // re-run the pass and re-read the rows. Without it the badges flipped to
+    // "scheduled" while nothing had actually been armed until the next
+    // unrelated write.
+    if (result === "granted") await afterChange();
   }
 
   function openAddSheet() {
@@ -514,12 +564,42 @@ export default function RemindersScreen() {
               a notification - the same sentence the edit sheet uses for the
               same state, rather than a second wording for one fact. */}
           {anyAlarmPending ? ` ${t("reminders.alarmPermissionHint")}` : ""}
+          {/* K3-2: a row that will not be delivered at all. Different fix from
+              the alarm hint above (the NOTIFICATION permission, not the alarm
+              one), so it is its own sentence rather than a reworded share. */}
+          {anyBlocked ? ` ${t("reminders.notifPermissionHint")}` : ""}
           {/* Only with a second profile: reminders are per profile and the
               inactive one's are silent, which is deliberate but was written
               down nowhere the user could see. Saying it on a single-profile
               device would only raise a question nobody has. */}
           {profileCount > 1 ? ` ${t("reminders.profileScopeNote")}` : ""}
         </Text>
+
+        {/* K3-2/X4: nothing is being armed because the app's OWN master switch
+            is off, not because the OS refused anything. A separate row from the
+            permission banner below on purpose: the fix is one tap away in
+            Settings > Notifications, and sending this user to system settings
+            would be sending them to the wrong place. */}
+        {anyMasterOff ? (
+          <Pressable
+            onPress={() => router.push("/settings/notifications")}
+            accessibilityRole="button"
+            accessibilityLabel={t("reminders.masterOffHint")}
+            className="rounded-2xl px-4 py-3 mb-3"
+            style={{
+              borderWidth: 1,
+              borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+              backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+            }}
+          >
+            <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+              {t("reminders.masterOffHint")}
+            </Text>
+            <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+              {t("reminders.masterOffCta")}
+            </Text>
+          </Pressable>
+        ) : null}
 
         {/* Store screenshots must never show a "permission not granted" banner
             (App Store 2.3.3 - a store frame has to look like a real, working

@@ -523,9 +523,16 @@ export default function OnboardingScreen() {
   function goToPaywall() {
     // `context` drives the downsell cascade; `reason` is the analytics source,
     // so paywall_view can be read per entry point instead of as one lump.
+    // `focus` carries the one quiz answer the paywall leads with: someone who
+    // just told us they dose sees the injection line first, everyone else the
+    // trends/report line. It selects copy, nothing more.
     router.replace({
       pathname: "/paywall",
-      params: { context: "onboarding", reason: "onboarding" },
+      params: {
+        context: "onboarding",
+        reason: "onboarding",
+        focus: hasInsulin ? "insulin" : "tracking",
+      },
     });
   }
 

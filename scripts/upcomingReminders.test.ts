@@ -63,7 +63,8 @@ function input(over: Partial<UpcomingInput> = {}): UpcomingInput {
     rows: [],
     now: NOW,
     windowMs: DAY,
-    granted: true,
+    masterEnabled: true,
+    notificationPermission: true,
     showsBasal: true,
     showsMeds: true,
     alarmKitAvailable: true,
@@ -133,7 +134,7 @@ section("C. only rows applyReminders would actually schedule");
 
   eq(
     "master switch / permission off empties the reminder side",
-    buildUpcoming(input({ rows, granted: false })).length,
+    buildUpcoming(input({ rows, masterEnabled: false })).length,
     0
   );
 }
@@ -263,12 +264,39 @@ section("G. the running post-meal window takes its place in the same list");
     buildUpcoming(input({ postMealEndsAt: NOW + 2 * DAY })).length,
     0
   );
-  // The countdown is delivered by AlarmKit when the user chose that, so it does
-  // NOT depend on the notification permission the reminder rows are gated on.
+  // K3-2. The MASTER switch is the user's own "no" and takes the countdown down
+  // with everything else - applyNotificationPrefs cancels the armed timer on the
+  // same rule, so listing it here would contradict the scheduler.
   eq(
-    "it survives granted=false (the screen hides the card instead)",
-    buildUpcoming(input({ rows, granted: false, postMealEndsAt: NOW + 30 * MIN })).length,
+    "the master switch off takes the countdown with it",
+    buildUpcoming(input({ rows, masterEnabled: false, postMealEndsAt: NOW + 30 * MIN })).length,
+    0
+  );
+  // The NOTIFICATION permission is a different matter: a countdown set to ring
+  // as an alarm is delivered by AlarmKit and does not need it.
+  eq(
+    "no notification permission, but it rings as an alarm: still listed",
+    buildUpcoming(
+      input({
+        rows: [],
+        notificationPermission: false,
+        postMealEndsAt: NOW + 30 * MIN,
+        postMealAlarm: true,
+      })
+    ).length,
     1
+  );
+  eq(
+    "no notification permission and no alarm: nothing to list",
+    buildUpcoming(
+      input({
+        rows: [],
+        notificationPermission: false,
+        postMealEndsAt: NOW + 30 * MIN,
+        postMealAlarm: false,
+      })
+    ).length,
+    0
   );
 }
 
@@ -292,7 +320,7 @@ section("I. nextUpcoming - the single item the dashboard line shows");
   // Permission (or the master switch) off: the reminders are not going to
   // arrive, so the line must not claim they will.
   const rows = [row({ id: "a", time: "12:00" }), row({ id: "b", time: "18:00" })];
-  eq("gated off -> null", nextUpcoming(input({ rows, granted: false })), null);
+  eq("gated off -> null", nextUpcoming(input({ rows, masterEnabled: false })), null);
 
   // The ordinary case: the soonest reminder, with everything the line draws.
   const first = nextUpcoming(input({ rows }));
@@ -328,6 +356,102 @@ section("I. nextUpcoming - the single item the dashboard line shows");
     "identical to buildUpcoming's first item",
     nextUpcoming(input({ rows, postMealEndsAt: NOW + 30 * MIN }))?.id,
     buildUpcoming(input({ rows, postMealEndsAt: NOW + 30 * MIN }))[0]?.id
+  );
+}
+
+section("J. what the LIVE SNAPSHOT hands the lock-screen widgets (2.3.0 scope 3)");
+{
+  // lib/services/liveData.ts no longer runs its own candidate loop: it calls
+  // nextUpcoming, exactly like the reminders screen and the dashboard line, and
+  // publishes the result to the App Group. So the three properties the new
+  // accessory families depend on are properties of THIS function.
+
+  // 1. Delivery mechanism travels with the item, and is the app's real decision
+  //    rather than the stored column - the lock screen draws an alarm glyph off
+  //    the back of it, which is a promise the OS has to keep.
+  const armed = nextUpcoming(input({ rows: [row({ time: "12:00", alarm_enabled: 1 })] }));
+  eq("an armed alarm reports 'alarm'", armed?.mode, "alarm");
+  const noPermission = nextUpcoming(
+    input({
+      rows: [row({ time: "12:00", alarm_enabled: 1 })],
+      alarmAuthorized: false,
+    })
+  );
+  eq(
+    "the same row with no AlarmKit permission reports 'notification'",
+    noPermission?.mode,
+    "notification"
+  );
+  eq(
+    "and with no AlarmKit at all",
+    nextUpcoming(
+      input({
+        rows: [row({ alarm_enabled: 1 })],
+        alarmKitAvailable: false,
+        alarmAuthorized: false,
+      })
+    )?.mode,
+    "notification"
+  );
+  eq(
+    "a row stored as a notification stays one",
+    nextUpcoming(input({ rows: [row({ alarm_enabled: 0 })] }))?.mode,
+    "notification"
+  );
+
+  // 2. The snapshot must go EMPTY behind the same gate applyReminders schedules
+  //    behind, or a lock screen counts down to something the phone will never
+  //    deliver. This is the whole "izin/anahtar kapalıysa boş" rule.
+  eq(
+    "the master switch off empties the next fields",
+    nextUpcoming(input({ rows: [row(), row({ id: "r2", time: "10:00" })], masterEnabled: false })),
+    null
+  );
+  // K3-2: a missing NOTIFICATION permission no longer empties them by itself.
+  // An alarm-mode row rings through AlarmKit, so the lock screen keeps showing
+  // it - and a notification-mode row correctly disappears.
+  const alarmRow = nextUpcoming(
+    input({ rows: [row({ alarm_enabled: 1 })], notificationPermission: false })
+  );
+  eq("an alarm-mode row survives a missing notification permission", alarmRow?.mode, "alarm");
+  eq(
+    "a notification-mode row does not",
+    nextUpcoming(input({ rows: [row({ alarm_enabled: 0 })], notificationPermission: false })),
+    null
+  );
+
+  // 3. Naming. liveData.ts localizes the row's own label, falling back to the
+  //    type noun, so a native surface owns no translations - which means the
+  //    item has to carry both facts.
+  const named = nextUpcoming(input({ rows: [row({ label: "Morning check" })] }));
+  eq("the user's own name travels", named?.label, "Morning check");
+  eq("and its type, for the fallback noun", named?.type, "glucose");
+  const unnamed = nextUpcoming(input({ rows: [row({ type: "basal", label: null })] }));
+  eq("an unnamed row carries a null label", unnamed?.label, null);
+  eq("and the type the noun comes from", unnamed?.type, "basal");
+  // The post-meal item has no row behind it, so it has no type to name from -
+  // liveData.ts uses reminders.upcomingPostMeal for exactly this case.
+  const timer = nextUpcoming(input({ rows: [], postMealEndsAt: NOW + 10 * MIN }));
+  eq("the running timer names itself by kind", timer?.kind, "postMeal");
+  eq("with no reminder type", timer?.type, undefined);
+
+  // 4. The post-meal END is published as its own field too, because the
+  //    lock-screen families promote a ticking countdown ABOVE a sooner daily
+  //    reminder - a decision the sort here deliberately does not make.
+  const soonerDaily = nextUpcoming(
+    input({
+      rows: [row({ time: "09:30" })],
+      postMealEndsAt: NOW + 2 * HOUR,
+    })
+  );
+  eq(
+    "the sort still puts the sooner daily reminder first",
+    soonerDaily?.kind,
+    "reminder"
+  );
+  ok(
+    "so the widget needs postMealEndsAt separately to promote the timer",
+    soonerDaily?.at !== NOW + 2 * HOUR
   );
 }
 

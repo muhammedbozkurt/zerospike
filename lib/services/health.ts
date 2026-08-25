@@ -5,26 +5,100 @@ import {
   insertHealthSugarLogs,
   setSugarLogHealthUuid,
 } from "../db/logs";
+import { getProfile, listProfiles } from "../db/profiles";
 import type { PeriodTag, SugarLog } from "../db/types";
+import { planWriteFlagRead, shouldWriteToHealth } from "../healthWriteScope";
 import { pickMgdl, snapIso } from "./healthMath";
 
 /** Our own app bundle id, used to skip our OWN writes on import (loop guard). */
 const OWN_BUNDLE_ID = "com.greeneyeapp.zerospike";
 
-/** Persisted "mirror manual readings to Apple Health" preference (default OFF). */
+/** Base of the "mirror manual readings to Apple Health" preference (default
+ *  OFF). Stored PER PROFILE at "<base>.<profileId>": one Health account serves
+ *  the whole device, so on a family/caregiver install a device-wide flag pushed
+ *  one profile's readings into another person's Health. */
 const HEALTH_WRITE_KEY = "zerospike.healthWriteEnabled";
-export async function getHealthWriteEnabled(): Promise<boolean> {
+/** Mirrors AppContext's key: writes happen outside React (fire-and-forget from
+ *  the add flow), so the active profile is resolved the same way there. */
+const ACTIVE_PROFILE_KEY = "zerospike.activeProfile";
+/** Read-only view of the Health auto-sync opt-in owned by CGM_KEY in
+ *  app/(tabs)/index.tsx, so screens outside the dashboard can tell whether THIS
+ *  profile connected Health at all. Values are "true"/"false" there. */
+const HEALTH_SYNC_KEY = "zerospike.cgmSync";
+
+/** Same resolution as lib/db/reminders.ts: saved id first, else the first
+ *  profile. Never throws - a failed lookup is "no profile", like a fresh install. */
+async function activeProfileId(): Promise<string | null> {
   try {
-    return (await AsyncStorage.getItem(HEALTH_WRITE_KEY)) === "1";
+    const saved = await AsyncStorage.getItem(ACTIVE_PROFILE_KEY);
+    const profile = saved ? await getProfile(saved) : null;
+    if (profile) return profile.id;
+    const fallback = (await listProfiles())[0];
+    return fallback?.id ?? null;
   } catch {
-    return false;
+    return null;
   }
 }
-export async function setHealthWriteEnabled(on: boolean): Promise<void> {
+
+/** The mirror flag AND the profile it belongs to, so callers can check a
+ *  reading against it rather than trusting the flag alone. */
+async function readHealthWriteScope(
+  profileId?: string | null
+): Promise<{ profileId: string | null; enabled: boolean }> {
   try {
-    await AsyncStorage.setItem(HEALTH_WRITE_KEY, on ? "1" : "0");
+    const id = profileId ?? (await activeProfileId());
+    if (!id) return { profileId: null, enabled: false };
+    const scopedKey = `${HEALTH_WRITE_KEY}.${id}`;
+    const [scoped, legacy] = await Promise.all([
+      AsyncStorage.getItem(scopedKey),
+      AsyncStorage.getItem(HEALTH_WRITE_KEY),
+    ]);
+    const plan = planWriteFlagRead({ scoped, legacy });
+    // One-time hand-off of the retired device-wide flag to whichever profile
+    // reads it first, so no second profile can inherit the same opt-in.
+    if (plan.adoptScoped != null) await AsyncStorage.setItem(scopedKey, plan.adoptScoped);
+    if (plan.clearLegacy) await AsyncStorage.removeItem(HEALTH_WRITE_KEY);
+    return { profileId: id, enabled: plan.enabled };
+  } catch {
+    return { profileId: null, enabled: false };
+  }
+}
+
+/** Is the Apple Health mirror on for this profile (default: the active one)? */
+export async function getHealthWriteEnabled(profileId?: string | null): Promise<boolean> {
+  return (await readHealthWriteScope(profileId)).enabled;
+}
+
+export async function setHealthWriteEnabled(
+  on: boolean,
+  profileId?: string | null
+): Promise<void> {
+  try {
+    const id = profileId ?? (await activeProfileId());
+    if (!id) return;
+    await AsyncStorage.setItem(`${HEALTH_WRITE_KEY}.${id}`, on ? "1" : "0");
+    // Retire the device-wide key on any write too: a profile that has never
+    // read the flag must not inherit a stale device-wide opt-in later.
+    await AsyncStorage.removeItem(HEALTH_WRITE_KEY);
   } catch {
     // best-effort
+  }
+}
+
+/**
+ * Whether this profile has Health auto-sync switched on (the dashboard toggle).
+ * Read-only: the dashboard owns the toggle and its one-time move to a
+ * per-profile key, so this never consumes the legacy value, it only mirrors it.
+ */
+export async function getHealthSyncEnabled(profileId?: string | null): Promise<boolean> {
+  try {
+    const id = profileId ?? (await activeProfileId());
+    if (!id) return false;
+    const scoped = await AsyncStorage.getItem(`${HEALTH_SYNC_KEY}.${id}`);
+    if (scoped != null) return scoped === "true";
+    return (await AsyncStorage.getItem(HEALTH_SYNC_KEY)) === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -276,11 +350,20 @@ export async function deleteGlucoseFromHealth(uuid: string | null): Promise<void
  * store the returned UUID on the row. Never mirrors imported ('health') rows -
  * that is where the loop would start. Fire-and-forget from the add flow; a failed
  * mirror leaves the row un-mirrored (healthkit_uuid stays null) and never crashes.
+ *
+ * The opt-in belongs to ONE profile, and the row carries its own profile_id, so
+ * a reading is mirrored only when the two are the same person.
  */
 export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void> {
   if (log.source === "health") return;
   if (Platform.OS !== "ios") return;
-  if (!(await getHealthWriteEnabled())) return;
+  const scope = await readHealthWriteScope();
+  const allowed = shouldWriteToHealth({
+    writeEnabledForProfile: scope.enabled,
+    recordProfileId: log.profile_id,
+    enabledProfileId: scope.profileId,
+  });
+  if (!allowed) return;
   const uuid = await writeGlucoseToHealth(log.glucose_level_mgdl, log.logged_at);
   if (!uuid) return;
   try {
@@ -318,10 +401,21 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void
 export async function updateGlucoseInHealth(
   oldUuid: string | null,
   mgdl: number,
-  dateIso: string
+  dateIso: string,
+  /** The profile the corrected row belongs to. REQUIRED (X7): defaulting it to
+   *  "whatever profile has the switch on" made the check compare a value to
+   *  itself, so the gate always opened - a caregiver correcting a reading on
+   *  one profile could mirror it into the Health account of another. */
+  recordProfileId: string | null
 ): Promise<string | null> {
   if (Platform.OS !== "ios") return null;
-  if (!(await getHealthWriteEnabled())) return null;
+  const scope = await readHealthWriteScope();
+  const allowed = shouldWriteToHealth({
+    writeEnabledForProfile: scope.enabled,
+    recordProfileId,
+    enabledProfileId: scope.profileId,
+  });
+  if (!allowed) return null;
   if (oldUuid) await deleteGlucoseFromHealth(oldUuid);
   return writeGlucoseToHealth(mgdl, dateIso);
 }

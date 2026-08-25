@@ -39,7 +39,11 @@ import { winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
-import { isAlarmKitAvailable, takePendingAlarmRoute } from "../modules/zerospike-alarmkit";
+import {
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+  takePendingAlarmRoute,
+} from "../modules/zerospike-alarmkit";
 import { listReminders } from "../lib/db/reminders";
 
 // One-shot guard for the startup RTL auto-reload below, persisted (not just an
@@ -509,15 +513,21 @@ function RootNavigator() {
           getNotificationPrefs(),
           getNotificationPermission(),
         ]);
+        const alarmKit = isAlarmKitAvailable();
         const open = shouldOpenAlarmTour({
           routeSettled: settled,
           onboarded,
           screenshotMode: isScreenshotMode(),
-          alarmKitAvailable: isAlarmKitAvailable(),
+          alarmKitAvailable: alarmKit,
           tourSeen,
           reminderCount: rows.length,
           notificationsEnabled: prefs.enabled,
           notificationPermission: permission === "granted",
+          // K3-2: an alarm reaches the user through AlarmKit, not through the
+          // notification system, so this alone is enough to make the tour true
+          // for them.
+          alarmAuthorized:
+            alarmKit && getAlarmAuthorizationStatus() === "authorized",
         });
         if (!open) return;
         await markAlarmTourSeen();

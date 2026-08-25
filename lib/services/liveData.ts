@@ -8,7 +8,17 @@ import { getPostMealTimerState, hasNotificationPermission } from "./notification
 import { getProfile } from "../db/profiles";
 import { listReminders } from "../db/reminders";
 import { targetBandFor } from "../agpChart";
-import { hypoThreshold, VERY_HIGH_MGDL, formatGlucose } from "../glucose";
+import { nextUpcoming, type UpcomingItem } from "../upcomingReminders";
+import {
+  getAlarmAuthorizationStatus,
+  isAlarmKitAvailable,
+} from "../../modules/zerospike-alarmkit";
+import {
+  hypoThreshold,
+  VERY_HIGH_MGDL,
+  formatGlucose,
+  glucoseUnitLabel,
+} from "../glucose";
 import {
   insulinModeOf,
   insulinModeShowsBasal,
@@ -75,6 +85,23 @@ export interface LiveData {
   /** epoch ms the next reminder is due, or null when none is pending. */
   nextReminderAt: number | null;
   nextReminderKind: ReminderKind | null;
+  /** What that reminder is CALLED, already localized here: the user's own row
+   *  name when they gave one, otherwise the plain type noun (and the post-meal
+   *  countdown's own name for the running timer). The lock-screen families show
+   *  a name rather than a bare countdown, and a native surface must never own a
+   *  second copy of nine translations. Null whenever `nextReminderAt` is. */
+  nextReminderLabel: string | null;
+  /** How that reminder will actually be DELIVERED, from the same three-way AND
+   *  applyReminders arms with (lib/alarmSelect.ts) rather than from the stored
+   *  column alone - so a lock-screen glyph can never promise an alarm the
+   *  device would ring as a notification. Null whenever `nextReminderAt` is. */
+  nextReminderMode: "alarm" | "notification" | null;
+  /** End of a RUNNING post-meal window (epoch ms), or null. Carried SEPARATELY
+   *  from `nextReminderAt` because the lock-screen rectangular family gives the
+   *  running countdown the top line even when a daily reminder happens to be
+   *  due sooner: a timer already ticking is the thing the user came to the lock
+   *  screen to check. */
+  postMealEndsAt: number | null;
   /** Whether the active profile uses insulin at all (insulin_mode !== "none").
    *  The Quick Add widgets hide their injection shortcut when it is false, so a
    *  profile that hid every in-app injection surface is not offered one from the
@@ -180,43 +207,64 @@ export async function computeLiveData(
   };
   const tracksOralMeds = profile?.oral_meds_enabled === 1;
 
-  const candidates: { at: number; kind: ReminderKind }[] = [];
-
+  // The SAME decision the reminders screen and the dashboard's "next" line make
+  // (lib/upcomingReminders.ts): one gate set, one sort, one delivery call. This
+  // used to be a second, hand-rolled candidate loop here, which is how the
+  // widget ended up able to announce a reminder the app itself would not list -
+  // and it had no way to say whether that reminder would RING or arrive as a
+  // notification, which the lock-screen families now show.
+  //
   // Owner check (mirrors app/(tabs)/index.tsx's postMealTimerForProfile): a
   // timer armed for a DIFFERENT profile must not surface on this profile's
-  // widget/Live Activity snapshot, or a caregiver who started a countdown on
-  // one profile and switched to another would see it announced as if it were
-  // the new profile's own. A timer with no recorded owner (armed before the
-  // lock existed) still surfaces everywhere, same as before.
-  if (
+  // snapshot, or a caregiver who started a countdown on one profile and
+  // switched to another would see it announced as the new profile's own. A
+  // timer with no recorded owner (armed before the lock existed) still
+  // surfaces everywhere, same as before.
+  const runningPostMeal =
     postMealState &&
     postMealState.endsAt > now &&
     (postMealState.profileId == null || postMealState.profileId === profileId)
-  ) {
-    candidates.push({ at: postMealState.endsAt, kind: "postMeal" });
-  }
-  // Same gates as applyReminders: the master switch, the row's own enabled
-  // flag, and (basal/med only) the active profile's mode/oral-meds flag.
-  // Without the basal mode half the widget announced a night-insulin reminder
-  // that was never scheduled, on a snapshot whose own usesInsulin said false;
-  // the med gate is stricter than the scheduler's on an unreadable profile (it
-  // keeps the reminder, this drops the row) so the countdown can never
-  // contradict the same snapshot's own usesOralMeds.
-  // The SAME gate applyReminders schedules behind (master switch AND the OS
-  // permission): without the permission nothing is armed at all, and a widget
-  // or watch face still counting down to it was telling a story the phone had
-  // no way of finishing.
-  if (prefs.enabled && (await hasNotificationPermission())) {
-    const showsBasal = insulinModeShowsBasal(insulinModeOf(profile));
-    for (const row of reminders) {
-      if (row.enabled !== 1) continue;
-      if (row.type === "basal" && !showsBasal) continue;
-      if (row.type === "med" && !tracksOralMeds) continue;
-      candidates.push({ at: nextOccurrence(row.time), kind: row.type });
+      ? postMealState.endsAt
+      : null;
+  const alarmKitAvailable = isAlarmKitAvailable();
+  const next: UpcomingItem | null = nextUpcoming({
+    rows: reminders,
+    now,
+    // A day ahead, the same horizon the reminders screen uses.
+    windowMs: 24 * 60 * 60 * 1000,
+    // The SAME two gates applyReminders schedules behind, applied per row and
+    // per mechanism (K3-2): the master switch empties everything, while the
+    // notification permission only takes down the rows that would arrive AS
+    // notifications - an alarm-mode row rings through AlarmKit without it.
+    masterEnabled: prefs.enabled,
+    notificationPermission: await hasNotificationPermission(),
+    showsBasal: insulinModeShowsBasal(insulinModeOf(profile)),
+    showsMeds: tracksOralMeds,
+    alarmKitAvailable,
+    alarmAuthorized:
+      alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
+    postMealEndsAt: runningPostMeal,
+    postMealAlarm: prefs.postMealAlarm,
+  });
+
+  /** What the next reminder is CALLED, resolved here so no native surface owns
+   *  a second copy of the translations. */
+  function nextReminderName(item: UpcomingItem | null): string | null {
+    if (!item) return null;
+    if (item.kind === "postMeal") return i18n.t("reminders.upcomingPostMeal");
+    const own = item.label?.trim();
+    if (own) return own;
+    switch (item.type) {
+      case "med":
+        return i18n.t("reminders.typeMed");
+      case "basal":
+        return i18n.t("reminders.typeBasal");
+      case "custom":
+        return i18n.t("reminders.typeCustom");
+      default:
+        return i18n.t("reminders.typeGlucose");
     }
   }
-  candidates.sort((a, b) => a.at - b.at);
-  const next = candidates[0] ?? null;
 
   return {
     updatedAt: now,
@@ -231,7 +279,14 @@ export async function computeLiveData(
     avgGlucoseDisplay: avgGlucoseMgdl != null ? formatGlucose(avgGlucoseMgdl, unit) : null,
     avgWindowDays: AVG_WINDOW_DAYS,
     nextReminderAt: next?.at ?? null,
-    nextReminderKind: next?.kind ?? null,
+    nextReminderKind: next
+      ? next.kind === "postMeal"
+        ? "postMeal"
+        : ((next.type ?? "glucose") as ReminderKind)
+      : null,
+    nextReminderLabel: nextReminderName(next),
+    nextReminderMode: next?.mode ?? null,
+    postMealEndsAt: runningPostMeal,
     usesInsulin: insulinModeUsesInsulin(insulinModeOf(profile)),
     usesOralMeds: tracksOralMeds,
     band,
@@ -358,6 +413,24 @@ export async function syncLiveData(
     const json = JSON.stringify(data);
     await AsyncStorage.setItem(LIVE_DATA_KEY, json);
     publishCoalesced(json);
+    // K3-1: the lock-screen card carries the last reading, and it was frozen at
+    // whatever that was when the countdown was armed - so logging, correcting or
+    // deleting a reading mid-window left it showing a number the app no longer
+    // agreed with. THIS is the one place to fix it: every write path already
+    // ends here (a log, an edit, a delete, an undo all reach syncLiveData
+    // through bumpData), and the dashboard's per-second countdown deliberately
+    // does not, so the card is refreshed by data changes rather than by ticks.
+    //
+    // Only for a window this profile actually owns - the same lock computeLiveData
+    // applies - and never a start: a reading is not a meal.
+    if (Platform.OS === "ios" && data.postMealEndsAt != null) {
+      void import("../../modules/zerospike-live-activity").then((m) =>
+        m.updatePostMealActivityReading({
+          lastReading: data.lastGlucoseDisplay,
+          unitLabel: glucoseUnitLabel(unit),
+        })
+      );
+    }
     return data;
   } catch {
     return null;

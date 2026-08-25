@@ -18,6 +18,7 @@ declare const process: { exit: (code: number) => void };
 
 import {
   alarmModeOf,
+  reminderDelivery,
   shouldOpenAlarmTour,
   shouldUseAlarm,
   type AlarmSelectionInput,
@@ -208,6 +209,26 @@ section("H. the one-time tour gate (2.3.0's D)");
     notificationPermission: true,
   };
   eq("the upgrading user opens it", shouldOpenAlarmTour(upgrader), true);
+  // K3-2: an alarm reaches the user through AlarmKit, so the alarm permission
+  // alone qualifies them for the tour even with notifications refused.
+  eq(
+    "alarm-authorized but notifications refused still opens it",
+    shouldOpenAlarmTour({
+      ...upgrader,
+      notificationPermission: false,
+      alarmAuthorized: true,
+    }),
+    true
+  );
+  eq(
+    "neither mechanism reaching them keeps it closed",
+    shouldOpenAlarmTour({
+      ...upgrader,
+      notificationPermission: false,
+      alarmAuthorized: false,
+    }),
+    false
+  );
 
   // The regression this gate exists for: the route gate in app/_layout.tsx
   // reports SETTLED the moment it has redirected into /onboarding, so "settled"
@@ -316,6 +337,120 @@ section("I. delivery reality: nothing reaches the user, nothing to explain (2.3.
     shouldOpenAlarmTour({ ...upgrader, screenshotMode: true }),
     false
   );
+}
+
+section("J. reminderDelivery - the per-row, per-mechanism gate (2.3.0's K3-2)");
+{
+  // The bug: the gate was one flat "master switch AND notification permission",
+  // applied before anything else. An AlarmKit alarm is delivered by AlarmKit,
+  // not by the notification system, so a user who granted the ALARM permission
+  // and refused notifications had every reminder silently dropped - while the
+  // reminders screen went on drawing "Alarm" badges next to rows nothing was
+  // arming.
+  const base = {
+    masterEnabled: true,
+    rowEnabled: true,
+    visibilityGateOpen: true,
+    alarmEnabled: true,
+    alarmKitAvailable: true,
+    alarmAuthorized: true,
+    notificationPermission: true,
+  };
+
+  eq("everything on -> alarm", reminderDelivery(base), "alarm");
+
+  // THE regression this exists for.
+  eq(
+    "alarm row, alarm permission, notifications REFUSED -> still an alarm",
+    reminderDelivery({ ...base, notificationPermission: false }),
+    "alarm"
+  );
+  // And the mirror: a notification row does need the notification permission.
+  eq(
+    "notification row without the permission -> nothing is armed",
+    reminderDelivery({ ...base, alarmEnabled: false, notificationPermission: false }),
+    "none"
+  );
+  eq(
+    "notification row with it -> a notification",
+    reminderDelivery({ ...base, alarmEnabled: false }),
+    "notification"
+  );
+
+  // A row that WANTS an alarm the device cannot ring falls back - but only when
+  // there is a notification permission to fall back onto.
+  eq(
+    "alarm intent, no AlarmKit permission, notifications allowed -> notification",
+    reminderDelivery({ ...base, alarmAuthorized: false }),
+    "notification"
+  );
+  eq(
+    "alarm intent, no AlarmKit permission, notifications refused -> nothing",
+    reminderDelivery({ ...base, alarmAuthorized: false, notificationPermission: false }),
+    "none"
+  );
+  eq(
+    "no AlarmKit at all, notifications allowed -> notification",
+    reminderDelivery({ ...base, alarmKitAvailable: false, alarmAuthorized: false }),
+    "notification"
+  );
+
+  // The master switch is the user's own "no" and outranks every mechanism.
+  for (const over of [
+    {},
+    { alarmEnabled: false },
+    { notificationPermission: false },
+    { alarmAuthorized: false },
+  ]) {
+    eq(
+      `master switch off -> none (${JSON.stringify(over)})`,
+      reminderDelivery({ ...base, ...over, masterEnabled: false }),
+      "none"
+    );
+  }
+  // So do the row's own switch and its profile visibility gate.
+  eq("row switched off", reminderDelivery({ ...base, rowEnabled: false }), "none");
+  eq("profile gate closed", reminderDelivery({ ...base, visibilityGateOpen: false }), "none");
+
+  // Exhaustive over the four permission-ish flags, against the rule stated in
+  // prose above - so a future edit cannot quietly reorder the precedence.
+  for (const alarmEnabled of [true, false]) {
+    for (const alarmKitAvailable of [true, false]) {
+      for (const alarmAuthorized of [true, false]) {
+        for (const notificationPermission of [true, false]) {
+          const got = reminderDelivery({
+            ...base,
+            alarmEnabled,
+            alarmKitAvailable,
+            alarmAuthorized,
+            notificationPermission,
+          });
+          const rings = alarmEnabled && alarmKitAvailable && alarmAuthorized;
+          const want = rings ? "alarm" : notificationPermission ? "notification" : "none";
+          eq(
+            `enabled=${alarmEnabled} kit=${alarmKitAvailable} auth=${alarmAuthorized} notif=${notificationPermission}`,
+            got,
+            want
+          );
+        }
+      }
+    }
+  }
+
+  // "alarm" here must be exactly shouldUseAlarm's answer, so the scheduler and
+  // every badge stay one decision rather than two that agree by accident.
+  for (const alarmEnabled of [true, false]) {
+    for (const alarmKitAvailable of [true, false]) {
+      for (const alarmAuthorized of [true, false]) {
+        const input = { alarmEnabled, alarmKitAvailable, alarmAuthorized };
+        eq(
+          `delivery agrees with shouldUseAlarm ${JSON.stringify(input)}`,
+          reminderDelivery({ ...base, ...input }) === "alarm",
+          shouldUseAlarm(input)
+        );
+      }
+    }
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

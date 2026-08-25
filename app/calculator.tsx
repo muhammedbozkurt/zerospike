@@ -1060,7 +1060,9 @@ function CalculatorScreen() {
               const uuid = await updateGlucoseInHealth(
                 row.healthkit_uuid,
                 row.glucose_level_mgdl,
-                row.logged_at
+                row.logged_at,
+                // X7: the row's OWN owner, not the active profile.
+                row.profile_id
               );
               await setSugarLogHealthUuid(row.id, uuid);
             } catch {

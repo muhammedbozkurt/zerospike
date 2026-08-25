@@ -310,9 +310,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // raise an OS dialog on launch - and a REVOKED permission is exactly the
       // case that has to reach this call, because applyReminders is what TAKES
       // an already-armed alarm down: without the notification permission its
-      // `granted` gate turns every row into the cancel branch (alarm delivery
-      // is gated on that permission too - a known limit, see
-      // docs/plan-2.3.0.md section 14). Gating this on hasNotificationPermission()
+      // per-row delivery decision turns every notification-mode row into the
+      // cancel branch (see reminderDelivery in lib/alarmSelect.ts; since K3-2 an
+      // ALARM-mode row is not gated on that permission and survives).
+      // Gating this on hasNotificationPermission()
       // itself, as before, skipped that teardown entirely and left yesterday's
       // alarms ringing. Onboarded-guarded still:
       // someone who quit mid-onboarding has no saved prefs yet, and applying
