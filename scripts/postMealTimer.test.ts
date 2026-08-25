@@ -483,11 +483,24 @@ section("O. what the running card offers: log, restart, or nothing (device QA)")
     ),
     JSON.stringify({ logMeal: false, restart: false, restartMealId: null })
   );
-  // One millisecond before the start is a DIFFERENT window, not this one's meal.
+  // One millisecond BEFORE the start is still this countdown's own meal: the
+  // window is symmetric, because delay compensation anchors from the tap and
+  // lands on either side of the meal (see section Q).
   eq(
-    "one ms before the start is a pre-timer meal",
+    "one ms before the start is still the timer's own meal",
+    JSON.stringify(
+      postMealCardActions({
+        meals: [{ id: "m", loggedAtMs: started - 1 }],
+        startedAt: started,
+      })
+    ),
+    JSON.stringify({ logMeal: false, restart: false, restartMealId: null })
+  );
+  // Far enough back, though, it belongs to an earlier window.
+  eq(
+    "a meal a full window earlier is a pre-timer meal",
     postMealCardActions({
-      meals: [{ id: "m", loggedAtMs: started - 1 }],
+      meals: [{ id: "m", loggedAtMs: started - POST_MEAL_OWN_MEAL_MS }],
       startedAt: started,
     }).logMeal,
     true
@@ -626,6 +639,105 @@ section("P. undo puts a re-anchored countdown back to the millisecond");
     now: original.endsAt + MIN,
   });
   eq("an expired original cannot be restored", stale.kind, "elapsed");
+}
+
+section("Q. the delay-compensation scenario from device QA (symmetric own-meal window)");
+{
+  // Reported: a meal logged at 13:46, the countdown then started with the
+  // "15 minutes ago" delay compensation, and the card offering "Restart for the
+  // 13:46 meal" for the very meal the timer was anchored to.
+  //
+  // Tracing it produced TWO distinct defects, only one of which matches the
+  // screenshot - both are covered here.
+  const MEAL = new Date(2026, 7, 25, 13, 46, 12).getTime();
+  const OWN = POST_MEAL_OWN_MEAL_MS;
+
+  // DEFECT 1, the one the symmetric window fixes. "I started eating a while
+  // ago" anchors from the moment of the TAP minus the user's estimate, so the
+  // anchor lands near the meal but on EITHER side of it. The old rule only
+  // looked at meals at-or-after the anchor, so a meal a few seconds EARLIER was
+  // dropped entirely and the card fell through to "log a meal" - asking the
+  // user to record the meal they had just recorded.
+  for (const anchorOffsetSec of [-20, -1, 0, 1, 20]) {
+    const startedAt = MEAL + anchorOffsetSec * 1000;
+    const a = postMealCardActions({ meals: [{ id: "m", loggedAtMs: MEAL }], startedAt });
+    eq(`anchor ${anchorOffsetSec >= 0 ? "+" : ""}${anchorOffsetSec}s: no restart`, a.restart, false);
+    eq(`anchor ${anchorOffsetSec >= 0 ? "+" : ""}${anchorOffsetSec}s: no 'log a meal'`, a.logMeal, false);
+  }
+  // The exact reported pair, both directions.
+  {
+    const before = postMealCardActions({
+      meals: [{ id: "m", loggedAtMs: MEAL }],
+      startedAt: new Date(2026, 7, 25, 13, 46, 20).getTime(),
+    });
+    eq("meal 13:46:00 vs anchor 13:46:20 -> no action", JSON.stringify(before), JSON.stringify({ logMeal: false, restart: false, restartMealId: null }));
+    const after = postMealCardActions({
+      meals: [{ id: "m", loggedAtMs: MEAL }],
+      startedAt: new Date(2026, 7, 25, 13, 45, 40).getTime(),
+    });
+    eq("meal 13:46:00 vs anchor 13:45:40 -> no action", JSON.stringify(after), JSON.stringify({ logMeal: false, restart: false, restartMealId: null }));
+  }
+
+  // DEFECT 2, which the window does NOT hide, and deliberately so. The
+  // screenshot is only reproducible when the user's own estimate was wrong:
+  // tapping "15 minutes ago" five minutes after the meal puts the anchor a full
+  // ten minutes BEFORE it. The countdown really is anchored ten minutes early,
+  // and restarting really would fix it - so the offer is correct.
+  {
+    const tap = new Date(2026, 7, 25, 13, 51, 12).getTime();
+    const late = startPostMealLate({ minutesAgo: 15, now: tap });
+    ok("the late start arms", late.kind === "start");
+    if (late.kind === "start") {
+      eq("the anchor lands 10 min before the meal", (MEAL - late.startedAt) / MIN, 10);
+      eq("and 105 minutes are left", Math.round(late.remainingMs / MIN), 105);
+      const a = postMealCardActions({ meals: [{ id: "m", loggedAtMs: MEAL }], startedAt: late.startedAt });
+      eq("a genuinely misplaced anchor still offers the restart", a.restart, true);
+    }
+  }
+
+  // The boundary, from both sides and in both directions.
+  eq("exactly +10 min -> restart", postMealCardActions({ meals: [{ id: "m", loggedAtMs: MEAL }], startedAt: MEAL - OWN }).restart, true);
+  eq("one ms under +10 min -> no action", postMealCardActions({ meals: [{ id: "m", loggedAtMs: MEAL }], startedAt: MEAL - OWN + 1 }).restart, false);
+  eq("exactly -10 min -> log a meal", postMealCardActions({ meals: [{ id: "m", loggedAtMs: MEAL }], startedAt: MEAL + OWN }).logMeal, true);
+  eq("one ms under -10 min -> no action", postMealCardActions({ meals: [{ id: "m", loggedAtMs: MEAL }], startedAt: MEAL + OWN - 1 }).logMeal, false);
+  eq("well before the anchor -> log a meal", postMealCardActions({ meals: [{ id: "m", loggedAtMs: MEAL }], startedAt: MEAL + 60 * MIN }).logMeal, true);
+
+  // The own meal silences the card only while it is the NEWEST one. Eat again
+  // mid-window and the newer meal takes over, exactly as before: the countdown
+  // is now anchored to the wrong meal and moving it is the useful offer.
+  {
+    const a = postMealCardActions({
+      meals: [
+        { id: "own", loggedAtMs: MEAL },
+        { id: "later", loggedAtMs: MEAL + 40 * MIN },
+      ],
+      startedAt: MEAL + 30_000,
+    });
+    eq("a genuinely later meal still wins over the own meal", a.restartMealId, "later");
+  }
+  // But an own meal that IS the newest keeps the card silent, whichever side of
+  // the anchor it fell on.
+  for (const offsetSec of [-30, 30]) {
+    const a = postMealCardActions({
+      meals: [{ id: "own", loggedAtMs: MEAL }],
+      startedAt: MEAL + offsetSec * 1000,
+    });
+    eq(`newest is the own meal (${offsetSec}s) -> silent`, JSON.stringify(a), JSON.stringify({ logMeal: false, restart: false, restartMealId: null }));
+  }
+
+  // REGRESSION: the ordinary flow, with no delay compensation at all, is
+  // unchanged - the plain "I started eating" tap anchors at now.
+  {
+    const now = new Date(2026, 7, 25, 13, 46, 12).getTime();
+    const fresh = startPostMealLate({ minutesAgo: 0, now });
+    ok("the plain tap arms", fresh.kind === "start");
+    if (fresh.kind === "start") {
+      eq("anchored at now", fresh.startedAt, now);
+      eq("no meal yet -> log a meal", postMealCardActions({ meals: [], startedAt: fresh.startedAt }).logMeal, true);
+      eq("the meal logged for it -> silent", postMealCardActions({ meals: [{ id: "m", loggedAtMs: now }], startedAt: fresh.startedAt }).restart, false);
+      eq("a real second meal later -> restart", postMealCardActions({ meals: [{ id: "m2", loggedAtMs: now + 40 * MIN }], startedAt: fresh.startedAt }).restart, true);
+    }
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

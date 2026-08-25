@@ -275,31 +275,45 @@ export interface PostMealCardActions {
   restartMealId: string | null;
 }
 
-/** Under this much time, a meal logged after the countdown started IS the meal
- *  the countdown was started for, not a later one: re-anchoring at this
- *  distance would not move the end meaningfully. */
+/**
+ * How far a meal may sit from the countdown's anchor and still BE that
+ * countdown's own meal. Applied SYMMETRICALLY: what matters is the distance,
+ * not the direction.
+ *
+ * The direction used to matter, and that was the bug. "I started eating a
+ * while ago" sets the anchor from the moment of the TAP minus the user's own
+ * estimate, so it lands NEAR the meal but on either side of it - a meal logged
+ * at 13:46:12 against an anchor of 13:46:30 is eighteen seconds EARLIER than
+ * the anchor. The old one-sided rule dropped such a meal from consideration
+ * entirely and fell through to "log a meal", asking the user to record the
+ * meal they had just recorded.
+ */
 export const POST_MEAL_OWN_MEAL_MS = 10 * 60_000;
 
 export function postMealCardActions(input: {
   meals: readonly { id: string; loggedAtMs: number }[];
   startedAt: number;
 }): PostMealCardActions {
+  // The NEWEST meal that could belong to this window decides. A meal further
+  // back than the window belongs to an EARLIER countdown (or to nothing):
+  // re-anchoring onto it would move the end backwards, so it is not a
+  // candidate at all and the card falls through to offering a fresh meal.
   let candidate: { id: string; loggedAtMs: number } | null = null;
   for (const meal of input.meals) {
     if (!Number.isFinite(meal.loggedAtMs)) continue;
-    // `>=`, so a meal stamped at the exact moment the timer started folds into
-    // the same rule as one logged a few seconds later rather than being its own
-    // special case.
-    if (meal.loggedAtMs < input.startedAt) continue;
+    if (meal.loggedAtMs - input.startedAt <= -POST_MEAL_OWN_MEAL_MS) continue;
     if (candidate == null || meal.loggedAtMs > candidate.loggedAtMs) candidate = meal;
   }
   if (candidate == null) return { logMeal: true, restart: false, restartMealId: null };
-  if (candidate.loggedAtMs - input.startedAt < POST_MEAL_OWN_MEAL_MS) {
-    // The countdown's OWN meal: offering to log one would ask for something
-    // that plainly exists, and offering to restart would ask the user to
-    // re-anchor onto the meal it is already anchored to. So the card says
-    // nothing and just counts down.
+  // SYMMETRIC: what matters is the distance from the anchor, not the side it
+  // falls on. This is the countdown's own meal, so offering to log one would
+  // ask for something that plainly exists and offering to restart would ask the
+  // user to re-anchor onto the meal it is already anchored to. The card says
+  // nothing and just counts down.
+  if (Math.abs(candidate.loggedAtMs - input.startedAt) < POST_MEAL_OWN_MEAL_MS) {
     return { logMeal: false, restart: false, restartMealId: null };
   }
+  // A genuinely later meal: the user ate again mid-window, and the countdown
+  // can be moved onto it.
   return { logMeal: false, restart: true, restartMealId: candidate.id };
 }
