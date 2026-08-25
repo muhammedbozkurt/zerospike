@@ -24,6 +24,7 @@ import {
   clampPostMealLateMinutes,
   postMealWindowForProfile,
   postMealCardActions,
+  POST_MEAL_OWN_MEAL_MS,
   startPostMealLate,
   POST_MEAL_MIN_MINUTES,
   POST_MEAL_MAX_MINUTES,
@@ -374,14 +375,21 @@ section("N. logging a meal mid-countdown vs. pressing 'restart for this meal'");
   }
 }
 
-section("O. the running card offers ONE action, never two (device QA)");
+section("O. what the running card offers: log, restart, or nothing (device QA)");
 {
-  // The bug: the card kept "Log a meal" up permanently and ADDED "Restart for
-  // this meal" beside it, so right after logging a meal the user was looking at
-  // two actions, one of which asked them to do the thing they had just done.
+  // Two device-QA findings, one rule. First: the card used to show "Log a meal"
+  // AND "Restart for this meal" together, so right after logging a meal the
+  // user faced two actions, one of which asked them to do what they had just
+  // done. Second: even alone, "restart" is nonsense for the meal the countdown
+  // was STARTED for - start the timer, log the meal from the card, come back
+  // ten seconds later, and it offered to re-anchor onto a meal it was already
+  // anchored to.
   const started = START;
   const before = started - 20 * MIN;
-  const after = started + 20 * MIN;
+  const own = started + 5 * MIN;      // the countdown's own meal
+  const later = started + 40 * MIN;   // a genuinely later one
+
+  eq("the threshold is ten minutes", POST_MEAL_OWN_MEAL_MS, 10 * MIN);
 
   // 1. No meal at all since the countdown began: offer to log one.
   {
@@ -391,14 +399,14 @@ section("O. the running card offers ONE action, never two (device QA)");
     eq("with nothing to anchor to", a.restartMealId, null);
   }
 
-  // 2. A meal logged AFTER the countdown started: it belongs to this window,
+  // 2. A meal logged well after the countdown started: a genuinely later meal,
   //    so the only open question is whether to move the countdown to it.
   {
     const a = postMealCardActions({
-      meals: [{ id: "m1", loggedAtMs: after }],
+      meals: [{ id: "m1", loggedAtMs: later }],
       startedAt: started,
     });
-    eq("a meal in this window -> restart", a.restart, true);
+    eq("a later meal -> restart", a.restart, true);
     eq("and 'log a meal' is GONE", a.logMeal, false);
     eq("anchored to that meal", a.restartMealId, "m1");
   }
@@ -416,37 +424,117 @@ section("O. the running card offers ONE action, never two (device QA)");
     eq("and it is not a candidate", a.restartMealId, null);
   }
 
-  // The exclusivity itself, over every shape a feed can take: the two flags are
-  // never both true and never both false, so the card always draws exactly one.
+  // 4. The countdown's OWN meal: neither action. Logging one is already done,
+  //    and restarting would re-anchor onto the meal it is anchored to.
+  {
+    const a = postMealCardActions({
+      meals: [{ id: "own", loggedAtMs: own }],
+      startedAt: started,
+    });
+    eq("the timer's own meal -> no restart", a.restart, false);
+    eq("and no 'log a meal' either", a.logMeal, false);
+    eq("nothing to anchor to", a.restartMealId, null);
+  }
+
+  // The exact boundary, from both sides.
+  eq(
+    "ten seconds after the start: the timer's own meal, no action",
+    JSON.stringify(
+      postMealCardActions({
+        meals: [{ id: "m", loggedAtMs: started + 10_000 }],
+        startedAt: started,
+      })
+    ),
+    JSON.stringify({ logMeal: false, restart: false, restartMealId: null })
+  );
+  eq(
+    "9 min 59 s: still the timer's own meal, no action",
+    postMealCardActions({
+      meals: [{ id: "m", loggedAtMs: started + 9 * MIN + 59_000 }],
+      startedAt: started,
+    }).restart,
+    false
+  );
+  eq(
+    "exactly 10 min: a later meal, restart offered",
+    postMealCardActions({
+      meals: [{ id: "m", loggedAtMs: started + POST_MEAL_OWN_MEAL_MS }],
+      startedAt: started,
+    }).restart,
+    true
+  );
+  eq(
+    "one ms under the threshold does not",
+    postMealCardActions({
+      meals: [{ id: "m", loggedAtMs: started + POST_MEAL_OWN_MEAL_MS - 1 }],
+      startedAt: started,
+    }).restart,
+    false
+  );
+  // The old "logged_at === startedAt" special case folds into the same rule
+  // rather than being handled separately.
+  eq(
+    "a meal stamped at the exact start is the timer's own meal",
+    JSON.stringify(
+      postMealCardActions({
+        meals: [{ id: "m", loggedAtMs: started }],
+        startedAt: started,
+      })
+    ),
+    JSON.stringify({ logMeal: false, restart: false, restartMealId: null })
+  );
+  // One millisecond before the start is a DIFFERENT window, not this one's meal.
+  eq(
+    "one ms before the start is a pre-timer meal",
+    postMealCardActions({
+      meals: [{ id: "m", loggedAtMs: started - 1 }],
+      startedAt: started,
+    }).logMeal,
+    true
+  );
+
+  // The two flags are never both TRUE, over every shape a feed can take, and
+  // the id agrees with the restart flag. (Both false is now a real state - the
+  // action row is simply not drawn.)
   const feeds: { id: string; loggedAtMs: number }[][] = [
     [],
     [{ id: "old", loggedAtMs: before }],
-    [{ id: "m1", loggedAtMs: after }],
-    [{ id: "old", loggedAtMs: before }, { id: "m1", loggedAtMs: after }],
-    [{ id: "m1", loggedAtMs: after }, { id: "old", loggedAtMs: before }],
+    [{ id: "own", loggedAtMs: own }],
+    [{ id: "later", loggedAtMs: later }],
+    [{ id: "old", loggedAtMs: before }, { id: "later", loggedAtMs: later }],
+    [{ id: "own", loggedAtMs: own }, { id: "later", loggedAtMs: later }],
+    [{ id: "later", loggedAtMs: later }, { id: "own", loggedAtMs: own }],
     [{ id: "edge", loggedAtMs: started }],
     [{ id: "bad", loggedAtMs: NaN }],
   ];
   for (const meals of feeds) {
     const a = postMealCardActions({ meals, startedAt: started });
-    ok(
-      `exactly one action for ${meals.length} meal(s)`,
-      a.logMeal !== a.restart
-    );
+    ok(`never both actions for ${meals.length} meal(s)`, !(a.logMeal && a.restart));
     ok(
       "restartMealId agrees with the restart flag",
       a.restart === (a.restartMealId !== null)
     );
   }
 
-  // A meal logged at the very moment the timer started is the timer's OWN meal,
-  // not a newer one: strictly after, so it never offers to restart onto itself.
+  // A later meal alongside the timer's own one still offers the restart: the
+  // NEWEST qualifying meal decides, whichever order the feed arrives in.
   eq(
-    "the timer's own meal is not a restart candidate",
-    postMealCardActions({ meals: [{ id: "edge", loggedAtMs: started }], startedAt: started })
-      .restart,
-    false
+    "own + later (newest-first) -> restart onto the later one",
+    postMealCardActions({
+      meals: [{ id: "later", loggedAtMs: later }, { id: "own", loggedAtMs: own }],
+      startedAt: started,
+    }).restartMealId,
+    "later"
   );
+  eq(
+    "own + later (oldest-first) -> same answer",
+    postMealCardActions({
+      meals: [{ id: "own", loggedAtMs: own }, { id: "later", loggedAtMs: later }],
+      startedAt: started,
+    }).restartMealId,
+    "later"
+  );
+
   // A malformed timestamp can never become the anchor.
   eq(
     "a NaN timestamp is ignored",
@@ -455,53 +543,89 @@ section("O. the running card offers ONE action, never two (device QA)");
     true
   );
 
-  // The NEWEST qualifying meal wins, whichever order the feed arrives in - the
-  // dashboard passes its journal feed straight through.
-  const newest = started + 40 * MIN;
-  eq(
-    "newest wins (newest-first feed)",
-    postMealCardActions({
-      meals: [
-        { id: "newer", loggedAtMs: newest },
-        { id: "older", loggedAtMs: after },
-      ],
-      startedAt: started,
-    }).restartMealId,
-    "newer"
-  );
-  eq(
-    "newest wins (oldest-first feed)",
-    postMealCardActions({
-      meals: [
-        { id: "older", loggedAtMs: after },
-        { id: "newer", loggedAtMs: newest },
-      ],
-      startedAt: started,
-    }).restartMealId,
-    "newer"
-  );
-
   // A backdated start ("I started eating a while ago") anchors the window in
-  // the past, so a meal logged since then still counts.
+  // the past: the meal that backdating describes is the timer's own meal, and a
+  // meal logged well after it is a later one.
   const late = startPostMealLate({ minutesAgo: 45, now: START });
   if (late.kind === "start") {
     eq(
-      "a meal logged after a backdated start still qualifies",
-      postMealCardActions({
-        meals: [{ id: "m1", loggedAtMs: late.startedAt + MIN }],
-        startedAt: late.startedAt,
-      }).restart,
-      true
-    );
-    eq(
-      "but the backdated meal itself does not",
+      "the backdated meal itself offers nothing",
       postMealCardActions({
         meals: [{ id: "meal", loggedAtMs: late.startedAt }],
         startedAt: late.startedAt,
       }).restart,
       false
     );
+    eq(
+      "a meal 40 min after a backdated start offers the restart",
+      postMealCardActions({
+        meals: [{ id: "m1", loggedAtMs: late.startedAt + 40 * MIN }],
+        startedAt: late.startedAt,
+      }).restart,
+      true
+    );
   }
+}
+
+section("P. undo puts a re-anchored countdown back to the millisecond");
+{
+  // The restart is one tap and used to be irreversible, so it now carries an
+  // undo toast (the pattern every other one-tap mutation on the dashboard
+  // uses). The undo re-anchors to the ORIGINAL start, which only restores the
+  // original end because the window length is fixed - this is what pins that.
+  const now = START;
+  const armed = startPostMealLate({ minutesAgo: 0, now });
+  ok("a running timer to begin with", armed.kind === "start");
+  if (armed.kind !== "start") throw new Error("unreachable");
+  const original = { startedAt: armed.startedAt, endsAt: armed.endsAt };
+
+  // Mis-tap: re-anchor onto a meal logged 40 minutes in.
+  const mealAt = now + 40 * MIN;
+  const moved = restartPostMealWindowAt({
+    startedAt: mealAt,
+    windowMin: POST_MEAL_WINDOW_MIN,
+    now: mealAt,
+  });
+  eq("the restart armed", moved.kind, "restarted");
+  if (moved.kind === "restarted") {
+    ok("and really moved the end", moved.endsAt !== original.endsAt);
+  }
+
+  // Undo, a few seconds later: re-anchor back to the original start.
+  const undone = restartPostMealWindowAt({
+    startedAt: original.startedAt,
+    windowMin: POST_MEAL_WINDOW_MIN,
+    now: mealAt + 5_000,
+  });
+  eq("the undo armed", undone.kind, "restarted");
+  if (undone.kind === "restarted") {
+    eq("start restored exactly", undone.startedAt, original.startedAt);
+    eq("end restored exactly", undone.endsAt, original.endsAt);
+  }
+
+  // Same for a BACKDATED window, which is the case where start and end are not
+  // simply "now" and "now + window".
+  const late = startPostMealLate({ minutesAgo: 45, now });
+  if (late.kind === "start") {
+    const back = restartPostMealWindowAt({
+      startedAt: late.startedAt,
+      windowMin: POST_MEAL_WINDOW_MIN,
+      now: now + MIN,
+    });
+    if (back.kind === "restarted") {
+      eq("backdated start restored", back.startedAt, late.startedAt);
+      eq("backdated end restored", back.endsAt, late.endsAt);
+    }
+  }
+
+  // If the original window ran out between the tap and the undo, there is
+  // nothing to put back and the caller says so instead of arming a dead timer.
+  const stale = restartPostMealWindowAt({
+    startedAt: original.startedAt,
+    windowMin: POST_MEAL_WINDOW_MIN,
+    now: original.endsAt + MIN,
+  });
+  eq("an expired original cannot be restored", stale.kind, "elapsed");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

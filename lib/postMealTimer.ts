@@ -267,11 +267,18 @@ export function restartPostMealWindowAt(input: {
 export interface PostMealCardActions {
   /** Show the "log a meal" shortcut. */
   logMeal: boolean;
-  /** Show "restart for this meal". Never true at the same time as `logMeal`. */
+  /** Show "restart for the HH:MM meal". Never true at the same time as
+   *  `logMeal`; both are false while the countdown is already anchored to the
+   *  meal that was logged for it. */
   restart: boolean;
   /** The meal a restart would anchor to, or null when there is none. */
   restartMealId: string | null;
 }
+
+/** Under this much time, a meal logged after the countdown started IS the meal
+ *  the countdown was started for, not a later one: re-anchoring at this
+ *  distance would not move the end meaningfully. */
+export const POST_MEAL_OWN_MEAL_MS = 10 * 60_000;
 
 export function postMealCardActions(input: {
   meals: readonly { id: string; loggedAtMs: number }[];
@@ -280,10 +287,19 @@ export function postMealCardActions(input: {
   let candidate: { id: string; loggedAtMs: number } | null = null;
   for (const meal of input.meals) {
     if (!Number.isFinite(meal.loggedAtMs)) continue;
-    if (meal.loggedAtMs <= input.startedAt) continue;
+    // `>=`, so a meal stamped at the exact moment the timer started folds into
+    // the same rule as one logged a few seconds later rather than being its own
+    // special case.
+    if (meal.loggedAtMs < input.startedAt) continue;
     if (candidate == null || meal.loggedAtMs > candidate.loggedAtMs) candidate = meal;
   }
-  return candidate
-    ? { logMeal: false, restart: true, restartMealId: candidate.id }
-    : { logMeal: true, restart: false, restartMealId: null };
+  if (candidate == null) return { logMeal: true, restart: false, restartMealId: null };
+  if (candidate.loggedAtMs - input.startedAt < POST_MEAL_OWN_MEAL_MS) {
+    // The countdown's OWN meal: offering to log one would ask for something
+    // that plainly exists, and offering to restart would ask the user to
+    // re-anchor onto the meal it is already anchored to. So the card says
+    // nothing and just counts down.
+    return { logMeal: false, restart: false, restartMealId: null };
+  }
+  return { logMeal: false, restart: true, restartMealId: candidate.id };
 }

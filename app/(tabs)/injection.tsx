@@ -149,7 +149,14 @@ export default function InjectionScreen() {
 
   // Which of the three faces is showing. State (form values, selected site) lives
   // at the component level, so switching segments never loses anything.
-  const [segment, setSegment] = useState<Segment>("save");
+  //
+  // MAP is the default: opening this tab is far more often "where should the
+  // next one go / where have they been" than "write one down right now", and
+  // the write path has its own entry point (the dashboard's add-record flow,
+  // which arrives with ?compose and is honoured below). Seeded from the param
+  // rather than corrected by an effect, so a compose deep-link opens straight
+  // on the form instead of flashing the map for a frame first.
+  const [segment, setSegment] = useState<Segment>(params.compose ? "save" : "map");
 
   const [usage, setUsage] = useState<RotationUsage>({
     sites: [],

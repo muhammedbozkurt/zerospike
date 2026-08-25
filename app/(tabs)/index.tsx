@@ -58,6 +58,7 @@ import {
   postMealElapsedFraction,
   postMealWindowForProfile,
   POST_MEAL_WINDOW_MIN,
+  type PostMealCardActions,
   type PostMealTimerWindow,
 } from "../../lib/postMealTimer";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
@@ -175,6 +176,14 @@ import { upper } from "../../lib/upper";
 type JournalSection = { title: string; dateLabel: string; data: JournalEntry[] };
 
 const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
+
+/** No countdown running, so the card is not drawn at all and neither action
+ *  applies. A shared constant so the memo below keeps one identity. */
+const NO_POST_MEAL_ACTIONS: PostMealCardActions = {
+  logMeal: false,
+  restart: false,
+  restartMealId: null,
+};
 
 /**
  * The dashboard's journal is ONE container, painted across four separately
@@ -945,18 +954,26 @@ export default function DashboardScreen() {
   // its own - this is how the user moves it themselves). No separate storage:
   // `entries` is the same feed the journal list already reads. Cleared the
   // moment the timer itself is cleared or completes.
-  const postMealRestartCandidate = useMemo(() => {
-    if (!postMealTimerForProfile) return null;
+  const postMealActions = useMemo(() => {
+    if (!postMealTimerForProfile) {
+      return { actions: NO_POST_MEAL_ACTIONS, entry: null as MealEntry | null };
+    }
     const meals = entries.filter((e): e is MealEntry => e.kind === "meal");
-    const { restartMealId } = postMealCardActions({
+    const actions = postMealCardActions({
       meals: meals.map((m) => ({
         id: m.id,
         loggedAtMs: new Date(m.logged_at).getTime(),
       })),
       startedAt: postMealTimerForProfile.startedAt,
     });
-    return restartMealId ? (meals.find((m) => m.id === restartMealId) ?? null) : null;
+    return {
+      actions,
+      entry: actions.restartMealId
+        ? (meals.find((m) => m.id === actions.restartMealId) ?? null)
+        : null,
+    };
   }, [entries, postMealTimerForProfile]);
+  const postMealRestartCandidate = postMealActions.entry;
 
   // Always-visible shortcut on the running countdown card: the same one-tap
   // entry point the "+" add-record sheet's own food card uses (see the
@@ -973,6 +990,9 @@ export default function DashboardScreen() {
   // running, so this never raises a fresh permission dialog.
   async function restartPostMealForEntry(entry: MealEntry) {
     if (!activeProfile) return;
+    // Captured BEFORE the move: one tap re-anchors a running countdown, and
+    // until now there was no way back from a mis-tap.
+    const previous = postMealTimerForProfile;
     const outcome = await restartPostMealTimerAt(new Date(entry.logged_at), activeProfile.id);
     if (outcome === "idle") return;
     hapticSuccess();
@@ -983,7 +1003,13 @@ export default function DashboardScreen() {
       setPostMealTimer(null);
       toast(t("dashboard.postMealRestartElapsed"), "info");
     } else {
-      toast(t("dashboard.postMealRestarted"), "success");
+      toast(
+        t("dashboard.postMealRestarted"),
+        "success",
+        previous
+          ? { label: t("common.undo"), onPress: () => void restorePostMealAnchor(previous) }
+          : undefined
+      );
     }
   }
 
@@ -1202,13 +1228,45 @@ export default function DashboardScreen() {
   }
 
   // "I started eating" timer running: let the user cancel it in place.
+  /** Puts a countdown back exactly where it was, by re-anchoring to its own
+   *  original start. The window length is fixed (POST_MEAL_WINDOW_MIN), so
+   *  restoring the start restores the end to the same millisecond - which is
+   *  what makes an undo here honest rather than approximate. */
+  async function restorePostMealAnchor(previous: PostMealTimerWindow) {
+    const outcome = await restartPostMealTimerAt(
+      new Date(previous.startedAt),
+      previous.profileId ?? activeProfileIdRef.current ?? undefined
+    );
+    await refreshPostMealTimer();
+    await refreshNextReminder();
+    const id = activeProfileIdRef.current;
+    if (id) void syncLiveData(id, glucoseUnitRef.current);
+    bumpData();
+    // Only reachable if what was left of the original window ran out between
+    // the tap and the undo; there is nothing to put back in that case.
+    if (outcome === "elapsed") toast(t("dashboard.postMealRestartElapsed"), "info");
+  }
+
+  // Cancelling kills a running countdown in one tap, with nothing to
+  // reconstruct it from - so it carries the same undo every other one-tap
+  // mutation on this screen does (see deleteWithUndo below, and the calculator's
+  // save toast). A blocking confirm is deliberately NOT used: this codebase
+  // reserves confirm() for losses a toast cannot undo (deleting a recipe), and
+  // a countdown is two numbers.
   async function cancelEatingTimer() {
+    const previous = postMealTimerForProfile;
     await cancelPostMealTimer();
     setPostMealTimer(null);
     await refreshNextReminder();
     if (activeProfile) void syncLiveData(activeProfile.id, glucoseUnit);
     bumpData();
     hapticWarning();
+    if (previous) {
+      toast(t("dashboard.postMealCancelled"), "info", {
+        label: t("common.undo"),
+        onPress: () => void restorePostMealAnchor(previous),
+      });
+    }
   }
 
   // Delete immediately (no blocking confirm) with a 6-second, accumulating undo
@@ -1597,7 +1655,12 @@ export default function DashboardScreen() {
   );
 
   const Header = (
-    <View className="pb-2">
+    // No bottom padding when the journal panel is open: the panel's sides are
+    // drawn by the header, each day separator and each row as separate pieces
+    // of one container, so any spacing BETWEEN those pieces shows up as a gap
+    // in the border. The separator's own paddingTop provides that air from
+    // inside the container instead.
+    <View className={journalEntries.length > 0 ? "" : "pb-2"}>
       <View className="flex-row items-center justify-between mb-4">
         <Text style={{ color: THEME.ink, fontSize: 24, fontWeight: "800" }}>
           {t("common.today")}
@@ -1734,7 +1797,13 @@ export default function DashboardScreen() {
             onCancel={cancelEatingTimer}
             onElapsed={onPostMealElapsed}
             onLogMeal={logMealFromCountdown}
+            actions={postMealActions.actions}
             restartEntry={postMealRestartCandidate}
+            restartTimeLabel={
+              postMealRestartCandidate
+                ? formatTimeForLang(new Date(postMealRestartCandidate.logged_at).getTime(), lang)
+                : ""
+            }
             onRestart={restartPostMealForEntry}
           />
         ) : (
@@ -2337,7 +2406,9 @@ function PostMealCountdown({
   onCancel,
   onElapsed,
   onLogMeal,
+  actions,
   restartEntry,
+  restartTimeLabel,
   onRestart,
 }: {
   timer: PostMealTimerWindow;
@@ -2347,7 +2418,13 @@ function PostMealCountdown({
   onLogMeal: () => void;
   /** The newer meal record to re-anchor onto, or null while none qualifies -
    *  its own presence is what shows/hides the "restart for this meal" action. */
+  /** Which of the two actions to draw, or neither - see postMealCardActions. */
+  actions: PostMealCardActions;
   restartEntry: MealEntry | null;
+  /** That meal's own clock time, in the device's locale format - the label says
+   *  WHICH meal it would re-anchor to. The meal's NAME is deliberately not
+   *  used: it is arbitrarily long and this is a one-line action. */
+  restartTimeLabel: string;
   onRestart: (entry: MealEntry) => void;
 }) {
   const { t } = useTranslation();
@@ -2383,6 +2460,7 @@ function PostMealCountdown({
   // backdated start ("I started eating a while ago") arrive already part-way
   // along instead of empty.
   const progress = postMealElapsedFraction(timer, now);
+  const restartLabel = t("dashboard.postMealRestart", { time: restartTimeLabel });
 
   return (
     <View>
@@ -2434,24 +2512,29 @@ function PostMealCountdown({
           countdown should move to it. Showing both let the card ask the user to
           log a meal they had visibly just logged. A second meal mid-window
           still goes through the dashboard's own "+" flow. */}
-      <View className="flex-row items-center" style={{ marginBottom: 10 }}>
-        {restartEntry ? (
+      {actions.restart && restartEntry ? (
+        <View className="flex-row items-center" style={{ marginBottom: 10 }}>
           <Pressable
             onPress={() => onRestart(restartEntry)}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={t("dashboard.postMealRestart")}
+            accessibilityLabel={restartLabel}
             style={{ flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 }}
           >
             <Ionicons name="refresh" size={13} color={THEME.muted} />
+            {/* Two lines allowed: the longest translations ("Für die Mahlzeit um
+                14:30 neu starten") do not fit one line at this size, and this is
+                the only action on the row. */}
             <Text
-              style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}
-              numberOfLines={1}
+              style={{ color: THEME.muted, fontSize: 11, fontWeight: "700", flexShrink: 1 }}
+              numberOfLines={2}
             >
-              {t("dashboard.postMealRestart")}
+              {restartLabel}
             </Text>
           </Pressable>
-        ) : (
+        </View>
+      ) : actions.logMeal ? (
+        <View className="flex-row items-center" style={{ marginBottom: 10 }}>
           <Pressable
             onPress={onLogMeal}
             hitSlop={8}
@@ -2464,8 +2547,8 @@ function PostMealCountdown({
               {t("dashboard.postMealLogMeal")}
             </Text>
           </Pressable>
-        )}
-      </View>
+        </View>
+      ) : null}
       <View style={{ height: 6, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden" }}>
         <View
           style={{
