@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
@@ -32,6 +32,8 @@ function Row({
   label,
   onPress,
   onLongPress,
+  inPanel,
+  firstInPanel,
 }: {
   children: React.ReactNode;
   accent: string;
@@ -39,6 +41,17 @@ function Row({
   label: string;
   onPress?: () => void;
   onLongPress?: () => void;
+  /** Drawn INSIDE the dashboard's journal panel rather than as a free-standing
+   *  card on the page background. A card inside a card reads as twice the
+   *  chrome for the same content, so in this mode the row drops its own border,
+   *  corner radius and fill and becomes a plain divided line - the panel
+   *  already provides all three. The colour hierarchy is untouched: the type
+   *  accent moves from a left border to a leading bar of the same width and
+   *  colour, so the row is still identifiable at a glance. */
+  inPanel?: boolean;
+  /** First row under a day separator: no divider above it, the separator is
+   *  already the break. */
+  firstInPanel?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -64,17 +77,38 @@ function Row({
         // A floor, not a height: taller rows are untouched, and the row still
         // grows with the text at a large accessibility font size.
         minHeight: HIT_TARGET,
-        borderRadius: 13,
-        borderWidth: 1,
-        borderColor: THEME.border,
-        borderLeftWidth: 3,
-        borderLeftColor: accent,
-        backgroundColor: THEME.glass,
-        paddingVertical: 9,
-        paddingHorizontal: 10,
-        marginBottom: 9,
+        ...(inPanel
+          ? {
+              borderTopWidth: firstInPanel ? 0 : StyleSheet.hairlineWidth,
+              borderTopColor: THEME.border,
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+            }
+          : {
+              borderRadius: 13,
+              borderWidth: 1,
+              borderColor: THEME.border,
+              borderLeftWidth: 3,
+              borderLeftColor: accent,
+              backgroundColor: THEME.glass,
+              paddingVertical: 9,
+              paddingHorizontal: 10,
+              marginBottom: 9,
+            }),
       }}
     >
+      {inPanel ? (
+        <View
+          style={{
+            width: 3,
+            alignSelf: "stretch",
+            minHeight: 22,
+            borderRadius: 2,
+            backgroundColor: accent,
+            marginRight: 9,
+          }}
+        />
+      ) : null}
       {children}
     </Pressable>
   );
@@ -159,10 +193,24 @@ interface Props {
    *  meal's response (lib/mealResponse.ts) instead of the row's own edit tap. */
   hasResponse?: boolean;
   onOpenResponse?: (entry: JournalEntry) => void;
+  /** See Row's own `inPanel` note: the dashboard draws its journal inside one
+   *  container, every other caller still gets the free-standing card. */
+  inPanel?: boolean;
+  firstInPanel?: boolean;
 }
 
-function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, onOpenResponse }: Props) {
+function JournalItemBase({
+  entry,
+  profile,
+  onLongPress,
+  onPress,
+  hasResponse,
+  onOpenResponse,
+  inPanel,
+  firstInPanel,
+}: Props) {
   const { t } = useTranslation();
+  const chrome = { inPanel, firstInPanel };
 
   if (entry.kind === "glucose") {
     const status = classifyGlucose(
@@ -181,6 +229,7 @@ function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, on
       .join(", ");
     return (
       <Row
+        {...chrome}
         accent={color}
         label={label}
         onPress={() => onPress?.(entry)}
@@ -239,6 +288,7 @@ function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, on
       .join(", ");
     return (
       <Row
+        {...chrome}
         accent={THEME.accent}
         label={label}
         onPress={() => onPress?.(entry)}
@@ -303,6 +353,7 @@ function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, on
       .join(", ");
     return (
       <Row
+        {...chrome}
         accent={THEME.accent}
         label={label}
         onPress={() => onPress?.(entry)}
@@ -365,6 +416,7 @@ function JournalItemBase({ entry, profile, onLongPress, onPress, hasResponse, on
     .join(", ");
   return (
     <Row
+      {...chrome}
       accent={THEME.muted}
       label={mealLabel}
       onPress={() => onPress?.(entry)}

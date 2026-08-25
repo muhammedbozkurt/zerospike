@@ -54,6 +54,7 @@ import {
 } from "../../lib/services/notifications";
 import {
   formatPostMealRemaining,
+  postMealCardActions,
   postMealElapsedFraction,
   postMealWindowForProfile,
   POST_MEAL_WINDOW_MIN,
@@ -174,6 +175,28 @@ import { upper } from "../../lib/upper";
 type JournalSection = { title: string; dateLabel: string; data: JournalEntry[] };
 
 const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
+
+/**
+ * The dashboard's journal is ONE container, painted across four separately
+ * rendered pieces of the same SectionList: the header's title + filter chips
+ * close the top, each day separator and each row carry the sides, and the
+ * footer closes the bottom. It cannot be a single wrapping <View> without
+ * giving up virtualization, which on a long feed is not a trade worth making.
+ *
+ * Opaque (THEME.sheet) rather than the usual translucent glass, because the day
+ * separators are STICKY: rows scroll underneath them, and anything see-through
+ * would show the feed sliding past behind the date.
+ */
+const JOURNAL_PANEL_BG = THEME.sheet;
+const JOURNAL_PANEL_PAD = 12;
+
+/** The sides, carried by every piece between the top and the bottom. */
+const journalPanelSide = {
+  backgroundColor: JOURNAL_PANEL_BG,
+  borderLeftWidth: 1,
+  borderRightWidth: 1,
+  borderColor: THEME.border,
+} as const;
 
 /**
  * Re-mirrors an EDITED reading into Apple Health: the stale sample is revoked and
@@ -914,20 +937,25 @@ export default function DashboardScreen() {
     activeProfile?.id
   );
 
-  // The "restart for this meal" action's own visibility: a meal logged AFTER
-  // the running timer's own anchor exists (schedulePostMealReminder leaves an
-  // already-active timer untouched per decidePostMealAutoStart, so that newer
-  // meal never moved the countdown on its own - this is how the user moves it
-  // themselves). No separate storage: `entries` is the same feed the journal
-  // list already reads, newest first, so the first qualifying row is the one
-  // to offer. Cleared the moment the timer itself is cleared or completes.
+  // Which action the running card offers - the two are mutually exclusive, see
+  // postMealCardActions (lib/postMealTimer.ts). A meal logged AFTER the running
+  // timer's own anchor is what turns "log a meal" into "restart for this meal"
+  // (schedulePostMealReminder leaves an already-active timer untouched per
+  // decidePostMealAutoStart, so that newer meal never moved the countdown on
+  // its own - this is how the user moves it themselves). No separate storage:
+  // `entries` is the same feed the journal list already reads. Cleared the
+  // moment the timer itself is cleared or completes.
   const postMealRestartCandidate = useMemo(() => {
     if (!postMealTimerForProfile) return null;
-    const startedAtMs = postMealTimerForProfile.startedAt;
-    for (const e of entries) {
-      if (e.kind === "meal" && new Date(e.logged_at).getTime() > startedAtMs) return e;
-    }
-    return null;
+    const meals = entries.filter((e): e is MealEntry => e.kind === "meal");
+    const { restartMealId } = postMealCardActions({
+      meals: meals.map((m) => ({
+        id: m.id,
+        loggedAtMs: new Date(m.logged_at).getTime(),
+      })),
+      startedAt: postMealTimerForProfile.startedAt,
+    });
+    return restartMealId ? (meals.find((m) => m.id === restartMealId) ?? null) : null;
   }, [entries, postMealTimerForProfile]);
 
   // Always-visible shortcut on the running countdown card: the same one-tap
@@ -1352,47 +1380,57 @@ export default function DashboardScreen() {
   const renderItem = useCallback(
     ({ item, index }: { item: JournalEntry; index: number }) =>
       activeProfile ? (
-        <Animated.View entering={listEntering.delay(Math.min(index, 8) * 40)}>
-          <JournalItem
-            entry={item}
-            profile={activeProfile}
-            onPress={onRowPress}
-            onLongPress={onRowLongPress}
-            hasResponse={item.kind === "meal" && mealResponseIds.has(item.id)}
-            onOpenResponse={onRowOpenResponse}
-          />
-        </Animated.View>
+        <View style={journalPanelSide}>
+          <Animated.View entering={listEntering.delay(Math.min(index, 8) * 40)}>
+            <JournalItem
+              entry={item}
+              profile={activeProfile}
+              onPress={onRowPress}
+              onLongPress={onRowLongPress}
+              hasResponse={item.kind === "meal" && mealResponseIds.has(item.id)}
+              onOpenResponse={onRowOpenResponse}
+              // `index` is the position WITHIN the day section, so the first row
+              // after a day separator skips its divider - the separator is
+              // already the break.
+              inPanel
+              firstInPanel={index === 0}
+            />
+          </Animated.View>
+        </View>
       ) : null,
     [activeProfile, mealResponseIds, onRowPress, onRowLongPress, onRowOpenResponse]
   );
 
-  // Day separator: an opaque chip (relative day + date) that stays readable
-  // while stuck over scrolling rows.
+  // Day separator. Inside the panel it is a SECTION BREAK rather than a pill on
+  // the page: a full-width band carrying the container's sides, so it divides
+  // the rows instead of adding a second bordered shape on top of them. Still
+  // opaque, which is what keeps it readable while stuck over scrolling rows.
+  //
+  // The label wraps rather than clipping: the longest relative-day + date
+  // combinations (de "Gestern", pt "Ontem" plus a long date) need the second
+  // line at large accessibility text sizes.
   const renderSectionHeader = useCallback(
     ({ section }: { section: JournalSection }) => (
-      <View style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 6 }}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            backgroundColor: THEME.sheet,
-            borderWidth: 1,
-            borderColor: THEME.border,
-            borderRadius: RADIUS.full,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-          }}
-        >
-          <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
-            {upper(section.title)}
+      <View
+        style={{
+          ...journalPanelSide,
+          flexDirection: "row",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 6,
+          paddingHorizontal: JOURNAL_PANEL_PAD,
+          paddingTop: 12,
+          paddingBottom: 6,
+        }}
+      >
+        <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+          {upper(section.title)}
+        </Text>
+        {section.dateLabel !== section.title ? (
+          <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+            {section.dateLabel}
           </Text>
-          {section.dateLabel !== section.title ? (
-            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
-              {section.dateLabel}
-            </Text>
-          ) : null}
-        </View>
+        ) : null}
       </View>
     ),
     []
@@ -2041,17 +2079,30 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
-      {isExistingUser ? (
+      {/* The journal panel's TOP: heading and filter chips, sharing the
+          container with the rows below instead of floating on the page. Gated
+          on the VISIBLE list (journalEntries), not the stats feed - the two can
+          differ now that the calculator's own bolus row is filtered out of the
+          former - so the container is never opened without rows to close it. */}
+      {journalEntries.length > 0 ? (
+        <View
+          style={{
+            ...journalPanelSide,
+            borderTopWidth: 1,
+            borderTopLeftRadius: RADIUS.lg,
+            borderTopRightRadius: RADIUS.lg,
+            paddingHorizontal: JOURNAL_PANEL_PAD,
+            paddingTop: 12,
+          }}
+        >
         <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
           {upper(t("dashboard.history"))}
         </Text>
-      ) : null}
 
-      {/* Journal kind filter (session-only). Gated on the VISIBLE list
-          (journalEntries), not the stats feed: the two can differ now that
-          the calculator's own bolus row is filtered out of the former. */}
-      {journalEntries.length > 0 ? (
-        <View className="flex-row mb-2" style={{ gap: 6 }}>
+        {/* Filter chips: unchanged behaviour, now inside the container. They
+            wrap rather than overflow, which is what keeps the longest
+            translated set (de/pt) on the panel instead of off the screen. */}
+        <View className="flex-row flex-wrap" style={{ gap: 6 }}>
           {FILTER_CHIPS.map((c) => {
             const on = filter === c.key;
             return (
@@ -2079,22 +2130,24 @@ export default function DashboardScreen() {
             );
           })}
         </View>
-      ) : null}
 
-      {/* One-time tap-to-edit discoverability hint */}
-      {showEditHint && journalEntries.length > 0 ? (
-        <View className="flex-row items-center rounded-xl border border-hair bg-glass px-3 py-2.5 mb-2">
-          <Ionicons name="create-outline" size={14} color={THEME.accent} />
-          <Text className="text-mut text-xs ml-2 flex-1">
-            {t("journal.editHint")}
-          </Text>
-          <Pressable
-            onPress={dismissEditHint}
-            hitSlop={10}
-            accessibilityLabel={t("common.close")}
-          >
-            <Ionicons name="close" size={16} color={THEME.muted} />
-          </Pressable>
+        {/* One-time tap-to-edit discoverability hint, inside the panel top so
+            it reads as part of the journal rather than a page-level notice. */}
+        {showEditHint ? (
+          <View className="flex-row items-center rounded-xl border border-hair bg-glass px-3 py-2.5 mt-2">
+            <Ionicons name="create-outline" size={14} color={THEME.accent} />
+            <Text className="text-mut text-xs ml-2 flex-1">
+              {t("journal.editHint")}
+            </Text>
+            <Pressable
+              onPress={dismissEditHint}
+              hitSlop={10}
+              accessibilityLabel={t("common.close")}
+            >
+              <Ionicons name="close" size={16} color={THEME.muted} />
+            </Pressable>
+          </View>
+        ) : null}
         </View>
       ) : null}
     </View>
@@ -2114,15 +2167,31 @@ export default function DashboardScreen() {
         ListFooterComponent={
           journalEntries.length > 0 ? (
             <View>
-              {canShowMore ? (
-                <Button
-                  label={t("journal.showMore")}
-                  variant="secondary"
-                  onPress={showMoreJournal}
-                  className="border border-hair mt-3"
-                  icon={<Ionicons name="chevron-down" size={16} color={THEME.ink} />}
-                />
-              ) : null}
+              {/* Closes the panel opened by the header. "Show more" belongs to
+                  the journal, so it lives inside; the medical notice does not,
+                  so it sits below on the page - it speaks for the whole app,
+                  not for this list. */}
+              <View
+                style={{
+                  ...journalPanelSide,
+                  borderBottomWidth: 1,
+                  borderBottomLeftRadius: RADIUS.lg,
+                  borderBottomRightRadius: RADIUS.lg,
+                  paddingHorizontal: JOURNAL_PANEL_PAD,
+                  paddingTop: canShowMore ? 4 : 12,
+                  paddingBottom: canShowMore ? 12 : 4,
+                }}
+              >
+                {canShowMore ? (
+                  <Button
+                    label={t("journal.showMore")}
+                    variant="secondary"
+                    onPress={showMoreJournal}
+                    className="border border-hair"
+                    icon={<Ionicons name="chevron-down" size={16} color={THEME.ink} />}
+                  />
+                ) : null}
+              </View>
               <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-3">
                 <Ionicons name="medical-outline" size={15} color="#f59e0b" />
                 <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
@@ -2139,7 +2208,11 @@ export default function DashboardScreen() {
         // this slot only speaks for an empty filter.
         ListEmptyComponent={
           filter !== "all" ? (
-            <View className="items-center py-10">
+            // Inside the panel too: the footer below still closes it, so the
+            // empty state sits in the same container the rows would have.
+            <View
+              style={{ ...journalPanelSide, alignItems: "center", paddingVertical: 40 }}
+            >
               <Ionicons name="funnel-outline" size={32} color={THEME.muted} />
               <Text className="text-mut text-center mt-3 px-8">
                 {t("dashboard.emptyFilter")}
@@ -2353,23 +2426,15 @@ function PostMealCountdown({
           </Pressable>
         </View>
       </View>
-      {/* Two small actions, stacked in their own row so the tight header row
-          above (title + countdown + cancel) never has to squeeze them in and
-          overflow. "Log a meal" stays up the whole time the timer runs; the
-          restart action only joins it while a newer meal record qualifies. */}
-      <View className="flex-row items-center flex-wrap" style={{ gap: 16, marginBottom: 10 }}>
-        <Pressable
-          onPress={onLogMeal}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t("dashboard.postMealLogMeal")}
-          style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-        >
-          <Ionicons name="restaurant-outline" size={13} color={THEME.accent} />
-          <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>
-            {t("dashboard.postMealLogMeal")}
-          </Text>
-        </Pressable>
+      {/* ONE action, in its own row so the tight header row above (title +
+          countdown + cancel) never has to squeeze it in and overflow.
+          Mutually exclusive by rule, not by layout - see postMealCardActions:
+          with no meal yet the card offers to log one, and once a meal belonging
+          to this window exists the only remaining question is whether the
+          countdown should move to it. Showing both let the card ask the user to
+          log a meal they had visibly just logged. A second meal mid-window
+          still goes through the dashboard's own "+" flow. */}
+      <View className="flex-row items-center" style={{ marginBottom: 10 }}>
         {restartEntry ? (
           <Pressable
             onPress={() => onRestart(restartEntry)}
@@ -2386,7 +2451,20 @@ function PostMealCountdown({
               {t("dashboard.postMealRestart")}
             </Text>
           </Pressable>
-        ) : null}
+        ) : (
+          <Pressable
+            onPress={onLogMeal}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("dashboard.postMealLogMeal")}
+            style={{ flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 }}
+          >
+            <Ionicons name="restaurant-outline" size={13} color={THEME.accent} />
+            <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>
+              {t("dashboard.postMealLogMeal")}
+            </Text>
+          </Pressable>
+        )}
       </View>
       <View style={{ height: 6, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden" }}>
         <View

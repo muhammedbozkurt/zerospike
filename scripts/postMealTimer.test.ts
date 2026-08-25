@@ -23,6 +23,7 @@ import {
   clampPostMealMinutes,
   clampPostMealLateMinutes,
   postMealWindowForProfile,
+  postMealCardActions,
   startPostMealLate,
   POST_MEAL_MIN_MINUTES,
   POST_MEAL_MAX_MINUTES,
@@ -369,6 +370,136 @@ section("N. logging a meal mid-countdown vs. pressing 'restart for this meal'");
       "restarted window span",
       (restarted.endsAt - restarted.startedAt) / MIN,
       POST_MEAL_WINDOW_MIN
+    );
+  }
+}
+
+section("O. the running card offers ONE action, never two (device QA)");
+{
+  // The bug: the card kept "Log a meal" up permanently and ADDED "Restart for
+  // this meal" beside it, so right after logging a meal the user was looking at
+  // two actions, one of which asked them to do the thing they had just done.
+  const started = START;
+  const before = started - 20 * MIN;
+  const after = started + 20 * MIN;
+
+  // 1. No meal at all since the countdown began: offer to log one.
+  {
+    const a = postMealCardActions({ meals: [], startedAt: started });
+    eq("no meals -> log a meal", a.logMeal, true);
+    eq("and no restart", a.restart, false);
+    eq("with nothing to anchor to", a.restartMealId, null);
+  }
+
+  // 2. A meal logged AFTER the countdown started: it belongs to this window,
+  //    so the only open question is whether to move the countdown to it.
+  {
+    const a = postMealCardActions({
+      meals: [{ id: "m1", loggedAtMs: after }],
+      startedAt: started,
+    });
+    eq("a meal in this window -> restart", a.restart, true);
+    eq("and 'log a meal' is GONE", a.logMeal, false);
+    eq("anchored to that meal", a.restartMealId, "m1");
+  }
+
+  // 3. A meal logged BEFORE the countdown started belongs to an earlier window
+  //    (or to nothing): re-anchoring onto it would move the countdown
+  //    backwards, so the card behaves exactly as if no meal existed.
+  {
+    const a = postMealCardActions({
+      meals: [{ id: "old", loggedAtMs: before }],
+      startedAt: started,
+    });
+    eq("a pre-timer meal -> still 'log a meal'", a.logMeal, true);
+    eq("no restart offered", a.restart, false);
+    eq("and it is not a candidate", a.restartMealId, null);
+  }
+
+  // The exclusivity itself, over every shape a feed can take: the two flags are
+  // never both true and never both false, so the card always draws exactly one.
+  const feeds: { id: string; loggedAtMs: number }[][] = [
+    [],
+    [{ id: "old", loggedAtMs: before }],
+    [{ id: "m1", loggedAtMs: after }],
+    [{ id: "old", loggedAtMs: before }, { id: "m1", loggedAtMs: after }],
+    [{ id: "m1", loggedAtMs: after }, { id: "old", loggedAtMs: before }],
+    [{ id: "edge", loggedAtMs: started }],
+    [{ id: "bad", loggedAtMs: NaN }],
+  ];
+  for (const meals of feeds) {
+    const a = postMealCardActions({ meals, startedAt: started });
+    ok(
+      `exactly one action for ${meals.length} meal(s)`,
+      a.logMeal !== a.restart
+    );
+    ok(
+      "restartMealId agrees with the restart flag",
+      a.restart === (a.restartMealId !== null)
+    );
+  }
+
+  // A meal logged at the very moment the timer started is the timer's OWN meal,
+  // not a newer one: strictly after, so it never offers to restart onto itself.
+  eq(
+    "the timer's own meal is not a restart candidate",
+    postMealCardActions({ meals: [{ id: "edge", loggedAtMs: started }], startedAt: started })
+      .restart,
+    false
+  );
+  // A malformed timestamp can never become the anchor.
+  eq(
+    "a NaN timestamp is ignored",
+    postMealCardActions({ meals: [{ id: "bad", loggedAtMs: NaN }], startedAt: started })
+      .logMeal,
+    true
+  );
+
+  // The NEWEST qualifying meal wins, whichever order the feed arrives in - the
+  // dashboard passes its journal feed straight through.
+  const newest = started + 40 * MIN;
+  eq(
+    "newest wins (newest-first feed)",
+    postMealCardActions({
+      meals: [
+        { id: "newer", loggedAtMs: newest },
+        { id: "older", loggedAtMs: after },
+      ],
+      startedAt: started,
+    }).restartMealId,
+    "newer"
+  );
+  eq(
+    "newest wins (oldest-first feed)",
+    postMealCardActions({
+      meals: [
+        { id: "older", loggedAtMs: after },
+        { id: "newer", loggedAtMs: newest },
+      ],
+      startedAt: started,
+    }).restartMealId,
+    "newer"
+  );
+
+  // A backdated start ("I started eating a while ago") anchors the window in
+  // the past, so a meal logged since then still counts.
+  const late = startPostMealLate({ minutesAgo: 45, now: START });
+  if (late.kind === "start") {
+    eq(
+      "a meal logged after a backdated start still qualifies",
+      postMealCardActions({
+        meals: [{ id: "m1", loggedAtMs: late.startedAt + MIN }],
+        startedAt: late.startedAt,
+      }).restart,
+      true
+    );
+    eq(
+      "but the backdated meal itself does not",
+      postMealCardActions({
+        meals: [{ id: "meal", loggedAtMs: late.startedAt }],
+        startedAt: late.startedAt,
+      }).restart,
+      false
     );
   }
 }

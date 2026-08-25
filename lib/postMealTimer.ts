@@ -241,3 +241,49 @@ export function restartPostMealWindowAt(input: {
   }
   return { kind: "restarted", startedAt, endsAt, remainingMs };
 }
+
+/**
+ * Which of the two actions the RUNNING countdown card offers, and the meal a
+ * restart would anchor to.
+ *
+ * They are mutually exclusive, which is the fix device QA asked for: the card
+ * used to keep "Log a meal" up permanently and add "Restart for this meal"
+ * beside it, so after logging a meal the user faced two actions that both
+ * looked like the thing to do next, one of which ("log a meal") they had
+ * demonstrably just done. Once a meal belonging to this window exists, the only
+ * open question is whether the countdown should move to it.
+ *
+ * Adding a SECOND meal mid-window is still possible, through the dashboard's
+ * own "+" add-record flow. It does not need a place on this card.
+ *
+ * `startedAt` is the timer's own anchor, not "now": a meal logged BEFORE the
+ * countdown started belongs to an earlier window (or to nothing), and offering
+ * to re-anchor onto it would move the countdown backwards. That case keeps the
+ * plain "log a meal" action, exactly as if no meal existed at all.
+ *
+ * Order-independent by design: the newest qualifying meal wins, whatever order
+ * the caller's feed is in.
+ */
+export interface PostMealCardActions {
+  /** Show the "log a meal" shortcut. */
+  logMeal: boolean;
+  /** Show "restart for this meal". Never true at the same time as `logMeal`. */
+  restart: boolean;
+  /** The meal a restart would anchor to, or null when there is none. */
+  restartMealId: string | null;
+}
+
+export function postMealCardActions(input: {
+  meals: readonly { id: string; loggedAtMs: number }[];
+  startedAt: number;
+}): PostMealCardActions {
+  let candidate: { id: string; loggedAtMs: number } | null = null;
+  for (const meal of input.meals) {
+    if (!Number.isFinite(meal.loggedAtMs)) continue;
+    if (meal.loggedAtMs <= input.startedAt) continue;
+    if (candidate == null || meal.loggedAtMs > candidate.loggedAtMs) candidate = meal;
+  }
+  return candidate
+    ? { logMeal: false, restart: true, restartMealId: candidate.id }
+    : { logMeal: true, restart: false, restartMealId: null };
+}
