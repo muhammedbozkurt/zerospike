@@ -394,6 +394,10 @@ const ar: TranslationSchema = {
     dayTomorrow: "غدًا",
     upcomingPostMeal: "مؤقّت ما بعد الوجبة",
     alarmOpenButton: "فتح",
+    alarmTitleGlucose: "قياس",
+    alarmTitleMed: "دواء",
+    alarmTitleBasal: "قاعدي",
+    alarmTitlePostMeal: "بعد الوجبة",
   },
   alarmTour: {
     step1Title: "يمكن لتذكيراتك أن تُشغَّل الآن",

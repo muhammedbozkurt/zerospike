@@ -394,6 +394,10 @@ const fr: TranslationSchema = {
     dayTomorrow: "demain",
     upcomingPostMeal: "Minuteur post-repas",
     alarmOpenButton: "Ouvrir",
+    alarmTitleGlucose: "Mesure",
+    alarmTitleMed: "Médicament",
+    alarmTitleBasal: "Basale",
+    alarmTitlePostMeal: "Post-repas",
   },
   alarmTour: {
     step1Title: "Vos rappels peuvent maintenant sonner",

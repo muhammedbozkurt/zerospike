@@ -392,6 +392,10 @@ const tr = {
     dayTomorrow: "yarın",
     upcomingPostMeal: "Tokluk sayacı",
     alarmOpenButton: "Aç",
+    alarmTitleGlucose: "Ölçüm",
+    alarmTitleMed: "İlaç",
+    alarmTitleBasal: "Bazal",
+    alarmTitlePostMeal: "Tokluk",
   },
   alarmTour: {
     step1Title: "Hatırlatıcılarınız artık çalabilir",

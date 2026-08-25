@@ -30,6 +30,7 @@ import {
   type AlarmRoute,
 } from "../../modules/zerospike-alarmkit";
 import { shouldUseAlarm } from "../alarmSelect";
+import { reminderAlarmTitle } from "../reminderLabel";
 import {
   derivePostMealStart,
   decidePostMealAutoStart,
@@ -515,20 +516,21 @@ const POSTMEAL_ALARM_ID = `${ALARM_ID_PREFIX}postmeal`;
 
 /** The alarm's own on-screen title - just the text, unlike reminderContent
  *  below (which also carries Android channel/sound extras an AlarmKit alarm
- *  has no use for). Same copy per type as the notification path, so switching
- *  "Play as alarm" on or off never changes what a reminder is called. */
+ *  has no use for).
+ *
+ *  DELIBERATELY shorter than the notification title for the same row: AlarmKit's
+ *  compact presentations clip hard (device QA caught "Glikoz olcu..." in the
+ *  Dynamic Island), and the width is the OS's to decide, not ours. Which key -
+ *  and when the user's own text is used untouched instead - is decided by
+ *  reminderAlarmTitle in lib/reminderLabel.ts, so the policy is pinned by
+ *  scripts/reminderLabel.test.ts rather than living inside this service.
+ *
+ *  Resolved through i18n.t on every call, so the language-change re-arm
+ *  (rescheduleForLanguageChange -> applyNotificationPrefs -> applyReminders)
+ *  re-schedules each alarm with the new language's short title. */
 function reminderAlarmLabel(row: Reminder): string {
-  switch (row.type) {
-    case "basal":
-      return i18n.t("notifications.basalTitle");
-    case "med":
-      return i18n.t("notifications.medTitle");
-    case "glucose":
-      return i18n.t("notifications.glucoseTitle");
-    case "custom":
-    default:
-      return row.label && row.label.trim() ? row.label : i18n.t("notifications.customTitle");
-  }
+  const source = reminderAlarmTitle(row.type, row.label);
+  return source.kind === "text" ? source.text : i18n.t(source.key);
 }
 
 /** Where a ringing alarm's "Open" button lands (2.3.0's K2-B). Deliberately the
@@ -1287,7 +1289,9 @@ async function schedulePostMealAt(opts: {
       (await scheduleOneShotAlarm({
         id: POSTMEAL_ALARM_ID,
         atMs: endsAt,
-        label: i18n.t("notifications.postmealTitle"),
+        // The short form, for the same clipping reason as reminderAlarmLabel
+        // above; the NOTIFICATION below keeps the full sentence.
+        label: i18n.t("reminders.alarmTitlePostMeal"),
         stopLabel: i18n.t("reminders.alarmStopButton"),
         openLabel: i18n.t("reminders.alarmOpenButton"),
         route: "postMeal",

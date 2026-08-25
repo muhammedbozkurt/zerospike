@@ -394,6 +394,10 @@ const es: TranslationSchema = {
     dayTomorrow: "mañana",
     upcomingPostMeal: "Temporizador posprandial",
     alarmOpenButton: "Abrir",
+    alarmTitleGlucose: "Medición",
+    alarmTitleMed: "Medicamento",
+    alarmTitleBasal: "Basal",
+    alarmTitlePostMeal: "Posprandial",
   },
   alarmTour: {
     step1Title: "Sus recordatorios ya pueden sonar",

@@ -394,6 +394,10 @@ const ja: TranslationSchema = {
     dayTomorrow: "明日",
     upcomingPostMeal: "食後タイマー",
     alarmOpenButton: "開く",
+    alarmTitleGlucose: "測定",
+    alarmTitleMed: "お薬",
+    alarmTitleBasal: "基礎",
+    alarmTitlePostMeal: "食後",
   },
   alarmTour: {
     step1Title: "リマインダーが鳴らせるようになりました",

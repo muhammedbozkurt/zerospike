@@ -59,3 +59,63 @@ export function reminderLabelFields(
     glucose: type === "glucose" ? value : "",
   };
 }
+
+/**
+ * Where an ALARM's on-screen title comes from - either an i18n key we control,
+ * or the user's own text passed straight through.
+ *
+ * Kept separate from every in-app surface on purpose. The alarm is the one
+ * place the app does not own the width: AlarmKit's compact presentations (the
+ * Dynamic Island, the banner) clip to a handful of characters, and device QA
+ * caught a Turkish measurement alarm arriving as "Glikoz ölçü...". Nothing in
+ * the app can widen that, so the copy has to get shorter instead.
+ */
+export type AlarmTitleSource =
+  /** An i18n key from the deliberately short `reminders.alarmTitle*` family. */
+  | { kind: "key"; key: string }
+  /** The user's own words, passed through untouched. */
+  | { kind: "text"; text: string };
+
+/**
+ * The alarm title for one reminder row.
+ *
+ * Type-based rows (glucose / med / basal) drop to the shortest natural word in
+ * each language rather than reusing the NOTIFICATION title: a notification
+ * banner has room for "Glucose check" and a Dynamic Island does not. They are
+ * their own keys rather than the `reminders.type*` labels the list draws,
+ * because the two are tuned against different constraints - renaming a row type
+ * in the UI must not silently re-clip an alarm, and shortening an alarm must
+ * not make the settings list terse.
+ *
+ * A custom row keeps the user's OWN name, in full, whatever its length: we do
+ * not get to abbreviate somebody's words. If the OS clips it, that is the OS
+ * clipping the user's text, which is the honest outcome - and it is the only
+ * title on this surface they can shorten themselves.
+ *
+ * IN-APP surfaces are untouched by all of this: the reminders list, the
+ * dashboard's next-reminder line, the "coming up" card and onboarding's closing
+ * card all keep showing the row's real name.
+ */
+export function reminderAlarmTitle(
+  type: ReminderType,
+  label: string | null
+): AlarmTitleSource {
+  const own = label?.trim();
+  if (type === "custom") {
+    return own
+      ? { kind: "text", text: own }
+      : // A custom row with no name of its own: nothing to pass through, so it
+        // falls back to the plain word for "reminder", which is already short
+        // in all nine languages.
+        { kind: "key", key: "notifications.customTitle" };
+  }
+  switch (type) {
+    case "med":
+      return { kind: "key", key: "reminders.alarmTitleMed" };
+    case "basal":
+      return { kind: "key", key: "reminders.alarmTitleBasal" };
+    case "glucose":
+    default:
+      return { kind: "key", key: "reminders.alarmTitleGlucose" };
+  }
+}

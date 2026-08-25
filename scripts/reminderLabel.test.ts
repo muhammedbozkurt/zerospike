@@ -13,7 +13,11 @@
 declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void };
 
-import { reminderLabelFields, resolveReminderLabel } from "../lib/reminderLabel";
+import {
+  reminderAlarmTitle,
+  reminderLabelFields,
+  resolveReminderLabel,
+} from "../lib/reminderLabel";
 import type { ReminderType } from "../lib/db/types";
 
 let passed = 0;
@@ -99,6 +103,96 @@ section("D. load and save agree on the SAME list of types");
       anyFieldHolds ? savedBack === name : savedBack === null,
       `holds=${JSON.stringify(holds)} back=${JSON.stringify(savedBack)}`
     );
+  }
+}
+
+section("E. the ALARM title is its own, much shorter, decision");
+{
+  // Device QA: a Turkish measurement alarm reached the Dynamic Island as
+  // "Glikoz olcu...". AlarmKit's compact presentations clip to a handful of
+  // characters and the app does not get to widen them, so the copy shortens
+  // instead - and it shortens ONLY here. Every in-app surface keeps the row's
+  // real name, which is what section A/B above are about.
+  const ALL_TYPES: ReminderType[] = ["glucose", "med", "basal", "custom"];
+
+  // The three type-based rows take a key from the deliberately short
+  // reminders.alarmTitle* family - NOT the notification title, which is a whole
+  // sentence in several languages ("Time for your post-meal check").
+  eq(
+    "glucose",
+    JSON.stringify(reminderAlarmTitle("glucose", null)),
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleGlucose" })
+  );
+  eq(
+    "med",
+    JSON.stringify(reminderAlarmTitle("med", null)),
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleMed" })
+  );
+  eq(
+    "basal",
+    JSON.stringify(reminderAlarmTitle("basal", null)),
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleBasal" })
+  );
+  for (const type of ALL_TYPES) {
+    const got = reminderAlarmTitle(type, null);
+    ok(
+      `${type} never falls back to a notification title`,
+      got.kind !== "key" || !got.key.startsWith("notifications.") || type === "custom"
+    );
+  }
+
+  // A NAMED type-based row still takes the short key: the alarm surface is
+  // about fitting, and the row's own name is on every screen that has room for
+  // it. This is the one place the two deliberately disagree.
+  eq(
+    "a named measurement row still shortens",
+    JSON.stringify(reminderAlarmTitle("glucose", "Morning glucose check")),
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleGlucose" })
+  );
+  eq(
+    "so does a named medication row",
+    JSON.stringify(reminderAlarmTitle("med", "Metformin 850")),
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleMed" })
+  );
+
+  // The user's own words are NEVER abbreviated by us. If the OS clips them,
+  // that is the OS clipping text the user can shorten themselves.
+  const custom = reminderAlarmTitle("custom", "Evening walk");
+  eq("a custom row passes through", custom.kind, "text");
+  if (custom.kind === "text") eq("verbatim", custom.text, "Evening walk");
+
+  const longName = "A deliberately very long custom reminder name that will not fit";
+  const long = reminderAlarmTitle("custom", longName);
+  eq("even a long one is untouched", long.kind, "text");
+  if (long.kind === "text") {
+    eq("no truncation of the user's text", long.text, longName);
+    eq("and no ellipsis added", long.text.includes("\u2026"), false);
+  }
+
+  // Trimmed, because a name of nothing but spaces is not a name.
+  const padded = reminderAlarmTitle("custom", "  Walk  ");
+  if (padded.kind === "text") eq("surrounding space is trimmed", padded.text, "Walk");
+  eq(
+    "a blank custom name falls back to the plain word for 'reminder'",
+    JSON.stringify(reminderAlarmTitle("custom", "   ")),
+    JSON.stringify({ kind: "key", key: "notifications.customTitle" })
+  );
+  eq(
+    "as does a null one",
+    JSON.stringify(reminderAlarmTitle("custom", null)),
+    JSON.stringify({ kind: "key", key: "notifications.customTitle" })
+  );
+
+  // Every type resolves to something drawable - no undefined key, no empty
+  // title, on any row the table can hold.
+  for (const type of ALL_TYPES) {
+    for (const label of [null, "", "   ", "Named"]) {
+      const got = reminderAlarmTitle(type, label);
+      ok(
+        `${type} / ${JSON.stringify(label)} produces a title`,
+        got.kind === "text" ? got.text.length > 0 : got.key.length > 0
+      );
+    }
   }
 }
 
