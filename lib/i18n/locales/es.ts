@@ -112,7 +112,7 @@ const es: TranslationSchema = {
     qNotify: "Permisos",
     qWidget: "Contigo en todas partes",
     widgetIntro:
-      "Su promedio en la pantalla de inicio, su próximo recordatorio y cualquier temporizador en curso en la pantalla de bloqueo. No olvide añadir el widget, la guía está en Ajustes.",
+      "Su promedio y su próximo recordatorio, en la pantalla de inicio y en la pantalla de bloqueo. No olvide añadir el widget, la guía está en Ajustes.",
     permCamera: "Cámara para escanear códigos de barras (se pide en su primer escaneo).",
     permHealth: "Para sincronizar la glucosa con Apple Salud (se pide al abrir Salud).",
     skipForNow: "Omitir por ahora",

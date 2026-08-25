@@ -525,9 +525,14 @@ const POSTMEAL_ALARM_ID = `${ALARM_ID_PREFIX}postmeal`;
  *  reminderAlarmTitle in lib/reminderLabel.ts, so the policy is pinned by
  *  scripts/reminderLabel.test.ts rather than living inside this service.
  *
- *  Resolved through i18n.t on every call, so the language-change re-arm
- *  (rescheduleForLanguageChange -> applyNotificationPrefs -> applyReminders)
- *  re-schedules each alarm with the new language's short title. */
+ *  Language changes need no special handling either way. A row whose STORED
+ *  name fits the compact budget is passed through as text, and a stored name
+ *  deliberately does not follow the app language (the same rule every other
+ *  surface applies to a name the user has made their own). A row that falls
+ *  back returns a KEY, resolved through i18n.t on every call - so the
+ *  language-change re-arm (rescheduleForLanguageChange ->
+ *  applyNotificationPrefs -> applyReminders) re-schedules it with the new
+ *  language's noun. */
 function reminderAlarmLabel(row: Reminder): string {
   const source = reminderAlarmTitle(row.type, row.label);
   return source.kind === "text" ? source.text : i18n.t(source.key);

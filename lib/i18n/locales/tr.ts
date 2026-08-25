@@ -110,7 +110,7 @@ const tr = {
     qNotify: "İzinler",
     qWidget: "Her yerde yanınızda",
     widgetIntro:
-      "Ortalamanız ana ekranda, sıradaki hatırlatıcınız ve çalışan sayacınız kilit ekranında. Widget eklemeyi unutmayın, rehber Ayarlar'da.",
+      "Ortalamanız ve sıradaki hatırlatıcınız, hem ana ekranda hem kilit ekranında. Widget eklemeyi unutmayın, rehber Ayarlar'da.",
     permCamera: "Barkod taramak için kamera (ilk taramada sorulur).",
     permHealth: "Glukozu Apple Sağlık ile eşitlemek için (Sağlık açıldığında sorulur).",
     skipForNow: "Şimdilik geç",

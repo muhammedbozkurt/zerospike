@@ -112,7 +112,7 @@ const it: TranslationSchema = {
     qNotify: "Autorizzazioni",
     qWidget: "Sempre con Lei",
     widgetIntro:
-      "La Sua media sulla schermata Home, il Suo prossimo promemoria e un eventuale timer in corso sulla schermata di blocco. Non dimentichi di aggiungere il widget: la guida è nelle Impostazioni.",
+      "La Sua media e il Suo prossimo promemoria, sulla schermata Home e sulla schermata di blocco. Non dimentichi di aggiungere il widget: la guida è nelle Impostazioni.",
     permCamera: "Fotocamera per scansionare i codici a barre (richiesta alla prima scansione).",
     permHealth: "Per sincronizzare la glicemia con Apple Salute (richiesta all'apertura di Salute).",
     skipForNow: "Salta per ora",

@@ -112,7 +112,7 @@ const pt: TranslationSchema = {
     qNotify: "Permissões",
     qWidget: "Com você em todo lugar",
     widgetIntro:
-      "Sua média na tela de início e, na tela bloqueada, seu próximo lembrete e qualquer cronômetro em andamento. Não esqueça de adicionar o widget, o guia está em Configurações.",
+      "Sua média e seu próximo lembrete, na tela de início e na tela bloqueada. Não esqueça de adicionar o widget, o guia está em Configurações.",
     permCamera: "Câmera para ler códigos de barras (solicitada na primeira leitura).",
     permHealth: "Para sincronizar a glicemia com o Apple Saúde (solicitada quando o Saúde abrir).",
     skipForNow: "Pular por enquanto",

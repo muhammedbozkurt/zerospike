@@ -987,30 +987,123 @@ export default function OnboardingScreen() {
                 <View style={{ height: "100%", width: "40%", backgroundColor: THEME.accent }} />
               </View>
             </View>
-            {/* Home-screen widget mock */}
+            {/* Home-screen widget mock, beside the three lock-screen shapes.
+                Both are stylised drawings in this screen's own primitives, not
+                the real widget code: the extension cannot render here, and the
+                point of the step is "here is what you would be adding", not a
+                pixel-accurate preview.
+
+                Laid out side by side, with the copy moved to its own full-width
+                line underneath, because the step already carries a sample badge
+                and the Live Activity card above - stacking a fourth block would
+                have pushed the footer off a small screen. The lock shapes are
+                44pt tall, the smallest size at which the three silhouettes stay
+                tellable apart. */}
             <View className="flex-row mt-3" style={{ gap: 12 }}>
               <View
                 style={{
-                  width: 96,
-                  height: 96,
+                  width: 108,
                   borderRadius: 18,
                   borderWidth: 1,
                   borderColor: THEME.border,
                   backgroundColor: THEME.glass,
-                  alignItems: "center",
-                  justifyContent: "center",
+                  paddingHorizontal: 10,
+                  paddingVertical: 9,
                 }}
               >
-                <Text className="text-mut text-[9px] font-bold">
-                  {upper(t("widget.lastReading"))}
+                <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
+                  {upper(t("widget.avgGlucose"))}
                 </Text>
-                <Text style={{ color: GLUCOSE_RICH.target, fontSize: 28, fontWeight: "800" }}>112</Text>
-                <Text className="text-mut text-[10px]">mg/dL</Text>
+                <View className="flex-row items-baseline" style={{ gap: 3 }}>
+                  <Text style={{ color: GLUCOSE_RICH.target, fontSize: 26, fontWeight: "800" }}>
+                    112
+                  </Text>
+                  <Text className="text-mut text-[10px]">mg/dL</Text>
+                </View>
+                {/* The reminder line the home families gained: name first, with
+                    the glyph for how it will actually be delivered. */}
+                <View className="flex-row items-center mt-1.5" style={{ gap: 3 }}>
+                  <Ionicons name="alarm-outline" size={9} color={THEME.muted} />
+                  <Text className="text-mut text-[9px] font-bold flex-1" numberOfLines={1}>
+                    {t("reminders.presetMorning")}
+                  </Text>
+                </View>
+                <Text
+                  style={{ color: THEME.accent, fontSize: 11, fontWeight: "800", marginTop: 1 }}
+                >
+                  08:00
+                </Text>
               </View>
-              <View style={{ flex: 1, justifyContent: "center" }}>
-                <Text className="text-ink text-sm leading-6">{t("onboarding.widgetIntro")}</Text>
+
+              {/* Lock screen: the three accessory shapes, in the order the OS
+                  gallery offers them. */}
+              <View style={{ flex: 1, gap: 6 }}>
+                <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
+                  {upper(t("widgetGuide.lockTitle"))}
+                </Text>
+                <View className="flex-row items-center" style={{ gap: 8 }}>
+                  {/* Circular: one number, no room for a label. */}
+                  <View
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 22,
+                      borderWidth: 1,
+                      borderColor: THEME.border,
+                      backgroundColor: THEME.glass,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>112</Text>
+                    <Ionicons name="water" size={7} color={THEME.muted} />
+                  </View>
+                  {/* Inline: a single tinted line. */}
+                  <View
+                    className="flex-row items-center flex-1"
+                    style={{
+                      gap: 4,
+                      height: 44,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: THEME.border,
+                      backgroundColor: THEME.glass,
+                      paddingHorizontal: 8,
+                    }}
+                  >
+                    <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
+                    <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
+                      {t("reminders.presetMorning")}
+                    </Text>
+                    <Text className="text-ink text-[10px] font-bold">08:00</Text>
+                  </View>
+                </View>
+                {/* Rectangular: name + time on top, the reading under it. */}
+                <View
+                  style={{
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: THEME.border,
+                    backgroundColor: THEME.glass,
+                    paddingHorizontal: 8,
+                    paddingVertical: 6,
+                  }}
+                >
+                  <View className="flex-row items-center" style={{ gap: 4 }}>
+                    <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
+                    <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
+                      {t("reminders.presetMorning")}
+                    </Text>
+                    <Text className="text-ink text-[10px] font-bold">08:00</Text>
+                  </View>
+                  <Text className="text-mut text-[10px] font-semibold mt-0.5">112 mg/dL</Text>
+                </View>
               </View>
             </View>
+
+            <Text className="text-ink text-sm leading-6 mt-3">
+              {t("onboarding.widgetIntro")}
+            </Text>
           </FadeSlideIn>
         );
 

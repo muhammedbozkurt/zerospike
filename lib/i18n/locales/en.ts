@@ -112,7 +112,7 @@ const en: TranslationSchema = {
     qNotify: "Permissions",
     qWidget: "With you everywhere",
     widgetIntro:
-      "Your average on the home screen, your next reminder and any running timer on the lock screen. Don't forget to add the widget, the guide is in Settings.",
+      "Your average and your next reminder, on the home screen and on the lock screen. Don't forget to add the widget, the guide is in Settings.",
     permCamera: "Camera to scan barcodes (asked on your first scan).",
     permHealth: "To sync glucose with Apple Health (asked when Health opens).",
     skipForNow: "Skip for now",

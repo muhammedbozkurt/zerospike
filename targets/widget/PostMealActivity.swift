@@ -122,6 +122,13 @@ struct PostMealActivityWidget: Widget {
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 12)
+      // Fill the card BEFORE the link is attached. `widgetURL` makes the view
+      // it is applied to the tap target, and this HStack is content-sized in
+      // height: without this the padding and any height the system hands the
+      // activity beyond the content were dead space, so a tap near the top or
+      // bottom edge did nothing while a tap on the timer worked. That is the
+      // "sometimes it opens, sometimes it doesn't" device QA reported.
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
       // Tapping the card opens the post-meal reading sheet (2.3.0's K2-B) -
       // the same target the post-meal notification routes to, so the countdown
       // ends in the same place however the user gets there. This card had no

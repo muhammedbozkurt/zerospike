@@ -112,7 +112,7 @@ const de: TranslationSchema = {
     qNotify: "Berechtigungen",
     qWidget: "Überall dabei",
     widgetIntro:
-      "Ihr Durchschnitt auf dem Home-Bildschirm, Ihre nächste Erinnerung und ein laufender Timer auf dem Sperrbildschirm. Denken Sie daran, das Widget hinzuzufügen, die Anleitung finden Sie in den Einstellungen.",
+      "Ihr Durchschnitt und Ihre nächste Erinnerung, auf dem Home-Bildschirm und auf dem Sperrbildschirm. Denken Sie daran, das Widget hinzuzufügen, die Anleitung finden Sie in den Einstellungen.",
     permCamera: "Kamera zum Scannen von Barcodes (wird beim ersten Scan abgefragt).",
     permHealth: "Zum Synchronisieren der Glukose mit Apple Health (wird abgefragt, wenn Health geöffnet wird).",
     skipForNow: "Vorerst überspringen",

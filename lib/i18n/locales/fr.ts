@@ -112,7 +112,7 @@ const fr: TranslationSchema = {
     qNotify: "Autorisations",
     qWidget: "Partout avec vous",
     widgetIntro:
-      "Votre moyenne sur l'écran d'accueil, votre prochain rappel et tout minuteur en cours sur l'écran verrouillé. Pensez à ajouter le widget, le guide est dans les Réglages.",
+      "Votre moyenne et votre prochain rappel, sur l'écran d'accueil comme sur l'écran verrouillé. Pensez à ajouter le widget, le guide est dans les Réglages.",
     permCamera: "Caméra pour scanner les codes-barres (demandée lors de votre premier scan).",
     permHealth: "Pour synchroniser la glycémie avec Apple Santé (demandée à l'ouverture de Santé).",
     skipForNow: "Passer pour l'instant",
