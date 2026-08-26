@@ -58,20 +58,50 @@ export function postMealWindowForProfile(
 }
 
 /**
- * The post-meal window, in minutes. FIXED (2.3.0's G15): the user does not
- * choose it and no screen offers a picker.
+ * The post-meal window, in minutes: ALWAYS the default the dashboard card
+ * shows and the "I started eating" button arms.
  *
- * It used to be a 60/90/120/150 preference. That setting answered a question
- * nobody was asking - the two hours are a property of the check itself, not a
- * taste - while the thing people really needed had no answer at all: "I forgot
- * to tap when I started eating". So the length became one constant and the
- * adjustable part became WHEN the meal began (see startPostMealLate).
+ * 2.3.1 briefly saved a per-profile choice (lib/postMealWindowStore.ts, since
+ * removed): a length chosen once and never looked at again became a silent
+ * setting the user had forgotten about, and a countdown that starts from a
+ * different number every day makes it harder to notice when something is
+ * actually off. 2.3.2 dropped the persistence - the duration sheet still lets
+ * a user change the length for the ONE timer they are about to start (a
+ * shorter snack, a longer meal), but that choice is never written down, so the
+ * card is back to this same number the next time. Nothing here is a
+ * recommended or medically-derived interval - it is a countdown length the
+ * user can set for themselves, one timer at a time.
  */
 export const POST_MEAL_WINDOW_MIN = 120;
+
+/** The bounds a countdown length is normalized to: never under five minutes
+ *  (noise), never over a full day. No UI field lets a user type one any more
+ *  (P14 removed the duration sheet's own length field) - these survive as
+ *  clampPostMealWindowMinutes's own range, its one remaining caller being
+ *  startPostMealLate's internal windowMin normalization. */
+export const POST_MEAL_CUSTOM_MIN_MINUTES = 5;
+export const POST_MEAL_CUSTOM_MAX_MINUTES = 1440;
+
+/**
+ * Sanitizes a window length (in minutes) to that range. A non-number falls
+ * back to the ordinary default rather than to the low end: a corrupted value
+ * should read as "back to normal", not silently shorten every future
+ * countdown to five minutes.
+ */
+export function clampPostMealWindowMinutes(n: number): number {
+  if (!Number.isFinite(n)) return POST_MEAL_WINDOW_MIN;
+  const rounded = Math.round(n);
+  if (rounded < POST_MEAL_CUSTOM_MIN_MINUTES) return POST_MEAL_CUSTOM_MIN_MINUTES;
+  if (rounded > POST_MEAL_CUSTOM_MAX_MINUTES) return POST_MEAL_CUSTOM_MAX_MINUTES;
+  return rounded;
+}
 
 /** The range a countdown may actually be armed for: never less than five
  *  minutes (a shorter one is noise), never more than the window itself. */
 export const POST_MEAL_MIN_MINUTES = 5;
+/** The default cap, equal to the default window. clampPostMealMinutes takes
+ *  the REAL cap (the selected window) as its own second argument now; this is
+ *  kept only for callers that still want the old fixed number. */
 export const POST_MEAL_MAX_MINUTES = POST_MEAL_WINDOW_MIN;
 
 /**
@@ -80,7 +110,7 @@ export const POST_MEAL_MAX_MINUTES = POST_MEAL_WINDOW_MIN;
  * Deliberately PAST the window: a user who ate three hours ago has to be able
  * to say so and be told the check has already passed, rather than being capped
  * at some number that silently arms a countdown for a meal that is long over.
- * Anything from POST_MEAL_WINDOW_MIN upwards reports "elapsed" (see
+ * Anything from the selected window upwards reports "elapsed" (see
  * startPostMealLate); this is only the point where the input stops moving.
  */
 export const POST_MEAL_LATE_MAX_MIN = 240;
@@ -89,25 +119,36 @@ export const POST_MEAL_LATE_MAX_MIN = 240;
  * The single validation point for a countdown length. Anything a caller hands
  * in becomes a whole number of minutes inside the supported range; a non-number
  * falls back to the low end rather than arming a NaN countdown that would never
- * fire.
+ * fire. `windowMin` is the SELECTED window (2.3.1); it defaults to
+ * POST_MEAL_WINDOW_MIN so every existing one-argument call keeps its old cap.
  */
-export function clampPostMealMinutes(n: number): number {
+export function clampPostMealMinutes(n: number, windowMin: number = POST_MEAL_WINDOW_MIN): number {
+  const max = clampPostMealWindowMinutes(windowMin);
   if (!Number.isFinite(n)) return POST_MEAL_MIN_MINUTES;
   const rounded = Math.round(n);
   if (rounded < POST_MEAL_MIN_MINUTES) return POST_MEAL_MIN_MINUTES;
-  if (rounded > POST_MEAL_MAX_MINUTES) return POST_MEAL_MAX_MINUTES;
+  if (rounded > max) return max;
   return rounded;
 }
 
 /** The same gate for "how long ago did you start eating": whole minutes, never
  *  negative (the meal cannot be in the future), never past the far end of the
  *  input's own range. A value inside the range can still be too late to arm -
- *  that is startPostMealLate's answer, not this one's. */
-export function clampPostMealLateMinutes(n: number): number {
+ *  that is startPostMealLate's answer, not this one's.
+ *
+ * `windowMin` no longer varies in production (P14 removed the duration
+ * sheet's own length field, so every real caller now passes
+ * POST_MEAL_WINDOW_MIN or omits it) - the parameter itself stays because
+ * scripts/entryGuardWire.test.ts still exercises the two-argument
+ * "carry-over" behavior directly. The far end is whichever of the two is
+ * LARGER, so a shorter-than-default window still keeps the old 240-minute
+ * reach - this stays an input ceiling, not the window's own length. */
+export function clampPostMealLateMinutes(n: number, windowMin?: number): number {
+  const max = Math.max(POST_MEAL_LATE_MAX_MIN, windowMin ?? POST_MEAL_LATE_MAX_MIN);
   if (!Number.isFinite(n)) return 0;
   const rounded = Math.round(n);
   if (rounded < 0) return 0;
-  if (rounded > POST_MEAL_LATE_MAX_MIN) return POST_MEAL_LATE_MAX_MIN;
+  if (rounded > max) return max;
   return rounded;
 }
 
@@ -123,24 +164,34 @@ export type PostMealLateStart =
  * "I started eating N minutes ago" (2.3.0's G15).
  *
  * The window belongs to the MEAL: `startedAt` moves back by `minutesAgo` and
- * the end stays exactly POST_MEAL_WINDOW_MIN after it, so a user who taps 30
- * minutes late is reminded 90 minutes from now - at the physiologically right
- * moment - instead of 120. The backdated start is also what the dashboard
- * progress bar and the Live Activity read, so all three agree.
+ * the end stays exactly `windowMin` after it (2.3.1: the user's own selected
+ * length, defaulting to POST_MEAL_WINDOW_MIN), so a user who taps 30 minutes
+ * late into a 120-minute window is reminded 90 minutes from now instead of
+ * 120. The backdated start is also what the dashboard progress bar and the
+ * Live Activity read, so all three agree.
  *
  * Reports "elapsed" once less than the scheduler floor is left
  * (POST_MEAL_MIN_SCHEDULE_MS), the same threshold every other re-timing in this
  * file uses: a countdown that cannot be placed at its real moment must not be
- * placed at a fake one. A meal POST_MEAL_WINDOW_MIN or more in the past always
- * lands there, which is what the sheet turns into "record the reading instead".
+ * placed at a fake one. A meal `windowMin` or more in the past always lands
+ * there, which is what the sheet turns into "record the reading instead".
  */
 export function startPostMealLate(input: {
   minutesAgo: number;
   now: number;
+  /** The countdown length to arm. Defaults to POST_MEAL_WINDOW_MIN so every
+   *  existing two-field call keeps arming the old fixed window. */
+  windowMin?: number;
 }): PostMealLateStart {
-  const minutesAgo = clampPostMealLateMinutes(input.minutesAgo);
+  const windowMin = clampPostMealWindowMinutes(input.windowMin ?? POST_MEAL_WINDOW_MIN);
+  // The late-start input's own reach follows the SELECTED window (see
+  // clampPostMealLateMinutes): without windowMin here, a window wider than
+  // POST_MEAL_LATE_MAX_MIN (240) got silently truncated to 240, so "I started
+  // 600 minutes ago" inside a 1440-minute window ended the countdown 20 hours
+  // out instead of the intended 14.
+  const minutesAgo = clampPostMealLateMinutes(input.minutesAgo, windowMin);
   const startedAt = input.now - minutesAgo * 60_000;
-  const endsAt = startedAt + POST_MEAL_WINDOW_MIN * 60_000;
+  const endsAt = startedAt + windowMin * 60_000;
   const remainingMs = endsAt - input.now;
   if (remainingMs < POST_MEAL_MIN_SCHEDULE_MS) return { kind: "elapsed" };
   return { kind: "start", startedAt, endsAt, remainingMs };
@@ -242,6 +293,41 @@ export function restartPostMealWindowAt(input: {
   return { kind: "restarted", startedAt, endsAt, remainingMs };
 }
 
+/** The span a running window was armed for, in whole minutes. Floored at one
+ *  so a corrupted or degenerate pair can never become a zero-length window. */
+export function postMealWindowSpanMinutes(window: PostMealTimerWindow): number {
+  return Math.max(1, Math.round((window.endsAt - window.startedAt) / 60_000));
+}
+
+/**
+ * Is there still enough of this window left to put it back (P17)?
+ *
+ * The question an UNDO has to answer before it touches anything. Pure, and
+ * asked first, for a reason that is not tidiness: the only other way to
+ * re-arm a stored window (restartPostMealTimerAt) cancels unconditionally when
+ * it finds the window elapsed, and that path runs several awaits after its
+ * caller last looked at the world - long enough for the user to have armed a
+ * fresh countdown that the cancel would then destroy. Deciding here, from two
+ * numbers and the clock, means an undo with nothing to restore calls nothing
+ * at all.
+ *
+ * Defined through restartPostMealWindowAt so it shares the scheduler floor
+ * (POST_MEAL_MIN_SCHEDULE_MS) with every other re-timing in this file: a
+ * countdown that cannot be placed at its real moment is over, not rounded up.
+ */
+export function postMealWindowRestorable(
+  window: PostMealTimerWindow,
+  now: number
+): boolean {
+  return (
+    restartPostMealWindowAt({
+      startedAt: window.startedAt,
+      windowMin: postMealWindowSpanMinutes(window),
+      now,
+    }).kind === "restarted"
+  );
+}
+
 /**
  * Which of the two actions the RUNNING countdown card offers, and the meal a
  * restart would anchor to.
@@ -290,6 +376,71 @@ export interface PostMealCardActions {
  */
 export const POST_MEAL_OWN_MEAL_MS = 10 * 60_000;
 
+/**
+ * The one predicate for "this meal is the running countdown's OWN meal",
+ * shared by everything that has to answer that question - the card's two
+ * actions below, and what a DELETE does to the countdown
+ * (decidePostMealAfterMealDelete).
+ *
+ * Symmetric on purpose (see POST_MEAL_OWN_MEAL_MS): the anchor lands near the
+ * meal from either side, so only the distance can decide.
+ */
+export function isPostMealOwnMeal(loggedAtMs: number, startedAt: number): boolean {
+  if (!Number.isFinite(loggedAtMs)) return false;
+  return Math.abs(loggedAtMs - startedAt) < POST_MEAL_OWN_MEAL_MS;
+}
+
+/** What deleting one or more MEAL records does to a running countdown. */
+export type PostMealAfterDelete =
+  /** The countdown outlives the delete: it was never this meal's. */
+  | "keep"
+  /** The countdown's own meal is gone and nothing is left for it to be
+   *  about, so the countdown ends with it. */
+  | "end";
+
+/**
+ * What a DELETED meal does to the running post-meal countdown.
+ *
+ * The rule: a countdown armed by logging a meal exists BECAUSE of that record.
+ * Erase the record and the countdown is counting down to a check on a meal the
+ * user says never happened - which is what device QA found, a card still
+ * reading "2 h post-meal timer, log a meal" for a meal that had just been
+ * deleted. So an automatic consequence of a record dies with the record.
+ *
+ * It is deliberately NOT "any meal delete ends the countdown":
+ *
+ * - A meal that is not this countdown's own (an older entry, yesterday's
+ *   dinner being written up, the second helping the user chose not to
+ *   re-anchor onto) leaves it exactly where it is.
+ * - A countdown the user armed HIMSELF with "I started eating", with no meal
+ *   record near its anchor, is not an automatic consequence of anything and is
+ *   never ended by a delete.
+ * - If another meal is STILL the countdown's own meal after the delete (two
+ *   helpings minutes apart, one of them removed), the countdown still has a
+ *   meal to be about and keeps running.
+ *
+ * Re-anchoring onto some other surviving meal is deliberately not done here:
+ * that silently moves the moment the user is reminded at, and the card's own
+ * "restart for this meal" already exists for when they want that.
+ */
+export function decidePostMealAfterMealDelete(input: {
+  /** The running countdown's anchor. */
+  startedAt: number;
+  /** logged_at (epoch ms) of every meal the delete removed. */
+  deletedMealsMs: readonly number[];
+  /** logged_at (epoch ms) of the meals STILL recorded. May be a band around
+   *  the anchor rather than every meal there is - only meals near the anchor
+   *  can change the answer. */
+  remainingMealsMs: readonly number[];
+}): PostMealAfterDelete {
+  const wasOwn = input.deletedMealsMs.some((ms) => isPostMealOwnMeal(ms, input.startedAt));
+  if (!wasOwn) return "keep";
+  const stillOwned = input.remainingMealsMs.some((ms) =>
+    isPostMealOwnMeal(ms, input.startedAt)
+  );
+  return stillOwned ? "keep" : "end";
+}
+
 export function postMealCardActions(input: {
   meals: readonly { id: string; loggedAtMs: number }[];
   startedAt: number;
@@ -310,7 +461,7 @@ export function postMealCardActions(input: {
   // ask for something that plainly exists and offering to restart would ask the
   // user to re-anchor onto the meal it is already anchored to. The card says
   // nothing and just counts down.
-  if (Math.abs(candidate.loggedAtMs - input.startedAt) < POST_MEAL_OWN_MEAL_MS) {
+  if (isPostMealOwnMeal(candidate.loggedAtMs, input.startedAt)) {
     return { logMeal: false, restart: false, restartMealId: null };
   }
   // A genuinely later meal: the user ate again mid-window, and the countdown

@@ -1,0 +1,39 @@
+campaign,ad group,keyword,match type,bid,note
+ZS-FR-Brand,Brand-Core,zerospike,Exact,0.40,Marka savunmasi
+ZS-FR-Brand,Brand-Core,zerospike app,Exact,0.40,Marka + app
+ZS-FR-Brand,Brand-Core,zero spike,Exact,0.40,Ayrik yazim
+ZS-FR-Brand,Brand-Broad,zerospike,Broad,0.22,Yazim hatasi yakalama
+ZS-FR-Generic,Glucose-Diary,carnet de diabète,Exact,0.36,"Takip edilen kelime, organik rank 32; app adimizda gecen terim (Carnet de glycémie)"
+ZS-FR-Generic,Glucose-Diary,carnet de glycémie,Exact,0.36,App adimizla birebir; marka-kategori koprusu
+ZS-FR-Generic,Glucose-Diary,suivi du glucose,Exact,0.33,Takip edilen kelime; rakip Glucomate ort. rank 3.0
+ZS-FR-Generic,Glucose-Diary,suivi de la glycémie,Exact,0.33,Rakip Suivi de la Glycémie ort. rank 1.67; dogrudan carpisma
+ZS-FR-Generic,Glucose-Diary,application diabète,Exact,0.33,En genis kategori terimi
+ZS-FR-Generic,Glucose-Diary,journal de glycémie,Exact,0.26,"Gunluk formu, uzun kuyruk"
+ZS-FR-Generic,Glucose-Diary,glycémie app,Exact,0.29,Kisa kategori terimi
+ZS-FR-Generic,Glucose-Diary,noter sa glycémie,Exact,0.21,"Fiil formu, saf kayit niyeti"
+ZS-FR-Generic,Glucose-Diary,historique glycémie,Exact,0.23,"Gecmis veri niyeti, Insights ile ortusur"
+ZS-FR-Generic,Glucose-Diary,diabète journal,Exact,0.23,Varyant
+ZS-FR-Generic,HbA1c-Trends,suivi hba1c,Exact,0.32,"Takip edilen kelime, organik rank 22; paid ile ilk sayfaya cikma firsati"
+ZS-FR-Generic,HbA1c-Trends,hba1c,Exact,0.28,"Tek terim, genis; dusuk teklifle test"
+ZS-FR-Generic,HbA1c-Trends,hémoglobine glyquée,Exact,0.25,HbA1c klinik karsiligi
+ZS-FR-Generic,HbA1c-Trends,temps dans la cible,Exact,0.21,Time in Range; gecmis veriyi tanimlayan metrik adi
+ZS-FR-Generic,HbA1c-Trends,rapport diabète pdf,Exact,0.21,"Doktora hazir PDF ozelligi, dusuk rekabet"
+ZS-FR-Generic,Carbs-Food,comptage des glucides,Exact,0.32,"Takip edilen kelime, rank NULL; satin alinmasi gereken terim"
+ZS-FR-Generic,Carbs-Food,compter les glucides,Exact,0.29,Fiil varyanti
+ZS-FR-Generic,Carbs-Food,glucides aliments,Exact,0.26,1000+ besin veritabaniyla ortusur
+ZS-FR-Generic,Carbs-Food,journal alimentaire diabète,Exact,0.24,"Ogun gunlugu, diyabet nitelemesi"
+ZS-FR-Generic,Carbs-Food,scanner code barre aliment,Exact,0.18,"Barkod tarama; genis niyet, dusuk teklif"
+ZS-FR-Generic,Injection-Rotation,rotation sites injection,Exact,0.30,"Rotasyon ozelligiyle birebir, rakiplerde nadir"
+ZS-FR-Generic,Injection-Rotation,sites injection insuline,Exact,0.30,"Kayit niyeti, doz niyeti degil"
+ZS-FR-Generic,Injection-Rotation,carnet injections,Exact,0.24,Uzun kuyruk
+ZS-FR-Generic,Condition,diabète type 2,Exact,0.34,Takip edilen kelime; rakip Phil Diabète Type 2 ort. rank 1.0
+ZS-FR-Generic,Condition,diabète type 1,Exact,0.34,Tip 1 kitlesi insulin kaydini yogun kullanir
+ZS-FR-Generic,Condition,prédiabète,Exact,0.26,Tani olmadan takip akisiyla ortusur
+ZS-FR-Generic,Condition,diabète gestationnel,Exact,0.32,"Gebelik diyabeti, yuksek motivasyon"
+ZS-FR-Competitor,Comp-Core,mysugr,Exact,0.40,FR'de mySugr Suivi du diabète ort. rank 1.67
+ZS-FR-Competitor,Comp-Core,diabetolog,Exact,0.31,"FR yerel rakip, carnet de diabète teriminde ort. rank 1.0"
+ZS-FR-Competitor,Comp-Core,glucomate,Exact,0.29,FR rakip
+ZS-FR-Competitor,Comp-Core,diabhealth,Exact,0.29,"FR rakip, ort. rank 1.0"
+ZS-FR-Competitor,Comp-Core,glooko,Exact,0.27,Klinik odakli rakip
+ZS-FR-Competitor,Comp-Core,my espace diabète,Exact,0.26,FR rakip
+ZS-FR-Discovery,Discovery-SearchMatch,,,0.28,Kelime YOK; Search Match acik. Negatif liste kampanya seviyesinde

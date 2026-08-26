@@ -86,7 +86,8 @@ export function journalFeedSql(
               NULL AS name_fr, NULL AS category,
               NULL AS site, NULL AS site_point, NULL AS dose_units,
               NULL AS insulin_type, NULL AS bolus_kind, NULL AS note,
-              s.healthkit_uuid AS healthkit_uuid, NULL AS med_name
+              s.healthkit_uuid AS healthkit_uuid, NULL AS med_name,
+              NULL AS insulin_product_id, NULL AS insulin_product_other
          FROM sugar_logs s
         WHERE s.profile_id = ?${bounds("s.logged_at")}
        UNION ALL
@@ -98,6 +99,7 @@ export function journalFeedSql(
               m.photo_uri_local, m.personal_note,
               f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr, f.category,
               NULL, NULL, NULL, NULL, NULL, NULL,
+              NULL, NULL,
               NULL, NULL
          FROM meal_logs m LEFT JOIN foods f ON f.id = m.food_id
         WHERE m.profile_id = ?${bounds("m.logged_at")}
@@ -108,7 +110,8 @@ export function journalFeedSql(
               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
               NULL, NULL, NULL, NULL, NULL, NULL,
               i.site, i.site_point, i.dose_units, i.insulin_type, i.bolus_kind, i.note,
-              NULL, NULL
+              NULL, NULL,
+              i.insulin_product_id, i.insulin_product_other
          FROM injection_logs i
         WHERE i.profile_id = ?${bounds("i.logged_at")}${notCalculator}
        UNION ALL
@@ -120,7 +123,8 @@ export function journalFeedSql(
               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
               NULL, NULL, NULL, NULL, NULL, NULL,
               NULL, NULL, NULL, NULL, NULL, d.note,
-              NULL, d.name
+              NULL, d.name,
+              NULL, NULL
          FROM med_logs d
         WHERE d.profile_id = ?${withRange ? " AND d.taken_at BETWEEN ? AND ?" : ""}
      )

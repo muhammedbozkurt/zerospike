@@ -3,6 +3,19 @@ import { uuid } from "../uuid";
 import type { Food, MealLog, PeriodTag, SugarLog } from "./types";
 import { parseTags, serializeTags } from "./types";
 import type { DateRange } from "../insights";
+import {
+  planHealthImport,
+  SUGAR_DEDUP_WINDOW_MINUTES,
+  type ExistingSugarReading,
+  type HealthSugarSample,
+} from "./healthImportSql";
+
+export {
+  planHealthImport,
+  SUGAR_DEDUP_WINDOW_MINUTES,
+  type ExistingSugarReading,
+  type HealthSugarSample,
+};
 
 /**
  * SQL fragment + bound values for an optional date range. Reports and exports
@@ -170,6 +183,36 @@ export async function listSugarLogsForWindows(
   return rows.map(mapSugar);
 }
 
+/** The bare fields lib/entryGuard.ts asks about, not a full row read.
+ *  `id` is what lets a caller pass its own row back as `excludeId` (P5b) so
+ *  editing an existing reading never flags against its own pre-edit row. */
+export interface RecentSugarLog {
+  id: string;
+  logged_at: string;
+  glucose_level_mgdl: number;
+}
+
+/**
+ * Readings logged between `sinceIso` and `untilIso` (open-ended when omitted),
+ * for the duplicate-entry check (lib/entryGuard.ts /
+ * components/useEntryGuardConfirm.tsx). A plain fact lookup, not a warning of
+ * its own - the caller decides what, if anything, to ask about.
+ */
+export async function listRecentSugarLogs(
+  profileId: string,
+  sinceIso: string,
+  untilIso?: string
+): Promise<RecentSugarLog[]> {
+  const db = await getDb();
+  const values = untilIso ? [profileId, sinceIso, untilIso] : [profileId, sinceIso];
+  return db.getAllAsync<RecentSugarLog>(
+    `SELECT id, logged_at, glucose_level_mgdl FROM sugar_logs
+      WHERE profile_id = ? AND logged_at >= ? ${untilIso ? "AND logged_at <= ?" : ""}
+      ORDER BY logged_at DESC;`,
+    values
+  );
+}
+
 /** Records the Apple Health sample UUID for a mirrored reading (schema v10). */
 export async function setSugarLogHealthUuid(
   id: string,
@@ -248,28 +291,18 @@ export async function getSugarLog(id: string): Promise<SugarLog | null> {
   return row ? mapSugar(row) : null;
 }
 
-/** One sample from the platform health store, ready to be stored. */
-export interface HealthSugarSample {
-  glucose_level_mgdl: number;
-  period_tag: PeriodTag;
-  /** Already snapped to the dedup grain by the caller (see healthMath.snapIso). */
-  logged_at: string;
-}
-
 /**
  * Imports a whole batch of health-store samples in ONE transaction, and returns
  * how many rows were actually new.
  *
- * Dedup stays value-aware: a row is a duplicate only when the same snapped
- * timestamp carries the same value, so a 42 mg/dL confirming fingerstick is never
- * dropped as a "duplicate" of a 95 mg/dL CGM sample at that minute. It is now
- * resolved from a SINGLE range query instead of a COUNT per sample, and the
- * inserts skip the row read-back addSugarLog does for its return value. A
- * 300-sample sync used to be ~900 round trips outside any transaction, so an
- * interrupted sync could leave a partially imported window.
- *
- * The seen-set is also updated as we go, so two identical samples inside the same
- * batch collapse into one row instead of both passing a pre-batch existence check.
+ * The candidate set is resolved from a SINGLE range query (widened by the
+ * dedupe window on both ends, so a match just outside the sample span is still
+ * seen) instead of a COUNT per sample, and inserts skip the row read-back
+ * addSugarLog does for its return value. A 300-sample sync used to be ~900
+ * round trips outside any transaction, so an interrupted sync could leave a
+ * partially imported window. Which samples actually get inserted is decided
+ * by planHealthImport (3d): every existing reading counts, not only rows this
+ * app previously imported.
  */
 export async function insertHealthSugarLogs(
   profileId: string,
@@ -284,42 +317,32 @@ export async function insertHealthSugarLogs(
     if (s.logged_at < from) from = s.logged_at;
     if (s.logged_at > to) to = s.logged_at;
   }
+  const windowMs = SUGAR_DEDUP_WINDOW_MINUTES * 60_000;
+  const rangeFrom = new Date(Date.parse(from) - windowMs).toISOString();
+  const rangeTo = new Date(Date.parse(to) + windowMs).toISOString();
 
-  const existing = await db.getAllAsync<{
-    logged_at: string;
-    glucose_level_mgdl: number;
-  }>(
+  const existing = await db.getAllAsync<ExistingSugarReading>(
     `SELECT logged_at, glucose_level_mgdl FROM sugar_logs
-      WHERE profile_id = ? AND source = 'health' AND logged_at BETWEEN ? AND ?;`,
-    [profileId, from, to]
+      WHERE profile_id = ? AND logged_at BETWEEN ? AND ?;`,
+    [profileId, rangeFrom, rangeTo]
   );
-  const key = (loggedAt: string, mgdl: number) => `${loggedAt}|${mgdl}`;
-  const seen = new Set(
-    existing.map((r) => key(r.logged_at, Math.round(r.glucose_level_mgdl)))
-  );
+
+  const toInsert = planHealthImport(samples, existing);
 
   let inserted = 0;
   await db.withTransactionAsync(async () => {
-    for (const s of samples) {
-      const mgdl = Math.round(s.glucose_level_mgdl);
-      const k = key(s.logged_at, mgdl);
-      if (seen.has(k)) continue;
-      seen.add(k);
+    for (const s of toInsert) {
       await db.runAsync(
         `INSERT INTO sugar_logs
            (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags)
          VALUES (?, ?, ?, ?, 'health', ?, '[]');`,
-        [uuid(), profileId, mgdl, s.period_tag, s.logged_at]
+        [uuid(), profileId, Math.round(s.glucose_level_mgdl), s.period_tag, s.logged_at]
       );
       inserted++;
     }
   });
   return inserted;
 }
-
-/** How far apart two readings of the same value can be and still be the same
- *  measurement typed twice. */
-export const SUGAR_DEDUP_WINDOW_MINUTES = 15;
 
 /**
  * Finds a reading the profile already has that is almost certainly the SAME
@@ -418,6 +441,52 @@ export async function listMealLogs(
     [profileId, ...values, limit]
   );
   return rows.map(mapMeal);
+}
+
+/** The bare fields lib/entryGuard.ts asks about, not a full row read.
+ *  `foodKey` mirrors what a caller building a NEW meal's own foodKey must
+ *  produce (see components/useEntryGuardConfirm.tsx): the catalog food_id
+ *  when there is one, otherwise the custom name lower-cased and trimmed - the
+ *  same comparison key on both sides is what makes the match work. `id` is
+ *  what lets a caller pass its own row back as `excludeId` (P5b) so editing
+ *  an existing meal never flags against its own pre-edit row. */
+export interface RecentMealLog {
+  id: string;
+  logged_at: string;
+  foodKey: string | null;
+  foodName: string | null;
+}
+
+/**
+ * Meals logged between `sinceIso` and `untilIso` (open-ended when omitted),
+ * for the duplicate-entry check (lib/entryGuard.ts /
+ * components/useEntryGuardConfirm.tsx). A plain fact lookup, not a warning of
+ * its own - the caller decides what, if anything, to ask about.
+ */
+export async function listRecentMealLogs(
+  profileId: string,
+  sinceIso: string,
+  untilIso?: string
+): Promise<RecentMealLog[]> {
+  const db = await getDb();
+  const values = untilIso ? [profileId, sinceIso, untilIso] : [profileId, sinceIso];
+  const rows = await db.getAllAsync<{
+    id: string;
+    logged_at: string;
+    food_id: string | null;
+    custom_food_name: string | null;
+  }>(
+    `SELECT id, logged_at, food_id, custom_food_name FROM meal_logs
+      WHERE profile_id = ? AND logged_at >= ? ${untilIso ? "AND logged_at <= ?" : ""}
+      ORDER BY logged_at DESC;`,
+    values
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    logged_at: r.logged_at,
+    foodKey: r.food_id ?? (r.custom_food_name ? r.custom_food_name.trim().toLowerCase() : null),
+    foodName: r.custom_food_name,
+  }));
 }
 
 /**

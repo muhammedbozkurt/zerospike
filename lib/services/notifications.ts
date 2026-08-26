@@ -34,6 +34,7 @@ import { reminderAlarmTitle } from "../reminderLabel";
 import {
   derivePostMealStart,
   decidePostMealAutoStart,
+  postMealWindowSpanMinutes,
   restartPostMealWindowAt,
   startPostMealLate,
   POST_MEAL_WINDOW_MIN,
@@ -1279,14 +1280,16 @@ async function schedulePostMealAt(opts: {
    *  countdown already read 0 - and skipping them outright, as the mode change
    *  used to, left the last minute of a window with no delivery at all. */
   minSeconds?: number;
-}): Promise<void> {
+  /** Arm ONLY if no live countdown is stored, and never overwrite one that is
+   *  (P17). Off by default: every ordinary path - the user's own "I started
+   *  eating", a meal log, a re-anchor - is a deliberate act that SHOULD replace
+   *  whatever is running. Only the undo of a delete opts in, because it is
+   *  putting an OLD countdown back and must lose to anything newer.
+   *
+   *  Returns false when the slot was taken, having touched nothing at all. */
+  claimIfIdle?: boolean;
+}): Promise<boolean> {
   const { minutes, windowMin = opts.minutes, minSeconds = 60 } = opts;
-  await ensureAndroidChannel();
-  try {
-    await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
-  } catch {
-    // nothing pending
-  }
   const seconds = Math.max(minSeconds, Math.round(minutes * 60));
 
   // Resolved BEFORE the delivery branch: a one-shot alarm is armed for the
@@ -1296,19 +1299,62 @@ async function schedulePostMealAt(opts: {
   const endsAt = opts.endsAt ?? now + seconds * 1000;
   const startedAt = opts.startedAt ?? now;
 
-  // Persist the whole timer - end, start and owner - in ONE write, BEFORE
-  // anything is armed: the three values describe a single countdown, and a
-  // reader must never catch a mix of an old one and a new one.
+  // The whole timer - end, start and owner - in ONE write, BEFORE anything is
+  // armed: the three values describe a single countdown, and a reader must
+  // never catch a mix of an old one and a new one.
   const entries: [string, string][] = [
     [POSTMEAL_TIMER_END_KEY, String(endsAt)],
     [POSTMEAL_TIMER_START_KEY, String(startedAt)],
   ];
   if (opts.profileId) entries.push([POSTMEAL_TIMER_PROFILE_KEY, opts.profileId]);
+
+  if (opts.claimIfIdle) {
+    // COMPARE-AND-SET, and the FIRST thing this function does.
+    //
+    // Both halves matter. It is first because everything below it is
+    // destructive to a countdown that is already running - the notification
+    // cancel just underneath would strip the delivery off someone else's timer
+    // before we ever noticed it was there. And the read sits directly against
+    // the write with only synchronous code between them, so nothing can slip
+    // in after we have looked and before we commit. A check made in the caller,
+    // or even at the top of this function before ensureAndroidChannel and the
+    // cancel, is not the same thing: those await real native bridge calls and
+    // yield the event loop, which is exactly the window this closes.
+    //
+    // scripts/afterDelete.test.ts locks the adjacency in place against drift.
+    let running = false;
+    try {
+      const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
+      const end = raw == null ? NaN : parseInt(raw, 10);
+      running = Number.isFinite(end) && end > Date.now();
+    } catch {
+      // Unreadable storage: treat the slot as free, exactly as every other
+      // read in this file falls back to "nothing running".
+      running = false;
+    }
+    if (running) return false;
+    try {
+      await AsyncStorage.multiSet(entries);
+      if (!opts.profileId) await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
+    } catch {
+      // best-effort persistence
+    }
+  }
+
+  await ensureAndroidChannel();
   try {
-    await AsyncStorage.multiSet(entries);
-    if (!opts.profileId) await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
+    await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
   } catch {
-    // best-effort persistence
+    // nothing pending
+  }
+
+  if (!opts.claimIfIdle) {
+    try {
+      await AsyncStorage.multiSet(entries);
+      if (!opts.profileId) await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
+    } catch {
+      // best-effort persistence
+    }
   }
 
   try {
@@ -1391,6 +1437,7 @@ async function schedulePostMealAt(opts: {
         : null,
     unitLabel: snapshot ? glucoseUnitLabel(snapshot.unit) : "",
   });
+  return true;
 }
 
 /**
@@ -1543,9 +1590,15 @@ export type PostMealAutoStartResult =
  *
  * Honors the saved preference (enabled + postMeal toggle), and no-ops if
  * disabled or permission is denied.
+ *
+ * `windowMin` (2.3.2) is never read from storage any more - the length is not
+ * saved (see lib/postMealTimer.ts's own doc comment) - so every automatic
+ * caller that omits it gets the fixed POST_MEAL_WINDOW_MIN, exactly what the
+ * dashboard card is showing at the moment the meal is logged.
  */
 export async function schedulePostMealReminder(
-  loggedAt?: Date | number | null
+  loggedAt?: Date | number | null,
+  windowMin: number = POST_MEAL_WINDOW_MIN
 ): Promise<PostMealAutoStartResult> {
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled || !prefs.postMeal) return "off";
@@ -1559,10 +1612,10 @@ export async function schedulePostMealReminder(
   if (decision !== "start") return decision;
   if (!(await ensureNotificationPermission())) return "off";
   const profile = await readActiveProfile();
-  // The automatic path always arms the full fixed window from now; only the
-  // "a while ago" sheet ever starts one part-way through.
+  // The automatic path always arms the full window from now; only the "a
+  // while ago" sheet ever starts one part-way through.
   await schedulePostMealAt({
-    minutes: POST_MEAL_WINDOW_MIN,
+    minutes: windowMin,
     profileId: profile?.id,
   });
   return "started";
@@ -1585,11 +1638,13 @@ export type PostMealStartOutcome =
  * switch on + permission). Shares POSTMEAL_ID, so pressing again just renews it.
  *
  * `minutesAgo` is how long ago the meal actually began (2.3.0's G15) - 0 for the
- * ordinary tap, a real number when the user is logging late. The window itself
- * is always POST_MEAL_WINDOW_MIN: the start moment is BACKDATED and the end
- * stays two hours after the meal, so a countdown started 30 minutes late runs
- * for 90 and lands where the check belongs. startPostMealLate owns that
- * arithmetic (and the "already over" answer); this only arms what it returns.
+ * ordinary tap, a real number when the user is logging late. The countdown
+ * itself is always POST_MEAL_WINDOW_MIN (P14 removed the duration sheet's own
+ * length field, its last source of a different value). The start moment is
+ * BACKDATED and the end stays POST_MEAL_WINDOW_MIN after the meal, so a
+ * countdown started 30 minutes into the window runs for 90 and lands where
+ * the check belongs. startPostMealLate owns that arithmetic (and the
+ * "already over" answer); this only arms what it returns.
  */
 export async function startPostMealTimer(
   minutesAgo = 0
@@ -1597,9 +1652,9 @@ export async function startPostMealTimer(
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled) return { kind: "off" };
   if (!(await ensureNotificationPermission())) return { kind: "off" };
+  const profile = await readActiveProfile();
   const next = startPostMealLate({ minutesAgo, now: Date.now() });
   if (next.kind === "elapsed") return { kind: "elapsed" };
-  const profile = await readActiveProfile();
   await schedulePostMealAt({
     minutes: next.remainingMs / 60_000,
     windowMin: POST_MEAL_WINDOW_MIN,
@@ -1614,6 +1669,20 @@ export async function startPostMealTimer(
 }
 
 /**
+ * The running countdown's own length, in whole minutes, derived from its
+ * persisted start/end pair - or null when nothing is running. 2.3.2 dropped
+ * the saved per-profile duration, so this is the only place left that still
+ * knows how long an ALREADY-ARMED window is meant to run; a re-anchor that
+ * cannot read it falls back to POST_MEAL_WINDOW_MIN rather than guess short.
+ */
+async function runningPostMealWindowMinutes(): Promise<number | null> {
+  const state = await getPostMealTimerState();
+  if (!state) return null;
+  const span = Math.round((state.endsAt - state.startedAt) / 60_000);
+  return span > 0 ? span : null;
+}
+
+/**
  * Dashboard "restart for this meal": a running timer is re-anchored to a
  * SPECIFIC meal's own moment instead of to now. The deliberate, user-initiated
  * counterpart to schedulePostMealReminder's "active" no-op - that call leaves an
@@ -1621,22 +1690,33 @@ export async function startPostMealTimer(
  * the anchor themselves when the newer meal is the one they actually want the
  * 2-hour check measured from.
  *
+ * `windowMin` (2.3.2) is normally left unset: with no saved preference left to
+ * read, the RUNNING timer's own span (end minus start) is what "restart for
+ * this meal" preserves - re-anchoring must move only the meal, never quietly
+ * shrink or grow the countdown itself. A caller restoring a specific past
+ * window verbatim (the dashboard's own undo, which already knows the exact
+ * span it wants back) passes it explicitly instead.
+ *
  * Non-prompting: the user already granted permission once to have a timer
  * running at all, so this never raises the OS dialog again - it only re-arms
  * with what is already granted.
  */
 export async function restartPostMealTimerAt(
   loggedAt: Date | number,
-  profileId?: string
+  profileId?: string,
+  windowMin?: number
 ): Promise<PostMealRetimeResult> {
   try {
     const prefs = await getNotificationPrefs();
     if (!prefs.enabled) return "idle";
     if (!(await hasNotificationPermission())) return "idle";
     const startedAt = loggedAt instanceof Date ? loggedAt.getTime() : loggedAt;
+    const resolvedProfileId = profileId ?? (await readActiveProfile())?.id;
+    const resolvedWindowMin =
+      windowMin ?? (await runningPostMealWindowMinutes()) ?? POST_MEAL_WINDOW_MIN;
     const next = restartPostMealWindowAt({
       startedAt,
-      windowMin: POST_MEAL_WINDOW_MIN,
+      windowMin: resolvedWindowMin,
       now: Date.now(),
     });
     if (next.kind === "elapsed") {
@@ -1645,14 +1725,82 @@ export async function restartPostMealTimerAt(
     }
     await schedulePostMealAt({
       minutes: next.remainingMs / 60_000,
-      windowMin: POST_MEAL_WINDOW_MIN,
+      windowMin: resolvedWindowMin,
       endsAt: next.endsAt,
       startedAt: next.startedAt,
-      profileId: profileId ?? (await readActiveProfile())?.id,
+      profileId: resolvedProfileId,
     });
     return "retimed";
   } catch {
     // The running timer keeps its old anchor; nothing is lost.
+    return "idle";
+  }
+}
+
+/** What putting a previously-ended countdown back did. */
+export type PostMealRestoreResult =
+  /** Armed again, at its original anchor and for its original span. */
+  | "restored"
+  /** What was left of the window ran out before the undo; nothing armed. */
+  | "elapsed"
+  /** A DIFFERENT countdown is running now; it was left strictly alone. */
+  | "occupied"
+  /** The master switch or the OS permission said no. */
+  | "idle";
+
+/**
+ * Puts back a countdown that a delete ended, for the undo of that delete
+ * (lib/afterDelete.ts).
+ *
+ * Deliberately NOT restartPostMealTimerAt, even though the arithmetic is the
+ * same. That function exists to move a RUNNING countdown, so its "elapsed"
+ * branch cancels unconditionally - correct there, wrong here: this is called
+ * when the app believes nothing is running, and between the caller's check and
+ * that branch there are several awaits (preferences, permission, the active
+ * profile) in which the user can perfectly well tap "I started eating" or log
+ * a meal. Reaching a cancel then would destroy a countdown this function never
+ * armed, trading one wrong countdown for another.
+ *
+ * So there is NO cancel in here at all, on any path. A window that has run out
+ * simply reports "elapsed" and arms nothing, which is the truth. And the check
+ * for someone else's countdown is made as the LAST read before the write, with
+ * no await between the two, so the gap it cannot cover is as small as this
+ * codebase can make it.
+ */
+export async function restorePostMealWindow(
+  window: PostMealTimerWindow
+): Promise<PostMealRestoreResult> {
+  try {
+    const prefs = await getNotificationPrefs();
+    if (!prefs.enabled) return "idle";
+    if (!(await hasNotificationPermission())) return "idle";
+    const windowMin = postMealWindowSpanMinutes(window);
+    // Pure, and BEFORE anything is touched: if there is nothing left to arm,
+    // this returns without having gone near the stored timer.
+    const next = restartPostMealWindowAt({
+      startedAt: window.startedAt,
+      windowMin,
+      now: Date.now(),
+    });
+    if (next.kind === "elapsed") return "elapsed";
+    // claimIfIdle is the whole guard, and it is deliberately NOT a check made
+    // here: schedulePostMealAt compares and sets with nothing awaiting between
+    // the two, whereas anything decided at this level is separated from the
+    // write by that function's own native-bridge awaits. Something armed while
+    // the undo toast was up is newer and the user's own, and it comes back
+    // untouched - no keys overwritten, no delivery stripped.
+    const claimed = await schedulePostMealAt({
+      minutes: next.remainingMs / 60_000,
+      windowMin,
+      endsAt: next.endsAt,
+      startedAt: next.startedAt,
+      profileId: window.profileId,
+      claimIfIdle: true,
+    });
+    return claimed ? "restored" : "occupied";
+  } catch {
+    // Nothing was armed (schedulePostMealAt rolls its own write back) and
+    // nothing was taken down; the entry itself is already back either way.
     return "idle";
   }
 }

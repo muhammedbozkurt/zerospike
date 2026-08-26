@@ -17,10 +17,11 @@ import { updateMed, upsertMedUse } from "../lib/db/meds";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { MedNamePicker } from "./MedNamePicker";
 import { useApp } from "../lib/store/AppContext";
+import { FeedbackHost, useFeedback } from "./Feedback";
 import { hapticSuccess } from "../lib/haptics";
 import { logEvent } from "../lib/analytics";
 import { formatTime, relativeDay } from "../lib/format";
-import { RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { GradientCTA } from "./rich/GradientCTA";
 
 /** The stored medication entry being corrected (structurally matches MedEntry
@@ -67,14 +68,20 @@ export function MedEditSheet({
   med,
   onClose,
   onSaved,
+  onDelete,
 }: {
   visible: boolean;
   med: MedEditTarget | null;
   onClose: () => void;
   onSaved: () => void;
+  /** Destructive "Delete" action (2.3.1 P4): confirms first, then fires this so
+   *  the caller can run the same undo-toast delete every other surface uses.
+   *  Left undefined, no delete button is drawn. */
+  onDelete?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const { activeProfile } = useApp();
+  const { confirm } = useFeedback();
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [loggedAt, setLoggedAt] = useState(new Date());
@@ -105,12 +112,29 @@ export function MedEditSheet({
       if (activeProfile && trimmedName) {
         await upsertMedUse(activeProfile.id, trimmedName, takenAt);
       }
-      logEvent("log_edited", { kind: "med" });
+      logEvent("log_edited");
       hapticSuccess();
       onSaved();
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Same confirm dialog as the row's own swipe delete (useJournalRows.tsx's
+   *  confirmAndDelete) and InjectionEditSheet's: a plain factual question,
+   *  destructive styling, no second line - a medication entry never has an
+   *  Apple Health mirror to warn about. */
+  async function handleDelete() {
+    if (!med || !onDelete) return;
+    const ok = await confirm({
+      message: t("journal.deleteEntry"),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      destructive: true,
+      icon: "trash-outline",
+    });
+    if (!ok) return;
+    onDelete();
   }
 
   return (
@@ -219,9 +243,42 @@ export function MedEditSheet({
               />
 
               <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
+
+              {onDelete ? (
+                <Pressable
+                  onPress={handleDelete}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("common.delete")}
+                  hitSlop={8}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minHeight: 44,
+                    marginTop: 14,
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
+                  <Text
+                    style={{ color: GLUCOSE_RICH.low, fontSize: 13, fontWeight: "700", marginLeft: 6 }}
+                  >
+                    {t("common.delete")}
+                  </Text>
+                </Pressable>
+              ) : null}
             </ScrollView>
           </Pressable>
         </Pressable>
+      {/* This sheet is an RN <Modal>, i.e. its own view controller. The
+          FeedbackHost a SCREEN renders lives in the screen's controller, which
+          is UNDERNEATH this one - so a confirm() raised from here used to be
+          painted behind the sheet: invisible, untappable, and the promise it
+          returns never settled, which left the action that awaited it hanging.
+          Hosts are a stack and only the topmost one paints (lib/feedback.ts
+          activeHostId), so mounting one here while the sheet is open puts the
+          dialog in the right controller and hands it back to the screen on
+          close. Guarded on `visible` so a closed sheet never takes the stack. */}
+      {visible ? <FeedbackHost /> : null}
       </KeyboardAvoidingView>
     </Modal>
   );

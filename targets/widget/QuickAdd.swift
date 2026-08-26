@@ -69,7 +69,7 @@ struct QuickAddEntry: TimelineEntry {
   ///
   /// URLs are exactly the ones the app already answers: `?sheet=glucose` opens
   /// the dashboard's glucose sheet, `?sheet=med` its medication sheet, `/food`
-  /// the food tab, `/injection?compose=1` the injection tab's compose segment.
+  /// the food tab, `/injection?segment=map` the injection tab's body map.
   /// No new parameters are invented here.
   var shortcuts: [QuickAddShortcut] {
     var items: [QuickAddShortcut] = [

@@ -26,6 +26,8 @@ import {
   popHost,
   pushHost,
   shouldStackButtons,
+  UNDO_TOAST_MS,
+  UNDO_TOAST_SCREEN_READER_MS,
 } from "../lib/feedback";
 import { GLUCOSE_RICH, THEME, RADIUS, ELEVATION } from "../lib/theme/tokens";
 
@@ -107,16 +109,18 @@ const TOAST_STYLE: Record<
 /** How long a toast stays up. */
 const TOAST_MS = 2200;
 /**
- * A toast that carries an action stays 6200ms, matching the undo-batch
- * accumulation window (useUndoBatch).
+ * A toast that carries an action stays up as long as UNDO_TOAST_MS
+ * (lib/feedback.ts), the same window the undo-batch accumulation
+ * (useUndoBatch) restores against - the two are one shared pair of constants
+ * so they can never drift apart again (see that file's own note).
  *
  * With a screen reader on, that window was not an undo model at all: the toast is
  * painted, not focused, so the announcement lands mid-sentence, the user then has
- * to swipe to the button, and 6 seconds is gone before they reach it. The whole
- * "you can take that back" affordance was effectively unavailable to them.
+ * to swipe to the button, and the normal window is gone before they reach it. The
+ * whole "you can take that back" affordance was effectively unavailable to them.
  */
-const TOAST_ACTION_MS = 6200;
-const TOAST_ACTION_SCREEN_READER_MS = 20000;
+const TOAST_ACTION_MS = UNDO_TOAST_MS;
+const TOAST_ACTION_SCREEN_READER_MS = UNDO_TOAST_SCREEN_READER_MS;
 
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   // Toast state

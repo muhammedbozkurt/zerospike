@@ -35,8 +35,9 @@ export async function getDefaultProfile(): Promise<UserProfile> {
         target_fasting_max, target_postmeal_min, target_postmeal_max,
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         basal_daily_units, basal_insulin_id, bolus_insulin_id,
+        basal_insulin_other, bolus_insulin_other,
         created_at)
-     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, ?);`,
+     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, NULL, NULL, ?);`,
     [DEFAULT_PROFILE_ID, defaultProfileName(), now]
   );
   return (await getProfile(DEFAULT_PROFILE_ID))!;
@@ -60,6 +61,10 @@ export interface NewProfileInput {
   basal_daily_units?: number | null;
   basal_insulin_id?: string | null;
   bolus_insulin_id?: string | null;
+  /** Free-text product name (schema v22), only meaningful alongside the
+   *  matching *_insulin_id set to the catalog's "other" id. */
+  basal_insulin_other?: string | null;
+  bolus_insulin_other?: string | null;
 }
 
 export async function createProfile(
@@ -76,8 +81,9 @@ export async function createProfile(
         target_fasting_max, target_postmeal_min, target_postmeal_max,
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         diabetes_type, insulin_mode,
-        basal_daily_units, basal_insulin_id, bolus_insulin_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        basal_daily_units, basal_insulin_id, bolus_insulin_id,
+        basal_insulin_other, bolus_insulin_other, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.name.trim() || defaultProfileName(),
@@ -97,6 +103,8 @@ export async function createProfile(
       input.basal_daily_units ?? null,
       input.basal_insulin_id ?? null,
       input.bolus_insulin_id ?? null,
+      input.basal_insulin_other ?? null,
+      input.bolus_insulin_other ?? null,
       now,
     ]
   );

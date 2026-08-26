@@ -1,39 +1,80 @@
 import React, { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import type { InsulinProduct } from "../lib/insulinCatalog";
+import {
+  OTHER_PRODUCT_ID,
+  insulinProductById,
+  productsByCategory,
+} from "../lib/insulinCatalog";
 import { THEME } from "../lib/theme/tokens";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
 
+interface InsulinProductPickerProps {
+  /** Modal header AND trigger accessibility label (the surrounding card
+   *  usually already shows its own title, so the trigger itself stays
+   *  unlabelled on screen). */
+  label: string;
+  /** A catalog product id, OTHER_PRODUCT_ID, or null (nothing picked). */
+  value: string | null;
+  /** Free-text name, only read/shown while value is OTHER_PRODUCT_ID. */
+  otherValue?: string | null;
+  onChange: (id: string | null) => void;
+  onOtherChange?: (text: string | null) => void;
+  /** Which single catalog category this picker lists: basal-only, bolus-only,
+   *  or the premix row. Never mixed - P9 split each slot into its own list, so
+   *  a bolus product can no longer render under a "Karisim" heading. */
+  slot: "basal" | "bolus" | "mix";
+  /** Shows a "Secilmedi" row the user can pick to clear back to null. Off by
+   *  default: once a value is set, going back to "unset" is not a real choice
+   *  (only onboarding/profile-migration state produces null, never a tap), so
+   *  the row is only offered where clearing to null is legitimate (the
+   *  per-entry pickers in injection.tsx / InjectionEditSheet.tsx). */
+  allowNotSet?: boolean;
+  notSetLabel?: string;
+  hint?: string;
+}
+
 /**
- * Single-choice picker over the insulin product catalog (11 items, too many for
- * Segmented). Same trigger-row + modal-list shape as LanguagePicker, since a
- * bottom-sheet library is not part of this project. Shared by the basal and
- * bolus cards in Settings > Profile so the two never drift into copies.
+ * Single-choice picker over the insulin product catalog. Same trigger-row +
+ * modal-list shape as LanguagePicker, since a bottom-sheet library is not
+ * part of this project. Shared by onboarding, Settings > Profile and the
+ * injection log/edit screens so the four never drift into copies.
  */
 export function InsulinProductPicker({
-  title,
+  label,
   value,
-  products,
+  otherValue,
   onChange,
+  onOtherChange,
+  slot,
+  allowNotSet = false,
   notSetLabel,
-  durationLabel,
-}: {
-  /** Modal header AND trigger accessibility label (the surrounding FormCard
-   *  already shows its own title, so the trigger itself stays unlabelled). */
-  title: string;
-  value: string | null;
-  products: readonly InsulinProduct[];
-  onChange: (id: string | null) => void;
-  notSetLabel: string;
-  durationLabel: string;
-}) {
+  hint,
+}: InsulinProductPickerProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const selected = products.find((p) => p.id === value) ?? null;
+
+  // Homogeneous, single-category list - no group headers, no cross-category
+  // leakage. A premix profile's OTHER slot still carries the mix id (see
+  // isMixSelection in lib/insulinCatalog.ts), so `value` can legitimately
+  // point at a product not in this list; the trigger below resolves it via
+  // insulinProductById directly rather than searching `products`.
+  const products = productsByCategory(slot);
+
+  const selectedProduct = insulinProductById(value);
+  const isOther = value === OTHER_PRODUCT_ID;
+  const fallbackNotSet = notSetLabel ?? t("settings.insulinProductNotSet");
+
+  const displayText = isOther
+    ? otherValue && otherValue.trim()
+      ? otherValue
+      : t("insulinPicker.other")
+    : selectedProduct
+      ? selectedProduct.label
+      : fallbackNotSet;
 
   function select(id: string | null) {
     hapticSelect();
@@ -46,26 +87,34 @@ export function InsulinProductPicker({
       <Pressable
         onPress={() => setOpen(true)}
         accessibilityRole="button"
-        accessibilityLabel={title}
-        accessibilityValue={{ text: selected ? selected.label : notSetLabel }}
+        accessibilityLabel={label}
+        accessibilityValue={{ text: displayText }}
         className="flex-row items-center justify-between rounded-2xl border border-hair bg-glass px-3.5"
         style={{ minHeight: 44 }}
       >
         <Text
           className="flex-1 text-[15px] font-medium text-ink mr-2"
-          numberOfLines={2}
+          numberOfLines={1}
+          style={{ flexShrink: 1 }}
         >
-          {selected ? selected.label : notSetLabel}
+          {displayText}
         </Text>
         <Ionicons name="chevron-down" size={16} color={THEME.muted} />
       </Pressable>
 
-      {selected ? (
+      {selectedProduct && !isOther ? (
         <Text className="text-mut text-xs mt-2 leading-4">
-          {durationLabel}
+          {t("settings.insulinDurationLabel")}
           {": ~"}
-          {t("settings.hours", { n: num(selected.durationHours) })}
+          {t("settings.hours", { n: num(selectedProduct.durationHours) })}
         </Text>
+      ) : null}
+      {hint ? <Text className="text-mut text-xs mt-2 leading-4">{hint}</Text> : null}
+
+      {isOther && onOtherChange ? (
+        <View style={{ marginTop: 10 }}>
+          <InsulinOtherField value={otherValue ?? null} onChange={onOtherChange} label={label} />
+        </View>
       ) : null}
 
       <Modal
@@ -91,15 +140,17 @@ export function InsulinProductPicker({
             }}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text className="text-ink text-lg font-bold mb-3 px-1">
-              {title}
+            <Text className="text-ink text-lg font-bold mb-3 px-1" numberOfLines={1}>
+              {label}
             </Text>
             <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-              <ProductRow
-                label={notSetLabel}
-                active={value === null}
-                onPress={() => select(null)}
-              />
+              {allowNotSet ? (
+                <ProductRow
+                  label={fallbackNotSet}
+                  active={value === null}
+                  onPress={() => select(null)}
+                />
+              ) : null}
               {products.map((p) => (
                 <ProductRow
                   key={p.id}
@@ -108,10 +159,51 @@ export function InsulinProductPicker({
                   onPress={() => select(p.id)}
                 />
               ))}
+              <ProductRow
+                label={t("insulinPicker.other")}
+                active={isOther}
+                onPress={() => select(OTHER_PRODUCT_ID)}
+              />
             </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
+    </View>
+  );
+}
+
+/** Free-text product name, shown only while a picker's value is
+ *  OTHER_PRODUCT_ID. One shared field so onboarding, Settings and the
+ *  injection screens never grow three copies of the same input. */
+export function InsulinOtherField({
+  value,
+  onChange,
+  label,
+}: {
+  value: string | null;
+  onChange: (text: string | null) => void;
+  label?: string;
+}) {
+  const { t } = useTranslation();
+  const isEmpty = !value || !value.trim();
+  return (
+    <View>
+      <TextInput
+        value={value ?? ""}
+        onChangeText={(text) => onChange(text.length > 0 ? text : null)}
+        placeholder={t("insulinPicker.otherPlaceholder")}
+        placeholderTextColor="rgba(137,163,176,0.7)"
+        maxLength={40}
+        returnKeyType="done"
+        accessibilityLabel={label ?? t("insulinPicker.otherPlaceholder")}
+        className="rounded-2xl border border-hair bg-glass px-3.5 text-ink"
+        style={{ minHeight: 44, fontSize: 15 }}
+      />
+      {isEmpty ? (
+        <Text className="text-mut text-xs mt-1.5 leading-4">
+          {t("insulinPicker.otherEmpty")}
+        </Text>
+      ) : null}
     </View>
   );
 }

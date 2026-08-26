@@ -214,11 +214,8 @@ function PaywallScreen() {
       source: reason ?? "direct",
       trial_eligible: annualTrial,
       context,
-      // Only meaningful for the onboarding entry point; clean() drops it
-      // elsewhere rather than logging a value nothing was personalised on.
-      focus: context === "onboarding" ? focus : undefined,
     });
-  }, [offer, reason, annualTrial, context, focus]);
+  }, [offer, reason, annualTrial, context]);
 
   // null, not "": a missing store price must never render as an empty gap where
   // the billed amount belongs.

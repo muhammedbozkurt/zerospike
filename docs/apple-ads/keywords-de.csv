@@ -1,0 +1,53 @@
+campaign,ad group,keyword,match type,bid,note
+ZS-DE-Brand,Brand-Core,zerospike,Exact,0.45,Marka savunmasi; rakipler marka terimine teklif verirse ilk sirayi kaybederiz
+ZS-DE-Brand,Brand-Core,zerospike app,Exact,0.45,Marka + app varyanti
+ZS-DE-Brand,Brand-Core,zero spike,Exact,0.45,Ayrik yazim; kullanicilar bosluklu ariyor
+ZS-DE-Brand,Brand-Core,zerospike blutzucker,Exact,0.45,Marka + kategori
+ZS-DE-Brand,Brand-Broad,zerospike,Broad,0.25,Yazim hatalarini ve varyantlari yakalar
+ZS-DE-Generic,Glucose-Diary,blutzucker tagebuch,Exact,0.40,"Cekirdek terim; pulse'ta organik siralamamiz YOK, rakip Blutzucker Tagebuch Diabetes+ ort. rank 1.5"
+ZS-DE-Generic,Glucose-Diary,diabetes tagebuch,Exact,0.40,"Takip edilen kelime, rank NULL (siralanmiyoruz); satin alinmasi gereken birincil terim"
+ZS-DE-Generic,Glucose-Diary,blutzucker messung,Exact,0.30,Organik rank 10; paid ustune ekleme yapar ama tam fiyat vermeye gerek yok
+ZS-DE-Generic,Glucose-Diary,blutzucker app,Exact,0.37,"Genis kategori niyeti, yuksek hacim tahmini"
+ZS-DE-Generic,Glucose-Diary,blutzucker tracker,Exact,0.37,Rakip Glucose - Blutzucker Tracker ort. rank 2.17
+ZS-DE-Generic,Glucose-Diary,blutzuckerwerte,Exact,0.33,App adimizda gecen terim (zerospike: Blutzuckerwerte); marka-kategori koprusu
+ZS-DE-Generic,Glucose-Diary,blutzucker protokoll,Exact,0.27,"Uzun kuyruk, dusuk rekabet beklentisi"
+ZS-DE-Generic,Glucose-Diary,blutzucker notieren,Exact,0.23,"Fiil formu, dogrudan gunluk tutma niyeti"
+ZS-DE-Generic,Glucose-Diary,blutzucker verlauf,Exact,0.27,Gecmis veri gorme niyeti; Insights ozelligiyle birebir ortusur
+ZS-DE-Generic,Glucose-Diary,zuckerwerte tagebuch,Exact,0.23,Uzun kuyruk varyant
+ZS-DE-Generic,Glucose-Diary,glukose tagebuch,Exact,0.23,"Klinik varyant, dusuk hacim yuksek niyet"
+ZS-DE-Generic,Glucose-Diary,diabetes app,Exact,0.37,"En genis kategori terimi; CPT yuksek olabilir, 2 hafta sonunda gozden gecir"
+ZS-DE-Generic,Glucose-Diary,diabetes tracker,Exact,0.33,Kategori terimi
+ZS-DE-Generic,Glucose-Diary,diabetes protokoll,Exact,0.23,Uzun kuyruk
+ZS-DE-Generic,HbA1c-Trends,hba1c wert,Exact,0.36,"Takip edilen kelime, rank NULL; Insights (GMI/tahmini A1C) ile ortusur"
+ZS-DE-Generic,HbA1c-Trends,hba1c tagebuch,Exact,0.29,Uzun kuyruk
+ZS-DE-Generic,HbA1c-Trends,langzeitzucker,Exact,0.29,HbA1c'nin gunluk dildeki karsiligi
+ZS-DE-Generic,HbA1c-Trends,zeit im zielbereich,Exact,0.25,Time in Range; gecmis veriyi tanimlayan metrik adi olarak kullanilir
+ZS-DE-Generic,HbA1c-Trends,diabetes pdf bericht,Exact,0.25,"Doktora hazir PDF ozelligiyle birebir ortusur, dusuk rekabet"
+ZS-DE-Generic,HbA1c-Trends,diabetes arztbericht,Exact,0.25,"Ayni niyet, randevu oncesi arama"
+ZS-DE-Generic,Carbs-Food,kohlenhydrate zählen,Exact,0.35,"Takip edilen kelime, rank NULL; rakip Kohlenhydrate Zähler ort. rank 1.5"
+ZS-DE-Generic,Carbs-Food,kohlenhydrate app,Exact,0.32,"Kategori terimi, Carb-Tracking CPP'sine baglanir"
+ZS-DE-Generic,Carbs-Food,kohlenhydrate tracker,Exact,0.29,Varyant
+ZS-DE-Generic,Carbs-Food,kohlenhydrate tagebuch,Exact,0.25,"Gunluk formu, bizim cerceveye en yakin"
+ZS-DE-Generic,Carbs-Food,kh zählen,Exact,0.19,"Kisaltma, dusuk hacim"
+ZS-DE-Generic,Carbs-Food,kohlenhydrate tabelle,Exact,0.22,1000+ besin veritabaniyla ortusur
+ZS-DE-Generic,Carbs-Food,ernährungstagebuch diabetes,Exact,0.25,"Ogun gunlugu niyeti, diyabet nitelemesi ile"
+ZS-DE-Generic,Carbs-Food,lebensmittel barcode scanner,Exact,0.19,"Barkod tarama ozelligi; niyet genis, dusuk teklifle test"
+ZS-DE-Generic,Injection-Rotation,spritzstellen wechseln,Exact,0.35,"Rotasyon ozelligiyle birebir; rakiplerde nadir, ucuz olmali"
+ZS-DE-Generic,Injection-Rotation,insulin spritzstellen,Exact,0.35,"Kayit niyeti, doz niyeti degil"
+ZS-DE-Generic,Injection-Rotation,spritzstellen dokumentieren,Exact,0.26,"Uzun kuyruk, saf kayit niyeti"
+ZS-DE-Generic,Injection-Rotation,injektionsstellen,Exact,0.31,Klinik terim
+ZS-DE-Generic,Injection-Rotation,spritzprotokoll,Exact,0.26,Uzun kuyruk
+ZS-DE-Generic,Condition,typ 2 diabetes,Exact,0.34,Organik rank 38; paid ile ilk sayfaya cikma firsati
+ZS-DE-Generic,Condition,typ 2 diabetes app,Exact,0.38,"Uygulama niyeti eklenmis, daha yuksek donusum beklentisi"
+ZS-DE-Generic,Condition,typ 1 diabetes app,Exact,0.38,Tip 1 kitlesi insulin kaydini daha yogun kullanir
+ZS-DE-Generic,Condition,prädiabetes,Exact,0.30,Tani olmadan takip akisiyla ortusur
+ZS-DE-Generic,Condition,schwangerschaftsdiabetes,Exact,0.34,Gebelik diyabeti; sureli ve yuksek motivasyonlu kitle
+ZS-DE-Generic,Condition,gestationsdiabetes tagebuch,Exact,0.30,"Ayni kitle, gunluk niyeti net"
+ZS-DE-Competitor,Comp-Core,mysugr,Exact,0.45,"Global lider (45 frekans, ort. rank 1.31); DE'de mySugr Diabetes-Tagebuch ort. rank 2.33"
+ZS-DE-Competitor,Comp-Core,mysugr alternative,Exact,0.39,Terk etme niyeti; en yuksek donusum beklenen rakip terimi
+ZS-DE-Competitor,Comp-Core,glucose buddy,Exact,0.35,Uluslararasi rakip
+ZS-DE-Competitor,Comp-Core,sugarnote,Exact,0.35,DE'de Blutzucker Messen SugarNote ort. rank 1.0
+ZS-DE-Competitor,Comp-Core,glucura,Exact,0.32,"DE yerel rakip, typ 2 diabetes teriminde ort. rank 1.0"
+ZS-DE-Competitor,Comp-Core,sugar sense,Exact,0.32,"DE rakip, ort. rank 3.0"
+ZS-DE-Competitor,Comp-Core,glooko,Exact,0.29,"Klinik odakli rakip, kitle ortusmesi kismi"
+ZS-DE-Discovery,Discovery-SearchMatch,,,0.30,"Kelime YOK; Search Match acik, yeni terim kesfi icin. Negatif liste kampanya seviyesinde uygulanir"

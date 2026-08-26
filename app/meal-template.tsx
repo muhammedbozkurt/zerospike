@@ -67,6 +67,7 @@ import {
   schedulePostMealReminder,
   noteJournalActivity,
 } from "../lib/services/notifications";
+import { applyAfterDelete } from "../lib/afterDelete";
 import { num } from "../lib/format";
 import { uuid } from "../lib/uuid";
 import { HIT_TARGET, INPUT_TEXT, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
@@ -445,7 +446,7 @@ function MealTemplateScreen() {
       // the meal is the thing that matters, and a failed recipe rewrite must not
       // take today's entry down with it.
       if (savePortions) await replaceTemplateItems(templateId, toInputs(items));
-      logEvent("log_added", { kind: "meal", source: "template" });
+      logEvent("log_added", { source: "template" });
       hapticSuccess();
       await schedulePostMealReminder();
       void noteJournalActivity();
@@ -460,6 +461,22 @@ function MealTemplateScreen() {
         onPress: () => {
           void (async () => {
             await deleteMealRecord(meal.id);
+            // The countdown this very save armed (schedulePostMealReminder
+            // above) has to go with the record: the same shared post-delete
+            // cleanup every other delete path runs (lib/afterDelete.ts).
+            await applyAfterDelete(
+              [
+                {
+                  id: meal.id,
+                  profileId: meal.profile_id,
+                  loggedAtMs: new Date(meal.logged_at).getTime(),
+                  templateId: meal.meal_template_id,
+                },
+              ],
+              // The counters are put back verbatim just below; correcting them
+              // here as well would be a write with no surviving effect.
+              { settleTemplates: false }
+            );
             await setTemplateUsage(templateId, priorUse, priorAt);
             bumpData();
             toast(t("calculator.undone"), "info");

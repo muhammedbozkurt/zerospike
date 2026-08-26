@@ -41,6 +41,19 @@ import {
   V21_MARK_EXPLICIT_CHOICE,
   V21_REMINDERS_COLUMNS,
 } from "./v21Sql";
+import {
+  V22_BACKFILL_CHUNK_SIZE,
+  V22_COPY_SUGAR_LOGS,
+  V22_CREATE_SUGAR_LOGS,
+  V22_DROP_OLD_SUGAR_LOGS,
+  V22_DROP_SCRATCH,
+  V22_INJECTION_COLUMNS,
+  V22_PROFILE_COLUMNS,
+  V22_RENAME_SUGAR_LOGS,
+  V22_SELECT_HEALTH_ROWS,
+  V22_SUGAR_INDEX,
+  matchesLegacyAutoPeriodTag,
+} from "./v22Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -81,7 +94,8 @@ export type SchemaStamp =
   | 18
   | 19
   | 20
-  | 21;
+  | 21
+  | 22;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -572,4 +586,95 @@ export async function migrateToV21(db: SQLite.SQLiteDatabase): Promise<void> {
     }
     await stampSchemaVersion(db, 21);
   });
+}
+
+/**
+ * The v21 → v22 migration: two guarded ADD COLUMNs on user_profiles
+ * (basal_insulin_other / bolus_insulin_other, see ./v22Sql), two more guarded
+ * ADD COLUMNs on injection_logs (insulin_product_id / insulin_product_other -
+ * the product an injection actually used, kept on the row itself so it never
+ * shifts when the profile's own product choice changes later), plus a rebuild
+ * of sugar_logs that widens its period_tag CHECK to accept 'unset' - the
+ * value a Health import now carries instead of a guessed period (see
+ * ../periodTag). SQLite cannot ALTER a CHECK constraint, so the rebuild
+ * follows the exact v8/v9/v11 shape: foreign keys off, one transaction, every
+ * row copied verbatim through a CHECK that is a strict superset of the old
+ * one.
+ *
+ * The backfill that actually SETS a row to 'unset' is a separate, targeted
+ * step inside the same transaction, run against the just-rebuilt table: every
+ * source='health' row is read up front (before the transaction, like the
+ * column-presence checks elsewhere in this file), matched against the OLD
+ * hour-based guess it may still carry (matchesLegacyAutoPeriodTag), and only
+ * an exact match is blanked out - a row the user has since retagged by hand no
+ * longer matches the guess and is left untouched. Matching ids are updated in
+ * chunks of V22_BACKFILL_CHUNK_SIZE, comfortably under SQLite's default
+ * 999-bound-parameter ceiling.
+ *
+ * Naturally idempotent, unlike v21's default flip: once a row reads 'unset' it
+ * can never again equal legacyAutoPeriodTag's output ('bedtime' / 'fasting' /
+ * 'manual'), so a replay of this whole function only ever touches a row once,
+ * with no separate "already ran" flag required.
+ */
+export async function migrateToV22(db: SQLite.SQLiteDatabase): Promise<void> {
+  const profileCols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(user_profiles);"
+  );
+  const presentOnProfile = new Set(profileCols.map((c) => c.name));
+  const missingProfileCols = V22_PROFILE_COLUMNS.filter(
+    (c) => !presentOnProfile.has(c.name)
+  );
+
+  const injectionCols = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(injection_logs);"
+  );
+  const presentOnInjection = new Set(injectionCols.map((c) => c.name));
+  const missingInjectionCols = V22_INJECTION_COLUMNS.filter(
+    (c) => !presentOnInjection.has(c.name)
+  );
+
+  const healthRows = await db.getAllAsync<{
+    id: string;
+    logged_at: string;
+    period_tag: string;
+  }>(V22_SELECT_HEALTH_ROWS);
+  const idsToUnset = healthRows
+    .filter((r) => matchesLegacyAutoPeriodTag(r.logged_at, r.period_tag))
+    .map((r) => r.id);
+
+  await db.execAsync("PRAGMA foreign_keys = OFF;");
+  try {
+    await db.withTransactionAsync(async () => {
+      for (const col of missingProfileCols) {
+        await db.execAsync(
+          `ALTER TABLE user_profiles ADD COLUMN ${col.name} ${col.type};`
+        );
+      }
+      for (const col of missingInjectionCols) {
+        await db.execAsync(
+          `ALTER TABLE injection_logs ADD COLUMN ${col.name} ${col.type};`
+        );
+      }
+
+      await db.execAsync(V22_DROP_SCRATCH);
+      await db.execAsync(V22_CREATE_SUGAR_LOGS);
+      await db.execAsync(V22_COPY_SUGAR_LOGS);
+      await db.execAsync(V22_DROP_OLD_SUGAR_LOGS);
+      await db.execAsync(V22_RENAME_SUGAR_LOGS);
+      await db.execAsync(V22_SUGAR_INDEX);
+
+      for (let i = 0; i < idsToUnset.length; i += V22_BACKFILL_CHUNK_SIZE) {
+        const chunk = idsToUnset.slice(i, i + V22_BACKFILL_CHUNK_SIZE);
+        const placeholders = chunk.map(() => "?").join(",");
+        await db.runAsync(
+          `UPDATE sugar_logs SET period_tag = 'unset' WHERE id IN (${placeholders});`,
+          chunk
+        );
+      }
+
+      await stampSchemaVersion(db, 22);
+    });
+  } finally {
+    await db.execAsync("PRAGMA foreign_keys = ON;");
+  }
 }

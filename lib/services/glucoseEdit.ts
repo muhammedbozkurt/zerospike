@@ -58,12 +58,15 @@ export async function remirrorEditedGlucose(
 ): Promise<void> {
   try {
     if (!previous.healthkit_uuid || Platform.OS !== "ios") return;
-    if (!(await getHealthWriteEnabled())) return;
-    // Read the stored row first, for its OWNER (X7): the mirror is per profile,
-    // and the corrected reading has to be checked against the profile it
-    // actually belongs to rather than whichever one happens to be active.
+    // Read the stored row FIRST, for its OWNER (X7 / H6): the mirror is per
+    // profile, so the write-enabled check has to run against the profile the
+    // corrected reading actually belongs to, not whichever one happens to be
+    // active. Checking the active profile here and the row's own profile
+    // inside updateGlucoseInHealth was two different checks that could
+    // disagree; this is now the single check, done with the right id.
     const stored = await getSugarLog(previous.id);
     if (!stored) return;
+    if (!(await getHealthWriteEnabled(stored.profile_id))) return;
     const dateIso = (loggedAt ?? new Date(previous.logged_at)).toISOString();
     const uuid = await updateGlucoseInHealth(
       previous.healthkit_uuid,

@@ -95,6 +95,17 @@ struct LiveData: Codable {
     /// The medication tile's title. Carries the app's own `meds.entryLabel`
     /// noun, so the tile needs no translation of its own.
     let addMed: String?
+    /// The post-meal countdown's own heading (`widget.timerTitle`), for the
+    /// timer widget's running state. Optional like every label above: a
+    /// snapshot written before this field existed still decodes, and the tile
+    /// then draws the glyph and the countdown with no heading rather than an
+    /// English one this extension would have to own.
+    let timerTitle: String?
+    /// The "start the countdown" call to action (`dashboard.startCountdown`),
+    /// for the timer widget's IDLE state. Optional AND nullable on the JS side:
+    /// the app sends null while that key is still untranslated, and the tile
+    /// falls back to the brand name rather than printing a raw i18n key.
+    let startCountdown: String?
   }
 }
 

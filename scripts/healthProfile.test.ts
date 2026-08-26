@@ -263,5 +263,34 @@ section("F. the UPDATE path is gated by the same rule as the write path (X7)");
   ok("glucoseEdit.ts passes the stored row's owner", /stored\.profile_id/.test(edit));
 }
 
+section("G. remirrorEditedGlucose gates on the ROW's profile, not the active one (H6)");
+{
+  // The bug: the write-enabled check ran on the active profile
+  // (getHealthWriteEnabled() with no argument) BEFORE the row's own owner was
+  // even read, so a caregiver correcting profile B's reading while profile A
+  // was active could be gated by A's toggle instead of B's - and could early
+  // -return (skip the mirror) even when B's own toggle was on.
+  const edit = readFileSync(
+    join(import.meta.dirname, "..", "lib", "services", "glucoseEdit.ts"),
+    "utf8"
+  );
+  ok(
+    "getHealthWriteEnabled is called with the stored row's profile id",
+    /getHealthWriteEnabled\(stored\.profile_id\)/.test(edit)
+  );
+  ok(
+    "the old parameterless (active-profile) check is gone",
+    !/getHealthWriteEnabled\(\)/.test(edit)
+  );
+  const storedIdx = edit.indexOf(
+    "const stored = await getSugarLog(previous.id);"
+  );
+  const checkIdx = edit.indexOf("getHealthWriteEnabled(stored.profile_id)");
+  ok(
+    "the row is read BEFORE the write-enabled check runs",
+    storedIdx >= 0 && checkIdx > storedIdx
+  );
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

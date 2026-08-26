@@ -8,7 +8,10 @@ import WidgetKit
 // Colour follows the app's one glucose language, and is never the only signal:
 // the value and its unit are always printed beside it.
 
-private enum GlucoseColor {
+// Not `private`: SmallWidgets.swift colours its own reading against the same
+// ramp, and a second copy of the band logic is exactly how the two tiles would
+// end up disagreeing about the same number.
+enum GlucoseColor {
   // Exact sRGB components of the tokens in lib/theme/tokens.ts, so the widget,
   // the app, the watch and the Android widget cannot drift apart by a shade.
   static let low = Color(red: 1.0, green: 0.3294, blue: 0.4078)        // #ff5468
@@ -639,10 +642,28 @@ struct ZerospikeWidgetView: View {
 @main
 struct ZerospikeWidgetBundle: WidgetBundle {
   var body: some Widget {
+    // The two originals stay FIRST and keep their kinds, families and looks.
+    // A kind string is the identity of a widget already sitting on someone's
+    // home screen: change it and their tile silently becomes a blank
+    // placeholder, so these two lines are the ones never to touch.
     ZerospikeWidget()
     ZerospikeQuickAddWidget()
+    // 2.3.1: the single-purpose tiles, small enough for the lock screen too
+    // (see SmallWidgets.swift).
+    ZerospikeReadingWidget()
+    ZerospikeLogGlucoseWidget()
+    ZerospikeLogMealWidget()
+    ZerospikeLogInsulinWidget()
+    ZerospikeTimerWidget()
     if #available(iOS 16.2, *) {
       PostMealActivityWidget()
+    }
+    // Control Centre / Lock Screen control slots / Action button. ControlWidget
+    // does not exist before iOS 18, so the whole block is behind availability
+    // and the deployment target stays 16.4 (see Controls.swift).
+    if #available(iOS 18.0, *) {
+      ZerospikeLogGlucoseControl()
+      ZerospikeStartTimerControl()
     }
   }
 }

@@ -55,6 +55,10 @@ export const LIVE_DATA_KEY = "zerospike.liveData";
 export const ANDROID_WIDGET_NAME = "Zerospike";
 /** The Android Quick Add widget's registered name (see app.json). */
 export const ANDROID_QUICK_ADD_WIDGET_NAME = "ZerospikeQuickAdd";
+/** The Android last-reading widget's registered name (see app.json). The 2.3.1
+ *  twin of the iOS ZerospikeReading widget: one small tile that pins the LAST
+ *  reading rather than the rolling average the glance widget shows. */
+export const ANDROID_READING_WIDGET_NAME = "ZerospikeReading";
 
 export type ReminderKind = "postMeal" | "basal" | "med" | "glucose" | "custom";
 
@@ -149,7 +153,33 @@ export interface LiveData {
      *  ships in every language the app does, so the tile cannot be the one
      *  place a locale is missing. */
     addMed: string;
+    /** The post-meal countdown's own heading, for the iOS timer widget's
+     *  RUNNING state (`widget.timerTitle`, already shipping in all nine
+     *  languages). */
+    timerTitle: string;
+    /** The "start the countdown" call to action for that widget's IDLE state.
+     *  NULL while `dashboard.startCountdown` is still untranslated: i18next
+     *  answers a missing key with the key itself, and a widget must never print
+     *  "dashboard.startCountdown" at someone - the native side falls back to the
+     *  brand name instead (see `localized` below and SmallWidgets.swift). */
+    startCountdown: string | null;
   };
+}
+
+/**
+ * A translated string, or null when the key has no translation yet.
+ *
+ * i18next returns the KEY ITSELF for a missing string. In the app that shows up
+ * as an obviously broken label someone fixes in the same session; on a widget it
+ * is baked into a tile on the user's lock screen until the next snapshot. So a
+ * key that did not resolve is reported as absent, and every native surface
+ * already treats an absent label as "draw the neutral state".
+ */
+function localized(key: string): string | null {
+  const value = i18n.t(key);
+  return typeof value === "string" && value.length > 0 && value !== key
+    ? value
+    : null;
 }
 
 /** The averaging window for the home-screen widget's pinned number. */
@@ -304,6 +334,8 @@ export async function computeLiveData(
       addMeal: i18n.t("widget.addMeal"),
       addInjection: i18n.t("widget.addInjection"),
       addMed: i18n.t("meds.entryLabel"),
+      timerTitle: i18n.t("widget.timerTitle"),
+      startCountdown: localized("dashboard.startCountdown"),
     },
   };
 }
@@ -338,18 +370,30 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
   if (Platform.OS === "android") {
     try {
       const { requestWidgetUpdate } = await import("react-native-android-widget");
-      const { buildZerospikeWidget, buildQuickAddWidget } = await import("./androidWidget");
+      const { buildZerospikeWidget, buildQuickAddWidget, buildReadingWidget } =
+        await import("./androidWidget");
       const data = JSON.parse(json) as LiveData;
-      await requestWidgetUpdate({
-        widgetName: ANDROID_WIDGET_NAME,
-        // The callback receives the placed widget's current dp size, so the
-        // layout can tier itself (see sizesFor in androidWidget.ts).
-        renderWidget: (info) => buildZerospikeWidget(data, info),
-      });
-      await requestWidgetUpdate({
-        widgetName: ANDROID_QUICK_ADD_WIDGET_NAME,
-        renderWidget: (info) => buildQuickAddWidget(data, info),
-      });
+      // allSettled, not a chain of awaits: the three widgets are independent
+      // surfaces and each is optional (the user may have placed none of them).
+      // Chained, one rejection - a name the installed launcher does not know, a
+      // widget host that went away - swallowed the redraw of every widget after
+      // it, so the newest one in the list was the most likely to go stale.
+      await Promise.allSettled([
+        requestWidgetUpdate({
+          widgetName: ANDROID_WIDGET_NAME,
+          // The callback receives the placed widget's current dp size, so the
+          // layout can tier itself (see sizesFor in androidWidget.ts).
+          renderWidget: (info) => buildZerospikeWidget(data, info),
+        }),
+        requestWidgetUpdate({
+          widgetName: ANDROID_QUICK_ADD_WIDGET_NAME,
+          renderWidget: (info) => buildQuickAddWidget(data, info),
+        }),
+        requestWidgetUpdate({
+          widgetName: ANDROID_READING_WIDGET_NAME,
+          renderWidget: (info) => buildReadingWidget(data, info),
+        }),
+      ]);
     } catch {
       // No widget placed on the home screen, or the module is not linked yet.
     }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -23,7 +23,7 @@ import {
   cancelMedReminder,
   hasNotificationPermission,
 } from "../../lib/services/notifications";
-import { productsByCategory } from "../../lib/insulinCatalog";
+import { OTHER_PRODUCT_ID, isMixSelection } from "../../lib/insulinCatalog";
 import { parseDecimalText } from "../../lib/numberInput";
 import { Segmented } from "../../components/ui";
 import { FormCard, InputRow } from "../../components/form";
@@ -79,6 +79,13 @@ export default function ProfileSettings() {
     activeProfile ? String(activeProfile.daily_carb_target_g) : ""
   );
   const [basalUnits, setBasalUnits] = useState(() => activeProfile?.basal_daily_units ?? 0);
+  // Premix UI toggle (P9), same reasoning as onboarding: the two layouts below
+  // are derived from isMixSelection(basal_insulin_id, bolus_insulin_id), which
+  // only turns true once a premix product is actually saved. This local flag
+  // only bridges the instant between tapping "mixUse" and picking one - before
+  // that the profile's own two ids are unchanged, so the derivation alone
+  // cannot yet tell "premix, nothing picked" apart from "separate mode".
+  const [mixModeUi, setMixModeUi] = useState(false);
 
   const glucoseBounds = {
     min: glucoseToDisplay(TARGET_RANGE_BOUNDS.min, unit),
@@ -87,6 +94,14 @@ export default function ProfileSettings() {
   const insulinMode = insulinModeOf(activeProfile);
   const showsBolus = insulinModeShowsBolus(insulinMode);
   const showsBasal = insulinModeShowsBasal(insulinMode);
+  // Premix needs BOTH fields (it fills basal_insulin_id and bolus_insulin_id
+  // together), so the toggle only ever appears when both gates are open; a
+  // mode showing just one of the two insulin fields keeps its plain picker.
+  const mixEligible = showsBasal && showsBolus;
+  const mixMode = mixEligible && (mixModeUi || isMixSelection(
+    activeProfile?.basal_insulin_id ?? null,
+    activeProfile?.bolus_insulin_id ?? null
+  ));
   const oralMeds = activeProfile?.oral_meds_enabled === 1;
   const diabetesType: DiabetesType = activeProfile?.diabetes_type ?? "unknown";
 
@@ -482,17 +497,76 @@ export default function ProfileSettings() {
         </FormCard>
       ) : null}
 
-      {showsBasal ? (
+      {/* A premix product covers both slots in one injection (see
+          isMixSelection), so it is offered as its own third card - basal and
+          bolus, below, only ever show a plain picker once this is off. */}
+      {mixMode ? (
+        <FormCard icon="battery-charging-outline" title={t("insulinPicker.groupMix")}>
+          <View className="px-4 py-3.5">
+            <InsulinProductPicker
+              label={t("insulinPicker.groupMix")}
+              value={activeProfile?.basal_insulin_id ?? null}
+              otherValue={activeProfile?.basal_insulin_other ?? null}
+              slot="mix"
+              onChange={(id) =>
+                void persist({
+                  basal_insulin_id: id,
+                  bolus_insulin_id: id,
+                  basal_insulin_other: id === OTHER_PRODUCT_ID ? activeProfile?.basal_insulin_other ?? null : null,
+                  bolus_insulin_other: id === OTHER_PRODUCT_ID ? activeProfile?.bolus_insulin_other ?? null : null,
+                })
+              }
+              onOtherChange={(text) =>
+                void persist({ basal_insulin_other: text, bolus_insulin_other: text })
+              }
+            />
+            <Pressable
+              onPress={() => {
+                setMixModeUi(false);
+                void persist({
+                  basal_insulin_id: null,
+                  bolus_insulin_id: null,
+                  basal_insulin_other: null,
+                  bolus_insulin_other: null,
+                });
+              }}
+              hitSlop={8}
+              className="py-3 items-center"
+              style={{ marginTop: 6 }}
+            >
+              <Text className="text-mut font-medium">{t("insulinPicker.mixOff")}</Text>
+            </Pressable>
+          </View>
+        </FormCard>
+      ) : null}
+
+      {showsBasal && !mixMode ? (
         <FormCard icon="battery-charging-outline" title={t("settings.basalInsulin")}>
           <View className="px-4 py-3.5">
             <InsulinProductPicker
-              title={t("settings.basalInsulin")}
+              label={t("settings.basalInsulin")}
               value={activeProfile?.basal_insulin_id ?? null}
-              products={productsByCategory("basal")}
-              onChange={(id) => void persist({ basal_insulin_id: id })}
+              otherValue={activeProfile?.basal_insulin_other ?? null}
+              slot="basal"
+              onChange={(id) =>
+                void persist({
+                  basal_insulin_id: id,
+                  basal_insulin_other: id === OTHER_PRODUCT_ID ? activeProfile?.basal_insulin_other ?? null : null,
+                })
+              }
+              onOtherChange={(text) => void persist({ basal_insulin_other: text })}
               notSetLabel={t("settings.insulinProductNotSet")}
-              durationLabel={t("settings.insulinDurationLabel")}
             />
+            {mixEligible ? (
+              <Pressable
+                onPress={() => setMixModeUi(true)}
+                hitSlop={8}
+                className="py-3 items-center"
+                style={{ marginTop: 6 }}
+              >
+                <Text className="text-mut font-medium">{t("insulinPicker.mixUse")}</Text>
+              </Pressable>
+            ) : null}
           </View>
         </FormCard>
       ) : null}
@@ -556,17 +630,23 @@ export default function ProfileSettings() {
         </FormCard>
       ) : null}
 
-      {showsBolus ? (
+      {showsBolus && !mixMode ? (
         <FormCard icon="flash-outline" title={t("settings.bolusInsulin")}>
           <View className="px-4 py-3.5">
-            <Text className="text-mut text-xs mb-2">{t("settings.bolusInsulinHint")}</Text>
             <InsulinProductPicker
-              title={t("settings.bolusInsulin")}
+              label={t("settings.bolusInsulin")}
               value={activeProfile?.bolus_insulin_id ?? null}
-              products={productsByCategory("bolus")}
-              onChange={(id) => void persist({ bolus_insulin_id: id })}
+              otherValue={activeProfile?.bolus_insulin_other ?? null}
+              slot="bolus"
+              onChange={(id) =>
+                void persist({
+                  bolus_insulin_id: id,
+                  bolus_insulin_other: id === OTHER_PRODUCT_ID ? activeProfile?.bolus_insulin_other ?? null : null,
+                })
+              }
+              onOtherChange={(text) => void persist({ bolus_insulin_other: text })}
               notSetLabel={t("settings.insulinProductNotSet")}
-              durationLabel={t("settings.insulinDurationLabel")}
+              hint={t("settings.bolusInsulinHint")}
             />
           </View>
         </FormCard>

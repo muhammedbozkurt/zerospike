@@ -17,6 +17,7 @@ import {
   migrateToV19,
   migrateToV20,
   migrateToV21,
+  migrateToV22,
   missingColumns,
   stampSchemaVersion,
 } from "./migrations";
@@ -32,6 +33,7 @@ import {
   V21_MARK_EXPLICIT_CHOICE,
   V21_REMINDERS_COLUMNS,
 } from "./v21Sql";
+import { V22_PERIOD_TAG_LIST } from "./v22Sql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -46,7 +48,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 21;
+const SCHEMA_VERSION = 22;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -296,6 +298,19 @@ export async function initDatabase(): Promise<void> {
     await migrateToV21(db);
   }
 
+  // v21 → v22: user_profiles.basal_insulin_other / bolus_insulin_other (a
+  // free-text product name for the insulin catalog's "other" entry) and
+  // injection_logs.insulin_product_id / insulin_product_other (the product
+  // ONE injection actually used, never shifted by a later profile change),
+  // plus a rebuild of sugar_logs that widens its period_tag CHECK to accept
+  // 'unset' (see ./v22Sql + ../periodTag). Four guarded ADD COLUMNs and one
+  // CHECK rebuild - the same "SQLite can't ALTER a CHECK" reason v8/v9/v11
+  // rebuilt injection_logs - plus a targeted, idempotent backfill of the rows
+  // that still carry the pre-v22 automatic guess untouched.
+  if (currentVersion >= 1 && currentVersion < 22) {
+    await migrateToV22(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -340,6 +355,10 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       basal_daily_units REAL,
       basal_insulin_id TEXT,
       bolus_insulin_id TEXT,
+      -- Free-text product name for the catalog's "other" entry (schema v22),
+      -- see ./v22Sql. Null unless the matching *_insulin_id above is "other".
+      basal_insulin_other TEXT,
+      bolus_insulin_other TEXT,
       -- Oral medication surfaces on/off (schema v16), presentation only: see
       -- ./v16Sql. Never an input to any calculation.
       oral_meds_enabled INTEGER NOT NULL DEFAULT 0,
@@ -372,10 +391,13 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       profile_id TEXT NOT NULL,
       glucose_level_mgdl INTEGER NOT NULL,
       period_tag TEXT NOT NULL DEFAULT 'manual'
-        CHECK (period_tag IN ('fasting','pre_meal','post_meal_2h','bedtime','manual')),
+        CHECK (period_tag IN (${V22_PERIOD_TAG_LIST.map((t) => `'${t}'`).join(",")})),
       source TEXT NOT NULL DEFAULT 'manual',
       logged_at TEXT NOT NULL,
       tags TEXT NOT NULL DEFAULT '[]',
+      -- HealthKit sample UUID mirror (schema v10, see ./v10Sql). 'unset' in
+      -- period_tag above (schema v22, see ./v22Sql) is what an import writes
+      -- here instead of a guessed period.
       healthkit_uuid TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
     );
@@ -540,6 +562,12 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
  *
  * `bolus_kind` (v15) records whether a bolus row was for a meal or a correction;
  * always NULL for a basal row (see logInjection/updateInjection in ./injections.ts).
+ *
+ * `insulin_product_id` / `insulin_product_other` (schema v22, see ./v22Sql)
+ * record the product THIS injection used. The profile's own basal_insulin_id /
+ * bolus_insulin_id is only ever a prefill for a new entry; the row keeps its
+ * own copy so a past entry never shifts under a later change to the profile's
+ * product.
  */
 async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
@@ -561,6 +589,11 @@ async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       tags TEXT NOT NULL DEFAULT '[]',
       -- Meal vs correction bolus (schema v15), nullable: see ./v15Sql.
       bolus_kind TEXT,
+      -- The product THIS injection used (schema v22, see ./v22Sql). Both
+      -- nullable; insulin_product_other holds the free-text name when
+      -- insulin_product_id is the catalog's "other" id.
+      insulin_product_id TEXT,
+      insulin_product_other TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
       FOREIGN KEY (meal_log_id) REFERENCES meal_logs (id) ON DELETE SET NULL
     );

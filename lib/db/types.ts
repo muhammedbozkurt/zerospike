@@ -17,7 +17,12 @@ export type PeriodTag =
   | "pre_meal"
   | "post_meal_2h"
   | "bedtime"
-  | "manual";
+  | "manual"
+  /** No period was assigned (schema v22). What a Health import carries: an
+   *  imported reading is an observation, not a guess about when it was taken
+   *  relative to a meal, so it gets no period_tag at all. See
+   *  ../periodTag for the one place this rule lives. */
+  | "unset";
 
 /** Blood-glucose display unit. Storage is always mg/dL; this only affects how
  *  values are shown and entered. */
@@ -103,6 +108,11 @@ export interface UserProfile {
   basal_daily_units: number | null;
   basal_insulin_id: string | null;
   bolus_insulin_id: string | null;
+  /** Free-text product name (schema v22), used only when the matching
+   *  *_insulin_id is the catalog's OTHER_PRODUCT_ID ("other") - see
+   *  ../insulinCatalog. Null otherwise. */
+  basal_insulin_other: string | null;
+  bolus_insulin_other: string | null;
   /** 1 when the oral-medication surfaces are shown for this profile (schema
    *  v16). Presentation flag: it decides what the user sees and never enters a
    *  calculation - no dose, no insulin figure and no metric reads it. */
@@ -401,6 +411,14 @@ export interface Injection {
   insulin_type: InsulinType | null;
   /** Meal vs correction (schema v15). Always null when insulin_type isn't 'bolus'. */
   bolus_kind: BolusKind | null;
+  /** Which product this injection actually used (schema v22, see
+   *  ../insulinCatalog). The profile's own basal_insulin_id / bolus_insulin_id
+   *  is only ever a PREFILL for a new entry; once logged, a row keeps its own
+   *  copy so it never shifts under a past entry when the profile's product is
+   *  changed later. insulin_product_other holds the free-text name when
+   *  insulin_product_id is the catalog's OTHER_PRODUCT_ID ("other"). */
+  insulin_product_id: string | null;
+  insulin_product_other: string | null;
   meal_log_id: string | null; // FK → meal_logs (SET NULL on meal delete)
   note: string | null;
   /** Where the row came from: 'manual' by default, 'calculator' for the bolus

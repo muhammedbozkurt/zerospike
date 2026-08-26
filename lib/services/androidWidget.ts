@@ -6,7 +6,12 @@ import {
   type WidgetTaskHandlerProps,
 } from "react-native-android-widget";
 
-import { readLiveData, ANDROID_QUICK_ADD_WIDGET_NAME, type LiveData } from "./liveData";
+import {
+  readLiveData,
+  ANDROID_QUICK_ADD_WIDGET_NAME,
+  ANDROID_READING_WIDGET_NAME,
+  type LiveData,
+} from "./liveData";
 import { MGDL_PER_MMOL } from "../glucose";
 import { GLUCOSE_RICH, THEME } from "../theme/tokens";
 import { VERY_HIGH_MGDL } from "../glucose";
@@ -28,10 +33,14 @@ import { formatTimeForLang } from "../format";
 
 /** Deep links the widgets open (scheme registered in app.json; expo-router
  *  resolves the paths). Kept identical, string for string, to the iOS side's
- *  own list in targets/widget/DeepLinks.swift. */
+ *  own list in targets/widget/DeepLinks.swift, which is the SUPERSET: it also
+ *  carries the reminders screen, the post-meal reading sheet and the post-meal
+ *  countdown's start surface, none of which an Android widget links to because
+ *  Android has no lock-screen widget and no Control Centre to put them on. The
+ *  four below must stay byte-identical to their Swift twins. */
 const URI_ADD_GLUCOSE = "zerospike:///?sheet=glucose";
 const URI_ADD_MEAL = "zerospike:///food";
-const URI_ADD_INJECTION = "zerospike:///injection?compose=1";
+const URI_ADD_INJECTION = "zerospike:///injection?segment=map";
 const URI_ADD_MED = "zerospike:///?sheet=med";
 
 /**
@@ -284,6 +293,111 @@ export function buildZerospikeWidget(
   );
 }
 
+/**
+ * The Android twin of the iOS ZerospikeReading widget: one small tile pinned to
+ * the LAST reading, next to the glance widget's rolling average. They
+ * deliberately answer different questions ("where am I lately" vs "what did I
+ * last write down"), which is why they are two widgets rather than one.
+ *
+ * The reading's own CLOCK TIME, never a "20 min ago" - for exactly the reason
+ * spelled out on nextReminderTimeLabel above: this view is a static bitmap that
+ * Android redraws at most every half hour, so an elapsed string would read wrong
+ * for most of the time it is on screen. A clock time stays true however long the
+ * tile has sat unrendered.
+ */
+export function buildReadingWidget(
+  data: LiveData | null,
+  size?: WidgetSize
+): React.JSX.Element {
+  const compact = (size?.width ?? 140) < 130 || (size?.height ?? 60) < 50;
+  const mgdl = data?.lastGlucoseMgdl ?? null;
+  const value =
+    data?.lastGlucoseDisplay ??
+    (mgdl == null
+      ? "-"
+      : data?.unit === "mmol"
+        ? (mgdl / MGDL_PER_MMOL).toFixed(1)
+        : String(Math.round(mgdl)));
+  const at = data?.lastGlucoseAt;
+  const timeText = at != null ? formatTimeForLang(at, data?.lang ?? "en") : "";
+  const hasReading = mgdl != null || data?.lastGlucoseDisplay != null;
+  return React.createElement(
+    FlexWidget,
+    {
+      style: {
+        height: "match_parent",
+        width: "match_parent",
+        flexDirection: "column",
+        justifyContent: "center",
+        backgroundGradient: {
+          from: THEME.bg.g2 as ColorProp,
+          to: THEME.bg.g1 as ColorProp,
+          orientation: "TOP_BOTTOM",
+        },
+        borderRadius: 20,
+        padding: compact ? 8 : 12,
+      },
+      clickAction: "OPEN_URI",
+      // A logging shortcut like every other tile: the tap opens the glucose
+      // quick-add sheet rather than only bringing the app forward.
+      clickActionData: { uri: URI_ADD_GLUCOSE },
+    },
+    React.createElement(
+      FlexWidget,
+      {
+        style: {
+          flexDirection: "row",
+          width: "match_parent",
+          justifyContent: "space-between",
+          alignItems: "center",
+        },
+      },
+      React.createElement(TextWidget, {
+        text: data?.labels?.lastReading ?? "",
+        truncate: "END",
+        maxLines: 1,
+        style: {
+          fontSize: compact ? 9 : 10,
+          fontWeight: "bold",
+          color: THEME.muted as ColorProp,
+        },
+      }),
+      React.createElement(TextWidget, {
+        text: timeText,
+        maxLines: 1,
+        style: {
+          fontSize: compact ? 9 : 10,
+          fontWeight: "bold",
+          color: THEME.muted as ColorProp,
+        },
+      })
+    ),
+    React.createElement(
+      FlexWidget,
+      { style: { flexDirection: "row", alignItems: "flex-end", marginTop: 1 } },
+      React.createElement(TextWidget, {
+        text: value,
+        maxLines: 1,
+        style: {
+          fontSize: compact ? 24 : 30,
+          fontWeight: "bold",
+          color: readingColor(mgdl, data?.band),
+        },
+      }),
+      React.createElement(TextWidget, {
+        text: hasReading ? ` ${unitLabel(data)}` : ` ${data?.labels?.noData ?? ""}`,
+        truncate: "END",
+        maxLines: 1,
+        style: {
+          fontSize: compact ? 10 : 11,
+          color: THEME.muted as ColorProp,
+          marginBottom: 4,
+        },
+      })
+    )
+  );
+}
+
 /** The Quick Add shortcuts, labels straight from the localized snapshot. The
  *  English fallbacks only ever show before the app has written a snapshot,
  *  mirroring the iOS QuickAdd.swift policy.
@@ -454,10 +568,15 @@ export function buildQuickAddWidget(
  */
 export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
   const data = await readLiveData();
+  // The glance widget is the DEFAULT arm on purpose: it is the one that has been
+  // placed on home screens since 2.0, and an unrecognised name must keep drawing
+  // it rather than falling through to a newer layout.
   const build =
     props.widgetInfo.widgetName === ANDROID_QUICK_ADD_WIDGET_NAME
       ? buildQuickAddWidget
-      : buildZerospikeWidget;
+      : props.widgetInfo.widgetName === ANDROID_READING_WIDGET_NAME
+        ? buildReadingWidget
+        : buildZerospikeWidget;
   switch (props.widgetAction) {
     case "WIDGET_ADDED":
     case "WIDGET_UPDATE":

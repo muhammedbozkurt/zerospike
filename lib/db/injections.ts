@@ -1,5 +1,6 @@
 import { getDb } from "./index";
 import { uuid } from "../uuid";
+import { OTHER_PRODUCT_ID } from "../insulinCatalog";
 import type {
   BolusKind,
   Injection,
@@ -105,6 +106,11 @@ export interface NewInjectionInput {
   insulin_type?: InsulinType | null;
   /** Meal vs correction (schema v15). Forced to null unless insulin_type is 'bolus'. */
   bolus_kind?: BolusKind | null;
+  /** Which product this injection actually used (schema v22, see
+   *  ../insulinCatalog). insulin_product_other only applies while
+   *  insulin_product_id is the catalog's OTHER_PRODUCT_ID. */
+  insulin_product_id?: string | null;
+  insulin_product_other?: string | null;
   meal_log_id?: string | null;
   note?: string | null;
   /** 'manual' (default) or 'calculator' for the auto-written mealtime bolus. */
@@ -124,8 +130,9 @@ export async function logInjection(
   await db.runAsync(
     `INSERT INTO injection_logs
        (id, profile_id, site, site_point, dose_units, insulin_type, bolus_kind,
+        insulin_product_id, insulin_product_other,
         meal_log_id, note, source, logged_at, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.profile_id,
@@ -134,6 +141,8 @@ export async function logInjection(
       input.dose_units ?? null,
       input.insulin_type ?? null,
       normalizedBolusKind(input.insulin_type, input.bolus_kind),
+      input.insulin_product_id ?? null,
+      input.insulin_product_id === OTHER_PRODUCT_ID ? (input.insulin_product_other ?? null) : null,
       input.meal_log_id ?? null,
       input.note ?? null,
       input.source ?? "manual",
@@ -181,6 +190,8 @@ export type InjectionUpdate = Partial<
     | "dose_units"
     | "insulin_type"
     | "bolus_kind"
+    | "insulin_product_id"
+    | "insulin_product_other"
     | "note"
     | "logged_at"
     | "tags"
@@ -207,11 +218,35 @@ export async function updateInjection(
   }
   const bolusKindPatch = resolveBolusKindPatch(patch, currentInsulinType);
 
+  // insulin_product_other is only meaningful while insulin_product_id is the
+  // catalog's OTHER_PRODUCT_ID - the same rule logInjection applies on insert.
+  // Without this, a patch that moves the row onto a real catalog product leaves
+  // the old free-text name behind in the column, and a patch that carries only
+  // the free text can resurrect it on a row that is no longer "other".
+  const touchesProduct =
+    patch.insulin_product_id !== undefined || patch.insulin_product_other !== undefined;
+  let productOther: string | null = null;
+  if (touchesProduct) {
+    let effectiveId: string | null;
+    if (patch.insulin_product_id !== undefined) {
+      effectiveId = patch.insulin_product_id ?? null;
+    } else {
+      const current = await db.getFirstAsync<{ insulin_product_id: string | null }>(
+        "SELECT insulin_product_id FROM injection_logs WHERE id = ?;",
+        [id]
+      );
+      effectiveId = current?.insulin_product_id ?? null;
+    }
+    productOther =
+      effectiveId === OTHER_PRODUCT_ID ? (patch.insulin_product_other ?? null) : null;
+  }
+
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
     if (key === "bolus_kind") continue; // handled below, via bolusKindPatch
+    if (key === "insulin_product_other") continue; // handled below, via productOther
     if (key === "tags") {
       fields.push("tags = ?");
       values.push(serializeTags(value as string[]));
@@ -223,6 +258,10 @@ export async function updateInjection(
   if (bolusKindPatch.touches) {
     fields.push("bolus_kind = ?");
     values.push(bolusKindPatch.value);
+  }
+  if (touchesProduct) {
+    fields.push("insulin_product_other = ?");
+    values.push(productOther);
   }
 
   if (fields.length > 0) {
@@ -259,6 +298,37 @@ export async function getCalculatorInjectionForMeal(
 export async function deleteInjection(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM injection_logs WHERE id = ?;", [id]);
+}
+
+/** The bare fields lib/entryGuard.ts asks about, not a full row read. `id` is
+ *  what lets a caller pass its own row back as `excludeId` (P5b) so editing
+ *  an existing injection never flags against its own pre-edit row. */
+export interface RecentInjection {
+  id: string;
+  logged_at: string;
+  insulin_type: InsulinType | null;
+  dose_units: number | null;
+}
+
+/**
+ * Injections logged between `sinceIso` and `untilIso` (open-ended when
+ * omitted), for the duplicate-entry check (lib/entryGuard.ts /
+ * components/useEntryGuardConfirm.tsx). A plain fact lookup, not a warning of
+ * its own - the caller decides what, if anything, to ask about.
+ */
+export async function listRecentInjections(
+  profileId: string,
+  sinceIso: string,
+  untilIso?: string
+): Promise<RecentInjection[]> {
+  const db = await getDb();
+  const values = untilIso ? [profileId, sinceIso, untilIso] : [profileId, sinceIso];
+  return db.getAllAsync<RecentInjection>(
+    `SELECT id, logged_at, insulin_type, dose_units FROM injection_logs
+      WHERE profile_id = ? AND logged_at >= ? ${untilIso ? "AND logged_at <= ?" : ""}
+      ORDER BY logged_at DESC;`,
+    values
+  );
 }
 
 /** How close in time a manual bolus entry has to be to an existing

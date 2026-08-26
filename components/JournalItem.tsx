@@ -1,7 +1,19 @@
-import React, { useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useRef, useState } from "react";
+import {
+  I18nManager,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 
 import type { JournalEntry } from "../lib/db/journal";
 import type { LogTag, UserProfile } from "../lib/db/types";
@@ -14,24 +26,118 @@ import {
 } from "../lib/glucose";
 import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
-import { RICH_BY_STATUS, THEME, TABULAR, glow, HIT_TARGET } from "../lib/theme/tokens";
+import { RICH_BY_STATUS, THEME, TABULAR, glow, HIT_TARGET, RADIUS } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { IconTile } from "./rich/IconTile";
 import { withAlpha } from "./rich/GlassCard";
+import {
+  deleteActionWidth,
+  estimateRowWidth,
+  SWIPE_DRAG_OFFSET,
+  SWIPE_FRICTION,
+  swipeContentOffset,
+  swipeIconOpacity,
+  swipeLabelOpacity,
+  swipeOpenThreshold,
+} from "../lib/swipeAction";
 
 
 
-/** The shared glass "lrow": translucent fill, light border, left accent bar.
+/** The single red action a swipe reveals: a trash icon over the word for
+ *  "Delete", so it reads the same way whether the user gets there by icon or
+ *  by label. `onPress` already carries the confirm - see useJournalRows.tsx's
+ *  confirmAndDelete - so this is a plain button, not a second confirmation.
+ *
+ *  The red fill is NEVER animated: ReanimatedSwipeable's own wrapper already
+ *  hides this whole layer while the row is closed, and its container has no
+ *  background of its own, so fading the fill in during the drag does not hide
+ *  the action - it punches a see-through hole where the row used to be. It is
+ *  painted the instant the row moves, and everything that does animate here is
+ *  driven off `translation` (the library's own SharedValue, the row's offset
+ *  in px) rather than `progress`, because what the icon and the word need to
+ *  know is how many POINTS of panel are uncovered, not a normalised fraction.
+ *  See lib/swipeAction.ts for the whole measured argument.
+ *
+ *  `alignSelf: "stretch"` - NOT `flex: 1` - is what makes the panel match the
+ *  ROW's own box: the library's action layer is `...StyleSheet.absoluteFill`
+ *  with `flexDirection: "row-reverse"` (see its styles.rightActions), so this
+ *  view's parent is a ROW. In a row, `flex: 1` means grow along the MAIN axis,
+ *  and its `flexBasis: 0%` overrides `width` outright - the panel then spanned
+ *  the whole row and the library measured that full span as the open distance.
+ *  Stretch is the cross-axis (height) property this actually wanted, and it is
+ *  already the parent's default, so the width below is the only thing setting
+ *  the panel's size. A fixed height would fall short of a taller multi-line
+ *  row and leave the red fill short of the row's own top/bottom edge. */
+function SwipeDeleteAction({
+  onPress,
+  translation,
+  actionWidth,
+}: {
+  onPress: () => void;
+  translation: SharedValue<number>;
+  /** A quarter of the row this action belongs to - measured, never assumed.
+   *  See Row's own onLayout and lib/swipeAction.ts's SWIPE_ACTION_RATIO. */
+  actionWidth: number;
+}) {
+  const { t } = useTranslation();
+  // Read once on the JS side: RN does not mirror `transform: translateX` for
+  // RTL, so the offset below has to carry its own sign.
+  const isRTL = I18nManager.isRTL;
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: swipeIconOpacity(translation.value, actionWidth),
+    transform: [
+      { translateX: swipeContentOffset(translation.value, actionWidth, isRTL) },
+    ],
+  }));
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: swipeLabelOpacity(translation.value, actionWidth),
+  }));
+  return (
+    <View style={{ width: actionWidth, alignSelf: "stretch" }}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={t("journal.deleteA11y")}
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: RICH_BY_STATUS.low,
+        }}
+      >
+        <Animated.View style={[{ alignItems: "center" }, contentStyle]}>
+          <Ionicons name="trash-outline" size={18} color="#fff" />
+          {/* Opacity only, never `display`: the word keeps its box at every
+              width, so the icon does not hop vertically as the label arrives. */}
+          <Animated.Text
+            numberOfLines={1}
+            style={[
+              { color: "#fff", fontSize: 10, fontWeight: "700", marginTop: 3 },
+              labelStyle,
+            ]}
+          >
+            {t("common.delete")}
+          </Animated.Text>
+        </Animated.View>
+      </Pressable>
+    </View>
+  );
+}
+
+/** The shared glass "row": translucent fill, light border, left accent bar.
  *
  *  The edit/delete menu is reached ONLY by long-pressing the row, which a screen
  *  reader neither announces nor offers. It is now both hinted and exposed as a
- *  real accessibility action, so the menu is reachable without a long press. */
+ *  real accessibility action, so the menu is reachable without a long press. A
+ *  left swipe (right in RTL) is a second, discoverable way to the same delete -
+ *  see `onDelete` below. */
 function Row({
   children,
   accent,
   label,
   onPress,
   onLongPress,
+  onDelete,
   inPanel,
   firstInPanel,
 }: {
@@ -41,6 +147,11 @@ function Row({
   label: string;
   onPress?: () => void;
   onLongPress?: () => void;
+  /** Reveals the swipe delete action (see SwipeDeleteAction) when set. Left
+   *  undefined, no ReanimatedSwipeable is even mounted for this row - the
+   *  long-press menu's own Delete stays the only way in, exactly as before
+   *  (zero regression for any caller that does not pass it). */
+  onDelete?: () => void;
   /** Drawn INSIDE the dashboard's journal panel rather than as a free-standing
    *  card on the page background. A card inside a card reads as twice the
    *  chrome for the same content, so in this mode the row drops its own border,
@@ -54,8 +165,35 @@ function Row({
   firstInPanel?: boolean;
 }) {
   const { t } = useTranslation();
-  return (
+  const swipeRef = useRef<SwipeableMethods>(null);
+
+  // The delete panel is a share of THIS row, not a fixed stub, so the row has
+  // to know its own width. onLayout is the authority; the window width only
+  // seeds the very first frame, because a row that started at the floor width
+  // and then jumped to a quarter would be visible on the first swipe after
+  // mount. The measurement is re-reported on rotation, on a tablet split, and
+  // whenever Dynamic Type re-lays the row out, so the panel and every
+  // threshold derived from it follow along on their own.
+  const { width: windowW } = useWindowDimensions();
+  const [measuredRowW, setMeasuredRowW] = useState(0);
+  const rowW = measuredRowW > 0 ? measuredRowW : estimateRowWidth(windowW);
+  const actionW = deleteActionWidth(rowW);
+  const openThreshold = swipeOpenThreshold(actionW);
+
+  const row = (
     <Pressable
+      // Only when a swipe can actually happen: a row without onDelete never
+      // mounts a Swipeable, so measuring it would be pure per-row overhead in
+      // the list. The sub-pixel guard stops a layout that reports 352.6667 and
+      // 352.66671 on alternate passes from looping setState forever.
+      onLayout={
+        onDelete
+          ? (e) => {
+              const w = e.nativeEvent.layout.width;
+              setMeasuredRowW((prev) => (Math.abs(prev - w) < 0.5 ? prev : w));
+            }
+          : undefined
+      }
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityRole="button"
@@ -93,7 +231,7 @@ function Row({
               backgroundColor: THEME.glass,
               paddingVertical: 9,
               paddingHorizontal: 10,
-              marginBottom: 9,
+              marginBottom: onDelete ? 0 : 9,
             }),
       }}
     >
@@ -111,6 +249,91 @@ function Row({
       ) : null}
       {children}
     </Pressable>
+  );
+
+  if (!onDelete) return row;
+
+  const revealDelete = (
+    _progress: SharedValue<number>,
+    translation: SharedValue<number>
+  ) => (
+    <SwipeDeleteAction
+      translation={translation}
+      actionWidth={actionW}
+      onPress={() => {
+        swipeRef.current?.close();
+        onDelete();
+      }}
+    />
+  );
+
+  return (
+    <ReanimatedSwipeable
+      ref={swipeRef}
+      // 1, the library's own default: the row follows the finger exactly. An
+      // earlier pass raised this to 2 to make the panel harder to reach, which
+      // is the wrong lever twice over - the library divides BOTH the row's
+      // travel and the release comparison by it, so it buys a lagging,
+      // unresponsive drag AND doubles the distance to commit. lib/swipeAction
+      // .ts carries the measured argument. Passed explicitly, not defaulted,
+      // so the value is a decision on the record rather than an omission.
+      friction={SWIPE_FRICTION}
+      // Both edges, same value: the pan needs real horizontal intent whichever
+      // way the finger goes, so a near-vertical drag stays with the FlatList.
+      // This is a dead zone on both platforms (the native handlers zero the
+      // translation on activation), which is why it is 16 and not the 28 that
+      // made the gesture feel broken.
+      dragOffsetFromLeftEdge={SWIPE_DRAG_OFFSET}
+      dragOffsetFromRightEdge={SWIPE_DRAG_OFFSET}
+      // THE fix for "azicik sola slide edince bile sil butonu geliyor" (device
+      // QA): the panel still tracks the finger from the first pixel, but
+      // letting go before 70% of it is out springs it shut, so a barely-there
+      // swipe can never leave the delete button sitting there to be tapped.
+      // The library's own default is half the panel. 70% OF THE MEASURED
+      // PANEL, so the pull stays proportionally identical on every screen
+      // instead of getting easier as the row gets wider.
+      leftThreshold={I18nManager.isRTL ? openThreshold : undefined}
+      rightThreshold={I18nManager.isRTL ? undefined : openThreshold}
+      // A single fixed-width action, not a variable drag-to-commit: overshoot
+      // would let it stretch past its own button, so it is turned off on
+      // whichever side the action actually renders on.
+      overshootLeft={I18nManager.isRTL ? false : undefined}
+      overshootRight={I18nManager.isRTL ? undefined : false}
+      // The row's own marginBottom moved here (it is off on the row itself
+      // whenever onDelete is set - see `row`'s style above) so the gap between
+      // free-standing cards sits OUTSIDE the swipeable's clipped, rounded
+      // container instead of inside it, where a rounded corner would show a
+      // square notch cut out of the revealed action underneath it.
+      //
+      // In-panel rows carry no border radius of their own (see the row style
+      // above) EXCEPT the very first row, which sits right under the panel's
+      // own rounded top cap (components/JournalPanel.tsx's JournalPanelTop) -
+      // without matching that same radius here, swiping that one row open
+      // used to show a hard square corner poking out of the panel's rounded
+      // silhouette (device QA screenshot). The panel's LAST row needs no
+      // equivalent: JournalPanelBottom always renders below the rows on both
+      // screens that draw a journal (it carries the "show more" / "see the full
+      // journal" action, and still renders its rounded cap with no action at
+      // all), so the last row's square bottom corners never reach the panel's
+      // silhouette. That is why there is no `lastInPanel` prop to match.
+      containerStyle={
+        !inPanel
+          ? { borderRadius: 13, marginBottom: 9 }
+          : firstInPanel
+            ? { borderTopLeftRadius: RADIUS.lg, borderTopRightRadius: RADIUS.lg }
+            : undefined
+      }
+      // ReanimatedSwipeable's renderRightActions is always the edge revealed by
+      // a swipe-towards-the-start gesture; it does NOT mirror for RTL layouts
+      // (only the actions' own internal stacking does - see the library's
+      // styles.rightActions). Arabic instead reveals from the left, so the
+      // action still appears on the side the reading direction opens towards.
+      {...(I18nManager.isRTL
+        ? { renderLeftActions: revealDelete }
+        : { renderRightActions: revealDelete })}
+    >
+      {row}
+    </ReanimatedSwipeable>
   );
 }
 
@@ -193,6 +416,10 @@ interface Props {
    *  meal's response (lib/mealResponse.ts) instead of the row's own edit tap. */
   hasResponse?: boolean;
   onOpenResponse?: (entry: JournalEntry) => void;
+  /** Swipe-to-delete (see Row's own `onDelete` note). Left undefined, the row
+   *  never mounts a ReanimatedSwipeable at all - the long-press menu's Delete
+   *  is unaffected either way. */
+  onDelete?: (entry: JournalEntry) => void;
   /** See Row's own `inPanel` note: the dashboard draws its journal inside one
    *  container, every other caller still gets the free-standing card. */
   inPanel?: boolean;
@@ -204,13 +431,18 @@ function JournalItemBase({
   profile,
   onLongPress,
   onPress,
+  onDelete,
   hasResponse,
   onOpenResponse,
   inPanel,
   firstInPanel,
 }: Props) {
   const { t } = useTranslation();
-  const chrome = { inPanel, firstInPanel };
+  const chrome = {
+    inPanel,
+    firstInPanel,
+    onDelete: onDelete ? () => onDelete(entry) : undefined,
+  };
 
   if (entry.kind === "glucose") {
     const status = classifyGlucose(
@@ -219,11 +451,28 @@ function JournalItemBase({
       profile
     );
     const color = RICH_BY_STATUS[status];
+    const isHealthSource = entry.source === "health";
+    // An imported reading carries no period at all (period_tag "unset" - see
+    // lib/periodTag.ts), so the row's own source is what identifies it, not a
+    // guessed time-of-day label. For any other row that somehow has no period
+    // set, the plain "unset" label still applies.
+    const periodLabel =
+      entry.period_tag !== "unset" ? t(`period.${entry.period_tag}`) : null;
+    const sourceLabel = isHealthSource
+      ? periodLabel
+        ? `${t("journal.sourceHealth")} · ${periodLabel}`
+        : t("journal.sourceHealth")
+      : (periodLabel ?? t("period.unset"));
     const label = [
       `${formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)} ${glucoseUnitLabel(profile.glucose_unit)}`,
-      t(`period.${entry.period_tag}`),
+      sourceLabel,
       status === "low" ? t("journal.lowBadge") : null,
       formatTime(entry.logged_at),
+      // Visual text is untouched (sourceLabel already reads "unset" above);
+      // this only tells VoiceOver/TalkBack that tapping the row can assign a
+      // period tag, since journal.addPeriodTag has no other reachable spot in
+      // the UI otherwise.
+      entry.period_tag === "unset" ? t("journal.addPeriodTag") : null,
     ]
       .filter(Boolean)
       .join(", ");
@@ -243,10 +492,18 @@ function JournalItemBase({
           style={{ marginRight: 10 }}
         />
         <View className="flex-1">
-          <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}>
+          {/* Health-sourced rows read as a secondary "where this came from"
+              badge (muted tone, same as the app's other secondary text) - not
+              a bold clinical classification like a period tag. */}
+          <Text
+            style={{
+              color: isHealthSource ? THEME.muted : THEME.ink,
+              fontSize: 12,
+              fontWeight: "700",
+            }}
+          >
             <Ionicons name="water" size={11} color={color} />{" "}
-            {t(`period.${entry.period_tag}`)}
-            {entry.source === "health" ? " · CGM" : ""}
+            {sourceLabel}
           </Text>
           {status === "low" ? (
             <Text style={{ color, fontSize: 10, fontWeight: "800", marginTop: 1 }}>

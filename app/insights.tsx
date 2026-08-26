@@ -386,7 +386,7 @@ export default function InsightsScreen() {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
-  const { activeProfile, isProUser } = useApp();
+  const { activeProfile, isProUser, dataVersion } = useApp();
   const { isWide } = useLayout();
   const { actionSheet } = useFeedback();
   const rtl = I18nManager.isRTL;
@@ -488,7 +488,11 @@ export default function InsightsScreen() {
     return () => {
       alive = false;
     };
-  }, [isProUser, activeProfile, fetchRange]);
+    // dataVersion (D5, 2.3.1 delete audit): every other reader of this profile's
+    // data re-fetches on it (see AppContext.bumpData) - without it, a delete or
+    // edit made elsewhere left this screen showing stale rows until something
+    // else (a window change, a profile switch) happened to re-run the effect.
+  }, [isProUser, activeProfile, fetchRange, dataVersion]);
 
   // Recompute locally when the window changes (no reload).
   const data = useMemo(
@@ -545,7 +549,12 @@ export default function InsightsScreen() {
   // screen (the unlock card is centred inside it).
   const lockedPreviewHeight = Math.max(360, windowHeight - insets.top - insets.bottom - 120);
   const premium = isProUser || locked;
-  const showsInjections = insulinModeUsesInsulin(activeProfile?.insulin_mode);
+  // D3 (2.3.1 delete audit): mode changes are a VISIBILITY choice, never a
+  // deletion - switching to "no diagnosis" must not make already-logged doses
+  // vanish from this report while the same range's PDF (lib/services/report.ts)
+  // keeps showing them via the identical `|| injections.length > 0` guard.
+  const showsInjections =
+    insulinModeUsesInsulin(activeProfile?.insulin_mode) || injections.length > 0;
 
   // Pro "from Health" summary: activity minutes + insulin delivery (read-only).
   const [health, setHealth] = useState<HealthSummary | null>(null);

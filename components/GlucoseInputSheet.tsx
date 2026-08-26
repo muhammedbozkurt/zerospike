@@ -36,12 +36,14 @@ import {
   parseDecimalText,
   sanitizeNumberText,
 } from "../lib/numberInput";
-import { INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { GradientCTA } from "./rich/GradientCTA";
 import { PressableScale } from "../lib/theme/motion";
 import { hapticSelect } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
+import { FeedbackHost, useFeedback } from "./Feedback";
+import { useEntryGuardConfirm } from "./useEntryGuardConfirm";
 
 /** Below this much room left over, the sheet drops into its compact type and
  *  spacing so the hero, the pills and Save all still fit above the keyboard. */
@@ -65,6 +67,12 @@ export interface GlucoseEditTarget {
   period_tag: PeriodTag;
   logged_at: string;
   tags: LogTag[];
+  /** Apple Health sample this reading is mirrored to, when the user opted in
+   *  (schema v10). Optional: only used to decide whether the delete confirm's
+   *  second line (journal.deleteHealthNote) applies - a caller that omits it
+   *  (structurally still a valid GlucoseEntry/SugarLog) just never sees that
+   *  line, which is the safe default. */
+  healthkit_uuid?: string | null;
 }
 
 interface Props {
@@ -84,6 +92,13 @@ interface Props {
     tags: LogTag[],
     loggedAt: Date | null
   ) => void;
+  /** Destructive "Delete" action (2.3.1 P4), EDIT mode only: confirms first
+   *  (with a second line when `edit.healthkit_uuid` is set), then fires with
+   *  the entry being edited so the caller can run the same undo-toast delete
+   *  every other surface uses. Left undefined, or with no `edit` target, no
+   *  delete button is drawn - a fresh (not yet saved) entry has nothing to
+   *  delete. */
+  onDelete?: (target: GlucoseEditTarget) => void;
 }
 
 /**
@@ -101,8 +116,11 @@ export function GlucoseInputSheet({
   edit = null,
   onClose,
   onSubmit,
+  onDelete,
 }: Props) {
   const { t, i18n } = useTranslation();
+  const { confirm } = useFeedback();
+  const guardEntry = useEntryGuardConfirm();
   const [value, setValue] = useState("");
   const [period, setPeriod] = useState<PeriodTag>(initialPeriod);
   const [tags, setTags] = useState<LogTag[]>([]);
@@ -221,19 +239,64 @@ export function GlucoseInputSheet({
 
   const typed = parseDecimalText(value);
 
-  function submit() {
+  // Guards the async gap between a Save tap and the guard dialog resolving:
+  // submittedRef alone (set only once the guard has already said "go") would
+  // let a second tap fire a second checkEntryGuards call, and a second dialog,
+  // while the first is still on screen.
+  const guardingRef = useRef(false);
+
+  async function submit() {
     if (typed == null || typed < minD || typed > maxD) return;
     // A second Save tap during the 190ms exit would restart the animation and
     // fire onSubmit twice, storing the reading twice.
-    if (submittedRef.current) return;
-    submittedRef.current = true;
+    if (submittedRef.current || guardingRef.current) return;
     // Captured BEFORE the exit animation: the callback fires a frame later and
     // must save exactly what was on screen when Save was pressed.
     const mgdl = glucoseFromDisplay(typed, unit);
     const p = period;
     const tg = tags;
     const at = loggedAt;
+
+    // Duplicate-entry check (lib/entryGuard.ts), right before the write. In
+    // EDIT mode the reading being corrected is its own excludeId, so it never
+    // gets flagged as a "recent glucose" duplicate of itself.
+    guardingRef.current = true;
+    let proceed: boolean;
+    try {
+      proceed = await guardEntry({
+        entryKind: "glucose",
+        entryAtIso: at ? at.toISOString() : undefined,
+        excludeId: edit?.id ?? null,
+      });
+    } finally {
+      guardingRef.current = false;
+    }
+    if (!proceed || submittedRef.current) return;
+    submittedRef.current = true;
     animateOut(() => onSubmit(mgdl, p, tg, at));
+  }
+
+  /** Same confirm dialog as the row's own swipe delete (useJournalRows.tsx's
+   *  confirmAndDelete) and the other edit sheets': a plain factual question,
+   *  destructive styling, plus a second line when this reading is also
+   *  mirrored to Apple Health (journal.deleteHealthNote) - the one case among
+   *  the three edit sheets where that line can ever apply. */
+  async function handleDelete() {
+    if (!edit || !onDelete || submittedRef.current) return;
+    const hasHealthNote = edit.healthkit_uuid != null;
+    const ok = await confirm({
+      message: hasHealthNote
+        ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote")}`
+        : t("journal.deleteEntry"),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      destructive: true,
+      icon: "trash-outline",
+    });
+    if (!ok) return;
+    submittedRef.current = true;
+    const target = edit;
+    animateOut(() => onDelete(target));
   }
 
   const valid = typed != null && typed >= minD && typed <= maxD;
@@ -603,11 +666,49 @@ export function GlucoseInputSheet({
                 />
 
                 <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
+
+                {edit && onDelete ? (
+                  <Pressable
+                    onPress={handleDelete}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("common.delete")}
+                    hitSlop={8}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minHeight: 44,
+                      marginTop: compact ? 8 : 14,
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
+                    <Text
+                      style={{
+                        color: GLUCOSE_RICH.low,
+                        fontSize: 13,
+                        fontWeight: "700",
+                        marginLeft: 6,
+                      }}
+                    >
+                      {t("common.delete")}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </ScrollView>
             </Pressable>
             </Animated.View>
           </Pressable>
         </KeyboardAvoidingView>
+      {/* This sheet is an RN <Modal>, i.e. its own view controller. The
+          FeedbackHost a SCREEN renders lives in the screen's controller, which
+          is UNDERNEATH this one - so a confirm() raised from here used to be
+          painted behind the sheet: invisible, untappable, and the promise it
+          returns never settled, which left the action that awaited it hanging.
+          Hosts are a stack and only the topmost one paints (lib/feedback.ts
+          activeHostId), so mounting one here while the sheet is open puts the
+          dialog in the right controller and hands it back to the screen on
+          close. Guarded on `visible` so a closed sheet never takes the stack. */}
+      {visible ? <FeedbackHost /> : null}
       </View>
     </Modal>
   );

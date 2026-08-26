@@ -23,19 +23,21 @@ import {
   type InjectionUpdate,
   type SiteUsage,
 } from "../lib/db/injections";
+import { OTHER_PRODUCT_ID } from "../lib/insulinCatalog";
 import { getRotationCycleStart } from "../lib/rotationCycle";
 import { InjectionBodyMap } from "./InjectionBodyMap";
+import { InsulinProductPicker } from "./InsulinProductPicker";
 import { Skeleton } from "./Skeleton";
 import { DirIcon } from "./DirIcon";
 import { checkDose } from "../lib/insulin";
 import { logCrash, logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import { useApp } from "../lib/store/AppContext";
-import { useFeedback } from "./Feedback";
+import { FeedbackHost, useFeedback } from "./Feedback";
 import { Stepper } from "./Stepper";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
-import { RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { listEntering, listExiting, listLayout } from "../lib/theme/motion";
 import { GradientCTA } from "./rich/GradientCTA";
 import { withAlpha } from "./rich/GlassCard";
@@ -50,6 +52,11 @@ export interface InjectionEditTarget {
   insulin_type: InsulinType | null;
   bolus_kind: BolusKind | null;
   logged_at: string;
+  /** Which product this row actually used (schema v22, see
+   *  ../lib/insulinCatalog). Its own copy, independent of the profile's
+   *  current basal_insulin_id / bolus_insulin_id. */
+  insulin_product_id: string | null;
+  insulin_product_other: string | null;
 }
 
 // Same heat window as the injection tab's map surface.
@@ -132,11 +139,17 @@ export function InjectionEditSheet({
   injection,
   onClose,
   onSaved,
+  onDelete,
 }: {
   visible: boolean;
   injection: InjectionEditTarget | null;
   onClose: () => void;
   onSaved: () => void;
+  /** Destructive "Delete" action (2.3.1 P4): confirms first, then fires this so
+   *  the caller can run the same undo-toast delete every other surface uses.
+   *  Left undefined, no delete button is drawn - same "prop absent, feature
+   *  absent" rule the row's own swipe delete follows. */
+  onDelete?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const { activeProfile, isProUser } = useApp();
@@ -150,6 +163,11 @@ export function InjectionEditSheet({
   const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
+  // Which product THIS row used (schema v22): its own copy, seeded from the
+  // row being edited (never re-derived from the profile here, unlike the
+  // create form's prefill - see app/(tabs)/injection.tsx).
+  const [productId, setProductId] = useState<string | null>(null);
+  const [productOther, setProductOther] = useState<string | null>(null);
   const [site, setSite] = useState<InjectionSite>("abdomen_left");
   const [point, setPoint] = useState<SitePoint | null>(null);
   // Whether the working state currently HAS a site (site+point pair), as
@@ -177,6 +195,8 @@ export function InjectionEditSheet({
       setDose(injection.dose_units ?? 0);
       setInsulinType(injection.insulin_type ?? "bolus");
       setBolusKind(injection.bolus_kind);
+      setProductId(injection.insulin_product_id ?? null);
+      setProductOther(injection.insulin_product_other ?? null);
       // A row logged without a region (a calculator bolus) opens on the first
       // selectable region so the user CAN fill one in; it only becomes part of
       // the record if they pick one (see hasSite).
@@ -250,6 +270,31 @@ export function InjectionEditSheet({
     });
   }
 
+  /**
+   * A catalog pick clears the free-text name (it no longer applies); picking
+   * "Diger" keeps whichever name this row already carries, falling back to
+   * the profile's own OTHER text for the current slot (the same source a
+   * fresh entry would have prefilled from) only when this row has none yet.
+   * There is no free-text field in this sheet (see the picker row below) -
+   * renaming an "other" product happens either by picking a catalog product
+   * here or by editing the name in Settings > Profile.
+   */
+  function selectProduct(id: string | null) {
+    setProductId(id);
+    if (id !== OTHER_PRODUCT_ID) {
+      setProductOther(null);
+      return;
+    }
+    setProductOther((prev) => {
+      if (prev && prev.trim()) return prev;
+      const profileOther =
+        insulinType === "basal"
+          ? activeProfile?.basal_insulin_other
+          : activeProfile?.bolus_insulin_other;
+      return profileOther ?? null;
+    });
+  }
+
   async function save() {
     if (!injection || saving) return;
     const hasDose = dose > 0;
@@ -262,17 +307,36 @@ export function InjectionEditSheet({
         dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
         bolus_kind: insulinType === "bolus" ? bolusKind : null,
+        insulin_product_id: productId,
+        insulin_product_other: productId === OTHER_PRODUCT_ID ? productOther : null,
         site: hasSite ? site : null,
         site_point: hasSite ? point : null,
         logged_at: loggedAt.toISOString(),
       };
       await updateInjection(injection.id, patch);
-      logEvent("log_edited", { kind: "insulin" });
+      logEvent("log_edited");
       hapticSuccess();
       onSaved();
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Same confirm dialog as the row's own swipe delete (useJournalRows.tsx's
+   *  confirmAndDelete) and MedEditSheet's: a plain factual question, destructive
+   *  styling, no second line here - an injection never has an Apple Health
+   *  mirror to warn about. */
+  async function handleDelete() {
+    if (!injection || !onDelete) return;
+    const ok = await confirm({
+      message: t("journal.deleteEntry"),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      destructive: true,
+      icon: "trash-outline",
+    });
+    if (!ok) return;
+    onDelete();
   }
 
   // Neutral vs. real: the row only names an actual region once one is on the
@@ -448,6 +512,27 @@ export function InjectionEditSheet({
                   style={{ marginBottom: 16 }}
                 />
 
+                {/* Which product THIS entry used - its own copy, independent of
+                    the profile's current pick (schema v22). No free-text field
+                    here: picking "Diger" keeps the row's existing name (or the
+                    profile's own, as a starting point); renaming it happens in
+                    Settings > Profile. */}
+                <FieldLabel>
+                  {insulinType === "basal" ? t("settings.basalInsulin") : t("settings.bolusInsulin")}
+                </FieldLabel>
+                <View style={{ marginBottom: 16 }}>
+                  <InsulinProductPicker
+                    label={
+                      insulinType === "basal" ? t("settings.basalInsulin") : t("settings.bolusInsulin")
+                    }
+                    value={productId}
+                    otherValue={productOther}
+                    slot={insulinType}
+                    allowNotSet
+                    onChange={selectProduct}
+                  />
+                </View>
+
                 {/* Reflows smoothly when the bolus-label row appears/disappears,
                     same motion language as the create form (WP3). */}
                 <Animated.View layout={listLayout}>
@@ -530,11 +615,49 @@ export function InjectionEditSheet({
                   </View>
 
                   <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
+
+                  {onDelete ? (
+                    <Pressable
+                      onPress={handleDelete}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("common.delete")}
+                      hitSlop={8}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minHeight: 44,
+                        marginTop: 14,
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
+                      <Text
+                        style={{
+                          color: GLUCOSE_RICH.low,
+                          fontSize: 13,
+                          fontWeight: "700",
+                          marginLeft: 6,
+                        }}
+                      >
+                        {t("common.delete")}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </Animated.View>
               </ScrollView>
             )}
           </Pressable>
         </Pressable>
+      {/* This sheet is an RN <Modal>, i.e. its own view controller. The
+          FeedbackHost a SCREEN renders lives in the screen's controller, which
+          is UNDERNEATH this one - so a confirm() raised from here used to be
+          painted behind the sheet: invisible, untappable, and the promise it
+          returns never settled, which left the action that awaited it hanging.
+          Hosts are a stack and only the topmost one paints (lib/feedback.ts
+          activeHostId), so mounting one here while the sheet is open puts the
+          dialog in the right controller and hands it back to the screen on
+          close. Guarded on `visible` so a closed sheet never takes the stack. */}
+      {visible ? <FeedbackHost /> : null}
       </KeyboardAvoidingView>
     </Modal>
   );

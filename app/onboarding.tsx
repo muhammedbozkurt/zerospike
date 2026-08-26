@@ -58,9 +58,11 @@ import {
 import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G } from "../lib/diabetesDefaults";
 import { RangeInput } from "../components/RangeInput";
 import { Stepper } from "../components/Stepper";
+import { InsulinProductPicker } from "../components/InsulinProductPicker";
+import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logEvent } from "../lib/analytics";
 import { hapticSelect } from "../lib/haptics";
-import { Button } from "../components/ui";
+import { Button, SectionLabel } from "../components/ui";
 import { AcceptCheck } from "../components/form";
 import { BigInput } from "../components/onboarding/BigInput";
 import { InlineTimePicker } from "../components/InlineTimePicker";
@@ -123,6 +125,7 @@ type StepId =
   | "insulin"
   | "pillsOnly"
   | "targets"
+  | "insulinProducts"
   | "carbRatio"
   | "isf"
   | "basal"
@@ -215,6 +218,33 @@ export default function OnboardingScreen() {
   );
   const [basalTime, setBasalTime] = useState("22:00");
   const [showTime, setShowTime] = useState(false);
+  // The insulinProducts step's own answers: which catalog product (or "other"
+  // + a typed name) for each slot, and the self-reported daily basal amount.
+  // Entirely optional - left at their profile/seed defaults, this step can be
+  // walked past with no write of its own (finishToReveal only sends these
+  // while hasInsulin, same gate as carbRatio/isf below).
+  const [basalInsulinId, setBasalInsulinId] = useState<string | null>(
+    activeProfile?.basal_insulin_id ?? null
+  );
+  const [bolusInsulinId, setBolusInsulinId] = useState<string | null>(
+    activeProfile?.bolus_insulin_id ?? null
+  );
+  const [basalInsulinOther, setBasalInsulinOther] = useState<string | null>(
+    activeProfile?.basal_insulin_other ?? null
+  );
+  const [bolusInsulinOther, setBolusInsulinOther] = useState<string | null>(
+    activeProfile?.bolus_insulin_other ?? null
+  );
+  const [basalDailyUnits, setBasalDailyUnits] = useState(
+    activeProfile?.basal_daily_units ?? 0
+  );
+  // Premix UI toggle (P9): the insulinProducts step's two layouts are derived
+  // from isMixSelection(basalInsulinId, bolusInsulinId) - true once a premix
+  // product has actually been picked. This extra flag only covers the instant
+  // between tapping "mixUse" and picking one: with no product chosen yet the
+  // two ids are still null/null, so the derivation alone cannot tell "premix,
+  // nothing picked" apart from "separate mode". Reset to false by mixOff.
+  const [mixModeUi, setMixModeUi] = useState(false);
   // The optional pill-reminder step (medReminder): a plain 08:00 default, its
   // own picker toggle, and the id of the row once "Kur" actually creates one -
   // kept so tapping "Kur" again after navigating back UPDATES that same row
@@ -267,7 +297,9 @@ export default function OnboardingScreen() {
   // notification, reminder-layout and disclaimer tail.
   const steps = useMemo<StepId[]>(() => {
     const treatmentStep: StepId[] = isTwoWayTreatment ? ["pillsOnly"] : ["insulin"];
-    const branch: StepId[] = hasInsulin ? ["carbRatio", "isf", "basal"] : [];
+    const branch: StepId[] = hasInsulin
+      ? ["insulinProducts", "carbRatio", "isf", "basal"]
+      : [];
     // Offered only to whoever tracks pills (the "pills" or "both" answer):
     // insulin-only users have nothing to set up here, and it never blocks
     // finishing - "Simdi degil" always moves on with no reminder created.
@@ -466,6 +498,15 @@ export default function OnboardingScreen() {
         // A number the user set is theirs; one they skipped past is not, and
         // the meal-log screen has to be able to tell those apart.
         patch.ratios_confirmed = carbRatioTouched && isfTouched ? 1 : 0;
+        // The insulinProducts step's own answers (schema v22, see
+        // ../lib/insulinCatalog). All optional - a skipped step simply writes
+        // the seed profile's defaults (null / null / 0 -> null), same as every
+        // other "walked past it" field on this screen.
+        patch.basal_insulin_id = basalInsulinId;
+        patch.bolus_insulin_id = bolusInsulinId;
+        patch.basal_insulin_other = basalInsulinOther;
+        patch.bolus_insulin_other = bolusInsulinOther;
+        patch.basal_daily_units = basalDailyUnits > 0 ? basalDailyUnits : null;
       }
       await updateProfile(activeProfile.id, patch);
 
@@ -548,6 +589,8 @@ export default function OnboardingScreen() {
         return diabetes === "none"
           ? t("onboarding.qTargetsHintTracking")
           : undefined;
+      case "insulinProducts":
+        return t("onboarding.qInsulinProductsHint");
       case "carbRatio":
         return t("onboarding.qCarbRatioHint");
       case "isf":
@@ -873,6 +916,116 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
+      // Optional, skippable (see the "gec" link in the footer): which product
+      // for each slot the user actually uses, and the daily basal amount they
+      // record themselves. Nothing here is a suggestion - both pickers store
+      // exactly what the user picks/types, and a blank step writes nothing.
+      case "insulinProducts": {
+        const mixMode = mixModeUi || isMixSelection(basalInsulinId, bolusInsulinId);
+        const basalUnitsField = (
+          <View style={{ marginTop: 14 }}>
+            <Text className="text-ink text-sm font-semibold mb-2">
+              {t("settings.basalDailyUnits")}
+            </Text>
+            <Stepper
+              value={basalDailyUnits}
+              onChange={setBasalDailyUnits}
+              step={1}
+              longStep={5}
+              min={0}
+              max={200}
+              decimals={0}
+              suffix={t("common.units")}
+              accessibilityLabel={t("settings.basalDailyUnits")}
+            />
+            <Text className="text-mut text-xs mt-2 leading-4">
+              {t("settings.basalDailyUnitsHint")}
+            </Text>
+          </View>
+        );
+        return mixMode ? (
+          <FadeSlideIn delay={optDelay(0)}>
+            <SectionLabel>{t("insulinPicker.groupMix")}</SectionLabel>
+            <InsulinProductPicker
+              label={t("insulinPicker.groupMix")}
+              value={basalInsulinId}
+              otherValue={basalInsulinOther}
+              slot="mix"
+              onChange={(id) => {
+                // A premix fills BOTH DB fields at once (see isMixSelection):
+                // there is no separate "mix" column, the two ids being equal
+                // and a mix-category product IS the mix state.
+                setBasalInsulinId(id);
+                setBolusInsulinId(id);
+                if (id !== OTHER_PRODUCT_ID) {
+                  setBasalInsulinOther(null);
+                  setBolusInsulinOther(null);
+                }
+              }}
+              onOtherChange={(text) => {
+                setBasalInsulinOther(text);
+                setBolusInsulinOther(text);
+              }}
+            />
+            {basalUnitsField}
+            <Pressable
+              onPress={() => {
+                setMixModeUi(false);
+                setBasalInsulinId(null);
+                setBolusInsulinId(null);
+                setBasalInsulinOther(null);
+                setBolusInsulinOther(null);
+              }}
+              hitSlop={8}
+              className="py-3.5 items-center"
+              style={{ marginTop: 10 }}
+            >
+              <Text className="text-mut font-medium">{t("insulinPicker.mixOff")}</Text>
+            </Pressable>
+          </FadeSlideIn>
+        ) : (
+          <FadeSlideIn delay={optDelay(0)}>
+            <SectionLabel>{t("settings.basalInsulin")}</SectionLabel>
+            <InsulinProductPicker
+              label={t("settings.basalInsulin")}
+              value={basalInsulinId}
+              otherValue={basalInsulinOther}
+              slot="basal"
+              onChange={(id) => {
+                setBasalInsulinId(id);
+                if (id !== OTHER_PRODUCT_ID) setBasalInsulinOther(null);
+              }}
+              onOtherChange={setBasalInsulinOther}
+            />
+            {basalUnitsField}
+
+            <View style={{ marginTop: 24 }}>
+              <SectionLabel>{t("settings.bolusInsulin")}</SectionLabel>
+              <InsulinProductPicker
+                label={t("settings.bolusInsulin")}
+                value={bolusInsulinId}
+                otherValue={bolusInsulinOther}
+                slot="bolus"
+                onChange={(id) => {
+                  setBolusInsulinId(id);
+                  if (id !== OTHER_PRODUCT_ID) setBolusInsulinOther(null);
+                }}
+                onOtherChange={setBolusInsulinOther}
+              />
+            </View>
+
+            <Pressable
+              onPress={() => setMixModeUi(true)}
+              hitSlop={8}
+              className="py-3.5 items-center"
+              style={{ marginTop: 10 }}
+            >
+              <Text className="text-mut font-medium">{t("insulinPicker.mixUse")}</Text>
+            </Pressable>
+          </FadeSlideIn>
+        );
+      }
+
       case "carbRatio":
         return (
           <FadeSlideIn delay={optDelay(0)}>
@@ -1098,6 +1251,60 @@ export default function OnboardingScreen() {
                   </View>
                   <Text className="text-mut text-[10px] font-semibold mt-0.5">112 mg/dL</Text>
                 </View>
+              </View>
+            </View>
+
+            {/* Mini widgets: 2.3.1's four single-purpose tiles, drawn as the
+                icon-only accessoryCircular shape above actually renders on the
+                Lock Screen (SmallActionView.circularView in
+                targets/widget/SmallWidgets.swift) - same 44pt circle, same
+                border/glass, no number because these tiles carry no reading.
+                No under-circle label: dashboard.startCountdown's German
+                ("Countdown starten", two words) does not fit one line under a
+                44pt column at 9-10pt even spread across the full step width,
+                and CLAUDE.md bans adjustsFontSizeToFit (it clips silently on
+                Android) - see scripts/postMealCardLayout.test.ts section H for
+                the measured widths. onboarding.widgetIntro right below already
+                says in prose what a tap on one of these does, so the row does
+                not go unexplained. */}
+            <View style={{ marginTop: 14 }}>
+              <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
+                {upper(t("widgetGuide.miniTitle"))}
+              </Text>
+              <View
+                className="flex-row items-center mt-2"
+                style={{ gap: 10, flexWrap: "wrap" }}
+              >
+                {[
+                  { key: "glucose", icon: "water" as const },
+                  { key: "meal", icon: "restaurant" as const },
+                  // Insulin tile only for a profile that actually uses
+                  // insulin - this step runs AFTER the treatment question, so
+                  // hasInsulin is already settled. Not hidden, not rendered:
+                  // the same "no leak for a no-insulin profile" rule
+                  // SmallWidgets.swift's smallInjectionAction enforces on the
+                  // real widget.
+                  ...(hasInsulin
+                    ? [{ key: "insulin", icon: "medical" as const }]
+                    : []),
+                  { key: "timer", icon: "timer-outline" as const },
+                ].map((tile) => (
+                  <View
+                    key={tile.key}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 22,
+                      borderWidth: 1,
+                      borderColor: THEME.border,
+                      backgroundColor: THEME.glass,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name={tile.icon} size={18} color={THEME.ink} />
+                  </View>
+                ))}
               </View>
             </View>
 
@@ -1329,8 +1536,10 @@ export default function OnboardingScreen() {
     // The diabetes question is optional, but skipping it has to be a deliberate
     // tap: Continue stays inert until something is picked, and the skip sits
     // next to it as its own action instead of hiding inside Continue.
+    // insulinProducts never disables Continue (nothing here is required), but
+    // gets the same explicit "gec" link since it is just as optional.
     const skipQuestion =
-      step === "diabetes" ? (
+      step === "diabetes" || step === "insulinProducts" ? (
         <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
           <Text className="text-mut font-medium">{t("onboarding.skipQuestion")}</Text>
         </Pressable>

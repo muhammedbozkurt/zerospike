@@ -181,6 +181,7 @@ function JournalScreen() {
             profile={activeProfile}
             onPress={rows.onRowPress}
             onLongPress={rows.onRowLongPress}
+            onDelete={rows.onRowDelete}
             hasResponse={item.kind === "meal" && rows.mealResponseIds.has(item.id)}
             onOpenResponse={rows.onRowOpenResponse}
             inPanel
@@ -193,6 +194,7 @@ function JournalScreen() {
       rows.mealResponseIds,
       rows.onRowPress,
       rows.onRowLongPress,
+      rows.onRowDelete,
       rows.onRowOpenResponse,
     ]
   );
@@ -207,7 +209,7 @@ function JournalScreen() {
     setEditGlucose(null);
     if (!target) return;
     await applyGlucoseCorrection(target, value, period, tags, loggedAt);
-    logEvent("log_edited", { kind: "glucose" });
+    logEvent("log_edited");
     hapticSuccess();
     bumpData();
   }
@@ -287,6 +289,12 @@ function JournalScreen() {
         edit={editGlucose}
         onClose={() => setEditGlucose(null)}
         onSubmit={submitGlucoseEdit}
+        onDelete={() => {
+          // The sheet's own confirm already ran before this fires.
+          const target = editGlucose;
+          setEditGlucose(null);
+          if (target) void rows.deleteEntry(target);
+        }}
       />
       {rows.sheets}
       <FeedbackHost />

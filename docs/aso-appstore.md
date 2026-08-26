@@ -1,4 +1,4 @@
-# zerospike App Store + Google Play ASO - Index (2026-08, v1.7.0)
+# zerospike App Store + Google Play ASO - Index (2026-08, 2.3.0 round)
 
 This is the overview and rule set. The actual per-store, per-language copy lives in
 one file per language under `zerospike-store/aso/`:
@@ -8,6 +8,14 @@ one file per language under `zerospike-store/aso/`:
 - German: [../zerospike-store/aso/de.md](../zerospike-store/aso/de.md)
 - Spanish: [../zerospike-store/aso/es.md](../zerospike-store/aso/es.md)
 - French: [../zerospike-store/aso/fr.md](../zerospike-store/aso/fr.md)
+- Italian: [../zerospike-store/aso/it.md](../zerospike-store/aso/it.md)
+- Portuguese (BR): [../zerospike-store/aso/pt.md](../zerospike-store/aso/pt.md)
+- Arabic: [../zerospike-store/aso/ar.md](../zerospike-store/aso/ar.md)
+- Japanese: [../zerospike-store/aso/ja.md](../zerospike-store/aso/ja.md)
+
+2.3.0 ASO round (2026-08-24): research, per-market rationale, A/B alternatives and
+sources live in [../zerospike-store/aso/aso-2.3.0-research.md](../zerospike-store/aso/aso-2.3.0-research.md).
+Previous field values are kept inline as "(onceki: ...)" lines in each language file.
 
 Each language file has an **App Store** block (App name, Subtitle, Promotional Text,
 Keywords, Description, What's New) and a **Google Play** block (Title, Short
@@ -19,7 +27,12 @@ length-limited field.
 - App name / Play title: 30
 - Subtitle: 30
 - Promotional Text: 170
-- Keywords (App Store): 100, comma-separated, no space after commas
+- Keywords (App Store): 100 BYTES (UTF-8), comma-separated, no space after commas.
+  Apple's metadata spec defines this limit in bytes (Japanese chars = 3 bytes,
+  Arabic = 2, Turkish diacritics = 2); App Store Connect may accept 100 characters,
+  but we target 100 bytes so nothing risks being cut from the index. Never repeat
+  words already in the name or subtitle. Verify with zerospike-store/aso research
+  script counts, never by hand.
 - Description / Play full description: 4000
 - Play short description: 80
 

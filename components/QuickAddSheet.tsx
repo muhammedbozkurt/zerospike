@@ -108,7 +108,7 @@ export function QuickAddSheet({
         note: medNote.trim() || null,
       });
       if (trimmedName) await upsertMedUse(activeProfile.id, trimmedName, takenAt);
-      logEvent("log_added", { kind: "med", source: "manual" });
+      logEvent("log_added", { source: "manual" });
       void noteJournalActivity();
       bumpData();
       hapticSuccess();

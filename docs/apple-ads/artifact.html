@@ -1,0 +1,662 @@
+<title>zerospike Apple Ads Plani</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{
+  --ground:#f2f8fa; --surface:#ffffff; --surface-2:#e7f1f5; --surface-3:#dbeaf0;
+  --ink:#0f2029; --ink-2:#3c5866; --ink-3:#6b8794;
+  --line:#cfe0e7; --line-2:#b6d2dc;
+  --accent:#0a7f96; --accent-ink:#065366; --accent-soft:#d3eef4;
+  --good:#0d8a5f; --good-soft:#d5f0e4; --warn:#a8620a; --warn-soft:#fbebd4;
+  --crit:#b3243b; --crit-soft:#fadfe4;
+  --shadow:0 1px 2px rgba(15,32,41,.06), 0 8px 24px -16px rgba(15,32,41,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0b1620; --surface:#0f2029; --surface-2:#16232e; --surface-3:#1b2f3c;
+    --ink:#eaf6fa; --ink-2:#a9c2ce; --ink-3:#89a3b0;
+    --line:#1e3644; --line-2:#2a4757;
+    --accent:#2ee6ff; --accent-ink:#7ff4ff; --accent-soft:#123141;
+    --good:#22e39a; --good-soft:#0d3a2e; --warn:#ffa02a; --warn-soft:#3a2a10;
+    --crit:#ff5468; --crit-soft:#3d1720;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0b1620; --surface:#0f2029; --surface-2:#16232e; --surface-3:#1b2f3c;
+  --ink:#eaf6fa; --ink-2:#a9c2ce; --ink-3:#89a3b0;
+  --line:#1e3644; --line-2:#2a4757;
+  --accent:#2ee6ff; --accent-ink:#7ff4ff; --accent-soft:#123141;
+  --good:#22e39a; --good-soft:#0d3a2e; --warn:#ffa02a; --warn-soft:#3a2a10;
+  --crit:#ff5468; --crit-soft:#3d1720;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.shell{max-width:1180px;margin:0 auto;padding:0 24px 96px}
+@media(min-width:1080px){
+  .shell{display:grid;grid-template-columns:186px minmax(0,1fr);gap:56px;padding-right:32px}
+  .rail{grid-column:1;align-self:start;position:sticky;top:28px;padding-top:40px}
+  .main{grid-column:2;min-width:0}
+  .masthead{grid-column:1/-1}
+}
+.rail{display:none}
+@media(min-width:1080px){.rail{display:block}}
+.rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.rail a{
+  display:flex;gap:10px;padding:5px 8px;border-radius:5px;text-decoration:none;
+  color:var(--ink-3);font-size:12.5px;line-height:1.35;border-left:2px solid transparent;
+}
+.rail a:hover{color:var(--accent);background:var(--accent-soft)}
+.rail a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.rail .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--line-2);flex:none}
+.rail a:hover .n{color:var(--accent)}
+
+/* masthead */
+.masthead{padding:56px 0 0}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 14px
+}
+h1{
+  font-size:clamp(34px,5.2vw,52px);line-height:1.02;letter-spacing:-.028em;
+  font-weight:600;margin:0 0 18px;text-wrap:balance;max-width:15ch
+}
+.standfirst{
+  font-family:"IBM Plex Serif",Georgia,serif;font-size:18px;line-height:1.55;
+  color:var(--ink-2);max-width:62ch;margin:0 0 26px
+}
+.meta{
+  display:flex;flex-wrap:wrap;gap:0 26px;row-gap:6px;padding:14px 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3)
+}
+.meta b{color:var(--ink-2);font-weight:500}
+
+/* verdict */
+.verdict{
+  margin:34px 0 8px;background:var(--surface);border:1px solid var(--line);
+  border-radius:10px;box-shadow:var(--shadow);overflow:hidden
+}
+.verdict-head{
+  padding:18px 22px 16px;border-bottom:1px solid var(--line);
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:12px
+}
+.verdict-head h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.verdict-body{padding:20px 22px 22px}
+.verdict-body > p{
+  font-family:"IBM Plex Serif",Georgia,serif;font-size:15.5px;line-height:1.6;
+  color:var(--ink-2);margin:0 0 18px;max-width:66ch
+}
+.gates{display:grid;gap:12px;margin:0}
+@media(min-width:640px){.gates{grid-template-columns:1fr 1fr}}
+.gate{
+  border:1px solid var(--line);border-radius:8px;padding:14px 16px;background:var(--surface-2)
+}
+.gate .lbl{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--warn);margin:0 0 6px
+}
+.gate h3{margin:0 0 6px;font-size:15px;font-weight:600}
+.gate p{margin:0;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+.gate code{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink)}
+
+.deltabar{
+  display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--line-2)
+}
+.delta{
+  flex:1 1 190px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--surface)
+}
+.delta .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.delta .v{font-family:"IBM Plex Mono",monospace;font-size:26px;font-weight:600;line-height:1.15;margin-top:5px;font-variant-numeric:tabular-nums}
+.delta.bad .v{color:var(--crit)} .delta.mid .v{color:var(--warn)} .delta.ok .v{color:var(--good)}
+.delta .s{font-size:12px;color:var(--ink-3);margin-top:3px}
+
+/* sections */
+section{padding-top:64px;scroll-margin-top:24px}
+.sechead{display:flex;gap:14px;align-items:baseline;margin:0 0 6px;padding-bottom:12px;border-bottom:2px solid var(--ink)}
+.sechead .n{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent);
+  letter-spacing:.06em;flex:none;padding-top:5px
+}
+.sechead h2{margin:0;font-size:clamp(22px,3vw,28px);font-weight:600;letter-spacing:-.02em;text-wrap:balance}
+.lede{font-family:"IBM Plex Serif",Georgia,serif;font-size:15.5px;line-height:1.62;color:var(--ink-2);max-width:66ch;margin:18px 0}
+.main p{max-width:66ch}
+h3.sub{font-size:15px;font-weight:600;margin:32px 0 10px;letter-spacing:-.005em}
+h3.sub .hint{font-weight:400;color:var(--ink-3);font-size:13px;margin-left:8px}
+
+/* tables */
+.scroll{overflow-x:auto;margin:18px 0;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+th,td{padding:9px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500;background:var(--surface-2);white-space:nowrap;position:sticky;top:0
+}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.tot td{background:var(--surface-2);font-weight:600}
+td.n,th.n{text-align:right;font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.k{font-weight:600;white-space:nowrap}
+.good{color:var(--good)} .warn{color:var(--warn)} .crit{color:var(--crit)} .dim{color:var(--ink-3)}
+
+.pill{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;padding:2px 7px;border-radius:3px;white-space:nowrap;font-weight:500
+}
+.pill.core{background:var(--good-soft);color:var(--good)}
+.pill.small{background:var(--accent-soft);color:var(--accent-ink)}
+.pill.test{background:var(--warn-soft);color:var(--warn)}
+.pill.out{background:var(--crit-soft);color:var(--crit)}
+
+/* keyword chips */
+.mkt{margin:22px 0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
+.mkt > summary{
+  padding:14px 18px;cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+  font-weight:600;font-size:15px;list-style:none;background:var(--surface-2)
+}
+.mkt > summary::-webkit-details-marker{display:none}
+.mkt > summary::before{content:"+";font-family:"IBM Plex Mono",monospace;color:var(--accent);font-weight:600}
+.mkt[open] > summary::before{content:"\2212"}
+.mkt > summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.mkt .cnt{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);font-weight:400;margin-left:auto}
+.mktbody{padding:6px 18px 18px}
+.grp{padding:14px 0;border-bottom:1px solid var(--line)}
+.grp:last-child{border-bottom:none}
+.grp-h{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 9px;display:flex;flex-wrap:wrap;gap:8px;align-items:center
+}
+.grp-h b{color:var(--accent-ink);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  display:inline-flex;align-items:baseline;gap:7px;border:1px solid var(--line);border-radius:5px;
+  padding:4px 9px;background:var(--surface-2);font-size:13px;line-height:1.35;max-width:100%
+}
+.chip .b{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums;flex:none}
+.chip.neg{background:transparent;border-style:dashed;border-color:var(--crit);color:var(--ink-2)}
+.negnote{font-size:12.5px;color:var(--ink-3);margin:0 0 9px;max-width:66ch}
+
+/* protocol timeline */
+.proto{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column}
+.proto li{display:grid;grid-template-columns:74px minmax(0,1fr);gap:16px;padding:0 0 20px;position:relative}
+.proto li::before{content:"";position:absolute;left:36px;top:22px;bottom:0;width:1px;background:var(--line)}
+.proto li:last-child::before{display:none}
+.proto .day{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);padding-top:3px;text-align:right;position:relative
+}
+.proto .day::after{
+  content:"";position:absolute;right:-22px;top:7px;width:9px;height:9px;border-radius:50%;
+  background:var(--ground);border:2px solid var(--accent)
+}
+.proto h4{margin:0 0 4px;font-size:14.5px;font-weight:600}
+.proto p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink-2);max-width:62ch}
+
+/* steps */
+ol.steps{counter-reset:s;list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column;gap:14px}
+ol.steps > li{counter-increment:s;display:grid;grid-template-columns:30px minmax(0,1fr);gap:14px}
+ol.steps > li::before{
+  content:counter(s);font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent);
+  border:1px solid var(--line);border-radius:5px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--surface)
+}
+ol.steps h4{margin:3px 0 4px;font-size:14.5px;font-weight:600}
+ol.steps p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink-2);max-width:64ch}
+code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:3px;border:1px solid var(--line)}
+pre{
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.6;background:var(--surface);
+  border:1px solid var(--line);border-radius:7px;padding:13px 15px;overflow-x:auto;margin:12px 0
+}
+pre code{background:none;border:none;padding:0}
+
+/* decisions */
+.dec{display:flex;flex-direction:column;gap:0;margin:20px 0 0;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+.dec > div{display:grid;grid-template-columns:130px minmax(0,1fr);gap:16px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.dec > div:last-child{border-bottom:none}
+.dec .who{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);padding-top:2px}
+.dec h4{margin:0 0 4px;font-size:14.5px;font-weight:600}
+.dec p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink-2);max-width:64ch}
+ul.plain{margin:14px 0;padding-left:20px;max-width:66ch}
+ul.plain li{font-size:14px;line-height:1.6;color:var(--ink-2);margin-bottom:8px}
+ul.plain li b{color:var(--ink)}
+footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-3);font-family:"IBM Plex Mono",monospace}
+footer p{max-width:70ch;line-height:1.65}
+@media (prefers-reduced-motion:no-preference){.rail a{transition:color .12s ease,background .12s ease}}
+</style>
+<div class="shell">
+<header class="masthead">
+  <p class="eyebrow">Apple Search Ads &middot; Advanced &middot; 2026-08-26</p>
+  <h1>zerospike Apple Ads Plani</h1>
+  <p class="standfirst">Dort storefront, 136 anahtar kelime, 115 negatif terim ve uc urun sayfasi.
+  Konsola girilmeye hazir, olcumu kurulu. Ama once iki on kosul var ve onlar yapilmadan hicbir
+  butce seviyesi kendini odemiyor.</p>
+  <div class="meta">
+    <span>Veri: <b>pulse.db</b></span>
+    <span>Donem: <b>2026-06-17 &rarr; 2026-08-24</b>, 69 gun</span>
+    <span>Uygulama: <b>6778782351</b></span>
+    <span>Gosterim: <b>1.316</b></span>
+    <span>Yeni indirme: <b>18</b></span>
+    <span>Gelir: <b>61,06 $</b>, tek satis</span>
+  </div>
+  <div class="verdict">
+    <div class="verdict-head"><h2>Karar ozeti</h2><span class="pill test">Kampanyadan once yapilacak</span></div>
+    <div class="verdict-body">
+      <p>Modelde her butce kademesi mevcut kosullarda yaklasik %40 zarar veriyor. Bunun sebebi
+      tekliflerin yuksekligi degil, birim ekonominin dar olmasi. Iki degisiklik bu tabloyu basa bas
+      seviyesine getiriyor ve ikisinin de reklam butcesiyle ilgisi yok.</p>
+      <div class="gates">
+        <div class="gate">
+          <p class="lbl">On kosul 1</p>
+          <h3>Small Business Program kaydi</h3>
+          <p>Tek gercek satistan geri hesap: <code>89,99 / 1,19 x 0,70 = 52,93</code>, gerceklesen net
+          52,94 EUR. Yalniz %30 komisyonla tutuyor, yani kayitli degiliz. Kayit komisyonu %15'e indirir,
+          net geliri %21 artirir, maliyeti sifirdir.</p>
+        </div>
+        <div class="gate">
+          <p class="lbl">On kosul 2</p>
+          <h3>Fiyat artisi</h3>
+          <p><code>docs/pricing-2026-08.md</code> tablosunun uygulanmasi. DE aylik 6,99, yillik 39,99,
+          lifetime 119,99 EUR. Mevcut abonelerde fiyat korumasi secilir.</p>
+        </div>
+      </div>
+      <div class="deltabar">
+        <div class="delta bad"><div class="k">Simdiki kosullar, test fazi</div><div class="v">%-43</div><div class="s">336 EUR tavan, ~202 EUR fiili harcama</div></div>
+        <div class="delta mid"><div class="k">On kosullar sonrasi, test fazi</div><div class="v">%-8</div><div class="s">ayni butce, ayni teklifler</div></div>
+        <div class="delta ok"><div class="k">DE indirme basina LTV tavani</div><div class="v">+%63</div><div class="s">0,81 $ &rarr; 1,32 $</div></div>
+      </div>
+    </div>
+  </div>
+</header>
+<nav class="rail" aria-label="Bolumler"><ol><li><a href="#veri"><span class="n">1</span><span>Veri ozeti</span></a></li><li><a href="#pazar"><span class="n">2</span><span>Hedef pazarlar</span></a></li><li><a href="#ekonomi"><span class="n">3</span><span>Birim ekonomi</span></a></li><li><a href="#butce"><span class="n">4</span><span>Butce kademeleri</span></a></li><li><a href="#yapi"><span class="n">5</span><span>Kampanya yapisi</span></a></li><li><a href="#kelime"><span class="n">6</span><span>Anahtar kelimeler</span></a></li><li><a href="#cpp"><span class="n">7</span><span>Urun sayfalari</span></a></li><li><a href="#olcum"><span class="n">8</span><span>Olcum plani</span></a></li><li><a href="#konsol"><span class="n">9</span><span>Konsol adimlari</span></a></li><li><a href="#karar"><span class="n">10</span><span>Kararlar</span></a></li></ol></nav>
+<main class="main">
+<section id="veri"><div class="sechead"><span class="n">1</span><h2>Veri ozeti</h2></div>
+<p class="lede">Kaynak <code>greeneyeapp-pulse/data/pulse.db</code>, zerospike = <code>apple_app_id 6778782351</code>.
+Donem 2026-06-17 ile 2026-08-24 arasi, 69 gun. Veritabani portfoydeki bes uygulamayi birden tutuyor,
+asagidaki her sayi yalniz zerospike satirlarindan uretildi.</p>
+<div class="scroll"><table>
+<thead><tr><th>Pazar</th><th class="n">Gosterim</th><th class="n">Arama payi</th><th class="n">Tap</th>
+<th class="n">TTR</th><th class="n">Urun sayfasi</th><th class="n">Yeni indirme</th>
+<th class="n">Sayfa &rarr; indirme</th><th class="n">Gelir</th></tr></thead><tbody>
+<tr><td class="k">TR</td><td class="n">255</td><td class="n">%67</td><td class="n">12</td><td class="n">%4,71</td><td class="n">30</td><td class="n">3</td><td class="n warn">%10,0</td><td class="n crit">0</td></tr>
+<tr><td class="k">US</td><td class="n">240</td><td class="n">%100</td><td class="n crit">0</td><td class="n crit">%0,00</td><td class="n">3</td><td class="n">2</td><td class="n dim">%66,7</td><td class="n crit">0</td></tr>
+<tr><td class="k">DE</td><td class="n">226</td><td class="n">%97</td><td class="n good">16</td><td class="n good">%7,08</td><td class="n">19</td><td class="n good">6</td><td class="n good">%31,6</td><td class="n good">61,06 $</td></tr>
+<tr><td class="k">FR</td><td class="n">142</td><td class="n">%100</td><td class="n">2</td><td class="n">%1,41</td><td class="n">6</td><td class="n">2</td><td class="n">%33,3</td><td class="n crit">0</td></tr>
+<tr><td class="k">MX</td><td class="n">103</td><td class="n">%100</td><td class="n">2</td><td class="n">%1,94</td><td class="n">4</td><td class="n">2</td><td class="n">%50,0</td><td class="n crit">0</td></tr>
+<tr><td class="k">JP</td><td class="n">80</td><td class="n">%100</td><td class="n crit">0</td><td class="n crit">%0,00</td><td class="n">5</td><td class="n crit">0</td><td class="n crit">%0,0</td><td class="n crit">0</td></tr>
+<tr><td class="k">ES</td><td class="n">24</td><td class="n">%100</td><td class="n">0</td><td class="n">%0,00</td><td class="n">0</td><td class="n">0</td><td class="n dim">yok</td><td class="n crit">0</td></tr>
+<tr><td class="k">IT</td><td class="n">9</td><td class="n">%100</td><td class="n">2</td><td class="n dim">%22,2</td><td class="n">0</td><td class="n">1</td><td class="n dim">yok</td><td class="n crit">0</td></tr>
+<tr class="tot"><td class="k">Toplam</td><td class="n">1.316</td><td class="n">%93</td><td class="n">37</td><td class="n">%2,81</td><td class="n">75</td><td class="n">18</td><td class="n">%24,0</td><td class="n">61,06 $</td></tr>
+</tbody></table></div>
+<h3 class="sub">Ne soyluyor <span class="hint">bes cumle</span></h3>
+<p class="lede">Almanya ilk uc pazarin en kucugu olmasina ragmen tiklanma orani digerlerinin iki katindan
+fazla ve tek odeme yapan pazar; huninin her adiminda en saglikli davranan storefront burasi.
+Turkiye en cok gosterimi aliyor ama gosterimlerinin ucte biri tarama kaynakli, arama kaynakli tek bir
+indirme bile yok ve 69 gunde sifir gelir uretti. ABD 240 gosterimde hic tiklanma almadi, yani urun
+sayfamiz ABD aramasinda goruluyor fakat listeleme rekabette ayirt edici degil; oraya odeli trafik
+satin almak once bu sorunu cozmeden anlamsiz. Tum veri setinde tek bir odeme var, o da Almanya'dan
+bir lifetime satisi, ve RevenueCat tarafinda deneme ile donusum kirilimi hic bulunmuyor, dolayisiyla
+LTV olculemiyor ve modellenmek zorunda. Gosterimden urun sayfasina gecis %2,81 ile cok dusuk ama
+sayfayi gorenlerin %24'u indiriyor, yani darbogaz urun sayfasinin kendisi degil arama sonucunda
+tiklanma, ve bu tam olarak Apple Ads'in cozdugu problem.</p>
+<h3 class="sub">Tekil sinyaller</h3>
+<ul class="plain">
+<li><b>Almanya lifetime satisi.</b> 2026-08-13, net 52,94 EUR. Geri hesap: 89,99 / 1,19 x 0,70 = 52,93.
+Test edilen tum fiyat noktalari icinde tek eslesme bu, yani <b>brut 89,99 EUR ve %30 komisyon</b>.
+Small Business Program'da olsaydik komisyon %15 olurdu ve net 64,28 EUR olurdu.</li>
+<li><b>RevenueCat verisi bos.</b> <code>rc_chart_points</code> yalniz dort grafik tutuyor, segment alani
+tum satirlarda bos, butun projelerde MRR sifir. Deneme baslangici, deneme donusumu, ulke ve paket
+kirilimi <b>yok</b>. Bu plandaki her donusum orani varsayimdir, olcum degil.</li>
+<li><b>GA4 tutunma.</b> D1 %35,1 (n=92), D7 %19,6 (n=38), D30 %36,5 (n=15 ve guvenilmez). Ilk hafta
+tutunmasi yariya dusuyor; reklamla gelen kullanicinin ilk yedi gunu deneme suresiyle birebir ortusuyor.</li>
+<li><b>Aktivasyon olcumu yok.</b> <code>app_events</code> yalniz <code>version_released</code> tutuyor,
+GA4'te <code>first_open</code> ve <code>session_start</code> gibi huni metrikleri kurulu degil.</li>
+<li><b>iOS, Android'in onunde.</b> Yeni kullanicida %90, gunluk aktifte %33 fark. Apple Ads'e once iOS
+icin butce ayirmak veriyle uyumlu.</li>
+</ul></section>
+<section id="pazar"><div class="sechead"><span class="n">2</span><h2>Hedef pazar secimi</h2></div>
+<p class="lede">Dort storefront acilir, ikisi faz 2'ye birakilir, ucu disarida kalir. Secim gerekcesi
+LTV, huni davranisi, dil ve rakip yogunlugudur.</p>
+<div class="scroll"><table>
+<thead><tr><th>Storefront</th><th>Karar</th><th class="n">Butce payi</th><th>Gerekce</th></tr></thead><tbody>
+<tr><td class="k">Almanya</td><td><span class="pill core">Cekirdek</span></td><td class="n">%50</td>
+<td>En yuksek TTR (%7,08), arama kaynakli 6/6 indirme, tek odeme yapan pazar, EUR fiyatlama.
+Bes takip kelimesinin ucunde organik siralama yok, yani reklamin satin alacagi gercek bir bosluk var.
+Rakip yogunlugu yuksek ama parcali: mySugr ortalama 2,33 ile ilk sirada degil.</td></tr>
+<tr><td class="k">Fransa</td><td><span class="pill core">Ikincil</span></td><td class="n">%21</td>
+<td>EUR pazar, gosterimin %100'u arama kaynakli, iki indirmenin ikisi de aramadan geldi.
+"comptage des glucides" hic siralanmiyor, "suivi hba1c" 22. sirada. DE'ye gore daha az rakip.</td></tr>
+<tr><td class="k">Turkiye</td><td><span class="pill test">Kucuk, capali</span></td><td class="n">%12</td>
+<td>En cok gosterim ama 69 gunde sifir gelir ve arama kaynakli sifir indirme.
+Tiklama cok ucuz oldugu icin <b>olcum altyapisini dogrulamanin en ucuz yeri</b>; asil isi budur.
+Marka savunmasi ayrica zorunlu, en cok gosterim aldigimiz pazarda markayi rakibe kaptirmak olmaz.</td></tr>
+<tr><td class="k">ABD</td><td><span class="pill test">Mikro test, 14 gunde kes</span></td><td class="n">%17</td>
+<td>240 gosterimde 0 tap. Modelde indirme basina maliyet 1,78 EUR, tavan 1,16 EUR: <b>tek basina
+zarar eden pazar</b>. Yine de en buyuk potansiyel oldugu icin yalniz Exact eslesme ve tek rakip
+terimiyle, Search Match kapali, sabit kesme esigiyle test edilir.</td></tr>
+<tr><td class="k">Ispanya, Italya</td><td><span class="pill small">Faz 2</span></td><td class="n">0</td>
+<td>Olcek kademesinde acilir. ES'te "medición hba1c" ve JP'de oldugu gibi organik olarak zaten
+1. siradayiz, yani reklamin ekleyecegi deger dusuk. IT hacmi test icin fazla ince (9 gosterim).</td></tr>
+<tr><td class="k">Japonya</td><td><span class="pill out">Disarida</span></td><td class="n">0</td>
+<td>80 gosterim, 0 tap, 0 indirme, ustelik "境界型糖尿病" teriminde organik 1. siradayiz.
+Gorunup tiklanmiyoruz: sorun trafik degil urun sayfasi. Reklamla ustune para koymak once bunu duzeltmeyi gerektirir.</td></tr>
+<tr><td class="k">Meksika, Brezilya, Suudi Arabistan</td><td><span class="pill out">Disarida</span></td><td class="n">0</td>
+<td>Fiyat tablosunda bilincli dusuk bant, ARPU kaniti yok. MX 103 gosterimle hacim uretiyor ama
+odeme kaniti olmadan butce ayirmak modelde her senaryoda zarar.</td></tr>
+</tbody></table></div>
+<h3 class="sub">Almanya ve Turkiye, ayri degerlendirme</h3>
+<p class="lede"><b>Almanya</b> az ama dogru trafik uretiyor. Gosterim TR'nin altinda olmasina ragmen
+tiklanma sayisi daha yuksek (16'ya 12) ve tiklayanin ucte biri indiriyor. Tek gercek odeme buradan
+geldi ve lifetime paketten geldi, yani fiyat toleransi 89,99 EUR seviyesinde kanitlandi. EUR fiyat
+noktasi, yuksek ARPU ve reklamla satin alinabilecek siralanmayan kelimeler bir araya gelince butcenin
+yarisini hak ediyor.</p>
+<p class="lede"><b>Turkiye</b> tam tersi: en cok gosterim, en cok kurulum, sifir gelir. 28 birim satis
+satirinin tamami sifir hasilatli. Onerilen fiyat tablosunda bile TR'de odeyen basina LTV 16,81 dolar,
+Almanya'nin ucte biri kadar. Bu yuzden TR'ye buyume butcesi degil <b>olcum butcesi</b> ayriliyor:
+gunde 3 EUR ile marka savunmasi yapilir, ucuz tiklamayla Search Match kelime kesfi calistirilir ve
+reklam &rarr; indirme &rarr; deneme zincirinin gercekten calistigi burada dogrulanir. Kelime basina
+teklifler tavana dayali tutuldu, hacim bilincli olarak dusuk kalacak.</p></section>
+<section id="ekonomi"><div class="sechead"><span class="n">3</span><h2>Birim ekonomi ve CPA tavani</h2></div>
+<p class="lede">Veride deneme ve donusum kirilimi olmadigi icin LTV olculemiyor, fiyat noktalarindan
+modelleniyor. Formul acik biraktildi ki varsayimlar tartisilabilsin.</p>
+<pre><code>net(paket) = brut / (1 + KDV) x (1 - komisyon)
+
+LTV/odeyen = 0,30 x net(aylik) x 3,5 ay        (aylik abonenin ortalama tutulma suresi)
+           + 0,55 x net(yillik) x 1,25         (yillik abonenin yenileme carpani)
+           + 0,15 x net(lifetime)
+
+LTV/indirme = LTV/odeyen x (indirme -&gt; odeyen orani)   = CPA tavani
+hedef CPA   = LTV/indirme x 0,60                        (%40 marj payi)
+hedef CPT   = hedef CPA x 0,45                          (tap -&gt; indirme orani)</code></pre>
+<div class="scroll"><table>
+<thead><tr><th>Pazar</th><th>Senaryo</th><th class="n">LTV / odeyen</th><th class="n">indirme &rarr; odeyen</th>
+<th class="n">CPA tavani</th><th class="n">Hedef CPA</th><th class="n">Hedef CPT</th></tr></thead><tbody>
+<tr><td class="k">DE</td><td class="dim">mevcut fiyat, %30 komisyon</td><td class="n">27,00 $</td><td class="n">%3,0</td><td class="n">0,81 $</td><td class="n">0,49 $</td><td class="n crit">0,24 $</td></tr>
+<tr><td class="k">DE</td><td class="dim">mevcut fiyat, SBP %15</td><td class="n">32,78 $</td><td class="n">%3,0</td><td class="n">0,98 $</td><td class="n">0,59 $</td><td class="n warn">0,30 $</td></tr>
+<tr><td class="k">DE</td><td><b>onerilen fiyat, SBP %15</b></td><td class="n">44,01 $</td><td class="n">%3,0</td><td class="n good">1,32 $</td><td class="n good">0,79 $</td><td class="n good">0,40 $</td></tr>
+<tr><td class="k">FR</td><td><b>onerilen fiyat, SBP %15</b></td><td class="n">43,64 $</td><td class="n">%2,5</td><td class="n">1,09 $</td><td class="n">0,65 $</td><td class="n">0,33 $</td></tr>
+<tr><td class="k">TR</td><td><b>onerilen fiyat, SBP %15</b></td><td class="n">16,81 $</td><td class="n">%1,5</td><td class="n">0,25 $</td><td class="n">0,15 $</td><td class="n">0,08 $</td></tr>
+<tr><td class="k">US</td><td><b>onerilen fiyat, SBP %15</b></td><td class="n">44,91 $</td><td class="n">%3,0</td><td class="n">1,35 $</td><td class="n">0,81 $</td><td class="n">0,40 $</td></tr>
+</tbody></table></div>
+<h3 class="sub">Planin tek kirilgan noktasi</h3>
+<p class="lede">Her sey <b>indirme &rarr; odeyen</b> oranina baglı ve bu oran veride yok. Almanya icin
+%3 varsayildi; gercek deger nerede cikarsa plan oraya gider. Test fazinin tek isi bu sayiyi olcmektir.</p>
+<div class="scroll"><table>
+<thead><tr><th>DE: indirme &rarr; odeyen</th><th class="n">indirme basina LTV</th>
+<th class="n">indirme maliyeti</th><th class="n">ROI</th><th>Karar</th></tr></thead><tbody>
+<tr><td class="n">%1,5</td><td class="n">0,57 EUR</td><td class="n">1,11 EUR</td><td class="n crit">%-49</td><td class="crit">Kapat</td></tr>
+<tr><td class="n">%2,0</td><td class="n">0,75 EUR</td><td class="n">1,11 EUR</td><td class="n crit">%-32</td><td class="crit">Kapat</td></tr>
+<tr><td class="n">%3,0</td><td class="n">1,13 EUR</td><td class="n">1,11 EUR</td><td class="n warn">%+2</td><td class="warn">Basa bas, devam</td></tr>
+<tr><td class="n">%4,0</td><td class="n">1,51 EUR</td><td class="n">1,11 EUR</td><td class="n good">%+36</td><td class="good">Olcek kademesi</td></tr>
+<tr><td class="n">%5,0</td><td class="n">1,89 EUR</td><td class="n">1,11 EUR</td><td class="n good">%+70</td><td class="good">Agresif kademe</td></tr>
+</tbody></table></div></section>
+<section id="butce"><div class="sechead"><span class="n">4</span><h2>Butce kademeleri</h2></div>
+<p class="lede">Etkin CPT varsayimi DE 0,50, FR 0,45, TR 0,11, US 0,80 EUR. Tap &rarr; indirme %45.
+Dusuk teklifle butce tam harcanmaz, fiili harcama butcenin %60'i alindi.</p>
+<div class="scroll"><table>
+<thead><tr><th>Kademe</th><th class="n">Gunluk</th><th class="n">Donem tavani</th><th class="n">Beklenen harcama</th>
+<th class="n">Indirme</th><th class="n">Deneme</th><th class="n">Odeyen</th>
+<th class="n">ROI simdi</th><th class="n">ROI on kosullar sonrasi</th></tr></thead><tbody>
+<tr><td class="k">Test, 14 gun</td><td class="n">24 EUR</td><td class="n">336 EUR</td><td class="n">~202 EUR</td><td class="n">~255</td><td class="n">~15</td><td class="n">~6</td><td class="n crit">%-43</td><td class="n warn">%-8</td></tr>
+<tr><td class="k">Olcek, 30 gun</td><td class="n">55 EUR</td><td class="n">1.650 EUR</td><td class="n">~990 EUR</td><td class="n">~1.205</td><td class="n">~77</td><td class="n">~29</td><td class="n crit">%-39</td><td class="n warn">%-2</td></tr>
+<tr><td class="k">Agresif, 30 gun</td><td class="n">153 EUR</td><td class="n">4.590 EUR</td><td class="n">~2.754 EUR</td><td class="n">~3.123</td><td class="n">~207</td><td class="n">~79</td><td class="n crit">%-39</td><td class="n warn">%0</td></tr>
+</tbody></table></div>
+<h3 class="sub">Gunluk dagilim</h3>
+<div class="scroll"><table>
+<thead><tr><th>Kademe</th><th class="n">DE</th><th class="n">FR</th><th class="n">TR</th><th class="n">US</th><th class="n">ES</th><th class="n">IT</th></tr></thead><tbody>
+<tr><td class="k">Test</td><td class="n">12</td><td class="n">5</td><td class="n">3</td><td class="n">4</td><td class="n dim">0</td><td class="n dim">0</td></tr>
+<tr><td class="k">Olcek</td><td class="n">35</td><td class="n">15</td><td class="n">5</td><td class="n dim">0</td><td class="n dim">0</td><td class="n dim">0</td></tr>
+<tr><td class="k">Agresif</td><td class="n">80</td><td class="n">35</td><td class="n">8</td><td class="n dim">0</td><td class="n">15</td><td class="n">15</td></tr>
+</tbody></table></div>
+<p class="lede">Uc kademenin de ROI'si mevcut kosullarda negatif. Bu bir hesap hatasi degil, planin ana
+bulgusu: <b>fiyat artisi ve Small Business Program kaydi yapilmadan hicbir butce seviyesi kendini
+odemiyor.</b> On kosullar tamamlandiginda tablo basa bas seviyesine geliyor ve bundan sonrasi
+indirme &rarr; odeyen oraninin gercekte ne cikacagina kaliyor.</p></section>
+<section id="yapi"><div class="sechead"><span class="n">5</span><h2>Kampanya yapisi</h2></div>
+<p class="lede">Storefront basina ayri kampanya kurulur. Butce Apple Ads'te kampanya seviyesindedir,
+tek kampanyaya birden fazla ulke koyulursa ucuz pazar pahali pazarin butcesini yer.</p>
+<div class="scroll"><table>
+<thead><tr><th>Kampanya</th><th>Ad group</th><th>Eslesme</th><th>Search Match</th><th class="n">Baslangic teklifi</th><th>Bagli CPP</th></tr></thead><tbody>
+<tr><td class="k">ZS-xx-Brand</td><td>Brand-Core, Brand-Broad</td><td>Exact + Broad</td><td class="dim">Kapali</td><td class="n">0,06 - 0,40</td><td>Glucose Diary</td></tr>
+<tr><td class="k">ZS-xx-Generic</td><td>Glucose-Diary, HbA1c-Trends, Carbs-Food, Injection-Rotation, Condition</td><td>Exact</td><td class="dim">Kapali</td><td class="n">0,07 - 0,85</td><td>Ad group basina</td></tr>
+<tr><td class="k">ZS-xx-Competitor</td><td>Comp-Core</td><td>Exact</td><td class="dim">Kapali</td><td class="n">0,08 - 0,90</td><td>Glucose Diary</td></tr>
+<tr><td class="k">ZS-xx-Discovery</td><td>Discovery-SearchMatch</td><td class="dim">kelime yok</td><td class="good">Acik</td><td class="n">0,08 - 0,35</td><td>Glucose Diary</td></tr>
+</tbody></table></div>
+<h3 class="sub">Her ad group icin sabit ayarlar</h3>
+<ul class="plain">
+<li><b>Cihaz: yalniz iPhone.</b> iPad ekran goruntuleri ayri set ve Live Activity ile widget anlatimi
+iPhone'a gore kurulu; iPad trafigi ayni sayfaya dusurulmez.</li>
+<li><b>Musteri tipi: yalniz yeni kullanicilar.</b> Mevcut kullaniciya ve baska uygulamalarimizin
+kullanicisina reklam gostermek butceyi zaten sahip oldugumuz kisiye harcar.</li>
+<li><b>Yas ve cinsiyet hedeflemesi yok.</b> Diyabet gunlugu kitlesi yas ve cinsiyete gore daralmaz,
+daraltmak erisimi kucultup CPT'yi yukseltir. Ayrica saglik kategorisinde demografik hedefleme
+gereksiz hassasiyet yaratir.</li>
+<li><b>Gun ici zamanlama yok.</b> Test fazinda saat kirilimi olcecek kadar veri olusmayacak.</li>
+<li><b>Search Match yalniz Discovery'de.</b> Generic ve Competitor gruplarinda acik birakilirsa
+negatif listeye ragmen kontrolsuz terim satin alinir; regulasyon riski oradan gelir.</li>
+<li><b>Negatif listeler kampanya seviyesinde.</b> Ad group seviyesine koyulursa yeni acilan her grupta
+tekrar tanimlanmasi gerekir ve bir gun unutulur.</li>
+</ul></section>
+<section id="kelime"><div class="sechead"><span class="n">6</span><h2>Anahtar kelime listeleri</h2></div><p class="lede">Toplam 136 kelime ve 115 negatif terim. Her kelimenin teklifi ve gerekcesi CSV dosyalarinda; asagida gerekce her kelimenin uzerine gelince gorunur. Teklifler <b>EUR</b> cinsindendir.</p><p class="lede">Ice aktarmaya hazir dilim: <code>cut -d, -f1-5 keywords-de.csv</code>. Apple Ads "Add Keywords" kutusuna yapistirmak icin yalniz kelime listesi: <code>tail -n +2 keywords-de.csv | cut -d, -f3 | grep .</code></p><details class="mkt" id="kw-de"><summary>Almanya <span class="pill small">DE</span><span class="cnt">51 kelime, 30 negatif</span></summary><div class="mktbody"><div class="grp"><p class="grp-h"><b>ZS-DE-Brand</b> / Brand-Core <span>Exact</span> <span>4 kelime</span></p><div class="chips"><span class="chip" title="Marka savunmasi; rakipler marka terimine teklif verirse ilk sirayi kaybederiz">zerospike<span class="b">0.30</span></span><span class="chip" title="Marka + app varyanti">zerospike app<span class="b">0.30</span></span><span class="chip" title="Ayrik yazim; kullanicilar bosluklu ariyor">zero spike<span class="b">0.30</span></span><span class="chip" title="Marka + kategori">zerospike blutzucker<span class="b">0.25</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-DE-Brand</b> / Brand-Broad <span>Broad</span> <span>1 kelime</span></p><div class="chips"><span class="chip" title="Yazim hatalarini ve varyantlari yakalar">zerospike<span class="b">0.35</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-DE-Generic</b> / Glucose-Diary <span>Exact</span> <span>14 kelime</span></p><div class="chips"><span class="chip" title="Cekirdek terim; pulse&#x27;ta organik siralamamiz YOK, rakip Blutzucker Tagebuch Diabetes+ ort. rank 1.5">blutzucker tagebuch<span class="b">0.60</span></span><span class="chip" title="Takip edilen kelime, rank NULL (siralanmiyoruz); satin alinmasi gereken birincil terim">diabetes tagebuch<span class="b">0.60</span></span><span class="chip" title="Organik rank 10; paid ustune ekleme yapar ama tam fiyat vermeye gerek yok">blutzucker messung<span class="b">0.45</span></span><span class="chip" title="Genis kategori niyeti, yuksek hacim tahmini">blutzucker app<span class="b">0.55</span></span><span class="chip" title="Rakip Glucose - Blutzucker Tracker ort. rank 2.17">blutzucker tracker<span class="b">0.55</span></span><span class="chip" title="App adimizda gecen terim (zerospike: Blutzuckerwerte); marka-kategori koprusu">blutzuckerwerte<span class="b">0.50</span></span><span class="chip" title="Uzun kuyruk, dusuk rekabet beklentisi">blutzucker protokoll<span class="b">0.40</span></span><span class="chip" title="Fiil formu, dogrudan gunluk tutma niyeti">blutzucker notieren<span class="b">0.35</span></span><span class="chip" title="Gecmis veri gorme niyeti; Insights ozelligiyle birebir ortusur">blutzucker verlauf<span class="b">0.40</span></span><span class="chip" title="Uzun kuyruk varyant">zuckerwerte tagebuch<span class="b">0.35</span></span><span class="chip" title="Klinik varyant, dusuk hacim yuksek niyet">glukose tagebuch<span class="b">0.35</span></span><span class="chip" title="En genis kategori terimi; CPT yuksek olabilir, 2 hafta sonunda gozden gecir">diabetes app<span class="b">0.55</span></span><span class="chip" title="Kategori terimi">diabetes tracker<span class="b">0.50</span></span><span class="chip" title="Uzun kuyruk">diabetes protokoll<span class="b">0.35</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-DE-Generic</b> / HbA1c-Trends <span>Exact</span> <span>6 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, rank NULL; Insights (GMI/tahmini A1C) ile ortusur">hba1c wert<span class="b">0.50</span></span><span class="chip" title="Uzun kuyruk">hba1c tagebuch<span class="b">0.40</span></span><span class="chip" title="HbA1c&#x27;nin gunluk dildeki karsiligi">langzeitzucker<span class="b">0.40</span></span><span class="chip" title="Time in Range; gecmis veriyi tanimlayan metrik adi olarak kullanilir">zeit im zielbereich<span class="b">0.35</span></span><span class="chip" title="Doktora hazir PDF ozelligiyle birebir ortusur, dusuk rekabet">diabetes pdf bericht<span class="b">0.35</span></span><span class="chip" title="Ayni niyet, randevu oncesi arama">diabetes arztbericht<span class="b">0.35</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-DE-Generic</b> / Carbs-Food <span>Exact</span> <span>8 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, rank NULL; rakip Kohlenhydrate Zähler ort. rank 1.5">kohlenhydrate zählen<span class="b">0.55</span></span><span class="chip" title="Kategori terimi, Carb-Tracking CPP&#x27;sine baglanir">kohlenhydrate app<span class="b">0.50</span></span><span class="chip" title="Varyant">kohlenhydrate tracker<span class="b">0.45</span></span><span class="chip" title="Gunluk formu, bizim cerceveye en yakin">kohlenhydrate tagebuch<span class="b">0.40</span></span><span class="chip" title="Kisaltma, dusuk hacim">kh zählen<span class="b">0.30</span></span><span class="chip" title="1000+ besin veritabaniyla ortusur">kohlenhydrate tabelle<span class="b">0.35</span></span><span class="chip" title="Ogun gunlugu niyeti, diyabet nitelemesi ile">ernährungstagebuch diabetes<span class="b">0.40</span></span><span class="chip" title="Barkod tarama ozelligi; niyet genis, dusuk teklifle test">lebensmittel barcode scanner<span class="b">0.30</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-DE-Generic</b> / Injection-Rotation <span>Exact</span> <span>5 kelime</span></p><div class="chips"><span class="chip" title="Rotasyon ozelligiyle birebir; rakiplerde nadir, ucuz olmali">spritzstellen wechseln<span class="b">0.40</span></span><span class="chip" title="Kayit niyeti, doz niyeti degil">insulin spritzstellen<span class="b">0.40</span></span><span class="chip" title="Uzun kuyruk, saf kayit niyeti">spritzstellen dokumentieren<span class="b">0.30</span></span><span class="chip" title="Klinik terim">injektionsstellen<span class="b">0.35</span></span><span class="chip" title="Uzun kuyruk">spritzprotokoll<span class="b">0.30</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-DE-Generic</b> / Condition <span>Exact</span> <span>6 kelime</span></p><div class="chips"><span class="chip" title="Organik rank 38; paid ile ilk sayfaya cikma firsati">typ 2 diabetes<span class="b">0.45</span></span><span class="chip" title="Uygulama niyeti eklenmis, daha yuksek donusum beklentisi">typ 2 diabetes app<span class="b">0.50</span></span><span class="chip" title="Tip 1 kitlesi insulin kaydini daha yogun kullanir">typ 1 diabetes app<span class="b">0.50</span></span><span class="chip" title="Tani olmadan takip akisiyla ortusur">prädiabetes<span class="b">0.40</span></span><span class="chip" title="Gebelik diyabeti; sureli ve yuksek motivasyonlu kitle">schwangerschaftsdiabetes<span class="b">0.45</span></span><span class="chip" title="Ayni kitle, gunluk niyeti net">gestationsdiabetes tagebuch<span class="b">0.40</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-DE-Competitor</b> / Comp-Core <span>Exact</span> <span>7 kelime</span></p><div class="chips"><span class="chip" title="Global lider (45 frekans, ort. rank 1.31); DE&#x27;de mySugr Diabetes-Tagebuch ort. rank 2.33">mysugr<span class="b">0.70</span></span><span class="chip" title="Terk etme niyeti; en yuksek donusum beklenen rakip terimi">mysugr alternative<span class="b">0.60</span></span><span class="chip" title="Uluslararasi rakip">glucose buddy<span class="b">0.55</span></span><span class="chip" title="DE&#x27;de Blutzucker Messen SugarNote ort. rank 1.0">sugarnote<span class="b">0.55</span></span><span class="chip" title="DE yerel rakip, typ 2 diabetes teriminde ort. rank 1.0">glucura<span class="b">0.50</span></span><span class="chip" title="DE rakip, ort. rank 3.0">sugar sense<span class="b">0.50</span></span><span class="chip" title="Klinik odakli rakip, kitle ortusmesi kismi">glooko<span class="b">0.45</span></span></div></div><div class="grp"><p class="grp-h"><b>Negatif liste</b> <span>Broad</span> <span>30 terim</span></p><p class="negnote">Kampanya seviyesinde uygulanir. Ilk blok regulasyon kaynaklidir: doz hesaplama, tedavi vaadi, dusurme vaadi ve tani niyeti tasiyan hicbir terime teklif verilmez. Kalani urun uyumsuzlugu (CGM donanimi, sarf malzemesi, ilac), kategori disi niyet ve dusuk niyet filtresidir.</p><div class="chips"><span class="chip neg" title="REGULASYON: uygulama doz hesaplamaz; bu niyete reklam cikmak Apple saglik politikasi riski">insulin rechner</span><span class="chip neg" title="REGULASYON: bitisik yazim">insulinrechner</span><span class="chip neg" title="REGULASYON: bolus doz hesabi; rakip app adi olsa da niyet yanlis">bolusrechner</span><span class="chip neg" title="REGULASYON: ayrik yazim">bolus rechner</span><span class="chip neg" title="REGULASYON: doz hesaplama niyeti">insulindosis berechnen</span><span class="chip neg" title="REGULASYON: broteinheit-doz koprusu, hesaplama niyeti">be rechner</span><span class="chip neg" title="REGULASYON: doz duzeltme faktoru">korrekturfaktor</span><span class="chip neg" title="REGULASYON: tedavi vaadi">diabetes heilen</span><span class="chip neg" title="REGULASYON: tedavi vaadi">diabetes heilung</span><span class="chip neg" title="REGULASYON: sonuc vaadi (dusurme)">blutzucker senken</span><span class="chip neg" title="REGULASYON: sonuc vaadi">zucker senken</span><span class="chip neg" title="REGULASYON: geri dondurme vaadi">diabetes rückgängig</span><span class="chip neg" title="REGULASYON: tani niyeti; uygulama tani koymaz">diabetes diagnose</span><span class="chip neg" title="REGULASYON: tarama/test niyeti">diabetes test</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi; dogrudan sensor baglantimiz yok">freestyle libre</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi">dexcom</span><span class="chip neg" title="URUN UYUMSUZ: donanim arayisi">cgm sensor</span><span class="chip neg" title="URUN UYUMSUZ: cihaz satin alma niyeti">blutzuckermessgerät kaufen</span><span class="chip neg" title="URUN UYUMSUZ: sarf malzemesi">teststreifen</span><span class="chip neg" title="URUN UYUMSUZ: sarf malzemesi">lanzetten</span><span class="chip neg" title="URUN UYUMSUZ: donanim">insulinpumpe</span><span class="chip neg" title="URUN UYUMSUZ: ilac">metformin</span><span class="chip neg" title="URUN UYUMSUZ: ilac">ozempic</span><span class="chip neg" title="KATEGORI DISI: kilo verme">abnehmen</span><span class="chip neg" title="KATEGORI DISI: diyet">diät</span><span class="chip neg" title="KATEGORI DISI: keto">keto</span><span class="chip neg" title="KATEGORI DISI: kalori sayaci, kitle ortusmuyor">kalorienzähler</span><span class="chip neg" title="KATEGORI DISI: tansiyon, bizde yok">blutdruck</span><span class="chip neg" title="OZELLIK YOK: Apple Watch uygulamamiz yok">apple watch</span><span class="chip neg" title="DUSUK NIYET: ucretsiz arayan Pro&#x27;ya donmuyor">kostenlos</span></div></div></div></details><details class="mkt" id="kw-fr"><summary>Fransa <span class="pill small">FR</span><span class="cnt">37 kelime, 25 negatif</span></summary><div class="mktbody"><div class="grp"><p class="grp-h"><b>ZS-FR-Brand</b> / Brand-Core <span>Exact</span> <span>3 kelime</span></p><div class="chips"><span class="chip" title="Marka savunmasi">zerospike<span class="b">0.28</span></span><span class="chip" title="Marka + app">zerospike app<span class="b">0.28</span></span><span class="chip" title="Ayrik yazim">zero spike<span class="b">0.28</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-FR-Brand</b> / Brand-Broad <span>Broad</span> <span>1 kelime</span></p><div class="chips"><span class="chip" title="Yazim hatasi yakalama">zerospike<span class="b">0.32</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-FR-Generic</b> / Glucose-Diary <span>Exact</span> <span>10 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, organik rank 32; app adimizda gecen terim (Carnet de glycémie)">carnet de diabète<span class="b">0.55</span></span><span class="chip" title="App adimizla birebir; marka-kategori koprusu">carnet de glycémie<span class="b">0.55</span></span><span class="chip" title="Takip edilen kelime; rakip Glucomate ort. rank 3.0">suivi du glucose<span class="b">0.50</span></span><span class="chip" title="Rakip Suivi de la Glycémie ort. rank 1.67; dogrudan carpisma">suivi de la glycémie<span class="b">0.50</span></span><span class="chip" title="En genis kategori terimi">application diabète<span class="b">0.50</span></span><span class="chip" title="Gunluk formu, uzun kuyruk">journal de glycémie<span class="b">0.40</span></span><span class="chip" title="Kisa kategori terimi">glycémie app<span class="b">0.45</span></span><span class="chip" title="Fiil formu, saf kayit niyeti">noter sa glycémie<span class="b">0.32</span></span><span class="chip" title="Gecmis veri niyeti, Insights ile ortusur">historique glycémie<span class="b">0.35</span></span><span class="chip" title="Varyant">diabète journal<span class="b">0.35</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-FR-Generic</b> / HbA1c-Trends <span>Exact</span> <span>5 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, organik rank 22; paid ile ilk sayfaya cikma firsati">suivi hba1c<span class="b">0.45</span></span><span class="chip" title="Tek terim, genis; dusuk teklifle test">hba1c<span class="b">0.40</span></span><span class="chip" title="HbA1c klinik karsiligi">hémoglobine glyquée<span class="b">0.35</span></span><span class="chip" title="Time in Range; gecmis veriyi tanimlayan metrik adi">temps dans la cible<span class="b">0.30</span></span><span class="chip" title="Doktora hazir PDF ozelligi, dusuk rekabet">rapport diabète pdf<span class="b">0.30</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-FR-Generic</b> / Carbs-Food <span>Exact</span> <span>5 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, rank NULL; satin alinmasi gereken terim">comptage des glucides<span class="b">0.50</span></span><span class="chip" title="Fiil varyanti">compter les glucides<span class="b">0.45</span></span><span class="chip" title="1000+ besin veritabaniyla ortusur">glucides aliments<span class="b">0.40</span></span><span class="chip" title="Ogun gunlugu, diyabet nitelemesi">journal alimentaire diabète<span class="b">0.38</span></span><span class="chip" title="Barkod tarama; genis niyet, dusuk teklif">scanner code barre aliment<span class="b">0.28</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-FR-Generic</b> / Injection-Rotation <span>Exact</span> <span>3 kelime</span></p><div class="chips"><span class="chip" title="Rotasyon ozelligiyle birebir, rakiplerde nadir">rotation sites injection<span class="b">0.35</span></span><span class="chip" title="Kayit niyeti, doz niyeti degil">sites injection insuline<span class="b">0.35</span></span><span class="chip" title="Uzun kuyruk">carnet injections<span class="b">0.28</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-FR-Generic</b> / Condition <span>Exact</span> <span>4 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime; rakip Phil Diabète Type 2 ort. rank 1.0">diabète type 2<span class="b">0.45</span></span><span class="chip" title="Tip 1 kitlesi insulin kaydini yogun kullanir">diabète type 1<span class="b">0.45</span></span><span class="chip" title="Tani olmadan takip akisiyla ortusur">prédiabète<span class="b">0.35</span></span><span class="chip" title="Gebelik diyabeti, yuksek motivasyon">diabète gestationnel<span class="b">0.42</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-FR-Competitor</b> / Comp-Core <span>Exact</span> <span>6 kelime</span></p><div class="chips"><span class="chip" title="FR&#x27;de mySugr Suivi du diabète ort. rank 1.67">mysugr<span class="b">0.62</span></span><span class="chip" title="FR yerel rakip, carnet de diabète teriminde ort. rank 1.0">diabetolog<span class="b">0.48</span></span><span class="chip" title="FR rakip">glucomate<span class="b">0.45</span></span><span class="chip" title="FR rakip, ort. rank 1.0">diabhealth<span class="b">0.45</span></span><span class="chip" title="Klinik odakli rakip">glooko<span class="b">0.42</span></span><span class="chip" title="FR rakip">my espace diabète<span class="b">0.40</span></span></div></div><div class="grp"><p class="grp-h"><b>Negatif liste</b> <span>Broad</span> <span>25 terim</span></p><p class="negnote">Kampanya seviyesinde uygulanir. Ilk blok regulasyon kaynaklidir: doz hesaplama, tedavi vaadi, dusurme vaadi ve tani niyeti tasiyan hicbir terime teklif verilmez. Kalani urun uyumsuzlugu (CGM donanimi, sarf malzemesi, ilac), kategori disi niyet ve dusuk niyet filtresidir.</p><div class="chips"><span class="chip neg" title="REGULASYON: uygulama doz hesaplamaz">calculateur insuline</span><span class="chip neg" title="REGULASYON: doz hesaplama niyeti">calcul insuline</span><span class="chip neg" title="REGULASYON: bolus doz hesabi">calculateur de bolus</span><span class="chip neg" title="REGULASYON: doz niyeti">dose insuline</span><span class="chip neg" title="REGULASYON: tedavi vaadi">guérir le diabète</span><span class="chip neg" title="REGULASYON: tedavi vaadi">guérison diabète</span><span class="chip neg" title="REGULASYON: sonuc vaadi (dusurme)">faire baisser la glycémie</span><span class="chip neg" title="REGULASYON: sonuc vaadi">baisser le sucre</span><span class="chip neg" title="REGULASYON: tani niyeti">diagnostic diabète</span><span class="chip neg" title="REGULASYON: tarama/test niyeti">test diabète</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi">freestyle libre</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi">dexcom</span><span class="chip neg" title="URUN UYUMSUZ: sensor arayisi">capteur glycémie</span><span class="chip neg" title="URUN UYUMSUZ: cihaz satin alma">lecteur glycémie acheter</span><span class="chip neg" title="URUN UYUMSUZ: sarf malzemesi">bandelettes</span><span class="chip neg" title="URUN UYUMSUZ: donanim">pompe à insuline</span><span class="chip neg" title="URUN UYUMSUZ: ilac">metformine</span><span class="chip neg" title="URUN UYUMSUZ: ilac">ozempic</span><span class="chip neg" title="KATEGORI DISI: kilo verme">maigrir</span><span class="chip neg" title="KATEGORI DISI: diyet">régime</span><span class="chip neg" title="KATEGORI DISI: keto">keto</span><span class="chip neg" title="KATEGORI DISI: kalori sayaci">compteur de calories</span><span class="chip neg" title="KATEGORI DISI: tansiyon">tension artérielle</span><span class="chip neg" title="OZELLIK YOK: Apple Watch uygulamamiz yok">apple watch</span><span class="chip neg" title="DUSUK NIYET: ucretsiz arayan Pro&#x27;ya donmuyor">gratuit</span></div></div></div></details><details class="mkt" id="kw-tr"><summary>Turkiye <span class="pill small">TR</span><span class="cnt">34 kelime, 30 negatif</span></summary><div class="mktbody"><div class="grp"><p class="grp-h"><b>ZS-TR-Brand</b> / Brand-Core <span>Exact</span> <span>3 kelime</span></p><div class="chips"><span class="chip" title="Marka savunmasi; TR en yuksek gosterim pazarimiz (255 gosterim), markayi kaptirmamak sart">zerospike<span class="b">0.06</span></span><span class="chip" title="Marka + uygulama">zerospike uygulama<span class="b">0.06</span></span><span class="chip" title="Ayrik yazim">zero spike<span class="b">0.06</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-TR-Brand</b> / Brand-Broad <span>Broad</span> <span>1 kelime</span></p><div class="chips"><span class="chip" title="Yazim hatasi ve varyant yakalama">zerospike<span class="b">0.08</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-TR-Generic</b> / Diary-Core <span>Exact</span> <span>10 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, rank NULL; satin alinmasi gereken birincil terim">kan şekeri takibi<span class="b">0.12</span></span><span class="chip" title="Organik rank 21; app adimizla yakin, paid ile ilk sayfa firsati. mySugr ort. rank 1.38">kan şekeri günlüğü<span class="b">0.10</span></span><span class="chip" title="App adimizla birebir (zerospike: Diyabet Günlüğü); rakip Şeker Takip ort. rank 2.63">diyabet günlüğü<span class="b">0.12</span></span><span class="chip" title="Gunluk dildeki en genis terim, hacim tahmini yuksek">şeker takibi<span class="b">0.12</span></span><span class="chip" title="Uzun kuyruk">şeker ölçüm takibi<span class="b">0.10</span></span><span class="chip" title="Kategori terimi">diyabet uygulaması<span class="b">0.11</span></span><span class="chip" title="Donem etiketi ozelligiyle ortusur (aclik/tokluk)">açlık şekeri<span class="b">0.10</span></span><span class="chip" title="Organik rank 5; zaten iyi siradayiz, dusuk teklif yeterli. SugarNote ort. rank 1.0">tokluk şekeri<span class="b">0.08</span></span><span class="chip" title="Organik rank 12; paid destek">tip 2 diyabet günlüğü<span class="b">0.09</span></span><span class="chip" title="Tip 1 kitlesi insulin kaydini yogun kullanir">tip 1 diyabet<span class="b">0.10</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-TR-Generic</b> / HbA1c-Trends <span>Exact</span> <span>3 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, rank NULL; Insights ile ortusur">hba1c takibi<span class="b">0.11</span></span><span class="chip" title="Klinik varyant">hemoglobin a1c<span class="b">0.09</span></span><span class="chip" title="Doktora hazir PDF ozelligi, dusuk rekabet beklentisi">diyabet raporu pdf<span class="b">0.08</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-TR-Generic</b> / Carbs-Food <span>Exact</span> <span>4 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime; rakip KarbSay ort. rank 2.0, KarbApp ort. rank 3.0">karbonhidrat sayımı<span class="b">0.11</span></span><span class="chip" title="Varyant">karbonhidrat sayacı<span class="b">0.10</span></span><span class="chip" title="Ogun gunlugu niyeti, genis">beslenme günlüğü<span class="b">0.09</span></span><span class="chip" title="Barkod tarama ozelligi, dusuk teklifle test">barkod okuyucu besin<span class="b">0.07</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-TR-Generic</b> / Injection-Rotation <span>Exact</span> <span>3 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, rank NULL; mySugr bu terimde ort. rank 1.0">insülin takibi<span class="b">0.11</span></span><span class="chip" title="Rotasyon ozelligiyle birebir, rakiplerde nadir">enjeksiyon bölgesi takibi<span class="b">0.08</span></span><span class="chip" title="Uzun kuyruk, saf kayit niyeti">iğne bölgesi değişimi<span class="b">0.07</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-TR-Generic</b> / Condition <span>Exact</span> <span>3 kelime</span></p><div class="chips"><span class="chip" title="Tani olmadan takip akisiyla ortusur">prediyabet<span class="b">0.09</span></span><span class="chip" title="Gebelik diyabeti; sureli ve yuksek motivasyonlu kitle">gebelik şekeri<span class="b">0.10</span></span><span class="chip" title="Ayni kitle, gunluk niyeti net">gebelik diyabeti günlüğü<span class="b">0.09</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-TR-Competitor</b> / Comp-Core <span>Exact</span> <span>7 kelime</span></p><div class="chips"><span class="chip" title="TR&#x27;de en hakim rakip (26 frekans, ort. rank 1.38)">mysugr<span class="b">0.14</span></span><span class="chip" title="TR yerel rakip, 16 frekans ort. rank 2.63">şeker takip diyabet günlüğü<span class="b">0.12</span></span><span class="chip" title="TR rakip, 12 frekans ort. rank 2.25">iglupal<span class="b">0.10</span></span><span class="chip" title="TR rakip, 12 frekans ort. rank 1.83">diabetlog<span class="b">0.10</span></span><span class="chip" title="TR yerel rakip, ort. rank 1.0">arkadaşım diyabet<span class="b">0.09</span></span><span class="chip" title="TR rakip, ort. rank 2.33">diabtrend<span class="b">0.09</span></span><span class="chip" title="Karbonhidrat odakli TR rakip, ort. rank 2.0">karbsay<span class="b">0.08</span></span></div></div><div class="grp"><p class="grp-h"><b>Negatif liste</b> <span>Broad</span> <span>30 terim</span></p><p class="negnote">Kampanya seviyesinde uygulanir. Ilk blok regulasyon kaynaklidir: doz hesaplama, tedavi vaadi, dusurme vaadi ve tani niyeti tasiyan hicbir terime teklif verilmez. Kalani urun uyumsuzlugu (CGM donanimi, sarf malzemesi, ilac), kategori disi niyet ve dusuk niyet filtresidir.</p><div class="chips"><span class="chip neg" title="REGULASYON: uygulama doz hesaplamaz; Apple saglik politikasi riski">insülin hesaplama</span><span class="chip neg" title="REGULASYON: doz niyeti">insülin dozu</span><span class="chip neg" title="REGULASYON: doz hesaplama niyeti">doz hesaplama</span><span class="chip neg" title="REGULASYON: bolus doz hesabi">bolus hesaplama</span><span class="chip neg" title="REGULASYON: hesaplayici varyanti">insülin hesaplayıcı</span><span class="chip neg" title="REGULASYON: doz duzeltme faktoru">düzeltme faktörü</span><span class="chip neg" title="REGULASYON: tedavi vaadi">diyabet tedavisi</span><span class="chip neg" title="REGULASYON: tedavi vaadi">şeker hastalığı tedavisi</span><span class="chip neg" title="REGULASYON: iyilestirme vaadi">diyabet nasıl geçer</span><span class="chip neg" title="REGULASYON: sonuc vaadi (dusurme)">şeker düşürme</span><span class="chip neg" title="REGULASYON: sonuc vaadi">şekeri düşüren</span><span class="chip neg" title="REGULASYON: sonuc vaadi">kan şekeri düşürme</span><span class="chip neg" title="REGULASYON: tani niyeti; uygulama tani koymaz">diyabet teşhisi</span><span class="chip neg" title="REGULASYON: tarama/test niyeti">şeker testi</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi">freestyle libre</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi">dexcom</span><span class="chip neg" title="URUN UYUMSUZ: cihaz satin alma niyeti">şeker ölçüm cihazı</span><span class="chip neg" title="URUN UYUMSUZ: cihaz">glukometre</span><span class="chip neg" title="URUN UYUMSUZ: sarf malzemesi">şeker ölçüm çubuğu</span><span class="chip neg" title="URUN UYUMSUZ: sarf malzemesi">lanset</span><span class="chip neg" title="URUN UYUMSUZ: donanim">insülin pompası</span><span class="chip neg" title="URUN UYUMSUZ: ilac">metformin</span><span class="chip neg" title="URUN UYUMSUZ: ilac">ozempic</span><span class="chip neg" title="KATEGORI DISI: kilo verme">zayıflama</span><span class="chip neg" title="KATEGORI DISI: diyet">diyet</span><span class="chip neg" title="KATEGORI DISI: kalori sayaci, kitle ortusmuyor">kalori sayacı</span><span class="chip neg" title="KATEGORI DISI: tansiyon, bizde yok">tansiyon</span><span class="chip neg" title="OZELLIK YOK: Apple Watch uygulamamiz yok">apple watch</span><span class="chip neg" title="DUSUK NIYET: ucretsiz arayan Pro&#x27;ya donmuyor">ücretsiz</span><span class="chip neg" title="DUSUK NIYET">bedava</span></div></div></div></details><details class="mkt" id="kw-us"><summary>ABD <span class="pill small">US</span><span class="cnt">14 kelime, 30 negatif</span></summary><div class="mktbody"><div class="grp"><p class="grp-h"><b>ZS-US-Brand</b> / Brand-Core <span>Exact</span> <span>3 kelime</span></p><div class="chips"><span class="chip" title="Organik rank 1 (pulse); marka savunmasi, ucuz ve yuksek donusum">zerospike<span class="b">0.35</span></span><span class="chip" title="Marka + app">zerospike app<span class="b">0.35</span></span><span class="chip" title="Ayrik yazim">zero spike<span class="b">0.35</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-US-Brand</b> / Brand-Broad <span>Broad</span> <span>1 kelime</span></p><div class="chips"><span class="chip" title="Yazim hatasi yakalama">zerospike<span class="b">0.40</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-US-Generic</b> / Diary-Core <span>Exact</span> <span>9 kelime</span></p><div class="chips"><span class="chip" title="Takip edilen kelime, rank NULL; app adimizla birebir (Blood Sugar Diary)">blood sugar diary<span class="b">0.85</span></span><span class="chip" title="Takip edilen kelime, organik rank 121 (yok sayilir); mySugr ort. rank 1.0">diabetes logbook<span class="b">0.80</span></span><span class="chip" title="Rank NULL; rakip Glucose Blood Sugar Tracker ort. rank 1.76, en pahali terim olmasi beklenir">blood sugar tracker<span class="b">0.85</span></span><span class="chip" title="Uzun kuyruk varyant, daha ucuz olmali">glucose diary<span class="b">0.70</span></span><span class="chip" title="Varyant">blood sugar log<span class="b">0.75</span></span><span class="chip" title="Takip edilen kelime, rank NULL; mySugr ort. rank 1.0">a1c tracker<span class="b">0.70</span></span><span class="chip" title="Takip edilen kelime, rank NULL; tani olmadan takip akisiyla ortusur">prediabetes tracker<span class="b">0.65</span></span><span class="chip" title="Takip edilen kelime, rank NULL, dusuk hacim">type 2 diary<span class="b">0.60</span></span><span class="chip" title="Takip edilen kelime, rank NULL; rakip Carb Manager ort. rank 1.0, kitle ortusmesi kismi">carb counter<span class="b">0.70</span></span></div></div><div class="grp"><p class="grp-h"><b>ZS-US-Competitor</b> / Comp-Core <span>Exact</span> <span>1 kelime</span></p><div class="chips"><span class="chip" title="Global lider; US&#x27;de ort. rank 1.31. Tek rakip terimi ile sinirli test">mysugr<span class="b">0.90</span></span></div></div><div class="grp"><p class="grp-h"><b>Negatif liste</b> <span>Broad</span> <span>30 terim</span></p><p class="negnote">Kampanya seviyesinde uygulanir. Ilk blok regulasyon kaynaklidir: doz hesaplama, tedavi vaadi, dusurme vaadi ve tani niyeti tasiyan hicbir terime teklif verilmez. Kalani urun uyumsuzlugu (CGM donanimi, sarf malzemesi, ilac), kategori disi niyet ve dusuk niyet filtresidir.</p><div class="chips"><span class="chip neg" title="REGULASYON: ASO kural 2, bu ifade hicbir yerde gecemez; reklamda da teklif verilmez">insulin calculator</span><span class="chip neg" title="REGULASYON: doz hesaplama">insulin dose calculator</span><span class="chip neg" title="REGULASYON: bolus doz hesabi">bolus calculator</span><span class="chip neg" title="REGULASYON: doz niyeti">insulin dosing</span><span class="chip neg" title="REGULASYON: doz duzeltme faktoru">correction factor</span><span class="chip neg" title="REGULASYON: doz turevli hesaplama">carb ratio calculator</span><span class="chip neg" title="REGULASYON: hesaplama cercevesi; bizde GMI gecmis veriden turetilen metrik adidir">a1c calculator</span><span class="chip neg" title="REGULASYON: tedavi vaadi">diabetes cure</span><span class="chip neg" title="REGULASYON: tedavi vaadi">cure diabetes</span><span class="chip neg" title="REGULASYON: geri dondurme vaadi">reverse diabetes</span><span class="chip neg" title="REGULASYON: sonuc vaadi (dusurme)">lower blood sugar</span><span class="chip neg" title="REGULASYON: kontrol vaadi, ASO kural 1">blood sugar control</span><span class="chip neg" title="REGULASYON: yonetme vaadi, ASO kural 1">manage diabetes</span><span class="chip neg" title="REGULASYON: tani niyeti">diabetes diagnosis</span><span class="chip neg" title="REGULASYON: tarama/test niyeti">diabetes test</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi">freestyle libre</span><span class="chip neg" title="URUN UYUMSUZ: CGM donanimi">dexcom</span><span class="chip neg" title="URUN UYUMSUZ: donanim arayisi">cgm sensor</span><span class="chip neg" title="URUN UYUMSUZ: cihaz satin alma">glucose meter buy</span><span class="chip neg" title="URUN UYUMSUZ: sarf malzemesi">test strips</span><span class="chip neg" title="URUN UYUMSUZ: sarf malzemesi">lancets</span><span class="chip neg" title="URUN UYUMSUZ: donanim">insulin pump</span><span class="chip neg" title="URUN UYUMSUZ: ilac">metformin</span><span class="chip neg" title="URUN UYUMSUZ: ilac">ozempic</span><span class="chip neg" title="KATEGORI DISI: kilo verme">weight loss</span><span class="chip neg" title="KATEGORI DISI: keto">keto diet</span><span class="chip neg" title="KATEGORI DISI: kalori sayaci, kitle ortusmuyor">calorie counter</span><span class="chip neg" title="KATEGORI DISI: tansiyon, bizde yok">blood pressure</span><span class="chip neg" title="OZELLIK YOK: Apple Watch uygulamamiz yok">apple watch</span><span class="chip neg" title="DUSUK NIYET: ucretsiz arayan Pro&#x27;ya donmuyor">free</span></div></div></div></details></section>
+<section id="cpp"><div class="sechead"><span class="n">7</span><h2>Custom Product Page onerileri</h2></div>
+<p class="lede">Once bir duzeltme: App Store Connect'te bir Custom Product Page <b>yalniz ekran
+goruntusu, app preview videosu ve Promotional Text</b> alanlarini degistirir. <b>App name, Subtitle ve
+Description degistirilemez</b>, varsayilan urun sayfasindan aynen gelir. Bu yuzden asagida baslik ve
+alt baslik onerisi yok; kullanicinin baslik olarak algiladigi metin ekran goruntusunun icine gomulu
+oldugu icin onu degistirmek gorseli yeniden uretmeyi gerektirir.</p>
+<div class="scroll"><table>
+<thead><tr><th>CPP</th><th>Bagli ad group</th><th>Ekran goruntusu sirasi</th><th>Neden</th></tr></thead><tbody>
+<tr><td class="k">Glucose Diary</td><td>Glucose-Diary, HbA1c-Trends, Condition, Diary-Core, tum Brand ve Discovery</td>
+<td><code>01-ring</code> &rarr; <code>09-reminders</code> &rarr; <code>05-insights</code> &rarr; <code>06-report</code> &rarr; <code>03-widget</code> &rarr; <code>04-food</code></td>
+<td>Varsayilan sayfaya en yakin CPP. Gunun ozeti ilk ekranda; hatirlatici ikinci sirada cunku D7
+tutunmasi zayif ve aliskanlik anlatimi one cekilmeli.</td></tr>
+<tr><td class="k">Injection Rotation</td><td>Injection-Rotation</td>
+<td><code>02-bodymap</code> &rarr; <code>01-ring</code> &rarr; <code>09-reminders</code> &rarr; <code>05-insights</code> &rarr; <code>06-report</code></td>
+<td>Aranan seyin tam karsiligi ilk ekranda. Nokta seviyesinde rotasyon rakiplerin cogunda yok,
+bu grubun donusum oraninin en yuksek cikmasi beklenir.</td></tr>
+<tr><td class="k">Carb Tracking</td><td>Carbs-Food</td>
+<td><code>04-food</code> &rarr; <code>01-ring</code> &rarr; <code>05-insights</code> &rarr; <code>06-report</code> &rarr; <code>03-widget</code></td>
+<td>En genis ama kitle ortusmesi en zayif grup. Ikinci ekranda diyabet baglami kurularak yanlis
+kitle bilincli olarak elenir.</td></tr>
+</tbody></table></div>
+<p class="lede"><code>07-spike.png</code> hicbir CPP'de kullanilmaz: Spike sohbet ekrani
+<code>docs/aso-appstore.md</code> icinde store paketinin disinda birakilmis. <code>08-takip.png</code>
+faz 2'de "tani olmadan takip" CPP'sine ayrildi, prediyabet kelimelerine baglanacak.</p>
+<h3 class="sub">Promotional Text ornegi <span class="hint">Glucose Diary, dort dil, 170 karakter siniri</span></h3>
+<div class="scroll"><table>
+<thead><tr><th>Dil</th><th>Metin</th><th class="n">Uzunluk</th></tr></thead><tbody>
+<tr><td class="k">de</td><td>Blutzucker, Mahlzeiten und Insulin in Sekunden erfassen. Farbcodiertes Tagebuch, Verlauf &uuml;ber 30 und 90 Tage, arztfertiges PDF. Ohne Konto, alles bleibt auf dem Ger&auml;t.</td><td class="n">167</td></tr>
+<tr><td class="k">fr</td><td>Notez glyc&eacute;mie, repas et insuline en secondes. Journal en couleurs, historique sur 30 et 90 jours, PDF pour votre m&eacute;decin. Sans compte, tout reste sur l'appareil.</td><td class="n">162</td></tr>
+<tr><td class="k">tr</td><td>&#350;ekeri, &ouml;&#287;&uuml;nleri ve ins&uuml;lini saniyeler i&ccedil;inde kaydedin. Renkli g&uuml;nl&uuml;k, 30 ve 90 g&uuml;nl&uuml;k ge&ccedil;mi&#351;, doktora haz&#305;r PDF. Hesap yok, veriler cihaz&#305;n&#305;zda kal&#305;r.</td><td class="n">151</td></tr>
+<tr><td class="k">en</td><td>Log glucose, meals and insulin in seconds. A color-coded journal, 30 and 90 day history and a doctor-ready PDF. No account; everything stays on your device.</td><td class="n">156</td></tr>
+</tbody></table></div>
+<p class="lede">Uc CPP'nin dortlu dil setinin tamami ve uyum kontrolu <code>cpp-glucose-diary.md</code>,
+<code>cpp-injection-rotation.md</code> ve <code>cpp-carb-tracking.md</code> dosyalarinda. Hepsi
+sonuc vaadi, tani, tedavi ve doz dili tasimiyor, Apple Watch gecmiyor, em-dash icermiyor ve her dil
+kendi tek hitabini koruyor.</p></section>
+<section id="olcum"><div class="sechead"><span class="n">8</span><h2>Olcum plani</h2></div>
+<p class="lede">Zincir: Apple Ads attribution &rarr; AdServices token &rarr; RevenueCat musteri
+ozniteligi &rarr; pulse. SDK tarafi bu isle birlikte kodlandi, geri kalani konsol ayari.</p>
+<pre><code>lib/services/purchases.ts:85
+  if (configured &amp;&amp; Platform.OS === "ios") {
+    // Apple Search Ads attribution token; no ATT prompt needed, no-op below iOS 14.3.
+    rc().enableAdServicesAttributionTokenCollection().catch(() =&gt; {});
+  }</code></pre>
+<p class="lede">Cagri <code>ensureConfigured()</code> icinde, RevenueCat <code>configure</code>
+basarili olduktan sonra calisiyor ve acilista <code>lib/store/AppContext.tsx:331</code> uzerinden
+tetikleniyor. AdServices token'i <b>ATT iznine tabi degildir</b>, bu yuzden izin dialogu eklenmedi.
+iOS 14.3 altinda native taraf sessizce no-op.</p>
+<h3 class="sub">Haftalik izlenen metrikler</h3>
+<div class="scroll"><table>
+<thead><tr><th>Metrik</th><th>Nerede</th><th class="n">Beklenen</th><th class="n">Durdurma esigi</th><th class="n">Olcekleme esigi</th></tr></thead><tbody>
+<tr><td class="k">TTR</td><td>Apple Ads</td><td class="n">%4 - 8</td><td class="n crit">%2 alti</td><td class="n good">%8 ustu</td></tr>
+<tr><td class="k">Tap &rarr; indirme</td><td>Apple Ads</td><td class="n">%45</td><td class="n crit">%30 alti</td><td class="n good">%55 ustu</td></tr>
+<tr><td class="k">Indirme maliyeti</td><td>Apple Ads</td><td class="n">DE 1,11 EUR</td><td class="n crit">tavanin 1,5 kati</td><td class="n good">tavanin %80 alti</td></tr>
+<tr><td class="k">Indirme &rarr; deneme</td><td>RevenueCat</td><td class="n">%9</td><td class="n crit">%4 alti</td><td class="n good">%14 ustu</td></tr>
+<tr><td class="k">Deneme &rarr; ucretli</td><td>RevenueCat</td><td class="n">%38</td><td class="n crit">%20 alti</td><td class="n good">%50 ustu</td></tr>
+<tr><td class="k">D7 tutunma</td><td>GA4</td><td class="n">%19,6</td><td class="n crit">%12 alti</td><td class="n good">%25 ustu</td></tr>
+</tbody></table></div>
+<h3 class="sub">Durdurma ve olcekleme kurallari</h3>
+<div class="scroll"><table>
+<thead><tr><th>Seviye</th><th>Durdur</th><th>Olcekle</th></tr></thead><tbody>
+<tr><td class="k">Kelime</td><td>30 tap ve 0 indirme</td><td>10+ indirme ve maliyet tavanin %80 altinda: teklif %20 artir</td></tr>
+<tr><td class="k">Ad group</td><td>14 gun sonunda indirme maliyeti tavanin 1,5 katinin ustunde</td><td>20+ indirme ve tavan altinda: butce %50 artir</td></tr>
+<tr><td class="k">Kampanya</td><td>US: 100 tap sonrasi indirme maliyeti 1,50 EUR ustunde</td><td>DE: olculen indirme &rarr; odeyen %3 ustunde ise olcek kademesi</td></tr>
+<tr><td class="k">Hesap</td><td>Toplam harcama 14 gunden once 336 EUR'yu bulursa hepsi durur</td><td>Olculen oran %4 ustunde ise agresif kademe</td></tr>
+</tbody></table></div>
+<h3 class="sub">Ilk 14 gun, gun gun</h3>
+<p class="lede"><b>Onemli zamanlama:</b> deneme 7 gun oldugu icin donusum sinyali kurulumdan yaklasik
+10 gun sonra geliyor. 14 gunluk harcama tek basina LTV'yi dogrulamaz. <b>14 gun harca, 14 gun daha
+olc, sonra olceklendir.</b></p>
+<ol class="proto">
+<li><span class="day">Gun 0</span><div><h4>Kurulum ve dogrulama</h4><p>Kampanyalar acilir ama
+<b>yalniz Brand</b> yayina alinir. Ilk gun tek isi attribution zincirinin calistigini gormek: kendi
+cihazindan reklama tikla, indir, denemeyi baslat ve RevenueCat'te o musterinin ozniteliklerinde
+Apple Ads kampanya bilgisinin gorundugunu dogrula. Gorunmuyorsa geri kalani baslatma.</p></div></li>
+<li><span class="day">Gun 1</span><div><h4>Generic acilir</h4><p>DE ve FR Generic kampanyalari
+yayina alinir. TR ve US kapali kalir. Ilk gun sonunda yalniz gosterim ve CPT bakilir; indirme
+sayisi anlamli olmayacak.</p></div></li>
+<li><span class="day">Gun 2 - 3</span><div><h4>Gercek CPT olcumu</h4><p>Varsayilan CPT 0,50 EUR idi.
+Gercek CPT %50'den fazla saparsa tum teklifler yeniden hesaplanir. Sifir gosterim alan kelimelerde
+teklif %20 artirilir, gosterim alip hic tiklanmayanlarda urun sayfasi degil kelime alaka sorunu
+aranir.</p></div></li>
+<li><span class="day">Gun 4</span><div><h4>TR ve US acilir</h4><p>Zincir dogrulandiktan ve DE
+CPT'si oturduktan sonra. US'te sabit kesme esigi ilk gunden isletilir.</p></div></li>
+<li><span class="day">Gun 5 - 7</span><div><h4>Ilk kelime temizligi</h4><p>30 tap alip hic indirme
+uretmeyen kelimeler durdurulur. Discovery'nin urettigi arama terimleri incelenir: iyi olanlar Generic'e
+Exact olarak tasinir, kotu olanlar negatif listeye eklenir. Regulasyona aykiri bir terim cikarsa
+ayni gun negatiflenir.</p></div></li>
+<li><span class="day">Gun 8 - 10</span><div><h4>Ilk deneme donusumleri</h4><p>Gun 0 - 3 arasi
+kurulumlarin denemesi bitiyor. Deneme &rarr; ucretli orani ilk kez goruluyor. Orneklem cok kucuk,
+karar verilmez, yalniz kaydedilir.</p></div></li>
+<li><span class="day">Gun 11 - 13</span><div><h4>Ad group kararlari</h4><p>Indirme maliyeti tavanin
+1,5 katini asan ad group'lar durdurulur. Carbs-Food grubu ozel olarak incelenir: donusumu digerlerinin
+yarisinin altindaysa kapatilir, kitle ortusmesi zayif demektir.</p></div></li>
+<li><span class="day">Gun 14</span><div><h4>Harcama durur, olcum baslar</h4><p>Butun kampanyalar
+duraklatilir. Bu noktada elde: gercek CPT, gercek tap &rarr; indirme, gercek indirme &rarr; deneme.
+Eksik olan tek sey deneme &rarr; ucretli.</p></div></li>
+<li><span class="day">Gun 15 - 28</span><div><h4>Sessiz olcum penceresi</h4><p>Harcama yok. Son
+kurulumlarin denemeleri tamamlanir ve gercek indirme &rarr; odeyen orani hesaplanir. Bu sayi %2 altinda
+ise kanal kapatilir, %3 civarinda ise olcek kademesine gecilir, %4 uzerinde ise agresif kademeye.</p></div></li>
+</ol></section>
+<section id="konsol"><div class="sechead"><span class="n">9</span><h2>Konsol adimlari</h2></div>
+<p class="lede">Sirasiyla. Adim 1 ve 2 kampanyadan once bitmeli, cunku birim ekonomiyi degistiren
+tek sey onlar.</p>
+<ol class="steps">
+<li><div><h4>Small Business Program kaydini kontrol et ve gerekirse yap</h4><p>App Store Connect &rarr;
+Business &rarr; App Store Small Business Program. Tek satistan geri hesap %30 komisyon gosteriyor,
+yani kayitli gorunmuyoruz. Kayit net geliri %21 artirir ve maliyeti sifirdir. Bu plandaki tum
+"onerilen fiyat, SBP %15" satirlari bunun yapildigini varsayar.</p></div></li>
+<li><div><h4>Fiyatlari guncelle</h4><p><code>docs/pricing-2026-08.md</code> tablosu: DE ve diger EUR
+pazarlarinda aylik 6,99, yillik 39,99, downsell 24,99, lifetime 119,99. Mevcut abonelerde
+"preserve current price" secilir. RevenueCat downsell offering'inin bagli oldugu urunun de
+guncellendigini ve downsell &lt; standart yillik kuralinin bozulmadigini dogrula.</p></div></li>
+<li><div><h4>Apple Ads Advanced hesabini ac</h4><p><code>ads.apple.com</code>, App Store Connect
+hesabiyla giris. Advanced secilir, Basic degil. <b>Para birimi olarak EUR sec.</b> Hesap para birimi
+kurulumda belirlenir ve sonradan degistirilemez; butcenin %70'i EUR pazarlarina gidiyor ve TRY
+oynakligi butce planlamasini bozar.</p></div></li>
+<li><div><h4>Odeme yontemi ve fatura bilgisi gir</h4><p>Kredi karti veya fatura hesabi. Hesap
+seviyesinde <b>aylik harcama tavani</b> tanimla: test fazi icin 400 EUR. Bu, esik kurallarindan
+bagimsiz sert bir emniyet kemeri.</p></div></li>
+<li><div><h4>CPP'leri App Store Connect'te olustur</h4><p>ASC &rarr; zerospike &rarr; Custom Product Pages.
+Uc sayfa: <code>zerospike-glucose-diary</code>, <code>zerospike-injection-rotation</code>,
+<code>zerospike-carb-tracking</code>. Her biri icin ekran goruntusu sirasini
+<code>zerospike-store/iphone-1284x2778/&lt;dil&gt;/</code> altindaki mevcut dosyalardan diz ve
+Promotional Text'i ilgili <code>cpp-*.md</code> dosyasindan kopyala. Yeni gorsel uretmek gerekmiyor.
+Sayfalar onaylandiktan sonra her birinin URL'si Apple Ads'te secilebilir hale gelir.</p></div></li>
+<li><div><h4>Kampanyalari kur</h4><p>Storefront basina bir kampanya, toplam dort:
+<code>ZS-DE-*</code>, <code>ZS-FR-*</code>, <code>ZS-TR-*</code>, <code>ZS-US-*</code>. Her kampanyada
+CSV'deki ad group'lari ac, cihazi iPhone'a sabitle, musteri tipini "yeni kullanicilar" yap, yas ve
+cinsiyet hedeflemesini bos birak.</p></div></li>
+<li><div><h4>Kelimeleri gir</h4><p>Apple Ads Advanced arayuzunde kampanya yapisi icin hazir bir CSV
+ice aktarici <b>yok</b>; toplu yukleme yalniz Campaign Management API ile mumkun. Arayuzde ad group
+icinde Keywords &rarr; Add Keywords kutusuna satir satir yapistirilir. Her ad group icin hazir liste:</p>
+<pre><code>cd docs/apple-ads
+awk -F, -v g="Glucose-Diary" '$2==g &amp;&amp; $3!="" {print $3}' keywords-de.csv</code></pre>
+<p>Teklifler eklendikten sonra kelime bazinda CSV'nin <code>bid</code> sutunundan girilir; ad group
+varsayilan CPT'si de ayni gruptaki ortalama teklife ayarlanir.</p></div></li>
+<li><div><h4>Negatif listeleri gir</h4><p>Kampanya seviyesinde, Negative Keywords &rarr; Add.
+<code>tail -n +2 negatives-de.csv | cut -d, -f3</code> ciktisi dogrudan yapistirilir, eslesme tipi
+Broad secilir. <b>Bu adim atlanamaz</b>: regulasyon negatifler burada uygulaniyor.</p></div></li>
+<li><div><h4>CPP'leri ad group'lara bagla</h4><p>Her ad group'un Creative bolumunde varsayilan urun
+sayfasi yerine ilgili CPP secilir. Eslesme <code>cpp-*.md</code> dosyalarinin basinda yazili.</p></div></li>
+<li><div><h4>Gun 0 dogrulamasini yap, sonra Generic'i ac</h4><p>Once yalniz Brand yayinda. Kendi
+cihazindan tikla, indir, denemeyi baslat, RevenueCat'te attribution ozniteligini gor. Gorunuyorsa
+Gun 1 protokoluyle devam et.</p></div></li>
+</ol></section>
+<section id="karar"><div class="sechead"><span class="n">10</span><h2>Kararlar ve varsayimlar</h2></div>
+<h3 class="sub">Senin adina verdigim kararlar</h3>
+<div class="dec">
+<div><span class="who">Pazar</span><div><h4>DE, FR, TR, US secildi; JP, MX, BR, SA disarida</h4>
+<p>JP'de organik olarak 1. sirada olup 80 gosterimde 0 tap almamiz trafik sorunu degil urun sayfasi
+sorunu gosteriyor; oraya reklam butcesi koymak sorunu ortmek olur.</p></div></div>
+<div><span class="who">Para birimi</span><div><h4>Apple Ads hesap para birimi EUR</h4>
+<p>Geri alinamaz bir karar. Butcenin %70'i EUR pazarlarinda ve TRY oynakligi butce planlamasini
+bozar. Tum CSV teklifleri EUR cinsinden yazildi.</p></div></div>
+<div><span class="who">ABD</span><div><h4>Disarida birakilmadi, mikro test olarak birakildi</h4>
+<p>Modelde tek basina zarar eden pazar (1,78 EUR maliyet, 1,16 EUR tavan) ama en buyuk potansiyel.
+14 kelime, Exact eslesme, Search Match kapali, 100 tap sonrasi sert kesme.</p></div></div>
+<div><span class="who">Turkiye</span><div><h4>Buyume degil olcum butcesi</h4>
+<p>Gunde 3 EUR. Isi indirme uretmek degil, ucuz tiklamayla attribution zincirini dogrulamak,
+Search Match ile kelime kesfetmek ve markayi savunmak.</p></div></div>
+<div><span class="who">Kelime</span><div><h4>Doz ve tedavi niyeti tasiyan hicbir terime teklif verilmedi</h4>
+<p>"insulin calculator", "bolusrechner", "insülin hesaplama", "diabetes cure", "blutzucker senken",
+"lower blood sugar" ve turevleri pozitif listelerde yok, negatif listelerde var. Rakip uygulama adi
+olsalar bile (Bolusrechner, A1C Calculator) alinmadi: uygulamamiz hesaplama yapmiyor, o niyete
+reklam cikmak Apple saglik kategorisi politikasinda risk.</p></div></div>
+<div><span class="who">CPP</span><div><h4>Yeni gorsel uretilmedi</h4>
+<p>Uc CPP de mevcut ekran goruntulerinin yeniden siralanmasindan olusuyor. Baslik metni gorsele gomulu
+oldugu icin farkli baslik ancak gorseli yeniden uretmekle mumkun; bu, kanit gelmeden yapilacak bir
+yatirim degil. <code>07-spike.png</code> hicbir sayfada kullanilmadi.</p></div></div>
+<div><span class="who">Butce</span><div><h4>Test fazi 336 EUR tavanla sinirlandi</h4>
+<p>Ve 14 gunun sonunda harcama tamamen duruyor. 14 gun harcama, 14 gun olcum. Deneme suresi 7 gun
+oldugu icin daha kisa bir pencere LTV hakkinda hicbir sey soylemez.</p></div></div>
+</div>
+<h3 class="sub">Varsayimlar <span class="hint">hepsi yanlis cikabilir, hangisinin ne kadar onemli oldugu yazili</span></h3>
+<ul class="plain">
+<li><b>Indirme &rarr; odeyen: DE %3, FR %2,5, TR %1,5, US %3.</b> Veride yok. <b>En kritik varsayim.</b>
+Gozlenen tek deger 18 indirmede 1 odeyen (%5,6) ve DE'de 6 indirmede 1 (%16,7), ikisi de tek gozlem
+oldugu icin kullanilmadi. %2 altinda kanal kapanir, %4 ustunde agresif kademeye gecilir.</li>
+<li><b>Odeyen paket dagilimi: %30 aylik, %55 yillik, %15 lifetime.</b> Veride yalniz 1 lifetime satisi var.
+Lifetime payi gercekte daha yuksekse LTV artar, plan iyilesir.</li>
+<li><b>Aylik abone 3,5 ay tutulur, yillik abone 1,25 kez yenilenir.</b> Sektor bandinin
+muhafazakar ucu. GA4 D7 tutunmasi %19,6 ile zayif oldugu icin yukari cekilmedi.</li>
+<li><b>Etkin CPT: DE 0,50, FR 0,45, TR 0,11, US 0,80 EUR.</b> Apple Ads'ten gercek deger gelene kadar
+tahmin. Gun 2 - 3'te olculur; %50'den fazla saparsa tum teklifler yeniden hesaplanir.</li>
+<li><b>Tap &rarr; indirme %45.</b> Organik veride sayfa &rarr; indirme %24 ama o urun sayfasi
+goruntulemesi uzerinden, tap uzerinden degil; reklam trafigi daha yuksek niyetli oldugu icin
+yukari alindi.</li>
+<li><b>Butcenin %60'i fiilen harcanir.</b> Teklifler tavana yakin oldugu icin butce tam harcanmaz.
+Tam harcanirsa indirme sayisi artar, ROI degismez.</li>
+<li><b>Lifetime brut fiyati 89,99 EUR ve komisyon %30.</b> Net 52,94 EUR'dan geri hesap; test edilen
+fiyat noktalari icinde tek eslesme. <b>ASC'de dogrulanmali</b>, cunku tum SBP argumani buna dayaniyor.</li>
+<li><b>KDV: DE %19, FR %20, TR %20, US %0.</b> Apple'in ABD fiyatlari vergi haric listelenir.</li>
+</ul>
+<h3 class="sub">Yapmadigim, sonraki adim olarak duran is</h3>
+<p class="lede">pulse icin Apple Ads Campaign Management API baglayicisi <b>yazilmadi</b>. Yazildiginda
+kampanya, ad group ve kelime seviyesinde harcama ve donusum pulse'a akar ve CPA ile ROAS elle
+hesaplanmaz. Gereken kimlik bilgileri:</p>
+<ul class="plain">
+<li><b>Apple Ads hesabinda API erisimi.</b> Account Settings &rarr; API. Sertifika tabanli eski akis
+yerine OAuth 2 kullaniliyor: bir anahtar cifti uretilir, public anahtar Apple Ads arayuzune yuklenir,
+karsiliginda <code>clientId</code>, <code>teamId</code> ve <code>keyId</code> alinir.</li>
+<li><b>ES256 ile imzalanan JWT</b> ile access token alinir, token kisa omurludur ve yenilenmesi gerekir.</li>
+<li><b>orgId</b> (Account Settings icinde) ve en az "API Account Read Only" rolu.</li>
+<li><b>Tahmini is:</b> 1 ile 1,5 gun. Auth ve token yenileme, kampanya / ad group / kelime rapor
+uclari, gunluk senkron, pulse'ta iki yeni tablo (<code>apple_ads_campaigns_daily</code>,
+<code>apple_ads_keywords_daily</code>) ve panoya harcama ile CPA kartlari.</li>
+<li><b>Ikinci secenek:</b> RevenueCat'in kendi Apple Ads maliyet entegrasyonu. Ayni kimlik bilgilerini
+ister ama kod yazmayi gerektirmez; pulse yerine RevenueCat panosunda ROAS verir. Once bu denenebilir.</li>
+</ul></section>
+<footer>
+<p>Kaynak dosyalar <code>docs/apple-ads/</code> altinda: <code>plan.md</code>,
+<code>keywords-{de,fr,tr,us}.csv</code>, <code>negatives-{de,fr,tr,us}.csv</code>,
+<code>cpp-glucose-diary.md</code>, <code>cpp-injection-rotation.md</code>, <code>cpp-carb-tracking.md</code>.
+Dil ve kapsam kurallari <code>docs/aso-appstore.md</code>, fiyat referansi <code>docs/pricing-2026-08.md</code>.
+Veri sorgulari salt okur calistirildi, pulse.db degistirilmedi.</p>
+</footer>
+</main>
+</div>

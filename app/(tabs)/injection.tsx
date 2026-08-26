@@ -18,10 +18,12 @@ import { useApp } from "../../lib/store/AppContext";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
+import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { Stepper } from "../../components/Stepper";
 import { InlineDateTimePicker } from "../../components/InlineDateTimePicker";
 import { useFeedback } from "../../components/Feedback";
 import { useUndoBatch } from "../../components/useUndoBatch";
+import { useEntryGuardConfirm } from "../../components/useEntryGuardConfirm";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import { listEntering, listExiting, listLayout } from "../../lib/theme/motion";
 import {
@@ -48,12 +50,12 @@ import {
   getInjections,
   logInjection,
   deleteInjection,
-  findRecentCalculatorBolus,
   pointKey,
   type RotationUsage,
 } from "../../lib/db/injections";
 import { captureDeletion } from "../../lib/db/undo";
 import { checkDose } from "../../lib/insulin";
+import { OTHER_PRODUCT_ID } from "../../lib/insulinCatalog";
 import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
@@ -145,6 +147,7 @@ export default function InjectionScreen() {
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
   const { confirm, actionSheet, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
+  const guardEntry = useEntryGuardConfirm();
   const { columnPad } = useLayout();
 
   // Which of the three faces is showing. State (form values, selected site) lives
@@ -187,6 +190,11 @@ export default function InjectionScreen() {
   const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
+  // Which product THIS entry uses (schema v22): pre-filled from the profile's
+  // own basal_insulin_id / bolus_insulin_id, but a change here only ever
+  // touches this one record - see applyInsulinType and save() below.
+  const [productId, setProductId] = useState<string | null>(null);
+  const [productOther, setProductOther] = useState<string | null>(null);
   const [loggedAt, setLoggedAt] = useState(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [note, setNote] = useState("");
@@ -197,6 +205,10 @@ export default function InjectionScreen() {
   // True once the dose has been hand-edited this session; while false, an
   // insulin-type switch is still allowed to prefill/clear it.
   const doseTouched = useRef(false);
+  // Same idea, for the product row: once the user has hand-picked a product
+  // this session, an insulin-type switch stops re-prefilling it from the
+  // profile.
+  const productTouched = useRef(false);
   // True once the user has hand-picked a time this session. While false,
   // loggedAt tracks "now" on every focus (see the useFocusEffect below): the
   // tab never unmounts (freezeOnBlur), so without this a form left open from
@@ -210,12 +222,30 @@ export default function InjectionScreen() {
 
   /** Switches insulin type and, unless the user already hand-edited the dose
    *  this session, pre-fills it: the profile's daily basal for basal, empty
-   *  for bolus (WP3 - basal is usually a fixed daily amount). */
+   *  for bolus (WP3 - basal is usually a fixed daily amount). Also pre-fills
+   *  the product row from the matching profile field (schema v22), unless the
+   *  user already hand-picked one this session - the same "touched" gate the
+   *  dose uses, kept as its own ref so picking a product never blocks the
+   *  dose prefill or vice versa. */
   const applyInsulinType = useCallback(
     (type: InsulinType) => {
       setInsulinType(type);
       if (!doseTouched.current) {
         setDose(type === "basal" ? activeProfile?.basal_daily_units ?? 0 : 0);
+      }
+      if (!productTouched.current) {
+        const id =
+          (type === "basal"
+            ? activeProfile?.basal_insulin_id
+            : activeProfile?.bolus_insulin_id) ?? null;
+        setProductId(id);
+        setProductOther(
+          id === OTHER_PRODUCT_ID
+            ? ((type === "basal"
+                ? activeProfile?.basal_insulin_other
+                : activeProfile?.bolus_insulin_other) ?? null)
+            : null
+        );
       }
     },
     [activeProfile]
@@ -276,6 +306,18 @@ export default function InjectionScreen() {
   useEffect(() => {
     loadHistory();
   }, [loadHistory, dataVersion]);
+
+  // Seeds the product row from the profile's own field as soon as a profile
+  // is available, independent of typeSeeded above (which only fires once real
+  // history exists to read a type from). Without this, a first-ever entry -
+  // opened on the default "bolus" type, so applyInsulinType is never called
+  // by a segment tap - would show "not set" even though the profile already
+  // has a bolus product picked.
+  useEffect(() => {
+    if (!activeProfile || productTouched.current) return;
+    applyInsulinType(insulinType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile?.id]);
 
   // Keeps the KAYDET form's time honest across a tab switch: freezeOnBlur
   // (app/(tabs)/_layout.tsx) means this screen never unmounts, so the
@@ -355,26 +397,6 @@ export default function InjectionScreen() {
     });
   }
 
-  /** Gentle, non-blocking nudge when a bolus the calculator already wrote sits
-   *  within DOUBLE_BOLUS_WINDOW_MINUTES of this one (R10 1.4). Runs before the
-   *  dose-threshold checks so the two never fight for the same dialog. */
-  async function confirmDoubleBolus(): Promise<boolean> {
-    if (!activeProfile) return true;
-    // Checked against the entry's OWN time, not "now": a back-dated entry has
-    // to be compared to what else was logged around that earlier moment.
-    const existing = await findRecentCalculatorBolus(activeProfile.id, loggedAt);
-    if (!existing) return true;
-    return confirm({
-      title: t("injection.doubleBolusTitle", {
-        n: num(existing.dose_units ?? 0),
-        time: formatTime(existing.logged_at),
-      }),
-      message: t("injection.doubleBolusBody"),
-      confirmLabel: t("injection.doubleBolusConfirm"),
-      icon: "help-circle-outline",
-    });
-  }
-
   /** Gentle, non-blocking nudge when the selected point already has entries
    *  this rotation cycle AND another point is still untouched (a genuinely
    *  empty point, or every point already used, both skip this - see
@@ -399,10 +421,12 @@ export default function InjectionScreen() {
   function resetForm() {
     setSelected(null);
     doseTouched.current = false;
+    productTouched.current = false;
     // Re-applies the current insulinType's prefill rule (profile's daily
-    // basal for basal, 0 for bolus) now that doseTouched is clear again -
-    // a plain setDose(0) here made the NEXT basal entry start from zero
-    // instead of the profile's usual dose.
+    // basal for basal, 0 for bolus, and its saved product) now that both
+    // "touched" flags are clear again - a plain setDose(0)/setProductId(null)
+    // here made the NEXT entry start from zero/blank instead of the profile's
+    // usual values.
     applyInsulinType(insulinType);
     setBolusKind(null);
     timeTouched.current = false;
@@ -414,8 +438,13 @@ export default function InjectionScreen() {
     if (!activeProfile || !selected || saving) return;
     const hasDose = dose > 0;
     if (!(await confirmReusedPoint())) return;
-    if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return;
     if (hasDose && !(await confirmDose(dose))) return;
+    // Duplicate-entry check (lib/entryGuard.ts), run last so it never fights
+    // the site/dose confirms above for the same dialog: a basal or bolus
+    // record close to this one asks a plain factual "save anyway?".
+    if (!(await guardEntry({ entryKind: "injection", insulinType, entryAtIso: loggedAt.toISOString() }))) {
+      return;
+    }
     setSaving(true);
     try {
       await logInjection({
@@ -425,10 +454,12 @@ export default function InjectionScreen() {
         dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
         bolus_kind: insulinType === "bolus" ? bolusKind : null,
+        insulin_product_id: productId,
+        insulin_product_other: productId === OTHER_PRODUCT_ID ? productOther : null,
         note: note.trim() || null,
         logged_at: loggedAt.toISOString(),
       });
-      logEvent("log_added", { kind: "insulin", source: "manual" });
+      logEvent("log_added", { source: "manual" });
       void noteLogAndMaybeReview("log_insulin");
       void noteJournalActivity();
       hapticSuccess();
@@ -1010,6 +1041,33 @@ export default function InjectionScreen() {
                     </Text>
                   </Pressable>
                 ) : null}
+
+                {/* 3b. Product: pre-filled from the profile's own field for the
+                    current insulin type (schema v22); changing it here only
+                    ever touches THIS entry, never the profile. */}
+                <FieldLabel>
+                  {insulinType === "basal" ? t("settings.basalInsulin") : t("settings.bolusInsulin")}
+                </FieldLabel>
+                <View style={{ marginBottom: 16 }}>
+                  <InsulinProductPicker
+                    label={
+                      insulinType === "basal" ? t("settings.basalInsulin") : t("settings.bolusInsulin")
+                    }
+                    value={productId}
+                    otherValue={productOther}
+                    slot={insulinType}
+                    allowNotSet
+                    onChange={(id) => {
+                      productTouched.current = true;
+                      setProductId(id);
+                      setProductOther((prev) => (id === OTHER_PRODUCT_ID ? prev : null));
+                    }}
+                    onOtherChange={(text) => {
+                      productTouched.current = true;
+                      setProductOther(text);
+                    }}
+                  />
+                </View>
 
                 {/* 4. Everything below reflows smoothly when the bolus-label row
                     (5.) appears or disappears above it (WP3 UI/UX rule). */}

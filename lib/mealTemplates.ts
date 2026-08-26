@@ -425,3 +425,52 @@ export function groupMealsBySlot<T extends DatedMeal>(
     return a.key < b.key ? -1 : 1;
   });
 }
+
+/** A template's usage counters, as meal_templates stores them. */
+export interface TemplateUsage {
+  useCount: number;
+  lastUsedAt: string | null;
+}
+
+/**
+ * Where a template's usage counters land after some of the meals logged from it
+ * are DELETED (P17).
+ *
+ * logTemplate bumps them through touchTemplate, and until now only the
+ * save-undo paths ever put them back (setTemplateUsage, which restores the
+ * stored pair verbatim because touchTemplate only moves last_used_at forward
+ * and so cannot undo itself). Deleting the meal from the journal left the
+ * template claiming a use whose record no longer exists.
+ *
+ * `use_count` is a count of the meals logged from the template, so it comes
+ * down by however many of them went away, and never below zero - a floor that
+ * matters because the counters can predate a delete they were never adjusted
+ * for.
+ *
+ * `last_used_at` is NOT rolled back to some remembered value: it is recomputed
+ * from the meals that are STILL recorded, which is the only answer that stays
+ * true whatever order things were deleted in. No meals left means no last use,
+ * i.e. null - the same value a never-used template carries. A moment that will
+ * not parse is ignored rather than allowed to win the comparison, and the
+ * winner is returned as the ORIGINAL string so the stored format survives
+ * untouched.
+ */
+export function templateUsageAfterDelete(input: {
+  useCount: number;
+  /** How many meals logged from this template the delete removed. */
+  deletedCount: number;
+  /** logged_at of every meal STILL recorded against this template. */
+  remainingLoggedAt: readonly string[];
+}): TemplateUsage {
+  const base = Number.isFinite(input.useCount) ? Math.floor(input.useCount) : 0;
+  const useCount = Math.max(0, base - Math.max(0, input.deletedCount));
+  let lastUsedAt: string | null = null;
+  let lastMs = -Infinity;
+  for (const raw of input.remainingLoggedAt) {
+    const ms = Date.parse(raw);
+    if (!Number.isFinite(ms) || ms <= lastMs) continue;
+    lastMs = ms;
+    lastUsedAt = raw;
+  }
+  return { useCount, lastUsedAt };
+}

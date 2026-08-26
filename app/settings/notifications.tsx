@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
 import { isScreenshotMode } from "../../lib/screenshotMode";
@@ -30,6 +30,7 @@ import {
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
   requestAlarmAuthorization,
+  type AlarmAuthorizationStatus,
 } from "../../modules/zerospike-alarmkit";
 import { POST_MEAL_WINDOW_MIN } from "../../lib/postMealTimer";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
@@ -87,19 +88,41 @@ export default function NotificationSettings() {
   const [alarmAuthorized, setAlarmAuthorized] = useState(
     () => isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized"
   );
+  // The row's own status, read the same way as the notification permission
+  // row above it. Re-read on every focus (see the useFocusEffect below) so a
+  // user coming back from iOS Settings sees the row update, the same gap the
+  // per-row alarm badge in reminders.tsx closes with its own reload.
+  const [alarmPermState, setAlarmPermState] = useState<AlarmAuthorizationStatus>(() =>
+    getAlarmAuthorizationStatus()
+  );
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
-  useEffect(() => {
-    (async () => {
-      const p = await getNotificationPrefs();
-      setPrefs(p);
-      const granted = await hasNotificationPermission();
-      setNotifDenied(p.enabled && !granted);
-      setPermission(await getNotificationPermission());
-      setReliability(await checkReminderReliability());
-      })();
+  const reload = useCallback(async () => {
+    const p = await getNotificationPrefs();
+    setPrefs(p);
+    const granted = await hasNotificationPermission();
+    setNotifDenied(p.enabled && !granted);
+    setPermission(await getNotificationPermission());
+    setReliability(await checkReminderReliability());
+    const alarmStatus = getAlarmAuthorizationStatus();
+    setAlarmPermState(alarmStatus);
+    setAlarmAuthorized(alarmStatus === "authorized");
   }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  // A return from iOS Settings (having granted or refused the alarm
+  // permission there) is not caught by the mount effect above; re-reading on
+  // every focus is what makes the row - and the post-meal hint below it -
+  // reflect the real state again instead of the stale one from launch.
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload])
+  );
 
   async function updatePrefs(patch: Partial<NotificationPrefs>) {
     const base = prefs ?? (await getNotificationPrefs());
@@ -184,6 +207,39 @@ export default function NotificationSettings() {
     setReliability(await checkReminderReliability());
   }
 
+  /** Maps the AlarmKit status to the same notifPerm_* value strings the
+   *  notification permission row above already uses (granted/undetermined/
+   *  permanently-off): the wording is generic enough to describe either
+   *  permission, and AlarmKit has no soft "denied" - a refusal is permanent
+   *  the moment it happens (see requestAlarmPermission below), so it maps
+   *  straight to notifPerm_deniedPermanently rather than notifPerm_denied. */
+  function alarmPermValueKey(
+    status: AlarmAuthorizationStatus
+  ): "granted" | "deniedPermanently" | "undetermined" | "unavailable" {
+    if (status === "authorized") return "granted";
+    if (status === "denied") return "deniedPermanently";
+    if (status === "notDetermined") return "undetermined";
+    return "unavailable";
+  }
+
+  /**
+   * The alarm permission row's tap target. iOS only ever shows the AlarmKit
+   * prompt once (see modules/zerospike-alarmkit's isAvailable/getAuthorizationStatus
+   * pair and its Swift-side counterpart): a "notDetermined" tap can still
+   * raise it, but a "denied" tap cannot, and requestAuthorization would just
+   * return "denied" again without showing anything - so a denied tap goes
+   * straight to system settings instead of silently doing nothing.
+   */
+  async function requestAlarmPermission() {
+    if (alarmPermState === "denied") {
+      Linking.openSettings();
+      return;
+    }
+    const status = await requestAlarmAuthorization();
+    setAlarmPermState(status);
+    setAlarmAuthorized(status === "authorized");
+  }
+
   return (
     <SettingsScaffold title={t("settings.notificationsSection")}>
       <View style={columnPad()}>
@@ -217,6 +273,56 @@ export default function NotificationSettings() {
           </Text>
         </View>
       )}
+
+      {/* Alarm (AlarmKit) permission row, the symmetric counterpart of the
+          notification permission row above. Only where AlarmKit itself
+          exists (iOS 26+): on Android and older iOS this permission does not
+          exist at all, so the row would just be dead. A permanent, always-
+          visible surface for it - unlike the conditional hints inside the
+          post-meal card below and in reminders.tsx, which only appear once a
+          specific alarm-mode reminder is already in play - because a denied
+          AlarmKit prompt cannot be re-shown by this app at all; the only way
+          back is iOS Settings, and this row is where a user who refused it
+          during onboarding can find that out again later. */}
+      {alarmKitAvailable ? (
+        <Row
+          icon={alarmPermState === "authorized" ? "alarm" : "alarm-outline"}
+          label={t("alarmTour.step2Title")}
+          value={t(`settings.notifPerm_${alarmPermValueKey(alarmPermState)}`)}
+          onPress={
+            alarmPermState === "authorized" ? undefined : () => void requestAlarmPermission()
+          }
+          right={
+            alarmPermState === "authorized" ? (
+              <Ionicons name="checkmark-circle" size={18} color={GLUCOSE_RICH.target} />
+            ) : undefined
+          }
+        />
+      ) : null}
+
+      {/* iOS shows the AlarmKit prompt only once; a refusal cannot be
+          re-asked from inside the app, only from system settings. Says that
+          plainly so a denied tap on the row above does not look like it did
+          nothing - it already opened settings. Hidden in screenshot mode, the
+          same store-frame reasoning as the notification banner right below. */}
+      {!isScreenshotMode() && alarmKitAvailable && alarmPermState === "denied" ? (
+        <Pressable
+          onPress={() => void requestAlarmPermission()}
+          className="rounded-2xl px-4 py-3 mb-2"
+          style={{
+            borderWidth: 1,
+            borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+            backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+          }}
+        >
+          <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+            {t("reminders.alarmPermissionDenied")}
+          </Text>
+          <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+            {t("settings.openSystemSettings")}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {prefs ? (
         <>

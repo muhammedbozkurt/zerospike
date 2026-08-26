@@ -1,0 +1,82 @@
+/**
+ * Pure geometry for a keyboard-aware bottom sheet (components/SheetShell.tsx).
+ * No react-native import here on purpose: this file has to be importable from
+ * a plain Node/tsx test (scripts/sheetLayout.test.ts) without a RN runtime.
+ *
+ * The bug this fixes: a Modal that is bottom-aligned (`justifyContent:
+ * "flex-end"`) and sized off the raw window height has no idea the keyboard
+ * is up, so once a field inside it is focused the keyboard overlays the
+ * bottom of the sheet - including whatever CTA sits there. Fixing that means
+ * the sheet's available height has to be measured AGAINST the keyboard
+ * (`windowHeight - keyboardHeight`), not against the raw window.
+ */
+
+export interface SheetLayoutInput {
+  /** Dimensions/useWindowDimensions height. */
+  windowHeight: number;
+  /** 0 = keyboard closed. */
+  keyboardHeight: number;
+  /** Safe area bottom inset. */
+  insetBottom: number;
+  /** Measured content height (e.g. ScrollView's onContentSizeChange). */
+  contentHeight: number;
+  /** Fraction of the available height the sheet may occupy. Default 0.9. */
+  maxHeightRatio?: number;
+  /** Floor the sheet may shrink to before we stop clamping. Default 220. */
+  minVisible?: number;
+}
+
+export interface SheetLayoutResult {
+  /** maxHeight for the sheet container. */
+  sheetMaxHeight: number;
+  /** Bottom padding for the content area. */
+  paddingBottom: number;
+  /** Whether the measured content no longer fits inside sheetMaxHeight. */
+  scrolls: boolean;
+  /** Whether the sheet's own action row can be inside the visible area
+   *  (false only in the degenerate case where there is no visible area at
+   *  all - a real overflow is handled by `scrolls`, not by hiding the
+   *  action). */
+  actionVisible: boolean;
+}
+
+const DEFAULT_MAX_HEIGHT_RATIO = 0.9;
+const DEFAULT_MIN_VISIBLE = 220;
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(Math.max(v, lo), hi);
+}
+
+export function sheetLayout(input: SheetLayoutInput): SheetLayoutResult {
+  const maxHeightRatio = input.maxHeightRatio ?? DEFAULT_MAX_HEIGHT_RATIO;
+  const minVisible = input.minVisible ?? DEFAULT_MIN_VISIBLE;
+
+  // Never negative, even for a degenerate keyboardHeight > windowHeight.
+  const available = Math.max(0, input.windowHeight - input.keyboardHeight);
+
+  const sheetMaxHeight =
+    available <= minVisible ? available : clamp(available * maxHeightRatio, minVisible, available);
+
+  // The keyboard already occupies the strip the safe-area inset would have
+  // covered, so the two are never added together.
+  const paddingBottom = input.keyboardHeight > 0 ? 16 : input.insetBottom + 16;
+
+  const scrolls = input.contentHeight + paddingBottom > sheetMaxHeight;
+
+  const actionVisible = sheetMaxHeight > 0 && available > 0;
+
+  return { sheetMaxHeight, paddingBottom, scrolls, actionVisible };
+}
+
+/**
+ * Regression oracle: what the OLD bottom-sheet math produced. The sheet sat
+ * flush to the bottom, sized off the raw window (never the keyboard), so its
+ * height was `min(contentHeight + insetBottom + 16, windowHeight * 0.9)` and
+ * the keyboard simply covered whatever that height did not leave clear.
+ * Returns the number of px of the sheet the keyboard used to cover.
+ */
+export function legacySheetBottomOverflowPx(input: SheetLayoutInput): number {
+  const legacyHeight = Math.min(input.contentHeight + input.insetBottom + 16, input.windowHeight * 0.9);
+  const clearAboveKeyboard = input.windowHeight - legacyHeight;
+  return Math.max(0, input.keyboardHeight - clearAboveKeyboard);
+}

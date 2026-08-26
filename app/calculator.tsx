@@ -21,6 +21,7 @@ import { getFood } from "../lib/db/foods";
 import {
   addMealLog,
   addSugarLog,
+  deleteMealLog,
   deleteMealRecord,
   findMatchingSugarLog,
   getMealLog,
@@ -29,6 +30,12 @@ import {
   updateMealLog,
   updateSugarLog,
 } from "../lib/db/logs";
+import { captureDeletion, restoreDeletion } from "../lib/db/undo";
+import {
+  applyAfterDelete,
+  applyAfterDeleteFromSnapshot,
+  undoAfterDelete,
+} from "../lib/afterDelete";
 import {
   deleteInjection,
   getCalculatorInjectionForMeal,
@@ -87,6 +94,7 @@ import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
 import { Tooltip } from "../components/Tooltip";
 import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { useEntryGuardConfirm } from "../components/useEntryGuardConfirm";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { Skeleton } from "../components/Skeleton";
 import { DirIcon } from "../components/DirIcon";
@@ -477,6 +485,7 @@ function CalculatorScreen() {
   }>();
   const { activeProfile, lang, bumpData, dataVersion, isProUser } = useApp();
   const { actionSheet, confirm, toast } = useFeedback();
+  const guardEntry = useEntryGuardConfirm();
 
   const [food, setFood] = useState<Food | null>(null);
   // Set only on the template route: what the synthetic food above stands for, and
@@ -984,6 +993,47 @@ function CalculatorScreen() {
       const chosenSite = siteTouched ? site : null;
       const chosenPoint = siteTouched ? point : null;
 
+      // The bolus row this meal already owns, read once up front so both the
+      // guard below and the update branch further down share it - editing a
+      // meal never has two separate reads of the same row racing each other.
+      const existingInjectionForEdit =
+        isEdit && mealLogId ? await getCalculatorInjectionForMeal(mealLogId) : null;
+
+      // Duplicate-entry check (lib/entryGuard.ts), before anything is written.
+      // Meal and bolus are each their own entry kind, so this is two sequential
+      // confirms at most - the second only runs once the first is accepted -
+      // never a stacked pair for the same save. A catalogue food's own id is
+      // the comparison key; a typed name or a template has no id (foodFromMeal
+      // / foodFromTemplate both leave it ""), so its own name stands in,
+      // normalized the same way listRecentMealLogs compares it. In EDIT mode
+      // each guard call excludes ITS OWN record only - the meal call excludes
+      // the meal row, the bolus call excludes the linked injection row - so
+      // correcting one type never gets flagged as a duplicate of itself, and
+      // never on the other type's behalf either.
+      const foodKeyForGuard = food.id || foodName(food, lang).trim().toLowerCase();
+      if (
+        !(await guardEntry({
+          entryKind: "meal",
+          entryAtIso: loggedIso,
+          foodKey: foodKeyForGuard,
+          foodName: foodName(food, lang),
+          excludeId: isEdit && mealLogId ? mealLogId : null,
+        }))
+      ) {
+        return;
+      }
+      if (
+        dose > 0 &&
+        !(await guardEntry({
+          entryKind: "injection",
+          insulinType: "bolus",
+          entryAtIso: loggedIso,
+          excludeId: existingInjectionForEdit?.id ?? null,
+        }))
+      ) {
+        return;
+      }
+
       if (isEdit && mealLogId) {
         // Correcting an existing record: no post-meal reminder and no review
         // nudge, but every row this meal owns has to move with it. Leaving the
@@ -999,7 +1049,7 @@ function CalculatorScreen() {
           ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
         });
 
-        const existingInjection = await getCalculatorInjectionForMeal(mealLogId);
+        const existingInjection = existingInjectionForEdit;
         if (dose > 0) {
           if (existingInjection) {
             await updateInjection(existingInjection.id, {
@@ -1096,7 +1146,7 @@ function CalculatorScreen() {
           await updateMealLog(mealLogId, { sugar_log_id: newSugarLogId });
         }
 
-        logEvent("log_edited", { kind: "meal" });
+        logEvent("log_edited");
         hapticSuccess();
         bumpData();
         dismiss();
@@ -1165,7 +1215,6 @@ function CalculatorScreen() {
         logCrash(err, { screen: "calculator", step: "touchTemplate" });
       }
       logEvent("log_added", {
-        kind: "meal",
         source: templateCtx ? "template" : "manual",
       });
 
@@ -1224,6 +1273,9 @@ function CalculatorScreen() {
       // created. A reading that already existed is never touched, because the
       // save did not create it.
       const mealId = meal.id;
+      const mealProfileId = meal.profile_id;
+      const mealTemplateId = meal.meal_template_id;
+      const mealLoggedAtMs = new Date(meal.logged_at).getTime();
       const createdReading = createdSugarLogId;
       // A region was picked or not - the toast says which, since "edit it on the
       // Injection tab" reads as a correction prompt when there is nothing wrong,
@@ -1244,6 +1296,20 @@ function CalculatorScreen() {
             // in Health would strand a reading the user just took back.
             const mirrored = await deleteMealRecord(mealId, createdReading);
             void deleteGlucoseFromHealth(mirrored);
+            // The save a moment ago is what armed the post-meal countdown
+            // (schedulePostMealReminder above), so taking the record back has
+            // to take that countdown back too - otherwise the dashboard counts
+            // down to a check on a meal the user just undid. Same shared
+            // cleanup as every other delete path (lib/afterDelete.ts); no undo
+            // is offered on an undo, so its report is not kept.
+            await applyAfterDelete([
+              {
+                id: mealId,
+                profileId: mealProfileId,
+                loggedAtMs: mealLoggedAtMs,
+                templateId: mealTemplateId,
+              },
+            ]);
             bumpData();
             toast(t("calculator.undone"), "info");
           })();
@@ -1255,6 +1321,57 @@ function CalculatorScreen() {
       // screen is right - but it used to stay in silence, with the button simply
       // doing nothing and no way to tell whether anything had been saved.
       logCrash(err, { screen: "calculator", step: "save" });
+      toast(t("calculator.saveFailed"), "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Destructive delete of an already-saved meal, edit mode only. Same confirm
+   * copy and undo toast as the glucose/injection/med edit sheets
+   * (journal.deleteEntry, common.delete/cancel, trash-outline, destructive).
+   *
+   * captureDeletion("meal", ...) + deleteMealLog, NOT deleteMealRecord: that
+   * helper is undo's own "revert the record THIS save just created" step and
+   * would also remove a glucose reading the user had logged before this meal
+   * ever existed. deleteMealLog only removes the meal and the calculator
+   * bolus it owns, and the snapshot restores both on undo.
+   */
+  async function deleteMeal() {
+    if (!isEdit || !mealLogId || saving) return;
+    const ok = await confirm({
+      message: t("journal.deleteEntry"),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      destructive: true,
+      icon: "trash-outline",
+    });
+    if (!ok) return;
+
+    setSaving(true);
+    try {
+      const snapshot = await captureDeletion("meal", mealLogId);
+      await deleteMealLog(mealLogId);
+      // The SAME post-delete cleanup the journal rows run (lib/afterDelete.ts):
+      // a countdown this meal armed must not outlive it here either, and the
+      // undo below puts both the rows and that countdown back.
+      const aftermath = await applyAfterDeleteFromSnapshot(snapshot);
+      bumpData();
+      toast(t("journal.deleted"), "success", {
+        label: t("common.undo"),
+        onPress: () => {
+          void (async () => {
+            await restoreDeletion(snapshot);
+            await undoAfterDelete(aftermath);
+            bumpData();
+            toast(t("calculator.undone"), "info");
+          })();
+        },
+      });
+      dismiss();
+    } catch (err) {
+      logCrash(err, { screen: "calculator", step: "delete" });
       toast(t("calculator.saveFailed"), "error");
     } finally {
       setSaving(false);
@@ -2153,6 +2270,38 @@ function CalculatorScreen() {
             disabled={saving || (isEdit && !editPrefillDone)}
             onPress={logMeal}
           />
+
+          {/* Edit mode only (mealLogId present): a new record has nothing to
+              delete yet. Same tone/position as the glucose, med and injection
+              edit sheets' own delete row (destructive colour, below the save
+              action, not inside it). */}
+          {isEdit ? (
+            <Pressable
+              onPress={deleteMeal}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.delete")}
+              hitSlop={8}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 44,
+                marginTop: 14,
+              }}
+            >
+              <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
+              <Text
+                style={{
+                  color: GLUCOSE_RICH.low,
+                  fontSize: 13,
+                  fontWeight: "700",
+                  marginLeft: 6,
+                }}
+              >
+                {t("common.delete")}
+              </Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </View>
       <FeedbackHost />

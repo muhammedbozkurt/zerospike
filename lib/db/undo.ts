@@ -1,31 +1,37 @@
 import { getDb } from "./index";
+import { planRestoreSteps, type DeletionSnapshot, type Row } from "./undoSql";
+
+export type { DeletionSnapshot, Row, RestoreStep } from "./undoSql";
+export { planRestoreSteps } from "./undoSql";
 
 /**
  * Undo support for deletions across the app.
  *
- * A delete is now immediate + undoable (a 6-second toast) instead of a blocking
- * confirm dialog. To make undo faithful, we SNAPSHOT the exact rows a delete
- * would remove BEFORE deleting, then re-insert them verbatim (original ids and
- * all) on undo. Snapshotting raw rows keeps every column - profile_id, source,
- * meal_log_id, tags - so a restored entry is byte-for-byte the one that was
- * removed, and any foreign-key link it carried is preserved.
+ * A delete is now immediate + undoable (a toast, see lib/feedback.ts for the
+ * shared window) instead of a blocking confirm dialog. To make undo faithful, we
+ * SNAPSHOT the exact rows a delete would remove BEFORE deleting, then re-insert
+ * them verbatim (original ids and all) on undo. Snapshotting raw rows keeps
+ * every column - profile_id, source, meal_log_id, tags - so a restored entry is
+ * byte-for-byte the one that was removed, and any foreign-key link it carried is
+ * preserved.
  *
  * The meal case mirrors deleteMealLog: deleting a meal also removes the bolus row
  * the calculator wrote for it (source = 'calculator'), so undo captures and
  * restores that row too. A reading the user had logged before the meal is never
  * touched by the meal delete, so it is not part of the snapshot.
+ *
+ * A glucose delete carries a second, indirect casualty: meal_logs.sugar_log_id is
+ * ON DELETE SET NULL (see lib/db/index.ts), so any meal that pointed at the
+ * reading loses that link the moment the reading is deleted - and re-inserting
+ * the reading on undo does not undo the SET NULL. `linkedMealIds` captures which
+ * meals to re-link, and restoreDeletion writes the link back AFTER the reading
+ * itself exists again (see lib/db/undoSql.ts's planRestoreSteps for the exact
+ * order, and scripts/undoDelete.test.ts for the DB-free proof of that order).
+ *
+ * The plan itself (which tables get which rows, in what order) lives in
+ * lib/db/undoSql.ts, dependency-free of expo-sqlite, so it can be exercised by a
+ * plain Node test - this module is the thin DB-touching half that runs it.
  */
-
-type Row = Record<string, string | number | null>;
-
-export interface DeletionSnapshot {
-  sugar?: Row[];
-  meals?: Row[];
-  injections?: Row[];
-  foods?: Row[];
-  /** med_logs rows (schema v16). Named for the table, not for `meals` above. */
-  meds?: Row[];
-}
 
 async function insertRow(
   db: Awaited<ReturnType<typeof getDb>>,
@@ -48,7 +54,11 @@ export async function captureDeletion(
 ): Promise<DeletionSnapshot> {
   const db = await getDb();
   if (kind === "glucose") {
-    return { sugar: await db.getAllAsync<Row>("SELECT * FROM sugar_logs WHERE id = ?;", [id]) };
+    const [sugar, linkedMeals] = await Promise.all([
+      db.getAllAsync<Row>("SELECT * FROM sugar_logs WHERE id = ?;", [id]),
+      db.getAllAsync<{ id: string }>("SELECT id FROM meal_logs WHERE sugar_log_id = ?;", [id]),
+    ]);
+    return { sugar, linkedMealIds: linkedMeals.map((m) => m.id) };
   }
   if (kind === "med") {
     return {
@@ -84,28 +94,25 @@ export async function captureFoodDeletion(id: string): Promise<DeletionSnapshot>
   };
 }
 
-/**
- * Re-inserts a captured snapshot verbatim. Foods and meals go back before
- * injections so a bolus row's meal_log_id foreign key resolves.
- *
- * ONE column is deliberately not restored: sugar_logs.healthkit_uuid. Deleting a
- * reading revokes its mirrored Apple Health sample, so that UUID names a sample
- * that no longer exists; writing it back left the restored row claiming a mirror
- * it does not have. The reading comes back un-mirrored, which is the truth.
- */
+/** Re-inserts a captured snapshot verbatim, in the order planRestoreSteps
+ *  decides (see that function, in lib/db/undoSql.ts, for why the order matters). */
 export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
   const db = await getDb();
-  for (const row of snap.foods ?? []) await insertRow(db, "foods", row);
-  for (const row of snap.meals ?? []) await insertRow(db, "meal_logs", row);
-  for (const row of snap.sugar ?? []) {
-    await insertRow(
-      db,
-      "sugar_logs",
-      "healthkit_uuid" in row ? { ...row, healthkit_uuid: null } : row
-    );
+  for (const step of planRestoreSteps(snap)) {
+    if (step.op === "insert") {
+      for (const row of step.rows) await insertRow(db, step.table, row);
+    } else {
+      // `AND sugar_log_id IS NULL`: the ON DELETE SET NULL that ran when the
+      // reading was deleted is the only link this restore is undoing. If the
+      // meal was re-linked to a DIFFERENT reading in the meantime (a
+      // calculator edit, during the undo window), that new link is the
+      // user's own doing and must not be overwritten by this restore.
+      for (const mealId of step.mealIds) {
+        await db.runAsync(
+          "UPDATE meal_logs SET sugar_log_id = ? WHERE id = ? AND sugar_log_id IS NULL;",
+          [step.sugarLogId, mealId]
+        );
+      }
+    }
   }
-  for (const row of snap.injections ?? []) await insertRow(db, "injection_logs", row);
-  // Medication rows reference nothing but their profile, so their order in here
-  // does not matter; they go last to keep the linked tables above together.
-  for (const row of snap.meds ?? []) await insertRow(db, "med_logs", row);
 }

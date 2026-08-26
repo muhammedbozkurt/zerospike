@@ -70,7 +70,8 @@ function makeFeedDb(days: number): DatabaseSync {
     CREATE TABLE injection_logs (
       id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, site TEXT, site_point INTEGER,
       dose_units REAL, insulin_type TEXT, bolus_kind TEXT, meal_log_id TEXT, note TEXT,
-      source TEXT, logged_at TEXT NOT NULL, tags TEXT);
+      source TEXT, logged_at TEXT NOT NULL, tags TEXT,
+      insulin_product_id TEXT, insulin_product_other TEXT);
     INSERT INTO foods VALUES ('f1','Pilav','Rice','Reis','Arroz','Riz','grains');
   `);
   const sugar = db.prepare(
@@ -80,7 +81,7 @@ function makeFeedDb(days: number): DatabaseSync {
     `INSERT INTO meal_logs VALUES (?, ?, NULL, ?, ?, 150, 40, 4, NULL, NULL, ?, '[]');`
   );
   const inj = db.prepare(
-    `INSERT INTO injection_logs VALUES (?, ?, ?, NULL, 4, 'bolus', NULL, NULL, NULL, 'calculator', ?, '[]');`
+    `INSERT INTO injection_logs VALUES (?, ?, ?, NULL, 4, 'bolus', NULL, NULL, NULL, 'calculator', ?, '[]', NULL, NULL);`
   );
   // Day 1 is the OLDEST; a second profile's rows must never appear in the feed.
   for (let d = 1; d <= days; d++) {
@@ -173,7 +174,7 @@ function main() {
     const db = makeFeedDb(3);
     db.exec(
       `INSERT INTO injection_logs VALUES
-        ('manual1','p1','abdomen_left',1,3,'bolus',NULL,NULL,NULL,'manual','2026-07-03T09:30:00.000Z','[]');`
+        ('manual1','p1','abdomen_left',1,3,'bolus',NULL,NULL,NULL,'manual','2026-07-03T09:30:00.000Z','[]',NULL,NULL);`
     );
 
     const withCalc = feed(db, 100);

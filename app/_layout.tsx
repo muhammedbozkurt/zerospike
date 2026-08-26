@@ -1,7 +1,7 @@
 import "../global.css";
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, I18nManager, LogBox, View } from "react-native";
-import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams } from "expo-router";
+import { AppState, I18nManager, Linking, LogBox, View } from "react-native";
+import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams, type Href } from "expo-router";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -45,6 +45,7 @@ import {
   takePendingAlarmRoute,
 } from "../modules/zerospike-alarmkit";
 import { listReminders } from "../lib/db/reminders";
+import { widgetRouteForUrl, type WidgetRoute } from "../lib/widgetRoute";
 
 // One-shot guard for the startup RTL auto-reload below, persisted (not just an
 // in-memory ref) because Updates.reloadAsync() throws away the whole JS
@@ -124,6 +125,33 @@ function routeForNotification(
       break;
     default:
       break;
+  }
+}
+
+/**
+ * Turns a resolved WidgetRoute (lib/widgetRoute.ts) into a typed expo-router
+ * Href, mirroring routeForNotification's own hardcoded-literal style so the
+ * typed-routes generator (app.json's experiments.typedRoutes) can check every
+ * branch. `route.pathname` itself is a plain string coming out of a pure
+ * helper, so the switch below - not a cast - is what proves each branch is
+ * actually one of the app's known routes.
+ */
+function hrefForWidgetRoute(route: WidgetRoute): Href | null {
+  if (!route) return null;
+  if (route.kind === "sheet") {
+    return { pathname: "/(tabs)", params: { sheet: route.sheet } };
+  }
+  switch (route.pathname) {
+    case "/(tabs)":
+      return { pathname: "/(tabs)" };
+    case "/(tabs)/food":
+      return { pathname: "/(tabs)/food" };
+    case "/(tabs)/injection":
+      return { pathname: "/(tabs)/injection", params: route.params };
+    case "/settings/reminders":
+      return { pathname: "/settings/reminders" };
+    default:
+      return null;
   }
 }
 
@@ -372,6 +400,39 @@ function RootNavigator() {
       if (retry) clearTimeout(retry);
       sub.remove();
     };
+  }, [ready, onboarded, router]);
+
+  // DEFENSIVE hot-open hook for zerospike:// widget taps (P11). expo-router
+  // already runs its own internal Linking "url" listener and, by all evidence
+  // gathered so far, routes a hot tap correctly on its own - this app has
+  // never registered a SECOND listener for that event, unlike the notification
+  // and AlarmKit paths above, which both have an explicit one. A report of
+  // "tapping a widget while the app is backgrounded reopens it on whatever
+  // screen was last open" could not be reproduced or pinned to a root cause
+  // (parameter stripping, freezeOnBlur and the onboarding gate were all ruled
+  // out), so this closes a gap that may or may not exist: if expo-router is
+  // already navigating correctly, calling router.navigate a second time with
+  // the same target is a no-op on screen; if something upstream of its own
+  // listener is swallowing the tap, this is what actually moves the app.
+  // getInitialURL() is deliberately NOT read here - cold start already works
+  // through expo-router's own linking config, and a second cold-start handler
+  // would double-navigate on launch.
+  const lastWidgetUrlRef = useRef<{ url: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!ready || !onboarded) return;
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      const last = lastWidgetUrlRef.current;
+      const now = Date.now();
+      // Same URL inside 1.5 s of the last one this hook itself handled: taken
+      // as expo-router's own listener having already fired for this exact tap,
+      // so a second navigate here is skipped rather than replayed.
+      if (last && last.url === url && now - last.at < 1500) return;
+      lastWidgetUrlRef.current = { url, at: now };
+      const href = hrefForWidgetRoute(widgetRouteForUrl(url));
+      if (!href) return;
+      router.navigate(href);
+    });
+    return () => sub.remove();
   }, [ready, onboarded, router]);
 
   const prevProRef = useRef<boolean | null>(null);

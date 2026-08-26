@@ -931,6 +931,11 @@ function splitJournalFeed(
         source: e.source,
         logged_at: e.logged_at,
         tags: e.tags,
+        // The journal feed this row is rebuilt from does not carry the product
+        // (schema v22); the report never prints it, so null is the honest value
+        // rather than a guess from the profile's CURRENT product.
+        insulin_product_id: null,
+        insulin_product_other: null,
       });
     }
   }

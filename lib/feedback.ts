@@ -60,3 +60,66 @@ export function shouldStackButtons(
 ): boolean {
   return Math.max(confirmLabel.length, cancelLabel.length) > MAX_SIDE_BY_SIDE_LABEL;
 }
+
+// ---------------------------------------------------------------------------
+// Undo timing
+// ---------------------------------------------------------------------------
+
+/**
+ * How long a delete's "Undo" toast (components/Feedback.tsx) stays up, and how
+ * long the batch behind it (components/useUndoBatch.ts) still has something to
+ * restore. The two used to be set independently (6200ms vs. a screen-reader-only
+ * 20000ms) and drifted apart: a "Geri Al" tapped after the batch had already
+ * cleared, but while the toast was still visible, did nothing while still
+ * playing the success haptic. One pair of constants, imported by both sides,
+ * keeps them locked together.
+ */
+export const UNDO_TOAST_MS = 5000;
+/** Screen reader open: the same reasoning as the toast's own note in
+ *  Feedback.tsx - reaching the button by swipe takes longer than reading it. */
+export const UNDO_TOAST_SCREEN_READER_MS = 20000;
+/** The batch stays open a little past the toast itself, so tapping "Undo" in
+ *  the same instant the toast starts to fade still lands. */
+const UNDO_BATCH_SAFETY_MS = 200;
+export function undoBatchWindowMs(toastMs: number): number {
+  return toastMs + UNDO_BATCH_SAFETY_MS;
+}
+
+/** Whether a pending "Undo" tap has anything left to restore. The batch window
+ *  already elapsing (or a stray extra tap) must not run a restore, fire the
+ *  success haptic, or call onChanged - a "Geri Al" that does nothing is not a
+ *  success (D2 in the 2.3.1 delete audit). */
+export function shouldRestoreBatch(pendingSnapshotCount: number): boolean {
+  return pendingSnapshotCount > 0;
+}
+
+/**
+ * Which of the side effects a collapsed delete batch settled outside the
+ * database get replayed by an undo, and in what order (P17).
+ *
+ * `pending` is in the order the deletes happened. An entry is replayed only
+ * when the undo actually restored one of ITS meals: a "3 entries deleted" toast
+ * restores three unrelated rows, and a countdown ended for one of them has
+ * nothing to do with the other two.
+ *
+ * The result is NEWEST FIRST, which settles the one case where two entries
+ * disagree. Only one post-meal countdown can run at a time, so a batch that
+ * ended countdown X and later countdown Y describes a user who had Y running
+ * most recently - Y is the state to put back, and X must not be armed over it.
+ * Replaying newest first lets the newer one win by being first, rather than by
+ * anything having to compare them. Absolute values (a template's usage
+ * counters) go the other way round and want the OLDEST applied last, which the
+ * same order gives for free: the oldest entry holds the pair from before the
+ * whole batch, and it lands last.
+ */
+export function planAftermathReplay<T extends { mealIds: readonly string[] }>(
+  pending: readonly T[],
+  restoredMealIds: ReadonlySet<string>
+): T[] {
+  const out: T[] = [];
+  for (let i = pending.length - 1; i >= 0; i--) {
+    const entry = pending[i];
+    if (entry.mealIds.some((id) => restoredMealIds.has(id))) out.push(entry);
+  }
+  return out;
+}

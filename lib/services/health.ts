@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { logCrash } from "../analytics";
 import {
   getSugarLog,
   insertHealthSugarLogs,
@@ -8,6 +9,7 @@ import {
 import { getProfile, listProfiles } from "../db/profiles";
 import type { PeriodTag, SugarLog } from "../db/types";
 import { planWriteFlagRead, shouldWriteToHealth } from "../healthWriteScope";
+import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 
 /** Our own app bundle id, used to skip our OWN writes on import (loop guard). */
@@ -146,23 +148,6 @@ export interface SyncResult {
   read: number;
 }
 
-/**
- * A GUESS at the period of an imported sample, from its hour of day. HealthKit
- * carries no fasting/post-meal context, so this is an assumption, not an
- * observation - which is exactly why every imported row is stored with
- * source: "health" and why the fasting/post-meal AVERAGES exclude those rows
- * (see lib/insights.ts). The tag is only there so an imported reading still has
- * a sensible label in the journal.
- */
-function pickTagForHour(hour: number): PeriodTag {
-  // Late evening / just after midnight first: the old order tested `hour < 9`
-  // ahead of it, so the `hour < 1` half of the bedtime rule could never run and
-  // a 00:30 reading was filed as "fasting".
-  if (hour >= 22 || hour < 1) return "bedtime";
-  if (hour < 9) return "fasting";
-  return "manual";
-}
-
 // ── Availability & permissions ─────────────────────────────────────────────
 
 export async function isHealthAvailable(): Promise<boolean> {
@@ -220,7 +205,7 @@ function readMockGlucose(): GlucoseSample[] {
     samples.push({
       value: baseline,
       date: ts.toISOString(),
-      period_tag: pickTagForHour(ts.getHours()),
+      period_tag: autoPeriodTagFor("health_import", {}),
     });
   }
   return samples;
@@ -256,7 +241,7 @@ async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
     return {
       value: mgdl == null ? 0 : Math.round(mgdl),
       date: snapIso(when.toISOString()),
-      period_tag: pickTagForHour(when.getHours()),
+      period_tag: autoPeriodTagFor("health_import", {}),
     };
   });
 }
@@ -298,6 +283,27 @@ export async function requestHealthWritePermission(): Promise<boolean> {
 }
 
 /**
+ * Set when a mirrored write to Health fails while the mirror toggle is ON -
+ * most likely because Health write access was revoked in iOS Settings after
+ * the toggle was switched on (iOS never notifies an app of this). Consumed
+ * ONCE by {@link takeHealthWriteFailureNotice} so a caller can tell the user;
+ * the toggle itself is NEVER flipped off here (H3): it must keep showing
+ * exactly what the user set it to.
+ */
+let healthWriteFailureNoticePending = false;
+
+/**
+ * Returns true (and clears the flag) the first time it is called after a
+ * mirrored write failed while the toggle was on. Returns false otherwise -
+ * including every call after the first one for the same failure.
+ */
+export function takeHealthWriteFailureNotice(): boolean {
+  if (!healthWriteFailureNoticePending) return false;
+  healthWriteFailureNoticePending = false;
+  return true;
+}
+
+/**
  * Writes ONE reading to Apple Health as a bloodGlucose sample (mg/dL) and returns
  * the created sample's UUID, or null on failure / off iOS. The UUID is stored on
  * the local row so the mirror can be revoked when the row is deleted.
@@ -330,6 +336,14 @@ export async function writeGlucoseToHealth(
  * Best-effort revoke of a mirrored sample by UUID. HealthKit only lets an app
  * delete samples IT wrote, so this is safe; any failure is swallowed and never
  * blocks the local delete.
+ *
+ * LOCKED: only ever called with the healthkit_uuid of a row THIS app wrote to
+ * Health (see writeGlucoseToHealthIfEnabled / updateGlucoseInHealth). A row
+ * imported FROM Health (source: "health") never gets a healthkit_uuid -
+ * insertHealthSugarLogs leaves that column unset - so a health-import row can
+ * never reach this call with a real uuid, and its delete path is a no-op here.
+ * Do not "fix" this by trying to revoke an imported sample: the sample belongs
+ * to whatever wrote it into Health, not to this app.
  */
 export async function deleteGlucoseFromHealth(uuid: string | null): Promise<void> {
   if (!uuid || DEBUG_MOCK_HEALTH) return;
@@ -365,7 +379,13 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void
   });
   if (!allowed) return;
   const uuid = await writeGlucoseToHealth(log.glucose_level_mgdl, log.logged_at);
-  if (!uuid) return;
+  if (!uuid) {
+    // The toggle is on and the write was attempted, so a null result here
+    // means the write itself failed (H3) - most likely revoked Settings
+    // access - not that the mirror is off.
+    healthWriteFailureNoticePending = true;
+    return;
+  }
   try {
     // The caller fires this and moves on, so the row can be undone while the write
     // is still in flight. A sample whose local reading no longer exists is an
@@ -376,11 +396,14 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void
       return;
     }
     await setSugarLogHealthUuid(log.id, uuid);
-  } catch {
+  } catch (err) {
     // This is fired-and-forgotten from the add flow (never awaited), so a DB
     // hiccup here must never surface as an unhandled rejection. The sample is
     // already written to Health; at worst it stays un-linked (healthkit_uuid
-    // not recorded on the row) instead of crashing.
+    // not recorded on the row) instead of crashing. H5: the sample is now
+    // orphaned in Health (nothing local points at it), so this is tracked
+    // silently - no message to the user for a DB-write failure they cannot act on.
+    logCrash(err, { screen: "health", op: "linkHealthUuid" });
   }
 }
 
@@ -417,7 +440,11 @@ export async function updateGlucoseInHealth(
   });
   if (!allowed) return null;
   if (oldUuid) await deleteGlucoseFromHealth(oldUuid);
-  return writeGlucoseToHealth(mgdl, dateIso);
+  const uuid = await writeGlucoseToHealth(mgdl, dateIso);
+  // Same H3 signal as writeGlucoseToHealthIfEnabled: allowed to write, but the
+  // write itself came back empty.
+  if (!uuid) healthWriteFailureNoticePending = true;
+  return uuid;
 }
 
 // ── Import into local SQLite ───────────────────────────────────────────────

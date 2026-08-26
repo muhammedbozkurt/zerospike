@@ -1,0 +1,36 @@
+campaign,ad group,keyword,match type,bid,note
+ZS-TR-Brand,Brand-Core,zerospike,Exact,0.08,"Marka savunmasi; TR en yuksek gosterim pazarimiz (255 gosterim), markayi kaptirmamak sart"
+ZS-TR-Brand,Brand-Core,zerospike uygulama,Exact,0.08,Marka + uygulama
+ZS-TR-Brand,Brand-Core,zero spike,Exact,0.08,Ayrik yazim
+ZS-TR-Brand,Brand-Broad,zerospike,Broad,0.09,Yazim hatasi ve varyant yakalama
+ZS-TR-Generic,Diary-Core,kan şekeri takibi,Exact,0.10,"Takip edilen kelime, rank NULL; satin alinmasi gereken birincil terim"
+ZS-TR-Generic,Diary-Core,kan şekeri günlüğü,Exact,0.08,"Organik rank 21; app adimizla yakin, paid ile ilk sayfa firsati. mySugr ort. rank 1.38"
+ZS-TR-Generic,Diary-Core,diyabet günlüğü,Exact,0.10,App adimizla birebir (zerospike: Diyabet Günlüğü); rakip Şeker Takip ort. rank 2.63
+ZS-TR-Generic,Diary-Core,şeker takibi,Exact,0.10,"Gunluk dildeki en genis terim, hacim tahmini yuksek"
+ZS-TR-Generic,Diary-Core,şeker ölçüm takibi,Exact,0.08,Uzun kuyruk
+ZS-TR-Generic,Diary-Core,diyabet uygulaması,Exact,0.09,Kategori terimi
+ZS-TR-Generic,Diary-Core,açlık şekeri,Exact,0.08,Donem etiketi ozelligiyle ortusur (aclik/tokluk)
+ZS-TR-Generic,Diary-Core,tokluk şekeri,Exact,0.07,"Organik rank 5; zaten iyi siradayiz, dusuk teklif yeterli. SugarNote ort. rank 1.0"
+ZS-TR-Generic,Diary-Core,tip 2 diyabet günlüğü,Exact,0.07,Organik rank 12; paid destek
+ZS-TR-Generic,Diary-Core,tip 1 diyabet,Exact,0.08,Tip 1 kitlesi insulin kaydini yogun kullanir
+ZS-TR-Generic,HbA1c-Trends,hba1c takibi,Exact,0.09,"Takip edilen kelime, rank NULL; Insights ile ortusur"
+ZS-TR-Generic,HbA1c-Trends,hemoglobin a1c,Exact,0.07,Klinik varyant
+ZS-TR-Generic,HbA1c-Trends,diyabet raporu pdf,Exact,0.07,"Doktora hazir PDF ozelligi, dusuk rekabet beklentisi"
+ZS-TR-Generic,Carbs-Food,karbonhidrat sayımı,Exact,0.09,"Takip edilen kelime; rakip KarbSay ort. rank 2.0, KarbApp ort. rank 3.0"
+ZS-TR-Generic,Carbs-Food,karbonhidrat sayacı,Exact,0.08,Varyant
+ZS-TR-Generic,Carbs-Food,beslenme günlüğü,Exact,0.07,"Ogun gunlugu niyeti, genis"
+ZS-TR-Generic,Carbs-Food,barkod okuyucu besin,Exact,0.06,"Barkod tarama ozelligi, dusuk teklifle test"
+ZS-TR-Generic,Injection-Rotation,insülin takibi,Exact,0.09,"Takip edilen kelime, rank NULL; mySugr bu terimde ort. rank 1.0"
+ZS-TR-Generic,Injection-Rotation,enjeksiyon bölgesi takibi,Exact,0.07,"Rotasyon ozelligiyle birebir, rakiplerde nadir"
+ZS-TR-Generic,Injection-Rotation,iğne bölgesi değişimi,Exact,0.06,"Uzun kuyruk, saf kayit niyeti"
+ZS-TR-Generic,Condition,prediyabet,Exact,0.08,Tani olmadan takip akisiyla ortusur
+ZS-TR-Generic,Condition,gebelik şekeri,Exact,0.09,Gebelik diyabeti; sureli ve yuksek motivasyonlu kitle
+ZS-TR-Generic,Condition,gebelik diyabeti günlüğü,Exact,0.08,"Ayni kitle, gunluk niyeti net"
+ZS-TR-Competitor,Comp-Core,mysugr,Exact,0.11,"TR'de en hakim rakip (26 frekans, ort. rank 1.38)"
+ZS-TR-Competitor,Comp-Core,şeker takip diyabet günlüğü,Exact,0.09,"TR yerel rakip, 16 frekans ort. rank 2.63"
+ZS-TR-Competitor,Comp-Core,iglupal,Exact,0.08,"TR rakip, 12 frekans ort. rank 2.25"
+ZS-TR-Competitor,Comp-Core,diabetlog,Exact,0.08,"TR rakip, 12 frekans ort. rank 1.83"
+ZS-TR-Competitor,Comp-Core,arkadaşım diyabet,Exact,0.07,"TR yerel rakip, ort. rank 1.0"
+ZS-TR-Competitor,Comp-Core,diabtrend,Exact,0.07,"TR rakip, ort. rank 2.33"
+ZS-TR-Competitor,Comp-Core,karbsay,Exact,0.06,"Karbonhidrat odakli TR rakip, ort. rank 2.0"
+ZS-TR-Discovery,Discovery-SearchMatch,,,0.09,Kelime YOK; Search Match acik. TR ucuz tiklama sayesinde en cok kelime kesfi buradan gelir

@@ -134,14 +134,16 @@ export function hypoThreshold(profile: Partial<TargetProfile>): number {
 
 /**
  * The target RANGE for a reading's period. Fasting/pre-meal/bedtime use the
- * fasting range; post-meal uses its own; an untagged manual reading uses the
- * more lenient post-meal range (unchanged from the pre-range behaviour).
+ * fasting range; post-meal uses its own; an untagged reading - "manual" (never
+ * tagged in the entry sheet) or "unset" (a Health import, schema v22, see
+ * lib/periodTag.ts) - uses the more lenient post-meal range (unchanged from
+ * the pre-range behaviour).
  */
 export function targetRangeFor(
   tag: PeriodTag,
   profile: Partial<TargetProfile>
 ): TargetRange {
-  const postMeal = tag === "post_meal_2h" || tag === "manual";
+  const postMeal = tag === "post_meal_2h" || tag === "manual" || tag === "unset";
   const min = postMeal
     ? (profile.target_postmeal_min ?? 80)
     : (profile.target_fasting_min ?? 80);

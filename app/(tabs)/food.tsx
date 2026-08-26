@@ -54,6 +54,7 @@ import {
   schedulePostMealReminder,
   noteJournalActivity,
 } from "../../lib/services/notifications";
+import { applyAfterDelete } from "../../lib/afterDelete";
 import { logCrash, logEvent } from "../../lib/analytics";
 import type { Food, Lang, MealSlot } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
@@ -648,7 +649,7 @@ export default function FoodScreen() {
     // Same side effects as every other one-tap meal write (template relog,
     // calculator save): the post-meal reminder and the journal-activity signal
     // used to fire for every path except this one.
-    logEvent("log_added", { kind: "meal", source: "recent" });
+    logEvent("log_added", { source: "recent" });
     hapticSuccess();
     await schedulePostMealReminder();
     void noteJournalActivity();
@@ -660,6 +661,17 @@ export default function FoodScreen() {
       onPress: () => {
         void (async () => {
           await deleteMealRecord(meal.id);
+          // The countdown this very save armed (schedulePostMealReminder
+          // above) has to go with the record: the same shared post-delete
+          // cleanup every other delete path runs (lib/afterDelete.ts).
+          await applyAfterDelete([
+            {
+              id: meal.id,
+              profileId: meal.profile_id,
+              loggedAtMs: new Date(meal.logged_at).getTime(),
+              templateId: meal.meal_template_id,
+            },
+          ]);
           bumpData();
           toast(t("calculator.undone"), "info");
         })();
@@ -713,7 +725,7 @@ export default function FoodScreen() {
         insulin_dose_units: 0,
         logged_at: when.toISOString(),
       });
-      logEvent("log_added", { kind: "meal", source: "template" });
+      logEvent("log_added", { source: "template" });
       hapticSuccess();
       // `when` carries the sheet's own time pick straight through: a running
       // timer is left untouched and a backdated pick does not start a fresh one
@@ -729,6 +741,21 @@ export default function FoodScreen() {
             // The counters are restored rather than decremented: touchTemplate only
             // moves last_used_at forward, so nothing can undo it by calling it again.
             await deleteMealRecord(meal.id);
+            // Same for the countdown this save armed: it goes with the record
+            // (lib/afterDelete.ts, shared by every delete path).
+            await applyAfterDelete(
+              [
+                {
+                  id: meal.id,
+                  profileId: meal.profile_id,
+                  loggedAtMs: new Date(meal.logged_at).getTime(),
+                  templateId: meal.meal_template_id,
+                },
+              ],
+              // The counters are put back verbatim just below; correcting them
+              // here as well would be a write with no surviving effect.
+              { settleTemplates: false }
+            );
             await setTemplateUsage(id, priorUse, priorAt);
             bumpData();
             toast(t("calculator.undone"), "info");

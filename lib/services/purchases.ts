@@ -82,6 +82,10 @@ async function ensureConfigured(): Promise<void> {
   } catch {
     // configure failures degrade gracefully to "not pro"
   }
+  if (configured && Platform.OS === "ios") {
+    // Apple Search Ads attribution token; no ATT prompt needed, no-op below iOS 14.3.
+    rc().enableAdServicesAttributionTokenCollection().catch(() => {});
+  }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────

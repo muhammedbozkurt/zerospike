@@ -1,0 +1,163 @@
+# Changelog
+
+Kullanıcıya görünen değişiklikler. Mağaza "yenilikler" metinleri
+`zerospike-store/aso/<dil>.md` dosyalarındaki **What's New** alanında, dokuz
+dilde tutulur; burada teknik ayrıntı da yer alır.
+
+Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
+ve `package.json`.
+
+## 2.3.1 (build 65 / versionCode 60)
+
+### Tokluk sayacı
+- Kart iki satıra indi: başlık ve "özel süre seç" butonu, altında tam genişlik
+  birincil buton. Kartta artık hiçbir yerde dakika sayısı yazmıyor; sağ üstteki
+  metin bir değer değil bir eylem, böylece buton olduğu okunuyor.
+- Sayaç süresi her zaman 120 dakika ve kullanıcıya hiçbir yerde sorulmuyor.
+  2.3.0'daki sabit pencere korundu; ayarlanabilir olan, sayacın ne zaman
+  başladığı.
+- Buton tek bir şey soran bir modal açıyor: yemeğe kaç dakika önce başlandığı.
+  Hazır seçenekler ve "başka bir süre" alanı var, kalan süre buna göre sayılır.
+  Ayrı "geç başladım" sheet'i bu modale dönüştü, iki sheet aynı işi yapmıyor.
+- Yerleşim saf bir ölçüm fonksiyonuyla test ediliyor
+  (`lib/postMealCardLayout.ts`, `scripts/postMealCardLayout.test.ts`): beş cihaz
+  genişliği, İngilizce ve Almanca etiketler, 1.0x ve 1.3x Dynamic Type için
+  taşma yok.
+- Seçilen süre `endsAt` üzerinden Live Activity'ye ve widget'lara yansır.
+  Çalışan bir sayacı aynı öğüne yeniden çapalamak süresini korur, 120'ye
+  düşürmez. Live Activity genişletilmedi, yalnız tokluk sayacı için kalır.
+
+### Klavye
+- Alt kenara yaslı sheet'ler için ortak kabuk: `components/SheetShell.tsx` ve
+  saf ölçüm fonksiyonu `lib/sheetLayout.ts`. Klavye yüksekliği ölçülüp telafi
+  ediliyor, onay alanı klavyenin üstünde kalıyor.
+- `PostMealLateSheet` bu kabuğa taşındı. Önceki hâlinde alt kenara yaslı bir
+  `Modal` içinde `KeyboardAvoidingView` yoktu ve içindeki `Stepper` gerçek bir
+  `TextInput` taşıdığı için klavye alanı ve onay butonunu örtüyordu.
+- Yeni `PostMealDurationSheet` sayısal klavye ve iOS'ta "Bitti" çubuğu
+  kullanıyor; boş, 0, 5 dakikanın altı ve 1440 dakikanın üstü değerler nötr bir
+  metinle reddediliyor.
+
+### İnsülin ürünleri
+- Onboarding'e insülin adımı eklendi: bazal ve bolus ürünü ayrı ayrı, günlük
+  bazal miktarı ile birlikte. Onboarding'i insülinsiz geçen kullanıcı bu adımı
+  görmez. Ekran uygulamanın geri kalanıyla aynı kelimeleri kullanır (bazal ve
+  bolus), enjeksiyon ekranı ve içgörülerdeki adlandırmayla birebir.
+- Ürün kataloğu genişletildi: birleşik marka etiketleri ayrıldı (Lantus,
+  Basaglar, Abasaglar, Semglee, Actrapid, Humulin R ayrı kayıtlar) ve karışım
+  kategorisi eklendi (NovoMix, Ryzodeg, Humalog Mix, Mixtard). Katalogda olmayan
+  ürün için "Diğer" serbest metin alanı.
+- Bazal ve bolus listeleri tamamen ayrı: her seçici tek kategorili homojen bir
+  liste gösteriyor, grup başlıkları kalktı. Karışım kendi satırında; seçilince
+  hem bazal hem bolus alanını doldurur ve diğer iki satır gizlenir.
+- Kurulum ve profil ekranındaki seçicilerde "Seçilmedi" artık bir seçenek
+  değil. Değer boşsa yalnız durum metni olarak görünür. Tek bir kayıt için
+  ürün belirtmemek meşru olduğundan enjeksiyon ekranında seçenek olarak kalır.
+- Enjeksiyon kaydı artık kendi ürününü taşıyor (`insulin_product_id`,
+  `insulin_product_other`). Ön dolu değer profilden gelir; kayıt ekranında
+  değiştirmek profili değiştirmez, geçmiş kayıtlar kendi ürününü korur.
+
+### Apple Health
+- İçe aktarılan okumalar artık yalnız `Health` kaynak etiketi taşıyor. Önceki
+  `CGM` etiketi kaldırıldı: kaynak Apple Health'tir, verinin sürekli ölçümden mi
+  parmak ucundan mı geldiği bilinmiyor.
+- İçe aktarılan okumaya otomatik dönem etiketi atanmıyor. Saat tablosuna dayalı
+  tahmin (`pickTagForHour`) silindi; kural tek yerde toplandı
+  (`lib/periodTag.ts`). Etiket kullanıcı isterse elle atanır.
+- Geçmiş satırlar için geri doldurma (şema v22): yalnız eski otomatik tahminle
+  birebir aynı olan etiketler `unset` yapılır, kullanıcının elle değiştirdiği
+  etiket korunur.
+- Çift kayıt düzeltildi: içe aktarma tekilleştirmesi artık yalnız Health
+  kaynaklı satırlara değil, tüm kayıtlara bakıyor. Ölçüt aynı mg/dL değer ve
+  15 dakikalık pencere.
+- İzin reddi ile veri yokluğu tek nötr metinde ayrıştırıldı; Health'e yazma
+  başarısızlığı sessiz kalmıyor; yazma sonrası kimlik saklanamazsa iz bırakılıyor.
+
+### Günlük ve silme
+- Sola kaydırarak silme ve düzenleme ekranında Sil butonu; ikisi de önce sorar.
+  Uzun basma menüsü erişilebilirlik alternatifi olarak kalır.
+- Dört kayıt türünün dördünde de düzenleme ekranında Sil var: şeker, ilaç,
+  enjeksiyon ve yemek. Yemek kaydı tam ekran hesaplayıcıda düzenlendiği için
+  en son o kazandı; silme günlüğün kullandığı yolu kullanır, yani hesaplayıcının
+  yazdığı bolus da birlikte gider ve geri alma ikisini birden getirir. Öğüne
+  bağlı, önceden var olan bir şeker ölçümüne dokunulmaz.
+- Silme panelinin genişliği satırın yüzde 25'i; sabit bir piksel değeri değil,
+  ölçülen satır genişliğine bağlı, böylece küçük ve büyük ekranlarda aynı oranda
+  duruyor. Tablette bir üst sınır devreye giriyor: oransal genişlik orada
+  paneli avuç içi kadar büyütüp açmak için gereken çekişi bir fiskenin
+  ulaşamayacağı yere taşıyordu. Sınır hiçbir telefonda bağlanmıyor.
+- Kaydırma jesti parmağı birebir takip ediyor ve kırmızı alan ilk hareket eden
+  pikselden itibaren dolu görünüyor. Küçük bir kaydırma bırakıldığında panel
+  geri kapanıyor: açık kalması için panelin yüzde 70'i çekilmiş olmalı. Silme
+  butonuna yanlışlıkla ulaşmak bu yüzden mümkün değil.
+- Kaydırma ölçüleri ve açılma kuralı saf bir modülde (`lib/swipeAction.ts`) ve
+  testle sabit; testler kütüphanenin kendi bırakma kuralını ve her iki native
+  jest işleyicisini de okuyarak uygulamanın gerçekten böyle bağlandığını
+  doğruluyor.
+- Geri alma süresi 5 saniye; toast süresi ve geri alma penceresi tek ortak
+  sabitten geliyor, aralarındaki uyumsuzluk giderildi.
+- Geri alma artık bağlı öğün ilişkisini de geri yazıyor; yazma açıksa Health
+  kopyası yeniden oluşturuluyor.
+- Bir kaydın otomatik sonucu olan tokluk sayacı, kayıt silinince biter. Sayacın
+  kalıcı durumu tamamen zamandan ibaretti ve hiçbir yerinde öğün kimliği
+  taşımıyordu, bu yüzden öğünü silmek sayaca ulaşamıyordu. Kendi elinizle
+  kurduğunuz sayaç hiçbir silmeden etkilenmez. Geri alma sayacı aynı çapa ve
+  aynı süreyle geri getirir, süresi bu arada dolduysa getirmez.
+- Bir öğün şablonundan kaydedilen yemek silinince şablonun kullanım sayacı
+  düşer ve son kullanım tarihi kalan kayıtlardan yeniden hesaplanır.
+- Kontrol panelinde enjeksiyon ve ilaç satırına dokunmak düzenleme ekranını
+  açıyor. Panonun kendi ölü kopyaları vardı ve gerçek olanlar hiç
+  yerleştirilmemişti, yani dokunuş sessizce hiçbir şey yapmıyordu. Şeker
+  düzenleme ekranındaki Sil de artık panoda görünüyor.
+
+### Çift kayıt doğrulaması
+- Tek katman (`lib/entryGuard.ts`): bazal 6 saat, bolus 90 dakika, glukoz
+  10 dakika, aynı yemek 30 dakika, çalışan sayaç varken yeni sayaç, ileri
+  tarihli kayıt +5 dakika.
+- Onay nötr ve olgusaldır, tıbbi hüküm içermez; kapatılamaz ama tek dokunuşla
+  geçilir. Enjeksiyon ekranındaki eski çift bolus onayı bu katmana taşındı; doz
+  makullüğü ve nokta tekrarı kontrolleri yerinde kaldı.
+
+### Widget'lar
+- Yeni tek amaçlı widget'lar: son okuma, şeker gir, yemek gir, insülin gir,
+  tokluk sayacını başlat. Kilit ekranı için accessoryCircular,
+  accessoryRectangular ve accessoryInline.
+- iOS 18 Kontrol Merkezi: şeker gir ve sayacı başlat. Dağıtım hedefi 16.4
+  kaldı, tamamı sürüm kapısının arkasında.
+- Mevcut widget'ların kind, aile ve görünümleri değişmedi.
+- İnsülin widget'ı artık enjeksiyon ekranının vücut haritasını açıyor, kaydet
+  formunu değil: widget dokunuşu geldiğinde henüz bölge seçilmemiştir.
+- Dil değiştirildiğinde widget anlık görüntüsü yeniden yazılıyor. Daha önce
+  yazılmadığı için kilit ekranı eski dilde kalıyordu.
+- Android'e küçük son okuma widget'ı eklendi. Health Connect eklenmedi.
+- "Tanı yok" modunda insülin widget'ı nötr bir hâle düşer, insülin sözcüğü
+  hiçbir yüzeyde basılmaz.
+
+### Diğer
+- Alarm izni artık bildirim izniyle aynı yerde, kalıcı bir satır olarak duruyor.
+  Kurulumda reddeden kullanıcının izni geri açacak keşfedilebilir bir yeri yoktu:
+  eski ipuçları yalnız bir alarm tercihi zaten açıkken görünüyordu, hiç alarm
+  kurmamış kullanıcı hiçbirini göremiyordu. iOS reddedilmiş bir izin için ikinci
+  kez istem göstermediğinden satır o durumda doğrudan sistem ayarlarına götürür
+  ve bunu açıkça söyler. Ekran öne geldiğinde durum yeniden okunur.
+- Alarm turunda, sistem alarmının durdurulmazsa kendiliğinden susacağı açıkça
+  yazıyor.
+- "Tanı yok" moduna geçen kullanıcının geçmiş insülin özeti İçgörüler'de artık
+  kaybolmuyor; mod değişimi bir görünürlük kararıdır, kayıt silinmez.
+- Şema v22: profil ve enjeksiyon tablolarında yeni sütunlar, `sugar_logs`
+  `period_tag` kısıtı `unset` değerini kabul edecek şekilde yeniden kuruldu.
+- Gizlilik manifestosu `app.json` içine taşındı (`expo.ios.privacyManifests`).
+  `/ios` prebuild çıktısı olduğundan oradaki dosyaya yazılan beyan bir sonraki
+  prebuild'de kayboluyordu. Apple Search Ads attribution ve analitik toplama
+  beyan edildi; hiçbir sağlık verisi beyan edilmiyor çünkü cihazdan çıkmıyor.
+  App Store Connect formu için kontrol listesi `docs/apple-ads/privacy-2.3.1.md`.
+- Widget derin bağlantıları için sıcak açılış kancası eklendi
+  (`lib/widgetRoute.ts` + kök düzen). Savunmacıdır: uygulama arka plandayken
+  gelen bağlantının hedefe ulaşmama gözlemi cihazda kanıtlanamadı, kanca
+  yönlendirme zaten çalışıyorsa görünmez kalır.
+
+## Önceki sürümler
+
+2.3.0 ve öncesinin kullanıcıya görünen değişiklikleri
+`zerospike-store/aso/<dil>.md` dosyalarındaki **What's New** bloklarında
+tutuluyor.

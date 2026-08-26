@@ -15,6 +15,15 @@
  *
  * Run: npx tsx scripts/migration.test.ts
  */
+
+// The S section's period_tag backfill checks (matchesLegacyAutoPeriodTag, via
+// migrateToV22) read a LOCAL hour off `logged_at` - deliberately, since that
+// is what the guess it is reproducing always did (lib/services/health.ts's
+// removed pickTagForHour). Pinned to UTC here so those fixtures' 'HH:00:00.000Z'
+// timestamps mean the same local hour on every machine and in CI, not just on
+// one already sitting in UTC. Nothing elsewhere in this file reads a Date.
+process.env.TZ = "UTC";
+
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -34,6 +43,7 @@ import {
   migrateToV19,
   migrateToV20,
   migrateToV21,
+  migrateToV22,
   missingColumns,
   stampSchemaVersion,
 } from "../lib/db/migrations";
@@ -69,6 +79,21 @@ import {
   V21_MARK_EXPLICIT_CHOICE,
   V21_REMINDERS_COLUMNS,
 } from "../lib/db/v21Sql";
+import {
+  V22_BACKFILL_CHUNK_SIZE,
+  V22_COPY_SUGAR_LOGS,
+  V22_CREATE_SUGAR_LOGS,
+  V22_DROP_OLD_SUGAR_LOGS,
+  V22_DROP_SCRATCH,
+  V22_INJECTION_COLUMNS,
+  V22_PERIOD_TAG_LIST,
+  V22_PROFILE_COLUMNS,
+  V22_RENAME_SUGAR_LOGS,
+  V22_SELECT_HEALTH_ROWS,
+  V22_SUGAR_INDEX,
+  legacyAutoPeriodTag,
+  matchesLegacyAutoPeriodTag,
+} from "../lib/db/v22Sql";
 import {
   adoptOrphanReminders,
   bridgeLegacyReminders,
@@ -525,6 +550,75 @@ function makeV15Database(): DatabaseSync {
     `INSERT INTO user_profiles
        (id, name, daily_carb_target_g, basal_daily_units, basal_insulin_id, created_at)
      VALUES ('p1', 'Me', 200, 20, 'glargine-u100', '2026-01-01T00:00:00.000Z');`
+  );
+  return db;
+}
+
+/**
+ * A database shaped like a v21 install: every user_profiles column through
+ * v21 (no basal_insulin_other / bolus_insulin_other yet), and sugar_logs with
+ * its ORIGINAL 5-value period_tag CHECK (no 'unset' yet) - the two things
+ * migrateToV22 exists to add. Used by the S section below.
+ */
+function makeV21Database(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE user_profiles (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      insulin_sensitivity_factor REAL NOT NULL DEFAULT 40,
+      carb_ratio_breakfast REAL NOT NULL DEFAULT 10,
+      carb_ratio_lunch REAL NOT NULL DEFAULT 12,
+      carb_ratio_dinner REAL NOT NULL DEFAULT 12,
+      target_fasting_min INTEGER NOT NULL DEFAULT 80,
+      target_fasting_max INTEGER NOT NULL DEFAULT 100,
+      target_postmeal_min INTEGER NOT NULL DEFAULT 80,
+      target_postmeal_max INTEGER NOT NULL DEFAULT 140,
+      hypo_threshold_mgdl INTEGER NOT NULL DEFAULT 70,
+      daily_carb_target_g INTEGER NOT NULL DEFAULT 200,
+      daily_carb_target_min_g INTEGER NOT NULL DEFAULT 160,
+      glucose_unit TEXT NOT NULL DEFAULT 'mgdl',
+      diabetes_type TEXT NOT NULL DEFAULT 'unknown',
+      insulin_mode TEXT NOT NULL DEFAULT 'both',
+      ratios_confirmed INTEGER NOT NULL DEFAULT 0,
+      basal_daily_units REAL,
+      basal_insulin_id TEXT,
+      bolus_insulin_id TEXT,
+      oral_meds_enabled INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE sugar_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      glucose_level_mgdl INTEGER NOT NULL,
+      period_tag TEXT NOT NULL DEFAULT 'manual'
+        CHECK (period_tag IN ('fasting','pre_meal','post_meal_2h','bedtime','manual')),
+      source TEXT NOT NULL DEFAULT 'manual',
+      logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
+      healthkit_uuid TEXT,
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_sugar_profile ON sugar_logs (profile_id, logged_at DESC);
+    CREATE TABLE injection_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      site TEXT,
+      site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
+      dose_units REAL,
+      insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+      meal_log_id TEXT,
+      note TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      logged_at TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
+      bolus_kind TEXT,
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
+  `);
+  db.exec(
+    `INSERT INTO user_profiles (id, name, created_at) VALUES ('p1', 'Me', '2026-01-01T00:00:00.000Z');`
   );
   return db;
 }
@@ -3470,7 +3564,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    // SCHEMA_VERSION itself is asserted in Q3, where the newest step lives.
+    // SCHEMA_VERSION itself is asserted in S3, where the newest step lives.
     ok(
       "the v19 → v20 step runs the real migration",
       /currentVersion < 20\)\s*\{\s*await migrateToV20\(db\);/.test(indexSrc)
@@ -3624,7 +3718,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 21", /const SCHEMA_VERSION = 21;/.test(indexSrc));
+    // SCHEMA_VERSION itself is asserted in S3, where the newest step lives.
     ok(
       "the v20 → v21 step runs the real migration",
       /currentVersion < 21\)\s*\{\s*await migrateToV21\(db\);/.test(indexSrc)
@@ -3792,6 +3886,546 @@ async function main() {
     db.close();
   }
 
+  // ── S. v22: insulin "other" free text + sugar_logs period_tag 'unset' ────
+  section("S1. v22 user_profiles: basal_insulin_other / bolus_insulin_other");
+  {
+    const db = makeV21Database();
+    db.exec(
+      `INSERT INTO user_profiles (id, name, basal_insulin_id, created_at)
+       VALUES ('p2', 'Kid', 'glargine_u100', '2026-01-02T00:00:00.000Z');`
+    );
+
+    await migrateToV22(adapt(db));
+
+    const cols = columns(db, "user_profiles");
+    ok("basal_insulin_other exists", cols.has("basal_insulin_other"));
+    ok("bolus_insulin_other exists", cols.has("bolus_insulin_other"));
+    eq("basal_insulin_other is nullable", cols.get("basal_insulin_other")?.notnull, 0);
+    eq("bolus_insulin_other is nullable", cols.get("bolus_insulin_other")?.notnull, 0);
+    eq("basal_insulin_other has no default", cols.get("basal_insulin_other")?.dflt_value, null);
+    eq("basal_insulin_other is TEXT-typed", cols.get("basal_insulin_other")?.type, "TEXT");
+
+    // Every pre-existing row backfills to NULL, like every other nullable ADD
+    // COLUMN in this chain (v15/v16/v19/v20/v21).
+    const p1 = db.prepare("SELECT * FROM user_profiles WHERE id='p1';").get() as Record<
+      string,
+      unknown
+    >;
+    eq("existing row's basal_insulin_other backfills to NULL", p1.basal_insulin_other, null);
+    const p2 = db.prepare("SELECT * FROM user_profiles WHERE id='p2';").get() as Record<
+      string,
+      unknown
+    >;
+    eq("its own basal_insulin_id survives untouched", p2.basal_insulin_id, "glargine_u100");
+    eq("and its own basal_insulin_other backfills to NULL too", p2.basal_insulin_other, null);
+
+    ok(
+      "basal_insulin_other accepts a value",
+      !refused(
+        db,
+        "UPDATE user_profiles SET basal_insulin_id='other', basal_insulin_other='Pens marca X' WHERE id='p2';"
+      )
+    );
+    eq("no profile was lost or gained", count(db, "user_profiles"), 2);
+    db.close();
+  }
+
+  section("S1b. v22 injection_logs: insulin_product_id / insulin_product_other");
+  {
+    const db = makeV21Database();
+    db.exec(
+      `INSERT INTO injection_logs (id, profile_id, insulin_type, dose_units, source, logged_at, tags, bolus_kind)
+       VALUES ('inj1','p1','basal',18,'manual','2026-07-01T22:00:00.000Z','[]',NULL);`
+    );
+
+    await migrateToV22(adapt(db));
+
+    const cols = columns(db, "injection_logs");
+    ok("insulin_product_id exists", cols.has("insulin_product_id"));
+    ok("insulin_product_other exists", cols.has("insulin_product_other"));
+    eq("insulin_product_id is nullable", cols.get("insulin_product_id")?.notnull, 0);
+    eq("insulin_product_other is nullable", cols.get("insulin_product_other")?.notnull, 0);
+    eq("insulin_product_id has no default", cols.get("insulin_product_id")?.dflt_value, null);
+    eq("insulin_product_id is TEXT-typed", cols.get("insulin_product_id")?.type, "TEXT");
+
+    // The pre-existing row backfills to NULL, like every other nullable ADD
+    // COLUMN in this chain, and its own dose/insulin_type survive untouched.
+    eq("its new insulin_product_id backfills to NULL", injectionField(db, "inj1", "insulin_product_id"), null);
+    eq("its new insulin_product_other backfills to NULL", injectionField(db, "inj1", "insulin_product_other"), null);
+    eq("its dose survives untouched", injectionField(db, "inj1", "dose_units"), 18);
+    eq("its insulin_type survives untouched", injectionField(db, "inj1", "insulin_type"), "basal");
+
+    // No CHECK on either column - the catalog id set is validated in
+    // TypeScript (see ../insulinCatalog), and the free-text "other" name
+    // cannot be constrained by SQL either way.
+    ok(
+      "insulin_product_id accepts an arbitrary string, no CHECK",
+      !refused(db, "UPDATE injection_logs SET insulin_product_id='not-a-real-catalog-id' WHERE id='inj1';")
+    );
+    ok(
+      "insulin_product_other accepts free text",
+      !refused(db, "UPDATE injection_logs SET insulin_product_id='other', insulin_product_other='Kendi kalemim' WHERE id='inj1';")
+    );
+    eq("no injection was lost or gained", count(db, "injection_logs"), 1);
+    db.close();
+  }
+
+  section("S2. v22 sugar_logs: period_tag CHECK widens to accept 'unset'");
+  {
+    const db = makeV21Database();
+    db.exec(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, healthkit_uuid)
+       VALUES
+         ('s1','p1',132,'fasting','manual','2026-07-01T07:00:00.000Z','["sport"]','hk-1'),
+         ('s2','p1',188,'post_meal_2h','manual','2026-07-01T14:00:00.000Z','[]',NULL),
+         ('s3','p1',96,'bedtime','manual','2026-07-01T22:00:00.000Z','[]',NULL);`
+    );
+
+    // The OLD CHECK genuinely rejects 'unset' - this is the regression the
+    // rebuild exists to fix, pinned so it cannot silently stop mattering.
+    ok(
+      "before the migration, the old CHECK rejects 'unset'",
+      refused(db, "UPDATE sugar_logs SET period_tag='unset' WHERE id='s1';")
+    );
+
+    await migrateToV22(adapt(db));
+
+    eq(
+      "V22_PERIOD_TAG_LIST is the 5 old values plus 'unset'",
+      V22_PERIOD_TAG_LIST.join(","),
+      "fasting,pre_meal,post_meal_2h,bedtime,manual,unset"
+    );
+
+    // Every pre-existing row is copied verbatim: nothing but the CHECK moved.
+    const s1 = db.prepare("SELECT * FROM sugar_logs WHERE id='s1';").get() as Record<
+      string,
+      unknown
+    >;
+    eq("s1 value survives", s1.glucose_level_mgdl, 132);
+    eq("s1 tag survives", s1.period_tag, "fasting");
+    eq("s1 tags survive", s1.tags, '["sport"]');
+    eq("s1 healthkit_uuid survives", s1.healthkit_uuid, "hk-1");
+    eq("no reading was lost or gained", count(db, "sugar_logs"), 3);
+
+    // The widened CHECK now accepts 'unset' ...
+    ok(
+      "after the migration, 'unset' is accepted",
+      !refused(db, "UPDATE sugar_logs SET period_tag='unset' WHERE id='s2';")
+    );
+    // ... but still rejects a genuinely bogus value - the rebuild widened the
+    // CHECK, it did not remove it.
+    ok(
+      "and a nonsense value is still refused",
+      refused(db, "UPDATE sugar_logs SET period_tag='breakfast' WHERE id='s3';")
+    );
+
+    // The index the rebuild recreates still exists and still works.
+    ok(
+      "idx_sugar_profile exists after the rebuild",
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sugar_profile';")
+        .get() !== undefined
+    );
+
+    // Foreign keys are back on afterwards - a bogus profile_id is refused.
+    db.exec("PRAGMA foreign_keys = ON;");
+    ok(
+      "the profile_id foreign key still enforces",
+      refused(
+        db,
+        "INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, logged_at) VALUES ('bad','no-such-profile',100,'2026-07-01T00:00:00.000Z');"
+      )
+    );
+    db.close();
+  }
+
+  section("S3. v22 idempotence");
+  {
+    const db = makeV21Database();
+    db.exec(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, healthkit_uuid)
+       VALUES ('s1','p1',110,'fasting','manual','2026-07-01T07:00:00.000Z','[]',NULL);`
+    );
+    db.exec(
+      `INSERT INTO injection_logs (id, profile_id, insulin_type, dose_units, source, logged_at, tags, bolus_kind)
+       VALUES ('inj1','p1','bolus',4,'manual','2026-07-01T13:00:00.000Z','[]',NULL);`
+    );
+
+    let reran = true;
+    try {
+      await migrateToV22(adapt(db));
+      await migrateToV22(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v22 threw: ${String(e)}`);
+    }
+    ok("v22 is safe to re-run", reran);
+    eq(
+      "re-running does not duplicate basal_insulin_other",
+      (db.prepare("PRAGMA table_info(user_profiles);").all() as { name: string }[]).filter(
+        (c) => c.name === "basal_insulin_other"
+      ).length,
+      1
+    );
+    eq(
+      "re-running does not duplicate bolus_insulin_other",
+      (db.prepare("PRAGMA table_info(user_profiles);").all() as { name: string }[]).filter(
+        (c) => c.name === "bolus_insulin_other"
+      ).length,
+      1
+    );
+    eq(
+      "re-running does not duplicate insulin_product_id",
+      (db.prepare("PRAGMA table_info(injection_logs);").all() as { name: string }[]).filter(
+        (c) => c.name === "insulin_product_id"
+      ).length,
+      1
+    );
+    eq(
+      "re-running does not duplicate insulin_product_other",
+      (db.prepare("PRAGMA table_info(injection_logs);").all() as { name: string }[]).filter(
+        (c) => c.name === "insulin_product_other"
+      ).length,
+      1
+    );
+    eq("still exactly one injection", count(db, "injection_logs"), 1);
+    eq("re-running keeps the injection's dose intact", injectionField(db, "inj1", "dose_units"), 4);
+    eq("still exactly one reading", count(db, "sugar_logs"), 1);
+    eq(
+      "re-running keeps the reading intact",
+      (db.prepare("SELECT period_tag AS t FROM sugar_logs WHERE id='s1';").get() as { t: string })
+        .t,
+      "fasting"
+    );
+    eq("migrateToV22 stamps 22", readUserVersion(db), 22);
+    db.close();
+  }
+
+  section("S4. v22 statements and fresh-install equivalence");
+  {
+    eq(
+      "V22_PROFILE_COLUMNS adds exactly the two documented columns",
+      V22_PROFILE_COLUMNS.map((c) => c.name).join(","),
+      "basal_insulin_other,bolus_insulin_other"
+    );
+    ok(
+      "both are plain nullable TEXT with no default",
+      V22_PROFILE_COLUMNS.every((c) => c.type === "TEXT")
+    );
+    eq(
+      "V22_INJECTION_COLUMNS adds exactly the two documented columns",
+      V22_INJECTION_COLUMNS.map((c) => c.name).join(","),
+      "insulin_product_id,insulin_product_other"
+    );
+    ok(
+      "both are plain nullable TEXT with no default too",
+      V22_INJECTION_COLUMNS.every((c) => c.type === "TEXT")
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok("SCHEMA_VERSION is 22", /const SCHEMA_VERSION = 22;/.test(indexSrc));
+    ok(
+      "the v21 → v22 step runs the real migration",
+      /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
+    );
+    ok(
+      "createSchemaV1's user_profiles DDL carries both new columns",
+      /basal_insulin_other TEXT,\s*\n\s*bolus_insulin_other TEXT,/.test(indexSrc)
+    );
+    ok(
+      "createSchemaV1's sugar_logs CHECK is built from V22_PERIOD_TAG_LIST",
+      /CHECK \(period_tag IN \(\$\{V22_PERIOD_TAG_LIST\.map/.test(indexSrc)
+    );
+    ok(
+      "createInjectionSchema's DDL carries both new columns",
+      /insulin_product_id TEXT,\s*\n\s*insulin_product_other TEXT,/.test(indexSrc)
+    );
+
+    // Same DDL-text comparison P3/Q3 use: both paths reach the same shape.
+    const migrated = makeV21Database();
+    await migrateToV22(adapt(migrated));
+
+    const fresh = new DatabaseSync(":memory:");
+    fresh.exec(`
+      CREATE TABLE user_profiles (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        insulin_sensitivity_factor REAL NOT NULL DEFAULT 40,
+        carb_ratio_breakfast REAL NOT NULL DEFAULT 10,
+        carb_ratio_lunch REAL NOT NULL DEFAULT 12,
+        carb_ratio_dinner REAL NOT NULL DEFAULT 12,
+        target_fasting_min INTEGER NOT NULL DEFAULT 80,
+        target_fasting_max INTEGER NOT NULL DEFAULT 100,
+        target_postmeal_min INTEGER NOT NULL DEFAULT 80,
+        target_postmeal_max INTEGER NOT NULL DEFAULT 140,
+        hypo_threshold_mgdl INTEGER NOT NULL DEFAULT 70,
+        daily_carb_target_g INTEGER NOT NULL DEFAULT 200,
+        daily_carb_target_min_g INTEGER NOT NULL DEFAULT 160,
+        glucose_unit TEXT NOT NULL DEFAULT 'mgdl',
+        diabetes_type TEXT NOT NULL DEFAULT 'unknown',
+        insulin_mode TEXT NOT NULL DEFAULT 'both',
+        ratios_confirmed INTEGER NOT NULL DEFAULT 0,
+        basal_daily_units REAL,
+        basal_insulin_id TEXT,
+        bolus_insulin_id TEXT,
+        basal_insulin_other TEXT,
+        bolus_insulin_other TEXT,
+        oral_meds_enabled INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE sugar_logs (
+        id TEXT PRIMARY KEY NOT NULL,
+        profile_id TEXT NOT NULL,
+        glucose_level_mgdl INTEGER NOT NULL,
+        period_tag TEXT NOT NULL DEFAULT 'manual'
+          CHECK (period_tag IN (${V22_PERIOD_TAG_LIST.map((t) => `'${t}'`).join(",")})),
+        source TEXT NOT NULL DEFAULT 'manual',
+        logged_at TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        healthkit_uuid TEXT,
+        FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_sugar_profile ON sugar_logs (profile_id, logged_at DESC);
+      CREATE TABLE injection_logs (
+        id TEXT PRIMARY KEY NOT NULL,
+        profile_id TEXT NOT NULL,
+        site TEXT,
+        site_point INTEGER CHECK (site_point IS NULL OR site_point BETWEEN 1 AND 4),
+        dose_units REAL,
+        insulin_type TEXT CHECK (insulin_type IN ('basal','bolus')),
+        meal_log_id TEXT,
+        note TEXT,
+        source TEXT NOT NULL DEFAULT 'manual',
+        logged_at TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        bolus_kind TEXT,
+        insulin_product_id TEXT,
+        insulin_product_other TEXT,
+        FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
+    `);
+    fresh.exec(
+      "INSERT INTO user_profiles (id, name, created_at) VALUES ('p1', 'Me', '2026-01-01T00:00:00.000Z');"
+    );
+
+    eq(
+      "user_profiles has the same column NAME SET as a fresh install",
+      [...columns(migrated, "user_profiles").keys()].sort().join(","),
+      [...columns(fresh, "user_profiles").keys()].sort().join(",")
+    );
+
+    // sugar_logs went through a RENAME (sugar_logs_v22 → sugar_logs), which
+    // SQLite records by substituting the identifier in the stored CREATE TABLE
+    // text and re-quoting it - cosmetic, not a shape difference - so this
+    // compares columns/types/CHECK behaviour instead of raw DDL text (the same
+    // reason K5 compares user_profiles by column SET rather than by text: an
+    // appended/renamed table cannot be expected to stay byte-identical to one
+    // that was never rebuilt).
+    const migratedCols = columns(migrated, "sugar_logs");
+    const freshCols = columns(fresh, "sugar_logs");
+    eq(
+      "sugar_logs has the same column NAME SET as a fresh install",
+      [...migratedCols.keys()].sort().join(","),
+      [...freshCols.keys()].sort().join(",")
+    );
+    for (const name of migratedCols.keys()) {
+      eq(
+        `sugar_logs.${name} has the same type as a fresh install`,
+        migratedCols.get(name)?.type,
+        freshCols.get(name)?.type
+      );
+      eq(
+        `sugar_logs.${name} has the same nullability as a fresh install`,
+        migratedCols.get(name)?.notnull,
+        freshCols.get(name)?.notnull
+      );
+    }
+    // And the fresh path's CHECK accepts exactly what the migrated path's does
+    // (see S2 for the migrated-path behaviour this mirrors).
+    ok(
+      "fresh install's sugar_logs CHECK also accepts 'unset'",
+      !refused(
+        fresh,
+        "INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, logged_at) VALUES ('f1','p1',100,'unset','2026-01-01T00:00:00.000Z');"
+      )
+    );
+    ok(
+      "and still refuses a nonsense value",
+      refused(
+        fresh,
+        "INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, logged_at) VALUES ('f2','p1',100,'breakfast','2026-01-01T00:00:00.000Z');"
+      )
+    );
+
+    // injection_logs got a plain guarded ADD COLUMN (no rebuild), so - unlike
+    // sugar_logs above - a column NAME SET comparison is enough here.
+    eq(
+      "injection_logs has the same column NAME SET as a fresh install",
+      [...columns(migrated, "injection_logs").keys()].sort().join(","),
+      [...columns(fresh, "injection_logs").keys()].sort().join(",")
+    );
+    migrated.close();
+    fresh.close();
+  }
+
+  section("S5. legacyAutoPeriodTag: the exact pre-v22 hour rule, reproduced");
+  {
+    // Pinned against lib/services/health.ts's own pickTagForHour (removed by
+    // this release - see ../periodTag): this migration recognises exactly the
+    // rows that function would have produced, nothing more and nothing less.
+    eq("just after midnight is bedtime", legacyAutoPeriodTag(0), "bedtime");
+    eq("00:59 is still bedtime", legacyAutoPeriodTag(0), "bedtime");
+    eq("01:00 is fasting, not bedtime", legacyAutoPeriodTag(1), "fasting");
+    eq("08:00 is still fasting", legacyAutoPeriodTag(8), "fasting");
+    eq("09:00 is manual", legacyAutoPeriodTag(9), "manual");
+    eq("21:00 is still manual", legacyAutoPeriodTag(21), "manual");
+    eq("22:00 is bedtime", legacyAutoPeriodTag(22), "bedtime");
+    eq("23:00 is still bedtime", legacyAutoPeriodTag(23), "bedtime");
+  }
+
+  section("S6. v22 backfill: only an untouched Health guess is blanked out");
+  {
+    const db = makeV21Database();
+    db.exec(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, healthkit_uuid) VALUES
+        -- imported at 07:00 local, still carries the guess it was given -> unset
+        ('untouched-fasting','p1',120,'fasting','health','2026-07-01T07:00:00.000Z','[]','hk-a'),
+        -- imported at 23:00 local, still carries the guess -> unset
+        ('untouched-bedtime','p1',140,'bedtime','health','2026-07-01T23:00:00.000Z','[]','hk-b'),
+        -- imported at 13:00 local (-> manual guess), still carries it -> unset
+        ('untouched-manual','p1',150,'manual','health','2026-07-01T13:00:00.000Z','[]','hk-c'),
+        -- imported at 07:00 local (guess would be fasting) but the USER retagged
+        -- it by hand -> must survive untouched
+        ('user-retagged','p1',160,'post_meal_2h','health','2026-07-01T07:00:00.000Z','[]','hk-d'),
+        -- imported at 07:00 local but already 'pre_meal' - also a hand edit,
+        -- a value the old guess could never itself have produced
+        ('user-pre-meal','p1',170,'pre_meal','health','2026-07-01T07:00:00.000Z','[]','hk-e'),
+        -- a MANUAL entry that happens to carry the same tag the guess would
+        -- have produced for its hour - never touched, source is not 'health'
+        ('manual-entry','p1',130,'fasting','manual','2026-07-01T07:00:00.000Z','[]',NULL);`
+    );
+
+    await migrateToV22(adapt(db));
+
+    const tagOf = (id: string): unknown => sugarLogField(db, id, "period_tag");
+
+    eq("untouched fasting guess -> unset", tagOf("untouched-fasting"), "unset");
+    eq("untouched bedtime guess -> unset", tagOf("untouched-bedtime"), "unset");
+    eq("untouched manual guess -> unset", tagOf("untouched-manual"), "unset");
+    eq("a hand-retagged health row survives untouched", tagOf("user-retagged"), "post_meal_2h");
+    eq("a hand-set pre_meal health row survives untouched", tagOf("user-pre-meal"), "pre_meal");
+    eq("a manual-source row is never touched by this migration", tagOf("manual-entry"), "fasting");
+    // The rebuild's promise for EVERY row, health or not: id, count and the
+    // HealthKit mirror UUID all survive - only period_tag ever moves.
+    eq("no reading was lost or gained", count(db, "sugar_logs"), 6);
+    eq("healthkit_uuid survives on a converted row", sugarLogField(db, "untouched-fasting", "healthkit_uuid"), "hk-a");
+    eq("healthkit_uuid survives on an untouched row", sugarLogField(db, "user-retagged", "healthkit_uuid"), "hk-d");
+    db.close();
+  }
+
+  section("S8. v22 backfill at the hour=1 boundary (hour<1 vs hour<9)");
+  {
+    // The exact boundary lib/services/health.ts's own comment calls out: at
+    // local hour 01:00, `hour < 1` has JUST stopped matching, so the legacy
+    // guess is 'fasting' (from the `hour < 9` branch), never 'bedtime'.
+    eq("legacyAutoPeriodTag(1) is 'fasting', not 'bedtime'", legacyAutoPeriodTag(1), "fasting");
+
+    const db = makeV21Database();
+    db.exec(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, healthkit_uuid) VALUES
+        -- 01:00 local, still carrying the exact guess that hour produces -> unset.
+        ('at-0100-matches','p1',120,'fasting','health','2026-07-01T01:00:00.000Z','[]',NULL),
+        -- Same 01:00 local hour, but tagged with something the guess could
+        -- never itself have produced for this hour -> a hand edit, kept.
+        ('at-0100-edited','p1',125,'post_meal_2h','health','2026-07-01T01:00:00.000Z','[]',NULL);`
+    );
+
+    await migrateToV22(adapt(db));
+
+    eq(
+      "01:00 local, tag still the guess ('fasting') -> unset",
+      sugarLogField(db, "at-0100-matches", "period_tag"),
+      "unset"
+    );
+    eq(
+      "01:00 local, tag hand-edited ('post_meal_2h') -> unchanged",
+      sugarLogField(db, "at-0100-edited", "period_tag"),
+      "post_meal_2h"
+    );
+    eq(
+      "matchesLegacyAutoPeriodTag agrees directly",
+      matchesLegacyAutoPeriodTag("2026-07-01T01:00:00.000Z", "fasting"),
+      true
+    );
+    eq(
+      "and rejects the hand-edited value directly",
+      matchesLegacyAutoPeriodTag("2026-07-01T01:00:00.000Z", "post_meal_2h"),
+      false
+    );
+    db.close();
+  }
+
+  section("S7. v22 backfill is naturally idempotent and chunks past 500 ids");
+  {
+    const db = makeV21Database();
+    // 505 health rows that all still carry the untouched fasting guess (07:00
+    // local), so the chunked UPDATE has to run across a V22_BACKFILL_CHUNK_SIZE
+    // boundary (500) and still reach every one of them.
+    const ROWS = 505;
+    ok("the fixture exceeds one backfill chunk", ROWS > V22_BACKFILL_CHUNK_SIZE);
+    const insert = db.prepare(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags)
+       VALUES (?, 'p1', 100, 'fasting', 'health', '2026-07-01T07:00:00.000Z', '[]');`
+    );
+    for (let i = 0; i < ROWS; i++) insert.run(`h${i}`);
+    // One row the user has already retagged, mixed in among them - the
+    // property the chunking must not break: still recognised individually.
+    db.exec(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags)
+       VALUES ('kept','p1',100,'bedtime','health','2026-07-01T13:00:00.000Z','[]');`
+    );
+
+    await migrateToV22(adapt(db));
+
+    const unsetCount = (
+      db.prepare("SELECT COUNT(*) AS c FROM sugar_logs WHERE period_tag = 'unset';").get() as {
+        c: number;
+      }
+    ).c;
+    eq("every one of the 505 untouched rows became unset", unsetCount, ROWS);
+    eq(
+      "the mixed-in hand-edited row is untouched",
+      sugarLogField(db, "kept", "period_tag"),
+      "bedtime"
+    );
+    eq("no row was lost or gained", count(db, "sugar_logs"), ROWS + 1);
+
+    // A second run (the natural-idempotence property migrateToV22's own doc
+    // comment relies on): 'unset' rows can never match the legacy guess again,
+    // and a later hand edit made AFTER the migration must survive a replay.
+    db.exec("UPDATE sugar_logs SET period_tag = 'bedtime' WHERE id = 'h0';");
+    await migrateToV22(adapt(db));
+    eq(
+      "a row retagged after the migration survives a second run",
+      sugarLogField(db, "h0", "period_tag"),
+      "bedtime"
+    );
+    eq(
+      "every other unset row stays unset, not reverted",
+      (
+        db.prepare("SELECT COUNT(*) AS c FROM sugar_logs WHERE period_tag = 'unset';").get() as {
+          c: number;
+        }
+      ).c,
+      ROWS - 1
+    );
+    db.close();
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -3805,7 +4439,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 21`, readUserVersion(db), 21);
+    eq(`v${start}: ends at 22`, readUserVersion(db), 22);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -3818,6 +4452,7 @@ async function main() {
     eq(`v${start}: carb target`, p1.daily_carb_target_g, 210);
     eq(`v${start}: profile reaches the v15 columns`, p1.basal_insulin_id, null);
     eq(`v${start}: profile reaches the v16 flag`, p1.oral_meds_enabled, 0);
+    eq(`v${start}: profile reaches the v22 columns`, p1.basal_insulin_other, null);
 
     eq(`v${start}: all 3 readings survive`, count(db, "sugar_logs"), 3);
     const s1 = db.prepare("SELECT * FROM sugar_logs WHERE id='s1';").get() as Record<
@@ -3888,6 +4523,11 @@ async function main() {
         injectionField(db, "inj1", "bolus_kind"),
         null
       );
+      eq(
+        `v${start}: injection reaches the v22 columns`,
+        injectionField(db, "inj1", "insulin_product_id"),
+        null
+      );
     }
 
     // The tables later steps introduce exist afterwards whatever the start was.
@@ -3951,7 +4591,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      21
+      22
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -3967,7 +4607,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 21", readUserVersion(db), 21);
+    eq("the next launch still ends at 22", readUserVersion(db), 22);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -4065,7 +4705,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 21 again", readUserVersion(db), 21);
+    eq("the chain lands on 22 again", readUserVersion(db), 22);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -4626,14 +5266,14 @@ const CHAIN_CREATE_INJECTIONS = `
 /**
  * initDatabase()'s migration chain, in the same order and with the same guards.
  *
- * The v8 → v21 steps are the REAL exported functions (and therefore the REAL
+ * The v8 → v22 steps are the REAL exported functions (and therefore the REAL
  * stamps, which live inside their transactions). Only the pre-v8 steps, which are
  * inline DDL in lib/db/index.ts and cannot be imported without pulling in
  * expo-sqlite, are replayed here; K6 pins them against that file's source so this
  * copy cannot drift.
  *
  * `stampFinal: false` is the crash under test: the chain runs to the end and the
- * process dies before lib/db/index.ts's closing `PRAGMA user_version = 21`.
+ * process dies before lib/db/index.ts's closing `PRAGMA user_version = 22`.
  */
 async function runChain(
   db: DatabaseSync,
@@ -4703,8 +5343,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 19) await migrateToV19(target);
   if (currentVersion >= 1 && currentVersion < 20) await migrateToV20(target);
   if (currentVersion >= 1 && currentVersion < 21) await migrateToV21(target);
+  if (currentVersion >= 1 && currentVersion < 22) await migrateToV22(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 21;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 22;");
 }
 
 function count(db: DatabaseSync, table: string): number {
@@ -4754,6 +5395,19 @@ function injectionField(
   try {
     const row = db
       .prepare(`SELECT ${column} AS v FROM injection_logs WHERE id = ?;`)
+      .get(id) as { v: unknown } | undefined;
+    return row === undefined ? "<row gone>" : row.v;
+  } catch {
+    return "<column gone>";
+  }
+}
+
+/** One column of one sugar_logs row, same "report don't crash" shape as
+ *  injectionField above - used by the S section's period_tag backfill checks. */
+function sugarLogField(db: DatabaseSync, id: string, column: string): unknown {
+  try {
+    const row = db
+      .prepare(`SELECT ${column} AS v FROM sugar_logs WHERE id = ?;`)
       .get(id) as { v: unknown } | undefined;
     return row === undefined ? "<row gone>" : row.v;
   } catch {

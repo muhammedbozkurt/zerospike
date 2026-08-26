@@ -215,6 +215,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     void import("../services/notifications").then((m) =>
       m.rescheduleForLanguageChange()
     );
+    // The widget's labels come from the App Group snapshot syncLiveData writes,
+    // not from the live i18n instance, so without this the lock-screen / home
+    // screen widget kept showing the PREVIOUS language until something else
+    // happened to touch the snapshot (a data write, a profile switch, or just
+    // bringing the app forward again) - the user read that as a missing
+    // translation rather than a stale one. Mirrors setActiveProfileId's own
+    // fire-and-forget re-sync above; fired only now, AFTER i18nSetLanguage has
+    // actually applied `next`, so the snapshot is never written in the language
+    // that is about to be replaced.
+    const activeId = activeIdRef.current;
+    if (activeId) {
+      void getProfile(activeId).then((p) => {
+        if (!p) return;
+        void import("../services/liveData").then((m) =>
+          m.syncLiveData(p.id, p.glucose_unit)
+        );
+      });
+    }
 
     if (!directionChanged) return;
 

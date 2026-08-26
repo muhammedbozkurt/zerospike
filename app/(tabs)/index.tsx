@@ -7,7 +7,7 @@ import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
-import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry, MedEntry } from "../../lib/db/journal";
+import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
 import { bolusProfileFor, basalProfileFor, insulinProductById } from "../../lib/insulinCatalog";
 import { targetBandFor } from "../../lib/agpChart";
@@ -22,7 +22,6 @@ import {
 import {
   addSugarLog,
   getSugarLog,
-  setSugarLogHealthUuid,
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
 import type { LogTag, PeriodTag, Reminder } from "../../lib/db/types";
@@ -53,6 +52,7 @@ import {
   type PostMealCardActions,
   type PostMealTimerWindow,
 } from "../../lib/postMealTimer";
+import { PostMealDurationSheet } from "../../components/PostMealDurationSheet";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import {
   markDay7DownsellShown,
@@ -65,6 +65,7 @@ import {
   updateGlucoseInHealth,
   deleteGlucoseFromHealth,
   getHealthWriteEnabled,
+  takeHealthWriteFailureNotice,
   type SyncResult,
 } from "../../lib/services/health";
 import { consecutiveLogDays } from "../../lib/insights";
@@ -150,9 +151,7 @@ import {
 } from "../../lib/journalSlice";
 import { applyGlucoseCorrection } from "../../lib/services/glucoseEdit";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
-import { InjectionEditSheet } from "../../components/InjectionEditSheet";
-import { MedEditSheet } from "../../components/MedEditSheet";
-import { PostMealLateSheet } from "../../components/PostMealLateSheet";
+import { useEntryGuardConfirm } from "../../components/useEntryGuardConfirm";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
@@ -162,7 +161,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { DirIcon } from "../../components/DirIcon";
 import Animated from "react-native-reanimated";
 import { listEntering, PressableScale } from "../../lib/theme/motion";
-import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS } from "../../lib/theme/tokens";
+import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS, ELEVATION, HIT_TARGET } from "../../lib/theme/tokens";
 import {
   AppBackground,
   GlassCard,
@@ -247,6 +246,7 @@ export default function DashboardScreen() {
   const { columnPad } = useLayout();
   const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
+  const guardEntry = useEntryGuardConfirm();
   // Store-screenshot only: an Android store frame is captured on the iOS
   // simulator (?scPlatform=android), and the Android build has no health sync at
   // all - so the quick-access row drops the Health card and takes its Android
@@ -269,8 +269,6 @@ export default function DashboardScreen() {
   const [loaded, setLoaded] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editGlucose, setEditGlucose] = useState<GlucoseEntry | null>(null);
-  const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
-  const [editMed, setEditMed] = useState<MedEntry | null>(null);
   const [showEditHint, setShowEditHint] = useState(false);
   const [showFinishSetup, setShowFinishSetup] = useState(false);
   const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
@@ -330,9 +328,11 @@ export default function DashboardScreen() {
   // current preference. The live ticking label lives in <PostMealCountdown> so it
   // never re-renders this screen's journal list.
   const [postMealTimer, setPostMealTimer] = useState<PostMealTimerWindow | null>(null);
-  // "I started eating a while ago" (2.3.0's G15), opened from the small button
-  // beside the primary "I started eating" pill.
-  const [lateSheetOpen, setLateSheetOpen] = useState(false);
+  // The duration + "I started eating a while ago" sheet (2.3.2 folded the two
+  // into one - see components/PostMealDurationSheet.tsx). Never carries a
+  // saved length: the card always arms POST_MEAL_WINDOW_MIN unless this sheet
+  // is used to pick a different one for THIS tap only.
+  const [durationSheetOpen, setDurationSheetOpen] = useState(false);
   // The next thing that will actually reach the user (2.3.0's G18). null when
   // there is nothing to say - no reminder set up, the master switch or the OS
   // permission off, or nothing inside the next day - and the line is then not
@@ -498,6 +498,19 @@ export default function DashboardScreen() {
         setEditGlucose(null);
         setInitialPeriod(DEFAULT_LOG_PERIOD);
         setSheetOpen(true);
+      } else if (s === "post_meal_start") {
+        // The timer widget's idle tile and the iOS 18 control both land here.
+        // Neither arms the countdown itself, on purpose: a lock-screen surface
+        // that logs on one tap can start a countdown nobody meant to start, and
+        // both the length and the "I started a while ago" answer belong to the
+        // user. So the link opens the duration sheet - the same one the card's
+        // own duration pill opens. A countdown already running for THIS profile
+        // needs nothing - the card below is already showing it.
+        const running = postMealWindowForProfile(
+          await getPostMealTimerState(),
+          activeProfile.id
+        );
+        if (running == null) setDurationSheetOpen(true);
       }
       router.setParams({ sheet: "" });
     })();
@@ -662,7 +675,11 @@ export default function DashboardScreen() {
       return { msg: t("dashboard.imported", { n: res.inserted }), tone: "success" };
     if (res.read > 0)
       return { msg: t("dashboard.healthUpToDate"), tone: "info" };
-    return { msg: t("dashboard.healthNoData"), tone: "info" };
+    // read === 0 && inserted === 0: iOS never reveals read-permission denial
+    // (requestHealthPermissions always resolves true there), so an empty
+    // result can mean "nothing new" OR "access was never granted" - this
+    // neutral copy names both instead of asserting the wrong one.
+    return { msg: t("dashboard.healthNoDataOrAccess"), tone: "info" };
   }
 
   // Pulls from Health. `announce` shows a toast (off for the silent open-sync).
@@ -674,12 +691,28 @@ export default function DashboardScreen() {
       const res = await importHealthGlucose(activeProfile.id);
       if (res.inserted > 0) {
         // One event per sync (not per row) to keep health-import volume sane.
-        logEvent("log_added", { kind: "glucose", source: "health" });
+        logEvent("log_added", { source: "health" });
         bumpData();
       }
       if (announce) {
-        const { msg, tone } = describeSync(res);
-        toast(msg, tone);
+        // H3: a mirrored write to Health can fail silently while the toggle
+        // stays on (write access revoked in iOS Settings, which iOS never
+        // notifies the app about). Surfaced once per failure, here rather than
+        // at the point of the failed write itself, because a sync is the next
+        // moment the user is actually looking at this card.
+        //
+        // It REPLACES the sync-result toast for this one run rather than
+        // preceding it: there is a single toast slot, so two calls in a row
+        // leave only the second on screen, and the routine "nothing new" line
+        // is the less useful of the two - the sync outcome is already written
+        // on this card, a broken mirror is not written anywhere. The toggle
+        // itself is never touched; only the user turns that off.
+        if (takeHealthWriteFailureNotice()) {
+          toast(t("dashboard.healthWriteFailed"), "info");
+        } else {
+          const { msg, tone } = describeSync(res);
+          toast(msg, tone);
+        }
       }
     } finally {
       setSyncing(false);
@@ -937,7 +970,10 @@ export default function DashboardScreen() {
   // Re-anchors the running timer to a meal logged while it was already
   // counting down, instead of the meal's own auto-start being a no-op forever.
   // Non-prompting (see restartPostMealTimerAt): the user already has a timer
-  // running, so this never raises a fresh permission dialog.
+  // running, so this never raises a fresh permission dialog. windowMin is
+  // deliberately omitted: restartPostMealTimerAt derives it from the RUNNING
+  // timer's own span when left out, so re-anchoring never quietly shrinks a
+  // countdown that was armed with a non-default length back to 120.
   async function restartPostMealForEntry(entry: MealEntry) {
     if (!activeProfile) return;
     // Captured BEFORE the move: one tap re-anchors a running countdown, and
@@ -971,9 +1007,13 @@ export default function DashboardScreen() {
   }
 
   // "I started eating": arms the post-meal check timer (dedupes with the
-  // meal-log auto reminder via a shared notification id). `minutesAgo` is only
-  // passed by the "a while ago" sheet (2.3.0's G15); the primary button arms
-  // from now, so the common case is still one tap.
+  // meal-log auto reminder via a shared notification id). `minutesAgo` is
+  // only passed by the duration sheet (2.3.2 folded the "a while ago" sheet's
+  // second section into it, P14 removed the sheet's first section entirely);
+  // the primary button arms from now, so the common case is still one tap.
+  // The countdown itself is always POST_MEAL_WINDOW_MIN - it is never a
+  // choice any more (lib/postMealTimer.ts's own doc comment on that
+  // constant).
   //
   // ONE arm at a time, across BOTH entry points: the pill and the sheet's own
   // "Start" can otherwise overlap (the sheet closes on the next render, the
@@ -985,8 +1025,26 @@ export default function DashboardScreen() {
     if (startingTimerRef.current) return;
     startingTimerRef.current = true;
     setStartingTimer(true);
-    setLateSheetOpen(false);
+    setDurationSheetOpen(false);
     try {
+      // Duplicate-entry check (lib/entryGuard.ts), against a FRESH read of the
+      // persisted timer rather than the `postMealTimerForProfile` React state:
+      // that state is only as current as the last refreshPostMealTimer() call
+      // (on focus / app-foreground), so a countdown armed a moment earlier -
+      // by a notification, the widget, or another device - could otherwise
+      // still read as "nothing running" here and get silently overwritten
+      // (startPostMealTimer itself always renews, it never refuses).
+      const runningNow = postMealWindowForProfile(
+        await getPostMealTimerState(),
+        activeProfile?.id ?? null
+      );
+      if (runningNow) {
+        const proceed = await guardEntry({
+          entryKind: "post_meal_timer",
+          runningTimerEndsAtIso: new Date(runningNow.endsAt).toISOString(),
+        });
+        if (!proceed) return;
+      }
       await finishStartedEating(await startPostMealTimer(minutesAgo));
     } catch {
       // startPostMealTimer arms nothing when it throws (schedulePostMealAt rolls
@@ -1050,7 +1108,7 @@ export default function DashboardScreen() {
       // row (lib/services/glucoseEdit.ts).
       await applyGlucoseCorrection(editGlucose, value, period, tags, loggedAt);
       setEditGlucose(null);
-      logEvent("log_edited", { kind: "glucose" });
+      logEvent("log_edited");
       hapticSuccess();
       bumpData();
       return;
@@ -1069,7 +1127,7 @@ export default function DashboardScreen() {
     // Opt-in Apple Health mirror (H1); no-op unless the user enabled it.
     void writeGlucoseToHealthIfEnabled(addedSugar);
     void noteJournalActivity();
-    logEvent("log_added", { kind: "glucose", source: "manual" });
+    logEvent("log_added", { source: "manual" });
     void noteLogAndMaybeReview("log_glucose");
     hapticSuccess();
     // NOTHING is armed here. A reading is a measurement, not a meal: logging a
@@ -1171,13 +1229,16 @@ export default function DashboardScreen() {
 
   // "I started eating" timer running: let the user cancel it in place.
   /** Puts a countdown back exactly where it was, by re-anchoring to its own
-   *  original start. The window length is fixed (POST_MEAL_WINDOW_MIN), so
-   *  restoring the start restores the end to the same millisecond - which is
-   *  what makes an undo here honest rather than approximate. */
+   *  original start AND passing the original span explicitly - the window
+   *  length is no longer a single fixed constant (2.3.2's duration sheet can
+   *  arm a timer with any length), so restoring the start alone is not enough
+   *  to land on the same end; the exact previous span is what makes an undo
+   *  here honest rather than approximate. */
   async function restorePostMealAnchor(previous: PostMealTimerWindow) {
     const outcome = await restartPostMealTimerAt(
       new Date(previous.startedAt),
-      previous.profileId ?? activeProfileIdRef.current ?? undefined
+      previous.profileId ?? activeProfileIdRef.current ?? undefined,
+      Math.round((previous.endsAt - previous.startedAt) / 60_000)
     );
     await refreshPostMealTimer();
     await refreshNextReminder();
@@ -1287,6 +1348,7 @@ export default function DashboardScreen() {
               profile={activeProfile}
               onPress={journalRows.onRowPress}
               onLongPress={journalRows.onRowLongPress}
+              onDelete={journalRows.onRowDelete}
               hasResponse={item.kind === "meal" && journalRows.mealResponseIds.has(item.id)}
               onOpenResponse={journalRows.onRowOpenResponse}
               // `index` is the position WITHIN the day section, so the first row
@@ -1303,6 +1365,7 @@ export default function DashboardScreen() {
       journalRows.mealResponseIds,
       journalRows.onRowPress,
       journalRows.onRowLongPress,
+      journalRows.onRowDelete,
       journalRows.onRowOpenResponse,
     ]
   );
@@ -1614,9 +1677,19 @@ export default function DashboardScreen() {
           value. While the timer runs, the same slot shows the countdown + a small
           cancel action. Hidden before the first entry (and before we know which
           case this is - see isExistingUser above): "I started eating" was the
-          loudest action on a brand-new dashboard, ahead of logging anything. */}
+          loudest action on a brand-new dashboard, ahead of logging anything.
+
+          Idle layout is DELIBERATELY vertical (device QA: "the card is
+          cramped, the button doesn't read as a button, and it overflows on
+          small screens"). The old shape packed an icon, a two-line title, a
+          filled pill and a 34pt round button onto ONE row - German
+          translations and large Dynamic Type had nowhere to go and the row
+          clipped/overflowed. Stacking the pieces (title+pill row -> full-width
+          CTA) gives each its own line; lib/postMealCardLayout.ts's test
+          proves the pill and the CTA's own label both still fit the
+          narrowest supported screen at max Dynamic Type. */}
       {isExistingUser ? (
-      <GlassCard accent style={{ marginBottom: 12, paddingVertical: 12 }}>
+      <GlassCard accent style={{ marginBottom: 12, paddingVertical: 14 }}>
         {postMealTimerForProfile != null ? (
           <PostMealCountdown
             timer={postMealTimerForProfile}
@@ -1633,70 +1706,70 @@ export default function DashboardScreen() {
             onRestart={restartPostMealForEntry}
           />
         ) : (
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
+          <View>
+            {/* Idle layout: the pill is an ACTION label ("pick a length"),
+                not the current value - the countdown length is never saved
+                (see lib/postMealTimer.ts's own doc comment), so there is no
+                value to show here. Tapping it opens the sheet that carries
+                BOTH settings (the length for this one timer, and "when did
+                you actually start eating") as its two sections. */}
+            <View className="flex-row items-center" style={{ gap: 8, marginBottom: 12 }}>
               <Ionicons name="restaurant-outline" size={18} color={THEME.accent} />
-              {/* Title and window on their own lines. As one line it needed
-                  adjustsFontSizeToFit to survive the CTA beside it, which is
-                  iOS-only, so the longer translations were simply clipped on
-                  Android. */}
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
-                  numberOfLines={2}
-                >
-                  {t("dashboard.quickPostMealTitle")}
-                </Text>
-                <Text
-                  style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}
-                  numberOfLines={1}
-                >
-                  {t("dashboard.quickPostMealWindow", { n: POST_MEAL_WINDOW_MIN })}
-                </Text>
-              </View>
-            </View>
-            <View className="flex-row items-center" style={{ gap: 6 }}>
-              <PressableScale
-                onPress={() => void startedEating()}
-                disabled={startingTimer}
-                accessibilityRole="button"
-                accessibilityLabel={t("dashboard.startedEating")}
-                style={{
-                  backgroundColor: THEME.accent,
-                  borderRadius: RADIUS.full,
-                  paddingHorizontal: 16,
-                  paddingVertical: 9,
-                  opacity: startingTimer ? 0.6 : 1,
-                }}
+              <Text
+                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", flex: 1 }}
+                numberOfLines={2}
               >
-                <Text style={{ color: "#00171c", fontWeight: "800", fontSize: 13 }}>
-                  {t("dashboard.startedEating")}
-                </Text>
-              </PressableScale>
-              {/* The one-off length (2.3.0's K2-C). Deliberately smaller and
-                  quieter than the pill beside it: the usual window is one tap,
-                  and this is the exception. */}
+                {t("dashboard.quickPostMealTitle")}
+              </Text>
               <Pressable
-                onPress={() => setLateSheetOpen(true)}
+                onPress={() => setDurationSheetOpen(true)}
                 disabled={startingTimer}
-                hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={t("dashboard.postMealLateA11y")}
+                accessibilityLabel={t("dashboard.postMealDurationA11y")}
                 className="items-center justify-center active:opacity-70"
                 style={{
-                  width: 34,
-                  height: 34,
+                  minHeight: HIT_TARGET,
+                  paddingHorizontal: 12,
                   borderRadius: RADIUS.full,
                   borderWidth: 1,
                   borderColor: THEME.border,
                   opacity: startingTimer ? 0.6 : 1,
                 }}
               >
-                {/* "I am logging this late", not "pick a length": a clock
-                    turning back reads as the meal already having happened. */}
-                <Ionicons name="time-outline" size={16} color={THEME.accent} />
+                <Text
+                  numberOfLines={1}
+                  style={{ color: THEME.accent, fontSize: 13, fontWeight: "800" }}
+                >
+                  {t("dashboard.postMealDurationPick")}
+                </Text>
               </Pressable>
             </View>
+
+            <PressableScale
+              onPress={() => void startedEating()}
+              disabled={startingTimer}
+              accessibilityRole="button"
+              accessibilityLabel={t("dashboard.startedEating")}
+              style={[
+                {
+                  width: "100%",
+                  minHeight: 48,
+                  borderRadius: RADIUS.full,
+                  backgroundColor: THEME.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: startingTimer ? 0.6 : 1,
+                },
+                ELEVATION.card,
+              ]}
+            >
+              <Text
+                numberOfLines={1}
+                style={{ color: "#00171c", fontWeight: "800", fontSize: 15 }}
+              >
+                {t("dashboard.startedEating")}
+              </Text>
+            </PressableScale>
           </View>
         )}
       </GlassCard>
@@ -2108,34 +2181,36 @@ export default function DashboardScreen() {
           setEditGlucose(null);
         }}
         onSubmit={submitGlucose}
-      />
-
-      <InjectionEditSheet
-        visible={editInjection != null}
-        injection={editInjection}
-        onClose={() => setEditInjection(null)}
-        onSaved={() => {
-          setEditInjection(null);
-          bumpData();
+        // Same delete the full journal screen offers (app/journal.tsx). The
+        // sheet only draws it while editing an existing reading, so passing it
+        // here does not put a Delete on the new-entry path this same instance
+        // serves. The sheet's own confirm has already run by the time this
+        // fires; deleteEntry then does the undo-toast delete every other path
+        // uses.
+        onDelete={() => {
+          const target = editGlucose;
+          setSheetOpen(false);
+          setEditGlucose(null);
+          if (target) void journalRows.deleteEntry(target);
         }}
       />
 
-      <MedEditSheet
-        visible={editMed != null}
-        med={editMed}
-        onClose={() => setEditMed(null)}
-        onSaved={() => {
-          setEditMed(null);
-          bumpData();
-        }}
-      />
+      {/* The injection and medication edit sheets belong to useJournalRows: it
+          owns the state a row tap sets, so only the copies it hands back can
+          ever open. This screen used to render its OWN pair against local state
+          nothing assigned - dead overlays, while the hook's real ones were never
+          mounted here at all, so tapping an injection or medication row on the
+          dashboard silently did nothing. app/journal.tsx always rendered
+          `rows.sheets`; this is the same line, and it brings the per-sheet
+          Delete with it. */}
+      {journalRows.sheets}
 
-      <PostMealLateSheet
-        visible={lateSheetOpen}
-        onClose={() => setLateSheetOpen(false)}
+      <PostMealDurationSheet
+        visible={durationSheetOpen}
+        onClose={() => setDurationSheetOpen(false)}
         onStart={(minutesAgo) => void startedEating(minutesAgo)}
         onAddReading={() => {
-          setLateSheetOpen(false);
+          setDurationSheetOpen(false);
           openLogger("post_meal_2h");
         }}
       />

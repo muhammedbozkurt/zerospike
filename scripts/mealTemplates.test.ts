@@ -44,6 +44,7 @@ import {
   templateItemsFromMeals,
   templateNameTaken,
   templatePortionG,
+  templateUsageAfterDelete,
 } from "../lib/mealTemplates";
 import type { ItemFood, TemplateItemWithFood } from "../lib/mealTemplates";
 import type { MealTemplate, MealTemplateItem } from "../lib/db/types";
@@ -668,6 +669,89 @@ section("G. editor helpers (name fold, portion edit, link portions)");
   eq("so its carbs survive", fromMeals[2].carbs_g, 17);
   eq("the order eaten is the order stored", fromMeals[1].sort_order, 1);
   eq("nothing is prefilled from nothing", templateItemsFromMeals([]).length, 0);
+}
+
+// ── P17: usage counters after the meals logged from a template are deleted ────
+{
+  const T1 = "2027-03-01T08:00:00.000Z";
+  const T2 = "2027-03-02T12:30:00.000Z";
+  const T3 = "2027-03-03T19:15:00.000Z";
+
+  // The plain case: one of three logged meals is deleted.
+  const one = templateUsageAfterDelete({
+    useCount: 3,
+    deletedCount: 1,
+    remainingLoggedAt: [T1, T2],
+  });
+  eq("use_count comes down by the meals removed", one.useCount, 2);
+  eq("last_used_at is the newest meal STILL recorded", one.lastUsedAt, T2);
+
+  // Recomputed, not rolled back: deleting an OLD meal leaves the newest alone.
+  eq(
+    "deleting an older meal leaves last_used_at on the newest",
+    templateUsageAfterDelete({ useCount: 3, deletedCount: 1, remainingLoggedAt: [T2, T3] }).lastUsedAt,
+    T3
+  );
+  // Order of the remaining rows must not matter.
+  eq(
+    "the newest wins whatever order the rows come in",
+    templateUsageAfterDelete({ useCount: 3, deletedCount: 1, remainingLoggedAt: [T3, T1, T2] }).lastUsedAt,
+    T3
+  );
+
+  // Nothing left: the template reads exactly like one that was never used.
+  const none = templateUsageAfterDelete({ useCount: 1, deletedCount: 1, remainingLoggedAt: [] });
+  eq("no meals left -> use_count 0", none.useCount, 0);
+  eq("no meals left -> last_used_at null", none.lastUsedAt, null);
+
+  // The floor. Counters can predate deletes they were never adjusted for, so
+  // this must never produce a negative count.
+  eq(
+    "use_count never goes below zero",
+    templateUsageAfterDelete({ useCount: 1, deletedCount: 4, remainingLoggedAt: [] }).useCount,
+    0
+  );
+  eq(
+    "a stored count of zero stays zero",
+    templateUsageAfterDelete({ useCount: 0, deletedCount: 1, remainingLoggedAt: [] }).useCount,
+    0
+  );
+  eq(
+    "a corrupted count falls back to zero rather than NaN",
+    templateUsageAfterDelete({ useCount: NaN, deletedCount: 1, remainingLoggedAt: [] }).useCount,
+    0
+  );
+
+  // Several meals from the same template removed in one delete.
+  eq(
+    "two meals removed take two off the count",
+    templateUsageAfterDelete({ useCount: 5, deletedCount: 2, remainingLoggedAt: [T1] }).useCount,
+    3
+  );
+
+  // A moment that will not parse must not win the comparison.
+  eq(
+    "an unreadable logged_at cannot become last_used_at",
+    templateUsageAfterDelete({
+      useCount: 3,
+      deletedCount: 1,
+      remainingLoggedAt: ["not a date", T1],
+    }).lastUsedAt,
+    T1
+  );
+  eq(
+    "only unreadable moments left -> null",
+    templateUsageAfterDelete({ useCount: 2, deletedCount: 1, remainingLoggedAt: ["nope"] }).lastUsedAt,
+    null
+  );
+
+  // The stored string is handed back verbatim, so the column's format survives.
+  const offset = "2027-03-04T09:00:00+03:00";
+  eq(
+    "the winning moment is returned as stored, not reformatted",
+    templateUsageAfterDelete({ useCount: 2, deletedCount: 1, remainingLoggedAt: [T1, offset] }).lastUsedAt,
+    offset
+  );
 }
 
 // ── summary ───────────────────────────────────────────────────────────────────

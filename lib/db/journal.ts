@@ -59,6 +59,11 @@ export interface InjectionEntry {
   /** 'manual', or 'calculator' for the bolus row a meal log wrote for you. */
   source: string;
   tags: LogTag[];
+  /** Which product this entry actually used (schema v22, see
+   *  ../insulinCatalog). This row's OWN copy, independent of the profile's
+   *  current basal_insulin_id / bolus_insulin_id. */
+  insulin_product_id: string | null;
+  insulin_product_other: string | null;
 }
 
 /**
@@ -113,6 +118,9 @@ interface FeedRow {
   note: string | null;
   // med
   med_name: string | null;
+  // injection (schema v22)
+  insulin_product_id: string | null;
+  insulin_product_other: string | null;
 }
 
 /**
@@ -179,6 +187,8 @@ export async function getJournal(
         note: r.note,
         source: r.source ?? "manual",
         tags: parseTags(r.tags),
+        insulin_product_id: r.insulin_product_id,
+        insulin_product_other: r.insulin_product_other,
       };
       return entry;
     }

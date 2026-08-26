@@ -31,6 +31,8 @@ interface TourStep {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   body: string;
+  /** Second, quieter line. Only step 1 has one. */
+  note?: string;
   cta: string;
 }
 
@@ -47,6 +49,12 @@ function AlarmTourScreen() {
       icon: "alarm-outline",
       title: t("alarmTour.step1Title"),
       body: t("alarmTour.step1Body"),
+      // A system alarm stops on its own if nobody stops it, exactly like the
+      // Clock app's; AlarmKit gives no way to change that and no callback when
+      // it happens. Saying so here is the only honest place: the reminder that
+      // rang and went unanswered leaves no trace behind, and a user who does
+      // not know that reads the silence as the alarm having failed.
+      note: t("alarmTour.step1Note"),
       cta: t("alarmTour.next"),
     },
     {
@@ -128,6 +136,13 @@ function AlarmTourScreen() {
             <Text style={{ color: THEME.ink, fontSize: 14, lineHeight: 21, opacity: 0.9 }}>
               {step.body}
             </Text>
+            {step.note ? (
+              <Text
+                style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginTop: 8 }}
+              >
+                {step.note}
+              </Text>
+            ) : null}
             {stepIdx === 1 && denied ? (
               <Pressable onPress={() => Linking.openSettings()} className="mt-3">
                 <View
