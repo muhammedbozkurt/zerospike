@@ -38,6 +38,7 @@ import {
 } from "../lib/numberInput";
 import { GLUCOSE_RICH, INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
+import { HEALTH_NAME } from "../lib/services/health";
 import { GradientCTA } from "./rich/GradientCTA";
 import { PressableScale } from "../lib/theme/motion";
 import { hapticSelect } from "../lib/haptics";
@@ -286,7 +287,7 @@ export function GlucoseInputSheet({
     const hasHealthNote = edit.healthkit_uuid != null;
     const ok = await confirm({
       message: hasHealthNote
-        ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote")}`
+        ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote", { health: HEALTH_NAME })}`
         : t("journal.deleteEntry"),
       confirmLabel: t("common.delete"),
       cancelLabel: t("common.cancel"),

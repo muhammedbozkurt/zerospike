@@ -58,3 +58,6 @@ zerospike-store*/
 docs/
 HUMAN-TODO.md
 .tmp*
+
+# Wear OS companion — a fully separate Gradle project EAS never builds
+/wear

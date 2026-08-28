@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zerospike</string>
+    <string name="last_reading_label">Última medición</string>
+    <string name="next_reminder_label">Próximo recordatorio</string>
+    <string name="post_meal_label">Control posprandial</string>
+    <string name="no_data">Sin registros</string>
+    <string name="none">Ninguno</string>
+</resources>

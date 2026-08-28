@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zerospike</string>
+    <string name="last_reading_label">Son ölçüm</string>
+    <string name="next_reminder_label">Sonraki hatırlatıcı</string>
+    <string name="post_meal_label">Tokluk ölçümü</string>
+    <string name="no_data">Kayıt yok</string>
+    <string name="none">Yok</string>
+</resources>

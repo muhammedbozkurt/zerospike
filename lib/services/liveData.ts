@@ -59,6 +59,10 @@ export const ANDROID_QUICK_ADD_WIDGET_NAME = "ZerospikeQuickAdd";
  *  twin of the iOS ZerospikeReading widget: one small tile that pins the LAST
  *  reading rather than the rolling average the glance widget shows. */
 export const ANDROID_READING_WIDGET_NAME = "ZerospikeReading";
+/** ANDROID_LOG_GLUCOSE_WIDGET_NAME / ANDROID_LOG_MEAL_WIDGET_NAME /
+ *  ANDROID_TIMER_WIDGET_NAME live in androidWidget.ts (single source of
+ *  truth) and are re-imported where needed below, so the two files can never
+ *  drift apart on these three names. */
 
 export type ReminderKind = "postMeal" | "basal" | "med" | "glucose" | "custom";
 
@@ -341,6 +345,27 @@ export async function computeLiveData(
 }
 
 /**
+ * Best-effort relay to a paired watch app: an Apple Watch on iOS, a Wear OS
+ * watch on Android. Both platform branches below call this SAME function
+ * (see modules/zerospike-watch-bridge) instead of each carrying their own
+ * copy of the try/catch, so the two native sides can never drift out of
+ * sync on how a missing module or an unpaired watch is silenced. The watch
+ * cannot read the iOS App Group or the Android AsyncStorage copy, so this
+ * push is its only path to the data. Optional and best-effort: no watch, no
+ * companion app, or the module not linked yet (Expo Go / pre-prebuild
+ * build) must never affect the phone. On Android, an unpaired watch is
+ * caught natively (Kotlin DataClient returns false) - no extra JS check.
+ */
+async function pushToPairedWatch(json: string): Promise<void> {
+  try {
+    const { pushLiveDataToWatch } = await import("../../modules/zerospike-watch-bridge");
+    pushLiveDataToWatch(json);
+  } catch {
+    // module not linked (Expo Go / pre-prebuild build) - silent no-op
+  }
+}
+
+/**
  * Pushes the snapshot to the native surfaces. Separate from the AsyncStorage
  * write so a missing native module can never lose the in-app copy.
  */
@@ -355,25 +380,26 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
     } catch {
       // Expo Go / pre-prebuild build: no App Group to write to.
     }
-    // R10 FAZ 3: also relay to a paired Apple Watch. The watch cannot read the
-    // App Group above, so this is its only path to the data (see
-    // modules/zerospike-watch-bridge). Optional and best-effort: no watch, no
-    // companion app, or the module not linked yet must never affect the phone.
-    try {
-      const { pushLiveDataToWatch } = await import("../../modules/zerospike-watch-bridge");
-      pushLiveDataToWatch(json);
-    } catch {
-      // module not linked (Expo Go / pre-prebuild build) - silent no-op
-    }
+    // R10 FAZ 3: also relay to a paired Apple Watch (see pushToPairedWatch).
+    await pushToPairedWatch(json);
     return;
   }
   if (Platform.OS === "android") {
     try {
       const { requestWidgetUpdate } = await import("react-native-android-widget");
-      const { buildZerospikeWidget, buildQuickAddWidget, buildReadingWidget } =
-        await import("./androidWidget");
+      const {
+        buildZerospikeWidget,
+        buildQuickAddWidget,
+        buildReadingWidget,
+        buildLogGlucoseWidget,
+        buildLogMealWidget,
+        buildTimerWidget,
+        ANDROID_LOG_GLUCOSE_WIDGET_NAME,
+        ANDROID_LOG_MEAL_WIDGET_NAME,
+        ANDROID_TIMER_WIDGET_NAME,
+      } = await import("./androidWidget");
       const data = JSON.parse(json) as LiveData;
-      // allSettled, not a chain of awaits: the three widgets are independent
+      // allSettled, not a chain of awaits: the six widgets are independent
       // surfaces and each is optional (the user may have placed none of them).
       // Chained, one rejection - a name the installed launcher does not know, a
       // widget host that went away - swallowed the redraw of every widget after
@@ -393,10 +419,30 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
           widgetName: ANDROID_READING_WIDGET_NAME,
           renderWidget: (info) => buildReadingWidget(data, info),
         }),
+        requestWidgetUpdate({
+          widgetName: ANDROID_LOG_GLUCOSE_WIDGET_NAME,
+          renderWidget: (info) => buildLogGlucoseWidget(data, info),
+        }),
+        requestWidgetUpdate({
+          widgetName: ANDROID_LOG_MEAL_WIDGET_NAME,
+          renderWidget: (info) => buildLogMealWidget(data, info),
+        }),
+        // The one most likely to go stale otherwise (C1): the countdown
+        // widget's content depends on a running post-meal timer, which is
+        // armed/ended from lib/services/notifications.ts, not from a log
+        // write - without this call it only ever redrew on its own 15-minute
+        // period (app.json) or a manual tap.
+        requestWidgetUpdate({
+          widgetName: ANDROID_TIMER_WIDGET_NAME,
+          renderWidget: (info) => buildTimerWidget(data, info),
+        }),
       ]);
     } catch {
       // No widget placed on the home screen, or the module is not linked yet.
     }
+    // Also relay to a paired Wear OS watch (see pushToPairedWatch). Outside
+    // the try/catch above so a widget-side failure can never skip it.
+    await pushToPairedWatch(json);
   }
 }
 
@@ -467,7 +513,15 @@ export async function syncLiveData(
     //
     // Only for a window this profile actually owns - the same lock computeLiveData
     // applies - and never a start: a reading is not a meal.
-    if (Platform.OS === "ios" && data.postMealEndsAt != null) {
+    //
+    // C1: Android now carries the same running-countdown surface (a
+    // notification, not a Live Activity - see modules/zerospike-live-activity's
+    // Android side), so it needs the exact same reading refresh iOS always
+    // got; only web (untargeted by this app) is excluded.
+    if (
+      (Platform.OS === "ios" || Platform.OS === "android") &&
+      data.postMealEndsAt != null
+    ) {
       void import("../../modules/zerospike-live-activity").then((m) =>
         m.updatePostMealActivityReading({
           lastReading: data.lastGlucoseDisplay,

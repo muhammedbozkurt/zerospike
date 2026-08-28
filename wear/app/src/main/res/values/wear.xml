@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto-detected by CapabilityClient at runtime from this exact array name -
+     no manifest meta-data needed. The phone side checks for this capability
+     to know a Wear OS companion is installed before it bothers relaying data. -->
+<resources>
+    <string-array name="android_wear_capabilities">
+        <item>zerospike_wear_app</item>
+    </string-array>
+</resources>

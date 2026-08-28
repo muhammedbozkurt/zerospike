@@ -61,6 +61,7 @@ import { Stepper } from "../components/Stepper";
 import { InsulinProductPicker } from "../components/InsulinProductPicker";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logEvent } from "../lib/analytics";
+import { HEALTH_NAME } from "../lib/services/health";
 import { hapticSelect } from "../lib/haptics";
 import { Button, SectionLabel } from "../components/ui";
 import { AcceptCheck } from "../components/form";
@@ -165,6 +166,11 @@ function screenshotDiabetes(param?: string): DiabetesOption | null {
 
 export default function OnboardingScreen() {
   const { t } = useTranslation();
+  // Android has no lock-screen widgets and no standalone injection widget
+  // (see widget-guide.tsx's Android section): the "widget" step's preview
+  // below drops both for Android instead of showing surfaces that do not
+  // exist there.
+  const ios = Platform.OS === "ios";
   const insets = useSafeAreaInsets();
   const { columnPad } = useLayout();
   const router = useRouter();
@@ -1091,7 +1097,45 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
-      case "widget":
+      case "widget": {
+        // Shared between both platform branches below so the home-screen
+        // widget mock is not duplicated: iOS keeps it beside the lock-screen
+        // shapes, Android (no lock-screen widgets - see widget-guide.tsx)
+        // shows it alone.
+        const homeWidgetCard = (
+          <View
+            style={{
+              width: 108,
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: THEME.glass,
+              paddingHorizontal: 10,
+              paddingVertical: 9,
+            }}
+          >
+            <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
+              {upper(t("widget.avgGlucose"))}
+            </Text>
+            <View className="flex-row items-baseline" style={{ gap: 3 }}>
+              <Text style={{ color: GLUCOSE_RICH.target, fontSize: 26, fontWeight: "800" }}>
+                112
+              </Text>
+              <Text className="text-mut text-[10px]">mg/dL</Text>
+            </View>
+            {/* The reminder line the home families gained: name first, with
+                the glyph for how it will actually be delivered. */}
+            <View className="flex-row items-center mt-1.5" style={{ gap: 3 }}>
+              <Ionicons name="alarm-outline" size={9} color={THEME.muted} />
+              <Text className="text-mut text-[9px] font-bold flex-1" numberOfLines={1}>
+                {t("reminders.presetMorning")}
+              </Text>
+            </View>
+            <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "800", marginTop: 1 }}>
+              08:00
+            </Text>
+          </View>
+        );
         return (
           <FadeSlideIn delay={optDelay(0)}>
             {/* The numbers below are drawn, not the user's own records, so they
@@ -1152,107 +1196,82 @@ export default function OnboardingScreen() {
                 have pushed the footer off a small screen. The lock shapes are
                 44pt tall, the smallest size at which the three silhouettes stay
                 tellable apart. */}
-            <View className="flex-row mt-3" style={{ gap: 12 }}>
-              <View
-                style={{
-                  width: 108,
-                  borderRadius: 18,
-                  borderWidth: 1,
-                  borderColor: THEME.border,
-                  backgroundColor: THEME.glass,
-                  paddingHorizontal: 10,
-                  paddingVertical: 9,
-                }}
-              >
-                <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
-                  {upper(t("widget.avgGlucose"))}
-                </Text>
-                <View className="flex-row items-baseline" style={{ gap: 3 }}>
-                  <Text style={{ color: GLUCOSE_RICH.target, fontSize: 26, fontWeight: "800" }}>
-                    112
-                  </Text>
-                  <Text className="text-mut text-[10px]">mg/dL</Text>
-                </View>
-                {/* The reminder line the home families gained: name first, with
-                    the glyph for how it will actually be delivered. */}
-                <View className="flex-row items-center mt-1.5" style={{ gap: 3 }}>
-                  <Ionicons name="alarm-outline" size={9} color={THEME.muted} />
-                  <Text className="text-mut text-[9px] font-bold flex-1" numberOfLines={1}>
-                    {t("reminders.presetMorning")}
-                  </Text>
-                </View>
-                <Text
-                  style={{ color: THEME.accent, fontSize: 11, fontWeight: "800", marginTop: 1 }}
-                >
-                  08:00
-                </Text>
-              </View>
+            {ios ? (
+              <View className="flex-row mt-3" style={{ gap: 12 }}>
+                {homeWidgetCard}
 
-              {/* Lock screen: the three accessory shapes, in the order the OS
-                  gallery offers them. */}
-              <View style={{ flex: 1, gap: 6 }}>
-                <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
-                  {upper(t("widgetGuide.lockTitle"))}
-                </Text>
-                <View className="flex-row items-center" style={{ gap: 8 }}>
-                  {/* Circular: one number, no room for a label. */}
-                  <View
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 22,
-                      borderWidth: 1,
-                      borderColor: THEME.border,
-                      backgroundColor: THEME.glass,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>112</Text>
-                    <Ionicons name="water" size={7} color={THEME.muted} />
+                {/* Lock screen: the three accessory shapes, in the order the OS
+                    gallery offers them. */}
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
+                    {upper(t("widgetGuide.lockTitle"))}
+                  </Text>
+                  <View className="flex-row items-center" style={{ gap: 8 }}>
+                    {/* Circular: one number, no room for a label. */}
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 22,
+                        borderWidth: 1,
+                        borderColor: THEME.border,
+                        backgroundColor: THEME.glass,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
+                        112
+                      </Text>
+                      <Ionicons name="water" size={7} color={THEME.muted} />
+                    </View>
+                    {/* Inline: a single tinted line. */}
+                    <View
+                      className="flex-row items-center flex-1"
+                      style={{
+                        gap: 4,
+                        height: 44,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: THEME.border,
+                        backgroundColor: THEME.glass,
+                        paddingHorizontal: 8,
+                      }}
+                    >
+                      <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
+                      <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
+                        {t("reminders.presetMorning")}
+                      </Text>
+                      <Text className="text-ink text-[10px] font-bold">08:00</Text>
+                    </View>
                   </View>
-                  {/* Inline: a single tinted line. */}
+                  {/* Rectangular: name + time on top, the reading under it. */}
                   <View
-                    className="flex-row items-center flex-1"
                     style={{
-                      gap: 4,
-                      height: 44,
                       borderRadius: 12,
                       borderWidth: 1,
                       borderColor: THEME.border,
                       backgroundColor: THEME.glass,
                       paddingHorizontal: 8,
+                      paddingVertical: 6,
                     }}
                   >
-                    <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
-                    <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
-                      {t("reminders.presetMorning")}
-                    </Text>
-                    <Text className="text-ink text-[10px] font-bold">08:00</Text>
+                    <View className="flex-row items-center" style={{ gap: 4 }}>
+                      <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
+                      <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
+                        {t("reminders.presetMorning")}
+                      </Text>
+                      <Text className="text-ink text-[10px] font-bold">08:00</Text>
+                    </View>
+                    <Text className="text-mut text-[10px] font-semibold mt-0.5">112 mg/dL</Text>
                   </View>
-                </View>
-                {/* Rectangular: name + time on top, the reading under it. */}
-                <View
-                  style={{
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: THEME.border,
-                    backgroundColor: THEME.glass,
-                    paddingHorizontal: 8,
-                    paddingVertical: 6,
-                  }}
-                >
-                  <View className="flex-row items-center" style={{ gap: 4 }}>
-                    <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
-                    <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
-                      {t("reminders.presetMorning")}
-                    </Text>
-                    <Text className="text-ink text-[10px] font-bold">08:00</Text>
-                  </View>
-                  <Text className="text-mut text-[10px] font-semibold mt-0.5">112 mg/dL</Text>
                 </View>
               </View>
-            </View>
+            ) : (
+              // Android has no lock-screen widgets (see widget-guide.tsx's
+              // Android section), so this step shows only the home-screen mock.
+              <View className="mt-3">{homeWidgetCard}</View>
+            )}
 
             {/* Mini widgets: 2.3.1's four single-purpose tiles, drawn as the
                 icon-only accessoryCircular shape above actually renders on the
@@ -1278,13 +1297,15 @@ export default function OnboardingScreen() {
                 {[
                   { key: "glucose", icon: "water" as const },
                   { key: "meal", icon: "restaurant" as const },
-                  // Insulin tile only for a profile that actually uses
-                  // insulin - this step runs AFTER the treatment question, so
-                  // hasInsulin is already settled. Not hidden, not rendered:
-                  // the same "no leak for a no-insulin profile" rule
+                  // Insulin tile only on iOS, and only for a profile that
+                  // actually uses insulin - this step runs AFTER the treatment
+                  // question, so hasInsulin is already settled. Not hidden, not
+                  // rendered: the same "no leak for a no-insulin profile" rule
                   // SmallWidgets.swift's smallInjectionAction enforces on the
-                  // real widget.
-                  ...(hasInsulin
+                  // real widget. Android has no standalone injection widget at
+                  // all (only a tile inside the Quick Add widget), so this mock
+                  // never offers one there.
+                  ...(ios && hasInsulin
                     ? [{ key: "insulin", icon: "medical" as const }]
                     : []),
                   { key: "timer", icon: "timer-outline" as const },
@@ -1309,10 +1330,11 @@ export default function OnboardingScreen() {
             </View>
 
             <Text className="text-ink text-sm leading-6 mt-3">
-              {t("onboarding.widgetIntro")}
+              {ios ? t("onboarding.widgetIntro") : t("onboarding.widgetIntroAndroid")}
             </Text>
           </FadeSlideIn>
         );
+      }
 
       case "notify":
         return (
@@ -1361,7 +1383,7 @@ export default function OnboardingScreen() {
             <View className="mt-3 flex-row items-start rounded-2xl border border-hair bg-glass p-4">
               <Ionicons name="fitness-outline" size={18} color={THEME.accent} />
               <Text className="text-mut text-sm leading-6 ml-3 flex-1">
-                {t("onboarding.permHealth")}
+                {t("onboarding.permHealth", { health: HEALTH_NAME })}
               </Text>
             </View>
           </FadeSlideIn>

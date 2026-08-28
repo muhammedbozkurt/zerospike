@@ -7,7 +7,7 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
 ve `package.json`.
 
-## 2.3.1 (build 65 / versionCode 60)
+## 2.3.1 (build 65 / versionCode 65)
 
 ### Tokluk sayacı
 - Kart iki satıra indi: başlık ve "özel süre seç" butonu, altında tam genişlik
@@ -26,6 +26,10 @@ ve `package.json`.
 - Seçilen süre `endsAt` üzerinden Live Activity'ye ve widget'lara yansır.
   Çalışan bir sayacı aynı öğüne yeniden çapalamak süresini korur, 120'ye
   düşürmez. Live Activity genişletilmedi, yalnız tokluk sayacı için kalır.
+- Android'de sayaç artık kalıcı bir bildirim olarak da görünüyor: sessiz, titreşimsiz
+  yeni bir kanaldan (`postmeal-v1`) geliyor ve kapatılamıyor ama dokunulmadıkça
+  ekranı meşgul etmiyor. iOS'ta bu görevi zaten Live Activity görüyor; Android'in
+  kilit ekranı eşdeğeri yok.
 
 ### Klavye
 - Alt kenara yaslı sheet'ler için ortak kabuk: `components/SheetShell.tsx` ve
@@ -72,6 +76,20 @@ ve `package.json`.
   15 dakikalık pencere.
 - İzin reddi ile veri yokluğu tek nötr metinde ayrıştırıldı; Health'e yazma
   başarısızlığı sessiz kalmıyor; yazma sonrası kimlik saklanamazsa iz bırakılıyor.
+
+### Health Connect (Android)
+- Android'de sağlık verisi köprüsü Health Connect ile geldi: son 30 gün, en
+  fazla 300 örnek olacak şekilde şeker okumaları içeri aktarılıyor; kullanıcı
+  elle girdiği ölçümleri Health Connect'e yazmayı açarsa oraya da yazılıyor.
+  Apple Health tarafındaki davranış değişmedi.
+- `lib/services/health.ts` sağlayıcı mimarisine ayrıldı: iOS ve Android artık
+  kendi dosyasında (`healthAppleKit.ts`, `healthConnect.ts`), geliştirme modu
+  kendi sahte sağlayıcısında (`healthMock.ts`); ortak arayüz sayesinde geri
+  kalan uygulama hangi platformda olduğunu bilmeden aynı fonksiyonları çağırır.
+- Sağlık yüzeyleri Android'de açıldı: ayarlar veri ekranı, ana ekran hızlı
+  erişim kartı, kurulum akışındaki sağlık adımı ve paywall'daki özellik satırı
+  artık Android'de de görünüyor. İçgörüler'deki sağlık özeti kartı iOS'ta
+  kalıyor; Health Connect'te insülin veri türü yok.
 
 ### Günlük ve silme
 - Sola kaydırarak silme ve düzenleme ekranında Sil butonu; ikisi de önce sorar.
@@ -129,7 +147,9 @@ ve `package.json`.
   formunu değil: widget dokunuşu geldiğinde henüz bölge seçilmemiştir.
 - Dil değiştirildiğinde widget anlık görüntüsü yeniden yazılıyor. Daha önce
   yazılmadığı için kilit ekranı eski dilde kalıyordu.
-- Android'e küçük son okuma widget'ı eklendi. Health Connect eklenmedi.
+- Android'e üç yeni ana ekran widget'ı eklendi: şeker gir, yemek gir, tokluk
+  sayacı. Küçük son okuma widget'ı zaten vardı, üçü onun yanına katılıyor;
+  Android'de kilit ekranı ailesi yok.
 - "Tanı yok" modunda insülin widget'ı nötr bir hâle düşer, insülin sözcüğü
   hiçbir yüzeyde basılmaz.
 
@@ -155,6 +175,18 @@ ve `package.json`.
   (`lib/widgetRoute.ts` + kök düzen). Savunmacıdır: uygulama arka plandayken
   gelen bağlantının hedefe ulaşmama gözlemi cihazda kanıtlanamadı, kanca
   yönlendirme zaten çalışıyorsa görünmez kalır.
+- Android'de kullanılmayan izinler kaldırıldı: expo-contacts ve expo-camera'nın
+  varsayılan eklediği WRITE_CONTACTS ve RECORD_AUDIO izinleri manifestten
+  çıkarıldı, uygulama hiçbirini kullanmıyor. USE_EXACT_ALARM izni engellendi;
+  mevcut SCHEDULE_EXACT_ALARM zaten yeterli.
+- Android'de hatırlatıcılar artık gerçek alarm olarak çalabiliyor: tam ekran,
+  sessizdeyken de duyulur, cihaz yeniden başlatılınca geri kurulur. Tam ekran
+  bildirim izni çalışma zamanında isteniyor; verilmezse hatırlatıcı sessizce
+  kaybolmaz, normal bildirime düşer (`lib/alarmSelect.ts` üçlü AND). Hiçbir alarm
+  bir glukoz değerinden, eğilimden veya eşikten tetiklenmez.
+- Wear OS için telefon tarafı köprü ve ayrı bir saat uygulaması projesi
+  eklendi; saat uygulaması henüz mağazada yayında değil, ayrı bir paket olarak
+  yüklenecek.
 
 ## Önceki sürümler
 

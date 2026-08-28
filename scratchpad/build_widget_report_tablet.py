@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""03-widget + 06-report on the two Android tablet canvases.
+"""06-report on the two Android tablet canvases. (03-widget moved to build_widget_android.py.)
 
 Both panels are synthetic (no capture exists for either), so unlike
 build_android_tablet.py this file draws its own scene instead of reframing an
@@ -11,7 +11,6 @@ from compose import (
     new_canvas_with_header, draw_chip_at, draw_device, font, F_BOLD, measure_chip,
     fit_header_and_chip, verify_output, align_for,
 )
-from build_widget_android import lockscreen_scene_android
 from build_report import draw_back_page, draw_front_page, soft_shadow_paste, report_data
 from i18n_copy import WIDGET_STRINGS, REPORT_STRINGS, LANGS, frame_copy
 
@@ -46,39 +45,13 @@ def build_all(lang):
         gap = int(cfg_["margin_x"] * 0.4)
         pad = int(cfg_["margin_x"] * 0.15)
 
-        # ---- 03-widget ----
-        headline, sub, chip_text = frame_copy(lang, "03-widget", platform="android")
-        cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
-
-        budget_h = SAFE_BOTTOM - DEV_Y
-        inner_h_max = budget_h - 2 * BEZEL
-        inner_w_needed = inner_h_max / cfg_["content_aspect"]
-        dev_w = min(DEV_W_STD, int(inner_w_needed + 2 * BEZEL))
-        inner_w = dev_w - 2 * BEZEL
-        inner_h = int(inner_w * cfg_["content_aspect"])
-        dev_x = (CANVAS[0] - dev_w) // 2
-
-        f_chip = font(F_BOLD, cfg["chip_size"], lang=lang)
-        chip_w, chip_h, *_ = measure_chip(probe, chip_text, f_chip, None)
-        cfg["sub_max_lines"], chip_y, fits = fit_header_and_chip(cfg, chip_h, DEV_Y, gap, pad)
-        if not fits:
-            print(f"  WARN [{lang}] {cfg_['name']} 03-widget chip overlaps the header band")
-
-        canvas, draw, y_after = new_canvas_with_header(cfg)
-        scene = lockscreen_scene_android(inner_w, inner_h, "9:41", WS["date"], 123, S=WS, lang=lang)
-        draw_device(canvas, scene, dev_x, DEV_Y, dev_w, BEZEL, RADIUS)
-        d2 = ImageDraw.Draw(canvas)
-        cx = dev_x + dev_w // 2
-        cy = DEV_Y + BEZEL + int(BEZEL * 1.6)
-        r = max(6, int(BEZEL * 0.6))
-        d2.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(3, 3, 4))
-        chip_x = (CANVAS[0] - chip_w) // 2 if cfg["align"] == "center" else CANVAS[0] - cfg["margin_x"] - chip_w
-        draw_chip_at(canvas, chip_text, chip_x, chip_y, f_chip, dot=(46, 230, 255))
-
-        out_path = os.path.join(OUT, "03-widget.png")
-        canvas.save(out_path)
-        print("wrote", out_path, canvas.size)
-        written.append((out_path, CANVAS))
+        # ---- 03-widget: RETIRED HERE ----
+        # 03-widget for ALL THREE Android canvases (phone, tablet7, tablet10) is
+        # produced by build_widget_android.py now, from home_widgets_scene_android.
+        # The block that used to sit here drew lockscreen_scene_android, which is an
+        # iOS lock screen: Android has no lock-screen widgets, and app/widget-guide.tsx
+        # deliberately hides that section on Android. Re-running it would have silently
+        # overwritten the correct panel with a feature the app does not have.
 
         # ---- 06-report ----
         headline, sub, chip_text = frame_copy(lang, "06-report", platform="android")

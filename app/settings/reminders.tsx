@@ -365,6 +365,7 @@ export default function RemindersScreen() {
       return masterEnabled ? "blocked" : "masterOff";
     }
     if (row.alarm_enabled !== 1) return "notification";
+    if (!alarmKitAvailable) return "notification";
     return alarmModeOf({
       alarmEnabled: true,
       alarmKitAvailable,

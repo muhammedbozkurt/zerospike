@@ -17,6 +17,14 @@ import { GLUCOSE_RICH, THEME } from "../theme/tokens";
 import { VERY_HIGH_MGDL } from "../glucose";
 import { formatTimeForLang } from "../format";
 
+/** Registered names of the three D1 widgets (app.json's react-native-android-
+ *  widget config; also the iOS twins' own `kind` strings in targets/widget/
+ *  SmallWidgets.swift, so the two platforms agree on identity). liveData.ts
+ *  does not export these yet - see the note on widgetTaskHandler below. */
+export const ANDROID_LOG_GLUCOSE_WIDGET_NAME = "ZerospikeLogGlucose";
+export const ANDROID_LOG_MEAL_WIDGET_NAME = "ZerospikeLogMeal";
+export const ANDROID_TIMER_WIDGET_NAME = "ZerospikeTimer";
+
 /**
  * The Android home-screen widgets: the glance widget (last reading + time left
  * on the next reminder) and the Quick Add widget (deep-link shortcuts into the
@@ -33,15 +41,24 @@ import { formatTimeForLang } from "../format";
 
 /** Deep links the widgets open (scheme registered in app.json; expo-router
  *  resolves the paths). Kept identical, string for string, to the iOS side's
- *  own list in targets/widget/DeepLinks.swift, which is the SUPERSET: it also
- *  carries the reminders screen, the post-meal reading sheet and the post-meal
- *  countdown's start surface, none of which an Android widget links to because
- *  Android has no lock-screen widget and no Control Centre to put them on. The
- *  four below must stay byte-identical to their Swift twins. */
+ *  own list in targets/widget/DeepLinks.swift. iOS still carries two links no
+ *  Android widget uses - the dashboard root and the reminders screen - because
+ *  neither Android surface below is a lock-screen tile or a Control Centre
+ *  button. The post-meal pair used to be iOS-only for the same reason; the
+ *  Timer widget below is a HOME-SCREEN tile, so it links to them too now. The
+ *  six below must stay byte-identical to their Swift twins. */
 const URI_ADD_GLUCOSE = "zerospike:///?sheet=glucose";
 const URI_ADD_MEAL = "zerospike:///food";
 const URI_ADD_INJECTION = "zerospike:///injection?segment=map";
 const URI_ADD_MED = "zerospike:///?sheet=med";
+/** The post-meal reading sheet - what a RUNNING countdown's tile opens.
+ *  Matches DeepLinks.postMeal2h. */
+const URI_POST_MEAL_2H = "zerospike:///?sheet=post_meal_2h";
+/** The dashboard's post-meal countdown START surface. Matches
+ *  DeepLinks.startPostMeal. The widget never arms a timer itself: the duration
+ *  picker and the "one is already running" confirmation live in the app, same
+ *  as the iOS twin (see buildTimerWidget). */
+const URI_START_POST_MEAL = "zerospike:///?sheet=post_meal_start";
 
 /**
  * Pre-mixed tile colours.
@@ -561,22 +578,220 @@ export function buildQuickAddWidget(
 }
 
 /**
+ * One logging shortcut tile, filling whatever footprint it was placed at. The
+ * Android twin of the iOS ZerospikeLogGlucose/ZerospikeLogMeal widgets' home-
+ * screen face (SmallActionView.smallView in targets/widget/SmallWidgets.swift)
+ * - no lock-screen families to draw here, so this is the whole widget rather
+ * than one case of several. Shared by both single-purpose shortcuts below
+ * (and by the idle face of the Timer widget) so the three tiles cannot drift
+ * apart the way the four Quick Add tiles used to before they shared
+ * quickAddShortcuts.
+ */
+function buildLogShortcutWidget(
+  size: WidgetSize | undefined,
+  action: {
+    label: string;
+    uri: string;
+    ink: ColorProp;
+    tile: { fill: string; border: string };
+  }
+): React.JSX.Element {
+  const compact = (size?.width ?? 110) < 100 || (size?.height ?? 80) < 70;
+  return React.createElement(
+    FlexWidget,
+    {
+      style: {
+        height: "match_parent",
+        width: "match_parent",
+        flexDirection: "column",
+        justifyContent: "flex-end",
+        backgroundGradient: {
+          from: THEME.bg.g2 as ColorProp,
+          to: THEME.bg.g1 as ColorProp,
+          orientation: "TOP_BOTTOM",
+        },
+        borderRadius: 20,
+        padding: compact ? 10 : 14,
+      },
+      clickAction: "OPEN_URI",
+      clickActionData: { uri: action.uri },
+    },
+    React.createElement(
+      FlexWidget,
+      {
+        style: {
+          width: compact ? 32 : 40,
+          height: compact ? 32 : 40,
+          borderRadius: compact ? 11 : 14,
+          alignItems: "center",
+          justifyContent: "center",
+          // Pre-mixed opaque hex over the ground, same reasoning as TILE's own
+          // doc comment: the widget's colour parser cannot read rgba.
+          backgroundColor: action.tile.fill as ColorProp,
+          borderColor: action.tile.border as ColorProp,
+          borderWidth: 1,
+          marginBottom: compact ? 6 : 8,
+        },
+      },
+      React.createElement(TextWidget, {
+        text: "+",
+        maxLines: 1,
+        style: { fontSize: compact ? 16 : 20, fontWeight: "bold", color: action.ink },
+      })
+    ),
+    React.createElement(TextWidget, {
+      text: action.label,
+      truncate: "END",
+      maxLines: 2,
+      style: { fontSize: compact ? 12 : 14, fontWeight: "bold", color: THEME.ink as ColorProp },
+    })
+  );
+}
+
+/** The Android twin of the iOS ZerospikeLogGlucose widget: a single tap opens
+ *  the glucose quick-add sheet. Same tile identity (glucosePrimary) the Quick
+ *  Add widget's own glucose tile uses. */
+export function buildLogGlucoseWidget(
+  data: LiveData | null,
+  size?: WidgetSize
+): React.JSX.Element {
+  return buildLogShortcutWidget(size, {
+    label: data?.labels?.addGlucose ?? "Glucose",
+    uri: URI_ADD_GLUCOSE,
+    ink: TILE_INK.glucose as ColorProp,
+    tile: TILE.glucosePrimary,
+  });
+}
+
+/** The Android twin of the iOS ZerospikeLogMeal widget: a single tap opens the
+ *  meal entry form. */
+export function buildLogMealWidget(
+  data: LiveData | null,
+  size?: WidgetSize
+): React.JSX.Element {
+  return buildLogShortcutWidget(size, {
+    label: data?.labels?.addMeal ?? "Meal",
+    uri: URI_ADD_MEAL,
+    ink: TILE_INK.meal as ColorProp,
+    tile: TILE.meal,
+  });
+}
+
+/** Absolute END clock time of a still-running post-meal countdown (e.g.
+ *  "14:30"), or null once it has passed / none is running. Never a live
+ *  "mm:ss" count: this widget is redrawn on the same coarse schedule as every
+ *  other one here (placement, resize, tap, and app.json's own period), so a
+ *  ticking number would read wrong for most of the time it sits on a home
+ *  screen - the exact reasoning nextReminderTimeLabel above already applies to
+ *  the glance widget's own reminder time. The LIVE per-second countdown lives
+ *  on the in-app card and its own persistent notification (see
+ *  lib/services/notifications.ts), not on a widget tile. */
+function postMealEndsTimeLabel(data: LiveData | null, now = Date.now()): string | null {
+  const at = data?.postMealEndsAt;
+  if (at == null || at <= now) return null;
+  return formatTimeForLang(at, data?.lang ?? "en");
+}
+
+/**
+ * The Android twin of the iOS ZerospikeTimerWidget's home-screen face. RUNNING:
+ * the countdown's end time in the same label+pill shape the glance widget uses
+ * for its next reminder, tapping through to the post-meal reading sheet. IDLE:
+ * the same one-tap shortcut shape as the two logging tiles above, tapping
+ * through to the app's own start surface - the widget never arms a timer
+ * itself, exactly like its iOS twin (see URI_START_POST_MEAL).
+ */
+export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): React.JSX.Element {
+  const endsAtLabel = postMealEndsTimeLabel(data);
+  if (endsAtLabel == null) {
+    return buildLogShortcutWidget(size, {
+      label: data?.labels?.startCountdown ?? "zerospike",
+      uri: URI_START_POST_MEAL,
+      ink: THEME.accent as ColorProp,
+      tile: TILE.countdown,
+    });
+  }
+  const compact = (size?.width ?? 150) < 130 || (size?.height ?? 80) < 70;
+  return React.createElement(
+    FlexWidget,
+    {
+      style: {
+        height: "match_parent",
+        width: "match_parent",
+        flexDirection: "column",
+        justifyContent: "center",
+        backgroundGradient: {
+          from: THEME.bg.g2 as ColorProp,
+          to: THEME.bg.g1 as ColorProp,
+          orientation: "TOP_BOTTOM",
+        },
+        borderRadius: 20,
+        padding: compact ? 10 : 14,
+      },
+      clickAction: "OPEN_URI",
+      clickActionData: { uri: URI_POST_MEAL_2H },
+    },
+    React.createElement(TextWidget, {
+      text: data?.labels?.timerTitle ?? "",
+      truncate: "END",
+      maxLines: 1,
+      style: { fontSize: compact ? 9 : 10, fontWeight: "bold", color: THEME.muted as ColorProp },
+    }),
+    React.createElement(
+      FlexWidget,
+      {
+        style: {
+          flexDirection: "row",
+          alignItems: "center",
+          // No alignSelf in this library's style props; a row FlexWidget with
+          // no explicit width already wraps its content instead of stretching,
+          // the same as the glance widget's own countdown pill above.
+          backgroundColor: TILE.countdown.fill as ColorProp,
+          borderColor: TILE.countdown.border as ColorProp,
+          borderWidth: 1,
+          borderRadius: 14,
+          paddingHorizontal: 8,
+          paddingVertical: 3,
+          marginTop: 4,
+        },
+      },
+      React.createElement(TextWidget, {
+        text: endsAtLabel,
+        maxLines: 1,
+        style: {
+          fontSize: compact ? 15 : 18,
+          fontWeight: "bold",
+          color: THEME.accent as ColorProp,
+        },
+      })
+    )
+  );
+}
+
+/** Maps a registered widget name to its builder. Module-level (not rebuilt
+ *  per call) since every entry is a stable function reference. */
+const WIDGET_BUILDERS: Record<
+  string,
+  (data: LiveData | null, size?: WidgetSize) => React.JSX.Element
+> = {
+  [ANDROID_QUICK_ADD_WIDGET_NAME]: buildQuickAddWidget,
+  [ANDROID_READING_WIDGET_NAME]: buildReadingWidget,
+  [ANDROID_LOG_GLUCOSE_WIDGET_NAME]: buildLogGlucoseWidget,
+  [ANDROID_LOG_MEAL_WIDGET_NAME]: buildLogMealWidget,
+  [ANDROID_TIMER_WIDGET_NAME]: buildTimerWidget,
+};
+
+/**
  * The task handler Android calls to draw or refresh a widget (placement, the
  * 15-minute period configured in app.json, resizes, and every explicit update
  * the app requests after a log). Registered once from the app entry; branches
- * on the widget name so both widgets share the one snapshot read.
+ * on the widget name so every widget shares the one snapshot read.
  */
 export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
   const data = await readLiveData();
   // The glance widget is the DEFAULT arm on purpose: it is the one that has been
   // placed on home screens since 2.0, and an unrecognised name must keep drawing
   // it rather than falling through to a newer layout.
-  const build =
-    props.widgetInfo.widgetName === ANDROID_QUICK_ADD_WIDGET_NAME
-      ? buildQuickAddWidget
-      : props.widgetInfo.widgetName === ANDROID_READING_WIDGET_NAME
-        ? buildReadingWidget
-        : buildZerospikeWidget;
+  const build = WIDGET_BUILDERS[props.widgetInfo.widgetName] ?? buildZerospikeWidget;
   switch (props.widgetAction) {
     case "WIDGET_ADDED":
     case "WIDGET_UPDATE":

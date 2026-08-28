@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Android phone composites, derived from the iPhone captures.
+"""Android phone composites, built from real Android phone captures.
 
-There is no Android capture pass for 2.0.0, so the iPhone raws are reused with
-their iOS status bar cropped away (STATUS_CROP): no clock, no signal stack and
-no Dynamic Island survives into the frame, and nothing iOS-specific is drawn
-back. The bezel keeps its Android reading via the punch-hole camera."""
+2.0.0 reused the iPhone raws with the iOS status bar cropped away, because
+there was no Android capture pass yet. There now is one
+(raw/android-phone/<lang>/*.png, 1080x2400, real emulator screenshots), so
+this build reads its own raw set instead of borrowing iPhone pixels. All the
+crop constants below were measured directly on those captures (row-by-row
+pixel inspection, cross-checked against all 9 languages), not carried over
+from build_iphone.py - the two raw sets differ in resolution and in exactly
+where the OS chrome and the app's own tab bar sit, so iPhone's pixel anchors
+do not transfer."""
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image, ImageDraw
@@ -22,18 +27,8 @@ from i18n_copy import LANGS, PANELS_2_0_0 as _ALL_PANELS, chips_for
 import os as _os
 _filter = _os.environ.get("PANEL_FILTER")
 PANELS_2_0_0 = tuple(p for p in _ALL_PANELS if p in _filter.split(",")) if _filter else _ALL_PANELS
-import build_iphone as iphone
 
-RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/iphone"
-# Android-dressed re-captures of the dashboard panels: the same iPhone simulator
-# run with ?scPlatform=android, so the iOS-only Apple Health card is out of the
-# frame. Only the dashboard panels differ, so only they are re-shot; everything
-# else keeps reading the shared iPhone raw.
-# 08-takip is deliberately NOT here any more: it shoots the onboarding question
-# screen now, which carries no iOS-only chrome. Leaving it in would also have
-# silently preferred the stale android-src DASHBOARD capture over the new raw.
-ANDROID_SRC_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/android-src/iphone"
-ANDROID_SRC_PANELS = ("01-ring",)
+RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/android-phone"
 OUT_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store/android-phone-1080x1920"
 
 CANVAS = (1080, 1920)
@@ -47,44 +42,89 @@ BEZEL = 13
 RADIUS = 52
 SAFE_BOTTOM = CANVAS[1] - 20
 
-# In the 1320x2868 iPhone raw the Dynamic Island's black pill ends at y=153 and
-# the app's own header starts at y~188, so 172 sits in the gap: the whole iOS
-# status bar goes, no app content is clipped.
-STATUS_CROP = 172
-# The cropped frame would otherwise start flush with the app header, leaving the
-# punch-hole camera sitting on top of a button. Re-open a plain strip built from
-# the shot's own top row (the app draws edge to edge under a transparent status
-# bar, so this is its real background) - no invented clock or battery glyphs.
-STATUS_BAND = 104
+# Measured on raw/android-phone/*/01-ring.png (1080x2400): the OS status icons
+# (clock/wifi/battery) end at y=48 and the app's own header row (the sparkle/
+# asterisk buttons, the tallest element in the header) starts at y=64 - 55
+# sits in that gap in every one of the 9 languages, so the whole status bar is
+# gone and no app content is clipped.
+STATUS_CROP = 55
+# The cropped frame would otherwise start flush with the app header, leaving
+# the drawn punch-hole camera sitting on top of a button. Re-open a plain
+# strip built from the shot's own top row (real background, no invented clock
+# or battery glyphs) just tall enough to clear the hole (drawn at
+# BEZEL+24+-radius, see add_punch_hole).
+STATUS_BAND = 40
 
-# identical source frames, so the cuts (and their per-capture snapping) come
-# straight from the iPhone build rather than being kept in sync by hand
-BODYMAP_TOP_CROP = iphone.BODYMAP_TOP_CROP
-BODYMAP_CARD_HEIGHT = iphone.BODYMAP_CARD_HEIGHT
-CROP_BOTTOM = iphone.CROP_BOTTOM
+# The app's own bottom tab bar: its background starts at y=2211 in every one
+# of the 9 languages (verified per-language, see scratchpad notes) - stable
+# because it is fixed chrome, not translated content.
+TABBAR_TOP = 2211
+TARGET_CROP_H = TABBAR_TOP
+CONTENT_H = TARGET_CROP_H - STATUS_CROP
 
-# --- fixed device frame -----------------------------------------------------
-# Same reasoning as build_iphone/build_ipad: dev_w is now a canvas-wide
-# constant (DEV_W_STD, no more dev_w_for_content), and every shot handed to
-# draw_device is exactly this canvas's fixed content height, so dev_h falls
-# out identical for all 7 panels x 9 languages. The fixed content height here
-# is the iPhone build's own TARGET_CROP_H minus STATUS_CROP: standard panels
-# (01-ring, 02-bodymap, 09-reminders) already resolve to iphone.TARGET_CROP_H
-# via iphone.cut_for/iphone.CROP_BOTTOM, so cropping STATUS_CROP off their top
-# lands on this value for free. 04-food/05-insights (iphone.PAD_PANELS) need
-# their own padding call here too, since their real safe crop is still
-# shorter than target after the status-bar crop. 07-spike/08-takip
-# (iphone.EXCEPTION_PANELS) need their own crop_top - the iPhone build's own
-# crop_top already sacrifices the top of the screen to protect the composer/
-# footer, and Android needs to additionally clear the status bar, so its
-# crop_top is deeper than iPhone's by STATUS_CROP.
-CONTENT_H = iphone.TARGET_CROP_H - STATUS_CROP
-PAD_PANELS = iphone.PAD_PANELS
-EXCEPTION_PANELS = iphone.EXCEPTION_PANELS
+# 05-insights has no tab bar of its own, so its content does not naturally
+# stop at TARGET_CROP_H the way the other panels' does - it is padded up to
+# that same CONTENT_H afterwards purely for device-rect uniformity (see
+# PAD_PANELS). That padded shot then goes through the exact same geometry as
+# every other panel (DEV_Y, this canvas's own height, BEZEL, DEV_W_STD), and
+# that geometry only ever shows this many raw px of a CONTENT_H-tall shot
+# before the device bleeds off the bottom of the canvas - the same bleed
+# 01-ring's own last card row already relies on landing in a gap for (see
+# draw_device; canvas.paste silently clips whatever falls past CANVAS[1]).
+# Snapping 05-insights toward THIS row instead of TABBAR_TOP keeps the crop
+# from bisecting a card at the edge that is actually shown - anything the
+# capture has beyond it is real content that would just be bled off anyway,
+# chosen as the snap target or not (verified broken before this fix: the
+# "TIME IN RANGE"/"READINGS" card row landed half past this line and was cut
+# off mid-card).
+_insights_scale = (DEV_W_STD - 2 * BEZEL) / 1080  # raw capture width
+_insights_visible_shot_px = (CANVAS[1] - DEV_Y - BEZEL) / _insights_scale
+INSIGHTS_VISIBLE_CUTOFF = STATUS_CROP + round(_insights_visible_shot_px - STATUS_BAND)
 
-# See build_iphone.CHIP_DEV_GAP - same fixed minimum, scaled by this canvas's
-# own width relative to the iPhone canvas (1284px) it's baselined against.
-CHIP_DEV_GAP = round(iphone.CHIP_DEV_GAP * CANVAS[0] / iphone.CANVAS[0])
+# 07-spike's chat composer bottom edge (+ margin), measured on the raw
+# captures and confirmed stable across all 9 languages (pinned bottom
+# element, not affected by translated text length). Neither screen has the
+# app tab bar, so both get their own EXCEPTION_PANELS handling instead of
+# TARGET_CROP_H.
+SPIKE_COMPOSER_BOTTOM = 2320
+# 08-takip crop_top = this minus CONTENT_H, so it has to clear the
+# back-chevron/language-pill row as a whole (content y=95-158 in every
+# language) - 2260 (crop_top=104) landed inside that range and left the
+# pill's rounded top corner looking flat-cut instead of just losing a hairline
+# sliver. 2320 (crop_top=164) clears it, and still frames the progress bar
+# (y=183) and the skip-link (ends by y=2249) fully, with margin below the
+# gesture-nav pill at y=2364.
+TAKIP_FOOTER_BOTTOM = 2320
+
+# 01-ring/02-bodymap/04-food/09-reminders all read as clean background (or,
+# for 01-ring, a fully-framed hint line) at TARGET_CROP_H in every language -
+# confirmed by sampling all 9 raw captures - so they crop there directly with
+# no padding. 05-insights is a pushed detail screen with no tab bar of its
+# own; its last card's end varies a lot by language (a two-column layout on
+# this canvas), so it is the one panel that needs a per-capture snap plus
+# padding up to CONTENT_H.
+CROP_BOTTOM = {
+    "01-ring": TARGET_CROP_H,
+    "02-bodymap": TARGET_CROP_H,
+    "04-food": TARGET_CROP_H,
+    "05-insights": INSIGHTS_VISIBLE_CUTOFF,
+    "07-spike": SPIKE_COMPOSER_BOTTOM,   # EXCEPTION, see load_shot
+    "08-takip": TAKIP_FOOTER_BOTTOM,     # EXCEPTION, see load_shot
+    "09-reminders": TARGET_CROP_H,
+}
+SNAP_PANELS = {"05-insights"}
+# All 9 languages land within ~15px of INSIGHTS_VISIBLE_CUTOFF already; kept
+# generous so a future copy change that shifts a card by more than that still
+# finds the next gap up instead of falling back to an unsnapped (possibly
+# mid-card) cut.
+SNAP_WINDOW = 450
+PAD_PANELS = {"05-insights"}
+EXCEPTION_PANELS = {"07-spike", "08-takip"}
+
+# Measured minimum gap between the chip block's bottom edge and the device
+# frame's top edge - see build_iphone.CHIP_DEV_GAP, scaled by this canvas's
+# own width relative to the iPhone canvas (1284px) it was baselined against.
+CHIP_DEV_GAP = round(24 * CANVAS[0] / 1284)
 
 
 def add_punch_hole(canvas, dev_x, dev_y, dev_w):
@@ -132,21 +172,69 @@ def with_status_band(shot, band_h=STATUS_BAND):
     return out
 
 
+def row_coverage_adaptive(img, y, step=8, inset=10, thr=20):
+    """Row 'coverage' for 05-insights' stat-box cards.
+
+    compose.row_coverage compares every sample to a fixed margin pixel; that
+    misses this panel's stat boxes, whose fill is only ~35 RGB-sum away from
+    the page background - under compose's default thr=45, and easy for the
+    default step=8 sampling grid to miss entirely where it lands, since a
+    plain fill area (no text passing through that exact row) never registers
+    as different at all. Comparing each sample to the row's own darkest pixel
+    (the true page background is always the darkest thing in this dark-mode
+    UI) catches the card fill itself, not just its text, at any threshold
+    that clears normal anti-aliasing noise."""
+    px = img.load()
+    xs = range(inset, img.width - inset, step)
+    vals = [px[x, y] for x in xs]
+    base = min(vals, key=lambda c: sum(c))
+    hits = sum(1 for c in vals if sum(abs(c[i] - base[i]) for i in range(3)) > thr)
+    return hits / len(vals)
+
+
+def snap_cut_adaptive(img, preferred, tabbar_top, window, thr=20, tol=0.02, run=10):
+    """Same walk as compose.snap_cut, via row_coverage_adaptive instead."""
+    if row_coverage_adaptive(img, preferred, thr=thr) <= tol:
+        return preferred, True
+    clear = 0
+    for y in range(min(preferred, tabbar_top), max(0, preferred - window), -1):
+        if row_coverage_adaptive(img, y, thr=thr) <= tol:
+            clear += 1
+            if clear >= run:
+                return y + clear - 1, True
+        else:
+            clear = 0
+    return preferred, False
+
+
+def cut_for(path, key):
+    if key not in SNAP_PANELS:
+        return CROP_BOTTOM[key]
+    preferred = CROP_BOTTOM[key]
+    with Image.open(path) as im:
+        cut, ok = snap_cut_adaptive(im.convert("RGB"), preferred, TABBAR_TOP, window=SNAP_WINDOW)
+    if not ok:
+        print(f"  WARN {key}: no clean cut in this capture; kept {cut}. "
+              f"The last card is bisected - re-capture with a different scroll.")
+    elif cut != preferred:
+        print(f"  cut {key}: {preferred} -> {cut} (snapped clear of a card)")
+    return cut
+
+
 def load_shot(raw_dir, key):
     if key == "02-bodymap":
         single = os.path.join(raw_dir, "02-bodymap.png")
-        cb = iphone.cut_for(single, key) if os.path.exists(single) else CROP_BOTTOM[key]
-        shot = bodymap_shot(raw_dir, STATUS_CROP, cb, BODYMAP_TOP_CROP, BODYMAP_CARD_HEIGHT)
+        cb = cut_for(single, key) if os.path.exists(single) else CROP_BOTTOM[key]
+        shot = bodymap_shot(raw_dir, STATUS_CROP, cb, 0, 0)
     else:
         path = os.path.join(raw_dir, f"{key}.png")
         if not os.path.exists(path):
             return None
-        bottom = iphone.cut_for(path, key)
+        bottom = cut_for(path, key)
         if key in EXCEPTION_PANELS:
-            # Android needs to additionally clear the status bar on top of
-            # iPhone's own composer/footer-preserving crop_top, so it can't
-            # just reuse iPhone's crop_top - re-derive it from this canvas's
-            # own fixed content height instead.
+            # These two screens have no tab bar of their own to anchor on, so
+            # crop_top is re-derived from this canvas's fixed content height
+            # instead, keeping the composer/footer fully framed.
             top = max(0, bottom - CONTENT_H)
         else:
             top = STATUS_CROP
@@ -159,35 +247,20 @@ def load_shot(raw_dir, key):
     return shot
 
 
-def raw_dir_for(lang, key):
-    """Where this panel's capture comes from: the Android-dressed re-shot when
-    one exists, otherwise the shared iPhone raw (which still carries the Apple
-    Health card, hence the warning)."""
-    fallback = os.path.join(RAW_BASE, lang)
-    if key not in ANDROID_SRC_PANELS:
-        return fallback
-    src_dir = os.path.join(ANDROID_SRC_BASE, lang)
-    if os.path.exists(os.path.join(src_dir, f"{key}.png")):
-        return src_dir
-    print(f"  WARN {lang}/{key}: no android-src capture; falling back to the "
-          f"iPhone raw - the Apple Health card will be visible in the frame")
-    return fallback
-
-
 def build_all(lang):
     raw_dir = os.path.join(RAW_BASE, lang)
-    out_dir = os.path.join(OUT_BASE, lang)
-    if not os.path.isdir(raw_dir) and not os.path.isdir(os.path.join(ANDROID_SRC_BASE, lang)):
+    if not os.path.isdir(raw_dir):
         print(f"SKIP {lang}: no raw dir {raw_dir}")
         return []
+    out_dir = os.path.join(OUT_BASE, lang)
     os.makedirs(out_dir, exist_ok=True)
     written = []
     for key in PANELS_2_0_0:
-        shot = load_shot(raw_dir_for(lang, key), key)
+        shot = load_shot(raw_dir, key)
         if shot is None:
             print(f"SKIP {lang}/{key}: raw capture missing")
             continue
-        headline, sub, chips = chips_for(lang, key)
+        headline, sub, chips = chips_for(lang, key, platform="android")
         cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
         written.append(frame(out_dir, key, cfg, chips, shot))
     return written

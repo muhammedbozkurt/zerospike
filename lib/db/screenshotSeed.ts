@@ -276,7 +276,39 @@ export async function ensureTrackingProfile(): Promise<string> {
   return SCREENSHOT_TRACKING_PROFILE_ID;
 }
 
+/**
+ * Per-profile in-flight guard: serializes concurrent seed passes for the SAME
+ * profile. On a cold launch via a scLang deep link, the launch URL resolves
+ * ASYNCHRONOUSLY (Linking's initial-URL promise), so app/_layout.tsx's seed
+ * effect can fire once with the fallback `lang` (scLang not parsed yet) and
+ * again moments later with the real target language once the URL lands - two
+ * DIFFERENT (profile, language) keys, so the effect's own ref guard (which
+ * only catches a repeat of the SAME key) lets both through. Without this
+ * queue those two passes interleave their delete-then-insert writes on
+ * seedMeals/seedReminders (neither protected against concurrent access) and
+ * the screenshot ends up with one row seeded in each language. Queuing the
+ * second pass behind the first instead of racing it makes it re-read the
+ * just-written marker and correctly fall into the "already seeded, only
+ * re-materialize the localized bits" branch below.
+ */
+const inFlightByProfile = new Map<string, Promise<void>>();
+
 export async function seedScreenshotData(
+  profileId: string,
+  lang: Lang,
+  variant?: "tracking"
+): Promise<void> {
+  const prior = inFlightByProfile.get(profileId) ?? Promise.resolve();
+  const run = prior.then(() => seedScreenshotDataLocked(profileId, lang, variant));
+  inFlightByProfile.set(profileId, run);
+  try {
+    await run;
+  } finally {
+    if (inFlightByProfile.get(profileId) === run) inFlightByProfile.delete(profileId);
+  }
+}
+
+async function seedScreenshotDataLocked(
   profileId: string,
   lang: Lang,
   variant?: "tracking"
