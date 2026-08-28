@@ -117,7 +117,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 66,
+      "versionCode": 67,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -130,7 +130,6 @@
         "android.permission.USE_FULL_SCREEN_INTENT",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.POST_PROMOTED_NOTIFICATIONS",
         "android.permission.health.READ_BLOOD_GLUCOSE",
         "android.permission.health.WRITE_BLOOD_GLUCOSE"

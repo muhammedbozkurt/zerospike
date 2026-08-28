@@ -26,9 +26,9 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * as if this native module were not linked at all, and every reminder falls
  * back to a plain notification.
  */
-// Bayrak ACIK. Kapatilirsa su dort izin app.json'dan da cikarilmali:
-// USE_FULL_SCREEN_INTENT, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE,
-// FOREGROUND_SERVICE_MEDIA_PLAYBACK. Kullanilmayan hassas izin Play'de bayrak yaratir.
+// Bayrak ACIK. Kapatilirsa su uc izin app.json'dan da cikarilmali:
+// USE_FULL_SCREEN_INTENT, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE.
+// Kullanilmayan hassas izin Play'de bayrak yaratir.
 private const val ANDROID_ALARM_ENABLED = true
 
 class ZerospikeAlarmKitModule : Module() {
