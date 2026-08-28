@@ -58,6 +58,46 @@ function Steps({ text }: { text: string }) {
   );
 }
 
+/** One row of the Android six-widget list: icon, the widget's own on-screen
+ *  label (reused, not new copy), a plain description of what it shows/does,
+ *  and a rough size hint so the picker's identical "zerospike" entries (see
+ *  the D1 note above the call site) become tellable apart before adding one. */
+function WidgetRow({
+  icon,
+  title,
+  desc,
+  size,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  desc: string;
+  size: string;
+}) {
+  return (
+    <View className="flex-row" style={{ gap: 10 }}>
+      <View
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 9,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: withAlpha(THEME.accent, 0.14),
+        }}
+      >
+        <Ionicons name={icon} size={15} color={THEME.accent} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>{title}</Text>
+        <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 2 }}>
+          {desc}
+        </Text>
+        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>{size}</Text>
+      </View>
+    </View>
+  );
+}
+
 function WidgetGuideScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -86,10 +126,62 @@ function WidgetGuideScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          <Section icon="grid-outline" title={t("widgetGuide.homeTitle")}>
+          <Section
+            icon="grid-outline"
+            title={ios ? t("widgetGuide.homeTitle") : t("widgetGuide.homeTitleAndroid")}
+          >
             <Steps
               text={ios ? t("widgetGuide.homeStepsIos") : t("widgetGuide.homeStepsAndroid")}
             />
+            {/* D1: the Android widget picker shows only the plain "zerospike"
+                label per entry (no configurationDisplayName the way iOS's
+                gallery has), so all six widgets are otherwise indistinguishable
+                in that list. Each row below reuses the widget's own already-
+                nine-language on-screen label instead of new copy, next to a
+                plain description and a rough size hint. */}
+            {!ios ? (
+              <View style={{ marginTop: 10, gap: 12 }}>
+                <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18 }}>
+                  {t("widgetGuide.androidListIntro")}
+                </Text>
+                <WidgetRow
+                  icon="analytics-outline"
+                  title={t("widget.avgGlucose")}
+                  desc={t("widgetGuide.androidGlanceDesc")}
+                  size={t("widgetGuide.androidGlanceSize")}
+                />
+                <WidgetRow
+                  icon="time-outline"
+                  title={t("widget.lastReading")}
+                  desc={t("widgetGuide.androidReadingDesc")}
+                  size={t("widgetGuide.androidReadingSize")}
+                />
+                <WidgetRow
+                  icon="apps-outline"
+                  title={t("widget.quickAdd")}
+                  desc={t("widgetGuide.androidQuickAddDesc")}
+                  size={t("widgetGuide.androidQuickAddSize")}
+                />
+                <WidgetRow
+                  icon="water-outline"
+                  title={t("widget.addGlucose")}
+                  desc={t("widgetGuide.androidLogGlucoseDesc")}
+                  size={t("widgetGuide.androidLogGlucoseSize")}
+                />
+                <WidgetRow
+                  icon="restaurant-outline"
+                  title={t("widget.addMeal")}
+                  desc={t("widgetGuide.androidLogMealDesc")}
+                  size={t("widgetGuide.androidLogMealSize")}
+                />
+                <WidgetRow
+                  icon="timer-outline"
+                  title={t("widget.timerTitle")}
+                  desc={t("widgetGuide.androidTimerDesc")}
+                  size={t("widgetGuide.androidTimerSize")}
+                />
+              </View>
+            ) : null}
           </Section>
 
           {ios ? (
@@ -102,6 +194,20 @@ function WidgetGuideScreen() {
                 style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginTop: 8 }}
               >
                 {t("widgetGuide.lockShapes")}
+              </Text>
+            </Section>
+          ) : null}
+
+          {!ios ? (
+            // Android's counterpart to the iOS Live Activity section below:
+            // there is no Lock Screen surface here (no Android lock-screen
+            // widgets exist), but the post-meal Timer widget above has its own
+            // honest twin - a persistent notification, since a home-screen
+            // widget only redraws every so often (see buildTimerWidget /
+            // PostMealNotification.kt).
+            <Section icon="timer-outline" title={t("widgetGuide.postMealTitleAndroid")}>
+              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19 }}>
+                {t("widgetGuide.postMealBodyAndroid")}
               </Text>
             </Section>
           ) : null}

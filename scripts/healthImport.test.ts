@@ -177,17 +177,36 @@ section("J. the old source-scoped dedupe query is gone (regression)");
   );
 }
 
-section("K. pickTagForHour is gone from lib/services/health.ts (3b regression)");
+section(
+  "K. pickTagForHour is gone from lib/services/health.ts (3b regression), and every " +
+    "health provider tags its own imports (AH provider-split regression)"
+);
 {
   const healthSrc = readFileSync(
     join(import.meta.dirname, "..", "lib", "services", "health.ts"),
     "utf8"
   );
   ok("no pickTagForHour left in health.ts", !/pickTagForHour/.test(healthSrc));
+  // AH moved the read paths out of health.ts and into one file per provider
+  // (healthAppleKit.ts, healthConnect.ts, healthMock.ts), health.ts itself no
+  // longer calls autoPeriodTagFor at all - so the call is counted per provider
+  // file instead of in the facade, one read path each.
   ok(
-    "both read paths tag imported samples via autoPeriodTagFor(\"health_import\", ...)",
-    (healthSrc.match(/autoPeriodTagFor\("health_import", \{\}\)/g) ?? []).length === 2
+    "autoPeriodTagFor is no longer called from health.ts itself",
+    !/autoPeriodTagFor/.test(healthSrc)
   );
+  const providerFiles = ["healthAppleKit.ts", "healthConnect.ts", "healthMock.ts"];
+  for (const file of providerFiles) {
+    const providerSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "services", file),
+      "utf8"
+    );
+    eq(
+      `${file} tags its imported samples via autoPeriodTagFor("health_import", {}) exactly once`,
+      (providerSrc.match(/autoPeriodTagFor\("health_import", \{\}\)/g) ?? []).length,
+      1
+    );
+  }
 }
 
 section("L. deleteGlucoseFromHealth is never called with a health-import row's uuid (SILME lock)");

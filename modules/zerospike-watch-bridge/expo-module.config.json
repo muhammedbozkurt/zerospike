@@ -1,6 +1,9 @@
 {
-  "platforms": ["apple"],
+  "platforms": ["apple", "android"],
   "apple": {
     "modules": ["ZerospikeWatchBridgeModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.zerospikewatchbridge.ZerospikeWatchBridgeModule"]
   }
 }

@@ -13,7 +13,7 @@ import {
 import { deleteMealLog, deleteSugarLog } from "../lib/db/logs";
 import { deleteInjection } from "../lib/db/injections";
 import { deleteMed } from "../lib/db/meds";
-import { deleteGlucoseFromHealth, writeGlucoseToHealthIfEnabled } from "../lib/services/health";
+import { deleteGlucoseFromHealth, writeGlucoseToHealthIfEnabled, HEALTH_NAME } from "../lib/services/health";
 import { syncLiveData } from "../lib/services/liveData";
 import { mealIdsWithResponse } from "../lib/mealResponse";
 import { mealSlotForHour } from "../lib/insulin";
@@ -236,7 +236,7 @@ export function useJournalRows(input: {
       const hasHealthNote = entry.kind === "glucose" && entry.healthkit_uuid != null;
       const ok = await confirm({
         message: hasHealthNote
-          ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote")}`
+          ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote", { health: HEALTH_NAME })}`
           : t("journal.deleteEntry"),
         confirmLabel: t("common.delete"),
         cancelLabel: t("common.cancel"),

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { Platform, Pressable, Switch, Text, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Linking, Platform, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -18,9 +18,13 @@ import { INSIGHTS_WINDOWS } from "../../lib/insights";
 import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { setProOverride } from "../../lib/services/purchases";
 import {
+  getHealthConnectStatus,
   getHealthWriteEnabled,
-  setHealthWriteEnabled,
+  hasHealthProvider,
+  isHealthConnectPermissionBlocked,
   requestHealthWritePermission,
+  setHealthWriteEnabled,
+  type HealthConnectStatus,
 } from "../../lib/services/health";
 import type { GlucoseUnit } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
@@ -58,6 +62,14 @@ function HealthDetailRow({
 export default function DataSettings() {
   const { t } = useTranslation();
   const router = useRouter();
+  // Brand name shown in the UI (App Review guideline 2.5.1 / Play policy):
+  // iOS reads "Apple Health", Android reads "Health Connect". The iOS name is
+  // already localized under settings.healthSection; Android's is not
+  // translated per language (Health Connect keeps its English name
+  // everywhere), so it sits right next to it as settings.healthSectionAndroid.
+  const healthName = t(
+    Platform.OS === "ios" ? "settings.healthSection" : "settings.healthSectionAndroid"
+  );
   const { toast, confirm, actionSheet } = useFeedback();
   const {
     activeProfile,
@@ -232,6 +244,31 @@ export default function DataSettings() {
   // pending state instead of committing to shown/hidden.
   const [healthWriteLoaded, setHealthWriteLoaded] = useState(false);
   const [healthDetailsOpen, setHealthDetailsOpen] = useState(false);
+  // Android-only three-state Health Connect availability (see
+  // getHealthConnectStatus). iOS has no such gate, so it resolves once,
+  // immediately, to "available" and never re-checks.
+  const [hcStatus, setHcStatus] = useState<HealthConnectStatus>(
+    Platform.OS === "android" ? "unavailable" : "available"
+  );
+  const [hcStatusLoaded, setHcStatusLoaded] = useState(Platform.OS !== "android");
+  // Re-checked on every focus (not just mount): the two ways out of a bad
+  // status - the Play Store update, or the device Settings permission screen -
+  // both send the user away from the app and back, so a stale status here
+  // would keep showing the update prompt after they already fixed it.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") return;
+      let alive = true;
+      void getHealthConnectStatus().then((status) => {
+        if (!alive) return;
+        setHcStatus(status);
+        setHcStatusLoaded(true);
+      });
+      return () => {
+        alive = false;
+      };
+    }, [])
+  );
   const healthWriteProfileId = activeProfile?.id ?? null;
   useEffect(() => {
     if (!healthWriteProfileId) {
@@ -259,7 +296,16 @@ export default function DataSettings() {
     if (value) {
       const granted = await requestHealthWritePermission();
       if (!granted) {
-        toast(t("settings.healthWriteDenied"), "error");
+        // Health Connect's system dialog silently no-ops once it considers the
+        // permission blocked (see isHealthConnectPermissionBlocked): re-prompting
+        // does nothing, so this sends the user to Settings instead of repeating
+        // the same denied toast forever.
+        if (Platform.OS === "android" && isHealthConnectPermissionBlocked("write")) {
+          toast(t("settings.healthPermissionBlocked", { health: healthName }), "info");
+          Linking.openSettings();
+        } else {
+          toast(t("settings.healthWriteDenied", { health: healthName }), "error");
+        }
         return;
       }
       await setHealthWriteEnabled(true, healthWriteProfileId);
@@ -269,6 +315,44 @@ export default function DataSettings() {
       setHealthWrite(false);
     }
   }
+
+  // Exact deep link from the AH provider layer: opens Health Connect's own
+  // Play Store listing. Never throws - an emulator/device with no Play Store
+  // app to handle the market:// scheme just leaves the user on this screen.
+  function onOpenHealthConnectUpdate() {
+    Linking.openURL(
+      "market://details?id=com.google.android.apps.healthdata&url=healthconnect%3A%2F%2Fonboarding"
+    ).catch(() => {});
+  }
+
+  // Same Pro/opt-in gate as before (a lapsed-Pro user with the mirror already
+  // on must still see it), now shared by both platforms via hasHealthProvider
+  // instead of an iOS-only Platform check.
+  const wantsHealthSection = hasHealthProvider() && (isProUser || healthWrite);
+  // Whole-section skeleton: deliberately independent of wantsHealthSection.
+  // Pro status is known synchronously, so a Pro user only waits on
+  // hcStatusLoaded (Android). A non-Pro user's healthWrite READS as false
+  // before the AsyncStorage lookup resolves, so gating pending on
+  // wantsHealthSection made a non-Pro user with the mirror already ON compute
+  // wantsHealthSection=false on the very first render, skip straight past
+  // "pending" to "hidden", then pop the section in once healthWriteLoaded
+  // caught up (H2 regression). Pending must cover every non-Pro user until
+  // healthWriteLoaded settles, whatever it turns out to be.
+  const healthSectionPending =
+    hasHealthProvider() && (!hcStatusLoaded || (!isProUser && !healthWriteLoaded));
+  // Rare (very old / unsupported Android): nothing to offer, so the section
+  // drops out entirely rather than showing a dead end.
+  const healthUnavailable = hcStatusLoaded && hcStatus === "unavailable";
+  const showsHealthUpdateRow =
+    wantsHealthSection &&
+    !healthSectionPending &&
+    !healthUnavailable &&
+    hcStatus === "update_required";
+  const showsHealthFullSection =
+    wantsHealthSection &&
+    !healthSectionPending &&
+    !healthUnavailable &&
+    hcStatus !== "update_required";
 
   return (
     <SettingsScaffold
@@ -340,34 +424,48 @@ export default function DataSettings() {
           known synchronously; only a non-Pro user's stored healthWrite is
           still in flight, so ONLY that combination gets the pending row below
           instead of a premature "hidden". */}
-      {Platform.OS === "ios" && !isProUser && !healthWriteLoaded ? (
+      {healthSectionPending ? (
         <>
-          <SectionLabel>{t("settings.healthSection")}</SectionLabel>
+          <SectionLabel>{healthName}</SectionLabel>
           <View
             className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1"
             style={{ opacity: 0.5 }}
           >
             <Ionicons name="heart-outline" size={19} color={THEME.muted} />
-            <Text className="flex-1 ml-3 font-medium text-ink">{t("settings.healthWrite")}</Text>
+            <Text className="flex-1 ml-3 font-medium text-ink">
+              {t("settings.healthWrite", { health: healthName })}
+            </Text>
             <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
           </View>
         </>
-      ) : Platform.OS === "ios" && (isProUser || healthWrite) ? (
+      ) : showsHealthUpdateRow ? (
         <>
-          <SectionLabel>{t("settings.healthSection")}</SectionLabel>
+          <SectionLabel>{healthName}</SectionLabel>
+          <Row
+            icon="cloud-download-outline"
+            label={healthName}
+            sub={t("settings.healthUpdateRequired")}
+            onPress={onOpenHealthConnectUpdate}
+          />
+        </>
+      ) : showsHealthFullSection ? (
+        <>
+          <SectionLabel>{healthName}</SectionLabel>
           {/* Transparency card: what Health sync reads/writes, shown BEFORE the
               write toggle below so nobody switches it on blind. Collapsed by
               default; the summary line alone already states the shape of it. */}
           <Pressable
             onPress={() => setHealthDetailsOpen((v) => !v)}
             accessibilityRole="button"
-            accessibilityLabel={t("settings.healthAbout")}
+            accessibilityLabel={t("settings.healthAbout", { health: healthName })}
             accessibilityState={{ expanded: healthDetailsOpen }}
             className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-2"
           >
             <View className="flex-row items-center">
               <Ionicons name="information-circle-outline" size={19} color={THEME.accent} />
-              <Text className="flex-1 ml-3 font-medium text-ink">{t("settings.healthAbout")}</Text>
+              <Text className="flex-1 ml-3 font-medium text-ink">
+                {t("settings.healthAbout", { health: healthName })}
+              </Text>
               <Text className="text-mut text-[11px] mr-1">{t("settings.healthAboutToggle")}</Text>
               <Ionicons
                 name={healthDetailsOpen ? "chevron-up" : "chevron-down"}
@@ -375,18 +473,24 @@ export default function DataSettings() {
                 color={THEME.muted}
               />
             </View>
-            <Text className="text-mut text-xs mt-2 leading-5">{t("settings.healthAboutBody")}</Text>
+            <Text className="text-mut text-xs mt-2 leading-5">
+              {t("settings.healthAboutBody", { health: healthName })}
+            </Text>
             {healthDetailsOpen ? (
               <View className="mt-3" style={{ gap: 10 }}>
                 <HealthDetailRow
                   icon="download-outline"
                   title={t("settings.healthReadTitle")}
-                  body={t("settings.healthReadBody")}
+                  body={t(
+                    Platform.OS === "android"
+                      ? "settings.healthReadBodyAndroid"
+                      : "settings.healthReadBody"
+                  )}
                 />
                 <HealthDetailRow
                   icon="cloud-upload-outline"
                   title={t("settings.healthWriteDetailTitle")}
-                  body={t("settings.healthWriteDetailBody")}
+                  body={t("settings.healthWriteDetailBody", { health: healthName })}
                 />
                 <HealthDetailRow
                   icon="phone-portrait-outline"
@@ -396,11 +500,11 @@ export default function DataSettings() {
                 <HealthDetailRow
                   icon="options-outline"
                   title={t("settings.healthPermissionsTitle")}
-                  body={t("settings.healthPermissionsBody")}
+                  body={t("settings.healthPermissionsBody", { health: healthName })}
                 />
                 {__DEV__ ? (
                   <Text className="text-mut text-[11px] italic">
-                    {t("settings.healthDevNote")}
+                    {t("settings.healthDevNote", { health: healthName })}
                   </Text>
                 ) : null}
               </View>
@@ -409,7 +513,9 @@ export default function DataSettings() {
           <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
             <View className="flex-row items-center">
               <Ionicons name="heart-outline" size={19} color={THEME.muted} />
-              <Text className="flex-1 ml-3 font-medium text-ink">{t("settings.healthWrite")}</Text>
+              <Text className="flex-1 ml-3 font-medium text-ink">
+                {t("settings.healthWrite", { health: healthName })}
+              </Text>
               {/* A Pro user reaches this branch before healthWriteLoaded resolves
                   too (isProUser alone already makes the section visible), so the
                   switch itself must stay neutral until the real value is in -
@@ -425,7 +531,9 @@ export default function DataSettings() {
                 <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
               )}
             </View>
-            <Text className="text-mut text-xs mt-2">{t("settings.healthWriteHint")}</Text>
+            <Text className="text-mut text-xs mt-2">
+              {t("settings.healthWriteHint", { health: healthName })}
+            </Text>
           </View>
         </>
       ) : null}

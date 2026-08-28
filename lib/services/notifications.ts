@@ -110,6 +110,13 @@ const LEGACY_REMINDER_CHANNEL_ID = "reminders";
 // (see scheduleLowFollowup) - every other reminder stays on REMINDER_CHANNEL_ID.
 // Same immutability rule applies: importance/sound are fixed at creation.
 const FOLLOWUP_CHANNEL_ID = "followup-v1";
+// Silent, low-importance channel for the Android post-meal countdown surface
+// (modules/zerospike-live-activity's PostMealNotification.kt posts to this id
+// directly, not through this file's own scheduleNotificationAsync calls - see
+// that module). IMPORTANCE_LOW: a countdown is a passive glance, never a
+// sound - the alarm/notification that actually fires at zero still uses
+// REMINDER_CHANNEL_ID via POSTMEAL_ID, untouched by this one.
+const POSTMEAL_CHANNEL_ID = "postmeal-v1";
 
 /**
  * Ensures the Android reminders channel exists, named from i18n and carrying
@@ -144,6 +151,15 @@ export async function ensureAndroidChannel(): Promise<void> {
     vibrationPattern: [0, 250, 250, 250],
     lightColor: "#22d3ee",
     sound: "reminder.wav",
+  });
+  // Post-meal countdown channel (C1): LOW importance, no sound/vibration -
+  // the countdown itself must never make noise. Created here too (not only
+  // lazily by the native module) so it shows up in system settings from
+  // first launch, same reasoning as the two channels above.
+  await Notifications.setNotificationChannelAsync(POSTMEAL_CHANNEL_ID, {
+    name: i18n.t("notifications.channelName"),
+    importance: Notifications.AndroidImportance.LOW,
+    sound: null,
   });
   // One-time-per-device sweep of the old sound-less channel. Harmless to
   // retry on every call (deleting an already-gone channel is a no-op), and

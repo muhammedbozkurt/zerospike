@@ -25,7 +25,7 @@ FRAME_COPY = {
                        "Enjeksiyon noktalarını haritada izle; rotasyon ve en uzun kullanılmayan yer",
                        "Bölge rotasyonu"),
         "03-widget": ("Sayaç kilit ekranında",
-                      "Tokluk sayacı kilit ekranında; 7 günlük ortalaman ana ekran widget'ında",
+                      "Tokluk sayacı kilit ekranında; 7 günlük ortalamanız ana ekran widget'ında",
                       "Tokluk sayacı açık"),
         "04-food": ("Saniyeler içinde öğün",
                     "562 besin, barkod tarama ve hızlı ekleme; karbonhidratı saniyeler içinde kaydet",
@@ -37,7 +37,7 @@ FRAME_COPY = {
                       "Her tarih aralığı için temiz PDF; özet, AGP ve zaman çizelgesiyle doktora hazır",
                       "PDF dışa aktar"),
         "07-spike": ("Sorulara Spike yanıt verir",
-                     "Uygulama ve beslenme hakkında sorularına yanıt alır. Spike tıbbi tavsiye vermez, sağlık ekibinin yerini tutmaz.",
+                     "Uygulama ve beslenme hakkında sorularınıza yanıt alır. Spike tıbbi tavsiye vermez, sağlık ekibinin yerini tutmaz.",
                      "Spike AI"),
     },
     "en": {
@@ -71,7 +71,7 @@ FRAME_COPY = {
                        "Injektionsstellen auf der Karte verfolgen; Rotation und die am längsten nicht genutzte Stelle",
                        "Stellen-Rotation"),
         "03-widget": ("Timer auf dem Sperrbildschirm",
-                      "Post-Meal-Timer auf dem Sperrbildschirm; dein 7-Tage-Durchschnitt im Homescreen-Widget",
+                      "Post-Meal-Timer auf dem Sperrbildschirm; Ihr 7-Tage-Durchschnitt im Homescreen-Widget",
                       "Post-Meal-Timer aktiv"),
         "04-food": ("Mahlzeit in Sekunden",
                     "562 Lebensmittel, Barcode-Scan und Schnelleingabe; Kohlenhydrate in Sekunden erfassen",
@@ -79,11 +79,11 @@ FRAME_COPY = {
         "05-insights": ("Erkenne deine Muster",
                         "Zeit im Zielbereich, AGP-Profil und Trends; mit 30- und 90-Tage-Übersichten",
                         "30 & 90 Tage"),
-        "06-report": ("Ein Bericht für deinen Arzt",
-                      "Ein sauberes PDF für jeden Zeitraum; Zusammenfassung, AGP und Zeitleiste, bereit für deinen Arzt",
+        "06-report": ("Ein Bericht für Ihren Arzt",
+                      "Ein sauberes PDF für jeden Zeitraum; Zusammenfassung, AGP und Zeitleiste, bereit für Ihren Arzt",
                       "PDF exportieren"),
-        "07-spike": ("Spike beantwortet deine Fragen",
-                     "Beantwortet deine Fragen zu App und Ernährung. Spike gibt keine medizinische Beratung und ersetzt nicht dein Behandlungsteam.",
+        "07-spike": ("Spike beantwortet Ihre Fragen",
+                     "Beantwortet Ihre Fragen zu App und Ernährung. Spike gibt keine medizinische Beratung und ersetzt nicht Ihr Behandlungsteam.",
                      "Spike AI"),
     },
     "es": {
@@ -94,7 +94,7 @@ FRAME_COPY = {
                        "Sigue las zonas de inyección en el mapa; rotación y la zona sin usar hace más tiempo",
                        "Rotación de zona"),
         "03-widget": ("Temporizador en la pantalla de bloqueo",
-                      "Temporizador posprandial en la pantalla de bloqueo; tu media de 7 días en el widget de inicio",
+                      "Temporizador posprandial en la pantalla de bloqueo; su media de 7 días en el widget de inicio",
                       "Temporizador activo"),
         "04-food": ("Registra una comida en segundos",
                     "562 alimentos, escaneo de código de barras y registro rápido; registra carbohidratos en segundos",
@@ -102,11 +102,11 @@ FRAME_COPY = {
         "05-insights": ("Observa tus patrones",
                         "Tiempo en rango, perfil AGP y tendencias; con resúmenes de 30 y 90 días",
                         "30 y 90 días"),
-        "06-report": ("Un informe listo para tu médico",
-                      "Un PDF claro para cualquier rango de fechas; resumen, AGP y cronología, listo para tu médico",
+        "06-report": ("Un informe listo para su médico",
+                      "Un PDF claro para cualquier rango de fechas; resumen, AGP y cronología, listo para su médico",
                       "Exportar PDF"),
-        "07-spike": ("Spike responde tus preguntas",
-                     "Responde tus preguntas sobre la app y la nutrición. Spike no da consejo médico ni sustituye a tu equipo de salud.",
+        "07-spike": ("Spike responde sus preguntas",
+                     "Responde sus preguntas sobre la app y la nutrición. Spike no da consejo médico ni sustituye a su equipo de salud.",
                      "Spike AI"),
     },
     "fr": {
@@ -128,7 +128,7 @@ FRAME_COPY = {
         "06-report": ("Un rapport prêt pour votre médecin",
                       "Un PDF clair pour toute période ; résumé, AGP et chronologie, prêt pour votre médecin",
                       "Exporter le PDF"),
-        "07-spike": ("Spike répond à tes questions",
+        "07-spike": ("Spike répond à vos questions",
                      "Répond à vos questions sur l'appli et la nutrition. Spike ne donne pas de conseil médical et ne remplace pas votre équipe soignante.",
                      "Spike AI"),
     },
@@ -177,14 +177,43 @@ CHIP_EMOJI = {
 # every other panel has just the one CHIP_EMOJI above.
 CHIP2_EMOJI = {"09-reminders": "💊"}
 
+# S10: 09-reminders' chip (from composite-texts-2.0.0.json, shared by iOS and
+# Android) names a real, full-screen alarm - an iOS-only surface
+# (modules/zerospike-alarmkit) that Android does not ship
+# (ZerospikeAlarmKitModule.kt keeps ANDROID_ALARM_ENABLED false). Naming it on
+# a Play listing both advertises an iOS feature and promises a capability
+# Android does not have. Same fix shape as ANDROID_SUB below: only the Android
+# canvases swap this one chip for something true on Android that echoes the
+# panel's own subtitle (each profile keeps its own reminder list). chip2 (the
+# medication-picker note) is untouched on both platforms.
+ANDROID_CHIP = {
+    "09-reminders": {
+        "tr": "Profil başına liste",
+        "en": "List per profile",
+        "de": "Liste pro Profil",
+        "es": "Lista por perfil",
+        "fr": "Liste par profil",
+        "it": "Elenco per profilo",
+        "pt": "Lista por perfil",
+        "ar": "قائمة لكل ملف تعريف",
+        "ja": "プロフィールごとのリスト",
+    },
+}
 
-def chips_for(lang, key):
+
+def chips_for(lang, key, platform="ios"):
     """(headline, sub, chips) for a panel - chips is a list of 1 or 2 chip
     dicts ({"text", "emoji"}), ready for compose.draw_chip_at. Centralises the
     "does this panel carry a second chip" check so every build script's loop
-    stays a single call instead of re-deriving the chip list by hand."""
+    stays a single call instead of re-deriving the chip list by hand.
+    platform="android" swaps in ANDROID_CHIP's override for the first chip
+    where one exists (currently only 09-reminders); the default keeps every
+    existing (iOS) caller byte-identical."""
     entry = FRAME_COPY[lang][key]
-    chips = [{"text": entry[2], "emoji": CHIP_EMOJI[key]}]
+    chip_text = entry[2]
+    if platform == "android":
+        chip_text = ANDROID_CHIP.get(key, {}).get(lang, chip_text)
+    chips = [{"text": chip_text, "emoji": CHIP_EMOJI[key]}]
     if len(entry) > 3 and entry[3]:
         chips.append({"text": entry[3], "emoji": CHIP2_EMOJI.get(key)})
     return entry[0], entry[1], chips
@@ -240,6 +269,49 @@ WIDGET_STRINGS = {
                timer_title="食後血糖", min_unit="分",
                date="7月26日日曜日",
                next_reminder="次のリマインダー", next_reminder_time="12:30"),
+}
+
+# S7: labels for the Android home-screen-widgets 03-widget scene
+# (home_widgets_scene_android). Every value below is the app's own real
+# widget.* string from lib/i18n/locales/<lang>.ts (avgGlucose, lastReading,
+# quickAdd, addGlucose, addMeal, startCountdown, timerTitle) in its actual
+# sentence case - not the manually-uppercased forms WIDGET_STRINGS above uses
+# for the old lock-screen scene. Kept as a separate dict rather than folded
+# into WIDGET_STRINGS so that dict's existing keys stay byte-identical for
+# build_widget_report_tablet.py's own (still lock-screen) 03-widget pass -
+# see the S7 handoff note in build_widget_android.py.
+WIDGET_LABELS = {
+    "tr": dict(avg_glucose="Ort. glukoz", last_reading="Son ölçüm", quick_add="Hızlı kayıt",
+               add_glucose="Glukoz ekle", add_meal="Yemek ekle", timer_title="Tokluk ölçümü", add_injection="Enjeksiyon ekle",
+               start_countdown="Sayacı başlat", countdown_demo="1:23:45"),
+    "en": dict(avg_glucose="Avg glucose", last_reading="Last reading", quick_add="Quick add",
+               add_glucose="Add glucose", add_meal="Add meal", timer_title="Post-meal check", add_injection="Add injection",
+               start_countdown="Start countdown", countdown_demo="1:23:45"),
+    "de": dict(avg_glucose="Ø Glukose", last_reading="Letzte Messung", quick_add="Schnelleintrag",
+               add_glucose="Glukose eintragen", add_meal="Mahlzeit eintragen",
+               timer_title="Messung nach dem Essen", add_injection="Injektion eintragen",
+               start_countdown="Countdown starten", countdown_demo="1:23:45"),
+    "es": dict(avg_glucose="Glucosa media", last_reading="Última medición", quick_add="Registro rápido",
+               add_glucose="Añadir glucosa", add_meal="Añadir comida", timer_title="Control posprandial", add_injection="Añadir inyección",
+               start_countdown="Iniciar el temporizador", countdown_demo="1:23:45"),
+    "fr": dict(avg_glucose="Glycémie moy.", last_reading="Dernière mesure", quick_add="Ajout rapide",
+               add_glucose="Ajouter une glycémie", add_meal="Ajouter un repas",
+               timer_title="Contrôle post-repas", add_injection="Ajouter une injection",
+               start_countdown="Démarrer le minuteur", countdown_demo="1:23:45"),
+    "it": dict(avg_glucose="Glicemia media", last_reading="Ultima misurazione", quick_add="Aggiunta rapida",
+               add_glucose="Aggiungi glicemia", add_meal="Aggiungi pasto",
+               timer_title="Controllo post-prandiale", add_injection="Aggiungi iniezione",
+               start_countdown="Avvia il timer", countdown_demo="1:23:45"),
+    "pt": dict(avg_glucose="Glicemia média", last_reading="Última medição", quick_add="Registro rápido",
+               add_glucose="Adicionar glicemia", add_meal="Adicionar refeição",
+               timer_title="Medição pós-refeição", add_injection="Adicionar aplicação",
+               start_countdown="Iniciar cronômetro", countdown_demo="1:23:45"),
+    "ar": dict(avg_glucose="متوسط سكر الدم", last_reading="آخر قراءة", quick_add="إضافة سريعة",
+               add_glucose="إضافة سكر دم", add_meal="إضافة وجبة", timer_title="فحص ما بعد الوجبة", add_injection="إضافة حقنة",
+               start_countdown="بدء المؤقّت", countdown_demo="1:23:45"),
+    "ja": dict(avg_glucose="平均血糖値", last_reading="最新の測定値", quick_add="クイック記録",
+               add_glucose="血糖値を追加", add_meal="食事を追加", timer_title="食後の測定", add_injection="注射を追加",
+               start_countdown="タイマーを開始", countdown_demo="1:23:45"),
 }
 
 REPORT_STRINGS = {
@@ -387,6 +459,15 @@ for _lang, _panels in _SYNTHETIC_COPY.items():
 # describes the same thing as a home-screen widget. Only the four languages
 # whose iOS subtitle names Live Activity need an override; the older five never
 # mention it.
+#
+# NOTE (S7): this dict, and frame_copy() below, are left byte-for-byte as they
+# were - build_widget_report_tablet.py (not part of this ticket's file list)
+# still imports frame_copy() for its own, still lock-screen-based, tablet
+# 03-widget pass, and must keep seeing the exact copy it always has so that
+# stale pass stays internally consistent (old copy + old scene) rather than
+# gaining new home-screen-widget copy over an old lock-screen picture. The new
+# Android copy for the corrected panel lives in the separate ANDROID_COPY
+# dict + android_copy_for() below, used only by build_widget_android.py.
 ANDROID_SUB = {
     "03-widget": {
         "it": "Il conto alla rovescia post-prandiale e l'ultima misurazione nel widget della schermata Home.",
@@ -404,6 +485,68 @@ def frame_copy(lang, panel, platform="ios"):
     if platform == "android":
         sub = ANDROID_SUB.get(panel, {}).get(lang, sub)
     return headline, sub, chip
+
+
+# S7: 03-widget's Android panel dropped the lock-screen mock entirely (Android
+# has no lock-screen widget surface - app/widget-guide.tsx hides that section
+# on this platform), so the iOS headline/subtitle/chip ("Timer on the lock
+# screen" et al.) no longer describes what the panel shows. Full headline +
+# subtitle + chip override for all 9 languages, describing the real surfaces
+# instead: the home-screen widgets (lib/services/androidWidget.ts) and the
+# post-meal countdown's persistent notification (postmeal-v1). Formal address
+# throughout (Sie/Ihr, usted/su, vous/votre, Lei/Suo, você/sua, cogul-nazik,
+# resmi MSA, teineigo) per this ticket's hitap rule - not copied from
+# FRAME_COPY's own 03-widget/01-ring text above, which predates that rule and
+# is out of this ticket's scope to correct. A standalone dict/function (not
+# folded into frame_copy/ANDROID_SUB above) so build_widget_report_tablet.py's
+# own frame_copy() calls are entirely unaffected - see the NOTE above ANDROID_SUB.
+ANDROID_COPY = {
+    "03-widget": {
+        "tr": ("Ana ekranınız için widget'lar",
+               "Widget'lar ortalamanızı, son ölçümünüzü ve hızlı kaydı gösterir; tokluk "
+               "sayacı ayrıca kalıcı bir bildirim olarak da çalışır.",
+               "6 ana ekran widget'ı"),
+        "en": ("Widgets for your home screen",
+               "Widgets show your average, last reading and quick logging; the post-meal "
+               "countdown also runs as an ongoing notification.",
+               "6 home screen widgets"),
+        "de": ("Widgets für Ihren Homescreen",
+               "Die Widgets zeigen Ihren Durchschnitt und Ihre letzte Messung; der Countdown "
+               "läuft zusätzlich als laufende Benachrichtigung.",
+               "6 Homescreen-Widgets"),
+        "es": ("Widgets para su pantalla de inicio",
+               "Los widgets muestran su media, última medición y registro rápido; la cuenta "
+               "atrás también funciona como notificación.",
+               "6 widgets de inicio"),
+        "fr": ("Des widgets pour votre écran d'accueil",
+               "Les widgets affichent votre moyenne et votre dernière mesure ; le compte à "
+               "rebours fonctionne aussi comme notification.",
+               "6 widgets d'accueil"),
+        "it": ("Widget per la Sua schermata Home",
+               "I widget mostrano media, ultima misurazione e registrazione rapida; il conto "
+               "alla rovescia funziona anche come notifica.",
+               "6 widget della Home"),
+        "pt": ("Widgets para sua tela de início",
+               "Os widgets mostram média, última medição e registro rápido; a contagem "
+               "regressiva também funciona como notificação.",
+               "6 widgets na tela de início"),
+        "ar": ("أدوات لشاشتك الرئيسية",
+               "متوسطك وآخر قياس والتسجيل السريع تظهر في أدوات الشاشة الرئيسية، ويعمل العد "
+               "التنازلي لما بعد الوجبة أيضًا كإشعار مستمر.",
+               "6 أدوات للشاشة الرئيسية"),
+        "ja": ("ホーム画面のウィジェット",
+               "平均値、最新の測定値、クイック記録をホーム画面のウィジェットで確認できます。"
+               "食後カウントダウンは通知としても表示されます。",
+               "ホーム画面ウィジェット6種"),
+    },
+}
+
+
+def android_copy_for(lang, panel):
+    """(headline, subtitle, chip) full override for a panel's Android-only
+    copy - only ANDROID_COPY entries (currently just 03-widget). Separate
+    from frame_copy() on purpose; see the NOTE above ANDROID_SUB."""
+    return ANDROID_COPY[panel][lang]
 
 
 # --- number/date shapes, mirroring lib/format.ts and lib/i18n date output ---

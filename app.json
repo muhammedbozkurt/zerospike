@@ -117,7 +117,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
-      "versionCode": 60,
+      "versionCode": 67,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -126,12 +126,22 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.POST_PROMOTED_NOTIFICATIONS",
+        "android.permission.health.READ_BLOOD_GLUCOSE",
+        "android.permission.health.WRITE_BLOOD_GLUCOSE"
+      ],
+      "blockedPermissions": [
+        "android.permission.USE_EXACT_ALARM"
       ]
     },
     "plugins": [
       "expo-router",
       "./plugins/withAndroidNavBarContrast",
+      "./plugins/withAndroidPermissionTrim",
       "expo-localization",
       [
         "expo-camera",
@@ -235,6 +245,42 @@
               "targetCellWidth": 4,
               "targetCellHeight": 1,
               "resizeMode": "horizontal"
+            },
+            {
+              "name": "ZerospikeLogGlucose",
+              "label": "zerospike +",
+              "minWidth": "80dp",
+              "minHeight": "80dp",
+              "description": "zerospike",
+              "previewImage": "./assets/icon.png",
+              "targetCellWidth": 1,
+              "targetCellHeight": 1,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "ZerospikeLogMeal",
+              "label": "zerospike +",
+              "minWidth": "80dp",
+              "minHeight": "80dp",
+              "description": "zerospike",
+              "previewImage": "./assets/icon.png",
+              "targetCellWidth": 1,
+              "targetCellHeight": 1,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "ZerospikeTimer",
+              "label": "zerospike",
+              "minWidth": "80dp",
+              "minHeight": "80dp",
+              "description": "zerospike",
+              "previewImage": "./assets/icon.png",
+              "targetCellWidth": 1,
+              "targetCellHeight": 1,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
             }
           ]
         }
@@ -250,7 +296,8 @@
         }
       ],
       "expo-sqlite",
-      "expo-status-bar"
+      "expo-status-bar",
+      "react-native-health-connect"
     ],
     "experiments": {
       "typedRoutes": true

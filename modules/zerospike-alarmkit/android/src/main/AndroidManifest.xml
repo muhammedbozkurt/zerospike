@@ -1,0 +1,32 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <application>
+    <activity
+      android:name=".AlarmRingActivity"
+      android:exported="false"
+      android:launchMode="singleInstance"
+      android:taskAffinity="expo.modules.zerospikealarmkit.alarmring"
+      android:excludeFromRecents="true"
+      android:showOnLockScreen="true"
+      android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+    <receiver
+      android:name=".AlarmReceiver"
+      android:exported="false" />
+
+    <receiver
+      android:name=".BootReceiver"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
+    <service
+      android:name=".AlarmSoundService"
+      android:exported="false"
+      android:foregroundServiceType="shortService" />
+  </application>
+
+</manifest>

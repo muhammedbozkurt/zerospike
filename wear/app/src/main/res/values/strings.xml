@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source of truth for these four: the app's own widget.* strings
+     (lib/i18n/locales/*.ts). The watch shows the phone-pushed label when a
+     snapshot carries one and falls back to these, so the two must match. -->
+<resources>
+    <string name="app_name">Zerospike</string>
+    <string name="last_reading_label">Last reading</string>
+    <string name="next_reminder_label">Next reminder</string>
+    <string name="post_meal_label">Post-meal check</string>
+    <string name="no_data">No entries</string>
+    <string name="none">None</string>
+</resources>

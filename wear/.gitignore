@@ -1,0 +1,14 @@
+# Scoped to this standalone Gradle project only - the root .gitignore is owned
+# by a different work item. wear/ itself IS tracked; only its own generated
+# build output is not.
+*.iml
+.gradle/
+.idea/
+local.properties
+.cxx/
+app/build/
+build/
+captures/
+keystore.properties
+*.jks
+*.keystore

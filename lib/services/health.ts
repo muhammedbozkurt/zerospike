@@ -7,13 +7,42 @@ import {
   setSugarLogHealthUuid,
 } from "../db/logs";
 import { getProfile, listProfiles } from "../db/profiles";
-import type { PeriodTag, SugarLog } from "../db/types";
+import type { SugarLog } from "../db/types";
 import { planWriteFlagRead, shouldWriteToHealth } from "../healthWriteScope";
-import { autoPeriodTagFor } from "../periodTag";
-import { pickMgdl, snapIso } from "./healthMath";
+import { healthAppleKit } from "./healthAppleKit";
+import {
+  healthConnect,
+  getHealthConnectStatus as hcGetStatus,
+  isReadPermissionBlocked,
+  isWritePermissionBlocked,
+} from "./healthConnect";
+import { healthMock } from "./healthMock";
+import {
+  ANDROID_SYNC_WINDOW_DAYS,
+  SYNC_MAX_SAMPLES,
+  SYNC_WINDOW_DAYS,
+} from "./healthTypes";
+import type {
+  GlucoseSample,
+  HealthConnectStatus,
+  HealthProvider,
+  HealthSummary,
+  SyncResult,
+} from "./healthTypes";
 
-/** Our own app bundle id, used to skip our OWN writes on import (loop guard). */
-const OWN_BUNDLE_ID = "com.greeneyeapp.zerospike";
+export type {
+  GlucoseSample,
+  SyncStatus,
+  SyncResult,
+  HealthSummary,
+  HealthConnectStatus,
+} from "./healthTypes";
+
+/** Shared brand name for the on-device health store, plugged into i18n
+ *  strings via the {{health}} placeholder. Single source of truth so it is
+ *  never redefined per screen (see settings.healthSection / healthSectionAndroid
+ *  for the alternate, per-locale-translated pick used by settings/paywall). */
+export const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
 
 /** Base of the "mirror manual readings to Apple Health" preference (default
  *  OFF). Stored PER PROFILE at "<base>.<profileId>": one Health account serves
@@ -105,190 +134,135 @@ export async function getHealthSyncEnabled(profileId?: string | null): Promise<b
 }
 
 /**
- * Apple Health (HealthKit) / Android Health Connect bridge.
+ * Apple Health (HealthKit) / Android Health Connect facade.
  *
- * Mirrors the RevenueCat pattern: a single DEBUG flag keeps everything
- * simulated during development (no device or CGM required), while a production
- * build reads real `BloodGlucose` samples from the platform health store.
+ * A single DEBUG flag keeps everything simulated during development (no
+ * device or CGM required), while a production build reads real
+ * `BloodGlucose` samples from the platform health store.
  *
- * The native module is lazy-`require`d ONLY in real mode, so Expo Go,
- * development and JS bundling never load native code.
+ * This module owns AsyncStorage/profile/scope state and the local-DB import,
+ * and picks ONE {@link HealthProvider} per platform:
  *
- *   iOS only → @kingstinct/react-native-healthkit  (HKQuantityType bloodGlucose)
+ *   iOS     -> healthAppleKit.ts (@kingstinct/react-native-healthkit)
+ *   Android -> healthConnect.ts  (react-native-health-connect)
+ *   DEBUG   -> healthMock.ts     (simulated, either platform)
  *
- * Android Health Connect was removed for the Google Play health-permission
- * policy, so the whole Health/CGM feature is iOS-only. Flip to real by shipping
- * a production build (DEBUG_MOCK_HEALTH is __DEV__), or set the constant to
- * `false` to test the real path on a dev build.
+ * Provider modules `require()` their native package INSIDE each function,
+ * never at module scope, so this facade can statically import all three and
+ * an iOS bundle never loads Health Connect (and vice versa).
  */
-/** Dev builds simulate Health end to end. To exercise the REAL HealthKit path
- *  on a dev build (the simulator's Health app included), restart the bundler
- *  with EXPO_PUBLIC_REAL_HEALTH=1; the native module is already linked. */
+/** Dev builds simulate Health end to end. To exercise the REAL native path on
+ *  a dev build, restart the bundler with EXPO_PUBLIC_REAL_HEALTH=1; the
+ *  native module is already linked. */
 export const DEBUG_MOCK_HEALTH =
   __DEV__ && process.env.EXPO_PUBLIC_REAL_HEALTH !== "1";
 
-/** How far back a sync scans the health store (days). */
-const SYNC_WINDOW_DAYS = 90;
-/** Hard cap on samples pulled per sync (newest first). */
-const SYNC_MAX_SAMPLES = 300;
-
-export interface GlucoseSample {
-  value: number; // mg/dL
-  date: string; // ISO timestamp
-  period_tag: PeriodTag;
+/** Picks the active provider for this run: the dev mock, or whichever native
+ *  provider matches the CURRENT platform (never a lazy/deferred check). */
+function getProvider(): HealthProvider | null {
+  if (DEBUG_MOCK_HEALTH) return healthMock;
+  if (Platform.OS === "ios") return healthAppleKit;
+  if (Platform.OS === "android") return healthConnect;
+  return null;
 }
 
-/** Outcome of a sync so the UI can tell the user exactly what happened. */
-export type SyncStatus = "ok" | "unavailable" | "denied" | "error";
-export interface SyncResult {
-  status: SyncStatus;
-  /** newly inserted rows */
-  inserted: number;
-  /** samples read from the health store (0 → nothing there / no permission) */
-  read: number;
+/** Is there ANY health provider wired up for this platform/build? Used by
+ *  callers outside this module (e.g. glucoseEdit.ts) that need a platform
+ *  gate without duplicating the DEBUG_MOCK_HEALTH / Platform.OS branching. */
+export function hasHealthProvider(): boolean {
+  return getProvider() != null;
 }
 
 // ── Availability & permissions ─────────────────────────────────────────────
 
 export async function isHealthAvailable(): Promise<boolean> {
-  if (DEBUG_MOCK_HEALTH) return Platform.OS === "ios";
+  const provider = getProvider();
+  if (!provider) return false;
   try {
-    if (Platform.OS === "ios") {
-      const HK = require("@kingstinct/react-native-healthkit");
-      return await HK.isHealthDataAvailable();
-    }
+    return await provider.isAvailable();
   } catch {
     return false;
   }
-  return false;
 }
 
 export async function requestHealthPermissions(): Promise<boolean> {
-  if (DEBUG_MOCK_HEALTH) return isHealthAvailable();
+  const provider = getProvider();
+  if (!provider) return false;
   try {
-    if (Platform.OS === "ios") {
-      const HK = require("@kingstinct/react-native-healthkit");
-      // iOS never reveals whether *read* access was granted (privacy), so a
-      // resolved call is the best signal we can get here. v14 takes a single
-      // { toShare, toRead } object with string-literal identifiers. We also
-      // request insulin delivery + exercise time for the Pro Health summary.
-      await HK.requestAuthorization({
-        toShare: [],
-        toRead: [
-          "HKQuantityTypeIdentifierBloodGlucose",
-          "HKQuantityTypeIdentifierInsulinDelivery",
-          "HKQuantityTypeIdentifierAppleExerciseTime",
-        ],
-      });
-      return true;
-    }
+    return await provider.requestReadPermissions();
   } catch {
     return false;
   }
-  return false;
+}
+
+/** Android-only: three-state Health Connect availability (missing / needs a
+ *  Play update / ready), so a settings screen can send the user to the right
+ *  place instead of a generic "unavailable". Always "unavailable" off Android. */
+export async function getHealthConnectStatus(): Promise<HealthConnectStatus> {
+  // Dev mock: healthMock is the active provider regardless of platform, so an
+  // Android emulator running with DEBUG_MOCK_HEALTH must never fall through to
+  // the REAL Health Connect SDK check (which reports "unavailable" there and
+  // hides the Health card/section for the whole simulated flow).
+  if (DEBUG_MOCK_HEALTH) return "available";
+  if (Platform.OS !== "android") return "unavailable";
+  try {
+    return await hcGetStatus();
+  } catch {
+    return "unavailable";
+  }
+}
+
+/** Android-only: true once a read/write permission request came back denied
+ *  with the granted-permission list UNCHANGED across the call - the signal
+ *  that the system dialog is silently no-oping (denied twice / restricted),
+ *  so a caller should send the user to Settings instead of re-prompting. */
+export function isHealthConnectPermissionBlocked(kind: "read" | "write"): boolean {
+  if (Platform.OS !== "android") return false;
+  return kind === "write" ? isWritePermissionBlocked() : isReadPermissionBlocked();
 }
 
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-function readMockGlucose(): GlucoseSample[] {
-  const now = Date.now();
-  const samples: GlucoseSample[] = [];
-  let baseline = 95 + Math.round(Math.random() * 20);
-  // ~8 readings/day over the window, timestamps snapped to the half hour so
-  // repeat syncs dedupe cleanly (matching real-store behaviour).
-  const count = 24;
-  for (let i = count - 1; i >= 0; i--) {
-    const raw = now - i * 3 * 60 * 60 * 1000;
-    const ts = new Date(Math.round(raw / (30 * 60 * 1000)) * 30 * 60 * 1000);
-    baseline += Math.round((Math.random() - 0.45) * 18);
-    baseline = Math.max(70, Math.min(220, baseline));
-    samples.push({
-      value: baseline,
-      date: ts.toISOString(),
-      period_tag: autoPeriodTagFor("health_import", {}),
-    });
-  }
-  return samples;
-}
-
-async function readRealGlucoseIOS(): Promise<GlucoseSample[]> {
-  const HK = require("@kingstinct/react-native-healthkit");
-  const from = new Date(Date.now() - SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  // v14 (Nitro) moved the date range into filter.date and made the identifier a
-  // string literal (the HKQuantityTypeIdentifier enum was removed).
-  const samples = await HK.queryQuantitySamples(
-    "HKQuantityTypeIdentifierBloodGlucose",
-    {
-      limit: SYNC_MAX_SAMPLES,
-      ascending: false,
-      unit: "mg/dL",
-      filter: { date: { startDate: from } },
-    }
-  );
-  return (samples ?? [])
-    // H2 loop guard: NEVER re-import a sample we wrote ourselves, or a
-    // mirror-then-import cycle would double every manual reading. HealthKit tags
-    // each sample with the writing app's bundle in sourceRevision.
-    .filter(
-      (s: any) => s?.sourceRevision?.source?.bundleIdentifier !== OWN_BUNDLE_ID
-    )
-    .map((s: any) => {
-    const when = new Date(s.endDate ?? s.startDate);
-    // The query above requests unit "mg/dL", so s.quantity is ALREADY mg/dL,
-    // it must NOT pass through any mmol heuristic (that inverted true sub-30
-    // hypos into fake highs). snapIso collapses ms-drift re-reads on dedup.
-    const mgdl = pickMgdl({ mgdl: Number(s.quantity) });
-    return {
-      value: mgdl == null ? 0 : Math.round(mgdl),
-      date: snapIso(when.toISOString()),
-      period_tag: autoPeriodTagFor("health_import", {}),
-    };
-  });
-}
-
-/** Reads recent glucose from the platform health store (or the dev mock). */
+/** Reads recent glucose from the platform health store (or the dev mock).
+ *  The look-back window is per platform: Health Connect only grants 30 days
+ *  by default (see ANDROID_SYNC_WINDOW_DAYS), HealthKit gets the full 90. */
 export async function readRecentGlucose(): Promise<GlucoseSample[]> {
-  if (DEBUG_MOCK_HEALTH) return readMockGlucose();
+  const provider = getProvider();
+  if (!provider) return [];
+  const windowDays = Platform.OS === "android" ? ANDROID_SYNC_WINDOW_DAYS : SYNC_WINDOW_DAYS;
   try {
-    if (Platform.OS === "ios") return await readRealGlucoseIOS();
+    return await provider.readRecentGlucose(windowDays, SYNC_MAX_SAMPLES);
   } catch {
     return [];
   }
-  return [];
 }
 
-// ── Writes: mirror manual readings to Apple Health (opt-in) ─────────────────
+// ── Writes: mirror manual readings to the platform health store (opt-in) ────
 
 /**
  * Requests WRITE (share) permission for blood glucose. Called at POINT OF USE -
- * when the user turns the "write to Apple Health" toggle ON - never at onboarding.
- * iOS never reveals whether share access was granted, so a resolved call is the
- * best signal; the caller keeps the toggle on only if this resolves true.
+ * when the user turns the "write to Health" toggle ON - never at onboarding.
+ * iOS never reveals whether share access was granted, so a resolved call is
+ * the best signal; Android's grant list is authoritative. The caller keeps
+ * the toggle on only if this resolves true.
  */
 export async function requestHealthWritePermission(): Promise<boolean> {
-  if (DEBUG_MOCK_HEALTH) return isHealthAvailable();
+  const provider = getProvider();
+  if (!provider) return false;
   try {
-    if (Platform.OS === "ios") {
-      const HK = require("@kingstinct/react-native-healthkit");
-      await HK.requestAuthorization({
-        toShare: ["HKQuantityTypeIdentifierBloodGlucose"],
-        toRead: [],
-      });
-      return true;
-    }
+    return await provider.requestWritePermission();
   } catch {
     return false;
   }
-  return false;
 }
 
 /**
  * Set when a mirrored write to Health fails while the mirror toggle is ON -
- * most likely because Health write access was revoked in iOS Settings after
- * the toggle was switched on (iOS never notifies an app of this). Consumed
- * ONCE by {@link takeHealthWriteFailureNotice} so a caller can tell the user;
- * the toggle itself is NEVER flipped off here (H3): it must keep showing
- * exactly what the user set it to.
+ * most likely because Health write access was revoked in system Settings after
+ * the toggle was switched on. Consumed ONCE by
+ * {@link takeHealthWriteFailureNotice} so a caller can tell the user; the
+ * toggle itself is NEVER flipped off here (H3): it must keep showing exactly
+ * what the user set it to.
  */
 let healthWriteFailureNoticePending = false;
 
@@ -304,41 +278,32 @@ export function takeHealthWriteFailureNotice(): boolean {
 }
 
 /**
- * Writes ONE reading to Apple Health as a bloodGlucose sample (mg/dL) and returns
- * the created sample's UUID, or null on failure / off iOS. The UUID is stored on
- * the local row so the mirror can be revoked when the row is deleted.
+ * Writes ONE reading to the platform health store as a bloodGlucose sample
+ * (mg/dL) and returns the created sample's id, or null on failure / no
+ * provider. The id is stored on the local row so the mirror can be revoked
+ * when the row is deleted.
  */
 export async function writeGlucoseToHealth(
   mgdl: number,
   dateIso: string
 ): Promise<string | null> {
   if (!Number.isFinite(mgdl) || mgdl <= 0) return null;
-  if (DEBUG_MOCK_HEALTH) return `mock-hk-${Date.parse(dateIso) || 0}-${Math.round(mgdl)}`;
+  const provider = getProvider();
+  if (!provider) return null;
   try {
-    if (Platform.OS === "ios") {
-      const HK = require("@kingstinct/react-native-healthkit");
-      const when = new Date(dateIso);
-      const res = await HK.saveQuantitySample(
-        "HKQuantityTypeIdentifierBloodGlucose",
-        { unit: "mg/dL", quantity: Math.round(mgdl), start: when, end: when }
-      );
-      // v14 returns the new sample's UUID string (older shapes: an object).
-      if (typeof res === "string") return res;
-      return res?.uuid ?? null;
-    }
+    return await provider.writeGlucose(mgdl, dateIso);
   } catch {
     return null;
   }
-  return null;
 }
 
 /**
- * Best-effort revoke of a mirrored sample by UUID. HealthKit only lets an app
- * delete samples IT wrote, so this is safe; any failure is swallowed and never
- * blocks the local delete.
+ * Best-effort revoke of a mirrored sample by id. Both native stores only let
+ * an app delete samples IT wrote, so this is safe; any failure is swallowed
+ * and never blocks the local delete.
  *
- * LOCKED: only ever called with the healthkit_uuid of a row THIS app wrote to
- * Health (see writeGlucoseToHealthIfEnabled / updateGlucoseInHealth). A row
+ * LOCKED: only ever called with the healthkit_uuid of a row THIS app wrote
+ * to Health (see writeGlucoseToHealthIfEnabled / updateGlucoseInHealth). A row
  * imported FROM Health (source: "health") never gets a healthkit_uuid -
  * insertHealthSugarLogs leaves that column unset - so a health-import row can
  * never reach this call with a real uuid, and its delete path is a no-op here.
@@ -346,31 +311,29 @@ export async function writeGlucoseToHealth(
  * to whatever wrote it into Health, not to this app.
  */
 export async function deleteGlucoseFromHealth(uuid: string | null): Promise<void> {
-  if (!uuid || DEBUG_MOCK_HEALTH) return;
+  if (!uuid) return;
+  const provider = getProvider();
+  if (!provider) return;
   try {
-    if (Platform.OS === "ios") {
-      const HK = require("@kingstinct/react-native-healthkit");
-      await HK.deleteObjects("HKQuantityTypeIdentifierBloodGlucose", {
-        uuids: [uuid],
-      });
-    }
+    await provider.deleteGlucose(uuid);
   } catch {
     // swallow: a failed mirror-delete must never block the local delete
   }
 }
 
 /**
- * If the user opted in, mirror a freshly-added MANUAL reading to Apple Health and
- * store the returned UUID on the row. Never mirrors imported ('health') rows -
- * that is where the loop would start. Fire-and-forget from the add flow; a failed
- * mirror leaves the row un-mirrored (healthkit_uuid stays null) and never crashes.
+ * If the user opted in, mirror a freshly-added MANUAL reading to the health
+ * store and store the returned id on the row. Never mirrors imported
+ * ('health') rows - that is where the loop would start. Fire-and-forget from
+ * the add flow; a failed mirror leaves the row un-mirrored (healthkit_uuid
+ * stays null) and never crashes.
  *
  * The opt-in belongs to ONE profile, and the row carries its own profile_id, so
  * a reading is mirrored only when the two are the same person.
  */
 export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void> {
   if (log.source === "health") return;
-  if (Platform.OS !== "ios") return;
+  if (!hasHealthProvider()) return;
   const scope = await readHealthWriteScope();
   const allowed = shouldWriteToHealth({
     writeEnabledForProfile: scope.enabled,
@@ -408,18 +371,13 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void
 }
 
 /**
- * Re-mirrors an EDITED reading: revokes the old Apple Health sample (if any)
- * and writes a fresh one for the corrected value/time. Returns the new UUID to
+ * Re-mirrors an EDITED reading: revokes the old health-store sample (if any)
+ * and writes a fresh one for the corrected value/time. Returns the new id to
  * store on the row (via setSugarLogHealthUuid), or null when nothing should be
  * stored (mirror off, or the write failed). Same delete-old-then-write-new
- * shape as create (writeGlucoseToHealthIfEnabled) - HealthKit has no "update a
- * sample" call, so a correction is a revoke of the stale value plus a write of
- * the new one.
- *
- * NOT wired to a caller yet: the two edit flows that can change a mirrored
- * reading's value (dashboard glucose edit, calculator's linked-reading edit)
- * live in files outside this task's ownership. See the delivery report for the
- * call sites and the one-line change each needs.
+ * shape as create (writeGlucoseToHealthIfEnabled) - neither store has an
+ * "update a sample" call, so a correction is a revoke of the stale value plus
+ * a write of the new one.
  */
 export async function updateGlucoseInHealth(
   oldUuid: string | null,
@@ -431,7 +389,7 @@ export async function updateGlucoseInHealth(
    *  one profile could mirror it into the Health account of another. */
   recordProfileId: string | null
 ): Promise<string | null> {
-  if (Platform.OS !== "ios") return null;
+  if (!hasHealthProvider()) return null;
   const scope = await readHealthWriteScope();
   const allowed = shouldWriteToHealth({
     writeEnabledForProfile: scope.enabled,
@@ -454,10 +412,10 @@ export async function updateGlucoseInHealth(
  * dev) into the profile's local log, skipping anything already imported.
  *
  * Returns a {@link SyncResult} so the caller can give precise feedback:
- *  - `unavailable` → no Health/Health Connect on this device
- *  - `denied`      → permission not granted (Android; iOS can't report this)
- *  - `error`       → the native read threw
- *  - `ok`          → read `read` samples, inserted `inserted` new ones
+ *  - `unavailable` -> no Health/Health Connect on this device
+ *  - `denied`      -> permission not granted
+ *  - `error`       -> the native read threw
+ *  - `ok`          -> read `read` samples, inserted `inserted` new ones
  */
 export async function importHealthGlucose(profileId: string): Promise<SyncResult> {
   // 1) Is there a health store at all?
@@ -496,76 +454,20 @@ export async function importHealthGlucose(profileId: string): Promise<SyncResult
 
 // ── Pro: activity + insulin delivery summary (read-only, descriptive) ────────
 
-export interface HealthSummary {
-  /** Total exercise/active minutes over the window (null if unavailable). */
-  activeMinutes: number | null;
-  /** Insulin delivery split from the health store (iOS/DIY Loop only). */
-  insulin: { basalUnits: number; bolusUnits: number; count: number } | null;
-}
-
-function mockHealthSummary(windowDays: number): HealthSummary {
-  // iOS-only feature, so Android returns nothing even in the dev mock.
-  if (Platform.OS !== "ios") return { activeMinutes: null, insulin: null };
-  const scale = windowDays / 7;
-  return {
-    activeMinutes: Math.round(150 * scale),
-    insulin: {
-      basalUnits: Math.round(18 * 7 * scale),
-      bolusUnits: Math.round(12 * 7 * scale),
-      count: Math.round(28 * scale),
-    },
-  };
-}
-
-async function readInsulinIOS(windowDays: number): Promise<HealthSummary["insulin"]> {
-  const HK = require("@kingstinct/react-native-healthkit");
-  const from = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
-  const samples = await HK.queryQuantitySamples(
-    "HKQuantityTypeIdentifierInsulinDelivery",
-    { limit: 2000, ascending: false, unit: "IU", filter: { date: { startDate: from } } }
-  );
-  let basal = 0;
-  let bolus = 0;
-  let count = 0;
-  for (const s of samples ?? []) {
-    const units = Number(s.quantity) || 0;
-    // HKInsulinDeliveryReason metadata: 1 = basal, 2 = bolus.
-    const reason = s?.metadata?.HKInsulinDeliveryReason;
-    if (reason === 2) bolus += units;
-    else basal += units;
-    count++;
-  }
-  return { basalUnits: Math.round(basal), bolusUnits: Math.round(bolus), count };
-}
-
-async function readExerciseMinutesIOS(windowDays: number): Promise<number> {
-  const HK = require("@kingstinct/react-native-healthkit");
-  const from = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
-  const samples = await HK.queryQuantitySamples(
-    "HKQuantityTypeIdentifierAppleExerciseTime",
-    { limit: 3000, ascending: false, unit: "min", filter: { date: { startDate: from } } }
-  );
-  let mins = 0;
-  for (const s of samples ?? []) mins += Number(s.quantity) || 0;
-  return Math.round(mins);
-}
-
 /**
  * Reads a descriptive Health summary for the Pro "activity vs glucose" view:
  * exercise minutes + insulin delivery split (iOS/HealthKit only; DIY Loop
  * users). Read-only: nothing is written to the local log, so it never touches
- * the injection-site rotation model. Returns all-null on error / no access, and
- * always all-null off iOS (Health Connect was removed).
+ * the injection-site rotation model. Returns all-null on error / no provider,
+ * and always all-null on Android (Health Connect has no insulin record type
+ * and this app does not read Android exercise/steps data).
  */
 export async function readHealthSummary(windowDays: number): Promise<HealthSummary> {
-  if (DEBUG_MOCK_HEALTH) return mockHealthSummary(windowDays);
-  const out: HealthSummary = { activeMinutes: null, insulin: null };
-  if (Platform.OS !== "ios") return out;
+  const provider = getProvider();
+  if (!provider) return { activeMinutes: null, insulin: null };
   try {
-    out.insulin = await readInsulinIOS(windowDays);
-    out.activeMinutes = await readExerciseMinutesIOS(windowDays);
+    return await provider.readSummary(windowDays);
   } catch {
-    // leave whatever was read; never throw to the UI
+    return { activeMinutes: null, insulin: null };
   }
-  return out;
 }

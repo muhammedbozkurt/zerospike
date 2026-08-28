@@ -11,11 +11,22 @@ expo-env.d.ts
 /ios
 /android
 
+# Local Expo modules: the Kotlin/Swift sources under modules/*/android are
+# tracked, but their Gradle build output is not. /android above only covers the
+# app's own generated project, not these.
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/.cxx/
+
 # Raw store-screenshot captures (composited into zerospike-store/; not tracked)
 /raw
 
 # Store listing assets (ASO copy + composited screenshots; local only)
 /zerospike-store
+
+# NOTE: /wear IS tracked. It is a standalone Gradle project for the Wear OS
+# companion, built and uploaded separately from the phone AAB, and it carries
+# its own .gitignore for build output. Do not add it here.
 
 # Build outputs & secrets
 *.ipa
@@ -26,6 +37,7 @@ expo-env.d.ts
 *.p8
 *.p12
 *.mobileprovision
+keystore.properties
 google-services.json
 GoogleService-Info.plist
 .env*.local

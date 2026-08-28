@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""Android tablet composites (tablet10 + tablet7), derived from the iPad captures.
+"""Android tablet composites (tablet10 + tablet7), built from real Android
+tablet captures.
 
-Same reasoning as build_android_phone: no Android tablet capture pass for
-2.0.0, so the iPad raws are reused with their iOS status bar cropped away and
-an Android-looking bezel (punch-hole, no island/notch) drawn around them. Both
-canvases come from the one raw set."""
+2.0.0 reused the iPad raws for both canvases, because there was no Android
+tablet capture pass yet. There now are two real ones - raw/android-tablet7
+(1200x1920) and raw/android-tablet10 (1600x2560) - a different emulator/skin
+for each form factor, not one raw set scaled two ways. So each entry in
+CANVASES reads its own raw directory and carries its own crop constants,
+measured directly on that raw set (row-by-row pixel inspection, cross-checked
+against all 9 languages) - the two tablets differ enough in layout (05-insights
+in particular reflows into a different column count) that they cannot share
+one set of anchors, let alone borrow the iPad's."""
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from PIL import Image, ImageDraw
 from compose import (
     new_canvas_with_header, draw_device, load_cropped_shot, font, F_BOLD,
-    measure_chip, fit_header_and_chip, verify_output, align_for,
-    pad_to_height, layout_chips, draw_chips,
+    measure_chip, bodymap_shot, fit_header_and_chip, verify_output, align_for,
+    pad_to_height, layout_chips, draw_chips, row_coverage,
 )
 from i18n_copy import LANGS, PANELS_2_0_0 as _ALL_PANELS, chips_for
 
@@ -22,43 +28,9 @@ from i18n_copy import LANGS, PANELS_2_0_0 as _ALL_PANELS, chips_for
 import os as _os
 _filter = _os.environ.get("PANEL_FILTER")
 PANELS_2_0_0 = tuple(p for p in _ALL_PANELS if p in _filter.split(",")) if _filter else _ALL_PANELS
-import build_ipad as ipad
 
-RAW_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/ipad"
-# Android-dressed re-captures of the dashboard panels: the same iPad simulator
-# run with ?scPlatform=android, so the iOS-only Apple Health card is out of the
-# frame. Only the dashboard panels differ, so only they are re-shot; everything
-# else keeps reading the shared iPad raw.
-# 08-takip is deliberately NOT here any more: it shoots the onboarding question
-# screen now, which carries no iOS-only chrome. Leaving it in would also have
-# silently preferred the stale android-src DASHBOARD capture over the new raw.
-ANDROID_SRC_BASE = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw/android-src/ipad"
-ANDROID_SRC_PANELS = ("01-ring",)
+RAW_ROOT = "/Users/muhammedbozkurt/Desktop/Others/zerospike/raw"
 OUT_ROOT = "/Users/muhammedbozkurt/Desktop/Others/zerospike/zerospike-store"
-
-# In the 2064x2752 iPad raw the status bar glyphs end at y=33 and the app's
-# header pill starts at y=50, so 42 sits in the gap. The iPad bar is a thin
-# overlay strip, hence a much smaller crop than the phone's 172.
-STATUS_CROP = 42
-# see build_android_phone.STATUS_BAND - keeps the punch-hole camera off the
-# app's own header row
-STATUS_BAND = 112
-
-# identical source frames, so the cuts (and their per-capture snapping) come
-# straight from the iPad build rather than being kept in sync by hand
-CROP_BOTTOM = ipad.CROP_BOTTOM
-
-# --- fixed device frame -----------------------------------------------------
-# Same reasoning as build_android_phone.py: the fixed content height for this
-# canvas is the iPad build's own TARGET_CROP_H minus STATUS_CROP. Standard
-# panels resolve to ipad.TARGET_CROP_H via ipad.cut_for/ipad.CROP_BOTTOM
-# already, so cropping STATUS_CROP off their top lands on CONTENT_H for free;
-# iPad needed no PAD_PANELS (every standard panel's real content reaches
-# ipad.TARGET_CROP_H without padding), so neither does this canvas. 08-takip
-# (ipad.EXCEPTION_PANELS) still needs its own crop_top, deeper than iPad's by
-# STATUS_CROP, to additionally clear the status bar.
-CONTENT_H = ipad.TARGET_CROP_H - STATUS_CROP
-EXCEPTION_PANELS = ipad.EXCEPTION_PANELS
 
 # iPhone-baseline (1284px, see build_iphone.CHIP_DEV_GAP) minimum chip-to-
 # device gap, scaled by each canvas's own width below.
@@ -66,13 +38,80 @@ IPHONE_W = 1284
 CHIP_DEV_GAP_BASE = 24
 
 CANVASES = [
-    # tablet10: matches the raw capture's own native width exactly
-    dict(name="android-tablet10-1600x2560", size=(1600, 2560), dev_y=480, margin_x=70,
-         headline_size=76, sub_size=33, chip_size=29, bezel=14, radius=56),
-    # tablet7: same raws, scaled-down geometry, different aspect (9:16)
-    dict(name="android-tablet7-1080x1920", size=(1080, 1920), dev_y=360, margin_x=48,
-         headline_size=58, sub_size=25, chip_size=22, bezel=11, radius=42),
+    # tablet10: raw/android-tablet10, 1600x2560 native capture.
+    dict(
+        name="android-tablet10-1600x2560", size=(1600, 2560), dev_y=480, margin_x=70,
+        headline_size=76, sub_size=33, chip_size=29, bezel=14, radius=56,
+        raw_dir=os.path.join(RAW_ROOT, "android-tablet10"),
+        # Measured on raw/android-tablet10/*/01-ring.png: OS status icons end
+        # at y=39, the app header's own buttons start at y=88 in every
+        # language - 60 sits comfortably in that gap.
+        status_crop=60,
+        # App's own bottom tab bar background starts at y=2400 in every
+        # language (fixed chrome).
+        tabbar_top=2400,
+        # 07-spike composer bottom edge (2476) + margin. Both pinned, stable
+        # across all 9 languages.
+        spike_composer_bottom=2500,
+        # 08-takip crop_top = this minus CONTENT_H, so it has to clear the
+        # back-chevron/language-pill row (content y=95-146 in every language,
+        # LTR and mirrored RTL both) as a whole - landing crop_top inside that
+        # range cuts the pill/chevron in half instead of just its top sliver
+        # (verified broken on a first pass: half a "DE"/"AR" glyph left
+        # floating). 2490 clears it (crop_top=150, the progress bar at
+        # y=164 and the skip-link at y<=2436 both stay fully framed) with
+        # comfortable margin below the gesture-nav pill at y=2524.
+        takip_footer_bottom=2490,
+        # 05-insights: last card's end ranges 2086-2208 across languages.
+        # The default row_coverage threshold (45) already tells every card
+        # apart from the page background on this raw set, so the plain
+        # snap_cut walk is used as-is.
+        insights_snap_window=400,
+        insights_snap_thr=45,
+    ),
+    # tablet7: raw/android-tablet7, 1200x1920 native capture.
+    dict(
+        name="android-tablet7-1080x1920", size=(1080, 1920), dev_y=360, margin_x=48,
+        headline_size=58, sub_size=25, chip_size=22, bezel=11, radius=42,
+        raw_dir=os.path.join(RAW_ROOT, "android-tablet7"),
+        # Measured on raw/android-tablet7/*/01-ring.png: OS status icons end
+        # at y=39, the app header's own buttons start at y=88 in every
+        # language - 60 sits comfortably in that gap.
+        status_crop=60,
+        # App's own bottom tab bar background starts at y=1760 in every
+        # language (fixed chrome).
+        tabbar_top=1760,
+        # 07-spike composer bottom edge (1836) + margin. Pinned, stable
+        # across all 9 languages.
+        spike_composer_bottom=1860,
+        # 08-takip: see the tablet10 entry's comment - same fix, same content
+        # geometry, this raw set's own numbers (pill/chevron content y=95-146,
+        # progress bar at y=164, skip-link ends by y=1796, gesture-nav pill at
+        # y=1884). 1850 -> crop_top=150.
+        takip_footer_bottom=1850,
+        # 05-insights on this narrower canvas reflows into two independent
+        # card columns whose last visible cards essentially never end at the
+        # same row (see two_col_insights_shot): the single full-width
+        # snap_cut_thr walk only finds the rare row where BOTH columns
+        # happen to have a gap at once, which in every language was the very
+        # first inter-card gap (~1047-1087) - a screen and a half above the
+        # raw capture's real bottom, rendering as a page of flat dark fill
+        # under "This week vs. last week". insights_two_col routes this
+        # panel through the per-column snap instead (below).
+        insights_two_col=True,
+    ),
 ]
+
+# The note size that goes on the OUTPUT canvas differs per spec above, but the
+# rendering rules for a given raw set (which panels crop directly at
+# tabbar_top, which snap, which are EXCEPTION) are identical for both -
+# they're properties of the app UI, not of the output canvas.
+SNAP_PANELS = {"05-insights"}
+PAD_PANELS = {"05-insights"}
+EXCEPTION_PANELS = {"07-spike", "08-takip"}
+# Clearance so the drawn punch-hole camera doesn't sit on the header; real bg
+# color, no invented clock/battery glyphs - see build_android_phone.STATUS_BAND.
+STATUS_BAND = 40
 
 
 def with_status_band(shot, band_h=STATUS_BAND):
@@ -84,26 +123,174 @@ def with_status_band(shot, band_h=STATUS_BAND):
     return out
 
 
-def resolve_sources(lang):
-    """Per-panel raw path for this language: the Android-dressed re-shot when one
-    exists, otherwise the shared iPad raw (which still carries the Apple Health
-    card, hence the warning). Resolved once per language so both canvases build
-    from the same decision and the warning is printed once."""
-    sources = {}
-    for key in PANELS_2_0_0:
-        src = os.path.join(ANDROID_SRC_BASE, lang, f"{key}.png")
-        if key in ANDROID_SRC_PANELS and os.path.exists(src):
-            sources[key] = src
-            continue
-        if key in ANDROID_SRC_PANELS:
-            print(f"  WARN {lang}/{key}: no android-src capture; falling back to "
-                  f"the iPad raw - the Apple Health card will be visible in the frame")
-        fallback = os.path.join(RAW_BASE, lang, f"{key}.png")
-        sources[key] = fallback if os.path.exists(fallback) else None
-    return sources
+def snap_cut_thr(img, preferred, tabbar_top, window, thr, tol=0.02, run=10):
+    """Same walk as compose.snap_cut, but with a configurable row_coverage
+    threshold - some raw sets need a lower one (see insights_snap_thr)."""
+    if row_coverage(img, preferred, thr=thr) <= tol:
+        return preferred, True
+    clear = 0
+    for y in range(min(preferred, tabbar_top), max(0, preferred - window), -1):
+        if row_coverage(img, y, thr=thr) <= tol:
+            clear += 1
+            if clear >= run:
+                return y + clear - 1, True
+        else:
+            clear = 0
+    return preferred, False
 
 
-def build_for_canvas(lang, spec, sources, out_dir):
+def crop_bottom_for(spec, key):
+    tabbar_top = spec["tabbar_top"]
+    if key == "07-spike":
+        return spec["spike_composer_bottom"]
+    if key == "08-takip":
+        return spec["takip_footer_bottom"]
+    # 01-ring/02-bodymap/04-food/09-reminders all read as clean background
+    # (or, for 01-ring, a fully-framed hint line) at tabbar_top in every
+    # language; 05-insights uses it only as the snap-search's preferred row.
+    return tabbar_top
+
+
+def two_col_bounds(w, inset=20, margin_frac=0.08):
+    """x-ranges for 05-insights' two card columns on the tablet7 raw set. The
+    two columns sit either side of a gutter centred on the image; margin_frac
+    keeps the sampled band clear of both the gutter and each column's own
+    rounded card edge (measured on raw/android-tablet7/*/05-insights.png: the
+    real gutter runs roughly w*0.46-w*0.53 across all 9 languages, comfortably
+    inside this margin on either side)."""
+    mid = w // 2
+    m = int(w * margin_frac)
+    return inset, mid - m, mid + m, w - inset
+
+
+def col_coverage_adaptive(img, y, x0, x1, step=4, thr=18):
+    """Row 'coverage' for one 05-insights card column.
+
+    compose.row_coverage compares every sample to a single margin pixel,
+    which is fine for a full-width row but not a lone column: the page
+    background on this raw set carries a soft ~20-RGB-sum gradient across a
+    column's own width (measured on the tr/es captures), enough on its own
+    to read as "card present" against a reference pixel taken from the
+    opposite side of the screen. Comparing each sample to the row's own
+    darkest pixel sidesteps that - this is a dark-mode UI, so a card fill is
+    never darker than the page behind it; in a real gap the darkest sample
+    is the page itself and every other sample matches it, while inside a
+    card there is no true page-background pixel left to pull the ratio
+    down."""
+    px = img.load()
+    xs = range(x0, x1, step)
+    vals = [px[x, y] for x in xs]
+    base = min(vals, key=lambda c: sum(c))
+    hits = sum(1 for c in vals if sum(abs(c[i] - base[i]) for i in range(3)) > thr)
+    return hits / len(vals)
+
+
+def snap_col(img, x0, x1, preferred, window, thr=18, tol=0.05, run=10):
+    """Same walk as compose.snap_cut, scoped to one card column via
+    col_coverage_adaptive instead of the full-width row_coverage."""
+    if col_coverage_adaptive(img, preferred, x0, x1, thr=thr) <= tol:
+        return preferred, True
+    clear = 0
+    for y in range(preferred, max(0, preferred - window), -1):
+        if col_coverage_adaptive(img, y, x0, x1, thr=thr) <= tol:
+            clear += 1
+            if clear >= run:
+                return y + clear - 1, True
+        else:
+            clear = 0
+    return preferred, False
+
+
+def patch_short_column(img, x0, x1, from_y, to_y):
+    """Extend the shorter of 05-insights' two columns down to the taller
+    one's cut with its own trailing background row (the same repeat-last-row
+    technique compose.pad_to_height uses), so the shorter column shows blank
+    page background under its last complete card instead of whatever -
+    possibly bisected - content the raw capture happens to have there."""
+    if to_y <= from_y + 1:
+        return
+    band = img.crop((x0, from_y - 1, x1, from_y)).resize((x1 - x0, to_y - from_y))
+    img.paste(band, (x0, from_y))
+
+
+def two_col_insights_shot(path, status_crop, label=""):
+    """05-insights reflows into two independent card columns on the tablet7
+    canvas; their last visible cards essentially never end at the same row,
+    so the plain full-width snap_cut_thr only finds the rare row where BOTH
+    columns happen to have a gap at once - in every language that was the
+    very first inter-card gap, a screen and a half above the raw capture's
+    real bottom (see the S7 store-panel ticket: the composite showed a page
+    of flat dark fill under "This week vs. last week"). Snapping each column
+    on its own, then background-filling the shorter one down to the taller
+    one's cut, uses the real content the capture already has without ever
+    bisecting a card in either column."""
+    with Image.open(path) as im0:
+        full = im0.convert("RGB")
+    w, h = full.size
+    lx0, lx1, rx0, rx1 = two_col_bounds(w)
+    anchor = h - 20  # a few px shy of the raw edge - avoids the occasional
+    # single-row false read right at the capture's own bottom border
+    lc, lok = snap_col(full, lx0, lx1, anchor, h)
+    rc, rok = snap_col(full, rx0, rx1, anchor, h)
+    if not lok or not rok:
+        print(f"  WARN {label}: two-col snap found no clean gap in a column "
+              f"(left ok={lok}, right ok={rok}); that side may show a "
+              f"bisected card.")
+    cut = max(lc, rc)
+    mid = w // 2
+    if lc < cut:
+        patch_short_column(full, 0, mid, lc, cut)
+    elif rc < cut:
+        patch_short_column(full, mid, w, rc, cut)
+    print(f"  two-col cut {label}: left={lc}({lok}) right={rc}({rok}) -> {cut}")
+    return full.crop((0, status_crop, w, cut))
+
+
+def cut_for(spec, path, key):
+    preferred = crop_bottom_for(spec, key)
+    if key not in SNAP_PANELS:
+        return preferred
+    with Image.open(path) as im:
+        cut, ok = snap_cut_thr(im.convert("RGB"), preferred, spec["tabbar_top"],
+                                spec["insights_snap_window"], spec["insights_snap_thr"])
+    if not ok:
+        print(f"  WARN {spec['name']}/{key}: no clean cut in this capture; kept {cut}. "
+              f"The last card is bisected - re-capture with a different scroll.")
+    elif cut != preferred:
+        print(f"  cut {spec['name']}/{key}: {preferred} -> {cut} (snapped clear of a card)")
+    return cut
+
+
+def load_shot(spec, raw_dir, key):
+    content_h = spec["tabbar_top"] - spec["status_crop"]
+    if key == "02-bodymap":
+        single = os.path.join(raw_dir, "02-bodymap.png")
+        if not os.path.exists(single):
+            return None
+        cb = cut_for(spec, single, key)
+        shot = bodymap_shot(raw_dir, spec["status_crop"], cb, 0, 0)
+    else:
+        path = os.path.join(raw_dir, f"{key}.png")
+        if not os.path.exists(path):
+            return None
+        if key == "05-insights" and spec.get("insights_two_col"):
+            shot = two_col_insights_shot(path, spec["status_crop"], label=f"{spec['name']}/{key}")
+        else:
+            bottom = cut_for(spec, path, key)
+            if key in EXCEPTION_PANELS:
+                top = max(0, bottom - content_h)
+            else:
+                top = spec["status_crop"]
+            shot = load_cropped_shot(path, top, bottom)
+    if shot is None:
+        return None
+    shot = with_status_band(shot)
+    if key in PAD_PANELS:
+        shot = pad_to_height(shot, content_h + STATUS_BAND)
+    return shot
+
+
+def build_for_canvas(lang, spec, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     W, H = spec["size"]
     margin_x, dev_y, bezel, radius = spec["margin_x"], spec["dev_y"], spec["bezel"], spec["radius"]
@@ -112,6 +299,7 @@ def build_for_canvas(lang, spec, sources, out_dir):
                 chip_size=spec["chip_size"], text_w=int(W * 0.80))
     dev_w_std = W - 2 * margin_x
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    raw_dir_lang = os.path.join(spec["raw_dir"], lang)
     written = []
 
     def add_punch_hole(canvas, dev_x, dw):
@@ -122,11 +310,11 @@ def build_for_canvas(lang, spec, sources, out_dir):
         d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(3, 3, 4))
 
     for key in PANELS_2_0_0:
-        raw_path = sources.get(key)
-        if raw_path is None:
+        shot = load_shot(spec, raw_dir_lang, key)
+        if shot is None:
             print(f"SKIP {lang}/{spec['name']}/{key}: raw capture missing")
             continue
-        headline, sub, chips = chips_for(lang, key)
+        headline, sub, chips = chips_for(lang, key, platform="android")
         cfg = dict(BASE, headline=headline, sub=sub, lang=lang, align=align_for(lang))
         f_chip = font(F_BOLD, cfg["chip_size"], lang=lang)
         chip_stack_gap = int(margin_x * 0.35)
@@ -139,9 +327,6 @@ def build_for_canvas(lang, spec, sources, out_dir):
         if not fits:
             print(f"  WARN [{lang}] chip overlaps the header band")
 
-        bottom = ipad.cut_for(raw_path, key)
-        top = max(0, bottom - CONTENT_H) if key in EXCEPTION_PANELS else STATUS_CROP
-        shot = with_status_band(load_cropped_shot(raw_path, top, bottom))
         dw = dev_w_std
         dev_x = (W - dw) // 2
 
@@ -158,14 +343,13 @@ def build_for_canvas(lang, spec, sources, out_dir):
 
 
 def build_all(lang):
-    raw_dir = os.path.join(RAW_BASE, lang)
-    if not os.path.isdir(raw_dir) and not os.path.isdir(os.path.join(ANDROID_SRC_BASE, lang)):
-        print(f"SKIP {lang}: no raw dir {raw_dir}")
-        return []
-    sources = resolve_sources(lang)
     written = []
     for spec in CANVASES:
-        written += build_for_canvas(lang, spec, sources, os.path.join(OUT_ROOT, spec["name"], lang))
+        raw_dir_lang = os.path.join(spec["raw_dir"], lang)
+        if not os.path.isdir(raw_dir_lang):
+            print(f"SKIP {lang}/{spec['name']}: no raw dir {raw_dir_lang}")
+            continue
+        written += build_for_canvas(lang, spec, os.path.join(OUT_ROOT, spec["name"], lang))
     return written
 
 

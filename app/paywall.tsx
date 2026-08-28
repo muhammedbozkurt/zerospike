@@ -43,6 +43,7 @@ import {
   scheduleTrialEndingReminder,
 } from "../lib/services/notifications";
 import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
+import { useHealthAvailable } from "../lib/services/healthAvailability";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
@@ -168,6 +169,17 @@ function PlanCard({
 
 function PaywallScreen() {
   const { t } = useTranslation();
+  // Same brand-name pick as app/settings/data.tsx: iOS's is localized under
+  // settings.healthSection, Android's ("Health Connect") is not per-language
+  // and lives right next to it as settings.healthSectionAndroid.
+  const healthName = t(
+    Platform.OS === "ios" ? "settings.healthSection" : "settings.healthSectionAndroid"
+  );
+  // Same device-level gate as the dashboard's quick-access Health card: on
+  // Android with no usable Health Connect (not installed / needs a Play
+  // update), the sync feature is not actually reachable, so the paywall must
+  // not sell it either.
+  const healthAvailable = useHealthAvailable();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { reason, context: ctxParam, focus: focusParam } = useLocalSearchParams<{
@@ -298,7 +310,7 @@ function PaywallScreen() {
   // it when present.
   const limit: { title: string; body?: string } | null =
     reason === "health"
-      ? { title: t("paywall.limitTitleHealth"), body: t("paywall.limitBodyHealth") }
+      ? { title: t("paywall.limitTitleHealth"), body: t("paywall.limitBodyHealth", { health: healthName }) }
       : reason === "foods"
         ? {
             title: t("paywall.limitTitleFoods"),
@@ -504,11 +516,12 @@ function PaywallScreen() {
             </View>
           ) : null}
 
-          {/* Benefits: a single, focused list (at most 4 rows). Health sync is
-              iOS-only (Health Connect removed for Play policy), so on Android it
-              drops off and an injection benefit fills the slot. The injection
-              benefit itself only applies to a profile that actually doses, so an
-              insulin-free / undiagnosed user never sees it. */}
+          {/* Benefits: a single, focused list (at most 4 rows). Health sync now
+              shows on both platforms (HealthKit / Health Connect), so a
+              profile that also doses can push the injection bullet off the
+              4-row cap - that bullet itself only applies to a profile that
+              actually doses, so an insulin-free / undiagnosed user never
+              loses a slot to it. */}
           <GlassCard style={{ paddingVertical: 16, marginBottom: 16 }}>
             {/* Coming out of onboarding the list opens with the one line that
                 matches the quiz answer, lit so it reads as the lead rather than
@@ -540,7 +553,9 @@ function PaywallScreen() {
               </View>
             ) : null}
             {[
-              ...(Platform.OS === "ios" ? [t("paywall.featureHealthSync")] : []),
+              ...(healthAvailable
+                ? [t("paywall.featureHealthSync", { health: healthName })]
+                : []),
               t("paywall.featureInsights"),
               t("paywall.featureFamily"),
               t("paywall.featurePdf"),

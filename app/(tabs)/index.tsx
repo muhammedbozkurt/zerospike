@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Platform, Pressable, SectionList, Switch, Text, View } from "react-native";
+import { AppState, Pressable, SectionList, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -65,9 +65,12 @@ import {
   updateGlucoseInHealth,
   deleteGlucoseFromHealth,
   getHealthWriteEnabled,
+  hasHealthProvider,
   takeHealthWriteFailureNotice,
+  HEALTH_NAME,
   type SyncResult,
 } from "../../lib/services/health";
+import { useHealthAvailable } from "../../lib/services/healthAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { logCrash, logEvent } from "../../lib/analytics";
@@ -116,8 +119,6 @@ async function readProfileFlag(baseKey: string, profileId: string): Promise<bool
 async function writeProfileFlag(baseKey: string, profileId: string, value: boolean): Promise<void> {
   await AsyncStorage.setItem(`${baseKey}.${profileId}`, value ? "true" : "false");
 }
-// Name the health source explicitly in the UI (App Review guideline 2.5.1).
-const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
 // The dashboard shows a PREVIEW of the journal, not the journal: the last
 // couple of days and at most a screenful of rows (JOURNAL_PREVIEW_LIMITS,
 // lib/journalSlice.ts). It deliberately does not grow in place - the old "show
@@ -248,11 +249,16 @@ export default function DashboardScreen() {
   const { toast, confirm, actionSheet } = useFeedback();
   const guardEntry = useEntryGuardConfirm();
   // Store-screenshot only: an Android store frame is captured on the iOS
-  // simulator (?scPlatform=android), and the Android build has no health sync at
-  // all - so the quick-access row drops the Health card and takes its Android
-  // shape. Always false in a normal build (dev + env double lock).
+  // simulator (?scPlatform=android). The quick-access row drops the Health
+  // card there regardless of the real device's Health Connect/HealthKit
+  // availability, so the captured frame stays deterministic. Always false in
+  // a normal build (dev + env double lock).
   const androidSourceShot = useScreenshotAndroidSource();
-  const showsHealthCard = Platform.OS === "ios" && !androidSourceShot;
+  // Shared gate for BOTH Health entry points (quick-access card + first-run
+  // step): see lib/services/healthAvailability.ts for why hasHealthProvider()
+  // alone is not enough on Android.
+  const healthAvailable = useHealthAvailable();
+  const showsHealthCard = healthAvailable && !androidSourceShot;
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   // The visible journal list only: same window, but with the calculator's own
@@ -622,8 +628,10 @@ export default function DashboardScreen() {
   // Pro-only now: a free user who had it on keeps their imported data but stops
   // auto-importing, and is told once.
   useEffect(() => {
-    // Health/CGM sync is iOS-only (Health Connect was removed for Play policy).
-    if (Platform.OS !== "ios") return;
+    // Health/CGM sync now runs on any platform with a wired-up provider
+    // (iOS/HealthKit, Android/Health Connect); hasHealthProvider() is the
+    // shared gate so this stays in sync with health.ts's own provider pick.
+    if (!hasHealthProvider()) return;
     // Profile lock (A): nothing to key the preference off until the active
     // profile has resolved.
     if (!activeProfile) return;
@@ -666,20 +674,23 @@ export default function DashboardScreen() {
 
   function describeSync(res: SyncResult): { msg: string; tone: "success" | "info" } {
     if (res.status === "unavailable")
-      return { msg: t("dashboard.healthUnavailable"), tone: "info" };
+      return { msg: t("dashboard.healthUnavailable", { health: HEALTH_NAME }), tone: "info" };
     if (res.status === "denied")
-      return { msg: t("dashboard.healthDenied"), tone: "info" };
+      return { msg: t("dashboard.healthDenied", { health: HEALTH_NAME }), tone: "info" };
     if (res.status === "error")
-      return { msg: t("dashboard.healthError"), tone: "info" };
+      return { msg: t("dashboard.healthError", { health: HEALTH_NAME }), tone: "info" };
     if (res.inserted > 0)
-      return { msg: t("dashboard.imported", { n: res.inserted }), tone: "success" };
+      return {
+        msg: t("dashboard.imported", { n: res.inserted, health: HEALTH_NAME }),
+        tone: "success",
+      };
     if (res.read > 0)
       return { msg: t("dashboard.healthUpToDate"), tone: "info" };
     // read === 0 && inserted === 0: iOS never reveals read-permission denial
     // (requestHealthPermissions always resolves true there), so an empty
     // result can mean "nothing new" OR "access was never granted" - this
     // neutral copy names both instead of asserting the wrong one.
-    return { msg: t("dashboard.healthNoDataOrAccess"), tone: "info" };
+    return { msg: t("dashboard.healthNoDataOrAccess", { health: HEALTH_NAME }), tone: "info" };
   }
 
   // Pulls from Health. `announce` shows a toast (off for the silent open-sync).
@@ -708,7 +719,7 @@ export default function DashboardScreen() {
         // on this card, a broken mirror is not written anywhere. The toggle
         // itself is never touched; only the user turns that off.
         if (takeHealthWriteFailureNotice()) {
-          toast(t("dashboard.healthWriteFailed"), "info");
+          toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
         } else {
           const { msg, tone } = describeSync(res);
           toast(msg, tone);
@@ -1428,9 +1439,10 @@ export default function DashboardScreen() {
       label: t("dashboard.stepGlucose"),
       onPress: () => setQuickAddOpen(true),
     },
-    // Health sync is iOS-only here (Health Connect stays out of the Android
-    // build), so on Android the guide is a two-step one and numbers itself.
-    ...(Platform.OS === "ios"
+    // Health sync now shows on both platforms (HealthKit / Health Connect);
+    // healthAvailable also drops it on an Android device where Health Connect
+    // itself is unavailable, leaving a two-step guide there instead.
+    ...(healthAvailable
       ? [
           {
             key: "health",
@@ -1451,7 +1463,8 @@ export default function DashboardScreen() {
   ];
 
   // Same optional steps the first-run guide offered, minus the one the user has
-  // already done (logging). Health stays off Android with the build.
+  // already done (logging). Health drops out on an Android device where
+  // Health Connect itself is unavailable (see healthAvailable above).
   const setupShortcuts = startSteps.filter((s) => s.key !== "log");
   // Both (or, on Android, the one) optional steps have a confirmed "done":
   // the compact row below hides itself even if the user never tapped its
