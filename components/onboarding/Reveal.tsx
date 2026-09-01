@@ -3,7 +3,7 @@ import { ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { GLUCOSE_RICH, TABULAR, THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, RADIUS, TABULAR, THEME } from "../../lib/theme/tokens";
 import { pct } from "../../lib/format";
 import { upper } from "../../lib/upper";
 import { FadeSlideIn, useCountUp } from "./motion";
@@ -15,7 +15,6 @@ import { GlassCard } from "../rich/GlassCard";
 import { GlucoseChip } from "../rich/GlucoseChip";
 import { GradientAreaChart } from "../rich/GradientAreaChart";
 import { GradientCTA } from "../rich/GradientCTA";
-import { IconTile } from "../rich/IconTile";
 import type { RevealPlanItem, RevealPlanKind } from "../../lib/revealPlan";
 
 // Cascade timing (ms): a gentle staggered reveal.
@@ -59,9 +58,61 @@ function RangeEnd({
 }) {
   const value = useCountUp(mgdl, undefined, onSettle);
   return (
-    <Text style={[TABULAR, { color: THEME.accent, fontSize: 22, fontWeight: "800" }]}>
+    <Text style={[TABULAR, { color: GLUCOSE_RICH.target, fontSize: 20, fontWeight: "800" }]}>
       {formatGlucose(value, unit)}
     </Text>
+  );
+}
+
+/** The small caps caption both closing cards open with. */
+function CardCaption({ children }: { children: string }) {
+  return (
+    <Text
+      style={{
+        color: THEME.muted,
+        fontSize: 11,
+        lineHeight: 14,
+        letterSpacing: 1.2,
+        fontWeight: "600",
+        marginBottom: 12,
+      }}
+    >
+      {upper(children)}
+    </Text>
+  );
+}
+
+/** One target band, as a row: what it is on the left, the band on the right. */
+function TargetRow({
+  label,
+  minMgdl,
+  maxMgdl,
+  unit,
+  onSettle,
+}: {
+  label: string;
+  minMgdl: number;
+  maxMgdl: number;
+  unit: GlucoseUnit;
+  onSettle?: () => void;
+}) {
+  return (
+    <View
+      className="flex-row items-baseline justify-between"
+      style={{ marginBottom: 12 }}
+      accessible
+      accessibilityLabel={`${label}, ${formatGlucose(minMgdl, unit)} - ${formatGlucose(maxMgdl, unit)} ${glucoseUnitLabel(unit)}`}
+    >
+      <Text style={{ color: THEME.ink, fontSize: 15 }}>{label}</Text>
+      <View className="flex-row items-baseline" style={{ gap: 4 }}>
+        <RangeEnd mgdl={minMgdl} unit={unit} onSettle={onSettle} />
+        <Text style={{ color: THEME.muted, fontSize: 16, fontWeight: "700" }}>-</Text>
+        <RangeEnd mgdl={maxMgdl} unit={unit} />
+        <Text style={{ color: THEME.muted, fontSize: 12, marginLeft: 2 }}>
+          {glucoseUnitLabel(unit)}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -75,19 +126,25 @@ function RangeEnd({
 function PlanRow({
   icon,
   label,
+  value,
+  valueTone = "ink",
   mode,
   wantsAlarm,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  /** The row's own right-hand value: a stored "HH:MM", or a descriptor for the
+   *  two rows that have no clock time of their own. */
+  value?: string;
+  valueTone?: "ink" | "muted";
   mode?: "alarm" | "notification" | null;
   wantsAlarm?: boolean;
 }) {
   const { t } = useTranslation();
   return (
-    <View className="flex-row items-center py-1.5">
-      <IconTile icon={icon} size={26} radius={9} />
-      <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 10, flex: 1 }} numberOfLines={2}>
+    <View className="flex-row items-center" style={{ gap: 10, marginBottom: 12 }}>
+      <Ionicons name={icon} size={18} color={THEME.accent} />
+      <Text style={{ color: THEME.ink, fontSize: 15, flex: 1 }} numberOfLines={2}>
         {label}
       </Text>
       {mode ? (
@@ -97,15 +154,27 @@ function PlanRow({
         // is what will really happen.
         <Ionicons
           name={mode === "alarm" ? "alarm" : wantsAlarm ? "alarm-outline" : "notifications-outline"}
-          size={13}
+          size={14}
           color={mode === "alarm" ? THEME.accent : THEME.muted}
           accessibilityLabel={
             mode === "alarm" ? t("reminders.modeAlarm") : t("reminders.modeNotification")
           }
-          style={{ marginRight: 8 }}
         />
       ) : null}
-      <Ionicons name="checkmark-circle" size={16} color={GLUCOSE_RICH.target} />
+      {value ? (
+        <Text
+          style={[
+            TABULAR,
+            {
+              color: valueTone === "muted" ? THEME.muted : THEME.ink,
+              fontSize: 15,
+              fontWeight: valueTone === "muted" ? "400" : "700",
+            },
+          ]}
+        >
+          {value}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -152,17 +221,25 @@ export function Reveal({
 }) {
   const { t } = useTranslation();
 
-  /** The line's text: the reminder's OWN name when it has one (every preset row
-   *  is named after its part of the day - see lib/reminderPresets), the type's
-   *  generic name otherwise, then the row's stored "HH:MM" - the same string
-   *  Settings > Reminders shows, so the two can never disagree. */
-  function planLabel(item: RevealPlanItem): string {
+  /** The line, split into what it is and when it happens: the reminder's OWN
+   *  name when it has one (every preset row is named after its part of the day
+   *  - see lib/reminderPresets), the type's generic name otherwise, and the
+   *  row's stored "HH:MM" as the right-hand value - the same string Settings >
+   *  Reminders shows, so the two can never disagree. The two rows with no clock
+   *  time of their own carry a descriptor there instead. */
+  function planLine(item: RevealPlanItem): {
+    label: string;
+    value?: string;
+    valueTone?: "ink" | "muted";
+  } {
     if (item.kind === "postMeal") {
-      return item.minutes != null
-        ? `${t("onboarding.planPostMeal")} · ${t("settings.minutes", { n: item.minutes })}`
-        : t("onboarding.planPostMeal");
+      return {
+        label: t("onboarding.planPostMeal"),
+        value: item.minutes != null ? t("settings.minutes", { n: item.minutes }) : undefined,
+        valueTone: "muted",
+      };
     }
-    if (item.kind === "lowFollowup") return t("onboarding.planLowFollow");
+    if (item.kind === "lowFollowup") return { label: t("onboarding.planLowFollow") };
     const name =
       item.label ??
       t(
@@ -172,7 +249,7 @@ export function Reveal({
             ? "reminders.typeBasal"
             : "reminders.typeGlucose"
       );
-    return item.time ? `${name} · ${item.time}` : name;
+    return { label: name, value: item.time ?? undefined };
   }
 
   const { curve, tir, band } = useMemo(() => {
@@ -273,81 +350,52 @@ export function Reveal({
           </GlassCard>
         </FadeSlideIn>
 
-        {/* The user's own range, as a range */}
+        {/* The user's own range, one band per row */}
         <FadeSlideIn delay={D_TARGETS}>
-          <GlassCard style={{ marginBottom: 12 }}>
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 11,
-                letterSpacing: 1.3,
-                fontWeight: "800",
-                marginBottom: 10,
-              }}
-            >
-              {upper(t("onboarding.revealTargetsTitle"))}
-            </Text>
-            <View className="flex-row">
-              <View className="flex-1 items-center">
-                <Text style={{ color: THEME.muted, fontSize: 11, marginBottom: 2 }}>
-                  {t("period.fasting")}
-                </Text>
-                <View className="flex-row items-baseline" style={{ gap: 4 }}>
-                  <RangeEnd mgdl={fastingMinMgdl} unit={unit} onSettle={hapticSuccess} />
-                  <Text style={{ color: THEME.muted, fontSize: 16 }}>-</Text>
-                  <RangeEnd mgdl={fastingMgdl} unit={unit} />
-                </View>
-                <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
-                  {glucoseUnitLabel(unit)}
-                </Text>
-              </View>
-              <View style={{ width: 1, backgroundColor: THEME.border }} />
-              <View className="flex-1 items-center">
-                <Text style={{ color: THEME.muted, fontSize: 11, marginBottom: 2 }}>
-                  {t("period.post_meal_2h")}
-                </Text>
-                <View className="flex-row items-baseline" style={{ gap: 4 }}>
-                  <RangeEnd mgdl={postmealMinMgdl} unit={unit} />
-                  <Text style={{ color: THEME.muted, fontSize: 16 }}>-</Text>
-                  <RangeEnd mgdl={postmealMgdl} unit={unit} />
-                </View>
-                <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
-                  {glucoseUnitLabel(unit)}
-                </Text>
-              </View>
-            </View>
+          <GlassCard radius={RADIUS.xl} style={{ marginBottom: 12, padding: 20 }}>
+            <CardCaption>{t("onboarding.revealTargetsTitle")}</CardCaption>
+            <TargetRow
+              label={t("period.fasting")}
+              minMgdl={fastingMinMgdl}
+              maxMgdl={fastingMgdl}
+              unit={unit}
+              onSettle={hapticSuccess}
+            />
+            <TargetRow
+              label={t("period.post_meal_2h")}
+              minMgdl={postmealMinMgdl}
+              maxMgdl={postmealMgdl}
+              unit={unit}
+            />
           </GlassCard>
         </FadeSlideIn>
 
         <FadeSlideIn delay={D_PLAN}>
-          <GlassCard>
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 11,
-                letterSpacing: 1.3,
-                fontWeight: "800",
-                marginBottom: 4,
-              }}
-            >
-              {upper(t("onboarding.revealPlanTitle"))}
-            </Text>
-            {plan.map((item) => (
-              <PlanRow
-                key={item.id}
-                icon={PLAN_ICONS[item.kind]}
-                label={planLabel(item)}
-                mode={item.mode}
-                wantsAlarm={item.wantsAlarm}
-              />
-            ))}
+          <GlassCard radius={RADIUS.xl} style={{ padding: 20 }}>
+            <CardCaption>{t("onboarding.revealPlanTitle")}</CardCaption>
+            {plan.map((item) => {
+              const line = planLine(item);
+              return (
+                <PlanRow
+                  key={item.id}
+                  icon={PLAN_ICONS[item.kind]}
+                  label={line.label}
+                  value={line.value}
+                  valueTone={line.valueTone}
+                  mode={item.mode}
+                  wantsAlarm={item.wantsAlarm}
+                />
+              );
+            })}
           </GlassCard>
         </FadeSlideIn>
       </ScrollView>
 
       <FadeSlideIn delay={D_CTA} style={{ marginTop: 12 }}>
         <GradientCTA
-          label={t("onboarding.continue")}
+          label={t("onboarding.getStarted")}
+          size="lg"
+          style={{ borderRadius: RADIUS.full }}
           disabled={saving}
           onPress={onContinue}
         />

@@ -22,6 +22,7 @@ import { hapticSuccess } from "../lib/haptics";
 import { logEvent } from "../lib/analytics";
 import { formatTime, relativeDay } from "../lib/format";
 import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
 
 /** The stored medication entry being corrected (structurally matches MedEntry
@@ -50,6 +51,10 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     </Text>
   );
 }
+
+/** Widest the sheet gets on a tablet before it stops stretching and centres
+ *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 /**
  * Bottom sheet for correcting a medication entry: name, time and note - the
@@ -82,6 +87,7 @@ export function MedEditSheet({
   const { t, i18n } = useTranslation();
   const { activeProfile } = useApp();
   const { confirm } = useFeedback();
+  const { isWide } = useLayout();
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [loggedAt, setLoggedAt] = useState(new Date());
@@ -162,6 +168,7 @@ export function MedEditSheet({
                 paddingBottom: 8,
               },
               glow(THEME.accent, 30, 0.3),
+              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
           >

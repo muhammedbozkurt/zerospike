@@ -30,6 +30,7 @@ import {
   UNDO_TOAST_SCREEN_READER_MS,
 } from "../lib/feedback";
 import { GLUCOSE_RICH, THEME, RADIUS, ELEVATION } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 
 type ToastKind = "success" | "info" | "error";
 
@@ -121,6 +122,13 @@ const TOAST_MS = 2200;
  */
 const TOAST_ACTION_MS = UNDO_TOAST_MS;
 const TOAST_ACTION_SCREEN_READER_MS = UNDO_TOAST_SCREEN_READER_MS;
+
+/** Widest a full-bleed action sheet gets on a tablet before it stops
+ *  stretching and centres (same cap as components/GlucoseInputSheet.tsx's
+ *  SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
+/** Cap for a centered, content-sized dialog card on a tablet (ConfirmOverlay). */
+const DIALOG_MAX_WIDTH = 520;
 
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   // Toast state
@@ -501,6 +509,7 @@ function ConfirmOverlay({
   onClose: (result: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const { isWide } = useLayout();
   const anim = useEnterAnim();
   const dismiss = useCallback(() => onClose(false), [onClose]);
   useBackHandler(dismiss);
@@ -568,14 +577,17 @@ function ConfirmOverlay({
         >
           <Pressable
             className="rounded-3xl border border-hair p-5"
-            style={{
-              backgroundColor: THEME.sheet,
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 28,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 16,
-            }}
+            style={[
+              {
+                backgroundColor: THEME.sheet,
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: 12 },
+                elevation: 16,
+              },
+              isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
             onPress={(e) => e.stopPropagation()}
             accessibilityRole="alert"
             accessibilityLabel={
@@ -660,6 +672,7 @@ function SheetOverlay({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { isWide } = useLayout();
   const anim = useEnterAnim();
   useBackHandler(onClose);
 
@@ -691,10 +704,13 @@ function SheetOverlay({
         >
           <Pressable
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
-            style={{
-              backgroundColor: THEME.bg.g1,
-              paddingBottom: insets.bottom + 20,
-            }}
+            style={[
+              {
+                backgroundColor: THEME.bg.g1,
+                paddingBottom: insets.bottom + 20,
+              },
+              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <View className="items-center mb-2">

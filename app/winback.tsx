@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  Pressable,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -14,10 +22,11 @@ import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { OfferCard } from "../components/OfferCard";
 import { hapticSuccess } from "../lib/haptics";
-import { AppBackground, GlassCard, GradientCTA, IconTile } from "../components/rich";
-import { MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
-import { pct } from "../lib/format";
+import { AppBackground, GradientCTA, IconTile } from "../components/rich";
+import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { isolateLtr, pct } from "../lib/format";
 
 /**
  * The return offer for a lapsed subscriber, rebuilt to the mockup's 08
@@ -31,6 +40,11 @@ function WinbackScreen() {
   const router = useRouter();
   const { refreshPro } = useApp();
   const { toast } = useFeedback();
+  const { width } = useWindowDimensions();
+  // Same cap as OfferCard's own cardWidth, so the bottom band (CTA + decline +
+  // legal) lines up edge-to-edge with the card above it on wide/tablet screens
+  // instead of stretching to the full px-6 width.
+  const bottomColWidth = Math.min(width - 48, 420);
   const [offer, setOffer] = useState<DownsellOffer | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -135,65 +149,31 @@ function WinbackScreen() {
               >
                 {t("winback.title")}
               </Text>
-              <Text
-                style={{
-                  color: THEME.muted,
-                  textAlign: "center",
-                  lineHeight: 20,
-                  maxWidth: 280,
-                }}
-              >
-                {t("winback.subtitle", { percent: pct(offer!.savingsPercent) })}
-              </Text>
 
-              <GlassCard glow style={{ alignSelf: "stretch", marginTop: 4 }}>
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-1 pr-3">
-                    <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
-                      {t("downsell.savingsBadge", { percent: pct(offer!.savingsPercent) })}
-                    </Text>
-                    <Text
-                      style={[
-                        TABULAR,
-                        {
-                          color: THEME.muted,
-                          fontSize: 12,
-                          textDecorationLine: "line-through",
-                          marginTop: 2,
-                        },
-                      ]}
-                    >
-                      {offer!.standardPriceString}
-                    </Text>
-                  </View>
-                  <Text
-                    style={[TABULAR, { color: THEME.ink, fontSize: 22, fontWeight: "800" }]}
-                  >
-                    {offer!.discountedPriceString}
-                  </Text>
-                </View>
-                <Text
-                  style={{
-                    color: THEME.muted,
-                    fontSize: 11,
-                    lineHeight: 16,
-                    marginTop: 10,
-                  }}
-                >
-                  {t("downsell.renewalDisclosure", {
-                    discountPrice: offer!.discountedPriceString,
-                    standardPrice: offer!.standardPriceString,
-                  })}
-                </Text>
-              </GlassCard>
+              <OfferCard
+                // Bidi: same "just the number+sign pair" isolate proven on the
+                // paywall's own savePercent badge (writingDirection alone was
+                // verified NOT enough on-device for this under RTL).
+                badgeText={t("downsell.savingsBadge", {
+                  percent: isolateLtr(pct(offer!.savingsPercent)),
+                })}
+                title={t("winback.subtitle", { percent: isolateLtr(pct(offer!.savingsPercent)) })}
+                discountedPrice={offer!.discountedPriceString ?? ""}
+                standardPrice={offer!.standardPriceString ?? ""}
+                disclosure={t("downsell.renewalDisclosure", {
+                  discountPrice: offer!.discountedPriceString,
+                  standardPrice: offer!.standardPriceString,
+                })}
+                style={{ marginTop: 4 }}
+              />
             </>
           )}
         </View>
 
         {!loading ? (
-          <View className="px-6">
+          <View style={{ width: bottomColWidth, alignSelf: "center" }}>
             <GradientCTA
-              label={t("winback.cta", { percent: pct(offer!.savingsPercent) })}
+              label={t("winback.cta", { percent: isolateLtr(pct(offer!.savingsPercent)) })}
               disabled={busy}
               onPress={accept}
             />

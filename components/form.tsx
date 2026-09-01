@@ -10,9 +10,10 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { INPUT_TEXT, THEME } from "../lib/theme/tokens";
+import { INPUT_TEXT, RADIUS, THEME } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
 import { DirIcon } from "./DirIcon";
+import { withAlpha } from "./rich/GlassCard";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -181,25 +182,47 @@ export function AcceptCheck({
   return (
     <Pressable
       onPress={onToggle}
-      className={`flex-row items-center rounded-2xl border px-4 py-3.5 ${
-        checked
-          ? "bg-brand/10 border-brand/40"
-          : "bg-glass border-hair"
-      }`}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      accessibilityLabel={label}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 14,
+        minHeight: 60,
+        paddingHorizontal: 18,
+        paddingVertical: 16,
+        borderRadius: RADIUS.lg,
+        // 1.5 in both states so ticking the box never shifts the row.
+        borderWidth: 1.5,
+        borderColor: checked ? THEME.accent : THEME.border,
+        backgroundColor: checked ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+      }}
     >
       <View
-        className={`w-6 h-6 rounded-md items-center justify-center mr-3 border-2 ${
-          checked ? "bg-brand border-brand" : "border-hair"
-        }`}
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: RADIUS.sm,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1.5,
+          borderColor: checked ? THEME.accent : "rgba(255,255,255,0.22)",
+          backgroundColor: checked ? THEME.accent : "transparent",
+        }}
       >
-        <Animated.View
-          style={{ opacity: anim, transform: [{ scale: anim }] }}
-        >
-          <Ionicons name="checkmark" size={15} color="#000" />
+        <Animated.View style={{ opacity: anim, transform: [{ scale: anim }] }}>
+          <Ionicons name="checkmark" size={15} color="#062126" />
         </Animated.View>
       </View>
       <Text
-        className={`flex-1 text-sm ${checked ? "text-brand" : "text-mut"}`}
+        style={{
+          flex: 1,
+          color: THEME.ink,
+          fontSize: 16,
+          lineHeight: 22,
+          fontWeight: "600",
+        }}
       >
         {label}
       </Text>

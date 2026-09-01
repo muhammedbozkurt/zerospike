@@ -7,6 +7,7 @@ import {
   Pressable,
   Text,
   View,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -50,6 +51,7 @@ import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import {
   clampHypoThreshold,
   clampTarget,
+  formatGlucose,
   glucoseToDisplay,
   glucoseFromDisplay,
   glucoseUnitLabel,
@@ -63,7 +65,7 @@ import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logEvent } from "../lib/analytics";
 import { HEALTH_NAME } from "../lib/services/health";
 import { hapticSelect } from "../lib/haptics";
-import { Button, SectionLabel } from "../components/ui";
+import { SectionLabel } from "../components/ui";
 import { AcceptCheck } from "../components/form";
 import { BigInput } from "../components/onboarding/BigInput";
 import { InlineTimePicker } from "../components/InlineTimePicker";
@@ -74,8 +76,8 @@ import { QuizStep } from "../components/onboarding/QuizStep";
 import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
-import { AppBackground } from "../components/rich";
-import { THEME, GLUCOSE_RICH } from "../lib/theme/tokens";
+import { AppBackground, GradientCTA, withAlpha } from "../components/rich";
+import { RADIUS, TABULAR, THEME, GLUCOSE_RICH } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
 import { parseDecimalText } from "../lib/numberInput";
 import { useLayout } from "../lib/useLayout";
@@ -118,6 +120,9 @@ const TREATMENT_ICONS: Record<TreatmentOption, IconName> = {
 /** Single-select steps settle, then advance. */
 const AUTO_ADVANCE_MS = 150;
 
+/** Ink on top of the accent fill (check discs) - never pure black. */
+const ON_ACCENT = "#062126";
+
 type Phase = "welcome" | "quiz" | "reveal";
 type StepId =
   | "name"
@@ -135,6 +140,27 @@ type StepId =
   | "medReminder"
   | "reminderPlan"
   | "disclaimer";
+
+/**
+ * The anchor glyph per step. Ionicons throughout - the app's icon language does
+ * not change for one screen - picking the nearest glyph to each approved mark.
+ * A step missing from this map draws none on purpose: its own content (the six
+ * diabetes options, the two range editors, the insulin form, the widget band,
+ * the reminder layout) already fills the frame, and a plate above it would only
+ * push the CTA off a short phone.
+ */
+const STEP_GLYPHS: Partial<Record<StepId, IconName>> = {
+  name: "person-outline",
+  unit: "speedometer-outline",
+  insulin: "medical-outline",
+  pillsOnly: "medkit-outline",
+  carbRatio: "water-outline",
+  isf: "locate-outline",
+  basal: "moon-outline",
+  medReminder: "medkit-outline",
+  notify: "notifications-outline",
+  disclaimer: "shield-outline",
+};
 
 // The fixed head of the quiz (everything after it branches on the answers).
 // Hoisted so the screenshot hook below can point at the diabetes question by
@@ -164,6 +190,162 @@ function screenshotDiabetes(param?: string): DiabetesOption | null {
     : null;
 }
 
+/**
+ * A "the app will do this at HH:MM" row: an icon plate, what it is, and the
+ * time. Module level so toggling the picker under it never remounts the row.
+ */
+function TimeRow({
+  icon,
+  label,
+  value,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityValue={{ text: value }}
+      className="active:opacity-80"
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 14,
+        minHeight: 64,
+        paddingHorizontal: 18,
+        paddingVertical: 16,
+        borderRadius: RADIUS.lg,
+        borderWidth: 1,
+        borderColor: THEME.border,
+        backgroundColor: THEME.glass,
+      }}
+    >
+      <View
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: RADIUS.md,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: withAlpha(THEME.accent, 0.1),
+        }}
+      >
+        <Ionicons name={icon} size={22} color={THEME.accent} />
+      </View>
+      <Text style={{ color: THEME.ink, fontSize: 16, lineHeight: 22, flex: 1 }}>
+        {label}
+      </Text>
+      <Text style={[TABULAR, { color: THEME.ink, fontSize: 19, fontWeight: "700" }]}>
+        {value}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** A plain "why we are asking" card: one icon, one sentence, no action. */
+function RationaleCard({
+  icon,
+  tint = THEME.accent,
+  children,
+  style,
+}: {
+  icon: IconName;
+  tint?: string;
+  children: React.ReactNode;
+  style?: ViewStyle;
+}) {
+  return (
+    <View
+      style={[
+        {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 12,
+          padding: 18,
+          borderRadius: RADIUS.lg,
+          borderWidth: 1,
+          borderColor: THEME.border,
+          backgroundColor: THEME.glass,
+        },
+        style,
+      ]}
+    >
+      <Ionicons name={icon} size={20} color={tint} />
+      <View style={{ flex: 1 }}>{children}</View>
+    </View>
+  );
+}
+
+/**
+ * The pinned primary action, identical on every step: the app's gradient CTA
+ * as a full-width pill. One component, so a step can never grow a CTA of its
+ * own size or shape.
+ */
+function PrimaryCta({
+  label,
+  onPress,
+  disabled,
+  loading,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <GradientCTA
+      label={label}
+      size="lg"
+      style={{ borderRadius: RADIUS.full }}
+      disabled={disabled}
+      loading={loading}
+      onPress={onPress}
+    />
+  );
+}
+
+/** The "skip / not now / I do not know" link under the CTA. The vertical
+ *  padding is the touch target, and the gap the frame asks for comes out of it. */
+function SecondaryLink({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="py-3.5 items-center"
+    >
+      <Text style={{ color: THEME.muted, fontSize: 15, fontWeight: "500" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** Body copy of a rationale card - one metric, used by all of them. */
+function RationaleText({
+  children,
+  tone = "muted",
+}: {
+  children: React.ReactNode;
+  tone?: "muted" | "ink";
+}) {
+  return (
+    <Text
+      style={{
+        color: tone === "ink" ? THEME.ink : THEME.muted,
+        fontSize: 15,
+        lineHeight: 22,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
 export default function OnboardingScreen() {
   const { t } = useTranslation();
   // Android has no lock-screen widgets and no standalone injection widget
@@ -172,7 +354,7 @@ export default function OnboardingScreen() {
   // exist there.
   const ios = Platform.OS === "ios";
   const insets = useSafeAreaInsets();
-  const { columnPad } = useLayout();
+  const { columnPad, height } = useLayout();
   const router = useRouter();
   const { activeProfile, bumpData, completeOnboarding } = useApp();
   const { scOnboarding } = useLocalSearchParams<{ scOnboarding?: string }>();
@@ -703,12 +885,13 @@ export default function OnboardingScreen() {
         ? () => setPhase("welcome")
         : back;
 
-  return (
-    <AppBackground style={{ paddingTop: insets.top }}>
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1"
-    >
+  // Shared header + phase body. The quiz phase now pins its own scrolling
+  // shell (QuizStep) with a footer that carries insets.bottom itself, so this
+  // wrapper only adds the safe-area gap for the two phases that have no
+  // footer of their own (welcome, reveal) - adding it here too would pad the
+  // quiz phase twice.
+  const shellBody = (
+    <>
       {/* Shared header: back (quiz only) + always-present language chip. Shares
           the content column so the chip stays over the copy on a tablet instead
           of drifting to the far edge of the screen. */}
@@ -717,18 +900,25 @@ export default function OnboardingScreen() {
         style={columnPad(24)}
       >
         {onBack ? (
-          <Pressable onPress={onBack} hitSlop={10} className="pr-3 py-1">
-            <Ionicons name="chevron-back" size={24} color={THEME.muted} />
+          <Pressable
+            onPress={onBack}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.back")}
+            className="rounded-full border border-hair bg-glass items-center justify-center active:opacity-80"
+            style={{ width: 36, height: 36 }}
+          >
+            <Ionicons name="chevron-back" size={18} color={THEME.ink} />
           </Pressable>
         ) : (
-          <View className="w-6" />
+          <View style={{ width: 36 }} />
         )}
         <LanguageChip />
       </View>
 
       <View
         className="flex-1"
-        style={{ paddingBottom: insets.bottom + 16, ...columnPad(24) }}
+        style={{ paddingBottom: phase === "quiz" ? 16 : insets.bottom + 16, ...columnPad(24) }}
       >
         {phase === "welcome" ? (
           <Welcome
@@ -757,13 +947,34 @@ export default function OnboardingScreen() {
             progress={progress}
             title={titleFor(step)}
             hint={hintFor(step)}
+            glyph={STEP_GLYPHS[step]}
+            // The disclaimer is the one step that is a notice, not a question.
+            glyphTone={step === "disclaimer" ? "caution" : "accent"}
             footer={renderFooter()}
+            insetsBottom={insets.bottom}
           >
             {renderContent()}
           </QuizStep>
         ) : null}
       </View>
-    </KeyboardAvoidingView>
+    </>
+  );
+
+  return (
+    <AppBackground style={{ paddingTop: insets.top }}>
+      {/* Android: no KeyboardAvoidingView here - adjustResize plus QuizStep's
+          own scrolling shell already lift the focused field above the
+          keyboard, and stacking a second lift on top of that used to
+          over-compensate (see the removed automaticallyAdjustKeyboardInsets
+          note this replaced). iOS keeps the padding behavior: it has no
+          resize-on-keyboard equivalent. */}
+      {ios ? (
+        <KeyboardAvoidingView behavior="padding" className="flex-1">
+          {shellBody}
+        </KeyboardAvoidingView>
+      ) : (
+        <View className="flex-1">{shellBody}</View>
+      )}
     </AppBackground>
   );
 
@@ -780,6 +991,19 @@ export default function OnboardingScreen() {
               maxLength={40}
               accessibilityLabel={t("onboarding.profileName")}
             />
+            {/* The one question a user could read as "one profile per app":
+                say up front that the others live in Settings. */}
+            <View
+              className="flex-row items-center justify-center"
+              style={{ marginTop: 18, gap: 8 }}
+            >
+              <Ionicons name="information-circle-outline" size={15} color={THEME.muted} />
+              <Text
+                style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, flexShrink: 1 }}
+              >
+                {t("onboarding.qNameHint")}
+              </Text>
+            </View>
           </FadeSlideIn>
         );
 
@@ -794,6 +1018,7 @@ export default function OnboardingScreen() {
                   icon={UNIT_ICONS[opt]}
                   label={glucoseUnitLabel(opt)}
                   description={t(`onboarding.unitHint_${opt}`)}
+                  spacing={14}
                   selected={unit === opt}
                   onPress={() => {
                     hapticSelect();
@@ -812,6 +1037,9 @@ export default function OnboardingScreen() {
               <FadeSlideIn key={opt} delay={optDelay(i)}>
                 <OptionCard
                   label={t(`onboarding.diabetes_${opt}`)}
+                  // Six options in one frame: the tightest gap of the three
+                  // option lists, so the last one still clears the CTA.
+                  spacing={10}
                   selected={diabetes === opt}
                   onPress={() => selectAndAdvance(() => selectDiabetes(opt))}
                 />
@@ -929,8 +1157,8 @@ export default function OnboardingScreen() {
       case "insulinProducts": {
         const mixMode = mixModeUi || isMixSelection(basalInsulinId, bolusInsulinId);
         const basalUnitsField = (
-          <View style={{ marginTop: 14 }}>
-            <Text className="text-ink text-sm font-semibold mb-2">
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ color: THEME.ink, fontSize: 14, marginBottom: 8 }}>
               {t("settings.basalDailyUnits")}
             </Text>
             <Stepper
@@ -942,9 +1170,11 @@ export default function OnboardingScreen() {
               max={200}
               decimals={0}
               suffix={t("common.units")}
+              // The one number entered on this step, so it gets the wider strip.
+              size="lg"
               accessibilityLabel={t("settings.basalDailyUnits")}
             />
-            <Text className="text-mut text-xs mt-2 leading-4">
+            <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginTop: 8 }}>
               {t("settings.basalDailyUnitsHint")}
             </Text>
           </View>
@@ -957,6 +1187,7 @@ export default function OnboardingScreen() {
               value={basalInsulinId}
               otherValue={basalInsulinOther}
               slot="mix"
+              size="lg"
               onChange={(id) => {
                 // A premix fills BOTH DB fields at once (see isMixSelection):
                 // there is no separate "mix" column, the two ids being equal
@@ -986,7 +1217,9 @@ export default function OnboardingScreen() {
               className="py-3.5 items-center"
               style={{ marginTop: 10 }}
             >
-              <Text className="text-mut font-medium">{t("insulinPicker.mixOff")}</Text>
+              <Text style={{ color: THEME.accent, fontSize: 15, fontWeight: "500" }}>
+                {t("insulinPicker.mixOff")}
+              </Text>
             </Pressable>
           </FadeSlideIn>
         ) : (
@@ -997,6 +1230,7 @@ export default function OnboardingScreen() {
               value={basalInsulinId}
               otherValue={basalInsulinOther}
               slot="basal"
+              size="lg"
               onChange={(id) => {
                 setBasalInsulinId(id);
                 if (id !== OTHER_PRODUCT_ID) setBasalInsulinOther(null);
@@ -1012,6 +1246,7 @@ export default function OnboardingScreen() {
                 value={bolusInsulinId}
                 otherValue={bolusInsulinOther}
                 slot="bolus"
+                size="lg"
                 onChange={(id) => {
                   setBolusInsulinId(id);
                   if (id !== OTHER_PRODUCT_ID) setBolusInsulinOther(null);
@@ -1026,7 +1261,11 @@ export default function OnboardingScreen() {
               className="py-3.5 items-center"
               style={{ marginTop: 10 }}
             >
-              <Text className="text-mut font-medium">{t("insulinPicker.mixUse")}</Text>
+              {/* Accent, not muted: this is a real alternative shape of the
+                  step, not the "skip" link the footer already carries. */}
+              <Text style={{ color: THEME.accent, fontSize: 15, fontWeight: "500" }}>
+                {t("insulinPicker.mixUse")}
+              </Text>
             </Pressable>
           </FadeSlideIn>
         );
@@ -1047,6 +1286,7 @@ export default function OnboardingScreen() {
               max={50}
               decimals={1}
               suffix={t("common.carbRatioUnit")}
+              variant="hero"
               accessibilityLabel={t("settings.carbRatios")}
             />
           </FadeSlideIn>
@@ -1067,6 +1307,7 @@ export default function OnboardingScreen() {
               max={unit === "mmol" ? 30 : 500}
               decimals={unit === "mmol" ? 1 : 0}
               suffix={glucoseUnitLabel(unit)}
+              variant="hero"
               accessibilityLabel={t("settings.isf")}
             />
           </FadeSlideIn>
@@ -1075,19 +1316,12 @@ export default function OnboardingScreen() {
       case "basal":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <Pressable
+            <TimeRow
+              icon="moon-outline"
+              label={t("onboarding.basalTime")}
+              value={basalTime}
               onPress={() => setShowTime((s) => !s)}
-              style={{ minHeight: 60 }}
-              className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 active:opacity-80"
-            >
-              <View className="flex-row items-center">
-                <Ionicons name="moon-outline" size={20} color={THEME.accent} />
-                <Text className="text-ink text-base ml-3">
-                  {t("onboarding.basalTime")}
-                </Text>
-              </View>
-              <Text className="text-ink text-lg font-semibold">{basalTime}</Text>
-            </Pressable>
+            />
             <InlineTimePicker
               visible={showTime}
               value={basalTime}
@@ -1098,238 +1332,101 @@ export default function OnboardingScreen() {
         );
 
       case "widget": {
-        // Shared between both platform branches below so the home-screen
-        // widget mock is not duplicated: iOS keeps it beside the lock-screen
-        // shapes, Android (no lock-screen widgets - see widget-guide.tsx)
-        // shows it alone.
-        const homeWidgetCard = (
-          <View
-            style={{
-              width: 108,
-              borderRadius: 18,
-              borderWidth: 1,
-              borderColor: THEME.border,
-              backgroundColor: THEME.glass,
-              paddingHorizontal: 10,
-              paddingVertical: 9,
-            }}
+        // The band has to clear the pinned footer on a short phone: the tiles
+        // are drawn at the mock's 118dp and give up height proportionally
+        // below that, so the row stays a band and never becomes a stack.
+        const band = Math.min(118, height * 0.16);
+        const s = band / 118;
+        // Stylised drawings in this screen's own primitives, not the real
+        // widget code: the extension cannot render here, and the point of the
+        // step is "here is what you would be adding", not a pixel-accurate
+        // preview. The numbers are invented, which is what the badge says.
+        const tileStyle = (accent?: boolean): ViewStyle => ({
+          flex: 1,
+          maxWidth: 104,
+          height: band,
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: accent ? withAlpha(THEME.accent, 0.35) : THEME.border,
+          backgroundColor: THEME.glass,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 6,
+          gap: 6 * s,
+        });
+        const tileCaption = (text: string) => (
+          <Text
+            numberOfLines={2}
+            style={{ color: THEME.muted, fontSize: 11, lineHeight: 14, textAlign: "center" }}
           >
-            <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
-              {upper(t("widget.avgGlucose"))}
-            </Text>
-            <View className="flex-row items-baseline" style={{ gap: 3 }}>
-              <Text style={{ color: GLUCOSE_RICH.target, fontSize: 26, fontWeight: "800" }}>
-                112
-              </Text>
-              <Text className="text-mut text-[10px]">mg/dL</Text>
-            </View>
-            {/* The reminder line the home families gained: name first, with
-                the glyph for how it will actually be delivered. */}
-            <View className="flex-row items-center mt-1.5" style={{ gap: 3 }}>
-              <Ionicons name="alarm-outline" size={9} color={THEME.muted} />
-              <Text className="text-mut text-[9px] font-bold flex-1" numberOfLines={1}>
-                {t("reminders.presetMorning")}
-              </Text>
-            </View>
-            <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "800", marginTop: 1 }}>
-              08:00
-            </Text>
-          </View>
+            {text}
+          </Text>
         );
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            {/* The numbers below are drawn, not the user's own records, so they
-                carry the same sample label the reveal preview uses. */}
             <Text
               style={{
                 color: THEME.muted,
                 fontSize: 11,
                 letterSpacing: 1.3,
                 fontWeight: "800",
-                marginBottom: 8,
+                marginBottom: 10,
+                textAlign: "center",
               }}
             >
               {upper(t("onboarding.sampleBadge"))}
             </Text>
-            {/* Lock-screen Live Activity mock (in-app drawing, no OS permission). */}
-            <View className="rounded-2xl border border-hair bg-glass p-4">
-              <View className="flex-row items-center" style={{ gap: 12 }}>
+            <View className="flex-row justify-center" style={{ gap: 12 }}>
+              {/* A reading - in the unit this user chose two steps ago, not a
+                  hard-coded mg/dL. */}
+              <View style={tileStyle()}>
+                <Text
+                  style={[
+                    TABULAR,
+                    { color: GLUCOSE_RICH.target, fontSize: 24 * s, fontWeight: "800" },
+                  ]}
+                >
+                  {formatGlucose(112, unit)}
+                </Text>
+                {tileCaption(glucoseUnitLabel(unit))}
                 <View
                   style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 10,
-                    backgroundColor: THEME.accent,
-                    alignItems: "center",
-                    justifyContent: "center",
+                    width: 56 * s,
+                    height: 3,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: withAlpha(GLUCOSE_RICH.target, 0.5),
                   }}
-                >
-                  <Ionicons name="pulse" size={20} color="#00171c" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text className="text-mut text-[11px] font-bold">zerospike</Text>
-                  {/* Mirrors the real running card, which shows the feature
-                      name alone next to the live countdown (the window length
-                      is fixed, so printing it here too was the same number
-                      twice). */}
-                  <Text className="text-ink text-sm font-bold" numberOfLines={1}>
-                    {t("dashboard.quickPostMealTitle")}
-                  </Text>
-                </View>
-                <Text style={{ color: THEME.accent, fontSize: 18, fontWeight: "800" }}>1:12</Text>
+                />
               </View>
-              <View
-                style={{ height: 5, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden", marginTop: 10 }}
-              >
-                <View style={{ height: "100%", width: "40%", backgroundColor: THEME.accent }} />
+              {/* The average - the family the widget leads with, so it carries
+                  the accent edge. */}
+              <View style={tileStyle(true)}>
+                <Text style={[TABULAR, { color: THEME.ink, fontSize: 20 * s, fontWeight: "800" }]}>
+                  {formatGlucose(124, unit)}
+                </Text>
+                {tileCaption(t("widget.avgGlucose"))}
+                <Ionicons name="bar-chart-outline" size={22 * s} color={THEME.accent} />
               </View>
-            </View>
-            {/* Home-screen widget mock, beside the three lock-screen shapes.
-                Both are stylised drawings in this screen's own primitives, not
-                the real widget code: the extension cannot render here, and the
-                point of the step is "here is what you would be adding", not a
-                pixel-accurate preview.
-
-                Laid out side by side, with the copy moved to its own full-width
-                line underneath, because the step already carries a sample badge
-                and the Live Activity card above - stacking a fourth block would
-                have pushed the footer off a small screen. The lock shapes are
-                44pt tall, the smallest size at which the three silhouettes stay
-                tellable apart. */}
-            {ios ? (
-              <View className="flex-row mt-3" style={{ gap: 12 }}>
-                {homeWidgetCard}
-
-                {/* Lock screen: the three accessory shapes, in the order the OS
-                    gallery offers them. */}
-                <View style={{ flex: 1, gap: 6 }}>
-                  <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
-                    {upper(t("widgetGuide.lockTitle"))}
-                  </Text>
-                  <View className="flex-row items-center" style={{ gap: 8 }}>
-                    {/* Circular: one number, no room for a label. */}
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 22,
-                        borderWidth: 1,
-                        borderColor: THEME.border,
-                        backgroundColor: THEME.glass,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
-                        112
-                      </Text>
-                      <Ionicons name="water" size={7} color={THEME.muted} />
-                    </View>
-                    {/* Inline: a single tinted line. */}
-                    <View
-                      className="flex-row items-center flex-1"
-                      style={{
-                        gap: 4,
-                        height: 44,
-                        borderRadius: 12,
-                        borderWidth: 1,
-                        borderColor: THEME.border,
-                        backgroundColor: THEME.glass,
-                        paddingHorizontal: 8,
-                      }}
-                    >
-                      <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
-                      <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
-                        {t("reminders.presetMorning")}
-                      </Text>
-                      <Text className="text-ink text-[10px] font-bold">08:00</Text>
-                    </View>
-                  </View>
-                  {/* Rectangular: name + time on top, the reading under it. */}
-                  <View
-                    style={{
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: THEME.border,
-                      backgroundColor: THEME.glass,
-                      paddingHorizontal: 8,
-                      paddingVertical: 6,
-                    }}
-                  >
-                    <View className="flex-row items-center" style={{ gap: 4 }}>
-                      <Ionicons name="alarm-outline" size={10} color={THEME.ink} />
-                      <Text className="text-ink text-[10px] font-semibold flex-1" numberOfLines={1}>
-                        {t("reminders.presetMorning")}
-                      </Text>
-                      <Text className="text-ink text-[10px] font-bold">08:00</Text>
-                    </View>
-                    <Text className="text-mut text-[10px] font-semibold mt-0.5">112 mg/dL</Text>
-                  </View>
-                </View>
-              </View>
-            ) : (
-              // Android has no lock-screen widgets (see widget-guide.tsx's
-              // Android section), so this step shows only the home-screen mock.
-              <View className="mt-3">{homeWidgetCard}</View>
-            )}
-
-            {/* Mini widgets: 2.3.1's four single-purpose tiles, drawn as the
-                icon-only accessoryCircular shape above actually renders on the
-                Lock Screen (SmallActionView.circularView in
-                targets/widget/SmallWidgets.swift) - same 44pt circle, same
-                border/glass, no number because these tiles carry no reading.
-                No under-circle label: dashboard.startCountdown's German
-                ("Countdown starten", two words) does not fit one line under a
-                44pt column at 9-10pt even spread across the full step width,
-                and CLAUDE.md bans adjustsFontSizeToFit (it clips silently on
-                Android) - see scripts/postMealCardLayout.test.ts section H for
-                the measured widths. onboarding.widgetIntro right below already
-                says in prose what a tap on one of these does, so the row does
-                not go unexplained. */}
-            <View style={{ marginTop: 14 }}>
-              <Text className="text-mut text-[9px] font-bold" numberOfLines={1}>
-                {upper(t("widgetGuide.miniTitle"))}
-              </Text>
-              <View
-                className="flex-row items-center mt-2"
-                style={{ gap: 10, flexWrap: "wrap" }}
-              >
-                {[
-                  { key: "glucose", icon: "water" as const },
-                  { key: "meal", icon: "restaurant" as const },
-                  // Insulin tile only on iOS, and only for a profile that
-                  // actually uses insulin - this step runs AFTER the treatment
-                  // question, so hasInsulin is already settled. Not hidden, not
-                  // rendered: the same "no leak for a no-insulin profile" rule
-                  // SmallWidgets.swift's smallInjectionAction enforces on the
-                  // real widget. Android has no standalone injection widget at
-                  // all (only a tile inside the Quick Add widget), so this mock
-                  // never offers one there.
-                  ...(ios && hasInsulin
-                    ? [{ key: "insulin", icon: "medical" as const }]
-                    : []),
-                  { key: "timer", icon: "timer-outline" as const },
-                ].map((tile) => (
-                  <View
-                    key={tile.key}
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 22,
-                      borderWidth: 1,
-                      borderColor: THEME.border,
-                      backgroundColor: THEME.glass,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Ionicons name={tile.icon} size={18} color={THEME.ink} />
-                  </View>
-                ))}
+              {/* The next reminder - the line the home families gained. */}
+              <View style={tileStyle()}>
+                <Ionicons name="notifications-outline" size={20 * s} color={THEME.accent} />
+                <Text style={[TABULAR, { color: THEME.ink, fontSize: 12 }]}>20:00</Text>
+                {tileCaption(t("widget.nextReminder"))}
               </View>
             </View>
 
-            <Text className="text-ink text-sm leading-6 mt-3">
+            {/* The copy still branches: Android has no lock-screen widgets
+                (see widget-guide.tsx's Android section), so it never promises
+                one. */}
+            <Text
+              style={{
+                color: THEME.muted,
+                fontSize: 15,
+                lineHeight: 22,
+                textAlign: "center",
+                marginTop: 14,
+              }}
+            >
               {ios ? t("onboarding.widgetIntro") : t("onboarding.widgetIntroAndroid")}
             </Text>
           </FadeSlideIn>
@@ -1340,27 +1437,16 @@ export default function OnboardingScreen() {
         return (
           <FadeSlideIn delay={optDelay(0)}>
             {notifyResult == null ? (
-              <View className="flex-row items-start rounded-2xl border border-hair bg-glass p-4">
-                <Ionicons name="notifications-outline" size={18} color={THEME.accent} />
-                <Text className="text-mut text-sm leading-6 ml-3 flex-1">
-                  {t("onboarding.notifRationale")}
-                </Text>
-              </View>
+              <RationaleCard icon="notifications-outline">
+                <RationaleText>{t("onboarding.notifRationale")}</RationaleText>
+              </RationaleCard>
             ) : notifyResult === "granted" ? (
-              <View className="flex-row items-center rounded-2xl border border-hair bg-glass p-4">
-                <Ionicons name="checkmark-circle" size={20} color={GLUCOSE_RICH.target} />
-                <Text className="text-ink text-sm leading-6 ml-3 flex-1">
-                  {t("onboarding.notifGranted")}
-                </Text>
-              </View>
+              <RationaleCard icon="checkmark-circle" tint={GLUCOSE_RICH.target}>
+                <RationaleText tone="ink">{t("onboarding.notifGranted")}</RationaleText>
+              </RationaleCard>
             ) : (
-              <View className="rounded-2xl border border-hair bg-glass p-4">
-                <View className="flex-row items-start">
-                  <Ionicons name="notifications-off-outline" size={20} color={THEME.muted} />
-                  <Text className="text-mut text-sm leading-6 ml-3 flex-1">
-                    {t("onboarding.notifOff")}
-                  </Text>
-                </View>
+              <RationaleCard icon="notifications-off-outline" tint={THEME.muted}>
+                <RationaleText>{t("onboarding.notifOff")}</RationaleText>
                 <Pressable
                   onPress={() => Linking.openSettings()}
                   className="mt-3 flex-row items-center justify-center rounded-xl border border-hair py-2.5 active:opacity-80"
@@ -1370,22 +1456,18 @@ export default function OnboardingScreen() {
                     {t("settings.openSystemSettings")}
                   </Text>
                 </Pressable>
-              </View>
+              </RationaleCard>
             )}
             {/* Camera + Apple Health are only INTRODUCED here; the OS ask stays at
                 the point of use (first barcode scan / when Health is opened). */}
-            <View className="mt-3 flex-row items-start rounded-2xl border border-hair bg-glass p-4">
-              <Ionicons name="barcode-outline" size={18} color={THEME.accent} />
-              <Text className="text-mut text-sm leading-6 ml-3 flex-1">
-                {t("onboarding.permCamera")}
-              </Text>
-            </View>
-            <View className="mt-3 flex-row items-start rounded-2xl border border-hair bg-glass p-4">
-              <Ionicons name="fitness-outline" size={18} color={THEME.accent} />
-              <Text className="text-mut text-sm leading-6 ml-3 flex-1">
+            <RationaleCard icon="barcode-outline" style={{ marginTop: 12 }}>
+              <RationaleText>{t("onboarding.permCamera")}</RationaleText>
+            </RationaleCard>
+            <RationaleCard icon="fitness-outline" style={{ marginTop: 12 }}>
+              <RationaleText>
                 {t("onboarding.permHealth", { health: HEALTH_NAME })}
-              </Text>
-            </View>
+              </RationaleText>
+            </RationaleCard>
           </FadeSlideIn>
         );
 
@@ -1396,19 +1478,12 @@ export default function OnboardingScreen() {
       case "medReminder":
         return (
           <FadeSlideIn delay={optDelay(0)}>
-            <Pressable
+            <TimeRow
+              icon="medkit-outline"
+              label={t("onboarding.medReminderTime")}
+              value={medReminderTime}
               onPress={() => setShowMedTime((s) => !s)}
-              style={{ minHeight: 60 }}
-              className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 active:opacity-80"
-            >
-              <View className="flex-row items-center">
-                <Ionicons name="medkit-outline" size={20} color={THEME.accent} />
-                <Text className="text-ink text-base ml-3">
-                  {t("onboarding.medReminderTime")}
-                </Text>
-              </View>
-              <Text className="text-ink text-lg font-semibold">{medReminderTime}</Text>
-            </Pressable>
+            />
             <InlineTimePicker
               visible={showMedTime}
               value={medReminderTime}
@@ -1416,7 +1491,7 @@ export default function OnboardingScreen() {
               onClose={() => setShowMedTime(false)}
             />
             {alarmKitAvailable ? (
-              <Text className="text-mut text-sm leading-5 mt-3">
+              <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginTop: 12 }}>
                 {t("onboarding.alarmNote")}
               </Text>
             ) : null}
@@ -1445,15 +1520,12 @@ export default function OnboardingScreen() {
                 pointer to the in-app Sources screen, shown before the
                 disclaimer banner itself. */}
             {isTwoWayTreatment ? (
-              <View className="flex-row items-start rounded-2xl border border-hair bg-glass p-4 mb-4">
-                <Ionicons name="information-circle-outline" size={18} color={THEME.accent} />
-                <Text className="text-mut text-sm leading-6 ml-3 flex-1">
-                  {t("onboarding.sourcesHintTracking")}
-                </Text>
-              </View>
+              <RationaleCard icon="information-circle-outline" style={{ marginBottom: 16 }}>
+                <RationaleText>{t("onboarding.sourcesHintTracking")}</RationaleText>
+              </RationaleCard>
             ) : null}
             <DisclaimerBanner full />
-            <View className="mt-4">
+            <View style={{ marginTop: 16 }}>
               <AcceptCheck
                 checked={accepted}
                 onToggle={() => setAccepted((a) => !a)}
@@ -1475,21 +1547,18 @@ export default function OnboardingScreen() {
       // the flow advances only on an explicit tap and never fakes a grant.
       return notifyResult == null ? (
         <View>
-          <Button label={t("onboarding.notifyCta")} size="lg" onPress={nextFromNotify} />
-          <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
-            <Text className="text-mut font-medium">{t("onboarding.skipForNow")}</Text>
-          </Pressable>
+          <PrimaryCta label={t("onboarding.notifyCta")} onPress={nextFromNotify} />
+          <SecondaryLink label={t("onboarding.skipForNow")} onPress={next} />
         </View>
       ) : (
-        <Button label={t("onboarding.continue")} size="lg" onPress={next} />
+        <PrimaryCta label={t("onboarding.continue")} onPress={next} />
       );
     }
 
     if (step === "disclaimer") {
       return (
-        <Button
+        <PrimaryCta
           label={t("onboarding.continue")}
-          size="lg"
           disabled={!accepted}
           loading={saving}
           onPress={finishToReveal}
@@ -1502,15 +1571,12 @@ export default function OnboardingScreen() {
     if (step === "medReminder") {
       return (
         <View>
-          <Button
+          <PrimaryCta
             label={t("onboarding.medReminderSetup")}
-            size="lg"
             loading={savingMedReminder}
             onPress={setupMedReminder}
           />
-          <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
-            <Text className="text-mut font-medium">{t("onboarding.medReminderSkip")}</Text>
-          </Pressable>
+          <SecondaryLink label={t("onboarding.medReminderSkip")} onPress={next} />
         </View>
       );
     }
@@ -1521,23 +1587,21 @@ export default function OnboardingScreen() {
           {/* Removing every line leaves nothing to set up, so the primary
               action steps aside rather than writing an empty plan. */}
           {planRows.length > 0 ? (
-            <Button
+            <PrimaryCta
               label={t("onboarding.planSetup")}
-              size="lg"
               loading={savingPlan}
               onPress={setupReminderPlan}
             />
           ) : null}
-          <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
-            <Text className="text-mut font-medium">{t("onboarding.planSkip")}</Text>
-          </Pressable>
+          <SecondaryLink label={t("onboarding.planSkip")} onPress={next} />
         </View>
       );
     }
 
     const notSure =
       step === "carbRatio" || step === "isf" ? (
-        <Pressable
+        <SecondaryLink
+          label={t("onboarding.notSure")}
           onPress={() => {
             if (step === "carbRatio") {
               setCarbRatio(DEFAULT_CARB_RATIO);
@@ -1548,11 +1612,7 @@ export default function OnboardingScreen() {
             }
             next();
           }}
-          hitSlop={8}
-          className="py-3.5 items-center"
-        >
-          <Text className="text-mut font-medium">{t("onboarding.notSure")}</Text>
-        </Pressable>
+        />
       ) : null;
 
     // The diabetes question is optional, but skipping it has to be a deliberate
@@ -1562,17 +1622,14 @@ export default function OnboardingScreen() {
     // gets the same explicit "gec" link since it is just as optional.
     const skipQuestion =
       step === "diabetes" || step === "insulinProducts" ? (
-        <Pressable onPress={next} hitSlop={8} className="py-3.5 items-center">
-          <Text className="text-mut font-medium">{t("onboarding.skipQuestion")}</Text>
-        </Pressable>
+        <SecondaryLink label={t("onboarding.skipQuestion")} onPress={next} />
       ) : null;
 
     const label = step === "diabetes" ? t("onboarding.continue") : t("onboarding.next");
     return (
       <View>
-        <Button
+        <PrimaryCta
           label={label}
-          size="lg"
           disabled={
             (step === "targets" && !rangesOk) ||
             (step === "diabetes" && diabetes == null)

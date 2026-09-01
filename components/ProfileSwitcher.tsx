@@ -18,6 +18,11 @@ import { useApp } from "../lib/store/AppContext";
 import { createProfile } from "../lib/db/profiles";
 import { Button } from "./ui";
 import { INPUT_TEXT, THEME } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
+
+/** Cap for a centered, content-sized dialog card on a tablet (does not
+ *  stretch edge to edge like a bottom sheet). */
+const DIALOG_MAX_WIDTH = 520;
 
 /**
  * Own trigger pill + modal by default (every existing call site just renders
@@ -52,6 +57,7 @@ export function ProfileSwitcher({
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const { height: winHeight } = useWindowDimensions();
+  const { isWide } = useLayout();
 
   async function handleSelect(id: string) {
     await setActiveProfileId(id);
@@ -148,14 +154,17 @@ export function ProfileSwitcher({
           >
             <Pressable
               className="rounded-3xl border border-hair p-5"
-              style={{
-                backgroundColor: THEME.sheet,
-                shadowColor: "#000",
-                shadowOpacity: 0.5,
-                shadowRadius: 28,
-                shadowOffset: { width: 0, height: 12 },
-                elevation: 16,
-              }}
+              style={[
+                {
+                  backgroundColor: THEME.sheet,
+                  shadowColor: "#000",
+                  shadowOpacity: 0.5,
+                  shadowRadius: 28,
+                  shadowOffset: { width: 0, height: 12 },
+                  elevation: 16,
+                },
+                isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
+              ]}
               onPress={(e) => e.stopPropagation()}
             >
               <Text className="text-ink text-lg font-bold mb-3">

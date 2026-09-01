@@ -26,7 +26,22 @@ interface StepperProps {
   editable?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
+  /**
+   * "row" (default) is the bordered -/value/+ strip used everywhere in the app.
+   * "hero" is the onboarding composition: two round buttons around one very
+   * large value, for a step whose ONLY job is that single number.
+   */
+  variant?: "row" | "hero";
+  /** Row variant only: "lg" widens the two buttons and the whole strip, for a
+   *  form field that is the focus of its own onboarding step. */
+  size?: "md" | "lg";
 }
+
+/** Round button + value metrics of the "hero" composition. */
+const HERO_BTN = 60;
+const HERO_VALUE = 64;
+/** Row variant, "lg": the wider button cell the onboarding form asks for. */
+const WIDE_BTN = 56;
 
 /**
  * A shared - value + stepper. Two 44pt buttons that also repeat (accelerating)
@@ -55,6 +70,8 @@ export function Stepper({
   editable = true,
   accessibilityLabel,
   style,
+  variant = "row",
+  size = "md",
 }: StepperProps) {
   const { t } = useTranslation();
   // Refs keep the held-repeat timer reading fresh values without re-arming.
@@ -133,27 +150,161 @@ export function Stepper({
   // What this control currently reads, so the two buttons and the field all
   // announce the same thing (they used to announce "<label> -" and a bare number).
   const valueText = suffix ? `${text} ${suffix}` : text;
+  const decLabel = [t("common.decrease"), accessibilityLabel].filter(Boolean).join(", ");
+  const incLabel = [t("common.increase"), accessibilityLabel].filter(Boolean).join(", ");
+  const wide = size === "lg";
+  const cellSize = wide ? WIDE_BTN : HIT_TARGET;
+
+  /** The press behaviour both compositions share: tap steps once, hold repeats. */
+  const pressProps = (dir: 1 | -1, label: string) => ({
+    onPress: () => apply(dir * step),
+    onLongPress: () => startHold(dir),
+    onPressOut: stopHold,
+    delayLongPress: 280,
+    hitSlop: 6,
+    accessibilityRole: "button" as const,
+    accessibilityLabel: label,
+    accessibilityValue: { text: valueText },
+  });
 
   const btn = (dir: 1 | -1, icon: keyof typeof Ionicons.glyphMap, label: string) => (
     <Pressable
-      onPress={() => apply(dir * step)}
-      onLongPress={() => startHold(dir)}
-      onPressOut={stopHold}
-      delayLongPress={280}
-      hitSlop={6}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityValue={{ text: valueText }}
+      {...pressProps(dir, label)}
       style={{
-        width: HIT_TARGET,
-        height: HIT_TARGET,
+        width: cellSize,
+        height: cellSize,
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      <Ionicons name={icon} size={20} color={THEME.accent} />
+      <Ionicons name={icon} size={wide ? 22 : 20} color={THEME.accent} />
     </Pressable>
   );
+
+  if (variant === "hero") {
+    // The plus is the "primary" side (a fresh step starts at its default and
+    // most users only ever raise it), so it carries the accent fill.
+    const heroBtn = (
+      dir: 1 | -1,
+      icon: keyof typeof Ionicons.glyphMap,
+      label: string,
+      primary: boolean
+    ) => (
+      <Pressable
+        {...pressProps(dir, label)}
+        style={{
+          width: HERO_BTN,
+          height: HERO_BTN,
+          borderRadius: RADIUS.full,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: primary ? withAlpha(THEME.accent, 0.4) : THEME.border,
+          backgroundColor: primary ? withAlpha(THEME.accent, 0.12) : THEME.glass,
+        }}
+      >
+        <Ionicons name={icon} size={24} color={THEME.accent} />
+      </Pressable>
+    );
+
+    return (
+      <View
+        style={[
+          { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16 },
+          style,
+        ]}
+      >
+        {heroBtn(-1, "remove", decLabel, false)}
+        <View style={{ alignItems: "center", minWidth: 120, flexShrink: 1 }}>
+          {/* flex-end, not baseline: a TextInput's baseline is not reliable
+              across platforms, so the unit is nudged up by hand instead.
+              minWidth: 0 is what lets this row actually shrink inside the hero
+              budget; without it a long suffix (mmol/L) pushes past the buttons
+              before adjustsFontSizeToFit ever engages. */}
+          <View style={{ flexDirection: "row", alignItems: "flex-end", flexShrink: 1, minWidth: 0 }}>
+            {editable ? (
+              <TextInput
+                ref={inputRef}
+                value={text}
+                onChangeText={onText}
+                onFocus={() => {
+                  editingRef.current = true;
+                  setFocused(true);
+                }}
+                onBlur={onBlurText}
+                keyboardType={decimals > 0 ? "decimal-pad" : "number-pad"}
+                returnKeyType="done"
+                selectTextOnFocus
+                accessibilityLabel={accessibilityLabel}
+                accessibilityValue={{ text: valueText }}
+                accessibilityHint={t("common.tapToEdit")}
+                style={[
+                  TABULAR,
+                  {
+                    color: THEME.ink,
+                    fontSize: HERO_VALUE,
+                    fontWeight: "800",
+                    textAlign: "center",
+                    // Sized off the current text (a controlled TextInput does
+                    // not grow while typing) and allowed to shrink, so a long
+                    // value can never push the two buttons off a phone.
+                    width: Math.max(90, text.length * 30 + 14),
+                    flexShrink: 1,
+                    paddingVertical: 0,
+                    paddingHorizontal: 0,
+                    // No lineHeight on purpose: iOS clips glyphs against a
+                    // fixed line box (see INPUT_TEXT in lib/theme/tokens).
+                    includeFontPadding: false,
+                  },
+                ]}
+              />
+            ) : (
+              <Text
+                style={[
+                  TABULAR,
+                  { color: THEME.ink, fontSize: HERO_VALUE, fontWeight: "800" },
+                ]}
+                accessibilityLabel={
+                  accessibilityLabel ? `${accessibilityLabel}, ${valueText}` : valueText
+                }
+              >
+                {text}
+              </Text>
+            )}
+            {suffix ? (
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+                style={{
+                  color: THEME.muted,
+                  fontSize: 18,
+                  fontWeight: "600",
+                  marginLeft: 8,
+                  marginBottom: 12,
+                  flexShrink: 1,
+                }}
+              >
+                {suffix}
+              </Text>
+            ) : null}
+          </View>
+          {/* The value's own underline: this is a typeable field, and at this
+              size a bordered chip would fight the number for attention. */}
+          <View
+            style={{
+              width: 96,
+              height: 3,
+              borderRadius: RADIUS.full,
+              marginTop: 4,
+              backgroundColor: withAlpha(THEME.accent, focused ? 0.9 : 0.5),
+            }}
+          />
+        </View>
+        {heroBtn(1, "add", incLabel, true)}
+      </View>
+    );
+  }
 
   return (
     <View
@@ -161,7 +312,7 @@ export function Stepper({
         {
           flexDirection: "row",
           alignItems: "center",
-          borderRadius: RADIUS.md,
+          borderRadius: wide ? RADIUS.lg : RADIUS.md,
           borderWidth: 1,
           borderColor: THEME.border,
           backgroundColor: THEME.glass,
@@ -170,11 +321,7 @@ export function Stepper({
         style,
       ]}
     >
-      {btn(
-        -1,
-        "remove",
-        [t("common.decrease"), accessibilityLabel].filter(Boolean).join(", ")
-      )}
+      {btn(-1, "remove", decLabel)}
       <Cell
         // The whole cell is the tap target, not just the glyphs inside it, so a
         // tap anywhere in the value area opens the keyboard.
@@ -189,7 +336,7 @@ export function Stepper({
           borderLeftWidth: 1,
           borderRightWidth: 1,
           borderColor: THEME.border,
-          minHeight: HIT_TARGET,
+          minHeight: cellSize,
           paddingHorizontal: 6,
           paddingVertical: 4,
         }}
@@ -223,7 +370,7 @@ export function Stepper({
                 // grow while typing, so a fixed 58pt clipped "10,5" to "10,".
                 width: Math.max(58, text.length * 14 + 20),
                 flexShrink: 1,
-                height: HIT_TARGET - 12,
+                height: cellSize - 12,
                 paddingVertical: 0,
                 paddingHorizontal: 8,
                 // Android adds font padding inside a fixed height and top-aligns
@@ -231,7 +378,7 @@ export function Stepper({
                 includeFontPadding: false,
                 textAlignVertical: "center",
                 // Visible affordance: the typed value is an input, not a label.
-                borderRadius: RADIUS.sm,
+                borderRadius: wide ? 10 : RADIUS.sm,
                 borderWidth: 1,
                 borderColor: withAlpha(THEME.accent, focused ? 0.75 : 0.3),
                 backgroundColor: withAlpha(THEME.accent, focused ? 0.14 : 0.06),
@@ -253,17 +400,18 @@ export function Stepper({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.7}
-            style={{ color: THEME.muted, fontSize: 12, fontWeight: "600", flexShrink: 1 }}
+            style={{
+              color: THEME.muted,
+              fontSize: wide ? 14 : 12,
+              fontWeight: "600",
+              flexShrink: 1,
+            }}
           >
             {suffix}
           </Text>
         ) : null}
       </Cell>
-      {btn(
-        1,
-        "add",
-        [t("common.increase"), accessibilityLabel].filter(Boolean).join(", ")
-      )}
+      {btn(1, "add", incLabel)}
     </View>
   );
 }

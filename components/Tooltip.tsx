@@ -5,6 +5,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { RADIUS, THEME } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
+
+/** Cap for a centered, content-sized dialog card on a tablet (does not
+ *  stretch edge to edge like a bottom sheet). */
+const DIALOG_MAX_WIDTH = 520;
 
 /**
  * A small (i) info control. Tapping opens the explanation in a centered popup.
@@ -28,6 +33,7 @@ export function Tooltip({
   style?: StyleProp<ViewStyle>;
 }) {
   const { t } = useTranslation();
+  const { isWide } = useLayout();
   const [open, setOpen] = useState(false);
   return (
     <View style={style}>
@@ -51,14 +57,17 @@ export function Tooltip({
         >
           <Pressable
             className="rounded-3xl border border-hair p-4"
-            style={{
-              backgroundColor: THEME.sheet,
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 28,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 16,
-            }}
+            style={[
+              {
+                backgroundColor: THEME.sheet,
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: 12 },
+                elevation: 16,
+              },
+              isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <ScrollView

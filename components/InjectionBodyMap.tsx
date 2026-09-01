@@ -61,6 +61,10 @@ interface Region {
   box: readonly [number, number, number, number];
   /** Corner radius; w/2 turns the box into a capsule (limbs). */
   rx: number;
+  /** For "row" layouts: the row's vertical position as a fraction of the box
+   *  height (default 0.5). The buttocks use 0.35 so the injection line sits on
+   *  the upper gluteal band, per clinical guidance. */
+  rowYFactor?: number;
 }
 
 // A smooth, WIDE anatomical body outline on the 0 0 240 380 viewBox (symmetric about
@@ -125,8 +129,8 @@ const REGIONS: readonly Region[] = [
   { site: "thigh_right", layout: "column", surface: "front", box: [92.5, 265, 19, 46], rx: 9.5 },
   { site: "arm_left", layout: "column", surface: "front", box: [168.5, 152.5, 9, 32], rx: 4.5 },
   { site: "arm_right", layout: "column", surface: "front", box: [62.5, 152.5, 9, 32], rx: 4.5 },
-  { site: "buttock_left", layout: "grid", surface: "back", box: [126.5, 232, 26, 28], rx: 8 },
-  { site: "buttock_right", layout: "grid", surface: "back", box: [87.5, 232, 26, 28], rx: 8 },
+  { site: "buttock_left", layout: "row", surface: "back", box: [126.5, 232, 26, 28], rx: 8, rowYFactor: 0.35 },
+  { site: "buttock_right", layout: "row", surface: "back", box: [87.5, 232, 26, 28], rx: 8, rowYFactor: 0.35 },
 ];
 
 /**
@@ -208,11 +212,12 @@ function placePoints(r: Region): PlacedPoint[] {
   }
   if (r.layout === "row") {
     // One horizontal line, vertically centred: the belly reads as four spots
-    // beside the navel rather than a quadrant grid.
+    // beside the navel and the buttock as four spots along the upper hip
+    // line, rather than a quadrant grid.
     return SITE_POINTS.map((point) => ({
       point,
       x: bx + bw * SPREAD[point - 1],
-      y: by + bh / 2,
+      y: by + bh * (r.rowYFactor ?? 0.5),
     }));
   }
   return SITE_POINTS.map((point) => ({
@@ -234,10 +239,11 @@ type ViewBox = readonly [number, number, number, number];
  * closest pair is 56.3pt apart (arm) against the 46pt dot diameter, and the dot
  * radius comes out at 3.14 units inside a 4.5-unit half-width plate.
  *
- * A "row" region puts all four dots side by side across 26.5 units and its zoom
- * width is exactly box width + 2 * pad, so the pad has to stay tight; at 3 units
- * the same 320-wide phone leaves 48.9pt between neighbouring centres, and every
- * wider screen only opens that up.
+ * A "row" region puts all four dots side by side across the box's own width and
+ * its zoom width is exactly box width + 2 * pad, so the pad has to stay tight;
+ * at 3 units the same 320-wide phone leaves 48.9pt between neighbouring centres
+ * on the 26.5-unit abdomen and 48.75pt on the 26-unit buttock (both against the
+ * 46pt dot diameter), and every wider screen only opens that up.
  */
 const ZOOM_PAD: Record<Region["layout"], number> = { grid: 11, column: 11, row: 3 };
 

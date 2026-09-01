@@ -543,6 +543,7 @@ export default function RemindersScreen() {
   return (
     <SettingsScaffold
       title={t("settings.remindersTitle")}
+      fillHeight
       overlay={
         <ReminderEditSheet
           visible={sheetOpen}

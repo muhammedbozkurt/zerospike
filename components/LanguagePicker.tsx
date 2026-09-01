@@ -13,6 +13,11 @@ import { useTranslation } from "react-i18next";
 import type { Lang } from "../lib/db/types";
 import { LANG_LABELS, SUPPORTED_LANGS } from "../lib/i18n";
 import { THEME } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
+
+/** Cap for a centered, content-sized dialog card on a tablet (does not
+ *  stretch edge to edge like a bottom sheet). */
+const DIALOG_MAX_WIDTH = 520;
 
 /** Small uppercase language-code badge (no flag emojis - those render as "?"
  *  on devices without regional-indicator glyph support). */
@@ -44,6 +49,7 @@ export function LanguagePicker({
 }) {
   const { t } = useTranslation();
   const { height } = useWindowDimensions();
+  const { isWide } = useLayout();
   const [open, setOpen] = useState(false);
 
   function select(lang: Lang) {
@@ -77,14 +83,17 @@ export function LanguagePicker({
         >
           <Pressable
             className="rounded-3xl border border-hair p-4"
-            style={{
-              backgroundColor: THEME.sheet,
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 28,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 16,
-            }}
+            style={[
+              {
+                backgroundColor: THEME.sheet,
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: 12 },
+                elevation: 16,
+              },
+              isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1">

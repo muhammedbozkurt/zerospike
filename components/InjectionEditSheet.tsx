@@ -38,6 +38,7 @@ import { Stepper } from "./Stepper";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 import { listEntering, listExiting, listLayout } from "../lib/theme/motion";
 import { GradientCTA } from "./rich/GradientCTA";
 import { withAlpha } from "./rich/GlassCard";
@@ -61,6 +62,10 @@ export interface InjectionEditTarget {
 
 // Same heat window as the injection tab's map surface.
 const USAGE_WINDOW_DAYS = 30;
+
+/** Widest the sheet gets on a tablet before it stops stretching and centres
+ *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 const inputStyle = {
   borderRadius: RADIUS.md,
@@ -155,6 +160,7 @@ export function InjectionEditSheet({
   const { activeProfile, isProUser } = useApp();
   const { confirm } = useFeedback();
   const { height: winH } = useWindowDimensions();
+  const { isWide } = useLayout();
   // Fixed, not just a cap: the sheet swaps its body between the form and the
   // site-picking step (see `step` below) without ever resizing the frame
   // around it, so a step change can never jump the sheet's height.
@@ -381,6 +387,7 @@ export function InjectionEditSheet({
                 paddingTop: 8,
               },
               glow(THEME.accent, 30, 0.3),
+              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
           >

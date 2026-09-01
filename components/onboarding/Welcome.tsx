@@ -15,25 +15,34 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { Button } from "../ui";
 import { Logo } from "../Logo";
+import { GradientCTA } from "../rich/GradientCTA";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "./motion";
-import { THEME, glow } from "../../lib/theme/tokens";
+import { RADIUS, THEME, glow } from "../../lib/theme/tokens";
+import { withAlpha } from "../rich/GlassCard";
+import { useLayout } from "../../lib/useLayout";
 
 const AUTO_ADVANCE_MS = 3500;
+
+/** Cap for the centred column on a tablet, matching the quiz card's width so
+ *  the welcome and the first question read as the same page. */
+const COLUMN_MAX_WIDTH = 520;
+/** The body copy never runs the full column: a measure this short is what keeps
+ *  the three slides reading as one poster rather than a paragraph. */
+const BODY_MAX_WIDTH = 320;
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
 const SLIDES: { key: string; icon: IconName }[] = [
   { key: "slide1", icon: "flash-outline" },
-  { key: "slide2", icon: "pulse-outline" },
+  { key: "slide2", icon: "bar-chart-outline" },
   { key: "slide3", icon: "document-text-outline" },
 ];
 
 function Dot({ active }: { active: boolean }) {
   const reduced = useReducedMotion();
   const style = useAnimatedStyle(() => {
-    const width = active ? 22 : 8;
+    const width = active ? 22 : 6;
     return {
       width: reduced
         ? width
@@ -42,20 +51,32 @@ function Dot({ active }: { active: boolean }) {
   });
   return (
     <Animated.View
-      style={style}
-      className={`h-2 rounded-full mx-1 ${active ? "bg-brand" : "bg-glass"}`}
+      style={[
+        style,
+        {
+          height: 6,
+          borderRadius: RADIUS.full,
+          marginHorizontal: 4,
+          backgroundColor: active ? THEME.accent : "rgba(255,255,255,0.18)",
+        },
+      ]}
     />
   );
 }
 
-/** Welcome screen body: the mark, three auto-advancing value slides, and CTA. */
+/** Welcome screen body: the mark, three value slides, and the CTA. The CTA
+ *  walks the slides ("Next") and only starts the quiz from the last one, so the
+ *  three pages are a deliberate read rather than something to swipe past. */
 export function Welcome({ onStart }: { onStart: () => void }) {
   const { t } = useTranslation();
+  const { height, isWide } = useLayout();
+  const dense = height < 700;
   const [width, setWidth] = useState(0);
   const [index, setIndex] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reduced = useReducedMotion();
+  const last = SLIDES.length - 1;
 
   const stop = () => {
     if (timerRef.current) {
@@ -92,28 +113,49 @@ export function Welcome({ onStart }: { onStart: () => void }) {
     start();
   };
 
+  /** The CTA on the first two slides is "Next": it moves the carousel, and the
+   *  auto-advance re-arms from there so a tap never fights the timer. */
+  const onCta = () => {
+    if (index >= last) {
+      onStart();
+      return;
+    }
+    // Before the first layout there is nothing to scroll to, and moving the
+    // index alone would leave the dots claiming a page the carousel is not on.
+    if (width === 0) return;
+    const next = index + 1;
+    setIndex(next);
+    scrollRef.current?.scrollTo({ x: next * width, animated: true });
+    start();
+  };
+
+  const columnStyle = isWide
+    ? { maxWidth: COLUMN_MAX_WIDTH, width: "100%" as const, alignSelf: "center" as const }
+    : undefined;
+
   return (
     <View className="flex-1">
-      <FadeSlideIn style={{ alignItems: "center", marginTop: 8 }}>
+      <FadeSlideIn style={{ alignItems: "center", marginTop: dense ? 16 : 34 }}>
         <View
-          className="w-20 h-20 rounded-3xl items-center justify-center"
           style={[
             {
-              backgroundColor: "rgba(46,230,255,0.12)",
+              width: 84,
+              height: 84,
+              borderRadius: RADIUS["2xl"],
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: THEME.glass,
               borderWidth: 1,
-              borderColor: "rgba(46,230,255,0.28)",
+              borderColor: withAlpha(THEME.accent, 0.35),
             },
-            glow(THEME.accent, 40, 0.6),
+            glow(THEME.accent, 42, 0.5),
           ]}
         >
           <Logo size={52} />
         </View>
       </FadeSlideIn>
 
-      <View
-        className="flex-1"
-        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-      >
+      <View className="flex-1" onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
         {width > 0 ? (
           <ScrollView
             ref={scrollRef}
@@ -126,19 +168,49 @@ export function Welcome({ onStart }: { onStart: () => void }) {
             {SLIDES.map((slide) => (
               <View
                 key={slide.key}
-                style={{ width }}
-                className="items-center justify-center px-4"
+                style={{ width, paddingHorizontal: 16, paddingBottom: 24 }}
+                className="items-center justify-center"
               >
                 <FadeSlideIn style={{ alignItems: "center" }}>
-                  <View className="w-24 h-24 rounded-full bg-brand/10 items-center justify-center mb-8">
-                    <Ionicons name={slide.icon} size={44} color="#2ee6ff" />
+                  <View
+                    style={{
+                      width: dense ? 84 : 108,
+                      height: dense ? 84 : 108,
+                      borderRadius: RADIUS.full,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: withAlpha(THEME.accent, 0.08),
+                      borderWidth: 1,
+                      borderColor: withAlpha(THEME.accent, 0.22),
+                    }}
+                  >
+                    <Ionicons name={slide.icon} size={dense ? 36 : 44} color={THEME.accent} />
                   </View>
-                  <Text className="text-ink text-center text-2xl font-extrabold">
+                  <Text
+                    style={{
+                      color: THEME.ink,
+                      fontSize: dense ? 28 : 34,
+                      lineHeight: dense ? 34 : 40,
+                      fontWeight: "800",
+                      textAlign: "center",
+                      marginTop: dense ? 20 : 30,
+                    }}
+                  >
                     {t(`onboarding.${slide.key}Title`)}
                   </Text>
                 </FadeSlideIn>
                 <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
-                  <Text className="text-mut mt-3 text-center text-base leading-6">
+                  <Text
+                    style={{
+                      color: THEME.muted,
+                      fontSize: 16,
+                      lineHeight: 23,
+                      textAlign: "center",
+                      marginTop: 14,
+                      maxWidth: BODY_MAX_WIDTH,
+                      flexShrink: 1,
+                    }}
+                  >
                     {t(`onboarding.${slide.key}Body`)}
                   </Text>
                 </FadeSlideIn>
@@ -148,14 +220,19 @@ export function Welcome({ onStart }: { onStart: () => void }) {
         ) : null}
       </View>
 
-      <View className="flex-row items-center justify-center py-3">
+      <View className="flex-row items-center justify-center" style={{ paddingBottom: 22 }}>
         {SLIDES.map((slide, i) => (
           <Dot key={slide.key} active={i === index} />
         ))}
       </View>
 
-      <FadeSlideIn delay={ENTRANCE_STAGGER_MS * 2}>
-        <Button label={t("onboarding.getStarted")} size="lg" onPress={onStart} />
+      <FadeSlideIn delay={ENTRANCE_STAGGER_MS * 2} style={columnStyle}>
+        <GradientCTA
+          label={t(index >= last ? "onboarding.getStarted" : "onboarding.next")}
+          size="lg"
+          style={{ borderRadius: RADIUS.full }}
+          onPress={onCta}
+        />
       </FadeSlideIn>
     </View>
   );

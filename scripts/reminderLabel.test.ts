@@ -115,9 +115,10 @@ section("E. the ALARM title is its own, much shorter, decision");
 {
   // Device QA: a Turkish measurement alarm reached the Dynamic Island as
   // "Glikoz olcu...". AlarmKit's compact presentations clip to a handful of
-  // characters and the app does not get to widen them, so the copy shortens
-  // instead - and it shortens ONLY here. Every in-app surface keeps the row's
-  // real name, which is what section A/B above are about.
+  // characters and the app does not get to widen them, so a TYPE-BASED row
+  // ALWAYS shows the short type noun on the alarm - never the row's own name,
+  // however short. Every in-app surface still keeps the row's real name at
+  // full length, which is what section A/B above are about.
   const ALL_TYPES: ReminderType[] = ["glucose", "med", "basal", "custom"];
 
   // The three type-based rows take a key from the deliberately short
@@ -146,18 +147,25 @@ section("E. the ALARM title is its own, much shorter, decision");
     );
   }
 
-  // A NAMED type-based row keeps its name when the name FITS the compact budget
-  // and shortens when it does not (the smart hybrid - see section F/G). The
-  // alarm surface is about fitting; a name that fits says more than a noun.
+  // A NAMED type-based row's own name NEVER reaches the alarm title any more -
+  // the previous "smart hybrid" (a name that fit a compact budget went
+  // through) is gone, because it made the SAME row's alarm title change shape
+  // depending on how it happened to be named. It is always the type noun now,
+  // whatever the row is called and however short that name is.
   eq(
-    "a long measurement name shortens",
+    "a long measurement name falls back",
     JSON.stringify(reminderAlarmTitle("glucose", "Morning glucose check")),
     JSON.stringify({ kind: "key", key: "reminders.alarmTitleGlucose" })
   );
   eq(
-    "a short medication name goes through as the name",
+    "a short medication name ALSO falls back now",
     JSON.stringify(reminderAlarmTitle("med", "Metformin 850")),
-    JSON.stringify({ kind: "text", text: "Metformin 850" })
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleMed" })
+  );
+  eq(
+    "even a one-character name falls back",
+    JSON.stringify(reminderAlarmTitle("basal", "A")),
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleBasal" })
   );
 
   // The user's own words are NEVER abbreviated by us. If the OS clips them,
@@ -201,12 +209,15 @@ section("E. the ALARM title is its own, much shorter, decision");
   }
 }
 
-section("F. the smart-hybrid alarm title, measured against the REAL preset names");
+section("F. a TYPE-BASED alarm title never leaks the preset name, in any language");
 {
-  // The policy: a type-based row uses its OWN name when that name fits the
-  // compact budget, and the short type noun when it does not. The threshold is
-  // calibrated on the actual localized preset names, so this section reads them
-  // out of the locale files rather than trusting a hard-coded copy.
+  // The previous "smart hybrid" let a preset name through when it fit a
+  // compact width budget, which meant tr/ar/ja (whose preset names are
+  // genuinely short) rang with their own name while the other six languages
+  // fell back. That per-language difference is gone: EVERY language's preset
+  // names, however short, now fall back to the short type noun. This reads
+  // the real preset copy out of the locale files so the property is proven
+  // against production text, not a hand-picked example.
   const LANGS = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"] as const;
   const PRESET_KEYS = [
     "presetMorning",
@@ -230,74 +241,56 @@ section("F. the smart-hybrid alarm title, measured against the REAL preset names
     });
   }
 
-  // Which languages the budget is calibrated to pass in full. The other six
-  // have sentence-shaped preset names ("Late morning glucose check"), which are
-  // right in the app's own list and hopeless on a Dynamic Island compact.
-  const FITS_ENTIRELY = new Set(["tr", "ar", "ja"]);
-
   for (const lang of LANGS) {
     const names = presetNames(lang);
-    const widest = Math.max(...names.map(alarmTitleWidth));
-    if (FITS_ENTIRELY.has(lang)) {
-      for (const name of names) {
-        const got = reminderAlarmTitle("glucose", name);
-        eq(`${lang}: "${name}" (${alarmTitleWidth(name)}) goes as the NAME`, got.kind, "text");
-        if (got.kind === "text") eq(`${lang}: verbatim`, got.text, name);
-      }
-      ok(
-        `${lang} really is within the budget (widest ${widest})`,
-        widest <= ALARM_TITLE_MAX_CELLS
-      );
-    } else {
-      // At least the longest one must fall back, which is the whole reason the
-      // budget exists - otherwise the threshold is not doing its job.
-      const longest = names.reduce((a, b) => (alarmTitleWidth(a) >= alarmTitleWidth(b) ? a : b));
+    for (const name of names) {
       eq(
-        `${lang}: "${longest}" (${alarmTitleWidth(longest)}) falls back to the type label`,
-        JSON.stringify(reminderAlarmTitle("glucose", longest)),
+        `${lang}: "${name}" (${alarmTitleWidth(name)} cells) still falls back to the type label`,
+        JSON.stringify(reminderAlarmTitle("glucose", name)),
         JSON.stringify({ kind: "key", key: "reminders.alarmTitleGlucose" })
-      );
-      ok(
-        `${lang} genuinely exceeds the budget (widest ${widest})`,
-        widest > ALARM_TITLE_MAX_CELLS
       );
     }
   }
 
-  // Japanese sits exactly on the line, which is why the comparison is
-  // inclusive and why WIDTH is measured rather than character count.
+  // Japanese used to sit exactly on the old budget's line; it now falls back
+  // like everything else, since width is no longer measured at all here.
   eq("a kanji/kana name is two cells per character", alarmTitleWidth("午前遅くの測定"), 14);
   eq("and only seven characters", "午前遅くの測定".length, 7);
   eq(
-    "exactly at the budget still goes as the name",
+    "even the old exactly-at-budget name now falls back",
     reminderAlarmTitle("glucose", "午前遅くの測定").kind,
-    "text"
-  );
-  eq(
-    "one cell over does not",
-    reminderAlarmTitle("glucose", "午前遅くのの測定").kind,
     "key"
   );
 }
 
-section("G. the threshold boundary, and who is on each side of it");
+section("G. width is irrelevant for a TYPE-BASED row; only CUSTOM is ever exempt from a limit");
 {
-  const at = "a".repeat(ALARM_TITLE_MAX_CELLS);
-  const over = "a".repeat(ALARM_TITLE_MAX_CELLS + 1);
-  eq("exactly at the budget -> name", reminderAlarmTitle("glucose", at).kind, "text");
-  eq("one character over -> type label", reminderAlarmTitle("glucose", over).kind, "key");
-  eq("one under -> name", reminderAlarmTitle("med", "a".repeat(ALARM_TITLE_MAX_CELLS - 1)).kind, "text");
+  // ALARM_TITLE_MAX_CELLS no longer gates anything in reminderAlarmTitle: a
+  // type-based row falls back at every width, from a single character to far
+  // past the old budget, so there is no boundary left to sit on either side of.
+  eq("far under the old budget -> still the noun", reminderAlarmTitle("glucose", "a").kind, "key");
+  eq(
+    "exactly at the old budget -> still the noun",
+    reminderAlarmTitle("glucose", "a".repeat(ALARM_TITLE_MAX_CELLS)).kind,
+    "key"
+  );
+  eq(
+    "far past the old budget -> still the noun",
+    reminderAlarmTitle("med", "a".repeat(ALARM_TITLE_MAX_CELLS * 3)).kind,
+    "key"
+  );
 
-  // Every type-based kind follows the same rule and falls back to its OWN noun.
+  // Every type-based kind follows the same rule and always falls back to its
+  // OWN noun, whatever the row is named.
   eq(
     "a long medication name falls back to the medication noun",
     JSON.stringify(reminderAlarmTitle("med", "Metformin 850 mg sabah dozu")),
     JSON.stringify({ kind: "key", key: "reminders.alarmTitleMed" })
   );
   eq(
-    "a short one goes through",
+    "and so does a short one now",
     JSON.stringify(reminderAlarmTitle("med", "Metformin")),
-    JSON.stringify({ kind: "text", text: "Metformin" })
+    JSON.stringify({ kind: "key", key: "reminders.alarmTitleMed" })
   );
   eq(
     "a long basal name falls back to the basal noun",
@@ -305,19 +298,21 @@ section("G. the threshold boundary, and who is on each side of it");
     JSON.stringify({ kind: "key", key: "reminders.alarmTitleBasal" })
   );
 
-  // Whitespace is trimmed before measuring, so padding cannot push a name over.
-  const padded = `  ${"a".repeat(ALARM_TITLE_MAX_CELLS)}  `;
-  eq("surrounding space does not count against the budget", reminderAlarmTitle("glucose", padded).kind, "text");
-
   // CUSTOM rows are exempt in both directions: always their own name, at any
   // length. This is the one place the app never abbreviates.
   const longCustom = "An extremely long custom reminder name the user chose themselves";
   const custom = reminderAlarmTitle("custom", longCustom);
   eq("a long custom name is still the name", custom.kind, "text");
   if (custom.kind === "text") eq("untouched", custom.text, longCustom);
-  ok("and it is genuinely over the budget", alarmTitleWidth(longCustom) > ALARM_TITLE_MAX_CELLS);
+  ok("and it is genuinely over the old budget", alarmTitleWidth(longCustom) > ALARM_TITLE_MAX_CELLS);
+  eq(
+    "a short custom name also stays the name",
+    JSON.stringify(reminderAlarmTitle("custom", "Walk")),
+    JSON.stringify({ kind: "text", text: "Walk" })
+  );
 
-  // Width helper sanity.
+  // Width helper sanity - unchanged, still used above to state "genuinely past
+  // the old budget" against real measurements.
   eq("latin is one cell each", alarmTitleWidth("abcd"), 4);
   eq("arabic is one cell each", alarmTitleWidth("قياس"), 4);
   eq("empty is zero", alarmTitleWidth(""), 0);

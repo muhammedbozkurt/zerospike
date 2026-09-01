@@ -577,10 +577,27 @@ function reminderAlarmRoute(row: Reminder): AlarmRoute {
  *  "Reminder" title and the label the user gave it as the body, and routes to
  *  the dashboard with no sheet (2.3.0's K2-B) - the app cannot know what the
  *  user's own reminder is about, so opening a specific form would be a guess,
- *  while dropping the tap on whatever screen was last open was worse. */
+ *  while dropping the tap on whatever screen was last open was worse.
+ *
+ *  TITLE / BODY SPLIT (ZS-NOTIF). A banner clips the TITLE hard and long before
+ *  it clips the body, and the title is the one line every presentation shows -
+ *  so every title here is a short, STATIC category noun ("Olcum zamani", "Ilac
+ *  zamani"), and everything that varies per row goes in the body instead. The
+ *  row's own name leads that body ("Aksam olcumu. Kan sekerinizi olcme
+ *  zamani."), because a clipped body still has to say WHICH reminder rang: a
+ *  device with four measurement rows used to deliver four identical
+ *  notifications, since the name was carried nowhere at all.
+ *
+ *  A name is only ever the user's (or the ready-made layout's) own text, so it
+ *  is interpolated, never concatenated - i18next runs with escapeValue false
+ *  (lib/i18n/index.ts), which is what keeps an apostrophe in "Anne'nin ilaci"
+ *  from arriving as an HTML entity. */
 function reminderContent(row: Reminder): Notifications.NotificationContentInput {
+  const label = row.label?.trim();
   switch (row.type) {
     case "basal":
+      // The one type with no per-row name (see resolveReminderLabel in
+      // lib/reminderLabel.ts), so there is nothing to lead the body with.
       return {
         title: i18n.t("notifications.basalTitle"),
         body: i18n.t("notifications.basalBody"),
@@ -590,22 +607,29 @@ function reminderContent(row: Reminder): Notifications.NotificationContentInput 
     case "med":
       return {
         title: i18n.t("notifications.medTitle"),
-        body: i18n.t("notifications.medBody"),
+        body: label
+          ? i18n.t("notifications.medBodyNamed", { label })
+          : i18n.t("notifications.medBody"),
         data: { route: "med" satisfies NotificationRoute },
         ...reminderExtras,
       };
     case "glucose":
       return {
         title: i18n.t("notifications.glucoseTitle"),
-        body: i18n.t("notifications.glucoseBody"),
+        body: label
+          ? i18n.t("notifications.glucoseBodyNamed", { label })
+          : i18n.t("notifications.glucoseBody"),
         data: { route: "glucose" satisfies NotificationRoute },
         ...reminderExtras,
       };
     case "custom":
     default:
+      // A custom row is supposed to be named, but a row whose name was cleared
+      // used to deliver an EMPTY body under a generic title - nothing at all to
+      // read. The fallback sentence is the floor for that case.
       return {
         title: i18n.t("notifications.customTitle"),
-        body: row.label ?? "",
+        body: label || i18n.t("notifications.customBody"),
         data: { route: "custom" satisfies NotificationRoute },
         ...reminderExtras,
       };

@@ -4,6 +4,7 @@ import {
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -24,11 +25,11 @@ import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
+import { OfferCard } from "../components/OfferCard";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
-import { withAlpha } from "../components/rich/GlassCard";
-import { MODAL_TOP_PAD, TABULAR, THEME, glow } from "../lib/theme/tokens";
-import { pct } from "../lib/format";
+import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { isolateLtr, pct } from "../lib/format";
 
 /**
  * The last-chance annual offer, rebuilt to the mockup's 08 "Downsell"
@@ -152,7 +153,11 @@ function DownsellScreen() {
           </View>
         ) : null}
 
-        <View className="flex-1 px-6 justify-center">
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 24 }}
+          showsVerticalScrollIndicator={false}
+        >
           {loading ? (
             <View className="items-center">
               <ActivityIndicator color={THEME.accent} />
@@ -161,83 +166,33 @@ function DownsellScreen() {
               </Text>
             </View>
           ) : discount ? (
-            <View
-              className="items-center rounded-3xl p-5"
-              style={[
-                {
-                  borderWidth: 1,
-                  borderColor: THEME.accent,
-                  backgroundColor: withAlpha(THEME.accent, 0.08),
-                  gap: 10,
-                },
-                glow(THEME.accent, 34, 0.4),
-              ]}
-            >
-              <View
-                className="rounded-full px-3 py-1"
-                style={{ backgroundColor: withAlpha(THEME.accent, 0.18) }}
-              >
-                <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "800" }}>
-                  {t("downsell.savingsBadge", { percent: pct(offer!.savingsPercent) })}
-                </Text>
-              </View>
-
-              <Text
-                style={{
-                  color: THEME.ink,
-                  fontSize: 17,
-                  fontWeight: "800",
-                  textAlign: "center",
-                }}
-              >
-                {t("downsell.title")}
-              </Text>
-
-              {/* The billed amount dominates */}
-              <View className="flex-row items-baseline" style={{ gap: 10 }}>
-                <Text
-                  style={[
-                    TABULAR,
-                    { color: THEME.ink, fontSize: 34, fontWeight: "800" },
-                  ]}
-                >
-                  {offer!.discountedPriceString}
-                </Text>
-                <Text
-                  style={[
-                    TABULAR,
-                    {
-                      color: THEME.muted,
-                      fontSize: 15,
-                      textDecorationLine: "line-through",
-                    },
-                  ]}
-                >
-                  {offer!.standardPriceString}
-                </Text>
-              </View>
-
-              <Text
-                style={{
-                  color: THEME.muted,
-                  fontSize: 11,
-                  lineHeight: 16,
-                  textAlign: "center",
-                }}
-              >
-                {t("downsell.renewalDisclosure", {
+            <View className="items-center" style={{ gap: 14 }}>
+              <OfferCard
+                // Bidi: same "just the number+sign pair" isolate proven on the
+                // paywall's own savePercent badge (writingDirection alone was
+                // verified NOT enough on-device for this under RTL).
+                badgeText={t("downsell.savingsBadge", {
+                  percent: isolateLtr(pct(offer!.savingsPercent)),
+                })}
+                title={t("downsell.title")}
+                discountedPrice={offer!.discountedPriceString ?? ""}
+                standardPrice={offer!.standardPriceString ?? ""}
+                disclosure={t("downsell.renewalDisclosure", {
                   discountPrice: offer!.discountedPriceString,
                   standardPrice: offer!.standardPriceString,
                 })}
-              </Text>
+              />
 
               <GradientCTA
-                label={t("downsell.discountCta", { percent: pct(offer!.savingsPercent) })}
+                label={t("downsell.acceptCta")}
                 disabled={busy}
                 onPress={accept}
-                style={{ alignSelf: "stretch", marginTop: 2 }}
+                style={{ width: "100%", maxWidth: 420, alignSelf: "center" }}
               />
-              <Pressable onPress={decline} disabled={busy} hitSlop={8}>
+
+              {/* Kept outside the card, well below the CTA: a quiet way out that
+                  never competes with the offer itself. */}
+              <Pressable onPress={decline} disabled={busy} hitSlop={8} style={{ marginTop: 12 }}>
                 <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}>
                   {t("downsell.decline")}
                 </Text>
@@ -272,7 +227,7 @@ function DownsellScreen() {
               </Text>
             </View>
           )}
-        </View>
+        </ScrollView>
 
         {!loading ? (
           <View className="px-6">

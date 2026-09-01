@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { THEME, RADIUS } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 import { IconTile, GradientCTA } from "./rich";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { DirIcon } from "./DirIcon";
@@ -28,6 +29,10 @@ import { MedNamePicker } from "./MedNamePicker";
 import { logEvent } from "../lib/analytics";
 import { noteJournalActivity } from "../lib/services/notifications";
 import { formatTime, relativeDay } from "../lib/format";
+
+/** Widest the sheet gets on a tablet before it stops stretching and centres
+ *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 interface QuickAddSheetProps {
   visible: boolean;
@@ -63,6 +68,7 @@ export function QuickAddSheet({
 }: QuickAddSheetProps) {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { isWide } = useLayout();
   const { activeProfile, bumpData } = useApp();
   const { toast } = useFeedback();
   const anim = useRef(new Animated.Value(0)).current;
@@ -212,16 +218,19 @@ export function QuickAddSheet({
           }}
         >
           <View
-            style={{
-              backgroundColor: THEME.bg.g1,
-              borderTopLeftRadius: RADIUS["2xl"],
-              borderTopRightRadius: RADIUS["2xl"],
-              borderTopWidth: 1,
-              borderColor: THEME.border,
-              paddingHorizontal: 16,
-              paddingTop: 8,
-              paddingBottom: insets.bottom + 20,
-            }}
+            style={[
+              {
+                backgroundColor: THEME.bg.g1,
+                borderTopLeftRadius: RADIUS["2xl"],
+                borderTopRightRadius: RADIUS["2xl"],
+                borderTopWidth: 1,
+                borderColor: THEME.border,
+                paddingHorizontal: 16,
+                paddingTop: 8,
+                paddingBottom: insets.bottom + 20,
+              },
+              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
           >
             <View style={{ alignItems: "center", marginBottom: 6 }}>
               <View

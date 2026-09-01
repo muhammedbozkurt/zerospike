@@ -15,6 +15,11 @@ import { LANG_LABELS, SUPPORTED_LANGS } from "../../lib/i18n";
 import { useApp } from "../../lib/store/AppContext";
 import { hapticSelect } from "../../lib/haptics";
 import { THEME } from "../../lib/theme/tokens";
+import { useLayout } from "../../lib/useLayout";
+
+/** Widest the sheet gets on a tablet before it stops stretching and centres
+ *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 /** Uppercase language-code badge (flag emojis render as "?" on some devices). */
 function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
@@ -42,6 +47,7 @@ export function LanguageChip() {
   const { t } = useTranslation();
   const { lang, setLanguage } = useApp();
   const { height } = useWindowDimensions();
+  const { isWide } = useLayout();
   const [open, setOpen] = useState(false);
 
   async function select(next: Lang) {
@@ -56,13 +62,14 @@ export function LanguageChip() {
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={t("settings.language")}
-        className="flex-row items-center rounded-full border border-hair bg-glass pl-2.5 pr-2 py-1.5"
+        className="flex-row items-center rounded-full border border-hair bg-glass"
+        style={{ gap: 6, paddingHorizontal: 14, paddingVertical: 8 }}
       >
-        <Ionicons name="language-outline" size={15} color={THEME.muted} />
-        <Text className="text-ink text-xs font-semibold ml-1.5">
+        <Ionicons name="language-outline" size={16} color={THEME.ink} />
+        <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "600" }}>
           {lang.toUpperCase()}
         </Text>
-        <Ionicons name="chevron-down" size={13} color={THEME.muted} />
+        <Ionicons name="chevron-down" size={12} color={THEME.muted} />
       </Pressable>
 
       <Modal
@@ -77,14 +84,17 @@ export function LanguageChip() {
         >
           <Pressable
             className="rounded-t-3xl border-t border-hair p-4 pb-8"
-            style={{
-              backgroundColor: THEME.sheet,
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 28,
-              shadowOffset: { width: 0, height: -8 },
-              elevation: 16,
-            }}
+            style={[
+              {
+                backgroundColor: THEME.sheet,
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: -8 },
+                elevation: 16,
+              },
+              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1">

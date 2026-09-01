@@ -4,7 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { hapticSelect } from "../lib/haptics";
-import { THEME } from "../lib/theme/tokens";
+import { RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
+import { withAlpha } from "./rich/GlassCard";
 import type { DayBucket, ReminderPreset } from "../lib/reminderPresets";
 
 /**
@@ -70,29 +71,60 @@ export function ReminderPlanPreview({
       {rows.map((preset) => (
         <View
           key={preset.time}
-          className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-4 mb-2"
-          style={{ minHeight: 56 }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 14,
+            minHeight: 58,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            marginBottom: 12,
+            borderRadius: RADIUS.lg,
+            borderWidth: 1,
+            borderColor: THEME.border,
+            backgroundColor: THEME.glass,
+          }}
         >
-          <View className="flex-row items-center" style={{ flex: 1, marginRight: 8 }}>
-            <Ionicons name="water-outline" size={18} color={THEME.accent} />
-            <Text className="text-ink text-base ml-3 flex-1" numberOfLines={1}>
-              {presetLabel(preset.bucket)}
-            </Text>
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 11,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: withAlpha(THEME.accent, 0.1),
+            }}
+          >
+            <Ionicons name="water-outline" size={20} color={THEME.accent} />
           </View>
-          <View className="flex-row items-center" style={{ gap: 12 }}>
-            <Text className="text-ink text-lg font-semibold">{preset.time}</Text>
-            <Pressable
-              onPress={() => {
-                hapticSelect();
-                onRemove(preset.time);
-              }}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={t("onboarding.planRemoveA11y")}
-            >
-              <Ionicons name="close" size={18} color={THEME.muted} />
-            </Pressable>
-          </View>
+          <Text
+            style={{ color: THEME.ink, fontSize: 15, lineHeight: 21, flex: 1 }}
+            numberOfLines={1}
+          >
+            {presetLabel(preset.bucket)}
+          </Text>
+          <Text style={[TABULAR, { color: THEME.ink, fontSize: 16, fontWeight: "700" }]}>
+            {preset.time}
+          </Text>
+          <Pressable
+            onPress={() => {
+              hapticSelect();
+              onRemove(preset.time);
+            }}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={t("onboarding.planRemoveA11y")}
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: RADIUS.full,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <Ionicons name="close" size={14} color={THEME.muted} />
+          </Pressable>
         </View>
       ))}
       {alarmKitAvailable && rows.length > 0 ? (

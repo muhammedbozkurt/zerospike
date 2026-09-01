@@ -130,6 +130,21 @@ async function writeProfileFlag(baseKey: string, profileId: string, value: boole
 const CTA_BOTTOM = 10;
 // What the journal has to scroll clear of: the CTA overlay plus a little air.
 const CTA_CLEARANCE = CTA_BOTTOM + 100;
+// The CTA's own footprint: the wrapper's pt-2 (8) plus GradientCTA's rendered
+// height (13 vertical padding x2 plus its ~24 line of 15pt bold text) plus the
+// wrapper's own bottom inset.
+const CTA_FOOTPRINT = 8 + 13 * 2 + 24 + CTA_BOTTOM;
+// Wide/tablet only (android-tablet7, tablet10): the pre-journal content (hero,
+// week strip, post-meal timer, quick access, finish-setup) is tall enough on
+// its own to reach the bottom of a tall portrait viewport before the list ever
+// needs to scroll, so at rest the floating CTA landed on the journal panel's
+// own title and filter chips instead of on empty space - contentContainerStyle
+// padding only guards the scrolled-to-end state, it cannot move content that
+// is still above the fold. Reserving the CTA's footprint directly on the
+// list's own style (not contentContainerStyle) shrinks its visible viewport so
+// nothing is ever laid out behind the overlay, whatever the scroll position.
+// Phones are untouched: this is isWide-only, and on a phone the same content
+// stack already needs scrolling well before it reaches the CTA's height.
 import { Tooltip } from "../../components/Tooltip";
 import { Skeleton } from "../../components/Skeleton";
 import { JournalItem } from "../../components/JournalItem";
@@ -244,7 +259,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string }>();
-  const { columnPad } = useLayout();
+  const { isWide, columnPad } = useLayout();
   const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
   const guardEntry = useEntryGuardConfirm();
@@ -2098,6 +2113,15 @@ export default function DashboardScreen() {
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
       <SectionList
+        // Wide screens only (see CTA_FOOTPRINT above): shrinks the list's own
+        // visible viewport by the CTA's footprint so nothing is ever laid out
+        // behind the floating overlay, regardless of scroll position. Phones
+        // are unaffected (undefined style = today's behavior).
+        style={
+          isWide && !isFirstRun
+            ? { paddingBottom: CTA_FOOTPRINT + insets.bottom }
+            : undefined
+        }
         sections={journalSections}
         keyExtractor={journalKey}
         stickySectionHeadersEnabled={true}
@@ -2140,7 +2164,12 @@ export default function DashboardScreen() {
         }
         contentContainerStyle={{
           // No floating CTA during first run, so the list does not have to
-          // scroll clear of one.
+          // scroll clear of one. Wide screens already shrink the list's own
+          // viewport by CTA_FOOTPRINT + insets.bottom via the `style` prop
+          // above, so adding that same clearance again here on top of
+          // CTA_CLEARANCE double-reserved space and left a dead ~180px band
+          // at the end of the list; CTA_CLEARANCE alone is the correct
+          // remaining clearance on every screen size.
           paddingBottom: isFirstRun ? 24 : CTA_CLEARANCE,
           // Tablet: one centred reading column instead of a stretched phone
           // layout. Reduces to the plain 16 inset on phones, so the narrow

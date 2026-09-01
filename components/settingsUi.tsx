@@ -9,6 +9,7 @@ import { withAlpha } from "./rich/GlassCard";
 import { ScreenHeader } from "./ScreenHeader";
 import { GLUCOSE_RICH, THEME } from "../lib/theme/tokens";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
+import { useLayout } from "../lib/useLayout";
 import { DirIcon } from "./DirIcon";
 
 /**
@@ -127,13 +128,22 @@ export function SettingsScaffold({
   title,
   children,
   overlay,
+  fillHeight = false,
 }: {
   title: string;
   children: React.ReactNode;
   overlay?: React.ReactNode;
+  /** OPT-IN (ZS-L2): when true, the scroll body's content container grows to
+   *  fill the available height and, on a wide screen (tablet), centers its
+   *  children vertically - a short list (e.g. reminders) then fills a tall
+   *  iPad frame instead of sticking to the top. Off by default, so every
+   *  other settings sub-page keeps its exact top-aligned, natural-height
+   *  layout. */
+  fillHeight?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { isWide } = useLayout();
   return (
     <AppBackground>
       <View className="flex-1" style={{ paddingTop: insets.top }}>
@@ -148,7 +158,12 @@ export function SettingsScaffold({
         />
         <ScrollView
           {...keyboardAwareScrollProps}
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: insets.bottom + 32,
+            ...(fillHeight ? { flexGrow: 1 } : null),
+            ...(fillHeight && isWide ? { justifyContent: "center" } : null),
+          }}
           showsVerticalScrollIndicator={false}
         >
           {children}

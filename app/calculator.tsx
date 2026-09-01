@@ -116,9 +116,14 @@ import {
   withAlpha,
 } from "../components/rich";
 import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 import { upper } from "../lib/upper";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
+
+/** Widest a bottom sheet gets on a tablet before it stops stretching and
+ *  centres (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 // Same heat window as the injection tab's map and its edit sheet, so a region's
 // colour means the same thing wherever it is picked.
@@ -395,6 +400,7 @@ function SitePickerModal({
 }) {
   const { t } = useTranslation();
   const { height: winH } = useWindowDimensions();
+  const { isWide } = useLayout();
   // Matches InjectionBodyMap's own minHeight floor, so the skeleton reserves
   // exactly the space the real silhouette will occupy - no jump once it loads.
   const mapMinHeight = Math.round(winH * 0.5);
@@ -420,6 +426,7 @@ function SitePickerModal({
               paddingTop: 8,
             },
             glow(THEME.accent, 30, 0.3),
+            isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
           ]}
           onPress={(e) => e.stopPropagation()}
         >

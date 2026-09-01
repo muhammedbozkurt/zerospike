@@ -5,10 +5,14 @@ import { addMealLog, listMealLogs, deleteMealLog } from "./logs";
 import { logInjection, getInjections, deleteInjection } from "./injections";
 import { logMed, listMeds, deleteMed } from "./meds";
 import { createReminder, listReminders, updateReminder } from "./reminders";
+import { listTemplates, deleteTemplate, createTemplate } from "./mealTemplates";
+import { addCustomFood, updateFood } from "./foods";
+import { isFavorite, toggleFavorite } from "./favorites";
 import { getProfile, updateProfile } from "./profiles";
 import { getDb, defaultProfileName, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
 import { SELECTABLE_SITES, SITE_POINTS } from "./types";
-import type { InsulinType, Lang, PeriodTag, ReminderType, SitePoint } from "./types";
+import type { InsulinType, Lang, MealSlot, PeriodTag, ReminderType, SitePoint } from "./types";
+import type { FoodCategory } from "./categories";
 import { setProOverride } from "../services/purchases";
 import i18n from "../i18n";
 
@@ -46,12 +50,14 @@ import i18n from "../i18n";
  *  - BOTH variants: oral meds on, with today's entry logged after the evening
  *    meal so the journal opens on it (the medication row is what the 01 panel's
  *    journal leads with; the tracking profile keeps it for realism);
+ *  - BOTH variants: three meal templates and five favorited foods (04-food
+ *    panel), so its "no templates yet" / "Favorites 0" empty states never show;
  *  - Pro on; range targets filled; profile named for the active locale.
  */
 // Bump the version suffix whenever the seeded STORY changes (reading spread,
 // colours, etc.) so an already-seeded screenshot build re-materialises cleanly on
 // next cold launch instead of keeping stale data.
-const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v14";
+const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v15";
 
 /** Per-profile marker key: v8 assumed a single seeded profile, so one global key
  *  was enough. With the tracking profile added, each profile needs its own
@@ -161,40 +167,189 @@ async function seedMeals(profileId: string, lang: Lang, variant?: "tracking"): P
 }
 
 /**
- * Store-screenshot only (09-reminders panel): six rows so the Reminders
+ * Store-screenshot only (04-food panel): three meal templates so the
+ * "Meal templates" row never shows its empty state. Each template pairs one
+ * of the MEALS entries above with a slot matching its usual time of day, and
+ * carries it as a single typed-name item (carbs_g_fixed, no catalogue link) -
+ * the template feature never requires a catalogue food, and this avoids
+ * inventing item names with no i18n key behind them. Re-materialised (wiped
+ * and re-created) on every seed pass, same shape as seedMeals just above,
+ * because both the template name and its item's name_snapshot are localized.
+ */
+async function seedMealTemplates(profileId: string, lang: Lang): Promise<void> {
+  for (const t of await listTemplates(profileId)) await deleteTemplate(t.id);
+  const meals = MEALS[lang] ?? MEALS.en;
+  const templates: { key: string; slot: MealSlot; mealIndex: number }[] = [
+    { key: "templates.demoName1", slot: "breakfast", mealIndex: 0 },
+    { key: "templates.demoName2", slot: "lunch", mealIndex: 1 },
+    { key: "templates.demoName3", slot: "dinner", mealIndex: 2 },
+  ];
+  for (const t of templates) {
+    const meal = meals[t.mealIndex];
+    await createTemplate({
+      profile_id: profileId,
+      name: i18n.t(t.key, { lng: lang }) as string,
+      slot: t.slot,
+      items: [
+        {
+          name_snapshot: meal.name,
+          carbs_g_fixed: meal.carbs,
+          portion_g: 200,
+        },
+      ],
+    });
+  }
+}
+
+/** The five demo favorites (04-food panel): a custom food per row, plus the
+ *  emoji it is filed under. carb/GI/portion figures mirror the closest
+ *  catalog entries (lib/db/seed.ts) for plausibility. */
+const FAVORITE_FOODS: {
+  key: string;
+  emoji: string;
+  category: FoodCategory;
+  carb_100g: number;
+  glycemic_index: number;
+  portion_size_g: number;
+}[] = [
+  { key: "food.demoFavorite1", emoji: "🥣", category: "dairy", carb_100g: 4, glycemic_index: 11, portion_size_g: 200 },
+  { key: "food.demoFavorite2", emoji: "🍞", category: "bakery", carb_100g: 41, glycemic_index: 53, portion_size_g: 50 },
+  { key: "food.demoFavorite3", emoji: "🍏", category: "fruits", carb_100g: 14, glycemic_index: 36, portion_size_g: 150 },
+  { key: "food.demoFavorite4", emoji: "🌰", category: "nuts", carb_100g: 14, glycemic_index: 15, portion_size_g: 30 },
+  { key: "food.demoFavorite5", emoji: "🥚", category: "protein", carb_100g: 1.1, glycemic_index: 0, portion_size_g: 55 },
+];
+
+/** GLOBAL marker for the five demo favorites' food ids (not per-profile).
+ *  Unlike a meal or a template, foods.* is NOT profile-scoped (a custom food
+ *  is a single global row; only `favorites` links it to a profile) - both the
+ *  default and tracking variant call seedFavoriteFoods, and a per-profile key
+ *  here made each variant create its OWN five rows on its own first pass,
+ *  leaving ten foods.* rows behind for the same five demo items. The five ids
+ *  are stashed globally on the very first call from EITHER profile; every
+ *  later call (a language switch, or the other profile's first pass) reuses
+ *  those same five rows instead of creating a fresh five. */
+const FAVORITE_FOOD_IDS_KEY = "zerospike.screenshotSeededFavoriteFoodIds";
+/** GLOBAL marker for which language the five rows above are currently named
+ *  in, so a rename (i18n.t + updateFood, five writes) runs at most ONCE per
+ *  language change - not once per profile that happens to call
+ *  seedFavoriteFoods in that same language (both variants call it on every
+ *  seed pass). */
+const FAVORITE_FOOD_LANG_KEY = "zerospike.screenshotSeededFavoriteFoodLang";
+
+/**
+ * Store-screenshot only (04-food panel): five favorited custom foods so the
+ * "Favorites" empty state never shows, for EVERY screenshot profile. The five
+ * underlying foods.* rows are created exactly once (globally, by whichever
+ * profile calls this first); every later call - a language switch, or the
+ * OTHER profile's first pass - reuses those same ids, only adding this
+ * profile's own `favorites` link (via isFavorite, so a repeat call never
+ * double-toggles a link back off) and, if the active language actually
+ * changed since the last rename, relabelling the shared rows once.
+ */
+async function seedFavoriteFoods(profileId: string, lang: Lang): Promise<void> {
+  const stored = await AsyncStorage.getItem(FAVORITE_FOOD_IDS_KEY);
+  const ids: string[] = stored ? JSON.parse(stored) : [];
+
+  if (ids.length === FAVORITE_FOODS.length) {
+    const lastLang = await AsyncStorage.getItem(FAVORITE_FOOD_LANG_KEY);
+    if (lastLang !== lang) {
+      for (let i = 0; i < FAVORITE_FOODS.length; i++) {
+        const name = i18n.t(FAVORITE_FOODS[i].key, { lng: lang }) as string;
+        await updateFood(ids[i], { name });
+      }
+      await AsyncStorage.setItem(FAVORITE_FOOD_LANG_KEY, lang);
+    }
+    for (const id of ids) {
+      if (!(await isFavorite(profileId, id))) await toggleFavorite(profileId, id);
+    }
+    return;
+  }
+
+  const newIds: string[] = [];
+  for (const spec of FAVORITE_FOODS) {
+    const name = i18n.t(spec.key, { lng: lang }) as string;
+    const food = await addCustomFood({
+      name,
+      carb_100g: spec.carb_100g,
+      glycemic_index: spec.glycemic_index,
+      portion_size_g: spec.portion_size_g,
+      category: spec.category,
+      emoji: spec.emoji,
+    });
+    await toggleFavorite(profileId, food.id);
+    newIds.push(food.id);
+  }
+  await AsyncStorage.setItem(FAVORITE_FOOD_IDS_KEY, JSON.stringify(newIds));
+  await AsyncStorage.setItem(FAVORITE_FOOD_LANG_KEY, lang);
+}
+
+/**
+ * Store-screenshot only (09-reminders panel): nine rows so the Reminders
  * settings screen shows a full, lived-in list instead of the empty state -
- * two glucose checks, two medications (one named, one left unlabeled so the
- * generic localized "Medication" name is what renders, exercising that
- * fallback - and that second one is also the only row kept on the notification
- * side, so both delivery badges appear in the list), one basal, and one custom
- * row for a neutral, non-medical routine (an evening walk). Idempotent per (type, time) pair -
- * checked against whatever the profile already has - so a re-run (language
- * switch, cold relaunch) never duplicates a row, and a profile that already
- * carries one of these (e.g. from the legacy-prefs bridge) is left alone
- * rather than getting a second.
+ * three glucose checks (two unlabeled, one a labeled post-meal check), three
+ * medications (one named, one left unlabeled so the generic localized
+ * "Medication" name is what renders, exercising that fallback - and that
+ * unlabeled one is also the only row kept on the notification side, so both
+ * delivery badges appear in the list - and one a labeled evening vitamin),
+ * one basal, and two custom rows for neutral, non-medical routines (a morning
+ * and an evening walk). Idempotent per (type, time) pair - checked against
+ * whatever the profile already has - so a re-run (language switch, cold
+ * relaunch) never duplicates a row, and a profile that already carries one of
+ * these (e.g. from the legacy-prefs bridge) is left alone rather than getting
+ * a second. Nine, not ten (MAX_REMINDERS): the list still has room for one
+ * more, so "Add reminder" stays visibly usable in the screenshot rather than
+ * reading as a maxed-out list.
  *
- * The custom row's label is fetched via i18n.t at the CALLER's `lang` (see
- * relabelCustomReminder below for how it stays correct across later language
+ * Every labeled row's text is fetched via i18n.t at the CALLER's `lang` (see
+ * relabelDemoReminders below for how it stays correct across later language
  * switches, since creation only ever happens once per profile).
  *
  * Basal is skipped on the insulin-free tracking profile (variant "tracking"),
  * which has no basal UI at all - the same gating the injection seed above
- * already applies for that variant - so that variant's list is five rows,
+ * already applies for that variant - so that variant's list is eight rows,
  * still well under MAX_REMINDERS (10).
+ *
+ * Each row is created through `tryCreate` rather than a bare `createReminder`
+ * call: a profile that already carries rows from elsewhere (the legacy-prefs
+ * bridge, a prior partial seed) can be sitting close to MAX_REMINDERS before
+ * this even runs, and `createReminder` THROWS once that cap is hit. A bare
+ * throw here used to abort the rest of this function AND the rest of
+ * seedScreenshotDataLocked's first-pass block (meals, templates, favorites,
+ * the marker write) - leaving the profile stuck re-attempting the same full
+ * first pass, and failing the same way, on every future relaunch. Swallowing
+ * a single row's failure lets the remaining rows (and the caller's marker)
+ * still land normally.
  */
 async function seedReminders(profileId: string, lang: Lang, variant?: "tracking"): Promise<void> {
   const existing = await listReminders(profileId);
   const has = (t: ReminderType, time: string) =>
     existing.some((r) => r.type === t && r.time === time);
+  const tryCreate = async (input: Parameters<typeof createReminder>[0]) => {
+    try {
+      await createReminder(input);
+    } catch {
+      // Best-effort: a full reminder list on this profile means one demo row
+      // simply does not fit - not a reason to fail the rest of the seed.
+    }
+  };
 
   if (!has("glucose", "08:00")) {
-    await createReminder({ type: "glucose", time: "08:00", enabled: true, profileId });
+    await tryCreate({ type: "glucose", time: "08:00", enabled: true, profileId });
   }
   if (!has("glucose", "18:00")) {
-    await createReminder({ type: "glucose", time: "18:00", enabled: true, profileId });
+    await tryCreate({ type: "glucose", time: "18:00", enabled: true, profileId });
+  }
+  if (!has("glucose", "13:00")) {
+    await tryCreate({
+      type: "glucose",
+      label: i18n.t("reminders.demoGlucoseLabel", { lng: lang }) as string,
+      time: "13:00",
+      enabled: true,
+      profileId,
+    });
   }
   if (!has("med", "20:10")) {
-    await createReminder({
+    await tryCreate({
       type: "med",
       label: "Metformin",
       time: "20:10",
@@ -207,7 +362,7 @@ async function seedReminders(profileId: string, lang: Lang, variant?: "tracking"
     // The one row deliberately left on the notification side, so the panel
     // shows BOTH delivery badges (see modeOf in app/settings/reminders.tsx)
     // instead of a column of identical ones.
-    await createReminder({
+    await tryCreate({
       type: "med",
       time: "12:00",
       enabled: true,
@@ -215,11 +370,21 @@ async function seedReminders(profileId: string, lang: Lang, variant?: "tracking"
       profileId,
     });
   }
+  if (!has("med", "20:00")) {
+    await tryCreate({
+      type: "med",
+      label: i18n.t("reminders.demoMedLabel", { lng: lang }) as string,
+      time: "20:00",
+      enabled: true,
+      alarmEnabled: true,
+      profileId,
+    });
+  }
   if (variant !== "tracking" && !has("basal", "22:00")) {
-    await createReminder({ type: "basal", time: "22:00", enabled: true, profileId });
+    await tryCreate({ type: "basal", time: "22:00", enabled: true, profileId });
   }
   if (!has("custom", "19:00")) {
-    await createReminder({
+    await tryCreate({
       type: "custom",
       label: i18n.t("reminders.demoCustomLabel", { lng: lang }) as string,
       time: "19:00",
@@ -227,26 +392,47 @@ async function seedReminders(profileId: string, lang: Lang, variant?: "tracking"
       profileId,
     });
   }
+  if (!has("custom", "07:30")) {
+    await tryCreate({
+      type: "custom",
+      label: i18n.t("reminders.demoCustomLabel2", { lng: lang }) as string,
+      time: "07:30",
+      enabled: true,
+      profileId,
+    });
+  }
 }
 
+/** (type, time) -> the i18n key behind that row's demo label. seedReminders
+ *  above only ever CREATES its rows once, on a profile's first pass, so
+ *  without a re-apply step every labeled row would freeze on whichever
+ *  language happened to be active that first time - wrong in the other 8 on
+ *  every later scLang relaunch. */
+const DEMO_REMINDER_LABELS: { type: ReminderType; time: string; key: string }[] = [
+  { type: "glucose", time: "13:00", key: "reminders.demoGlucoseLabel" },
+  { type: "med", time: "20:00", key: "reminders.demoMedLabel" },
+  { type: "custom", time: "07:30", key: "reminders.demoCustomLabel2" },
+  { type: "custom", time: "19:00", key: "reminders.demoCustomLabel" },
+];
+
 /**
- * Store-screenshot only: keeps the custom reminder's label in the ACTIVE
- * locale on every seed pass. seedReminders (above) only ever CREATES its rows
- * once, on the profile's first pass, so without this the custom row would
- * freeze on whichever language happened to be active that first time - wrong
- * in the other 8 on every later scLang relaunch. Mirrors seedMeals just below
- * (also called unconditionally, every pass): meal names carry the same
- * per-language re-materialisation, this just updates in place instead of
- * delete+recreate since there is exactly one custom row (seedReminders is
- * idempotent per (type, time)). A no-op once the label already matches.
+ * Store-screenshot only: keeps every labeled demo reminder's text in the
+ * ACTIVE locale on every seed pass, matched by (type, time) rather than by
+ * position - seedReminders is idempotent per that same pair, so it is the
+ * stable key across languages. Mirrors seedMeals just below (also called
+ * unconditionally, every pass): this just updates in place instead of
+ * delete+recreate, since seedReminders itself never duplicates a row. A
+ * no-op once a row's label already matches.
  */
-async function relabelCustomReminder(profileId: string, lang: Lang): Promise<void> {
+async function relabelDemoReminders(profileId: string, lang: Lang): Promise<void> {
   const rows = await listReminders(profileId);
-  const custom = rows.find((r) => r.type === "custom");
-  if (!custom) return;
-  const label = i18n.t("reminders.demoCustomLabel", { lng: lang }) as string;
-  if (custom.label !== label) {
-    await updateReminder(custom.id, { label });
+  for (const spec of DEMO_REMINDER_LABELS) {
+    const row = rows.find((r) => r.type === spec.type && r.time === spec.time);
+    if (!row) continue;
+    const label = i18n.t(spec.key, { lng: lang }) as string;
+    if (row.label !== label) {
+      await updateReminder(row.id, { label });
+    }
   }
 }
 
@@ -467,12 +653,16 @@ async function seedScreenshotDataLocked(
       await seedReminders(profileId, lang, variant);
     }
 
-    // Meals carry localized names -> always (re)materialise them in `lang`.
+    // Meals, templates and favorites all carry localized text -> always
+    // (re)materialise them in `lang` (see each function's own doc comment for
+    // why templates wipe+recreate while favorites rename in place).
     await seedMeals(profileId, lang, variant);
-    // Same reasoning, one row instead of a full re-materialisation: the custom
-    // reminder's label must track `lang` on every pass too (see
-    // relabelCustomReminder above).
-    await relabelCustomReminder(profileId, lang);
+    await seedMealTemplates(profileId, lang);
+    await seedFavoriteFoods(profileId, lang);
+    // Same reasoning, one row instead of a full re-materialisation: every
+    // labeled demo reminder's text must track `lang` on every pass too (see
+    // relabelDemoReminders above).
+    await relabelDemoReminders(profileId, lang);
 
     await AsyncStorage.setItem(markerKey, lang);
   } catch {

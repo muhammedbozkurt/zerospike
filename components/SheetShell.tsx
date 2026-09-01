@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { sheetLayout, type SheetLayoutResult } from "../lib/sheetLayout";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { THEME, glow } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 
 /**
  * Shared shell for every bottom-aligned Modal (`justifyContent: "flex-end"`).
@@ -57,6 +58,9 @@ export interface SheetShellProps {
 
 const ANDROID_KEYBOARD_ANIM_MS = 180;
 const IOS_KEYBOARD_ANIM_FALLBACK_MS = 250;
+/** Widest a sheet gets on a tablet before it stops stretching and centres
+ *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 export function SheetShell({
   visible,
@@ -70,6 +74,7 @@ export function SheetShell({
 }: SheetShellProps): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const { isWide } = useLayout();
   const [contentHeight, setContentHeight] = useState(0);
 
   // Raw measured keyboard height, animated. Doubles as the outer backdrop's
@@ -189,6 +194,7 @@ export function SheetShell({
             },
             glow(THEME.accent, 30, 0.3),
             { maxHeight: sheetMaxHeightAnim },
+            isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
           ]}
         >
           <View className="items-center mb-1.5">

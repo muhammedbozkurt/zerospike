@@ -9,7 +9,12 @@ import { useTranslation } from "react-i18next";
 import { THEME, RADIUS } from "../lib/theme/tokens";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
+import { useLayout } from "../lib/useLayout";
 import { ActionRow } from "./form";
+
+/** Widest the sheet gets on a tablet before it stops stretching and centres
+ *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 export interface PickedRange {
   start: number;
@@ -53,6 +58,7 @@ export function DateRangePicker({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { isWide } = useLayout();
   const [start, setStart] = useState<Date>(initialStart);
   const [end, setEnd] = useState<Date>(initialEnd);
   const [open, setOpen] = useState<"start" | "end" | null>(null);
@@ -120,16 +126,19 @@ export function DateRangePicker({
       >
         <Pressable
           onPress={(e) => e.stopPropagation()}
-          style={{
-            borderTopLeftRadius: RADIUS["2xl"],
-            borderTopRightRadius: RADIUS["2xl"],
-            borderTopWidth: 1,
-            borderColor: THEME.border,
-            backgroundColor: THEME.bg.g1,
-            paddingHorizontal: 18,
-            paddingTop: 8,
-            paddingBottom: insets.bottom + 20,
-          }}
+          style={[
+            {
+              borderTopLeftRadius: RADIUS["2xl"],
+              borderTopRightRadius: RADIUS["2xl"],
+              borderTopWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: THEME.bg.g1,
+              paddingHorizontal: 18,
+              paddingTop: 8,
+              paddingBottom: insets.bottom + 20,
+            },
+            isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+          ]}
         >
           <View className="items-center mb-1.5">
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: THEME.border }} />

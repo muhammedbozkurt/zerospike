@@ -13,7 +13,12 @@ import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
+
+/** Widest the sheet gets on a tablet before it stops stretching and centres
+ *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
+const SHEET_MAX_WIDTH = 600;
 
 const inputStyle = {
   borderRadius: RADIUS.md,
@@ -63,6 +68,7 @@ export function SavedMedEditSheet({
   onDelete?: () => void;
 }) {
   const { t } = useTranslation();
+  const { isWide } = useLayout();
   const [name, setName] = useState("");
   const isEdit = editingName != null;
 
@@ -103,6 +109,7 @@ export function SavedMedEditSheet({
                 paddingBottom: 8,
               },
               glow(THEME.accent, 30, 0.3),
+              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
           >

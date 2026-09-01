@@ -7,7 +7,12 @@ import { listSavedMeds, upsertMedUse } from "../lib/db/meds";
 import type { SavedMed } from "../lib/db/types";
 import { hapticSelect } from "../lib/haptics";
 import { RADIUS, THEME } from "../lib/theme/tokens";
+import { useLayout } from "../lib/useLayout";
 import { SavedMedEditSheet } from "./SavedMedEditSheet";
+
+/** Cap for a centered, content-sized dialog card on a tablet (does not
+ *  stretch edge to edge like a bottom sheet). */
+const DIALOG_MAX_WIDTH = 520;
 
 /**
  * Trigger-row + modal-list medication name picker, same shape as
@@ -49,6 +54,7 @@ export function MedNamePicker({
   emptyLabel?: string;
 }) {
   const { t } = useTranslation();
+  const { isWide } = useLayout();
   const [meds, setMeds] = useState<SavedMed[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
@@ -207,15 +213,18 @@ export function MedNamePicker({
         >
           <Pressable
             className="rounded-3xl border border-hair p-4"
-            style={{
-              maxHeight: "80%",
-              backgroundColor: THEME.sheet,
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 28,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 16,
-            }}
+            style={[
+              {
+                maxHeight: "80%",
+                backgroundColor: THEME.sheet,
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: 12 },
+                elevation: 16,
+              },
+              isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1">

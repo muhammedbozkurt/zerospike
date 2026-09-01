@@ -147,6 +147,12 @@ function SpikeScreen() {
           { role: "assistant", content: t("spike.mockAnswer2") },
           { role: "user", content: t("spike.mockQuestion3") },
           { role: "assistant", content: t("spike.mockAnswer3") },
+          { role: "user", content: t("spike.mockQuestion4") },
+          { role: "assistant", content: t("spike.mockAnswer4") },
+          { role: "user", content: t("spike.mockQuestion5") },
+          { role: "assistant", content: t("spike.mockAnswer5") },
+          { role: "user", content: t("spike.mockQuestion6") },
+          { role: "assistant", content: t("spike.mockAnswer6") },
         ]);
         setReady(true);
         return;
@@ -398,6 +404,8 @@ function SpikeScreen() {
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: "flex-end",
             paddingTop: 14,
             paddingBottom: 20,
             gap: 10,

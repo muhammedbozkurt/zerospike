@@ -20,8 +20,13 @@
 set -euo pipefail
 
 SCHEME="zerospike"
+BUNDLE_ID="com.greeneyeapp.zerospike"
 LANGS=(tr en de es fr it pt ar ja)
 OUT="raw"
+# Seconds to wait after a cold launch before the app is considered settled. A
+# debug build pulls its whole bundle from Metro, so this is much longer than the
+# warm deep-link settle below.
+COLD_SETTLE="${SHOTS_COLD_SETTLE:-50}"
 
 # route key -> deep-link path+query (scLang is appended per language).
 # 01-ring dashboard, 02-bodymap heat map zoomed, 03-widget composited separately
@@ -29,11 +34,18 @@ OUT="raw"
 # range, 06-report rendered from the print HTML (see note below).
 declare -a SHOTS=(
   "01-ring|/(tabs)"
-  "02-bodymap|/(tabs)/injection?segment=map&zoom=abdomen_left_upper"
+  # NO zoom= on purpose: the store frame is the full-body heat map, the same
+  # framing that shipped. (initialZoom is optional; without it the map stays on
+  # FULL_VIEW.) A zoom= region crops to one body part, which reads as a detail
+  # shot rather than as the feature. Adding one back needs a real InjectionSite
+  # from InjectionBodyMap's GEOMETRY map (abdomen_left/right, thigh_left/right,
+  # arm_left/right, buttock_left/right); anything else silently no-ops.
+  "02-bodymap|/(tabs)/injection?segment=map"
   "04-food|/(tabs)/food"
   "05-insights|/insights?custom=1"
   "07-spike|/spike"
   "08-takip|/onboarding?scOnboarding=none"
+  "09-reminders|/settings/reminders"
 )
 # 03-widget: NOT a device capture (lock-screen + widget composite). If a Live
 # Activity screenshot is desired, capture it manually on the lock screen.
@@ -44,7 +56,12 @@ open_url() { # $1 = full url
   if [[ "$PLATFORM" == "ios" ]]; then
     xcrun simctl openurl booted "$1"
   else
-    adb shell am start -a android.intent.action.VIEW -d "$1" >/dev/null
+    # adb joins argv into one string and hands it to the DEVICE shell, so the
+    # url must survive a second round of shell parsing: "(tabs)" is a subshell
+    # ("syntax error: unexpected '('") and "&" backgrounds the command, losing
+    # every query param after it. Single-quoting is what stops that; the urls
+    # built here never contain a single quote.
+    adb shell am start -a android.intent.action.VIEW -d "'$1'" >/dev/null
   fi
 }
 
@@ -59,34 +76,138 @@ shoot() { # $1 = device dir, $2 = lang, $3 = shot key
   echo "  captured $dir/$3.png"
 }
 
+# Deep links stack: each openurl pushes onto whatever is already presented, so
+# without this the backdrop behind a sheet (07-spike is presentation:"modal";
+# 08/09 sit on top of whatever the previous shot left) is whatever the PREVIOUS
+# shot happened to be, and it differs per language and per device. Returning to
+# the dashboard first makes every sheet's backdrop the same dashboard, and also
+# forces a fresh mount so screenshot params (02-bodymap's segment/zoom) are
+# re-read instead of being ignored by an already-mounted screen.
+DASHBOARD_PATH="/(tabs)"
+reset_to_dashboard() { # $1 = lang
+  open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${1}"
+  sleep 1.5
+}
+
+# Mirrors isRTLLang() in lib/i18n/index.ts: Arabic is the only RTL locale.
+is_rtl_lang() { [[ "$1" == "ar" ]]; }
+
+app_terminate() {
+  if [[ "$PLATFORM" == "ios" ]]; then
+    xcrun simctl terminate booted "$BUNDLE_ID" >/dev/null 2>&1 || true
+  else
+    adb shell am force-stop "$BUNDLE_ID" >/dev/null 2>&1 || true
+  fi
+}
+
+# Writing direction is fixed for the LIFETIME OF THE PROCESS, so it cannot be
+# switched by a deep link mid-pass. app/_layout.tsx runs its RTL sync once per
+# launch (rtlSyncDone) and, in screenshot mode, only writes I18nManager's
+# force/allowRTL flags without reloading; setLanguage() in lib/i18n/index.ts
+# never touches I18nManager at all. RN reads those flags natively at process
+# start. So a pass that never relaunches renders every language in whatever
+# direction the app happened to launch in: that is how a whole iPhone set came
+# out mirrored for the eight LTR languages while the iPad set rendered Arabic
+# left-to-right.
+#
+# Two cold launches converge it on both platforms: the first records the flag
+# for $1, the second starts a process that reads it back.
+establish_direction() { # $1 = lang
+  echo " establishing writing direction from '$1' (2 cold launches)"
+  local i
+  for i in 1 2; do
+    app_terminate
+    sleep 2
+    open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${1}"
+    sleep "$COLD_SETTLE"
+  done
+}
+
+capture_lang() { # $1 = device output dir label, $2 = lang
+  local devdir="$1" lang="$2"
+  echo " lang: $lang"
+  local shot key path sep
+  for shot in "${SHOTS[@]}"; do
+    key="${shot%%|*}"
+    path="${shot#*|}"
+    sep="?"; [[ "$path" == *"?"* ]] && sep="&"
+    # Unwind to the dashboard first so this shot starts from the same place
+    # every time. Skipped for the dashboard shot itself, which IS that state.
+    if [[ "$path" != "$DASHBOARD_PATH" ]]; then reset_to_dashboard "$lang"; fi
+    open_url "${SCHEME}://${path}${sep}scLang=${lang}"
+    sleep 3.5
+    shoot "$devdir" "$lang" "$key"
+  done
+}
+
 status_bar_ios() {
   xcrun simctl status_bar booted override \
     --time "9:41" --batteryLevel 100 --batteryState charged \
     --cellularBars 4 --wifiBars 3 --dataNetwork wifi
 }
 
+# SHOTS_WIFI=hide drops the wifi glyph. The tablet AVDs render the demo wifi
+# slot twice (two identical triangles) and hiding is the only variant that
+# clears the duplicate; the phone renders it once, so it keeps the icon.
 status_bar_android() {
-  adb shell settings put global sysui_demo_allowed 1
-  adb shell am broadcast -a com.android.systemui.demo -e command clock -e hhmm 0941 >/dev/null
-  adb shell am broadcast -a com.android.systemui.demo -e command battery -e level 100 -e plugged false >/dev/null
-  adb shell am broadcast -a com.android.systemui.demo -e command network -e wifi show -e level 4 >/dev/null
+  local wifi="${SHOTS_WIFI:-show}"
+  local B=(adb shell am broadcast -a com.android.systemui.demo)
+  adb shell settings put global sysui_demo_allowed 1 >/dev/null
+  # Demo mode does not suppress Safety Center's status icons (the "set a screen
+  # lock" shield), so snooze those notifications outright. Only the
+  # |android|2345| safety-center keys actually render an icon.
+  # `|| true`: with `set -o pipefail` a grep that matches nothing (the common
+  # case, no safety-center notification posted) would abort the whole run.
+  adb shell cmd notification list 2>/dev/null | tr -d '\r' | grep '|android|2345|' | while read -r k; do
+    [[ -n "$k" ]] && adb shell "cmd notification snooze --for 86400000 '$k'" >/dev/null 2>&1
+  done || true
+  "${B[@]}" -e command enter >/dev/null
+  "${B[@]}" -e command clock -e hhmm 0941 >/dev/null
+  "${B[@]}" -e command battery -e level 100 -e plugged false >/dev/null
+  if [[ "$wifi" == "hide" ]]; then
+    # airplane hide keeps the plane glyph away on the tablets, which are put
+    # into airplane mode so SystemUI stops drawing its out-of-service icon.
+    "${B[@]}" -e command network -e wifi hide -e airplane hide >/dev/null
+  else
+    # `fully true` marks the network validated, otherwise the wifi glyph carries
+    # the "no internet" exclamation because the AVD has no upstream.
+    "${B[@]}" -e command network -e wifi show -e level 4 -e fully true >/dev/null
+  fi
+  "${B[@]}" -e command network -e mobile hide >/dev/null
+  "${B[@]}" -e command network -e sims hide >/dev/null
+  "${B[@]}" -e command notifications -e visible false >/dev/null
+  "${B[@]}" -e command status -e volume hide -e bluetooth hide -e location hide \
+      -e alarm hide -e sync hide -e tty hide -e eri hide -e mute hide \
+      -e speakerphone hide -e zen hide -e cast hide -e hotspot hide >/dev/null
 }
 
+capture_group() { # $1 = device output dir label, $2.. = languages of one group
+  local devdir="$1"; shift
+  (($#)) || return 0
+  establish_direction "$1"
+  # A cold launch drops the status bar override, so re-assert it per group.
+  if [[ "$PLATFORM" == "ios" ]]; then status_bar_ios; else status_bar_android; fi
+  local lang
+  for lang in "$@"; do
+    capture_lang "$devdir" "$lang"
+  done
+}
+
+# Languages are captured in two direction groups rather than in LANGS order, so
+# the expensive cold-relaunch dance runs twice per device instead of once per
+# language. Within a group nothing relaunches, so the fast deep-link path is
+# unchanged; only the boundary between the groups costs anything.
 capture_for_device() { # $1 = device output dir label
   local devdir="$1"
   echo "== device: $devdir =="
-  [[ "$PLATFORM" == "ios" ]] && status_bar_ios || status_bar_android
+  local ltr=() rtl=() lang
   for lang in "${LANGS[@]}"; do
-    echo " lang: $lang"
-    for shot in "${SHOTS[@]}"; do
-      local key="${shot%%|*}"
-      local path="${shot#*|}"
-      local sep="?"; [[ "$path" == *"?"* ]] && sep="&"
-      open_url "${SCHEME}://${path}${sep}scLang=${lang}"
-      sleep 3.5
-      shoot "$devdir" "$lang" "$key"
-    done
+    if is_rtl_lang "$lang"; then rtl+=("$lang"); else ltr+=("$lang"); fi
   done
+  # ${arr[@]+"${arr[@]}"}: macOS ships bash 3.2, where an empty array expanded
+  # under `set -u` is an unbound-variable error.
+  capture_group "$devdir" ${ltr[@]+"${ltr[@]}"}
+  capture_group "$devdir" ${rtl[@]+"${rtl[@]}"}
 }
 
 PLATFORM="${1:-ios}"
@@ -107,10 +228,14 @@ case "$PLATFORM" in
     capture_for_device "ipad"
     ;;
   android)
-    capture_for_device "android-phone"
+    # Output profile label: 2nd arg, or $SHOTS_PROFILE, so the same android pass
+    # can write the phone and the two tablet AVDs into separate raw/ folders
+    # instead of overwriting one another. Defaults to the historical label, so
+    # `store-shots.sh android` keeps behaving exactly as before.
+    capture_for_device "${2:-${SHOTS_PROFILE:-android-phone}}"
     ;;
   *)
-    echo "usage: $0 [ios|android]" >&2; exit 1;;
+    echo "usage: $0 [ios|android] [output-profile]" >&2; exit 1;;
 esac
 
 echo "Done. Raw shots in ./$OUT/ — feed them to the hypershots composite (Faz 3)."

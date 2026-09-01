@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
@@ -14,9 +14,19 @@ interface GradientCTAProps {
   /** Danger gradient (SOS / delete) - a warm red sweep. */
   danger?: boolean;
   disabled?: boolean;
+  /** Taller pill for a screen whose one pinned action closes the page
+   *  (onboarding's footer). "md" stays the app-wide default everywhere else. */
+  size?: "md" | "lg";
+  /** Swaps the label for a spinner and blocks the press, like ui.tsx Button. */
+  loading?: boolean;
   icon?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }
+
+const CTA_SIZE = {
+  md: { padV: 13, padH: 14, font: 15 },
+  lg: { padV: 17, padH: 20, font: 17 },
+} as const;
 
 /**
  * The signature call-to-action: a glowing cyan gradient (light -> accent) with
@@ -29,10 +39,14 @@ export function GradientCTA({
   variant = "primary",
   danger = false,
   disabled = false,
+  size = "md",
+  loading = false,
   icon,
   style,
 }: GradientCTAProps) {
   const sub = variant === "sub";
+  const metrics = CTA_SIZE[size];
+  const isOff = disabled || loading;
   const stops: [string, string] = danger
     ? ["#ff7a8a", GLUCOSE_RICH.low]
     : [THEME.accentSoft, THEME.accent];
@@ -41,20 +55,20 @@ export function GradientCTA({
 
   return (
     <PressableScale
-      onPress={disabled ? undefined : onPress}
+      onPress={isOff ? undefined : onPress}
       // This is the app's PRIMARY action on almost every screen and it carried no
       // role and no state at all: a screen reader announced the most important
       // control on the paywall, onboarding and SOS screens as plain text, and a
       // disabled one as fully available (the 0.5 opacity says nothing to it).
-      disabled={disabled}
+      disabled={isOff}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled: isOff, busy: loading }}
       style={[
         {
           borderRadius: RADIUS.lg,
           overflow: "hidden",
-          opacity: disabled ? 0.5 : 1,
+          opacity: isOff ? 0.5 : 1,
           borderWidth: sub ? 1 : 0,
           borderColor: THEME.border,
           backgroundColor: sub ? THEME.glass : undefined,
@@ -80,16 +94,31 @@ export function GradientCTA({
           />
         </Svg>
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, paddingHorizontal: 14 }}>
-        {icon}
-        <Text
-          style={{ color: textColor, fontWeight: "800", fontSize: 15, flexShrink: 1 }}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.7}
-        >
-          {label}
-        </Text>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          paddingVertical: metrics.padV,
+          paddingHorizontal: metrics.padH,
+        }}
+      >
+        {loading ? (
+          <ActivityIndicator color={textColor} />
+        ) : (
+          <>
+            {icon}
+            <Text
+              style={{ color: textColor, fontWeight: "800", fontSize: metrics.font, flexShrink: 1 }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {label}
+            </Text>
+          </>
+        )}
       </View>
     </PressableScale>
   );

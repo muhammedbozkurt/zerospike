@@ -109,36 +109,13 @@ export function alarmTitleWidth(title: string): number {
 }
 
 /**
- * The widest a name may be before the alarm falls back to its short type label.
- *
- * CALIBRATED ON THE REAL NAMES, in all nine languages (pinned by
- * scripts/reminderLabel.test.ts, which reads the locale files rather than
- * trusting this comment). The measurement:
- *
- *   tr  max 13   Kuşluk ölçümü
- *   ar  max 12   قياس الظهيرة
- *   ja  max 14   午前遅くの測定  (7 chars, 14 cells)
- *   de  max 21   Messung am Nachmittag
- *   pt  max 23   Medição do fim da manhã
- *   fr  max 24   Mesure de fin de matinée
- *   es  max 24   Medición de media mañana
- *   en  max 26   Late morning glucose check
- *   it  max 27   Misurazione di metà mattina
- *
- * The two goals asked for cannot both hold: letting EVERY preset name through
- * needs 27 cells, and 27 cells on a Dynamic Island compact is exactly the
- * clipping device QA reported ("Glikoz olcu..."). The budget wins, because a
- * title nobody can read is worse than a correct short one - so this is 14, the
- * largest value that still fits the compact surface, and it is calibrated so
- * that the three languages whose preset names are genuinely short (tr, ar, ja)
- * pass ALL of theirs by name. Japanese lands exactly on the line at 14 cells,
- * which is why the limit is inclusive and why width, not length, is measured.
- *
- * The six Latin languages keep the previous behaviour for PRESET rows (their
- * names are sentences, not labels), but every user in every language still
- * gets their OWN short names through: "Metformin", "Yurüyüs", "Insulin" all
- * fit comfortably. Naming a reminder something short is now the way to see it
- * on the alarm, in any language.
+ * A reference width budget, in latin-character cells, from the compact-alarm
+ * calibration that used to decide whether a TYPE-BASED row's own name reached
+ * the alarm title. reminderAlarmTitle no longer gates on it - a type-based row
+ * (glucose/med/basal) always shows its short type noun, at any name width -
+ * and a CUSTOM row was never limited by it either way. Kept only because
+ * scripts/reminderLabel.test.ts still uses it to state "genuinely past the old
+ * budget" when proving a custom row's name goes through untouched regardless.
  */
 export const ALARM_TITLE_MAX_CELLS = 14;
 
@@ -149,22 +126,23 @@ export const ALARM_TITLE_MAX_CELLS = 14;
  * we do not get to abbreviate somebody's words, and it is the only title on
  * this surface they can shorten themselves.
  *
- * A TYPE-BASED row (glucose / med / basal) now uses its own name too - the
- * user's, or the one the ready-made layout gave it - but only while that name
- * fits the compact budget (ALARM_TITLE_MAX_CELLS). Past it the short type noun
- * takes over, because AlarmKit's compact presentations clip hard and the app
- * does not own that width. A named row that fits is strictly better than a
- * generic noun: "Sabah olcumu" says which reminder is ringing, "Olcum" does not.
+ * A TYPE-BASED row (glucose / med / basal) ALWAYS shows its short type noun,
+ * never the user's or the ready-made layout's own name, no matter how short
+ * that name is. AlarmKit's compact presentations clip hard and the app does
+ * not own that width (device QA caught a Turkish measurement alarm arriving as
+ * "Glikoz olcu..."), and a name that only sometimes made it through - fitting
+ * for one row, clipped for the next - left the alarm title unpredictable in a
+ * way a fixed noun is not.
  *
  * IN-APP surfaces are untouched by all of this: the reminders list, the
  * dashboard's next-reminder line, the "coming up" card and onboarding's closing
  * card all keep showing the row's real name at full length.
  *
- * Language changes need no special handling. A stored name is the user's (or
- * the layout's) own text and deliberately does not follow the app language -
- * the same rule every other surface applies - while a row that falls back here
- * returns a KEY, which rescheduleForLanguageChange re-resolves through i18n.t
- * on its re-arm pass. So both halves already do the right thing.
+ * Language changes need no special handling. A type-based row always returns a
+ * KEY, which rescheduleForLanguageChange re-resolves through i18n.t on its
+ * re-arm pass. A custom row's stored name is the user's own text and
+ * deliberately does not follow the app language, the same rule every other
+ * surface applies.
  */
 export function reminderAlarmTitle(
   type: ReminderType,
@@ -178,9 +156,6 @@ export function reminderAlarmTitle(
         // falls back to the plain word for "reminder", which is already short
         // in all nine languages.
         { kind: "key", key: "notifications.customTitle" };
-  }
-  if (own && alarmTitleWidth(own) <= ALARM_TITLE_MAX_CELLS) {
-    return { kind: "text", text: own };
   }
   switch (type) {
     case "med":

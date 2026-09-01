@@ -11,6 +11,11 @@ import {
 import { THEME } from "../lib/theme/tokens";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
+import { useLayout } from "../lib/useLayout";
+
+/** Cap for a centered, content-sized dialog card on a tablet (does not
+ *  stretch edge to edge like a bottom sheet). */
+const DIALOG_MAX_WIDTH = 520;
 
 interface InsulinProductPickerProps {
   /** Modal header AND trigger accessibility label (the surrounding card
@@ -35,6 +40,10 @@ interface InsulinProductPickerProps {
   allowNotSet?: boolean;
   notSetLabel?: string;
   hint?: string;
+  /** Trigger-row size. "lg" is the onboarding step, where this row is one of
+   *  only two things on the page; every other screen keeps the compact "md"
+   *  row that sits in a settings list. Presentational only. */
+  size?: "md" | "lg";
 }
 
 /**
@@ -53,8 +62,10 @@ export function InsulinProductPicker({
   allowNotSet = false,
   notSetLabel,
   hint,
+  size = "md",
 }: InsulinProductPickerProps) {
   const { t } = useTranslation();
+  const { isWide } = useLayout();
   const [open, setOpen] = useState(false);
 
   // Homogeneous, single-category list - no group headers, no cross-category
@@ -89,13 +100,16 @@ export function InsulinProductPicker({
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityValue={{ text: displayText }}
-        className="flex-row items-center justify-between rounded-2xl border border-hair bg-glass px-3.5"
-        style={{ minHeight: 44 }}
+        className="flex-row items-center justify-between rounded-2xl border border-hair bg-glass"
+        style={{
+          minHeight: size === "lg" ? 56 : 44,
+          paddingHorizontal: size === "lg" ? 18 : 14,
+        }}
       >
         <Text
-          className="flex-1 text-[15px] font-medium text-ink mr-2"
+          className="flex-1 font-medium text-ink mr-2"
           numberOfLines={1}
-          style={{ flexShrink: 1 }}
+          style={{ flexShrink: 1, fontSize: size === "lg" ? 16 : 15 }}
         >
           {displayText}
         </Text>
@@ -129,15 +143,18 @@ export function InsulinProductPicker({
         >
           <Pressable
             className="rounded-3xl border border-hair p-4"
-            style={{
-              maxHeight: "80%",
-              backgroundColor: THEME.sheet,
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 28,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 16,
-            }}
+            style={[
+              {
+                maxHeight: "80%",
+                backgroundColor: THEME.sheet,
+                shadowColor: "#000",
+                shadowOpacity: 0.5,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: 12 },
+                elevation: 16,
+              },
+              isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1" numberOfLines={1}>

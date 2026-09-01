@@ -50,6 +50,7 @@ import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
+import { useLayout } from "../lib/useLayout";
 
 /** Used only if the annual plan's own offering data has no trial length. */
 const FALLBACK_TRIAL_DAYS = 7;
@@ -74,7 +75,7 @@ function PlanCard({
   selected: boolean;
   onSelect: () => void;
   name: string;
-  desc: string;
+  desc?: string;
   foot?: string;
   price: string | null;
   period: string;
@@ -136,9 +137,11 @@ function PlanCard({
             </View>
           ) : null}
         </View>
-        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }} numberOfLines={2}>
-          {desc}
-        </Text>
+        {desc ? (
+          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }} numberOfLines={2}>
+            {desc}
+          </Text>
+        ) : null}
         {foot ? (
           <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>{foot}</Text>
         ) : null}
@@ -181,6 +184,7 @@ function PaywallScreen() {
   // not sell it either.
   const healthAvailable = useHealthAvailable();
   const insets = useSafeAreaInsets();
+  const { columnPad } = useLayout();
   const router = useRouter();
   const { reason, context: ctxParam, focus: focusParam } = useLocalSearchParams<{
     reason?: string;
@@ -394,26 +398,56 @@ function PaywallScreen() {
     }
   }
 
-  const ctaPeriod =
-    plan === "monthly"
-      ? t("paywall.perMonth")
-      : plan === "annual"
-        ? t("paywall.perYear")
-        : ` ${t("paywall.perOnce")}`;
   const ctaTrial = plan === "annual" && annualTrial;
   // scheduleTrialEndingReminder skips scheduling entirely once trialDays leaves
   // no room before its 2-day lead (trialDays <= 2), so the "we'll remind you"
   // note must not promise a reminder that is never actually armed.
   const trialReminderArmed = trialDays > 2;
-  const selectedPrice = priceStr(plan);
   const ctaLabel = ctaTrial
     ? t("paywall.ctaTrial", { days: trialDays })
-    : selectedPrice
-      ? `${t("paywall.cta")} · ${selectedPrice}${ctaPeriod}`
-      : t("paywall.cta");
+    : t("paywall.cta");
 
   const loading = offer === null;
   const unavailable = offer?.status === "unavailable";
+
+  // Onboarding hands over which single benefit matters most (see `focus`
+  // above); that profile's own short label leads the 2x2 grid instead of
+  // resting at whatever slot the fixed list order would give it.
+  const shortFeatures = [
+    ...(healthAvailable
+      ? [t("paywall.featureShortHealth", { health: healthName })]
+      : []),
+    t("paywall.featureShortInsights"),
+    t("paywall.featureShortFamily"),
+    t("paywall.featureShortPdf"),
+    ...(insulinModeUsesInsulin(activeProfile?.insulin_mode)
+      ? [t("paywall.featureShortInjection")]
+      : []),
+  ];
+  if (context === "onboarding" && focus === "insulin") {
+    const injectionIdx = shortFeatures.indexOf(t("paywall.featureShortInjection"));
+    if (injectionIdx > 0) {
+      shortFeatures.unshift(shortFeatures.splice(injectionIdx, 1)[0]);
+    }
+  }
+  const featureGrid = shortFeatures.slice(0, 4);
+
+  // One 22pt headline, one 13pt subline. A limit context (health/foods/...)
+  // takes over both slots with its own title/body instead of sitting in a
+  // second box underneath - the generic offer headline is not the point when
+  // the visitor already hit a specific wall.
+  const heroHeadline = limit
+    ? limit.title
+    : annualTrial
+      ? t("paywall.headlineTrial", { days: trialDays })
+      : t("paywall.headline");
+  const heroSubline = limit
+    ? limit.body
+    : context === "onboarding"
+      ? focus === "insulin"
+        ? t("paywall.focusInsulin")
+        : t("paywall.focusTracking")
+      : t("paywall.heroValue");
 
   return (
     <AppBackground>
@@ -461,120 +495,80 @@ function PaywallScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24 }}
+          contentContainerStyle={[
+            // No pinned CTA band while loading/unavailable (see the band's own
+            // guard below), so nothing needs clearing beyond the flat 24; once
+            // real plans render, the band is pinned outside the scroll and the
+            // scroll's own bottom padding has to clear it plus the safe area.
+            {
+              paddingTop: 20,
+              paddingBottom: loading || unavailable ? insets.bottom + 24 : 24,
+            },
+            columnPad(20),
+          ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero: what Pro IS, then the privacy line under it. The card used
-              to open with the privacy sentence alone, which answered a question
-              nobody had asked yet - the offer has to be stated before it is
-              qualified. Neither line is a health claim: both describe where
-              things are kept, not what they will do for anyone. */}
-          <GlassCard glow style={{ alignItems: "center", paddingVertical: 16, marginBottom: 14 }}>
-            <Text style={{ fontSize: 30 }}>📄</Text>
+          {/* Hero: one headline, one subline underneath. A limit context
+              (health/foods/...) takes over both slots with its own
+              title/body instead of a second box below - the offer has to be
+              stated in the visitor's own terms when they already hit a wall.
+              Neither line is a health claim: both describe where things are
+              kept, not what they will do for anyone. */}
+          <GlassCard glow style={{ alignItems: "center", paddingVertical: 20, marginBottom: 14 }}>
             <Text
               style={{
                 color: THEME.ink,
-                fontSize: 14,
-                fontWeight: "700",
-                lineHeight: 20,
+                fontSize: 22,
+                fontWeight: "800",
+                lineHeight: 28,
                 textAlign: "center",
-                marginTop: 8,
               }}
             >
-              {t("paywall.heroValue")}
+              {heroHeadline}
             </Text>
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 12,
-                lineHeight: 18,
-                textAlign: "center",
-                marginTop: 6,
-              }}
-            >
-              {t("paywall.subtitle")}
-            </Text>
-          </GlassCard>
-
-          {limit ? (
-            <View
-              className="rounded-2xl p-4 mb-4"
-              style={{
-                borderWidth: 1,
-                borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-                backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-              }}
-            >
-              <Text style={{ color: GLUCOSE_RICH.high, fontWeight: "800", marginBottom: 2 }}>
-                {limit.title}
-              </Text>
-              {limit.body ? (
-                <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.85 }}>
-                  {limit.body}
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-
-          {/* Benefits: a single, focused list (at most 4 rows). Health sync now
-              shows on both platforms (HealthKit / Health Connect), so a
-              profile that also doses can push the injection bullet off the
-              4-row cap - that bullet itself only applies to a profile that
-              actually doses, so an insulin-free / undiagnosed user never
-              loses a slot to it. */}
-          <GlassCard style={{ paddingVertical: 16, marginBottom: 16 }}>
-            {/* Coming out of onboarding the list opens with the one line that
-                matches the quiz answer, lit so it reads as the lead rather than
-                a fifth bullet. Every other entry point keeps the plain list. */}
-            {context === "onboarding" ? (
-              <View
-                className="flex-row items-center rounded-xl px-3 py-2 mb-3"
+            {heroSubline ? (
+              <Text
                 style={{
-                  borderWidth: 1,
-                  borderColor: withAlpha(THEME.accent, 0.35),
-                  backgroundColor: withAlpha(THEME.accent, 0.1),
+                  color: THEME.muted,
+                  fontSize: 13,
+                  lineHeight: 18,
+                  textAlign: "center",
+                  marginTop: 6,
                 }}
               >
-                <Ionicons name="sparkles" size={16} color={THEME.accent} />
-                <Text
-                  style={{
-                    color: THEME.ink,
-                    flex: 1,
-                    marginLeft: 10,
-                    fontSize: 13,
-                    fontWeight: "700",
-                    lineHeight: 18,
-                  }}
-                >
-                  {focus === "insulin"
-                    ? t("paywall.focusInsulin")
-                    : t("paywall.focusTracking")}
-                </Text>
-              </View>
+                {heroSubline}
+              </Text>
             ) : null}
-            {[
-              ...(healthAvailable
-                ? [t("paywall.featureHealthSync", { health: healthName })]
-                : []),
-              t("paywall.featureInsights"),
-              t("paywall.featureFamily"),
-              t("paywall.featurePdf"),
-              ...(insulinModeUsesInsulin(activeProfile?.insulin_mode)
-                ? [t("paywall.featureInjection")]
-                : []),
-            ]
-              .slice(0, 4)
-              .map((text, i, arr) => (
+          </GlassCard>
+
+          {/* Benefits: a 2x2 grid of short labels instead of four full
+              sentences, so the four benefits read at a glance in every
+              language. Health sync now shows on both platforms (HealthKit /
+              Health Connect), so a profile that also doses can push the
+              injection label off the 4-slot cap - that label itself only
+              applies to a profile that actually doses, so an insulin-free /
+              undiagnosed user never loses a slot to it. */}
+          <GlassCard style={{ paddingVertical: 16, marginBottom: 16 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+              {featureGrid.map((text, i) => (
                 <View
                   key={i}
-                  className={`flex-row items-center ${i < arr.length - 1 ? "mb-3" : ""}`}
+                  style={{
+                    width: "50%",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingRight: i % 2 === 0 ? 8 : 0,
+                    paddingLeft: i % 2 === 1 ? 8 : 0,
+                    marginTop: i >= 2 ? 12 : 0,
+                  }}
                 >
-                  <Ionicons name="checkmark-circle" size={17} color={THEME.accent} />
-                  <Text style={{ color: THEME.ink, flex: 1, marginLeft: 10, fontSize: 13 }}>
+                  <Ionicons name="checkmark-circle" size={14} color={THEME.accent} />
+                  <Text style={{ color: THEME.ink, flex: 1, marginLeft: 8, fontSize: 12 }}>
                     {text}
                   </Text>
                 </View>
               ))}
+            </View>
           </GlassCard>
 
           {loading ? (
@@ -609,7 +603,6 @@ function PaywallScreen() {
                 selected={plan === "monthly"}
                 onSelect={() => selectPlan("monthly")}
                 name={t("paywall.planMonthly")}
-                desc={t("paywall.monthlyDesc")}
                 price={priceStr("monthly")}
                 period={t("paywall.perMonth")}
               />
@@ -644,7 +637,6 @@ function PaywallScreen() {
                 selected={plan === "lifetime"}
                 onSelect={() => selectPlan("lifetime")}
                 name={t("paywall.planLifetime")}
-                desc={t("paywall.lifetimeDesc")}
                 foot={
                   lifetimeYears != null
                     ? t("paywall.lifetimeAnchor", {
@@ -656,57 +648,27 @@ function PaywallScreen() {
                 period={t("paywall.perOnce")}
                 badge={t("paywall.lifetimeBadge")}
               />
-
-              <View className="h-2" />
-              <GradientCTA label={ctaLabel} disabled={busy} onPress={buy} />
-
-              {ctaTrial && trialReminderArmed ? (
-                <Text
-                  style={{
-                    color: THEME.muted,
-                    fontSize: 11,
-                    textAlign: "center",
-                    marginTop: 8,
-                    lineHeight: 16,
-                    paddingHorizontal: 8,
-                  }}
-                >
-                  {t("paywall.trialNote")}
-                </Text>
-              ) : null}
-
-              {/* Secure payment */}
-              <View className="flex-row items-center justify-center mt-3">
-                <Ionicons name="lock-closed" size={12} color={THEME.muted} />
-                <Text
-                  style={{ color: THEME.muted, fontSize: 11, marginLeft: 6, textAlign: "center" }}
-                >
-                  {t("paywall.securePayment")}
-                </Text>
-              </View>
-
-              <Pressable onPress={onRestore} disabled={busy} className="py-3 items-center">
-                <Text style={{ color: THEME.muted, fontWeight: "600", opacity: busy ? 0.5 : 1 }}>
-                  {t("paywall.restore")}
-                </Text>
-              </Pressable>
             </>
           )}
 
-          <Text
-            style={{
-              color: THEME.muted,
-              fontSize: 11,
-              textAlign: "center",
-              paddingHorizontal: 8,
-              lineHeight: 16,
-              marginTop: 8,
-              marginBottom: 12,
-            }}
+          {/* Bottom band: restore + privacy + terms, one 11pt row. */}
+          <View
+            className="flex-row items-center justify-center flex-wrap mt-4"
+            style={{ gap: 6 }}
           >
-            {t("paywall.legalNote")}
-          </Text>
-          <View className="flex-row justify-center" style={{ gap: 24 }}>
+            <Pressable onPress={onRestore} disabled={busy}>
+              <Text
+                style={{
+                  color: THEME.muted,
+                  fontSize: 11,
+                  fontWeight: "600",
+                  opacity: busy ? 0.5 : 1,
+                }}
+              >
+                {t("paywall.restore")}
+              </Text>
+            </Pressable>
+            <Text style={{ color: THEME.muted, fontSize: 11 }}>·</Text>
             <Pressable onPress={() => Linking.openURL(privacyUrl())}>
               <Text
                 style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
@@ -714,6 +676,7 @@ function PaywallScreen() {
                 {t("settings.privacy")}
               </Text>
             </Pressable>
+            <Text style={{ color: THEME.muted, fontSize: 11 }}>·</Text>
             <Pressable onPress={() => Linking.openURL(termsUrl())}>
               <Text
                 style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
@@ -722,7 +685,53 @@ function PaywallScreen() {
               </Text>
             </Pressable>
           </View>
+
+          <Text
+            style={{
+              color: THEME.muted,
+              fontSize: 11,
+              textAlign: "center",
+              paddingHorizontal: 8,
+              lineHeight: 16,
+              marginTop: 10,
+            }}
+          >
+            {t("paywall.legalNote")}
+          </Text>
         </ScrollView>
+
+        {/* Pinned CTA band: only once real plans are on screen (loading /
+            unavailable keep their own in-scroll composition, no CTA to pin). */}
+        {!loading && !unavailable ? (
+          <View
+            style={[
+              {
+                borderTopWidth: 1,
+                borderTopColor: THEME.border,
+                backgroundColor: THEME.bg.g1,
+                paddingTop: 12,
+                paddingBottom: insets.bottom + 12,
+              },
+              columnPad(20),
+            ]}
+          >
+            <GradientCTA label={ctaLabel} disabled={busy} onPress={buy} />
+            {ctaTrial && trialReminderArmed ? (
+              <Text
+                style={{
+                  color: THEME.muted,
+                  fontSize: 11,
+                  textAlign: "center",
+                  marginTop: 8,
+                  lineHeight: 16,
+                  paddingHorizontal: 8,
+                }}
+              >
+                {t("paywall.trialNote")}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
       <FeedbackHost />
     </AppBackground>
