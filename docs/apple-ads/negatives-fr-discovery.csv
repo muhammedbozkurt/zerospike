@@ -1,0 +1,140 @@
+campaign,ad group,keyword,match type,note
+ZS-FR-Discovery,,calculateur insuline,Broad,REGULASYON: uygulama doz hesaplamaz
+ZS-FR-Discovery,,calcul insuline,Broad,REGULASYON: doz hesaplama niyeti
+ZS-FR-Discovery,,calculateur de bolus,Broad,REGULASYON: bolus doz hesabi
+ZS-FR-Discovery,,dose insuline,Broad,REGULASYON: doz niyeti
+ZS-FR-Discovery,,guérir le diabète,Broad,REGULASYON: tedavi vaadi
+ZS-FR-Discovery,,guérison diabète,Broad,REGULASYON: tedavi vaadi
+ZS-FR-Discovery,,faire baisser la glycémie,Broad,REGULASYON: sonuc vaadi (dusurme)
+ZS-FR-Discovery,,baisser le sucre,Broad,REGULASYON: sonuc vaadi
+ZS-FR-Discovery,,diagnostic diabète,Broad,REGULASYON: tani niyeti
+ZS-FR-Discovery,,test diabète,Broad,REGULASYON: tarama/test niyeti
+ZS-FR-Discovery,,alarme glycémie,Broad,REGULASYON: alarm cercevesi yasak
+ZS-FR-Discovery,,alerte hypo,Broad,REGULASYON: uyari cercevesi yasak
+ZS-FR-Discovery,,hypoglycémie,Broad,"REGULASYON: tani/klinik terim, uygulama tani koymaz"
+ZS-FR-Discovery,,alerte glycémie,Broad,REGULASYON: uyari cercevesi yasak
+ZS-FR-Discovery,,freestyle libre,Broad,URUN UYUMSUZ: CGM donanimi
+ZS-FR-Discovery,,dexcom,Broad,URUN UYUMSUZ: CGM donanimi
+ZS-FR-Discovery,,capteur glycémie,Broad,URUN UYUMSUZ: sensor arayisi
+ZS-FR-Discovery,,lecteur glycémie acheter,Broad,URUN UYUMSUZ: cihaz satin alma
+ZS-FR-Discovery,,bandelettes,Broad,URUN UYUMSUZ: sarf malzemesi
+ZS-FR-Discovery,,pompe à insuline,Broad,URUN UYUMSUZ: donanim
+ZS-FR-Discovery,,metformine,Broad,URUN UYUMSUZ: ilac
+ZS-FR-Discovery,,ozempic,Broad,URUN UYUMSUZ: ilac
+ZS-FR-Discovery,,maigrir,Broad,KATEGORI DISI: kilo verme
+ZS-FR-Discovery,,régime,Broad,KATEGORI DISI: diyet
+ZS-FR-Discovery,,keto,Broad,KATEGORI DISI: keto
+ZS-FR-Discovery,,compteur de calories,Broad,KATEGORI DISI: kalori sayaci
+ZS-FR-Discovery,,tension artérielle,Broad,KATEGORI DISI: tansiyon
+ZS-FR-Discovery,,recettes diabète,Broad,"KATEGORI DISI: yemek tarifi arayisi, urun kapsami disi"
+ZS-FR-Discovery,,menu diabétique,Broad,"KATEGORI DISI: beslenme plani arayisi, urun kapsami disi"
+ZS-FR-Discovery,,gratuit,Broad,DUSUK NIYET: ucretsiz arayan Pro'ya donmuyor
+ZS-FR-Discovery,,fitbit,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,withings,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,whoop,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,strava,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,workout,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,timer,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,classpass,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,class pass,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,basic fit,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,fitness park,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,adidas running,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,cookidoo,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,running,Exact,"WEARABLE/FITNESS: kategori disi marka, Discovery genis eslesmede yakalanma riski"
+ZS-FR-Discovery,,appli diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,appli glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,application diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,application diabète sans compte,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,application diabétique,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,application glycémie sans inscription,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,autosurveillance glycémique,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet alimentaire diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet asg,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet autosurveillance,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet autosurveillance glycémique,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet basal bolus,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet d'autosurveillance glycémique,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet de diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet de glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet diabète enfant,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet diabétique,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet glycémie hors ligne,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet glycémie médecin,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet glycémie pdf,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet glycémie à imprimer,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet injections,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,carnet insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,comptage des glucides,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,compter les glucides,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabetolog,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabhealth,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète apple watch,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète de grossesse,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète gestationnel,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète gestationnel app,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète gestationnel carnet,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète gourmand,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète journal,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète type 1,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète type 1 app,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète type 1 carnet,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète type 2,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète type 2 app,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,diabète type 2 carnet,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,dt1,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,dt2,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glooko,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,gluci chek,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,gluci-chek,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glucides aliments,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glucomate,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glucose buddy,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glycémie app,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glycémie apple watch,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glycémie après repas,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glycémie grossesse,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glycémie postprandiale,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,glycémie à jeun,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,hba1c,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,historique glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,hémoglobine glyquée,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,journal alimentaire diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,journal de glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,journal insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,my espace diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,mydiabby,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,mysugr,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,noter insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,noter sa glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,prédiabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,prédiabète app,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,rappel diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,rappel glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,rappel insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,rapport diabète pdf,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,relevé glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,rotation injection insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,rotation sites injection,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,scanner code barre aliment,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,sites injection insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,socialdiabetes,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,stylo insuline app,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,suivi de la glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,suivi du glucose,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,suivi glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,suivi hba1c,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,suivi insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,suivi taux de sucre,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,table des glucides,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,tableau glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,taux de sucre,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,temps dans la cible,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,widget glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,zero spike,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,zerospike,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,zerospike app,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,zerospike diabète,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,zerospike glycémie,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
+ZS-FR-Discovery,,zones injection insuline,Exact,"HARVEST KORUMA: Brand/Generic/Competitor'da zaten exact var, Discovery'nin yeni sorgu bulmasi icin kendi exact'ini negatif yapar"
