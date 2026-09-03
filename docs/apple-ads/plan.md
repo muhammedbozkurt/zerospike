@@ -75,45 +75,53 @@ Etkin CPT varsayimi DE 0,50 / FR 0,45 / TR 0,11 / US 0,80 EUR; tap->indirme %45;
 
 Dagilim: test DE 12 / FR 5 / TR 3 / US 4. Olcek DE 35 / FR 15 / TR 5. Agresif DE 80 / FR 35 / ES 15 / IT 15 / TR 8.
 
-## 5b. Ilk test: 80 USD
+## 5b. v1 sonucu (26 Agustos - 2 Eylul 2026)
 
-Butce 80 USD'ye indirilince 5. bolumdeki dort storefront'luk yapi tasinamaz: 15 kampanyaya bolunen
-80 dolar kampanya basina 5 dolar demektir ve hicbir seyi olcemez. Ilk test **DE ve TR ile sinirli**,
-Competitor kampanyalari ve FR ile US faz 2'ye birakildi.
+Ilk test yapisi (ZS-DE-Search, ZS-DE-Discovery, ZS-FR-Search, toplam 3 kampanya) canli kosuldu.
+Sonuc: DE CPT 1,00 $, CPA 3,48 $, 2 indirme; tum tiklar Brand-Broad marka teriminden geldi, Generic/Core
+exact kelimeler sifir tiklama cekti. Discovery-SearchMatch 0,20 $ teklifle 30 gosterim, 0 tik aldi.
 
-| Kampanya | Ad group | Gunluk | 14 gun | Max teklif |
+Ders: marka trafigi tek butce havuzunu tuketiyor ve exact generic kelimeler hic sans bulamiyor; asagidaki
+v2 yapisi butceyi kampanya bazinda ayirarak bunu duzeltmek icin tasarlandi.
+
+## 6. Kampanya yapisi: v2 (Eylul 2026)
+
+Pazar basina 4 kampanya, butce ayrimi marka trafiginin generic butceyi yemesini engeller.
+
+| Kampanya | Butce/gun | Eslesme | Ad group'lar | Teklif araligi |
 |---|---|---|---|---|
-| ZS-DE-Search | Brand, Core, Carbs-Food, Injection-Rotation | 2,70 $ | 37,80 $ | 0,45 |
-| ZS-DE-Discovery | Discovery-SearchMatch | 1,00 $ | 14,00 $ | 0,30 |
-| ZS-FR-Search | Brand, Core | 2,00 $ | 28,00 $ | 0,40 |
-| **Toplam** | | **5,70 $** | **79,80 $** | |
+| ZS-DE-Brand | 1,00 $ | Exact | Brand | 0,45 $ |
+| ZS-DE-Generic | 5,00 $ | Exact | Glucose-Diary, Insulin-Log, HbA1c-Report, Carbs-Food, Injection-Rotation, Condition, Reminders, Privacy, Watch-Widget | 0,40-0,90 $ |
+| ZS-DE-Competitor | 1,50 $ | Exact | Comp-Core | 0,60-0,90 $ |
+| ZS-DE-Discovery | 3,00 $ | Broad + Search Match | Broad (0,60-0,80 $), SearchMatch (kelime yok, Search Match acik, varsayilan CPT 0,50 $) | |
+| ZS-FR-Brand | 1,00 $ | Exact | Brand | 0,40 $ |
+| ZS-FR-Generic | 2,00 $ | Exact | ayni 9 ad group | 0,20-0,40 $ |
+| ZS-FR-Competitor | 1,00 $ | Exact | Comp-Core | 0,30-0,40 $ |
+| ZS-FR-Discovery | 2,00 $ | Broad + Search Match | Broad (0,30 $), SearchMatch (0,20 $) | |
 
-Apple kampanya gunluk butcesinin Max CPT teklifinden buyuk olmasini sart kosuyor. 80 dolar alti
-kampanyaya bolununce gunluk butceler tekliflerin altina dusuyordu; bu yuzden kampanya sayisi uce
-indirildi. Butce kampanya seviyesinde, teklif ve Search Match ad group seviyesinde oldugu icin
-birlestirme hicbir kontrolu kaybettirmiyor. Tek odun: marka artik kendi butce havuzunda degil.
+Toplam tavan 16,50 $/gun; gercek harcama v1'de tavanin bes'te biriydi.
 
-Orta senaryoda (butcenin %65'i harcanir) beklenen: ~243 tap, ~109 indirme, ~51 $ fiili harcama,
-indirme basina ~0,47 $.
+Ortak ayarlar: yalniz Search Results yerlesimi; iPhone; Audience New Users (tum kampanyalar); yas/cinsiyet/
+gun-saat hedeflemesi yok; Search Match yalniz Discovery/SearchMatch ad group'unda acik, diger tum ad
+group'larda kapali.
 
-**Bu butcenin olcemedigi sey:** indirme -> odeyen orani. Beklenen odeyen sayisi ~2, yani istatistiksel
-olarak hicbir sey. 80 dolar **CPT'yi ve tap -> indirme oranini** olcer, LTV'yi olcmez. Planin dayandigi
-%3 varsayimi ancak olcek kademesinde sinanabilir. Bu bir kusur degil dogru sira: gercek CPT hedef
-bandin disindaysa zaten olcek kademesine hic gecilmeyecek ve 80 dolar bunu 300 dolar harcamadan soyler.
+Negatifler: negatives-XX.csv dort kampanyaya da uygulanir; negatives-XX-discovery.csv yalniz Discovery'ye
+(paylasilan liste + wearable marka negatifleri + tum exact kelimelerin exact negatifi).
 
-## 6. Kampanya yapisi
+CPP eslemesi (ad group -> custom product page): Glucose-Diary, HbA1c-Report, Reminders -> cpp-glucose-diary;
+Carbs-Food -> cpp-carb-tracking; Injection-Rotation, Insulin-Log -> cpp-injection-rotation; Condition,
+Privacy, Watch-Widget, Brand, Comp-Core, Discovery -> varsayilan urun sayfasi (Privacy, Gestational,
+Doctor-Report, Watch CPP'leri sonraki tur).
 
-Storefront basina ayri kampanya (butce kampanya seviyesinde, pazarlarin birbirinin butcesini yemesi engellenir).
+Apple oneri CSV notu: 26 Agustos - 2 Eylul donemi icin Apple'in sundugu 166 satirlik oneri CSV'si incelendi;
+tamami sosyal medya ve fitness marka terimiydi, diyabet ile ilgili tek terim yoktu. Liste dogrudan
+kullanilmadi, yalniz wearable/fitness marka isimleri Discovery negatif listesine alindi.
 
-| Kampanya | Ad group | Eslesme | Search Match | CPP |
-|---|---|---|---|---|
-| ZS-xx-Brand | Brand-Core, Brand-Broad | Exact + Broad | Kapali | Glucose Diary |
-| ZS-xx-Generic | Glucose-Diary, HbA1c-Trends, Carbs-Food, Injection-Rotation, Condition | Exact | Kapali | Grup basina (bkz. cpp-*.md) |
-| ZS-xx-Competitor | Comp-Core | Exact | Kapali | Glucose Diary |
-| ZS-xx-Discovery | Discovery-SearchMatch | kelime yok | **Acik** | Glucose Diary |
+Harvest dongusu: haftada bir Discovery Search Terms raporu okunur; 2+ indirme veya 5+ tik getiren sorgu
+Generic'e exact kelime olarak tasinir ve ayni terim Discovery negatifine exact olarak eklenir.
 
-Her ad group: cihaz yalniz **iPhone**, musteri tipi **yalniz yeni kullanicilar**, yas ve cinsiyet hedeflemesi
-**yok**, gun ici zamanlama **yok**. Search Match yalniz Discovery'de. Negatif listeler kampanya seviyesinde.
+Kelime kapisi: 30 tik 0 indirme = duraklat; 10+ indirme ve CPA < 3 $ = teklif +%20. Kanal esigi: indirme ->
+odeyen %5,3 (20-30 indirme birikince okunur, RevenueCat Charts -> Segment).
 
 ## 7. Durdurma ve olcekleme esikleri
 
@@ -137,17 +145,20 @@ olcmeden olcekleme yapma.**
 
 | Dosya | Icerik |
 |---|---|
-| `keywords-de.csv` | 51 kelime, 4 kampanya, 8 ad group |
-| `keywords-fr.csv` | 37 kelime |
-| `keywords-tr.csv` | 34 kelime |
-| `keywords-us.csv` | 14 kelime (mikro test) |
-| `negatives-<ulke>.csv` | Ulke basina 25-30 negatif; regulasyon, urun uyumsuzlugu, kategori disi, dusuk niyet |
+| `keywords-de.csv` | v2: 125 kelime, 4 kampanya (Brand/Generic/Competitor/Discovery), 12 ad group |
+| `keywords-fr.csv` | v2: 104 kelime, ayni kampanya/ad group yapisi |
+| `keywords-tr.csv` | 34 kelime (v1, degismedi) |
+| `keywords-us.csv` | 14 kelime (mikro test, v1, degismedi) |
+| `negatives-de.csv`, `negatives-fr.csv` | Paylasilan negatif liste, dort kampanyaya da uygulanir (DE 37, FR 30 satir); regulasyon, urun uyumsuzlugu, kategori disi, dusuk niyet |
+| `negatives-de-discovery.csv`, `negatives-fr-discovery.csv` | Yalniz Discovery kampanyasina; paylasilan liste + wearable/fitness marka negatifleri + Brand/Generic/Competitor'daki tum exact kelimelerin exact negatifi (DE 178, FR 139 satir) |
+| `negatives-tr.csv`, `negatives-us.csv` | v1, degismedi |
 | `cpp-glucose-diary.md`, `cpp-injection-rotation.md`, `cpp-carb-tracking.md` | Ekran goruntusu sirasi ve Promotional Text |
 | `privacy-2.3.1.md` | Attribution gizlilik beyani: app.json privacy manifest blogu ve App Store Connect formu kontrol listesi |
 
-CSV'ler 6 sutunlu: `campaign,ad group,keyword,match type,bid,note`. `note` sutunu gerekcedir, konsola
-girmez. Ice aktarmaya hazir dilim: `cut -d, -f1-5 keywords-de.csv`. Yalniz kelime listesi (Apple Ads
-"Add Keywords" kutusuna yapistirmak icin): `tail -n +2 keywords-de.csv | cut -d, -f3 | grep .`
+`keywords-*.csv` 6 sutunlu: `campaign,ad group,keyword,match type,bid,note`. `negatives-*.csv` 5 sutunlu:
+`campaign,ad group,keyword,match type,note`. `note` sutunu gerekcedir, konsola girmez. Ice aktarmaya hazir
+dilim: `cut -d, -f1-5 keywords-de.csv`. Yalniz kelime listesi (Apple Ads "Add Keywords" kutusuna
+yapistirmak icin): `tail -n +2 keywords-de.csv | cut -d, -f3 | grep .`
 
 Teklifler **USD** cinsindendir. Apple Ads hesabi USD tabanli Advanced olarak zaten acik, hesap para
 birimi kurulumda belirlenir ve degistirilemez, dolayisiyla bu bir karar degil veridir. Teklifler EUR'dan
