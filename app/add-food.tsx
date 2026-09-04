@@ -6,11 +6,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { GLUCOSE_RICH, HIT_TARGET, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, HIT_TARGET, INPUT_TEXT, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
-import { addCustomFood, getFood, updateFood } from "../lib/db/foods";
+import { addCustomFood, getFood, listPortions, replacePortions, updateFood } from "../lib/db/foods";
 import {
   DEFAULT_FOOD_CATEGORY,
   FOOD_CATEGORIES,
@@ -18,6 +18,7 @@ import {
   isFoodCategory,
   type FoodCategory,
 } from "../lib/db/categories";
+import { PORTION_LABEL_KEYS, type PortionLabelKey } from "../lib/db/types";
 import { categoryTileIcon } from "../components/FoodPlate";
 import { FOOD_EMOJI_PICKER_OPTIONS } from "../lib/foodMeta";
 import { canAddCustomFood } from "../lib/guardrails";
@@ -35,6 +36,10 @@ import { sanitizeIntegerText } from "../lib/numberInput";
  *  dose estimate as a wildly implausible number. */
 const GI_MIN = 0;
 const GI_MAX = 110;
+
+/** Keeps the optional presets section short: a handful of real-world serving
+ *  shortcuts, not a second full picker. */
+const MAX_PRESETS = 4;
 
 function AddFoodScreen() {
   const { t } = useTranslation();
@@ -55,6 +60,14 @@ function AddFoodScreen() {
   const [gi, setGi] = useState("");
   const [portion, setPortion] = useState(100);
   const [notes, setNotes] = useState("");
+  // Optional serving-size shortcuts (food_portions, schema v23). `id` is the
+  // DB row id in edit mode (string) or a locally-minted one for a row the user
+  // just added and has not saved yet - either way, stable across re-renders,
+  // which a plain array index is not once a middle row is removed.
+  const [presets, setPresets] = useState<
+    { id: string; labelKey: PortionLabelKey; grams: string }[]
+  >([]);
+  const presetSeqRef = useRef(0);
   // The shelf this food is filed on. It decides the plate the food is drawn
   // with everywhere, which is why it is asked for here: every hand-typed and
   // scanned food used to land on the unclassified shelf and so every one of
@@ -81,6 +94,10 @@ function AddFoodScreen() {
   // (risking a prefill landing on top of what the user already typed) until
   // that read has settled - success, "not found", or error alike.
   const [foodLoaded, setFoodLoaded] = useState(false);
+  // Guards save() against a second tap while the write is in flight, and
+  // keeps the CTA showing a spinner instead of silently doing nothing on a
+  // slow write.
+  const [saving, setSaving] = useState(false);
 
   // Return-key focus chain across the text fields (E.8): name -> brand -> gi ->
   // notes. Carbs/portion are steppers and sit outside the keyboard chain.
@@ -143,6 +160,15 @@ function AddFoodScreen() {
         // A row written before this field existed (or by a migration's backfill)
         // can hold anything at all, so it is narrowed rather than trusted.
         setCategory(isFoodCategory(f.category) ? f.category : DEFAULT_FOOD_CATEGORY);
+        const existingPresets = await listPortions(foodId);
+        if (!alive) return;
+        setPresets(
+          existingPresets.map((p) => ({
+            id: String(p.id),
+            labelKey: p.label_key,
+            grams: String(p.grams),
+          }))
+        );
       } catch (err) {
         logCrash(err, { screen: "add-food", load: "edit" });
       } finally {
@@ -187,50 +213,94 @@ function AddFoodScreen() {
     setGi(String(clamped));
   }
 
-  async function save() {
-    if (!valid) return;
+  function addPresetRow() {
+    if (presets.length >= MAX_PRESETS) return;
+    hapticSelect();
+    presetSeqRef.current += 1;
+    setPresets((prev) => [
+      ...prev,
+      { id: `new-${presetSeqRef.current}`, labelKey: "portion", grams: "" },
+    ]);
+  }
 
-    if (isEdit && foodId) {
-      // Barcode stays as stored; everything else follows the form. portion is
-      // written as entered - the Stepper's own min (1) is what keeps it off
-      // zero, not a silent `|| 100` here that used to also overwrite a real 0.
-      await updateFood(foodId, {
+  function setPresetLabel(id: string, labelKey: PortionLabelKey) {
+    setPresets((prev) => prev.map((r) => (r.id === id ? { ...r, labelKey } : r)));
+  }
+
+  function setPresetGrams(id: string, text: string) {
+    const cleaned = sanitizeIntegerText(text);
+    setPresets((prev) => prev.map((r) => (r.id === id ? { ...r, grams: cleaned } : r)));
+  }
+
+  function removePresetRow(id: string) {
+    hapticSelect();
+    setPresets((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  /** Rows with no (or zero) grams typed are dropped silently - an empty grams
+   *  field is an unfinished preset, not a request to save a 0 g one. */
+  function presetRowsForSave(): ReadonlyArray<readonly [PortionLabelKey, number]> {
+    return presets
+      .map((r) => [r.labelKey, parseInt(r.grams, 10) || 0] as const)
+      .filter((r) => r[1] > 0);
+  }
+
+  async function save() {
+    if (!valid || saving) return;
+
+    if (!isEdit && !allowed) {
+      // push, not replace: the banner above already offers this same route,
+      // and a push here (defense in depth - the CTA below is disabled at the
+      // limit) keeps the typed form on the stack instead of destroying it.
+      // Not a write, so it stays outside the try/catch below.
+      router.push({ pathname: "/paywall", params: { reason: "foods" } });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (isEdit && foodId) {
+        // Barcode stays as stored; everything else follows the form. portion is
+        // written as entered - the Stepper's own min (1) is what keeps it off
+        // zero, not a silent `|| 100` here that used to also overwrite a real 0.
+        await updateFood(foodId, {
+          name: name.trim(),
+          brand_name: brand.trim() || null,
+          carb_100g: carb || 0,
+          glycemic_index: parseInt(gi, 10) || 0,
+          portion_size_g: portion,
+          custom_notes: notes.trim() || null,
+          category,
+          emoji,
+        });
+        await replacePortions(foodId, presetRowsForSave());
+        bumpData();
+        toast(t("food.saved"), "success");
+        closeAfterSave();
+        return;
+      }
+
+      const created = await addCustomFood({
         name: name.trim(),
         brand_name: brand.trim() || null,
         carb_100g: carb || 0,
         glycemic_index: parseInt(gi, 10) || 0,
         portion_size_g: portion,
+        barcode: barcode ?? null,
         custom_notes: notes.trim() || null,
         category,
         emoji,
       });
+      await replacePortions(created.id, presetRowsForSave());
       bumpData();
       toast(t("food.saved"), "success");
       closeAfterSave();
-      return;
+    } catch (err) {
+      logCrash(err, { screen: "add-food", action: "save" });
+      toast(t("common.saveFailed"), "error");
+    } finally {
+      setSaving(false);
     }
-
-    if (!allowed) {
-      // push, not replace: the banner above already offers this same route,
-      // and a push here (defense in depth - the CTA below is disabled at the
-      // limit) keeps the typed form on the stack instead of destroying it.
-      router.push({ pathname: "/paywall", params: { reason: "foods" } });
-      return;
-    }
-    await addCustomFood({
-      name: name.trim(),
-      brand_name: brand.trim() || null,
-      carb_100g: carb || 0,
-      glycemic_index: parseInt(gi, 10) || 0,
-      portion_size_g: portion,
-      barcode: barcode ?? null,
-      custom_notes: notes.trim() || null,
-      category,
-      emoji,
-    });
-    bumpData();
-    toast(t("food.saved"), "success");
-    closeAfterSave();
   }
 
   return (
@@ -462,6 +532,105 @@ function AddFoodScreen() {
                 accessibilityLabel={t("food.portionSize")}
               />
             </View>
+            {/* Optional: up to MAX_PRESETS serving-size shortcuts, saved as
+                food_portions on this food (replacePortions, full-list-at-once -
+                a preset has no identity outside its position in this list). */}
+            <View className="mb-3">
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-sm font-medium text-mut">
+                  {t("portion.presetsTitle")}
+                </Text>
+                {presets.length < MAX_PRESETS ? (
+                  <Pressable
+                    onPress={addPresetRow}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("portion.addPreset")}
+                  >
+                    <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700" }}>
+                      {t("portion.addPreset")}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {presets.map((row) => (
+                <View
+                  key={row.id}
+                  className="rounded-2xl bg-glass border border-hair p-3 mb-2"
+                >
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row flex-wrap flex-1" style={{ gap: 6 }}>
+                      {PORTION_LABEL_KEYS.map((key) => {
+                        const active = key === row.labelKey;
+                        return (
+                          <Pressable
+                            key={key}
+                            onPress={() => {
+                              if (!active) hapticSelect();
+                              setPresetLabel(row.id, key);
+                            }}
+                            hitSlop={4}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: active }}
+                            accessibilityLabel={t(`portion.${key}`)}
+                            className="rounded-full px-2.5 py-1"
+                            style={{
+                              borderWidth: 1,
+                              borderColor: active ? THEME.accent : THEME.border,
+                              backgroundColor: active
+                                ? withAlpha(THEME.accent, 0.16)
+                                : THEME.glass,
+                            }}
+                          >
+                            <Text
+                              numberOfLines={1}
+                              style={{
+                                color: active ? THEME.accent : THEME.ink,
+                                fontSize: 12,
+                                fontWeight: active ? "700" : "500",
+                              }}
+                            >
+                              {t(`portion.${key}`)}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Pressable
+                      onPress={() => removePresetRow(row.id)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("portion.removePreset")}
+                      style={{
+                        marginLeft: 8,
+                        minWidth: 32,
+                        minHeight: HIT_TARGET,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Ionicons name="close-circle-outline" size={19} color={THEME.muted} />
+                    </Pressable>
+                  </View>
+                  <View className="flex-row items-center" style={{ gap: 8 }}>
+                    <TextInput
+                      value={row.grams}
+                      onChangeText={(text) => setPresetGrams(row.id, text)}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor={THEME.muted}
+                      accessibilityLabel={`${t(`portion.${row.labelKey}`)}, ${t("common.grams")}`}
+                      className="rounded-xl bg-glass border border-hair px-4 py-2.5 text-ink"
+                      style={[INPUT_TEXT, { flex: 1 }]}
+                    />
+                    <Text style={{ color: THEME.muted, fontSize: 13 }}>
+                      {t("common.grams")}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+
             <Field
               ref={notesRef}
               label={t("food.notes")}
@@ -477,7 +646,8 @@ function AddFoodScreen() {
               // At the free-tier limit, the banner above is the one route to
               // the paywall; Save goes inert instead of also silently routing
               // there itself (which used to blindside a filled-in form).
-              disabled={!valid || (!isEdit && allowed === false)}
+              disabled={!valid || (!isEdit && allowed === false) || saving}
+              loading={saving}
               onPress={save}
             />
           </View>

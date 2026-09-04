@@ -172,6 +172,42 @@ export async function ensureAndroidChannel(): Promise<void> {
   }
 }
 
+/** Category id for the basal reminder's own quick action (see
+ *  ensureNotificationCategories below); the notification content that uses
+ *  it sets categoryIdentifier to this same string. */
+export const BASAL_CATEGORY_ID = "basal";
+
+/** actionIdentifier a NotificationResponse carries when the basal reminder's
+ *  quick action ("I already did it") was the one tapped, rather than the
+ *  notification body itself - see app/_layout.tsx's response listener, which
+ *  sends the two cases to different steps of app/basal-confirm.tsx. */
+export const BASAL_DONE_ACTION_ID = "basal_done";
+
+/**
+ * Registers the basal reminder's one quick-action category: tapping it opens
+ * app/basal-confirm.tsx straight on the site-picking step instead of the
+ * plain confirm question. Cross-platform (unlike ensureAndroidChannel, this
+ * is not behind a Platform.OS guard - iOS reads categoryIdentifier directly,
+ * Android surfaces the action too), and called from the same two places as
+ * ensureAndroidChannel: eagerly on every cold start (app/_layout.tsx) and
+ * again on a language change (rescheduleForLanguageChange below), since the
+ * button's own title is translated. Re-registering with the same identifier
+ * replaces the category in place.
+ */
+export async function ensureNotificationCategories(): Promise<void> {
+  try {
+    await Notifications.setNotificationCategoryAsync(BASAL_CATEGORY_ID, [
+      {
+        identifier: BASAL_DONE_ACTION_ID,
+        buttonTitle: i18n.t("basalConfirm.doneAction"),
+        options: { opensAppToForeground: true },
+      },
+    ]);
+  } catch {
+    // best-effort, like ensureAndroidChannel's own channel calls
+  }
+}
+
 const androidChannel =
   Platform.OS === "android" ? { channelId: REMINDER_CHANNEL_ID } : {};
 
@@ -408,6 +444,7 @@ export async function scheduleBasalReminder(time: string): Promise<void> {
       title: i18n.t("notifications.basalTitle"),
       body: i18n.t("notifications.basalBody"),
       data: { route: "basal" satisfies NotificationRoute },
+      categoryIdentifier: BASAL_CATEGORY_ID,
       ...reminderExtras,
     },
     trigger: {
@@ -514,6 +551,18 @@ function reminderIdentifier(id: string): string {
   return `${REMINDER_ID_PREFIX}${id}`;
 }
 
+/** The reverse of reminderIdentifier above: the reminder row id encoded in a
+ *  "zerospike-rem-<id>" notification identifier, or null when the string
+ *  carries no such id (a fixed-id legacy notification, or nothing at all -
+ *  see app/basal-confirm.tsx, whose reminderId param is resolved this way in
+ *  app/_layout.tsx's response listener). */
+export function parseReminderIdentifier(
+  identifier: string | null | undefined
+): string | null {
+  if (!identifier || !identifier.startsWith(REMINDER_ID_PREFIX)) return null;
+  return identifier.slice(REMINDER_ID_PREFIX.length);
+}
+
 /** Every AlarmKit alarm this app schedules carries this prefix (2.2.0's A1),
  *  the exact same convention as REMINDER_ID_PREFIX above - see
  *  modules/zerospike-alarmkit, which only ever sees this already-prefixed
@@ -522,6 +571,24 @@ const ALARM_ID_PREFIX = "zerospike-alarm-";
 
 function alarmIdentifier(id: string): string {
   return `${ALARM_ID_PREFIX}${id}`;
+}
+
+/** The reverse of alarmIdentifier above, exactly as parseReminderIdentifier is
+ *  the reverse of reminderIdentifier: the reminder row id encoded in a
+ *  "zerospike-alarm-<id>" identity string, or null when the string carries no
+ *  such id. app/_layout.tsx runs an "Open"ed alarm's identity through this so a
+ *  ringing reminder opens ITS OWN row (see takePendingAlarmContext in
+ *  modules/zerospike-alarmkit), instead of the row that best matches the clock.
+ *
+ *  POSTMEAL_ALARM_ID below shares the prefix but is not a row id, so this
+ *  returns its fixed "postmeal" suffix - harmless, since that alarm routes to
+ *  the dashboard, which never reads a reminder id. */
+export function parseAlarmIdentifier(
+  identifier: string | null | undefined
+): string | null {
+  if (!identifier || !identifier.startsWith(ALARM_ID_PREFIX)) return null;
+  const id = identifier.slice(ALARM_ID_PREFIX.length);
+  return id.length > 0 ? id : null;
 }
 
 /** The post-meal countdown's own alarm identity (2.3.0's B). Same prefix as
@@ -602,6 +669,7 @@ function reminderContent(row: Reminder): Notifications.NotificationContentInput 
         title: i18n.t("notifications.basalTitle"),
         body: i18n.t("notifications.basalBody"),
         data: { route: "basal" satisfies NotificationRoute },
+        categoryIdentifier: BASAL_CATEGORY_ID,
         ...reminderExtras,
       };
     case "med":
@@ -799,6 +867,15 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   const masterEnabled = prefs.enabled;
   const notificationPermission = await hasNotificationPermission();
   const rows = await listReminders(profileId);
+
+  // Unconditional and cheap (a single setNotificationCategoryAsync call, no
+  // permission needed) - re-registers the basal quick action on every apply
+  // pass, which runs on every cold start via AppContext's launch effect. The
+  // eager module-scope call in app/_layout.tsx fires before the user's own
+  // saved language has loaded from AsyncStorage, so without this the category
+  // button stayed in whatever language i18n started in until the next actual
+  // language change (rescheduleForLanguageChange) fixed it.
+  await ensureNotificationCategories();
 
   if (masterEnabled && notificationPermission && rows.length > 0) {
     await ensureAndroidChannel();
@@ -2088,6 +2165,9 @@ export async function rescheduleForLanguageChange(): Promise<void> {
   try {
     // The Android channel name is i18n too, and setting it again renames in place.
     await ensureAndroidChannel();
+    // The basal quick action's own button title is i18n too - see
+    // ensureNotificationCategories's doc comment.
+    await ensureNotificationCategories();
     await applyNotificationPrefs();
 
     const now = Date.now();

@@ -7,6 +7,78 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
 ve `package.json`.
 
+## 2.3.3 (build 69 / versionCode 70)
+
+### Ana ekran halkası
+- Halka artık günün ortalama ölçümünü gösteriyor; son ölçüm değeri halkanın
+  altında ayrı bir satırda kalıyor.
+
+### Aktif insülin ve bazal
+- Aktif insülin kartı yalnız hızlı etkili insülini sayıyor. Bazal için günlük
+  durum satırı eklendi ("bazal bugün yapıldı" / "bekliyor") ve tek dokunuşla
+  kayıt eklenebiliyor.
+- Bazal hatırlatıcısına dokununca onay sorusu, bölge seçimi ve profildeki
+  bazal ünite ile kayıt alınıyor; bildirimde "Yaptım" düğmesi var.
+
+### Öğün kaydı ve karbonhidrat oranı
+- Karbonhidrat oranı (1 Ü = X g) yemek sekmesinde ve öğün kaydında görünüyor,
+  dokununca ayara gidiyor.
+- Öğün kaydında doz alanı artık otomatik dolmuyor; referans satırlar kalıyor,
+  dozu kullanıcı giriyor.
+
+### Yemek kataloğu
+- Yaklaşık 280 yeni kayıt eklendi (Türk, Alman, Fransız, İspanyol, İtalyan,
+  Portekiz/Brezilya, Arap, Japon mutfakları) ve porsiyon ön ayarları (dilim,
+  kase, tabak) geldi. Tüm katalog adları İtalyanca, Portekizce, Arapça ve
+  Japonca'ya çevrildi.
+- Open Food Facts'te isimle arama eklendi.
+
+### Rapor
+- Raporda hatırlatıcıdan gelen bazal kayıtlar işaretli görünüyor.
+
+## 2.3.2 (build 67-68 / versionCode 68-69)
+
+### Kurulum ve Pro ekranları
+- Onboarding "midnight" tasarımına göre yeniden çizildi: her adımda tek çapa
+  ikon, daha büyük seçenek kartları, tam genişlik tek birincil buton ve sade
+  bir "atla" bağlantısı. Diyabet tipi sorusu daha doğrudan soruluyor, hâlâ
+  atlanabiliyor; kurulumun önceden doldurduğu başlangıç hedef aralığı yeni
+  değil, sadece ekran yeniden çizildi.
+- Paywall, downsell ve winback sadeleştirildi: tek başlık, tam cümle yerine
+  kısa fayda etiketleri, sabitlenmiş tek buton ve yeni bir teklif kartı
+  (`components/OfferCard.tsx`).
+
+### Bildirim ve alarm başlıkları
+- Tipe bağlı hatırlatıcılar (ölçüm, ilaç, bazal) artık bildirimde ve alarmda
+  her zaman kısa tip adını gösteriyor; kullanıcının verdiği veya hazır
+  düzenin verdiği isim başlığa çıkmıyor. Özel hatırlatıcılar kendi adını
+  göstermeye devam ediyor (`lib/reminderLabel.ts`). Amaç, uzun isimlerin
+  AlarmKit'in dar görünümünde kırpılmasını (ör. "Glikoz ölçü...") önlemek;
+  uygulama içindeki liste, kontrol paneli ve "sıradaki" kartı hâlâ tam adı
+  gösteriyor.
+
+### Enjeksiyon haritası ve tablet düzeni
+- Enjeksiyon vücut haritasında kalça bölgeleri artık üst tarafta tek sırada,
+  önceki 2x2 düzen yerine.
+- Alt kenara yaslı sheet'ler 600pt'de, onay dialogları 520pt'de üst
+  sınırlanıp ortalanıyor; onboarding soru kartı aynı sınırı kullanıyor;
+  tablette yüzen ekle düğmesi artık günlük panelinin üstüne binmiyor.
+
+### Küçük düzeltmeler
+- Hero stepper boşlukları sıkılaştırıldı ve mmol/L birim son ekinin stepper
+  alanında taşması giderildi.
+- Android'de alarm sesi servisi `mediaPlayback` yerine `shortService`
+  türüne alındı: ek izin gerektirmiyor, Play politika uyumu için.
+
+### Mağaza ve dahili
+- Ekran görüntüsü modu ve mağaza çekim tarifi güncellendi: demo Spike
+  sohbeti 9 dilde 6 turluk oldu, çekim tarifi 7 kareye ve deterministik
+  panel sıfırlamaya geçti; bunlar yalnız dahili çekim araçları, uygulama
+  davranışını etkilemiyor.
+- ASO metni: Apple Watch ve Wear OS companion uygulamaları artık mağaza
+  açıklamasında anlatılıyor; App Store anahtar kelime sınırı 100 karaktere,
+  Play kaynağı `aso-android/<dil>.md`'ye netleştirildi.
+
 ## 2.3.1 (build 65 / versionCode 65)
 
 ### Tokluk sayacı

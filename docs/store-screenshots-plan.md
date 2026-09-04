@@ -17,21 +17,27 @@ Klasor: `zerospike-store/` (faunade duzeninin aynisi). Diller: **tr, en, de, es,
 
 Magazaya yukleme dil eslemesi (dosya 5 dil, yukleme daha genis): tr -> tr + en-GB (TR vitrininin birincil dili en-GB, ikisi de yuklenir); en -> en-US + en-GB; de -> de-DE; es -> es-ES + es-MX (LatAm); fr -> fr-FR + fr-CA. Play: tr-TR, en-US, en-GB, de-DE, es-ES, es-419, fr-FR, fr-CA.
 
-## 2. Kare senaryosu (dil basina 01..06, sira bilincli)
+## 2. Kare senaryosu (dil basina 01..08, sira bilincli, v2 midnight pipeline ile ayni sira)
 
-Ilk 3 kare kurali: kullanicilarin cogu 3. kareden oteye gecmez; 1-3 = halka, isi haritasi, widget (en guclu fark).
+Ilk 3 kare kurali: kullanicilarin cogu 3. kareden oteye gecmez; 1-3 = halka, isi haritasi, widget'lar/Live Activity (en guclu fark).
 
-| # | Dosya | Ekran (mock data ile) | Baslik EN | Baslik TR | Alt yazi EN |
-|---|---|---|---|---|---|
-| 1 | `01-ring` | Dashboard: glukoz halkasi 112 hedefte + aktif tokluk sayaci + haftalik serit | Your day at a glance | Gunun tek bakista | Glucose, meals and doses in one place |
-| 2 | `02-bodymap` | Enjeksiyon isi haritasi (on govde, dolu noktalar, zoom karti acik) | Every site, mapped | Her bolge haritada | Point-level rotation tracking nobody else has |
-| 3 | `03-widget` | Kilit ekrani Live Activity + ana ekran widget'i (kompozit iki cihaz) | Timer on your lock screen | Sayac kilit ekraninda | The post-meal countdown follows you |
-| 4 | `04-food` | Yemek sekmesi: karb hero + emoji karolu ogunler + hizli ekleme sheet'i | Log meals in seconds | Saniyeler icinde ogun | 562 foods, barcode scan, quick add |
-| 5 | `05-insights` | Insights: TIR donut + gradyan AGP + ozel aralik cipi | See your patterns | Desenlerini gor | Time in range, AGP and trends |
-| 6 | `06-report` | Yeni doktor raporu (kapak + gunluk zaman cizelgesi sayfasi yan yana) | Doctor-ready reports | Doktora hazir rapor | A clean PDF of any date range |
+Dosya adlari ve kopya, `zerospike-store/pipeline/v2/panels-v2.json` (id -> output) ve
+`zerospike-store/composite-texts-2.0.0.json` ile birebir eslesir; panel id'si ile
+cikti dosya adi ayni olmayabilir (orn. `07-spike` id'si `06-spike` olarak yuklenir).
+
+| # | Dosya | Panel id | Ekran (mock data ile) | Baslik EN | Baslik TR | Alt yazi EN |
+|---|---|---|---|---|---|---|
+| 1 | `01-ring` | `01-ring` | Dashboard: glukoz halkasi hedefte + aktif tokluk sayaci + haftalik serit | Your day on one screen | Gununuz tek ekranda | Your average today, your weekly average and the post-meal timer on one screen. Your run of logged days shows here too. |
+| 2 | `02-bodymap` | `02-bodymap` | Enjeksiyon isi haritasi (on govde, dolu noktalar, en uzun suredir kullanilmayan nokta isaretli) | Which site comes next | Sira hangi bolgede | Your logged injections gather on a body map, with the site you have left unused the longest marked for you. |
+| 3 | `03-widgets` | `03-widget` | Kilit ekrani Live Activity/Dynamic Island + ana ekran ve mini widget'lar (Android'de yalniz ana ekran ve mini widget) | Widgets and Live Activity | Widget'lar ve Canlı Etkinlik | From your lock screen to your home screen, your reading and your post-meal timer are always in view. |
+| 4 | `04-food` | `04-food` | Yemek sekmesi: karb hero + emoji karolu ogunler + hizli ekleme sheet'i | A meal in a few taps | Ogun kaydi yormasin | Over a thousand foods, barcode scanning and your own templates. The carb count is already filled in. |
+| 5 | `05-insights` | `05-insights` | Insights: TIR donut + gradyan AGP + ozel aralik cipi | What changed over time | Zamanla ne degisti | Time in range, your daily profile and a week-to-week comparison in one place. It all goes into the PDF report. |
+| 6 | `06-spike` | `07-spike` | Spike AI sohbet ekrani: genel bilgi/uygulama sorulari, notr dil | Ask what is on your mind | Akliniza takilani sorun | Spike answers questions about diabetes in general and about the app. It does not give medical advice; decisions stay with your care team. |
+| 7 | `07-takip` | `08-takip` | Tani secilmeden kurulum: sade seker + ogun gunlugu, insulin ekranlari kapali | Works without a diagnosis | Taniniz yoksa da kullanin | Choose no diagnosis during setup. Insulin screens switch off and a simple glucose and meal journal is what remains. |
+| 8 | `08-reminders` | `09-reminders` | Hatirlaticilar listesi: olcum/ilac/bazal, profil basina liste | Reminders in one place | Hatirlaticilar tek yerde | You set the glucose, medication and basal reminders. Each profile keeps its own list. |
 
 - REGULASYON (kesin kurallar): basliklarda/altyazilarda iddia YOK ("control/lower/prevent/manage your diabetes" yasak; track/log/see/understand kalibi). "Insulin calculator" ifadesi HICBIR magaza metninde ve karede baslik olarak KULLANILMAZ (Apple 1.4.2 doz hesaplayici kurali); calculator ekrani kare olarak gosterilmez, doz "kayit" olarak gecer. Rozet yok (FDA/CE yok). Gercek UI kurali (2.3.3): karelerdeki ekranlar gercek uygulama ekrani olmali, mockup cizim degil.
-- Spike AI kasitli olarak 6 karede yok (saglik uygulamasinda AI vitrini 1.4.1 dikkat cekiyor); iOS'ta max 10 kare hakki var, istenirse 07-spike opsiyonel eklenir (notr "Ask Spike" diliyle).
+- Spike AI notr "Ask what is on your mind" diliyle 6. kare olarak sette yer alir; tibbi tavsiye vermedigi ve kararin saglik ekibine ait oldugu altyazida acikca belirtilir.
 - de/fr/es basliklari EN'den uzun olur: sablonda iki satirlik baslik alani ayrilir, font kuculmez.
 
 ## 3. Gorsel sablon (hypershots stili, tibbi kategoriye uyarlanmis)

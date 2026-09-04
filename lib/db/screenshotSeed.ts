@@ -57,7 +57,7 @@ import i18n from "../i18n";
 // Bump the version suffix whenever the seeded STORY changes (reading spread,
 // colours, etc.) so an already-seeded screenshot build re-materialises cleanly on
 // next cold launch instead of keeping stale data.
-const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v15";
+const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v16";
 
 /** Per-profile marker key: v8 assumed a single seeded profile, so one global key
  *  was enough. With the tracking profile added, each profile needs its own
@@ -578,6 +578,15 @@ async function seedScreenshotDataLocked(
       const periodBySlot: PeriodTag[] = [
         PERIODS[0], PERIODS[2], PERIODS[1], PERIODS[4], PERIODS[2], PERIODS[3],
       ];
+      // Today's first 3 slots (fasting/post-breakfast/pre-lunch) are fixed
+      // in-target values, not the weighted-random `reading()` used for every
+      // other day: the dashboard's hero ring now averages TODAY's readings
+      // (not just the last one), so a stray low/high from the RNG here would
+      // pull that average - and the ring's color - off target in the
+      // screenshot. Together with the fixed 112 hero (slot 3) below, today's
+      // 4-reading average lands around 108 mg/dL (~6.0 mmol), just like the
+      // "~110 mg/dL / 6.1 mmol" the story targets.
+      const TODAY_TARGET_MGDL = [100, 115, 105];
       for (let day = 0; day < 30; day++) {
         if (day === 12) continue;
         const slots = day === 0 ? 4 : hoursBySlot.length; // today: up to the ~evening hero
@@ -591,9 +600,14 @@ async function seedScreenshotDataLocked(
             : slot === 5
               ? 40 + Math.round(rng(day + slot) * 8)
               : Math.round(rng(day + slot) * 40);
+          const glucoseLevel = isTodayHero
+            ? 112
+            : day === 0
+              ? TODAY_TARGET_MGDL[slot]
+              : reading(day, slot);
           await addSugarLog({
             profile_id: profileId,
-            glucose_level_mgdl: isTodayHero ? 112 : reading(day, slot),
+            glucose_level_mgdl: glucoseLevel,
             period_tag: isTodayHero ? "post_meal_2h" : periodBySlot[slot],
             logged_at: at(day, hour, minute),
           });
@@ -634,6 +648,19 @@ async function seedScreenshotDataLocked(
             n++;
           }
         }
+
+        // A basal dose logged today, close to the 22:00 basal reminder
+        // seeded below (seedReminders), so the dashboard's basal status line
+        // reads "done today" (see components/BasalStatusLine.tsx) rather
+        // than "pending" in the screenshot.
+        await logInjection({
+          profile_id: profileId,
+          site: "abdomen_left",
+          site_point: 1,
+          dose_units: 24,
+          insulin_type: "basal",
+          logged_at: at(0, 22, 30),
+        });
       }
 
       // Both variants: one oral medication taken today. Timed 20:10, AFTER the

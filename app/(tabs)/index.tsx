@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../../lib/store/AppContext";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
-import { bolusProfileFor, basalProfileFor, insulinProductById } from "../../lib/insulinCatalog";
+import { bolusProfileFor, basalProfileFor } from "../../lib/insulinCatalog";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
 import { isScreenshotMode, useScreenshotAndroidSource } from "../../lib/screenshotMode";
@@ -53,6 +53,8 @@ import {
   type PostMealTimerWindow,
 } from "../../lib/postMealTimer";
 import { PostMealDurationSheet } from "../../components/PostMealDurationSheet";
+import { IobInfoSheet } from "../../components/IobInfoSheet";
+import { BasalStatusLine } from "../../components/BasalStatusLine";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import {
   markDay7DownsellShown,
@@ -145,7 +147,6 @@ const CTA_FOOTPRINT = 8 + 13 * 2 + 24 + CTA_BOTTOM;
 // nothing is ever laid out behind the overlay, whatever the scroll position.
 // Phones are untouched: this is isWide-only, and on a phone the same content
 // stack already needs scrolling well before it reaches the CTA's height.
-import { Tooltip } from "../../components/Tooltip";
 import { Skeleton } from "../../components/Skeleton";
 import { JournalItem } from "../../components/JournalItem";
 import { QuickAddSheet } from "../../components/QuickAddSheet";
@@ -186,7 +187,7 @@ import {
   GradientCTA,
   IconTile,
 } from "../../components/rich";
-import { formatDate, formatDateKey, formatTime, formatTimeForLang, formatWeekday, relativeDay, num, pct } from "../../lib/format";
+import { formatDate, formatDateKey, formatTime, formatTimeForLang, formatWeekday, isolateLtr, relativeDay, num, pct } from "../../lib/format";
 import {
   formatGlucose,
   glucoseUnitLabel,
@@ -354,6 +355,9 @@ export default function DashboardScreen() {
   // saved length: the card always arms POST_MEAL_WINDOW_MIN unless this sheet
   // is used to pick a different one for THIS tap only.
   const [durationSheetOpen, setDurationSheetOpen] = useState(false);
+  // "What does this number include?" sheet for the active-insulin card
+  // (components/IobInfoSheet.tsx) - opened by tapping the card itself.
+  const [iobInfoOpen, setIobInfoOpen] = useState(false);
   // The next thing that will actually reach the user (2.3.0's G18). null when
   // there is nothing to say - no reminder set up, the master switch or the OS
   // permission off, or nothing inside the next day - and the line is then not
@@ -764,12 +768,22 @@ export default function DashboardScreen() {
     // Measured against the PROFILE'S band, not a fixed 70-180 rectangle, so
     // these figures agree with Insights and the doctor report.
     const weekBand = targetBandFor(activeProfile ?? {});
+    // Device local day - the same key formatDateKey groups the journal by,
+    // so "today" here can never disagree with how the journal itself groups.
+    const todayKey = formatDateKey(new Date().toISOString());
 
     let weekReadings = 0;
     let weekSum = 0;
     let weekInBand = 0;
     let weekInjections = 0;
     let lastGlucose: GlucoseEntry | undefined;
+    let todayReadings = 0;
+    let todaySum = 0;
+    let todayBolusTotal = 0;
+    let todayBasalTotal = 0;
+    // Feed is newest-first, so the first today basal row found is the most
+    // recent one - the same "first match wins" trick lastGlucose uses below.
+    let todayBasalRecord: InjectionEntry | undefined;
     const injections: InjectionEntry[] = [];
     const logDates: string[] = [];
     // Feed order is newest-first; the sparkline reads chronologically.
@@ -778,9 +792,14 @@ export default function DashboardScreen() {
     for (const e of entries) {
       logDates.push(e.logged_at);
       if (e.kind === "meal") continue;
+      const isToday = formatDateKey(e.logged_at) === todayKey;
       const inWeek = new Date(e.logged_at).getTime() >= weekAgo;
       if (e.kind === "glucose") {
         if (!lastGlucose) lastGlucose = e;
+        if (isToday) {
+          todayReadings++;
+          todaySum += e.glucose_level_mgdl;
+        }
         if (inWeek) {
           weekReadings++;
           weekSum += e.glucose_level_mgdl;
@@ -800,30 +819,49 @@ export default function DashboardScreen() {
       if (e.kind !== "injection") continue;
       injections.push(e);
       if (inWeek) weekInjections++;
+      if (isToday && e.dose_units != null && e.dose_units > 0) {
+        if (e.insulin_type === "bolus") {
+          todayBolusTotal += e.dose_units;
+        } else if (e.insulin_type === "basal") {
+          todayBasalTotal += e.dose_units;
+          if (!todayBasalRecord) todayBasalRecord = e;
+        }
+      }
     }
 
     const weekAvg = weekReadings ? Math.round(weekSum / weekReadings) : null;
     const weekTIR = weekReadings
       ? Math.round((weekInBand / weekReadings) * 100)
       : null;
-    const lastStatus =
-      lastGlucose && activeProfile
-        ? classifyGlucose(
-            lastGlucose.glucose_level_mgdl,
-            lastGlucose.period_tag,
-            activeProfile
-          )
+    const todayAvg = todayReadings ? Math.round(todaySum / todayReadings) : null;
+    // Same "manual" tag weekAvg's own color uses below: an aggregate figure
+    // is not tied to one meal period, so it reads against the more lenient
+    // post-meal band rather than assuming a period it does not have.
+    const todayStatus =
+      todayAvg != null && activeProfile
+        ? classifyGlucose(todayAvg, "manual", activeProfile)
         : null;
 
     return {
       // Encouraging consistency count ("X days in a row"), never a streak to
       // protect.
       logStreak: consecutiveLogDays(logDates),
-      // Hero ring: the most recent glucose reading in its status color (Midnight
-      // Monitor). Decorative sweep only - the value + period label carry it.
+      // Hero ring: TODAY's average (device local day), in its status color -
+      // never the widgets' own "last 7 days" figure, so the two never read as
+      // disagreeing about the same number.
+      todayAvg,
+      todayReadings,
+      todayStatus,
+      todayColor: todayStatus ? RICH_BY_STATUS[todayStatus] : THEME.muted,
+      todayBasalRecord,
+      todayBolusTotal: Math.round(todayBolusTotal * 100) / 100,
+      todayBasalTotal: Math.round(todayBasalTotal * 100) / 100,
+      // The single most recent reading overall (any day), for the small line
+      // under the ring - kept apart from the average above.
       lastGlucose,
-      lastStatus,
-      lastColor: lastStatus ? RICH_BY_STATUS[lastStatus] : THEME.accent,
+      lastGlucoseIsToday: lastGlucose
+        ? formatDateKey(lastGlucose.logged_at) === todayKey
+        : false,
       weekAvg,
       weekTIR,
       hasWeekData: weekReadings > 0 || weekInjections > 0,
@@ -851,9 +889,15 @@ export default function DashboardScreen() {
   }, [entries, activeProfile]);
 
   const {
+    todayAvg,
+    todayReadings,
+    todayStatus,
+    todayColor,
+    todayBasalRecord,
+    todayBolusTotal,
+    todayBasalTotal,
     lastGlucose,
-    lastStatus,
-    lastColor,
+    lastGlucoseIsToday,
     logStreak,
     weekAvg,
     weekTIR,
@@ -862,13 +906,18 @@ export default function DashboardScreen() {
     avgColor,
     tirColor,
     bolus: iob,
-    basal: basalIob,
   } = stats;
 
   // Onboarding said whether this user takes a mealtime insulin at all. When they
   // do not, the insulin apparatus (IOB line here, the whole Injection tab) stays
   // out of the way instead of implying they should be dosing.
   const showsInsulin = insulinModeShowsBolus(activeProfile?.insulin_mode);
+  // The basal status line only makes sense for a profile that actually takes
+  // a basal dose: either it has one on record (basal_daily_units) or it has a
+  // basal-type reminder set up (see components/BasalStatusLine.tsx).
+  const showsBasalStatus =
+    (activeProfile?.basal_daily_units ?? 0) > 0 ||
+    nextReminderRows.some((r) => r.type === "basal");
 
   /** Whether the next reminder is STORED as an alarm, whatever this device can
    *  do about it - what tells "not allowed yet" from "set to notification". */
@@ -905,26 +954,6 @@ export default function DashboardScreen() {
           );
     return row ? `${row.time} · ${name}` : name;
   }
-
-  // "What is this based on?" explanation for the compact active-insulin line:
-  // names the selected bolus product and its typical duration, or says a
-  // generic profile is in use, plus any still-active basal kept apart from
-  // the headline bolus figure.
-  const iobTooltipText = useMemo(() => {
-    const bolusProduct = insulinProductById(activeProfile?.bolus_insulin_id);
-    const parts = [
-      t("iob.basisText"),
-      bolusProduct
-        ? t("iob.productText", {
-            product: bolusProduct.label,
-            hours: num(bolusProduct.durationHours),
-          })
-        : t("iob.genericText"),
-    ];
-    if (basalIob > 0) parts.push(t("iob.basalActive", { value: num(basalIob) }));
-    parts.push(t("iob.personalNote"));
-    return parts.join("\n\n");
-  }, [activeProfile?.bolus_insulin_id, basalIob, t]);
 
   // Post-meal button slot: while a reminder is pending the <PostMealCountdown>
   // child ticks in place, otherwise the slot is the normal CTA. Reaching the end
@@ -1621,29 +1650,39 @@ export default function DashboardScreen() {
         FirstRunGuide
       ) : (
         <>
-          {/* Hero: most recent reading as the signature glucose ring */}
+          {/* Hero: TODAY's average as the signature glucose ring (device local
+              day - see the `stats` memo above), with the count of readings it
+              is built from, and the single most recent reading (whichever day
+              it fell on) as a small line underneath. Still gated on
+              `lastGlucose` existing at all: with no reading EVER logged this
+              stays out of the way for the FirstRunGuide branch above. */}
           {lastGlucose ? (
-            <GlassCard glow={lastColor} style={{ paddingVertical: 14, marginBottom: 12 }}>
+            <GlassCard
+              glow={todayAvg != null ? todayColor : THEME.muted}
+              style={{ paddingVertical: 14, marginBottom: 12 }}
+            >
               <View className="flex-row items-center justify-between px-1 mb-1">
                 <Text
+                  numberOfLines={1}
                   style={{
                     color: THEME.muted,
                     fontSize: 11,
                     letterSpacing: 1.3,
                     fontWeight: "800",
+                    flexShrink: 1,
                   }}
                 >
-                  {upper(t("dashboard.lastReading"))}
+                  {upper(t("dashboard.todayAvgLabel"))}
                 </Text>
-                {lastStatus ? (
+                {todayStatus ? (
                   <GlucoseChip
-                    status={lastStatus}
+                    status={todayStatus}
                     label={
-                      lastStatus === "normal"
+                      todayStatus === "normal"
                         ? t("insights.inRange")
-                        : lastStatus === "low"
+                        : todayStatus === "low"
                           ? t("insights.low")
-                          : lastStatus === "veryHigh"
+                          : todayStatus === "veryHigh"
                             ? t("insights.veryHigh")
                             : t("insights.high")
                     }
@@ -1652,13 +1691,37 @@ export default function DashboardScreen() {
               </View>
               <View className="items-center">
                 <GlucoseRing
-                  value={lastGlucose.glucose_level_mgdl}
-                  display={formatGlucose(lastGlucose.glucose_level_mgdl, unit)}
-                  caption={`${glucoseUnitLabel(unit)} · ${formatTime(lastGlucose.logged_at)}`}
-                  color={lastColor}
+                  value={todayAvg ?? undefined}
+                  display={todayAvg != null ? formatGlucose(todayAvg, unit) : "-"}
+                  caption={
+                    todayAvg != null
+                      ? t("dashboard.todayReadingCount", { count: todayReadings })
+                      : t("dashboard.todayNoReading")
+                  }
+                  color={todayAvg != null ? todayColor : THEME.muted}
+                  gradientTo={todayAvg != null ? undefined : THEME.muted}
+                  fraction={todayAvg != null ? undefined : 0}
                   size={152}
                 />
               </View>
+              <Text
+                numberOfLines={1}
+                style={{ color: THEME.muted, fontSize: 11, textAlign: "center", marginTop: 10 }}
+              >
+                {t("dashboard.lastReadingLine", {
+                  // "value unit · when" is one purely-LTR run (digits + unit +
+                  // digits); composed and isolated as a single block (lib/format's
+                  // LRI/PDI wrap) so RTL never reorders the reading against its
+                  // own timestamp - same pattern as components/CarbRatioLine.tsx.
+                  summary: isolateLtr(
+                    `${formatGlucose(lastGlucose.glucose_level_mgdl, unit)} ${glucoseUnitLabel(unit)} · ${
+                      lastGlucoseIsToday
+                        ? formatTime(lastGlucose.logged_at)
+                        : `${formatDate(lastGlucose.logged_at)} ${formatTime(lastGlucose.logged_at)}`
+                    }`
+                  ),
+                })}
+              </Text>
             </GlassCard>
           ) : null}
 
@@ -1863,7 +1926,13 @@ export default function DashboardScreen() {
       {(iob > 0 && showsInsulin) || nextReminder ? (
         <View className="flex-row rounded-2xl bg-glass border border-hair mb-3 overflow-hidden">
           {iob > 0 && showsInsulin ? (
-            <View className="flex-1 px-3 justify-center" style={{ minHeight: 46, paddingVertical: 8 }}>
+            <Pressable
+              onPress={() => setIobInfoOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t("dashboard.activeInsulin")}
+              className="flex-1 px-3 justify-center active:opacity-70"
+              style={{ minHeight: 58, paddingVertical: 8 }}
+            >
               <View className="flex-row items-center" style={{ gap: 5 }}>
                 <Ionicons name="hourglass-outline" size={11} color={THEME.accent} />
                 <Text
@@ -1872,9 +1941,10 @@ export default function DashboardScreen() {
                 >
                   {t("dashboard.activeInsulin")}
                 </Text>
-                {/* The existing "what is this based on?" explanation, kept
-                    exactly where it was: on the IOB half, not on the strip. */}
-                <Tooltip text={iobTooltipText} size={12} />
+                {/* "What does this number include?" now opens the full sheet
+                    (components/IobInfoSheet.tsx) - the whole card is the
+                    tap target, this icon is only the affordance. */}
+                <Ionicons name="information-circle-outline" size={12} color={THEME.muted} />
               </View>
               <Text
                 numberOfLines={1}
@@ -1882,7 +1952,13 @@ export default function DashboardScreen() {
               >
                 {num(iob)} {t("common.units")}
               </Text>
-            </View>
+              {/* Bolus only: basal is a background dose, not a stacking risk
+                  the way a fresh mealtime dose is, so it stays off this
+                  headline figure entirely (see lib/iob.ts's own note). */}
+              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 9, marginTop: 1 }}>
+                {t("dashboard.activeInsulinBolusOnly")}
+              </Text>
+            </Pressable>
           ) : null}
 
           {iob > 0 && showsInsulin && nextReminder ? (
@@ -1936,6 +2012,28 @@ export default function DashboardScreen() {
             </Pressable>
           ) : null}
         </View>
+      ) : null}
+
+      {/* Basal status: only for a profile that actually takes a basal dose
+          (see showsBasalStatus above). Today's own record if one exists, or a
+          nudge into app/basal-confirm.tsx otherwise. */}
+      {showsBasalStatus ? (
+        <BasalStatusLine
+          record={
+            todayBasalRecord
+              ? {
+                  loggedAt: todayBasalRecord.logged_at,
+                  units: todayBasalRecord.dose_units ?? 0,
+                }
+              : null
+          }
+          onConfirm={() =>
+            router.push({
+              pathname: "/basal-confirm",
+              params: { step: "ask", profileId: activeProfile?.id },
+            })
+          }
+        />
       ) : null}
 
       {/* Quick access: Insights + Health sync, promoted from the old list footer
@@ -2255,6 +2353,14 @@ export default function DashboardScreen() {
           setDurationSheetOpen(false);
           openLogger("post_meal_2h");
         }}
+      />
+
+      <IobInfoSheet
+        visible={iobInfoOpen}
+        onClose={() => setIobInfoOpen(false)}
+        bolusProfile={bolusProfileFor(activeProfile?.bolus_insulin_id)}
+        todayBolusUnits={todayBolusTotal}
+        todayBasalUnits={todayBasalTotal}
       />
     </AppBackground>
   );

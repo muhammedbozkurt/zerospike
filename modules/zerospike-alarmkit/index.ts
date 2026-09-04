@@ -46,7 +46,13 @@ interface AlarmKitNativeModule {
   ): Promise<boolean>;
   cancelAlarm(id: string): Promise<boolean>;
   listScheduledAlarmIds(): string[];
-  takePendingAlarmRoute(): string | null;
+  /** `{ route, alarmId? }` now. The bare-string shape is what earlier builds
+   *  returned, and a JS bundle can be newer than the native binary it runs
+   *  against (a reloaded dev build), so both are still accepted below. */
+  takePendingAlarmRoute():
+    | { route?: string; alarmId?: string }
+    | string
+    | null;
 }
 
 /** Where an alarm's "Open" button should land - the same vocabulary as
@@ -199,18 +205,50 @@ export function listScheduledAlarmIds(): string[] {
   }
 }
 
+/** What an alarm's "Open" button left behind: where to land, and - when the
+ *  ringing alarm knew it - the identity string it was scheduled under (JS's own
+ *  "zerospike-alarm-<reminderId>", see alarmIdentifier in
+ *  lib/services/notifications.ts). `alarmId` is null for an alarm armed by a
+ *  build that predated it, which is the case app/_layout.tsx falls back to
+ *  resolving by time. */
+export type PendingAlarm = {
+  route: AlarmRoute;
+  alarmId: string | null;
+};
+
 /**
- * The route left behind by an alarm's "Open" button, or null when none is
- * waiting (2.3.0's K2-B). READ-ONCE: the native side clears the key as it
- * hands the value over, so a route can only ever be acted on for the
- * foreground transition it belongs to. Synchronous, like every other read
- * here, so app/_layout.tsx can call it straight from an AppState listener.
+ * The alarm left behind by an "Open" tap, or null when none is waiting
+ * (2.3.0's K2-B, since extended with the alarm's identity). READ-ONCE: the
+ * native side clears the keys as it hands them over, so an alarm can only ever
+ * be acted on for the foreground transition it belongs to. Synchronous, like
+ * every other read here, so app/_layout.tsx can call it straight from an
+ * AppState listener.
+ *
+ * The SINGLE point where the native payload is normalized: takePendingAlarmRoute
+ * below is a view onto this, so no caller ever has to know that older native
+ * builds hand back a bare route string.
  */
-export function takePendingAlarmRoute(): AlarmRoute | null {
+export function takePendingAlarmContext(): PendingAlarm | null {
   try {
-    const route = native?.takePendingAlarmRoute() ?? null;
-    return route ? (route as AlarmRoute) : null;
+    const pending = native?.takePendingAlarmRoute() ?? null;
+    if (!pending) return null;
+    if (typeof pending === "string") return { route: pending as AlarmRoute, alarmId: null };
+    const route = typeof pending.route === "string" ? pending.route : "";
+    if (!route) return null;
+    const alarmId =
+      typeof pending.alarmId === "string" && pending.alarmId.length > 0
+        ? pending.alarmId
+        : null;
+    return { route: route as AlarmRoute, alarmId };
   } catch {
     return null;
   }
+}
+
+/** The route half of takePendingAlarmContext above, for callers that only need
+ *  to know WHERE a pending alarm points - or, in completeOnboarding's case
+ *  (lib/store/AppContext.tsx), only need the slot drained. Consumes the pending
+ *  alarm exactly like the full read does: there is one slot, not two. */
+export function takePendingAlarmRoute(): AlarmRoute | null {
+  return takePendingAlarmContext()?.route ?? null;
 }

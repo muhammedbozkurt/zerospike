@@ -44,6 +44,8 @@ import {
   migrateToV20,
   migrateToV21,
   migrateToV22,
+  migrateToV23,
+  ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
 } from "../lib/db/migrations";
@@ -94,6 +96,14 @@ import {
   legacyAutoPeriodTag,
   matchesLegacyAutoPeriodTag,
 } from "../lib/db/v22Sql";
+import {
+  V23_CREATE_FOOD_PORTIONS,
+  V23_CREATE_FTS,
+  V23_CREATE_TRIGGERS,
+  V23_FOODS_COLUMNS,
+  V23_PORTION_LABEL_KEYS,
+} from "../lib/db/v23Sql";
+import { PORTION_LABEL_KEYS } from "../lib/db/types";
 import {
   adoptOrphanReminders,
   bridgeLegacyReminders,
@@ -616,6 +626,51 @@ function makeV21Database(): DatabaseSync {
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
     );
     CREATE INDEX idx_injection_profile ON injection_logs (profile_id, logged_at DESC);
+  `);
+  db.exec(
+    `INSERT INTO user_profiles (id, name, created_at) VALUES ('p1', 'Me', '2026-01-01T00:00:00.000Z');`
+  );
+  return db;
+}
+
+/**
+ * A database shaped like a v22 install's food catalogue: the original six
+ * name columns, no name_it/pt/ar/ja, no food_portions - and the SAME foods_fts
+ * virtual table + sync triggers a fresh install and a migrated one already
+ * share (six name columns, not ten). Used by the T section below
+ * (migrateToV23).
+ */
+function makeV22FoodsDatabase(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL, name TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE foods (
+      id TEXT PRIMARY KEY NOT NULL, name_tr TEXT NOT NULL, name_en TEXT NOT NULL DEFAULT '',
+      name_de TEXT NOT NULL DEFAULT '', name_es TEXT NOT NULL DEFAULT '', name_fr TEXT NOT NULL DEFAULT '',
+      aliases_json TEXT NOT NULL DEFAULT '[]', category TEXT NOT NULL DEFAULT 'other', barcode TEXT,
+      carb_100g REAL NOT NULL DEFAULT 0, glycemic_index INTEGER NOT NULL DEFAULT 0,
+      glycemic_load INTEGER NOT NULL DEFAULT 0, portion_size_g REAL NOT NULL DEFAULT 100,
+      brand_name TEXT, custom_notes TEXT, is_custom INTEGER NOT NULL DEFAULT 0, source TEXT,
+      created_at TEXT NOT NULL, emoji TEXT
+    );
+    CREATE TABLE meal_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, food_id TEXT,
+      portion_g REAL NOT NULL DEFAULT 0, logged_at TEXT NOT NULL,
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
+      FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL);
+    CREATE TABLE favorites (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, food_id TEXT NOT NULL,
+      UNIQUE (profile_id, food_id),
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
+      FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE CASCADE);
+    CREATE VIRTUAL TABLE foods_fts USING fts5(food_id UNINDEXED, name_tr, name_en, name_de, name_es, name_fr,
+      aliases, brand, tokenize = 'unicode61 remove_diacritics 2');
+    CREATE TRIGGER foods_ai AFTER INSERT ON foods BEGIN
+      INSERT INTO foods_fts (food_id, name_tr, name_en, name_de, name_es, name_fr, aliases, brand)
+      VALUES (new.id, new.name_tr, new.name_en, new.name_de, new.name_es, new.name_fr, new.aliases_json, COALESCE(new.brand_name,'')); END;
+    CREATE TRIGGER foods_ad AFTER DELETE ON foods BEGIN DELETE FROM foods_fts WHERE food_id = old.id; END;
+    CREATE TRIGGER foods_au AFTER UPDATE ON foods BEGIN DELETE FROM foods_fts WHERE food_id = old.id;
+      INSERT INTO foods_fts (food_id, name_tr, name_en, name_de, name_es, name_fr, aliases, brand)
+      VALUES (new.id, new.name_tr, new.name_en, new.name_de, new.name_es, new.name_fr, new.aliases_json, COALESCE(new.brand_name,'')); END;
+    PRAGMA user_version = 22;
   `);
   db.exec(
     `INSERT INTO user_profiles (id, name, created_at) VALUES ('p1', 'Me', '2026-01-01T00:00:00.000Z');`
@@ -4126,7 +4181,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 22", /const SCHEMA_VERSION = 22;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 23", /const SCHEMA_VERSION = 23;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4426,6 +4481,138 @@ async function main() {
     db.close();
   }
 
+  // ── T. v23: four more food-name columns + food_portions ──────────────────
+  section("T1. v23 food-name columns + food_portions schema shape");
+  {
+    const db = makeV22FoodsDatabase();
+    db.exec(`
+      INSERT INTO foods (id,name_tr,name_en,name_de,name_es,name_fr,aliases_json,category,carb_100g,glycemic_index,glycemic_load,portion_size_g,is_custom,created_at)
+        VALUES ('f1','Pilav','Rice','Reis','Arroz','Riz','[]','grains',28,65,18,150,0,'2026-01-01');
+      INSERT INTO foods (id,name_tr,name_en,name_de,name_es,name_fr,aliases_json,category,carb_100g,is_custom,created_at)
+        VALUES ('f2','Ev yemegi','Home food','x','x','x','[]','other',10,1,'2026-01-01');
+    `);
+
+    await migrateToV23(adapt(db));
+
+    eq("migrateToV23 stamps 23", readUserVersion(db), 23);
+    const foodCols = new Set(columns(db, "foods").keys());
+    for (const col of V23_FOODS_COLUMNS) {
+      ok(`foods gains ${col.name}`, foodCols.has(col.name));
+    }
+    ok(
+      "food_portions table exists",
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='food_portions';"
+        )
+        .get() !== undefined
+    );
+    ok("food_portions has the food_id index", indexNames(db).has("idx_food_portions_food"));
+
+    db.exec(
+      "INSERT INTO food_portions (food_id,label_key,grams,sort) VALUES ('f2','slice',30,0);"
+    );
+    eq("a valid label_key is accepted", count(db, "food_portions"), 1);
+    ok(
+      "an unknown label_key is refused by the CHECK",
+      refused(
+        db,
+        "INSERT INTO food_portions (food_id,label_key,grams,sort) VALUES ('f2','handful',10,1);"
+      )
+    );
+    db.exec("DELETE FROM foods WHERE id = 'f2';");
+    eq("ON DELETE CASCADE clears its portions", count(db, "food_portions"), 0);
+
+    // BULGU 3: the CHECK's label list is built FROM PORTION_LABEL_KEYS
+    // (./types), not hand-duplicated - so the two can never drift apart. This
+    // is a regression guard, not the only thing enforcing it: v23Sql.ts
+    // imports PORTION_LABEL_KEYS directly (see that file).
+    eq(
+      "V23_PORTION_LABEL_KEYS matches PORTION_LABEL_KEYS (./types)",
+      JSON.stringify(V23_PORTION_LABEL_KEYS),
+      JSON.stringify(PORTION_LABEL_KEYS)
+    );
+    db.close();
+  }
+
+  section("T2. v23 FTS rebuild preserves every row (drop + recreate + repopulate)");
+  {
+    const db = makeV22FoodsDatabase();
+    const insert = db.prepare(
+      `INSERT INTO foods (id,name_tr,name_en,name_de,name_es,name_fr,aliases_json,category,carb_100g,is_custom,created_at)
+       VALUES (?, ?, ?, ?, ?, ?, '[]','other',10,0,'2026-01-01');`
+    );
+    for (let i = 0; i < 40; i++) {
+      insert.run(`bulk-${i}`, `TR ${i}`, `EN ${i}`, `DE ${i}`, `ES ${i}`, `FR ${i}`);
+    }
+    const foodsBefore = count(db, "foods");
+    eq("fixture: FTS starts in sync with foods", count(db, "foods_fts"), foodsBefore);
+
+    await migrateToV23(adapt(db));
+
+    eq("foods row count unchanged by the migration", count(db, "foods"), foodsBefore);
+    eq(
+      "foods_fts row count still matches foods after the drop + recreate",
+      count(db, "foods_fts"),
+      foodsBefore
+    );
+    eq(
+      "the rebuilt index is still searchable by the original columns",
+      (
+        db.prepare("SELECT food_id FROM foods_fts WHERE foods_fts MATCH 'TR*';").all() as unknown[]
+      ).length,
+      foodsBefore
+    );
+    db.close();
+  }
+
+  section("T3. v23 idempotence + statements shared with a fresh install");
+  {
+    const db = makeV22FoodsDatabase();
+    db.exec(
+      `INSERT INTO foods (id,name_tr,name_en,name_de,name_es,name_fr,aliases_json,category,carb_100g,is_custom,created_at)
+       VALUES ('f1','Pilav','Rice','Reis','Arroz','Riz','[]','grains',28,0,'2026-01-01');`
+    );
+    await migrateToV23(adapt(db));
+    let threw = false;
+    try {
+      await migrateToV23(adapt(db));
+    } catch {
+      threw = true;
+    }
+    ok("a second run does not throw", !threw);
+    eq(
+      "no duplicate FTS rows after a second run",
+      count(db, "foods_fts"),
+      count(db, "foods")
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    ok(
+      "the v22 → v23 step runs the real migration",
+      /currentVersion < 23\)\s*\{\s*await migrateToV23\(db\);/.test(indexSrc)
+    );
+    ok(
+      "createSchemaV1 creates the same foods_fts + trigger statements migrateToV23 runs",
+      indexSrc.includes("await db.execAsync(V23_CREATE_FTS);") &&
+        indexSrc.includes("await db.execAsync(V23_CREATE_TRIGGERS);")
+    );
+    ok(
+      "createSchemaV1's foods table already carries the four v23 name columns",
+      /name_it TEXT,\s*\n\s*name_pt TEXT,\s*\n\s*name_ar TEXT,\s*\n\s*name_ja TEXT,/.test(indexSrc)
+    );
+    ok(
+      "the v1 → v2 re-seed calls ensureFoodNameColumns before its DELETE (K1c)",
+      /await ensureFoodNameColumns\(db\);[\s\S]*?DELETE FROM foods WHERE is_custom = 0;/.test(
+        indexSrc
+      )
+    );
+    db.close();
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -4439,7 +4626,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 22`, readUserVersion(db), 22);
+    eq(`v${start}: ends at 23`, readUserVersion(db), 23);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -4572,6 +4759,35 @@ async function main() {
         "3"
       );
     }
+
+    // v23: four more food-name columns + food_portions + the foods_fts rebuild,
+    // whatever the start version was - including start=1, where the v1 → v2
+    // re-seed runs BEFORE migrateToV23 in the chain and used to throw "no such
+    // column" against exactly this shape (BULGU 1 / K1c - see runChain).
+    const v23FoodCols = new Set(columns(db, "foods").keys());
+    for (const col of V23_FOODS_COLUMNS) {
+      ok(`v${start}: foods gains ${col.name}`, v23FoodCols.has(col.name));
+    }
+    ok(
+      `v${start}: food_portions table exists`,
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='food_portions';"
+        )
+        .get() !== undefined
+    );
+    ok(
+      `v${start}: food_portions CHECK refuses an unknown label_key`,
+      refused(
+        db,
+        "INSERT INTO food_portions (food_id,label_key,grams,sort) VALUES ('f-mine','handful',10,0);"
+      )
+    );
+    eq(
+      `v${start}: foods_fts row count matches foods after the v23 rebuild`,
+      count(db, "foods_fts"),
+      count(db, "foods")
+    );
     db.close();
   }
 
@@ -4591,7 +4807,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      22
+      23
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -4607,7 +4823,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 22", readUserVersion(db), 22);
+    eq("the next launch still ends at 23", readUserVersion(db), 23);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -4705,7 +4921,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 22 again", readUserVersion(db), 22);
+    eq("the chain lands on 23 again", readUserVersion(db), 23);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -5220,6 +5436,11 @@ const CHAIN_SEED_STUB = [
  * seedFoods() reduced to what the chain depends on: the same "is there already a
  * catalog?" guard, three rows instead of the real array. What the real one
  * inserts, and what it refuses to touch, is covered by I8-I11.
+ *
+ * Binds name_it/name_pt/name_ar/name_ja explicitly (NULL), like the real
+ * insertSeedFoods (lib/db/index.ts) does - so this stub reproduces the same
+ * "no such column" surface against a pre-v23 foods table that the real v1 →
+ * v2 re-seed hit before ensureFoodNameColumns ran ahead of it (K1c).
  */
 function seedStub(db: DatabaseSync): void {
   const existing = (
@@ -5231,8 +5452,8 @@ function seedStub(db: DatabaseSync): void {
   ).c;
   if (existing > 0) return;
   const insert = db.prepare(
-    `INSERT INTO foods (id, name_tr, name_en, category, carb_100g, is_custom, created_at)
-     VALUES (?, ?, ?, 'other', 20, 0, '2026-01-01T00:00:00.000Z');`
+    `INSERT INTO foods (id, name_tr, name_en, name_it, name_pt, name_ar, name_ja, category, carb_100g, is_custom, created_at)
+     VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 'other', 20, 0, '2026-01-01T00:00:00.000Z');`
   );
   for (const row of CHAIN_SEED_STUB) insert.run(...row);
 }
@@ -5266,14 +5487,16 @@ const CHAIN_CREATE_INJECTIONS = `
 /**
  * initDatabase()'s migration chain, in the same order and with the same guards.
  *
- * The v8 → v22 steps are the REAL exported functions (and therefore the REAL
+ * The v8 → v23 steps are the REAL exported functions (and therefore the REAL
  * stamps, which live inside their transactions). Only the pre-v8 steps, which are
  * inline DDL in lib/db/index.ts and cannot be imported without pulling in
  * expo-sqlite, are replayed here; K6 pins them against that file's source so this
- * copy cannot drift.
+ * copy cannot drift. The v1 → v2 step below additionally calls the REAL
+ * ensureFoodNameColumns (./migrations) - T3 and K1 (start=1) pin that call
+ * against lib/db/index.ts's source and reproduce the crash it fixes (K1c).
  *
  * `stampFinal: false` is the crash under test: the chain runs to the end and the
- * process dies before lib/db/index.ts's closing `PRAGMA user_version = 22`.
+ * process dies before lib/db/index.ts's closing `PRAGMA user_version = 23`.
  */
 async function runChain(
   db: DatabaseSync,
@@ -5296,8 +5519,14 @@ async function runChain(
     } catch {
       // column already exists, ignore
     }
-    db.exec("DELETE FROM foods WHERE is_custom = 0;");
-    seedStub(db);
+    // Mirrors lib/db/index.ts's v1 → v2 step: the re-seed binds name_it/pt/ar/ja
+    // (see seedStub), so a v1 table must gain them BEFORE the DELETE, and the
+    // DELETE + re-seed share one transaction (K1c).
+    await ensureFoodNameColumns(target);
+    await target.withTransactionAsync(async () => {
+      db.exec("DELETE FROM foods WHERE is_custom = 0;");
+      seedStub(db);
+    });
     await stampSchemaVersion(target, 2);
   }
   if (currentVersion >= 1 && currentVersion < 3) {
@@ -5344,8 +5573,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 20) await migrateToV20(target);
   if (currentVersion >= 1 && currentVersion < 21) await migrateToV21(target);
   if (currentVersion >= 1 && currentVersion < 22) await migrateToV22(target);
+  if (currentVersion >= 1 && currentVersion < 23) await migrateToV23(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 22;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 23;");
 }
 
 function count(db: DatabaseSync, table: string): number {

@@ -3,7 +3,8 @@ import { uuid } from "../uuid";
 import { foodName } from "./types";
 import { DEFAULT_FOOD_CATEGORY, type FoodCategory } from "./categories";
 import { queryExpansion, rankBoost } from "../foodMeta";
-import type { Food, Lang } from "./types";
+import { OFF_SOURCE, type OffProduct } from "../services/openFoodFacts";
+import type { Food, FoodPortion, Lang, PortionLabelKey } from "./types";
 
 /** Free-tier custom-food cap. */
 export const FREE_CUSTOM_FOOD_LIMIT = 10;
@@ -121,12 +122,14 @@ export async function searchFoods(
     rows = await db.getAllAsync<Food>(
       `SELECT * FROM foods
          WHERE name_tr LIKE ? OR name_en LIKE ? OR name_de LIKE ?
-            OR name_es LIKE ? OR name_fr LIKE ? OR aliases_json LIKE ?
+            OR name_es LIKE ? OR name_fr LIKE ? OR name_it LIKE ?
+            OR name_pt LIKE ? OR name_ar LIKE ? OR name_ja LIKE ?
+            OR aliases_json LIKE ?
             OR brand_name LIKE ?
             ${extraClause ? `OR ${extraClause}` : ""}
        LIMIT ?;`,
       [
-        like, like, like, like, like, like, like,
+        like, like, like, like, like, like, like, like, like, like, like,
         ...extraLikes.flatMap((t) => [t, t]),
         pool,
       ]
@@ -151,19 +154,20 @@ export async function searchFoods(
     .slice(0, limit);
 }
 
-/** The name column SQLite orders a page by, per active language. The catalogue
- *  only carries five name columns, so it/pt/ar/ja page on the English one - the
- *  same name foodName() shows them - and the JS re-sort below settles the rest. */
+/** The name column (or expression) SQLite orders a page by, per active
+ *  language. it/pt/ar/ja (schema v23) fall back to name_en where their own
+ *  column is null - a seeded row the top-up has not filled yet, or a custom /
+ *  OFF-cached food, which never gets one - the same fallback foodName() uses. */
 const NAME_COLUMN: Record<Lang, string> = {
   tr: "name_tr",
   en: "name_en",
   de: "name_de",
   es: "name_es",
   fr: "name_fr",
-  it: "name_en",
-  pt: "name_en",
-  ar: "name_en",
-  ja: "name_en",
+  it: "COALESCE(name_it, name_en)",
+  pt: "COALESCE(name_pt, name_en)",
+  ar: "COALESCE(name_ar, name_en)",
+  ja: "COALESCE(name_ja, name_en)",
 };
 
 /** How many rows one category page pulls. Must stay comfortably above the
@@ -283,10 +287,15 @@ function buildAliases(names: string[]): string {
 /**
  * A name per language, as Open Food Facts reports them.
  *
- * The table has a column for the first five. The rest are optional because the
- * catalogue has no column to put them in: they are folded into aliases_json,
+ * The table has a NOT NULL column for the first five, so those always get a
+ * value (falling back to the product's main name). it/pt/ar/ja (schema v23)
+ * have their own nullable columns too: written when the caller supplies one,
+ * left NULL otherwise - never force-filled with the main name, so NULL keeps
+ * meaning "no dedicated translation" for foodName()'s own fallback and for
+ * NAME_COLUMN's COALESCE. Either way they also ride along in aliases_json,
  * which FTS and the LIKE fallback both search, so an Italian or Japanese user
- * finds a scanned product by the name their own shelf prints.
+ * finds a scanned product by the name their own shelf prints even when the
+ * column itself is NULL.
  */
 export interface FoodNames {
   tr: string;
@@ -343,8 +352,18 @@ export async function cacheBarcodeFood(input: {
     es: pick(input.names?.es),
     fr: pick(input.names?.fr),
   };
-  // The four column-less languages ride along as aliases; buildAliases lowercases
-  // and dedupes, so a product that only ever had one name still stores one entry.
+  // Unlike `pick` above, NOT force-filled with the main name: these columns
+  // are nullable specifically so NULL can keep meaning "no dedicated
+  // translation" for foodName()'s fallback chain and NAME_COLUMN's COALESCE.
+  const pickOptional = (value: string | undefined): string | null =>
+    value?.trim() || null;
+  const it = pickOptional(input.names?.it);
+  const pt = pickOptional(input.names?.pt);
+  const ar = pickOptional(input.names?.ar);
+  const ja = pickOptional(input.names?.ja);
+  // Every language rides along as an alias too (buildAliases lowercases and
+  // dedupes), so a product findable only by its it/pt/ar/ja name is still
+  // findable there even from a UI language whose own column stayed NULL.
   const aliases = buildAliases([
     name,
     names.tr,
@@ -352,18 +371,18 @@ export async function cacheBarcodeFood(input: {
     names.de,
     names.es,
     names.fr,
-    input.names?.it ?? "",
-    input.names?.pt ?? "",
-    input.names?.ar ?? "",
-    input.names?.ja ?? "",
+    it ?? "",
+    pt ?? "",
+    ar ?? "",
+    ja ?? "",
   ]);
 
   await db.runAsync(
     `INSERT INTO foods
-      (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
-       category, barcode, carb_100g, glycemic_index, glycemic_load,
+      (id, name_tr, name_en, name_de, name_es, name_fr, name_it, name_pt, name_ar, name_ja,
+       aliases_json, category, barcode, carb_100g, glycemic_index, glycemic_load,
        portion_size_g, brand_name, custom_notes, is_custom, source, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, 0, ?, ?);`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, 0, ?, ?);`,
     [
       id,
       names.tr,
@@ -371,6 +390,10 @@ export async function cacheBarcodeFood(input: {
       names.de,
       names.es,
       names.fr,
+      it,
+      pt,
+      ar,
+      ja,
       aliases,
       input.category ?? DEFAULT_FOOD_CATEGORY,
       input.barcode.trim(),
@@ -385,6 +408,28 @@ export async function cacheBarcodeFood(input: {
   const created = await getFood(id);
   if (!created) throw new Error("Failed to cache barcode food");
   return created;
+}
+
+/**
+ * Same upsert-by-barcode semantics as cacheBarcodeFood, for a name SEARCH hit
+ * (lib/services/openFoodFacts searchProducts) instead of a barcode lookup:
+ * the caller already has a full OffProduct, so this just forwards its fields
+ * with source = 'off'. A product already cached - by an earlier scan or an
+ * earlier search - resolves to that same row rather than a duplicate; is_custom
+ * stays 0, so it never counts against FREE_CUSTOM_FOOD_LIMIT (see
+ * countCustomFoods below, which only counts is_custom = 1).
+ */
+export async function upsertOffFood(product: OffProduct): Promise<Food> {
+  return cacheBarcodeFood({
+    barcode: product.barcode,
+    name: product.name,
+    names: product.names,
+    brand: product.brand,
+    category: product.category,
+    carb_100g: product.carb100g,
+    portion_size_g: product.portionG,
+    source: OFF_SOURCE,
+  });
 }
 
 export interface NewFoodInput {
@@ -545,4 +590,41 @@ export async function deleteFood(id: string): Promise<void> {
     "DELETE FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off');",
     [id]
   );
+}
+
+/* ── Portion presets (schema v23, ./types.ts FoodPortion) ──────────────────
+ *
+ * A per-food list of preset serving sizes; food_portions has no row for a
+ * food that offers none, which is the ordinary case for most of the catalog. */
+
+/** One food's presets, in the order the picker should show them. */
+export async function listPortions(foodId: string): Promise<FoodPortion[]> {
+  const db = await getDb();
+  return db.getAllAsync<FoodPortion>(
+    "SELECT * FROM food_portions WHERE food_id = ? ORDER BY sort ASC, id ASC;",
+    [foodId]
+  );
+}
+
+/**
+ * Replaces one food's whole preset list. Used by the seed side (a catalog
+ * update that ships a new preset list for a food) and by any future editor:
+ * always the full set at once, since a preset has no identity of its own
+ * outside its position in this list.
+ */
+export async function replacePortions(
+  foodId: string,
+  rows: ReadonlyArray<readonly [PortionLabelKey, number]>
+): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM food_portions WHERE food_id = ?;", [foodId]);
+    for (let i = 0; i < rows.length; i++) {
+      const [labelKey, grams] = rows[i];
+      await db.runAsync(
+        "INSERT INTO food_portions (food_id, label_key, grams, sort) VALUES (?, ?, ?, ?);",
+        [foodId, labelKey, grams, i]
+      );
+    }
+  });
 }

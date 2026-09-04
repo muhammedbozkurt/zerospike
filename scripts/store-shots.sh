@@ -29,9 +29,11 @@ OUT="raw"
 COLD_SETTLE="${SHOTS_COLD_SETTLE:-50}"
 
 # route key -> deep-link path+query (scLang is appended per language).
-# 01-ring dashboard, 02-bodymap heat map zoomed, 03-widget composited separately
-# (lock screen + widget mock; not a device shot), 04-food, 05-insights custom
-# range, 06-report rendered from the print HTML (see note below).
+# 01-ring dashboard, 02-bodymap heat map zoomed, 03-widget a mock scene
+# (app/sc-widgets.tsx: lock screen + Dynamic Island + home widgets on iOS,
+# real react-native-android-widget previews on Android - see note below),
+# 04-food, 05-insights custom range, 06-report rendered from the print HTML
+# (see note below).
 declare -a SHOTS=(
   "01-ring|/(tabs)"
   # NO zoom= on purpose: the store frame is the full-body heat map, the same
@@ -41,14 +43,20 @@ declare -a SHOTS=(
   # from InjectionBodyMap's GEOMETRY map (abdomen_left/right, thigh_left/right,
   # arm_left/right, buttock_left/right); anything else silently no-ops.
   "02-bodymap|/(tabs)/injection?segment=map"
+  "03-widget|/sc-widgets"
   "04-food|/(tabs)/food"
   "05-insights|/insights?custom=1"
   "07-spike|/spike"
   "08-takip|/onboarding?scOnboarding=none"
   "09-reminders|/settings/reminders"
 )
-# 03-widget: NOT a device capture (lock-screen + widget composite). If a Live
-# Activity screenshot is desired, capture it manually on the lock screen.
+# 03-widget: IS a device capture. iOS draws a hand-built replica of the
+# WidgetKit targets (no extension surface to point a deep link at); Android
+# renders the actual widget trees through react-native-android-widget's
+# WidgetPreview, which only produces a real bitmap on Android itself - so the
+# android PLATFORM pass is the only capture that shows real widget pixels for
+# this panel; run it on a real/emulated Android device, not composited from
+# the iOS shots the way the other panels' Android art is.
 # 06-report: open the Data settings and export a PDF, then screenshot the print
 # preview / the rendered HTML (the report is print HTML, not an in-app screen).
 
@@ -117,7 +125,7 @@ establish_direction() { # $1 = lang
   local i
   for i in 1 2; do
     app_terminate
-    sleep 2
+    sleep "${SHOTS_DIR_SETTLE:-5}"
     open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${1}"
     sleep "$COLD_SETTLE"
   done
@@ -135,7 +143,7 @@ capture_lang() { # $1 = device output dir label, $2 = lang
     # every time. Skipped for the dashboard shot itself, which IS that state.
     if [[ "$path" != "$DASHBOARD_PATH" ]]; then reset_to_dashboard "$lang"; fi
     open_url "${SCHEME}://${path}${sep}scLang=${lang}"
-    sleep 3.5
+    sleep "${SHOTS_PANEL_SETTLE:-9}"
     shoot "$devdir" "$lang" "$key"
   done
 }

@@ -83,7 +83,8 @@ export function journalFeedSql(
               NULL AS portion_g, NULL AS calculated_carbs_g, NULL AS insulin_dose_units,
               NULL AS photo_uri_local, NULL AS personal_note,
               NULL AS name_tr, NULL AS name_en, NULL AS name_de, NULL AS name_es,
-              NULL AS name_fr, NULL AS category,
+              NULL AS name_fr, NULL AS name_it, NULL AS name_pt, NULL AS name_ar,
+              NULL AS name_ja, NULL AS category,
               NULL AS site, NULL AS site_point, NULL AS dose_units,
               NULL AS insulin_type, NULL AS bolus_kind, NULL AS note,
               s.healthkit_uuid AS healthkit_uuid, NULL AS med_name,
@@ -97,7 +98,8 @@ export function journalFeedSql(
               m.food_id, m.sugar_log_id, m.custom_food_name,
               m.portion_g, m.calculated_carbs_g, m.insulin_dose_units,
               m.photo_uri_local, m.personal_note,
-              f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr, f.category,
+              f.name_tr, f.name_en, f.name_de, f.name_es, f.name_fr,
+              f.name_it, f.name_pt, f.name_ar, f.name_ja, f.category,
               NULL, NULL, NULL, NULL, NULL, NULL,
               NULL, NULL,
               NULL, NULL
@@ -108,7 +110,7 @@ export function journalFeedSql(
               2,
               NULL, NULL, i.source,
               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-              NULL, NULL, NULL, NULL, NULL, NULL,
+              NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
               i.site, i.site_point, i.dose_units, i.insulin_type, i.bolus_kind, i.note,
               NULL, NULL,
               i.insulin_product_id, i.insulin_product_other
@@ -121,7 +123,7 @@ export function journalFeedSql(
               3,
               NULL, NULL, NULL,
               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-              NULL, NULL, NULL, NULL, NULL, NULL,
+              NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
               NULL, NULL, NULL, NULL, NULL, d.note,
               NULL, d.name,
               NULL, NULL

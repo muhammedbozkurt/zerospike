@@ -64,6 +64,14 @@ data class AlarmRecord(
 }
 
 /**
+ * What an alarm's "Open" button left behind: the screen to land on and, when
+ * the ringing alarm knew it, the id it was scheduled under. `alarmId` is null
+ * for an alarm armed by a build that predated it, which is exactly the case
+ * app/_layout.tsx falls back to time matching for.
+ */
+data class PendingAlarm(val route: String, val alarmId: String?)
+
+/**
  * SharedPreferences-backed store for AlarmRecords plus the single read-once
  * "pending route" slot (mirrors takePendingAlarmRoute's contract in index.ts).
  * One flat file, one entry per id under an "alarm_" prefix - listing is a
@@ -74,6 +82,7 @@ object AlarmStore {
   private const val PREFS_NAME = "zerospike_alarmkit_store"
   private const val ALARM_KEY_PREFIX = "alarm_"
   private const val PENDING_ROUTE_KEY = "pending_route"
+  private const val PENDING_ALARM_ID_KEY = "pending_alarm_id"
   private const val HAS_REQUESTED_AUTH_KEY = "has_requested_authorization"
 
   private fun prefs(context: Context): SharedPreferences =
@@ -98,19 +107,31 @@ object AlarmStore {
 
   fun allIds(context: Context): List<String> = all(context).map { it.id }
 
-  fun setPendingRoute(context: Context, route: String) {
-    prefs(context).edit().putString(PENDING_ROUTE_KEY, route).apply()
+  /** Parks both halves of a tapped alarm: WHICH screen to open and WHICH alarm
+   *  asked for it (the caller-owned "zerospike-alarm-<reminderId>" string).
+   *  Written in one edit, and an alarm with no id explicitly clears the key
+   *  rather than leaving the previous alarm's id to be paired with this route. */
+  fun setPending(context: Context, route: String, alarmId: String?) {
+    prefs(context).edit().apply {
+      if (alarmId.isNullOrEmpty()) remove(PENDING_ALARM_ID_KEY)
+      else putString(PENDING_ALARM_ID_KEY, alarmId)
+      putString(PENDING_ROUTE_KEY, route)
+    }.apply()
   }
 
-  /** Reads and clears the pending route in one shot - same read-once contract
-   *  as takePendingAlarmRoute in index.ts. */
-  fun takePendingRoute(context: Context): String? {
+  /** Reads and clears both pending keys in one shot - same read-once contract
+   *  as takePendingAlarmRoute in index.ts. A stray id with no route beside it
+   *  is dropped, so it can never attach itself to a later alarm's route. */
+  fun takePending(context: Context): PendingAlarm? {
     val p = prefs(context)
     val route = p.getString(PENDING_ROUTE_KEY, null)
-    if (route != null) {
-      p.edit().remove(PENDING_ROUTE_KEY).apply()
+    if (route.isNullOrEmpty()) {
+      if (p.contains(PENDING_ALARM_ID_KEY)) p.edit().remove(PENDING_ALARM_ID_KEY).apply()
+      return null
     }
-    return route
+    val alarmId = p.getString(PENDING_ALARM_ID_KEY, null)
+    p.edit().remove(PENDING_ROUTE_KEY).remove(PENDING_ALARM_ID_KEY).apply()
+    return PendingAlarm(route, alarmId?.takeIf { it.isNotEmpty() })
   }
 
   fun hasRequestedAuthorization(context: Context): Boolean =

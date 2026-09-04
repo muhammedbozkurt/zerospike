@@ -1328,6 +1328,9 @@ export default function OnboardingScreen() {
               onChange={setBasalTime}
               onClose={() => setShowTime(false)}
             />
+            <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginTop: 8 }}>
+              {t("onboarding.basalReminderTip")}
+            </Text>
           </FadeSlideIn>
         );
 

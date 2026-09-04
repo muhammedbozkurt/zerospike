@@ -88,7 +88,9 @@ class AlarmRingActivity : Activity() {
   private fun onOpenPressed(route: String) {
     dismiss()
     if (route.isNotEmpty()) {
-      AlarmStore.setPendingRoute(this, route)
+      // The id this activity was launched with, so the app opens the reminder
+      // that actually rang instead of inferring it back from the clock.
+      AlarmStore.setPending(this, route, alarmId)
     }
     packageManager.getLaunchIntentForPackage(packageName)?.let {
       it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)

@@ -1024,12 +1024,20 @@ export async function exportLogsPdf(
     .map((e) => {
       const { date, time } = fmtDateTime(e.logged_at);
       const x = e as Extract<typeof e, { kind: "injection" }>;
+      const siteLabel = x.site
+        ? i18n.t(`injectionSite.${x.site}`)
+        : i18n.t("injectionSite.unassigned");
       return {
         date,
         time,
-        site: x.site
-          ? i18n.t(`injectionSite.${x.site}`)
-          : i18n.t("injectionSite.unassigned"),
+        // A short marker for a row confirmed straight from the basal
+        // reminder (source 'reminder' - see lib/services/basalConfirm.ts),
+        // same " · " badge pattern app/(tabs)/injection.tsx already uses for
+        // the calculator's own 'fromCalculator' rows.
+        site:
+          x.source === "reminder"
+            ? `${siteLabel} · ${i18n.t("report.fromReminder")}`
+            : siteLabel,
         dose:
           x.dose_units != null ? `${num(x.dose_units)} ${i18n.t("common.units")}` : "",
       };

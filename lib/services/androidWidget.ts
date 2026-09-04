@@ -359,16 +359,15 @@ export function buildReadingWidget(
       // quick-add sheet rather than only bringing the app forward.
       clickActionData: { uri: URI_ADD_GLUCOSE },
     },
+    // Label and clock time stack instead of sharing one row: a row here relies on
+    // justifyContent's spacer to push the time to the far edge, but that spacer
+    // never shrinks the label, so a wide translation (de "Letzte Messung") plus
+    // the time can overflow the row width on a narrow placement (7" tablet cells)
+    // and get hard-clipped with no ellipsis - Android's RemoteViews TextView has
+    // no real flex-shrink. Two full-width lines cannot overflow the same way.
     React.createElement(
       FlexWidget,
-      {
-        style: {
-          flexDirection: "row",
-          width: "match_parent",
-          justifyContent: "space-between",
-          alignItems: "center",
-        },
-      },
+      { style: { flexDirection: "column", width: "match_parent" } },
       React.createElement(TextWidget, {
         text: data?.labels?.lastReading ?? "",
         truncate: "END",
@@ -381,11 +380,13 @@ export function buildReadingWidget(
       }),
       React.createElement(TextWidget, {
         text: timeText,
+        truncate: "END",
         maxLines: 1,
         style: {
           fontSize: compact ? 9 : 10,
           fontWeight: "bold",
           color: THEME.muted as ColorProp,
+          marginTop: 1,
         },
       })
     ),
@@ -521,8 +522,17 @@ export function buildQuickAddWidget(
     React.createElement(
       FlexWidget,
       { style: { flexDirection: "row", flex: 1, width: "match_parent" } },
-      ...shortcuts.map((shortcut, i) =>
-        React.createElement(
+      ...shortcuts.map((shortcut, i) => {
+        // A wrap is only safe at a WHITESPACE boundary ("Add glucose" ->
+        // "Add" / "glucose"); a label with none (de "Medikament", es/pt
+        // "Medicamento", fr "Médicament") has no such point, so Android's
+        // line breaker falls back to a mid-word hyphen split the moment it
+        // does not fit - autosize alone does not stop this, because a
+        // forced 2-line split still counts as "fits" to its own search.
+        // Locking such a label to one line forces autosize to keep
+        // shrinking until the whole word actually fits.
+        const hasWordBreak = /\s/.test(shortcut.label);
+        return React.createElement(
           FlexWidget,
           {
             key: shortcut.key,
@@ -554,25 +564,33 @@ export function buildQuickAddWidget(
               color: shortcut.ink,
             },
           }),
-          // The iOS twin shrinks this label (minimumScaleFactor 0.6); a
-          // TextWidget cannot, so at one line "Glukose eintragen" / "Injection
-          // enregistrer" simply lost their tails in a ~70dp tile. Two lines at a
-          // slightly smaller size is the closest Android equivalent, centred so
-          // a wrapped label still reads as one label.
+          // The iOS twin shrinks this label (minimumScaleFactor 0.6); the
+          // TextWidget equivalent is adjustsFontSizeToFit (native TextView
+          // autosize, not the RN Text prop of the same name), paired with the
+          // one-line lock above for a label with no space to wrap at. Two
+          // lines at a slightly smaller size is the closest Android
+          // equivalent for the multi-word labels, centred so a wrapped
+          // label still reads as one label.
           React.createElement(TextWidget, {
             text: shortcut.label,
             truncate: "END",
-            maxLines: compact ? 1 : 2,
+            maxLines: compact || !hasWordBreak ? 1 : 2,
             style: {
+              // Autosize only kicks in with a concrete box to shrink into - a
+              // WRAP_CONTENT width (this element's default) makes the native
+              // TextView autosize helper a no-op, which is why the width is
+              // pinned to the tile's own full inner width here.
+              width: "match_parent",
               fontSize: compact ? 9 : 10,
               fontWeight: "bold",
               color: THEME.ink as ColorProp,
               marginTop: 1,
               textAlign: "center",
+              adjustsFontSizeToFit: true,
             },
           })
-        )
-      )
+        );
+      })
     )
   );
 }
@@ -711,6 +729,11 @@ export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): Reac
     });
   }
   const compact = (size?.width ?? 150) < 130 || (size?.height ?? 80) < 70;
+  const timerTitle = data?.labels?.timerTitle ?? "";
+  // Same reasoning as the Quick Add tile labels above: a label with no space
+  // to wrap at has to stay on one line or a forced fit falls back to a
+  // mid-word break, so only a multi-word title gets the second line.
+  const timerTitleHasWordBreak = /\s/.test(timerTitle);
   return React.createElement(
     FlexWidget,
     {
@@ -731,10 +754,21 @@ export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): Reac
       clickActionData: { uri: URI_POST_MEAL_2H },
     },
     React.createElement(TextWidget, {
-      text: data?.labels?.timerTitle ?? "",
+      text: timerTitle,
       truncate: "END",
-      maxLines: 1,
-      style: { fontSize: compact ? 9 : 10, fontWeight: "bold", color: THEME.muted as ColorProp },
+      maxLines: timerTitleHasWordBreak ? 2 : 1,
+      style: {
+        // Same fix as the Quick Add labels: adjustsFontSizeToFit is a no-op
+        // on the default WRAP_CONTENT width, so the title needs a real box
+        // (the tile's own inner width) to shrink into before it stops
+        // fitting and falls back to an ellipsis - de "Messung nach dem
+        // Essen" is the tightest translation, at the smallest (1x1) footprint.
+        width: "match_parent",
+        fontSize: compact ? 9 : 10,
+        fontWeight: "bold",
+        color: THEME.muted as ColorProp,
+        adjustsFontSizeToFit: true,
+      },
     }),
     React.createElement(
       FlexWidget,

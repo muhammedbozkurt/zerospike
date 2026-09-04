@@ -25,7 +25,7 @@ export const PROFILE_SCOPED_KEY_BASES = [
   /** lib/rotationCycle.ts - when this profile's injection rotation started. */
   "zerospike.rotationCycleStart",
   /** lib/db/screenshotSeed.ts - which language this profile was seeded in. */
-  "zerospike.screenshotSeededLang.v14",
+  "zerospike.screenshotSeededLang.v16",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

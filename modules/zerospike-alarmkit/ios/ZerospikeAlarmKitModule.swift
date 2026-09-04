@@ -256,7 +256,7 @@ public class ZerospikeAlarmKitModule: Module {
       let configuration = AlarmManager.AlarmConfiguration(
         schedule: schedule,
         attributes: attributes,
-        secondaryIntent: ZerospikeAlarmOpenIntent(route: route)
+        secondaryIntent: ZerospikeAlarmOpenIntent(route: route, alarmId: id)
       )
 
       do {
@@ -319,7 +319,7 @@ public class ZerospikeAlarmKitModule: Module {
       let configuration = AlarmManager.AlarmConfiguration(
         schedule: schedule,
         attributes: attributes,
-        secondaryIntent: ZerospikeAlarmOpenIntent(route: route)
+        secondaryIntent: ZerospikeAlarmOpenIntent(route: route, alarmId: id)
       )
 
       do {
@@ -362,20 +362,41 @@ public class ZerospikeAlarmKitModule: Module {
       }
     }
 
-    /// Reads (and clears) the route an alarm's "Open" button left behind - see
+    /// Reads (and clears) what an alarm's "Open" button left behind - see
     /// ZerospikeAlarmOpenIntent. Read-once on purpose: the app consumes it on
     /// its next foreground transition, and a value left in place would re-route
     /// the user on every later launch.
     ///
-    /// No iOS 26 guard: an App Group read is harmless on any OS, and the key
-    /// simply never exists where AlarmKit does not.
-    Function("takePendingAlarmRoute") { () -> String? in
-      guard let defaults = UserDefaults(suiteName: zerospikeAlarmAppGroup),
-            let route = defaults.string(forKey: zerospikeAlarmRouteKey),
-            !route.isEmpty
-      else { return nil }
+    /// Returns `{ route, alarmId? }` rather than the bare route string it used
+    /// to: `alarmId` is the SAME identity string the alarm was scheduled under
+    /// ("zerospike-alarm-<reminderId>"), which is what lets app/_layout.tsx open
+    /// the exact reminder that rang instead of guessing it back by time. It is
+    /// absent (never an empty string) for an alarm scheduled before the intent
+    /// carried an id, so the JS side can tell "no identity" from "an identity
+    /// that happens to be empty".
+    ///
+    /// The route key is read FIRST: the intent writes the id before the route,
+    /// so a visible route guarantees its id is already there. A stray id with no
+    /// route (an id written by a build whose route write never landed) is
+    /// dropped rather than left to pair with some later alarm's route.
+    ///
+    /// No iOS 26 guard: an App Group read is harmless on any OS, and the keys
+    /// simply never exist where AlarmKit does not.
+    Function("takePendingAlarmRoute") { () -> [String: Any]? in
+      guard let defaults = UserDefaults(suiteName: zerospikeAlarmAppGroup) else {
+        return nil
+      }
+      guard let route = defaults.string(forKey: zerospikeAlarmRouteKey), !route.isEmpty
+      else {
+        defaults.removeObject(forKey: zerospikeAlarmIdKey)
+        return nil
+      }
+      let alarmId = defaults.string(forKey: zerospikeAlarmIdKey)
       defaults.removeObject(forKey: zerospikeAlarmRouteKey)
-      return route
+      defaults.removeObject(forKey: zerospikeAlarmIdKey)
+      var pending: [String: Any] = ["route": route]
+      if let alarmId, !alarmId.isEmpty { pending["alarmId"] = alarmId }
+      return pending
     }
 
     /// The JS-string ids ("zerospike-alarm-<reminderId>") this module has

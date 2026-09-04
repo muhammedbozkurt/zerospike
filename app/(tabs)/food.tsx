@@ -60,6 +60,8 @@ import type { Food, Lang, MealSlot } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
 import { CATEGORIES, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
+import { OffSearchResults } from "../../components/OffSearchResults";
+import { CarbRatioLine } from "../../components/CarbRatioLine";
 import { EMOJI_RENDERS, FoodPlate } from "../../components/FoodPlate";
 import { EmptyState } from "../../components/EmptyState";
 import { Skeleton } from "../../components/Skeleton";
@@ -110,6 +112,10 @@ type ListRow = GridBand | Food;
 
 /** Keystroke quiet period before the catalog is searched. */
 const SEARCH_DEBOUNCE_MS = 250;
+
+/** Below this many local matches, a search offers the Open Food Facts
+ *  button underneath its results (empty counts as "below" too). */
+const OFF_SEARCH_MAX_RESULTS = 3;
 
 /** Illustrated plate per meal slot, for the day's journal rows. */
 const SLOT_EMOJI: Record<MealSlot, string> = {
@@ -624,6 +630,12 @@ export default function FoodScreen() {
     return [];
   }, [mode, searchResults, selected, favs, customFoods, categoryFoods]);
 
+  // The local catalog's FTS only knows what the app ships or the user has
+  // typed before; a search that comes up short (or empty) is exactly where
+  // the one-tap Open Food Facts lookup belongs, under the local results.
+  const showOffSearch =
+    mode === "search" && !searchPending && listData.length < OFF_SEARCH_MAX_RESULTS;
+
   /**
    * One-tap re-log. A catalogue food reopens in the calculator (its portion is
    * adjustable there); a typed-name meal has no catalogue row to reopen, so it
@@ -1093,6 +1105,8 @@ export default function FoodScreen() {
           />
         </GlassCard>
       ) : null}
+
+      {mode === "grid" ? <CarbRatioLine /> : null}
 
       {SearchBar}
 
@@ -1595,6 +1609,17 @@ export default function FoodScreen() {
                     : undefined
                 }
               />
+            </View>
+          ) : null
+        }
+        // Rendered whether the local search came up empty (below
+        // ListEmptyComponent, VirtualizedList draws both) or just short - the
+        // one difference from every row above is that this one is not local
+        // catalogue data, so it lives outside `rows`/renderItem entirely.
+        ListFooterComponent={
+          showOffSearch ? (
+            <View style={columnPad(16)}>
+              <OffSearchResults query={query.trim()} lang={lang} onPicked={onFoodPress} />
             </View>
           ) : null
         }

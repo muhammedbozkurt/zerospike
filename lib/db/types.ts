@@ -127,6 +127,19 @@ export interface Food {
   name_de: string;
   name_es: string;
   name_fr: string;
+  /** Schema v23, all nullable (unlike the five above) and optional: null (or
+   *  absent, for a hand-built stand-in row like app/calculator.tsx's
+   *  foodFromMeal/foodFromTemplate) for the seeded catalogue rows the top-up
+   *  has not filled yet, for every hand-typed custom food (which only ever
+   *  gets the five required columns), and for an OFF-cached food whose result
+   *  carried no name in that language. An OFF-cached food DOES get these
+   *  columns filled (lib/db/foods cacheBarcodeFood/upsertOffFood) when the
+   *  product had a name to put there. foodName() and the search queries fall
+   *  back to name_en whenever these are null or absent. */
+  name_it?: string | null;
+  name_pt?: string | null;
+  name_ar?: string | null;
+  name_ja?: string | null;
   aliases_json: string; // JSON string[] of synonyms
   category: string; // see lib/db/categories.ts
   barcode: string | null;
@@ -147,6 +160,51 @@ export interface Food {
    *  the one place that decides food.emoji vs the emojiFor keyword match. */
   emoji: string | null;
   created_at: string;
+}
+
+/* ── Portion presets (schema v23) ──────────────────────────────────────────
+ *
+ * A per-food list of preset serving sizes ("1 slice" ≈ 30 g), so a food's
+ * detail screen can offer a tap instead of a bare gram field. `label_key` is a
+ * closed enum resolved from i18n (`portions.<key>`), never free text. */
+
+export type PortionLabelKey =
+  | "slice"
+  | "piece"
+  | "bowl"
+  | "plate"
+  | "cup"
+  | "glass"
+  | "tbsp"
+  | "tsp"
+  | "small"
+  | "medium"
+  | "large"
+  | "portion";
+
+/** Canonical order (preset picker display). */
+export const PORTION_LABEL_KEYS: readonly PortionLabelKey[] = [
+  "slice",
+  "piece",
+  "bowl",
+  "plate",
+  "cup",
+  "glass",
+  "tbsp",
+  "tsp",
+  "small",
+  "medium",
+  "large",
+  "portion",
+];
+
+export interface FoodPortion {
+  id: number;
+  food_id: string; // FK → foods.id, ON DELETE CASCADE
+  label_key: PortionLabelKey;
+  grams: number;
+  /** The picker's own ordering; also the tie-break within one food. */
+  sort: number;
 }
 
 export interface SugarLog {
@@ -242,10 +300,14 @@ export function foodName(food: Food, lang: Lang): string {
       return food.name_fr || food.name_en || food.name_tr;
     case "tr":
       return food.name_tr || food.name_en;
-    // it/pt/ar/ja have no name column in the catalogue: English is the neutral
-    // fallback, never Turkish (which the old default branch would have shown).
-    default:
-      return food.name_en || food.name_tr;
+    case "it":
+      return food.name_it || food.name_en || food.name_tr;
+    case "pt":
+      return food.name_pt || food.name_en || food.name_tr;
+    case "ar":
+      return food.name_ar || food.name_en || food.name_tr;
+    case "ja":
+      return food.name_ja || food.name_en || food.name_tr;
   }
 }
 
@@ -423,7 +485,9 @@ export interface Injection {
   note: string | null;
   /** Where the row came from: 'manual' by default, 'calculator' for the bolus
    *  row the dose calculator writes alongside a meal (so the injection tab can
-   *  show it as already-logged instead of inviting a duplicate entry). */
+   *  show it as already-logged instead of inviting a duplicate entry), or
+   *  'reminder' for one logged from a reminder notification's own action.
+   *  Plain TEXT with no CHECK, so a new value here needs no migration. */
   source: string;
   logged_at: string;
   tags: LogTag[];

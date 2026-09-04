@@ -213,7 +213,7 @@ def patch_short_column(img, x0, x1, from_y, to_y):
     img.paste(band, (x0, from_y))
 
 
-def two_col_insights_shot(path, status_crop, label=""):
+def two_col_insights_shot(path, status_crop, tabbar_top, label=""):
     """05-insights reflows into two independent card columns on the tablet7
     canvas; their last visible cards essentially never end at the same row,
     so the plain full-width snap_cut_thr only finds the rare row where BOTH
@@ -223,15 +223,37 @@ def two_col_insights_shot(path, status_crop, label=""):
     of flat dark fill under "This week vs. last week"). Snapping each column
     on its own, then background-filling the shorter one down to the taller
     one's cut, uses the real content the capture already has without ever
-    bisecting a card in either column."""
+    bisecting a card in either column.
+
+    S3 fix: the walk used to start at the raw capture's own bottom edge
+    (h - 20) with no upper bound, well past tabbar_top - the app's fixed
+    chrome starts there, but a card that renders behind it (only in the raw
+    pixel buffer, never actually visible on screen) reads as flat "page
+    background" too, so in en/de/fr/it/pt/ar/ja the walk locked onto a gap
+    below tabbar_top and produced a shot taller than every other panel's
+    content_h, throwing off dev_rect height on the composite (tr/es have
+    short enough copy that their last real card already ends above
+    tabbar_top, so they were never affected). Capping the anchor at
+    tabbar_top - 1 keeps every candidate inside content_h; window=400 is far
+    enough to still reach each column's real last-card gap (measured
+    119-253px back) but short of the false early gap from the bug above
+    (measured ~700px back), so a column with no clean gap in range now falls
+    back to the tabbar_top boundary itself instead of overshooting past it.
+
+    de/fr/it/pt/ja's right column has that same real gap right below
+    tabbar_top too (measured at the same rows tr/es/en/ar land on), but only
+    an 8-9-row clean run - snap_col's default run=10 missed it by a hair and
+    fell back to the boundary, bisecting the next card's row of numbers.
+    run=8 catches it (still well clear of a single stray row, per snap_col's
+    own reasoning for requiring a run at all)."""
     with Image.open(path) as im0:
         full = im0.convert("RGB")
     w, h = full.size
     lx0, lx1, rx0, rx1 = two_col_bounds(w)
-    anchor = h - 20  # a few px shy of the raw edge - avoids the occasional
-    # single-row false read right at the capture's own bottom border
-    lc, lok = snap_col(full, lx0, lx1, anchor, h)
-    rc, rok = snap_col(full, rx0, rx1, anchor, h)
+    anchor = min(h - 20, tabbar_top - 1)
+    window = 400
+    lc, lok = snap_col(full, lx0, lx1, anchor, window, run=8)
+    rc, rok = snap_col(full, rx0, rx1, anchor, window, run=8)
     if not lok or not rok:
         print(f"  WARN {label}: two-col snap found no clean gap in a column "
               f"(left ok={lok}, right ok={rok}); that side may show a "
@@ -274,7 +296,8 @@ def load_shot(spec, raw_dir, key):
         if not os.path.exists(path):
             return None
         if key == "05-insights" and spec.get("insights_two_col"):
-            shot = two_col_insights_shot(path, spec["status_crop"], label=f"{spec['name']}/{key}")
+            shot = two_col_insights_shot(path, spec["status_crop"], spec["tabbar_top"],
+                                          label=f"{spec['name']}/{key}")
         else:
             bottom = cut_for(spec, path, key)
             if key in EXCEPTION_PANELS:

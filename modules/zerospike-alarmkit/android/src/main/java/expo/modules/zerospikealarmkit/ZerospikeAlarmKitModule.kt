@@ -132,8 +132,21 @@ class ZerospikeAlarmKitModule : Module() {
       if (!ANDROID_ALARM_ENABLED) emptyList<String>() else AlarmStore.allIds(context)
     }
 
+    // Returns { route, alarmId? } rather than the bare route string it used to
+    // (iOS returns the same shape), so JS can open the exact reminder that
+    // rang. `alarmId` is left out entirely - never an empty string - when the
+    // ringing alarm carried no id.
     Function("takePendingAlarmRoute") {
-      if (!ANDROID_ALARM_ENABLED) null else AlarmStore.takePendingRoute(context)
+      if (!ANDROID_ALARM_ENABLED) {
+        null
+      } else {
+        AlarmStore.takePending(context)?.let { pending ->
+          buildMap<String, String> {
+            put("route", pending.route)
+            pending.alarmId?.let { put("alarmId", it) }
+          }
+        }
+      }
     }
 
     OnActivityEntersForeground {

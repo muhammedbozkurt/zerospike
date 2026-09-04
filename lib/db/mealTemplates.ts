@@ -28,6 +28,10 @@ interface ItemJoinRow extends MealTemplateItem {
   f_name_de: string | null;
   f_name_es: string | null;
   f_name_fr: string | null;
+  f_name_it: string | null;
+  f_name_pt: string | null;
+  f_name_ar: string | null;
+  f_name_ja: string | null;
 }
 
 /** A stored item with its live food attached (null when the food is gone). */
@@ -45,6 +49,10 @@ function mapItem(r: ItemJoinRow): ItemWithFood {
           name_de: r.f_name_de ?? "",
           name_es: r.f_name_es ?? "",
           name_fr: r.f_name_fr ?? "",
+          name_it: r.f_name_it,
+          name_pt: r.f_name_pt,
+          name_ar: r.f_name_ar,
+          name_ja: r.f_name_ja,
         };
   return {
     id: r.id,
@@ -70,7 +78,9 @@ async function readItems(templateId: string): Promise<ItemWithFood[]> {
   const rows = await db.getAllAsync<ItemJoinRow>(
     `SELECT i.*, f.id AS f_id, f.carb_100g AS f_carb_100g, f.category AS f_category,
             f.name_tr AS f_name_tr, f.name_en AS f_name_en, f.name_de AS f_name_de,
-            f.name_es AS f_name_es, f.name_fr AS f_name_fr
+            f.name_es AS f_name_es, f.name_fr AS f_name_fr,
+            f.name_it AS f_name_it, f.name_pt AS f_name_pt,
+            f.name_ar AS f_name_ar, f.name_ja AS f_name_ja
        FROM meal_template_items i
        LEFT JOIN foods f ON f.id = i.food_id
       WHERE i.template_id = ?
@@ -95,7 +105,9 @@ async function readItemsByTemplate(
   const rows = await db.getAllAsync<ItemJoinRow>(
     `SELECT i.*, f.id AS f_id, f.carb_100g AS f_carb_100g, f.category AS f_category,
             f.name_tr AS f_name_tr, f.name_en AS f_name_en, f.name_de AS f_name_de,
-            f.name_es AS f_name_es, f.name_fr AS f_name_fr
+            f.name_es AS f_name_es, f.name_fr AS f_name_fr,
+            f.name_it AS f_name_it, f.name_pt AS f_name_pt,
+            f.name_ar AS f_name_ar, f.name_ja AS f_name_ja
        FROM meal_template_items i
        JOIN meal_templates t ON t.id = i.template_id
        LEFT JOIN foods f ON f.id = i.food_id

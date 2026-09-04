@@ -54,6 +54,7 @@ import {
   estimateInsulin,
   activeMealSlot,
   mealSlotForHour,
+  carbRatioForSlot,
   type InsulinWarning,
 } from "../lib/insulin";
 import { activeInsulinBreakdown } from "../lib/iob";
@@ -90,6 +91,7 @@ import type { Food, InjectionSite, LogTag, MealSlot, SitePoint } from "../lib/db
 import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
 import { Stepper } from "../components/Stepper";
+import { PortionPresetChips } from "../components/PortionPresetChips";
 import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
 import { Tooltip } from "../components/Tooltip";
 import { TagPicker } from "../components/TagPicker";
@@ -98,6 +100,7 @@ import { useEntryGuardConfirm } from "../components/useEntryGuardConfirm";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { Skeleton } from "../components/Skeleton";
 import { DirIcon } from "../components/DirIcon";
+import { CarbRatioLine } from "../components/CarbRatioLine";
 import { formatTime, num, relativeDay } from "../lib/format";
 import {
   GLUCOSE_INPUT_CEILING,
@@ -268,22 +271,28 @@ function ReadoutCard({
   );
 }
 
-/** A neutral, non-blocking notice card (info tone, never an alarm). */
+/** A neutral, non-blocking notice card (info tone, never an alarm). Optionally
+ *  tappable (e.g. "ratio not set, tap to set it") - onPress swaps the plain
+ *  View for a Pressable with a trailing chevron, everything else unchanged. */
 function NoticeCard({
   icon,
   tint,
   title,
   body,
+  onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   tint: string;
   title?: string;
   body: string;
+  onPress?: () => void;
 }) {
+  const Wrapper = onPress ? Pressable : View;
   return (
-    <View
+    <Wrapper
       className="flex-row items-start rounded-2xl px-3.5 py-3 mb-3"
       style={{ borderWidth: 1, borderColor: withAlpha(tint, 0.3), backgroundColor: withAlpha(tint, 0.1) }}
+      {...(onPress ? { onPress, accessibilityRole: "button" as const } : {})}
     >
       <Ionicons name={icon} size={15} color={tint} style={{ marginTop: 1 }} />
       <View className="flex-1 ml-2.5">
@@ -296,7 +305,8 @@ function NoticeCard({
           {body}
         </Text>
       </View>
-    </View>
+      {onPress ? <DirIcon name="chevron-forward-outline" size={14} color={tint} /> : null}
+    </Wrapper>
   );
 }
 
@@ -506,11 +516,10 @@ function CalculatorScreen() {
   // that effect at all, see isEdit guard).
   const [slotTouched, setSlotTouched] = useState(false);
   const [glucose, setGlucose] = useState("");
+  // A new record starts with this BLANK - never pre-filled from the estimate -
+  // so the stored dose is always something the user actually typed. Edit mode
+  // is the one exception: the prefill effect below loads it from the record.
   const [doseText, setDoseText] = useState("");
-  const [doseTouched, setDoseTouched] = useState(false);
-  // The estimate.totalDose this field was last synced to (see below), so the
-  // sync only fires again when the estimate actually moves.
-  const [lastSyncedDose, setLastSyncedDose] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [tags, setTags] = useState<LogTag[]>([]);
@@ -612,8 +621,9 @@ function CalculatorScreen() {
     })();
   }, [templateId, portions, lang]);
 
-  // Edit mode: prefill every field from the stored log. doseTouched is set so
-  // the estimate effect never overwrites the dose the user actually applied.
+  // Edit mode: prefill every field from the stored log, including the dose
+  // exactly as it was recorded - a new record's blank-start default (above)
+  // never applies here.
   useEffect(() => {
     (async () => {
       if (!isEdit || !mealLogId) {
@@ -629,7 +639,6 @@ function CalculatorScreen() {
       setFood(catalogueFood ?? foodFromMeal(log));
       setPortion(log.portion_g);
       setDoseText(num(log.insulin_dose_units));
-      setDoseTouched(true);
       setNote(log.personal_note ?? "");
       setPhoto(log.photo_uri_local);
       setTags(log.tags);
@@ -827,16 +836,13 @@ function CalculatorScreen() {
     });
   }, [food, activeProfile, portion, slot, glucoseMgdl, iob]);
 
-  // Keep the manual dose synced to the estimate until the user edits it. This
-  // is a render-phase update, not a post-commit effect: an effect always
-  // paints one frame with the still-empty field before correcting it, which
-  // is exactly the "Manual Dose opens blank, fills a beat later" jump; doing
-  // it here means React re-renders with the synced value before anything is
-  // ever shown to the user.
-  if (estimate && !doseTouched && lastSyncedDose !== estimate.totalDose) {
-    setLastSyncedDose(estimate.totalDose);
-    setDoseText(num(estimate.totalDose));
-  }
+  // The RAW stored ratio (not estimateInsulin's own 0.1 floor - that floor
+  // only guards its division and is never a real setting): a missing/zero
+  // ratio makes the meal-dose arithmetic meaningless, so the hero and its
+  // breakdown are replaced below rather than showing a number built on it.
+  const rawCarbRatio = activeProfile ? carbRatioForSlot(activeProfile, slot) : null;
+  const carbRatioValid =
+    rawCarbRatio != null && Number.isFinite(rawCarbRatio) && rawCarbRatio > 0;
 
   async function pickPhoto(fromCamera: boolean) {
     const perm = fromCamera
@@ -963,27 +969,19 @@ function CalculatorScreen() {
       if (!showsDose) {
         dose = 0;
       } else if (typedDose == null) {
+        // Without a usable ratio est.totalDose is built on the defensive 0.1
+        // floor (lib/insulin.ts), not a real setting - the dialog drops the
+        // number rather than cite it.
         const proceed = await confirm({
           title: t("calculator.emptyDoseTitle"),
-          message: t("calculator.emptyDoseBody", { n: num(est.totalDose) }),
+          message: carbRatioValid
+            ? t("calculator.emptyDoseBody", { n: num(est.totalDose) })
+            : t("calculator.doseZeroNote"),
           confirmLabel: t("calculator.emptyDoseConfirm"),
           icon: "help-circle-outline",
         });
         if (!proceed) return;
         dose = 0;
-      } else if (!doseTouched && typedDose !== est.totalDose) {
-        // The field still holds the estimate from when the screen opened, and the
-        // re-read active insulin moved it. Show the current figure instead of
-        // storing either number behind the user's back; declining just returns to
-        // the screen, which now displays the refreshed estimate.
-        const proceed = await confirm({
-          title: t("calculator.iobRefreshedTitle"),
-          message: t("calculator.iobRefreshedBody", { n: num(est.totalDose) }),
-          confirmLabel: t("common.save"),
-          icon: "refresh-outline",
-        });
-        if (!proceed) return;
-        dose = est.totalDose;
       } else {
         dose = typedDose;
       }
@@ -1754,6 +1752,8 @@ function CalculatorScreen() {
               </View>
             </GlassCard>
 
+            {showsDose ? <CarbRatioLine slot={slot} /> : null}
+
             {showsDose ? (
               <View
                 className="rounded-2xl p-4 mb-3"
@@ -1813,7 +1813,6 @@ function CalculatorScreen() {
                 <TextInput
                   value={doseText}
                   onChangeText={(s) => {
-                    setDoseTouched(true);
                     setDirty(true);
                     setDoseText(sanitizeNumberText(s, true));
                   }}
@@ -1965,6 +1964,16 @@ function CalculatorScreen() {
                     style={{ flex: 1, maxWidth: 220 }}
                   />
                 </View>
+                {/* No presets for a custom-name entry (foodFromMeal/foodFromTemplate
+                    stand in with id ""), so the chips just stay hidden there. */}
+                {food.id ? (
+                  <PortionPresetChips
+                    foodId={food.id}
+                    value={portion}
+                    onPick={setPortion}
+                    style={{ marginTop: 10 }}
+                  />
+                ) : null}
                 {/* The slider stays a 0-500 g coarse control; typing can exceed it, so
                     clamp only its thumb, never the real portion. */}
                 <Slider
@@ -2045,8 +2054,8 @@ function CalculatorScreen() {
           </GlassCard>
 
           {/* Descriptive notes about the READING itself. Neither is an alarm and
-              neither instructs: they state what the number is, so a low reading
-              that auto-fills a full meal dose is never presented without it. */}
+              neither instructs: they state what the number is, alongside the
+              calculated estimate below. */}
           {glucoseStatus === "low" ? (
             <NoticeCard
               icon="information-circle-outline"
@@ -2067,97 +2076,114 @@ function CalculatorScreen() {
 
           {showsDose ? (
             <>
-              {/* Hero: the calculated number, glowing, with its provenance */}
-              <View
-                className="rounded-2xl p-4 mb-3"
-                style={[
-                  {
-                    borderWidth: 1,
-                    borderColor: withAlpha(THEME.accent, 0.45),
-                    backgroundColor: withAlpha(THEME.accent, 0.12),
-                  },
-                  glow(THEME.accent, 28, 0.45),
-                ]}
-              >
-                <Text
-                  style={{
-                    color: THEME.accent,
-                    fontSize: 11,
-                    letterSpacing: 1.3,
-                    fontWeight: "800",
-                  }}
-                >
-                  {upper(t("calculator.estimatedDose"))}
-                </Text>
+              <CarbRatioLine slot={slot} />
 
-                <View className="items-center mt-1">
-                  <Text
+              {carbRatioValid ? (
+                <>
+                  {/* Hero: the calculated number, glowing, with its provenance */}
+                  <View
+                    className="rounded-2xl p-4 mb-3"
                     style={[
-                      TABULAR,
                       {
-                        color: THEME.accent,
-                        fontSize: 46,
-                        lineHeight: 54,
-                        fontWeight: "800",
-                        textShadowColor: withAlpha(THEME.accent, 0.6),
-                        textShadowRadius: 20,
+                        borderWidth: 1,
+                        borderColor: withAlpha(THEME.accent, 0.45),
+                        backgroundColor: withAlpha(THEME.accent, 0.12),
                       },
+                      glow(THEME.accent, 28, 0.45),
                     ]}
                   >
-                    {heroDose}
-                  </Text>
-                  <Text style={{ color: THEME.muted, fontSize: 12, marginTop: -2 }}>
-                    {t("common.units")}
-                  </Text>
-                </View>
+                    <Text
+                      style={{
+                        color: THEME.accent,
+                        fontSize: 11,
+                        letterSpacing: 1.3,
+                        fontWeight: "800",
+                      }}
+                    >
+                      {upper(t("calculator.estimatedDose"))}
+                    </Text>
 
-                {/* The arithmetic behind the figure, itemised */}
-                <View className="mt-3" style={{ gap: 5 }}>
-                  <Breakdown
-                    label={t("calculator.mealDose")}
-                    value={`${num(estimate.mealDose)} ${t("common.units")}`}
-                  />
-                  {estimate.correctionDose > 0 ? (
-                    <Breakdown
-                      label={t("calculator.correctionDose")}
-                      value={`${num(estimate.correctionDose)} ${t("common.units")}`}
-                    />
-                  ) : null}
-                  {iob > 0 ? (
-                    <Breakdown
-                      label={t("calculator.activeInsulin")}
-                      value={`${num(iob)} ${t("common.units")}`}
-                      tooltip={iobTooltipText}
-                    />
-                  ) : null}
-                  {estimate.iobReduction > 0 ? (
-                    <Breakdown
-                      label={t("calculator.iobReduction")}
-                      value={`-${num(estimate.iobReduction)} ${t("common.units")}`}
-                      tint={GLUCOSE_RICH.target}
-                    />
-                  ) : null}
-                </View>
+                    <View className="items-center mt-1">
+                      <Text
+                        style={[
+                          TABULAR,
+                          {
+                            color: THEME.accent,
+                            fontSize: 46,
+                            lineHeight: 54,
+                            fontWeight: "800",
+                            textShadowColor: withAlpha(THEME.accent, 0.6),
+                            textShadowRadius: 20,
+                          },
+                        ]}
+                      >
+                        {heroDose}
+                      </Text>
+                      <Text style={{ color: THEME.muted, fontSize: 12, marginTop: -2 }}>
+                        {t("common.units")}
+                      </Text>
+                    </View>
 
-                {/* The "adjust it yourself" explanation collapses into a tooltip
-                    so the read-out stays uncluttered (regulation note below is
-                    always visible). */}
-                <View className="flex-row items-center justify-end" style={{ marginTop: 8, gap: 6 }}>
-                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
-                    {t("common.note")}
-                  </Text>
-                  <Tooltip
-                    text={
-                      correctionTarget != null
-                        ? `${t("calculator.overrideHint")}\n\n${t("calculator.correctionTargetNote", {
-                            value: formatGlucose(correctionTarget, unit),
-                            unit: glucoseUnitLabel(unit),
-                          })}`
-                        : t("calculator.overrideHint")
-                    }
-                  />
-                </View>
-              </View>
+                    {/* The arithmetic behind the figure, itemised */}
+                    <View className="mt-3" style={{ gap: 5 }}>
+                      <Breakdown
+                        label={t("calculator.mealDose")}
+                        value={`${num(estimate.mealDose)} ${t("common.units")}`}
+                      />
+                      {estimate.correctionDose > 0 ? (
+                        <Breakdown
+                          label={t("calculator.correctionDose")}
+                          value={`${num(estimate.correctionDose)} ${t("common.units")}`}
+                        />
+                      ) : null}
+                      {iob > 0 ? (
+                        <Breakdown
+                          label={t("calculator.activeInsulin")}
+                          value={`${num(iob)} ${t("common.units")}`}
+                          tooltip={iobTooltipText}
+                        />
+                      ) : null}
+                      {estimate.iobReduction > 0 ? (
+                        <Breakdown
+                          label={t("calculator.iobReduction")}
+                          value={`-${num(estimate.iobReduction)} ${t("common.units")}`}
+                          tint={GLUCOSE_RICH.target}
+                        />
+                      ) : null}
+                    </View>
+
+                    {/* The "adjust it yourself" explanation collapses into a tooltip
+                        so the read-out stays uncluttered (regulation note below is
+                        always visible). */}
+                    <View className="flex-row items-center justify-end" style={{ marginTop: 8, gap: 6 }}>
+                      <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                        {t("common.note")}
+                      </Text>
+                      <Tooltip
+                        text={
+                          correctionTarget != null
+                            ? `${t("calculator.overrideHint")}\n\n${t("calculator.correctionTargetNote", {
+                                value: formatGlucose(correctionTarget, unit),
+                                unit: glucoseUnitLabel(unit),
+                              })}`
+                            : t("calculator.overrideHint")
+                        }
+                      />
+                    </View>
+                  </View>
+                </>
+              ) : (
+                // No usable ratio for this slot (0/unset): the meal-dose
+                // arithmetic has nothing real to divide by, so instead of a
+                // number built on a floor value, this is the same "not set,
+                // tap to fix" state CarbRatioLine itself shows above.
+                <NoticeCard
+                  icon="water-outline"
+                  tint={THEME.accent}
+                  body={t("ratio.notSet")}
+                  onPress={() => router.push("/settings/profile")}
+                />
+              )}
 
               {/* Regulation: a non-advice note accompanies every dose display. */}
               <NoticeCard
@@ -2166,61 +2192,64 @@ function CalculatorScreen() {
                 body={t("calculator.calcNotAdvice")}
               />
 
-              {/* Secondary, non-regulation notices (default ratio in use, ISF
-                  skipped) grouped into one card instead of stacking each as
-                  its own box - a default ratio must still never be mistaken
-                  for the user's own, and a dropped correction is still stated,
-                  not hidden, just no longer in a separate box each. */}
-              <NoticeGroup
-                items={[
-                  ...(activeProfile && !activeProfile.ratios_confirmed
-                    ? [
-                        {
-                          icon: "information-circle-outline" as const,
-                          tint: THEME.accent,
-                          title: t("calculator.defaultRatiosTitle"),
-                          body: t("calculator.defaultRatiosBody"),
-                        },
-                      ]
-                    : []),
-                  ...(estimate.correctionSkipped === "isf_invalid"
-                    ? [
-                        {
-                          icon: "information-circle-outline" as const,
-                          tint: THEME.accent,
-                          body: t("calculator.correctionOffIsf"),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
+              {carbRatioValid ? (
+                <>
+                  {/* Secondary, non-regulation notices (default ratio in use, ISF
+                      skipped) grouped into one card instead of stacking each as
+                      its own box - a default ratio must still never be mistaken
+                      for the user's own, and a dropped correction is still stated,
+                      not hidden, just no longer in a separate box each. */}
+                  <NoticeGroup
+                    items={[
+                      ...(activeProfile && !activeProfile.ratios_confirmed
+                        ? [
+                            {
+                              icon: "information-circle-outline" as const,
+                              tint: THEME.accent,
+                              title: t("calculator.defaultRatiosTitle"),
+                              body: t("calculator.defaultRatiosBody"),
+                            },
+                          ]
+                        : []),
+                      ...(estimate.correctionSkipped === "isf_invalid"
+                        ? [
+                            {
+                              icon: "information-circle-outline" as const,
+                              tint: THEME.accent,
+                              body: t("calculator.correctionOffIsf"),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
 
-              {/* Plausibility warnings: non-blocking; the dose stays editable */}
-              {estimate.warnings.map((w) => (
-                <NoticeCard
-                  key={w}
-                  icon="alert-circle-outline"
-                  tint={GLUCOSE_RICH.low}
-                  body={t(`calculator.${WARN_KEY[w]}`)}
-                />
-              ))}
+                  {/* Plausibility warnings: non-blocking; the dose stays editable */}
+                  {estimate.warnings.map((w) => (
+                    <NoticeCard
+                      key={w}
+                      icon="alert-circle-outline"
+                      tint={GLUCOSE_RICH.low}
+                      body={t(`calculator.${WARN_KEY[w]}`)}
+                    />
+                  ))}
 
-              <Pressable
-                onPress={() => router.push("/sources")}
-                hitSlop={8}
-                className="flex-row items-center mb-4"
-              >
-                <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />
-                <Text style={{ color: THEME.accent, fontSize: 12, marginLeft: 5 }}>
-                  {t("sources.calcLink")}
-                </Text>
-              </Pressable>
+                  <Pressable
+                    onPress={() => router.push("/sources")}
+                    hitSlop={8}
+                    className="flex-row items-center mb-4"
+                  >
+                    <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />
+                    <Text style={{ color: THEME.accent, fontSize: 12, marginLeft: 5 }}>
+                      {t("sources.calcLink")}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
 
               <DetailLabel>{t("calculator.manualDose")}</DetailLabel>
               <TextInput
                 value={doseText}
                 onChangeText={(s) => {
-                  setDoseTouched(true);
                   setDirty(true);
                   setDoseText(sanitizeNumberText(s, true));
                 }}
@@ -2233,12 +2262,19 @@ function CalculatorScreen() {
               />
               {/* What the save will store, spelled out while the field is still
                   in front of the user - an empty field is not a value, and a
-                  typed 0 is a real record of "no insulin". */}
+                  typed 0 is a real record of "no insulin". Without a usable
+                  ratio there is no estimate worth citing, so this falls back to
+                  the same plain "0 units, no injection" wording the typed-0
+                  branch already uses. */}
               {typedDose == null ? (
                 <NoticeCard
                   icon="information-circle-outline"
                   tint={THEME.accent}
-                  body={t("calculator.doseEmptyNote", { n: num(estimate.totalDose) })}
+                  body={
+                    carbRatioValid
+                      ? t("calculator.doseEmptyNote", { n: num(estimate.totalDose) })
+                      : t("calculator.doseZeroNote")
+                  }
                 />
               ) : typedDose === 0 ? (
                 <NoticeCard

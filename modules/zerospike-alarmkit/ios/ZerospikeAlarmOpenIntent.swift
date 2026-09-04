@@ -29,6 +29,13 @@ let zerospikeAlarmAppGroup = "group.com.greeneyeapp.zerospike"
 /// coming forward to read it.
 let zerospikeAlarmRouteKey = "zerospike.pendingAlarmRoute"
 
+/// The alarm's own identity string ("zerospike-alarm-<reminderId>"), parked
+/// next to the route above so the app can tell WHICH reminder rang, not just
+/// which screen to open. Written BEFORE the route key and cleared with it, so
+/// a route that is visible to the reader always has its id already in place
+/// and an id can never outlive the route it belongs to.
+let zerospikeAlarmIdKey = "zerospike.pendingAlarmId"
+
 @available(iOS 26.0, *)
 struct ZerospikeAlarmOpenIntent: LiveActivityIntent {
   static var title: LocalizedStringResource = "Open zerospike"
@@ -40,15 +47,32 @@ struct ZerospikeAlarmOpenIntent: LiveActivityIntent {
   @Parameter(title: "Route")
   var route: String
 
+  /// The scheduling side's own identity string for this alarm
+  /// ("zerospike-alarm-<reminderId>", see alarmIdentifier in
+  /// lib/services/notifications.ts). Optional on purpose: an alarm scheduled by
+  /// a build that predates this parameter decodes with nothing here, and that
+  /// case has to keep opening the app exactly as it did before.
+  @Parameter(title: "Alarm")
+  var alarmId: String?
+
   init() {}
 
-  init(route: String) {
+  init(route: String, alarmId: String?) {
     self.route = route
+    self.alarmId = alarmId
   }
 
   func perform() async throws -> some IntentResult {
-    UserDefaults(suiteName: zerospikeAlarmAppGroup)?
-      .set(route, forKey: zerospikeAlarmRouteKey)
+    guard let defaults = UserDefaults(suiteName: zerospikeAlarmAppGroup) else {
+      return .result()
+    }
+    if let alarmId, !alarmId.isEmpty {
+      defaults.set(alarmId, forKey: zerospikeAlarmIdKey)
+    } else {
+      // An alarm with no identity must not inherit the previous alarm's one.
+      defaults.removeObject(forKey: zerospikeAlarmIdKey)
+    }
+    defaults.set(route, forKey: zerospikeAlarmRouteKey)
     return .result()
   }
 }

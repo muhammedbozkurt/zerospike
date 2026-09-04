@@ -59,7 +59,7 @@ function makeFeedDb(days: number): DatabaseSync {
       name TEXT, note TEXT, created_at INTEGER NOT NULL);
     CREATE TABLE foods (
       id TEXT PRIMARY KEY NOT NULL, name_tr TEXT, name_en TEXT, name_de TEXT,
-      name_es TEXT, name_fr TEXT, category TEXT);
+      name_es TEXT, name_fr TEXT, name_it TEXT, name_pt TEXT, name_ar TEXT, name_ja TEXT, category TEXT);
     CREATE TABLE sugar_logs (
       id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, glucose_level_mgdl INTEGER,
       period_tag TEXT, source TEXT, logged_at TEXT NOT NULL, tags TEXT, healthkit_uuid TEXT);
@@ -72,7 +72,7 @@ function makeFeedDb(days: number): DatabaseSync {
       dose_units REAL, insulin_type TEXT, bolus_kind TEXT, meal_log_id TEXT, note TEXT,
       source TEXT, logged_at TEXT NOT NULL, tags TEXT,
       insulin_product_id TEXT, insulin_product_other TEXT);
-    INSERT INTO foods VALUES ('f1','Pilav','Rice','Reis','Arroz','Riz','grains');
+    INSERT INTO foods VALUES ('f1','Pilav','Rice','Reis','Arroz','Riz',NULL,NULL,NULL,NULL,'grains');
   `);
   const sugar = db.prepare(
     `INSERT INTO sugar_logs VALUES (?, ?, ?, 'fasting', 'manual', ?, '[]', NULL);`

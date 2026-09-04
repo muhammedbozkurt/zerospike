@@ -108,6 +108,10 @@ interface FeedRow {
   name_de: string | null;
   name_es: string | null;
   name_fr: string | null;
+  name_it: string | null;
+  name_pt: string | null;
+  name_ar: string | null;
+  name_ja: string | null;
   category: string | null;
   // injection
   site: InjectionSite | null;
@@ -211,6 +215,10 @@ export async function getJournal(
           name_de: r.name_de ?? "",
           name_es: r.name_es ?? "",
           name_fr: r.name_fr ?? "",
+          name_it: r.name_it,
+          name_pt: r.name_pt,
+          name_ar: r.name_ar,
+          name_ja: r.name_ja,
         } as Food,
         lang
       );

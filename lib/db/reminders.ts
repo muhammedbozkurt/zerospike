@@ -125,6 +125,32 @@ export async function getReminder(id: string): Promise<Reminder | null> {
   );
 }
 
+/**
+ * Every ENABLED basal reminder, deliberately not profile-scoped by default
+ * (hub card B3): a ringing AlarmKit alarm hands back no reminder id at all
+ * (native gap, see app/_layout.tsx's alarm consume()), so
+ * lib/services/basalConfirm.ts's resolveBasalReminderByTime has to search
+ * every profile's own basal row by TIME instead, and can only do that with
+ * every candidate in hand up front. `profileId` (hub card B4) narrows the
+ * same read to one profile's own row, for the caller that already KNOWS
+ * which profile a reminderId-less open is about (task package A's dashboard
+ * button) and only needs its time, not a search across every profile. A
+ * disabled row is excluded either way, since it cannot be the row that just
+ * rang. Read-only.
+ */
+export async function listAllBasalReminders(profileId?: string): Promise<Reminder[]> {
+  const db = await getDb();
+  if (profileId) {
+    return db.getAllAsync<Reminder>(
+      "SELECT * FROM reminders WHERE type = 'basal' AND enabled = 1 AND profile_id = ?;",
+      [profileId]
+    );
+  }
+  return db.getAllAsync<Reminder>(
+    "SELECT * FROM reminders WHERE type = 'basal' AND enabled = 1;"
+  );
+}
+
 export async function countReminders(profileId?: string): Promise<number> {
   const db = await getDb();
   const id = await resolveProfileId(profileId);

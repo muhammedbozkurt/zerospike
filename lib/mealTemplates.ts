@@ -33,10 +33,21 @@ export type TemplateItemCore = Pick<
 
 /** The live catalogue row an item's food_id resolves to (null when it is gone).
  *  `category` is optional because it only feeds the row's plate emoji: a caller
- *  that has no use for it (the carb rule never reads it) may leave it out. */
+ *  that has no use for it (the carb rule never reads it) may leave it out.
+ *  name_it/pt/ar/ja are optional/nullable like on Food itself (schema v23):
+ *  foodName() falls back to name_en/name_tr when a caller omits them. */
 export type ItemFood = Pick<
   Food,
-  "carb_100g" | "name_tr" | "name_en" | "name_de" | "name_es" | "name_fr"
+  | "carb_100g"
+  | "name_tr"
+  | "name_en"
+  | "name_de"
+  | "name_es"
+  | "name_fr"
+  | "name_it"
+  | "name_pt"
+  | "name_ar"
+  | "name_ja"
 > & { category?: string | null };
 
 /** A stored item together with whatever its food_id resolves to right now. */

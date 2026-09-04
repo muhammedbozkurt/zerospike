@@ -18,7 +18,9 @@ import {
   migrateToV20,
   migrateToV21,
   migrateToV22,
+  migrateToV23,
   missingColumns,
+  ensureFoodNameColumns,
   stampSchemaVersion,
 } from "./migrations";
 import { V13_CREATE } from "./v13Sql";
@@ -35,9 +37,17 @@ import {
 } from "./v21Sql";
 import { V22_PERIOD_TAG_LIST } from "./v22Sql";
 import {
+  V23_CREATE_FOOD_PORTIONS,
+  V23_CREATE_FTS,
+  V23_CREATE_TRIGGERS,
+} from "./v23Sql";
+import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
+  selectFoodsToUpdate,
   selectMissingFoods,
+  type ExistingSeedFoodRow,
+  type SeedFoodUpdate,
 } from "./seedVersion";
 import type { SeedFood } from "./seed";
 import i18n from "../i18n";
@@ -48,7 +58,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -133,16 +143,36 @@ export async function initDatabase(): Promise<void> {
     } catch {
       // column already exists, ignore
     }
-    await db.execAsync("DELETE FROM foods WHERE is_custom = 0;");
-    seededNow = (await seedFoods(db)) || seededNow;
-    // These early steps have no transaction of their own, so the stamp follows
-    // the step instead of committing with it. That is enough here and only here:
-    // each one is a guarded ALTER, a CREATE IF NOT EXISTS or a DROP IF EXISTS
-    // that rebuilds no table and deletes no user row (the DELETE above reaches
-    // only seeded catalog rows, which the same step re-inserts). A kill between
-    // the step and its stamp therefore costs a repeat of the step on the next
-    // launch, never a row. The rebuild steps from v8 on cannot say that, which is
-    // why their stamps are inside their transactions.
+    // The re-seed below binds all ten name columns (see insertSeedFoods), so a
+    // v1 table - created before schema v23 - must gain name_it/name_pt/name_ar/
+    // name_ja BEFORE the DELETE that follows, or the INSERT throws "no such
+    // column" with the DELETE already committed: the catalog is gone with
+    // nothing to replace it, favorites/meal_logs pointing at it are cleared by
+    // their own foreign keys, and user_version never reaches 2 - a permanent
+    // brick this step used to hit on every launch of an untouched v1 install
+    // (see ensureFoodNameColumns in ./migrations).
+    await ensureFoodNameColumns(db);
+    // DELETE + re-seed now share ONE transaction - they used to be two
+    // separately auto-committed statements, so an error thrown by the second
+    // (the column-mismatch above, or anything else) left the first permanently
+    // committed with no catalog behind it. A failure here now rolls both back,
+    // so the next launch retries the whole step against foods exactly as it
+    // found them instead of against an already-emptied table.
+    const { SEED_FOODS } = await import("./seed");
+    await db.withTransactionAsync(async () => {
+      await db.execAsync("DELETE FROM foods WHERE is_custom = 0;");
+      await insertSeedFoodsWithinTransaction(db, SEED_FOODS);
+    });
+    seededNow = true;
+    // These early steps have no transaction of their own around the STAMP
+    // (the DELETE + re-seed above now has one of its own - see above), so the
+    // stamp follows the step instead of committing with it. That is enough
+    // here and only here: each one is a guarded ALTER, a CREATE IF NOT EXISTS,
+    // a DROP IF EXISTS or - this one - a transaction that has already
+    // committed or fully rolled back by the time this line runs. A kill
+    // between the step and its stamp therefore costs a repeat of the step on
+    // the next launch, never a row. The rebuild steps from v8 on cannot say
+    // that, which is why their stamps are inside their transactions.
     await stampSchemaVersion(db, 2);
   }
 
@@ -311,6 +341,17 @@ export async function initDatabase(): Promise<void> {
     await migrateToV22(db);
   }
 
+  // v22 → v23: four more food name columns (name_it/name_pt/name_ar/name_ja)
+  // and food_portions, the per-food preset serving-size list, plus a rebuild
+  // of foods_fts and its three sync triggers to index the new columns - FTS5
+  // has no ALTER TABLE ADD COLUMN (see ./v23Sql + migrateToV23). Two guarded
+  // ADD COLUMNs and one CREATE TABLE IF NOT EXISTS touch no existing row; the
+  // FTS rebuild is a drop + recreate + full repopulate from `foods`, inside
+  // the same transaction as everything else in this step.
+  if (currentVersion >= 1 && currentVersion < 23) {
+    await migrateToV23(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -372,6 +413,14 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       name_de TEXT NOT NULL DEFAULT '',
       name_es TEXT NOT NULL DEFAULT '',
       name_fr TEXT NOT NULL DEFAULT '',
+      -- Schema v23, all nullable (unlike the five above): see ./v23Sql. Null
+      -- for a seeded row the top-up has not filled yet and for every custom
+      -- or OFF-cached food; foodName() and the search queries fall back to
+      -- name_en.
+      name_it TEXT,
+      name_pt TEXT,
+      name_ar TEXT,
+      name_ja TEXT,
       aliases_json TEXT NOT NULL DEFAULT '[]',
       category TEXT NOT NULL DEFAULT 'other',
       barcode TEXT,
@@ -447,41 +496,30 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   `);
 
   // The user's own icon for an editable food (schema v20, see ./v20Sql). Same
-  // statement, in the same order, that a migrated install's migrateToV20 runs,
-  // so both paths end up with byte-identical foods DDL - and behind the same
+  // statement that a migrated install's migrateToV20 runs, behind the same
   // column guard (missingColumns), so an install KILLED partway through this
   // function can replay it on the next launch instead of dying on a duplicate
-  // column forever.
+  // column forever. NOT byte-identical DDL with a migrated install: this path
+  // creates name_it/name_pt/name_ar/name_ja inline (above, before emoji),
+  // while a migrated install ADDs them later via migrateToV23, so the two
+  // foods tables end up with the same column SET and types but a different
+  // column ORDER (see rd1-audit.ts's T4 "column SET" check).
+
   for (const col of await missingColumns(db, "foods", V20_FOODS_COLUMNS)) {
     await db.execAsync(`ALTER TABLE foods ADD COLUMN ${col.name} ${col.type};`);
   }
 
-  // FTS5 across all five language columns + aliases, keyed by the food UUID.
-  // Typing "rice", "reis" or "pilav" all match the same row.
-  await db.execAsync(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS foods_fts USING fts5(
-      food_id UNINDEXED,
-      name_tr, name_en, name_de, name_es, name_fr, aliases, brand,
-      tokenize = 'unicode61 remove_diacritics 2'
-    );
+  // FTS5 across all nine language columns + aliases, keyed by the food UUID.
+  // Typing "rice", "reis" or "pilav" all match the same row. Same statements
+  // the v22 → v23 migration runs against an existing install (see ./v23Sql),
+  // so a fresh install and a migrated one end up with byte-identical DDL.
+  await db.execAsync(V23_CREATE_FTS);
+  await db.execAsync(V23_CREATE_TRIGGERS);
 
-    CREATE TRIGGER IF NOT EXISTS foods_ai AFTER INSERT ON foods BEGIN
-      INSERT INTO foods_fts (food_id, name_tr, name_en, name_de, name_es, name_fr, aliases, brand)
-      VALUES (new.id, new.name_tr, new.name_en, new.name_de, new.name_es, new.name_fr,
-              new.aliases_json, COALESCE(new.brand_name, ''));
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS foods_ad AFTER DELETE ON foods BEGIN
-      DELETE FROM foods_fts WHERE food_id = old.id;
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS foods_au AFTER UPDATE ON foods BEGIN
-      DELETE FROM foods_fts WHERE food_id = old.id;
-      INSERT INTO foods_fts (food_id, name_tr, name_en, name_de, name_es, name_fr, aliases, brand)
-      VALUES (new.id, new.name_tr, new.name_en, new.name_de, new.name_es, new.name_fr,
-              new.aliases_json, COALESCE(new.brand_name, ''));
-    END;
-  `);
+  // Portion presets (schema v23, see ./v23Sql). Create-only; a fresh install
+  // seeds nothing here (the seed side inserts a food's own presets alongside
+  // it - see insertSeedFoods below).
+  await db.execAsync(V23_CREATE_FOOD_PORTIONS);
 
   // Repeating-meal templates (schema v13). The SAME statements the v12 → v13
   // migration runs, so a fresh install and a migrated one are the same shape.
@@ -709,51 +747,88 @@ const SEED_BATCH_ROWS = 50;
  * Inserts catalog rows. One multi-row INSERT per batch instead of one statement
  * per food: each of those was its own statement parse plus its own round trip
  * into the native layer, which is the bulk of a first launch's database time.
- * One transaction, and the foods_ai FTS trigger fires per row exactly as before.
+ * The foods_ai FTS trigger fires per row exactly as before.
  *
  * Only ever INSERTs. Nothing here updates or deletes, so no row the user has
  * touched can be reached by it.
+ *
+ * Callers must already be inside a transaction (SQLite has no nested
+ * BEGIN/COMMIT): insertSeedFoods below wraps this in its own for its two
+ * call sites, while the v1 → v2 step in initDatabase calls this directly so
+ * it can share ONE transaction with the DELETE that precedes it.
+ *
+ * Every column this binds must already exist on `foods` - in particular the
+ * four v23 name columns - so any caller reachable before migrateToV23 has run
+ * must call ensureFoodNameColumns (./migrations) first, or this throws
+ * "no such column" (see the v1 → v2 step for why that used to brick an
+ * install).
  */
-async function insertSeedFoods(
+async function insertSeedFoodsWithinTransaction(
   db: SQLite.SQLiteDatabase,
   foods: SeedFood[]
 ): Promise<void> {
   const now = new Date().toISOString();
 
-  await db.withTransactionAsync(async () => {
-    for (let start = 0; start < foods.length; start += SEED_BATCH_ROWS) {
-      const batch = foods.slice(start, start + SEED_BATCH_ROWS);
-      const values: (string | number)[] = [];
-      for (const f of batch) {
-        values.push(
-          uuid(),
-          f.tr,
-          f.en,
-          f.de,
-          f.es,
-          f.fr,
-          buildAliases([f.tr, f.en, f.de, f.es, f.fr]),
-          f.cat,
-          f.carb,
-          f.gi,
-          Math.round((f.gi * f.carb) / 100),
-          f.portion ?? 100,
-          now
-        );
-      }
-      const rows = batch
-        .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, 0, ?)")
-        .join(", ");
-      await db.runAsync(
-        `INSERT INTO foods
-          (id, name_tr, name_en, name_de, name_es, name_fr, aliases_json,
-           category, barcode, carb_100g, glycemic_index, glycemic_load,
-           portion_size_g, brand_name, custom_notes, is_custom, created_at)
-         VALUES ${rows};`,
-        values
+  for (let start = 0; start < foods.length; start += SEED_BATCH_ROWS) {
+    const batch = foods.slice(start, start + SEED_BATCH_ROWS);
+    const values: (string | number | null)[] = [];
+    const ids: string[] = [];
+    for (const f of batch) {
+      const id = uuid();
+      ids.push(id);
+      values.push(
+        id,
+        f.tr,
+        f.en,
+        f.de,
+        f.es,
+        f.fr,
+        f.it ?? null,
+        f.pt ?? null,
+        f.ar ?? null,
+        f.ja ?? null,
+        buildAliases([f.tr, f.en, f.de, f.es, f.fr]),
+        f.cat,
+        f.carb,
+        f.gi,
+        Math.round((f.gi * f.carb) / 100),
+        f.portion ?? 100,
+        now
       );
     }
-  });
+    const rows = batch
+      .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, 0, ?)")
+      .join(", ");
+    await db.runAsync(
+      `INSERT INTO foods
+        (id, name_tr, name_en, name_de, name_es, name_fr,
+         name_it, name_pt, name_ar, name_ja, aliases_json,
+         category, barcode, carb_100g, glycemic_index, glycemic_load,
+         portion_size_g, brand_name, custom_notes, is_custom, created_at)
+       VALUES ${rows};`,
+      values
+    );
+
+    for (let i = 0; i < batch.length; i++) {
+      const portions = batch[i].portions;
+      if (!portions || portions.length === 0) continue;
+      const foodId = ids[i];
+      for (let s = 0; s < portions.length; s++) {
+        const [labelKey, grams] = portions[s];
+        await db.runAsync(
+          "INSERT INTO food_portions (food_id, label_key, grams, sort) VALUES (?, ?, ?, ?);",
+          [foodId, labelKey, grams, s]
+        );
+      }
+    }
+  }
+}
+
+async function insertSeedFoods(
+  db: SQLite.SQLiteDatabase,
+  foods: SeedFood[]
+): Promise<void> {
+  await db.withTransactionAsync(() => insertSeedFoodsWithinTransaction(db, foods));
 }
 
 /** True when this call actually wrote the catalog. */
@@ -795,10 +870,17 @@ async function readSeedCatalogVersion(db: SQLite.SQLiteDatabase): Promise<number
  *
  * What it will not do, in order of how much it would cost the user to get wrong:
  *
- *   - It never UPDATEs and never DELETEs. Every statement it runs is an INSERT,
- *     so a food the user edited, renamed or corrected the carb value of cannot be
- *     reached by it, and neither can their own foods (is_custom = 1) or a cached
- *     barcode result.
+ *   - It only ever UPDATEs a seeded row that is STILL seeded (is_custom = 0 AND
+ *     source IS NULL - see selectFoodsToUpdate in ./seedVersion), matched by
+ *     English name, and only the columns that actually differ from the catalog
+ *     (a corrected carb figure, a fixed translation, a new it/pt/ar/ja name or
+ *     preset list). A seeded row can never BECOME custom or 'off' by the user
+ *     editing it: updateFood (./foods.ts) only accepts a row that is already
+ *     is_custom = 1 or source = 'off', so a seed row's own is_custom/source
+ *     never changes - the user's own foods (is_custom = 1) and a cached
+ *     barcode result (source = 'off') simply were never in this set to begin
+ *     with. Every INSERT this function runs is a brand-new row, never a
+ *     rewrite of an existing one.
  *   - It skips any catalog food whose English name already exists in the table,
  *     matched case-insensitively against ALL rows - including the user's own. A
  *     user who long ago typed in the food we are now shipping keeps theirs, and
@@ -831,14 +913,24 @@ async function syncSeedCatalog(
 
     const { SEED_FOODS } = await import("./seed");
 
-    const rows = await db.getAllAsync<{ name_en: string | null }>(
-      "SELECT name_en FROM foods;"
+    // ALL rows, not just seeded ones: selectMissingFoods matches against the
+    // user's own foods too (see its own doc), and selectFoodsToUpdate does its
+    // own is_custom/source filtering in JS - see ./seedVersion.
+    const rows = await db.getAllAsync<ExistingSeedFoodRow>(
+      `SELECT id, name_en, name_tr, name_de, name_es, name_fr,
+              name_it, name_pt, name_ar, name_ja,
+              carb_100g, glycemic_index, portion_size_g, is_custom, source
+         FROM foods;`
     );
+
     const missing = selectMissingFoods(
       SEED_FOODS,
       rows.map((r) => r.name_en)
     );
     if (missing.length > 0) await insertSeedFoods(db, missing);
+
+    const updates = selectFoodsToUpdate(SEED_FOODS, rows);
+    if (updates.length > 0) await applySeedFoodUpdates(db, updates);
 
     await db.runAsync(V14_WRITE_META, [
       SEED_CATALOG_VERSION_KEY,
@@ -847,6 +939,63 @@ async function syncSeedCatalog(
   } catch {
     // Best-effort: the catalog stays as it was and the next launch retries.
   }
+}
+
+/**
+ * Applies the pending changes selectFoodsToUpdate (./seedVersion) found: an
+ * UPDATE of only the columns that actually differ, per row, plus a
+ * food_portions replace where the catalog gave the food a preset list. The
+ * WHERE clause repeats the is_custom = 0 AND source IS NULL guard the caller
+ * already filtered on - defense in depth, so a bug in that filter can never
+ * turn into a write onto a row the user has made their own.
+ */
+async function applySeedFoodUpdates(
+  db: SQLite.SQLiteDatabase,
+  updates: SeedFoodUpdate[]
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const u of updates) {
+      const fields: string[] = [];
+      const values: (string | number)[] = [];
+      const set = (column: string, value: string | number | undefined) => {
+        if (value === undefined) return;
+        fields.push(`${column} = ?`);
+        values.push(value);
+      };
+      set("name_tr", u.name_tr);
+      set("name_de", u.name_de);
+      set("name_es", u.name_es);
+      set("name_fr", u.name_fr);
+      set("name_it", u.name_it);
+      set("name_pt", u.name_pt);
+      set("name_ar", u.name_ar);
+      set("name_ja", u.name_ja);
+      set("carb_100g", u.carb_100g);
+      set("glycemic_index", u.glycemic_index);
+      set("glycemic_load", u.glycemic_load);
+      set("portion_size_g", u.portion_size_g);
+
+      if (fields.length > 0) {
+        values.push(u.id);
+        await db.runAsync(
+          `UPDATE foods SET ${fields.join(", ")}
+             WHERE id = ? AND is_custom = 0 AND source IS NULL;`,
+          values
+        );
+      }
+
+      if (u.portions && u.portions.length > 0) {
+        await db.runAsync("DELETE FROM food_portions WHERE food_id = ?;", [u.id]);
+        for (let i = 0; i < u.portions.length; i++) {
+          const [labelKey, grams] = u.portions[i];
+          await db.runAsync(
+            "INSERT INTO food_portions (food_id, label_key, grams, sort) VALUES (?, ?, ?, ?);",
+            [u.id, labelKey, grams, i]
+          );
+        }
+      }
+    }
+  });
 }
 
 /**

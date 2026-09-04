@@ -47,6 +47,7 @@ import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { Field, Segmented } from "../components/ui";
 import { DirIcon } from "../components/DirIcon";
 import { Stepper } from "../components/Stepper";
+import { PortionPresetChips } from "../components/PortionPresetChips";
 import { FoodRow } from "../components/FoodRow";
 import { FoodPlate } from "../components/FoodPlate";
 import { EmptyState } from "../components/EmptyState";
@@ -552,18 +553,29 @@ function MealTemplateScreen() {
           {t("templates.fixedCarbs")}: {num(item.carbs_g)} {t("common.grams")}
         </Text>
       ) : (
-        <Stepper
-          value={item.portion_g}
-          onChange={(v) => setItemPortion(item.id, v)}
-          step={5}
-          longStep={25}
-          min={0}
-          max={2000}
-          decimals={0}
-          suffix={t("common.grams")}
-          accessibilityLabel={`${t("calculator.portion")}, ${item.name}`}
-          style={{ marginTop: 8 }}
-        />
+        <>
+          <Stepper
+            value={item.portion_g}
+            onChange={(v) => setItemPortion(item.id, v)}
+            step={5}
+            longStep={25}
+            min={0}
+            max={2000}
+            decimals={0}
+            suffix={t("common.grams")}
+            accessibilityLabel={`${t("calculator.portion")}, ${item.name}`}
+            style={{ marginTop: 8 }}
+          />
+          {/* No presets for a typed-name item (no food_id to look them up by). */}
+          {item.food_id ? (
+            <PortionPresetChips
+              foodId={item.food_id}
+              value={item.portion_g}
+              onPick={(g) => setItemPortion(item.id, g)}
+              style={{ marginTop: 8 }}
+            />
+          ) : null}
+        </>
       )}
     </View>
   );

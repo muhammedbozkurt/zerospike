@@ -574,8 +574,8 @@ section("O. source guards (data scope, profile hand-over, input filters)");
     /calculator\.emptyDoseTitle/.test(calc) && /calculator\.emptyDoseBody/.test(calc)
   );
   ok(
-    "a refreshed estimate is shown, not stored silently",
-    /calculator\.iobRefreshedBody/.test(calc)
+    "the applied dose field is never auto-filled from the estimate",
+    !/calculator\.iobRefreshedBody/.test(calc) && !/lastSyncedDose/.test(calc)
   );
 
   for (const rel of ["components/Stepper.tsx", "components/RangeInput.tsx"]) {

@@ -678,6 +678,7 @@ export default function InjectionScreen() {
           <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>
             {formatTime(inj.logged_at)}
             {inj.source === "calculator" ? ` · ${t("injection.fromCalculator")}` : ""}
+            {inj.source === "reminder" ? ` · ${t("report.fromReminder")}` : ""}
           </Text>
         </View>
         <DirIcon name="chevron-forward" size={16} color={THEME.muted} />

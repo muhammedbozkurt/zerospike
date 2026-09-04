@@ -387,6 +387,14 @@ export function Reveal({
                 />
               );
             })}
+            {/* Descriptive only, and only next to a basal row that is really
+                there: this states what the reminder's own tap already does,
+                never a new promise of its own. */}
+            {plan.some((item) => item.kind === "basal") ? (
+              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 16 }}>
+                {t("onboarding.revealBasalTip")}
+              </Text>
+            ) : null}
           </GlassCard>
         </FadeSlideIn>
       </ScrollView>

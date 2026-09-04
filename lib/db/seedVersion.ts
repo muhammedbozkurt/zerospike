@@ -14,13 +14,18 @@
  *      marker report 0, which is treated the same as 1 for our purposes since
  *      the top-up is keyed on names, not on the number)
  *   2  the expansion to 1152 foods
+ *   3  the name_it/name_pt/name_ar/name_ja + food_portions schema (v23); also
+ *      the version that makes syncSeedCatalog (./index.ts) start comparing
+ *      every already-seeded row against the catalog's own current values, not
+ *      just inserting what is missing - see selectFoodsToUpdate below.
  */
 
 // A type-only import: erased at build time, so reading this module never pulls
 // the catalog itself into memory. That is the whole point of the split.
+import type { PortionLabelKey } from "./types";
 import type { SeedFood } from "./seed";
 
-export const SEED_CATALOG_VERSION = 2;
+export const SEED_CATALOG_VERSION = 3;
 
 /** The app_meta key the number above is stored under (schema v14). */
 export const SEED_CATALOG_VERSION_KEY = "seed_catalog_version";
@@ -94,4 +99,140 @@ export function selectMissingFoods(
     if (renamedTo) known.add(renamedTo);
   }
   return catalog.filter((f) => !known.has(seedNameKey(f.en)));
+}
+
+/** The `foods` columns selectFoodsToUpdate needs to decide whether a row is
+ *  still what the catalog says it should be. Pulled from ALL rows by the
+ *  caller (like selectMissingFoods above), never from a pre-filtered query:
+ *  the is_custom/source check below is what excludes an edited row, done in
+ *  JS so it stays testable without the native SQLite module. */
+export interface ExistingSeedFoodRow {
+  id: string;
+  name_en: string | null;
+  name_tr: string;
+  name_de: string;
+  name_es: string;
+  name_fr: string;
+  name_it: string | null;
+  name_pt: string | null;
+  name_ar: string | null;
+  name_ja: string | null;
+  carb_100g: number;
+  glycemic_index: number;
+  portion_size_g: number;
+  is_custom: number;
+  source: string | null;
+}
+
+/** A pending change to one already-seeded row; only the fields that actually
+ *  differ from the catalog are present, so the caller's UPDATE only ever
+ *  touches what changed. */
+export interface SeedFoodUpdate {
+  id: string;
+  name_tr?: string;
+  name_de?: string;
+  name_es?: string;
+  name_fr?: string;
+  name_it?: string;
+  name_pt?: string;
+  name_ar?: string;
+  name_ja?: string;
+  carb_100g?: number;
+  glycemic_index?: number;
+  glycemic_load?: number;
+  portion_size_g?: number;
+  /** Present only when the catalog gives this food a preset list; the caller
+   *  replaces the food's whole food_portions set with it (lib/db/foods.ts
+   *  replacePortions), unconditionally - a preset has no identity of its own
+   *  to diff against the stored set field by field. */
+  portions?: ReadonlyArray<readonly [PortionLabelKey, number]>;
+}
+
+/**
+ * Which already-seeded rows need to catch up with a catalog value that
+ * changed since they were inserted (a corrected carb figure, a fixed
+ * translation, a newly-added it/pt/ar/ja name or preset list) - the other
+ * half of what a catalog version bump can mean, alongside selectMissingFoods'
+ * brand-new rows.
+ *
+ * Scoped to is_custom = 0 AND source IS NULL - a row the user has renamed,
+ * corrected or turned into their own is neither anymore, so it drops out of
+ * this set the moment they touch it and this function can never reach it.
+ * Matched the same way selectMissingFoods matches, by name_en (RENAMED_EN is
+ * not consulted here: a renamed row's OLD name_en no longer equals any
+ * catalog entry's `en`, so it simply stops matching anything, exactly like an
+ * install that has not been topped up yet for that food's insert side).
+ */
+export function selectFoodsToUpdate(
+  catalog: readonly SeedFood[],
+  existingRows: readonly ExistingSeedFoodRow[]
+): SeedFoodUpdate[] {
+  const byNameEn = new Map<string, SeedFood>();
+  for (const f of catalog) byNameEn.set(seedNameKey(f.en), f);
+
+  const updates: SeedFoodUpdate[] = [];
+  for (const row of existingRows) {
+    if (row.is_custom !== 0 || row.source !== null) continue;
+    const key = seedNameKey(row.name_en ?? "");
+    if (!key) continue;
+    const seed = byNameEn.get(key);
+    if (!seed) continue;
+
+    const update: SeedFoodUpdate = { id: row.id };
+    let changed = false;
+
+    if (seed.tr !== row.name_tr) {
+      update.name_tr = seed.tr;
+      changed = true;
+    }
+    if (seed.de !== row.name_de) {
+      update.name_de = seed.de;
+      changed = true;
+    }
+    if (seed.es !== row.name_es) {
+      update.name_es = seed.es;
+      changed = true;
+    }
+    if (seed.fr !== row.name_fr) {
+      update.name_fr = seed.fr;
+      changed = true;
+    }
+    if (typeof seed.it === "string" && seed.it !== row.name_it) {
+      update.name_it = seed.it;
+      changed = true;
+    }
+    if (typeof seed.pt === "string" && seed.pt !== row.name_pt) {
+      update.name_pt = seed.pt;
+      changed = true;
+    }
+    if (typeof seed.ar === "string" && seed.ar !== row.name_ar) {
+      update.name_ar = seed.ar;
+      changed = true;
+    }
+    if (typeof seed.ja === "string" && seed.ja !== row.name_ja) {
+      update.name_ja = seed.ja;
+      changed = true;
+    }
+
+    if (seed.carb !== row.carb_100g || seed.gi !== row.glycemic_index) {
+      update.carb_100g = seed.carb;
+      update.glycemic_index = seed.gi;
+      update.glycemic_load = Math.round((seed.gi * seed.carb) / 100);
+      changed = true;
+    }
+
+    const seedPortionSize = seed.portion ?? 100;
+    if (seedPortionSize !== row.portion_size_g) {
+      update.portion_size_g = seedPortionSize;
+      changed = true;
+    }
+
+    if (seed.portions && seed.portions.length > 0) {
+      update.portions = seed.portions;
+      changed = true;
+    }
+
+    if (changed) updates.push(update);
+  }
+  return updates;
 }

@@ -14,7 +14,11 @@ import * as FileSystem from "expo-file-system/legacy";
 
 import {
   ensureAndroidChannel,
+  ensureNotificationCategories,
   getNotificationPermission,
+  parseAlarmIdentifier,
+  parseReminderIdentifier,
+  BASAL_DONE_ACTION_ID,
   type NotificationRoute,
 } from "../lib/services/notifications";
 import { getNotificationPrefs } from "../lib/services/notificationPrefs";
@@ -42,7 +46,7 @@ import { shouldOpenAlarmTour } from "../lib/alarmSelect";
 import {
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
-  takePendingAlarmRoute,
+  takePendingAlarmContext,
 } from "../modules/zerospike-alarmkit";
 import { listReminders } from "../lib/db/reminders";
 import { widgetRouteForUrl, type WidgetRoute } from "../lib/widgetRoute";
@@ -78,16 +82,54 @@ initAnalyticsSink();
 // iOS (see ensureAndroidChannel).
 void ensureAndroidChannel();
 
+// Registers the basal reminder's quick-action category (app/basal-confirm.tsx's
+// site step) the same way - eagerly, unconditionally, before any reminder is
+// scheduled. Re-registered on a language change too (rescheduleForLanguageChange).
+void ensureNotificationCategories();
+
+/**
+ * The routeForNotification context an "Open"ed alarm deserves: the reminder row
+ * the alarm belongs to, recovered from the identity string the native side hands
+ * back beside the route (takePendingAlarmContext in modules/zerospike-alarmkit)
+ * - the alarm counterpart of parseReminderIdentifier on the notification path.
+ *
+ * Undefined, never a guess, when the alarm carried no identity: an alarm armed
+ * by a build older than that payload, or one whose id the intent could not
+ * write. That case keeps the previous behaviour exactly - /basal-confirm opens
+ * with no reminderId and resolveBasalConfirmEntry (lib/services/basalConfirm.ts)
+ * matches by time - so time matching is the fallback rather than the rule.
+ */
+function alarmReminderContext(
+  alarmId: string | null | undefined
+): { reminderId: string } | undefined {
+  const reminderId = parseAlarmIdentifier(alarmId);
+  return reminderId ? { reminderId } : undefined;
+}
+
 /**
  * Where each reminder should land when tapped. Post-meal/glucose/low-followup all
  * open the dashboard with the right period sheet pre-armed (index.tsx reads the
- * `sheet` param); basal goes to the injection tab, weekly to Insights, trial to
- * Settings > App. Called both from the live response listener and the cold-start
- * getLastNotificationResponseAsync path.
+ * `sheet` param); basal opens app/basal-confirm.tsx (task B), weekly to Insights,
+ * trial to Settings > App. Called both from the live response listener and the
+ * cold-start getLastNotificationResponseAsync path.
+ *
+ * `context` carries the two fields only a basal notification's own response
+ * needs: the notification's OWN identifier (to recover which reminder row this
+ * was, via parseReminderIdentifier) and which actionIdentifier was tapped (the
+ * quick action vs. the notification body itself) - see
+ * ensureNotificationCategories in lib/services/notifications.ts.
  */
 function routeForNotification(
   route: NotificationRoute | undefined,
-  router: ReturnType<typeof useRouter>
+  router: ReturnType<typeof useRouter>,
+  context?: {
+    identifier?: string | null;
+    actionIdentifier?: string;
+    /** Already-resolved row id, for a caller whose payload carries the reminder
+     *  directly rather than a notification identifier to decode - an alarm's
+     *  "Open" button (alarmReminderContext below). */
+    reminderId?: string | null;
+  }
 ) {
   switch (route) {
     case "postMeal":
@@ -107,9 +149,18 @@ function routeForNotification(
     case "custom":
       router.navigate("/(tabs)");
       break;
-    case "basal":
-      router.navigate("/(tabs)/injection");
+    case "basal": {
+      // The quick action ("I already did it") skips straight to the
+      // site-picking step; a tap on the notification body itself asks first.
+      const step = context?.actionIdentifier === BASAL_DONE_ACTION_ID ? "site" : "ask";
+      const reminderId =
+        context?.reminderId ?? parseReminderIdentifier(context?.identifier);
+      router.navigate({
+        pathname: "/basal-confirm",
+        params: reminderId ? { step, reminderId } : { step },
+      });
       break;
+    }
     case "med":
       router.navigate({ pathname: "/(tabs)", params: { sheet: "med" } });
       break;
@@ -338,7 +389,10 @@ function RootNavigator() {
       const data = response.notification.request.content.data as {
         route?: NotificationRoute;
       };
-      routeForNotification(data?.route, router);
+      routeForNotification(data?.route, router, {
+        identifier: response.notification.request.identifier,
+        actionIdentifier: response.actionIdentifier,
+      });
     });
     return () => sub.remove();
   }, [router]);
@@ -353,7 +407,10 @@ function RootNavigator() {
         const data = last.notification.request.content.data as {
           route?: NotificationRoute;
         };
-        routeForNotification(data?.route, router);
+        routeForNotification(data?.route, router, {
+          identifier: last.notification.request.identifier,
+          actionIdentifier: last.actionIdentifier,
+        });
       } catch {
         // no launching notification, nothing to route
       }
@@ -379,9 +436,15 @@ function RootNavigator() {
     if (!ready || !onboarded) return;
     let retry: ReturnType<typeof setTimeout> | null = null;
     const consume = (): boolean => {
-      const route = takePendingAlarmRoute();
-      if (!route) return false;
-      routeForNotification(route, router);
+      const pending = takePendingAlarmContext();
+      if (!pending) return false;
+      // The alarm now carries the identity string it was scheduled under, so
+      // this path resolves the reminder the same way the notification path just
+      // above does - from the payload itself, not from the clock. An alarm with
+      // no identity (an older build's) still routes, just without a reminderId,
+      // which is what leaves resolveBasalConfirmEntry's time matching in place
+      // as the fallback.
+      routeForNotification(pending.route, router, alarmReminderContext(pending.alarmId));
       return true;
     };
     const consumeWithRetry = () => {
@@ -653,6 +716,10 @@ function RootNavigator() {
       />
       <Stack.Screen
         name="calculator"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="basal-confirm"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen

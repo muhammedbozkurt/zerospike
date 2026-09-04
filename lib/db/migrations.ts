@@ -54,6 +54,15 @@ import {
   V22_SUGAR_INDEX,
   matchesLegacyAutoPeriodTag,
 } from "./v22Sql";
+import {
+  V23_CREATE_FOOD_PORTIONS,
+  V23_CREATE_FTS,
+  V23_CREATE_TRIGGERS,
+  V23_DROP_FTS,
+  V23_DROP_TRIGGERS,
+  V23_FOODS_COLUMNS,
+  V23_REBUILD_FTS,
+} from "./v23Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -95,7 +104,8 @@ export type SchemaStamp =
   | 19
   | 20
   | 21
-  | 22;
+  | 22
+  | 23;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -677,4 +687,63 @@ export async function migrateToV22(db: SQLite.SQLiteDatabase): Promise<void> {
   } finally {
     await db.execAsync("PRAGMA foreign_keys = ON;");
   }
+}
+
+/**
+ * Adds the four v23 name columns (name_it/name_pt/name_ar/name_ja) to `foods`
+ * if they are not there yet. Idempotent, and the single place both
+ * migrateToV23 AND any earlier step that writes to `foods` through
+ * insertSeedFoods() (lib/db/index.ts's v1 → v2 re-seed, which runs BEFORE
+ * migrateToV23 in the chain) must call first: insertSeedFoods() binds all ten
+ * name columns unconditionally, so running it against a table that has not
+ * gained these four yet throws "no such column" - and on that specific v1 → v2
+ * step, which used to run its DELETE outside any transaction, the throw left
+ * the catalog deleted with nothing to replace it and user_version stuck below
+ * 2 forever (K1c). Same missingColumns guard as every other ALTER in this
+ * file, so a kill between two of these ALTERs replays cleanly next launch.
+ */
+export async function ensureFoodNameColumns(
+  db: SQLite.SQLiteDatabase
+): Promise<void> {
+  for (const col of await missingColumns(db, "foods", V23_FOODS_COLUMNS)) {
+    await db.execAsync(`ALTER TABLE foods ADD COLUMN ${col.name} ${col.type};`);
+  }
+}
+
+/**
+ * The v22 → v23 migration: four more food name columns (name_it, name_pt,
+ * name_ar, name_ja - see ./v23Sql, added through ensureFoodNameColumns above)
+ * and food_portions, the per-food list of preset serving sizes. Two guarded
+ * ADD COLUMNs, one CREATE TABLE IF NOT EXISTS: no existing row is read or
+ * rewritten by either, so an interrupted run cannot cost a food. Unlike
+ * migrateToV8/V13/V15/V16/V19/V20/V21, the column check runs INSIDE the
+ * transaction here (ensureFoodNameColumns is also called from lib/db/index.ts's
+ * v1 → v2 step, ahead of a DELETE it must share a transaction with - see that
+ * helper's own doc) - harmless, since missingColumns is a read-only PRAGMA and
+ * SQLite is single-writer, so nothing else can add the column out from under it
+ * mid-transaction.
+ *
+ * foods_fts is a different story: FTS5 has no ALTER TABLE ADD COLUMN, so
+ * widening it to the four new columns means DROP + CREATE + a full
+ * repopulate from `foods` (an INSERT ... SELECT, since the table is not
+ * external-content and has no automatic rebuild command), with the three
+ * sync triggers dropped and recreated around it so they write the new
+ * columns too. The drop is momentary and inside the same transaction as the
+ * repopulate, so a reader never sees an empty search index; a kill mid-run
+ * rolls the whole rebuild back and the next launch retries it from scratch.
+ */
+export async function migrateToV23(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await ensureFoodNameColumns(db);
+
+    await db.execAsync(V23_CREATE_FOOD_PORTIONS);
+
+    await db.execAsync(V23_DROP_TRIGGERS);
+    await db.execAsync(V23_DROP_FTS);
+    await db.execAsync(V23_CREATE_FTS);
+    await db.execAsync(V23_CREATE_TRIGGERS);
+    await db.execAsync(V23_REBUILD_FTS);
+
+    await stampSchemaVersion(db, 23);
+  });
 }
