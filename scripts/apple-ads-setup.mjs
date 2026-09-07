@@ -38,7 +38,7 @@ const MARKETS = {
     },
     discoveryCampaign: 'ZS-DE-Discovery',
     searchMatchBid: '0.50',
-    expected: { campaigns: 4, csvAdGroups: 12, keywords: 125, sharedNegatives: 37, discoveryNegatives: 183 },
+    expected: { campaigns: 4, csvAdGroups: 12, keywords: 125, sharedNegatives: 37, discoveryNegatives: 188 },
   },
   fr: {
     label: 'FR',
