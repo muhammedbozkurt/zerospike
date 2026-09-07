@@ -33,8 +33,8 @@ import {
 } from "../lib/services/purchases";
 import {
   canShowDownsell,
-  getDownsellState,
   recordDownsellShown,
+  recordPaywallDismissed,
   type DownsellTrigger,
 } from "../lib/services/downsell";
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
@@ -45,9 +45,8 @@ import {
 import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { useHealthAvailable } from "../lib/services/healthAvailability";
 import { privacyUrl, termsUrl } from "../lib/legal";
-import { logEvent } from "../lib/analytics";
+import { logEvent, type PaywallViewSource } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
-import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
 import { useLayout } from "../lib/useLayout";
@@ -186,19 +185,17 @@ function PaywallScreen() {
   const insets = useSafeAreaInsets();
   const { columnPad } = useLayout();
   const router = useRouter();
-  const { reason, context: ctxParam, focus: focusParam } = useLocalSearchParams<{
-    reason?: string;
-    context?: string;
-    focus?: string;
+  const { reason } = useLocalSearchParams<{
+    reason?: PaywallViewSource;
   }>();
-  const context: DownsellTrigger =
-    ctxParam === "onboarding" ? "onboarding" : "inapp";
-  // Onboarding hands over the answer that decides which single benefit line
-  // leads the list. Both lines describe a feature; neither says anything about
-  // the person reading it.
-  const focus: "insulin" | "tracking" =
-    focusParam === "insulin" ? "insulin" : "tracking";
-  const { refreshPro, completeOnboarding, activeProfile, isProUser } = useApp();
+  // 2.3.4: onboarding no longer hands off to the paywall (app/onboarding.tsx
+  // goes straight to the dashboard), so every entry point is "inapp" now -
+  // the "onboarding" DownsellTrigger, the `context` route param and the
+  // `focus` param it drove (which insulin/tracking line led the feature
+  // grid) were dropped with it. Kept as a DownsellTrigger rather than a bare
+  // string literal in case a future entry point needs its own value again.
+  const context: DownsellTrigger = "inapp";
+  const { refreshPro, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<PlanId>("annual");
@@ -265,13 +262,9 @@ function PaywallScreen() {
     setPlan(p);
   }
 
-  // Leaves the paywall. During onboarding it completes onboarding first so the
-  // app does not bounce back to the quiz.
+  // Leaves the paywall.
   async function exit() {
-    if (context === "onboarding") {
-      await completeOnboarding();
-      router.replace("/(tabs)");
-    } else if (router.canGoBack()) {
+    if (router.canGoBack()) {
       router.back();
     } else {
       router.replace("/(tabs)");
@@ -279,18 +272,21 @@ function PaywallScreen() {
   }
 
   // Downsell trigger, shared by an explicit dismiss and a cancelled purchase:
-  // first time always, then a single 7-day re-armed retry, capped at 2 lifetime
-  // shows. An active Pro/trial user is never shown a discount on their own
-  // subscription, and a lifetime show is only spent once a REAL discount is
-  // confirmed to exist - never on an empty offering. Falls back to exit
-  // otherwise.
+  // the paywall must be closed at least twice, 24h apart from the first close,
+  // before a downsell can show at all (2.3.4 - the first close alone used to
+  // convert 0/16); after that gate, the existing single 7-day re-armed retry,
+  // capped at 2 lifetime shows, applies unchanged. An active Pro/trial user is
+  // never shown a discount on their own subscription, and a lifetime show is
+  // only spent once a REAL discount is confirmed to exist - never on an empty
+  // offering. Falls back to exit otherwise.
   async function triggerDownsell() {
     if (isProUser) {
       await exit();
       return;
     }
-    const state = await getDownsellState();
-    if (!canShowDownsell(state, Date.now())) {
+    const now = Date.now();
+    const state = await recordPaywallDismissed(now);
+    if (!canShowDownsell(state, now)) {
       await exit();
       return;
     }
@@ -299,7 +295,7 @@ function PaywallScreen() {
       await exit();
       return;
     }
-    await recordDownsellShown(context, Date.now());
+    await recordDownsellShown(context, now);
     router.replace({ pathname: "/downsell", params: { trigger: context } });
   }
 
@@ -410,9 +406,6 @@ function PaywallScreen() {
   const loading = offer === null;
   const unavailable = offer?.status === "unavailable";
 
-  // Onboarding hands over which single benefit matters most (see `focus`
-  // above); that profile's own short label leads the 2x2 grid instead of
-  // resting at whatever slot the fixed list order would give it.
   const shortFeatures = [
     ...(healthAvailable
       ? [t("paywall.featureShortHealth", { health: healthName })]
@@ -424,12 +417,6 @@ function PaywallScreen() {
       ? [t("paywall.featureShortInjection")]
       : []),
   ];
-  if (context === "onboarding" && focus === "insulin") {
-    const injectionIdx = shortFeatures.indexOf(t("paywall.featureShortInjection"));
-    if (injectionIdx > 0) {
-      shortFeatures.unshift(shortFeatures.splice(injectionIdx, 1)[0]);
-    }
-  }
   const featureGrid = shortFeatures.slice(0, 4);
 
   // One 22pt headline, one 13pt subline. A limit context (health/foods/...)
@@ -441,13 +428,7 @@ function PaywallScreen() {
     : annualTrial
       ? t("paywall.headlineTrial", { days: trialDays })
       : t("paywall.headline");
-  const heroSubline = limit
-    ? limit.body
-    : context === "onboarding"
-      ? focus === "insulin"
-        ? t("paywall.focusInsulin")
-        : t("paywall.focusTracking")
-      : t("paywall.heroValue");
+  const heroSubline = limit ? limit.body : t("paywall.heroValue");
 
   return (
     <AppBackground>
@@ -479,11 +460,6 @@ function PaywallScreen() {
             {t("paywall.title")}
           </Text>
           <View className="flex-row items-center" style={{ flexShrink: 0 }}>
-            {context === "onboarding" ? (
-              <View className="mr-2">
-                <LanguageChip />
-              </View>
-            ) : null}
             <Pressable
               onPress={dismiss}
               hitSlop={10}

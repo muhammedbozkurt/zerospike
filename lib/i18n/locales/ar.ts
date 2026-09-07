@@ -1240,6 +1240,7 @@ const ar: TranslationSchema = {
     nextReminder: "التذكير التالي",
     noData: "لا توجد سجلات",
     timerTitle: "فحص ما بعد الوجبة",
+    mealTime: "الوجبة",
     hourShort: "س",
     minuteShort: "د",
     agoTemplate: "قبل {{t}}",

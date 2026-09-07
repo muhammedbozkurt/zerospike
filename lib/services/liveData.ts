@@ -110,6 +110,10 @@ export interface LiveData {
    *  due sooner: a timer already ticking is the thing the user came to the lock
    *  screen to check. */
   postMealEndsAt: number | null;
+  /** epoch ms the RUNNING post-meal window above started, so a watch/widget
+   *  surface can show a meal time instead of only a countdown target. Set
+   *  whenever `postMealEndsAt` is, null otherwise. */
+  postMealStartedAt: number | null;
   /** Whether the active profile uses insulin at all (insulin_mode !== "none").
    *  The Quick Add widgets hide their injection shortcut when it is false, so a
    *  profile that hid every in-app injection surface is not offered one from the
@@ -167,6 +171,9 @@ export interface LiveData {
      *  "dashboard.startCountdown" at someone - the native side falls back to the
      *  brand name instead (see `localized` below and SmallWidgets.swift). */
     startCountdown: string | null;
+    /** Short one-word label for the meal time shown next to `postMealStartedAt`
+     *  on the watch app/complication. */
+    mealTime: string;
   };
 }
 
@@ -254,12 +261,18 @@ export async function computeLiveData(
   // switched to another would see it announced as the new profile's own. A
   // timer with no recorded owner (armed before the lock existed) still
   // surfaces everywhere, same as before.
-  const runningPostMeal =
-    postMealState &&
+  const hasRunningPostMeal =
+    postMealState != null &&
     postMealState.endsAt > now &&
-    (postMealState.profileId == null || postMealState.profileId === profileId)
-      ? postMealState.endsAt
-      : null;
+    (postMealState.profileId == null || postMealState.profileId === profileId);
+  const runningPostMeal = hasRunningPostMeal ? postMealState!.endsAt : null;
+  // Carried alongside `runningPostMeal` so a watch/widget surface can show the
+  // meal's own start time, not just the countdown target - same owner/expiry
+  // gate as above, sourced straight from getPostMealTimerState()'s own
+  // `startedAt` (set when the countdown was armed; see lib/postMealTimer.ts).
+  const runningPostMealStartedAt = hasRunningPostMeal
+    ? postMealState!.startedAt
+    : null;
   const alarmKitAvailable = isAlarmKitAvailable();
   const next: UpcomingItem | null = nextUpcoming({
     rows: reminders,
@@ -321,6 +334,7 @@ export async function computeLiveData(
     nextReminderLabel: nextReminderName(next),
     nextReminderMode: next?.mode ?? null,
     postMealEndsAt: runningPostMeal,
+    postMealStartedAt: runningPostMealStartedAt,
     usesInsulin: insulinModeUsesInsulin(insulinModeOf(profile)),
     usesOralMeds: tracksOralMeds,
     band,
@@ -340,6 +354,7 @@ export async function computeLiveData(
       addMed: i18n.t("meds.entryLabel"),
       timerTitle: i18n.t("widget.timerTitle"),
       startCountdown: localized("dashboard.startCountdown"),
+      mealTime: i18n.t("widget.mealTime"),
     },
   };
 }

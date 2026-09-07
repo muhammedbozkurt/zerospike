@@ -24,7 +24,6 @@ import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
-import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { OfferCard } from "../components/OfferCard";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
@@ -43,8 +42,12 @@ function DownsellScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { trigger: triggerParam } = useLocalSearchParams<{ trigger?: string }>();
-  const trigger = triggerParam ?? "onboarding";
-  const { refreshPro, completeOnboarding } = useApp();
+  // 2.3.4: every real caller (paywall.tsx, the day-7 trigger) always passes
+  // its own trigger now that onboarding no longer hands off here - "inapp" is
+  // just the same fallback paywall.tsx's own `exit()` uses for an unparsed
+  // route.
+  const trigger = triggerParam ?? "inapp";
+  const { refreshPro } = useApp();
   const { toast } = useFeedback();
   const [offer, setOffer] = useState<DownsellOffer | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,18 +81,12 @@ function DownsellScreen() {
     }
   }, [offer, trigger]);
 
-  // Reached from the onboarding paywall, so complete onboarding on the way out;
-  // onboarding always lands on the tabs root (there is nothing to go "back" to).
-  // An in-app trigger, though, opened this screen ON TOP of wherever the user
-  // already was, so leaving it returns there instead of resetting to the tabs
-  // root - falling back to that reset only if there is truly nothing to go back
-  // to (e.g. this screen was somehow the only one on the stack).
+  // This screen always opens ON TOP of wherever the user already was (the
+  // paywall, or the dashboard for the day-7 trigger), so leaving it returns
+  // there instead of resetting to the tabs root - falling back to that reset
+  // only if there is truly nothing to go back to (e.g. this screen was
+  // somehow the only one on the stack).
   async function goHome() {
-    if (trigger === "onboarding") {
-      await completeOnboarding();
-      router.replace("/(tabs)");
-      return;
-    }
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -146,13 +143,6 @@ function DownsellScreen() {
         className="flex-1"
         style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD), paddingBottom: insets.bottom + 16 }}
       >
-        {/* Onboarding-sourced downsell carries the language chip too. */}
-        {trigger === "onboarding" ? (
-          <View className="flex-row justify-end px-6 pt-2 pb-2">
-            <LanguageChip />
-          </View>
-        ) : null}
-
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 24 }}

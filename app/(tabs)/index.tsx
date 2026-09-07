@@ -60,6 +60,15 @@ import {
   markDay7DownsellShown,
   shouldShowDay7Downsell,
 } from "../../lib/services/downsell";
+import {
+  AFTER_LOGS_THRESHOLD,
+  shouldTriggerAfterLogsPaywall,
+} from "../../lib/afterLogsPaywall";
+import {
+  getAfterLogsPaywallGate,
+  markAfterLogsPaywallShown,
+} from "../../lib/services/afterLogsPaywall";
+import { isPro } from "../../lib/services/purchases";
 import { syncLiveData } from "../../lib/services/liveData";
 import {
   importHealthGlucose,
@@ -625,6 +634,92 @@ export default function DashboardScreen() {
         router.push({ pathname: "/downsell", params: { trigger: "day7" } });
       })();
     }, [isProUser, router])
+  );
+
+  // "First value" paywall (2.3.4): opens once, the first time this profile's
+  // own VISIBLE log count reaches AFTER_LOGS_THRESHOLD, replacing the old
+  // end-of-onboarding paywall. The one-shot AsyncStorage gate lives in
+  // lib/services/afterLogsPaywall.ts; this is only the trigger. Re-runs on
+  // every dashboard focus AND whenever one of this screen's own sheets opens
+  // or closes (they change the callback identity without a route change,
+  // which useFocusEffect still re-fires for) - and bails out for as long as
+  // any of them is open, so the paywall never lands on top of an in-progress
+  // log; closing one immediately gives the trigger another look.
+  //
+  // "Visible" (excludeCalculatorInjections, same option the dashboard's own
+  // list reads with, see `load` above): a meal logged through the calculator
+  // with a dose also silently writes a source='calculator' injection row
+  // (app/calculator.tsx) - counting that row here would let one user action
+  // spend two of the three "logs" the user never sees as two.
+  //
+  // Two live checks guard the async gap between the reads above and the
+  // actual navigation, on top of the dependency array retrying the whole
+  // effect: `sheetsOpenRef` (kept fresh below, read live rather than through
+  // this closure's own now-stale sheetOpen/etc.) catches a sheet opening
+  // WHILE a check is already in flight; `cancelled` (set in this effect's own
+  // cleanup, which useFocusEffect runs on blur OR on a dependency change) is
+  // the same guard for the user leaving the screen entirely mid-check.
+  const afterLogsPendingRef = useRef(false);
+  const sheetsOpenRef = useRef(false);
+  useEffect(() => {
+    sheetsOpenRef.current = sheetOpen || quickAddOpen || durationSheetOpen || iobInfoOpen;
+  }, [sheetOpen, quickAddOpen, durationSheetOpen, iobInfoOpen]);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      if (afterLogsPendingRef.current) return;
+      if (isProUser) return;
+      if (isScreenshotMode()) return; // never let a paywall land mid-capture
+      if (sheetOpen || quickAddOpen || durationSheetOpen || iobInfoOpen) return;
+      if (!activeProfile) return;
+      const profileId = activeProfile.id;
+      afterLogsPendingRef.current = true;
+      void (async () => {
+        try {
+          const gate = await getAfterLogsPaywallGate();
+          if (cancelled) return;
+          if (gate === "done") return;
+          if (gate === "grandfather") {
+            // A pre-2.3.4 install whose completeOnboarding ran on an older
+            // version never armed this flag - never show it retroactively.
+            await markAfterLogsPaywallShown();
+            return;
+          }
+          const rows = await getJournal(profileId, lang, AFTER_LOGS_THRESHOLD, undefined, {
+            excludeCalculatorInjections: true,
+          });
+          if (cancelled || sheetsOpenRef.current) return;
+          if (
+            !shouldTriggerAfterLogsPaywall({
+              logCount: rows.length,
+              alreadyTriggered: false,
+              isProUser,
+            })
+          ) {
+            return;
+          }
+          // Cached isProUser can lag a purchase made elsewhere (another
+          // device, a restore); re-verify against the STORE right before
+          // spending the one-shot, same as the day-7 trigger does.
+          const proNow = await isPro();
+          if (proNow) {
+            await markAfterLogsPaywallShown();
+            return;
+          }
+          if (cancelled || sheetsOpenRef.current) return;
+          await markAfterLogsPaywallShown();
+          router.push({
+            pathname: "/paywall",
+            params: { context: "inapp", reason: "after_logs" },
+          });
+        } finally {
+          afterLogsPendingRef.current = false;
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [isProUser, sheetOpen, quickAddOpen, durationSheetOpen, iobInfoOpen, activeProfile, lang, router])
   );
 
   // Coming back to the foreground: re-read the timer (it may have elapsed while

@@ -7,6 +7,7 @@
     <string name="last_reading_label">Last reading</string>
     <string name="next_reminder_label">Next reminder</string>
     <string name="post_meal_label">Post-meal check</string>
+    <string name="meal_time_label">Meal</string>
     <string name="no_data">No entries</string>
     <string name="none">None</string>
 </resources>

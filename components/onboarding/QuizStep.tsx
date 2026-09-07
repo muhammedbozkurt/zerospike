@@ -44,6 +44,7 @@ export function QuizStep({
   glyph,
   glyphTone,
   footer,
+  compact = false,
   insetsBottom = 0,
   children,
 }: {
@@ -55,6 +56,11 @@ export function QuizStep({
   glyph?: keyof typeof Ionicons.glyphMap;
   glyphTone?: "accent" | "caution";
   footer?: React.ReactNode;
+  /** Store-screenshot only (see scCompact in app/onboarding.tsx): render the
+   *  short-screen rhythm and pin the interaction block under the question
+   *  instead of centring it in the leftover room. Ignored on the wide layout,
+   *  whose card hugs its content already. */
+  compact?: boolean;
   /** Safe-area bottom inset, applied inside the pinned footer (or, when there
    *  is no footer, as extra scroll padding) so the caller's own wrapper never
    *  has to add it a second time. On a tablet the footer rides inside the
@@ -63,7 +69,8 @@ export function QuizStep({
   children: React.ReactNode;
 }) {
   const { height, isWide } = useLayout();
-  const dense = height < DENSE_HEIGHT;
+  const tight = compact && !isWide;
+  const dense = height < DENSE_HEIGHT || tight;
   const interactiveColumnStyle = isWide
     ? { maxWidth: INTERACTIVE_MAX_WIDTH, width: "100%" as const, alignSelf: "center" as const }
     : undefined;
@@ -134,8 +141,8 @@ export function QuizStep({
         // question and the CTA. Once the content is taller than that room the
         // container grows to fit it and this centring becomes a no-op, so a
         // long step still scrolls from its own top.
-        justifyContent: "center",
-        paddingTop: dense ? 12 : 20,
+        justifyContent: tight ? "flex-start" : "center",
+        paddingTop: tight ? 0 : dense ? 12 : 20,
         paddingBottom: isWide || footer ? 16 : insetsBottom + 16,
       }}
       keyboardShouldPersistTaps="handled"

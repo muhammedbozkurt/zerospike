@@ -19,7 +19,7 @@ android {
         targetSdk = 36
         // Fully independent of the phone's versionCode (currently 60). Starts
         // at 100000 so the two build lineages can never collide on Play.
-        versionCode = 100000
+        versionCode = 100001
         versionName = "2.3.1"
     }
 
@@ -82,5 +82,6 @@ dependencies {
     // non-Guava way to construct a ListenableFuture.
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.concurrent:concurrent-futures-ktx:1.1.0")
 }

@@ -1239,6 +1239,7 @@ const tr = {
     nextReminder: "Sonraki hatırlatıcı",
     noData: "Kayıt yok",
     timerTitle: "Tokluk ölçümü",
+    mealTime: "Yemek",
     hourShort: "sa",
     minuteShort: "dk",
     agoTemplate: "{{t}} önce",

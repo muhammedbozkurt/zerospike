@@ -4,6 +4,7 @@
     <string name="last_reading_label">最新の測定値</string>
     <string name="next_reminder_label">次のリマインダー</string>
     <string name="post_meal_label">食後の測定</string>
+    <string name="meal_time_label">食事</string>
     <string name="no_data">記録なし</string>
     <string name="none">なし</string>
 </resources>

@@ -13,11 +13,10 @@ import androidx.wear.compose.material3.ColorScheme
  * changes there is meant to be changed here by hand, in the same hex.
  */
 object Ink {
-    /** THEME.bg.g1 - the darkest stop of the Midnight Monitor ground. Same
-     *  literal the Apple Watch app and the iOS widget sit on. */
-    val Ground = Color(0xFF080E14)
-    /** THEME.bg.g2 - top of the vertical wash. */
-    val TopWash = Color(0xFF0F2029)
+    /** Play WO-V13: black background required for all Wear OS apps and
+     *  tiles. Pure black here, not THEME.bg.g1 - this token intentionally
+     *  diverges from the phone/iOS ground literal. */
+    val Ground = Color(0xFF000000)
     /** THEME.ink - primary text. */
     val Primary = Color(0xFFEAF6FA)
     /** THEME.muted - secondary text. */
@@ -89,21 +88,6 @@ fun relativeAgo(elapsedMs: Long, labels: LiveDataSnapshot.Labels?): String? {
     val duration =
         if (hours > 0) "$hours $hourShort $minutes $minuteShort" else "$minutes $minuteShort"
     return template.replace("{{t}}", duration)
-}
-
-/** m:ss while under an hour, h:mm:ss above it - the shape watchOS's own timer
- *  style prints, so the two watches read the same. Digits only, nothing to
- *  translate. */
-fun countdown(remainingMs: Long): String {
-    val total = (remainingMs / 1000L).coerceAtLeast(0L)
-    val hours = total / 3600
-    val minutes = (total % 3600) / 60
-    val seconds = total % 60
-    return if (hours > 0) {
-        String.format("%d:%02d:%02d", hours, minutes, seconds)
-    } else {
-        String.format("%d:%02d", minutes, seconds)
-    }
 }
 
 /**

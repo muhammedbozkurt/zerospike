@@ -15,11 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -34,18 +30,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import java.util.Date
-import kotlinx.coroutines.delay
 
 /**
  * The glance screen: the last logged reading in the app's one glucose colour
- * language, how long ago it was measured, and either the running post-meal
- * countdown or the next pending reminder. The same story, in the same order,
+ * language, how long ago it was measured, and either the pending post-meal
+ * check time or the next pending reminder. The same story, in the same order,
  * as the Apple Watch screen (targets/watch/ContentView.swift), so the two
  * companions read as one product.
  *
@@ -54,6 +50,9 @@ import kotlinx.coroutines.delay
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Play WO-V15: installed before super.onCreate so the splash theme
+        // (Theme.Zerospike.Starting) is what shows until the first frame.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         LiveDataStore.load(applicationContext)
         setContent { ZerospikeWearApp() }
@@ -77,15 +76,10 @@ private fun GlanceScreen() {
     val context = LocalContext.current
     val data = LiveDataStore.snapshot.value
 
-    // One second, because a running countdown ticks; the "ago" line and the
-    // reminder time ride the same tick rather than owning a second timer.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1_000L)
-            now = System.currentTimeMillis()
-        }
-    }
+    // Read once at first composition, not on a running clock: Play WO-V4
+    // forbids a self-ticking counter on screen. This value does not refresh
+    // again while the same Activity instance is alive.
+    val now = remember { System.currentTimeMillis() }
 
     val mgdl = data?.lastGlucoseMgdl
     val statusColor = mgdl?.let { glucoseColorFor(it, data?.band) } ?: Ink.Muted
@@ -102,10 +96,11 @@ private fun GlanceScreen() {
         modifier = Modifier
             .fillMaxSize()
             .drawBehind {
-                // THEME.bg: the vertical wash, a colour-matched glow behind the
-                // reading (tokens' glow(), so the surface lights up in its own
-                // status colour) and the cyan radial at the foot.
-                drawRect(Brush.verticalGradient(listOf(Ink.TopWash, Ink.Ground)))
+                // Play WO-V13: flat black ground, no wash. A colour-matched
+                // glow behind the reading (tokens' glow(), so the surface
+                // lights up in its own status colour) and the cyan radial at
+                // the foot still sit on top of it.
+                drawRect(color = Ink.Ground)
                 drawRect(
                     Brush.radialGradient(
                         colors = listOf(statusColor.copy(alpha = 0.16f), Color.Transparent),
@@ -200,23 +195,34 @@ private fun GlanceScreen() {
 }
 
 /**
- * The bottom half: a running post-meal window outranks a pending reminder,
- * the same order the lock-screen card uses on the phone - a countdown already
- * ticking is what the wrist was raised for.
+ * The bottom half: an open post-meal window outranks a pending reminder, the
+ * same order the lock-screen card uses on the phone. Play WO-V4 forbids a
+ * running countdown here, so this prints the fixed clock time the window
+ * closes at rather than a ticking remaining-time value.
  */
 @Composable
 private fun UpcomingBlock(data: LiveDataSnapshot?, now: Long, context: Context) {
     val postMealEndsAt = data?.postMealEndsAt
+    val postMealStartedAt = data?.postMealStartedAt
     val reminderAt = data?.nextReminderAt
 
     when {
         postMealEndsAt != null && postMealEndsAt > now -> {
+            if (postMealStartedAt != null) {
+                CaptionText(
+                    text = "${
+                        data?.labels?.mealTime?.takeIf { it.isNotBlank() }
+                            ?: stringResource(id = R.string.meal_time_label)
+                    } ${clockTime(context, postMealStartedAt)}",
+                    color = Ink.Muted
+                )
+            }
             CaptionText(
                 text = data?.labels?.timerTitle?.takeIf { it.isNotBlank() }
                     ?: stringResource(id = R.string.post_meal_label),
                 color = Ink.Muted
             )
-            AccentValue(text = countdown(postMealEndsAt - now))
+            AccentValue(text = clockTime(context, postMealEndsAt))
         }
 
         reminderAt != null && reminderAt > now -> {

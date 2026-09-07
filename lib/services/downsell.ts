@@ -5,6 +5,17 @@ import {
   day7LocalGate,
   shouldTriggerDay7,
 } from "../day7Downsell";
+import {
+  DOWNSELL_REARM_MS,
+  DOWNSELL_MIN_DISMISSALS,
+  DOWNSELL_FIRST_SHOW_DELAY_MS,
+  canShowDownsell,
+  applyDownsellShown,
+  applyPaywallDismissed,
+  initialDownsellState,
+  type DownsellState,
+  type DownsellTrigger,
+} from "../downsellGate";
 import { getDownsellOffer, isPro } from "./purchases";
 import { isScreenshotMode } from "../screenshotMode";
 
@@ -17,43 +28,22 @@ import { isScreenshotMode } from "../screenshotMode";
  *
  * The day-7 offer at the bottom is a third entry point into the SAME two
  * lifetime shows, not an extra one.
+ *
+ * The gate itself (canShowDownsell and friends) lives in ../downsellGate, kept
+ * dependency-free so scripts/downsell.test.ts can run it under plain Node;
+ * everything is re-exported from here unchanged for existing callers.
  */
 
-export { DOWNSELL_MAX_SHOWS };
-export const DOWNSELL_REARM_MS = 7 * 24 * 60 * 60 * 1000;
-
-export type DownsellTrigger = "onboarding" | "inapp" | "winback" | "day7";
-
-export interface DownsellState {
-  count: number;
-  lastShownAt: number | null;
-  lastTrigger: DownsellTrigger | null;
-}
-
-export const initialDownsellState: DownsellState = {
-  count: 0,
-  lastShownAt: null,
-  lastTrigger: null,
+export {
+  DOWNSELL_MAX_SHOWS,
+  DOWNSELL_REARM_MS,
+  DOWNSELL_MIN_DISMISSALS,
+  DOWNSELL_FIRST_SHOW_DELAY_MS,
+  canShowDownsell,
+  applyDownsellShown,
+  initialDownsellState,
 };
-
-/**
- * Whether the discounted downsell may be shown again. The first offer is always
- * allowed. After that it re-arms only once, and only after the cool-off, so a
- * single user never sees the downsell more than DOWNSELL_MAX_SHOWS times.
- */
-export function canShowDownsell(state: DownsellState, now: number): boolean {
-  if (state.count >= DOWNSELL_MAX_SHOWS) return false;
-  if (state.count === 0) return true;
-  return state.lastShownAt !== null && now - state.lastShownAt >= DOWNSELL_REARM_MS;
-}
-
-export function applyDownsellShown(
-  state: DownsellState,
-  trigger: DownsellTrigger,
-  now: number
-): DownsellState {
-  return { count: state.count + 1, lastShownAt: now, lastTrigger: trigger };
-}
+export type { DownsellState, DownsellTrigger };
 
 // ── Persistence ────────────────────────────────────────────────────────────
 
@@ -69,6 +59,10 @@ export async function getDownsellState(): Promise<DownsellState> {
       count: Number(parsed.count) || 0,
       lastShownAt: parsed.lastShownAt ?? null,
       lastTrigger: parsed.lastTrigger ?? null,
+      // Absent on any state persisted before 2.3.4 - defaults read as "never
+      // closed under the new rule", never crash on the old shape.
+      dismissCount: Number(parsed.dismissCount) || 0,
+      firstDismissAt: parsed.firstDismissAt ?? null,
     };
   } catch {
     return initialDownsellState;
@@ -81,6 +75,19 @@ export async function recordDownsellShown(
   now: number
 ): Promise<DownsellState> {
   const next = applyDownsellShown(await getDownsellState(), trigger, now);
+  try {
+    await AsyncStorage.setItem(DOWNSELL_KEY, JSON.stringify(next));
+  } catch {
+    // best-effort persistence
+  }
+  return next;
+}
+
+/** Records a paywall close (explicit dismiss or a cancelled purchase) and
+ *  returns the updated (persisted) state - call BEFORE canShowDownsell so the
+ *  close that just happened counts toward DOWNSELL_MIN_DISMISSALS. */
+export async function recordPaywallDismissed(now: number): Promise<DownsellState> {
+  const next = applyPaywallDismissed(await getDownsellState(), now);
   try {
     await AsyncStorage.setItem(DOWNSELL_KEY, JSON.stringify(next));
   } catch {

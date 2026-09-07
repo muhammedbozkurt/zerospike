@@ -1245,6 +1245,7 @@ const es: TranslationSchema = {
     nextReminder: "Próximo recordatorio",
     noData: "Sin registros",
     timerTitle: "Control posprandial",
+    mealTime: "Comida",
     hourShort: "h",
     minuteShort: "min",
     agoTemplate: "hace {{t}}",

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Overrides core-splashscreen's Wear default icon container size so
+         the launcher icon reads at Play WO-V15's ~48dp on startup. -->
+    <dimen name="splash_screen_icon_size">48dp</dimen>
+</resources>

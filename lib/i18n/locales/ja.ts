@@ -1241,6 +1241,7 @@ const ja: TranslationSchema = {
     nextReminder: "次のリマインダー",
     noData: "記録なし",
     timerTitle: "食後の測定",
+    mealTime: "食事",
     hourShort: "時間",
     minuteShort: "分",
     agoTemplate: "{{t}}前",

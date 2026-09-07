@@ -7,6 +7,15 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
 ve `package.json`.
 
+## 2.3.4 (build 72 / versionCode 73, eas autoIncrement sonrasi)
+
+### Paywall zamanlaması
+- Paywall artık onboarding'in sonunda değil, kullanıcı ilk üç kaydını
+  girdikten sonra ana ekrandan açılıyor.
+- İndirim ekranı (downsell), paywall en az iki kez kapatılıp ilk kapatmadan bu
+  yana en az 24 saat geçmeden gösterilmiyor.
+- Bu kural satın alma vazgeçildiğinde de aynen geçerli.
+
 ## 2.3.3 (build 69 / versionCode 70)
 
 ### Ana ekran halkası

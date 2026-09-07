@@ -1241,6 +1241,7 @@ const en: TranslationSchema = {
     nextReminder: "Next reminder",
     noData: "No entries",
     timerTitle: "Post-meal check",
+    mealTime: "Meal",
     hourShort: "hr",
     minuteShort: "min",
     agoTemplate: "{{t}} ago",

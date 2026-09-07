@@ -4,6 +4,7 @@
     <string name="last_reading_label">Letzte Messung</string>
     <string name="next_reminder_label">Nächste Erinnerung</string>
     <string name="post_meal_label">Messung nach dem Essen</string>
+    <string name="meal_time_label">Mahlzeit</string>
     <string name="no_data">Keine Einträge</string>
     <string name="none">Keine</string>
 </resources>

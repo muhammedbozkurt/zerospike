@@ -34,6 +34,7 @@ data class LiveDataSnapshot(
     val nextReminderLabel: String?,
     val nextReminderMode: String?,
     val postMealEndsAt: Long?,
+    val postMealStartedAt: Long?,
     val usesInsulin: Boolean,
     val usesOralMeds: Boolean,
     val band: Band?,
@@ -61,7 +62,8 @@ data class LiveDataSnapshot(
         val addInjection: String,
         val addMed: String,
         val timerTitle: String,
-        val startCountdown: String?
+        val startCountdown: String?,
+        val mealTime: String?
     )
 
     companion object {
@@ -83,6 +85,7 @@ data class LiveDataSnapshot(
                 nextReminderLabel = obj.nullableString("nextReminderLabel"),
                 nextReminderMode = obj.nullableString("nextReminderMode"),
                 postMealEndsAt = obj.nullableLong("postMealEndsAt"),
+                postMealStartedAt = obj.nullableLong("postMealStartedAt"),
                 usesInsulin = obj.optBoolean("usesInsulin", false),
                 usesOralMeds = obj.optBoolean("usesOralMeds", false),
                 band = obj.optJSONObject("band")?.let {
@@ -109,7 +112,8 @@ data class LiveDataSnapshot(
                         addInjection = l.optString("addInjection"),
                         addMed = l.optString("addMed"),
                         timerTitle = l.optString("timerTitle"),
-                        startCountdown = l.nullableString("startCountdown")
+                        startCountdown = l.nullableString("startCountdown"),
+                        mealTime = l.nullableString("mealTime")
                     )
                 }
             )

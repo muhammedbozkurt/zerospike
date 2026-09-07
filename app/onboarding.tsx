@@ -354,7 +354,7 @@ export default function OnboardingScreen() {
   // exist there.
   const ios = Platform.OS === "ios";
   const insets = useSafeAreaInsets();
-  const { columnPad, height } = useLayout();
+  const { columnPad, height, isWide } = useLayout();
   const router = useRouter();
   const { activeProfile, bumpData, completeOnboarding } = useApp();
   const { scOnboarding } = useLocalSearchParams<{ scOnboarding?: string }>();
@@ -362,6 +362,20 @@ export default function OnboardingScreen() {
   // step with no welcome frame in between (and a later re-render can never
   // re-arm it behind the user).
   const scDiabetes = screenshotDiabetes(scOnboarding);
+  // The Play PHONE canvas frames only the top 57% of a 1080x2400 capture,
+  // against 78% on the iPhone one, so the answer the panel is about ("no
+  // diagnosis", the fifth of six) falls below the frame while the same shot is
+  // fine on iOS and on both tablets (79%, and they render the wide dialog).
+  // Scrolling cannot fix it: the six cards are SHORTER than the scroller, so
+  // there is nothing to scroll. What fits instead is the app's own short-screen
+  // rhythm plus a top-aligned list - the layout this screen already renders on
+  // a phone under DENSE_HEIGHT, where the block fills the room and the centring
+  // is a no-op. Nothing is hidden, resized or reordered.
+  //
+  // Locked to the capture route (scOnboarding, itself behind isScreenshotMode)
+  // AND to a narrow Android window, so iOS captures stay byte-identical and the
+  // two tablet profiles keep the wide dialog they already frame correctly.
+  const scCompact = scDiabetes != null && Platform.OS === "android" && !isWide;
 
   const [phase, setPhase] = useState<Phase>(scDiabetes ? "quiz" : "welcome");
   const [stepIdx, setStepIdx] = useState(scDiabetes ? DIABETES_STEP_IDX : 0);
@@ -749,20 +763,12 @@ export default function OnboardingScreen() {
     }
   }
 
-  function goToPaywall() {
-    // `context` drives the downsell cascade; `reason` is the analytics source,
-    // so paywall_view can be read per entry point instead of as one lump.
-    // `focus` carries the one quiz answer the paywall leads with: someone who
-    // just told us they dose sees the injection line first, everyone else the
-    // trends/report line. It selects copy, nothing more.
-    router.replace({
-      pathname: "/paywall",
-      params: {
-        context: "onboarding",
-        reason: "onboarding",
-        focus: hasInsulin ? "insulin" : "tracking",
-      },
-    });
+  function goToDashboard() {
+    // 2.3.4: onboarding no longer hands off to the paywall - the reveal's
+    // "Continue" now lands straight on the dashboard. The paywall itself
+    // opens later, once this profile's own log count first reaches 3 (see
+    // lib/afterLogsPaywall.ts), not as a tax on finishing the quiz.
+    router.replace("/(tabs)");
   }
 
   // Optional subtitle per step (the title is derived from the step id). Steps
@@ -937,7 +943,7 @@ export default function OnboardingScreen() {
             postmealMinMgdl={postmealMinMgdl}
             postmealMgdl={postmealMgdl}
             plan={revealPlan}
-            onContinue={goToPaywall}
+            onContinue={goToDashboard}
           />
         ) : null}
 
@@ -952,6 +958,7 @@ export default function OnboardingScreen() {
             glyphTone={step === "disclaimer" ? "caution" : "accent"}
             footer={renderFooter()}
             insetsBottom={insets.bottom}
+            compact={scCompact}
           >
             {renderContent()}
           </QuizStep>
@@ -1038,8 +1045,9 @@ export default function OnboardingScreen() {
                 <OptionCard
                   label={t(`onboarding.diabetes_${opt}`)}
                   // Six options in one frame: the tightest gap of the three
-                  // option lists, so the last one still clears the CTA.
-                  spacing={10}
+                  // option lists, so the last one still clears the CTA. The
+                  // Play phone capture takes it tighter still; see scCompact.
+                  spacing={scCompact ? 4 : 10}
                   selected={diabetes === opt}
                   onPress={() => selectAndAdvance(() => selectDiabetes(opt))}
                 />

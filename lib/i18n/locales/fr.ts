@@ -1246,6 +1246,7 @@ const fr: TranslationSchema = {
     nextReminder: "Prochain rappel",
     noData: "Aucune entrée",
     timerTitle: "Contrôle post-repas",
+    mealTime: "Repas",
     hourShort: "h",
     minuteShort: "min",
     agoTemplate: "il y a {{t}}",

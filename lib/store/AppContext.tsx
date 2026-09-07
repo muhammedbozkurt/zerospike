@@ -25,6 +25,7 @@ import i18nInstance, {
 } from "../i18n";
 import { isProCached, verifyProWithStore } from "../services/purchases";
 import { markAlarmTourSeen } from "../services/alarmTour";
+import { armAfterLogsPaywall } from "../services/afterLogsPaywall";
 import { takePendingAlarmRoute } from "../../modules/zerospike-alarmkit";
 import { isScreenshotMode } from "../screenshotMode";
 
@@ -279,6 +280,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // tell this user. Marking it here is also what keeps that tour from
     // needing to compare app versions to tell a new install from an upgrade.
     await markAlarmTourSeen();
+    // Arms the 2.3.4 "first value" paywall from log count 0 for THIS account.
+    // A pre-2.3.4 install never calls completeOnboarding again on update, so
+    // its flag stays unarmed and is grandfathered on the dashboard's first
+    // check instead (lib/services/afterLogsPaywall.ts) - the same
+    // new-install-vs-upgrade split markAlarmTourSeen relies on above.
+    await armAfterLogsPaywall();
     setOnboarded(true);
   }, []);
 

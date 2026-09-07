@@ -4,6 +4,7 @@
     <string name="last_reading_label">آخر قراءة</string>
     <string name="next_reminder_label">التذكير التالي</string>
     <string name="post_meal_label">فحص ما بعد الوجبة</string>
+    <string name="meal_time_label">الوجبة</string>
     <string name="no_data">لا توجد سجلات</string>
     <string name="none">لا يوجد</string>
 </resources>

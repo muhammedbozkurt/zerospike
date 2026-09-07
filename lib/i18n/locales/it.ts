@@ -1244,6 +1244,7 @@ const it: TranslationSchema = {
     nextReminder: "Prossimo promemoria",
     noData: "Nessuna voce",
     timerTitle: "Controllo post-prandiale",
+    mealTime: "Pasto",
     hourShort: "h",
     minuteShort: "min",
     agoTemplate: "{{t}} fa",

@@ -536,8 +536,12 @@ function RootNavigator() {
   // always decided on the same frame the route is known.
   const root = segments[0];
   const inOnboarding = root === "onboarding";
-  // The onboarding flow hands off to the soft paywall (and its downsell) before
-  // completing, so those routes are allowed while still not onboarded.
+  // 2.3.4: onboarding no longer hands off to the paywall (it completes and
+  // goes straight to the dashboard - app/onboarding.tsx), and completeOnboarding
+  // already runs before that, so `onboarded` is true by the time any of these
+  // three routes can be reached today. Left permissive rather than tightened:
+  // not fully verified against every deep-link/notification path, and being
+  // wrong here would misroute a fresh install.
   const inOnboardingPaywall =
     root === "paywall" || root === "downsell" || root === "winback";
   const needsOnboarding =

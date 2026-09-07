@@ -39,6 +39,29 @@ export type AnalyticsParams = Record<
   string | number | boolean | null | undefined
 >;
 
+/**
+ * Known paywall_view sources (the route's `reason` param, echoed into
+ * params.source). Not enforced at every entry screen - each already passes
+ * its own literal - the trailing branded string keeps those compiling while
+ * still giving the values this task cares about a real type. 2.3.4 dropped
+ * "onboarding" as a paywall entry point (the reveal screen goes straight to
+ * the dashboard now) and added "after_logs": the dashboard's own log-count
+ * trigger, see lib/afterLogsPaywall.ts.
+ */
+export type PaywallViewSource =
+  | "after_logs"
+  | "direct"
+  | "health"
+  | "foods"
+  | "profiles"
+  | "rotation"
+  | "mealResponse"
+  | "spike"
+  | "insights"
+  | "export"
+  | "settings"
+  | (string & {});
+
 type AnalyticsSink = (name: string, params?: AnalyticsParams) => void;
 type CrashSink = (error: unknown, context?: AnalyticsParams) => void;
 
