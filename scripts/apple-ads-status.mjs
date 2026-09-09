@@ -21,7 +21,7 @@ const base = "https://api.searchads.apple.com/api/v5";
 const status = target.toUpperCase();
 const cs = (await (await fetch(`${base}/campaigns?limit=50`, { headers: H })).json()).data || [];
 for (const c of cs.filter((c) => c.name.startsWith("ZS-"))) {
-  const r = await fetch(`${base}/campaigns/${c.id}`, { method: "PUT", headers: H, body: JSON.stringify({ status }) });
+  const r = await fetch(`${base}/campaigns/${c.id}`, { method: "PUT", headers: H, body: JSON.stringify({ campaign: { status }, clearGeoTargetingOnCountryOrRegionChange: false }) });
   const j = await r.json().catch(() => ({}));
   console.log(c.name.padEnd(18), r.ok ? j.data?.status : "HATA " + r.status + " " + JSON.stringify(j).slice(0, 160));
 }
