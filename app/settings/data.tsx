@@ -20,19 +20,22 @@ import { setProOverride } from "../../lib/services/purchases";
 import {
   getHealthConnectStatus,
   getHealthWriteEnabled,
+  getHealthWriteStatus,
   hasHealthProvider,
   isHealthConnectPermissionBlocked,
   requestHealthWritePermission,
   setHealthWriteEnabled,
   type HealthConnectStatus,
+  type HealthWriteStatusRecord,
 } from "../../lib/services/health";
+import { healthWriteStatusKey } from "../../lib/healthWriteRetry";
 import type { GlucoseUnit } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
-import { formatLocale } from "../../lib/format";
+import { formatDate, formatLocale, formatTime } from "../../lib/format";
 import { THEME } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 
@@ -244,6 +247,11 @@ export default function DataSettings() {
   // pending state instead of committing to shown/hidden.
   const [healthWriteLoaded, setHealthWriteLoaded] = useState(false);
   const [healthDetailsOpen, setHealthDetailsOpen] = useState(false);
+  // Last attempted mirror write's outcome (2.4 observability), re-read on
+  // every focus (not just on profile switch): a foreground/manual-sync retry
+  // can update it while this screen is not the one on screen, so coming back
+  // to it must not show a stale answer.
+  const [writeStatus, setWriteStatus] = useState<HealthWriteStatusRecord | null>(null);
   // Android-only three-state Health Connect availability (see
   // getHealthConnectStatus). iOS has no such gate, so it resolves once,
   // immediately, to "available" and never re-checks.
@@ -291,6 +299,21 @@ export default function DataSettings() {
       alive = false;
     };
   }, [healthWriteProfileId]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!healthWriteProfileId) {
+        setWriteStatus(null);
+        return;
+      }
+      let alive = true;
+      void getHealthWriteStatus(healthWriteProfileId).then((v) => {
+        if (alive) setWriteStatus(v);
+      });
+      return () => {
+        alive = false;
+      };
+    }, [healthWriteProfileId])
+  );
   async function onToggleHealthWrite(value: boolean) {
     if (!healthWriteProfileId) return;
     if (value) {
@@ -534,6 +557,18 @@ export default function DataSettings() {
             <Text className="text-mut text-xs mt-2">
               {t("settings.healthWriteHint", { health: healthName })}
             </Text>
+            {writeStatus ? (
+              <Text className="text-mut text-[11px] mt-1.5">
+                {t(healthWriteStatusKey(writeStatus)!, {
+                  // Date + time, not time alone (2.3.5 fix): this record can
+                  // be from an earlier day (a foreground retry, not just a
+                  // just-now write), and the same locale-aware helpers every
+                  // other screen uses - never an undefined locale into Intl.
+                  time: `${formatDate(writeStatus.atIso)} ${formatTime(writeStatus.atIso)}`,
+                  count: writeStatus.failedCount ?? 1,
+                })}
+              </Text>
+            ) : null}
           </View>
         </>
       ) : null}

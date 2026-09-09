@@ -78,6 +78,8 @@ import {
   getHealthWriteEnabled,
   hasHealthProvider,
   takeHealthWriteFailureNotice,
+  shouldAnnounceHealthWriteFailure,
+  retryPendingHealthWrites,
   HEALTH_NAME,
   type SyncResult,
 } from "../../lib/services/health";
@@ -733,6 +735,11 @@ export default function DashboardScreen() {
       refreshPostMealTimer();
       void refreshNextReminder();
       if (profileId) void syncLiveData(profileId, glucoseUnit);
+      // Health write-mirror catch-up (2.4): coming back to the foreground is
+      // the other of the two moments this retries pending writes, alongside
+      // a manual sync (runSync below). Not gated on Pro - see
+      // retryPendingHealthWrites's own doc comment.
+      if (profileId) void retryPendingHealthWrites(profileId);
     });
     return () => sub.remove();
   }, [refreshPostMealTimer, refreshNextReminder, profileId, glucoseUnit]);
@@ -808,9 +815,14 @@ export default function DashboardScreen() {
   }
 
   // Pulls from Health. `announce` shows a toast (off for the silent open-sync).
-  // Auto-sync is a Pro feature, so this is the import-path gate as well.
+  // Auto-sync (the IMPORT) is a Pro feature, so that part stays gated below -
+  // but the write-mirror retry is not (same as the foreground AppState
+  // trigger above), so it runs here even for a non-Pro profile that still
+  // has the write toggle on from an earlier Pro period.
   async function runSync(announce: boolean) {
-    if (!activeProfile || syncing || !isProUser) return;
+    if (!activeProfile) return;
+    void retryPendingHealthWrites(activeProfile.id);
+    if (syncing || !isProUser) return;
     setSyncing(true);
     try {
       const res = await importHealthGlucose(activeProfile.id);
@@ -1274,8 +1286,15 @@ export default function DashboardScreen() {
       tags,
       logged_at: loggedAt ? loggedAt.toISOString() : undefined,
     });
-    // Opt-in Apple Health mirror (H1); no-op unless the user enabled it.
-    void writeGlucoseToHealthIfEnabled(addedSugar);
+    // Opt-in Apple Health mirror (H1); no-op unless the user enabled it. A
+    // genuine failure (toggle on, write attempted, came back empty) shows an
+    // immediate toast here rather than waiting for the next manual sync -
+    // capped at once per session by shouldAnnounceHealthWriteFailure.
+    void writeGlucoseToHealthIfEnabled(addedSugar).then((ok) => {
+      if (!ok && shouldAnnounceHealthWriteFailure()) {
+        toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+      }
+    });
     void noteJournalActivity();
     logEvent("log_added", { source: "manual" });
     void noteLogAndMaybeReview("log_glucose");

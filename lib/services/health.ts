@@ -9,6 +9,14 @@ import {
 import { getProfile, listProfiles } from "../db/profiles";
 import type { SugarLog } from "../db/types";
 import { planWriteFlagRead, shouldWriteToHealth } from "../healthWriteScope";
+import {
+  buildRetryStatusRecord,
+  isRetryPassOpen,
+  pruneWritePendingQueue,
+  selectHealthRetryCandidates,
+  type HealthWriteStatusRecord,
+  type PendingWriteEntry,
+} from "../healthWriteRetry";
 import { healthAppleKit } from "./healthAppleKit";
 import {
   healthConnect,
@@ -37,6 +45,7 @@ export type {
   HealthSummary,
   HealthConnectStatus,
 } from "./healthTypes";
+export type { HealthWriteStatusRecord } from "../healthWriteRetry";
 
 /** Shared brand name for the on-device health store, plugged into i18n
  *  strings via the {{health}} placeholder. Single source of truth so it is
@@ -56,6 +65,21 @@ const ACTIVE_PROFILE_KEY = "zerospike.activeProfile";
  *  app/(tabs)/index.tsx, so screens outside the dashboard can tell whether THIS
  *  profile connected Health at all. Values are "true"/"false" there. */
 const HEALTH_SYNC_KEY = "zerospike.cgmSync";
+/** Last attempted mirror write's outcome, PER PROFILE (same scoping as
+ *  HEALTH_WRITE_KEY): a JSON-serialised {@link HealthWriteStatusRecord},
+ *  shown as the status line under the write toggle (settings/data.tsx). */
+const HEALTH_WRITE_STATUS_KEY = "zerospike.healthWriteStatus";
+/**
+ * CONSENT SCOPE (2.3.5 fix): the queue of sugar_logs ids the retry in
+ * {@link retryPendingHealthWrites} is EVER allowed to touch, PER PROFILE. A
+ * row joins this queue only from {@link writeGlucoseToHealthIfEnabled} at
+ * the exact moment a write was attempted (toggle on, row eligible) and
+ * failed - never merely because it "looks" pending (no uuid yet). Without
+ * this, a scan-based retry would eventually reach - and silently write to
+ * Health - readings the user logged while the mirror was OFF, which they
+ * never agreed to have written at all.
+ */
+const HEALTH_WRITE_PENDING_KEY = "zerospike.healthWritePending";
 
 /** Same resolution as lib/db/reminders.ts: saved id first, else the first
  *  profile. Never throws - a failed lookup is "no profile", like a fresh install. */
@@ -113,6 +137,155 @@ export async function setHealthWriteEnabled(
     await AsyncStorage.removeItem(HEALTH_WRITE_KEY);
   } catch {
     // best-effort
+  }
+}
+
+/** Persists the outcome of an attempted mirror write for this profile -
+ *  best-effort, never thrown from a write path over it. `failedCount` is
+ *  only meaningful (and only ever passed) for a whole RETRY PASS - see
+ *  {@link buildRetryStatusRecord}; a single fresh write/correction never
+ *  passes it, so the record reads as a plain single failure. */
+async function recordHealthWriteStatus(
+  profileId: string | null | undefined,
+  ok: boolean,
+  failedCount?: number
+): Promise<void> {
+  if (!profileId) return;
+  try {
+    const record: HealthWriteStatusRecord = {
+      result: ok ? "success" : "failed",
+      atIso: new Date().toISOString(),
+      ...(ok || failedCount == null ? {} : { failedCount }),
+    };
+    await AsyncStorage.setItem(`${HEALTH_WRITE_STATUS_KEY}.${profileId}`, JSON.stringify(record));
+  } catch {
+    // best-effort
+  }
+}
+
+/** Writes {@link HealthWriteStatusRecord} straight to storage - used by
+ *  retryPendingHealthWrites, which already builds the exact record it wants
+ *  (via buildRetryStatusRecord) rather than deriving one from a single
+ *  ok/failedCount pair. */
+async function saveHealthWriteStatus(
+  profileId: string,
+  record: HealthWriteStatusRecord
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${HEALTH_WRITE_STATUS_KEY}.${profileId}`, JSON.stringify(record));
+  } catch {
+    // best-effort
+  }
+}
+
+/** The entries currently queued for retry for this profile (see
+ *  HEALTH_WRITE_PENDING_KEY's doc comment for the consent-scope rule they
+ *  enforce). Corrupt/missing storage reads as an empty queue. Tolerates a
+ *  bare id string too (defensive only - nothing in this codebase has ever
+ *  stored the queue that way, but a malformed/hand-edited entry should not
+ *  crash the read): it is given a fresh `queuedAtIso` rather than dropped.
+ */
+async function getPendingWriteEntries(profileId: string): Promise<PendingWriteEntry[]> {
+  try {
+    const raw = await AsyncStorage.getItem(`${HEALTH_WRITE_PENDING_KEY}.${profileId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const nowIso = new Date().toISOString();
+    const out: PendingWriteEntry[] = [];
+    for (const v of parsed) {
+      if (typeof v === "string") out.push({ id: v, queuedAtIso: nowIso });
+      else if (v && typeof v.id === "string" && typeof v.queuedAtIso === "string") {
+        out.push({ id: v.id, queuedAtIso: v.queuedAtIso });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function savePendingWriteEntries(
+  profileId: string,
+  entries: readonly PendingWriteEntry[]
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${HEALTH_WRITE_PENDING_KEY}.${profileId}`, JSON.stringify(entries));
+  } catch {
+    // best-effort
+  }
+}
+
+/** The ids currently queued for retry - convenience for callers that only
+ *  need membership/identity, not the queue timestamps. */
+async function getPendingWriteIds(profileId: string): Promise<string[]> {
+  return (await getPendingWriteEntries(profileId)).map((e) => e.id);
+}
+
+/** Queues one row for retry - called ONLY at the moment a write was
+ *  actually attempted (toggle on, row eligible) and failed. Never called
+ *  for a row that was simply never attempted. Also prunes the queue (2.3.5
+ *  fix): every add is a natural point to drop what has aged out rather than
+ *  letting the queue grow unbounded between retry passes. */
+async function addPendingWriteId(profileId: string | null | undefined, id: string): Promise<void> {
+  if (!profileId) return;
+  try {
+    const nowMs = Date.now();
+    let entries = pruneWritePendingQueue(await getPendingWriteEntries(profileId), nowMs);
+    if (!entries.some((e) => e.id === id)) {
+      entries = pruneWritePendingQueue(
+        [...entries, { id, queuedAtIso: new Date(nowMs).toISOString() }],
+        nowMs
+      );
+    }
+    await savePendingWriteEntries(profileId, entries);
+  } catch {
+    // best-effort
+  }
+}
+
+/** Drops one or more ids from the retry queue - a successful (re)write, or
+ *  a row that no longer exists locally. No-op on an empty list so a caller
+ *  never has to guard the call itself. */
+async function removePendingWriteIds(
+  profileId: string,
+  idsToRemove: readonly string[]
+): Promise<void> {
+  if (idsToRemove.length === 0) return;
+  try {
+    const entries = await getPendingWriteEntries(profileId);
+    const remove = new Set(idsToRemove);
+    const next = entries.filter((e) => !remove.has(e.id));
+    if (next.length === entries.length) return;
+    await savePendingWriteEntries(profileId, next);
+  } catch {
+    // best-effort
+  }
+}
+
+/** Last attempted mirror write's outcome for this profile (default: the
+ *  active one), or null when none has been attempted yet. Read by
+ *  settings/data.tsx for the status line under the write toggle. */
+export async function getHealthWriteStatus(
+  profileId?: string | null
+): Promise<HealthWriteStatusRecord | null> {
+  try {
+    const id = profileId ?? (await activeProfileId());
+    if (!id) return null;
+    const raw = await AsyncStorage.getItem(`${HEALTH_WRITE_STATUS_KEY}.${id}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<HealthWriteStatusRecord>;
+    if (parsed.result !== "success" && parsed.result !== "failed") return null;
+    if (typeof parsed.atIso !== "string") return null;
+    // failedCount only ever comes from a retry-pass record (buildRetryStatusRecord) -
+    // preserved here so a batch failure keeps its real count instead of the
+    // caller falling back to "1" for a plain single-write failure.
+    if (typeof parsed.failedCount === "number" && Number.isFinite(parsed.failedCount)) {
+      return { result: parsed.result, atIso: parsed.atIso, failedCount: parsed.failedCount };
+    }
+    return { result: parsed.result, atIso: parsed.atIso };
+  } catch {
+    return null;
   }
 }
 
@@ -278,6 +451,40 @@ export function takeHealthWriteFailureNotice(): boolean {
 }
 
 /**
+ * Session-scoped, independent of {@link healthWriteFailureNoticePending}
+ * above (which drives the separate "tell me at the next manual sync" toast
+ * on the dashboard): this one gates the NEW immediate toast shown right on
+ * the screen that just tried to write a reading (index.tsx, calculator.tsx,
+ * useJournalRows.tsx). Without it, a run of consecutive failed writes (e.g.
+ * Health access revoked) would otherwise pop the same toast after every
+ * single one.
+ */
+let healthWriteFailureToastShown = false;
+
+/**
+ * True the FIRST time it is called after a mirrored write failed while the
+ * toggle was on, for the remaining lifetime of this app session; false on
+ * every call after that (including across further failures). A caller shows
+ * its "could not write to Health" toast only when this returns true.
+ */
+export function shouldAnnounceHealthWriteFailure(): boolean {
+  if (healthWriteFailureToastShown) return false;
+  healthWriteFailureToastShown = true;
+  return true;
+}
+
+/**
+ * Row ids a write is mid-flight on RIGHT NOW, module-level (2.3.5 fix):
+ * added the instant an attempt starts, removed as soon as it settles either
+ * way. Both the fresh-write path (writeGlucoseToHealthIfEnabled) and the
+ * retry pass (retryPendingHealthWrites) add/remove their own row here and
+ * the retry additionally SKIPS anything already in this set - without it, a
+ * fresh write and a retry pass racing on the same row could both see
+ * healthkit_uuid still null and write a second sample for the same reading.
+ */
+const healthWriteInFlightIds = new Set<string>();
+
+/**
  * Writes ONE reading to the platform health store as a bloodGlucose sample
  * (mg/dL) and returns the created sample's id, or null on failure / no
  * provider. The id is stored on the local row so the mirror can be revoked
@@ -330,43 +537,72 @@ export async function deleteGlucoseFromHealth(uuid: string | null): Promise<void
  *
  * The opt-in belongs to ONE profile, and the row carries its own profile_id, so
  * a reading is mirrored only when the two are the same person.
+ *
+ * Returns true when there was nothing to report (mirror off/not this
+ * profile/imported row, or the write succeeded) and false when the mirror
+ * WAS applicable and the write itself failed - the signal a caller uses to
+ * show its own immediate "could not write" toast (gated on
+ * {@link shouldAnnounceHealthWriteFailure} so it only ever fires once per
+ * session).
  */
-export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void> {
-  if (log.source === "health") return;
-  if (!hasHealthProvider()) return;
+export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<boolean> {
+  if (log.source === "health") return true;
+  if (!hasHealthProvider()) return true;
   const scope = await readHealthWriteScope();
   const allowed = shouldWriteToHealth({
     writeEnabledForProfile: scope.enabled,
     recordProfileId: log.profile_id,
     enabledProfileId: scope.profileId,
   });
-  if (!allowed) return;
-  const uuid = await writeGlucoseToHealth(log.glucose_level_mgdl, log.logged_at);
-  if (!uuid) {
-    // The toggle is on and the write was attempted, so a null result here
-    // means the write itself failed (H3) - most likely revoked Settings
-    // access - not that the mirror is off.
-    healthWriteFailureNoticePending = true;
-    return;
-  }
+  if (!allowed) return true;
+  healthWriteInFlightIds.add(log.id);
   try {
-    // The caller fires this and moves on, so the row can be undone while the write
-    // is still in flight. A sample whose local reading no longer exists is an
-    // orphan in the user's Health app, so it is revoked instead of being recorded
-    // on a row that is gone.
-    if (!(await getSugarLog(log.id))) {
-      await deleteGlucoseFromHealth(uuid);
-      return;
+    const uuid = await writeGlucoseToHealth(log.glucose_level_mgdl, log.logged_at);
+    await recordHealthWriteStatus(log.profile_id, uuid != null);
+    if (!uuid) {
+      // The toggle is on and the write was attempted, so a null result here
+      // means the write itself failed (H3) - most likely revoked Settings
+      // access - not that the mirror is off. Queued so the next
+      // foreground/manual-sync retry re-attempts exactly this row (see
+      // retryPendingHealthWrites) - the queue is the ONLY thing a retry
+      // ever reads from, so a row logged while the toggle was off can never
+      // be swept up later (consent scope, 2.3.5 fix).
+      healthWriteFailureNoticePending = true;
+      await addPendingWriteId(log.profile_id, log.id);
+      return false;
     }
-    await setSugarLogHealthUuid(log.id, uuid);
-  } catch (err) {
-    // This is fired-and-forgotten from the add flow (never awaited), so a DB
-    // hiccup here must never surface as an unhandled rejection. The sample is
-    // already written to Health; at worst it stays un-linked (healthkit_uuid
-    // not recorded on the row) instead of crashing. H5: the sample is now
-    // orphaned in Health (nothing local points at it), so this is tracked
-    // silently - no message to the user for a DB-write failure they cannot act on.
-    logCrash(err, { screen: "health", op: "linkHealthUuid" });
+    try {
+      // The caller fires this and moves on, so the row can be undone while the write
+      // is still in flight. A sample whose local reading no longer exists is an
+      // orphan in the user's Health app, so it is revoked instead of being recorded
+      // on a row that is gone.
+      if (!(await getSugarLog(log.id))) {
+        await deleteGlucoseFromHealth(uuid);
+        return true;
+      }
+      await setSugarLogHealthUuid(log.id, uuid);
+      // In case an earlier attempt had queued this same row: it is linked
+      // now, so it must not be retried again.
+      await removePendingWriteIds(log.profile_id, [log.id]);
+    } catch (err) {
+      // The sample IS in Health now but the local row never got the link -
+      // left alone, a LATER write (a retry, or this row logged again) would
+      // see healthkit_uuid still null and write a SECOND sample for the
+      // same reading (2.3.5 double-write fix). Revoke the orphan and queue
+      // the row instead, so the next retry starts clean.
+      try {
+        await deleteGlucoseFromHealth(uuid);
+      } catch {
+        // best-effort: the DB failure below is what matters here
+      }
+      await addPendingWriteId(log.profile_id, log.id);
+      // This is fired-and-forgotten from the add flow (never awaited), so a DB
+      // hiccup here must never surface as an unhandled rejection.
+      logCrash(err, { screen: "health", op: "linkHealthUuid" });
+    }
+    return true;
+  } finally {
+    healthWriteInFlightIds.delete(log.id);
   }
 }
 
@@ -380,6 +616,11 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<void
  * a write of the new one.
  */
 export async function updateGlucoseInHealth(
+  /** The row being corrected - queued for retry on failure (2.3.5 fix): this
+   *  row already carried a mirror sample (oldUuid), so it is squarely inside
+   *  the mirror's already-consented scope, not a consent-scope expansion the
+   *  way a never-attempted row would be. */
+  logId: string,
   oldUuid: string | null,
   mgdl: number,
   dateIso: string,
@@ -399,10 +640,132 @@ export async function updateGlucoseInHealth(
   if (!allowed) return null;
   if (oldUuid) await deleteGlucoseFromHealth(oldUuid);
   const uuid = await writeGlucoseToHealth(mgdl, dateIso);
+  await recordHealthWriteStatus(recordProfileId, uuid != null);
   // Same H3 signal as writeGlucoseToHealthIfEnabled: allowed to write, but the
   // write itself came back empty.
-  if (!uuid) healthWriteFailureNoticePending = true;
+  if (!uuid) {
+    healthWriteFailureNoticePending = true;
+    // Queued so the next foreground/manual-sync retry re-attempts exactly
+    // this row - the caller still clears healthkit_uuid to null on the row
+    // (it has no fresh sample to point at), which is exactly what makes the
+    // row eligible again once queued.
+    await addPendingWriteId(recordProfileId, logId);
+  }
   return uuid;
+}
+
+// Module-level (not per-profile): the app only ever shows one active
+// profile's dashboard at a time, and this guards against the two triggers
+// below (foreground AppState + manual sync) firing close together and
+// running two overlapping passes, which could otherwise both see the same
+// row's healthkit_uuid as still null and write it to Health twice.
+let healthRetryInFlight = false;
+
+/**
+ * Foreground/manual-sync catch-up for the write mirror (2.4/2.3.5): re-
+ * attempts a bounded, chronological batch of THIS profile's own QUEUED rows
+ * (see HEALTH_WRITE_PENDING_KEY's doc comment - consent scope: never a row
+ * that was simply never attempted) - covers both "the write silently failed
+ * at the time" (H3) and "Health write access was only granted just now"
+ * (see healthAppleKit's pre-write authorization check). Sequential, never
+ * parallel, capped at {@link HEALTH_RETRY_MAX_ROWS} - see
+ * selectHealthRetryCandidates for the exact selection rule.
+ *
+ * Gated on the SAME per-profile scope every other mirror write uses:
+ * retrying is never a way around "this profile's toggle is off", and it is
+ * not gated on Pro status - once the write mirror is on for a profile it
+ * keeps working the same way a fresh write does (see settings/data.tsx,
+ * where turning it OFF is always available even to a lapsed-Pro profile).
+ */
+export async function retryPendingHealthWrites(
+  profileId: string
+): Promise<{ attempted: number; succeeded: number }> {
+  const none = { attempted: 0, succeeded: 0 };
+  if (!profileId || !hasHealthProvider() || healthRetryInFlight) return none;
+  const scope = await readHealthWriteScope(profileId);
+  if (!scope.enabled || scope.profileId !== profileId) return none;
+  healthRetryInFlight = true;
+  try {
+    const nowMs = Date.now();
+    // Prune FIRST (2.3.5 fix): every retry pass, not just every add, is a
+    // point to drop what has aged out of the queue - a profile that never
+    // opens the app for a while would otherwise only ever prune on the rare
+    // fresh write that happens to fail.
+    const prunedEntries = pruneWritePendingQueue(await getPendingWriteEntries(profileId), nowMs);
+    await savePendingWriteEntries(profileId, prunedEntries);
+    const pendingIds = prunedEntries.map((e) => e.id);
+    if (pendingIds.length === 0) return none;
+    // Fetch every queued row so the pure selector can apply the window/cap
+    // rule against its real logged_at; a row that no longer exists (deleted
+    // since the failed write) is dropped from the queue right here instead
+    // of being retried forever.
+    const fetched = await Promise.all(pendingIds.map((id) => getSugarLog(id)));
+    const rows: SugarLog[] = [];
+    const goneIds: string[] = [];
+    fetched.forEach((row, i) => {
+      if (row) rows.push(row);
+      else goneIds.push(pendingIds[i]);
+    });
+    if (goneIds.length > 0) await removePendingWriteIds(profileId, goneIds);
+
+    const candidates = selectHealthRetryCandidates(
+      rows,
+      pendingIds,
+      healthWriteInFlightIds,
+      nowMs
+    );
+    let succeeded = 0;
+    const succeededIds: string[] = [];
+    for (const row of candidates) {
+      // Re-read fresh for EVERY row (2.3.5 fix), not the `scope` captured
+      // once above: a pass can span many sequential native calls, and the
+      // user may switch the write toggle off in the middle of one
+      // (settings/data.tsx) - stop the whole pass right there rather than
+      // spending further writes on a stale "was on when I started" read.
+      const freshScope = await readHealthWriteScope(profileId);
+      if (!isRetryPassOpen(freshScope, profileId)) break;
+      // Defensive only: every queued row already belongs to this profile by
+      // construction (the queue is itself per-profile), so this should
+      // never actually trip - a mismatch here is queue corruption, not a
+      // reason to stop the whole pass, so it skips just this row.
+      if (row.profile_id !== profileId) continue;
+      healthWriteInFlightIds.add(row.id);
+      try {
+        const uuid = await writeGlucoseToHealth(row.glucose_level_mgdl, row.logged_at);
+        if (!uuid) continue; // stays queued, tried again next pass
+        try {
+          await setSugarLogHealthUuid(row.id, uuid);
+          // Only counted as succeeded once the LOCAL link is written too -
+          // a native write that succeeds but never links (below) leaves the
+          // row still pending, and must count toward the failed tally, not
+          // the succeeded one, or buildRetryStatusRecord's count would be
+          // wrong (see 2.3.5 fix).
+          succeeded++;
+          succeededIds.push(row.id);
+        } catch (err) {
+          // Same double-write guard as the fresh-write path: the sample
+          // exists now but never got linked, so revoke it and leave the
+          // row queued rather than risking a second sample next retry.
+          try {
+            await deleteGlucoseFromHealth(uuid);
+          } catch {
+            // best-effort
+          }
+          logCrash(err, { screen: "health", op: "retryLinkHealthUuid" });
+        }
+      } finally {
+        healthWriteInFlightIds.delete(row.id);
+      }
+    }
+    if (succeededIds.length > 0) await removePendingWriteIds(profileId, succeededIds);
+    // ONE status record for the whole pass (never one per row - that would
+    // leave only the last row's outcome on screen).
+    const record = buildRetryStatusRecord(candidates.length, succeeded, new Date(nowMs).toISOString());
+    if (record) await saveHealthWriteStatus(profileId, record);
+    return { attempted: candidates.length, succeeded };
+  } finally {
+    healthRetryInFlight = false;
+  }
 }
 
 // ── Import into local SQLite ───────────────────────────────────────────────

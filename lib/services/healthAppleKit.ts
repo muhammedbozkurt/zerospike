@@ -86,8 +86,43 @@ async function readRecentGlucose(windowDays: number, max: number): Promise<Gluco
     });
 }
 
+/**
+ * Write (share) authorization for BloodGlucose, checked right before every
+ * write (2.4): authorizationStatusFor is synchronous and, for a SHARE type
+ * (unlike the read side), reliably reports notDetermined / sharingDenied /
+ * sharingAuthorized. A first-ever write used to just call saveQuantitySample
+ * cold - which works once requestWritePermission has already run (the
+ * settings toggle), but a stale/blocked permission would otherwise reach the
+ * native call to fail regardless. notDetermined re-prompts once; anything
+ * else that is not "authorized" fails the write here, before it is attempted.
+ */
+async function ensureWriteAuthorized(HK: any): Promise<boolean> {
+  try {
+    const statusFor = () => HK.authorizationStatusFor("HKQuantityTypeIdentifierBloodGlucose");
+    const isAuthorized = () => statusFor() === HK.AuthorizationStatus.sharingAuthorized;
+    if (isAuthorized()) return true;
+    if (statusFor() !== HK.AuthorizationStatus.notDetermined) return false; // sharingDenied
+    // requestAuthorization's OWN resolved value only says the request
+    // completed without error, never whether it was granted - HealthKit
+    // deliberately never reveals that to the completion handler, even for a
+    // share (write) type. authorizationStatusFor is the one call that
+    // reports the real decision, so it is re-checked after the prompt closes
+    // rather than trusting what requestAuthorization resolved to.
+    await HK.requestAuthorization({
+      toShare: ["HKQuantityTypeIdentifierBloodGlucose"],
+      toRead: [],
+    });
+    return isAuthorized();
+  } catch {
+    // authorizationStatusFor is not expected to throw, but if it does, fall
+    // through to the actual write rather than blocking it on an unrelated bug.
+    return true;
+  }
+}
+
 async function writeGlucose(mgdl: number, dateIso: string): Promise<string | null> {
   const HK = require("@kingstinct/react-native-healthkit");
+  if (!(await ensureWriteAuthorized(HK))) return null;
   const when = new Date(dateIso);
   const res = await HK.saveQuantitySample("HKQuantityTypeIdentifierBloodGlucose", {
     unit: "mg/dL",

@@ -85,6 +85,8 @@ import {
   getHealthWriteEnabled,
   updateGlucoseInHealth,
   writeGlucoseToHealthIfEnabled,
+  shouldAnnounceHealthWriteFailure,
+  HEALTH_NAME,
 } from "../lib/services/health";
 import { foodSourceLabel } from "../lib/services/openFoodFacts";
 import type { Food, InjectionSite, LogTag, MealSlot, SitePoint } from "../lib/db/types";
@@ -1113,6 +1115,7 @@ function CalculatorScreen() {
               const row = await getSugarLog(linkedSugarLogId);
               if (!row?.healthkit_uuid) return;
               const uuid = await updateGlucoseInHealth(
+                row.id,
                 row.healthkit_uuid,
                 row.glucose_level_mgdl,
                 row.logged_at,
@@ -1120,6 +1123,9 @@ function CalculatorScreen() {
                 row.profile_id
               );
               await setSugarLogHealthUuid(row.id, uuid);
+              if (!uuid && shouldAnnounceHealthWriteFailure()) {
+                toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+              }
             } catch {
               // the local edit must never fail because the mirror did
             }
@@ -1145,7 +1151,11 @@ function CalculatorScreen() {
               tags,
               logged_at: loggedIso,
             });
-            void writeGlucoseToHealthIfEnabled(sugar);
+            void writeGlucoseToHealthIfEnabled(sugar).then((ok) => {
+              if (!ok && shouldAnnounceHealthWriteFailure()) {
+                toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+              }
+            });
             newSugarLogId = sugar.id;
           }
           await updateMealLog(mealLogId, { sugar_log_id: newSugarLogId });
@@ -1186,7 +1196,14 @@ function CalculatorScreen() {
             logged_at: loggedIso,
           });
           // Opt-in Apple Health mirror (H1); no-op unless the user enabled it.
-          void writeGlucoseToHealthIfEnabled(sugar);
+          // A genuine failure gets one immediate toast, capped per session by
+          // shouldAnnounceHealthWriteFailure (the same signal the dashboard's
+          // own manual-sync toast and the foreground/sync retry both key off).
+          void writeGlucoseToHealthIfEnabled(sugar).then((ok) => {
+            if (!ok && shouldAnnounceHealthWriteFailure()) {
+              toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+            }
+          });
           sugarLogId = sugar.id;
           createdSugarLogId = sugar.id;
         }

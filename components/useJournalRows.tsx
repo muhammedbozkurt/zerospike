@@ -13,7 +13,12 @@ import {
 import { deleteMealLog, deleteSugarLog } from "../lib/db/logs";
 import { deleteInjection } from "../lib/db/injections";
 import { deleteMed } from "../lib/db/meds";
-import { deleteGlucoseFromHealth, writeGlucoseToHealthIfEnabled, HEALTH_NAME } from "../lib/services/health";
+import {
+  deleteGlucoseFromHealth,
+  writeGlucoseToHealthIfEnabled,
+  shouldAnnounceHealthWriteFailure,
+  HEALTH_NAME,
+} from "../lib/services/health";
 import { syncLiveData } from "../lib/services/liveData";
 import { mealIdsWithResponse } from "../lib/mealResponse";
 import { mealSlotForHour } from "../lib/insulin";
@@ -77,7 +82,7 @@ export function useJournalRows(input: {
   const { t } = useTranslation();
   const router = useRouter();
   const { activeProfile, bumpData } = useApp();
-  const { actionSheet, confirm } = useFeedback();
+  const { actionSheet, confirm, toast } = useFeedback();
   const { entries, onChanged, onEditGlucose } = input;
 
   const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
@@ -109,7 +114,7 @@ export function useJournalRows(input: {
         const loggedAt = row.logged_at;
         if (!Number.isFinite(mgdl) || typeof loggedAt !== "string") continue;
         try {
-          await writeGlucoseToHealthIfEnabled({
+          const ok = await writeGlucoseToHealthIfEnabled({
             id: String(row.id),
             profile_id: String(row.profile_id),
             glucose_level_mgdl: mgdl,
@@ -119,12 +124,15 @@ export function useJournalRows(input: {
             tags: [],
             healthkit_uuid: null,
           });
+          if (!ok && shouldAnnounceHealthWriteFailure()) {
+            toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+          }
         } catch {
           // best-effort re-mirror; the local restore already succeeded either way
         }
       }
     }
-  }, []);
+  }, [t, toast]);
 
   // P17: a delete can take down more than rows. A meal that armed the post-meal
   // countdown is the case device QA found - the card kept counting down to a

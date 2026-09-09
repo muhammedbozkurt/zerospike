@@ -70,6 +70,7 @@ export async function remirrorEditedGlucose(
     if (!(await getHealthWriteEnabled(stored.profile_id))) return;
     const dateIso = (loggedAt ?? new Date(previous.logged_at)).toISOString();
     const uuid = await updateGlucoseInHealth(
+      previous.id,
       previous.healthkit_uuid,
       mgdl,
       dateIso,

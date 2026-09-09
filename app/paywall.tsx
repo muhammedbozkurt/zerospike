@@ -309,29 +309,34 @@ function PaywallScreen() {
   // limit explanation, so `body` stays optional and the card below only renders
   // it when present.
   const limit: { title: string; body?: string } | null =
-    reason === "health"
-      ? { title: t("paywall.limitTitleHealth"), body: t("paywall.limitBodyHealth", { health: healthName }) }
-      : reason === "foods"
-        ? {
-            title: t("paywall.limitTitleFoods"),
-            body: t("paywall.limitBodyFoods", { limit: FREE_CUSTOM_FOOD_LIMIT }),
-          }
-        : reason === "profiles"
-          ? { title: t("paywall.limitTitleProfiles"), body: t("paywall.limitBodyProfiles") }
-          : reason === "rotation"
-            ? { title: t("paywall.limitTitleRotation"), body: t("paywall.limitBodyRotation") }
-            : reason === "mealResponse"
-              ? { title: t("paywall.limitTitleMealResponse"), body: t("paywall.limitBodyMealResponse") }
-              : reason === "spike"
-                ? {
-                    title: t("paywall.limitTitleSpike"),
-                    body: t("paywall.limitBodySpike"),
-                  }
-                : reason === "insights"
-                  ? { title: t("paywall.limitTitleInsights") }
-                  : reason === "export"
-                    ? { title: t("paywall.limitTitleExport") }
-                    : null;
+    reason === "after_logs"
+      ? {
+          title: t("paywall.limitTitleAfterLogs"),
+          body: t("paywall.limitBodyAfterLogs", { health: healthName }),
+        }
+      : reason === "health"
+        ? { title: t("paywall.limitTitleHealth"), body: t("paywall.limitBodyHealth", { health: healthName }) }
+        : reason === "foods"
+          ? {
+              title: t("paywall.limitTitleFoods"),
+              body: t("paywall.limitBodyFoods", { limit: FREE_CUSTOM_FOOD_LIMIT }),
+            }
+          : reason === "profiles"
+            ? { title: t("paywall.limitTitleProfiles"), body: t("paywall.limitBodyProfiles") }
+            : reason === "rotation"
+              ? { title: t("paywall.limitTitleRotation"), body: t("paywall.limitBodyRotation") }
+              : reason === "mealResponse"
+                ? { title: t("paywall.limitTitleMealResponse"), body: t("paywall.limitBodyMealResponse") }
+                : reason === "spike"
+                  ? {
+                      title: t("paywall.limitTitleSpike"),
+                      body: t("paywall.limitBodySpike"),
+                    }
+                  : reason === "insights"
+                    ? { title: t("paywall.limitTitleInsights") }
+                    : reason === "export"
+                      ? { title: t("paywall.limitTitleExport") }
+                      : null;
 
   async function buy() {
     if (busy) return;
@@ -436,16 +441,13 @@ function PaywallScreen() {
         className="flex-1"
         style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}
       >
-        {/* Header (mockup 08: free exit left, title centred, close right) */}
+        {/* Header (mockup 08 originally had a free-text exit on the left too;
+            2.3.5 drops it - the App Store rule only requires a visible close
+            control, not two of them, and the second exit read as confusing.
+            A left spacer matching the close tile's width keeps the title
+            centred exactly as before.) */}
         <View className="flex-row items-center justify-between px-4 py-2">
-          <Pressable onPress={dismiss} hitSlop={10} className="px-1 py-1" style={{ flexShrink: 1 }}>
-            <Text
-              style={{ color: THEME.muted, fontWeight: "600", fontSize: 13, flexShrink: 1 }}
-              numberOfLines={1}
-            >
-              {t("paywall.notNow")}
-            </Text>
-          </Pressable>
+          <View style={{ width: 30 }} />
           <Text
             style={{
               color: THEME.ink,
@@ -539,7 +541,14 @@ function PaywallScreen() {
                   }}
                 >
                   <Ionicons name="checkmark-circle" size={14} color={THEME.accent} />
-                  <Text style={{ color: THEME.ink, flex: 1, marginLeft: 8, fontSize: 12 }}>
+                  {/* numberOfLines: outcome-phrased labels (2.3.5) run longer
+                      in German/French than the old single-word ones; two
+                      lines keeps a long translation from being clipped
+                      instead of shrinking the whole row. */}
+                  <Text
+                    style={{ color: THEME.ink, flex: 1, marginLeft: 8, fontSize: 12 }}
+                    numberOfLines={2}
+                  >
                     {text}
                   </Text>
                 </View>

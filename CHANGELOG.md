@@ -7,6 +7,33 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
 ve `package.json`.
 
+## 2.3.5 (build 73 / versionCode 74, eas autoIncrement sonrasi)
+
+### Enjeksiyon kaydı
+- Enjeksiyon düzenleme sayfasındaki kalem/ürün seçici kaldırıldı; kayıt
+  hangi ürünle girildiyse onu taşıyor. Ürün artık yalnız Ayarlar > Profil'den
+  değişiyor.
+
+### Health yazması
+- Bir ölçüm Health'e yazılamadığında ekranda anında bilgilendirme (toast)
+  çıkıyor, oturum başına bir kez.
+- Ön plana gelindiğinde veya elle senkronda, daha önce yazılamamış son 7
+  günün ölçümleri sırayla yeniden deneniyor.
+- Ayarlar > Veri'de yazma anahtarının altında son yazmanın başarılı mı
+  başarısız mı olduğu ve zamanı gösteriliyor.
+- iOS'ta yazma izni her yazımdan önce kontrol ediliyor; izin belirsizse
+  tekrar sorulup sonuca göre değerlendiriliyor.
+
+### Paywall
+- Üçüncü kayıttan sonra açılan paywall artık kendi bağlamlı başlık ve
+  metnini gösteriyor; önceden jenerik başlığa düşüyordu.
+- Fayda ızgarası özellik adı yerine sonucu anlatıyor (örnek: "90 güne kadar
+  trendler", "doktorunuz için PDF").
+- Üst bardaki ayrı "Şimdi değil" düğmesi kaldırıldı, tek kapatma kontrolü
+  (X) kaldı.
+- Fiyat sabitleri güncellendi; bunlar yalnız offerings yüklenemediğinde
+  gösterilen yedek değerler, gerçek mağaza fiyatları değişmedi.
+
 ## 2.3.4 (build 72 / versionCode 73, eas autoIncrement sonrasi)
 
 ### Paywall zamanlaması

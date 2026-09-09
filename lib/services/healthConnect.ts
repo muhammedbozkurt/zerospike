@@ -170,6 +170,17 @@ async function writeGlucose(mgdl: number, dateIso: string): Promise<string | nul
   if (!(await ensureReady())) return null;
   try {
     const HC = require("react-native-health-connect");
+    // Checked right before every write (2.4): requestWritePermission already
+    // ran at point of use (the settings toggle), but access can be revoked
+    // from system Settings afterwards without this app being told - the same
+    // class of gap HealthKit's authorizationStatusFor closes on iOS. Skipping
+    // straight to null here (rather than letting insertRecords fail on its
+    // own) is what lets the caller's failure-toast/retry logic (health.ts)
+    // treat this the same as any other failed write.
+    const granted: GrantedPermission[] = await HC.getGrantedPermissions();
+    if (!granted.some((p) => p.accessType === "write" && p.recordType === "BloodGlucose")) {
+      return null;
+    }
     const ids: string[] = await HC.insertRecords([
       {
         recordType: "BloodGlucose",

@@ -26,7 +26,6 @@ import {
 import { OTHER_PRODUCT_ID } from "../lib/insulinCatalog";
 import { getRotationCycleStart } from "../lib/rotationCycle";
 import { InjectionBodyMap } from "./InjectionBodyMap";
-import { InsulinProductPicker } from "./InsulinProductPicker";
 import { Skeleton } from "./Skeleton";
 import { DirIcon } from "./DirIcon";
 import { checkDose } from "../lib/insulin";
@@ -54,8 +53,11 @@ export interface InjectionEditTarget {
   bolus_kind: BolusKind | null;
   logged_at: string;
   /** Which product this row actually used (schema v22, see
-   *  ../lib/insulinCatalog). Its own copy, independent of the profile's
-   *  current basal_insulin_id / bolus_insulin_id. */
+   *  ../lib/insulinCatalog). save() keeps this as-is UNLESS the sheet's own
+   *  insulin-type toggle is switched away from this row's original type -
+   *  then it is re-derived from the active profile's product for the NEW
+   *  type instead, so a basal product can never end up sitting on a row
+   *  that now reads as bolus (or vice versa). */
   insulin_product_id: string | null;
   insulin_product_other: string | null;
 }
@@ -169,11 +171,6 @@ export function InjectionEditSheet({
   const [dose, setDose] = useState(0);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
-  // Which product THIS row used (schema v22): its own copy, seeded from the
-  // row being edited (never re-derived from the profile here, unlike the
-  // create form's prefill - see app/(tabs)/injection.tsx).
-  const [productId, setProductId] = useState<string | null>(null);
-  const [productOther, setProductOther] = useState<string | null>(null);
   const [site, setSite] = useState<InjectionSite>("abdomen_left");
   const [point, setPoint] = useState<SitePoint | null>(null);
   // Whether the working state currently HAS a site (site+point pair), as
@@ -201,8 +198,6 @@ export function InjectionEditSheet({
       setDose(injection.dose_units ?? 0);
       setInsulinType(injection.insulin_type ?? "bolus");
       setBolusKind(injection.bolus_kind);
-      setProductId(injection.insulin_product_id ?? null);
-      setProductOther(injection.insulin_product_other ?? null);
       // A row logged without a region (a calculator bolus) opens on the first
       // selectable region so the user CAN fill one in; it only becomes part of
       // the record if they pick one (see hasSite).
@@ -276,31 +271,6 @@ export function InjectionEditSheet({
     });
   }
 
-  /**
-   * A catalog pick clears the free-text name (it no longer applies); picking
-   * "Diger" keeps whichever name this row already carries, falling back to
-   * the profile's own OTHER text for the current slot (the same source a
-   * fresh entry would have prefilled from) only when this row has none yet.
-   * There is no free-text field in this sheet (see the picker row below) -
-   * renaming an "other" product happens either by picking a catalog product
-   * here or by editing the name in Settings > Profile.
-   */
-  function selectProduct(id: string | null) {
-    setProductId(id);
-    if (id !== OTHER_PRODUCT_ID) {
-      setProductOther(null);
-      return;
-    }
-    setProductOther((prev) => {
-      if (prev && prev.trim()) return prev;
-      const profileOther =
-        insulinType === "basal"
-          ? activeProfile?.basal_insulin_other
-          : activeProfile?.bolus_insulin_other;
-      return profileOther ?? null;
-    });
-  }
-
   async function save() {
     if (!injection || saving) return;
     const hasDose = dose > 0;
@@ -309,12 +279,32 @@ export function InjectionEditSheet({
 
     setSaving(true);
     try {
+      // Product picking moved to settings/profile.tsx (2.4): this sheet no
+      // longer offers a picker. The row keeps whatever product it already
+      // had UNLESS the type toggle above was switched to the other type
+      // this session - a basal product carried over onto a row now typed
+      // "bolus" (or vice versa) would be a straight mismatch, so that case
+      // re-derives from the active profile's product for the NEW type
+      // instead, the same source a fresh entry of that type would use.
+      const typeChanged = insulinType !== (injection.insulin_type ?? "bolus");
+      const productId = typeChanged
+        ? ((insulinType === "basal"
+            ? activeProfile?.basal_insulin_id
+            : activeProfile?.bolus_insulin_id) ?? null)
+        : injection.insulin_product_id;
+      const productOther = typeChanged
+        ? (productId === OTHER_PRODUCT_ID
+            ? ((insulinType === "basal"
+                ? activeProfile?.basal_insulin_other
+                : activeProfile?.bolus_insulin_other) ?? null)
+            : null)
+        : injection.insulin_product_other;
       const patch: InjectionUpdate = {
         dose_units: hasDose ? dose : null,
         insulin_type: insulinType,
         bolus_kind: insulinType === "bolus" ? bolusKind : null,
         insulin_product_id: productId,
-        insulin_product_other: productId === OTHER_PRODUCT_ID ? productOther : null,
+        insulin_product_other: productOther,
         site: hasSite ? site : null,
         site_point: hasSite ? point : null,
         logged_at: loggedAt.toISOString(),
@@ -518,27 +508,6 @@ export function InjectionEditSheet({
                   accessibilityLabel={t("injection.dose")}
                   style={{ marginBottom: 16 }}
                 />
-
-                {/* Which product THIS entry used - its own copy, independent of
-                    the profile's current pick (schema v22). No free-text field
-                    here: picking "Diger" keeps the row's existing name (or the
-                    profile's own, as a starting point); renaming it happens in
-                    Settings > Profile. */}
-                <FieldLabel>
-                  {insulinType === "basal" ? t("settings.basalInsulin") : t("settings.bolusInsulin")}
-                </FieldLabel>
-                <View style={{ marginBottom: 16 }}>
-                  <InsulinProductPicker
-                    label={
-                      insulinType === "basal" ? t("settings.basalInsulin") : t("settings.bolusInsulin")
-                    }
-                    value={productId}
-                    otherValue={productOther}
-                    slot={insulinType}
-                    allowNotSet
-                    onChange={selectProduct}
-                  />
-                </View>
 
                 {/* Reflows smoothly when the bolus-label row appears/disappears,
                     same motion language as the create form (WP3). */}
