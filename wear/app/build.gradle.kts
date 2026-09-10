@@ -19,8 +19,8 @@ android {
         targetSdk = 36
         // Fully independent of the phone's versionCode (currently 60). Starts
         // at 100000 so the two build lineages can never collide on Play.
-        versionCode = 100001
-        versionName = "2.3.1"
+        versionCode = 100002
+        versionName = "2.3.5"
     }
 
     // Play, ayni paket adiyla yuklenen her artifact'i AYNI upload key ile
