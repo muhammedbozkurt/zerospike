@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -43,7 +44,6 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
-import androidx.wear.compose.material3.screenHeightFraction
 import java.util.Date
 
 /**
@@ -361,3 +361,9 @@ private fun AccentValue(text: String) {
 /** The watch's own 12/24-hour setting, same as the clock on the arc above. */
 private fun clockTime(context: Context, epochMs: Long): String =
     DateFormat.getTimeFormat(context).format(Date(epochMs))
+
+// Wear Material 3 keeps its own screenHeightFraction internal, so the same
+// idea lives here: spacing as a share of the round screen, not a fixed dp.
+@Composable
+private fun screenHeightFraction(fraction: Float): Dp =
+    (LocalConfiguration.current.screenHeightDp * fraction).dp
