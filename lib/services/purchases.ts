@@ -46,17 +46,17 @@ export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
   monthly: {
     id: "monthly",
     productId: "zerospike_pro", // $rc_monthly (Android base plan zerospike_pro:monthly)
-    priceUSD: "$6.99",
+    priceUSD: "$4.99",
   },
   annual: {
     id: "annual",
     productId: "zerospike_pro_annual", // $rc_annual (Android base plan :annualv2)
-    priceUSD: "$39.99",
+    priceUSD: "$29.99",
   },
   lifetime: {
     id: "lifetime",
     productId: "zerospike_lifetime", // $rc_lifetime (non-consumable)
-    priceUSD: "$119.99",
+    priceUSD: "$79.99",
   },
 };
 
@@ -494,9 +494,9 @@ function mapRcPackage(
 // wrong ratio in every dev build and screenshot.
 function devFallbackPlans(): OfferingPlans {
   return {
-    monthly: { priceString: PRO_PRODUCTS.monthly.priceUSD, price: 6.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
-    annual: { priceString: PRO_PRODUCTS.annual.priceUSD, price: 39.99, currencyCode: "USD", hasFreeTrial: true, introPriceString: null, introPrice: null, freeTrialDays: FALLBACK_TRIAL_DAYS },
-    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 119.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
+    monthly: { priceString: PRO_PRODUCTS.monthly.priceUSD, price: 4.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
+    annual: { priceString: PRO_PRODUCTS.annual.priceUSD, price: 29.99, currencyCode: "USD", hasFreeTrial: true, introPriceString: null, introPrice: null, freeTrialDays: FALLBACK_TRIAL_DAYS },
+    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 79.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
   };
 }
 
@@ -558,8 +558,8 @@ const NO_DOWNSELL: DownsellOffer = {
 const MOCK_DOWNSELL: DownsellOffer = {
   hasRealDiscount: true,
   discountedPriceString: "$19.99",
-  standardPriceString: "$39.99",
-  savingsPercent: 50,
+  standardPriceString: "$29.99",
+  savingsPercent: 33,
 };
 
 function findAnnual(pkgs: any[]): PlanMeta | undefined {
