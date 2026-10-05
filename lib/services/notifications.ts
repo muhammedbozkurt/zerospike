@@ -25,6 +25,7 @@ import {
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
   listScheduledAlarmIds,
+  requestAlarmAuthorization,
   scheduleDailyAlarm,
   scheduleOneShotAlarm,
   type AlarmRoute,
@@ -37,6 +38,8 @@ import {
   postMealWindowSpanMinutes,
   restartPostMealWindowAt,
   startPostMealLate,
+  isExactTimingError,
+  postMealTimingNotice,
   POST_MEAL_WINDOW_MIN,
   type PostMealTimerWindow,
 } from "../postMealTimer";
@@ -1405,6 +1408,10 @@ async function schedulePostMealAt(opts: {
    *
    *  Returns false when the slot was taken, having touched nothing at all. */
   claimIfIdle?: boolean;
+  /** Filled in by the call: `deliveryMissed` is true when the countdown was
+   *  kept but no reminder could be armed because Android's exact-timing
+   *  permission is off. */
+  result?: { deliveryMissed: boolean };
 }): Promise<boolean> {
   const { minutes, windowMin = opts.minutes, minSeconds = 60 } = opts;
   const seconds = Math.max(minSeconds, Math.round(minutes * 60));
@@ -1516,9 +1523,29 @@ async function schedulePostMealAt(opts: {
       await cancelAlarm(POSTMEAL_ALARM_ID);
     }
   } catch (e) {
+    if (isExactTimingError(e) && Platform.OS === "android") {
+      // Only the on-time delivery is missing: the card and the ongoing
+      // notification still work, so the countdown stays and the caller offers
+      // the settings screen that fixes the delivery.
+      if (opts.result) opts.result.deliveryMissed = true;
+      try {
+        await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+        await cancelAlarm(POSTMEAL_ALARM_ID);
+      } catch {
+        // nothing pending
+      }
+      await mirrorPostMealActivity(endsAt, startedAt);
+      return true;
+    }
     // Nothing was armed, so nothing may be left claiming a countdown is
     // running: undo the write above and let the caller see the failure, exactly
     // as it did when persistence came last.
+    try {
+      await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+      await cancelAlarm(POSTMEAL_ALARM_ID);
+    } catch {
+      // nothing pending
+    }
     try {
       await AsyncStorage.multiRemove([
         POSTMEAL_TIMER_END_KEY,
@@ -1531,30 +1558,41 @@ async function schedulePostMealAt(opts: {
     throw e;
   }
 
-  // Mirror the same countdown onto the lock screen and Dynamic Island, so the
-  // user can see the time left without opening the app. Timer-style, no push:
-  // iOS draws the countdown from the end date we just persisted. A no-op when
-  // Live Activities are unavailable or the module is not linked.
-  // Imported lazily: liveData reads the pending timer from this module, and a
-  // module-scope import here would close that cycle.
-  //
-  // Runs in BOTH delivery modes (2.3.0's K2-F): the alarm is alert-only, so it
-  // draws nothing until the window ends and this card is the only countdown on
-  // the lock screen either way. The alarm adds sound and a full-screen finish,
-  // it does not replace the surface the user already knows.
-  const { readLiveData } = await import("./liveData");
-  const snapshot = await readLiveData();
-  startPostMealActivity({
-    endsAt,
-    startedAt,
-    title: i18n.t("widget.timerTitle"),
-    lastReading:
-      snapshot?.lastGlucoseMgdl != null
-        ? formatGlucose(snapshot.lastGlucoseMgdl, snapshot.unit)
-        : null,
-    unitLabel: snapshot ? glucoseUnitLabel(snapshot.unit) : "",
-  });
+  await mirrorPostMealActivity(endsAt, startedAt);
   return true;
+}
+
+/** Lock screen / ongoing-notification mirror of the countdown. Best-effort: the
+ *  countdown is already persisted, so a failure here must never undo it (it used
+ *  to throw out of the arm and leave a stored timer the card never showed). */
+async function mirrorPostMealActivity(endsAt: number, startedAt: number): Promise<void> {
+  try {
+    // Mirror the same countdown onto the lock screen and Dynamic Island, so the
+    // user can see the time left without opening the app. Timer-style, no push:
+    // iOS draws the countdown from the end date we just persisted. A no-op when
+    // Live Activities are unavailable or the module is not linked.
+    // Imported lazily: liveData reads the pending timer from this module, and a
+    // module-scope import here would close that cycle.
+    //
+    // Runs in BOTH delivery modes (2.3.0's K2-F): the alarm is alert-only, so it
+    // draws nothing until the window ends and this card is the only countdown on
+    // the lock screen either way. The alarm adds sound and a full-screen finish,
+    // it does not replace the surface the user already knows.
+    const { readLiveData } = await import("./liveData");
+    const snapshot = await readLiveData();
+    startPostMealActivity({
+      endsAt,
+      startedAt,
+      title: i18n.t("widget.timerTitle"),
+      lastReading:
+        snapshot?.lastGlucoseMgdl != null
+          ? formatGlucose(snapshot.lastGlucoseMgdl, snapshot.unit)
+          : null,
+      unitLabel: snapshot ? glucoseUnitLabel(snapshot.unit) : "",
+    });
+  } catch {
+    // best-effort mirror
+  }
 }
 
 /**
@@ -1742,7 +1780,13 @@ export async function schedulePostMealReminder(
  * What the "I started eating" action did. */
 export type PostMealStartOutcome =
   /** Armed, with `minutesLeft` of the window still ahead. */
-  | { kind: "started"; minutesLeft: number }
+  | {
+      kind: "started";
+      minutesLeft: number;
+      /** Android: exact timing is off, so the reminder may be late or missing and
+       *  the screen offers the settings route (openExactTimingSettings). */
+      timingNotice: "none" | "exactTiming";
+    }
   /** The meal was long enough ago that the window is already over: nothing is
    *  armed, and the screen offers to record the reading instead. */
   | { kind: "elapsed" }
@@ -1772,6 +1816,7 @@ export async function startPostMealTimer(
   const profile = await readActiveProfile();
   const next = startPostMealLate({ minutesAgo, now: Date.now() });
   if (next.kind === "elapsed") return { kind: "elapsed" };
+  const result = { deliveryMissed: false };
   await schedulePostMealAt({
     minutes: next.remainingMs / 60_000,
     windowMin: POST_MEAL_WINDOW_MIN,
@@ -1781,8 +1826,29 @@ export async function startPostMealTimer(
     // A backdated start can leave under a minute of the FIRST minute; the end
     // is real and must not be rounded forward.
     minSeconds: 1,
+    result,
   });
-  return { kind: "started", minutesLeft: Math.round(next.remainingMs / 60_000) };
+  return {
+    kind: "started",
+    minutesLeft: Math.round(next.remainingMs / 60_000),
+    timingNotice: postMealTimingNotice({
+      platform: Platform.OS,
+      authStatus: getAlarmAuthorizationStatus(),
+      deliveryMissed: result.deliveryMissed,
+      alarmPref: prefs.postMealAlarm,
+    }),
+  };
+}
+
+/**
+ * Opens Android's "Alarms & reminders" screen for this app (exact timing).
+ * Reuses the alarm module's own authorization flow, which launches
+ * ACTION_REQUEST_SCHEDULE_EXACT_ALARM with package:<applicationId> and resolves
+ * once the user comes back. No new native code and no manifest change.
+ */
+export async function openExactTimingSettings(): Promise<void> {
+  if (Platform.OS !== "android") return;
+  await requestAlarmAuthorization();
 }
 
 /**

@@ -369,6 +369,34 @@ section("Q. multiple records share the excluded id -> all of them are skipped");
   eq("units from the non-excluded record", withOther[0]?.detail?.units, 22);
 }
 
+section("R. glucose edit: the reading being edited never flags against itself, a neighbour still does");
+{
+  const own = { id: "g-1", logged_at: iso(NOW - 2 * MIN), valueText: "120 mg/dL" };
+  const edited = checkEntryGuards({
+    now: NOW,
+    entryKind: "glucose",
+    entryAtIso: iso(NOW - 2 * MIN),
+    excludeId: "g-1",
+    recent: { glucose: [own] },
+  });
+  eq("self excluded -> empty", edited.length, 0);
+  const noId = checkEntryGuards({
+    now: NOW,
+    entryKind: "glucose",
+    entryAtIso: iso(NOW - 2 * MIN),
+    recent: { glucose: [own] },
+  });
+  eq("new entry, same list -> fires", noId.length, 1);
+  const withNeighbour = checkEntryGuards({
+    now: NOW,
+    entryKind: "glucose",
+    entryAtIso: iso(NOW - 2 * MIN),
+    excludeId: "g-1",
+    recent: { glucose: [own, { id: "g-2", logged_at: iso(NOW - 5 * MIN), valueText: "118 mg/dL" }] },
+  });
+  eq("real neighbour still flagged", withNeighbour.length, 1);
+}
+
 section("window constants match the spec");
 {
   eq("recent_basal", GUARD_WINDOW_MS.recent_basal, 6 * HOUR);

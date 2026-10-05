@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, SectionList, Switch, Text, View } from "react-native";
+import { Alert, AppState, Pressable, SectionList, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,6 +33,7 @@ import {
 } from "../../modules/zerospike-alarmkit";
 import {
   startPostMealTimer,
+  openExactTimingSettings,
   restartPostMealTimerAt,
   scheduleLowFollowup,
   lowFollowupThresholdMgdl,
@@ -1220,8 +1221,10 @@ export default function DashboardScreen() {
       await finishStartedEating(await startPostMealTimer(minutesAgo), minutesAgo);
     } catch {
       // startPostMealTimer arms nothing when it throws (schedulePostMealAt rolls
-      // its own write back), so the countdown is simply not started.
+      // its own write back), so the countdown is simply not started. The card is
+      // re-read anyway so it can never disagree with what is persisted.
       toast(t("dashboard.toklukNeedsPerm"), "info");
+      await refreshPostMealTimer();
     } finally {
       startingTimerRef.current = false;
       setStartingTimer(false);
@@ -1253,6 +1256,15 @@ export default function DashboardScreen() {
       await refreshPostMealTimer();
       await refreshNextReminder();
       if (activeProfile) void syncLiveData(activeProfile.id, glucoseUnit);
+      if (outcome.timingNotice === "exactTiming") {
+        Alert.alert(t("dashboard.exactTimingTitle"), t("dashboard.exactTimingBody"), [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("dashboard.exactTimingAction"),
+            onPress: () => void openExactTimingSettings(),
+          },
+        ]);
+      }
       // First timer: tell the user the countdown also shows on the lock screen.
       try {
         if (activeProfile && !(await readProfileFlag(WIDGET_TIP_KEY, activeProfile.id))) {

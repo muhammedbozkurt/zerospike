@@ -167,5 +167,12 @@ section("F. Dejenere girdiler: throw yok, negatif yukseklik yok");
   ok("kucuk pencere -> scroll gerekir", r3.scrolls, `scrolls=${r3.scrolls}`);
 }
 
+{
+  const { keyboardOverlapPx } = require("../lib/sheetLayout");
+  ok("overlap: pencere kuculduyse 0", keyboardOverlapPx({ containerBottom: 800, keyboardTop: 800 }) === 0, "");
+  ok("overlap: klavye ustte kalirsa fark", keyboardOverlapPx({ containerBottom: 2400, keyboardTop: 1500 }) === 900, "");
+  ok("overlap: negatif/NaN -> 0", keyboardOverlapPx({ containerBottom: 700, keyboardTop: 800 }) === 0 && keyboardOverlapPx({ containerBottom: NaN, keyboardTop: 1 }) === 0, "");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

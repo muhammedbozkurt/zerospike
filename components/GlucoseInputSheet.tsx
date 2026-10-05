@@ -27,6 +27,7 @@ import {
   glucoseUnitLabel,
   VERY_HIGH_MGDL,
 } from "../lib/glucose";
+import { keyboardOverlapPx } from "../lib/sheetLayout";
 import { TagPicker } from "./TagPicker";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
@@ -136,6 +137,31 @@ export function GlucoseInputSheet({
    *  without guessing at keyboard metrics. */
   const [availH, setAvailH] = useState(0);
   const compact = availH > 0 && availH < COMPACT_BELOW;
+
+  // Android's edge-to-edge window is not resized by the keyboard, so Save used
+  // to sit underneath it. The lift is the measured overlap, so a device that
+  // still resizes the window (overlap 0) is left alone.
+  const kavRef = useRef<KeyboardAvoidingView>(null);
+  const [androidLift, setAndroidLift] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== "android" || !visible) {
+      setAndroidLift(0);
+      return;
+    }
+    const subShow = Keyboard.addListener("keyboardDidShow", (e) => {
+      const keyboardTop = e?.endCoordinates?.screenY ?? 0;
+      requestAnimationFrame(() => {
+        (kavRef.current as unknown as View | null)?.measureInWindow((_x: number, y: number, _w: number, h: number) => {
+          setAndroidLift(keyboardOverlapPx({ containerBottom: y + h, keyboardTop }));
+        });
+      });
+    });
+    const subHide = Keyboard.addListener("keyboardDidHide", () => setAndroidLift(0));
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [visible]);
 
   // OFFSCREEN, not 0: the sheet's real height is only known after layout, so it
   // waits out of frame instead of flashing at its final position for a frame.
@@ -361,6 +387,8 @@ export function GlucoseInputSheet({
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={0}
           className="flex-1"
+          ref={kavRef}
+          style={androidLift > 0 ? { paddingBottom: androidLift } : undefined}
         >
           <Pressable
             style={{ flex: 1, justifyContent: "flex-end" }}

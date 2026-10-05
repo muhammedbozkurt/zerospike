@@ -1148,3 +1148,24 @@ section("reminder preview");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+
+// ---- exact-timing helpers (Android: SCHEDULE_EXACT_ALARM off by default) ----
+{
+  const { isExactTimingError, postMealTimingNotice } = require("../lib/postMealTimer");
+  const check = (c: boolean, m: string) => {
+    if (!c) {
+      console.log("FAIL " + m);
+      process.exit(1);
+    }
+  };
+  check(isExactTimingError(new Error("java.lang.SecurityException: Caller needs SCHEDULE_EXACT_ALARM")), "exact err detected");
+  check(!isExactTimingError(new Error("network down")), "other err ignored");
+  check(!isExactTimingError(undefined), "undefined ignored");
+  check(postMealTimingNotice({ platform: "ios", authStatus: "denied", deliveryMissed: true, alarmPref: false }) === "none", "ios silent");
+  check(postMealTimingNotice({ platform: "android", authStatus: "authorized", deliveryMissed: false, alarmPref: true }) === "none", "authorized silent");
+  check(postMealTimingNotice({ platform: "android", authStatus: "unavailable", deliveryMissed: false, alarmPref: true }) === "none", "unavailable silent");
+  check(postMealTimingNotice({ platform: "android", authStatus: "notDetermined", deliveryMissed: false, alarmPref: true }) === "exactTiming", "fresh install hints");
+  check(postMealTimingNotice({ platform: "android", authStatus: "authorized", deliveryMissed: true, alarmPref: false }) === "exactTiming", "missed delivery hints");
+  check(postMealTimingNotice({ platform: "android", authStatus: "notDetermined", deliveryMissed: false, alarmPref: false }) === "none", "no pref, no prompt");
+  console.log("exact timing helpers ok");
+}

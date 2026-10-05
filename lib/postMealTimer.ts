@@ -518,3 +518,42 @@ export function postMealCardActions(input: {
   // can be moved onto it.
   return { logMeal: false, restart: true, restartMealId: candidate.id };
 }
+
+/**
+ * Whether a scheduling failure is the Android exact-timing permission being off
+ * (SecurityException from AlarmManager). That one failure must not cost the user
+ * the countdown: the card and the lock-screen surface still work, only the
+ * on-time delivery is missing, and the fix is one settings screen away.
+ */
+export function isExactTimingError(err: unknown): boolean {
+  const msg =
+    err instanceof Error
+      ? `${err.name} ${err.message}`
+      : typeof err === "string"
+        ? err
+        : "";
+  return /SecurityException|SCHEDULE_EXACT_ALARM|exact alarm|canScheduleExactAlarms/i.test(msg);
+}
+
+/**
+ * What the screen should tell the user right after a countdown was set.
+ * "none": nothing to add. "exactTiming": Android's own scheduling permission is
+ * off, so the reminder may come late (or, when `deliveryMissed`, not at all)
+ * and the user is offered the settings screen that fixes it.
+ *
+ * `authStatus` is the native availability read ("authorized" only when exact
+ * timing is allowed); "unavailable" means the module cannot tell, which is
+ * never reported as a problem.
+ */
+export function postMealTimingNotice(input: {
+  platform: string;
+  authStatus: string;
+  deliveryMissed: boolean;
+  /** The user's own opt-in for the ringing delivery; only then is the unauthorized state worth a prompt. */
+  alarmPref: boolean;
+}): "none" | "exactTiming" {
+  if (input.platform !== "android") return "none";
+  if (input.deliveryMissed) return "exactTiming";
+  if (input.alarmPref && (input.authStatus === "notDetermined" || input.authStatus === "denied")) return "exactTiming";
+  return "none";
+}

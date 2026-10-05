@@ -1,3 +1,4 @@
+import { injectionDoseOk } from "../../lib/injectionDose";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Keyboard,
@@ -396,10 +397,9 @@ export default function InjectionScreen() {
   }
 
   async function save() {
-    if (!activeProfile || !selected || saving || !stepperFields.allValid) return;
-    const hasDose = dose > 0;
+    if (!activeProfile || !selected || saving || !stepperFields.allValid || !injectionDoseOk(dose)) return;
     if (!(await confirmReusedPoint())) return;
-    if (hasDose && !(await confirmDose(dose))) return;
+    if (!(await confirmDose(dose))) return;
     // Duplicate-entry check (lib/entryGuard.ts), run last so it never fights
     // the site/dose confirms above for the same dialog: a basal or bolus
     // record close to this one asks a plain factual "save anyway?".
@@ -427,7 +427,7 @@ export default function InjectionScreen() {
         profile_id: activeProfile.id,
         site: selected.site,
         site_point: selected.point,
-        dose_units: hasDose ? dose : null,
+        dose_units: dose,
         insulin_type: insulinType,
         bolus_kind: insulinType === "bolus" ? bolusKind : null,
         insulin_product_id: productId,
@@ -1002,8 +1002,13 @@ export default function InjectionScreen() {
                   decimals={1}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
-                  style={{ marginBottom: 16 }}
+                  style={{ marginBottom: injectionDoseOk(dose) ? 16 : 6 }}
                 />
+                {injectionDoseOk(dose) ? null : (
+                  <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 12 }}>
+                    {t("basalConfirm.doseRequired")}
+                  </Text>
+                )}
                 {insulinType === "basal" && activeProfile?.basal_daily_units == null ? (
                   <Pressable
                     onPress={() => router.push("/settings/profile")}
@@ -1121,7 +1126,7 @@ export default function InjectionScreen() {
 
                   <GradientCTA
                     label={t("injection.logInjection")}
-                    disabled={!selected || saving || !stepperFields.allValid}
+                    disabled={!selected || saving || !stepperFields.allValid || !injectionDoseOk(dose)}
                     onPress={save}
                   />
                 </Animated.View>

@@ -1,3 +1,4 @@
+import { injectionDoseOk } from "../lib/injectionDose";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -273,7 +274,7 @@ export function InjectionEditSheet({
   }
 
   async function save() {
-    if (!injection || saving || !stepperFields.allValid) return;
+    if (!injection || saving || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)) return;
     const hasDose = dose > 0;
     if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return;
     if (hasDose && !(await confirmDose(dose))) return;
@@ -508,8 +509,13 @@ export function InjectionEditSheet({
                   decimals={1}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
-                  style={{ marginBottom: 16 }}
+                  style={{ marginBottom: injectionDoseOk(dose, injection?.dose_units ?? null) ? 16 : 6 }}
                 />
+                {injectionDoseOk(dose, injection?.dose_units ?? null) ? null : (
+                  <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 12 }}>
+                    {t("basalConfirm.doseRequired")}
+                  </Text>
+                )}
 
                 {/* Reflows smoothly when the bolus-label row appears/disappears,
                     same motion language as the create form (WP3). */}
@@ -592,7 +598,7 @@ export function InjectionEditSheet({
                     ) : null}
                   </View>
 
-                  <GradientCTA label={t("common.save")} disabled={saving || !stepperFields.allValid} onPress={save} />
+                  <GradientCTA label={t("common.save")} disabled={saving || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)} onPress={save} />
 
                   {onDelete ? (
                     <Pressable

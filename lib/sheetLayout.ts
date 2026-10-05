@@ -80,3 +80,16 @@ export function legacySheetBottomOverflowPx(input: SheetLayoutInput): number {
   const clearAboveKeyboard = input.windowHeight - legacyHeight;
   return Math.max(0, input.keyboardHeight - clearAboveKeyboard);
 }
+
+/**
+ * How far a bottom-aligned container still has to lift to clear the keyboard.
+ * Measured against the real overlap (container bottom vs keyboard top, both in
+ * window coordinates) instead of assuming the window was or was not resized:
+ * Android with adjustResize shrinks the window itself (overlap 0), while an
+ * edge-to-edge window does not resize at all and the keyboard simply covers
+ * the bottom of the sheet, Save included.
+ */
+export function keyboardOverlapPx(input: { containerBottom: number; keyboardTop: number }): number {
+  const overlap = input.containerBottom - input.keyboardTop;
+  return Number.isFinite(overlap) && overlap > 0 ? Math.round(overlap) : 0;
+}
