@@ -149,8 +149,9 @@ export function ProfileSwitcher({
           <Pressable
             className="flex-1 bg-black/70 justify-center px-6"
             onPress={() => setOpen(false)}
-            accessibilityRole="button"
-            accessibilityLabel={t("common.close")}
+            onAccessibilityEscape={() => setOpen(false)}
+            accessible={false}
+            focusable={false}
           >
             <Pressable
               className="rounded-3xl border border-hair p-5"
@@ -166,6 +167,9 @@ export function ProfileSwitcher({
                 isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
               ]}
               onPress={(e) => e.stopPropagation()}
+              accessible={false}
+              focusable={false}
+              importantForAccessibility="auto"
             >
               <Text className="text-ink text-lg font-bold mb-3">
                 {t("profiles.switch")}

@@ -271,6 +271,8 @@ export function ReminderEditSheet({
         <Pressable
           style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
           onPress={onClose}
+          accessible={false}
+          focusable={false}
         >
           <Pressable
             style={[
@@ -290,6 +292,9 @@ export function ReminderEditSheet({
               isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
+            accessible={false}
+            focusable={false}
+            importantForAccessibility="auto"
           >
             <View className="items-center mb-1.5">
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />

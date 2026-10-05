@@ -394,6 +394,8 @@ export function GlucoseInputSheet({
           <Pressable
             style={{ flex: 1, justifyContent: "flex-end" }}
             onPress={animateClose}
+            accessible={false}
+            focusable={false}
             onLayout={(e) => setAvailH(e.nativeEvent.layout.height)}
           >
             {/* Capped at the lifted container's height: on a small phone the sheet
@@ -434,6 +436,9 @@ export function GlucoseInputSheet({
             >
             <Pressable
               onPress={(e) => e.stopPropagation()}
+              accessible={false}
+              focusable={false}
+              importantForAccessibility="auto"
               style={[
                 {
                   borderTopLeftRadius: 26,

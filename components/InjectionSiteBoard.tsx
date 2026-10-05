@@ -634,9 +634,14 @@ export function InjectionSiteBoard({
         <Pressable
           style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
           onPress={() => setOpenRegion(null)}
+          accessible={false}
+          focusable={false}
         >
           <Pressable
             onPress={(e) => e.stopPropagation()}
+            accessible={false}
+            focusable={false}
+            importantForAccessibility="auto"
             style={[
               {
                 maxHeight: Math.round(winH * 0.86),

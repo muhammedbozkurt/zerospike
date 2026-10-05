@@ -54,6 +54,8 @@ export function Tooltip({
         <Pressable
           className="flex-1 bg-black/70 justify-center px-6"
           onPress={() => setOpen(false)}
+          accessible={false}
+          focusable={false}
         >
           <Pressable
             className="rounded-3xl border border-hair p-4"
@@ -69,6 +71,9 @@ export function Tooltip({
               isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
+            accessible={false}
+            focusable={false}
+            importantForAccessibility="auto"
           >
             <ScrollView
               style={{ maxHeight: 380 }}

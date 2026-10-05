@@ -514,6 +514,18 @@ function ConfirmOverlay({
   const dismiss = useCallback(() => onClose(false), [onClose]);
   useBackHandler(dismiss);
 
+  useEffect(() => {
+    try {
+      AccessibilityInfo.announceForAccessibility(
+        opts.title ? `${opts.title}. ${opts.message}` : opts.message
+      );
+    } catch {
+      // announcing is best-effort; the visible dialog is unaffected
+    }
+    // once, on open: the dialog never takes focus by itself
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const confirmLabel = opts.confirmLabel ?? t("common.confirm");
   const cancelLabel = opts.cancelLabel ?? t("common.cancel");
   const stacked = shouldStackButtons(confirmLabel, cancelLabel);
@@ -556,12 +568,13 @@ function ConfirmOverlay({
       style={[StyleSheet.absoluteFill, { opacity: anim }]}
       accessibilityViewIsModal
       importantForAccessibility="yes"
+      onAccessibilityEscape={dismiss}
     >
       <Pressable
         className="flex-1 bg-black/70 justify-center px-8"
         onPress={dismiss}
-        accessibilityRole="button"
-        accessibilityLabel={cancelLabel}
+        accessible={false}
+        focusable={false}
       >
         <Animated.View
           style={{
@@ -589,10 +602,8 @@ function ConfirmOverlay({
               isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
-            accessibilityRole="alert"
-            accessibilityLabel={
-              opts.title ? `${opts.title}. ${opts.message}` : opts.message
-            }
+            accessible={false}
+            focusable={false}
           >
             <View className="items-center mb-3">
               <View
@@ -612,7 +623,10 @@ function ConfirmOverlay({
             </View>
 
             {opts.title ? (
-              <Text className="text-ink text-lg font-bold text-center mb-1.5">
+              <Text
+                accessibilityRole="header"
+                className="text-ink text-lg font-bold text-center mb-1.5"
+              >
                 {opts.title}
               </Text>
             ) : null}
@@ -683,12 +697,13 @@ function SheetOverlay({
       style={[StyleSheet.absoluteFill, { opacity: anim }]}
       accessibilityViewIsModal
       importantForAccessibility="yes"
+      onAccessibilityEscape={onClose}
     >
       <Pressable
         className="flex-1 bg-black/70 justify-end"
         onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel={t("common.cancel")}
+        accessible={false}
+        focusable={false}
       >
         <Animated.View
           style={{
@@ -712,6 +727,9 @@ function SheetOverlay({
               isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
+            accessible={false}
+            focusable={false}
+            importantForAccessibility="auto"
           >
             <View className="items-center mb-2">
               <View className="w-10 h-1 rounded-full bg-hair" />

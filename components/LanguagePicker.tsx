@@ -80,6 +80,9 @@ export function LanguagePicker({
         <Pressable
           className="flex-1 bg-black/70 justify-center px-6"
           onPress={() => setOpen(false)}
+          onAccessibilityEscape={() => setOpen(false)}
+          accessible={false}
+          focusable={false}
         >
           <Pressable
             className="rounded-3xl border border-hair p-4"
@@ -95,6 +98,9 @@ export function LanguagePicker({
               isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
+            accessible={false}
+            focusable={false}
+            importantForAccessibility="auto"
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1">
               {t("settings.language")}

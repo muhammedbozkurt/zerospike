@@ -262,6 +262,7 @@ function TemplateConfirmSheet({
       style={[StyleSheet.absoluteFill, { zIndex: 200 }]}
       accessibilityViewIsModal
       importantForAccessibility="yes"
+      onAccessibilityEscape={onClose}
     >
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
         <Pressable
@@ -288,6 +289,9 @@ function TemplateConfirmSheet({
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
             style={{ backgroundColor: THEME.bg.g1, paddingBottom: insets.bottom + 20 }}
             onPress={(e) => e.stopPropagation()}
+            accessible={false}
+            focusable={false}
+            importantForAccessibility="auto"
           >
             <View className="items-center mb-2">
               <View className="w-10 h-1 rounded-full bg-hair" />

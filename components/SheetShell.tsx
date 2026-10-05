@@ -45,9 +45,10 @@ export interface SheetShellProps {
   visible: boolean;
   onClose: () => void;
   /** Title row; when omitted, no title/close row is drawn (the caller owns
-   *  its own way to close, e.g. a backdrop tap or its own header). */
+   *  its own way to close). The backdrop is hidden from the accessibility
+   *  tree, so screen readers close via the title row's X or the escape gesture. */
   title?: string;
-  /** i18n-sourced (t("common.close")); also used as the backdrop's a11y label. */
+  /** i18n-sourced (t("common.close")); labels the title row's close button. */
   closeLabel: string;
   maxHeightRatio?: number;
   children: React.ReactNode;
@@ -174,12 +175,17 @@ export function SheetShell({
           paddingBottom: keyboardAnim,
         }}
         onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel={closeLabel}
+        accessible={false}
+        focusable={false}
+        accessibilityViewIsModal
+        onAccessibilityEscape={onClose}
       >
         <AnimatedPressable
           testID={testID}
           onPress={(e) => e.stopPropagation()}
+          accessible={false}
+          focusable={false}
+          importantForAccessibility="auto"
           style={[
             {
               borderTopLeftRadius: 26,

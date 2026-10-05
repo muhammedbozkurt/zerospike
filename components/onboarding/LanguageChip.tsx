@@ -81,6 +81,9 @@ export function LanguageChip() {
         <Pressable
           className="flex-1 bg-black/70 justify-end"
           onPress={() => setOpen(false)}
+          onAccessibilityEscape={() => setOpen(false)}
+          accessible={false}
+          focusable={false}
         >
           <Pressable
             className="rounded-t-3xl border-t border-hair p-4 pb-8"
@@ -96,6 +99,9 @@ export function LanguageChip() {
               isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
             onPress={(e) => e.stopPropagation()}
+            accessible={false}
+            focusable={false}
+            importantForAccessibility="auto"
           >
             <Text className="text-ink text-lg font-bold mb-3 px-1">
               {t("settings.language")}

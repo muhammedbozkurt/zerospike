@@ -123,9 +123,14 @@ export function DateRangePicker({
       <Pressable
         style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
         onPress={onCancel}
+        accessible={false}
+        focusable={false}
       >
         <Pressable
           onPress={(e) => e.stopPropagation()}
+          accessible={false}
+          focusable={false}
+          importantForAccessibility="auto"
           style={[
             {
               borderTopLeftRadius: RADIUS["2xl"],
