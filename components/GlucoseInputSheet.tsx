@@ -28,6 +28,7 @@ import {
   VERY_HIGH_MGDL,
 } from "../lib/glucose";
 import { keyboardOverlapPx } from "../lib/sheetLayout";
+import { measureHostInWindow } from "../lib/measureHost";
 import { TagPicker } from "./TagPicker";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
@@ -141,7 +142,7 @@ export function GlucoseInputSheet({
   // Android's edge-to-edge window is not resized by the keyboard, so Save used
   // to sit underneath it. The lift is the measured overlap, so a device that
   // still resizes the window (overlap 0) is left alone.
-  const kavRef = useRef<KeyboardAvoidingView>(null);
+  const hostRef = useRef<View>(null);
   const [androidLift, setAndroidLift] = useState(0);
   useEffect(() => {
     if (Platform.OS !== "android" || !visible) {
@@ -151,8 +152,8 @@ export function GlucoseInputSheet({
     const subShow = Keyboard.addListener("keyboardDidShow", (e) => {
       const keyboardTop = e?.endCoordinates?.screenY ?? 0;
       requestAnimationFrame(() => {
-        (kavRef.current as unknown as View | null)?.measureInWindow((_x: number, y: number, _w: number, h: number) => {
-          setAndroidLift(keyboardOverlapPx({ containerBottom: y + h, keyboardTop }));
+        measureHostInWindow(hostRef, ({ y, height }) => {
+          setAndroidLift(keyboardOverlapPx({ containerBottom: y + height, keyboardTop }));
         });
       });
     });
@@ -383,11 +384,11 @@ export function GlucoseInputSheet({
             screens use automaticallyAdjustKeyboardInsets instead (lib/keyboard.ts).
             Inside a Modal the sheet starts at the window's own top, so the
             offset is 0 - anything else double-counts a header that is not there. */}
+        <View ref={hostRef} collapsable={false} style={{ flex: 1 }}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={0}
           className="flex-1"
-          ref={kavRef}
           style={androidLift > 0 ? { paddingBottom: androidLift } : undefined}
         >
           <Pressable
@@ -728,6 +729,7 @@ export function GlucoseInputSheet({
             </Animated.View>
           </Pressable>
         </KeyboardAvoidingView>
+        </View>
       {/* This sheet is an RN <Modal>, i.e. its own view controller. The
           FeedbackHost a SCREEN renders lives in the screen's controller, which
           is UNDERNEATH this one - so a confirm() raised from here used to be

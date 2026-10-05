@@ -174,5 +174,33 @@ section("F. Dejenere girdiler: throw yok, negatif yukseklik yok");
   ok("overlap: negatif/NaN -> 0", keyboardOverlapPx({ containerBottom: 700, keyboardTop: 800 }) === 0 && keyboardOverlapPx({ containerBottom: NaN, keyboardTop: 1 }) === 0, "");
 }
 
+{
+  const { measureHostInWindow } = require("../lib/measureHost");
+  const { keyboardOverlapPx } = require("../lib/sheetLayout");
+  // Old logic: direct call on a ref without measureInWindow throws.
+  let threw = false;
+  try {
+    (({ current: {} }.current as any) as { measureInWindow: () => void }).measureInWindow();
+  } catch {
+    threw = true;
+  }
+  ok("eski dogrudan cagri fonksiyonsuz ref'te throw eder", threw, "");
+  let called = 0;
+  let r: unknown = "x";
+  try {
+    r = measureHostInWindow({ current: {} }, () => called++);
+  } catch {
+    r = "threw";
+  }
+  ok("fonksiyonsuz ref -> cagrilmaz, hata yok", r === false && called === 0, String(r));
+  ok("null ref -> false", measureHostInWindow({ current: null }, () => called++) === false && measureHostInWindow(null, () => called++) === false && called === 0, "");
+  let lift = -1;
+  const host = { measureInWindow(cb: (x: number, y: number, w: number, h: number) => void) { cb(0, 100, 400, 2300); } };
+  const started = measureHostInWindow({ current: host }, (m: { y: number; height: number }) => {
+    lift = keyboardOverlapPx({ containerBottom: m.y + m.height, keyboardTop: 1500 });
+  });
+  ok("olcum doner -> overlap hesaplanir", started === true && lift === 900, `lift=${lift}`);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
