@@ -7,7 +7,7 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
 ve `package.json`.
 
-## Unreleased
+## 2.3.6 (yayinlanmadi)
 
 ### Health yazması
 - Apple Health ve Health Connect'e yazma artık ücretsiz; okuma ve otomatik
