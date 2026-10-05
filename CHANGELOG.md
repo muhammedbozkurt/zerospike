@@ -23,10 +23,28 @@ ve `package.json`.
 - NSHealthUpdateUsageDescription metni (app.json ve 8 ios-locales dosyası)
   yazmanın yalnız kullanıcı açtığında/onayladığında ve yalnız elle girilen
   ölçümler için yapıldığını anlatacak şekilde güncellendi.
+- Kayıttan hemen sonra yapılan düzenleme, silme ve geri alma Health'te tek
+  ve güncel örnekle sonuçlanıyor (satır başına kilit, 30 sn native zaman
+  aşımı).
+
+### iOS 27
+- UIScene yaşam döngüsüne geçildi (expo ~57.0.26, RN 0.86.3). Xcode 27 SDK
+  ile derlenen uygulama artık iOS 27'de açılıyor. plugins/withSceneLifecycle.js.
 
 ### Post-meal hatırlatıcı
 - Elle girilen "yemeğe kaç dk önce başladınız" değeri birebir kuruluyor;
   kurulacak saat önizlemede ve onay mesajında gösteriliyor.
+- Android'de kesin zamanlama izni kapalıyken de sayaç kuruluyor; hatırlatıcı
+  tercihi açıksa izin ayarına götüren uyarı gösteriliyor.
+
+### Erişilebilirlik
+- Sheet ve onay diyaloglarında VoiceOver/TalkBack düğmelere tek tek
+  ulaşabiliyor; kapatma hareketi destekleniyor.
+
+### Diğer
+- Android glukoz giriş sheet'inde Kaydet klavyenin üstünde kalıyor.
+- 0 ünitelik yeni enjeksiyon kaydı engellendi; dozsuz eski kayıtlar
+  düzenlenebilir.
 
 ### Enjeksiyon haritası
 - Bölge haritasında yeni insan silüeti.
