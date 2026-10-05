@@ -16,6 +16,7 @@
 # store size, only crisp.
 #
 # Usage:  scripts/store-shots.sh ios      # iPhone + iPad
+#         scripts/store-shots.sh iphone   # (or ipad) single device, non-interactive
 #         scripts/store-shots.sh android
 #         SHOTS_ONLY=02-bodymap,05-insights scripts/store-shots.sh android   # panel filter (optional)
 set -euo pipefail
@@ -70,6 +71,7 @@ open_url() { # $1 = full url
     # ("syntax error: unexpected '('") and "&" backgrounds the command, losing
     # every query param after it. Single-quoting is what stops that; the urls
     # built here never contain a single quote.
+    adb reverse tcp:8081 tcp:8081 >/dev/null 2>&1 || true
     adb shell am start -a android.intent.action.VIEW -d "'$1'" >/dev/null
   fi
 }
@@ -77,11 +79,21 @@ open_url() { # $1 = full url
 shoot() { # $1 = device dir, $2 = lang, $3 = shot key
   local dir="$OUT/$1/$2"
   mkdir -p "$dir"
+  # Capture to a temp file, then mv: macOS refuses to let simctl overwrite an
+  # existing PNG that carries a com.apple.provenance xattr ("Operation not
+  # permitted"), while a rename over it works.
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/shot.XXXXXX")"
   if [[ "$PLATFORM" == "ios" ]]; then
-    xcrun simctl io booted screenshot "$dir/$3.png"
+    xcrun simctl io booted screenshot --type=png "$tmp"
   else
-    adb exec-out screencap -p > "$dir/$3.png"
+    # App activity brings the tablet satellite glyph back; re-assert demo mode right before the capture.
+    status_bar_android >/dev/null 2>&1
+    sleep 1
+    adb exec-out screencap -p > "$tmp"
   fi
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$dir/$3.png"
   echo "  captured $dir/$3.png"
 }
 
@@ -127,8 +139,15 @@ establish_direction() { # $1 = lang
   for i in 1 2; do
     app_terminate
     sleep "${SHOTS_DIR_SETTLE:-5}"
-    open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${1}"
-    sleep "$COLD_SETTLE"
+    if [[ "$PLATFORM" == "android" ]]; then
+      open_url "${SCHEME}://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      sleep "$COLD_SETTLE"
+      open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${1}"
+      sleep 6
+    else
+      open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${1}"
+      sleep "$COLD_SETTLE"
+    fi
   done
 }
 
@@ -199,6 +218,8 @@ status_bar_android() {
   adb shell cmd notification list 2>/dev/null | tr -d '\r' | grep '|android|2345|' | while read -r k; do
     [[ -n "$k" ]] && adb shell "cmd notification snooze --for 86400000 '$k'" >/dev/null 2>&1
   done || true
+  # exit first: a satellite hide is ignored when demo mode is already active.
+  "${B[@]}" -e command exit >/dev/null
   "${B[@]}" -e command enter >/dev/null
   "${B[@]}" -e command clock -e hhmm 0941 >/dev/null
   "${B[@]}" -e command battery -e level 100 -e plugged false >/dev/null
@@ -213,6 +234,8 @@ status_bar_android() {
   fi
   "${B[@]}" -e command network -e mobile hide >/dev/null
   "${B[@]}" -e command network -e sims hide >/dev/null
+  # Last network command on purpose: the tablet AVDs fall back to a satellite glyph when mobile/wifi are hidden.
+  "${B[@]}" -e command network -e satellite hide >/dev/null
   "${B[@]}" -e command notifications -e visible false >/dev/null
   "${B[@]}" -e command status -e volume hide -e bluetooth hide -e location hide \
       -e alarm hide -e sync hide -e tty hide -e eri hide -e mute hide \
@@ -250,7 +273,10 @@ capture_for_device() { # $1 = device output dir label
 
 PLATFORM="${1:-ios}"
 select_shots || exit 1
-case "$PLATFORM" in
+if [[ "$PLATFORM" == iphone || "$PLATFORM" == ipad ]]; then PLATFORM_DEV="$PLATFORM"; PLATFORM=ios; fi
+case "${PLATFORM_DEV:-$PLATFORM}" in
+  iphone) capture_for_device "iphone" ;;
+  ipad) capture_for_device "ipad" ;;
   ios)
     # iPhone pass first (the iPhone 16 Pro Max must be the BOOTED sim now).
     echo "Ensure the iPhone 16 Pro Max simulator is booted and the screenshot build is installed."
@@ -274,7 +300,7 @@ case "$PLATFORM" in
     capture_for_device "${2:-${SHOTS_PROFILE:-android-phone}}"
     ;;
   *)
-    echo "usage: $0 [ios|android] [output-profile]" >&2; exit 1;;
+    echo "usage: $0 [ios|iphone|ipad|android] [output-profile]" >&2; exit 1;;
 esac
 
 echo "Done. Raw shots in ./$OUT/ — feed them to the hypershots composite (Faz 3)."
