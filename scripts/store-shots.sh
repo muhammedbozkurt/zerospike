@@ -17,6 +17,7 @@
 #
 # Usage:  scripts/store-shots.sh ios      # iPhone + iPad
 #         scripts/store-shots.sh android
+#         SHOTS_ONLY=02-bodymap,05-insights scripts/store-shots.sh android   # panel filter (optional)
 set -euo pipefail
 
 SCHEME="zerospike"
@@ -131,11 +132,40 @@ establish_direction() { # $1 = lang
   done
 }
 
+# SHOTS_ONLY (comma-separated shot keys, e.g. 02-bodymap,05-insights) narrows the
+# panel loop only; per-language setup (direction launches, status bar) is untouched.
+# Unset or empty keeps every panel. Unknown keys abort before any device command.
+select_shots() {
+  SELECTED=()
+  if [[ -z "${SHOTS_ONLY:-}" ]]; then
+    SELECTED=("${SHOTS[@]}")
+    return 0
+  fi
+  local want wanted shot found
+  IFS=',' read -r -a wanted <<< "$SHOTS_ONLY"
+  for want in "${wanted[@]}"; do
+    want="${want// /}"
+    [[ -n "$want" ]] || continue
+    found=0
+    for shot in "${SHOTS[@]}"; do
+      if [[ "${shot%%|*}" == "$want" ]]; then SELECTED+=("$shot"); found=1; break; fi
+    done
+    if ((!found)); then
+      echo "SHOTS_ONLY: unknown panel '$want'. Valid: $(printf '%s ' "${SHOTS[@]%%|*}")" >&2
+      return 1
+    fi
+  done
+  if ((${#SELECTED[@]} == 0)); then
+    echo "SHOTS_ONLY is set but names no panel." >&2
+    return 1
+  fi
+}
+
 capture_lang() { # $1 = device output dir label, $2 = lang
   local devdir="$1" lang="$2"
   echo " lang: $lang"
   local shot key path sep
-  for shot in "${SHOTS[@]}"; do
+  for shot in "${SELECTED[@]}"; do
     key="${shot%%|*}"
     path="${shot#*|}"
     sep="?"; [[ "$path" == *"?"* ]] && sep="&"
@@ -219,6 +249,7 @@ capture_for_device() { # $1 = device output dir label
 }
 
 PLATFORM="${1:-ios}"
+select_shots || exit 1
 case "$PLATFORM" in
   ios)
     # iPhone pass first (the iPhone 16 Pro Max must be the BOOTED sim now).
