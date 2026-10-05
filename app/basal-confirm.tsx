@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { AppBackground, GradientCTA } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { Skeleton } from "../components/Skeleton";
-import { Stepper } from "../components/Stepper";
+import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { InjectionBodyMap } from "../components/InjectionBodyMap";
 import { DirIcon } from "../components/DirIcon";
@@ -102,6 +102,8 @@ function BasalConfirmScreen() {
   const [noSiteCount, setNoSiteCount] = useState(0);
   const usageRequestedRef = useRef(false);
   const [saving, setSaving] = useState(false);
+  const stepperFields = useStepperValidity();
+  const [doseInvalidKind, setDoseInvalidKind] = useState<null | "empty" | "range">(null);
   // Synchronous double-tap guard: `saving` (state) only actually blocks a
   // second call to save() once React has re-rendered with it true, and a
   // rapid double-tap can fire twice before that happens. The ref is set
@@ -239,7 +241,7 @@ function BasalConfirmScreen() {
   async function save() {
     // dose > 0 is also what disables the button (see the Save CTA below);
     // checked again here so a stray call can never write a doseless row.
-    if (load.kind !== "ready" || savingRef.current || !(dose > 0)) return;
+    if (load.kind !== "ready" || savingRef.current || !(dose > 0) || !stepperFields.allValid) return;
     const ctx = load.ctx;
     savingRef.current = true;
     setSaving(true);
@@ -486,6 +488,8 @@ function BasalConfirmScreen() {
             <Stepper
               value={dose}
               onChange={setDose}
+              onValidityChange={stepperFields.reporter("dose")}
+              onInvalidKindChange={setDoseInvalidKind}
               step={0.5}
               longStep={1}
               min={0}
@@ -508,9 +512,11 @@ function BasalConfirmScreen() {
               <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
             </Pressable>
 
-            {dose > 0 ? null : (
+            {dose > 0 && stepperFields.allValid ? null : (
               <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 8 }}>
-                {t("basalConfirm.doseRequired")}
+                {doseInvalidKind === "range"
+                  ? t("settings.rangeOutOfBounds", { min: num(0), max: num(150) })
+                  : t("basalConfirm.doseRequired")}
               </Text>
             )}
             {saveError ? (
@@ -522,7 +528,7 @@ function BasalConfirmScreen() {
               label={t("common.save")}
               onPress={save}
               loading={saving}
-              disabled={saving || !(dose > 0)}
+              disabled={saving || !(dose > 0) || !stepperFields.allValid}
             />
           </ScrollView>
         )}

@@ -1,13 +1,33 @@
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash } from "../analytics";
 import {
   getSugarLog,
   insertHealthSugarLogs,
+  listHealthBackfillRows,
+  listHealthMirrorRows,
+  listHealthUuidLinks,
+  listLinkedHealthUuids,
   setSugarLogHealthUuid,
 } from "../db/logs";
 import { getProfile, listProfiles } from "../db/profiles";
-import type { SugarLog } from "../db/types";
+import type { PeriodTag, SugarLog } from "../db/types";
+import {
+  chunkBatches,
+  selectBackfillCandidates,
+  type HealthBackfillWindow,
+} from "../healthBackfill";
+import {
+  HEALTH_DELETE_BATCH,
+  enqueueDeletes,
+  normalizeDeleteEntries,
+  ownHealthUuids,
+  pruneDeleteQueue,
+  removeDeleted,
+  selectDeletePass,
+  type PendingDeleteEntry,
+} from "../healthDeleteQueue";
+import { buildHealthWriteMeta, type HealthWriteMeta } from "../healthMeta";
 import { planWriteFlagRead, shouldWriteToHealth } from "../healthWriteScope";
 import {
   buildRetryStatusRecord,
@@ -80,6 +100,25 @@ const HEALTH_WRITE_STATUS_KEY = "zerospike.healthWriteStatus";
  * never agreed to have written at all.
  */
 const HEALTH_WRITE_PENDING_KEY = "zerospike.healthWritePending";
+/** Health sample ids whose revoke failed, retried on the write retry's
+ *  triggers. DEVICE-wide (not per profile): a deleted profile's copies must
+ *  still be retried once the profile is gone. Only ever holds ids this app
+ *  wrote (see lib/healthDeleteQueue.ts). */
+const HEALTH_DELETE_PENDING_KEY = "zerospike.healthDeletePending";
+
+/** Serializes async read-modify-write cycles on one AsyncStorage queue: two
+ *  overlapping mutations would otherwise both read the same snapshot and the
+ *  second write would drop the first one's change. */
+function makeLock() {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = tail.then(fn, fn);
+    tail = run.catch(() => {});
+    return run;
+  };
+}
+const writeQueueLock = makeLock();
+const deleteQueueLock = makeLock();
 
 /** Same resolution as lib/db/reminders.ts: saved id first, else the first
  *  profile. Never throws - a failed lookup is "no profile", like a fresh install. */
@@ -229,19 +268,21 @@ async function getPendingWriteIds(profileId: string): Promise<string[]> {
  *  letting the queue grow unbounded between retry passes. */
 async function addPendingWriteId(profileId: string | null | undefined, id: string): Promise<void> {
   if (!profileId) return;
-  try {
-    const nowMs = Date.now();
-    let entries = pruneWritePendingQueue(await getPendingWriteEntries(profileId), nowMs);
-    if (!entries.some((e) => e.id === id)) {
-      entries = pruneWritePendingQueue(
-        [...entries, { id, queuedAtIso: new Date(nowMs).toISOString() }],
-        nowMs
-      );
+  await writeQueueLock(async () => {
+    try {
+      const nowMs = Date.now();
+      let entries = pruneWritePendingQueue(await getPendingWriteEntries(profileId), nowMs);
+      if (!entries.some((e) => e.id === id)) {
+        entries = pruneWritePendingQueue(
+          [...entries, { id, queuedAtIso: new Date(nowMs).toISOString() }],
+          nowMs
+        );
+      }
+      await savePendingWriteEntries(profileId, entries);
+    } catch {
+      // best-effort
     }
-    await savePendingWriteEntries(profileId, entries);
-  } catch {
-    // best-effort
-  }
+  });
 }
 
 /** Drops one or more ids from the retry queue - a successful (re)write, or
@@ -252,15 +293,25 @@ async function removePendingWriteIds(
   idsToRemove: readonly string[]
 ): Promise<void> {
   if (idsToRemove.length === 0) return;
-  try {
-    const entries = await getPendingWriteEntries(profileId);
-    const remove = new Set(idsToRemove);
-    const next = entries.filter((e) => !remove.has(e.id));
-    if (next.length === entries.length) return;
-    await savePendingWriteEntries(profileId, next);
-  } catch {
-    // best-effort
-  }
+  await writeQueueLock(async () => {
+    try {
+      const entries = await getPendingWriteEntries(profileId);
+      const remove = new Set(idsToRemove);
+      const next = entries.filter((e) => !remove.has(e.id));
+      if (next.length === entries.length) return;
+      await savePendingWriteEntries(profileId, next);
+    } catch {
+      // best-effort
+    }
+  });
+}
+
+/** Links a Health sample id to its row. The id also leaves the delete queue:
+ *  Health Connect keeps the uuid on an upsert, so an id queued for deletion by
+ *  an earlier undo can be the very sample this row now owns. */
+async function linkHealthUuid(rowId: string, uuid: string): Promise<void> {
+  await setSugarLogHealthUuid(rowId, uuid);
+  await dequeueHealthDeletes([uuid]);
 }
 
 /** Last attempted mirror write's outcome for this profile (default: the
@@ -368,6 +419,37 @@ export async function requestHealthPermissions(): Promise<boolean> {
   }
 }
 
+/**
+ * The connect flow: asks for read AND write blood-glucose access in one system
+ * dialog. When the write grant is NEW (it was not authorized before this call),
+ * the mirror switches on for the profile, because the user just said yes to it;
+ * a grant that already existed leaves the profile's own switch alone, so a user
+ * who turned the mirror off is never switched back on by reconnecting. A denial
+ * is silent: nothing is switched on and nothing is reported.
+ */
+export async function requestHealthReadWriteAccess(
+  profileId?: string | null
+): Promise<{ read: boolean; write: boolean; writeEnabled: boolean; newlyEnabled: boolean }> {
+  const provider = getProvider();
+  if (!provider) return { read: false, write: false, writeEnabled: false, newlyEnabled: false };
+  try {
+    const wasAuthorized = await provider.isWriteAuthorized();
+    const res = await provider.requestReadWritePermissions();
+    let newlyEnabled = false;
+    if (res.write && !wasAuthorized) {
+      const id = profileId ?? (await activeProfileId());
+      if (id) {
+        await setHealthWriteEnabled(true, id);
+        newlyEnabled = true;
+      }
+    }
+    const writeEnabled = res.write && (await getHealthWriteEnabled(profileId));
+    return { read: res.read, write: res.write, writeEnabled, newlyEnabled };
+  } catch {
+    return { read: false, write: false, writeEnabled: false, newlyEnabled: false };
+  }
+}
+
 /** Android-only: three-state Health Connect availability (missing / needs a
  *  Play update / ready), so a settings screen can send the user to the right
  *  place instead of a generic "unavailable". Always "unavailable" off Android. */
@@ -415,9 +497,10 @@ export async function readRecentGlucose(): Promise<GlucoseSample[]> {
 /**
  * Requests WRITE (share) permission for blood glucose. Called at POINT OF USE -
  * when the user turns the "write to Health" toggle ON - never at onboarding.
- * iOS never reveals whether share access was granted, so a resolved call is
- * the best signal; Android's grant list is authoritative. The caller keeps
- * the toggle on only if this resolves true.
+ * Both platforms report the real outcome (iOS via authorizationStatusFor, which
+ * is reliable for share types; Android via the grant list). The caller keeps
+ * the toggle on only if this resolves true. iOS never re-shows the dialog once
+ * denied, so a false there needs {@link openHealthSettings} guidance.
  */
 export async function requestHealthWritePermission(): Promise<boolean> {
   const provider = getProvider();
@@ -492,14 +575,16 @@ const healthWriteInFlightIds = new Set<string>();
  */
 export async function writeGlucoseToHealth(
   mgdl: number,
-  dateIso: string
+  dateIso: string,
+  meta?: HealthWriteMeta
 ): Promise<string | null> {
   if (!Number.isFinite(mgdl) || mgdl <= 0) return null;
   const provider = getProvider();
   if (!provider) return null;
   try {
-    return await provider.writeGlucose(mgdl, dateIso);
-  } catch {
+    return await provider.writeGlucose(mgdl, dateIso, meta);
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "writeGlucose" });
     return null;
   }
 }
@@ -523,8 +608,178 @@ export async function deleteGlucoseFromHealth(uuid: string | null): Promise<void
   if (!provider) return;
   try {
     await provider.deleteGlucose(uuid);
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "deleteGlucose" });
+    // A failed mirror-delete never blocks the local delete; it is retried
+    // later instead (retryPendingHealthDeletes).
+    await queueHealthDeletes([uuid]);
+  }
+}
+
+async function getDeleteEntries(): Promise<PendingDeleteEntry[]> {
+  try {
+    const raw = await AsyncStorage.getItem(HEALTH_DELETE_PENDING_KEY);
+    if (!raw) return [];
+    return normalizeDeleteEntries(JSON.parse(raw), new Date().toISOString());
   } catch {
-    // swallow: a failed mirror-delete must never block the local delete
+    return [];
+  }
+}
+
+async function saveDeleteEntries(entries: readonly PendingDeleteEntry[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(HEALTH_DELETE_PENDING_KEY, JSON.stringify(entries));
+  } catch {
+    // best-effort
+  }
+}
+
+async function queueHealthDeletes(uuids: readonly string[]): Promise<void> {
+  if (uuids.length === 0) return;
+  await deleteQueueLock(async () => {
+    await saveDeleteEntries(enqueueDeletes(await getDeleteEntries(), uuids, Date.now()));
+  });
+}
+
+async function dequeueHealthDeletes(uuids: readonly string[]): Promise<void> {
+  await deleteQueueLock(async () => {
+    const entries = await getDeleteEntries();
+    if (entries.length === 0) return;
+    const next = removeDeleted(entries, uuids);
+    if (next.length !== entries.length) await saveDeleteEntries(next);
+  });
+}
+
+/** Revokes sample ids in batches; ids a batch could not delete go to the
+ *  retry queue. Returns how many were deleted right away. */
+async function revokeHealthSamples(uuids: readonly string[]): Promise<number> {
+  const provider = getProvider();
+  if (!provider || uuids.length === 0) return 0;
+  let deleted = 0;
+  const failed: string[] = [];
+  for (const batch of chunkBatches(uuids, HEALTH_DELETE_BATCH)) {
+    try {
+      await provider.deleteGlucoseBatch(batch);
+      deleted += batch.length;
+    } catch (err) {
+      logCrash(err, { screen: "health", op: "deleteGlucoseBatch" });
+      failed.push(...batch);
+    }
+  }
+  await queueHealthDeletes(failed);
+  return deleted;
+}
+
+/** How many Health samples this app wrote for the profile (a reading imported
+ *  from Health never counts). Drives the honest "copies are deleted too" line
+ *  in the clear/delete confirmations. */
+export async function countHealthCopies(profileId: string): Promise<number> {
+  if (!hasHealthProvider()) return 0;
+  try {
+    return ownHealthUuids(await listHealthMirrorRows(profileId)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Call BEFORE a bulk clear or profile delete removes the rows: collects the
+ *  Health ids of the profile's own copies and revokes them best-effort, queueing
+ *  failures. Never throws, never blocks the local delete. */
+export async function revokeHealthCopiesBeforeDelete(profileId: string): Promise<number> {
+  if (!hasHealthProvider()) return 0;
+  try {
+    const uuids = ownHealthUuids(await listHealthMirrorRows(profileId));
+    return await revokeHealthSamples(uuids);
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "revokeCopiesBeforeDelete" });
+    return 0;
+  }
+}
+
+let healthDeleteRetryInFlight = false;
+
+/** Re-attempts queued Health deletes (bounded per pass, oldest first). Not
+ *  gated on the write switch: the user asked for the data to go. An id a row
+ *  is linked to again (an undo re-mirror) is not a delete candidate any more.
+ *  When the store keeps refusing (a failed batch AND a failed first single),
+ *  the pass stops instead of spending one native call per queued id. */
+export async function retryPendingHealthDeletes(): Promise<{ attempted: number; succeeded: number }> {
+  const none = { attempted: 0, succeeded: 0 };
+  const provider = getProvider();
+  if (!provider || healthDeleteRetryInFlight) return none;
+  healthDeleteRetryInFlight = true;
+  try {
+    const pass = await deleteQueueLock(async () => {
+      const current = await getDeleteEntries();
+      const pruned = pruneDeleteQueue(current, Date.now());
+      let kept = pruned;
+      const candidates = selectDeletePass(pruned);
+      const bound = new Set(candidates.length > 0 ? await listLinkedHealthUuids(candidates) : []);
+      if (bound.size > 0) kept = removeDeleted(pruned, [...bound]);
+      if (kept.length !== current.length) await saveDeleteEntries(kept);
+      return selectDeletePass(kept);
+    });
+    if (pass.length === 0) return none;
+    const done: string[] = [];
+    let stop = false;
+    let refused: string | null = null;
+    for (const batch of chunkBatches(pass, HEALTH_DELETE_BATCH)) {
+      if (stop) break;
+      try {
+        await provider.deleteGlucoseBatch(batch);
+        done.push(...batch);
+      } catch {
+        // One bad id must not pin the rest of its batch: fall back to singles,
+        // but give up on the whole pass if the first single fails too.
+        let first = true;
+        for (const id of batch) {
+          try {
+            await provider.deleteGlucose(id);
+            done.push(id);
+          } catch {
+            if (first) {
+              stop = true;
+              refused = id;
+              break;
+            }
+          }
+          first = false;
+        }
+      }
+    }
+    if (done.length > 0) {
+      await dequeueHealthDeletes(done);
+      await relinkAfterDelete(done);
+    }
+    // An id the store keeps refusing goes to the back, so it cannot starve the
+    // ids behind it on every later pass.
+    if (refused) {
+      const moved = refused;
+      await deleteQueueLock(async () => {
+        const entries = await getDeleteEntries();
+        const head = entries.find((e) => e.uuid === moved);
+        if (!head) return;
+        await saveDeleteEntries([...entries.filter((e) => e.uuid !== moved), head]);
+      });
+    }
+    return { attempted: pass.length, succeeded: done.length };
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "retryPendingHealthDeletes" });
+    return none;
+  } finally {
+    healthDeleteRetryInFlight = false;
+  }
+}
+
+/** The link check before a pass cannot see a row that got re-linked to an id
+ *  WHILE its native delete was running (an undo re-mirror on Health Connect
+ *  keeps the uuid). Such a row now points at a deleted sample: its link is
+ *  cleared and it goes back on the write queue so the next retry re-writes it. */
+async function relinkAfterDelete(deleted: readonly string[]): Promise<void> {
+  const links = await listHealthUuidLinks(deleted);
+  for (const row of links) {
+    await setSugarLogHealthUuid(row.id, null);
+    await addPendingWriteId(row.profile_id, row.id);
   }
 }
 
@@ -557,7 +812,11 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<bool
   if (!allowed) return true;
   healthWriteInFlightIds.add(log.id);
   try {
-    const uuid = await writeGlucoseToHealth(log.glucose_level_mgdl, log.logged_at);
+    const uuid = await writeGlucoseToHealth(
+      log.glucose_level_mgdl,
+      log.logged_at,
+      buildHealthWriteMeta(log)
+    );
     await recordHealthWriteStatus(log.profile_id, uuid != null);
     if (!uuid) {
       // The toggle is on and the write was attempted, so a null result here
@@ -580,7 +839,7 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<bool
         await deleteGlucoseFromHealth(uuid);
         return true;
       }
-      await setSugarLogHealthUuid(log.id, uuid);
+      await linkHealthUuid(log.id, uuid);
       // In case an earlier attempt had queued this same row: it is linked
       // now, so it must not be retried again.
       await removePendingWriteIds(log.profile_id, [log.id]);
@@ -607,13 +866,11 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<bool
 }
 
 /**
- * Re-mirrors an EDITED reading: revokes the old health-store sample (if any)
- * and writes a fresh one for the corrected value/time. Returns the new id to
- * store on the row (via setSugarLogHealthUuid), or null when nothing should be
- * stored (mirror off, or the write failed). Same delete-old-then-write-new
- * shape as create (writeGlucoseToHealthIfEnabled) - neither store has an
- * "update a sample" call, so a correction is a revoke of the stale value plus
- * a write of the new one.
+ * Re-mirrors an EDITED reading: writes the corrected value/time, then revokes
+ * the old health-store sample (if any, and if it is a different object).
+ * Returns the new id to store on the row (via setSugarLogHealthUuid), or null
+ * when nothing should be stored (mirror off, or the write failed; the stale
+ * sample is revoked in that case too, so a wrong value never lingers).
  */
 export async function updateGlucoseInHealth(
   /** The row being corrected - queued for retry on failure (2.3.5 fix): this
@@ -624,6 +881,8 @@ export async function updateGlucoseInHealth(
   oldUuid: string | null,
   mgdl: number,
   dateIso: string,
+  /** The corrected reading's period tag, for the meal-context metadata. */
+  periodTag: PeriodTag | null,
   /** The profile the corrected row belongs to. REQUIRED (X7): defaulting it to
    *  "whatever profile has the switch on" made the check compare a value to
    *  itself, so the gate always opened - a caregiver correcting a reading on
@@ -638,8 +897,20 @@ export async function updateGlucoseInHealth(
     enabledProfileId: scope.profileId,
   });
   if (!allowed) return null;
-  if (oldUuid) await deleteGlucoseFromHealth(oldUuid);
-  const uuid = await writeGlucoseToHealth(mgdl, dateIso);
+  // Write FIRST, revoke the stale sample after: a failed write can no longer
+  // cost the user the old sample. The write carries the row id as sync id with
+  // a newer version, so the store itself replaces a sample written the same
+  // way (HealthKit replaces it with a new uuid and drops the old sample, Health
+  // Connect upserts and keeps the uuid). The explicit revoke covers legacy
+  // samples that carry no sync id; when the store already replaced the old one
+  // it finds nothing and is harmless. It is skipped when the uuid is unchanged,
+  // since that would delete the sample just written.
+  const uuid = await writeGlucoseToHealth(
+    mgdl,
+    dateIso,
+    buildHealthWriteMeta({ id: logId, period_tag: periodTag })
+  );
+  if (oldUuid && oldUuid !== uuid) await deleteGlucoseFromHealth(oldUuid);
   await recordHealthWriteStatus(recordProfileId, uuid != null);
   // Same H3 signal as writeGlucoseToHealthIfEnabled: allowed to write, but the
   // write itself came back empty.
@@ -680,8 +951,21 @@ let healthRetryInFlight = false;
 export async function retryPendingHealthWrites(
   profileId: string
 ): Promise<{ attempted: number; succeeded: number }> {
+  try {
+    return await runPendingHealthWrites(profileId);
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "retryPendingHealthWrites" });
+    return { attempted: 0, succeeded: 0 };
+  }
+}
+
+async function runPendingHealthWrites(
+  profileId: string
+): Promise<{ attempted: number; succeeded: number }> {
   const none = { attempted: 0, succeeded: 0 };
-  if (!profileId || !hasHealthProvider() || healthRetryInFlight) return none;
+  if (!profileId || !hasHealthProvider()) return none;
+  await retryPendingHealthDeletes();
+  if (healthRetryInFlight) return none;
   const scope = await readHealthWriteScope(profileId);
   if (!scope.enabled || scope.profileId !== profileId) return none;
   healthRetryInFlight = true;
@@ -691,8 +975,12 @@ export async function retryPendingHealthWrites(
     // point to drop what has aged out of the queue - a profile that never
     // opens the app for a while would otherwise only ever prune on the rare
     // fresh write that happens to fail.
-    const prunedEntries = pruneWritePendingQueue(await getPendingWriteEntries(profileId), nowMs);
-    await savePendingWriteEntries(profileId, prunedEntries);
+    const prunedEntries = await writeQueueLock(async () => {
+      const current = await getPendingWriteEntries(profileId);
+      const pruned = pruneWritePendingQueue(current, nowMs);
+      if (pruned.length !== current.length) await savePendingWriteEntries(profileId, pruned);
+      return pruned;
+    });
     const pendingIds = prunedEntries.map((e) => e.id);
     if (pendingIds.length === 0) return none;
     // Fetch every queued row so the pure selector can apply the window/cap
@@ -731,10 +1019,20 @@ export async function retryPendingHealthWrites(
       if (row.profile_id !== profileId) continue;
       healthWriteInFlightIds.add(row.id);
       try {
-        const uuid = await writeGlucoseToHealth(row.glucose_level_mgdl, row.logged_at);
+        const uuid = await writeGlucoseToHealth(
+          row.glucose_level_mgdl,
+          row.logged_at,
+          buildHealthWriteMeta(row)
+        );
         if (!uuid) continue; // stays queued, tried again next pass
         try {
-          await setSugarLogHealthUuid(row.id, uuid);
+          // Same orphan guard as the fresh-write path: the row may have been
+          // deleted while the native write was in flight.
+          if (!(await getSugarLog(row.id))) {
+            await deleteGlucoseFromHealth(uuid);
+            continue;
+          }
+          await linkHealthUuid(row.id, uuid);
           // Only counted as succeeded once the LOCAL link is written too -
           // a native write that succeeds but never links (below) leaves the
           // row still pending, and must count toward the failed tally, not
@@ -765,6 +1063,158 @@ export async function retryPendingHealthWrites(
     return { attempted: candidates.length, succeeded };
   } finally {
     healthRetryInFlight = false;
+  }
+}
+
+/** Rows waiting for a retried Health write for this profile (queue size after
+ *  pruning). Shown next to the "try now" action in settings. */
+export async function getHealthPendingWriteCount(profileId: string): Promise<number> {
+  const entries = pruneWritePendingQueue(await getPendingWriteEntries(profileId), Date.now());
+  return entries.length;
+}
+
+let healthBackfillInFlight = false;
+let backfillProgress: { done: number; total: number } | null = null;
+const backfillListeners = new Set<() => void>();
+
+function setBackfillProgress(next: { done: number; total: number } | null): void {
+  backfillProgress = next;
+  backfillListeners.forEach((l) => l());
+}
+
+/** The running history transfer's progress, or null when none is running. One
+ *  pass at a time for the whole app, so every screen shows the same one. */
+export function getHealthBackfillProgress(): { done: number; total: number } | null {
+  return backfillProgress;
+}
+
+export function subscribeHealthBackfill(listener: () => void): () => void {
+  backfillListeners.add(listener);
+  return () => {
+    backfillListeners.delete(listener);
+  };
+}
+
+export interface HealthBackfillResult {
+  /** Rows the run set out to write. */
+  total: number;
+  written: number;
+  failed: number;
+  /** The write switch was off or there is no provider. */
+  skipped: boolean;
+  /** Another transfer is already running; nothing was started. */
+  alreadyRunning: boolean;
+}
+
+/**
+ * One-time transfer of the active profile's past, app-entered readings that
+ * have no Health sample yet (see selectBackfillCandidates). Sequential batches,
+ * progress after each. Every row is re-read right before its write, so a row
+ * that was deleted, edited or linked since the list was taken is skipped or
+ * written with its current values. Idempotent: every write carries the row id
+ * as sync id with a newer version, so a pass killed between the native write
+ * and the local link, then started again, makes the store REPLACE that sample
+ * instead of adding a second one. Re-checks the write switch before every row.
+ */
+export async function backfillGlucoseToHealth(
+  profileId: string,
+  windowDays: HealthBackfillWindow,
+  onProgress?: (done: number, total: number) => void
+): Promise<HealthBackfillResult> {
+  const skipped = { total: 0, written: 0, failed: 0, skipped: true, alreadyRunning: false };
+  if (!profileId || !hasHealthProvider()) return skipped;
+  if (healthBackfillInFlight) return { ...skipped, alreadyRunning: true };
+  const scope = await readHealthWriteScope(profileId);
+  if (!isRetryPassOpen(scope, profileId)) return skipped;
+  healthBackfillInFlight = true;
+  try {
+    const nowMs = Date.now();
+    const since = new Date(nowMs - windowDays * 24 * 60 * 60 * 1000).toISOString();
+    const rows = selectBackfillCandidates(
+      await listHealthBackfillRows(profileId, since),
+      profileId,
+      healthWriteInFlightIds,
+      nowMs,
+      windowDays
+    );
+    let written = 0;
+    let failed = 0;
+    const writtenIds: string[] = [];
+    const report = (done: number) => {
+      setBackfillProgress({ done, total: rows.length });
+      onProgress?.(done, rows.length);
+    };
+    report(0);
+    let open = true;
+    let handled = 0;
+    for (const batch of chunkBatches(rows)) {
+      for (const stale of batch) {
+        handled++;
+        if (!isRetryPassOpen(await readHealthWriteScope(profileId), profileId)) {
+          open = false;
+          break;
+        }
+        if (healthWriteInFlightIds.has(stale.id)) continue;
+        healthWriteInFlightIds.add(stale.id);
+        try {
+          const row = await getSugarLog(stale.id);
+          if (!row || row.healthkit_uuid != null || row.source === "health") continue;
+          const uuid = await writeGlucoseToHealth(
+            row.glucose_level_mgdl,
+            row.logged_at,
+            buildHealthWriteMeta(row)
+          );
+          if (!uuid) {
+            failed++;
+            continue;
+          }
+          try {
+            if (!(await getSugarLog(row.id))) {
+              await deleteGlucoseFromHealth(uuid);
+              continue;
+            }
+            await linkHealthUuid(row.id, uuid);
+            written++;
+            writtenIds.push(row.id);
+          } catch (err) {
+            try {
+              await deleteGlucoseFromHealth(uuid);
+            } catch {
+              // best-effort
+            }
+            failed++;
+            logCrash(err, { screen: "health", op: "backfillLinkHealthUuid" });
+          }
+        } finally {
+          healthWriteInFlightIds.delete(stale.id);
+        }
+      }
+      report(handled);
+      if (!open) break;
+    }
+    if (writtenIds.length > 0) await removePendingWriteIds(profileId, writtenIds);
+    return { total: rows.length, written, failed, skipped: false, alreadyRunning: false };
+  } finally {
+    healthBackfillInFlight = false;
+    setBackfillProgress(null);
+  }
+}
+
+/**
+ * Takes the user to where the Health write permission can be (re)granted:
+ * Health Connect's own settings on Android, the Health app on iOS (iOS never
+ * re-shows its permission dialog after a denial). Never throws.
+ */
+export async function openHealthSettings(): Promise<void> {
+  try {
+    if (Platform.OS === "android") {
+      const HC = require("react-native-health-connect");
+      HC.openHealthConnectSettings();
+    } else {
+      await Linking.openURL("x-apple-health://");
+    }
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "openHealthSettings" });
   }
 }
 

@@ -1,3 +1,5 @@
+import { logCrash } from "../analytics";
+import { hasValidSyncKey, toRelationToMeal, type HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
@@ -18,8 +20,8 @@ import type {
  *
  * getSdkStatus()/initialize() gate every other call: nothing here runs before
  * initialize() has resolved true. specimenSource/mealType/relationToMeal are
- * required fields on a write and are always UNKNOWN (0) - this app has no
- * clinical context for a manually typed reading.
+ * required fields on a write: UNKNOWN (0) unless the reading carries a stated
+ * meal relation (fasting / before / after meal), see lib/healthMeta.ts.
  */
 
 let initialized = false;
@@ -132,6 +134,42 @@ async function requestWritePermission(): Promise<boolean> {
   }
 }
 
+async function isWriteAuthorized(): Promise<boolean> {
+  try {
+    if (!(await ensureReady())) return false;
+    const HC = require("react-native-health-connect");
+    const granted: GrantedPermission[] = await HC.getGrantedPermissions();
+    return granted.some((p) => p.accessType === "write" && p.recordType === "BloodGlucose");
+  } catch {
+    return false;
+  }
+}
+
+async function requestReadWritePermissions(): Promise<{ read: boolean; write: boolean }> {
+  try {
+    if (!(await ensureReady())) return { read: false, write: false };
+    const HC = require("react-native-health-connect");
+    const has = (list: GrantedPermission[], accessType: string) =>
+      list.some((p) => p.accessType === accessType && p.recordType === "BloodGlucose");
+    const before: GrantedPermission[] = await HC.getGrantedPermissions();
+    const missing: GrantedPermission[] = [];
+    if (!has(before, "read")) missing.push({ accessType: "read", recordType: "BloodGlucose" });
+    if (!has(before, "write")) missing.push({ accessType: "write", recordType: "BloodGlucose" });
+    if (missing.length === 0) return { read: true, write: true };
+    const granted: GrantedPermission[] = await HC.requestPermission(missing);
+    const after: GrantedPermission[] = await HC.getGrantedPermissions();
+    const read = has(granted, "read") || has(after, "read");
+    const write = has(granted, "write") || has(after, "write");
+    if (read) readPermissionBlocked = false;
+    else readPermissionBlocked = permissionsEqual(before, after) && missing.some((p) => p.accessType === "read");
+    if (write) writePermissionBlocked = false;
+    else writePermissionBlocked = permissionsEqual(before, after) && missing.some((p) => p.accessType === "write");
+    return { read, write };
+  } catch {
+    return { read: false, write: false };
+  }
+}
+
 async function readRecentGlucose(windowDays: number, max: number): Promise<GlucoseSample[]> {
   if (!(await ensureReady())) return [];
   const HC = require("react-native-health-connect");
@@ -166,7 +204,11 @@ async function readRecentGlucose(windowDays: number, max: number): Promise<Gluco
     });
 }
 
-async function writeGlucose(mgdl: number, dateIso: string): Promise<string | null> {
+async function writeGlucose(
+  mgdl: number,
+  dateIso: string,
+  meta?: HealthWriteMeta
+): Promise<string | null> {
   if (!(await ensureReady())) return null;
   try {
     const HC = require("react-native-health-connect");
@@ -188,24 +230,30 @@ async function writeGlucose(mgdl: number, dateIso: string): Promise<string | nul
         level: { value: Math.round(mgdl), unit: "milligramsPerDeciliter" },
         specimenSource: 0, // UNKNOWN
         mealType: 0, // UNKNOWN
-        relationToMeal: 0, // UNKNOWN
-        metadata: { recordingMethod: 3 }, // MANUAL_ENTRY
+        relationToMeal: toRelationToMeal(meta?.mealContext ?? null),
+        // MANUAL_ENTRY. A clientRecordId makes insertRecords an upsert: the same
+        // id with a greater version replaces the record instead of adding one.
+        metadata: meta && hasValidSyncKey(meta)
+          ? { recordingMethod: 3, clientRecordId: meta.recordId, clientRecordVersion: meta.version }
+          : { recordingMethod: 3 },
       },
     ]);
     return ids?.[0] ?? null;
-  } catch {
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "insertRecords" });
     return null;
   }
 }
 
+async function deleteGlucoseBatch(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  if (!(await ensureReady())) throw new Error("health connect unavailable");
+  const HC = require("react-native-health-connect");
+  await HC.deleteRecordsByUuids("BloodGlucose", ids, []);
+}
+
 async function deleteGlucose(id: string): Promise<void> {
-  if (!(await ensureReady())) return;
-  try {
-    const HC = require("react-native-health-connect");
-    await HC.deleteRecordsByUuids("BloodGlucose", [id], []);
-  } catch {
-    // swallow: a failed mirror-delete must never block the local delete
-  }
+  await deleteGlucoseBatch([id]);
 }
 
 /** Health Connect has no insulin-delivery record type and this app does not
@@ -218,9 +266,12 @@ export const healthConnect: HealthProvider = {
   isAvailable,
   requestReadPermissions,
   requestWritePermission,
+  requestReadWritePermissions,
+  isWriteAuthorized,
   readRecentGlucose,
   writeGlucose,
   deleteGlucose,
+  deleteGlucoseBatch,
   readSummary,
 };
 

@@ -24,7 +24,7 @@ import { FOOD_EMOJI_PICKER_OPTIONS } from "../lib/foodMeta";
 import { canAddCustomFood } from "../lib/guardrails";
 import { logCrash } from "../lib/analytics";
 import { Field } from "../components/ui";
-import { Stepper } from "../components/Stepper";
+import { Stepper, useStepperValidity } from "../components/Stepper";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { hapticSelect } from "../lib/haptics";
@@ -98,6 +98,7 @@ function AddFoodScreen() {
   // keeps the CTA showing a spinner instead of silently doing nothing on a
   // slow write.
   const [saving, setSaving] = useState(false);
+  const stepperFields = useStepperValidity();
 
   // Return-key focus chain across the text fields (E.8): name -> brand -> gi ->
   // notes. Carbs/portion are steppers and sit outside the keyboard chain.
@@ -246,7 +247,7 @@ function AddFoodScreen() {
   }
 
   async function save() {
-    if (!valid || saving) return;
+    if (!valid || saving || !stepperFields.allValid) return;
 
     if (!isEdit && !allowed) {
       // push, not replace: the banner above already offers this same route,
@@ -498,6 +499,7 @@ function AddFoodScreen() {
               <Stepper
                 value={carb}
                 onChange={setCarb}
+                onValidityChange={stepperFields.reporter("carb")}
                 step={1}
                 longStep={5}
                 min={0}
@@ -523,6 +525,7 @@ function AddFoodScreen() {
               <Stepper
                 value={portion}
                 onChange={setPortion}
+                onValidityChange={stepperFields.reporter("portion")}
                 step={5}
                 longStep={25}
                 min={1}
@@ -646,7 +649,7 @@ function AddFoodScreen() {
               // At the free-tier limit, the banner above is the one route to
               // the paywall; Save goes inert instead of also silently routing
               // there itself (which used to blindside a filled-in form).
-              disabled={!valid || (!isEdit && allowed === false) || saving}
+              disabled={!valid || (!isEdit && allowed === false) || saving || !stepperFields.allValid}
               loading={saving}
               onPress={save}
             />

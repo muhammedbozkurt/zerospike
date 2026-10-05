@@ -27,7 +27,7 @@ import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G, isNoInsulinDiabetesType }
 import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { RangeInput } from "../components/RangeInput";
-import { Stepper } from "../components/Stepper";
+import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InlineTimePicker } from "../components/InlineTimePicker";
 import { InsulinModeSection } from "../components/InsulinModeSection";
 import { Button, Segmented } from "../components/ui";
@@ -146,6 +146,7 @@ function ProfileSetupScreen() {
   const [basalTimeTouched, setBasalTimeTouched] = useState(false);
   const [showTime, setShowTime] = useState(false);
   const [saving, setSaving] = useState(false);
+  const stepperFields = useStepperValidity();
 
   // ── The ready-made measurement layout (2.3.0's K2-E, shared with onboarding) ─
   //
@@ -349,7 +350,7 @@ function ProfileSetupScreen() {
   const carbOk =
     rangeOk(carbMin, carbMax) &&
     withinBounds(carbMin, carbMax, CARB_TARGET_BOUNDS);
-  const canSave = fastingOk && postmealOk && carbOk;
+  const canSave = fastingOk && postmealOk && carbOk && stepperFields.allValid;
 
   /**
    * "Set up this plan": writes the previewed rows to THIS profile and asks for
@@ -674,6 +675,7 @@ function ProfileSetupScreen() {
                     setter(v);
                     setCarbRatioTouched(true);
                   }}
+                  onValidityChange={stepperFields.reporter(`cr:${slot}`)}
                   step={0.5}
                   longStep={1}
                   min={1}
@@ -698,6 +700,7 @@ function ProfileSetupScreen() {
                     setIsf(v);
                     setIsfTouched(true);
                   }}
+                  onValidityChange={stepperFields.reporter("isf")}
                   step={unit === "mmol" ? 0.1 : 1}
                   longStep={unit === "mmol" ? 0.5 : 5}
                   min={unit === "mmol" ? 0.5 : 5}

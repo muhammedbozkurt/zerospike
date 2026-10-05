@@ -59,7 +59,7 @@ import {
 } from "../lib/glucose";
 import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G } from "../lib/diabetesDefaults";
 import { RangeInput } from "../components/RangeInput";
-import { Stepper } from "../components/Stepper";
+import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InsulinProductPicker } from "../components/InsulinProductPicker";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logEvent } from "../lib/analytics";
@@ -440,6 +440,7 @@ export default function OnboardingScreen() {
   const [basalDailyUnits, setBasalDailyUnits] = useState(
     activeProfile?.basal_daily_units ?? 0
   );
+  const stepperFields = useStepperValidity();
   // Premix UI toggle (P9): the insulinProducts step's two layouts are derived
   // from isMixSelection(basalInsulinId, bolusInsulinId) - true once a premix
   // product has actually been picked. This extra flag only covers the instant
@@ -1172,6 +1173,8 @@ export default function OnboardingScreen() {
             <Stepper
               value={basalDailyUnits}
               onChange={setBasalDailyUnits}
+              onValidityChange={stepperFields.reporter("basalUnits")}
+              revertOnUnmount
               step={1}
               longStep={5}
               min={0}
@@ -1288,6 +1291,7 @@ export default function OnboardingScreen() {
                 setCarbRatio(v);
                 setCarbRatioTouched(true);
               }}
+              onValidityChange={stepperFields.reporter("carbRatio")}
               step={0.5}
               longStep={1}
               min={1}
@@ -1309,6 +1313,7 @@ export default function OnboardingScreen() {
                 setIsf(v);
                 setIsfTouched(true);
               }}
+              onValidityChange={stepperFields.reporter("isf")}
               step={unit === "mmol" ? 0.1 : 1}
               longStep={unit === "mmol" ? 0.5 : 5}
               min={unit === "mmol" ? 0.5 : 5}
@@ -1643,7 +1648,8 @@ export default function OnboardingScreen() {
           label={label}
           disabled={
             (step === "targets" && !rangesOk) ||
-            (step === "diabetes" && diabetes == null)
+            (step === "diabetes" && diabetes == null) ||
+            !stepperFields.allValid
           }
           onPress={next}
         />

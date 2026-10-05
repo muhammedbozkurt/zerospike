@@ -7,6 +7,34 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
 ve `package.json`.
 
+## Unreleased
+
+### Health yazması
+- Apple Health ve Health Connect'e yazma artık ücretsiz; okuma ve otomatik
+  senkron Pro olarak kalıyor. Yazma izni üç yerde istenebiliyor: Ayarlar'daki
+  anahtar, Health bağlanma akışı (okuma ve yazma tek diyalog) ve elle kayıt
+  sonrası tek seferlik "Health'e de kaydedelim mi?" sorusu.
+- Yalnız elle girilen kan şekeri ölçümleri yazılıyor. Uygulamada silinen
+  kaydın Health'teki kopyası da siliniyor.
+- Ayarlar > Veri'de isteğe bağlı geçmiş aktarımı (7/30/90 gün).
+- iOS'ta Health'e yazma önceki sürümlerde hiç çalışmıyordu; düzeltildi. Daha
+  önce yazılamayan kayıtlardan yalnız son 7 gün otomatik yazılır, daha eskiler
+  için geçmiş aktarımı kullanılır.
+- NSHealthUpdateUsageDescription metni (app.json ve 8 ios-locales dosyası)
+  yazmanın yalnız kullanıcı açtığında/onayladığında ve yalnız elle girilen
+  ölçümler için yapıldığını anlatacak şekilde güncellendi.
+
+### Post-meal hatırlatıcı
+- Elle girilen "yemeğe kaç dk önce başladınız" değeri birebir kuruluyor;
+  kurulacak saat önizlemede ve onay mesajında gösteriliyor.
+
+### Enjeksiyon haritası
+- Bölge haritasında yeni insan silüeti.
+
+### Sayı girişi
+- Doz, karbonhidrat ve oran alanlarında boş veya yarım değerin sessizce
+  kaydedilmesi engellendi; geçersiz alanda kaydet pasif.
+
 ## 2.3.5 (build 73 / versionCode 74, eas autoIncrement sonrasi)
 
 ### Enjeksiyon kaydı

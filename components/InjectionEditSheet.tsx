@@ -33,7 +33,7 @@ import { logCrash, logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import { useApp } from "../lib/store/AppContext";
 import { FeedbackHost, useFeedback } from "./Feedback";
-import { Stepper } from "./Stepper";
+import { Stepper, useStepperValidity } from "./Stepper";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
@@ -183,6 +183,7 @@ export function InjectionEditSheet({
   const [loggedAt, setLoggedAt] = useState<Date>(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const stepperFields = useStepperValidity();
   // Which body the sheet shows: the form, or the site-picking silhouette
   // (entered from the compact site row, returns to the form on a pick).
   const [step, setStep] = useState<"form" | "site">("form");
@@ -272,7 +273,7 @@ export function InjectionEditSheet({
   }
 
   async function save() {
-    if (!injection || saving) return;
+    if (!injection || saving || !stepperFields.allValid) return;
     const hasDose = dose > 0;
     if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return;
     if (hasDose && !(await confirmDose(dose))) return;
@@ -499,6 +500,7 @@ export function InjectionEditSheet({
                 <Stepper
                   value={dose}
                   onChange={setDose}
+                  onValidityChange={stepperFields.reporter("dose")}
                   step={0.5}
                   longStep={1}
                   min={0}
@@ -590,7 +592,7 @@ export function InjectionEditSheet({
                     ) : null}
                   </View>
 
-                  <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
+                  <GradientCTA label={t("common.save")} disabled={saving || !stepperFields.allValid} onPress={save} />
 
                   {onDelete ? (
                     <Pressable

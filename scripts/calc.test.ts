@@ -578,11 +578,16 @@ section("O. source guards (data scope, profile hand-over, input filters)");
     !/calculator\.iobRefreshedBody/.test(calc) && !/lastSyncedDose/.test(calc)
   );
 
+  const stepperInput = src("lib/stepperInput.ts");
   for (const rel of ["components/Stepper.tsx", "components/RangeInput.tsx"]) {
     const s = src(rel);
+    const viaStepperInput =
+      /from "\.\.\/lib\/stepperInput"/.test(s) &&
+      /sanitizeNumberText\(/.test(stepperInput) &&
+      /parseDecimalText\(/.test(stepperInput);
     ok(
       `${rel} uses the shared normalizer`,
-      /sanitizeNumberText\(/.test(s) && /parseDecimalText\(/.test(s)
+      (/sanitizeNumberText\(/.test(s) && /parseDecimalText\(/.test(s)) || viaStepperInput
     );
     ok(
       `${rel} has no local decimal filter`,

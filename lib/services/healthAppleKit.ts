@@ -1,3 +1,5 @@
+import { logCrash } from "../analytics";
+import { toHealthKitMetadata, type HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
@@ -13,9 +15,15 @@ import type { GlucoseSample, HealthProvider, HealthSummary } from "./healthTypes
  *   insulinDelivery / appleExerciseTime)
  */
 
+type HKModule = typeof import("@kingstinct/react-native-healthkit");
+
+function loadHK(): HKModule {
+  return require("@kingstinct/react-native-healthkit");
+}
+
 async function isAvailable(): Promise<boolean> {
   try {
-    const HK = require("@kingstinct/react-native-healthkit");
+    const HK = loadHK();
     return await HK.isHealthDataAvailable();
   } catch {
     return false;
@@ -24,7 +32,7 @@ async function isAvailable(): Promise<boolean> {
 
 async function requestReadPermissions(): Promise<boolean> {
   try {
-    const HK = require("@kingstinct/react-native-healthkit");
+    const HK = loadHK();
     // iOS never reveals whether *read* access was granted (privacy), so a
     // resolved call is the best signal we can get here. v14 takes a single
     // { toShare, toRead } object with string-literal identifiers. We also
@@ -43,21 +51,58 @@ async function requestReadPermissions(): Promise<boolean> {
   }
 }
 
+async function requestReadWritePermissions(): Promise<{ read: boolean; write: boolean }> {
+  try {
+    const HK = loadHK();
+    await HK.requestAuthorization({
+      toShare: ["HKQuantityTypeIdentifierBloodGlucose"],
+      toRead: [
+        "HKQuantityTypeIdentifierBloodGlucose",
+        "HKQuantityTypeIdentifierInsulinDelivery",
+        "HKQuantityTypeIdentifierAppleExerciseTime",
+      ],
+    });
+    return {
+      read: true,
+      write:
+        HK.authorizationStatusFor("HKQuantityTypeIdentifierBloodGlucose") ===
+        HK.AuthorizationStatus.sharingAuthorized,
+    };
+  } catch {
+    return { read: false, write: false };
+  }
+}
+
+async function isWriteAuthorized(): Promise<boolean> {
+  try {
+    const HK = loadHK();
+    return (
+      HK.authorizationStatusFor("HKQuantityTypeIdentifierBloodGlucose") ===
+      HK.AuthorizationStatus.sharingAuthorized
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function requestWritePermission(): Promise<boolean> {
   try {
-    const HK = require("@kingstinct/react-native-healthkit");
+    const HK = loadHK();
     await HK.requestAuthorization({
       toShare: ["HKQuantityTypeIdentifierBloodGlucose"],
       toRead: [],
     });
-    return true;
+    return (
+      HK.authorizationStatusFor("HKQuantityTypeIdentifierBloodGlucose") ===
+      HK.AuthorizationStatus.sharingAuthorized
+    );
   } catch {
     return false;
   }
 }
 
 async function readRecentGlucose(windowDays: number, max: number): Promise<GlucoseSample[]> {
-  const HK = require("@kingstinct/react-native-healthkit");
+  const HK = loadHK();
   const from = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   // v14 (Nitro) moved the date range into filter.date and made the identifier a
   // string literal (the HKQuantityTypeIdentifier enum was removed).
@@ -71,8 +116,8 @@ async function readRecentGlucose(windowDays: number, max: number): Promise<Gluco
     // Loop guard: NEVER re-import a sample we wrote ourselves, or a
     // mirror-then-import cycle would double every manual reading. HealthKit tags
     // each sample with the writing app's bundle in sourceRevision.
-    .filter((s: any) => s?.sourceRevision?.source?.bundleIdentifier !== OWN_BUNDLE_ID)
-    .map((s: any) => {
+    .filter((s) => s.sourceRevision?.source?.bundleIdentifier !== OWN_BUNDLE_ID)
+    .map((s) => {
       const when = new Date(s.endDate ?? s.startDate);
       // The query above requests unit "mg/dL", so s.quantity is ALREADY mg/dL,
       // it must NOT pass through any mmol heuristic (that inverted true sub-30
@@ -96,7 +141,7 @@ async function readRecentGlucose(windowDays: number, max: number): Promise<Gluco
  * native call to fail regardless. notDetermined re-prompts once; anything
  * else that is not "authorized" fails the write here, before it is attempted.
  */
-async function ensureWriteAuthorized(HK: any): Promise<boolean> {
+async function ensureWriteAuthorized(HK: HKModule): Promise<boolean> {
   try {
     const statusFor = () => HK.authorizationStatusFor("HKQuantityTypeIdentifierBloodGlucose");
     const isAuthorized = () => statusFor() === HK.AuthorizationStatus.sharingAuthorized;
@@ -120,28 +165,55 @@ async function ensureWriteAuthorized(HK: any): Promise<boolean> {
   }
 }
 
-async function writeGlucose(mgdl: number, dateIso: string): Promise<string | null> {
-  const HK = require("@kingstinct/react-native-healthkit");
+async function writeGlucose(
+  mgdl: number,
+  dateIso: string,
+  meta?: HealthWriteMeta
+): Promise<string | null> {
+  const HK = loadHK();
   if (!(await ensureWriteAuthorized(HK))) return null;
   const when = new Date(dateIso);
-  const res = await HK.saveQuantitySample("HKQuantityTypeIdentifierBloodGlucose", {
-    unit: "mg/dL",
-    quantity: Math.round(mgdl),
-    start: when,
-    end: when,
-  });
-  // v14 returns the new sample's UUID string (older shapes: an object).
-  if (typeof res === "string") return res;
-  return res?.uuid ?? null;
+  if (Number.isNaN(when.getTime())) return null;
+  const value = Math.round(mgdl);
+  const plain = () =>
+    HK.saveQuantitySample("HKQuantityTypeIdentifierBloodGlucose", "mg/dL", value, when, when);
+  if (!meta) return (await plain())?.uuid ?? null;
+  try {
+    // Verified against the iOS 18.6 HealthKit binary and the library's
+    // anyMapToDictionary (Helpers.swift:428): string/bool/Double values reach
+    // HealthKit as NSString/NSNumber under the literal HK* key strings.
+    // toHealthKitMetadata only emits values HealthKit accepts: it rejects an
+    // invalid sync identifier/version with a native exception that no JS
+    // try/catch can catch.
+    const res = await HK.saveQuantitySample(
+      "HKQuantityTypeIdentifierBloodGlucose",
+      "mg/dL",
+      value,
+      when,
+      when,
+      toHealthKitMetadata(meta)
+    );
+    return res?.uuid ?? null;
+  } catch (err) {
+    // Covers a plain JS-side rejection only. Retries the same write once
+    // without metadata (the sample is then just not idempotent).
+    logCrash(err, { screen: "health", op: "saveWithMetadata" });
+    return (await plain())?.uuid ?? null;
+  }
+}
+
+async function deleteGlucoseBatch(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const HK = loadHK();
+  await HK.deleteObjects("HKQuantityTypeIdentifierBloodGlucose", { uuids: ids });
 }
 
 async function deleteGlucose(id: string): Promise<void> {
-  const HK = require("@kingstinct/react-native-healthkit");
-  await HK.deleteObjects("HKQuantityTypeIdentifierBloodGlucose", { uuids: [id] });
+  await deleteGlucoseBatch([id]);
 }
 
 async function readInsulin(windowDays: number): Promise<HealthSummary["insulin"]> {
-  const HK = require("@kingstinct/react-native-healthkit");
+  const HK = loadHK();
   const from = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const samples = await HK.queryQuantitySamples("HKQuantityTypeIdentifierInsulinDelivery", {
     limit: 2000,
@@ -164,7 +236,7 @@ async function readInsulin(windowDays: number): Promise<HealthSummary["insulin"]
 }
 
 async function readExerciseMinutes(windowDays: number): Promise<number> {
-  const HK = require("@kingstinct/react-native-healthkit");
+  const HK = loadHK();
   const from = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const samples = await HK.queryQuantitySamples("HKQuantityTypeIdentifierAppleExerciseTime", {
     limit: 3000,
@@ -194,8 +266,11 @@ export const healthAppleKit: HealthProvider = {
   isAvailable,
   requestReadPermissions,
   requestWritePermission,
+  requestReadWritePermissions,
+  isWriteAuthorized,
   readRecentGlucose,
   writeGlucose,
   deleteGlucose,
+  deleteGlucoseBatch,
   readSummary,
 };

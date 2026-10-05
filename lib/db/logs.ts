@@ -225,6 +225,58 @@ export async function setSugarLogHealthUuid(
   ]);
 }
 
+/** Rows the history transfer may write to Health: this profile's app-entered
+ *  readings since `sinceIso` that have no Health sample yet. The pure selector
+ *  (lib/healthBackfill.ts) applies the same rule again on top of this. */
+export async function listHealthBackfillRows(
+  profileId: string,
+  sinceIso: string
+): Promise<SugarLog[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<SugarRow>(
+    `SELECT * FROM sugar_logs
+      WHERE profile_id = ? AND source != 'health' AND healthkit_uuid IS NULL AND logged_at >= ?
+      ORDER BY logged_at ASC;`,
+    [profileId, sinceIso]
+  );
+  return rows.map(mapSugar);
+}
+
+/** Which of these Health sample ids are linked to a local row right now. */
+export async function listLinkedHealthUuids(uuids: readonly string[]): Promise<string[]> {
+  if (uuids.length === 0) return [];
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ healthkit_uuid: string }>(
+    `SELECT healthkit_uuid FROM sugar_logs WHERE healthkit_uuid IN (${uuids.map(() => "?").join(",")});`,
+    [...uuids]
+  );
+  return rows.map((r) => r.healthkit_uuid);
+}
+
+/** The local rows currently linked to any of these Health sample ids. */
+export async function listHealthUuidLinks(
+  uuids: readonly string[]
+): Promise<{ id: string; profile_id: string; healthkit_uuid: string }[]> {
+  if (uuids.length === 0) return [];
+  const db = await getDb();
+  return db.getAllAsync<{ id: string; profile_id: string; healthkit_uuid: string }>(
+    `SELECT id, profile_id, healthkit_uuid FROM sugar_logs WHERE healthkit_uuid IN (${uuids.map(() => "?").join(",")});`,
+    [...uuids]
+  );
+}
+
+/** Source and Health sample id of every reading of this profile that carries
+ *  one, for revoking the app's own copies before the rows are deleted. */
+export async function listHealthMirrorRows(
+  profileId: string
+): Promise<{ source: string; healthkit_uuid: string | null }[]> {
+  const db = await getDb();
+  return db.getAllAsync<{ source: string; healthkit_uuid: string | null }>(
+    "SELECT source, healthkit_uuid FROM sugar_logs WHERE profile_id = ? AND healthkit_uuid IS NOT NULL;",
+    [profileId]
+  );
+}
+
 /**
  * Deletes a sugar log and returns its healthkit_uuid (or null) so the caller can
  * best-effort revoke the mirrored Apple Health sample. Returning it here means

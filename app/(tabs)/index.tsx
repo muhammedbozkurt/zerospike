@@ -24,7 +24,7 @@ import {
   getSugarLog,
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
-import type { LogTag, PeriodTag, Reminder } from "../../lib/db/types";
+import type { LogTag, PeriodTag, Reminder, SugarLog } from "../../lib/db/types";
 import { listReminders } from "../../lib/db/reminders";
 import { nextUpcoming, type UpcomingItem } from "../../lib/upcomingReminders";
 import {
@@ -46,6 +46,7 @@ import {
 import {
   formatPostMealRemaining,
   postMealCardActions,
+  postMealReminderPreview,
   postMealElapsedFraction,
   postMealWindowForProfile,
   POST_MEAL_WINDOW_MIN,
@@ -80,9 +81,16 @@ import {
   takeHealthWriteFailureNotice,
   shouldAnnounceHealthWriteFailure,
   retryPendingHealthWrites,
+  isHealthAvailable,
+  requestHealthReadWriteAccess,
+  requestHealthWritePermission,
+  setHealthWriteEnabled,
   HEALTH_NAME,
   type SyncResult,
 } from "../../lib/services/health";
+import { healthWriteAskSeen, markHealthWriteAskSeen } from "../../lib/services/healthWritePrompt";
+import { useHealthBackfill } from "../../lib/useHealthBackfill";
+import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
 import { useHealthAvailable } from "../../lib/services/healthAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
@@ -272,8 +280,10 @@ export default function DashboardScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string }>();
   const { isWide, columnPad } = useLayout();
-  const { activeProfile, isProUser, dataVersion, bumpData, lang } = useApp();
+  const { activeProfile, profiles, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
+  const healthBackfill = useHealthBackfill();
+  const onHealthWriteDenied = useHealthWriteDenied();
   const guardEntry = useEntryGuardConfirm();
   // Store-screenshot only: an Android store frame is captured on the iOS
   // simulator (?scPlatform=android). The quick-access row drops the Health
@@ -1207,7 +1217,7 @@ export default function DashboardScreen() {
         });
         if (!proceed) return;
       }
-      await finishStartedEating(await startPostMealTimer(minutesAgo));
+      await finishStartedEating(await startPostMealTimer(minutesAgo), minutesAgo);
     } catch {
       // startPostMealTimer arms nothing when it throws (schedulePostMealAt rolls
       // its own write back), so the countdown is simply not started.
@@ -1218,7 +1228,7 @@ export default function DashboardScreen() {
     }
   }
 
-  async function finishStartedEating(outcome: PostMealStartOutcome) {
+  async function finishStartedEating(outcome: PostMealStartOutcome, minutesAgo = 0) {
     if (outcome.kind === "elapsed") {
       // Nothing was armed: the meal is older than the window. Say so and leave
       // the user on the dashboard, where the reading is one tap away.
@@ -1228,7 +1238,18 @@ export default function DashboardScreen() {
     if (outcome.kind === "started") {
       logEvent("tokluk_timer_started");
       hapticSuccess();
-      toast(t("dashboard.toklukSet", { n: outcome.minutesLeft }), "success");
+      // Same function and same clock formatting as the duration sheet's preview,
+      // so the toast names exactly the time the user saw before tapping Start.
+      const preview = postMealReminderPreview(minutesAgo, Date.now());
+      toast(
+        preview
+          ? t("dashboard.postMealSetAt", {
+              time: isolateLtr(formatTime(new Date(preview.atMs).toISOString())),
+              left: preview.leftMin,
+            })
+          : t("dashboard.toklukSet", { n: outcome.minutesLeft }),
+        "success"
+      );
       await refreshPostMealTimer();
       await refreshNextReminder();
       if (activeProfile) void syncLiveData(activeProfile.id, glucoseUnit);
@@ -1335,6 +1356,50 @@ export default function DashboardScreen() {
     }
     bumpData();
     if (isNow) void maybeOfferLowFollowup(value);
+    // Not on top of the low-reading follow-up sheet.
+    if (classifyGlucose(value, period, activeProfile) !== "low") void maybeAskHealthWrite(addedSugar);
+  }
+
+  // One-time question for a profile that never turned Health writing on: asked
+  // right after a manual reading (the moment the value is obvious), answered
+  // either way it is never asked again; Settings > Data keeps the switch.
+  function writeOnMessage(): string {
+    return profiles.length > 1 && activeProfile
+      ? t("dashboard.healthWriteOnNamed", { name: activeProfile.name, health: HEALTH_NAME })
+      : t("dashboard.healthWriteOn", { health: HEALTH_NAME });
+  }
+
+  async function maybeAskHealthWrite(log: SugarLog) {
+    try {
+      if (log.source === "health" || !hasHealthProvider() || !healthAvailable) return;
+      if (await getHealthWriteEnabled(log.profile_id)) return;
+      if (await healthWriteAskSeen()) return;
+      // Marked only once Health is known to be usable here: an unavailable
+      // Health Connect must not use up the one question.
+      if (!(await isHealthAvailable())) return;
+      await markHealthWriteAskSeen();
+      const many = profiles.length > 1 ? activeProfile?.name : undefined;
+      const yes = await confirm({
+        title: t("dashboard.healthWriteAskTitle", { health: HEALTH_NAME }),
+        message:
+          t("dashboard.healthWriteAskBody", { health: HEALTH_NAME }) +
+          (many ? `\n\n${t("dashboard.healthWriteAskProfile", { name: many })}` : ""),
+        confirmLabel: t("dashboard.healthWriteAskYes"),
+        cancelLabel: t("dashboard.healthWriteAskLater"),
+        icon: "heart-outline",
+      });
+      if (!yes) return;
+      if (!(await requestHealthWritePermission())) {
+        await onHealthWriteDenied();
+        return;
+      }
+      await setHealthWriteEnabled(true, log.profile_id);
+      void writeGlucoseToHealthIfEnabled(log);
+      toast(writeOnMessage(), "success");
+      await healthBackfill.offerOnce(log.profile_id);
+    } catch (err) {
+      logCrash(err, { screen: "dashboard", op: "askHealthWrite" });
+    }
   }
 
   // Neutral follow-up: after the user LOGS a reading below their own profile's
@@ -1375,7 +1440,26 @@ export default function DashboardScreen() {
   async function toggleCgm(next: boolean) {
     setCgmOn(next);
     if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, next);
-    if (next) await runSync(true);
+    if (!next) return;
+    // Connecting asks for write access in the same system dialog as read; a new
+    // grant switches the mirror on for this profile, a denial stays silent.
+    const access = activeProfile
+      ? await requestHealthReadWriteAccess(activeProfile.id)
+      : null;
+    // Read refused in the combined dialog: opening the read dialog again right
+    // away (importHealthGlucose asks for it) would just repeat the same prompt.
+    if (access && !access.read) {
+      toast(
+        access.newlyEnabled ? writeOnMessage() : t("dashboard.healthDenied", { health: HEALTH_NAME }),
+        "info"
+      );
+      return;
+    }
+    await runSync(true);
+    if (access?.newlyEnabled && activeProfile) {
+      toast(writeOnMessage(), "success");
+      await healthBackfill.offerOnce(activeProfile.id);
+    }
   }
 
   // The one Health entry point, shared by the quick-access card and the

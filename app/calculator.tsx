@@ -92,7 +92,7 @@ import { foodSourceLabel } from "../lib/services/openFoodFacts";
 import type { Food, InjectionSite, LogTag, MealSlot, SitePoint } from "../lib/db/types";
 import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
-import { Stepper } from "../components/Stepper";
+import { Stepper, useStepperValidity } from "../components/Stepper";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
 import { Tooltip } from "../components/Tooltip";
@@ -530,6 +530,7 @@ function CalculatorScreen() {
   // only, see lib/iob.ts) and shown as its own line in the IOB tooltip.
   const [basalIob, setBasalIob] = useState(0);
   const [saving, setSaving] = useState(false);
+  const stepperFields = useStepperValidity();
   // Flips true only on a direct user edit (photo, note, tags, typed dose) -
   // never on the edit-mode prefill - so the close button only warns about
   // input the user themselves just made, not the record it loaded.
@@ -945,7 +946,7 @@ function CalculatorScreen() {
   }
 
   async function logMeal() {
-    if (!food || !activeProfile || !estimate || saving) return;
+    if (!food || !activeProfile || !estimate || saving || !stepperFields.allValid) return;
 
     // Locked before the confirmation dialog, not after it: the CTA is disabled
     // while `saving`, and a second tap during the dialog would otherwise start a
@@ -1119,6 +1120,7 @@ function CalculatorScreen() {
                 row.healthkit_uuid,
                 row.glucose_level_mgdl,
                 row.logged_at,
+                row.period_tag,
                 // X7: the row's OWN owner, not the active profile.
                 row.profile_id
               );
@@ -1971,6 +1973,7 @@ function CalculatorScreen() {
                   <Stepper
                     value={portion}
                     onChange={setPortion}
+                    onValidityChange={stepperFields.reporter("portion")}
                     step={5}
                     longStep={25}
                     min={0}
@@ -2327,7 +2330,7 @@ function CalculatorScreen() {
                   ? t("calculator.saveMealAndDose")
                   : t("calculator.logMeal")
             }
-            disabled={saving || (isEdit && !editPrefillDone)}
+            disabled={saving || (isEdit && !editPrefillDone) || !stepperFields.allValid}
             onPress={logMeal}
           />
 

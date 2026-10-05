@@ -1,3 +1,5 @@
+import { parseDecimalText } from "./numberInput";
+
 /**
  * Post-meal reminder countdown formatting. Pure and i18n-free: it only decides
  * the display number and which unit to show, so the caller picks the localized
@@ -152,6 +154,42 @@ export function clampPostMealLateMinutes(n: number, windowMin?: number): number 
   return rounded;
 }
 
+/** What the late-start field's text means. An empty or unreadable field arms
+ *  nothing (no value is invented for it); a number is kept as typed unless it
+ *  passes the input's reach, in which case it is capped and `clamped` says so. */
+export type PostMealLateInput =
+  | { kind: "empty" }
+  | { kind: "ok"; minutes: number; clamped: boolean };
+
+export function parsePostMealLateInput(text: string): PostMealLateInput {
+  const parsed = parseDecimalText(text);
+  if (parsed == null) return { kind: "empty" };
+  const minutes = clampPostMealLateMinutes(parsed);
+  return { kind: "ok", minutes, clamped: minutes !== Math.round(parsed) };
+}
+
+/** The late-start field after an edit (typed, pasted or stepped). Any edit
+ *  makes the value manual (`fromChip: false`); text past the reach is replaced
+ *  by the maximum and `capped` says so, so the field never shows a number other
+ *  than the one that will be armed. */
+export function editPostMealLateDraft(text: string): {
+  draft: string;
+  capped: boolean;
+  fromChip: false;
+} {
+  const r = parsePostMealLateInput(text);
+  if (r.kind === "ok" && r.clamped) {
+    return { draft: String(r.minutes), capped: true, fromChip: false };
+  }
+  return { draft: text, capped: false, fromChip: false };
+}
+
+/** A +/- press: the unclamped result goes through the same gate as typing, so
+ *  stepping past the maximum reports the cap exactly as typing would. */
+export function stepPostMealLateDraft(current: number | null, delta: number) {
+  return editPostMealLateDraft(String(Math.max(0, (current ?? 0) + delta)));
+}
+
 /** What a late "I started eating N minutes ago" can produce. */
 export type PostMealLateStart =
   /** Arm the countdown: `startedAt` is BACKDATED to the real meal moment, so
@@ -195,6 +233,18 @@ export function startPostMealLate(input: {
   const remainingMs = endsAt - input.now;
   if (remainingMs < POST_MEAL_MIN_SCHEDULE_MS) return { kind: "elapsed" };
   return { kind: "start", startedAt, endsAt, remainingMs };
+}
+
+/** The one-line answer the late-start sheet shows under the field: the clock
+ *  moment the reminder lands and the whole minutes left (rounded up, so it
+ *  never reads 0 while time remains). Null once the window is over. */
+export function postMealReminderPreview(
+  minutesAgo: number,
+  now: number
+): { atMs: number; leftMin: number } | null {
+  const r = startPostMealLate({ minutesAgo, now });
+  if (r.kind !== "start") return null;
+  return { atMs: r.endsAt, leftMin: Math.ceil(r.remainingMs / 60_000) };
 }
 
 /**

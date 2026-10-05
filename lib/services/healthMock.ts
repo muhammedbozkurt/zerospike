@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 
+import type { HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
 import type { GlucoseSample, HealthProvider, HealthSummary } from "./healthTypes";
 
@@ -46,6 +47,8 @@ export function mockHealthSummary(windowDays: number): HealthSummary {
   };
 }
 
+let mockWriteGranted = false;
+
 export const healthMock: HealthProvider = {
   async isAvailable() {
     return true;
@@ -54,15 +57,26 @@ export const healthMock: HealthProvider = {
     return true;
   },
   async requestWritePermission() {
+    mockWriteGranted = true;
     return true;
+  },
+  async requestReadWritePermissions() {
+    mockWriteGranted = true;
+    return { read: true, write: true };
+  },
+  async isWriteAuthorized() {
+    return mockWriteGranted;
   },
   async readRecentGlucose() {
     return readMockGlucose();
   },
-  async writeGlucose(mgdl: number, dateIso: string) {
+  async writeGlucose(mgdl: number, dateIso: string, _meta?: HealthWriteMeta) {
     return `mock-hk-${Date.parse(dateIso) || 0}-${Math.round(mgdl)}`;
   },
   async deleteGlucose() {
+    // no-op: mock ids are never real health-store objects
+  },
+  async deleteGlucoseBatch() {
     // no-op: mock ids are never real health-store objects
   },
   async readSummary(windowDays: number) {

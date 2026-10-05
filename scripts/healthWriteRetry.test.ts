@@ -380,11 +380,14 @@ section("J. wiring: health.ts and its callers actually use this module");
   );
   ok(
     "retryPendingHealthWrites prunes at the START of the pass",
-    /const prunedEntries = pruneWritePendingQueue\(await getPendingWriteEntries\(profileId\), nowMs\);/.test(
+    /const prunedEntries = await writeQueueLock\(async \(\) => \{[\s\S]{0,200}pruneWritePendingQueue\(current, nowMs\)/.test(
       health
     )
   );
-  ok("the pruned queue is actually persisted", /await savePendingWriteEntries\(profileId, prunedEntries\);/.test(health));
+  ok(
+    "the pruned queue is actually persisted (under the queue lock)",
+    /pruned\.length !== current\.length\) await savePendingWriteEntries\(profileId, pruned\);/.test(health)
+  );
 
   section("J1d. mid-pass toggle-off (2.3.5 fix #3): scope re-read fresh per row, break not continue");
   ok(
@@ -491,6 +494,27 @@ section("J. wiring: health.ts and its callers actually use this module");
     "InjectionEditSheet re-derives the product when the type toggle changes (2.3.5 fix)",
     /typeChanged/.test(editSheet)
   );
+}
+
+section("K. idempotent write wiring (sync id + version) and retry orphan guard");
+{
+  const health = readFileSync(join(import.meta.dirname, "..", "lib", "services", "health.ts"), "utf8");
+  const retry = health.slice(health.indexOf("export async function retryPendingHealthWrites"));
+  ok("fresh write carries buildHealthWriteMeta(log)", /buildHealthWriteMeta\(log\)/.test(health));
+  ok("retry carries buildHealthWriteMeta(row)", /buildHealthWriteMeta\(row\)/.test(retry));
+  ok(
+    "retry re-checks the row exists before linking, and revokes the sample if gone",
+    /if \(!\(await getSugarLog\(row\.id\)\)\) \{\s*await deleteGlucoseFromHealth\(uuid\);\s*continue;/.test(retry)
+  );
+  ok(
+    "edit writes before revoking and never revokes the uuid it just got back",
+    /oldUuid && oldUuid !== uuid/.test(health) && health.indexOf("buildHealthWriteMeta({ id: logId") < health.indexOf("oldUuid !== uuid")
+  );
+  const hc = readFileSync(join(import.meta.dirname, "..", "lib", "services", "healthConnect.ts"), "utf8");
+  ok("Android writes clientRecordId + clientRecordVersion", /clientRecordId: meta\.recordId, clientRecordVersion: meta\.version/.test(hc));
+  ok("Android read loop guard still skips our own dataOrigin", /dataOrigin !== OWN_BUNDLE_ID/.test(hc));
+  const ak = readFileSync(join(import.meta.dirname, "..", "lib", "services", "healthAppleKit.ts"), "utf8");
+  ok("iOS read loop guard still skips our own bundle", /bundleIdentifier !== OWN_BUNDLE_ID/.test(ak));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

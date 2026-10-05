@@ -490,6 +490,7 @@ export default function ProfileSettings() {
               min={0}
               max={150}
               decimals={1}
+              revertOnUnmount
               suffix={t("common.units")}
               accessibilityLabel={t("settings.basalDailyUnits")}
             />
@@ -589,6 +590,7 @@ export default function ProfileSettings() {
               min={unit === "mmol" ? 0.5 : 5}
               max={unit === "mmol" ? 30 : 500}
               decimals={unit === "mmol" ? 1 : 0}
+              revertOnUnmount
               suffix={glucoseUnitLabel(unit)}
               accessibilityLabel={t("settings.isf")}
             />
@@ -622,6 +624,7 @@ export default function ProfileSettings() {
                 min={1}
                 max={50}
                 decimals={1}
+                revertOnUnmount
                 suffix={t("common.carbRatioUnit")}
                 accessibilityLabel={t(`slot.${slot}`)}
               />

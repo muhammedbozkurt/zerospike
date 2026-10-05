@@ -18,12 +18,15 @@ import { INSIGHTS_WINDOWS } from "../../lib/insights";
 import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { setProOverride } from "../../lib/services/purchases";
 import {
+  countHealthCopies,
   getHealthConnectStatus,
+  getHealthPendingWriteCount,
   getHealthWriteEnabled,
   getHealthWriteStatus,
   hasHealthProvider,
-  isHealthConnectPermissionBlocked,
   requestHealthWritePermission,
+  retryPendingHealthWrites,
+  revokeHealthCopiesBeforeDelete,
   setHealthWriteEnabled,
   type HealthConnectStatus,
   type HealthWriteStatusRecord,
@@ -38,6 +41,8 @@ import { useFeedback } from "../../components/Feedback";
 import { formatDate, formatLocale, formatTime } from "../../lib/format";
 import { THEME } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
+import { useHealthBackfill } from "../../lib/useHealthBackfill";
+import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
 
 /** One bullet inside the Apple Health transparency card's expanded detail. */
 function HealthDetailRow({
@@ -160,13 +165,18 @@ export default function DataSettings() {
   // shows one person's data, so it may never touch anybody else's history.
   async function onClearLogs() {
     if (!activeProfile) return;
+    const copies = await countHealthCopies(activeProfile.id);
     const ok = await confirm({
       title: t("settings.clearLogs"),
-      message: t("settings.clearLogsConfirm", { name: activeProfile.name }),
+      message:
+        t("settings.clearLogsConfirm", { name: activeProfile.name }) +
+        (copies > 0 ? `\n\n${t("settings.healthDeleteCopiesNote", { health: healthName })}` : ""),
       confirmLabel: t("common.delete"),
       destructive: true,
     });
     if (!ok) return;
+    // Before the rows go: their Health ids live only on those rows.
+    await revokeHealthCopiesBeforeDelete(activeProfile.id);
     await clearAllLogs(activeProfile.id);
     // The countdown was armed for a meal in the history that was just erased:
     // leaving it running would ring for a record the user asked to be gone.
@@ -182,14 +192,18 @@ export default function DataSettings() {
       toast(t("profiles.cannotDeleteLast"), "error");
       return;
     }
+    const copies = await countHealthCopies(activeProfile.id);
     const ok = await confirm({
       title: t("profiles.delete"),
-      message: t("profiles.deleteConfirm", { name: activeProfile.name }),
+      message:
+        t("profiles.deleteConfirm", { name: activeProfile.name }) +
+        (copies > 0 ? `\n\n${t("settings.healthDeleteCopiesNote", { health: healthName })}` : ""),
       confirmLabel: t("common.delete"),
       destructive: true,
       icon: "person-remove-outline",
     });
     if (!ok) return;
+    await revokeHealthCopiesBeforeDelete(activeProfile.id);
     // Read BEFORE the delete: afterwards there is no way to tell whether the
     // countdown belonged to the profile that just went.
     const runningTimer = await getPostMealTimerState();
@@ -235,16 +249,14 @@ export default function DataSettings() {
     await refreshPro();
   }
 
-  // H4/H5: opt-in "write my manual readings to Apple Health", default OFF, and
-  // per profile - one Health account serves the device, so this switch says
-  // whether THIS profile's readings go there. The write (share) permission is
-  // requested at POINT OF USE - here, when the toggle is switched on - never at
-  // onboarding. If it is denied, the toggle stays off.
+  // Opt-in "write my manual readings to Apple Health", per profile - one Health
+  // account serves the device, so this switch says whether THIS profile's
+  // readings go there. Free for everyone. Besides the toggle here, the write
+  // permission is also asked in the Health connect flow and by a one-time
+  // question after a manual reading (dashboard). A denial leaves it off.
   const [healthWrite, setHealthWrite] = useState(false);
-  // AsyncStorage read, so the real value cannot be known on the first render. A
-  // non-Pro user with the mirror already on must never see the section vanish
-  // even for one frame, so until this resolves the section renders in a
-  // pending state instead of committing to shown/hidden.
+  // AsyncStorage read: the real value is unknown on the first render, so the
+  // switch shows a spinner until it resolves.
   const [healthWriteLoaded, setHealthWriteLoaded] = useState(false);
   const [healthDetailsOpen, setHealthDetailsOpen] = useState(false);
   // Last attempted mirror write's outcome (2.4 observability), re-read on
@@ -252,6 +264,10 @@ export default function DataSettings() {
   // can update it while this screen is not the one on screen, so coming back
   // to it must not show a stale answer.
   const [writeStatus, setWriteStatus] = useState<HealthWriteStatusRecord | null>(null);
+  const [pendingWrites, setPendingWrites] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const backfill = useHealthBackfill();
+  const onWriteDenied = useHealthWriteDenied();
   // Android-only three-state Health Connect availability (see
   // getHealthConnectStatus). iOS has no such gate, so it resolves once,
   // immediately, to "available" and never re-checks.
@@ -303,11 +319,15 @@ export default function DataSettings() {
     useCallback(() => {
       if (!healthWriteProfileId) {
         setWriteStatus(null);
+        setPendingWrites(0);
         return;
       }
       let alive = true;
       void getHealthWriteStatus(healthWriteProfileId).then((v) => {
         if (alive) setWriteStatus(v);
+      });
+      void getHealthPendingWriteCount(healthWriteProfileId).then((n) => {
+        if (alive) setPendingWrites(n);
       });
       return () => {
         alive = false;
@@ -319,23 +339,33 @@ export default function DataSettings() {
     if (value) {
       const granted = await requestHealthWritePermission();
       if (!granted) {
-        // Health Connect's system dialog silently no-ops once it considers the
-        // permission blocked (see isHealthConnectPermissionBlocked): re-prompting
-        // does nothing, so this sends the user to Settings instead of repeating
-        // the same denied toast forever.
-        if (Platform.OS === "android" && isHealthConnectPermissionBlocked("write")) {
-          toast(t("settings.healthPermissionBlocked", { health: healthName }), "info");
-          Linking.openSettings();
-        } else {
-          toast(t("settings.healthWriteDenied", { health: healthName }), "error");
-        }
+        await onWriteDenied();
         return;
       }
       await setHealthWriteEnabled(true, healthWriteProfileId);
       setHealthWrite(true);
+      void backfill.offerOnce(healthWriteProfileId);
     } else {
       await setHealthWriteEnabled(false, healthWriteProfileId);
       setHealthWrite(false);
+    }
+  }
+
+  async function onRetryHealthWrites() {
+    if (!healthWriteProfileId || retrying) return;
+    setRetrying(true);
+    try {
+      const res = await retryPendingHealthWrites(healthWriteProfileId);
+      setWriteStatus(await getHealthWriteStatus(healthWriteProfileId));
+      setPendingWrites(await getHealthPendingWriteCount(healthWriteProfileId));
+      toast(
+        res.attempted === 0
+          ? t("settings.healthRetryNone")
+          : t("settings.healthRetryResult", { ok: res.succeeded, total: res.attempted }),
+        res.attempted > 0 && res.succeeded === res.attempted ? "success" : "info"
+      );
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -348,21 +378,10 @@ export default function DataSettings() {
     ).catch(() => {});
   }
 
-  // Same Pro/opt-in gate as before (a lapsed-Pro user with the mirror already
-  // on must still see it), now shared by both platforms via hasHealthProvider
-  // instead of an iOS-only Platform check.
-  const wantsHealthSection = hasHealthProvider() && (isProUser || healthWrite);
-  // Whole-section skeleton: deliberately independent of wantsHealthSection.
-  // Pro status is known synchronously, so a Pro user only waits on
-  // hcStatusLoaded (Android). A non-Pro user's healthWrite READS as false
-  // before the AsyncStorage lookup resolves, so gating pending on
-  // wantsHealthSection made a non-Pro user with the mirror already ON compute
-  // wantsHealthSection=false on the very first render, skip straight past
-  // "pending" to "hidden", then pop the section in once healthWriteLoaded
-  // caught up (H2 regression). Pending must cover every non-Pro user until
-  // healthWriteLoaded settles, whatever it turns out to be.
-  const healthSectionPending =
-    hasHealthProvider() && (!hcStatusLoaded || (!isProUser && !healthWriteLoaded));
+  // Writing to Health is free for everyone (reading/auto-sync stays Pro and is
+  // gated on the dashboard), so the section shows whenever a provider exists.
+  const wantsHealthSection = hasHealthProvider();
+  const healthSectionPending = hasHealthProvider() && !hcStatusLoaded;
   // Rare (very old / unsupported Android): nothing to offer, so the section
   // drops out entirely rather than showing a dead end.
   const healthUnavailable = hcStatusLoaded && hcStatus === "unavailable";
@@ -441,12 +460,8 @@ export default function DataSettings() {
       <Row icon="trash-outline" label={t("settings.clearLogs")} onPress={onClearLogs} danger />
       <Row icon="person-remove-outline" label={t("profiles.delete")} onPress={onDeleteProfile} danger />
 
-      {/* Also shown to a lapsed-Pro user while the write mirror is still on:
-          the mirror keeps running off its stored flag, so the switch to turn it
-          off must never disappear behind the paywall. Pro status is already
-          known synchronously; only a non-Pro user's stored healthWrite is
-          still in flight, so ONLY that combination gets the pending row below
-          instead of a premature "hidden". */}
+      {/* Shown to everyone: writing to Health is free. Only Android's
+          Health Connect status check is still in flight while pending. */}
       {healthSectionPending ? (
         <>
           <SectionLabel>{healthName}</SectionLabel>
@@ -539,10 +554,9 @@ export default function DataSettings() {
               <Text className="flex-1 ml-3 font-medium text-ink">
                 {t("settings.healthWrite", { health: healthName })}
               </Text>
-              {/* A Pro user reaches this branch before healthWriteLoaded resolves
-                  too (isProUser alone already makes the section visible), so the
-                  switch itself must stay neutral until the real value is in -
-                  otherwise a Pro user with the mirror ON would see it flash OFF. */}
+              {/* The section renders before healthWriteLoaded resolves, so the
+                  switch stays neutral until the real value is in - otherwise a
+                  profile with the mirror ON would see it flash OFF. */}
               {healthWriteLoaded ? (
                 <Switch
                   value={healthWrite}
@@ -569,7 +583,44 @@ export default function DataSettings() {
                 })}
               </Text>
             ) : null}
+            {healthWrite && pendingWrites > 0 ? (
+              <View className="flex-row items-center mt-1.5">
+                <Text className="flex-1 text-mut text-[11px]">
+                  {t("settings.healthPendingWrites", { count: pendingWrites })}
+                </Text>
+                <Pressable
+                  onPress={onRetryHealthWrites}
+                  disabled={retrying}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  className="ml-3"
+                >
+                  <Text className="text-xs font-semibold" style={{ color: THEME.accent }}>
+                    {retrying ? "..." : t("settings.healthRetryNow")}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
+          {healthWrite ? (
+            <Row
+              icon="cloud-upload-outline"
+              label={t("settings.healthBackfill")}
+              sub={
+                backfill.progress
+                  ? t("settings.healthBackfillRunning", {
+                      done: backfill.progress.done,
+                      total: backfill.progress.total,
+                    })
+                  : t("settings.healthBackfillSub", { health: healthName })
+              }
+              onPress={() => {
+                if (healthWriteProfileId && !backfill.progress) {
+                  backfill.pickWindow(healthWriteProfileId);
+                }
+              }}
+            />
+          ) : null}
         </>
       ) : null}
 

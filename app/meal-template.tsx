@@ -46,7 +46,7 @@ import { CATEGORIES, type Category } from "../lib/db/categories";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { Field, Segmented } from "../components/ui";
 import { DirIcon } from "../components/DirIcon";
-import { Stepper } from "../components/Stepper";
+import { Stepper, useStepperValidity } from "../components/Stepper";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { FoodRow } from "../components/FoodRow";
 import { FoodPlate } from "../components/FoodPlate";
@@ -151,6 +151,7 @@ function MealTemplateScreen() {
   // OFF by default: one day's larger helping must not quietly move the recipe.
   const [savePortions, setSavePortions] = useState(false);
   const [saving, setSaving] = useState(false);
+  const stepperFields = useStepperValidity();
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -396,7 +397,7 @@ function MealTemplateScreen() {
   }
 
   async function save() {
-    if (!activeProfile || !trimmedName || saving) return;
+    if (!activeProfile || !trimmedName || saving || !stepperFields.allValid) return;
     setSaving(true);
     try {
       const slotValue = slot === "any" ? null : slot;
@@ -430,7 +431,7 @@ function MealTemplateScreen() {
    * taken deliberately, through the calculator's own gates.
    */
   async function logNow() {
-    if (!activeProfile || !templateId || !template || saving) return;
+    if (!activeProfile || !templateId || !template || saving || !stepperFields.allValid) return;
     setSaving(true);
     try {
       const meal = await addMealLog({
@@ -557,6 +558,7 @@ function MealTemplateScreen() {
           <Stepper
             value={item.portion_g}
             onChange={(v) => setItemPortion(item.id, v)}
+            onValidityChange={stepperFields.reporter(`portion:${item.id}`)}
             step={5}
             longStep={25}
             min={0}
@@ -831,7 +833,7 @@ function MealTemplateScreen() {
 
                 <GradientCTA
                   label={t("templates.logNow")}
-                  disabled={saving || items.length === 0}
+                  disabled={saving || items.length === 0 || !stepperFields.allValid}
                   onPress={logNow}
                 />
 
@@ -849,10 +851,11 @@ function MealTemplateScreen() {
                         },
                       })
                     }
+                    disabled={!stepperFields.allValid}
                     hitSlop={8}
                     accessibilityRole="button"
                     className="flex-row items-center justify-center mt-3"
-                    style={{ minHeight: HIT_TARGET }}
+                    style={{ minHeight: HIT_TARGET, opacity: stepperFields.allValid ? 1 : 0.5 }}
                   >
                     <Ionicons name="calculator-outline" size={15} color={THEME.accent} />
                     <Text style={{ color: THEME.accent, fontSize: 13, marginLeft: 6 }}>
@@ -864,7 +867,7 @@ function MealTemplateScreen() {
             ) : (
               <GradientCTA
                 label={t("templates.save")}
-                disabled={saving || !trimmedName}
+                disabled={saving || !trimmedName || !stepperFields.allValid}
                 onPress={save}
               />
             )}

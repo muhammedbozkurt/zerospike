@@ -18,7 +18,7 @@ import { useApp } from "../../lib/store/AppContext";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
-import { Stepper } from "../../components/Stepper";
+import { Stepper, useStepperValidity } from "../../components/Stepper";
 import { InlineDateTimePicker } from "../../components/InlineDateTimePicker";
 import { useFeedback } from "../../components/Feedback";
 import { useUndoBatch } from "../../components/useUndoBatch";
@@ -193,6 +193,7 @@ export default function InjectionScreen() {
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const stepperFields = useStepperValidity();
   const [editing, setEditing] = useState<Injection | null>(null);
 
   const typeSeeded = useRef(false);
@@ -395,7 +396,7 @@ export default function InjectionScreen() {
   }
 
   async function save() {
-    if (!activeProfile || !selected || saving) return;
+    if (!activeProfile || !selected || saving || !stepperFields.allValid) return;
     const hasDose = dose > 0;
     if (!(await confirmReusedPoint())) return;
     if (hasDose && !(await confirmDose(dose))) return;
@@ -993,6 +994,7 @@ export default function InjectionScreen() {
                     doseTouched.current = true;
                     setDose(v);
                   }}
+                  onValidityChange={stepperFields.reporter("dose")}
                   step={0.5}
                   longStep={1}
                   min={0}
@@ -1119,7 +1121,7 @@ export default function InjectionScreen() {
 
                   <GradientCTA
                     label={t("injection.logInjection")}
-                    disabled={!selected || saving}
+                    disabled={!selected || saving || !stepperFields.allValid}
                     onPress={save}
                   />
                 </Animated.View>

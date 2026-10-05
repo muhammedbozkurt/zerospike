@@ -1,20 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import { SheetShell } from "./SheetShell";
-import { Stepper } from "./Stepper";
 import { GradientCTA } from "./rich/GradientCTA";
 import { withAlpha } from "./rich/GlassCard";
 import {
-  clampPostMealLateMinutes,
+  editPostMealLateDraft,
+  parsePostMealLateInput,
+  postMealReminderPreview,
+  stepPostMealLateDraft,
   startPostMealLate,
   POST_MEAL_WINDOW_MIN,
   POST_MEAL_LATE_MAX_MIN,
 } from "../lib/postMealTimer";
 import { hapticSelect } from "../lib/haptics";
-import { GLUCOSE_RICH, HIT_TARGET, THEME } from "../lib/theme/tokens";
+import { formatTime, isolateLtr } from "../lib/format";
+import { sanitizeDecimalText } from "../lib/numberInput";
+import { GLUCOSE_RICH, HIT_TARGET, RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
 
 /** How long ago the meal began, as one tap. Short offsets, because this is
  *  for "I forgot to press it" and not for logging yesterday's dinner;
@@ -110,21 +114,42 @@ export function PostMealDurationSheet({
 }) {
   const { t } = useTranslation();
 
-  // Resets to the first preset on every open - nothing here is saved.
-  const [minutesAgo, setMinutesAgo] = useState<number>(LATE_PRESETS[0]);
+  // The field's own text is the single source of truth: a chip writes its
+  // number into it, typing edits it, and what gets armed is always parsed back
+  // out of it - so a typed value can never be swapped for a preset.
+  const [draft, setDraft] = useState<string>(String(LATE_PRESETS[0]));
+  const [fromChip, setFromChip] = useState(true);
+  const [capped, setCapped] = useState(false);
   const [lateCustomOpen, setLateCustomOpen] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
-    setMinutesAgo(LATE_PRESETS[0]);
+    setDraft(String(LATE_PRESETS[0]));
+    setFromChip(true);
+    setCapped(false);
     setLateCustomOpen(false);
   }, [visible]);
 
-  const activeLateChip = LATE_PRESETS.find((p) => p === minutesAgo);
+  const parsed = parsePostMealLateInput(draft);
+  const minutesAgo = parsed.kind === "ok" ? parsed.minutes : null;
+  const activeLateChip = fromChip ? LATE_PRESETS.find((p) => p === minutesAgo) : undefined;
   // Live answer, from the same pure function that will actually arm the timer -
   // so what the sheet promises and what gets scheduled cannot disagree.
-  const preview = startPostMealLate({ minutesAgo, now: Date.now() });
-  const elapsed = preview.kind === "elapsed";
+  const preview =
+    minutesAgo == null ? null : startPostMealLate({ minutesAgo, now: Date.now() });
+  const elapsed = preview?.kind === "elapsed";
+  const reminder = minutesAgo == null ? null : postMealReminderPreview(minutesAgo, Date.now());
+
+  function applyEdit(next: ReturnType<typeof editPostMealLateDraft>) {
+    setDraft(next.draft);
+    setFromChip(next.fromChip);
+    setCapped(next.capped);
+  }
+
+  function step(delta: number) {
+    hapticSelect();
+    applyEdit(stepPostMealLateDraft(minutesAgo, delta));
+  }
 
   return (
     <SheetShell
@@ -138,9 +163,11 @@ export function PostMealDurationSheet({
         // reading itself rather than a countdown that would end instantly.
         <GradientCTA
           label={elapsed ? t("dashboard.postMealLateAddReading") : t("dashboard.postMealLateStart")}
+          disabled={minutesAgo == null}
           onPress={() => {
+            if (minutesAgo == null) return;
             if (elapsed) onAddReading();
-            else onStart(clampPostMealLateMinutes(minutesAgo, POST_MEAL_WINDOW_MIN));
+            else onStart(minutesAgo);
           }}
         />
       }
@@ -152,7 +179,9 @@ export function PostMealDurationSheet({
       <LateChips
         value={activeLateChip ?? -1}
         onChange={(m) => {
-          setMinutesAgo(clampPostMealLateMinutes(m, POST_MEAL_WINDOW_MIN));
+          setDraft(String(m));
+          setFromChip(true);
+          setCapped(false);
           setLateCustomOpen(false);
         }}
       />
@@ -175,18 +204,92 @@ export function PostMealDurationSheet({
 
       {lateCustomOpen ? (
         <View className="mt-1 mb-2">
-          <Stepper
-            value={minutesAgo}
-            onChange={(v) => setMinutesAgo(clampPostMealLateMinutes(v, POST_MEAL_WINDOW_MIN))}
-            step={LATE_CUSTOM_STEP}
-            min={0}
-            max={POST_MEAL_LATE_MAX_MIN}
-            // The standalone minutes unit the insights screen already
-            // carries in all nine languages - no second word for one unit.
-            suffix={t("insights.minShort")}
-            accessibilityLabel={t("dashboard.postMealLateTitle")}
-          />
+          <View
+            className="flex-row items-center"
+            style={{
+              borderRadius: RADIUS.md,
+              borderWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: THEME.glass,
+              overflow: "hidden",
+            }}
+          >
+            <Pressable
+              onPress={() => step(-LATE_CUSTOM_STEP)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.decrease")}
+              style={{ width: HIT_TARGET, height: HIT_TARGET, alignItems: "center", justifyContent: "center" }}
+            >
+              <Ionicons name="remove" size={20} color={THEME.accent} />
+            </Pressable>
+            <View
+              className="flex-row items-center justify-center"
+              style={{
+                flex: 1,
+                gap: 5,
+                borderLeftWidth: 1,
+                borderRightWidth: 1,
+                borderColor: THEME.border,
+                minHeight: HIT_TARGET,
+              }}
+            >
+              <TextInput
+                value={draft}
+                onChangeText={(text) => applyEdit(editPostMealLateDraft(sanitizeDecimalText(text)))}
+                keyboardType="number-pad"
+                returnKeyType="done"
+                maxLength={4}
+                selectTextOnFocus
+                accessibilityLabel={t("dashboard.postMealLateTitle")}
+                accessibilityHint={t("common.tapToEdit")}
+                style={[
+                  TABULAR,
+                  {
+                    color: THEME.ink,
+                    fontSize: 20,
+                    fontWeight: "800",
+                    textAlign: "center",
+                    minWidth: 58,
+                    height: HIT_TARGET - 12,
+                    paddingVertical: 0,
+                    paddingHorizontal: 8,
+                    includeFontPadding: false,
+                    textAlignVertical: "center",
+                  },
+                ]}
+              />
+              <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}>
+                {t("insights.minShort")}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => step(LATE_CUSTOM_STEP)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.increase")}
+              style={{ width: HIT_TARGET, height: HIT_TARGET, alignItems: "center", justifyContent: "center" }}
+            >
+              <Ionicons name="add" size={20} color={THEME.accent} />
+            </Pressable>
+          </View>
+          {minutesAgo == null || capped ? (
+            <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+              {minutesAgo == null
+                ? t("dashboard.postMealLateNeedValue")
+                : t("dashboard.postMealLateMax", { n: POST_MEAL_LATE_MAX_MIN })}
+            </Text>
+          ) : null}
         </View>
+      ) : null}
+
+      {reminder ? (
+        <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "600", lineHeight: 18, marginTop: 12 }}>
+          {t("dashboard.postMealLatePreview", {
+            time: isolateLtr(formatTime(new Date(reminder.atMs).toISOString())),
+            left: reminder.leftMin,
+          })}
+        </Text>
       ) : null}
 
       {elapsed ? (

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,11 +8,35 @@ import { HIT_TARGET, RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
-import { parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
+import {
+  fieldShowsValue,
+  nextInvalidKeys,
+  readStepperText,
+  resolveStepperBlur,
+  shouldRevertOnUnmount,
+  sanitizeStepperText,
+  stepStepperValue,
+} from "../lib/stepperInput";
+import type { StepperRead } from "../lib/stepperInput";
 
 interface StepperProps {
   value: number;
   onChange: (v: number) => void;
+  /**
+   * Called only on a transition. An empty or out-of-range field reports false
+   * (and onChange is not called for it); a valid edit, a +/- press, blur and
+   * unmount report true again.
+   */
+  onValidityChange?: (valid: boolean) => void;
+  /**
+   * When the field unmounts while invalid, report the value it had on focus
+   * through onChange. For screens whose state is persisted (or consumed by a
+   * footer outside the scroll area) without a blur ever happening. Leave it off
+   * where unmount must not overwrite a default (onboarding "not sure").
+   */
+  revertOnUnmount?: boolean;
+  /** Tells a screen why the field is invalid ("empty" or out of "range"), null when valid. */
+  onInvalidKindChange?: (kind: null | "empty" | "range") => void;
   /** Increment for a single tap. */
   step?: number;
   /** Increment while the button is held down (accelerated repeat). */
@@ -47,7 +71,9 @@ const WIDE_BTN = 56;
  * A shared - value + stepper. Two 44pt buttons that also repeat (accelerating)
  * while held, with a keyboard-editable value in the middle, so a number never
  * REQUIRES the keyboard: dose, carbs, portion and ratio fields all drive off
- * this one control. Values snap to `step` and clamp to [min, max].
+ * this one control. The +/- buttons step by `step` and clamp to [min, max]; a
+ * typed value is committed exactly as written (up to `decimals` places), and
+ * empty or out-of-range text is never committed.
  *
  * Tap-to-type fix: the middle used to be a bare TextInput inside a baseline-
  * aligned row, so its touch area was only its own ~24pt line box while the cell
@@ -61,6 +87,9 @@ const WIDE_BTN = 56;
 export function Stepper({
   value,
   onChange,
+  onValidityChange,
+  revertOnUnmount,
+  onInvalidKindChange,
   step = 1,
   longStep,
   min,
@@ -77,34 +106,83 @@ export function Stepper({
   // Refs keep the held-repeat timer reading fresh values without re-arming.
   const valueRef = useRef(value);
   valueRef.current = value;
-  const cfg = { step, longStep, min, max, decimals, onChange };
+  const cfg = { step, longStep, min, max, decimals, onChange, onValidityChange, revertOnUnmount, onInvalidKindChange };
   const cfgRef = useRef(cfg);
   cfgRef.current = cfg;
 
   const [text, setText] = useState(fmt(value, decimals));
+  const textRef = useRef(text);
   const editingRef = useRef(false);
   const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
+  const [invalidKind, setInvalidKind] = useState<null | "empty" | "range">(null);
+  // The value the field had when it was focused: blur returns to it when the
+  // typed text is not a usable number.
+  const baselineRef = useRef(value);
+  const validRef = useRef(true);
+
+  function showText(s: string) {
+    textRef.current = s;
+    setText(s);
+  }
+
+  function setValidity(read: StepperRead) {
+    const valid = read.kind === "ok";
+    setInvalidKind(valid ? null : read.kind === "empty" ? "empty" : "range");
+    if (valid !== validRef.current) {
+      validRef.current = valid;
+      cfgRef.current.onValidityChange?.(valid);
+    }
+  }
+
+  function emit(v: number) {
+    valueRef.current = v;
+    cfgRef.current.onChange(v);
+  }
+
   useEffect(() => {
-    if (!editingRef.current) setText(fmt(value, decimals));
+    if (!editingRef.current) {
+      showText(fmt(value, decimals));
+    } else if (!fieldShowsValue(textRef.current, value, { min, max, decimals })) {
+      showText(fmt(value, decimals));
+      baselineRef.current = value;
+      setValidity({ kind: "ok", value });
+    }
   }, [value, decimals]);
 
   const holdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => stopHold(), []);
+  // onChange only on explicit opt-in: unmounting must not overwrite a default
+  // the screen just set (onboarding "not sure"); validity is always released.
+  useEffect(
+    () => () => {
+      stopHold();
+      if (!validRef.current) {
+        if (
+          cfgRef.current.revertOnUnmount &&
+          shouldRevertOnUnmount(false, baselineRef.current, valueRef.current)
+        ) {
+          cfgRef.current.onChange(baselineRef.current);
+        }
+        cfgRef.current.onValidityChange?.(true);
+        cfgRef.current.onInvalidKindChange?.(null);
+      }
+    },
+    []
+  );
 
   function apply(delta: number) {
     const c = cfgRef.current;
-    const q = c.decimals > 0 ? Math.pow(10, c.decimals) : 1;
-    let v = Math.round((valueRef.current + delta) * q) / q;
-    if (c.max != null) v = Math.min(c.max, v);
-    if (c.min != null) v = Math.max(c.min, v);
+    // A stale invalid entry hides a fragment in valueRef; step from what the
+    // field had when focused instead.
+    const from = validRef.current ? valueRef.current : baselineRef.current;
+    const v = stepStepperValue(from, delta, c);
+    // The text is rewritten even when v is unchanged: a stale invalid entry
+    // ("999") plus a press must land on a value the field really shows.
+    showText(fmt(v, c.decimals));
+    setValidity({ kind: "ok", value: v });
+    baselineRef.current = v;
     if (v !== valueRef.current) {
-      valueRef.current = v;
-      // Also update the text directly: while the field is focused the value
-      // effect is deliberately suppressed (editingRef), so without this a +/-
-      // press during editing would change the stored dose but not the display.
-      setText(fmt(v, c.decimals));
-      c.onChange(v);
+      emit(v);
       hapticSelect();
     }
   }
@@ -130,22 +208,32 @@ export function Stepper({
 
   function onText(s: string) {
     editingRef.current = true;
-    const cleaned = sanitizeNumberText(s, decimals > 0);
-    setText(cleaned);
-    const parsed = parseDecimalText(cleaned);
-    if (parsed != null) {
-      let v = parsed;
-      if (max != null) v = Math.min(max, v);
-      if (min != null) v = Math.max(min, v);
-      onChange(v);
-    }
+    const cleaned = sanitizeStepperText(s, decimals);
+    showText(cleaned);
+    const read = readStepperText(cleaned, { min, max, decimals });
+    setValidity(read);
+    if (read.kind === "ok") emit(read.value);
   }
 
   function onBlurText() {
     editingRef.current = false;
     setFocused(false);
-    setText(fmt(valueRef.current, decimals));
+    const read = readStepperText(textRef.current, { min, max, decimals });
+    const r = resolveStepperBlur(read, baselineRef.current, valueRef.current);
+    if (r.emit) emit(r.value);
+    showText(fmt(valueRef.current, decimals));
+    setValidity({ kind: "ok", value: valueRef.current });
   }
+
+  useEffect(() => {
+    cfgRef.current.onInvalidKindChange?.(invalidKind);
+  }, [invalidKind]);
+
+  const outOfRange = invalidKind === "range";
+  const fieldHint =
+    outOfRange && min != null && max != null
+      ? t("settings.rangeOutOfBounds", { min: fmt(min, decimals), max: fmt(max, decimals) })
+      : t("common.tapToEdit");
 
   // What this control currently reads, so the two buttons and the field all
   // announce the same thing (they used to announce "<label> -" and a bare number).
@@ -229,6 +317,7 @@ export function Stepper({
                 onChangeText={onText}
                 onFocus={() => {
                   editingRef.current = true;
+                  baselineRef.current = valueRef.current;
                   setFocused(true);
                 }}
                 onBlur={onBlurText}
@@ -237,7 +326,7 @@ export function Stepper({
                 selectTextOnFocus
                 accessibilityLabel={accessibilityLabel}
                 accessibilityValue={{ text: valueText }}
-                accessibilityHint={t("common.tapToEdit")}
+                accessibilityHint={fieldHint}
                 style={[
                   TABULAR,
                   {
@@ -297,7 +386,7 @@ export function Stepper({
               height: 3,
               borderRadius: RADIUS.full,
               marginTop: 4,
-              backgroundColor: withAlpha(THEME.accent, focused ? 0.9 : 0.5),
+              backgroundColor: outOfRange ? THEME.caution : withAlpha(THEME.accent, focused ? 0.9 : 0.5),
             }}
           />
         </View>
@@ -348,6 +437,7 @@ export function Stepper({
             onChangeText={onText}
             onFocus={() => {
               editingRef.current = true;
+              baselineRef.current = valueRef.current;
               setFocused(true);
             }}
             onBlur={onBlurText}
@@ -358,7 +448,7 @@ export function Stepper({
             // it was never announced: the field read out as a bare number.
             accessibilityLabel={accessibilityLabel}
             accessibilityValue={{ text: valueText }}
-            accessibilityHint={t("common.tapToEdit")}
+            accessibilityHint={fieldHint}
             style={[
               TABULAR,
               {
@@ -380,7 +470,9 @@ export function Stepper({
                 // Visible affordance: the typed value is an input, not a label.
                 borderRadius: wide ? 10 : RADIUS.sm,
                 borderWidth: 1,
-                borderColor: withAlpha(THEME.accent, focused ? 0.75 : 0.3),
+                borderColor: outOfRange
+                  ? THEME.caution
+                  : withAlpha(THEME.accent, focused ? 0.75 : 0.3),
                 backgroundColor: withAlpha(THEME.accent, focused ? 0.14 : 0.06),
               },
             ]}
@@ -452,4 +544,21 @@ function Cell({
       {children}
     </Pressable>
   );
+}
+
+/**
+ * Screen-side aggregation of Stepper validity: give each Stepper
+ * `onValidityChange={reporter("key")}` and gate the save/continue action on
+ * `allValid`.
+ */
+export function useStepperValidity(): {
+  allValid: boolean;
+  reporter: (key: string) => (valid: boolean) => void;
+} {
+  const [invalid, setInvalid] = useState<ReadonlySet<string>>(() => new Set());
+  const reporter = useCallback(
+    (key: string) => (valid: boolean) => setInvalid((p) => nextInvalidKeys(p, key, valid)),
+    []
+  );
+  return { allValid: invalid.size === 0, reporter };
 }

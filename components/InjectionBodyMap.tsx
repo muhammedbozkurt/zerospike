@@ -11,7 +11,6 @@ import Animated, {
 import Svg, {
   Circle,
   Defs,
-  Ellipse,
   G,
   LinearGradient,
   Path,
@@ -67,23 +66,35 @@ interface Region {
   rowYFactor?: number;
 }
 
-// A smooth, WIDE anatomical body outline on the 0 0 240 380 viewBox (symmetric about
-// x=120): a stockier torso so the belly regions sit comfortably, and shorter legs
-// (ending near the knee) so the whole figure can be shown large. Head is separate.
+// Head, neck and body as ONE outline on the 0 0 240 380 viewBox (symmetric about
+// x=120), so the jaw flows into the neck and the neck into sloping shoulders with
+// no seam where a separate head shape would overlap the body. Proportions are a
+// stylised ~7 heads; the torso stays wide enough for the belly regions.
 const BODY_PATH =
-  "M 111 60 C 103.8 66 93.2 86.3 86 96 C 78.8 105.7 72.3 109 68 118 C 63.7 127 61.5 138.3 60 150 " +
-  "C 58.5 161.7 59.3 175.3 59 188 C 58.7 200.7 57 217.7 58 226 C 59 234.3 62.7 237.7 65 238 " +
-  "C 67.3 238.3 70.7 235.7 72 228 C 73.3 220.3 71.2 205.7 73 192 C 74.8 178.3 80.2 146.3 83 146 " +
-  "C 85.8 145.7 90 176.7 90 190 C 90 203.3 83.7 210.7 83 226 C 82.3 241.3 84.3 263.7 86 282 " +
-  "C 87.7 300.3 91.3 323 93 336 C 94.7 349 94.2 354.7 96 360 C 97.8 365.3 101.3 368 104 368 " +
-  "C 106.7 368 110 372.3 112 360 C 114 347.7 114.8 311.7 116 294 C 117.2 276.3 118.3 261.7 119 254 " +
-  "C 119.7 246.3 119.7 248 120 248 C 120.3 248 120.3 246.3 121 254 C 121.7 261.7 122.8 276.3 124 294 " +
-  "C 125.2 311.7 126 347.7 128 360 C 130 372.3 133.3 368 136 368 C 138.7 368 142.2 365.3 144 360 " +
-  "C 145.8 354.7 145.3 349 147 336 C 148.7 323 152.3 300.3 154 282 C 155.7 263.7 157.7 241.3 157 226 " +
-  "C 156.3 210.7 150 203.3 150 190 C 150 176.7 154.2 145.7 157 146 C 159.8 146.3 165.2 178.3 167 192 " +
-  "C 168.8 205.7 166.7 220.3 168 228 C 169.3 235.7 172.7 238.3 175 238 C 177.3 237.7 181 234.3 182 226 " +
-  "C 183 217.7 181.3 200.7 181 188 C 180.7 175.3 181.5 161.7 180 150 C 178.5 138.3 176.3 127 172 118 " +
-  "C 167.7 109 161.2 105.7 154 96 C 146.8 86.3 136.2 66 129 60 C 121.8 54 118.2 54 111 60 Z";
+  "M 120 13 C 107.6 13 99 24.1 99 36.5 C 99 42.9 100 50.4 104.5 55 C 106.8 57.4 108.3 60.4 108.7 64 " +
+  "C 109.1 68.1 108.1 73.5 104.5 75.5 C 95 80.8 84.4 83.9 74 87 C 67 89.1 60.7 96.7 60 104 " +
+  "C 58.8 116 59 128 58.5 140 C 58 152 57.1 164 56.5 176 C 55.5 196 54.4 216 54 236 " +
+  "C 53.9 241.3 53.2 246.8 54.5 252 C 55.5 255.8 56.5 261 60.5 261 C 64.7 261 65.4 255.1 66 251 " +
+  "C 66.7 246.1 66.3 241 66.5 236 C 67.5 215.9 71 196 73 176 C 74.3 163.3 75.7 150.7 76.5 138 " +
+  "C 76.8 132.7 77.1 127.3 77.6 122 C 77.8 120.3 77.7 116.5 79.4 116.5 C 81.1 116.5 81 120.3 81.2 122 " +
+  "C 81.6 126.3 81.7 130.7 82 135 C 82.7 146.7 86 158.3 86 170 C 86 183.4 83.5 196.6 83 210 " +
+  "C 82.5 221.7 84.2 233.3 85 245 C 85.6 254 87.3 263 88 272 C 88.6 280 90.5 288 90.5 296 " +
+  "C 90.5 303.3 89.4 310.7 90.5 318 C 92.2 329 95.5 339.9 95.5 351 C 95.5 355.4 94.2 359.7 93.5 364 " +
+  "C 92.8 368.4 97.6 372.5 102 372.5 C 105.9 372.5 110.3 369.9 110.5 366 C 110.7 361 110 356 110 351 " +
+  "C 110 340 113 329 113 318 C 113 310.7 113.4 303.3 113.5 296 C 113.8 280.6 115.1 265.3 116 250 " +
+  "C 116.5 241.3 116 232.5 117.5 224 C 117.9 221.6 117.5 217 120 217 C 122.5 217 122.1 221.6 122.5 224 " +
+  "C 124 232.5 123.5 241.3 124 250 C 124.9 265.3 126.2 280.6 126.5 296 C 126.6 303.3 127 310.7 127 318 " +
+  "C 127 329 130 340 130 351 C 130 356 129.3 361 129.5 366 C 129.7 369.9 134.1 372.5 138 372.5 " +
+  "C 142.4 372.5 147.2 368.4 146.5 364 C 145.8 359.7 144.5 355.4 144.5 351 C 144.5 339.9 147.8 329 149.5 318 " +
+  "C 150.6 310.7 149.5 303.3 149.5 296 C 149.5 288 151.4 280 152 272 C 152.7 263 154.4 254 155 245 " +
+  "C 155.8 233.3 157.5 221.7 157 210 C 156.5 196.6 154 183.4 154 170 C 154 158.3 157.3 146.7 158 135 " +
+  "C 158.3 130.7 158.4 126.3 158.8 122 C 159 120.3 158.9 116.5 160.6 116.5 C 162.3 116.5 162.2 120.3 162.4 122 " +
+  "C 162.9 127.3 163.2 132.7 163.5 138 C 164.3 150.7 165.7 163.3 167 176 C 169 196 172.5 215.9 173.5 236 " +
+  "C 173.7 241 173.3 246.1 174 251 C 174.6 255.1 175.3 261 179.5 261 C 183.5 261 184.5 255.8 185.5 252 " +
+  "C 186.8 246.8 186.1 241.3 186 236 C 185.6 216 184.5 196 183.5 176 C 182.9 164 182 152 181.5 140 " +
+  "C 181 128 181.2 116 180 104 C 179.3 96.7 173 89.1 166 87 C 155.6 83.9 145 80.8 135.5 75.5 " +
+  "C 131.9 73.5 130.9 68.1 131.3 64 C 131.7 60.4 133.2 57.4 135.5 55 C 140 50.4 141 42.9 141 36.5 " +
+  "C 141 24.1 132.4 13 120 13 Z";
 
 const VB_W = 240;
 const VB_H = 380;
@@ -115,7 +126,7 @@ const VB_ASPECT = VB_W / VB_H;
  *
  * Every box below (grown by HALO) is sampled against a Bezier-sampled polygon of
  * BODY_PATH at 2400 points around its contour: the WORST clearance to the
- * silhouette edge is 1.72 units (upper arm) and the tightest gap between two
+ * silhouette edge is 2.19 units (upper arm) and the tightest gap between two
  * boxes is 4 units. The arm boxes in particular are narrow because the limb
  * tapers - their bottom end has to fit the arm where it is NARROWEST, not where
  * the plate starts. (Both facts are about the physical boxes, which are exact
@@ -123,14 +134,14 @@ const VB_ASPECT = VB_W / VB_H;
  * change either measurement.)
  */
 const REGIONS: readonly Region[] = [
-  { site: "abdomen_left", layout: "row", surface: "front", box: [123, 202, 26.5, 26], rx: 8 },
-  { site: "abdomen_right", layout: "row", surface: "front", box: [90.5, 202, 26.5, 26], rx: 8 },
-  { site: "thigh_left", layout: "column", surface: "front", box: [128.5, 265, 19, 46], rx: 9.5 },
-  { site: "thigh_right", layout: "column", surface: "front", box: [92.5, 265, 19, 46], rx: 9.5 },
-  { site: "arm_left", layout: "column", surface: "front", box: [168.5, 152.5, 9, 32], rx: 4.5 },
-  { site: "arm_right", layout: "column", surface: "front", box: [62.5, 152.5, 9, 32], rx: 4.5 },
-  { site: "buttock_left", layout: "row", surface: "back", box: [126.5, 232, 26, 28], rx: 8, rowYFactor: 0.35 },
-  { site: "buttock_right", layout: "row", surface: "back", box: [87.5, 232, 26, 28], rx: 8, rowYFactor: 0.35 },
+  { site: "abdomen_left", layout: "row", surface: "front", box: [123, 162, 26.5, 26], rx: 8 },
+  { site: "abdomen_right", layout: "row", surface: "front", box: [90.5, 162, 26.5, 26], rx: 8 },
+  { site: "thigh_left", layout: "column", surface: "front", box: [128.5, 225, 19, 46], rx: 9.5 },
+  { site: "thigh_right", layout: "column", surface: "front", box: [92.5, 225, 19, 46], rx: 9.5 },
+  { site: "arm_left", layout: "column", surface: "front", box: [168.5, 120.5, 9, 32], rx: 4.5 },
+  { site: "arm_right", layout: "column", surface: "front", box: [62.5, 120.5, 9, 32], rx: 4.5 },
+  { site: "buttock_left", layout: "row", surface: "back", box: [126.5, 192, 26, 28], rx: 8, rowYFactor: 0.35 },
+  { site: "buttock_right", layout: "row", surface: "back", box: [87.5, 192, 26, 28], rx: 8, rowYFactor: 0.35 },
 ];
 
 /**
@@ -500,17 +511,18 @@ const SURFACE_KEY_MAX_W = 96;
 
 /**
  * Decorative L/R side badges, anchored in viewBox units and drawn at a fixed pt
- * size. The inner edge sits at x=56 (mirrored to 184), which measures 4.8 units
- * clear of the silhouette at the smallest supported width and more as the map
- * grows, 4.1 units above the padded arm hit rect and 8.1 above the arm plate at
- * that same width (both open up as the map grows, since the badge height is a
+ * size, beside the shoulders. The inner edge sits at x=56 (mirrored to 184),
+ * which measures 5.7 units clear of the silhouette at the smallest supported
+ * width and more as the map grows, 18.1 units above the padded arm hit rect and
+ * 22.1 above the arm plate at that same width (both open up as the map grows,
+ * since the badge height is a
  * fixed pt value), and clear of the frequency legend column on the left at every
  * width down to winW 320. Both anchors are still just x=56 and x=184 under the
  * observer-view flip; only WHICH badge key (sideLeft/sideRight) is assigned to
  * which anchor changed - see the `badges` useMemo below.
  */
 const BADGE_INNER_X = 56;
-const BADGE_TOP_Y = 130;
+const BADGE_TOP_Y = 84;
 const BADGE_H = 15;
 /** Budgeted for the longest label, Arabic "يمين"; a single letter just centres. */
 const BADGE_MAX_W = 52;
@@ -821,22 +833,13 @@ export function InjectionBodyMap({
             </Defs>
 
             <G onPress={open ? () => goTo(null) : undefined}>
-              <Ellipse
-                cx={120}
-                cy={38}
-                rx={22}
-                ry={25}
-                fill="url(#bodyGrad)"
-                stroke={BODY_EDGE}
-                strokeWidth={1.2 * upx}
-              />
               <Path
                 d={BODY_PATH}
                 fill="url(#bodyGrad)"
                 stroke={BODY_EDGE}
                 strokeWidth={1.2 * upx}
               />
-              <Circle cx={120} cy={210} r={2} fill="rgba(10,20,26,0.28)" />
+              <Circle cx={120} cy={170} r={2} fill="rgba(10,20,26,0.28)" />
             </G>
 
             {REGIONS.map((r) => {

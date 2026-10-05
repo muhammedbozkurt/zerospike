@@ -4,7 +4,7 @@
     "NSCameraUsageDescription": "zerospike nutzt Ihre Kamera, um Lebensmittel-Barcodes zu scannen und Mahlzeitenfotos hinzuzufügen.",
     "NSPhotoLibraryUsageDescription": "zerospike greift auf Ihre Fotomediathek zu, um Fotos zu Ihrem Mahlzeiten-Tagebuch hinzuzufügen.",
     "NSHealthShareUsageDescription": "zerospike liest Ihre Blutzucker-, Insulin- und Aktivitätsdaten aus Apple Health, um sie in Ihrem Tagebuch und in Übersichten anzuzeigen.",
-    "NSHealthUpdateUsageDescription": "zerospike schreibt nur die von Ihnen manuell erfassten Blutzuckerwerte in Apple Health, wenn Sie das in den Einstellungen aktivieren.",
+    "NSHealthUpdateUsageDescription": "zerospike schreibt nur die von Ihnen manuell erfassten Blutzuckerwerte in Apple Health, und zwar nur mit Ihrer Erlaubnis: in den Einstellungen, beim Verbinden mit Apple Health oder auf Nachfrage nach dem Speichern eines Werts. Sonst wird nichts geschrieben; ein in zerospike gelöschter Wert wird auch aus Apple Health gelöscht.",
     "NSLocationWhenInUseUsageDescription": "zerospike kann Ihren aktuellen Standort an eine Nachricht anhängen, die Sie über den SOS-Bildschirm senden, damit Sie schneller gefunden werden.",
     "NSContactsUsageDescription": "zerospike lässt Sie für den SOS-Bildschirm einen Notfallkontakt aus Ihren Kontakten auswählen.",
     "NSAlarmKitUsageDescription": "zerospike verwendet AlarmKit, damit die von Ihnen eingerichteten Erinnerungen und der von Ihnen gestartete Timer nach dem Essen als echte Alarme klingeln können. Sie können jeden davon wieder auf eine Mitteilung umstellen.",

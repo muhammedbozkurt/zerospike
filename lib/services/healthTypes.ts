@@ -1,4 +1,5 @@
 import type { PeriodTag } from "../db/types";
+import type { HealthWriteMeta } from "../healthMeta";
 
 /**
  * Shared types + constants for the health-store provider layer (health.ts
@@ -59,8 +60,17 @@ export interface HealthProvider {
   isAvailable(): Promise<boolean>;
   requestReadPermissions(): Promise<boolean>;
   requestWritePermission(): Promise<boolean>;
+  /** Read and write in ONE system dialog (the connect flow). `write` is the
+   *  verified share outcome, never just "the dialog closed". */
+  requestReadWritePermissions(): Promise<{ read: boolean; write: boolean }>;
+  /** Current write grant, without prompting. */
+  isWriteAuthorized(): Promise<boolean>;
   readRecentGlucose(windowDays: number, max: number): Promise<GlucoseSample[]>;
-  writeGlucose(mgdl: number, dateIso: string): Promise<string | null>;
+  /** `meta` makes the write idempotent per record id (see lib/healthMeta.ts);
+   *  the returned id can equal an earlier one when the store upserted. */
+  writeGlucose(mgdl: number, dateIso: string, meta?: HealthWriteMeta): Promise<string | null>;
+  /** Throws when the store could not delete, so the caller can queue a retry. */
   deleteGlucose(id: string): Promise<void>;
+  deleteGlucoseBatch(ids: string[]): Promise<void>;
   readSummary(windowDays: number): Promise<HealthSummary>;
 }

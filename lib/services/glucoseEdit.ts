@@ -41,9 +41,10 @@ export async function applyGlucoseCorrection(
 }
 
 /**
- * Re-mirrors an EDITED reading into the health store: the stale sample is
- * revoked and the corrected value/time written in its place (neither store
- * has an update), then the new id is recorded on the row - or cleared when
+ * Re-mirrors an EDITED reading into the health store: the corrected value/time
+ * is written first (same sync id, newer version, so the store replaces the
+ * stale sample itself) and the stale one revoked after if it is still a
+ * different object, then the new id is recorded on the row - or cleared when
  * the write did not land, so the row never points at a sample that no longer
  * exists.
  *
@@ -74,6 +75,7 @@ export async function remirrorEditedGlucose(
       previous.healthkit_uuid,
       mgdl,
       dateIso,
+      stored.period_tag,
       stored.profile_id
     );
     // Same orphan guard as writeGlucoseToHealthIfEnabled: if the row was

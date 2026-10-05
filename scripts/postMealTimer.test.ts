@@ -13,6 +13,7 @@ declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void };
 
 import {
+  postMealReminderPreview,
   derivePostMealStart,
   formatPostMealRemaining,
   postMealElapsedFraction,
@@ -37,6 +38,9 @@ import {
   clampPostMealWindowMinutes,
   POST_MEAL_CUSTOM_MIN_MINUTES,
   POST_MEAL_CUSTOM_MAX_MINUTES,
+  parsePostMealLateInput,
+  editPostMealLateDraft,
+  stepPostMealLateDraft,
 } from "../lib/postMealTimer";
 
 let passed = 0;
@@ -1057,6 +1061,89 @@ section("P17b. an undo only re-arms a window that still has time in it");
     plan.kind === "restarted" ? plan.remainingMs / MIN : -1,
     119
   );
+}
+
+section("typed late-start minutes are armed verbatim, never swapped for a preset");
+{
+  const PRESETS = [5, 10, 15, 20, 30];
+  for (const typed of [1, 7, 12, 25, 45, 90, 119]) {
+    const r = parsePostMealLateInput(String(typed));
+    eq(`"${typed}" is taken as typed`, r.kind === "ok" ? r.minutes : -1, typed);
+    eq(`"${typed}" is not flagged as clamped`, r.kind === "ok" ? r.clamped : null, false);
+    const plan = startPostMealLate({ minutesAgo: r.kind === "ok" ? r.minutes : -1, now: 1_000_000 });
+    eq(
+      `"${typed}" backdates the start by exactly that many minutes`,
+      plan.kind === "start" ? (1_000_000 - plan.startedAt) / MIN : -1,
+      typed
+    );
+  }
+  ok("a typed 45 is not any preset", !PRESETS.includes(45));
+  eq("comma decimal is read as a whole number", parsePostMealLateInput("12,4").kind === "ok" ? (parsePostMealLateInput("12,4") as { minutes: number }).minutes : -1, 12);
+  eq("empty text arms nothing", parsePostMealLateInput("").kind, "empty");
+  eq("blank text arms nothing", parsePostMealLateInput("  ").kind, "empty");
+  eq("lone separator arms nothing", parsePostMealLateInput(",").kind, "empty");
+  const over = parsePostMealLateInput("999");
+  eq("over the reach is capped at the maximum", over.kind === "ok" ? over.minutes : -1, POST_MEAL_LATE_MAX_MIN);
+  eq("over the reach is flagged", over.kind === "ok" ? over.clamped : null, true);
+  const zero = parsePostMealLateInput("0");
+  eq("zero means 'just now'", zero.kind === "ok" ? zero.minutes : -1, 0);
+  eq("Arabic-Indic digits read as the same number", parsePostMealLateInput("٤٥").kind === "ok" ? (parsePostMealLateInput("٤٥") as { minutes: number }).minutes : -1, 45);
+}
+
+section("late-start field edits: draft, cap flag, chip handoff");
+{
+  const e = (t: string) => editPostMealLateDraft(t);
+  eq("empty field stays empty, no cap", JSON.stringify(e("")), JSON.stringify({ draft: "", capped: false, fromChip: false }));
+  eq("12,5 keeps its text, no cap", JSON.stringify(e("12,5")), JSON.stringify({ draft: "12,5", capped: false, fromChip: false }));
+  eq("12,5 arms as a whole number, not 125", (parsePostMealLateInput("12,5") as { minutes: number }).minutes, 13);
+  eq("999 is replaced by the maximum and flagged", JSON.stringify(e("999")), JSON.stringify({ draft: String(POST_MEAL_LATE_MAX_MIN), capped: true, fromChip: false }));
+  eq("0 is kept", JSON.stringify(e("0")), JSON.stringify({ draft: "0", capped: false, fromChip: false }));
+  eq("typing after a chip leaves chip mode", e("20").fromChip, false);
+  eq("typed 20 arms 20", (parsePostMealLateInput(e("20").draft) as { minutes: number }).minutes, 20);
+  const up = stepPostMealLateDraft(POST_MEAL_LATE_MAX_MIN, 5);
+  eq("+ past the maximum stays at the maximum", up.draft, String(POST_MEAL_LATE_MAX_MIN));
+  eq("+ past the maximum reports the cap", up.capped, true);
+  eq("+ below the maximum does not report a cap", stepPostMealLateDraft(235, 5).capped, false);
+  eq("+ from empty starts from zero", stepPostMealLateDraft(null, 5).draft, "5");
+  eq("- never goes below zero", stepPostMealLateDraft(3, -5).draft, "0");
+}
+
+section("sheet sequences: what gets armed is always what the field shows");
+{
+  type S = { draft: string };
+  const chip = (_: S, m: number): S => ({ draft: String(m) });
+  const type = (_: S, text: string): S => ({ draft: editPostMealLateDraft(text).draft });
+  const armed = (st: S): number | null => {
+    const r = parsePostMealLateInput(st.draft);
+    return r.kind === "ok" ? r.minutes : null;
+  };
+  let st: S = { draft: "5" };
+  st = type(st, "");
+  eq("cleared field arms nothing", armed(st), null);
+  st = type(st, "25");
+  eq("cleared then 25 arms 25", armed(st), 25);
+  st = type({ draft: "5" }, "525");
+  eq("5 then appended 25 shows 525 and arms the 240 cap, field shows 240", [armed(st), st.draft].join("/"), "240/240");
+  st = type(chip({ draft: "5" }, 10), "45");
+  eq("chip 10 then typed 45 arms 45", armed(st), 45);
+  st = type({ draft: "5" }, "45");
+  eq("typed 45 arms 45 with or without blur", armed(st), 45);
+  st = type(chip({ draft: "5" }, 30), "");
+  eq("chip then cleared arms nothing", armed(st), null);
+  st = stepPostMealLateDraft(armed({ draft: "45" }), 5);
+  eq("step from typed 45 arms 50", String(armed({ draft: st.draft })), "50");
+}
+
+section("reminder preview");
+{
+  const now = Date.UTC(2026, 0, 1, 12, 0, 0);
+  const p45 = postMealReminderPreview(45, now);
+  eq("45 min ago: 75 min left", p45?.leftMin, 75);
+  eq("45 min ago: lands 2 h after the meal began", p45 ? p45.atMs - now : null, 75 * 60_000);
+  eq("0 min ago: full window", postMealReminderPreview(0, now)?.leftMin, 120);
+  eq("119 min ago: 1 min left", postMealReminderPreview(119, now)?.leftMin, 1);
+  eq("120 min ago: no preview", postMealReminderPreview(120, now), null);
+  eq("240 min ago: no preview", postMealReminderPreview(240, now), null);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
