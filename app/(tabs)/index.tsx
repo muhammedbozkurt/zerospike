@@ -75,8 +75,6 @@ import { syncLiveData } from "../../lib/services/liveData";
 import {
   importHealthGlucose,
   writeGlucoseToHealthIfEnabled,
-  updateGlucoseInHealth,
-  deleteGlucoseFromHealth,
   getHealthWriteEnabled,
   hasHealthProvider,
   takeHealthWriteFailureNotice,

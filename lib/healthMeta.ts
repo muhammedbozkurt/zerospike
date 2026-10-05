@@ -39,6 +39,17 @@ export function buildHealthWriteMeta(
   };
 }
 
+/**
+ * The next sync version for one record: the clock, but never at or below the
+ * last version this process wrote for it. Two writes of the same reading inside
+ * one millisecond would otherwise carry equal versions, which Health Connect
+ * ignores and HealthKit refuses (the older value then stays in the store).
+ */
+export function nextSyncVersion(previous: number | undefined, nowMs: number): number {
+  const now = Math.max(1, Math.floor(nowMs));
+  return previous != null && Number.isFinite(previous) && previous >= now ? previous + 1 : now;
+}
+
 /** The record id and version are only usable as a sync pair when the id is a
  *  non-blank string and the version a finite positive number. */
 export function hasValidSyncKey(meta: Pick<HealthWriteMeta, "recordId" | "version">): boolean {

@@ -51,6 +51,7 @@ const logs = {
   setSugarLogHealthUuid: async (id: string, uuid: string | null) => {
     const r = rows.get(id);
     if (r) r.healthkit_uuid = uuid;
+    return r != null;
   },
 };
 const profiles = {

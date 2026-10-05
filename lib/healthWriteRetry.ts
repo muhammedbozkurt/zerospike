@@ -64,10 +64,12 @@ export const HEALTH_RETRY_MAX_ROWS = 50;
  *
  * `pendingIds` is the consent-scope gate (see the module doc above): a row
  * whose id is not in this set is never a candidate, full stop, regardless of
- * anything else about it. `inFlightIds` excludes a row a FRESH write is
- * mid-flight on right now (health.ts's module-level in-flight set) - without
- * it, a retry pass and a fresh write racing on the same row could both see
- * healthkit_uuid still null and write it to Health twice.
+ * anything else about it. `inFlightIds` excludes a row another Health
+ * operation is queued or running on right now (health.ts's busyRowIds(), the
+ * keys of its per-row lock): that operation writes the row's current values
+ * itself, so the pass leaves it alone instead of queueing behind it.
+ * health.ts passes the rows with healthkit_uuid cleared, because a queued row
+ * can be linked to a sample whose rewrite failed and still needs the retry.
  *
  * `nowMs` is a parameter (not Date.now() inline) so this stays pure and
  * exactly reproducible in tests.

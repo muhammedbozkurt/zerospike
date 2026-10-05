@@ -1,10 +1,5 @@
-import { getSugarLog, setSugarLogHealthUuid, updateSugarLog } from "../db/logs";
-import {
-  deleteGlucoseFromHealth,
-  getHealthWriteEnabled,
-  hasHealthProvider,
-  updateGlucoseInHealth,
-} from "./health";
+import { getSugarLog, updateSugarLog } from "../db/logs";
+import { getHealthWriteEnabled, hasHealthProvider, updateGlucoseInHealth } from "./health";
 import type { GlucoseEntry } from "../db/journal";
 import type { LogTag, PeriodTag } from "../db/types";
 
@@ -37,29 +32,28 @@ export async function applyGlucoseCorrection(
   // sample still carried the old value made the two disagree, and neither
   // store has an "update", so the helper revokes and rewrites. Fire-and-forget:
   // the local edit is already saved and a mirror failure must never surface.
-  void remirrorEditedGlucose(previous, value, loggedAt);
+  void remirrorEditedGlucose(previous);
 }
 
 /**
- * Re-mirrors an EDITED reading into the health store: the corrected value/time
- * is written first (same sync id, newer version, so the store replaces the
- * stale sample itself) and the stale one revoked after if it is still a
- * different object, then the new id is recorded on the row - or cleared when
- * the write did not land, so the row never points at a sample that no longer
- * exists.
+ * Re-mirrors an EDITED reading into the health store (updateGlucoseInHealth:
+ * the stored values are written in line behind any write of the reading still
+ * in flight, the stale sample revoked after, the new id linked on the row - or
+ * the link cleared when the write did not land).
  *
- * Only touches rows that were actually mirrored, and only while the write toggle
- * is on: with the mirror switched off the old sample stays where it is and its
- * link is kept, so a later delete can still revoke it. Best-effort throughout -
- * the local edit is already saved and a mirror failure must never surface.
+ * NOT gated on `previous.healthkit_uuid`: that is the screen's copy, loaded
+ * before the first write of a just-logged reading had linked, so a correction
+ * made in that window was dropped and Health kept the old value. Whether the
+ * reading is mirrored is decided on the stored row inside the row lock.
+ *
+ * Only while the write toggle is on: with the mirror switched off the old
+ * sample stays where it is and its link is kept, so a later delete can still
+ * revoke it. Best-effort throughout - the local edit is already saved and a
+ * mirror failure must never surface.
  */
-export async function remirrorEditedGlucose(
-  previous: GlucoseEntry,
-  mgdl: number,
-  loggedAt: Date | null
-): Promise<void> {
+export async function remirrorEditedGlucose(previous: GlucoseEntry): Promise<void> {
   try {
-    if (!previous.healthkit_uuid || !hasHealthProvider()) return;
+    if (!hasHealthProvider()) return;
     // Read the stored row FIRST, for its OWNER (X7 / H6): the mirror is per
     // profile, so the write-enabled check has to run against the profile the
     // corrected reading actually belongs to, not whichever one happens to be
@@ -69,23 +63,9 @@ export async function remirrorEditedGlucose(
     const stored = await getSugarLog(previous.id);
     if (!stored) return;
     if (!(await getHealthWriteEnabled(stored.profile_id))) return;
-    const dateIso = (loggedAt ?? new Date(previous.logged_at)).toISOString();
-    const uuid = await updateGlucoseInHealth(
-      previous.id,
-      previous.healthkit_uuid,
-      mgdl,
-      dateIso,
-      stored.period_tag,
-      stored.profile_id
-    );
-    // Same orphan guard as writeGlucoseToHealthIfEnabled: if the row was
-    // deleted while the rewrite was in flight, revoke the fresh sample instead
-    // of leaving it unlinked in the user's Health app.
-    if (uuid && !(await getSugarLog(previous.id))) {
-      await deleteGlucoseFromHealth(uuid);
-      return;
-    }
-    await setSugarLogHealthUuid(previous.id, uuid);
+    // Links (or unlinks) the row and runs the orphan guard itself, inside the
+    // row lock; a second link from here could land after a later operation's.
+    await updateGlucoseInHealth(previous.id, previous.healthkit_uuid, stored.profile_id);
   } catch {
     // best-effort mirror: never blocks or reports back to the edit flow
   }

@@ -14,7 +14,7 @@ import { deleteMealLog, deleteSugarLog } from "../lib/db/logs";
 import { deleteInjection } from "../lib/db/injections";
 import { deleteMed } from "../lib/db/meds";
 import {
-  deleteGlucoseFromHealth,
+  deleteGlucoseRowFromHealth,
   writeGlucoseToHealthIfEnabled,
   shouldAnnounceHealthWriteFailure,
   HEALTH_NAME,
@@ -208,8 +208,10 @@ export function useJournalRows(input: {
         if (entry.kind === "glucose") {
           // Revoke the mirrored Apple Health sample (best-effort) when the local
           // reading is deleted (undo included - undo re-adds without a mirror,
-          // then remirrorRestoredGlucose above re-creates it if eligible).
-          void deleteGlucoseFromHealth(await deleteSugarLog(entry.id));
+          // then remirrorRestoredGlucose above re-creates it if eligible). In
+          // line behind a write of this reading still in flight, and ahead of
+          // the write an undo queues.
+          void deleteGlucoseRowFromHealth(entry.id, await deleteSugarLog(entry.id));
         } else if (entry.kind === "injection") await deleteInjection(entry.id);
         else if (entry.kind === "med") await deleteMed(entry.id);
         else await deleteMealLog(entry.id);

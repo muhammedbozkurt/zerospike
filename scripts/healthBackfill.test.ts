@@ -68,7 +68,11 @@ ok("empty input", chunkBatches([]).length === 0);
 console.log("E. wiring");
 const health = readFileSync(join(import.meta.dirname, "..", "lib", "services", "health.ts"), "utf8");
 ok("facade uses the selector", /selectBackfillCandidates/.test(health));
-ok("backfill sends idempotent meta", /buildHealthWriteMeta\(row\)/.test(health));
+ok(
+  "backfill writes through the shared idempotent-meta helper, inside the row lock",
+  /const outcome = await withRowLock\(stale\.id,[\s\S]{0,300}mirrorStoredRow\(row, \[\]\)/.test(health) &&
+    /nextWriteMeta\(row\)/.test(health)
+);
 ok("backfill re-checks the switch per row", /isRetryPassOpen\(await readHealthWriteScope\(profileId\), profileId\)/.test(health));
 const data = readFileSync(join(import.meta.dirname, "..", "app", "settings", "data.tsx"), "utf8");
 ok("settings shows the section without Pro", /const wantsHealthSection = hasHealthProvider\(\);/.test(data));

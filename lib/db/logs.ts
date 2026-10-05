@@ -213,16 +213,19 @@ export async function listRecentSugarLogs(
   );
 }
 
-/** Records the Apple Health sample UUID for a mirrored reading (schema v10). */
+/** Records the Apple Health sample UUID for a mirrored reading (schema v10).
+ *  False when no row was updated: the reading was deleted in the meantime, so
+ *  a sample just written for it has nothing to belong to. */
 export async function setSugarLogHealthUuid(
   id: string,
   healthkitUuid: string | null
-): Promise<void> {
+): Promise<boolean> {
   const db = await getDb();
-  await db.runAsync("UPDATE sugar_logs SET healthkit_uuid = ? WHERE id = ?;", [
+  const res = await db.runAsync("UPDATE sugar_logs SET healthkit_uuid = ? WHERE id = ?;", [
     healthkitUuid,
     id,
   ]);
+  return res.changes > 0;
 }
 
 /** Rows the history transfer may write to Health: this profile's app-entered
@@ -281,14 +284,17 @@ export async function listHealthMirrorRows(
  * Deletes a sugar log and returns its healthkit_uuid (or null) so the caller can
  * best-effort revoke the mirrored Apple Health sample. Returning it here means
  * every delete path (journal swipe, undo) gets the value without a second query.
+ *
+ * One statement (RETURNING, all changes happen on the first step): a separate
+ * SELECT then DELETE let a Health write link its sample in between, and the
+ * uuid returned here then missed that sample, which stayed in Health.
  */
 export async function deleteSugarLog(id: string): Promise<string | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ healthkit_uuid: string | null }>(
-    "SELECT healthkit_uuid FROM sugar_logs WHERE id = ?;",
+    "DELETE FROM sugar_logs WHERE id = ? RETURNING healthkit_uuid;",
     [id]
   );
-  await db.runAsync("DELETE FROM sugar_logs WHERE id = ?;", [id]);
   return row?.healthkit_uuid ?? null;
 }
 

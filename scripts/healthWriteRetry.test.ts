@@ -330,7 +330,7 @@ section("J. wiring: health.ts and its callers actually use this module");
   ok("removePendingWriteIds drops rows from the queue", /async function removePendingWriteIds/.test(health));
   ok(
     "a failed fresh write queues its OWN row (not a broader scan)",
-    /healthWriteFailureNoticePending = true;\s*\n\s*await addPendingWriteId\(log\.profile_id, log\.id\);/.test(
+    /healthWriteFailureNoticePending = true;\s*\n\s*await addPendingWriteId\(row\.profile_id, row\.id\);/.test(
       health
     )
   );
@@ -350,7 +350,7 @@ section("J. wiring: health.ts and its callers actually use this module");
   );
   ok(
     "recordProfileId is still the LAST parameter (regression lock, see healthProfile.test.ts F)",
-    /recordProfileId: string \| null\n\): Promise<string \| null>/.test(health)
+    /recordProfileId: string \| null\n\): Promise<HealthRewriteResult>/.test(health)
   );
   ok(
     "a failed correction write queues logId under recordProfileId",
@@ -361,8 +361,9 @@ section("J. wiring: health.ts and its callers actually use this module");
   const calcSrc = readFileSync(join(import.meta.dirname, "..", "app", "calculator.tsx"), "utf8");
   ok(
     "calculator.tsx's meal-edit correction path passes the row id and announces on failure",
-    /updateGlucoseInHealth\(\s*row\.id,\s*row\.healthkit_uuid,/.test(calcSrc) &&
-      /if \(!uuid && shouldAnnounceHealthWriteFailure\(\)\)/.test(calcSrc)
+    /updateGlucoseInHealth\(\s*linkedSugarLogId,\s*row\.healthkit_uuid \?\? null,/.test(calcSrc) &&
+      /if \(res\.failed && shouldAnnounceHealthWriteFailure\(\)\)/.test(calcSrc) &&
+      !/if \(!row\?\.healthkit_uuid\) return;/.test(calcSrc)
   );
   const glucoseEditSrc = readFileSync(
     join(import.meta.dirname, "..", "lib", "services", "glucoseEdit.ts"),
@@ -401,42 +402,35 @@ section("J. wiring: health.ts and its callers actually use this module");
     /if \(!isRetryPassOpen\(freshScope, profileId\)\) break;/.test(health)
   );
 
-  section("J2. double-write guards (2.3.5): in-flight set + uuid-link-failure delete-and-requeue");
-  ok("a module-level in-flight id set exists", /const healthWriteInFlightIds = new Set<string>\(\);/.test(health));
+  section("J2. double-write guards: one lock per row + uuid-link-failure delete-and-requeue");
+  ok("a per-row lock exists", /function withRowLock<T>\(rowId: string, fn: \(\) => Promise<T>\): Promise<T>/.test(health));
   ok(
-    "a fresh write marks its row in-flight before attempting the native write",
-    /healthWriteInFlightIds\.add\(log\.id\);/.test(health)
+    "the fresh write runs inside its row's lock",
+    /export async function writeGlucoseToHealthIfEnabled[\s\S]{0,300}return withRowLock\(log\.id,/.test(health)
   );
   ok(
-    "a fresh write always clears its in-flight mark (finally)",
-    /healthWriteInFlightIds\.delete\(log\.id\);/.test(health)
+    "the correction runs inside its row's lock",
+    /export async function updateGlucoseInHealth[\s\S]{0,1400}return withRowLock\(logId,/.test(health)
   );
   ok(
-    "the retry pass also marks/clears its own in-flight rows",
-    /healthWriteInFlightIds\.add\(row\.id\);/.test(health) &&
-      /healthWriteInFlightIds\.delete\(row\.id\);/.test(health)
+    "the retry pass writes each row inside its lock",
+    /const done = await withRowLock\(row\.id,/.test(health)
   );
   ok(
-    "the retry pass hands the in-flight set to the selector so it skips them",
-    /selectHealthRetryCandidates\(\s*rows,\s*pendingIds,\s*healthWriteInFlightIds,/.test(health)
+    "the retry pass hands the busy rows to the selector so it skips them",
+    /selectHealthRetryCandidates\(\s*rows\.map\(\(r\) => \(\{ \.\.\.r, healthkit_uuid: null \}\)\),\s*pendingIds,\s*busyRowIds\(\),/.test(health)
   );
   // A successful native write whose uuid never got linked locally (DB
-  // hiccup) is revoked from Health and re-queued, in BOTH the fresh-write
-  // and the retry path - never left as a silent orphan a later write could
-  // duplicate.
-  const linkFailureBlocks = health.split("catch (err) {").length - 1;
+  // hiccup) is revoked from Health, in the ONE helper every write path uses,
+  // and re-queued by the fresh-write path - never left as a silent orphan a
+  // later write could duplicate.
   ok(
-    "at least one uuid-link failure path exists to guard",
-    linkFailureBlocks >= 1,
-    `found ${linkFailureBlocks} catch (err) blocks`
+    "the shared helper revokes a sample it could not link",
+    /async function mirrorStoredRow[\s\S]*?catch \(err\) \{[\s\S]{0,300}await deleteGlucoseFromHealth\(uuid\);[\s\S]{0,300}outcome: "linkFailed"/.test(health)
   );
   ok(
-    "the fresh-write path deletes the orphaned sample and re-queues on a link failure",
-    /catch \(err\) \{[\s\S]{0,800}await addPendingWriteId\(log\.profile_id, log\.id\);/.test(health)
-  );
-  ok(
-    "the retry path deletes the orphaned sample on its own link failure",
-    /succeededIds\.push\(row\.id\);[\s\S]{0,300}await deleteGlucoseFromHealth\(uuid\);/.test(health)
+    "the fresh-write path re-queues on a link failure",
+    /if \(res\.outcome === "linkFailed"\) await addPendingWriteId\(row\.profile_id, row\.id\);/.test(health)
   );
 
   const index = readFileSync(join(import.meta.dirname, "..", "app", "(tabs)", "index.tsx"), "utf8");
@@ -499,16 +493,27 @@ section("J. wiring: health.ts and its callers actually use this module");
 section("K. idempotent write wiring (sync id + version) and retry orphan guard");
 {
   const health = readFileSync(join(import.meta.dirname, "..", "lib", "services", "health.ts"), "utf8");
-  const retry = health.slice(health.indexOf("export async function retryPendingHealthWrites"));
-  ok("fresh write carries buildHealthWriteMeta(log)", /buildHealthWriteMeta\(log\)/.test(health));
-  ok("retry carries buildHealthWriteMeta(row)", /buildHealthWriteMeta\(row\)/.test(retry));
+  const helperStart = health.indexOf("async function mirrorStoredRow");
+  const helper = health.slice(helperStart, health.indexOf("\n}\n", helperStart));
   ok(
-    "retry re-checks the row exists before linking, and revokes the sample if gone",
-    /if \(!\(await getSugarLog\(row\.id\)\)\) \{\s*await deleteGlucoseFromHealth\(uuid\);\s*continue;/.test(retry)
+    "every write builds a strictly rising version for its row",
+    /nextSyncVersion\(lastSyncVersion\.get\(row\.id\), Date\.now\(\)\)/.test(health) &&
+      /return buildHealthWriteMeta\(row, version\);/.test(health)
+  );
+  ok("the shared helper writes with nextWriteMeta(row)", /nextWriteMeta\(row\)/.test(helper));
+  ok(
+    "the shared helper re-checks the row exists before linking, and revokes the sample if gone",
+    /const current = await getSugarLog\(row\.id\);\s*if \(!current \|\| !\(await linkHealthUuid\(row\.id, uuid\)\)\) \{\s*await deleteGlucoseFromHealth\(uuid\);/.test(helper)
   );
   ok(
-    "edit writes before revoking and never revokes the uuid it just got back",
-    /oldUuid && oldUuid !== uuid/.test(health) && health.indexOf("buildHealthWriteMeta({ id: logId") < health.indexOf("oldUuid !== uuid")
+    "the shared helper links first and never revokes the uuid it just got back",
+    /if \(u && u !== uuid\) stale\.add\(u\);/.test(helper) &&
+      helper.indexOf("linkHealthUuid(row.id, uuid)") >= 0 &&
+      helper.indexOf("linkHealthUuid(row.id, uuid)") < helper.indexOf("stale.add(u)")
+  );
+  ok(
+    "no write path builds its meta outside the helper",
+    (health.match(/buildHealthWriteMeta\(/g) ?? []).length === 1
   );
   const hc = readFileSync(join(import.meta.dirname, "..", "lib", "services", "healthConnect.ts"), "utf8");
   ok("Android writes clientRecordId + clientRecordVersion", /clientRecordId: meta\.recordId, clientRecordVersion: meta\.version/.test(hc));

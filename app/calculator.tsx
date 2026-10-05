@@ -26,7 +26,6 @@ import {
   findMatchingSugarLog,
   getMealLog,
   getSugarLog,
-  setSugarLogHealthUuid,
   updateMealLog,
   updateSugarLog,
 } from "../lib/db/logs";
@@ -81,7 +80,7 @@ import {
   noteJournalActivity,
 } from "../lib/services/notifications";
 import {
-  deleteGlucoseFromHealth,
+  deleteGlucoseRowFromHealth,
   getHealthWriteEnabled,
   updateGlucoseInHealth,
   writeGlucoseToHealthIfEnabled,
@@ -1109,23 +1108,20 @@ function CalculatorScreen() {
           // Apple Health after a correction here.
           void (async () => {
             try {
-              // With the mirror off, updateGlucoseInHealth returns null WITHOUT
-              // deleting the old sample; clearing the uuid then would orphan it
-              // in Apple Health forever. Leave the link untouched instead.
-              if (!(await getHealthWriteEnabled())) return;
+              // With the mirror off the old sample and its link stay as they are.
               const row = await getSugarLog(linkedSugarLogId);
-              if (!row?.healthkit_uuid) return;
-              const uuid = await updateGlucoseInHealth(
-                row.id,
-                row.healthkit_uuid,
-                row.glucose_level_mgdl,
-                row.logged_at,
-                row.period_tag,
+              if (!row) return;
+              if (!(await getHealthWriteEnabled(row.profile_id))) return;
+              // Not gated on row.healthkit_uuid: the reading's first write can
+              // still be in flight. updateGlucoseInHealth decides inside the
+              // row lock, writes the stored values and links the result itself.
+              const res = await updateGlucoseInHealth(
+                linkedSugarLogId,
+                row.healthkit_uuid ?? null,
                 // X7: the row's OWN owner, not the active profile.
                 row.profile_id
               );
-              await setSugarLogHealthUuid(row.id, uuid);
-              if (!uuid && shouldAnnounceHealthWriteFailure()) {
+              if (res.failed && shouldAnnounceHealthWriteFailure()) {
                 toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
               }
             } catch {
@@ -1319,7 +1315,7 @@ function CalculatorScreen() {
             // created (best-effort): the local row is gone, so leaving the sample
             // in Health would strand a reading the user just took back.
             const mirrored = await deleteMealRecord(mealId, createdReading);
-            void deleteGlucoseFromHealth(mirrored);
+            if (createdReading) void deleteGlucoseRowFromHealth(createdReading, mirrored);
             // The save a moment ago is what armed the post-meal countdown
             // (schedulePostMealReminder above), so taking the record back has
             // to take that countdown back too - otherwise the dashboard counts

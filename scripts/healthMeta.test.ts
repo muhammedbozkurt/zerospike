@@ -11,6 +11,7 @@ import {
   buildHealthWriteMeta,
   hasValidSyncKey,
   mealContextFor,
+  nextSyncVersion,
   toHealthKitMetadata,
   toRelationToMeal,
 } from "../lib/healthMeta";
@@ -59,6 +60,12 @@ eq("HC unknown", toRelationToMeal(null), 0);
 eq("HC fasting", toRelationToMeal("fasting"), 2);
 eq("HC before", toRelationToMeal("before_meal"), 3);
 eq("HC after", toRelationToMeal("after_meal"), 4);
+
+eq("first version is the clock", nextSyncVersion(undefined, 1000.7), 1000);
+eq("clock ahead of the last version wins", nextSyncVersion(900, 1000), 1000);
+eq("same millisecond still moves forward", nextSyncVersion(1000, 1000), 1001);
+eq("clock behind the last version still moves forward", nextSyncVersion(1005, 1000), 1006);
+eq("never below 1", nextSyncVersion(undefined, 0), 1);
 
 console.log(`${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

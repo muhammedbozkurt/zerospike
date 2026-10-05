@@ -165,6 +165,17 @@ async function ensureWriteAuthorized(HK: HKModule): Promise<boolean> {
   }
 }
 
+/** The permission half of a write, for health.ts to run before it starts
+ *  timing the native save (writeGlucose checks again; once decided, that check
+ *  is a synchronous status read). */
+export async function prepareHealthKitWrite(): Promise<boolean> {
+  try {
+    return await ensureWriteAuthorized(loadHK());
+  } catch {
+    return false;
+  }
+}
+
 async function writeGlucose(
   mgdl: number,
   dateIso: string,
@@ -196,7 +207,11 @@ async function writeGlucose(
     return res?.uuid ?? null;
   } catch (err) {
     // Covers a plain JS-side rejection only. Retries the same write once
-    // without metadata (the sample is then just not idempotent).
+    // without metadata (the sample is then just not idempotent). It cannot
+    // leave a second sample: health.ts writes a reading one operation at a
+    // time with a strictly rising version (so a "not newer" refusal needs a
+    // clock set backwards), and revokes the row's previous sample once this
+    // one is linked.
     logCrash(err, { screen: "health", op: "saveWithMetadata" });
     return (await plain())?.uuid ?? null;
   }

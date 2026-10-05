@@ -11,7 +11,7 @@ import {
   setSugarLogHealthUuid,
 } from "../db/logs";
 import { getProfile, listProfiles } from "../db/profiles";
-import type { PeriodTag, SugarLog } from "../db/types";
+import type { SugarLog } from "../db/types";
 import {
   chunkBatches,
   selectBackfillCandidates,
@@ -27,7 +27,7 @@ import {
   selectDeletePass,
   type PendingDeleteEntry,
 } from "../healthDeleteQueue";
-import { buildHealthWriteMeta, type HealthWriteMeta } from "../healthMeta";
+import { buildHealthWriteMeta, nextSyncVersion, type HealthWriteMeta } from "../healthMeta";
 import { planWriteFlagRead, shouldWriteToHealth } from "../healthWriteScope";
 import {
   buildRetryStatusRecord,
@@ -37,7 +37,7 @@ import {
   type HealthWriteStatusRecord,
   type PendingWriteEntry,
 } from "../healthWriteRetry";
-import { healthAppleKit } from "./healthAppleKit";
+import { healthAppleKit, prepareHealthKitWrite } from "./healthAppleKit";
 import {
   healthConnect,
   getHealthConnectStatus as hcGetStatus,
@@ -309,9 +309,10 @@ async function removePendingWriteIds(
 /** Links a Health sample id to its row. The id also leaves the delete queue:
  *  Health Connect keeps the uuid on an upsert, so an id queued for deletion by
  *  an earlier undo can be the very sample this row now owns. */
-async function linkHealthUuid(rowId: string, uuid: string): Promise<void> {
-  await setSugarLogHealthUuid(rowId, uuid);
+async function linkHealthUuid(rowId: string, uuid: string): Promise<boolean> {
+  if (!(await setSugarLogHealthUuid(rowId, uuid))) return false;
   await dequeueHealthDeletes([uuid]);
+  return true;
 }
 
 /** Last attempted mirror write's outcome for this profile (default: the
@@ -557,15 +558,162 @@ export function shouldAnnounceHealthWriteFailure(): boolean {
 }
 
 /**
- * Row ids a write is mid-flight on RIGHT NOW, module-level (2.3.5 fix):
- * added the instant an attempt starts, removed as soon as it settles either
- * way. Both the fresh-write path (writeGlucoseToHealthIfEnabled) and the
- * retry pass (retryPendingHealthWrites) add/remove their own row here and
- * the retry additionally SKIPS anything already in this set - without it, a
- * fresh write and a retry pass racing on the same row could both see
- * healthkit_uuid still null and write a second sample for the same reading.
+ * One promise chain per sugar_logs row: every Health write, rewrite and revoke
+ * of a reading starts only after the previous one for that reading settled.
+ * Without it a correction made while the first write was still in flight was
+ * dropped (the edit saw no link yet) and the first write then linked the old
+ * value; and two writes of one reading landing out of order made HealthKit
+ * refuse the older version, whose metadata-free retry left a second sample.
+ * Never acquire a row's lock from inside that same row's locked section.
  */
-const healthWriteInFlightIds = new Set<string>();
+const rowChains = new Map<string, Promise<void>>();
+
+function withRowLock<T>(rowId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = rowChains.get(rowId) ?? Promise.resolve();
+  const run = prev.then(fn);
+  const tail = run.then(
+    () => undefined,
+    () => undefined
+  );
+  rowChains.set(rowId, tail);
+  void tail.then(() => {
+    if (rowChains.get(rowId) !== tail) return;
+    rowChains.delete(rowId);
+    // Settled means its native call returned, so the clock has moved past the
+    // version it used; keeping the entry would only grow the map.
+    lastSyncVersion.delete(rowId);
+  });
+  return run;
+}
+
+/** A native write or delete that never settles must not hold its row's lock,
+ *  and with it every later edit of that reading, for the rest of the session. */
+const NATIVE_TIMEOUT_MS = 30_000;
+let nativeTimeoutMs = NATIVE_TIMEOUT_MS;
+/** Test hook only: the timeout is a constant in the app. */
+export function setHealthNativeTimeoutForTests(ms: number | null): void {
+  nativeTimeoutMs = ms ?? NATIVE_TIMEOUT_MS;
+}
+
+class HealthNativeTimeout extends Error {}
+
+function withNativeTimeout<T>(call: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new HealthNativeTimeout("health native call timed out")), nativeTimeoutMs);
+    call.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
+/**
+ * A write given up on can still land later. Nothing to do when the row is
+ * already linked to it (Health Connect upserts keep the uuid); revoked when the
+ * reading is gone. Otherwise it is NOT simply revoked: on HealthKit a late
+ * sync-id write has already replaced the linked sample, so revoking it left the
+ * reading out of Health until the next retry. The row's current values are
+ * written again instead, and the late sample revoked after that lands.
+ */
+function settleLateSample(rowId: string, uuid: string): Promise<void> {
+  return withRowLock(rowId, async () => {
+    const row = await getSugarLog(rowId);
+    if (!row) {
+      await deleteGlucoseFromHealth(uuid);
+      return;
+    }
+    if (row.healthkit_uuid === uuid) return;
+    const scope = await readHealthWriteScope();
+    const open = shouldWriteToHealth({
+      writeEnabledForProfile: scope.enabled,
+      recordProfileId: row.profile_id,
+      enabledProfileId: scope.profileId,
+    });
+    if (open) {
+      const res = await mirrorStoredRow(row, [uuid]);
+      if (res.outcome === "written") await removePendingWriteIds(row.profile_id, [rowId]);
+      return;
+    }
+    // Mirror switched off since: nothing new is written. The late sample is
+    // the newest one this reading has in Health, so the row points at it.
+    await linkHealthUuid(rowId, uuid);
+  }).catch((err) => logCrash(err, { screen: "health", op: "settleLateSample" }));
+}
+
+/** Test hook only: resolves once no reading has a Health operation queued or
+ *  running. */
+export async function healthIdleForTests(): Promise<void> {
+  while (rowChains.size > 0) await Promise.all([...rowChains.values()]);
+}
+
+/** Rows with a Health operation queued or running. The retry pass and the
+ *  history transfer skip them: the operation already holding the row writes
+ *  its current values itself. */
+function busyRowIds(): ReadonlySet<string> {
+  return new Set(rowChains.keys());
+}
+
+/** Last sync version written per row in this process (see nextSyncVersion). */
+const lastSyncVersion = new Map<string, number>();
+
+/** Built inside the row lock, right before the native call, so a later write
+ *  of the same reading always carries a strictly higher version. */
+function nextWriteMeta(row: Pick<SugarLog, "id" | "period_tag">): HealthWriteMeta {
+  const version = nextSyncVersion(lastSyncVersion.get(row.id), Date.now());
+  lastSyncVersion.set(row.id, version);
+  return buildHealthWriteMeta(row, version);
+}
+
+type MirrorOutcome = "written" | "failed" | "gone" | "linkFailed";
+
+/**
+ * Writes the row's CURRENT stored values and links the result. Must run inside
+ * withRowLock(row.id). Every other sample the row pointed at (its stored link
+ * and any id the caller still held) is revoked once the new one is linked:
+ * HealthKit replaces a same-sync-id sample itself, but a sample saved without
+ * metadata (the healthAppleKit fallback) or a legacy one can only go this way.
+ * Health Connect keeps the uuid on an upsert, so nothing is revoked there.
+ */
+async function mirrorStoredRow(
+  row: SugarLog,
+  heldUuids: readonly (string | null | undefined)[]
+): Promise<{ outcome: MirrorOutcome; uuid: string | null }> {
+  const uuid = await writeGlucoseToHealth(row.glucose_level_mgdl, row.logged_at, nextWriteMeta(row));
+  if (!uuid) return { outcome: "failed", uuid: null };
+  try {
+    // The local delete is not under this lock, so the reading can be gone by
+    // now; its sample would be an orphan in the user's Health app. Checked
+    // twice: a delete can also land between this read and the link, and then
+    // the link updates no row.
+    const current = await getSugarLog(row.id);
+    if (!current || !(await linkHealthUuid(row.id, uuid))) {
+      await deleteGlucoseFromHealth(uuid);
+      return { outcome: "gone", uuid: null };
+    }
+    const stale = new Set<string>();
+    for (const u of [current.healthkit_uuid, row.healthkit_uuid, ...heldUuids]) {
+      if (u && u !== uuid) stale.add(u);
+    }
+    for (const u of stale) await deleteGlucoseFromHealth(u);
+    return { outcome: "written", uuid };
+  } catch (err) {
+    // The sample IS in Health but the row never got the link: left alone, a
+    // later write would add a second sample for the same reading (2.3.5).
+    try {
+      await deleteGlucoseFromHealth(uuid);
+    } catch {
+      // best-effort: the DB failure is what matters here
+    }
+    logCrash(err, { screen: "health", op: "linkHealthUuid" });
+    return { outcome: "linkFailed", uuid: null };
+  }
+}
 
 /**
  * Writes ONE reading to the platform health store as a bloodGlucose sample
@@ -581,9 +729,26 @@ export async function writeGlucoseToHealth(
   if (!Number.isFinite(mgdl) || mgdl <= 0) return null;
   const provider = getProvider();
   if (!provider) return null;
+  // The HealthKit permission sheet waits for the user, however long they take,
+  // so it runs before the native-call timeout starts, never inside it.
+  if (provider === healthAppleKit && !(await prepareHealthKitWrite())) return null;
+  let call: Promise<string | null>;
   try {
-    return await provider.writeGlucose(mgdl, dateIso, meta);
+    call = provider.writeGlucose(mgdl, dateIso, meta);
   } catch (err) {
+    logCrash(err, { screen: "health", op: "writeGlucose" });
+    return null;
+  }
+  try {
+    return await withNativeTimeout(call);
+  } catch (err) {
+    if (err instanceof HealthNativeTimeout && meta?.recordId) {
+      const rowId = meta.recordId;
+      void call.then(
+        (late) => (late ? settleLateSample(rowId, late) : undefined),
+        () => undefined
+      );
+    }
     logCrash(err, { screen: "health", op: "writeGlucose" });
     return null;
   }
@@ -603,17 +768,39 @@ export async function writeGlucoseToHealth(
  * to whatever wrote it into Health, not to this app.
  */
 export async function deleteGlucoseFromHealth(uuid: string | null): Promise<void> {
-  if (!uuid) return;
+  await revokeHealthSample(uuid);
+}
+
+/** deleteGlucoseFromHealth, telling whether the sample is gone now (false:
+ *  nothing to revoke, or the revoke failed and was queued for retry). */
+async function revokeHealthSample(uuid: string | null): Promise<boolean> {
+  if (!uuid) return false;
   const provider = getProvider();
-  if (!provider) return;
+  if (!provider) return false;
   try {
-    await provider.deleteGlucose(uuid);
+    await withNativeTimeout(provider.deleteGlucose(uuid));
+    return true;
   } catch (err) {
     logCrash(err, { screen: "health", op: "deleteGlucose" });
     // A failed mirror-delete never blocks the local delete; it is retried
     // later instead (retryPendingHealthDeletes).
     await queueHealthDeletes([uuid]);
+    return false;
   }
+}
+
+/**
+ * The revoke for a reading the user just deleted, in line behind any write of
+ * that reading still in flight (that write's own orphan check revokes what it
+ * produced) and ahead of the write an undo queues next. A row linked to the
+ * revoked id by then (an undo restored it while a correction was in flight,
+ * and the Health Connect upsert kept the uuid) is unlinked and queued for a
+ * rewrite, so it never points at a sample that no longer exists.
+ */
+export function deleteGlucoseRowFromHealth(rowId: string, uuid: string | null): Promise<void> {
+  return withRowLock(rowId, async () => {
+    if (uuid && (await revokeHealthSample(uuid))) await relinkAfterDelete([uuid]);
+  }).catch((err) => logCrash(err, { screen: "health", op: "deleteGlucoseRow" }));
 }
 
 async function getDeleteEntries(): Promise<PendingDeleteEntry[]> {
@@ -659,7 +846,7 @@ async function revokeHealthSamples(uuids: readonly string[]): Promise<number> {
   const failed: string[] = [];
   for (const batch of chunkBatches(uuids, HEALTH_DELETE_BATCH)) {
     try {
-      await provider.deleteGlucoseBatch(batch);
+      await withNativeTimeout(provider.deleteGlucoseBatch(batch));
       deleted += batch.length;
     } catch (err) {
       logCrash(err, { screen: "health", op: "deleteGlucoseBatch" });
@@ -726,7 +913,7 @@ export async function retryPendingHealthDeletes(): Promise<{ attempted: number; 
     for (const batch of chunkBatches(pass, HEALTH_DELETE_BATCH)) {
       if (stop) break;
       try {
-        await provider.deleteGlucoseBatch(batch);
+        await withNativeTimeout(provider.deleteGlucoseBatch(batch));
         done.push(...batch);
       } catch {
         // One bad id must not pin the rest of its batch: fall back to singles,
@@ -734,7 +921,7 @@ export async function retryPendingHealthDeletes(): Promise<{ attempted: number; 
         let first = true;
         for (const id of batch) {
           try {
-            await provider.deleteGlucose(id);
+            await withNativeTimeout(provider.deleteGlucose(id));
             done.push(id);
           } catch {
             if (first) {
@@ -799,26 +986,29 @@ async function relinkAfterDelete(deleted: readonly string[]): Promise<void> {
  * show its own immediate "could not write" toast (gated on
  * {@link shouldAnnounceHealthWriteFailure} so it only ever fires once per
  * session).
+ *
+ * Only the row's id is taken from `log`: the values written are the STORED
+ * row's, read inside the row lock. The one-time question writes the reading
+ * it was asked about after the user answered, and an undo writes a restored
+ * snapshot; either can be older than the row by then.
  */
 export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<boolean> {
   if (log.source === "health") return true;
   if (!hasHealthProvider()) return true;
-  const scope = await readHealthWriteScope();
-  const allowed = shouldWriteToHealth({
-    writeEnabledForProfile: scope.enabled,
-    recordProfileId: log.profile_id,
-    enabledProfileId: scope.profileId,
-  });
-  if (!allowed) return true;
-  healthWriteInFlightIds.add(log.id);
-  try {
-    const uuid = await writeGlucoseToHealth(
-      log.glucose_level_mgdl,
-      log.logged_at,
-      buildHealthWriteMeta(log)
-    );
-    await recordHealthWriteStatus(log.profile_id, uuid != null);
-    if (!uuid) {
+  return withRowLock(log.id, async () => {
+    // Gone already (deleted before this write got its turn): nothing to mirror.
+    const row = await getSugarLog(log.id);
+    if (!row || row.source === "health") return true;
+    const scope = await readHealthWriteScope();
+    const allowed = shouldWriteToHealth({
+      writeEnabledForProfile: scope.enabled,
+      recordProfileId: row.profile_id,
+      enabledProfileId: scope.profileId,
+    });
+    if (!allowed) return true;
+    const res = await mirrorStoredRow(row, [log.healthkit_uuid]);
+    await recordHealthWriteStatus(row.profile_id, res.outcome !== "failed");
+    if (res.outcome === "failed") {
       // The toggle is on and the write was attempted, so a null result here
       // means the write itself failed (H3) - most likely revoked Settings
       // access - not that the mirror is off. Queued so the next
@@ -827,102 +1017,91 @@ export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<bool
       // ever reads from, so a row logged while the toggle was off can never
       // be swept up later (consent scope, 2.3.5 fix).
       healthWriteFailureNoticePending = true;
-      await addPendingWriteId(log.profile_id, log.id);
+      await addPendingWriteId(row.profile_id, row.id);
       return false;
     }
-    try {
-      // The caller fires this and moves on, so the row can be undone while the write
-      // is still in flight. A sample whose local reading no longer exists is an
-      // orphan in the user's Health app, so it is revoked instead of being recorded
-      // on a row that is gone.
-      if (!(await getSugarLog(log.id))) {
-        await deleteGlucoseFromHealth(uuid);
-        return true;
-      }
-      await linkHealthUuid(log.id, uuid);
-      // In case an earlier attempt had queued this same row: it is linked
-      // now, so it must not be retried again.
-      await removePendingWriteIds(log.profile_id, [log.id]);
-    } catch (err) {
-      // The sample IS in Health now but the local row never got the link -
-      // left alone, a LATER write (a retry, or this row logged again) would
-      // see healthkit_uuid still null and write a SECOND sample for the
-      // same reading (2.3.5 double-write fix). Revoke the orphan and queue
-      // the row instead, so the next retry starts clean.
-      try {
-        await deleteGlucoseFromHealth(uuid);
-      } catch {
-        // best-effort: the DB failure below is what matters here
-      }
-      await addPendingWriteId(log.profile_id, log.id);
-      // This is fired-and-forgotten from the add flow (never awaited), so a DB
-      // hiccup here must never surface as an unhandled rejection.
-      logCrash(err, { screen: "health", op: "linkHealthUuid" });
-    }
+    // Written but never linked: the orphan was revoked, the next retry starts clean.
+    if (res.outcome === "linkFailed") await addPendingWriteId(row.profile_id, row.id);
+    // In case an earlier attempt had queued this same row: it is linked now.
+    if (res.outcome === "written") await removePendingWriteIds(row.profile_id, [row.id]);
     return true;
-  } finally {
-    healthWriteInFlightIds.delete(log.id);
-  }
+  }).catch((err) => {
+    // Fired and forgotten from the add flow: a DB hiccup must never surface
+    // as an unhandled rejection.
+    logCrash(err, { screen: "health", op: "writeGlucoseToHealthIfEnabled" });
+    return true;
+  });
 }
 
 /**
- * Re-mirrors an EDITED reading: writes the corrected value/time, then revokes
- * the old health-store sample (if any, and if it is a different object).
- * Returns the new id to store on the row (via setSugarLogHealthUuid), or null
- * when nothing should be stored (mirror off, or the write failed; the stale
- * sample is revoked in that case too, so a wrong value never lingers).
+ * Re-mirrors an EDITED reading, in line behind any write of it still in flight.
+ * The corrected values are read from the stored row inside the row lock, so the
+ * last edit always wins. Write FIRST, revoke the stale sample after: a failed
+ * write can no longer cost the user the old sample, and the write carries the
+ * row id as sync id with a strictly newer version, so the store replaces a
+ * sample written the same way (HealthKit with a new uuid, Health Connect in
+ * place). Links the result on the row itself and returns it.
+ *
+ * `uuid` is null when nothing was linked: the mirror is off for the row, the
+ * reading was never mirrored or is gone (`failed` false, nothing to report), or
+ * the write itself did not land (`failed` true). A failed rewrite keeps the old
+ * sample and its link - revoking it on an empty result would delete the only
+ * copy if the store had merely refused or ignored the write - and the row is
+ * queued; the retry pass rewrites it with its current values.
  */
+export interface HealthRewriteResult {
+  uuid: string | null;
+  failed: boolean;
+}
+
+
 export async function updateGlucoseInHealth(
   /** The row being corrected - queued for retry on failure (2.3.5 fix): this
    *  row already carried a mirror sample (oldUuid), so it is squarely inside
    *  the mirror's already-consented scope, not a consent-scope expansion the
    *  way a never-attempted row would be. */
   logId: string,
+  /** The sample the caller last saw linked. Only a hint: a screen's copy can
+   *  predate the link of a first write that was still in flight, so the stored
+   *  link is what decides, and both are revoked once the rewrite lands. */
   oldUuid: string | null,
-  mgdl: number,
-  dateIso: string,
-  /** The corrected reading's period tag, for the meal-context metadata. */
-  periodTag: PeriodTag | null,
   /** The profile the corrected row belongs to. REQUIRED (X7): defaulting it to
    *  "whatever profile has the switch on" made the check compare a value to
    *  itself, so the gate always opened - a caregiver correcting a reading on
    *  one profile could mirror it into the Health account of another. */
   recordProfileId: string | null
-): Promise<string | null> {
-  if (!hasHealthProvider()) return null;
-  const scope = await readHealthWriteScope();
-  const allowed = shouldWriteToHealth({
-    writeEnabledForProfile: scope.enabled,
-    recordProfileId,
-    enabledProfileId: scope.profileId,
-  });
-  if (!allowed) return null;
-  // Write FIRST, revoke the stale sample after: a failed write can no longer
-  // cost the user the old sample. The write carries the row id as sync id with
-  // a newer version, so the store itself replaces a sample written the same
-  // way (HealthKit replaces it with a new uuid and drops the old sample, Health
-  // Connect upserts and keeps the uuid). The explicit revoke covers legacy
-  // samples that carry no sync id; when the store already replaced the old one
-  // it finds nothing and is harmless. It is skipped when the uuid is unchanged,
-  // since that would delete the sample just written.
-  const uuid = await writeGlucoseToHealth(
-    mgdl,
-    dateIso,
-    buildHealthWriteMeta({ id: logId, period_tag: periodTag })
-  );
-  if (oldUuid && oldUuid !== uuid) await deleteGlucoseFromHealth(oldUuid);
-  await recordHealthWriteStatus(recordProfileId, uuid != null);
-  // Same H3 signal as writeGlucoseToHealthIfEnabled: allowed to write, but the
-  // write itself came back empty.
-  if (!uuid) {
-    healthWriteFailureNoticePending = true;
-    // Queued so the next foreground/manual-sync retry re-attempts exactly
-    // this row - the caller still clears healthkit_uuid to null on the row
-    // (it has no fresh sample to point at), which is exactly what makes the
-    // row eligible again once queued.
+): Promise<HealthRewriteResult> {
+  const none: HealthRewriteResult = { uuid: null, failed: false };
+  if (!hasHealthProvider()) return none;
+  return withRowLock(logId, async () => {
+    const scope = await readHealthWriteScope();
+    const allowed = shouldWriteToHealth({
+      writeEnabledForProfile: scope.enabled,
+      recordProfileId,
+      enabledProfileId: scope.profileId,
+    });
+    if (!allowed) return none;
+    const row = await getSugarLog(logId);
+    if (!row || row.source === "health") return none;
+    // Only a reading that is (or was) mirrored is rewritten; one logged while
+    // the mirror was off stays out of Health (consent scope).
+    const held = [row.healthkit_uuid, oldUuid].filter((u): u is string => !!u);
+    if (held.length === 0) return none;
+    const res = await mirrorStoredRow(row, held);
+    await recordHealthWriteStatus(recordProfileId, res.outcome !== "failed");
+    if (res.outcome === "written") {
+      await removePendingWriteIds(row.profile_id, [logId]);
+      return { uuid: res.uuid, failed: false };
+    }
+    if (res.outcome === "gone") return none;
+    if (res.outcome === "failed") {
+      // Same H3 signal as writeGlucoseToHealthIfEnabled: allowed to write,
+      // but the write itself came back empty.
+      healthWriteFailureNoticePending = true;
+    }
     await addPendingWriteId(recordProfileId, logId);
-  }
-  return uuid;
+    return { uuid: null, failed: true };
+  });
 }
 
 // Module-level (not per-profile): the app only ever shows one active
@@ -996,10 +1175,13 @@ async function runPendingHealthWrites(
     });
     if (goneIds.length > 0) await removePendingWriteIds(profileId, goneIds);
 
+    // The selector's "not linked yet" rule predates the row lock: a queued row
+    // can now be linked to a sample whose rewrite failed (updateGlucoseInHealth
+    // keeps that link), and it is rewritten under its lock like any other.
     const candidates = selectHealthRetryCandidates(
-      rows,
+      rows.map((r) => ({ ...r, healthkit_uuid: null })),
       pendingIds,
-      healthWriteInFlightIds,
+      busyRowIds(),
       nowMs
     );
     let succeeded = 0;
@@ -1017,42 +1199,20 @@ async function runPendingHealthWrites(
       // never actually trip - a mismatch here is queue corruption, not a
       // reason to stop the whole pass, so it skips just this row.
       if (row.profile_id !== profileId) continue;
-      healthWriteInFlightIds.add(row.id);
-      try {
-        const uuid = await writeGlucoseToHealth(
-          row.glucose_level_mgdl,
-          row.logged_at,
-          buildHealthWriteMeta(row)
-        );
-        if (!uuid) continue; // stays queued, tried again next pass
-        try {
-          // Same orphan guard as the fresh-write path: the row may have been
-          // deleted while the native write was in flight.
-          if (!(await getSugarLog(row.id))) {
-            await deleteGlucoseFromHealth(uuid);
-            continue;
-          }
-          await linkHealthUuid(row.id, uuid);
-          // Only counted as succeeded once the LOCAL link is written too -
-          // a native write that succeeds but never links (below) leaves the
-          // row still pending, and must count toward the failed tally, not
-          // the succeeded one, or buildRetryStatusRecord's count would be
-          // wrong (see 2.3.5 fix).
-          succeeded++;
-          succeededIds.push(row.id);
-        } catch (err) {
-          // Same double-write guard as the fresh-write path: the sample
-          // exists now but never got linked, so revoke it and leave the
-          // row queued rather than risking a second sample next retry.
-          try {
-            await deleteGlucoseFromHealth(uuid);
-          } catch {
-            // best-effort
-          }
-          logCrash(err, { screen: "health", op: "retryLinkHealthUuid" });
-        }
-      } finally {
-        healthWriteInFlightIds.delete(row.id);
+      // Re-read inside the row lock: the reading may have been corrected or
+      // deleted since the queue was read. Written with its current values; a
+      // queued row that is still linked is a correction that did not land,
+      // so its old sample is replaced. A failed or unlinked write stays
+      // queued, and only a LOCAL link counts as succeeded (2.3.5).
+      const done = await withRowLock(row.id, async () => {
+        const current = await getSugarLog(row.id);
+        if (!current || current.source === "health") return false;
+        const res = await mirrorStoredRow(current, []);
+        return res.outcome === "written";
+      });
+      if (done) {
+        succeeded++;
+        succeededIds.push(row.id);
       }
     }
     if (succeededIds.length > 0) await removePendingWriteIds(profileId, succeededIds);
@@ -1133,7 +1293,7 @@ export async function backfillGlucoseToHealth(
     const rows = selectBackfillCandidates(
       await listHealthBackfillRows(profileId, since),
       profileId,
-      healthWriteInFlightIds,
+      busyRowIds(),
       nowMs,
       windowDays
     );
@@ -1154,39 +1314,18 @@ export async function backfillGlucoseToHealth(
           open = false;
           break;
         }
-        if (healthWriteInFlightIds.has(stale.id)) continue;
-        healthWriteInFlightIds.add(stale.id);
-        try {
+        // A row another write is holding is written by that write itself.
+        if (rowChains.has(stale.id)) continue;
+        const outcome = await withRowLock(stale.id, async () => {
           const row = await getSugarLog(stale.id);
-          if (!row || row.healthkit_uuid != null || row.source === "health") continue;
-          const uuid = await writeGlucoseToHealth(
-            row.glucose_level_mgdl,
-            row.logged_at,
-            buildHealthWriteMeta(row)
-          );
-          if (!uuid) {
-            failed++;
-            continue;
-          }
-          try {
-            if (!(await getSugarLog(row.id))) {
-              await deleteGlucoseFromHealth(uuid);
-              continue;
-            }
-            await linkHealthUuid(row.id, uuid);
-            written++;
-            writtenIds.push(row.id);
-          } catch (err) {
-            try {
-              await deleteGlucoseFromHealth(uuid);
-            } catch {
-              // best-effort
-            }
-            failed++;
-            logCrash(err, { screen: "health", op: "backfillLinkHealthUuid" });
-          }
-        } finally {
-          healthWriteInFlightIds.delete(stale.id);
+          if (!row || row.healthkit_uuid != null || row.source === "health") return null;
+          return (await mirrorStoredRow(row, [])).outcome;
+        });
+        if (outcome === "written") {
+          written++;
+          writtenIds.push(stale.id);
+        } else if (outcome === "failed" || outcome === "linkFailed") {
+          failed++;
         }
       }
       report(handled);

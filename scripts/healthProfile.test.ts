@@ -243,7 +243,7 @@ section("F. the UPDATE path is gated by the same rule as the write path (X7)");
   );
   ok(
     "updateGlucoseInHealth takes a required recordProfileId",
-    /recordProfileId: string \| null\n\): Promise<string \| null>/.test(src)
+    /recordProfileId: string \| null\n\): Promise<HealthRewriteResult>/.test(src)
   );
   ok(
     "and no longer falls back to the enabled profile",
