@@ -312,7 +312,7 @@ export function InjectionEditSheet({
         logged_at: loggedAt.toISOString(),
       };
       await updateInjection(injection.id, patch);
-      logEvent("log_edited");
+      logEvent("log_edited", { kind: insulinType === "basal" ? "basal" : "injection" });
       hapticSuccess();
       onSaved();
     } finally {

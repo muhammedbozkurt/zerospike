@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Pressable, SectionList, Switch, Text, View } from "react-native";
+import { Alert, AppState, Platform, Pressable, SectionList, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -42,6 +42,7 @@ import {
   completePostMealTimer,
   getNotificationPermission,
   noteJournalActivity,
+  cancelTrialDay1Nudge,
   type PostMealStartOutcome,
 } from "../../lib/services/notifications";
 import {
@@ -56,6 +57,7 @@ import {
 } from "../../lib/postMealTimer";
 import { PostMealDurationSheet } from "../../components/PostMealDurationSheet";
 import { IobInfoSheet } from "../../components/IobInfoSheet";
+import { AnalyticsConsentSheet } from "../../lib/analytics/ConsentSheet";
 import { BasalStatusLine } from "../../components/BasalStatusLine";
 import { getNotificationPrefs } from "../../lib/services/notificationPrefs";
 import {
@@ -93,7 +95,10 @@ import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
 import { useHealthAvailable } from "../../lib/services/healthAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
+import { noteFirstLog, seedFirstLogFlags } from "../../lib/services/firstLog";
 import { logCrash, logEvent } from "../../lib/analytics";
+import { TrialCard } from "../../components/TrialCard";
+import { markProWelcomeStep } from "../../lib/services/proWelcome";
 import { isWidgetInstalled } from "../../modules/zerospike-live-activity";
 
 // Base keys below are scoped per profile ("<key>.<profileId>") via
@@ -277,7 +282,7 @@ export default function DashboardScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ sheet?: string }>();
+  const params = useLocalSearchParams<{ sheet?: string; health?: string }>();
   const { isWide, columnPad } = useLayout();
   const { activeProfile, profiles, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
@@ -503,6 +508,12 @@ export default function DashboardScreen() {
     void syncLiveData(profileId, glucoseUnit);
   }, [profileId, glucoseUnit, dataVersion]);
 
+  // An install that logged before first_log existed must not report its next
+  // entry as a first one; this runs once and is a no-op after that.
+  useEffect(() => {
+    if (profileId) void seedFirstLogFlags();
+  }, [profileId]);
+
   // Deep-link with a `sheet` param: a reminder tap (app/_layout.tsx routes the
   // notification here), a widget tap, or the Live Activity card. Each accepted
   // value is matched EXPLICITLY:
@@ -560,6 +571,23 @@ export default function DashboardScreen() {
       router.setParams({ sheet: "" });
     })();
   }, [params.sheet, activeProfile, router]);
+
+  // Deep link from the Pro welcome's Health step and the day-1 nudge: runs the
+  // one Health connect flow (openHealthFlow) once the sync preference has
+  // resolved. A param of its own on purpose: the `sheet` effect above clears
+  // anything it does not recognise the moment it sees it, which would eat this
+  // one before cgmOn is known.
+  useEffect(() => {
+    if (params.health !== "connect") return;
+    if (!hasHealthProvider()) {
+      router.setParams({ health: "" });
+      return;
+    }
+    if (cgmOn === null) return;
+    router.setParams({ health: "" });
+    openHealthFlow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.health, cgmOn]);
 
   // Tap-to-edit is invisible until you know it: show a dismissible one-time
   // hint above the journal until the user closes it. The setup row next to it
@@ -828,16 +856,18 @@ export default function DashboardScreen() {
   // but the write-mirror retry is not (same as the foreground AppState
   // trigger above), so it runs here even for a non-Pro profile that still
   // has the write toggle on from an earlier Pro period.
-  async function runSync(announce: boolean) {
-    if (!activeProfile) return;
+  async function runSync(announce: boolean): Promise<SyncResult | null> {
+    if (!activeProfile) return null;
     void retryPendingHealthWrites(activeProfile.id);
-    if (syncing || !isProUser) return;
+    if (syncing || !isProUser) return null;
     setSyncing(true);
     try {
       const res = await importHealthGlucose(activeProfile.id);
       if (res.inserted > 0) {
-        // One event per sync (not per row) to keep health-import volume sane.
-        logEvent("log_added", { source: "health" });
+        // One event per sync (not per row) to keep health-import volume sane. Its
+        // own kind keeps imports out of the counts of what the user logged, and
+        // out of first_log.
+        logEvent("log_added", { kind: "health_import" });
         bumpData();
       }
       if (announce) {
@@ -860,6 +890,7 @@ export default function DashboardScreen() {
           toast(msg, tone);
         }
       }
+      return res;
     } finally {
       setSyncing(false);
     }
@@ -1301,7 +1332,7 @@ export default function DashboardScreen() {
       // row (lib/services/glucoseEdit.ts).
       await applyGlucoseCorrection(editGlucose, value, period, tags, loggedAt);
       setEditGlucose(null);
-      logEvent("log_edited");
+      logEvent("log_edited", { kind: "glucose" });
       hapticSuccess();
       bumpData();
       return;
@@ -1327,7 +1358,8 @@ export default function DashboardScreen() {
       }
     });
     void noteJournalActivity();
-    logEvent("log_added", { source: "manual" });
+    logEvent("log_added", { kind: "glucose" });
+    void noteFirstLog("glucose");
     void noteLogAndMaybeReview("log_glucose");
     hapticSuccess();
     // NOTHING is armed here. A reading is a measurement, not a meal: logging a
@@ -1465,7 +1497,17 @@ export default function DashboardScreen() {
       );
       return;
     }
-    await runSync(true);
+    const synced = await runSync(true);
+    if (synced?.status === "ok") {
+      // Connected and the first import went through: the Health funnel step, and
+      // the day-1 nudge (and the Pro welcome step) have nothing left to ask for.
+      logEvent("health_connected", {
+        platform: Platform.OS === "ios" ? "ios" : "android",
+        imported: synced.inserted,
+      });
+      void markProWelcomeStep("health", "done");
+      void cancelTrialDay1Nudge();
+    }
     if (access?.newlyEnabled && activeProfile) {
       toast(writeOnMessage(), "success");
       await healthBackfill.offerOnce(activeProfile.id);
@@ -1845,6 +1887,10 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+
+      {/* Free-trial card: days left and open Pro welcome steps. Renders nothing
+          unless the store reports a running trial. */}
+      <TrialCard />
 
       {!loaded ? (
         // Unknown yet whether this is a first run or an existing user: neither
@@ -2570,6 +2616,10 @@ export default function DashboardScreen() {
         todayBolusUnits={todayBolusTotal}
         todayBasalUnits={todayBasalTotal}
       />
+
+      {/* One-time usage-data question for an install that predates the opt-in;
+          it decides for itself whether it is due (lib/analytics/ConsentSheet.tsx). */}
+      <AnalyticsConsentSheet />
     </AppBackground>
   );
 }

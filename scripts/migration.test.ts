@@ -45,6 +45,7 @@ import {
   migrateToV21,
   migrateToV22,
   migrateToV23,
+  migrateToV24,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -103,6 +104,7 @@ import {
   V23_FOODS_COLUMNS,
   V23_PORTION_LABEL_KEYS,
 } from "../lib/db/v23Sql";
+import { V24_CREATE } from "../lib/db/v24Sql";
 import { PORTION_LABEL_KEYS } from "../lib/db/types";
 import {
   adoptOrphanReminders,
@@ -705,6 +707,31 @@ function refused(db: DatabaseSync, sql: string): boolean {
   } catch {
     return true;
   }
+}
+
+/**
+ * A v23 install as far as v24 can tell: migrateToV24 only creates a table and
+ * touches nothing that exists, so a profile with one reading is a faithful
+ * enough neighbour to prove nothing around it moves.
+ */
+function makeV23Database(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE sugar_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      glucose_level_mgdl INTEGER NOT NULL,
+      logged_at TEXT NOT NULL,
+      FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+    );
+    INSERT INTO user_profiles (id, name, created_at) VALUES ('p1', 'Me', '2026-01-01T00:00:00.000Z');
+    INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, logged_at)
+      VALUES ('s1', 'p1', 110, '2026-01-02T08:00:00.000Z');
+    PRAGMA user_version = 23;
+  `);
+  return db;
 }
 
 async function main() {
@@ -4181,7 +4208,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 23", /const SCHEMA_VERSION = 23;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 24", /const SCHEMA_VERSION = 24;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4613,6 +4640,185 @@ async function main() {
     db.close();
   }
 
+  // ── U. v24: analytics_queue, the analytics outbox ──────────────────────────
+  section("U1. v24 analytics_queue: schema shape");
+  {
+    const db = makeV23Database();
+    await migrateToV24(adapt(db));
+
+    eq("migrateToV24 stamps 24", readUserVersion(db), 24);
+    ok(
+      "analytics_queue exists",
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='analytics_queue';")
+        .get() !== undefined
+    );
+    const cols = columns(db, "analytics_queue");
+    eq(
+      "exactly the documented columns, in order",
+      [...cols.keys()].join(","),
+      "id,name,props,ts,session_id,is_pro,batch_id"
+    );
+    eq("id is the primary key", cols.get("id")?.pk, 1);
+    for (const name of ["name", "props", "ts", "session_id", "is_pro"]) {
+      eq(`${name} is NOT NULL`, cols.get(name)?.notnull, 1);
+    }
+    eq("batch_id stays nullable until a send is attempted", cols.get("batch_id")?.notnull, 0);
+    eq("props defaults to an empty object", cols.get("props")?.dflt_value, "'{}'");
+    eq("is_pro defaults to 0", cols.get("is_pro")?.dflt_value, "0");
+    ok(
+      "ids are AUTOINCREMENT, so an id is never handed out twice",
+      /AUTOINCREMENT/.test(
+        (
+          db
+            .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='analytics_queue';")
+            .get() as { sql: string }
+        ).sql
+      )
+    );
+    eq(
+      "it has no foreign key: nothing in it belongs to a profile",
+      (db.prepare("PRAGMA foreign_key_list(analytics_queue);").all() as unknown[]).length,
+      0
+    );
+    ok("and no profile_id column", !cols.has("profile_id"));
+
+    eq("the profile around it is untouched", count(db, "user_profiles"), 1);
+    eq("and so is its reading", count(db, "sugar_logs"), 1);
+
+    db.exec(
+      "INSERT INTO analytics_queue (name, ts, session_id) VALUES ('app_open', '2026-01-01T00:00:00.000Z', 's1');"
+    );
+    const row = db.prepare("SELECT props, is_pro, batch_id FROM analytics_queue;").get() as {
+      props: string;
+      is_pro: number;
+      batch_id: string | null;
+    };
+    eq("a row written with only the required columns gets an empty props object", row.props, "{}");
+    eq("is_pro 0", row.is_pro, 0);
+    eq("and no batch id", row.batch_id, null);
+    ok(
+      "name is required",
+      refused(db, "INSERT INTO analytics_queue (ts, session_id) VALUES ('t', 's');")
+    );
+    ok(
+      "ts is required",
+      refused(db, "INSERT INTO analytics_queue (name, session_id) VALUES ('n', 's');")
+    );
+    ok(
+      "session_id is required",
+      refused(db, "INSERT INTO analytics_queue (name, ts) VALUES ('n', 't');")
+    );
+    db.close();
+  }
+
+  section("U2. v24 idempotence and atomicity");
+  {
+    const db = makeV23Database();
+    await migrateToV24(adapt(db));
+    db.exec(
+      `INSERT INTO analytics_queue (name, props, ts, session_id, is_pro, batch_id)
+       VALUES ('log_added', '{"kind":"meal"}', '2026-01-01T00:00:00.000Z', 's1', 1, 'b1');`
+    );
+
+    let reran = true;
+    try {
+      await migrateToV24(adapt(db));
+      await migrateToV24(adapt(db));
+    } catch (e) {
+      reran = false;
+      console.error(`  ✗ re-running v24 threw: ${String(e)}`);
+    }
+    ok("v24 is safe to re-run", reran);
+    eq("re-running keeps the queued row", count(db, "analytics_queue"), 1);
+    eq(
+      "and every value on it",
+      JSON.stringify(db.prepare("SELECT name, props, is_pro, batch_id FROM analytics_queue;").get()),
+      JSON.stringify({ name: "log_added", props: '{"kind":"meal"}', is_pro: 1, batch_id: "b1" })
+    );
+    eq("and stamps 24 again", readUserVersion(db), 24);
+    db.close();
+
+    // The table and the stamp commit together: a kill between them leaves
+    // neither, and the next launch simply runs the whole step.
+    const killed = makeV23Database();
+    const real = adapt(killed);
+    const dying = {
+      ...real,
+      execAsync: async (sql: string) => {
+        if (/user_version = 24/.test(sql)) throw new Error("simulated kill before the stamp");
+        await real.execAsync(sql);
+      },
+    } as unknown as typeof real;
+    let threw = false;
+    try {
+      await migrateToV24(dying);
+    } catch {
+      threw = true;
+    }
+    ok("a step killed before its stamp fails", threw);
+    eq("the version is not advanced", readUserVersion(killed), 23);
+    ok(
+      "and no half-made table is left behind",
+      killed.prepare("SELECT name FROM sqlite_master WHERE name='analytics_queue';").get() ===
+        undefined
+    );
+    await migrateToV24(adapt(killed));
+    eq("the next launch finishes the step", readUserVersion(killed), 24);
+    killed.close();
+  }
+
+  section("U3. v24 statements and fresh-install equivalence");
+  {
+    ok(
+      "V24_CREATE declares analytics_queue",
+      V24_CREATE.some((s) => /CREATE TABLE IF NOT EXISTS analytics_queue/.test(s))
+    );
+
+    const indexSrc = readFileSync(
+      join(import.meta.dirname, "..", "lib", "db", "index.ts"),
+      "utf8"
+    );
+    // SCHEMA_VERSION itself is asserted in S4; this section checks the v23 → v24
+    // step and the shape it leaves.
+    ok(
+      "the v23 → v24 step runs the real migration",
+      /currentVersion < 24\)\s*\{\s*await migrateToV24\(db\);/.test(indexSrc)
+    );
+    ok(
+      "and createSchemaV1 creates the table from the same V24_CREATE statements",
+      /for \(const statement of V24_CREATE\)/.test(indexSrc)
+    );
+
+    const ddl = (d: DatabaseSync): string =>
+      (
+        d
+          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='analytics_queue';")
+          .get() as { sql: string }
+      ).sql;
+    const migrated = makeV23Database();
+    await migrateToV24(adapt(migrated));
+    const fresh = new DatabaseSync(":memory:");
+    for (const statement of V24_CREATE) fresh.exec(statement);
+    eq("analytics_queue has the same DDL as a fresh install", ddl(migrated), ddl(fresh));
+    eq(
+      "and the same columns",
+      [...columns(migrated, "analytics_queue").keys()].join(","),
+      [...columns(fresh, "analytics_queue").keys()].join(",")
+    );
+    fresh.close();
+
+    // It is not profile data: deleting a profile (and the cascade through its
+    // readings) must leave the queue exactly as it was.
+    migrated.exec(
+      "INSERT INTO analytics_queue (name, ts, session_id) VALUES ('app_open', '2026-01-01T00:00:00.000Z', 's1');"
+    );
+    migrated.exec("DELETE FROM user_profiles WHERE id = 'p1';");
+    eq("the profile's cascade did run", count(migrated, "sugar_logs"), 0);
+    eq("and the queue is untouched by it", count(migrated, "analytics_queue"), 1);
+    migrated.close();
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -4626,7 +4832,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 23`, readUserVersion(db), 23);
+    eq(`v${start}: ends at 24`, readUserVersion(db), 24);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -4788,6 +4994,15 @@ async function main() {
       count(db, "foods_fts"),
       count(db, "foods")
     );
+
+    // v24: the analytics outbox, whatever the start version was.
+    ok(
+      `v${start}: analytics_queue table exists`,
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='analytics_queue';")
+        .get() !== undefined
+    );
+    eq(`v${start}: analytics_queue starts empty`, count(db, "analytics_queue"), 0);
     db.close();
   }
 
@@ -4807,7 +5022,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      23
+      24
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -4823,7 +5038,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 23", readUserVersion(db), 23);
+    eq("the next launch still ends at 24", readUserVersion(db), 24);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -4921,7 +5136,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 23 again", readUserVersion(db), 23);
+    eq("the chain lands on 24 again", readUserVersion(db), 24);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -5055,6 +5270,11 @@ async function main() {
     await migrateToV17(adapt(v17db));
     eq("migrateToV17 stamps 17", readUserVersion(v17db), 17);
     v17db.close();
+
+    const v24db = makeV23Database();
+    await migrateToV24(adapt(v24db));
+    eq("migrateToV24 stamps 24", readUserVersion(v24db), 24);
+    v24db.close();
 
     // The property the whole fix rests on: SQLite keeps user_version in the
     // database header, which is journalled, so a stamp written inside a
@@ -5487,7 +5707,7 @@ const CHAIN_CREATE_INJECTIONS = `
 /**
  * initDatabase()'s migration chain, in the same order and with the same guards.
  *
- * The v8 → v23 steps are the REAL exported functions (and therefore the REAL
+ * The v8 → v24 steps are the REAL exported functions (and therefore the REAL
  * stamps, which live inside their transactions). Only the pre-v8 steps, which are
  * inline DDL in lib/db/index.ts and cannot be imported without pulling in
  * expo-sqlite, are replayed here; K6 pins them against that file's source so this
@@ -5496,7 +5716,7 @@ const CHAIN_CREATE_INJECTIONS = `
  * against lib/db/index.ts's source and reproduce the crash it fixes (K1c).
  *
  * `stampFinal: false` is the crash under test: the chain runs to the end and the
- * process dies before lib/db/index.ts's closing `PRAGMA user_version = 23`.
+ * process dies before lib/db/index.ts's closing `PRAGMA user_version = 24`.
  */
 async function runChain(
   db: DatabaseSync,
@@ -5574,8 +5794,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 21) await migrateToV21(target);
   if (currentVersion >= 1 && currentVersion < 22) await migrateToV22(target);
   if (currentVersion >= 1 && currentVersion < 23) await migrateToV23(target);
+  if (currentVersion >= 1 && currentVersion < 24) await migrateToV24(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 23;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 24;");
 }
 
 function count(db: DatabaseSync, table: string): number {

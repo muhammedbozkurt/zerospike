@@ -77,7 +77,7 @@ function DownsellScreen() {
     // Distinguishes "no real discount configured" (e.g. sandbox missing an intro
     // price) from a bug: the honest fallback is shown, not the discount card.
     if (!offer.hasRealDiscount) {
-      logEvent("downsell_skipped_no_discount", { trigger });
+      logEvent("downsell_skipped_no_discount");
     }
   }, [offer, trigger]);
 
@@ -108,7 +108,7 @@ function DownsellScreen() {
       const feedback = purchaseToastFor(res);
       if (res.ok) {
         logEvent("downsell_accept", { trigger });
-        logEvent("purchase_completed", { tier: "annual" });
+        logEvent("purchase_completed", { tier: "annual", source: "downsell" });
         hapticSuccess();
         if (feedback) toast(t(feedback.key), feedback.kind);
         goHome();

@@ -27,6 +27,7 @@ import { useFeedback } from "./Feedback";
 import { logMed, upsertMedUse } from "../lib/db/meds";
 import { MedNamePicker } from "./MedNamePicker";
 import { logEvent } from "../lib/analytics";
+import { noteFirstLog } from "../lib/services/firstLog";
 import { noteJournalActivity } from "../lib/services/notifications";
 import { formatTime, relativeDay } from "../lib/format";
 
@@ -114,7 +115,8 @@ export function QuickAddSheet({
         note: medNote.trim() || null,
       });
       if (trimmedName) await upsertMedUse(activeProfile.id, trimmedName, takenAt);
-      logEvent("log_added", { source: "manual" });
+      logEvent("log_added", { kind: "med" });
+      void noteFirstLog("med");
       void noteJournalActivity();
       bumpData();
       hapticSuccess();

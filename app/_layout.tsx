@@ -18,6 +18,7 @@ import {
   getNotificationPermission,
   parseAlarmIdentifier,
   parseReminderIdentifier,
+  reportTrialNudgeIfDelivered,
   BASAL_DONE_ACTION_ID,
   type NotificationRoute,
 } from "../lib/services/notifications";
@@ -37,9 +38,10 @@ import {
 } from "../lib/store/AppContext";
 import { FeedbackProvider, FeedbackHost, useFeedback } from "../components/Feedback";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { logEvent } from "../lib/analytics";
+import { logCrash, logEvent } from "../lib/analytics";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
-import { winbackHasRealDiscount } from "../lib/services/purchases";
+import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSink";
+import { watchEntitlement, winbackHasRealDiscount } from "../lib/services/purchases";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
@@ -71,6 +73,9 @@ if (isScreenshotMode()) LogBox.ignoreAllLogs(true);
 // Attach Firebase (Analytics + Crashlytics) as the analytics sink once, before
 // any screen renders. No-op in dev; every event still mirrors to the console.
 initAnalyticsSink();
+// Second sink: schema v1 events to Supabase (outbox + batched POST). Self-gating
+// (off in dev, in screenshot mode, without extra.trackFnUrl, and when opted out).
+initSupabaseSink();
 
 // Register the Android reminders channel on every cold start, unconditionally -
 // no permission check, no onboarding check, before any reminder is ever
@@ -110,7 +115,8 @@ function alarmReminderContext(
  * Where each reminder should land when tapped. Post-meal/glucose/low-followup all
  * open the dashboard with the right period sheet pre-armed (index.tsx reads the
  * `sheet` param); basal opens app/basal-confirm.tsx (task B), weekly to Insights,
- * trial to Settings > App. Called both from the live response listener and the
+ * the trial reminder to Insights, the day-1 Health nudge to the dashboard's
+ * Health connect flow. Called both from the live response listener and the
  * cold-start getLastNotificationResponseAsync path.
  *
  * `context` carries the two fields only a basal notification's own response
@@ -168,11 +174,16 @@ function routeForNotification(
       router.navigate("/insights");
       break;
     case "trial":
-      // The reminder exists so a trial can be stopped before it converts, and
-      // the paywall it used to open cannot do that - only the store's own
-      // subscription management can, which is what Settings > App links to.
+      // The reminder speaks about what carries on with Pro, so it opens the
+      // place that shows it: Insights. The way out of a trial lives in the
+      // paywall timeline and Settings > App, not behind this tap.
       logEvent("trial_reminder_opened");
-      router.navigate("/settings/app");
+      router.navigate("/insights");
+      break;
+    case "trialNudge":
+      // The day-1 nudge offers to bring the Health history in: it opens the
+      // dashboard, which runs the existing Health connect flow.
+      router.navigate({ pathname: "/(tabs)", params: { health: "connect" } });
       break;
     default:
       break;
@@ -218,6 +229,12 @@ function RootNavigator() {
     scOnboarding?: string;
   }>();
   const { confirm } = useFeedback();
+
+  // Entitlement for the analytics sink. Only once AppContext is ready: before
+  // that isProUser is the pre-bootstrap default, not the user's real state.
+  useEffect(() => {
+    if (ready) setAnalyticsIsPro(isProUser);
+  }, [ready, isProUser]);
 
   // AppContext.setLanguage lives in AppProvider, an ANCESTOR of FeedbackProvider
   // in the tree below, so it cannot call useFeedback() itself. RootNavigator is
@@ -411,8 +428,9 @@ function RootNavigator() {
           identifier: last.notification.request.identifier,
           actionIdentifier: last.actionIdentifier,
         });
-      } catch {
+      } catch (err) {
         // no launching notification, nothing to route
+        logCrash(err, { screen: "layout", op: "coldStartNotification" });
       }
     })();
   }, [ready, onboarded, router]);
@@ -510,6 +528,29 @@ function RootNavigator() {
   // the splash colour) sits over the navigator so the tab bar / dashboard can
   // never paint for even one frame before the onboarding redirect (A6).
   const [revealed, setRevealed] = useState(false);
+
+  // The entitlement is re-read when the app comes to the foreground and when
+  // RevenueCat pushes an update (see watchEntitlement), so a trial that ended, a
+  // renewal or a purchase made elsewhere shows up without a restart. refreshPro
+  // leaves the flag alone when the store cannot answer, so an offline paying
+  // user is never demoted here (and never handed the win-back below).
+  useEffect(() => {
+    if (!ready) return;
+    return watchEntitlement(() => {
+      void refreshPro();
+    });
+  }, [ready, refreshPro]);
+
+  // The day-1 Health nudge is delivered by the OS with the app closed, so the
+  // app can only notice that it fired: on launch and on every foreground.
+  useEffect(() => {
+    if (!ready || !onboarded) return;
+    void reportTrialNudgeIfDelivered();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void reportTrialNudgeIfDelivered();
+    });
+    return () => sub.remove();
+  }, [ready, onboarded]);
 
   // One-time winback: when the Pro entitlement is lost, offer the discounted
   // annual once (only if a real discount is configured).
@@ -700,6 +741,10 @@ function RootNavigator() {
       />
       <Stack.Screen
         name="winback"
+        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="pro-welcome"
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
       <Stack.Screen

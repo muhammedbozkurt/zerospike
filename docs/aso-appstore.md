@@ -1,4 +1,4 @@
-# zerospike App Store + Google Play ASO - Index (2026-09, 2.3.2 round)
+# zerospike App Store + Google Play ASO - Index (2026-10, 2.3.7 round)
 
 This is the overview and rule set. The actual per-store, per-language copy lives in
 one file per language, in two folders:
@@ -19,6 +19,13 @@ per-market rationale, A/B alternatives and sources live in
 [../zerospike-store/aso/aso-2.3.0-research.md](../zerospike-store/aso/aso-2.3.0-research.md).
 Previous field values are kept inline as "(onceki: ...)" lines in each language file.
 Character counts are noted in parentheses after every length-limited field.
+
+2.3.7 ASO round (2026-10-06, all nine languages: en/de/fr/es by card K8, tr/it/pt/ar/ja by
+card K9): Spike section, privacy line, free-trial paragraph and Pro labels aligned with the
+paywall gates. Values that contain banned words are no longer kept inline: previous values,
+the 2.3.7 banned-word scan (patterns and results per language), every character count and
+the open risks live in
+[../zerospike-store/aso/CHANGES-2.3.7.md](../zerospike-store/aso/CHANGES-2.3.7.md).
 
 ## Character limits
 
@@ -47,6 +54,12 @@ Character counts are noted in parentheses after every length-limited field.
    The same applies to "warns", "hypoglycemia alarm", "diagnosis", "treatment",
    "recommended dose" and their equivalents (see CLAUDE.md). Alarms and reminders
    are described as reminders the user set, never as medical alerts.
+   Since 2.3.7 the scan list also covers alarm, warn(s), alert(s), diagnose/diagnosis,
+   treat/treatment, dose/dosage, "manage your", "control your" and their per-language
+   equivalents (patterns and results: CHANGES-2.3.7.md). In-app labels that contain those
+   words (the "No diagnosis" setup option, the Android "play as alarm" switch) are
+   described, not quoted. The disclaimer keeps "not medical advice, not a medical device"
+   and says decisions about the user's care stay with their healthcare team.
 3. Neutral, factual, non-promissory tone. No "your health companion" hype.
 4. Each long description carries a neutral disclaimer: the app is for personal
    tracking, is not medical advice and is not a medical device.
@@ -117,21 +130,50 @@ copy mentions the other platform's bridge.
   never imply screening, risk scoring or symptom assessment by the app.
 - 9 languages: Turkish, English, German, Spanish, French, Italian, Portuguese,
   Arabic, Japanese (last four added in 2.0.0).
-- Pro subscription tier (monthly, yearly with 7-day trial, one-time lifetime).
+- Pro subscription tier (monthly, yearly with 7-day trial for new subscribers, one-time
+  lifetime). Store copy states the trial, the automatic renewal, the 24-hour cancellation
+  rule and where to cancel (Apple Account settings, or Google Play > Payments &
+  subscriptions), and never a price.
+- Spike (2.3.7): optional in-app assistant for general diabetes education and app help.
+  Answers stream in, with sources and quick actions. It is not medical advice, not a
+  calculator and is never presented as a way to get a dose. A separate, off-by-default
+  switch lets Spike describe a summary of the user's last 14 days: computed on the device,
+  sent only together with the user's questions, not stored on our server (the server keeps
+  only usage counters, model name, token counts and latency, never the text or the summary).
+  Daily cap: 3 messages free, 50 with Pro. "Not stored on our server" is true for our
+  server only: AWS Bedrock retention depends on the model
+  (docs/apple-ads/privacy-2.3.7.md section 0.1), so re-check the sentence if SPIKE_MODEL
+  changes.
+- Usage analytics (2.3.7): optional, off by default, switched on under Settings > Data.
+  Copy says exactly that, adds that the analytics use a random install ID and are not
+  linked to the user's name or email, and does not call them "anonymous" (the install ID
+  is attached to the events, see docs/apple-ads/privacy-2.3.7.md section 0.4).
 
-Note: the app also has an SOS/emergency-contact screen and a "Spike" help chat, but
-these are intentionally left out of the store copy because they are outside the
-confirmed feature list for this ASO package.
+Note: the app also has an SOS/emergency-contact screen, which is intentionally left out
+of the store copy because it is outside the confirmed feature list for this ASO package.
+The "Spike" help chat is part of the store copy from 2.3.7 on, within the limits listed
+above.
 
 ## App Review Information notes (English only, single reviewer field)
 
 zerospike is a personal diabetes logbook (wellness/tracking). It does not diagnose,
 treat or provide medical advice; any insulin figure shown is plain arithmetic from
 the user's own saved ratios, and every such screen carries a "not medical advice"
-disclaimer. All health data stays on the device: there is no account, no server and
-no upload. HealthKit reads (blood glucose, insulin delivery, workouts) display the
-user's own data in the journal; manually logged glucose can optionally be written
-back to Health, only when the user turns this on in Settings, and nothing is shared.
+disclaimer. The diary (readings, meals, insulin, medication) is stored on the device
+and there is no account. Two optional features send data to our server, each with its
+own consent screen or switch: (1) the Spike assistant sends the user's question and
+chat and, only if a separate off-by-default switch is turned on, a summary of the last
+14 days computed on the device (counts, averages, target range, meal tags, injection
+regions, logging habits, diabetes type, insulin or tablet use; never individual
+readings or insulin amounts, and never records that came from Apple Health); messages
+are processed by Anthropic Claude models on Amazon Web Services (Amazon Bedrock) in
+the EU region, and our server does not store the text or the summary; (2) usage
+analytics (event names and counts under a random per-install identifier, never glucose
+values or free text) are off by default and can be switched on in Settings > Data.
+HealthKit reads (blood glucose, insulin delivery, workouts) display the user's own data
+in the journal; manually logged glucose can optionally be written back to Health, only
+when the user turns this on in Settings, and records that came from Apple Health are
+never sent to our server.
 Reminders and the post-meal timer are user-set notifications and alarms, not medical
 alerts. Setup includes an optional "No diagnosis" choice that simply hides insulin
 screens; the app never screens, scores risk or assesses symptoms. The SOS screen only
@@ -141,3 +183,6 @@ on a fresh install, complete the step-by-step setup (defaults are fine), then us
 sample data offer on the empty dashboard to populate the journal, Insights and the
 PDF report. Subscriptions (monthly; yearly with a 7-day free trial; one-time
 lifetime) run through StoreKit via RevenueCat and can be tested with a sandbox account.
+
+(2.3.7 wording follows docs/apple-ads/privacy-2.3.7.md section 6.2 and the 2.3.7 release
+card; check it against the release build before pasting it into App Store Connect.)

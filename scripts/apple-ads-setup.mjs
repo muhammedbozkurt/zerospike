@@ -56,6 +56,24 @@ const MARKETS = {
     searchMatchBid: '0.20',
     expected: { campaigns: 4, csvAdGroups: 12, keywords: 104, sharedNegatives: 30, discoveryNegatives: 139 },
   },
+  // Tek kampanyali, sure sinirli test: ayri Discovery listesi yok, negatifler kampanya duzeyindedir.
+  us: {
+    label: 'US',
+    country: 'US',
+    keywordsCsv: 'keywords-us.csv',
+    sharedNegativesCsv: 'negatives-us.csv',
+    discoveryNegativesCsv: null,
+    budgets: {
+      'ZS-US-Test': '3.50',
+    },
+    discoveryCampaign: 'ZS-US-Test',
+    searchMatchBid: '0.45',
+    devices: ['IPHONE', 'IPAD'],
+    newUsersOnly: false,
+    durationDays: 14,
+    checkDefaultAd: true,
+    expected: { campaigns: 1, csvAdGroups: 2, keywords: 13, sharedNegatives: 70, discoveryNegatives: 0 },
+  },
 };
 
 const SEARCH_MATCH_AD_GROUP = 'SearchMatch';
@@ -198,11 +216,19 @@ function buildPlan(marketKey) {
     defaultBid: market.searchMatchBid,
   });
 
+  for (const campaign of campaigns.values()) {
+    // Apple: dailyBudgetAmount, ad group defaultBidAmount degerinden kucuk olamaz.
+    const maxBid = [...campaign.adGroups.values()].reduce((max, g) => Math.max(max, Number(g.defaultBid)), 0);
+    if (Number(campaign.dailyBudget) < maxBid) {
+      throw new UserError(`${campaign.name}: gunluk butce ${campaign.dailyBudget} ${CURRENCY}, en yuksek teklif ${maxBid.toFixed(2)} ${CURRENCY}. Gunluk butce teklifi asmali.`);
+    }
+  }
+
   const sharedNegatives = loadNegatives(market.sharedNegativesCsv);
-  const discoveryNegatives = loadNegatives(market.discoveryNegativesCsv);
+  const discoveryNegatives = market.discoveryNegativesCsv ? loadNegatives(market.discoveryNegativesCsv) : null;
 
   for (const campaign of campaigns.values()) {
-    if (campaign.isDiscovery) {
+    if (campaign.isDiscovery && discoveryNegatives) {
       campaign.negatives = discoveryNegatives;
       campaign.negativesSource = market.discoveryNegativesCsv;
     } else {
@@ -223,7 +249,7 @@ function buildPlan(marketKey) {
     totalAdGroups: totalAdGroupCount,
     keywords: keywordCount,
     sharedNegatives: sharedNegatives.length,
-    discoveryNegatives: discoveryNegatives.length,
+    discoveryNegatives: discoveryNegatives ? discoveryNegatives.length : 0,
     negativeRows: [...campaigns.values()].reduce((sum, c) => sum + c.negatives.length, 0),
   };
 
@@ -239,9 +265,9 @@ function buildPlan(marketKey) {
     if (actual !== want) warnings.push(`SAYIM SAPMASI: ${label} beklenen ${want}, bulunan ${actual}`);
   }
 
-  const missingInDiscovery = sharedNegatives.filter(
+  const missingInDiscovery = discoveryNegatives ? sharedNegatives.filter(
     (n) => !discoveryNegatives.some((d) => d.text.toLowerCase() === n.text.toLowerCase() && d.matchType === n.matchType),
-  );
+  ) : [];
   if (missingInDiscovery.length > 0) {
     warnings.push(`${market.discoveryNegativesCsv} paylasilan listeyi kapsamiyor, eksik ${missingInDiscovery.length} satir. Ornek: ${missingInDiscovery[0].text}`);
   }
@@ -319,12 +345,32 @@ function printPlan(plan) {
     }
   }
 
+  const hasDiscoveryList = Boolean(market.discoveryNegativesCsv);
+  const sharedCampaignCount = campaigns.filter((c) => !c.isDiscovery).length;
+  const negativeSummary = hasDiscoveryList ? `${counts.sharedNegatives} + ${counts.discoveryNegatives}` : counts.sharedNegatives;
+  const devices = (market.devices || ['IPHONE']).join(' + ');
+  const audience = market.newUsersOnly === false ? 'tum kullanicilar (yeni kullanici kisiti yok)' : 'uygulamayi indirmemis kullanicilar';
   console.log('');
-  console.log(`CSV ozeti ${market.label}: ${counts.campaigns} kampanya / ${counts.csvAdGroups} ad group / ${counts.keywords} keyword / ${counts.sharedNegatives} + ${counts.discoveryNegatives} negatif`);
+  console.log(`CSV ozeti ${market.label}: ${counts.campaigns} kampanya / ${counts.csvAdGroups} ad group / ${counts.keywords} keyword / ${negativeSummary} negatif`);
   console.log(`Olusturulacak ad group: ${counts.csvAdGroups} (CSV) + 1 (${SEARCH_MATCH_AD_GROUP}, kelimesiz) = ${counts.totalAdGroups}`);
-  console.log(`Yazilacak negatif satiri: ${counts.negativeRows} (paylasilan liste ${counts.sharedNegatives} x 3 kampanya + Discovery listesi ${counts.discoveryNegatives}).`);
-  console.log(`Discovery listesi paylasilan listeyi zaten kapsadigi icin Discovery kampanyasina yalniz ${market.discoveryNegativesCsv} yazilir.`);
-  console.log('Ortak ayarlar: yerlesim APPSTORE_SEARCH_RESULTS, cihaz IPHONE, hedef kitle uygulamayi indirmemis kullanicilar, kampanya durumu PAUSED.');
+  if (hasDiscoveryList) {
+    console.log(`Yazilacak negatif satiri: ${counts.negativeRows} (paylasilan liste ${counts.sharedNegatives} x ${sharedCampaignCount} kampanya + Discovery listesi ${counts.discoveryNegatives}).`);
+    console.log(`Discovery listesi paylasilan listeyi zaten kapsadigi icin Discovery kampanyasina yalniz ${market.discoveryNegativesCsv} yazilir.`);
+  } else {
+    console.log(`Yazilacak negatif satiri: ${counts.negativeRows} (${market.sharedNegativesCsv}, kampanya duzeyi, ayri Discovery listesi yok).`);
+  }
+  console.log(`Ortak ayarlar: yerlesim APPSTORE_SEARCH_RESULTS, cihaz ${devices}, hedef kitle ${audience}, kampanya durumu PAUSED.`);
+  if (plan.schedule) {
+    const s = plan.schedule;
+    if (s.startTime) {
+      console.log(`Takvim: ${s.startTime} .. ${s.endTime} (UTC), ${s.days} gun${s.clamped ? '; gecmis tarih verildigi icin baslangic simdiye cekildi' : ''}.`);
+    } else {
+      console.log(`Takvim: ${s.days} gun. Baslangic --start YYYY-MM-DD ile verilir (apply icin zorunlu), bitis baslangictan ${s.days} gun sonradir.`);
+    }
+  }
+  if (market.checkDefaultAd) {
+    console.log('Default Ad: her ad group icin kontrol edilir; listede ad yoksa yalniz --create-default-ad ile olusturulur.');
+  }
 
   if (plan.warnings.length > 0) {
     console.log('');
@@ -546,33 +592,131 @@ function money(amount) {
   return { amount, currency: CURRENCY };
 }
 
+// Apple tarih bicimi: UTC, "Z" eki yok.
+function toApiTime(ms) {
+  return new Date(ms).toISOString().replace('Z', '');
+}
+
+function parseStart(value) {
+  if (value === 'now') return 'now';
+  const ms = /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? Date.parse(`${value}T00:00:00Z`) : NaN;
+  // Date.parse 2026-02-31 gibi tarihleri sessizce kaydirir; gidis donus kontrolu bunu yakalar.
+  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== value) {
+    throw new UserError(`--start gecersiz: "${value}". Ornek: --start 2026-10-14 (UTC 00:00) veya --start now.`);
+  }
+  return ms;
+}
+
+// Sure sinirli pazarlarda (durationDays) kampanya takvimi. Bitis her zaman baslangic + durationDays.
+function resolveSchedule(market, startArg, { required }) {
+  if (!market.durationDays) return null;
+  if (startArg == null) {
+    if (required) {
+      throw new UserError(`${market.label}: ${market.durationDays} gunluk pencere icin --start gerekir. Ornek: --start 2026-10-14 (release gunu, UTC 00:00) veya --start now.`);
+    }
+    return { days: market.durationDays, startTime: null, endTime: null, clamped: false };
+  }
+  const earliest = Date.now() + AD_GROUP_START_OFFSET_MS;
+  const wanted = startArg === 'now' ? earliest : startArg;
+  const clamped = wanted < earliest;
+  const startMs = clamped ? earliest : wanted;
+  return {
+    days: market.durationDays,
+    startTime: toApiTime(startMs),
+    endTime: toApiTime(startMs + market.durationDays * 86400000),
+    clamped,
+  };
+}
+
+const DEFAULT_AD_NAME = 'Default Ad';
+const DEFAULT_CREATIVE_NAME = 'Default Product Page';
+
+async function findDefaultCreativeId(client, adamId) {
+  const found = await client.request('POST', '/creatives/find', {
+    body: {
+      pagination: { offset: 0, limit: 100 },
+      conditions: [
+        { field: 'adamId', operator: 'EQUALS', values: [String(adamId)] },
+        { field: 'type', operator: 'EQUALS', values: ['DEFAULT_PRODUCT_PAGE'] },
+      ],
+    },
+  });
+  const hit = (found.data || [])[0];
+  if (hit) return hit.id;
+  const created = await client.request('POST', '/creatives', {
+    body: { adamId, name: DEFAULT_CREATIVE_NAME, type: 'DEFAULT_PRODUCT_PAGE' },
+  });
+  return created.data.id;
+}
+
+// Search Results ad group'larinda varsayilan ad Apple tarafindan otomatik saglanmasi beklenir (hesapta
+// DEFAULT_PRODUCT_PAGE creative'i yok, konsol kampanyalari yine de calisti), bu yuzden varsayilan davranis yalniz
+// kontroldur. Olusturma yalniz create=true iken denenir; uclar belgelenmis ama canli dogrulanmadi, hata
+// kurulumu durdurmaz.
+async function checkDefaultAd(client, campaignId, adGroup, state, create) {
+  try {
+    const listed = await client.request('GET', `/campaigns/${campaignId}/adgroups/${adGroup.id}/ads`);
+    const ads = (listed.data || []).filter((a) => !a.deleted);
+    if (ads.length > 0) {
+      console.log(`    Ad: ${ads.length} mevcut, Default Ad eklenmedi.`);
+      return;
+    }
+    if (!create) {
+      console.log('    Ad: listede ad yok; Search Results ad group\'unda varsayilan ad Apple tarafindan saglanmasi beklenir.');
+      console.log('        Gosterim gelmez ve ad group NO_AVAILABLE_ADS gosterirse ayni komutu --create-default-ad ile tekrar calistirin.');
+      return;
+    }
+    if (!state.creativeId) state.creativeId = await findDefaultCreativeId(client, Number(client.config.adamId));
+    const res = await client.request('POST', `/campaigns/${campaignId}/adgroups/${adGroup.id}/ads`, {
+      body: { name: DEFAULT_AD_NAME, creativeId: state.creativeId, status: 'ENABLED' },
+    });
+    console.log(`    Ad: Default Ad olusturuldu (id ${res.data.id}).`);
+  } catch (err) {
+    console.log(`    UYARI: Default Ad kontrol edilemedi veya olusturulamadi, konsolda ${adGroup.name} > Ads sekmesine bakin.`);
+    console.log(`    ${String(err.message).split('\n').join('\n    ')}`);
+  }
+}
+
 async function applyMarket(client, plan) {
   const { market, campaigns } = plan;
   const adamId = Number(client.config.adamId);
   console.log('');
   console.log(`### ${market.label} uygulaniyor`);
-  const startTime = new Date(Date.now() + AD_GROUP_START_OFFSET_MS).toISOString().replace('Z', '');
+  // "now" ve gecmis baslangic uygulama aninda yeniden hesaplanir; --market all uzun surerse pay tukenmesin.
+  const schedule = resolveSchedule(market, plan.startArg, { required: true });
+  const startTime = schedule ? schedule.startTime : toApiTime(Date.now() + AD_GROUP_START_OFFSET_MS);
+  const targetingDimensions = { deviceClass: { included: market.devices || ['IPHONE'] } };
+  // excluded = uygulamayi indirmemis kullanicilar, yani yeni kullanicilar.
+  if (market.newUsersOnly !== false) targetingDimensions.appDownloaders = { excluded: [String(adamId)] };
+  const adState = { creativeId: null };
 
   for (const c of campaigns) {
     let campaign = await findCampaignByName(client, c.name);
     if (campaign) {
       console.log(`- Kampanya var, atlandi: ${c.name} (id ${campaign.id})`);
+      if (schedule && String(campaign.endTime || '').slice(0, 16) !== schedule.endTime.slice(0, 16)) {
+        console.log(`  UYARI: mevcut takvim ${campaign.startTime || '-'} .. ${campaign.endTime || '-'}, istenen ${schedule.startTime} .. ${schedule.endTime}. Mevcut kampanya guncellenmez.`);
+      }
     } else {
-      const res = await client.request('POST', '/campaigns', {
-        body: {
-          orgId: client.config.orgId,
-          name: c.name,
-          adamId,
-          countriesOrRegions: [c.country],
-          adChannelType: 'SEARCH',
-          supplySources: ['APPSTORE_SEARCH_RESULTS'],
-          billingEvent: 'TAPS',
-          dailyBudgetAmount: money(c.dailyBudget),
-          status: 'PAUSED',
-        },
-      });
+      const campaignBody = {
+        orgId: client.config.orgId,
+        name: c.name,
+        adamId,
+        countriesOrRegions: [c.country],
+        adChannelType: 'SEARCH',
+        supplySources: ['APPSTORE_SEARCH_RESULTS'],
+        billingEvent: 'TAPS',
+        dailyBudgetAmount: money(c.dailyBudget),
+        status: 'PAUSED',
+      };
+      if (schedule) {
+        campaignBody.startTime = schedule.startTime;
+        campaignBody.endTime = schedule.endTime;
+      }
+      const res = await client.request('POST', '/campaigns', { body: campaignBody });
       campaign = res.data;
-      console.log(`- Kampanya olusturuldu: ${c.name} (id ${campaign.id}, butce ${c.dailyBudget} ${CURRENCY}, durum PAUSED)`);
+      const when = schedule ? `, takvim ${schedule.startTime} .. ${schedule.endTime} UTC` : '';
+      console.log(`- Kampanya olusturuldu: ${c.name} (id ${campaign.id}, butce ${c.dailyBudget} ${CURRENCY}, durum PAUSED${when})`);
     }
 
     const existingNegatives = await listAll(client, `/campaigns/${campaign.id}/negativekeywords`);
@@ -604,16 +748,14 @@ async function applyMarket(client, plan) {
             defaultBidAmount: money(g.defaultBid),
             automatedKeywordsOptIn: g.searchMatch,
             status: 'ENABLED',
-            targetingDimensions: {
-              deviceClass: { included: ['IPHONE'] },
-              // excluded = uygulamayi indirmemis kullanicilar, yani yeni kullanicilar.
-              appDownloaders: { excluded: [String(adamId)] },
-            },
+            targetingDimensions,
           },
         });
         adGroup = res.data;
         console.log(`  - Ad group olusturuldu: ${g.name} (id ${adGroup.id}, teklif ${g.defaultBid} ${CURRENCY}, Search Match ${g.searchMatch ? 'acik' : 'kapali'})`);
       }
+
+      if (market.checkDefaultAd) await checkDefaultAd(client, campaign.id, adGroup, adState, plan.createDefaultAd === true);
 
       if (g.keywords.length === 0) {
         console.log(`    Keyword: yok (${g.name} kelimesiz calisir).`);
@@ -753,7 +895,7 @@ function cmdSelftestJwt(keyPath) {
 }
 
 function parseArgs(argv) {
-  const args = { mode: 'dry-run', market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30 };
+  const args = { mode: 'dry-run', market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30, start: null, createDefaultAd: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--dry-run') args.mode = 'dry-run';
@@ -765,6 +907,8 @@ function parseArgs(argv) {
     else if (a === '--market') args.market = String(argv[++i] || '').toLowerCase();
     else if (a === '--campaign') args.campaign = argv[++i];
     else if (a === '--days') args.days = Number(argv[++i]);
+    else if (a === '--start') args.start = argv[++i];
+    else if (a === '--create-default-ad') args.createDefaultAd = true;
     else if (a === '--help' || a === '-h') args.mode = 'help';
     else throw new UserError(`Bilinmeyen secenek: ${a}. Kullanim icin --help.`);
   }
@@ -786,7 +930,10 @@ function printHelp() {
     '  --selftest-jwt <pem>   Verilen ozel anahtarla client secret uretip dogrular',
     '',
     'Secenekler:',
-    '  --market de|fr|all     Varsayilan all',
+    '  --market de|fr|us|all  Varsayilan all',
+    '  --start <YYYY-MM-DD|now>  Sure sinirli pazar (us) icin baslangic gunu (UTC 00:00); bitis baslangictan 14 gun sonradir.',
+    '                         us icin --apply sirasinda zorunlu, dry-run da onizler',
+    '  --create-default-ad    Ad group listesinde ad yoksa Default Ad olusturmayi dener (varsayilan: yalniz kontrol)',
     '  --campaign <ad>        Rapor icin kampanya adi',
     '  --days <sayi>          Rapor penceresi, varsayilan 30',
     '',
@@ -797,7 +944,7 @@ function printHelp() {
 function resolveMarkets(value) {
   if (value === 'all') return Object.keys(MARKETS);
   if (value in MARKETS) return [value];
-  throw new UserError(`Gecersiz pazar: ${value}. Beklenen: de, fr veya all.`);
+  throw new UserError(`Gecersiz pazar: ${value}. Beklenen: de, fr, us veya all.`);
 }
 
 async function main() {
@@ -811,12 +958,24 @@ async function main() {
 
   const marketKeys = resolveMarkets(args.market);
   const plans = marketKeys.map((k) => buildPlan(k));
+  const startArg = args.start == null ? null : parseStart(args.start);
+  for (const plan of plans) {
+    plan.startArg = startArg;
+    plan.createDefaultAd = args.createDefaultAd;
+    plan.schedule = resolveSchedule(plan.market, startArg, { required: args.mode === 'apply' });
+    if (startArg != null && !plan.market.durationDays) {
+      plan.warnings.push(`--start yalniz sure sinirli pazarlar icin gecerlidir, ${plan.market.label} icin yok sayildi.`);
+    }
+  }
 
   if (args.mode === 'dry-run') {
     console.log('MOD: dry-run. Ag cagrisi yapilmaz, hicbir sey olusturulmaz.');
     for (const plan of plans) printPlan(plan);
     console.log('');
-    console.log('Gercekten olusturmak icin: node scripts/apple-ads-setup.mjs --apply --market <de|fr|all>');
+    console.log('Gercekten olusturmak icin: node scripts/apple-ads-setup.mjs --apply --market <de|fr|us|all>');
+    if (plans.some((p) => p.schedule)) {
+      console.log('Sure sinirli pazar (us) icin: node scripts/apple-ads-setup.mjs --apply --market us --start YYYY-MM-DD');
+    }
     return;
   }
 

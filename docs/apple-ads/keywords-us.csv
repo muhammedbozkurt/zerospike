@@ -1,16 +1,14 @@
 campaign,ad group,keyword,match type,bid,note
-ZS-US-Brand,Brand-Core,zerospike,Exact,0.35,"Organik rank 1 (pulse); marka savunmasi, ucuz ve yuksek donusum"
-ZS-US-Brand,Brand-Core,zerospike app,Exact,0.35,Marka + app
-ZS-US-Brand,Brand-Core,zero spike,Exact,0.35,Ayrik yazim
-ZS-US-Brand,Brand-Broad,zerospike,Broad,0.40,Yazim hatasi yakalama
-ZS-US-Generic,Diary-Core,blood sugar diary,Exact,0.70,"Takip edilen kelime, rank NULL; app adimizla birebir (Blood Sugar Diary)"
-ZS-US-Generic,Diary-Core,diabetes logbook,Exact,0.66,"Takip edilen kelime, organik rank 121 (yok sayilir); mySugr ort. rank 1.0"
-ZS-US-Generic,Diary-Core,blood sugar tracker,Exact,0.70,"Rank NULL; rakip Glucose Blood Sugar Tracker ort. rank 1.76, en pahali terim olmasi beklenir"
-ZS-US-Generic,Diary-Core,glucose diary,Exact,0.58,"Uzun kuyruk varyant, daha ucuz olmali"
-ZS-US-Generic,Diary-Core,blood sugar log,Exact,0.62,Varyant
-ZS-US-Generic,Diary-Core,a1c tracker,Exact,0.58,"Takip edilen kelime, rank NULL; mySugr ort. rank 1.0"
-ZS-US-Generic,Diary-Core,prediabetes tracker,Exact,0.54,"Takip edilen kelime, rank NULL; tani olmadan takip akisiyla ortusur"
-ZS-US-Generic,Diary-Core,type 2 diary,Exact,0.49,"Takip edilen kelime, rank NULL, dusuk hacim"
-ZS-US-Generic,Diary-Core,carb counter,Exact,0.58,"Takip edilen kelime, rank NULL; rakip Carb Manager ort. rank 1.0, kitle ortusmesi kismi"
-ZS-US-Competitor,Comp-Core,mysugr,Exact,0.80,Global lider; US'de ort. rank 1.31. Tek rakip terimi ile sinirli test
-ZS-US-Discovery,,,,,KAPALI: US test fazinda Discovery ACILMAZ. Search Match genis kitleye acilir ve US CPT tavani ekonomiyi asar
+ZS-US-Test,Broad,blood sugar log,Broad,0.45,
+ZS-US-Test,Broad,blood sugar tracker,Broad,0.45,
+ZS-US-Test,Broad,blood sugar diary,Broad,0.45,
+ZS-US-Test,Broad,glucose log,Broad,0.45,
+ZS-US-Test,Broad,glucose tracker,Broad,0.45,
+ZS-US-Test,Broad,diabetes diary,Broad,0.45,
+ZS-US-Test,Broad,diabetes log,Broad,0.45,
+ZS-US-Test,Broad,diabetes tracker,Broad,0.45,
+ZS-US-Test,Broad,insulin log,Broad,0.45,Kayit cercevesi; hesaplayici veya doz terimi degil
+ZS-US-Test,Broad,carb counter diabetes,Broad,0.45,Karbonhidrat sayimi kayit cercevesi; doz ima etmez
+ZS-US-Test,Brand,zerospike,Exact,0.30,
+ZS-US-Test,Brand,zero spike,Exact,0.30,
+ZS-US-Test,Brand,zerospike app,Exact,0.30,

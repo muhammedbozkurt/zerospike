@@ -118,7 +118,7 @@ export function MedEditSheet({
       if (activeProfile && trimmedName) {
         await upsertMedUse(activeProfile.id, trimmedName, takenAt);
       }
-      logEvent("log_edited");
+      logEvent("log_edited", { kind: "med" });
       hapticSuccess();
       onSaved();
     } finally {

@@ -16,6 +16,11 @@ import {
   type TrialStatus,
 } from "../../lib/services/purchases";
 import { hasSpikeConsent, withdrawSpikeConsent } from "../../lib/services/spikeConsent";
+import { getProWelcomeState } from "../../lib/services/proWelcome";
+import { getHealthSyncEnabled } from "../../lib/services/health";
+import { useHealthAvailable } from "../../lib/services/healthAvailability";
+import { incompleteCount, withHealthMirror } from "../../lib/proWelcome";
+import { StoreStatusNotice } from "../../components/StoreStatusNotice";
 import { SectionLabel } from "../../components/ui";
 import { LanguagePicker } from "../../components/LanguagePicker";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
@@ -29,9 +34,14 @@ export default function AppSettings() {
   const { t } = useTranslation();
   const router = useRouter();
   const { toast, confirm } = useFeedback();
-  const { lang, setLanguage, isProUser, refreshPro } = useApp();
+  const { lang, setLanguage, isProUser, refreshPro, activeProfile } = useApp();
   const { columnPad } = useLayout();
+  const healthAvailable = useHealthAvailable();
+  const profileId = activeProfile?.id;
   const [restoring, setRestoring] = useState(false);
+  // Open Pro welcome steps; null until read. The welcome row follows these for
+  // any Pro user, trial or not: the steps do not expire with the trial.
+  const [stepsLeft, setStepsLeft] = useState<number | null>(null);
   const [spikeConsent, setSpikeConsent] = useState(false);
   // Which plan unlocked Pro, so the "Pro active" row can open store subscription
   // management for a monthly/annual subscriber but not for a lifetime purchase
@@ -58,7 +68,14 @@ export default function AppSettings() {
       if (!isProUser) return;
       void getPlan().then(setProPlan);
       void getTrialStatus().then(setTrial);
-    }, [isProUser])
+      void (async () => {
+        const state = withHealthMirror(
+          await getProWelcomeState(),
+          await getHealthSyncEnabled(profileId)
+        );
+        setStepsLeft(incompleteCount(state, healthAvailable));
+      })();
+    }, [isProUser, profileId, healthAvailable])
   );
 
   async function onWithdrawSpikeConsent() {
@@ -146,6 +163,7 @@ export default function AppSettings() {
       ) : null}
 
       <SectionLabel>{t("settings.proSection")}</SectionLabel>
+      <StoreStatusNotice onRestore={onRestore} busy={restoring} />
       {isProUser ? (
         <Row
           icon="checkmark-circle"
@@ -162,6 +180,14 @@ export default function AppSettings() {
           onPress={() => router.push({ pathname: "/paywall", params: { reason: "settings" } })}
         />
       )}
+      {isProUser && stepsLeft != null && stepsLeft > 0 ? (
+        <Row
+          icon="sparkles-outline"
+          label={t("trial.welcomeRow")}
+          sub={t("trial.stepsLeft", { count: stepsLeft })}
+          onPress={() => router.push("/pro-welcome")}
+        />
+      ) : null}
       {!isProUser ? (
         <Row icon="pricetag-outline" label={t("settings.redeemCode")} onPress={onRedeemCode} />
       ) : null}

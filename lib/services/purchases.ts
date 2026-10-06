@@ -1,6 +1,9 @@
-import { Platform } from "react-native";
+import { useSyncExternalStore } from "react";
+import { AppState, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { logEvent } from "../analytics";
+import { logCrash, logEvent } from "../analytics";
+import { getAnalyticsEnabled, onAnalyticsEnabledChange } from "../analytics/optOut";
+import { getDeviceId } from "../identity/deviceId";
 
 /**
  * RevenueCat purchases layer.
@@ -34,6 +37,18 @@ const RC_ERR_CANCELLED = "1";
 const RC_ERR_ALREADY_PURCHASED = "6";
 const RC_ERR_ALREADY_IN_USE = "7";
 
+// INTRO_ELIGIBILITY_STATUS (same by-value reasoning). Only ELIGIBLE promises a
+// trial: UNKNOWN is RevenueCat saying it cannot tell, and its own guidance is to
+// show the non-intro price rather than a misleading offer.
+const RC_INTRO_ELIGIBLE = 2;
+
+/**
+ * How long the paywall waits on the eligibility answer before showing the plain
+ * price. The check is a native call on the one screen that sells the product, so
+ * it is bounded like the restore is.
+ */
+export const ELIGIBILITY_TIMEOUT_MS = 8000;
+
 export type PlanId = "monthly" | "annual" | "lifetime";
 
 export interface ProProduct {
@@ -66,18 +81,277 @@ let configured = false;
 function rc(): any {
   return require("react-native-purchases").default;
 }
+
+// ── Store health ────────────────────────────────────────────────────────────
+
+/**
+ * Whether the last store read worked. "error" is NOT "not subscribed": the
+ * stored entitlement keeps standing (see verifyProWithStore) and the UI uses
+ * this to offer "Restore purchases" where a stuck state could otherwise hide it.
+ */
+export type StoreStatus = "ok" | "error";
+
+let storeStatus: StoreStatus = "ok";
+const storeStatusListeners = new Set<() => void>();
+
+function setStoreStatus(next: StoreStatus): void {
+  if (next === storeStatus) return;
+  storeStatus = next;
+  storeStatusListeners.forEach((l) => l());
+}
+
+export function getStoreStatus(): StoreStatus {
+  return storeStatus;
+}
+
+export function subscribeStoreStatus(listener: () => void): () => void {
+  storeStatusListeners.add(listener);
+  return () => {
+    storeStatusListeners.delete(listener);
+  };
+}
+
+export function useStoreStatus(): StoreStatus {
+  return useSyncExternalStore(subscribeStoreStatus, getStoreStatus, getStoreStatus);
+}
+
+/**
+ * Marks the store unreachable. Logged once per outage (the ok to error flip),
+ * not on every retry: an offline user would otherwise report on each focus.
+ */
+function noteStoreFailure(op: string, err: unknown): void {
+  const flipped = storeStatus !== "error";
+  setStoreStatus("error");
+  if (flipped) logCrash(err, { service: "purchases", op });
+}
+
+// ── Last known entitlement facts ────────────────────────────────────────────
+
+export type PeriodType = "trial" | "normal" | "intro" | "unknown";
+
+interface EntitlementFacts {
+  periodType: PeriodType;
+  /** Epoch ms of the current period's end, null when the store reported none. */
+  expiresAt: number | null;
+}
+
+const FACTS_KEY = "zerospike.proFacts";
+
+function periodTypeOf(ent: unknown): PeriodType {
+  switch (String((ent as any)?.periodType ?? "").toUpperCase()) {
+    case "TRIAL":
+      return "trial";
+    case "INTRO":
+      return "intro";
+    case "NORMAL":
+      return "normal";
+    default:
+      return "unknown";
+  }
+}
+
+function isoMs(iso: unknown): number | null {
+  if (typeof iso !== "string" || iso === "") return null;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Whether Pro is currently running as a free trial, and how much is left. */
+export interface TrialStatus {
+  active: boolean;
+  /** Whole days remaining, rounded UP, so the last partial day still reads as a
+   *  day the user has. Null when the store reported no expiry at all. */
+  daysLeft: number | null;
+  /** Epoch ms the trial turns into the first charge, null when the store
+   *  reported none. The ending reminder is timed from this. */
+  expiresAt: number | null;
+}
+
+const NO_TRIAL: TrialStatus = { active: false, daysLeft: null, expiresAt: null };
+
+/**
+ * The trial state of ONE entitlement. Only periodType TRIAL counts: INTRO is a
+ * discounted PAID period, not a free trial, and must never be presented as one.
+ * An entitlement already past its expiry is not a running trial either.
+ */
+function trialStatusOf(ent: unknown): TrialStatus {
+  if (!ent || periodTypeOf(ent) !== "trial") return NO_TRIAL;
+  const expiresAt = isoMs((ent as any).expirationDate);
+  if (expiresAt === null) return { active: true, daysLeft: null, expiresAt: null };
+  const left = Math.ceil((expiresAt - Date.now()) / 86400000);
+  return left > 0 ? { active: true, daysLeft: left, expiresAt } : NO_TRIAL;
+}
+
+async function readFacts(): Promise<EntitlementFacts | null> {
+  try {
+    const raw = await AsyncStorage.getItem(FACTS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const periodType = periodTypeOf({ periodType: parsed?.periodType });
+    const expiresAt = typeof parsed?.expiresAt === "number" ? parsed.expiresAt : null;
+    return { periodType, expiresAt };
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "readFacts" });
+    return null;
+  }
+}
+
+async function writeFacts(facts: EntitlementFacts | null): Promise<void> {
+  try {
+    if (facts) await AsyncStorage.setItem(FACTS_KEY, JSON.stringify(facts));
+    else await AsyncStorage.removeItem(FACTS_KEY);
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "writeFacts" });
+  }
+}
+
+/**
+ * The single place a store answer becomes the cached entitlement. Serialized, so
+ * two answers arriving together (a foreground refresh and RevenueCat's own push)
+ * can neither interleave their cache writes nor report the same loss twice.
+ *
+ * The true to false step is the only "entitlement lost" there is: it needs a
+ * SUCCESSFUL store answer (a failed read never reaches here) that says inactive
+ * while the cache said active. The period type comes from the lapsed entitlement
+ * itself, or from the last facts seen while it was active.
+ *
+ * It is also where a stale trial-ending reminder comes down: every path that
+ * learns the store's word (the foreground refresh, RevenueCat's push, a purchase,
+ * a restore) lands here, so a trial that converted, lapsed or was refunded takes
+ * its pending reminder with it, and one that is still running leaves it alone.
+ */
+let applyChain: Promise<unknown> = Promise.resolve();
+
+function applyCustomerInfo(info: unknown): Promise<boolean> {
+  const run = applyChain.then(() => applyCustomerInfoNow(info));
+  applyChain = run.catch((err) =>
+    logCrash(err, { service: "purchases", op: "applyCustomerInfo" })
+  );
+  return run;
+}
+
+async function applyCustomerInfoNow(info: unknown): Promise<boolean> {
+  const ent = (info as any)?.entitlements?.active?.[ENTITLEMENT_ID];
+  const active = Boolean(ent);
+  let wasActive = false;
+  try {
+    wasActive = (await AsyncStorage.getItem(PRO_KEY)) === "true";
+    await AsyncStorage.setItem(PRO_KEY, active ? "true" : "false");
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "cacheWrite" });
+  }
+  const before = await readFacts();
+  const lost = wasActive && !active;
+  if (active) {
+    await writeFacts({ periodType: periodTypeOf(ent), expiresAt: isoMs(ent.expirationDate) });
+  } else {
+    if (lost) {
+      const fromStore = periodTypeOf((info as any)?.entitlements?.all?.[ENTITLEMENT_ID]);
+      const periodType = fromStore !== "unknown" ? fromStore : (before?.periodType ?? "unknown");
+      logEvent("entitlement_lost", { period_type: periodType });
+    }
+    await writeFacts(null);
+  }
+  // Gated on a trial having been seen (or Pro having just lapsed) so a free or
+  // paying user's every foreground refresh does not touch the notification stack.
+  if (!trialStatusOf(ent).active && (before?.periodType === "trial" || lost)) {
+    dropTrialReminder();
+  }
+  // A trial cancelled in the store will not convert, and a reminder saying Pro
+  // carries on would be wrong. Only a running trial qualifies, so a free or
+  // paying user's refreshes still leave the notification stack alone.
+  if (trialStatusOf(ent).active && (ent as any).willRenew === false) {
+    dropTrialReminder();
+  }
+  setStoreStatus("ok");
+  return active;
+}
+
+/**
+ * Takes the pending trial-ending reminder (and the day-1 nudge) down. The
+ * notifications service is required on demand: it pulls in the whole native
+ * notification stack, which a plain entitlement read must not load.
+ */
+function dropTrialReminder(): void {
+  void (async () => {
+    try {
+      const notifications: { cancelTrialReminder: () => Promise<void> } =
+        require("./notifications");
+      await notifications.cancelTrialReminder();
+    } catch (err) {
+      logCrash(err, { service: "purchases", op: "dropTrialReminder" });
+    }
+  })();
+}
+
+/** Reads the customer info from the store and runs it through the cache. Throws when the store cannot be read. */
+async function fetchCustomerInfo(): Promise<any> {
+  await ensureConfigured();
+  const info = await rc().getCustomerInfo();
+  if (info == null || typeof info !== "object") throw new Error("empty customer info");
+  await applyCustomerInfo(info);
+  return info;
+}
+
+/**
+ * Links this install's anonymous id to the RevenueCat customer, so a purchase can
+ * be matched to the usage events. That is an analytics purpose, so it follows the
+ * analytics switch: nothing is sent while usage analytics is off.
+ */
+async function attachDeviceId(): Promise<void> {
+  try {
+    if (!(await getAnalyticsEnabled())) return;
+    const id = await getDeviceId();
+    if (id && id !== "unknown") await rc().setAttributes({ device_id: id });
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "setAttributes" });
+  }
+}
+
+/** Follows the Settings > Data switch: off takes the id back off the customer, on puts it there again. */
+async function syncDeviceIdAttribute(enabled: boolean): Promise<void> {
+  if (enabled) {
+    await attachDeviceId();
+    return;
+  }
+  try {
+    await rc().setAttributes({ device_id: null });
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "clearAttribute" });
+  }
+}
+
+/**
+ * Puts the id on the customer, or takes it off, to match the analytics switch as
+ * it stands when the SDK starts. A switch turned off while the SDK was not
+ * running never reached syncDeviceIdAttribute, so an id left by an earlier
+ * session would otherwise stay on the customer.
+ */
+async function syncDeviceIdToSwitch(): Promise<void> {
+  try {
+    await syncDeviceIdAttribute(await getAnalyticsEnabled());
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "syncAttribute" });
+  }
+}
+
 async function ensureConfigured(): Promise<void> {
   if (DEBUG_MOCK_PURCHASES || configured) return;
   try {
     rc().configure({ apiKey: RC_API_KEY });
     configured = true;
-  } catch {
-    // configure failures degrade gracefully to "not pro"
+  } catch (err) {
+    noteStoreFailure("configure", err);
   }
-  if (configured && Platform.OS === "ios") {
+  if (!configured) return;
+  if (Platform.OS === "ios") {
     // Apple Search Ads attribution token; no ATT prompt needed, no-op below iOS 14.3.
-    rc().enableAdServicesAttributionTokenCollection().catch(() => {});
+    rc()
+      .enableAdServicesAttributionTokenCollection()
+      .catch((err: unknown) => logCrash(err, { service: "purchases", op: "adServices" }));
   }
+  void syncDeviceIdToSwitch();
+  onAnalyticsEnabledChange(syncDeviceIdAttribute);
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -92,7 +366,8 @@ async function ensureConfigured(): Promise<void> {
 export async function isProCached(): Promise<boolean> {
   try {
     return (await AsyncStorage.getItem(PRO_KEY)) === "true";
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "readCache" });
     return false;
   }
 }
@@ -104,73 +379,105 @@ export async function isProCached(): Promise<boolean> {
  * That distinction matters to the launch path: it starts from the cached flag, so
  * a failure it could not tell apart from a genuine "no longer subscribed" would
  * demote a paying user mid-session and trip the win-back offer at them. Callers
- * that only want a boolean use isPro() below, which keeps the original
- * "unreachable counts as not pro" reading.
+ * that only want a boolean use isPro() below, which falls back to the last
+ * known entitlement when the store cannot answer.
  */
 export async function verifyProWithStore(): Promise<boolean | null> {
   if (DEBUG_MOCK_PURCHASES) return isProCached();
   try {
-    await ensureConfigured();
-    const info = await rc().getCustomerInfo();
-    const active = Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
-    // Keep the launch cache warm. Only written on a SUCCESSFUL answer, so a
-    // failure can never overwrite a paying user's stored flag.
-    await AsyncStorage.setItem(PRO_KEY, active ? "true" : "false").catch(() => {});
-    return active;
-  } catch {
+    // The cache is only written from a SUCCESSFUL answer (applyCustomerInfo), so
+    // a failure can never overwrite a paying user's stored flag.
+    const info = await fetchCustomerInfo();
+    return Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
+  } catch (err) {
+    noteStoreFailure("getCustomerInfo", err);
     return null;
   }
 }
 
+/** The entitlement as best known: the store's answer, else the last one cached. */
 export async function isPro(): Promise<boolean> {
-  return (await verifyProWithStore()) === true;
+  const verified = await verifyProWithStore();
+  return verified ?? (await isProCached());
+}
+
+/**
+ * Keeps the entitlement fresh while the app runs: `onChange` fires when the app
+ * comes back to the foreground (a trial can end, or a subscription renew, while
+ * it was away) and after RevenueCat pushes an update of its own (a renewal, a
+ * refund, a purchase made on another device). The pushed info is run through the
+ * cache first, so even a caller that ignores `onChange` never reads a stale flag,
+ * and that same pass retires the trial-ending reminder once the trial is no
+ * longer running (see applyCustomerInfo). Returns the unsubscribe function. A
+ * no-op on a dev build, which has no store.
+ */
+export function watchEntitlement(onChange: () => void): () => void {
+  if (DEBUG_MOCK_PURCHASES) return () => {};
+  let stopped = false;
+  let listening = false;
+  const appSub = AppState.addEventListener("change", (state) => {
+    if (state === "active") onChange();
+  });
+  const listener = (info: unknown) => {
+    if (info == null || typeof info !== "object") return;
+    void applyCustomerInfo(info).then(() => {
+      if (!stopped) onChange();
+    });
+  };
+  void ensureConfigured().then(() => {
+    if (stopped || !configured) return;
+    try {
+      rc().addCustomerInfoUpdateListener(listener);
+      listening = true;
+    } catch (err) {
+      logCrash(err, { service: "purchases", op: "addListener" });
+    }
+  });
+  return () => {
+    stopped = true;
+    appSub.remove();
+    if (!listening) return;
+    try {
+      rc().removeCustomerInfoUpdateListener(listener);
+    } catch (err) {
+      logCrash(err, { service: "purchases", op: "removeListener" });
+    }
+  };
 }
 
 /** Which plan unlocked Pro (for display), if known. */
 export async function getPlan(): Promise<PlanId | null> {
-  try {
-    if (!DEBUG_MOCK_PURCHASES) {
-      await ensureConfigured();
-      const info = await rc().getCustomerInfo();
+  if (!DEBUG_MOCK_PURCHASES) {
+    try {
+      const info = await fetchCustomerInfo();
       const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
       // Android subscription ids carry a base plan, e.g. "zerospike_pro:monthly".
       const id = (ent?.productIdentifier ?? "").split(":")[0];
       if (id === PRO_PRODUCTS.lifetime.productId) return "lifetime";
       if (id === PRO_PRODUCTS.annual.productId) return "annual";
       if (id === PRO_PRODUCTS.monthly.productId) return "monthly";
+    } catch (err) {
+      // An unreachable store falls through to the plan stored at purchase time.
+      noteStoreFailure("getPlan", err);
     }
+  }
+  try {
     const v = await AsyncStorage.getItem(PLAN_KEY);
     return v === "monthly" || v === "annual" || v === "lifetime" ? v : null;
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "readPlan" });
     return null;
   }
 }
 
-/** Whether Pro is currently running as a free trial, and how much is left. */
-export interface TrialStatus {
-  active: boolean;
-  /** Whole days remaining, rounded UP, so the last partial day still reads as a
-   *  day the user has. Null when the store reported no expiry at all. */
-  daysLeft: number | null;
-}
-
-const NO_TRIAL: TrialStatus = { active: false, daysLeft: null };
-
-function daysUntil(iso: unknown): number | null {
-  if (typeof iso !== "string" || iso === "") return null;
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return null;
-  return Math.ceil((ms - Date.now()) / 86400000);
-}
-
 /**
- * The free-trial state as the STORE sees it, or null when the store could not be
- * read at all (offline, SDK not configured, request failed) - the same
- * "unreachable is not an answer" distinction verifyProWithStore draws, so the UI
- * can stay silent instead of claiming there is no trial.
+ * The free-trial state as the STORE sees it. When the store cannot be read at
+ * all (offline, SDK not configured, request failed) the last trial seen is
+ * returned instead, and null only when there is none: the same "unreachable is
+ * not an answer" distinction verifyProWithStore draws, so the UI can stay silent
+ * instead of claiming there is no trial.
  *
- * Only periodType TRIAL counts. INTRO is a discounted PAID period, not a free
- * trial, and must never be presented as one.
+ * Only periodType TRIAL counts (see trialStatusOf).
  */
 export async function getTrialStatus(): Promise<TrialStatus | null> {
   if (DEBUG_MOCK_PURCHASES) {
@@ -181,23 +488,41 @@ export async function getTrialStatus(): Promise<TrialStatus | null> {
       const pro = (await AsyncStorage.getItem(PRO_KEY)) === "true";
       const plan = await AsyncStorage.getItem(PLAN_KEY);
       if (!pro || plan !== "annual") return NO_TRIAL;
-      return { active: true, daysLeft: FALLBACK_TRIAL_DAYS };
-    } catch {
+      return {
+        active: true,
+        daysLeft: FALLBACK_TRIAL_DAYS,
+        expiresAt: Date.now() + FALLBACK_TRIAL_DAYS * 86400000,
+      };
+    } catch (err) {
+      logCrash(err, { service: "purchases", op: "mockTrial" });
       return null;
     }
   }
   try {
-    await ensureConfigured();
-    const info = await rc().getCustomerInfo();
-    const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
-    if (!ent) return NO_TRIAL;
-    if (String(ent.periodType ?? "").toUpperCase() !== "TRIAL") return NO_TRIAL;
-    const left = daysUntil(ent.expirationDate);
-    if (left !== null && left <= 0) return NO_TRIAL;
-    return { active: true, daysLeft: left };
-  } catch {
-    return null;
+    const info = await fetchCustomerInfo();
+    return trialStatusOf(info?.entitlements?.active?.[ENTITLEMENT_ID]);
+  } catch (err) {
+    noteStoreFailure("getTrialStatus", err);
+    return lastKnownTrialStatus();
   }
+}
+
+/**
+ * The trial as last seen while the store was readable, for when it is not: a
+ * trial user who goes offline keeps their countdown instead of it vanishing.
+ * Null when nothing was seen, or the remembered trial has already run out.
+ */
+async function lastKnownTrialStatus(): Promise<TrialStatus | null> {
+  const facts = await readFacts();
+  if (!facts || facts.periodType !== "trial") return null;
+  if (facts.expiresAt === null) return { active: true, daysLeft: null, expiresAt: null };
+  const left = Math.ceil((facts.expiresAt - Date.now()) / 86400000);
+  return left > 0 ? { active: true, daysLeft: left, expiresAt: facts.expiresAt } : null;
+}
+
+/** Whether the user is inside a free trial right now, for event params. */
+export async function isDuringTrial(): Promise<boolean> {
+  return (await getTrialStatus())?.active === true;
 }
 
 /** Why a purchase attempt did not activate Pro. */
@@ -209,8 +534,11 @@ export type PurchaseErrorClass = "cancelled" | "alreadyOwned" | "storeError";
  *               recovered without a restart, see `recovered`).
  * - `cancelled` the user dismissed the native sheet (distinct from a store
  *               error), so the caller can route a cancel into the downsell.
- * - `recovered` Pro became active via already-owned recovery, so the UI can
- *               tell the user "this is already yours" instead of "purchased".
+ * - `recovered` Pro was already the user's and the attempt only found it again
+ *               (an already-owned error, or another error with an entitlement
+ *               that predates the attempt), so the UI can tell the user "this is
+ *               already yours" instead of "purchased". An error that arrives
+ *               after the store took the payment is a plain success instead.
  * - `error`     failure classification when `!ok` (null on success).
  */
 export interface PurchaseOutcome {
@@ -231,25 +559,35 @@ const OK_OUTCOME: PurchaseOutcome = {
  * After a failed purchase, tries to activate Pro without a restart: first checks
  * whether the entitlement is in fact already active (the store can report
  * "already purchased" for something the user genuinely owns), then, for an
- * already-owned error, runs a restore. Store-read only; never throws.
+ * already-owned error, runs a restore. Store-read only; never throws. Returns the
+ * active entitlement, or null when Pro could not be found.
  */
-async function recoverEntitlement(alreadyOwned: boolean): Promise<boolean> {
+async function recoverEntitlement(alreadyOwned: boolean): Promise<object | null> {
   try {
-    await ensureConfigured();
-    const info = await rc().getCustomerInfo();
-    if (info?.entitlements?.active?.[ENTITLEMENT_ID]) return true;
-  } catch {
+    const info = await fetchCustomerInfo();
+    const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
+    if (ent) return ent;
+  } catch (err) {
     // fall through to the restore attempt
+    noteStoreFailure("recoverCustomerInfo", err);
   }
   if (alreadyOwned) {
     try {
       const info: any = await withTimeout(rc().restorePurchases(), 20000);
-      return Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
-    } catch {
-      return false;
+      await applyCustomerInfo(info);
+      return info?.entitlements?.active?.[ENTITLEMENT_ID] ?? null;
+    } catch (err) {
+      noteStoreFailure("recoverRestore", err);
+      return null;
     }
   }
-  return false;
+  return null;
+}
+
+/** Whether the entitlement's latest purchase is at or after `sinceMs`. An unreadable date says no. */
+function boughtSince(ent: unknown, sinceMs: number): boolean {
+  const at = isoMs((ent as any)?.latestPurchaseDate);
+  return at !== null && at >= sinceMs;
 }
 
 /**
@@ -260,7 +598,8 @@ async function recoverEntitlement(alreadyOwned: boolean): Promise<boolean> {
  */
 async function classifyAndRecover(
   e: any,
-  plan: PlanId
+  plan: PlanId,
+  startedAt: number
 ): Promise<PurchaseOutcome> {
   const code = e?.code;
   if (Boolean(e?.userCancelled) || code === RC_ERR_CANCELLED) {
@@ -268,9 +607,18 @@ async function classifyAndRecover(
   }
   const alreadyOwned =
     code === RC_ERR_ALREADY_PURCHASED || code === RC_ERR_ALREADY_IN_USE;
-  if (await recoverEntitlement(alreadyOwned)) {
-    await AsyncStorage.setItem(PLAN_KEY, plan).catch(() => {});
-    return { ok: true, cancelled: false, recovered: true, error: null };
+  const ent = await recoverEntitlement(alreadyOwned);
+  if (ent) {
+    await AsyncStorage.setItem(PLAN_KEY, plan).catch((err) =>
+      logCrash(err, { service: "purchases", op: "writePlan" })
+    );
+    // An error other than already-owned can arrive AFTER the store took the
+    // payment (a receipt that could not be posted, a dropped connection). An
+    // entitlement whose latest purchase is newer than this attempt is that
+    // purchase landing, not an old one found again, so it settles like any other
+    // purchase: a trial it started gets its reminder and its trial_started.
+    const landed = !alreadyOwned && boughtSince(ent, startedAt);
+    return { ok: true, cancelled: false, recovered: !landed, error: null };
   }
   return {
     ok: false,
@@ -288,6 +636,7 @@ export async function purchasePro(
     await AsyncStorage.setItem(PLAN_KEY, plan);
     return OK_OUTCOME;
   }
+  const startedAt = Date.now();
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -307,7 +656,10 @@ export async function purchasePro(
     }
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
-    if (ok) await AsyncStorage.setItem(PLAN_KEY, plan);
+    if (ok) {
+      await applyCustomerInfo(customerInfo);
+      await AsyncStorage.setItem(PLAN_KEY, plan);
+    }
     return {
       ok,
       cancelled: false,
@@ -315,8 +667,34 @@ export async function purchasePro(
       error: ok ? null : "storeError",
     };
   } catch (e: any) {
-    return classifyAndRecover(e, plan);
+    return classifyAndRecover(e, plan, startedAt);
   }
+}
+
+/**
+ * What a completed purchase did to the trial, as the STORE reports it now.
+ * - `started`  a new free trial began; `endsAt` is the store's own expiry (null
+ *              when it reported none) and `daysLeft` its length from today.
+ * - `running`  the purchase was an already-owned recovery while a trial is
+ *              active: that trial is not new, and its reminder is not ours to touch.
+ * - `none`     no trial is running (a paid period, or a failed purchase): any
+ *              reminder left over from an earlier trial no longer applies.
+ *
+ * The decision never comes from the offer the paywall showed: the same package
+ * starts a trial for one account and a paid period for another (the user already
+ * took the intro offer on another device), and only the store knows which.
+ */
+export type TrialAfterPurchase =
+  | { kind: "started"; endsAt: number | null; daysLeft: number | null }
+  | { kind: "running" }
+  | { kind: "none" };
+
+export async function trialAfterPurchase(res: PurchaseOutcome): Promise<TrialAfterPurchase> {
+  if (!res.ok) return { kind: "none" };
+  const status = await getTrialStatus();
+  if (status?.active !== true) return { kind: "none" };
+  if (res.recovered) return { kind: "running" };
+  return { kind: "started", endsAt: status.expiresAt, daysLeft: status.daysLeft };
 }
 
 export type RestoreResult = "restored" | "none" | "error";
@@ -349,8 +727,10 @@ export async function restore(): Promise<RestoreResult> {
   try {
     await ensureConfigured();
     const info: any = await withTimeout(rc().restorePurchases(), 20000);
-    return info?.entitlements?.active?.[ENTITLEMENT_ID] ? "restored" : "none";
-  } catch {
+    const active = await applyCustomerInfo(info);
+    return active ? "restored" : "none";
+  } catch (err) {
+    noteStoreFailure("restore", err);
     return "error";
   }
 }
@@ -365,8 +745,9 @@ export async function presentCodeRedemption(): Promise<void> {
   try {
     await ensureConfigured();
     await rc().presentCodeRedemptionSheet();
-  } catch {
+  } catch (err) {
     // sheet unavailable, ignore
+    logCrash(err, { service: "purchases", op: "codeRedemption" });
   }
 }
 
@@ -384,7 +765,12 @@ export interface PlanMeta {
   /** Raw numeric price for derived math (savings %, per-month). */
   price: number;
   currencyCode: string;
-  /** True when the plan carries a real free trial (intro price 0). */
+  /**
+   * True when the plan carries a real free trial (intro price 0) THIS user can
+   * still take. On iOS the store decides that per account (an intro offer is once
+   * per subscription group), so the offer existing is not enough: see
+   * loadOfferings. Everything the paywall says about a trial hangs off this flag.
+   */
   hasFreeTrial: boolean;
   /** A paid intro price (not a free trial), if any. */
   introPriceString: string | null;
@@ -501,6 +887,32 @@ function devFallbackPlans(): OfferingPlans {
 }
 
 /**
+ * Which of these store products this account may still take the intro offer on.
+ * iOS only: Apple grants a free trial once per subscription group per Apple
+ * Account, and `product.introPrice` is there whether or not it is still
+ * available, so the offer on the product proves nothing about the person.
+ * Anything short of a definite ELIGIBLE (INELIGIBLE, UNKNOWN, no intro offer, a
+ * missing entry, a failed or slow check) is "not eligible": the paywall then
+ * shows the plain price instead of promising a trial it may not give.
+ */
+async function trialEligibleProductIds(productIds: string[]): Promise<Set<string>> {
+  const eligible = new Set<string>();
+  if (productIds.length === 0) return eligible;
+  try {
+    const result: any = await withTimeout(
+      rc().checkTrialOrIntroductoryPriceEligibility(productIds),
+      ELIGIBILITY_TIMEOUT_MS
+    );
+    for (const id of productIds) {
+      if (Number(result?.[id]?.status) === RC_INTRO_ELIGIBLE) eligible.add(id);
+    }
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "trialEligibility" });
+  }
+  return eligible;
+}
+
+/**
  * Loads the current offering as display-ready plan metadata. In release, when
  * the offering cannot be fetched or mapped, returns status 'unavailable' (never
  * a hardcoded fallback) and fires offerings_fallback_shown so the paywall can
@@ -514,18 +926,32 @@ export async function loadOfferings(): Promise<OfferingsResult> {
   try {
     await ensureConfigured();
     const offerings = await rc().getOfferings();
+    setStoreStatus("ok");
     const pkgs = offerings?.current?.availablePackages ?? [];
     reason = pkgs.length === 0 ? "empty_offering" : "no_mappable_packages";
-    const plans: OfferingPlans = {};
+    const mapped: { meta: PlanMeta; plan: PlanId; productId: string }[] = [];
     for (const p of pkgs) {
       const m = mapRcPackage(p);
-      if (m) plans[m.plan] = m.meta;
+      if (!m) continue;
+      mapped.push({ meta: m.meta, plan: m.plan, productId: String(p.product?.identifier ?? "") });
     }
+    if (Platform.OS === "ios") {
+      const withTrial = mapped.filter((m) => m.meta.hasFreeTrial);
+      const eligible = await trialEligibleProductIds(withTrial.map((m) => m.productId));
+      for (const m of withTrial) {
+        if (eligible.has(m.productId)) continue;
+        m.meta.hasFreeTrial = false;
+        m.meta.freeTrialDays = 0;
+      }
+    }
+    const plans: OfferingPlans = {};
+    for (const m of mapped) plans[m.plan] = m.meta;
     if (Object.keys(plans).length > 0) {
       return { status: "ready", isDevFallback: false, plans };
     }
-  } catch {
+  } catch (err) {
     reason = "fetch_error";
+    noteStoreFailure("getOfferings", err);
   }
   logEvent("offerings_fallback_shown", { reason });
   return { status: "unavailable", isDevFallback: false, plans: {} };
@@ -607,7 +1033,8 @@ export async function getDownsellOffer(): Promise<DownsellOffer> {
       standardPriceString: standard!.priceString,
       savingsPercent: savingsPct(standard, discounted),
     };
-  } catch {
+  } catch (err) {
+    noteStoreFailure("getDownsellOffer", err);
     return NO_DOWNSELL;
   }
 }
@@ -624,6 +1051,7 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
     await AsyncStorage.setItem(PLAN_KEY, "annual");
     return OK_OUTCOME;
   }
+  const startedAt = Date.now();
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -638,7 +1066,10 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
     }
     const { customerInfo } = await Purchases.purchasePackage(target);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
-    if (ok) await AsyncStorage.setItem(PLAN_KEY, "annual");
+    if (ok) {
+      await applyCustomerInfo(customerInfo);
+      await AsyncStorage.setItem(PLAN_KEY, "annual");
+    }
     return {
       ok,
       cancelled: false,
@@ -646,6 +1077,6 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
       error: ok ? null : "storeError",
     };
   } catch (e: any) {
-    return classifyAndRecover(e, "annual");
+    return classifyAndRecover(e, "annual", startedAt);
   }
 }

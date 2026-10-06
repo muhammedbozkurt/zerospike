@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Linking, Platform, Pressable, Switch, Text, View } from "react-native";
+import { Linking, Platform, Pressable, Share, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -34,15 +34,25 @@ import {
 import { healthWriteStatusKey } from "../../lib/healthWriteRetry";
 import type { GlucoseUnit } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { DirIcon } from "../../components/DirIcon";
+import { withAlpha } from "../../components/rich/GlassCard";
 import { SectionLabel } from "../../components/ui";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
 import { formatDate, formatLocale, formatTime } from "../../lib/format";
-import { THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, TABULAR, THEME } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
+import {
+  getAnalyticsConsent,
+  setAnalyticsConsent,
+  type ConsentChoice,
+  type ConsentState,
+} from "../../lib/analytics/optOut";
+import { deleteMyServerRecords } from "../../lib/analytics/serverRecords";
+import { getDeviceId } from "../../lib/identity/deviceId";
 
 /** One bullet inside the Apple Health transparency card's expanded detail. */
 function HealthDetailRow({
@@ -247,6 +257,81 @@ export default function DataSettings() {
   async function onToggleSimPro(value: boolean) {
     await setProOverride(value);
     await refreshPro();
+  }
+
+  // Usage analytics are opt-in: the switch reads "on" only for a stored
+  // "granted" (never asked and declined both read "off"). The stored answer is an
+  // AsyncStorage read, so the switch shows a spinner until it resolves instead
+  // of flashing a state that may be wrong.
+  const [analyticsConsent, setConsentState] = useState<ConsentState>("unanswered");
+  const [analyticsLoaded, setAnalyticsLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void getAnalyticsConsent().then((state) => {
+      if (!alive) return;
+      setConsentState(state);
+      setAnalyticsLoaded(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const analyticsOn = analyticsConsent === "granted";
+  async function onToggleAnalytics(value: boolean) {
+    const previous = analyticsConsent;
+    const next: ConsentChoice = value ? "granted" : "declined";
+    setConsentState(next);
+    try {
+      await setAnalyticsConsent(next);
+    } catch {
+      // the choice could not be stored, so the switch must not claim it was
+      setConsentState(previous);
+    }
+  }
+
+  // The random installation ID the usage events, the Spike counter and the
+  // subscription events are filed under, so the user can see it and quote it.
+  // "unknown" is getDeviceId's storage-failure fallback, not an ID.
+  const [installId, setInstallId] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void getDeviceId().then((id) => {
+      if (alive) setInstallId(id === "unknown" ? null : id);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  async function onShareInstallId() {
+    if (!installId) return;
+    try {
+      await Share.share({ message: installId });
+    } catch {
+      // the share sheet could not open; the ID is still selectable on screen
+    }
+  }
+
+  const [deletingServer, setDeletingServer] = useState(false);
+  async function onDeleteServerRecords() {
+    if (deletingServer) return;
+    const ok = await confirm({
+      title: t("settings.analytics.deleteConfirmTitle"),
+      message: t("settings.analytics.deleteConfirmBody"),
+      confirmLabel: t("common.delete"),
+      destructive: true,
+      icon: "cloud-offline-outline",
+    });
+    if (!ok) return;
+    setDeletingServer(true);
+    try {
+      const res = await deleteMyServerRecords();
+      toast(
+        res.ok ? t("settings.analytics.deleteDone") : t("settings.analytics.deleteFailed"),
+        res.ok ? "success" : "error"
+      );
+    } finally {
+      setDeletingServer(false);
+    }
   }
 
   // Opt-in "write my manual readings to Apple Health", per profile - one Health
@@ -533,7 +618,7 @@ export default function DataSettings() {
                 <HealthDetailRow
                   icon="phone-portrait-outline"
                   title={t("settings.healthOnDeviceTitle")}
-                  body={t("settings.healthOnDeviceBody")}
+                  body={t("settings.healthOnDeviceBody", { health: healthName })}
                 />
                 <HealthDetailRow
                   icon="options-outline"
@@ -623,6 +708,93 @@ export default function DataSettings() {
           ) : null}
         </>
       ) : null}
+
+      <SectionLabel>{t("settings.analytics.section")}</SectionLabel>
+      <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
+        <View className="flex-row items-center">
+          <Ionicons name="stats-chart-outline" size={19} color={THEME.muted} />
+          <Text className="flex-1 ml-3 font-medium text-ink">
+            {t("settings.analytics.title")}
+          </Text>
+          {analyticsLoaded ? (
+            <Switch
+              value={analyticsOn}
+              onValueChange={onToggleAnalytics}
+              trackColor={{ true: THEME.accent, false: THEME.border }}
+              thumbColor={THEME.ink}
+              accessibilityLabel={t("settings.analytics.title")}
+            />
+          ) : (
+            <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+          )}
+        </View>
+        <Text className="text-mut text-xs mt-2">{t("settings.analytics.hint")}</Text>
+      </View>
+      <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-2 mt-1">
+        <View className="flex-row items-center">
+          <Ionicons name="finger-print-outline" size={19} color={THEME.muted} />
+          <Text className="flex-1 ml-3 font-medium text-ink">
+            {t("settings.analytics.installId")}
+          </Text>
+          <Pressable
+            onPress={onShareInstallId}
+            disabled={!installId}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={t("settings.analytics.installIdShare")}
+          >
+            <Ionicons
+              name="share-outline"
+              size={20}
+              color={installId ? THEME.accent : THEME.muted}
+            />
+          </Pressable>
+        </View>
+        {/* Base direction pinned to LTR: in an RTL language the hyphens of a
+            UUID would otherwise reorder its groups. selectable = press and hold
+            copies it, on both platforms. */}
+        <Text
+          selectable
+          className="text-ink text-xs mt-2"
+          style={[TABULAR, { writingDirection: "ltr", textAlign: "left" }]}
+        >
+          {installId ?? "-"}
+        </Text>
+        <Text className="text-mut text-xs mt-2">{t("settings.analytics.installIdHint")}</Text>
+      </View>
+      {/* Row's sub line is fixed at one line, and the German text cuts off at 130%
+          font size; this row is the Row layout with a two-line sub. */}
+      <Pressable
+        onPress={onDeleteServerRecords}
+        accessibilityRole="button"
+        accessibilityLabel={t("settings.analytics.deleteRow")}
+        className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 active:opacity-80"
+        style={{ minHeight: 60 }}
+      >
+        <View
+          className="w-9 h-9 rounded-xl items-center justify-center"
+          style={{ backgroundColor: withAlpha(GLUCOSE_RICH.low, 0.14) }}
+        >
+          <Ionicons name="cloud-offline-outline" size={18} color={GLUCOSE_RICH.low} />
+        </View>
+        <View className="flex-1 ml-3">
+          <Text
+            className="text-[15px] font-semibold"
+            style={{ color: GLUCOSE_RICH.low }}
+            numberOfLines={2}
+          >
+            {t("settings.analytics.deleteRow")}
+          </Text>
+          <Text className="text-mut text-[12px] mt-0.5" numberOfLines={2}>
+            {t("settings.analytics.deleteSub")}
+          </Text>
+        </View>
+        {deletingServer ? (
+          <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+        ) : (
+          <DirIcon name="chevron-forward" size={18} color={THEME.muted} />
+        )}
+      </Pressable>
 
       {__DEV__ ? (
         <>

@@ -209,7 +209,7 @@ function JournalScreen() {
     setEditGlucose(null);
     if (!target) return;
     await applyGlucoseCorrection(target, value, period, tags, loggedAt);
-    logEvent("log_edited");
+    logEvent("log_edited", { kind: "glucose" });
     hapticSuccess();
     bumpData();
   }

@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BackHandler,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
+  Switch,
   Text,
   View,
   type ViewStyle,
@@ -26,7 +26,6 @@ import {
 import {
   applyNotificationPrefs,
   requestNotificationPermission,
-  type NotificationPermission,
 } from "../lib/services/notifications";
 import {
   DEFAULT_PREFS,
@@ -47,11 +46,25 @@ import {
 } from "../components/ReminderPlanPreview";
 import { buildRevealPlan, type RevealPlanItem } from "../lib/revealPlan";
 import { POST_MEAL_WINDOW_MIN } from "../lib/postMealTimer";
-import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
+import type { GlucoseUnit, InsulinMode } from "../lib/db/types";
+import {
+  BASE_STEPS,
+  DIABETES_OPTIONS,
+  TREATMENT_OPTIONS,
+  basalReminderOnAtFinish,
+  buildOnboardingSteps,
+  diabetesTypeOf,
+  onboardingDoneEvent,
+  onboardingFlags,
+  onboardingStepEvent,
+  planSetupDecision,
+  type DiabetesOption,
+  type OnboardingStepId,
+  type TreatmentOption,
+} from "../lib/onboardingSteps";
 import {
   clampHypoThreshold,
   clampTarget,
-  formatGlucose,
   glucoseToDisplay,
   glucoseFromDisplay,
   glucoseUnitLabel,
@@ -62,8 +75,8 @@ import { RangeInput } from "../components/RangeInput";
 import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InsulinProductPicker } from "../components/InsulinProductPicker";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
-import { logEvent } from "../lib/analytics";
-import { HEALTH_NAME } from "../lib/services/health";
+import { logCrash, logEvent } from "../lib/analytics";
+import { markAnalyticsConsentPrompted, setAnalyticsConsent } from "../lib/analytics/optOut";
 import { hapticSelect } from "../lib/haptics";
 import { SectionLabel } from "../components/ui";
 import { AcceptCheck } from "../components/form";
@@ -77,31 +90,15 @@ import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
 import { AppBackground, GradientCTA, withAlpha } from "../components/rich";
-import { RADIUS, TABULAR, THEME, GLUCOSE_RICH } from "../lib/theme/tokens";
-import { upper } from "../lib/upper";
+import { RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
 import { parseDecimalText } from "../lib/numberInput";
 import { useLayout } from "../lib/useLayout";
-
-// Sensible defaults used by the "I'm not sure" path (never blocks a new user).
-// Taking this path leaves ratios_confirmed at 0, so the calculator can say out
-// loud that it is running on a default rather than on the user's own number.
-const DEFAULT_CARB_RATIO = 10;
-const DEFAULT_ISF_MGDL = 40;
 
 // The ADA-shaped starting ranges, prefilled so nobody has to invent a number.
 // Also the generic mg/dL fallback used while parsing typed text, before any
 // diabetes answer has picked a matrix-specific default (see TARGET_DEFAULTS_MGDL).
 const DEFAULT_FASTING_RANGE = { min: 80, max: 130 };
 const DEFAULT_POSTMEAL_RANGE = { min: 80, max: 180 };
-
-const DIABETES_OPTIONS = ["type1", "type2", "gestational", "prediabetes", "none", "other"] as const;
-type DiabetesOption = (typeof DIABETES_OPTIONS)[number];
-
-// What the user tracks, asked as one question. Insulin and oral medication are
-// two independent flags on the profile, so the four answers below are just the
-// four combinations of them (see effectiveTreatment / hasInsulin / hasOralMeds).
-const TREATMENT_OPTIONS = ["insulin", "pills", "both", "none"] as const;
-type TreatmentOption = (typeof TREATMENT_OPTIONS)[number];
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -124,48 +121,27 @@ const AUTO_ADVANCE_MS = 150;
 const ON_ACCENT = "#062126";
 
 type Phase = "welcome" | "quiz" | "reveal";
-type StepId =
-  | "name"
-  | "unit"
-  | "diabetes"
-  | "insulin"
-  | "pillsOnly"
-  | "targets"
-  | "insulinProducts"
-  | "carbRatio"
-  | "isf"
-  | "basal"
-  | "widget"
-  | "notify"
-  | "medReminder"
-  | "reminderPlan"
-  | "disclaimer";
+type StepId = OnboardingStepId;
 
 /**
  * The anchor glyph per step. Ionicons throughout - the app's icon language does
  * not change for one screen - picking the nearest glyph to each approved mark.
  * A step missing from this map draws none on purpose: its own content (the six
- * diabetes options, the two range editors, the insulin form, the widget band,
- * the reminder layout) already fills the frame, and a plate above it would only
- * push the CTA off a short phone.
+ * diabetes options, the two range editors, the insulin form, the reminder
+ * layout) already fills the frame, and a plate above it would only push the CTA
+ * off a short phone.
  */
 const STEP_GLYPHS: Partial<Record<StepId, IconName>> = {
   name: "person-outline",
   unit: "speedometer-outline",
   insulin: "medical-outline",
   pillsOnly: "medkit-outline",
-  carbRatio: "water-outline",
-  isf: "locate-outline",
-  basal: "moon-outline",
   medReminder: "medkit-outline",
-  notify: "notifications-outline",
   disclaimer: "shield-outline",
 };
 
-// The fixed head of the quiz (everything after it branches on the answers).
 // Hoisted so the screenshot hook below can point at the diabetes question by
 // name instead of hard-coding an index that would drift if a step is inserted.
-const BASE_STEPS: StepId[] = ["name", "unit", "diabetes"];
 const DIABETES_STEP_IDX = BASE_STEPS.indexOf("diabetes");
 
 /**
@@ -177,12 +153,6 @@ const DIABETES_STEP_IDX = BASE_STEPS.indexOf("diabetes");
  * so no profile or DB write ever happens. Double-locked behind isScreenshotMode()
  * (dev + env), so in a release build this returns null and the branch is dead.
  */
-// "other" (prefer not to say) and a skipped question both land on the DB's
-// "unknown" type - the one non-answer this screen can produce.
-function diabetesTypeOf(opt: DiabetesOption | null): DiabetesType {
-  return opt == null || opt === "other" ? "unknown" : opt;
-}
-
 function screenshotDiabetes(param?: string): DiabetesOption | null {
   if (!isScreenshotMode() || !param) return null;
   return (DIABETES_OPTIONS as readonly string[]).includes(param)
@@ -244,6 +214,122 @@ function TimeRow({
         {value}
       </Text>
     </Pressable>
+  );
+}
+
+/**
+ * The basal reminder inside the plan step. Unpicked it is one "add" line; once
+ * picked it is a row like the preview's own, whose time is the thing the user
+ * is asked for, so the picker opens the moment it is added. Module level so
+ * toggling the picker under it never remounts the row.
+ */
+function BasalPlanRow({
+  selected,
+  label,
+  addLabel,
+  removeLabel,
+  time,
+  onAdd,
+  onToggleTime,
+  onRemove,
+}: {
+  selected: boolean;
+  label: string;
+  addLabel: string;
+  removeLabel: string;
+  time: string;
+  onAdd: () => void;
+  onToggleTime: () => void;
+  onRemove: () => void;
+}) {
+  if (!selected) {
+    return (
+      <Pressable
+        onPress={onAdd}
+        accessibilityRole="button"
+        accessibilityLabel={addLabel}
+        className="active:opacity-80"
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 14,
+          minHeight: 58,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          marginBottom: 12,
+          borderRadius: RADIUS.lg,
+          borderWidth: 1,
+          borderStyle: "dashed",
+          borderColor: THEME.border,
+        }}
+      >
+        <Ionicons name="add-circle-outline" size={22} color={THEME.accent} />
+        <Text
+          style={{ color: THEME.accent, fontSize: 15, lineHeight: 21, fontWeight: "600", flex: 1 }}
+        >
+          {addLabel}
+        </Text>
+      </Pressable>
+    );
+  }
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 14,
+        minHeight: 58,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        marginBottom: 12,
+        borderRadius: RADIUS.lg,
+        borderWidth: 1,
+        borderColor: THEME.border,
+        backgroundColor: THEME.glass,
+      }}
+    >
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 11,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: withAlpha(THEME.accent, 0.1),
+        }}
+      >
+        <Ionicons name="moon-outline" size={20} color={THEME.accent} />
+      </View>
+      <Pressable
+        onPress={onToggleTime}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityValue={{ text: time }}
+        className="active:opacity-80"
+        style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 14, minHeight: 36 }}
+      >
+        <Text style={{ color: THEME.ink, fontSize: 15, lineHeight: 21, flex: 1 }} numberOfLines={2}>
+          {label}
+        </Text>
+        <Text style={[TABULAR, { color: THEME.ink, fontSize: 16, fontWeight: "700" }]}>{time}</Text>
+      </Pressable>
+      <Pressable
+        onPress={onRemove}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel={removeLabel}
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: RADIUS.full,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "rgba(255,255,255,0.06)",
+        }}
+      >
+        <Ionicons name="close" size={14} color={THEME.muted} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -346,15 +432,59 @@ function RationaleText({
   );
 }
 
+/**
+ * The optional usage-data switch on the disclaimer step. It starts off, and
+ * leaving it off asks nothing more of the user: the answer stays "unanswered"
+ * (never "declined") and Settings > Data can still turn it on later. Module
+ * level so toggling it never remounts the card.
+ */
+function ConsentSwitchRow({
+  title,
+  body,
+  value,
+  onValueChange,
+}: {
+  title: string;
+  body: string;
+  value: boolean;
+  onValueChange: (next: boolean) => void;
+}) {
+  return (
+    <View
+      style={{
+        padding: 18,
+        borderRadius: RADIUS.lg,
+        borderWidth: 1,
+        borderColor: value ? THEME.accent : THEME.border,
+        backgroundColor: value ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <Text
+          style={{ flex: 1, color: THEME.ink, fontSize: 16, lineHeight: 22, fontWeight: "600" }}
+        >
+          {title}
+        </Text>
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          trackColor={{ true: THEME.accent, false: THEME.border }}
+          thumbColor={THEME.ink}
+          accessibilityLabel={title}
+        />
+      </View>
+      <Text style={{ color: THEME.muted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
+        {body}
+      </Text>
+    </View>
+  );
+}
+
 export default function OnboardingScreen() {
   const { t } = useTranslation();
-  // Android has no lock-screen widgets and no standalone injection widget
-  // (see widget-guide.tsx's Android section): the "widget" step's preview
-  // below drops both for Android instead of showing surfaces that do not
-  // exist there.
   const ios = Platform.OS === "ios";
   const insets = useSafeAreaInsets();
-  const { columnPad, height, isWide } = useLayout();
+  const { columnPad, isWide } = useLayout();
   const router = useRouter();
   const { activeProfile, bumpData, completeOnboarding } = useApp();
   const { scOnboarding } = useLocalSearchParams<{ scOnboarding?: string }>();
@@ -403,28 +533,14 @@ export default function OnboardingScreen() {
   const [postmealMax, setPostmealMax] = useState(
     String(glucoseToDisplay(activeProfile?.target_postmeal_max ?? DEFAULT_POSTMEAL_RANGE.max, unit))
   );
-  // A prefilled ratio only becomes the user's own once they actually move the
-  // control on its step. Walking past the default with Next is not a
-  // confirmation, so these stay false and ratios_confirmed stays 0.
-  const [carbRatioTouched, setCarbRatioTouched] = useState(false);
-  const [isfTouched, setIsfTouched] = useState(false);
   // Same pattern for the target range: once the user edits a value by hand,
   // switching the diabetes answer must never overwrite it again.
   const [targetsTouched, setTargetsTouched] = useState(false);
-  // Ratio + ISF are stepper-driven numbers (E.7); ISF is in the display unit.
-  const [carbRatio, setCarbRatio] = useState(
-    activeProfile?.carb_ratio_breakfast ?? DEFAULT_CARB_RATIO
-  );
-  const [isf, setIsf] = useState(
-    glucoseToDisplay(activeProfile?.insulin_sensitivity_factor ?? DEFAULT_ISF_MGDL, unit)
-  );
-  const [basalTime, setBasalTime] = useState("22:00");
-  const [showTime, setShowTime] = useState(false);
   // The insulinProducts step's own answers: which catalog product (or "other"
   // + a typed name) for each slot, and the self-reported daily basal amount.
   // Entirely optional - left at their profile/seed defaults, this step can be
   // walked past with no write of its own (finishToReveal only sends these
-  // while hasInsulin, same gate as carbRatio/isf below).
+  // while hasInsulin).
   const [basalInsulinId, setBasalInsulinId] = useState<string | null>(
     activeProfile?.basal_insulin_id ?? null
   );
@@ -473,62 +589,43 @@ export default function OnboardingScreen() {
       ),
     [diabetes, removedPlanTimes]
   );
+  // The basal reminder lives inside the plan step: picked there, timed there,
+  // and written only by "Set up this plan". `basalSelected` is what the row
+  // shows; `basalInstalled` is what has really been written, so a user who
+  // picks it and then taps "Not now" ends up with no basal reminder at all and
+  // is never asked for a permission they did not choose to need.
+  const [basalSelected, setBasalSelected] = useState(false);
+  const [basalInstalled, setBasalInstalled] = useState(false);
+  const [basalTime, setBasalTime] = useState("22:00");
+  const [showBasalTime, setShowBasalTime] = useState(false);
   // What the reveal card lists at the end, built from the rows that were
   // REALLY written (see lib/revealPlan.ts). Empty until finishToReveal fills it.
   const [revealPlan, setRevealPlan] = useState<RevealPlanItem[]>([]);
   const [accepted, setAccepted] = useState(false);
+  // The disclaimer step's optional usage-data switch. Off by default: only an
+  // explicit "on" becomes consent, anything else leaves the answer unanswered
+  // (see the end of finishToReveal).
+  const [analyticsOptIn, setAnalyticsOptIn] = useState(false);
   const [saving, setSaving] = useState(false);
-  // The real outcome of the notification prompt, shown on the notify step so the
-  // flow never advances as if permission was granted when it was not.
-  const [notifyResult, setNotifyResult] = useState<NotificationPermission | null>(null);
 
-  // "none" and "prediabetes" (Wave 2a matrix) both force the tracking-only
-  // path: any treatment answer picked before backing up and switching to one
-  // of them must not leak into the profile, so the effective value is
-  // re-derived every render instead of trusting the raw `treatment` state.
-  const isTwoWayTreatment = diabetes === "none" || diabetes === "prediabetes";
-  const effectiveTreatment: TreatmentOption | null =
-    isTwoWayTreatment ? "none" : treatment;
-  const hasInsulin =
-    effectiveTreatment === "insulin" || effectiveTreatment === "both";
-  const hasOralMeds = isTwoWayTreatment
-    ? pillsOnly === true
-    : effectiveTreatment === "pills" || effectiveTreatment === "both";
-  // Branching flow: the "none" / "prediabetes" path swaps the four-way treatment
-  // question for a two-option pill question and skips the carb-ratio / ISF /
-  // basal-time trio (no insulin to compute for). Everyone gets the widget,
-  // notification, reminder-layout and disclaimer tail.
-  const steps = useMemo<StepId[]>(() => {
-    const treatmentStep: StepId[] = isTwoWayTreatment ? ["pillsOnly"] : ["insulin"];
-    const branch: StepId[] = hasInsulin
-      ? ["insulinProducts", "carbRatio", "isf", "basal"]
-      : [];
-    // Offered only to whoever tracks pills (the "pills" or "both" answer):
-    // insulin-only users have nothing to set up here, and it never blocks
-    // finishing - "Simdi degil" always moves on with no reminder created.
-    const medReminderStep: StepId[] = hasOralMeds ? ["medReminder"] : [];
-    // The ready-made measurement layout (K2-E), offered on every path, unlike
-    // medReminder above. Always AFTER notify: setting it up fires the OS
-    // permission prompts right away (see setupReminderPlan), and that must
-    // never happen before the notify step's own on-screen rationale has been
-    // shown. After medReminder on the pill path too, so the two reminder setups
-    // sit back to back.
-    const reminderPlanStep: StepId[] = ["reminderPlan"];
-    return [
-      ...BASE_STEPS,
-      ...treatmentStep,
-      "targets",
-      ...branch,
-      "widget",
-      "notify",
-      ...medReminderStep,
-      ...reminderPlanStep,
-      "disclaimer",
-    ];
-  }, [isTwoWayTreatment, hasInsulin, hasOralMeds]);
+  // Re-derived every render instead of trusting the raw answers: a treatment
+  // picked before backing up and switching to "none" or "prediabetes" must not
+  // leak into the profile or the step list (see lib/onboardingSteps.ts).
+  const flags = onboardingFlags({ diabetes, treatment, pillsOnly });
+  const { isTwoWayTreatment, hasInsulin, hasOralMeds } = flags;
+  const steps = useMemo<StepId[]>(
+    () => buildOnboardingSteps({ isTwoWayTreatment, hasInsulin, hasOralMeds }),
+    [isTwoWayTreatment, hasInsulin, hasOralMeds]
+  );
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
   const step = steps[stepIdxClamped];
+  const planDecision = planSetupDecision({
+    glucoseRows: planRows.length,
+    hasInsulin,
+    basalSelected,
+    basalInstalled,
+  });
 
   const advancingRef = useRef(false);
   useEffect(() => {
@@ -544,11 +641,11 @@ export default function OnboardingScreen() {
   const alarmKitAvailable = useMemo(() => isAlarmKitAvailable(), []);
   const presetLabel = usePresetLabel();
 
-  // Preserve the original analytics events. Log the current quiz step, or the
-  // welcome / reveal phase name.
+  const stepEvent = onboardingStepEvent(phase, step, steps);
   useEffect(() => {
-    logEvent("onboarding_step", { step: phase === "quiz" ? step : phase });
-  }, [phase, step]);
+    logEvent("onboarding_step", stepEvent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepEvent.step, stepEvent.index]);
 
   function num(v: string, fallback: number): number {
     const x = (parseDecimalText(v) ?? NaN);
@@ -568,8 +665,6 @@ export default function OnboardingScreen() {
     setFastingMax(convert(fastingMax, DEFAULT_FASTING_RANGE.max));
     setPostmealMin(convert(postmealMin, DEFAULT_POSTMEAL_RANGE.min));
     setPostmealMax(convert(postmealMax, DEFAULT_POSTMEAL_RANGE.max));
-    // ISF is a number in the current display unit - convert it numerically.
-    setIsf(glucoseToDisplay(glucoseFromDisplay(isf, unit), next));
     setUnit(next);
   }
 
@@ -611,15 +706,6 @@ export default function OnboardingScreen() {
     if (advancingRef.current) return;
     advancingRef.current = true;
     setTimeout(next, AUTO_ADVANCE_MS);
-  }
-
-  // Leaving the notification step: the on-screen rationale has been shown, so
-  // fire the OS prompt here (contextual). We DON'T advance blindly: the step now
-  // reflects the true outcome (on / off) and the user taps Continue to proceed,
-  // so the flow never pretends permission was granted when it was not.
-  async function nextFromNotify() {
-    const result = await requestNotificationPermission();
-    setNotifyResult(result);
   }
 
   const toMgdl = (text: string, fallbackMgdl: number) =>
@@ -690,17 +776,10 @@ export default function OnboardingScreen() {
         daily_carb_target_min_g: carbDefaults.min,
         daily_carb_target_g: carbDefaults.max,
       };
-      // Insulin math is only relevant to insulin users; leave the profile's
-      // defaults untouched otherwise.
+      // The carb ratio and ISF are deliberately not written here: the
+      // calculator asks for them the first time it opens (lib/calcSetup.ts),
+      // so ratios_confirmed stays whatever the profile already says.
       if (hasInsulin) {
-        const cr = carbRatio;
-        patch.carb_ratio_breakfast = cr;
-        patch.carb_ratio_lunch = cr;
-        patch.carb_ratio_dinner = cr;
-        patch.insulin_sensitivity_factor = glucoseFromDisplay(isf, unit);
-        // A number the user set is theirs; one they skipped past is not, and
-        // the meal-log screen has to be able to tell those apart.
-        patch.ratios_confirmed = carbRatioTouched && isfTouched ? 1 : 0;
         // The insulinProducts step's own answers (schema v22, see
         // ../lib/insulinCatalog). All optional - a skipped step simply writes
         // the seed profile's defaults (null / null / 0 -> null), same as every
@@ -713,16 +792,19 @@ export default function OnboardingScreen() {
       }
       await updateProfile(activeProfile.id, patch);
 
-      // Reminder relevance follows insulin use (the basal reminder only applies
-      // to insulin users); post-meal tracking stays on for everyone. The basal
-      // row is written straight to the reminders registry, not left to the
-      // one-time legacy-prefs bridge (lib/db/remindersBridge.ts): a process
-      // killed right after an earlier, abandoned onboarding attempt already
-      // consumed that one-time bridge, so a restarted onboarding choosing
-      // differently would otherwise have no way left to change it.
+      // The basal reminder exists only if the user picked it in the plan step
+      // and "Set up this plan" wrote it (see basalReminderOnAtFinish); post-meal
+      // tracking stays on for everyone. The basal row is written straight to
+      // the reminders registry, not left to the one-time legacy-prefs bridge
+      // (lib/db/remindersBridge.ts): a process killed right after an earlier,
+      // abandoned onboarding attempt already consumed that one-time bridge, so a
+      // restarted onboarding choosing differently would otherwise have no way
+      // left to change it. This pass is also what switches a row off that was
+      // written and then un-picked.
+      const basalOn = basalReminderOnAtFinish({ hasInsulin, basalSelected, basalInstalled });
       await setNotificationPrefs({
         ...DEFAULT_PREFS,
-        basal: hasInsulin,
+        basal: basalOn,
         basalTime,
         // The weekly summary starts ON for a brand-new user, and only here: a
         // full blob written at the end of onboarding is the one moment the app
@@ -732,7 +814,7 @@ export default function OnboardingScreen() {
         // from an older stored blob (lib/services/notificationPrefs.ts).
         weekly: true,
       });
-      await syncBasalReminderRow(hasInsulin, basalTime, true);
+      await syncBasalReminderRow(basalOn, basalTime, true);
       await applyNotificationPrefs();
 
       // The closing card describes what was ACTUALLY set up, so it is built
@@ -757,7 +839,24 @@ export default function OnboardingScreen() {
 
       bumpData();
       await completeOnboarding();
-      logEvent("onboarding_done", {});
+      // Only an explicit "on" is recorded; a switch left off keeps the answer
+      // "unanswered" (not "declined"), and Settings can still turn it on. It
+      // goes in before onboarding_done so that event is covered by it, and the
+      // question counts as put to the user either way, so the dashboard's
+      // one-time sheet (for installs that predate it) never repeats it.
+      if (analyticsOptIn) {
+        try {
+          await setAnalyticsConsent("granted");
+        } catch (err) {
+          logCrash(err, { screen: "onboarding", op: "analyticsConsent" });
+        }
+      }
+      try {
+        await markAnalyticsConsentPrompted();
+      } catch (err) {
+        logCrash(err, { screen: "onboarding", op: "analyticsConsentPrompted" });
+      }
+      logEvent("onboarding_done", onboardingDoneEvent(steps));
       setPhase("reveal");
     } finally {
       setSaving(false);
@@ -786,12 +885,6 @@ export default function OnboardingScreen() {
           : undefined;
       case "insulinProducts":
         return t("onboarding.qInsulinProductsHint");
-      case "carbRatio":
-        return t("onboarding.qCarbRatioHint");
-      case "isf":
-        return t("onboarding.qIsfHint");
-      case "basal":
-        return t("onboarding.qBasalHint");
       case "medReminder":
         return t("onboarding.qMedReminderHint");
       case "reminderPlan":
@@ -811,10 +904,10 @@ export default function OnboardingScreen() {
 
   // "Kur": writes (or, on a second visit, updates) the single med reminder row
   // straight to the registry - the same direct-write pattern basal already
-  // uses - then asks for notification permission (existing onboarding
-  // pattern, see nextFromNotify above). Never blocks Continue: a failed write
-  // (or a denied permission) still advances, since the reminder can always be
-  // set up later from Settings > Reminders.
+  // uses - then asks for notification permission, which is a contextual ask:
+  // the user has just chosen to set a reminder up. Never blocks Continue: a
+  // failed write (or a denied permission) still advances, since the reminder
+  // can always be set up later from Settings > Reminders.
   async function setupMedReminder() {
     if (savingMedReminder) return;
     setSavingMedReminder(true);
@@ -858,12 +951,17 @@ export default function OnboardingScreen() {
   }
 
   /**
-   * "Set up this plan" (2.3.0's K2-E). The write, the replace-not-merge rule
-   * and the two permission prompts all live in setUpReminderPlan
+   * "Set up this plan" (2.3.0's K2-E). The glucose write, the replace-not-merge
+   * rule and the two permission prompts all live in setUpReminderPlan
    * (lib/services/reminderPlan.ts), shared with app/profile-setup.tsx so a
    * profile added later gets the exact same layout and the exact same asks.
    * "Not now" writes nothing and asks for nothing at all: it is plain `next()`
-   * in the footer below.
+   * in the footer below. This is the only place onboarding raises the OS
+   * notification prompt for a plan, so a user who picks none never sees one.
+   *
+   * A picked basal row is written BEFORE the shared glucose write, so the single
+   * permission chain that follows covers both. When no glucose line is left (or
+   * none landed) nothing downstream asks, and this asks itself, once.
    *
    * The profile is passed explicitly for the same reason profile setup does it,
    * even though onboarding cannot switch profiles: it is the one write here
@@ -875,7 +973,23 @@ export default function OnboardingScreen() {
     if (savingPlan) return;
     setSavingPlan(true);
     try {
-      await setUpReminderPlan(planRows, presetLabel, activeProfile?.id);
+      const profileId = activeProfile?.id;
+      let basalWritten = false;
+      if (planDecision.basal !== "keep") {
+        const wrote = await syncBasalReminderRow(planDecision.wantBasal, basalTime, true, profileId);
+        basalWritten = planDecision.wantBasal && wrote;
+        setBasalInstalled(basalWritten);
+      }
+      const glucoseWritten =
+        planRows.length > 0
+          ? (await setUpReminderPlan(planRows, presetLabel, profileId)).written
+          : 0;
+      if (basalWritten && glucoseWritten === 0) {
+        await requestNotificationPermission();
+        await ensureAlarmAuthorizationOnce();
+      }
+    } catch {
+      // best-effort: Settings > Reminders is always there to try again
     } finally {
       setSavingPlan(false);
     }
@@ -1058,7 +1172,7 @@ export default function OnboardingScreen() {
         );
 
       // One question, two flags: insulin answers map to insulin_mode "both" (the
-      // carbRatio/isf/basal branch follows), pill answers to oral_meds_enabled.
+      // insulinProducts step follows), pill answers to oral_meds_enabled.
       // The finer 4-way insulin distinction stays in Settings, which is its only
       // real consumer (tab visibility, IOB, calculator mode).
       case "insulin":
@@ -1282,215 +1396,10 @@ export default function OnboardingScreen() {
         );
       }
 
-      case "carbRatio":
-        return (
-          <FadeSlideIn delay={optDelay(0)}>
-            <Stepper
-              value={carbRatio}
-              onChange={(v) => {
-                setCarbRatio(v);
-                setCarbRatioTouched(true);
-              }}
-              onValidityChange={stepperFields.reporter("carbRatio")}
-              step={0.5}
-              longStep={1}
-              min={1}
-              max={50}
-              decimals={1}
-              suffix={t("common.carbRatioUnit")}
-              variant="hero"
-              accessibilityLabel={t("settings.carbRatios")}
-            />
-          </FadeSlideIn>
-        );
-
-      case "isf":
-        return (
-          <FadeSlideIn delay={optDelay(0)}>
-            <Stepper
-              value={isf}
-              onChange={(v) => {
-                setIsf(v);
-                setIsfTouched(true);
-              }}
-              onValidityChange={stepperFields.reporter("isf")}
-              step={unit === "mmol" ? 0.1 : 1}
-              longStep={unit === "mmol" ? 0.5 : 5}
-              min={unit === "mmol" ? 0.5 : 5}
-              max={unit === "mmol" ? 30 : 500}
-              decimals={unit === "mmol" ? 1 : 0}
-              suffix={glucoseUnitLabel(unit)}
-              variant="hero"
-              accessibilityLabel={t("settings.isf")}
-            />
-          </FadeSlideIn>
-        );
-
-      case "basal":
-        return (
-          <FadeSlideIn delay={optDelay(0)}>
-            <TimeRow
-              icon="moon-outline"
-              label={t("onboarding.basalTime")}
-              value={basalTime}
-              onPress={() => setShowTime((s) => !s)}
-            />
-            <InlineTimePicker
-              visible={showTime}
-              value={basalTime}
-              onChange={setBasalTime}
-              onClose={() => setShowTime(false)}
-            />
-            <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginTop: 8 }}>
-              {t("onboarding.basalReminderTip")}
-            </Text>
-          </FadeSlideIn>
-        );
-
-      case "widget": {
-        // The band has to clear the pinned footer on a short phone: the tiles
-        // are drawn at the mock's 118dp and give up height proportionally
-        // below that, so the row stays a band and never becomes a stack.
-        const band = Math.min(118, height * 0.16);
-        const s = band / 118;
-        // Stylised drawings in this screen's own primitives, not the real
-        // widget code: the extension cannot render here, and the point of the
-        // step is "here is what you would be adding", not a pixel-accurate
-        // preview. The numbers are invented, which is what the badge says.
-        const tileStyle = (accent?: boolean): ViewStyle => ({
-          flex: 1,
-          maxWidth: 104,
-          height: band,
-          borderRadius: 18,
-          borderWidth: 1,
-          borderColor: accent ? withAlpha(THEME.accent, 0.35) : THEME.border,
-          backgroundColor: THEME.glass,
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 6,
-          gap: 6 * s,
-        });
-        const tileCaption = (text: string) => (
-          <Text
-            numberOfLines={2}
-            style={{ color: THEME.muted, fontSize: 11, lineHeight: 14, textAlign: "center" }}
-          >
-            {text}
-          </Text>
-        );
-        return (
-          <FadeSlideIn delay={optDelay(0)}>
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 11,
-                letterSpacing: 1.3,
-                fontWeight: "800",
-                marginBottom: 10,
-                textAlign: "center",
-              }}
-            >
-              {upper(t("onboarding.sampleBadge"))}
-            </Text>
-            <View className="flex-row justify-center" style={{ gap: 12 }}>
-              {/* A reading - in the unit this user chose two steps ago, not a
-                  hard-coded mg/dL. */}
-              <View style={tileStyle()}>
-                <Text
-                  style={[
-                    TABULAR,
-                    { color: GLUCOSE_RICH.target, fontSize: 24 * s, fontWeight: "800" },
-                  ]}
-                >
-                  {formatGlucose(112, unit)}
-                </Text>
-                {tileCaption(glucoseUnitLabel(unit))}
-                <View
-                  style={{
-                    width: 56 * s,
-                    height: 3,
-                    borderRadius: RADIUS.full,
-                    backgroundColor: withAlpha(GLUCOSE_RICH.target, 0.5),
-                  }}
-                />
-              </View>
-              {/* The average - the family the widget leads with, so it carries
-                  the accent edge. */}
-              <View style={tileStyle(true)}>
-                <Text style={[TABULAR, { color: THEME.ink, fontSize: 20 * s, fontWeight: "800" }]}>
-                  {formatGlucose(124, unit)}
-                </Text>
-                {tileCaption(t("widget.avgGlucose"))}
-                <Ionicons name="bar-chart-outline" size={22 * s} color={THEME.accent} />
-              </View>
-              {/* The next reminder - the line the home families gained. */}
-              <View style={tileStyle()}>
-                <Ionicons name="notifications-outline" size={20 * s} color={THEME.accent} />
-                <Text style={[TABULAR, { color: THEME.ink, fontSize: 12 }]}>20:00</Text>
-                {tileCaption(t("widget.nextReminder"))}
-              </View>
-            </View>
-
-            {/* The copy still branches: Android has no lock-screen widgets
-                (see widget-guide.tsx's Android section), so it never promises
-                one. */}
-            <Text
-              style={{
-                color: THEME.muted,
-                fontSize: 15,
-                lineHeight: 22,
-                textAlign: "center",
-                marginTop: 14,
-              }}
-            >
-              {ios ? t("onboarding.widgetIntro") : t("onboarding.widgetIntroAndroid")}
-            </Text>
-          </FadeSlideIn>
-        );
-      }
-
-      case "notify":
-        return (
-          <FadeSlideIn delay={optDelay(0)}>
-            {notifyResult == null ? (
-              <RationaleCard icon="notifications-outline">
-                <RationaleText>{t("onboarding.notifRationale")}</RationaleText>
-              </RationaleCard>
-            ) : notifyResult === "granted" ? (
-              <RationaleCard icon="checkmark-circle" tint={GLUCOSE_RICH.target}>
-                <RationaleText tone="ink">{t("onboarding.notifGranted")}</RationaleText>
-              </RationaleCard>
-            ) : (
-              <RationaleCard icon="notifications-off-outline" tint={THEME.muted}>
-                <RationaleText>{t("onboarding.notifOff")}</RationaleText>
-                <Pressable
-                  onPress={() => Linking.openSettings()}
-                  className="mt-3 flex-row items-center justify-center rounded-xl border border-hair py-2.5 active:opacity-80"
-                >
-                  <Ionicons name="settings-outline" size={16} color={THEME.accent} />
-                  <Text className="text-brand font-semibold ml-2">
-                    {t("settings.openSystemSettings")}
-                  </Text>
-                </Pressable>
-              </RationaleCard>
-            )}
-            {/* Camera + Apple Health are only INTRODUCED here; the OS ask stays at
-                the point of use (first barcode scan / when Health is opened). */}
-            <RationaleCard icon="barcode-outline" style={{ marginTop: 12 }}>
-              <RationaleText>{t("onboarding.permCamera")}</RationaleText>
-            </RationaleCard>
-            <RationaleCard icon="fitness-outline" style={{ marginTop: 12 }}>
-              <RationaleText>
-                {t("onboarding.permHealth", { health: HEALTH_NAME })}
-              </RationaleText>
-            </RationaleCard>
-          </FadeSlideIn>
-        );
-
       // Optional, skippable: offered only to a pill-tracking answer (see
-      // hasOralMeds in the steps list above). "Kur" writes the row directly
+      // hasOralMeds in lib/onboardingSteps.ts). "Kur" writes the row directly
       // to the reminders registry (setupMedReminder), matching the pattern
-      // the basal reminder already uses.
+      // the basal reminder uses.
       case "medReminder":
         return (
           <FadeSlideIn delay={optDelay(0)}>
@@ -1517,15 +1426,62 @@ export default function OnboardingScreen() {
       // Optional, skippable, offered on every path (2.3.0's K2-E). A PREVIEW:
       // nothing is written until "Set up this plan", and any line can be
       // removed first. No diabetes type is ever named here, and no frequency is
-      // ever framed as advice - see lib/reminderPresets.ts.
+      // ever framed as advice - see lib/reminderPresets.ts. On an insulin path
+      // the basal reminder is one more line the user can add, and its time is
+      // asked right there. The notes sit under the list, not inside the shared
+      // preview, so they can follow the basal line and appear only while there
+      // is something to set up: this step is where the OS prompt comes from, so
+      // it is also where the reason for it is said.
       case "reminderPlan":
         return (
           <FadeSlideIn delay={optDelay(0)}>
             <ReminderPlanPreview
               rows={planRows}
               onRemove={(time) => setRemovedPlanTimes((prev) => [...prev, time])}
-              alarmKitAvailable={alarmKitAvailable}
+              alarmKitAvailable={false}
             />
+            {hasInsulin ? (
+              <>
+                <BasalPlanRow
+                  selected={basalSelected}
+                  label={t("onboarding.qBasal")}
+                  addLabel={t("onboarding.basalAdd")}
+                  removeLabel={t("onboarding.planRemoveA11y")}
+                  time={basalTime}
+                  onAdd={() => {
+                    hapticSelect();
+                    setBasalSelected(true);
+                    setShowBasalTime(true);
+                  }}
+                  onToggleTime={() => setShowBasalTime((s) => !s)}
+                  onRemove={() => {
+                    setBasalSelected(false);
+                    setShowBasalTime(false);
+                  }}
+                />
+                <InlineTimePicker
+                  visible={basalSelected && showBasalTime}
+                  value={basalTime}
+                  onChange={setBasalTime}
+                  onClose={() => setShowBasalTime(false)}
+                />
+                {basalSelected ? (
+                  <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginBottom: 4 }}>
+                    {t("onboarding.basalReminderTip")}
+                  </Text>
+                ) : null}
+              </>
+            ) : null}
+            {planDecision.canSetUp ? (
+              <Text style={{ color: THEME.muted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
+                {t("onboarding.planPermNote")}
+              </Text>
+            ) : null}
+            {alarmKitAvailable && planDecision.canSetUp ? (
+              <Text style={{ color: THEME.muted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
+                {t("onboarding.alarmNote")}
+              </Text>
+            ) : null}
           </FadeSlideIn>
         );
 
@@ -1548,6 +1504,19 @@ export default function OnboardingScreen() {
                 label={t("disclaimer.accept")}
               />
             </View>
+            {/* Separate from the accept check on purpose: Continue never waits
+                on it, and it is off until the user turns it on. */}
+            <View style={{ marginTop: 12 }}>
+              <ConsentSwitchRow
+                title={t("onboarding.analyticsConsentTitle")}
+                body={t("onboarding.analyticsConsentBody")}
+                value={analyticsOptIn}
+                onValueChange={(next) => {
+                  hapticSelect();
+                  setAnalyticsOptIn(next);
+                }}
+              />
+            </View>
           </FadeSlideIn>
         );
     }
@@ -1557,19 +1526,6 @@ export default function OnboardingScreen() {
   function renderFooter(): React.ReactNode {
     // Single-select steps auto-advance and have no footer.
     if (step === "insulin" || step === "pillsOnly") return null;
-
-    if (step === "notify") {
-      // Before asking: the prompt trigger. After a result: a plain Continue, so
-      // the flow advances only on an explicit tap and never fakes a grant.
-      return notifyResult == null ? (
-        <View>
-          <PrimaryCta label={t("onboarding.notifyCta")} onPress={nextFromNotify} />
-          <SecondaryLink label={t("onboarding.skipForNow")} onPress={next} />
-        </View>
-      ) : (
-        <PrimaryCta label={t("onboarding.continue")} onPress={next} />
-      );
-    }
 
     if (step === "disclaimer") {
       return (
@@ -1600,9 +1556,10 @@ export default function OnboardingScreen() {
     if (step === "reminderPlan") {
       return (
         <View>
-          {/* Removing every line leaves nothing to set up, so the primary
-              action steps aside rather than writing an empty plan. */}
-          {planRows.length > 0 ? (
+          {/* Removing every line (and not picking the basal one) leaves nothing
+              to set up, so the primary action steps aside rather than writing
+              an empty plan. */}
+          {planDecision.canSetUp ? (
             <PrimaryCta
               label={t("onboarding.planSetup")}
               loading={savingPlan}
@@ -1613,23 +1570,6 @@ export default function OnboardingScreen() {
         </View>
       );
     }
-
-    const notSure =
-      step === "carbRatio" || step === "isf" ? (
-        <SecondaryLink
-          label={t("onboarding.notSure")}
-          onPress={() => {
-            if (step === "carbRatio") {
-              setCarbRatio(DEFAULT_CARB_RATIO);
-              setCarbRatioTouched(false);
-            } else {
-              setIsf(glucoseToDisplay(DEFAULT_ISF_MGDL, unit));
-              setIsfTouched(false);
-            }
-            next();
-          }}
-        />
-      ) : null;
 
     // The diabetes question is optional, but skipping it has to be a deliberate
     // tap: Continue stays inert until something is picked, and the skip sits
@@ -1653,7 +1593,6 @@ export default function OnboardingScreen() {
           }
           onPress={next}
         />
-        {notSure}
         {skipQuestion}
       </View>
     );

@@ -26,6 +26,8 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.rotationCycleStart",
   /** lib/db/screenshotSeed.ts - which language this profile was seeded in. */
   "zerospike.screenshotSeededLang.v16",
+  /** lib/calcSetup.ts - the calculator's first-use number sheet, put away once. */
+  "zerospike.calcSetupDismissed",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

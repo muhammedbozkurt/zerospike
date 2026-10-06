@@ -7,9 +7,9 @@ import { isScreenshotMode } from "../screenshotMode";
 /**
  * Store-review gateway. Every trigger (a saved log, a viewed weekly digest, a
  * finished export) routes through maybeRequestReview(trigger) instead of its
- * own copy of the eligibility rules, so the caps below apply everywhere and
- * the trigger name always lands in analytics. Never called from app launch or
- * from an error/interruption path - only from the positive moment itself.
+ * own copy of the eligibility rules, so the caps below apply everywhere. Never
+ * called from app launch or from an error/interruption path - only from the
+ * positive moment itself.
  *
  * Caps (all must hold):
  * - first seen (this device, this install) at least MIN_DAYS_SINCE_FIRST_SEEN
@@ -98,9 +98,9 @@ async function recordPromptAttempt(): Promise<void> {
   }
 }
 
-/** Single entry point for every review-prompt trigger. `trigger` is a short
- *  identifier for the calling site (e.g. "log_meal", "weekly_insights_view")
- *  and is forwarded to the "review_prompted" analytics event. */
+/** Single entry point for every review-prompt trigger. `trigger` names the
+ *  calling site (e.g. "log_meal", "weekly_insights_view") for the reader of that
+ *  call; schema v1's store_review_prompt carries no fields, so it is not sent. */
 export async function maybeRequestReview(trigger: string): Promise<void> {
   // Never let the native review sheet steal a store-screenshot capture.
   if (isScreenshotMode()) return;
@@ -112,7 +112,7 @@ export async function maybeRequestReview(trigger: string): Promise<void> {
     // whether it actually showed, so this is the standard way to guarantee
     // the per-version/30-day caps above regardless of what iOS/Android did.
     await recordPromptAttempt();
-    logEvent("review_prompted", { trigger });
+    logEvent("store_review_prompt");
     await StoreReview.requestReview();
   } catch {
     // review unavailable; never block a user flow

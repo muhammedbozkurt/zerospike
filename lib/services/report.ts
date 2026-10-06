@@ -31,6 +31,7 @@ import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
 import { EXPORT_MAX_ROWS, type ExportResult } from "./export";
+import { isDuringTrial } from "./purchases";
 import {
   weeklyComparison,
   weekAnchorForLang,
@@ -942,6 +943,14 @@ function splitJournalFeed(
   return { sugar, meals, injections };
 }
 
+// Never awaited by the export: the trial lookup can reach the store, and the
+// caller is already holding a finished PDF.
+function reportExported(): void {
+  void isDuringTrial()
+    .then((duringTrial) => logEvent("export_pdf", { during_trial: duringTrial }))
+    .catch(() => {});
+}
+
 export async function exportLogsPdf(
   profile: UserProfile,
   windowDays: number,
@@ -1117,7 +1126,7 @@ export async function exportLogsPdf(
         /* fall back to the print-cache uri */
       }
     }
-    logEvent("report_generated", { window: windowDays });
+    reportExported();
     return { ok: true, uri: finalUri, count: inWindow.length };
   }
 
@@ -1131,6 +1140,6 @@ export async function exportLogsPdf(
     UTI: "com.adobe.pdf",
   });
 
-  logEvent("report_generated", { window: windowDays });
+  reportExported();
   return { ok: true, uri, count: inWindow.length };
 }

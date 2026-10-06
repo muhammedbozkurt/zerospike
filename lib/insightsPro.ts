@@ -9,10 +9,10 @@ import {
 import { computeMealResponse } from "./mealResponse";
 
 /**
- * Pro "Insights" — wave 2: pure calculation layer (docs/plan-2.2.0.md D10).
+ * Pro "Insights", wave 2: pure calculation layer (docs/plan-2.2.0.md D10).
  *
  * No DB access, no UI, no locale. Every function takes the rows it needs as
- * plain arrays and — whenever it needs a notion of "today" — an explicit
+ * plain arrays and, whenever it needs a notion of "today", an explicit
  * `now` (epoch ms) instead of calling Date.now() itself, so every result here
  * is reproducible from its arguments alone. This is a deliberate tightening
  * of the convention in lib/insights.ts (whose windowDays-style helpers default
@@ -27,8 +27,8 @@ import { computeMealResponse } from "./mealResponse";
  * formatGlucose) is the UI wave's job, not this layer's.
  */
 
-// ── Shared local helpers (kept private: lib/insights.ts's own equivalents —
-// mean/stdev/dayKey/startOfDay — are not exported, so a small amount of
+// ── Shared local helpers (kept private: lib/insights.ts's own equivalents,
+// mean/stdev/dayKey/startOfDay, are not exported, so a small amount of
 // parallel arithmetic here is unavoidable without reaching into app-facing
 // modules). ──────────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ const ANCHOR_DOW: Record<WeekAnchor, number> = { sunday: 0, monday: 1, saturday:
 /**
  * Language → week-start day, mirroring app/settings/notifications.tsx's
  * weekOrder(): ar starts Saturday, ja/en start Sunday, every other bundle
- * starts Monday. Re-derived here rather than imported — that file lives under
+ * starts Monday. Re-derived here rather than imported: that file lives under
  * app/** and this module has to stay a pure data layer with zero app/router
  * dependency; the mapping is a 3-line rule, small enough that duplicating it
  * is cheaper than the coupling.
@@ -144,7 +144,7 @@ function metricOf(cur: number | null, prev: number | null): WeekMetric {
  * This calendar week (week-start .. now, so a week in progress is compared as
  * far as it has got) vs. the immediately preceding FULL week. Unlike
  * lib/insights.ts's weeklyDigest (a rolling last-7-days vs. previous-7-days
- * window), this is calendar-week aligned per the app's own week-start rule —
+ * window), this is calendar-week aligned per the app's own week-start rule:
  * that alignment is the point of this card, so a Wednesday view compares
  * "this week so far" against "all of last week", not two arbitrary 7-day
  * slices. TIR/avg/CV are all normalized (%, mean), so a partial week is still
@@ -213,14 +213,14 @@ export interface HourBand {
 /**
  * Mean glucose per 3-hour band of the day, pooled across every reading
  * handed in (the caller is expected to have already limited `readings` to the
- * window it cares about — this function does no date filtering of its own;
+ * window it cares about: this function does no date filtering of its own;
  * `days` is used only to size the sparse-data threshold below).
  *
- * Design decision — 8 bands of 3h, not 24 of 1h: zerospike is a manual
+ * Design decision, 8 bands of 3h, not 24 of 1h: zerospike is a manual
  * logging diary, not a continuous CGM feed. A typical user logs a handful of
  * readings a day, clustered around meals and fasting, so splitting into 24
  * single-hour cells leaves most cells at 0-2 points even over a 30-day
- * window — too thin to color a heat strip meaningfully. Pooling into 3-hour
+ * window, too thin to color a heat strip meaningfully. Pooling into 3-hour
  * bands triples the readings per cell for the same data. The existing
  * 4-slice night/morning/afternoon/evening split (lib/insights.ts's
  * `hourly`/DayKind) is coarser still and was judged too blunt for a
@@ -253,8 +253,8 @@ export function hourBandAverages(readings: SugarLog[], days: number): HourBand[]
 
 /**
  * Hour-of-day p5/p25/p50/p75/p95 bands for the last `days` days up to `now`.
- * This is a thin, deterministic wrapper around lib/agp.ts's `computeAgp` —
- * NOT a re-implementation — so the median this returns is byte-identical to
+ * This is a thin, deterministic wrapper around lib/agp.ts's `computeAgp`,
+ * NOT a re-implementation, so the median this returns is byte-identical to
  * the one app/insights.tsx already renders as its AGP curve (`agp.bands.map(b
  * => b.p50)`) when given the same window: both ultimately run the same
  * function. `computeAgp` is only ever called here with an explicit `range`,
@@ -264,7 +264,7 @@ export function hourBandAverages(readings: SugarLog[], days: number): HourBand[]
  * The window itself uses raw ms (`now - days * 86_400_000`), matching how
  * lib/insights.ts's other windowDays-style helpers (dailyAverages,
  * trendVsPrevious, computeAgp's own windowDays path) already measure "last N
- * days" — unlike weeklyComparison/cvTrend below, calendar-day alignment is
+ * days": unlike weeklyComparison/cvTrend below, calendar-day alignment is
  * not the point here.
  */
 export function agpPercentiles(readings: SugarLog[], now: number, days: number): Agp {
@@ -281,7 +281,7 @@ export const MIN_READINGS_PER_DAY = 3;
 
 /** "Day in target" streak bar: the day's own TIR% clears the ADA Time-in-Range
  *  consensus figure (>70%) most patients are gauged against. A count, not a
- *  recommendation — this only reports which days cleared the line. */
+ *  recommendation: this only reports which days cleared the line. */
 export const DAY_IN_TARGET_TIR_PCT = 70;
 
 export interface BestDay {
@@ -407,7 +407,7 @@ export interface MealResponseSummaryEntry {
 export interface MealResponseSummary {
   totalMeals: number;
   /** Meals with a computable curve (>= MIN_READINGS_FOR_RESPONSE readings in
-   *  their window) — see lib/mealResponse.ts. */
+   *  their window), see lib/mealResponse.ts. */
   evaluableMeals: number;
   /** Mean delta across meals that HAVE a baseline. null with no such meal. */
   avgDelta: number | null;
@@ -420,12 +420,12 @@ export interface MealResponseSummary {
 }
 
 /**
- * Aggregates lib/mealResponse.ts's per-meal `computeMealResponse` — this
+ * Aggregates lib/mealResponse.ts's per-meal `computeMealResponse`: this
  * never recomputes a curve itself, only summarizes across meals, so a
  * baseline/peak/delta rule change in that module can't silently drift out of
  * step with what this reports. `computeMealResponse` also classifies each
  * point's low/in/high band against a personal target profile; this summary
- * never surfaces that split, so an empty profile (`{}`) is passed through —
+ * never surfaces that split, so an empty profile (`{}`) is passed through:
  * classifyGlucose's own built-in defaults keep that harmless, and the result
  * is discarded either way.
  */
@@ -492,7 +492,7 @@ export interface CvWeekPoint {
 export interface CvTrend {
   weekAnchor: WeekAnchor;
   /** Oldest first, length === the requested `weeks` (one point per week even
-   *  when a week has no data — cv null, n 0 — so gaps stay visible). */
+   *  when a week has no data: cv null, n 0, so gaps stay visible). */
   weeks: CvWeekPoint[];
   /** null until at least CV_TREND_MIN_WEEKS weeks have a CV value. */
   direction: TrendDirection | null;
@@ -506,7 +506,7 @@ export interface CvTrend {
  * per `weekAnchor` (same rule as weeklyComparison).
  *
  * The slope is fit over the INDEX of weeks that have data, not their
- * chronological week number — a gap week (nothing logged) is skipped rather
+ * chronological week number: a gap week (nothing logged) is skipped rather
  * than treated as a real zero-width data point, so one quiet week doesn't
  * bend the fit around it.
  */

@@ -64,6 +64,7 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logCrash, logEvent } from "../lib/analytics";
+import { noteFirstLog } from "../lib/services/firstLog";
 import {
   schedulePostMealReminder,
   noteJournalActivity,
@@ -448,7 +449,8 @@ function MealTemplateScreen() {
       // the meal is the thing that matters, and a failed recipe rewrite must not
       // take today's entry down with it.
       if (savePortions) await replaceTemplateItems(templateId, toInputs(items));
-      logEvent("log_added", { source: "template" });
+      logEvent("log_added", { kind: "meal" });
+      void noteFirstLog("meal");
       hapticSuccess();
       await schedulePostMealReminder();
       void noteJournalActivity();

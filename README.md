@@ -24,10 +24,10 @@ the Injection tab and the whole dose apparatus.
   colour from the same classification the rest of the app uses, a period tag,
   optional context tags (sport, illness, stress, travel, alcohol) and a
   backdatable timestamp.
-- **Meals.** A 562-item multilingual food catalogue with FTS5 search across five
-  languages plus synonyms, barcode scanning (Open Food Facts, cached locally so
-  the second scan of a product works offline), custom foods, and one-tap re-log
-  of recent meals.
+- **Meals.** A 1403-item multilingual food catalogue with FTS5 search across nine
+  name columns (en, tr, de, fr, es, it, pt, ar, ja) plus synonyms, barcode
+  scanning (Open Food Facts, cached locally so the second scan of a product
+  works offline), custom foods, and one-tap re-log of recent meals.
 - **Dose calculator.** carbs ÷ carb ratio, plus an optional correction toward
   the middle of the user's post-meal range, minus active insulin. Logging a meal
   also stores the glucose reading that was typed and, for a mealtime-insulin
@@ -41,10 +41,14 @@ the Injection tab and the whole dose apparatus.
 - **Doctor report.** A one-tap PDF: summary tiles, the AGP chart drawn from the
   same geometry the app renders, and the full log tables. CSV export follows the
   profile's display unit and names it in its own column.
-- **Spike.** An in-app assistant for app help and general diabetes education,
-  behind an explicit consent gate, metered per day. It never returns a dose
-  number, and no health record leaves the device: only the typed question and
-  the chat window are sent.
+- **Spike.** An in-app assistant for app help and general diabetes education
+  (Claude on Amazon Bedrock), behind an explicit consent gate and metered per
+  day. It never returns a dose number: an output filter replaces any reply that
+  would. Only the typed question and the chat window are sent. A separate,
+  off-by-default switch adds a 14-day summary computed on the device (counts,
+  averages, target range, meal tags, injection regions, logging habits, diabetes
+  type, insulin, pills or neither); no single reading, timestamp, insulin amount
+  or Health record is ever included.
 - **SOS.** A calm screen that opens the dialer on the region's emergency number
   or hands a prefilled message (optionally with a location link) to a contact.
   Nothing is ever sent or dialled automatically.
@@ -69,8 +73,12 @@ the Injection tab and the whole dose apparatus.
 
 ## Architecture
 
-**SQLite is the single source of truth.** The app works fully offline and
-nothing is uploaded.
+**SQLite is the single source of truth.** The app works fully offline and the
+journal never leaves the device. What can leave it is opt-in or on request:
+Spike messages (and, only with its own consent, the 14-day summary), usage
+analytics (off until the user agrees) and the RevenueCat purchase records.
+Crash reports (Crashlytics) and Open Food Facts lookups (barcode, food name) are
+not behind a switch. `docs/apple-ads/privacy-2.3.7.md` has the exact lists.
 
 ```
 app/                 expo-router screens (tabs + modal routes)
@@ -78,20 +86,24 @@ components/          shared UI
   rich/              the Midnight Monitor visual vocabulary
   charts/            AGP, trend and hourly charts
 lib/
-  db/                schema + migrations, typed data access
+  db/                schema + migrations (v24), typed data access
   services/          notifications, health, export/report, purchases, live data
-  i18n/locales/      tr, en, de, es, fr
+  analytics/         opt-in usage analytics: consent, event schema, outbox, sinks
+  ai/                Spike client and the on-device 14-day summary packet
+  identity/          the random per-install ID
+  i18n/locales/      en, tr, de, fr, es, it, pt, ar, ja
   theme/             design tokens (mirrored in tailwind.config.js)
   glucose.ts         units + classification (the one glucose language)
   insulin.ts         the dose estimator + plausibility guardrails
   iob.ts             active insulin from logged bolus doses
 modules/             local native modules (the Live Activity bridge)
 targets/widget/      iOS WidgetKit + ActivityKit target (Swift)
-supabase/functions/  the Spike edge function (Deno, deployed separately)
-scripts/             gate scripts and the math test suites
+supabase/functions/  ai-ask-spike, track, rc-webhook, delete-device (Deno, deployed separately)
+supabase/migrations/ server schema: analytics, subscription events, Spike limits
+scripts/             gate scripts, the math test suites, Apple Ads tooling
 ```
 
-### Data model (schema v8)
+### Data model (schema v24)
 
 `user_profiles` carries the personal numbers: target RANGES (fasting and
 post-meal, each a min and a max), the user's own low threshold, a carb ratio per
@@ -103,6 +115,9 @@ were confirmed by the user or are still defaults.
 carry a region, an optional rotation point (1-4), and where the row came from.
 The insulin-pen stock feature was removed in R5; its last dormant column was
 dropped in the v8 table rebuild.
+
+`analytics_queue` (v24) is the on-device outbox of the opt-in analytics sink. It
+has no profile and no foreign key, so clearing a profile's logs never touches it.
 
 ## Development
 
@@ -118,24 +133,87 @@ npm run ios        # or: npm run android
 Gates, all of which must pass:
 
 ```bash
-npx tsc --noEmit                     # types
-npm run i18n-check                   # every static t() key exists in the schema
+npm run typecheck                    # tsc --noEmit + i18n key check
+npm run i18n:check                   # i18n key check + regulatory-wording scan (reg:check)
 npx tsx scripts/calc.test.ts         # units, classification, dose math, IOB
 npx tsx scripts/feedback.test.ts
 npx tsx scripts/offParse.test.ts
 ```
 
-Every new string is added in all five languages. The translation schema is
-`lib/i18n/locales/tr.ts`; TypeScript enforces parity across the other four.
+The other suites in `scripts/*.test.ts` (analytics consent and schema, Spike
+summary, purchases, trial timeline, Pro welcome, onboarding steps, migrations)
+print their exact run command in the file header. The Spike output filter has a
+Deno suite, see `supabase/functions/ai-ask-spike/README.md`.
+
+Every new string is added in all nine languages (en, tr, de, fr, es, it, pt, ar,
+ja). The translation schema is `lib/i18n/locales/tr.ts`; TypeScript enforces
+parity across the other eight.
 
 ### Native steps
 
-The widget, the Live Activity and Spike need work outside this repo:
+The widget and the Live Activity need work outside this repo:
 
 - `npx expo prebuild` and a device build, with the App Group
   `group.com.greeneyeapp.zerospike` and the Live Activity capability enabled in
   the Apple Developer portal and in EAS credentials.
-- `supabase secrets set OPENAI_API_KEY=...` and
-  `supabase functions deploy ai-ask-spike`, then the resulting URL in
-  `expo.extra.spikeFnUrl`. Until it is set, every Spike entry point stays hidden
-  rather than opening a dead end.
+
+### Server side (Supabase)
+
+Four edge functions and the migrations behind them are deployed by hand, never
+by the app build. Push the migrations first: the new `ai-ask-spike` calls
+`spike_reserve` and answers 503 until it exists.
+
+```bash
+supabase db push   # app_events, spike_calls, subscription_events_retention, spike_hardening
+supabase secrets set AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=eu-central-1
+supabase secrets set RC_WEBHOOK_SECRET=...
+supabase functions deploy ai-ask-spike --no-verify-jwt
+supabase functions deploy track --no-verify-jwt
+supabase functions deploy rc-webhook --no-verify-jwt
+supabase functions deploy delete-device --no-verify-jwt
+supabase secrets unset OPENAI_API_KEY   # once the new ai-ask-spike is verified live
+```
+
+| Secret | Needed | Default and notes |
+|---|---|---|
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | yes | an IAM user that may call the model through Bedrock only; the model must be enabled for the region in the Bedrock console |
+| `AWS_REGION` | no | `eu-central-1`; only `eu-central-1`, `eu-west-1`, `eu-west-3` and `eu-north-1` are accepted |
+| `SPIKE_MODEL` | no | `anthropic.claude-sonnet-5-5`; `anthropic.claude-opus-5-5` and `anthropic.claude-haiku-4-5` are the other accepted values |
+| `SPIKE_GLOBAL_DAILY_CAP` | no | `3000` model calls per UTC day, all callers |
+| `RC_WEBHOOK_SECRET` | yes | must equal the Authorization value set in RevenueCat's webhook; without it `rc-webhook` answers 401 to everyone |
+| `TRACK_GLOBAL_DAILY_CAP` | no | `500000` analytics rows per UTC day, all devices |
+
+`AWS_SESSION_TOKEN` (temporary credentials only) and `SPIKE_IP_HOURLY_CAP` are
+described in `supabase/functions/ai-ask-spike/README.md`. In RevenueCat >
+Integrations > Webhooks, point the webhook at
+`https://<project-ref>.supabase.co/functions/v1/rc-webhook` and put the same
+value in its Authorization header. The function URLs live in `app.json`
+(`expo.extra.spikeFnUrl`, `trackFnUrl`, `deleteDeviceFnUrl`). Until
+`spikeFnUrl` is set, every Spike entry point stays hidden rather than opening a
+dead end; without `trackFnUrl` the analytics sink stays off.
+
+The three retention jobs are scheduled by the migrations when pg_cron is
+enabled. After `db push`, check them in the SQL editor:
+
+```sql
+select jobname, schedule from cron.job
+ where jobname in ('purge-app-events', 'spike-logs-retention', 'purge-subscription-events');
+```
+
+Three rows are expected. Fewer means pg_cron is not enabled: enable it in the
+Supabase dashboard and run the commented `cron.schedule` line of each migration
+once. Retention is 180 days for `app_events`, 90 days for the Spike counters and
+call log, and 24 months for `subscription_events` (its raw webhook body 90 days).
+
+### Apple Ads (release day)
+
+The US test campaign (`ZS-US-Test`, 14 days, 3.50 USD a day) is created PAUSED
+and switched on the day the release goes live. The developer runs these by hand;
+credentials and every option are in `scripts/apple-ads-README.md`.
+
+```bash
+node scripts/apple-ads-setup.mjs --dry-run --market us                    # plan only, no network
+node scripts/apple-ads-setup.mjs --apply --market us --start YYYY-MM-DD   # apply: creates it PAUSED, YYYY-MM-DD is the release day (UTC)
+node scripts/apple-ads-status.mjs enabled ZS-US-Test                      # enable on release day
+node scripts/apple-ads-report.mjs --days 14 --prefix ZS-US-Test           # read-only report
+```

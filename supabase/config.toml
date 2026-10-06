@@ -5,3 +5,15 @@ project_id = "zerospike"
 
 [functions.ai-ask-spike]
 verify_jwt = false
+
+# track: app JWT gondermez, cihaz basina limit fonksiyonun icinde (ai-ask-spike gibi).
+[functions.track]
+verify_jwt = false
+
+# rc-webhook: RevenueCat kendi Authorization degerini yollar (RC_WEBHOOK_SECRET), JWT degil.
+[functions.rc-webhook]
+verify_jwt = false
+
+# delete-device: app JWT gondermez, cihaz basina limit fonksiyonun icinde (track gibi).
+[functions.delete-device]
+verify_jwt = false

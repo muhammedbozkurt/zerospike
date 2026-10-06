@@ -72,7 +72,7 @@ function WinbackScreen() {
     if (offer.hasRealDiscount) logEvent("winback_view");
     // No real discount: the winback is skipped (redirects away). Log it so a
     // missing sandbox intro price is not mistaken for a broken winback.
-    else logEvent("downsell_skipped_no_discount", { trigger: "winback" });
+    else logEvent("downsell_skipped_no_discount");
   }, [offer]);
 
   function close() {
@@ -94,7 +94,7 @@ function WinbackScreen() {
       const feedback = purchaseToastFor(res);
       if (res.ok) {
         logEvent("downsell_accept", { trigger: "winback" });
-        logEvent("purchase_completed", { tier: "annual" });
+        logEvent("purchase_completed", { tier: "annual", source: "winback" });
         hapticSuccess();
         if (feedback) toast(t(feedback.key), feedback.kind);
         close();

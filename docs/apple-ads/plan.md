@@ -42,7 +42,7 @@ Ikisi birlikte DE'de indirme basina LTV tavanini 0,49 USD'den 0,79 USD'ye cikari
 | **DE** | Cekirdek, butcenin ~%50'si | En yuksek TTR (%7,08), arama kaynakli 6/6 indirme, tek odeme yapan pazar, EUR fiyatlama, 5 takip kelimesinin 3'unde organik siralama yok |
 | **FR** | Ikincil, ~%21 | EUR pazar, %100 arama kaynakli, "comptage des glucides" siralanmiyor, rakip yogunlugu DE'den dusuk |
 | **TR** | Kucuk ve capali, ~%12 | En cok gosterim ama gelir sifir; tiklama cok ucuz oldugu icin olcum altyapisini dogrulamanin en ucuz yeri. Marka savunmasi zorunlu |
-| **US** | Mikro test, ~%17, 14 gunde kes | 240 gosterimde 0 tap; modelde indirme basina 1,78 EUR maliyet, tavan 1,16 EUR. Kanit olmadan buyutulmez |
+| **US** | Mikro test, ~%17, 14 gunde kes | 240 gosterimde 0 tap; modelde indirme basina 1,78 EUR maliyet, tavan 1,16 EUR. Kanit olmadan buyutulmez. Yapi: bolum 6b |
 | ES, IT | Faz 2 | Olcek kademesinde acilir, test fazinda degil |
 | JP | Disarida | 80 gosterim, 0 tap, 0 indirme. Rank 1 oldugumuz halde tiklanmiyoruz; once urun sayfasi duzeltilir |
 | MX, BR, SA | Disarida | Fiyat tablosunda dusuk bant, ARPU kaniti yok |
@@ -123,6 +123,37 @@ Generic'e exact kelime olarak tasinir ve ayni terim Discovery negatifine exact o
 Kelime kapisi: 30 tik 0 indirme = duraklat; 10+ indirme ve CPA < 3 $ = teklif +%20. Kanal esigi: indirme ->
 odeyen %5,3 (20-30 indirme birikince okunur, RevenueCat Charts -> Segment).
 
+## 6b. US test kampanyasi (Ekim 2026)
+
+US icin tek kampanya, 14 gun, toplam tavan 49 $ (3,50 $/gun x 14). Amac: US'de gunluk/takip diliyle gosterim,
+TTR ve indirme sinyali toplamak; kanit olmadan olceklenmez. Bolum 5'teki US payi (4 EUR/gun) yerine onayli
+3,50 $/gun kullanilir.
+
+| Ayar | Deger |
+|---|---|
+| Kampanya | ZS-US-Test, storefront US, dil en, yalniz Search Results yerlesimi |
+| Butce | 3,50 $/gun; Apple gunluk butcenin teklifi asmasini ister (3,50 > 0,45) |
+| Takvim | `--start` ile release gunu (UTC 00:00), bitis +14 gun kampanya `endTime`; PAUSED kurulur, `apple-ads-status.mjs enabled ZS-US-Test` ile acilir |
+| Cihaz ve kitle | iPhone + iPad; tum kullanicilar (New Users kisiti yok); yas, cinsiyet, gun-saat hedefi yok |
+| Ad group SearchMatch | Search Match acik, kelime yok, teklif 0,45 $ |
+| Ad group Broad | Search Match kapali, 10 Broad kelime, teklif 0,45 $: blood sugar log / tracker / diary, glucose log / tracker, diabetes diary / log / tracker, insulin log, carb counter diabetes |
+| Ad group Brand | Exact zerospike, zero spike, zerospike app; teklif 0,30 $ |
+| Negatifler | `negatives-us.csv`, 70 satir Broad, kampanya duzeyi: regulasyon ve doz hesaplayici terimleri, CGM/pompa/glukometre markalari, oyun ve fitness |
+| Default Ad | her ad group icin kontrol edilir; Search Results'ta Apple saglar, eksikse `--create-default-ad` veya konsoldan elle |
+
+Kararlar ve riskler:
+
+- Rakip uygulama adlari bu turda negatif degil: Search Match ve Broad'in ne yakaladigini gormek icin acik birakildi.
+  Rakip adlari ve alakasiz terimler rapordan okunup sonraki turda negatife alinir.
+- Regulasyon: Broad kelimelerde doz ima eden terim yok ("insulin log" kayit cercevesidir). Negatif listesi
+  "calculator", doz, bolus ve oran terimlerini keser; reklam dili gunluk, takip, hatirlatici cercevesinde kalir.
+- Butce/teklif orani Broad ve SearchMatch'te 7,8x, Brand'de 11,7x. v1 dersi dusuk oranda dagitimin bogulmasi ve
+  ~20x hedefiydi; 48 saat sonra gosterim yoksa once bu oran ve teklifler gozden gecirilir.
+- Toplam (lifetime) butce alani Campaign API 5.6'da kalkti; tavan gunluk butce x gun ile saglanir (49 $), sure
+  asimi kampanya bitis tarihiyle durur.
+- Okuma: `node scripts/apple-ads-report.mjs --days 7`. Durdurma esigi bolum 7'dedir (US: 100 tap sonrasi indirme
+  maliyeti 1,50 EUR ustunde); 14. gun sonunda sonuc o satirla okunur, genisletme karari ayri verilir.
+
 ## 7. Durdurma ve olcekleme esikleri
 
 | Seviye | Durdur | Olcekle |
@@ -148,10 +179,11 @@ olcmeden olcekleme yapma.**
 | `keywords-de.csv` | v2: 125 kelime, 4 kampanya (Brand/Generic/Competitor/Discovery), 12 ad group |
 | `keywords-fr.csv` | v2: 104 kelime, ayni kampanya/ad group yapisi |
 | `keywords-tr.csv` | 34 kelime (v1, degismedi) |
-| `keywords-us.csv` | 14 kelime (mikro test, v1, degismedi) |
+| `keywords-us.csv` | v2: 13 kelime, 1 kampanya (ZS-US-Test), 2 CSV ad group (Broad, Brand); SearchMatch ad group script tarafindan eklenir |
 | `negatives-de.csv`, `negatives-fr.csv` | Paylasilan negatif liste, dort kampanyaya da uygulanir (DE 37, FR 30 satir); regulasyon, urun uyumsuzlugu, kategori disi, dusuk niyet |
 | `negatives-de-discovery.csv`, `negatives-fr-discovery.csv` | Yalniz Discovery kampanyasina; paylasilan liste + wearable/fitness marka negatifleri + Brand/Generic/Competitor'daki tum exact kelimelerin exact negatifi (DE 178, FR 139 satir) |
-| `negatives-tr.csv`, `negatives-us.csv` | v1, degismedi |
+| `negatives-tr.csv` | v1, degismedi |
+| `negatives-us.csv` | 70 satir Broad (30 v1 + 40 yeni), yalniz ZS-US-Test'e yazilir; ayri Discovery listesi yok |
 | `cpp-glucose-diary.md`, `cpp-injection-rotation.md`, `cpp-carb-tracking.md` | Ekran goruntusu sirasi ve Promotional Text |
 | `privacy-2.3.1.md` | Attribution gizlilik beyani: app.json privacy manifest blogu ve App Store Connect formu kontrol listesi |
 

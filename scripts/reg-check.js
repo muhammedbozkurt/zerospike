@@ -7,6 +7,17 @@
  * auto-exempt anything, since only a human can judge whether a hit is real
  * regulatory language or a false positive (e.g. "alarm" used for the
  * reminder-ringing feature). Run via `npm run reg:check`.
+ *
+ * It also scans the local store copy that ships: zerospike-store/aso/<locale>.md,
+ * aso-android/<locale>.md and the newest google-play-extras/whats-new-<version>.md.
+ * That folder is gitignored, so CI does not have it and skips it silently. The
+ * notes, research and check logs beside those files quote banned wording on
+ * purpose and are not scanned. The scanned files mix languages (English notes
+ * next to the translated copy), so every line is checked against every locale's
+ * list, and a hit is excused only by a
+ * "zerospike-store/<dir>/<file>.md#<sentence>" key in reg-allowlist.json: the
+ * matched text must sit inside that sentence, so a banned phrase added next to
+ * it is still reported.
  */
 const fs = require("fs");
 const path = require("path");
@@ -14,6 +25,8 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const LOCALES_DIR = path.join(ROOT, "lib/i18n/locales");
 const ALLOWLIST_FILE = path.join(__dirname, "reg-allowlist.json");
+const STORE_DIR = path.join(ROOT, "zerospike-store");
+const STORE_KEY_PREFIX = "zerospike-store/";
 
 const LOCALES = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
 
@@ -215,12 +228,16 @@ function escapeRegExp(s) {
 // misfires around every accented/Turkish/German letter. Lookaround against
 // \p{L}/\p{N} instead. A trailing "*" in a pattern is a stem (e.g.
 // "diagnos*"), so it drops the right-hand boundary check.
-function buildLatinMatcher(pattern) {
+function latinRegExp(pattern, flags) {
   const wildcard = pattern.endsWith("*");
   const base = wildcard ? pattern.slice(0, -1) : pattern;
   const left = "(?<![\\p{L}\\p{N}_])";
   const right = wildcard ? "" : "(?![\\p{L}\\p{N}_])";
-  const re = new RegExp(left + escapeRegExp(base) + right, "iu");
+  return new RegExp(left + escapeRegExp(base) + right, flags);
+}
+
+function buildLatinMatcher(pattern) {
+  const re = latinRegExp(pattern, "iu");
   return (text) => re.exec(text);
 }
 
@@ -229,6 +246,22 @@ function buildSubstringMatcher(pattern) {
     const idx = text.indexOf(pattern);
     return idx === -1 ? null : { index: idx, 0: pattern };
   };
+}
+
+// Every occurrence in a line, not just the first: the store scan excuses a hit
+// by position, so a second occurrence must not hide behind an excused first one.
+function buildAllMatcher(pattern, substringMode) {
+  if (substringMode) {
+    return (text) => {
+      const hits = [];
+      for (let i = text.indexOf(pattern); i !== -1; i = text.indexOf(pattern, i + pattern.length)) {
+        hits.push({ index: i, length: pattern.length });
+      }
+      return hits;
+    };
+  }
+  const re = latinRegExp(pattern, "giu");
+  return (text) => Array.from(text.matchAll(re), (m) => ({ index: m.index, length: m[0].length }));
 }
 
 function excerpt(text, index, matchLen) {
@@ -249,6 +282,119 @@ const contextMatchers = [
 ];
 function hasGlucoseContext(text) {
   return contextMatchers.some((match) => match(text) !== null);
+}
+
+function compareVersions(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] || 0) - (b[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+// whats-new-<version>.md with the highest version. The watch app's notes
+// (whats-new-wear-<version>.md) do not match the pattern, so they never win.
+function newestWhatsNew(dir) {
+  let best = null;
+  for (const name of fs.readdirSync(dir)) {
+    const m = /^whats-new-(\d+(?:\.\d+)*)\.md$/.exec(name);
+    if (!m) continue;
+    const version = m[1].split(".").map(Number);
+    if (!best || compareVersions(version, best.version) > 0) best = { name, version };
+  }
+  return best ? best.name : null;
+}
+
+function listStoreFiles() {
+  const files = [];
+  const add = (sub, name) => {
+    const abs = path.join(STORE_DIR, sub, name);
+    const stat = fs.statSync(abs, { throwIfNoEntry: false });
+    if (stat && stat.isFile()) files.push({ abs, key: `${STORE_KEY_PREFIX}${sub}/${name}` });
+  };
+  for (const sub of ["aso", "aso-android"]) {
+    for (const locale of LOCALES) add(sub, `${locale}.md`);
+  }
+  const extras = path.join(STORE_DIR, "google-play-extras");
+  const extrasStat = fs.statSync(extras, { throwIfNoEntry: false });
+  const whatsNew = extrasStat && extrasStat.isDirectory() ? newestWhatsNew(extras) : null;
+  if (whatsNew) add("google-play-extras", whatsNew);
+  return files;
+}
+
+// "zerospike-store/<dir>/<file>.md#<sentence>" -> Map(file key -> sentences).
+function loadStoreAnchors(allowlist) {
+  const byFile = new Map();
+  for (const entry of Object.keys(allowlist)) {
+    if (!entry.startsWith(STORE_KEY_PREFIX)) continue;
+    const hash = entry.indexOf("#");
+    if (hash === -1 || hash === entry.length - 1) {
+      throw new Error(
+        `reg-allowlist.json: "${entry}" must look like "${STORE_KEY_PREFIX}<dir>/<file>.md#<sentence>"`
+      );
+    }
+    const file = entry.slice(0, hash);
+    if (!byFile.has(file)) byFile.set(file, []);
+    byFile.get(file).push(entry.slice(hash + 1));
+  }
+  return byFile;
+}
+
+// True when the matched text lies wholly inside an occurrence of an allowlisted sentence.
+function insideAnchor(anchors, line, index, length) {
+  for (const anchor of anchors) {
+    for (let at = line.indexOf(anchor); at !== -1; at = line.indexOf(anchor, at + 1)) {
+      if (index >= at && index + length <= at + anchor.length) return true;
+    }
+  }
+  return false;
+}
+
+function scanStore(allowlist, findings) {
+  const files = listStoreFiles();
+  if (files.length === 0) return { files: 0, excused: 0 };
+  const anchorsByFile = loadStoreAnchors(allowlist);
+  const matchers = LOCALES.map((locale) => ({
+    locale,
+    list: (PATTERNS[locale] || []).map(({ pattern, requiresContext }) => ({
+      pattern,
+      requiresContext: !!requiresContext,
+      all: buildAllMatcher(pattern, SUBSTRING_LOCALES.has(locale)),
+    })),
+  }));
+  let excused = 0;
+  for (const { abs, key } of files) {
+    // The file's own language goes first so a word several languages share is
+    // reported once, under that language.
+    const own = path.basename(abs, ".md");
+    const ordered = [...matchers.filter((m) => m.locale === own), ...matchers.filter((m) => m.locale !== own)];
+    const anchors = anchorsByFile.get(key) || [];
+    const lines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
+    lines.forEach((line, i) => {
+      const seen = new Set();
+      for (const { locale, list } of ordered) {
+        for (const { pattern, requiresContext, all } of list) {
+          for (const { index, length } of all(line)) {
+            const span = `${index}:${length}`;
+            if (seen.has(span)) continue;
+            if (requiresContext && !hasGlucoseContext(line)) continue;
+            seen.add(span);
+            if (insideAnchor(anchors, line, index, length)) {
+              excused++;
+              continue;
+            }
+            findings.push({
+              locale,
+              key: `${key}:${i + 1}`,
+              pattern,
+              excerpt: excerpt(line, index, length),
+            });
+          }
+        }
+      }
+    });
+  }
+  return { files: files.length, excused };
 }
 
 const allowlist = loadAllowlist();
@@ -285,9 +431,13 @@ for (const locale of LOCALES) {
   }
 }
 
+const store = scanStore(allowlist, findings);
+excusedCount += store.excused;
+const storeNote = store.files > 0 ? `, ${store.files} magaza dosyasi` : "";
+
 if (findings.length === 0) {
   console.log(
-    `reg-check: OK (${LOCALES.length} locale, 0 bulgu${
+    `reg-check: OK (${LOCALES.length} locale${storeNote}, 0 bulgu${
       excusedCount > 0 ? `, ${excusedCount} allowlist istisnasi` : ""
     })`
   );

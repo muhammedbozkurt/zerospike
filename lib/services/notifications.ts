@@ -3,6 +3,12 @@ import * as Device from "expo-device";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import i18n from "../i18n";
+import { logCrash, logEvent } from "../analytics";
+import {
+  TRIAL_NUDGE_DELAY_MS,
+  TRIAL_REMINDER_LEAD_DAYS,
+  trialReminderFireAt,
+} from "../trialTimeline";
 import {
   getNotificationPrefs,
   type NotificationPrefs,
@@ -49,6 +55,7 @@ const MED_ID = "zerospike-med-reminder";
 const GLUCOSE_ID = "zerospike-glucose-reminder";
 const WEEKLY_ID = "zerospike-weekly-summary";
 const TRIAL_ID = "zerospike-trial-ending";
+const TRIAL_NUDGE_ID = "zerospike-trial-day1-nudge";
 // One fixed id for the post-meal check, so the meal-log auto reminder and the
 // "I started eating" button can never stack two notifications at the same time
 // (re-scheduling with the same id replaces the pending one).
@@ -170,8 +177,10 @@ export async function ensureAndroidChannel(): Promise<void> {
   // a device that never schedules anything after upgrading.
   try {
     await Notifications.deleteNotificationChannelAsync(LEGACY_REMINDER_CHANNEL_ID);
-  } catch {
-    // never existed on this device - ignore
+  } catch (err) {
+    // A channel that never existed is a no-op, so an error here is unexpected,
+    // but the sweep is best-effort and retries on the next call.
+    logCrash(err, { service: "notifications", op: "deleteLegacyChannel" });
   }
 }
 
@@ -206,8 +215,9 @@ export async function ensureNotificationCategories(): Promise<void> {
         options: { opensAppToForeground: true },
       },
     ]);
-  } catch {
+  } catch (err) {
     // best-effort, like ensureAndroidChannel's own channel calls
+    logCrash(err, { service: "notifications", op: "registerCategories" });
   }
 }
 
@@ -270,6 +280,8 @@ export type NotificationRoute =
   | "weekly"
   | "lowFollowup"
   | "trial"
+  /** The one-off "connect Health" nudge a day into a trial. */
+  | "trialNudge"
   | "idle"
   /** A user-defined reminder. Opens the dashboard and NOTHING else: the app
    *  does not know what a custom reminder is about, so picking a form for it
@@ -333,7 +345,8 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
     if (req.status === "granted") return "granted";
     if (req.status === "denied") return req.canAskAgain ? "denied" : "deniedPermanently";
     return "undetermined";
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "requestPermission" });
     return "unavailable";
   }
 }
@@ -348,7 +361,8 @@ export async function hasNotificationPermission(): Promise<boolean> {
   try {
     const settings = await Notifications.getPermissionsAsync();
     return settings.status === "granted";
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "hasPermission" });
     return false;
   }
 }
@@ -367,7 +381,8 @@ export async function getNotificationPermission(): Promise<NotificationPermissio
       return settings.canAskAgain ? "denied" : "deniedPermanently";
     }
     return "undetermined";
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "readPermission" });
     return "unavailable";
   }
 }
@@ -426,8 +441,9 @@ export async function checkReminderReliability(): Promise<ReminderReliability> {
     }
     const api = Device.platformApiLevel ?? 0;
     result.exactAlarmUnknown = api >= 31;
-  } catch {
+  } catch (err) {
     // A failed probe must never be reported as a problem with the user's setup.
+    logCrash(err, { service: "notifications", op: "reliabilityProbe" });
   }
   return result;
 }
@@ -461,8 +477,9 @@ export async function scheduleBasalReminder(time: string): Promise<void> {
 export async function cancelBasalReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(BASAL_ID);
-  } catch {
+  } catch (err) {
     // not scheduled - ignore
+    logCrash(err, { service: "notifications", op: "cancelBasal" });
   }
   // Scheduling has moved to the reminders registry (schema v17): a basal
   // reminder now lives under "zerospike-rem-<id>", not the fixed BASAL_ID
@@ -499,8 +516,9 @@ export async function scheduleMedReminder(time: string): Promise<void> {
 export async function cancelMedReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(MED_ID);
-  } catch {
+  } catch (err) {
     // not scheduled - ignore
+    logCrash(err, { service: "notifications", op: "cancelMed" });
   }
   // See cancelBasalReminder above: app/settings/profile.tsx calls this when
   // oral-medication tracking is turned off, and the reminder it means to take
@@ -531,8 +549,9 @@ export async function scheduleGlucoseReminder(time: string): Promise<void> {
 export async function cancelGlucoseReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(GLUCOSE_ID);
-  } catch {
+  } catch (err) {
     // not scheduled - ignore
+    logCrash(err, { service: "notifications", op: "cancelGlucose" });
   }
   // See cancelBasalReminder above, for the same reason and the same id move.
   await cancelReminderNotificationsOfType("glucose");
@@ -723,8 +742,9 @@ async function scheduleReminderRow(row: Reminder): Promise<void> {
 async function cancelReminderIdentifier(identifier: string): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(identifier);
-  } catch {
+  } catch (err) {
     // not scheduled - ignore
+    logCrash(err, { service: "notifications", op: "cancelReminder" });
   }
 }
 
@@ -747,8 +767,9 @@ async function cancelReminderNotificationsOfType(
       // keeps ringing on a surface the profile no longer shows.
       await cancelAlarm(alarmIdentifier(row.id));
     }
-  } catch {
+  } catch (err) {
     // best-effort; a failed lookup must not throw out of a settings toggle
+    logCrash(err, { service: "notifications", op: "cancelByType" });
   }
 }
 
@@ -777,7 +798,10 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
         // bridge creates (only possible the very first time it ever runs, on
         // a device with no reminders row at all yet) is never left orphaned
         // for adoptOrphanReminders to have to pick up later.
-        const profile = await readActiveProfile().catch(() => null);
+        const profile = await readActiveProfile().catch((err) => {
+          logCrash(err, { service: "notifications", op: "bridgeProfile" });
+          return null;
+        });
         const bridged = await applyLegacyRemindersBridge(
           {
             basal: prefs.basal,
@@ -796,7 +820,8 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
             cancelGlucoseReminder(),
           ]);
         }
-      } catch {
+      } catch (err) {
+        logCrash(err, { service: "notifications", op: "remindersBridge" });
         // best-effort: a failed bridge leaves the table empty and the legacy
         // schedule untouched, which is never worse than doing nothing; the
         // next launch tries again (remindersBridgePromise resets per process).
@@ -851,7 +876,8 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   let profile: UserProfile | null;
   try {
     profile = await readActiveProfile();
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "applyRemindersProfile" });
     return;
   }
   const profileId = profile?.id;
@@ -995,8 +1021,9 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
         await cancelReminderIdentifier(n.identifier);
       }
     }
-  } catch {
+  } catch (err) {
     // best-effort sweep; a failed listing must never break the apply
+    logCrash(err, { service: "notifications", op: "orphanSweep" });
   }
 
   // Orphaned-alarm sweep (2.2.0's A1), the exact same pattern as the
@@ -1049,8 +1076,9 @@ export async function scheduleWeeklySummary(
 export async function cancelWeeklySummary(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(WEEKLY_ID);
-  } catch {
+  } catch (err) {
     // not scheduled - ignore
+    logCrash(err, { service: "notifications", op: "cancelWeekly" });
   }
 }
 
@@ -1084,7 +1112,8 @@ async function readIdleEnd(): Promise<number | null> {
     if (!raw) return null;
     const end = parseInt(raw, 10);
     return Number.isFinite(end) ? end : null;
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "readIdleEnd" });
     return null;
   }
 }
@@ -1102,8 +1131,9 @@ export async function scheduleIdleReminder(keepFireAt?: number): Promise<void> {
   await ensureAndroidChannel();
   try {
     await Notifications.cancelScheduledNotificationAsync(IDLE_ID);
-  } catch {
+  } catch (err) {
     // nothing pending
+    logCrash(err, { service: "notifications", op: "rearmIdle" });
   }
   const fireAt =
     keepFireAt != null && keepFireAt > Date.now() + 60_000
@@ -1125,21 +1155,24 @@ export async function scheduleIdleReminder(keepFireAt?: number): Promise<void> {
   });
   try {
     await AsyncStorage.setItem(IDLE_END_KEY, String(fireAt));
-  } catch {
+  } catch (err) {
     // best-effort persistence
+    logCrash(err, { service: "notifications", op: "writeIdleEnd" });
   }
 }
 
 export async function cancelIdleReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(IDLE_ID);
-  } catch {
+  } catch (err) {
     // nothing pending
+    logCrash(err, { service: "notifications", op: "cancelIdle" });
   }
   try {
     await AsyncStorage.removeItem(IDLE_END_KEY);
-  } catch {
+  } catch (err) {
     // best-effort
+    logCrash(err, { service: "notifications", op: "clearIdleEnd" });
   }
 }
 
@@ -1160,20 +1193,22 @@ export async function noteJournalActivity(): Promise<void> {
     }
     if (!(await hasNotificationPermission())) return;
     await scheduleIdleReminder();
-  } catch {
+  } catch (err) {
     // the reminder is a nudge; a failure must never surface in a logging flow
+    logCrash(err, { service: "notifications", op: "noteJournalActivity" });
   }
 }
 
 // ── Pending one-off reminders, tracked so a language change can rewrite them ──
 
-type OneOffKind = "lowFollowup" | "trial";
+type OneOffKind = "lowFollowup" | "trial" | "trialNudge";
 
 async function readOneOffEnds(): Promise<Partial<Record<OneOffKind, number>>> {
   try {
     const raw = await AsyncStorage.getItem(ONEOFF_ENDS_KEY);
     return raw ? (JSON.parse(raw) as Partial<Record<OneOffKind, number>>) : {};
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "readOneOffEnds" });
     return {};
   }
 }
@@ -1183,8 +1218,9 @@ async function rememberOneOffEnd(kind: OneOffKind, endsAt: number): Promise<void
     const all = await readOneOffEnds();
     all[kind] = endsAt;
     await AsyncStorage.setItem(ONEOFF_ENDS_KEY, JSON.stringify(all));
-  } catch {
+  } catch (err) {
     // best-effort: without the record the reminder just keeps its old copy
+    logCrash(err, { service: "notifications", op: "rememberOneOff", kind });
   }
 }
 
@@ -1199,8 +1235,9 @@ async function forgetOneOffEnd(kind: OneOffKind): Promise<void> {
     if (all[kind] == null) return;
     delete all[kind];
     await AsyncStorage.setItem(ONEOFF_ENDS_KEY, JSON.stringify(all));
-  } catch {
+  } catch (err) {
     // best-effort
+    logCrash(err, { service: "notifications", op: "forgetOneOff", kind });
   }
 }
 
@@ -1315,46 +1352,133 @@ export async function applyNotificationPrefs(
 // ── Trial-ending reminder ──────────────────────────────────────────────────
 
 /**
- * Local reminder scheduled `leadDays` before a free trial converts, so a user
- * can cancel in time and is never surprised by a charge. One-off.
+ * Content of the trial-ending reminder, shared by the first arming and a
+ * language-change re-arm. The lead is the same constant the timeline and the
+ * scheduler use, so the copy can never name a different number than the one
+ * that fires. `count` only picks the singular or plural wording.
  */
-export async function scheduleTrialEndingReminder(trialDays: number): Promise<void> {
-  const leadDays = 2;
-  const fireInDays = trialDays - leadDays;
-  if (fireInDays <= 0) return;
-  const granted = await ensureNotificationPermission();
-  if (!granted) return;
-  await ensureAndroidChannel();
-  await Notifications.scheduleNotificationAsync({
-    identifier: TRIAL_ID,
-    content: {
-      title: i18n.t("notifications.trialTitle"),
-      body: i18n.t("notifications.trialBody"),
-      data: { route: "trial" satisfies NotificationRoute },
-      ...androidChannel,
-      ...iosSound,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: fireInDays * 24 * 60 * 60,
-      repeats: false,
-    },
-  });
-  await rememberOneOffEnd("trial", Date.now() + fireInDays * 24 * 60 * 60 * 1000);
+function trialEndingContent(): Notifications.NotificationContentInput {
+  const days = TRIAL_REMINDER_LEAD_DAYS;
+  return {
+    title: i18n.t("notifications.trialTitle", { count: days, days }),
+    body: i18n.t("notifications.trialBody"),
+    data: { route: "trial" satisfies NotificationRoute },
+    ...androidChannel,
+    ...iosSound,
+  };
 }
 
 /**
- * Takes the trial reminder down. The reminder only makes sense while a trial is
- * still running towards its first charge, so a completed purchase (or the master
- * switch going off) must not leave a "your trial ends soon" nudge armed.
+ * Local reminder scheduled TRIAL_REMINDER_LEAD_DAYS before a free trial
+ * converts, so the end of the trial is never a surprise. One-off. The copy says
+ * what carries on with Pro; the paywall timeline and Settings carry the way out.
+ *
+ * `trialEndsAt` is the store's own expiry (epoch ms), so the reminder follows the
+ * real end of the trial. Nothing is armed when that leaves no room for a reminder
+ * that still comes BEFORE the end, or when the app's own notification switch is
+ * off (checked before anything is asked of the OS, so a muted app never raises
+ * the permission prompt).
+ */
+export async function scheduleTrialEndingReminder(trialEndsAt: number): Promise<void> {
+  const fireAt = trialReminderFireAt(trialEndsAt);
+  if (!(fireAt - Date.now() >= 1000)) return;
+  if (!(await getNotificationPrefs()).enabled) return;
+  const granted = await ensureNotificationPermission();
+  if (!granted) return;
+  // The prompt can sit open for a while: the room left is measured again.
+  const seconds = Math.floor((fireAt - Date.now()) / 1000);
+  if (seconds < 1) return;
+  await ensureAndroidChannel();
+  await Notifications.scheduleNotificationAsync({
+    identifier: TRIAL_ID,
+    content: trialEndingContent(),
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      repeats: false,
+    },
+  });
+  await rememberOneOffEnd("trial", fireAt);
+  logEvent("trial_reminder_scheduled", { days_before: TRIAL_REMINDER_LEAD_DAYS });
+}
+
+/** Content of the day-1 nudge, shared by the first arming and a language-change re-arm. */
+function trialNudgeContent(): Notifications.NotificationContentInput {
+  const health = i18n.t(
+    Platform.OS === "ios" ? "settings.healthSection" : "settings.healthSectionAndroid"
+  );
+  return {
+    title: i18n.t("notifications.trialNudgeTitle"),
+    body: i18n.t("notifications.trialNudgeBody", { health }),
+    data: { route: "trialNudge" satisfies NotificationRoute },
+    ...androidChannel,
+    ...iosSound,
+  };
+}
+
+/**
+ * One gentle nudge 24 hours into a trial, to bring in the Health history.
+ * One-off. The caller decides whether it applies (Health usable on this device
+ * and not connected yet, see shouldScheduleTrialNudge). Never prompts: it only
+ * arms when notifications are on and permitted already.
+ */
+export async function scheduleTrialDay1Nudge(): Promise<void> {
+  const prefs = await getNotificationPrefs();
+  if (!prefs.enabled) return;
+  if (!(await hasNotificationPermission())) return;
+  await ensureAndroidChannel();
+  await Notifications.scheduleNotificationAsync({
+    identifier: TRIAL_NUDGE_ID,
+    content: trialNudgeContent(),
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: TRIAL_NUDGE_DELAY_MS / 1000,
+      repeats: false,
+    },
+  });
+  await rememberOneOffEnd("trialNudge", Date.now() + TRIAL_NUDGE_DELAY_MS);
+}
+
+/** Takes the day-1 nudge down, e.g. once Health is connected. */
+export async function cancelTrialDay1Nudge(): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(TRIAL_NUDGE_ID);
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "cancelTrialNudge" });
+  }
+  await forgetOneOffEnd("trialNudge");
+}
+
+/**
+ * Reports the day-1 nudge once its fire time has passed. The OS delivers it
+ * with the app closed, so the app can only notice afterwards: it is called on
+ * launch and on every foreground. A nudge whose permission has since gone is
+ * dropped without a report.
+ */
+export async function reportTrialNudgeIfDelivered(now: number = Date.now()): Promise<void> {
+  try {
+    const firedAt = (await readOneOffEnds()).trialNudge;
+    if (firedAt == null || firedAt > now) return;
+    await forgetOneOffEnd("trialNudge");
+    if (await hasNotificationPermission()) logEvent("trial_day1_nudge_sent");
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "reportTrialNudge" });
+  }
+}
+
+/**
+ * Takes the trial reminder and the day-1 nudge down. Both only make sense while
+ * a trial is still running towards its first charge, so a completed purchase (or
+ * the master switch going off) must not leave either armed.
  */
 export async function cancelTrialReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(TRIAL_ID);
-  } catch {
-    // nothing pending
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "cancelTrialReminder" });
   }
   await forgetOneOffEnd("trial");
+  await cancelTrialDay1Nudge();
 }
 
 // ── Event-driven: post-meal check ──────────────────────────────────────────
@@ -1451,33 +1575,37 @@ async function schedulePostMealAt(opts: {
       const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
       const end = raw == null ? NaN : parseInt(raw, 10);
       running = Number.isFinite(end) && end > Date.now();
-    } catch {
+    } catch (err) {
       // Unreadable storage: treat the slot as free, exactly as every other
       // read in this file falls back to "nothing running".
+      logCrash(err, { service: "notifications", op: "readPostMealEnd" });
       running = false;
     }
     if (running) return false;
     try {
       await AsyncStorage.multiSet(entries);
       if (!opts.profileId) await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
-    } catch {
+    } catch (err) {
       // best-effort persistence
+      logCrash(err, { service: "notifications", op: "claimPostMealTimer" });
     }
   }
 
   await ensureAndroidChannel();
   try {
     await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
-  } catch {
+  } catch (err) {
     // nothing pending
+    logCrash(err, { service: "notifications", op: "rearmPostMeal" });
   }
 
   if (!opts.claimIfIdle) {
     try {
       await AsyncStorage.multiSet(entries);
       if (!opts.profileId) await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
-    } catch {
+    } catch (err) {
       // best-effort persistence
+      logCrash(err, { service: "notifications", op: "writePostMealTimer" });
     }
   }
 
@@ -1531,8 +1659,9 @@ async function schedulePostMealAt(opts: {
       try {
         await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
         await cancelAlarm(POSTMEAL_ALARM_ID);
-      } catch {
+      } catch (cancelErr) {
         // nothing pending
+        logCrash(cancelErr, { service: "notifications", op: "postMealExactFallback" });
       }
       await mirrorPostMealActivity(endsAt, startedAt);
       return true;
@@ -1543,8 +1672,9 @@ async function schedulePostMealAt(opts: {
     try {
       await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
       await cancelAlarm(POSTMEAL_ALARM_ID);
-    } catch {
+    } catch (cancelErr) {
       // nothing pending
+      logCrash(cancelErr, { service: "notifications", op: "postMealRollbackCancel" });
     }
     try {
       await AsyncStorage.multiRemove([
@@ -1552,8 +1682,9 @@ async function schedulePostMealAt(opts: {
         POSTMEAL_TIMER_START_KEY,
         POSTMEAL_TIMER_PROFILE_KEY,
       ]);
-    } catch {
+    } catch (rollbackErr) {
       // best-effort rollback
+      logCrash(rollbackErr, { service: "notifications", op: "postMealRollback" });
     }
     throw e;
   }
@@ -1590,8 +1721,9 @@ async function mirrorPostMealActivity(endsAt: number, startedAt: number): Promis
           : null,
       unitLabel: snapshot ? glucoseUnitLabel(snapshot.unit) : "",
     });
-  } catch {
+  } catch (err) {
     // best-effort mirror
+    logCrash(err, { service: "notifications", op: "mirrorPostMealActivity" });
   }
 }
 
@@ -1611,7 +1743,8 @@ export async function getPostMealTimerEnd(): Promise<number | null> {
       return null;
     }
     return end;
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "readPostMealTimerEnd" });
     return null;
   }
 }
@@ -1641,7 +1774,8 @@ async function readPostMealStart(): Promise<number | null> {
     if (!raw) return null;
     const start = parseInt(raw, 10);
     return Number.isFinite(start) ? start : null;
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "readPostMealTimerStart" });
     return null;
   }
 }
@@ -1649,7 +1783,8 @@ async function readPostMealStart(): Promise<number | null> {
 async function readPostMealTimerProfile(): Promise<string | null> {
   try {
     return await AsyncStorage.getItem(POSTMEAL_TIMER_PROFILE_KEY);
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "readPostMealTimerProfile" });
     return null;
   }
 }
@@ -1680,8 +1815,9 @@ export async function completePostMealTimer(): Promise<void> {
       POSTMEAL_TIMER_START_KEY,
       POSTMEAL_TIMER_PROFILE_KEY,
     ]);
-  } catch {
+  } catch (err) {
     // best-effort
+    logCrash(err, { service: "notifications", op: "completePostMealTimer" });
   }
   endPostMealActivity();
 }
@@ -1698,8 +1834,9 @@ export async function completePostMealTimer(): Promise<void> {
 export async function cancelPostMealTimer(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
-  } catch {
+  } catch (err) {
     // nothing pending
+    logCrash(err, { service: "notifications", op: "cancelPostMeal" });
   }
   await cancelAlarm(POSTMEAL_ALARM_ID);
   try {
@@ -1708,8 +1845,9 @@ export async function cancelPostMealTimer(): Promise<void> {
       POSTMEAL_TIMER_START_KEY,
       POSTMEAL_TIMER_PROFILE_KEY,
     ]);
-  } catch {
+  } catch (err) {
     // best-effort
+    logCrash(err, { service: "notifications", op: "clearPostMealTimer" });
   }
   endPostMealActivity();
 }
@@ -1914,8 +2052,9 @@ export async function restartPostMealTimerAt(
       profileId: resolvedProfileId,
     });
     return "retimed";
-  } catch {
+  } catch (err) {
     // The running timer keeps its old anchor; nothing is lost.
+    logCrash(err, { service: "notifications", op: "restartPostMealTimer" });
     return "idle";
   }
 }
@@ -1981,9 +2120,10 @@ export async function restorePostMealWindow(
       claimIfIdle: true,
     });
     return claimed ? "restored" : "occupied";
-  } catch {
+  } catch (err) {
     // Nothing was armed (schedulePostMealAt rolls its own write back) and
     // nothing was taken down; the entry itself is already back either way.
+    logCrash(err, { service: "notifications", op: "restorePostMealWindow" });
     return "idle";
   }
 }
@@ -2048,8 +2188,9 @@ export async function applyPostMealAlarmModeChange(): Promise<PostMealRetimeResu
       minSeconds: 1,
     });
     return "retimed";
-  } catch {
+  } catch (err) {
     // The running countdown keeps the mode it was armed with; nothing is lost.
+    logCrash(err, { service: "notifications", op: "postMealAlarmMode" });
     return "idle";
   }
 }
@@ -2069,8 +2210,9 @@ async function hidePostMealActivityForOtherProfile(): Promise<void> {
     if (running == null || running.profileId == null) return;
     const active = await readActiveProfile();
     if (active?.id && active.id !== running.profileId) endPostMealActivity();
-  } catch {
+  } catch (err) {
     // best-effort: at worst the card stays a little longer than it should
+    logCrash(err, { service: "notifications", op: "hideOtherProfileActivity" });
   }
 }
 
@@ -2130,8 +2272,9 @@ async function reconcilePostMealDelivery(prefs: NotificationPrefs): Promise<void
       profileId: running.profileId,
       minSeconds: 1,
     });
-  } catch {
+  } catch (err) {
     // best-effort: the countdown keeps whatever it was armed with.
+    logCrash(err, { service: "notifications", op: "reconcilePostMealDelivery" });
   }
 }
 
@@ -2175,8 +2318,9 @@ export async function scheduleLowFollowup(): Promise<boolean> {
   await ensureAndroidChannel();
   try {
     await Notifications.cancelScheduledNotificationAsync(LOWFOLLOW_ID);
-  } catch {
+  } catch (err) {
     // nothing pending
+    logCrash(err, { service: "notifications", op: "rearmLowFollowup" });
   }
   await Notifications.scheduleNotificationAsync({
     identifier: LOWFOLLOW_ID,
@@ -2200,8 +2344,9 @@ export async function scheduleLowFollowup(): Promise<boolean> {
 export async function cancelLowFollowup(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(LOWFOLLOW_ID);
-  } catch {
+  } catch (err) {
     // nothing pending
+    logCrash(err, { service: "notifications", op: "cancelLowFollowup" });
   }
   await forgetOneOffEnd("lowFollowup");
 }
@@ -2269,19 +2414,29 @@ export async function rescheduleForLanguageChange(): Promise<void> {
     }
 
     if (ends.trial != null && ends.trial > now) {
-      const ok = await rearmOneOff(TRIAL_ID, (ends.trial - now) / 1000, {
-        title: i18n.t("notifications.trialTitle"),
-        body: i18n.t("notifications.trialBody"),
-        data: { route: "trial" satisfies NotificationRoute },
-        ...androidChannel,
-        ...iosSound,
-      });
+      const ok = await rearmOneOff(TRIAL_ID, (ends.trial - now) / 1000, trialEndingContent());
       if (ok) kept.trial = ends.trial;
     }
 
+    if (ends.trialNudge != null) {
+      if (ends.trialNudge > now) {
+        const ok = await rearmOneOff(
+          TRIAL_NUDGE_ID,
+          (ends.trialNudge - now) / 1000,
+          trialNudgeContent()
+        );
+        if (ok) kept.trialNudge = ends.trialNudge;
+      } else {
+        // Already delivered: kept only so reportTrialNudgeIfDelivered can still
+        // report it once.
+        kept.trialNudge = ends.trialNudge;
+      }
+    }
+
     await AsyncStorage.setItem(ONEOFF_ENDS_KEY, JSON.stringify(kept));
-  } catch {
+  } catch (err) {
     // best-effort; the previously scheduled reminders still fire as before
+    logCrash(err, { service: "notifications", op: "languageChange" });
   }
 }
 
@@ -2295,8 +2450,9 @@ async function rearmOneOff(
   if (seconds < 1) return false;
   try {
     await Notifications.cancelScheduledNotificationAsync(identifier);
-  } catch {
+  } catch (err) {
     // nothing pending
+    logCrash(err, { service: "notifications", op: "rearmOneOffCancel", id: identifier });
   }
   try {
     await Notifications.scheduleNotificationAsync({
@@ -2309,7 +2465,8 @@ async function rearmOneOff(
       },
     });
     return true;
-  } catch {
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "rearmOneOff", id: identifier });
     return false;
   }
 }

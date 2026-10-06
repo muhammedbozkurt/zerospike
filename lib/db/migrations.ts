@@ -63,6 +63,7 @@ import {
   V23_FOODS_COLUMNS,
   V23_REBUILD_FTS,
 } from "./v23Sql";
+import { V24_CREATE } from "./v24Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -105,7 +106,8 @@ export type SchemaStamp =
   | 20
   | 21
   | 22
-  | 23;
+  | 23
+  | 24;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -745,5 +747,20 @@ export async function migrateToV23(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.execAsync(V23_REBUILD_FTS);
 
     await stampSchemaVersion(db, 23);
+  });
+}
+
+/**
+ * The v23 → v24 migration: analytics_queue, the on-device outbox of the
+ * Supabase analytics sink (see ./v24Sql). Create-only DDL, identical to what a
+ * fresh install runs, so no existing row is read, rewritten or lost and a
+ * re-run is a no-op. The stamp lands in the same transaction as the DDL.
+ */
+export async function migrateToV24(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const statement of V24_CREATE) {
+      await db.execAsync(statement);
+    }
+    await stampSchemaVersion(db, 24);
   });
 }

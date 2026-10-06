@@ -12,11 +12,20 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import Slider from "@react-native-community/slider";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
+import { updateProfile } from "../lib/db/profiles";
+import {
+  CALC_SETUP_DISMISSED_KEY,
+  calcSetupInitial,
+  calcSetupNeeded,
+  calcSetupPatch,
+  shouldAutoOpenCalcSetup,
+} from "../lib/calcSetup";
 import { getFood } from "../lib/db/foods";
 import {
   addMealLog,
@@ -48,6 +57,7 @@ import { getRotationCycleStart } from "../lib/rotationCycle";
 import { InjectionBodyMap, type PointSelection } from "../components/InjectionBodyMap";
 import { logCrash, logEvent } from "../lib/analytics";
 import { noteLogAndMaybeReview } from "../lib/services/review";
+import { noteFirstLog } from "../lib/services/firstLog";
 import {
   checkDose,
   estimateInsulin,
@@ -88,9 +98,17 @@ import {
   HEALTH_NAME,
 } from "../lib/services/health";
 import { foodSourceLabel } from "../lib/services/openFoodFacts";
-import type { Food, InjectionSite, LogTag, MealSlot, SitePoint } from "../lib/db/types";
+import type {
+  Food,
+  GlucoseUnit,
+  InjectionSite,
+  LogTag,
+  MealSlot,
+  SitePoint,
+} from "../lib/db/types";
 import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
+import { SheetShell } from "../components/SheetShell";
 import { Stepper, useStepperValidity } from "../components/Stepper";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
@@ -319,7 +337,14 @@ function NoticeCard({
 function NoticeGroup({
   items,
 }: {
-  items: { icon: keyof typeof Ionicons.glyphMap; tint: string; title?: string; body: string }[];
+  items: {
+    icon: keyof typeof Ionicons.glyphMap;
+    tint: string;
+    title?: string;
+    body: string;
+    /** Makes the row tappable, with the same trailing chevron NoticeCard draws. */
+    onPress?: () => void;
+  }[];
 }) {
   if (items.length === 0) return null;
   return (
@@ -331,26 +356,161 @@ function NoticeGroup({
         backgroundColor: withAlpha(THEME.accent, 0.1),
       }}
     >
-      {items.map((item, i) => (
-        <View
-          key={i}
-          className="flex-row items-start"
-          style={{ marginTop: i === 0 ? 0 : 10 }}
-        >
-          <Ionicons name={item.icon} size={15} color={item.tint} style={{ marginTop: 1 }} />
-          <View className="flex-1 ml-2.5">
-            {item.title ? (
-              <Text style={{ color: item.tint, fontSize: 12, fontWeight: "800", marginBottom: 2 }}>
-                {item.title}
+      {items.map((item, i) => {
+        const Row = item.onPress ? Pressable : View;
+        return (
+          <Row
+            key={i}
+            className="flex-row items-start"
+            style={{ marginTop: i === 0 ? 0 : 10 }}
+            {...(item.onPress
+              ? { onPress: item.onPress, accessibilityRole: "button" as const }
+              : {})}
+          >
+            <Ionicons name={item.icon} size={15} color={item.tint} style={{ marginTop: 1 }} />
+            <View className="flex-1 ml-2.5">
+              {item.title ? (
+                <Text style={{ color: item.tint, fontSize: 12, fontWeight: "800", marginBottom: 2 }}>
+                  {item.title}
+                </Text>
+              ) : null}
+              <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 17, opacity: 0.85 }}>
+                {item.body}
               </Text>
+            </View>
+            {item.onPress ? (
+              <DirIcon name="chevron-forward-outline" size={14} color={item.tint} />
             ) : null}
-            <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 17, opacity: 0.85 }}>
-              {item.body}
-            </Text>
-          </View>
-        </View>
-      ))}
+          </Row>
+        );
+      })}
     </View>
+  );
+}
+
+/**
+ * The calculator's two numbers, asked in one sheet the first time it opens
+ * (see lib/calcSetup.ts for who is asked and why here, not in onboarding).
+ *
+ * Saving writes one carb ratio for all three meals plus the ISF and marks them
+ * the user's own, the same rule Settings applies. Closing any other way leaves
+ * the defaults in place; the screen remembers that and the "default ratios"
+ * notice stays one tap from reopening this.
+ *
+ * ISF is edited in the profile's display unit and handed back in it; the
+ * screen converts to mg/dL at the storage boundary.
+ */
+function CalcSetupSheet({
+  visible,
+  onClose,
+  onSave,
+  saving,
+  saveError,
+  unit,
+  initialCarbRatio,
+  initialIsfMgdl,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSave: (values: { carbRatio: number; isfDisplay: number }) => void;
+  saving: boolean;
+  saveError: boolean;
+  unit: GlucoseUnit;
+  initialCarbRatio: number;
+  initialIsfMgdl: number;
+}) {
+  const { t } = useTranslation();
+  const [carbRatio, setCarbRatio] = useState(initialCarbRatio);
+  const [isf, setIsf] = useState(glucoseToDisplay(initialIsfMgdl, unit));
+  const fields = useStepperValidity();
+
+  // Every open starts from what the profile holds now, not from what a
+  // previous, abandoned open left in the steppers.
+  useEffect(() => {
+    if (!visible) return;
+    setCarbRatio(initialCarbRatio);
+    setIsf(glucoseToDisplay(initialIsfMgdl, unit));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  return (
+    <SheetShell
+      visible={visible}
+      onClose={onClose}
+      title={t("calculator.setup.title")}
+      closeLabel={t("common.close")}
+      footer={
+        <View>
+          {saveError ? (
+            <Text style={{ color: THEME.caution, fontSize: 12, marginBottom: 8 }}>
+              {t("common.saveFailed")}
+            </Text>
+          ) : null}
+          <GradientCTA
+            label={t("common.save")}
+            loading={saving}
+            disabled={saving || !fields.allValid}
+            onPress={() => onSave({ carbRatio, isfDisplay: isf })}
+          />
+          <Pressable
+            onPress={onClose}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("calculator.setup.later")}
+            style={{ minHeight: 44, alignItems: "center", justifyContent: "center", marginTop: 4 }}
+          >
+            <Text style={{ color: THEME.muted, fontSize: 15, fontWeight: "500" }}>
+              {t("calculator.setup.later")}
+            </Text>
+          </Pressable>
+        </View>
+      }
+    >
+      <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 19, marginBottom: 16 }}>
+        {t("calculator.setup.body")}
+      </Text>
+
+      <DetailLabel>{t("calculator.setup.carbLabel")}</DetailLabel>
+      <Stepper
+        value={carbRatio}
+        onChange={setCarbRatio}
+        onValidityChange={fields.reporter("carbRatio")}
+        step={0.5}
+        longStep={1}
+        min={1}
+        max={50}
+        decimals={1}
+        suffix={t("common.carbRatioUnit")}
+        size="lg"
+        accessibilityLabel={t("calculator.setup.carbLabel")}
+      />
+      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
+        {t("calculator.setup.carbHint")}
+      </Text>
+      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }}>
+        {t("calculator.setup.perMealNote")}
+      </Text>
+
+      <View style={{ marginTop: 18 }}>
+        <DetailLabel>{t("calculator.setup.isfLabel")}</DetailLabel>
+        <Stepper
+          value={isf}
+          onChange={setIsf}
+          onValidityChange={fields.reporter("isf")}
+          step={unit === "mmol" ? 0.1 : 1}
+          longStep={unit === "mmol" ? 0.5 : 5}
+          min={unit === "mmol" ? 0.5 : 5}
+          max={unit === "mmol" ? 30 : 500}
+          decimals={unit === "mmol" ? 1 : 0}
+          suffix={glucoseUnitLabel(unit)}
+          size="lg"
+          accessibilityLabel={t("calculator.setup.isfLabel")}
+        />
+        <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
+          {t("calculator.setup.isfHint")}
+        </Text>
+      </View>
+    </SheetShell>
   );
 }
 
@@ -588,6 +748,66 @@ function CalculatorScreen() {
   // this screen (portion, carbs, photo, note, tags) is unchanged.
   const insulinMode = insulinModeOf(activeProfile);
   const showsDose = insulinModeShowsBolus(insulinMode);
+
+  // First-use setup of the ratio and ISF (lib/calcSetup.ts). It opens by
+  // itself on a new record while the profile has no number of its own and the
+  // sheet has not been put away before; the notices below reopen it by hand.
+  const setupNeeded = calcSetupNeeded(activeProfile);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [savingSetup, setSavingSetup] = useState(false);
+  const [setupSaveError, setSetupSaveError] = useState(false);
+  const setupDismissedKey = activeProfile ? `${CALC_SETUP_DISMISSED_KEY}.${activeProfile.id}` : null;
+
+  useEffect(() => {
+    if (!setupDismissedKey || !setupNeeded || isEdit) return;
+    let alive = true;
+    (async () => {
+      let dismissed = false;
+      try {
+        dismissed = (await AsyncStorage.getItem(setupDismissedKey)) != null;
+      } catch {
+        // an unreadable flag means "ask", which is the safe direction
+      }
+      if (alive && shouldAutoOpenCalcSetup({ needed: true, isEdit, dismissed })) {
+        setSetupOpen(true);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [setupDismissedKey, setupNeeded, isEdit]);
+
+  function closeSetup() {
+    setSetupOpen(false);
+    setSetupSaveError(false);
+    if (setupDismissedKey) {
+      AsyncStorage.setItem(setupDismissedKey, "1").catch(() => {
+        // best-effort: worst case the sheet is offered once more next time
+      });
+    }
+  }
+
+  async function saveSetup(values: { carbRatio: number; isfDisplay: number }) {
+    if (!activeProfile || savingSetup) return;
+    const patch = calcSetupPatch({
+      carbRatio: values.carbRatio,
+      isfMgdl: glucoseFromDisplay(values.isfDisplay, unit),
+    });
+    if (!patch) return;
+    setSavingSetup(true);
+    setSetupSaveError(false);
+    try {
+      await updateProfile(activeProfile.id, patch);
+      bumpData();
+      setSetupOpen(false);
+      hapticSuccess();
+    } catch (err) {
+      logCrash(err, { screen: "calculator", step: "calcSetup" });
+      setSetupSaveError(true);
+    } finally {
+      setSavingSetup(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -1164,7 +1384,7 @@ function CalculatorScreen() {
           await updateMealLog(mealLogId, { sugar_log_id: newSugarLogId });
         }
 
-        logEvent("log_edited");
+        logEvent("log_edited", { kind: "meal" });
         hapticSuccess();
         bumpData();
         dismiss();
@@ -1239,9 +1459,8 @@ function CalculatorScreen() {
       } catch (err) {
         logCrash(err, { screen: "calculator", step: "touchTemplate" });
       }
-      logEvent("log_added", {
-        source: templateCtx ? "template" : "manual",
-      });
+      logEvent("log_added", { kind: "meal" });
+      void noteFirstLog("meal");
 
       // SAFETY: the dose has to land in injection_logs, not only on the meal row.
       // IOB is computed from bolus injections, so a dose recorded on the meal
@@ -1272,6 +1491,11 @@ function CalculatorScreen() {
           logCrash(err, { screen: "calculator", step: "logInjection" });
         }
       }
+
+      // The reading and the dose this save wrote are entries of their own kind
+      // too, though log_added stays one event per save.
+      if (createdSugarLogId) void noteFirstLog("glucose");
+      if (wroteInjection) void noteFirstLog("injection");
 
       void noteLogAndMaybeReview("log_meal");
       void noteJournalActivity();
@@ -1632,6 +1856,23 @@ function CalculatorScreen() {
     );
   }
 
+  // Mounted on both branches below at the same position (after the host), so
+  // React keeps one instance across the skeleton-to-loaded swap instead of
+  // dismissing and re-presenting a sheet that is already on screen.
+  const setupInitial = calcSetupInitial(activeProfile);
+  const calcSetupSheet = showsDose ? (
+    <CalcSetupSheet
+      visible={setupOpen}
+      onClose={closeSetup}
+      onSave={saveSetup}
+      saving={savingSetup}
+      saveError={setupSaveError}
+      unit={unit}
+      initialCarbRatio={setupInitial.carbRatio}
+      initialIsfMgdl={setupInitial.isfMgdl}
+    />
+  ) : null;
+
   if (!food || !estimate) {
     // The host lives on every branch, so anything this screen ever says lands
     // inside its own view controller rather than behind it.
@@ -1858,6 +2099,7 @@ function CalculatorScreen() {
           </ScrollView>
         </View>
         <FeedbackHost />
+        {calcSetupSheet}
       </AppBackground>
     );
   }
@@ -2202,7 +2444,10 @@ function CalculatorScreen() {
                   icon="water-outline"
                   tint={THEME.accent}
                   body={t("ratio.notSet")}
-                  onPress={() => router.push("/settings/profile")}
+                  onPress={() => {
+                    hapticSelect();
+                    setSetupOpen(true);
+                  }}
                 />
               )}
 
@@ -2229,6 +2474,10 @@ function CalculatorScreen() {
                               tint: THEME.accent,
                               title: t("calculator.defaultRatiosTitle"),
                               body: t("calculator.defaultRatiosBody"),
+                              onPress: () => {
+                                hapticSelect();
+                                setSetupOpen(true);
+                              },
                             },
                           ]
                         : []),
@@ -2369,6 +2618,7 @@ function CalculatorScreen() {
         </ScrollView>
       </View>
       <FeedbackHost />
+      {calcSetupSheet}
     </AppBackground>
   );
 }

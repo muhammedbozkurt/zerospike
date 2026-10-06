@@ -71,6 +71,7 @@ import {
 } from "../lib/format";
 import { isScreenshotMode } from "../lib/screenshotMode";
 import { maybeRequestReview } from "../lib/services/review";
+import { getTrialStatus } from "../lib/services/purchases";
 import { ChartCard } from "../components/charts/ChartCard";
 import { HourlyChart } from "../components/charts/HourlyChart";
 import { TrendChart } from "../components/charts/TrendChart";
@@ -424,9 +425,30 @@ export default function InsightsScreen() {
   const [rangePickerOpen, setRangePickerOpen] = useState(false);
   const range = customRange ?? undefined;
 
+  // Whether this view happens inside a free trial, for the funnel event. Null
+  // until known, so the event below goes out once, with the real answer.
+  const [duringTrial, setDuringTrial] = useState<boolean | null>(null);
   useEffect(() => {
-    logEvent("insights_view", { window: windowDays });
-  }, [windowDays]);
+    if (!isProUser) {
+      setDuringTrial(false);
+      return;
+    }
+    let alive = true;
+    void getTrialStatus().then((s) => {
+      if (alive) setDuringTrial(s?.active === true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [isProUser]);
+
+  useEffect(() => {
+    if (duringTrial === null) return;
+    logEvent("insights_view", {
+      range_days: customRange ? rangeWindowDays(customRange) : windowDays,
+      during_trial: duringTrial,
+    });
+  }, [windowDays, customRange, duringTrial]);
 
   // Store-screenshot: preselect a 21-day custom range so the header chip shows a
   // "from - to" label for the 05-insights shot. Double-locked; ignored otherwise.

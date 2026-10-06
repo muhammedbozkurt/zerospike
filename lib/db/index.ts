@@ -19,6 +19,7 @@ import {
   migrateToV21,
   migrateToV22,
   migrateToV23,
+  migrateToV24,
   missingColumns,
   ensureFoodNameColumns,
   stampSchemaVersion,
@@ -41,6 +42,7 @@ import {
   V23_CREATE_FTS,
   V23_CREATE_TRIGGERS,
 } from "./v23Sql";
+import { V24_CREATE } from "./v24Sql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -58,7 +60,7 @@ export function defaultProfileName(): string {
 }
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -352,6 +354,13 @@ export async function initDatabase(): Promise<void> {
     await migrateToV23(db);
   }
 
+  // v23 → v24: analytics_queue, the on-device outbox of the Supabase analytics
+  // sink (see ./v24Sql + lib/analytics/queue.ts). Create-only DDL, no existing
+  // table touched.
+  if (currentVersion >= 1 && currentVersion < 24) {
+    await migrateToV24(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -579,6 +588,12 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   }
   await db.execAsync(V21_MARK_EXPLICIT_CHOICE);
   await db.execAsync(V21_DEFAULT_TO_ALARM);
+
+  // The analytics outbox (schema v24), from the SAME statements the v23 → v24
+  // migration runs, so a fresh install and a migrated one are the same shape.
+  for (const statement of V24_CREATE) {
+    await db.execAsync(statement);
+  }
 
   // Injection-site logging (shared with the v3 → v4 migration).
   await createInjectionSchema(db);

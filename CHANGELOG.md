@@ -4,8 +4,221 @@ Kullanıcıya görünen değişiklikler. Mağaza "yenilikler" metinleri
 `zerospike-store/aso/<dil>.md` dosyalarındaki **What's New** alanında, dokuz
 dilde tutulur; burada teknik ayrıntı da yer alır.
 
-Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
-ve `package.json`.
+Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`).
+
+## 2.3.7 (build 77 / versionCode 78)
+
+### Deneme ve Pro karşılama
+- Yeni deneme veya satın alma artık paywall'dan "Pro'ya hoş geldiniz"
+  ekranına geçiyor: Health bağlantısı, Insights ve hatırlatıcı adımlarından
+  oluşan bir kontrol listesi. Health adımı yalnız Health bağlanabilen
+  cihazda görünür. Her adım tamamlandı ya da "şimdi değil" diye kaydedilir;
+  tamamlanan adım geri alınmaz. Liste ana ekrandaki deneme kartından ve
+  Ayarlar > Uygulama'dan yeniden açılabiliyor.
+- Ana ekranda deneme kartı: kalan gün ve açık kalan adım sayısı. Deneme
+  bitince ya da ücretli döneme geçilince kendiliğinden kalkıyor.
+- Paywall'da zaman çizelgesi: bugün, hatırlatma günü ve ilk ödeme günü.
+  Hatırlatma satırı yalnız gerçekten kurulabilecek ve ulaşabilecekse
+  gösteriliyor (deneme en az 3 gün, bildirimler açık, izin kalıcı olarak
+  reddedilmemiş).
+- Paywall'da kişisel satır: kullanıcının elle girdiği son 14 günün ölçüm
+  sayısı, ortalaması ve hedef aralıktaki payı. En az 3 ölçüm yoksa gizli;
+  Health'ten gelen kayıtlar dahil değil, rakamlar Insights ile aynı hesaptan
+  geliyor.
+- Deneme bitiş bildirimi değer odaklı ("Günlüğünüz ve içgörüleriniz Pro ile
+  devam eder") ve dokunulunca Insights'ı açıyor. Denemenin 1. gününde, Health
+  henüz bağlı değilse, tek seferlik bir "Geçmişinizi getirin" hatırlatması
+  gidiyor; dokunulunca Health bağlama akışı açılıyor.
+- iOS'ta deneme uygunluğu mağazadan doğrulanıyor: hesabın deneme hakkı kesin
+  görünmüyorsa (cevap "uygun değil" ya da "bilinmiyor", eksik, hatalı veya 8
+  saniyede gelmemiş olsa da) paywall denemeyi vaat etmeden normal fiyatı
+  gösteriyor.
+- Deneme kararı paywall'da gösterilen tekliften değil, mağazanın cevabından
+  okunuyor (`lib/trialSettle.ts`): yeni deneme başladıysa `trial_started`
+  bildirilir ve bitiş hatırlatması mağazanın bildirdiği bitiş zamanına göre
+  kurulur (mağaza bitiş vermezse gün sayısından hesaplanır); deneme yoksa
+  (ücretli dönem, başarısız satın alma) önceki denemeden kalan hatırlatma
+  indirilir; zaten sahip olunan yetkinin satın alma sırasında geri bulunması
+  yeni deneme sayılmaz ve süren denemenin hatırlatmasına dokunmaz. Geri
+  yüklemede de aynı kural: deneme sürüyorsa hatırlatma yerinde kalır,
+  denemesiz bir yetki (ömür boyu, ücretli abonelik) geri gelirse eskisi
+  indirilir.
+- Mağazada otomatik yenilemesi kapatılan deneme ücretli döneme geçmeyecek;
+  bu durumda bitiş hatırlatması ve 1. gün hatırlatması indirilir
+  (`willRenew` false). Kontrol yetki her okunduğunda (uygulama öne gelince
+  dahil) çalışır, yalnız süren bir denemede devreye girer ve uygulama
+  kapalıyken yapılan iptali bir sonraki okumada yakalar.
+- Mağazaya ulaşılamadığında son bilinen abonelik durumu korunuyor; paywall
+  ve Ayarlar > Uygulama'da durumu anlatan, "Satın alımları geri yükle"
+  düğmeli bir not çıkıyor. Uygulama öne gelince yetki yeniden okunuyor.
+
+### Onboarding
+- Insülin yolu 13 ekrandan 8'e indi (insülin ve hap birlikte 14'ten 9'a,
+  yalnız hap 10'dan 8'e, ilaçsız 9'dan 7'ye). Karbonhidrat oranı ve ISF
+  ekranları, widget önizlemesi ve ayrı bildirim izni ekranı kalktı; bazal
+  saati hatırlatıcı adımının içinde soruluyor.
+- Hesaplayıcının iki sayısı (karbonhidrat oranı ve ISF) onboarding yerine
+  hesaplayıcı ilk açıldığında tek bir sayfada soruluyor. Yalnız öğün insülini
+  kullanan ve henüz kendi onaylı sayısı olmayan profillerde, yeni kayıtta
+  açılır; kapatılırsa kendiliğinden bir daha açılmaz. Varsayılan değerle
+  devam edilirse sonuç ekranı varsayılanla çalıştığını söylemeye devam
+  ediyor. Oranlarını daha önce onaylamış profillere yeni bir şey sorulmuyor.
+- Bildirim izni yalnız hatırlatıcı adımında bir plan seçilince isteniyor;
+  onboarding'i bitirmek izin diyaloğu açmıyor.
+- Kullanım verisi paylaşımı için onboarding'de isteğe bağlı, varsayılan
+  kapalı bir anahtar var (Kullanım analitiği bölümüne bak).
+
+### Spike
+- Spike artık Amazon Bedrock üzerinde Claude ile çalışıyor (varsayılan
+  Sonnet 5.5, AB bölgesi eu-central-1; `SPIKE_MODEL` ve `AWS_REGION` ile
+  değişir). OpenAI kaldırıldı.
+- İsteğe bağlı 14 günlük günlük özeti: ayrı bir rıza ekranıyla açılır,
+  varsayılan kapalı, sohbet sırasında kapatılabilir. Özet cihazda hesaplanır
+  (sayılar, ortalamalar, hedef aralık, öğün etiketleri, enjeksiyon bölgeleri,
+  kayıt düzeni, diyabet türü, insülin/hap/hiçbiri bilgisi, glukoz birimi);
+  tek tek ölçüm, saat, insülin miktarı, serbest metin ve Health'ten gelen
+  kayıt içermez. Sunucuda saklanmaz, model eğitiminde kullanılmaz. Rıza
+  metinleri alıcıyı ve özetin içeriğini 9 dilde sayıyor.
+- Akan yanıt, hızlı sorular, yanıtın altında eylem çipleri ve kaynaklar,
+  olumlu/olumsuz geri bildirim.
+- Çıktı filtresi her yanıtı 9 dilin kurallarıyla tarıyor; doz sayısı, emir
+  ve izin kipi, ilaç miktarı gibi kalıplar yakalanırsa yanıt kullanıcının
+  dilinde sabit bir güvenli metinle değişiyor. Filtre akış sırasında da
+  uygulanıyor.
+- Sınırlar: uygulama ücretsiz kullanıcıya günde 3, Pro'ya 50 mesaj
+  gösteriyor; sunucu ayrıca adres başına saatlik ve tüm hizmet için günlük
+  tavan uyguluyor (Sunucu bölümü). Ayrıntı: `docs/spike-ai.md` ve
+  `supabase/functions/ai-ask-spike/README.md`.
+
+### Kullanım analitiği (isteğe bağlı)
+- Kullanım istatistikleri artık onay verilmeden toplanmıyor ve gönderilmiyor.
+  Onay üç yerden verilir: onboarding'deki anahtar (varsayılan kapalı), eski
+  kurulumlar için ana ekranda bir kez sorulan sayfa ve Ayarlar > Veri ve
+  Dışa Aktarım > Gizlilik'teki anahtar. "Şimdi değil" cevapsız bırakır ve
+  soru tekrarlanmaz. Eski "varsayılan açık" anahtarda kapatmış olanlar kapalı
+  kalır, diğerleri cevapsız sayılıp bir kez sorulur.
+- Olaylar cihazdaki bir çıkış kutusunda (`analytics_queue`, SQLite şema v24)
+  birikir ve toplu olarak Supabase `track` fonksiyonuna gider; tekrar denenen
+  toplu gönderim iki kez yazılmaz. Olay adları ve alanları şema v1 ile
+  sınırlı (`lib/analytics/eventSchema.ts` ve sunucudaki ikizi
+  `event-schema.json`): sağlık değeri ve serbest metin yok, kayıt türü yalnız
+  glucose, meal veya other. `onboarding_done` hiçbir alan taşımıyor (`path`
+  ve ardından aynı bilgiyi veren `screens` kaldırıldı). Yalnız insülin
+  kullananların üretebildiği iki değer gönderilmeden önce katlanıyor:
+  paywall kaynağı `rotation` `feature`, Spike eylemi `open_injection_map`
+  `open_feature` oluyor (Firebase da katlanmış değeri görür).
+- Kurulum kimliği (rastgele UUID) Ayarlar'da gösteriliyor ve paylaşılabiliyor.
+  RevenueCat'e `device_id` attribute'u olarak yalnız analitik açıkken
+  gidiyor, kapatınca kaldırılıyor; böylece abonelik olayları kullanım
+  olaylarıyla eşleşebiliyor.
+- Ayarlar > Veri ve Dışa Aktarım > Gizlilik'te "Sunucu kayıtlarımı sil"
+  düğmesi: bu kurulum kimliğine ait olay, Spike sayaç ve günlüğü ile abonelik
+  olayı kayıtlarını sunucudan siler. Abonelik olayları kurulum kimliğiyle ya
+  da RevenueCat kullanıcı kimliğiyle (`x-rc-app-user-id`) eşleşince gider;
+  böylece RevenueCat'e `device_id` konmadan önce veya analitik kapalıyken
+  gelenler de silinir. Akış önce yüklemeleri duraklatır ve cihazdaki çıkış
+  kutusunu boşaltır, başarıdan sonra kutuyu yeniden boşaltır, Firebase
+  Analytics örneğini sıfırlatır (`resetAnalyticsData`) ve yüklemeleri
+  sürdürür. Cihazdaki günlüğe ve kurulum kimliğine dokunmaz (yeni kimlik
+  günlük Spike hakkını sıfırlardı).
+- Anahtarı kapatmak toplamayı durdurur ve cihazdaki çıkış kutusunu boşaltır;
+  sunucuya hiçbir olay gitmez (kapatmak için son bir `analytics_opt_out`
+  olayı yok, bu olay yalnız anahtar açılınca `enabled: true` ile gider).
+- Firebase Analytics otomatik toplaması kapalı (`firebase.json`); yalnız onay
+  varken açılıyor. Crashlytics bu anahtarın kapsamı dışında.
+- Privacy manifest (`app.json`) güncel; App Privacy ve Data safety cevap
+  listesi `docs/apple-ads/privacy-2.3.7.md` içinde.
+
+### Sunucu
+- Yeni Edge Function'lar: `track` (olay alımı: şema doğrulama, saatlik
+  cihaz ve adres sınırı, günlük üst sınır), `rc-webhook` (RevenueCat
+  olaylarını `subscription_events` tablosuna yazar; `Authorization` değeri
+  `RC_WEBHOOK_SECRET` ile birebir eşleşmezse 401) ve `delete-device` (bir
+  kurulum kimliğinin ve verilmişse RevenueCat kullanıcı kimliğinin sunucudaki
+  tüm satırlarını siler, saatlik sınırlı).
+  `ai-ask-spike` v2: Bedrock, akış, çıktı filtresi, rıza başlığı, maliyet
+  tavanları. `supabase/config.toml`'da üçü için de `verify_jwt = false`.
+- Maliyet tavanları model çağrısından önce Postgres'te tek atomik adımda
+  uygulanıyor (`spike_reserve`): cihaz başına gün (3 ücretsiz, 50 Pro), adres
+  başına saat (60) ve tüm hizmet için gün (3000). Model hatasında cihaz ve
+  genel yuva iade edilir; veritabanına ulaşılamazsa istek geçirilmez (503).
+- Migration'lar: `20261006094929_app_events` (app_events, track_* sayaçları,
+  subscription_events, üç analiz görünümü), `20261006095331_spike_calls`
+  (çağrı günlüğü, `purge_spike_logs`),
+  `20261006110710_subscription_events_retention`
+  (`purge_subscription_events`, `delete_device_data`, `delete_usage`),
+  `20261006141500_spike_hardening` (`spike_reserve`, `spike_release`,
+  `spike_global_usage`, `spike_ip_usage`),
+  `20261006143000_delete_device_data_v2` (`delete_device_data_v2`: kurulum
+  kimliği veya RevenueCat kimliği; `delete-device` dağıtımından önce itilir,
+  yoksa fonksiyon 503 verir) ve `20261006143100_cron_enable` (pg_cron'u açar,
+  üç temizleme işini kurar). Tüm tablolarda RLS açık, anon ve
+  authenticated erişimi kapalı; public şemasında yeni tablolara varsayılan
+  erişim verilmesi de kapatıldı.
+- Saklama süreleri: `app_events` 180 gün (`track_batches` 30 gün, sayaçlar 2
+  gün), `spike_usage`, `spike_calls` ve `spike_global_usage` 90 gün,
+  `subscription_events` satırları 24 ay ve ham webhook gövdesi (`raw`) 90 gün.
+  Üç günlük temizleme işi (`purge-app-events`, `purge-spike-logs`,
+  `purge-subscription-events`) `20261006143100_cron_enable` migration'ıyla
+  kuruluyor: migration pg_cron eklentisini açar, işleri yeniden zamanlar
+  (eski `spike-logs-retention` adı kalkar) ve eklenti açılamazsa push'u
+  durdurur; saklama süreleri sessizce işlemez durumda kalamaz. Önceki
+  migration'lar eklentiyi açmaz, yalnız zaten açıksa iş kurardı.
+- İstemci IP adresi hiçbir tabloya yazılmıyor; adres başına sınırlar anahtarlı
+  özetlerle sayılıyor ve özetler en çok 2 gün tutuluyor.
+
+### Mağaza ve site
+- App Store ve Google Play metinleri 9 dilde 2.3.7 için yenilendi
+  (promosyon metni, anahtar kelimeler, açıklama, Play kısa ve uzun
+  açıklama), What's New 2.3.7 ve üç özel ürün sayfası (CPP: kan şekeri
+  günlüğü, enjeksiyon rotasyonu, karbonhidrat takibi) hazır. Mağaza dosyaları
+  git dışında (`zerospike-store/`).
+- Site görselleri mağaza panellerinden `scripts/site-shots.sh` ile
+  üretiliyor; site sayfaları ve legal metinler (9 dilde gizlilik politikası
+  dahil) bu depoda değil, greeneyeapp-site deposunda.
+- Gizlilik beyanı: App Store Connect App Privacy ve Google Play Data safety
+  için kesin cevap listesi `docs/apple-ads/privacy-2.3.7.md` içinde; cevaplar
+  konsola elle girilir.
+- Apple Ads: ZS-US-Test kampanyası (14 gün, günlük 3,50 USD, 13 anahtar
+  kelime, 70 negatif) kurulum betiğiyle PAUSED oluşturuluyor ve release
+  gününde açılıyor. Salt okunur rapor betiği `scripts/apple-ads-report.mjs`
+  eklendi. Komutlar `scripts/apple-ads-README.md` içinde.
+
+### Testler ve kapılar
+- Yeni test paketleri (`scripts/`; koşma komutu her dosyanın başlığında):
+  `analyticsConsent` (üç durumlu rıza, eski anahtardan geçiş, panodaki sayfa
+  kuralı, kayıt türlerinin glucose/meal/other'a ve insülin kullanıcısını ele
+  veren değerlerin (`rotation`, `open_injection_map`) nötr adlara katlanması,
+  "Sunucu kayıtlarımı sil" akışı ve sırası, gerçek sink'lerle kapatınca
+  sunucuya hiçbir şey gitmediğinin ağ, çıkış kutusu ve Firebase
+  çağrılarından okunması, ekran bağlantıları), `analyticsSchema`
+  (olay şeması v1 ile sunucudaki ikizinin birebir eşleşmesi, temizleyici,
+  oturum, toplu gönderim ve yeniden deneme, `analytics_queue` SQL'i),
+  `eventCallsites` (koddaki her `logEvent` çağrısının şemaya karşı statik
+  denetimi; her `log_added` çağrısı `noteFirstLog` çağırır), `spikeContext`
+  (14 günlük özet paketi, ikinci rıza, istek ve akış protokolü),
+  `purchasesBehavior` (`purchases.ts` uçtan uca: başarısız mağaza okumasının
+  önbelleğe dokunmaması, tek "yetki kaybı" raporu, iOS deneme uygunluğu,
+  satın alma sonrası deneme kararı ve eski hatırlatmanın indirilmesi,
+  mağazada iptal edilen denemenin hatırlatmasının inmesi, RevenueCat
+  `device_id`'nin analitik anahtarını izlemesi), `trialSettle` (mağazanın
+  cevabını paywall eylemine çeviren tablo: `trial_started`, bitiş
+  hatırlatması ve zamanı, eski hatırlatmanın indirilmesi; paywall'ın bu
+  tabloya bağlı kalması), `trialTimeline`
+  (paywall zaman çizelgesi, hatırlatma ucu ve teslim kapısı, 24 saatlik
+  Health bildirimi, kişisel satır, hatırlatma başlığı 9 dilde),
+  `proWelcome` (kontrol listesi durumu ve adımı bildiren servis),
+  `onboardingSteps` (yol başına ekran sayıları ve sırası, alansız
+  `onboarding_done`, hesaplayıcı ilk kullanım sayfası).
+- `supabase/functions/ai-ask-spike/filter.test.ts` (Deno, ağ ve model
+  gerekmez): çıktı filtresi ve yanıt ayrıştırma; kurallara her dokunuşta
+  `BLOCKED` ve `ALLOWED` listelerine satır eklenir.
+- `scripts/migration.test.ts` v24 (`analytics_queue`) kapsamıyla genişledi;
+  `scripts/profileScopedKeys.test.ts` ve `lib/profileScopedKeys.ts`
+  `zerospike.calcSetupDismissed` anahtarını profil silinince süpürüyor.
+- `npm run reg:check` (ve onu içeren `npm run i18n:check`) artık yerel mağaza
+  kopyasını da tarıyor (`zerospike-store/aso`, `aso-android`, en yeni
+  `whats-new`); klasör git dışında olduğu için CI'da sessizce atlanır.
 
 ## 2.3.6 (build 75 / versionCode 76, eas autoIncrement sonrasi)
 

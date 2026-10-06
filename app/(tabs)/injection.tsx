@@ -59,6 +59,7 @@ import { OTHER_PRODUCT_ID } from "../../lib/insulinCatalog";
 import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
+import { noteFirstLog } from "../../lib/services/firstLog";
 import { noteJournalActivity } from "../../lib/services/notifications";
 import {
   injectionMapFlipNoticeSeen,
@@ -435,7 +436,9 @@ export default function InjectionScreen() {
         note: note.trim() || null,
         logged_at: loggedAt.toISOString(),
       });
-      logEvent("log_added", { source: "manual" });
+      const kind = insulinType === "basal" ? "basal" : "injection";
+      logEvent("log_added", { kind });
+      void noteFirstLog(kind);
       void noteLogAndMaybeReview("log_insulin");
       void noteJournalActivity();
       hapticSuccess();

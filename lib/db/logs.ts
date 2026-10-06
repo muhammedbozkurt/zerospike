@@ -93,6 +93,26 @@ export async function listSugarLogs(
   return rows.map(mapSugar);
 }
 
+/**
+ * The profile's own readings (everything but Health imports) inside a span, with
+ * no row cap. The paywall's personal line reads this: filtering the newest N rows
+ * in JS let a CGM-style import (a row every five minutes) fill the cap and push
+ * the user's own readings out of the window, so the figures came from a fraction
+ * of the span they claim. The filter and the span both belong in the query.
+ */
+export async function listManualSugarLogs(
+  profileId: string,
+  range: DateRange
+): Promise<SugarLog[]> {
+  const db = await getDb();
+  const { sql, values } = rangeClause("logged_at", range);
+  const rows = await db.getAllAsync<SugarRow>(
+    `SELECT * FROM sugar_logs WHERE profile_id = ? AND source != 'health'${sql} ORDER BY logged_at DESC;`,
+    [profileId, ...values]
+  );
+  return rows.map(mapSugar);
+}
+
 /** The newest reading's value + time, or null when the profile has none. */
 export interface LatestReading {
   glucose_level_mgdl: number;

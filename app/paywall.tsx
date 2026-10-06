@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -19,7 +19,7 @@ import {
 } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { GLUCOSE_RICH, MODAL_TOP_PAD, TABULAR, THEME, glow } from "../lib/theme/tokens";
-import { isolateLtr, money, pct } from "../lib/format";
+import { isolateLtr, money, num, pct } from "../lib/format";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -28,7 +28,10 @@ import {
   restore,
   loadOfferings,
   getDownsellOffer,
+  getTrialStatus,
+  trialAfterPurchase,
   type OfferingsResult,
+  type PurchaseOutcome,
   PlanId,
 } from "../lib/services/purchases";
 import {
@@ -40,19 +43,39 @@ import {
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import {
   cancelTrialReminder,
+  getNotificationPermission,
+  scheduleTrialDay1Nudge,
   scheduleTrialEndingReminder,
 } from "../lib/services/notifications";
+import { getNotificationPrefs } from "../lib/services/notificationPrefs";
 import { FREE_CUSTOM_FOOD_LIMIT } from "../lib/guardrails";
 import { useHealthAvailable } from "../lib/services/healthAvailability";
 import { privacyUrl, termsUrl } from "../lib/legal";
-import { logEvent, type PaywallViewSource } from "../lib/analytics";
+import { logCrash, logEvent, type PaywallViewSource } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
 import { useLayout } from "../lib/useLayout";
-
-/** Used only if the annual plan's own offering data has no trial length. */
-const FALLBACK_TRIAL_DAYS = 7;
+import { StoreStatusNotice } from "../components/StoreStatusNotice";
+import { listManualSugarLogs } from "../lib/db/logs";
+import { rangeFromWindow } from "../lib/insights";
+import { targetBandFor } from "../lib/agpChart";
+import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
+import { upper } from "../lib/upper";
+import {
+  DEFAULT_TRIAL_DAYS,
+  PERSONAL_WINDOW_DAYS,
+  buildTrialTimeline,
+  perMonthPrice,
+  personalSummary,
+  shouldScheduleTrialNudge,
+  trialReminderDeliverable,
+  type PersonalSummary,
+} from "../lib/trialTimeline";
+import { trialSettleAction, type TrialSettleAction } from "../lib/trialSettle";
+import { shouldAutoOpenWelcome, withHealthMirror } from "../lib/proWelcome";
+import { getProWelcomeState } from "../lib/services/proWelcome";
+import { getHealthSyncEnabled } from "../lib/services/health";
 
 /**
  * A plan row in the mockup's 08 composition: the plan name and its terms on the
@@ -201,6 +224,64 @@ function PaywallScreen() {
   const [plan, setPlan] = useState<PlanId>("annual");
   const [offer, setOffer] = useState<OfferingsResult | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [personal, setPersonal] = useState<PersonalSummary | null>(null);
+  const profileId = activeProfile?.id;
+  const glucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
+  const band = useMemo(() => {
+    const b = targetBandFor(activeProfile ?? {});
+    return { low: b.low, high: b.high };
+  }, [activeProfile]);
+
+  // The personal line: the user's own manual readings of the last two weeks,
+  // through the same computeInsights Insights uses. Hidden until there are
+  // enough readings to say something. The own-readings filter and the span are
+  // in the query itself: a row cap on the newest readings let a Health import
+  // crowd the user's own out of the window.
+  useEffect(() => {
+    if (!profileId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const now = Date.now();
+        const logs = await listManualSugarLogs(
+          profileId,
+          rangeFromWindow(PERSONAL_WINDOW_DAYS, now)
+        );
+        if (alive) setPersonal(personalSummary(logs, band, now));
+      } catch (err) {
+        logCrash(err, { screen: "paywall", load: "personal" });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [profileId, band]);
+
+  // Whether an ending reminder can be promised: the app's own notification
+  // switch and what the OS says. False until both are read, so the timeline row
+  // never shows and then disappears for someone who muted notifications.
+  const [reminderOk, setReminderOk] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [prefs, permission] = await Promise.all([
+          getNotificationPrefs(),
+          getNotificationPermission(),
+        ]);
+        if (alive) {
+          setReminderOk(
+            trialReminderDeliverable({ notificationsEnabled: prefs.enabled, permission })
+          );
+        }
+      } catch (err) {
+        logCrash(err, { screen: "paywall", load: "reminderState" });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Real localized store prices + trial state. In release, a failed fetch
   // yields status 'unavailable' (never a hardcoded fallback) → retry state.
@@ -209,7 +290,10 @@ function PaywallScreen() {
     setOffer(null);
     loadOfferings()
       .then((r) => alive && setOffer(r))
-      .catch(() => alive && setOffer({ status: "unavailable", isDevFallback: false, plans: {} }));
+      .catch((err) => {
+        logCrash(err, { screen: "paywall", load: "offerings" });
+        if (alive) setOffer({ status: "unavailable", isDevFallback: false, plans: {} });
+      });
     return () => {
       alive = false;
     };
@@ -219,7 +303,7 @@ function PaywallScreen() {
   const annualTrial = plans.annual?.hasFreeTrial ?? false;
   // Store-reported trial length (RC intro offer), so an A/B on the trial
   // length never needs a code change; falls back to the shipped default.
-  const trialDays = plans.annual?.freeTrialDays || FALLBACK_TRIAL_DAYS;
+  const trialDays = plans.annual?.freeTrialDays || DEFAULT_TRIAL_DAYS;
 
   useEffect(() => {
     if (!offer) return;
@@ -241,9 +325,10 @@ function PaywallScreen() {
     monthly && annual && monthly.price > 0
       ? Math.round((1 - annual.price / (monthly.price * 12)) * 100)
       : 0;
+  const annualPerMonthValue = perMonthPrice(annual?.price);
   const annualPerMonth =
-    annual && annual.price > 0
-      ? money(annual.price / 12, annual.currencyCode)
+    annual && annualPerMonthValue != null
+      ? money(annualPerMonthValue, annual.currencyCode)
       : null;
   // What the one-off costs in years of the annual plan, from the STORE's own
   // two prices - never a written-down number, because both move per country,
@@ -338,6 +423,85 @@ function PaywallScreen() {
                       ? { title: t("paywall.limitTitleExport") }
                       : null;
 
+  // The day-1 Health nudge, armed only where it can pay off: Health usable on
+  // this device and not connected yet (see shouldScheduleTrialNudge).
+  async function armTrialNudge(days: number) {
+    try {
+      const connected = await getHealthSyncEnabled(profileId);
+      if (!shouldScheduleTrialNudge({ trialDays: days, healthAvailable, healthConnected: connected })) {
+        return;
+      }
+      await scheduleTrialDay1Nudge();
+    } catch (err) {
+      logCrash(err, { screen: "paywall", op: "trialNudge" });
+    }
+  }
+
+  // What a completed purchase or restore did to the trial is read from the
+  // STORE, not from the offer the screen showed: the same package starts a trial
+  // for one account and a paid period for another (the intro offer was already
+  // used elsewhere), and an already-owned recovery is not a new trial at all.
+  // What the store's answer means (the event, the reminder and the day it is
+  // timed from, taking a stale one down) is decided in lib/trialSettle; this
+  // only carries the action out.
+  function applyTrialAction(action: TrialSettleAction) {
+    if (action.logTrialStarted) logEvent("trial_started", { tier: plan });
+    if (action.scheduleReminderAt !== null) {
+      const endsAt = action.scheduleReminderAt;
+      const days = action.trialDays ?? trialDays;
+      // The nudge goes second: the reminder is what may raise the
+      // notification permission prompt, and the nudge never prompts.
+      scheduleTrialEndingReminder(endsAt)
+        .catch((err) => logCrash(err, { screen: "paywall", op: "trialReminder" }))
+        .then(() => armTrialNudge(days));
+    }
+    if (action.cancelReminder) {
+      cancelTrialReminder().catch((err) =>
+        logCrash(err, { screen: "paywall", op: "cancelTrialReminder" })
+      );
+    }
+  }
+
+  async function settleTrial(res: PurchaseOutcome) {
+    try {
+      applyTrialAction(
+        trialSettleAction({
+          restored: false,
+          trial: await trialAfterPurchase(res),
+          offerDays: trialDays,
+          now: Date.now(),
+        })
+      );
+    } catch (err) {
+      // The purchase already went through: nothing here may hold up its success.
+      logCrash(err, { screen: "paywall", op: "settleTrial" });
+    }
+  }
+
+  async function settleRestoredTrial() {
+    try {
+      applyTrialAction(
+        trialSettleAction({ restored: true, trialStatus: await getTrialStatus() })
+      );
+    } catch (err) {
+      logCrash(err, { screen: "paywall", op: "settleTrial" });
+    }
+  }
+
+  // A new trial or purchase lands on the Pro welcome. `replace`, so back never
+  // returns to the paywall; skipped when every step is already done.
+  async function leaveAfterPurchase() {
+    const steps = withHealthMirror(
+      await getProWelcomeState(),
+      await getHealthSyncEnabled(profileId)
+    );
+    if (shouldAutoOpenWelcome(steps, healthAvailable)) {
+      router.replace("/pro-welcome");
+      return;
+    }
+    await exit();
+  }
+
   async function buy() {
     if (busy) return;
     setBusy(true);
@@ -347,23 +511,11 @@ function PaywallScreen() {
       const feedback = purchaseToastFor(res);
       if (res.ok) {
         logEvent("purchase_completed", { tier: plan, source: reason ?? "direct" });
-        if (plan === "annual" && annualTrial) {
-          // A fresh trial starts: schedule its own ending reminder. Scheduling
-          // uses the same fixed identifier as cancelTrialReminder, so it already
-          // replaces any stale one on its own - calling cancel here too would
-          // race the two un-awaited calls and risk cancelling the one just armed.
-          logEvent("trial_started", { tier: "annual", source: reason ?? "direct" });
-          scheduleTrialEndingReminder(trialDays).catch(() => {});
-        } else {
-          // No trial in this purchase (lifetime, monthly, or a non-trial annual):
-          // any trial-ending reminder left over from an earlier trial must not
-          // survive a completed purchase.
-          cancelTrialReminder().catch(() => {});
-        }
+        await settleTrial(res);
         hapticSuccess();
         // Success, or an already-owned recovery ("this is already yours").
         if (feedback) toast(t(feedback.key), feedback.kind);
-        await exit();
+        await leaveAfterPurchase();
       } else if (res.cancelled) {
         // A cancelled purchase is a downsell trigger too (same lifetime cap).
         await triggerDownsell();
@@ -383,9 +535,7 @@ function PaywallScreen() {
       const result = await restore();
       await refreshPro();
       if (result === "restored") {
-        // A restored entitlement is already paid (lifetime or subscription): any
-        // trial-ending reminder from an earlier trial no longer applies.
-        cancelTrialReminder().catch(() => {});
+        await settleRestoredTrial();
         hapticSuccess();
         toast(t("paywall.restored"), "success");
         await exit();
@@ -400,10 +550,37 @@ function PaywallScreen() {
   }
 
   const ctaTrial = plan === "annual" && annualTrial;
-  // scheduleTrialEndingReminder skips scheduling entirely once trialDays leaves
-  // no room before its 2-day lead (trialDays <= 2), so the "we'll remind you"
-  // note must not promise a reminder that is never actually armed.
-  const trialReminderArmed = trialDays > 2;
+
+  // The timeline under the CTA: today, the reminder (only when one is really
+  // armed, buildTrialTimeline drops it for a trial too short to leave room) and
+  // the first charge with the yearly total and its monthly equivalent. Prices
+  // are isolated LTR so a right-to-left sentence cannot reorder them.
+  const annualTotal = isolateLtr(priceStr("annual") ?? "");
+  const chargeBody = annualPerMonth
+    ? t("paywall.timeline.chargeBody", {
+        price: annualTotal,
+        perMonth: isolateLtr(annualPerMonth),
+      })
+    : t("paywall.timeline.chargeBodyPlain", { price: annualTotal });
+  const timelineRows = ctaTrial
+    ? buildTrialTimeline(trialDays, reminderOk).map((row) => ({
+        kind: row.kind,
+        label:
+          row.kind === "today"
+            ? t("paywall.timeline.today")
+            : t("paywall.timeline.day", { day: row.day }),
+        body:
+          row.kind === "today"
+            ? t("paywall.timeline.todayBody")
+            : row.kind === "reminder"
+              ? t("paywall.timeline.reminderBody")
+              : chargeBody,
+      }))
+    : [];
+  const cancelLine =
+    Platform.OS === "ios"
+      ? t("paywall.timeline.cancelIos")
+      : t("paywall.timeline.cancelAndroid");
   const ctaLabel = ctaTrial
     ? t("paywall.ctaTrial", { days: trialDays })
     : t("paywall.cta");
@@ -519,6 +696,33 @@ function PaywallScreen() {
             ) : null}
           </GlassCard>
 
+          {/* The user's own last two weeks, one line: shown only with enough
+              manual readings of their own (personalSummary). Descriptive, a
+              restatement of what they logged, never an assessment of it. */}
+          {personal ? (
+            <GlassCard style={{ paddingVertical: 14, marginBottom: 14 }}>
+              <Text
+                style={{
+                  color: THEME.muted,
+                  fontSize: 11,
+                  letterSpacing: 1.3,
+                  fontWeight: "800",
+                }}
+              >
+                {upper(t("paywall.timeline.personalLabel"))}
+              </Text>
+              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, marginTop: 6 }}>
+                {t("paywall.timeline.personal", {
+                  n: personal.readings,
+                  avg: isolateLtr(
+                    `${formatGlucose(personal.avgMgdl, glucoseUnit)} ${glucoseUnitLabel(glucoseUnit)}`
+                  ),
+                  inRange: isolateLtr(pct(personal.inRangePct)),
+                })}
+              </Text>
+            </GlassCard>
+          ) : null}
+
           {/* Benefits: a 2x2 grid of short labels instead of four full
               sentences, so the four benefits read at a glance in every
               language. Health sync now shows on both platforms (HealthKit /
@@ -555,6 +759,11 @@ function PaywallScreen() {
               ))}
             </View>
           </GlassCard>
+
+          {/* Only while the last store read failed: says so and puts a real
+              "Restore purchases" button within reach (the small link at the
+              bottom stays as it was). */}
+          {!loading ? <StoreStatusNotice onRestore={onRestore} busy={busy} /> : null}
 
           {loading ? (
             // Same waiting composition as downsell / winback: a spinner carries
@@ -625,7 +834,7 @@ function PaywallScreen() {
                 foot={
                   lifetimeYears != null
                     ? t("paywall.lifetimeAnchor", {
-                        years: isolateLtr(String(lifetimeYears)),
+                        years: isolateLtr(num(lifetimeYears)),
                       })
                     : undefined
                 }
@@ -701,19 +910,47 @@ function PaywallScreen() {
             ]}
           >
             <GradientCTA label={ctaLabel} disabled={busy} onPress={buy} />
-            {ctaTrial && trialReminderArmed ? (
-              <Text
-                style={{
-                  color: THEME.muted,
-                  fontSize: 11,
-                  textAlign: "center",
-                  marginTop: 8,
-                  lineHeight: 16,
-                  paddingHorizontal: 8,
-                }}
-              >
-                {t("paywall.trialNote")}
-              </Text>
+            {timelineRows.length > 0 ? (
+              <View style={{ marginTop: 10, paddingHorizontal: 4 }}>
+                {timelineRows.map((row, i) => (
+                  <View
+                    key={row.kind}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      marginTop: i === 0 ? 0 : 5,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        marginTop: 4,
+                        marginEnd: 8,
+                        backgroundColor: row.kind === "charge" ? THEME.muted : THEME.accent,
+                      }}
+                    />
+                    {/* Label and body are one wrapping paragraph (no fixed
+                        column, no single-line clip), so the longest translation
+                        just takes a second line. */}
+                    <Text
+                      maxFontSizeMultiplier={1.3}
+                      style={{ color: THEME.muted, fontSize: 12, lineHeight: 16, flex: 1 }}
+                    >
+                      <Text style={{ color: THEME.ink, fontWeight: "800" }}>{row.label}</Text>
+                      {"  "}
+                      {row.body}
+                    </Text>
+                  </View>
+                ))}
+                <Text
+                  maxFontSizeMultiplier={1.3}
+                  style={{ color: THEME.muted, fontSize: 11, lineHeight: 15, marginTop: 8 }}
+                >
+                  {cancelLine}
+                </Text>
+              </View>
             ) : null}
           </View>
         ) : null}

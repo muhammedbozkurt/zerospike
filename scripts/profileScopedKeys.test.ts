@@ -56,6 +56,7 @@ section("A. every base name is really written by the file that owns it");
     "zerospike.finishSetupDismissed": "app/(tabs)/index.tsx",
     "zerospike.rotationCycleStart": "lib/rotationCycle.ts",
     "zerospike.screenshotSeededLang.v16": "lib/db/screenshotSeed.ts",
+    "zerospike.calcSetupDismissed": "lib/calcSetup.ts",
   };
   for (const base of PROFILE_SCOPED_KEY_BASES) {
     const file = owners[base];

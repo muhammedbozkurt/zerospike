@@ -16,6 +16,7 @@ import { MODAL_TOP_PAD, RADIUS, THEME } from "../lib/theme/tokens";
 import { formatTime, isolateLtr, num, relativeDay } from "../lib/format";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logCrash, logEvent } from "../lib/analytics";
+import { noteFirstLog } from "../lib/services/firstLog";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useApp } from "../lib/store/AppContext";
 import { SELECTABLE_SITES, type InjectionSite, type SitePoint } from "../lib/db/types";
@@ -271,7 +272,8 @@ function BasalConfirmScreen() {
         setLoad({ kind: "duplicate", ctx, existing: result.existing });
         return;
       }
-      logEvent("log_added", { source: "reminder" });
+      logEvent("log_added", { kind: "basal" });
+      void noteFirstLog("basal");
       hapticSuccess();
       bumpData();
       dismiss();
