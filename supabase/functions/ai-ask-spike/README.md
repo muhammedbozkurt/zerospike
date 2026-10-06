@@ -1,22 +1,28 @@
 # ai-ask-spike
 
-Spike asistanı: Amazon Bedrock (Mantle uç noktası, `@anthropic-ai/bedrock-sdk`) üzerinden Claude. Deploy, secret ve eval insan adımıdır.
+Spike asistanı: Amazon Bedrock üzerinden Claude (`@anthropic-ai/bedrock-sdk`). İki kimlik yolu var: Bedrock API anahtarı (bearer, `bedrock-runtime` uç noktası, inference profile kimliği; tercih edilen) ve IAM erişim anahtarı çifti (SigV4, Mantle uç noktası, çıplak model adı). İstek gövdesi (`buildParams`) iki yolda aynıdır. Deploy, secret ve eval insan adımıdır.
 
 ## Secret'lar
 
 | Ad | Zorunlu | Varsayılan |
 |---|---|---|
-| `AWS_ACCESS_KEY_ID` | evet | |
-| `AWS_SECRET_ACCESS_KEY` | evet | |
-| `AWS_SESSION_TOKEN` | yalnız geçici kimlikte | |
+| `AWS_BEARER_TOKEN_BEDROCK` | evet, ya bu ya aşağıdaki anahtar çifti | Bedrock API anahtarı (`ABSK...`), tercih edilen yol: doluysa anahtar çiftine bakılmaz |
+| `AWS_ACCESS_KEY_ID` | bearer yoksa evet | |
+| `AWS_SECRET_ACCESS_KEY` | bearer yoksa evet | |
+| `AWS_SESSION_TOKEN` | yalnız geçici kimlikte (anahtar çifti yolu) | |
 | `AWS_REGION` | hayır | `eu-central-1` |
-| `SPIKE_MODEL` | hayır | `anthropic.claude-sonnet-5-5` |
+| `SPIKE_MODEL` | hayır | `anthropic.claude-sonnet-5-5` (mantıksal ad, iki yolda aynı) |
+| `SPIKE_MODEL_PREFIX` | hayır | `eu.` (yalnız bearer yolunda; `eu.` veya `global.`) |
 | `SPIKE_GLOBAL_DAILY_CAP` | hayır | `3000` (UTC günü başına model çağrısı, tüm çağıranlar) |
 | `SPIKE_IP_HOURLY_CAP` | hayır | `60` (çağıran adres başına saatlik istek) |
 
-`SUPABASE_URL` ve `SUPABASE_SERVICE_ROLE_KEY` platformdan gelir. IAM kullanıcısına yalnız bu modeli Bedrock Mantle üzerinden çağırma izni verin; modele erişim Bedrock konsolunda bu bölge için açık olmalı. `OPENAI_API_KEY` artık kullanılmıyor.
+`SUPABASE_URL` ve `SUPABASE_SERVICE_ROLE_KEY` platformdan gelir. Bedrock API anahtarının bağlı olduğu IAM kimliğine (anahtar çifti yolunda IAM kullanıcısına) yalnız bu modeli çağırma izni verin; modele erişim Bedrock konsolunda bu bölge için açık olmalı. `OPENAI_API_KEY` artık kullanılmıyor.
 
-`SPIKE_MODEL` yalnız `anthropic.claude-sonnet-5-5`, `anthropic.claude-opus-5-5`, `anthropic.claude-haiku-4-5` olabilir; `AWS_REGION` yalnız `eu-central-1`, `eu-west-1`, `eu-west-3`, `eu-north-1`. Listede olmayan değer 500 `not_configured` döner ve günlüğe nedeni yazılır (listeler `bedrock.ts` içinde). Opus her zaman düşünür ve düşünme token'ları `max_tokens` sınırına sayılır, bu yüzden Opus için sınır 1200, diğerleri için 600.
+Kimlik yolu: `AWS_BEARER_TOKEN_BEDROCK` doluysa `AnthropicBedrock` istemcisi `Authorization: Bearer <anahtar>` ile `https://bedrock-runtime.<bölge>.amazonaws.com/model/<profil kimliği>/invoke` (akışta `/invoke-with-response-stream`) adresini çağırır; SDK `model` ve `stream` alanlarını gövdeden URL'ye taşır ve `anthropic_version` alanını kendisi ekler, imza (SigV4) yoktur. Yoksa `AWS_ACCESS_KEY_ID` ve `AWS_SECRET_ACCESS_KEY` ile `AnthropicBedrockMantle` istemcisi Mantle uç noktasını (`bedrock-mantle.<bölge>.api.aws/anthropic`) SigV4 imzasıyla çağırır. Mantle uç noktası Bedrock API anahtarını 401 ile reddeder, bu yüzden anahtar için ikinci istemci gerekir. İkisi de doluysa bearer kazanır, ikisi de yoksa 500 `not_configured` döner. Soğuk başlangıçta istemci kurulunca günlüğe bir kez `spike bedrock: auth=<bearer|sigv4> region=<bölge> model=<çağrıda kullanılan kimlik>` satırı yazılır (anahtar yazılmaz): canlıda hangi yolun seçildiği buradan görülür.
+
+Model kimliği: `SPIKE_MODEL` mantıksal ad olarak kalır ve iki yolda aynıdır (`spike_calls.model` ve istemciye dönen `usage.model` bunu taşır). Bearer yolunda `bedrock-runtime` çıplak adı 400 ile reddeder (inference profile ister), bu yüzden çağrıda `SPIKE_MODEL_PREFIX` + `SPIKE_MODEL` kullanılır, varsayılan `eu.anthropic.claude-sonnet-5-5`. AB bölgesi (veri yerleşimi) `eu.` önekiyle sağlanır; `global.` profili isteği AB dışına da yönlendirebilir. Mantle yolunda önek kullanılmaz. Canlıda doğrulanan profil `eu.anthropic.claude-sonnet-5-5`; Opus ve Haiku profilleri aynı kalıpla kurulur ama canlıda denenmedi.
+
+`SPIKE_MODEL` yalnız `anthropic.claude-sonnet-5-5`, `anthropic.claude-opus-5-5`, `anthropic.claude-haiku-4-5` olabilir; `AWS_REGION` yalnız `eu-central-1`, `eu-west-1`, `eu-west-3`, `eu-north-1`; `SPIKE_MODEL_PREFIX` (bearer yolunda) yalnız `eu.` ve `global.`. Listede olmayan değer 500 `not_configured` döner ve günlüğe nedeni yazılır (listeler `bedrock.ts` içinde). Opus her zaman düşünür ve düşünme token'ları `max_tokens` sınırına sayılır, bu yüzden Opus için sınır 1200, diğerleri için 600.
 
 ## Deploy
 
@@ -24,10 +30,12 @@ Sıra önemli: yeni fonksiyon `spike_reserve` çağırır; migration yoksa her i
 
 ```sh
 supabase db push   # 20260727051605_spike_usage, 20261006095331_spike_calls, 20261006141500_spike_hardening, 20261006143100_cron_enable (günlük saklama işi)
-supabase secrets set AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+supabase secrets set AWS_BEARER_TOKEN_BEDROCK=...   # tercih edilen; yedek: AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
 supabase functions deploy ai-ask-spike --no-verify-jwt
 supabase secrets unset OPENAI_API_KEY   # yeni sürüm canlıda doğrulandıktan sonra
 ```
+
+Bearer yolundan geri dönüş: `supabase secrets unset AWS_BEARER_TOKEN_BEDROCK` (anahtar çifti duruyorsa fonksiyon Mantle yoluna döner).
 
 Saklama sınıfları: `spike_usage` (cihaz başına günlük sayaç), `spike_global_usage` (günün toplam çağrısı) ve `spike_calls` (çağrı günlüğü: model, token, süre, süzgeç kuralı; mesaj metni yok) 90 gün; `spike_ip_usage` (adres özeti sayacı) 2 gün tutulur. `purge_spike_logs()` süresi dolan satırların hepsini siler. Günlük iş (`purge-spike-logs`, 03:17 UTC) `20261006143100_cron_enable.sql` ile kurulur: migration pg_cron'u kendisi açar ve işi yeniden yaratır, pg_cron açılamazsa `db push` durur; elle `cron.schedule` çalıştırmak gerekmez (eski `spike-logs-retention` işi aynı migration'da `purge-spike-logs` ile değişir).
 
@@ -65,10 +73,10 @@ deno test --config supabase/functions/ai-ask-spike/deno.json supabase/functions/
 
 Kurallara dokunan her değişiklikte `BLOCKED` (yakalanması gereken), `ALLOWED` (geçmesi gereken) ve gizleme denemeleri için `ESCAPES` listelerine satır ekleyin. Aynı dosya boş cevabın (`rule: "empty"`) ve akıştaki payın davranışını da sınar; yuvanın iade edilip edilmediği ise `index.ts` işleyicisindedir ve bu testin kapsamı dışındadır.
 
-Eval (22 vaka x 2 model = 44 ücretli çağrı; ikinci model varsayılan `anthropic.claude-opus-5-5`; `a07`-`a10` izin kipli saldırgan vakalardır):
+Eval (22 vaka x 2 model = 44 ücretli çağrı; ikinci model varsayılan `anthropic.claude-opus-5-5`; `a07`-`a10` izin kipli saldırgan vakalardır). Eval fonksiyonla aynı istemci fabrikasını (`bedrockClient()`) ve `buildParams` çıktısını kullanır: kimlik yolu aynı kuralla seçilir ve ikinci model de mantıksal adla verilir (bearer yolunda önek kendiliğinden eklenir). Anahtar çifti için `AWS_BEARER_TOKEN_BEDROCK` yerine `AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...` verin:
 
 ```sh
-AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... deno run --config supabase/functions/ai-ask-spike/deno.json --allow-env --allow-net --allow-read --allow-write supabase/functions/ai-ask-spike/eval.ts anthropic.claude-opus-5-5 --out .tmp/spike-eval.md
+AWS_BEARER_TOKEN_BEDROCK=... deno run --config supabase/functions/ai-ask-spike/deno.json --allow-env --allow-net --allow-read --allow-write supabase/functions/ai-ask-spike/eval.ts anthropic.claude-opus-5-5 --out .tmp/spike-eval.md
 ```
 
 ## Çıktı filtresi

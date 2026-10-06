@@ -165,7 +165,7 @@ by the app build. Push the migrations first: the new `ai-ask-spike` calls
 
 ```bash
 supabase db push   # app_events, spike_calls, subscription_events_retention, spike_hardening
-supabase secrets set AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=eu-central-1
+supabase secrets set AWS_BEARER_TOKEN_BEDROCK=... AWS_REGION=eu-central-1   # or AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
 supabase secrets set RC_WEBHOOK_SECRET=...
 supabase functions deploy ai-ask-spike --no-verify-jwt
 supabase functions deploy track --no-verify-jwt
@@ -176,9 +176,11 @@ supabase secrets unset OPENAI_API_KEY   # once the new ai-ask-spike is verified 
 
 | Secret | Needed | Default and notes |
 |---|---|---|
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | yes | an IAM user that may call the model through Bedrock only; the model must be enabled for the region in the Bedrock console |
+| `AWS_BEARER_TOKEN_BEDROCK` | yes, unless the key pair below is set | a Bedrock API key (preferred): the function calls `bedrock-runtime` through an inference profile; it wins over the key pair when both are set |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | yes, unless `AWS_BEARER_TOKEN_BEDROCK` is set | an IAM user that may call the model through Bedrock Mantle only (SigV4); the model must be enabled for the region in the Bedrock console |
 | `AWS_REGION` | no | `eu-central-1`; only `eu-central-1`, `eu-west-1`, `eu-west-3` and `eu-north-1` are accepted |
-| `SPIKE_MODEL` | no | `anthropic.claude-sonnet-5-5`; `anthropic.claude-opus-5-5` and `anthropic.claude-haiku-4-5` are the other accepted values |
+| `SPIKE_MODEL` | no | `anthropic.claude-sonnet-5-5`, the logical name on both paths; `anthropic.claude-opus-5-5` and `anthropic.claude-haiku-4-5` are the other accepted values |
+| `SPIKE_MODEL_PREFIX` | no | `eu.`; only used with `AWS_BEARER_TOKEN_BEDROCK`, where it is put in front of `SPIKE_MODEL` to form the inference profile id (`eu.anthropic.claude-sonnet-5-5`). Only `eu.` and `global.` are accepted. The EU region guarantee comes from `eu.`: a `global.` profile may be served from outside the EU |
 | `SPIKE_GLOBAL_DAILY_CAP` | no | `3000` model calls per UTC day, all callers |
 | `RC_WEBHOOK_SECRET` | yes | must equal the Authorization value set in RevenueCat's webhook; without it `rc-webhook` answers 401 to everyone |
 | `TRACK_GLOBAL_DAILY_CAP` | no | `500000` analytics rows per UTC day, all devices |

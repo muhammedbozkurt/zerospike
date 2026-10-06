@@ -82,9 +82,10 @@ the bill whatever else happens.
 1. `supabase db push` (applies `spike_calls`, 90-day retention, service-role-only grants,
    and `spike_hardening`: the atomic reservation, address and global counters). Push it
    BEFORE deploying the function: the new version answers 503 until `spike_reserve` exists.
-2. `supabase secrets set AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...`
-   (optional: `AWS_REGION`, `SPIKE_MODEL`, `AWS_SESSION_TOKEN`). Model access must be
-   enabled in the Bedrock console for that region.
+2. `supabase secrets set AWS_BEARER_TOKEN_BEDROCK=... AWS_REGION=eu-central-1 SPIKE_MODEL_PREFIX=eu.`
+   (Bedrock API key, bearer path; alternatively `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`
+   for the Mantle path; optional: `SPIKE_MODEL`, `AWS_SESSION_TOKEN`). Model access must be
+   enabled in the Bedrock console for that region; `eu.` keeps inference inside EU regions.
 3. `supabase functions deploy ai-ask-spike --no-verify-jwt`, then
    `supabase secrets unset OPENAI_API_KEY` once the new version is verified live.
 4. Nothing to run by hand for the 90-day retention: the `cron_enable` migration

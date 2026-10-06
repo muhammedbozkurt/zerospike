@@ -2,6 +2,10 @@
 // alternative model straight on Bedrock (no HTTP layer, no database), through
 // the same prompt, request params, meta parser and output filter as the
 // function, and writes a markdown report. Every run is billed: see README.md.
+// The client comes from bedrock.ts, so it takes the function's credential path:
+// AWS_BEARER_TOKEN_BEDROCK when set, else AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+// altModel is a logical name like SPIKE_MODEL; the inference profile prefix is added
+// by buildParams on the bearer path.
 //
 //   deno run --allow-env --allow-net --allow-read --allow-write \
 //     supabase/functions/ai-ask-spike/eval.ts [altModel] [--out report.md]
@@ -152,7 +156,7 @@ async function main(): Promise<void> {
   const { alt, out } = parseArgs(Deno.args);
   const client = bedrockClient();
   if (!client) {
-    console.error("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set, and SPIKE_MODEL and AWS_REGION, when set, must be on the allowlists in bedrock.ts (the log above says which one is not).");
+    console.error("AWS_BEARER_TOKEN_BEDROCK (or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY) must be set, and SPIKE_MODEL, SPIKE_MODEL_PREFIX (bearer only) and AWS_REGION, when set, must be on the allowlists in bedrock.ts (the log above says which one is not).");
     Deno.exit(1);
   }
   const cases = JSON.parse(await Deno.readTextFile(new URL("./eval-cases.json", import.meta.url))) as EvalCase[];

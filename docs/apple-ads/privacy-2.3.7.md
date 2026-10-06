@@ -663,7 +663,7 @@ zerospike and excludes everything that came from Health Connect."
 ## 7. Yayından önce doğrulama (hepsi salt okunur)
 
 Depo kökünden:
-1. `grep -rn "console\." supabase/functions --include='*.ts'`: yalnız `bedrock.ts` içindeki iki
+1. `grep -rn "console\." supabase/functions --include='*.ts'`: yalnız `bedrock.ts` içindeki üç
    satır (`spike config`: yapılandırma sorunu; `logUpstream`: durum kodu ve hata sınıfı) ve
    çevrimdışı `eval.ts` çıkmalı; mesaj veya özet yazan satır olmamalı.
 2. `grep -n "USER_SUGAR_SOURCE" lib/ai/spikeContext.ts && ls scripts/spikeContext.test.ts`:
