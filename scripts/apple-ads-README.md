@@ -34,15 +34,21 @@ Tum secenekler icin `--help`.
 14 gunluk, tek kampanyali test: gunluk 3.50 USD x 14 gun = 49 USD tavan. Tasarim ve esikler:
 `docs/apple-ads/plan.md` bolum 6b. Veri: `keywords-us.csv` (13 kelime) ve `negatives-us.csv` (70 negatif).
 
-    node scripts/apple-ads-setup.mjs --dry-run --market us                    # plani gosterir, aga cikmaz
-    node scripts/apple-ads-setup.mjs --apply --market us --start 2026-10-14   # kampanya PAUSED olusur
+    node scripts/apple-ads-setup.mjs --dry-run --market us                    # plani ve kampanya govdesini gosterir, aga cikmaz
+    node scripts/apple-ads-setup.mjs --apply --market us                      # tarihsiz: PAUSED olusur, bitis tarihi yok
+    node scripts/apple-ads-setup.mjs --apply --market us --start 2026-10-14   # yalniz baslangic gunu, bitis tarihi yok
+    node scripts/apple-ads-setup.mjs --apply --market us --start 2026-10-14 --end 2026-10-28   # 14 gunluk pencere
+    node scripts/apple-ads-setup.mjs --update-schedule --market us --dry-run  # mevcut kampanyaya gidecek PUT govdesini gosterir, aga cikmaz
+    node scripts/apple-ads-setup.mjs --update-schedule --market us            # canli: bitis tarihini siler, kampanya ve sonra baslayan ad group baslangicini simdiye (+15 dk) ceker
     node scripts/apple-ads-status.mjs enabled ZS-US-Test                      # yayina alir
     node scripts/apple-ads-status.mjs paused ZS-US-Test                       # durdurur
 
-- `--start YYYY-MM-DD` release gunudur (UTC 00:00); bitis her zaman baslangic + 14 gundur ve kampanyaya
-  `endTime` olarak yazilir, sure dolunca kampanya kendiliginden biter. US icin `--apply` sirasinda zorunludur
-  (unutulursa hicbir sey olusturulmadan hata verir). `--start now` su an + 15 dk demektir; gecmis tarih verilirse
-  baslangic simdiye cekilir.
+- Tarih opsiyoneldir. `--start` verilmezse kampanya govdesine `startTime` ve `endTime` hic yazilmaz (Apple
+  varsayilani: olusturuldugu anda baslar, bitis tarihi yok); kampanya yine `PAUSED` olusur. `--start YYYY-MM-DD`
+  (UTC 00:00, release gunu) yalniz `startTime` yazar; `--start now` su an + 15 dk demektir, gecmis tarih verilirse
+  baslangic simdiye cekilir. `endTime` yalniz `--end YYYY-MM-DD` ile yazilir (UTC 00:00, yani o gunun basi);
+  `--end` tek basina verilemez, `--start` ister ve baslangictan sonra olmalidir. Dry-run kampanya govdesini
+  (POST /campaigns) basar, hangi tarih alanlarinin gidecegi oradan gorulur.
 - Kampanya gelecek tarihli `startTime` ile `enabled` yapilirsa baslangic gunune kadar bekler; release gununu
   beklemeden de acilabilir.
 - `status` scriptinde kampanya on eki verin (`ZS-US-Test`). Onek vermezseniz `ZS-` ile baslayan tum kampanyalar
@@ -52,15 +58,29 @@ Tum secenekler icin `--help`.
   kullanicilar (New Users kisiti yok), yas ve cinsiyet hedefi yok. Negatifler kampanya duzeyinde.
 - Apple gunluk butcenin teklifi asmasini ister (3.50 > 0.45); script bunu plan asamasinda kontrol eder.
 - Toplam (lifetime) butce alani Campaign API 5.6'da kaldirildi; toplam tavan gunluk butce x 14 gun = 49 USD ile
-  saglanir (hedef 50 USD).
+  saglanir (hedef 50 USD). `--end` verilmediyse Apple kampanyayi kendiliginden durdurmaz; 14. gunde siz durdurun
+  (`apple-ads-status.mjs paused ZS-US-Test`).
 - Default Ad: script her ad group icin ad listesini kontrol eder. Search Results ad group'unda varsayilan ad
   Apple tarafindan saglanmasi beklenir (hesapta DEFAULT_PRODUCT_PAGE creative'i yok, konsol kampanyalari yine de
   calisti), bu yuzden listede ad yoksa yalniz bilgi basilir. Gosterim gelmezse ve ad group `NO_AVAILABLE_ADS`
   gosterirse ayni komutu `--create-default-ad` ile tekrar calistirin (creative'i bulur veya olusturur, Default Ad
   ekler; kampanya ve ad group'lar zaten var oldugu icin atlanir). Bu uclar belgelenmis ama canli denenmedi; hata
   olursa kurulum durmaz, `UYARI` basilir, Default Ad konsolda ad group > Ads sekmesinden elle eklenir.
-- Mevcut kampanyanin takvimi guncellenmez; farkliysa `UYARI` basilir. `--market all` artik us'u da kapsar,
-  yalniz de/fr icin `--market de` ve `--market fr` kullanin.
+- `--apply` mevcut kampanyanin takvimini guncellemez; farkliysa `UYARI` basilir. Takvimi `--update-schedule`
+  duzeltir: `PUT /campaigns/{id}` govdesine yalniz `startTime` ve `endTime` koyar, durum ve butceye dokunmaz.
+  `--start`/`--end` verilmezse `endTime: null` ile bitis silinir ve baslangic simdiye (+15 dk) cekilir (mevcut
+  baslangic bundan once ise gonderilmez); `--start`/`--end` verilirse o tarihler yazilir. Apple baslangic
+  degisikligini reddederse yalniz bitis guncellenir ve `UYARI` basilir. Sonuc `GET /campaigns/{id}` ile dogrulanir.
+  Apple'in `CampaignUpdate` belgesi `startTime`/`endTime` listelemez, ama canli API 2026-10-06'da `endTime: null`
+  ve one cekilen `startTime` ile calisti.
+- `--update-schedule` ad group baslangiclarini da duzeltir: baslangici kampanyanin yeni baslangicindan sonra olan
+  ad group, kampanya `ENABLED` olsa da kendi tarihine kadar yayina girmez (`ON_HOLD`). Bu ad group'lar
+  `PUT /campaigns/{id}/adgroups/{adGroupId}` govdesi `{"startTime": ...}` ile kampanyanin baslangicina cekilir
+  (AdGroupUpdate zarf istemez; Apple startTime'in simdiden buyuk olmasini ister, bu yuzden +15 dk). Daha once
+  baslayan ad group'lara ve ad group durumuna (status) dokunulmaz; kampanya takvimi zaten istenen gibiyse kampanya
+  icin PUT gonderilmez. Ad group listesi GET ile basilir; cekilemeyen ad group `HATA` ve cikis kodu 1 verir.
+- `--market all` artik us'u da kapsar, yalniz de/fr icin `--market de` ve `--market fr` kullanin
+  (`--update-schedule` yalniz `--market us` kabul eder).
 
 ## Rapor (apple-ads-report.mjs)
 

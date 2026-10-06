@@ -133,7 +133,7 @@ TTR ve indirme sinyali toplamak; kanit olmadan olceklenmez. Bolum 5'teki US payi
 |---|---|
 | Kampanya | ZS-US-Test, storefront US, dil en, yalniz Search Results yerlesimi |
 | Butce | 3,50 $/gun; Apple gunluk butcenin teklifi asmasini ister (3,50 > 0,45) |
-| Takvim | `--start` ile release gunu (UTC 00:00), bitis +14 gun kampanya `endTime`; PAUSED kurulur, `apple-ads-status.mjs enabled ZS-US-Test` ile acilir |
+| Takvim | Bitis tarihi yok, baslangic "simdi" (`--start` istege bagli): PAUSED kurulur, `apple-ads-status.mjs enabled ZS-US-Test` ile acildigi anda yayina girer; 14. gunde elle durdurulur. Kurulu kampanyanin takvimi ve sonra baslayan ad group baslangiclari `--update-schedule --market us` ile duzeltilir |
 | Cihaz ve kitle | iPhone + iPad; tum kullanicilar (New Users kisiti yok); yas, cinsiyet, gun-saat hedefi yok |
 | Ad group SearchMatch | Search Match acik, kelime yok, teklif 0,45 $ |
 | Ad group Broad | Search Match kapali, 10 Broad kelime, teklif 0,45 $: blood sugar log / tracker / diary, glucose log / tracker, diabetes diary / log / tracker, insulin log, carb counter diabetes |
@@ -149,8 +149,8 @@ Kararlar ve riskler:
   "calculator", doz, bolus ve oran terimlerini keser; reklam dili gunluk, takip, hatirlatici cercevesinde kalir.
 - Butce/teklif orani Broad ve SearchMatch'te 7,8x, Brand'de 11,7x. v1 dersi dusuk oranda dagitimin bogulmasi ve
   ~20x hedefiydi; 48 saat sonra gosterim yoksa once bu oran ve teklifler gozden gecirilir.
-- Toplam (lifetime) butce alani Campaign API 5.6'da kalkti; tavan gunluk butce x gun ile saglanir (49 $), sure
-  asimi kampanya bitis tarihiyle durur.
+- Toplam (lifetime) butce alani Campaign API 5.6'da kalkti; tavan gunluk butce x gun ile saglanir (49 $). Kampanyada
+  bitis tarihi yok, bu yuzden 14. gunde `apple-ads-status.mjs paused ZS-US-Test` ile elle durdurulur.
 - Okuma: `node scripts/apple-ads-report.mjs --days 7`. Durdurma esigi bolum 7'dedir (US: 100 tap sonrasi indirme
   maliyeti 1,50 EUR ustunde); 14. gun sonunda sonuc o satirla okunur, genisletme karari ayri verilir.
 

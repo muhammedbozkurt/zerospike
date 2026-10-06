@@ -209,13 +209,16 @@ call log, and 24 months for `subscription_events` (its raw webhook body 90 days)
 
 ### Apple Ads (release day)
 
-The US test campaign (`ZS-US-Test`, 14 days, 3.50 USD a day) is created PAUSED
-and switched on the day the release goes live. The developer runs these by hand;
+The US test campaign (`ZS-US-Test`, 3.50 USD a day) is created PAUSED, with no
+end date, and switched on the day the release goes live. Because it has no end
+date, stop it by hand after 14 days. The developer runs these by hand;
 credentials and every option are in `scripts/apple-ads-README.md`.
 
 ```bash
 node scripts/apple-ads-setup.mjs --dry-run --market us                    # plan only, no network
-node scripts/apple-ads-setup.mjs --apply --market us --start YYYY-MM-DD   # apply: creates it PAUSED, YYYY-MM-DD is the release day (UTC)
+node scripts/apple-ads-setup.mjs --apply --market us                      # apply: creates it PAUSED, starts when created, no end date (--start is optional)
+node scripts/apple-ads-setup.mjs --update-schedule --market us            # existing campaign: clears the end date, campaign and later ad group starts move to now
 node scripts/apple-ads-status.mjs enabled ZS-US-Test                      # enable on release day
+node scripts/apple-ads-status.mjs paused ZS-US-Test                       # stop after 14 days
 node scripts/apple-ads-report.mjs --days 14 --prefix ZS-US-Test           # read-only report
 ```

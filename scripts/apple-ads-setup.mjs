@@ -56,7 +56,7 @@ const MARKETS = {
     searchMatchBid: '0.20',
     expected: { campaigns: 4, csvAdGroups: 12, keywords: 104, sharedNegatives: 30, discoveryNegatives: 139 },
   },
-  // Tek kampanyali, sure sinirli test: ayri Discovery listesi yok, negatifler kampanya duzeyindedir.
+  // Tek kampanyali test: ayri Discovery listesi yok, negatifler kampanya duzeyindedir. Takvim (--start, --end) istege baglidir.
   us: {
     label: 'US',
     country: 'US',
@@ -70,7 +70,7 @@ const MARKETS = {
     searchMatchBid: '0.45',
     devices: ['IPHONE', 'IPAD'],
     newUsersOnly: false,
-    durationDays: 14,
+    acceptsSchedule: true,
     checkDefaultAd: true,
     expected: { campaigns: 1, csvAdGroups: 2, keywords: 13, sharedNegatives: 70, discoveryNegatives: 0 },
   },
@@ -302,7 +302,7 @@ function padLeft(value, width) {
   return s.length >= width ? s : ' '.repeat(width - s.length) + s;
 }
 
-function printPlan(plan) {
+function printPlan(plan, { showBodies = false } = {}) {
   const { market, campaigns, counts } = plan;
   console.log('');
   console.log(`Pazar: ${market.label} (${market.country})`);
@@ -362,10 +362,12 @@ function printPlan(plan) {
   console.log(`Ortak ayarlar: yerlesim APPSTORE_SEARCH_RESULTS, cihaz ${devices}, hedef kitle ${audience}, kampanya durumu PAUSED.`);
   if (plan.schedule) {
     const s = plan.schedule;
-    if (s.startTime) {
-      console.log(`Takvim: ${s.startTime} .. ${s.endTime} (UTC), ${s.days} gun${s.clamped ? '; gecmis tarih verildigi icin baslangic simdiye cekildi' : ''}.`);
-    } else {
-      console.log(`Takvim: ${s.days} gun. Baslangic --start YYYY-MM-DD ile verilir (apply icin zorunlu), bitis baslangictan ${s.days} gun sonradir.`);
+    console.log(`Takvim: ${scheduleLabel(s)}${s.startTime ? '' : '; kampanya olusturuldugu anda baslar'}${s.clamped ? '; gecmis tarih verildigi icin baslangic simdiye cekildi' : ''}.`);
+    if (showBodies) {
+      for (const c of campaigns) {
+        const body = buildCampaignBody({ orgId: '<orgId>', adamId: '<adamId>', campaign: c, schedule: s });
+        console.log(`Kampanya govdesi ${c.name} (orgId ve adamId config.json'dan gelir): ${JSON.stringify(body)}`);
+      }
     }
   }
   if (market.checkDefaultAd) {
@@ -597,35 +599,76 @@ function toApiTime(ms) {
   return new Date(ms).toISOString().replace('Z', '');
 }
 
-function parseStart(value) {
-  if (value === 'now') return 'now';
+function parseDay(value) {
   const ms = /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? Date.parse(`${value}T00:00:00Z`) : NaN;
   // Date.parse 2026-02-31 gibi tarihleri sessizce kaydirir; gidis donus kontrolu bunu yakalar.
-  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== value) {
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === value ? ms : NaN;
+}
+
+function parseStart(value) {
+  if (value === 'now') return 'now';
+  const ms = parseDay(value);
+  if (Number.isNaN(ms)) {
     throw new UserError(`--start gecersiz: "${value}". Ornek: --start 2026-10-14 (UTC 00:00) veya --start now.`);
   }
   return ms;
 }
 
-// Sure sinirli pazarlarda (durationDays) kampanya takvimi. Bitis her zaman baslangic + durationDays.
-function resolveSchedule(market, startArg, { required }) {
-  if (!market.durationDays) return null;
-  if (startArg == null) {
-    if (required) {
-      throw new UserError(`${market.label}: ${market.durationDays} gunluk pencere icin --start gerekir. Ornek: --start 2026-10-14 (release gunu, UTC 00:00) veya --start now.`);
-    }
-    return { days: market.durationDays, startTime: null, endTime: null, clamped: false };
+function parseEnd(value) {
+  const ms = parseDay(value);
+  if (Number.isNaN(ms)) {
+    throw new UserError(`--end gecersiz: "${value}". Ornek: --end 2026-10-28 (UTC 00:00).`);
   }
+  return ms;
+}
+
+// Takvimli pazarlarda (acceptsSchedule) tarih istege baglidir. --start yoksa kampanya govdesine hicbir tarih
+// yazilmaz (Apple varsayilani: olusturuldugu anda baslar, bitis yok); endTime yalniz --end ile yazilir.
+function resolveSchedule(market, startArg, endArg) {
+  if (!market.acceptsSchedule) return null;
+  if (startArg == null) return { startTime: null, endTime: null, clamped: false };
   const earliest = Date.now() + AD_GROUP_START_OFFSET_MS;
   const wanted = startArg === 'now' ? earliest : startArg;
   const clamped = wanted < earliest;
   const startMs = clamped ? earliest : wanted;
+  if (endArg != null && endArg <= startMs) {
+    throw new UserError(`${market.label}: --end (${toApiTime(endArg)}) baslangictan (${toApiTime(startMs)}) sonra olmali.`);
+  }
   return {
-    days: market.durationDays,
     startTime: toApiTime(startMs),
-    endTime: toApiTime(startMs + market.durationDays * 86400000),
+    endTime: endArg == null ? null : toApiTime(endArg),
     clamped,
   };
+}
+
+function scheduleLabel(s) {
+  if (!s.startTime) return 'tarih yok, bitis yok';
+  if (!s.endTime) return `baslangic ${s.startTime} UTC, bitis yok`;
+  return `${s.startTime} .. ${s.endTime} UTC`;
+}
+
+function scheduleDiffers(campaign, schedule) {
+  const differs = (have, want) => String(have || '').slice(0, 16) !== String(want || '').slice(0, 16);
+  // Baslangica yalniz --start verildiyse bakilir; verilmediyse kampanya olusturuldugu andaki degeri tasir.
+  return (schedule.startTime != null && differs(campaign.startTime, schedule.startTime)) || differs(campaign.endTime, schedule.endTime);
+}
+
+// Tarih alanlari yalniz verildiyse govdeye girer; yazilmayan alan Apple varsayilanina kalir.
+function buildCampaignBody({ orgId, adamId, campaign, schedule }) {
+  const body = {
+    orgId,
+    name: campaign.name,
+    adamId,
+    countriesOrRegions: [campaign.country],
+    adChannelType: 'SEARCH',
+    supplySources: ['APPSTORE_SEARCH_RESULTS'],
+    billingEvent: 'TAPS',
+    dailyBudgetAmount: money(campaign.dailyBudget),
+    status: 'PAUSED',
+  };
+  if (schedule?.startTime) body.startTime = schedule.startTime;
+  if (schedule?.endTime) body.endTime = schedule.endTime;
+  return body;
 }
 
 const DEFAULT_AD_NAME = 'Default Ad';
@@ -683,8 +726,8 @@ async function applyMarket(client, plan) {
   console.log('');
   console.log(`### ${market.label} uygulaniyor`);
   // "now" ve gecmis baslangic uygulama aninda yeniden hesaplanir; --market all uzun surerse pay tukenmesin.
-  const schedule = resolveSchedule(market, plan.startArg, { required: true });
-  const startTime = schedule ? schedule.startTime : toApiTime(Date.now() + AD_GROUP_START_OFFSET_MS);
+  const schedule = resolveSchedule(market, plan.startArg, plan.endArg);
+  const startTime = schedule?.startTime ?? toApiTime(Date.now() + AD_GROUP_START_OFFSET_MS);
   const targetingDimensions = { deviceClass: { included: market.devices || ['IPHONE'] } };
   // excluded = uygulamayi indirmemis kullanicilar, yani yeni kullanicilar.
   if (market.newUsersOnly !== false) targetingDimensions.appDownloaders = { excluded: [String(adamId)] };
@@ -694,28 +737,14 @@ async function applyMarket(client, plan) {
     let campaign = await findCampaignByName(client, c.name);
     if (campaign) {
       console.log(`- Kampanya var, atlandi: ${c.name} (id ${campaign.id})`);
-      if (schedule && String(campaign.endTime || '').slice(0, 16) !== schedule.endTime.slice(0, 16)) {
-        console.log(`  UYARI: mevcut takvim ${campaign.startTime || '-'} .. ${campaign.endTime || '-'}, istenen ${schedule.startTime} .. ${schedule.endTime}. Mevcut kampanya guncellenmez.`);
+      if (schedule && scheduleDiffers(campaign, schedule)) {
+        console.log(`  UYARI: mevcut takvim ${campaign.startTime || '-'} .. ${campaign.endTime || '-'}, istenen ${scheduleLabel(schedule)}. --apply mevcut kampanyayi guncellemez; takvim icin --update-schedule --market ${market.label.toLowerCase()}.`);
       }
     } else {
-      const campaignBody = {
-        orgId: client.config.orgId,
-        name: c.name,
-        adamId,
-        countriesOrRegions: [c.country],
-        adChannelType: 'SEARCH',
-        supplySources: ['APPSTORE_SEARCH_RESULTS'],
-        billingEvent: 'TAPS',
-        dailyBudgetAmount: money(c.dailyBudget),
-        status: 'PAUSED',
-      };
-      if (schedule) {
-        campaignBody.startTime = schedule.startTime;
-        campaignBody.endTime = schedule.endTime;
-      }
+      const campaignBody = buildCampaignBody({ orgId: client.config.orgId, adamId, campaign: c, schedule });
       const res = await client.request('POST', '/campaigns', { body: campaignBody });
       campaign = res.data;
-      const when = schedule ? `, takvim ${schedule.startTime} .. ${schedule.endTime} UTC` : '';
+      const when = schedule ? `, takvim ${scheduleLabel(schedule)}` : '';
       console.log(`- Kampanya olusturuldu: ${c.name} (id ${campaign.id}, butce ${c.dailyBudget} ${CURRENCY}, durum PAUSED${when})`);
     }
 
@@ -776,6 +805,160 @@ async function applyMarket(client, plan) {
       })));
       console.log(`    Keyword: ${created.length} eklendi, ${g.keywords.length - newKeywords.length} zaten vardi.`);
     }
+  }
+}
+
+function apiTimeMs(value) {
+  const s = String(value);
+  return Date.parse(s.endsWith('Z') ? s : `${s}Z`);
+}
+
+function minuteOf(value) {
+  return String(value || '').slice(0, 16);
+}
+
+// Apple belgesinde CampaignUpdate startTime ve endTime listelemez (Campaign nesnesi ikisini updatable der) ve
+// endTime'i silmenin yolunu tarif etmez. Canli API'de endTime: null bitisi siler ve gelecekteki startTime one
+// cekilebilir (2026-10-06, GET ile dogrulandi). Belgesiz oldugu icin sonuc her calismada GET ile yeniden dogrulanir.
+function buildScheduleUpdateBody(schedule, { withStart }) {
+  const campaign = {};
+  if (withStart) campaign.startTime = schedule.startTime;
+  campaign.endTime = schedule.endTime;
+  return { campaign, clearGeoTargetingOnCountryOrRegionChange: false };
+}
+
+// AdGroupUpdate zarf istemez (Apple belgesi: kismi guncelleme, yalniz startTime yeter).
+function buildAdGroupStartBody(schedule) {
+  return { startTime: schedule.startTime };
+}
+
+function printScheduleUpdatePlan(name, schedule, explicitStart) {
+  console.log('');
+  console.log(`Kampanya ${name}: PUT /api/v5/campaigns/<campaignId> (id kampanya adindan bulunur)`);
+  console.log(`  Takvim: ${scheduleLabel(schedule)}`);
+  console.log(`  Govde: ${JSON.stringify(buildScheduleUpdateBody(schedule, { withStart: true }))}`);
+  console.log(`  Apple baslangic degisikligini reddederse yedek govde: ${JSON.stringify(buildScheduleUpdateBody(schedule, { withStart: false }))}`);
+  if (!explicitStart) console.log('  --start verilmedigi icin baslangic yalniz mevcut baslangic bu zamandan sonraysa gonderilir.');
+  console.log('  Kampanya takvimi zaten istenen gibiyse kampanya icin PUT gonderilmez. Durum (status) govdede yok, degismez.');
+  console.log(`  Ad group: baslangici ${schedule.startTime} UTC'den sonra olan her ad group icin (canlida listeden bulunur):`);
+  console.log(`    PUT /api/v5/campaigns/<campaignId>/adgroups/<adGroupId> govde: ${JSON.stringify(buildAdGroupStartBody(schedule))}`);
+  console.log('    Bu zamandan once baslayan ad group\'lara dokunulmaz.');
+}
+
+// Ad group baslangici kampanyanin yeni baslangicindan sonraysa o ad group kendi tarihine kadar yayina girmez (ON_HOLD),
+// kampanya ENABLED olsa bile. Bu ad group'larin startTime'i kampanyanin baslangicina cekilir.
+async function pullAdGroupStarts(client, campaign, schedule) {
+  const endpoint = `/campaigns/${campaign.id}/adgroups`;
+  const listActive = async () => (await listAll(client, endpoint)).filter((g) => !g.deleted);
+  try {
+    let adGroups = await listActive();
+    const late = adGroups.filter((g) => g.startTime && apiTimeMs(g.startTime) > apiTimeMs(schedule.startTime));
+    if (late.length === 0) console.log(`Ad group baslangici: ${schedule.startTime} UTC'den sonra baslayan ad group yok, PUT gonderilmedi.`);
+    const pulled = [];
+    for (const g of late) {
+      const body = buildAdGroupStartBody(schedule);
+      console.log(`PUT ${endpoint}/${g.id} (${g.name}, onceki baslangic ${g.startTime}) govde: ${JSON.stringify(body)}`);
+      try {
+        await client.request('PUT', `${endpoint}/${g.id}`, { body });
+        pulled.push(g.id);
+      } catch (err) {
+        console.log(`HATA: ${g.name} baslangici cekilemedi: ${String(err.message).split('\n').join(' ').slice(0, 400)}`);
+        process.exitCode = 1;
+      }
+    }
+    if (pulled.length > 0) adGroups = await listActive();
+    for (const g of adGroups) {
+      console.log(`  Ad group ${pad(g.name, 12)} id ${g.id}, durum ${g.status}, servingStatus ${g.servingStatus}, displayStatus ${g.displayStatus}, baslangic ${g.startTime || '-'}`);
+      if (pulled.includes(g.id) && minuteOf(g.startTime) !== minuteOf(schedule.startTime)) {
+        console.log(`    HATA: baslangic degismedi (istenen ${schedule.startTime}, GET ${g.startTime || '-'}); Apple alani sessizce yok saymis olabilir.`);
+        process.exitCode = 1;
+      }
+    }
+  } catch (err) {
+    console.log(`HATA: ad group baslangiclari islenemedi: ${String(err.message).split('\n')[0]}`);
+    process.exitCode = 1;
+  }
+}
+
+async function updateCampaignSchedule(client, name, schedule, explicitStart) {
+  const found = await findCampaignByName(client, name);
+  if (!found) throw new UserError(`Kampanya bulunamadi: ${name}. Once --apply ile olusturun.`);
+  console.log('');
+  console.log(`### ${name} (id ${found.id})`);
+  console.log(`Onceki: baslangic ${found.startTime || '-'}, bitis ${found.endTime || 'yok'}, durum ${found.status}`);
+  console.log(`Istenen: ${scheduleLabel(schedule)}`);
+
+  // Baslamis kampanyanin baslangici ileri alinmasin: --start yokken "simdi" yalniz gelecekteki baslangici one ceker.
+  const withStart = explicitStart || !found.startTime || apiTimeMs(found.startTime) > apiTimeMs(schedule.startTime);
+  if (!withStart) console.log(`Baslangic gonderilmez: mevcut ${found.startTime} UTC, istenen ${schedule.startTime} UTC'den once.`);
+  const needsEnd = minuteOf(found.endTime) !== minuteOf(schedule.endTime);
+
+  let sentStart = withStart;
+  let startRejection = null;
+  if (!withStart && !needsEnd) {
+    console.log('Kampanya takvimi zaten istenen gibi, kampanya icin PUT gonderilmez.');
+  } else {
+    const put = (withStartField) => {
+      const body = buildScheduleUpdateBody(schedule, { withStart: withStartField });
+      console.log(`PUT /campaigns/${found.id} govde: ${JSON.stringify(body)}`);
+      return client.request('PUT', `/campaigns/${found.id}`, { body });
+    };
+    try {
+      await put(withStart);
+    } catch (err) {
+      if (!withStart || !(err instanceof UserError) || !/start/i.test(err.message)) throw err;
+      startRejection = String(err.message).split('\n').slice(1).join(' ').slice(0, 400);
+      sentStart = false;
+      console.log('Apple baslangic degisikligini reddetti, yalniz bitis ile yeniden denenir.');
+      await put(false);
+    }
+  }
+
+  const after = (await client.request('GET', `/campaigns/${found.id}`)).data;
+  console.log(`Sonra (GET): baslangic ${after.startTime || '-'}, bitis ${after.endTime || 'yok'}, durum ${after.status}, servingStatus ${after.servingStatus}`);
+  if (startRejection) {
+    console.log(`UYARI: Apple baslangic degisikligini reddetti, yalniz bitis guncellendi; baslangic ${after.startTime || '-'} kaldi. Apple yaniti: ${startRejection}`);
+  } else if (sentStart && minuteOf(after.startTime) !== minuteOf(schedule.startTime)) {
+    console.log(`${explicitStart ? 'HATA' : 'UYARI'}: baslangic degismedi (istenen ${schedule.startTime}, GET ${after.startTime || '-'}); Apple alani sessizce yok saymis olabilir.`);
+    if (explicitStart) process.exitCode = 1;
+  }
+  if (minuteOf(after.endTime) !== minuteOf(schedule.endTime)) {
+    console.log(`HATA: bitis tarihi istenen gibi degil (istenen ${schedule.endTime || 'yok'}, GET ${after.endTime || 'yok'}); Apple null degerini yok saymis veya alani degistirmemis olabilir.`);
+    process.exitCode = 1;
+  }
+
+  await pullAdGroupStarts(client, found, schedule);
+  console.log(`Kampanya durumu ${after.status}; yayina almak icin: node scripts/apple-ads-status.mjs enabled ${name}`);
+}
+
+async function cmdUpdateSchedule(args) {
+  const marketKeys = resolveMarkets(args.market);
+  const unsupported = marketKeys.filter((k) => !MARKETS[k].acceptsSchedule);
+  if (unsupported.length > 0) {
+    throw new UserError(`--update-schedule yalniz takvimli pazar (us) icin gecerlidir, ${unsupported.join(', ')} takvimli degil. --market us verin.`);
+  }
+  const startArg = args.start == null ? null : parseStart(args.start);
+  const endArg = args.end == null ? null : parseEnd(args.end);
+  const explicitStart = startArg != null;
+  const live = args.dryRun !== true;
+  const client = live ? new AdsClient(loadConfig({ requireOrgId: true })) : null;
+  if (live) {
+    console.log(`MOD: update-schedule (canli). orgId ${client.config.orgId}. Govdelerde yalniz takvim alanlari var, kampanya ve ad group durumu (status) degismez.`);
+  } else {
+    console.log('MOD: update-schedule, dry-run. Ag cagrisi yapilmaz, hicbir sey degismez.');
+  }
+  for (const key of marketKeys) {
+    const market = MARKETS[key];
+    // --start yoksa baslangic "simdi" (+15 dk) olur; --end yoksa bitis temizlenir.
+    const schedule = resolveSchedule(market, startArg ?? 'now', endArg);
+    for (const name of Object.keys(market.budgets)) {
+      if (live) await updateCampaignSchedule(client, name, schedule, explicitStart);
+      else printScheduleUpdatePlan(name, schedule, explicitStart);
+    }
+  }
+  if (!live) {
+    console.log('');
+    console.log('Canli gonderim icin --dry-run olmadan calistirin: node scripts/apple-ads-setup.mjs --update-schedule --market us');
   }
 }
 
@@ -895,11 +1078,12 @@ function cmdSelftestJwt(keyPath) {
 }
 
 function parseArgs(argv) {
-  const args = { mode: 'dry-run', market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30, start: null, createDefaultAd: false };
+  const args = { mode: 'dry-run', dryRun: false, updateSchedule: false, market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30, start: null, end: null, createDefaultAd: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
-    if (a === '--dry-run') args.mode = 'dry-run';
+    if (a === '--dry-run') { args.mode = 'dry-run'; args.dryRun = true; }
     else if (a === '--apply') args.mode = 'apply';
+    else if (a === '--update-schedule') args.updateSchedule = true;
     else if (a === '--whoami') args.mode = 'whoami';
     else if (a === '--export-search-terms') args.mode = 'search-terms';
     else if (a === '--find-app') { args.mode = 'find-app'; args.findApp = argv[++i]; }
@@ -907,7 +1091,9 @@ function parseArgs(argv) {
     else if (a === '--market') args.market = String(argv[++i] || '').toLowerCase();
     else if (a === '--campaign') args.campaign = argv[++i];
     else if (a === '--days') args.days = Number(argv[++i]);
-    else if (a === '--start') args.start = argv[++i];
+    // Degersiz --start/--end "verilmedi" sayilmasin; bos metin dogrulayiciya gider ve hata verir.
+    else if (a === '--start') args.start = argv[++i] ?? '';
+    else if (a === '--end') args.end = argv[++i] ?? '';
     else if (a === '--create-default-ad') args.createDefaultAd = true;
     else if (a === '--help' || a === '-h') args.mode = 'help';
     else throw new UserError(`Bilinmeyen secenek: ${a}. Kullanim icin --help.`);
@@ -924,6 +1110,9 @@ function printHelp() {
     'Komutlar:',
     '  --dry-run              CSV planini dogrular ve tabloyu basar, aga cikmaz (varsayilan)',
     '  --apply                Kampanya, ad group, keyword ve negatifleri olusturur (idempotent)',
+    '  --update-schedule      Mevcut kampanyanin startTime/endTime alanlarini PUT ile gunceller; kampanyadan sonra baslayan',
+    '                         ad group baslangiclarini da kampanyanin baslangicina ceker (canli; --dry-run govdeleri basar).',
+    '                         --start/--end verilmezse bitis tarihi temizlenir ve baslangic simdiye (+15 dk) cekilir.',
     '  --whoami               /acls ve /me cagirir, orgId listesini basar',
     '  --find-app <metin>     adamId arar',
     '  --export-search-terms  --campaign <ad> ile Search Terms raporunu CSV basar',
@@ -931,8 +1120,9 @@ function printHelp() {
     '',
     'Secenekler:',
     '  --market de|fr|us|all  Varsayilan all',
-    '  --start <YYYY-MM-DD|now>  Sure sinirli pazar (us) icin baslangic gunu (UTC 00:00); bitis baslangictan 14 gun sonradir.',
-    '                         us icin --apply sirasinda zorunlu, dry-run da onizler',
+    '  --start <YYYY-MM-DD|now>  Takvimli pazar (us) icin baslangic (UTC 00:00), now = su an + 15 dk. Verilmezse kampanya',
+    '                         govdesine hicbir tarih yazilmaz (olusturuldugu anda baslar, bitis tarihi yok).',
+    '  --end <YYYY-MM-DD>     Takvimli pazar (us) icin bitis (UTC 00:00); yalniz --start ile birlikte verilir. Verilmezse bitis tarihi yok.',
     '  --create-default-ad    Ad group listesinde ad yoksa Default Ad olusturmayi dener (varsayilan: yalniz kontrol)',
     '  --campaign <ad>        Rapor icin kampanya adi',
     '  --days <sayi>          Rapor penceresi, varsayilan 30',
@@ -951,6 +1141,13 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (args.mode === 'help') { printHelp(); return; }
+  if (args.updateSchedule) {
+    if (args.mode !== 'dry-run' && args.mode !== 'apply') {
+      throw new UserError('--update-schedule diger komutlarla birlestirilemez; yalniz --market, --start, --end ve --dry-run ile kullanilir.');
+    }
+    await cmdUpdateSchedule(args);
+    return;
+  }
   if (args.mode === 'selftest-jwt') { cmdSelftestJwt(args.selftestJwt); return; }
   if (args.mode === 'whoami') { await cmdWhoami(); return; }
   if (args.mode === 'find-app') { await cmdFindApp(args.findApp); return; }
@@ -959,22 +1156,27 @@ async function main() {
   const marketKeys = resolveMarkets(args.market);
   const plans = marketKeys.map((k) => buildPlan(k));
   const startArg = args.start == null ? null : parseStart(args.start);
+  const endArg = args.end == null ? null : parseEnd(args.end);
+  if (endArg != null && startArg == null) {
+    throw new UserError('--end tek basina verilemez, --start de gerekir. Ornek: --start 2026-10-14 --end 2026-10-28 (--start now da olur).');
+  }
   for (const plan of plans) {
     plan.startArg = startArg;
+    plan.endArg = endArg;
     plan.createDefaultAd = args.createDefaultAd;
-    plan.schedule = resolveSchedule(plan.market, startArg, { required: args.mode === 'apply' });
-    if (startArg != null && !plan.market.durationDays) {
-      plan.warnings.push(`--start yalniz sure sinirli pazarlar icin gecerlidir, ${plan.market.label} icin yok sayildi.`);
+    plan.schedule = resolveSchedule(plan.market, startArg, endArg);
+    if ((startArg != null || endArg != null) && !plan.market.acceptsSchedule) {
+      plan.warnings.push(`--start ve --end yalniz takvimli pazar (us) icin gecerlidir, ${plan.market.label} icin yok sayildi.`);
     }
   }
 
   if (args.mode === 'dry-run') {
     console.log('MOD: dry-run. Ag cagrisi yapilmaz, hicbir sey olusturulmaz.');
-    for (const plan of plans) printPlan(plan);
+    for (const plan of plans) printPlan(plan, { showBodies: true });
     console.log('');
     console.log('Gercekten olusturmak icin: node scripts/apple-ads-setup.mjs --apply --market <de|fr|us|all>');
     if (plans.some((p) => p.schedule)) {
-      console.log('Sure sinirli pazar (us) icin: node scripts/apple-ads-setup.mjs --apply --market us --start YYYY-MM-DD');
+      console.log('US icin istege bagli takvim: node scripts/apple-ads-setup.mjs --apply --market us [--start YYYY-MM-DD [--end YYYY-MM-DD]]');
     }
     return;
   }
