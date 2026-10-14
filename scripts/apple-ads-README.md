@@ -40,6 +40,7 @@ Tum secenekler icin `--help`.
     node scripts/apple-ads-setup.mjs --apply --market us --start 2026-10-14 --end 2026-10-28   # 14 gunluk pencere
     node scripts/apple-ads-setup.mjs --update-schedule --market us --dry-run  # mevcut kampanyaya gidecek PUT govdesini gosterir, aga cikmaz
     node scripts/apple-ads-setup.mjs --update-schedule --market us            # canli: bitis tarihini siler, kampanya ve sonra baslayan ad group baslangicini simdiye (+15 dk) ceker
+    node scripts/apple-ads-setup.mjs --update-bids --market us --factor 1.33 [--dry-run]  # canli: ad group ve keyword tekliflerini CSV x carpan PUT eder, GET ile dogrular
     node scripts/apple-ads-status.mjs enabled ZS-US-Test                      # yayina alir
     node scripts/apple-ads-status.mjs paused ZS-US-Test                       # durdurur
 
@@ -53,10 +54,10 @@ Tum secenekler icin `--help`.
   beklemeden de acilabilir.
 - `status` scriptinde kampanya on eki verin (`ZS-US-Test`). Onek vermezseniz `ZS-` ile baslayan tum kampanyalar
   (DE/FR dahil) acilir.
-- Yapi: 3 ad group. `SearchMatch` (Search Match acik, kelime yok, 0.45), `Broad` (Search Match kapali, 10 broad
-  kelime, 0.45), `Brand` (exact zerospike, zero spike, zerospike app, 0.30). Cihaz iPhone + iPad, kitle tum
+- Yapi: 3 ad group. `SearchMatch` (Search Match acik, kelime yok, 0.60), `Broad` (Search Match kapali, 10 broad
+  kelime, 0.60), `Brand` (exact zerospike, zero spike, zerospike app, 0.40). Cihaz iPhone + iPad, kitle tum
   kullanicilar (New Users kisiti yok), yas ve cinsiyet hedefi yok. Negatifler kampanya duzeyinde.
-- Apple gunluk butcenin teklifi asmasini ister (3.50 > 0.45); script bunu plan asamasinda kontrol eder.
+- Apple gunluk butcenin teklifi asmasini ister (3.50 > 0.60); script bunu plan asamasinda kontrol eder.
 - Toplam (lifetime) butce alani Campaign API 5.6'da kaldirildi; toplam tavan gunluk butce x 14 gun = 49 USD ile
   saglanir (hedef 50 USD). `--end` verilmediyse Apple kampanyayi kendiliginden durdurmaz; 14. gunde siz durdurun
   (`apple-ads-status.mjs paused ZS-US-Test`).

@@ -67,7 +67,7 @@ const MARKETS = {
       'ZS-US-Test': '3.50',
     },
     discoveryCampaign: 'ZS-US-Test',
-    searchMatchBid: '0.45',
+    searchMatchBid: '0.60',
     devices: ['IPHONE', 'IPAD'],
     newUsersOnly: false,
     acceptsSchedule: true,
@@ -962,6 +962,111 @@ async function cmdUpdateSchedule(args) {
   }
 }
 
+function scaleBid(bid, factor) {
+  return (Math.round(Number(bid) * factor * 100) / 100).toFixed(2);
+}
+
+// Teklifler CSV'deki degerin carpimidir (kaynak dosya henuz eski degerdeyken calistirilir, sonra CSV yeni degerlere
+// guncellenir). Canlida hedef zaten esitse PUT gonderilmez, bu yuzden yeniden calistirmak guvenlidir.
+async function cmdUpdateBids(args) {
+  const marketKeys = resolveMarkets(args.market);
+  const unsupported = marketKeys.filter((k) => !MARKETS[k].acceptsSchedule);
+  if (unsupported.length > 0 || marketKeys.length !== 1) {
+    throw new UserError('--update-bids yalniz --market us ile kullanilir.');
+  }
+  const factor = Number(args.factor);
+  if (!(factor > 0) || factor > 5) throw new UserError(`--factor gecersiz: "${args.factor}". Ornek: --factor 1.33`);
+  const plan = buildPlan(marketKeys[0]);
+  const live = args.dryRun !== true;
+  const client = live ? new AdsClient(loadConfig({ requireOrgId: true })) : null;
+  console.log(live
+    ? `MOD: update-bids (canli). Carpan ${factor}. Govdelerde yalniz teklif alanlari var, durum (status) degismez.`
+    : `MOD: update-bids, dry-run. Carpan ${factor}. Ag cagrisi yapilmaz.`);
+
+  let sent = 0;
+  for (const c of plan.campaigns) {
+    const campaign = live ? await findCampaignByName(client, c.name) : null;
+    if (live && !campaign) throw new UserError(`Kampanya bulunamadi: ${c.name}`);
+    console.log('');
+    console.log(`### ${c.name}${campaign ? ` (id ${campaign.id})` : ''}`);
+    for (const g of c.adGroups.values()) {
+      const newDefault = scaleBid(g.defaultBid, factor);
+      const groupBody = { defaultBidAmount: money(newDefault) };
+      const kwTargets = g.keywords.map((k) => ({ text: k.text, matchType: k.matchType, from: k.bid, to: scaleBid(k.bid, factor) }));
+      console.log(`- Ad group ${g.name}: varsayilan teklif ${g.defaultBid} -> ${newDefault} ${CURRENCY}, ${kwTargets.length} keyword`);
+      console.log(`  PUT /campaigns/<c>/adgroups/<a> govde: ${JSON.stringify(groupBody)}`);
+      if (kwTargets.length > 0) {
+        console.log(`  PUT /campaigns/<c>/adgroups/<a>/targetingkeywords/bulk govde ornegi: ${JSON.stringify({ id: '<id>', text: kwTargets[0].text, matchType: kwTargets[0].matchType, bidAmount: money(kwTargets[0].to) })}`);
+        for (const k of kwTargets) console.log(`    ${pad(k.text, 26)}${k.matchType} ${k.from} -> ${k.to}`);
+      }
+      if (!live) continue;
+
+      const adGroup = await findAdGroupByName(client, campaign.id, g.name);
+      if (!adGroup) throw new UserError(`Ad group bulunamadi: ${g.name}`);
+      const base = `/campaigns/${campaign.id}/adgroups/${adGroup.id}`;
+      const haveDefault = adGroup.defaultBidAmount && adGroup.defaultBidAmount.amount;
+      if (haveDefault && Number(haveDefault) === Number(newDefault)) {
+        console.log(`  Varsayilan teklif zaten ${newDefault}, PUT gonderilmedi.`);
+      } else {
+        await client.request('PUT', base, { body: groupBody });
+        sent += 1;
+        console.log(`  PUT ${base} tamam.`);
+      }
+
+      if (kwTargets.length > 0) {
+        const existing = (await listAll(client, `${base}/targetingkeywords`)).filter((k) => !k.deleted);
+        const updates = [];
+        for (const t of kwTargets) {
+          const hit = existing.find((k) => k.text.toLowerCase() === t.text.toLowerCase() && k.matchType === t.matchType);
+          if (!hit) { console.log(`  UYARI: keyword canlida yok: ${t.text} (${t.matchType})`); process.exitCode = 1; continue; }
+          if (hit.bidAmount && Number(hit.bidAmount.amount) === Number(t.to)) continue;
+          updates.push({ id: hit.id, text: hit.text, matchType: hit.matchType, bidAmount: money(t.to) });
+        }
+        if (updates.length === 0) {
+          console.log('  Keyword teklifleri zaten hedefte, PUT gonderilmedi.');
+        } else {
+          await client.waitForBulkSlot();
+          const res = await client.request('PUT', `${base}/targetingkeywords/bulk`, { body: updates, tolerateBodyErrors: true });
+          const failed = (res.error && res.error.errors) || [];
+          if (failed.length > 0) { console.log(`  HATA: ${failed.length} keyword reddedildi: ${JSON.stringify(failed).slice(0, 500)}`); process.exitCode = 1; }
+          sent += updates.length;
+          console.log(`  PUT ${base}/targetingkeywords/bulk: ${updates.length} keyword gonderildi.`);
+        }
+      }
+    }
+  }
+  if (!live) {
+    console.log('');
+    console.log('Canli gonderim icin --dry-run olmadan: node scripts/apple-ads-setup.mjs --update-bids --market us --factor 1.33');
+    return;
+  }
+
+  console.log('');
+  console.log(`Gonderilen degisiklik: ${sent}. GET dogrulamasi:`);
+  for (const c of plan.campaigns) {
+    const campaign = await findCampaignByName(client, c.name);
+    const adGroups = (await listAll(client, `/campaigns/${campaign.id}/adgroups`)).filter((g) => !g.deleted);
+    for (const g of adGroups) {
+      const planned = c.adGroups.get(g.name);
+      const want = planned ? scaleBid(planned.defaultBid, factor) : null;
+      const have = g.defaultBidAmount && g.defaultBidAmount.amount;
+      const ok = want != null && Number(have) === Number(want);
+      console.log(`  Ad group ${pad(g.name, 12)} id ${g.id}, teklif ${have} ${CURRENCY} (istenen ${want}) ${ok ? 'TAMAM' : 'FARKLI'}, durum ${g.status}, servingStatus ${g.servingStatus}, servingStateReasons ${JSON.stringify(g.servingStateReasons ?? null)}`);
+      if (!ok) process.exitCode = 1;
+      if (planned && planned.keywords.length > 0) {
+        const kws = (await listAll(client, `/campaigns/${campaign.id}/adgroups/${g.id}/targetingkeywords`)).filter((k) => !k.deleted);
+        for (const k of kws) {
+          const pk = planned.keywords.find((p) => p.text.toLowerCase() === k.text.toLowerCase() && p.matchType === k.matchType);
+          const kwant = pk ? scaleBid(pk.bid, factor) : null;
+          const kok = kwant != null && Number(k.bidAmount && k.bidAmount.amount) === Number(kwant);
+          console.log(`    ${pad(k.text, 26)}${pad(k.matchType, 7)}${pad(k.bidAmount && k.bidAmount.amount, 6)} ${k.status} ${kok ? 'TAMAM' : `FARKLI (istenen ${kwant})`}`);
+          if (!kok) process.exitCode = 1;
+        }
+      }
+    }
+  }
+}
+
 async function cmdWhoami() {
   const config = loadConfig({ requireOrgId: false });
   const client = new AdsClient(config);
@@ -1078,12 +1183,14 @@ function cmdSelftestJwt(keyPath) {
 }
 
 function parseArgs(argv) {
-  const args = { mode: 'dry-run', dryRun: false, updateSchedule: false, market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30, start: null, end: null, createDefaultAd: false };
+  const args = { mode: 'dry-run', dryRun: false, updateSchedule: false, updateBids: false, factor: null, market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30, start: null, end: null, createDefaultAd: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--dry-run') { args.mode = 'dry-run'; args.dryRun = true; }
     else if (a === '--apply') args.mode = 'apply';
     else if (a === '--update-schedule') args.updateSchedule = true;
+    else if (a === '--update-bids') args.updateBids = true;
+    else if (a === '--factor') args.factor = argv[++i] ?? '';
     else if (a === '--whoami') args.mode = 'whoami';
     else if (a === '--export-search-terms') args.mode = 'search-terms';
     else if (a === '--find-app') { args.mode = 'find-app'; args.findApp = argv[++i]; }
@@ -1113,6 +1220,8 @@ function printHelp() {
     '  --update-schedule      Mevcut kampanyanin startTime/endTime alanlarini PUT ile gunceller; kampanyadan sonra baslayan',
     '                         ad group baslangiclarini da kampanyanin baslangicina ceker (canli; --dry-run govdeleri basar).',
     '                         --start/--end verilmezse bitis tarihi temizlenir ve baslangic simdiye (+15 dk) cekilir.',
+    '  --update-bids          Mevcut US kampanyasinda CSV tekliflerini --factor ile carpip 2 ondalik yuvarlar; ad group',
+    '                         defaultBidAmount ve keyword bidAmount PUT eder, GET ile dogrular (--market us --factor 1.33).',
     '  --whoami               /acls ve /me cagirir, orgId listesini basar',
     '  --find-app <metin>     adamId arar',
     '  --export-search-terms  --campaign <ad> ile Search Terms raporunu CSV basar',
@@ -1141,6 +1250,13 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (args.mode === 'help') { printHelp(); return; }
+  if (args.updateBids) {
+    if (args.mode !== 'dry-run' && args.mode !== 'apply') {
+      throw new UserError('--update-bids diger komutlarla birlestirilemez; yalniz --market us, --factor ve --dry-run ile kullanilir.');
+    }
+    await cmdUpdateBids(args);
+    return;
+  }
   if (args.updateSchedule) {
     if (args.mode !== 'dry-run' && args.mode !== 'apply') {
       throw new UserError('--update-schedule diger komutlarla birlestirilemez; yalniz --market, --start, --end ve --dry-run ile kullanilir.');
