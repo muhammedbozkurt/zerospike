@@ -41,6 +41,7 @@ Tum secenekler icin `--help`.
     node scripts/apple-ads-setup.mjs --update-schedule --market us --dry-run  # mevcut kampanyaya gidecek PUT govdesini gosterir, aga cikmaz
     node scripts/apple-ads-setup.mjs --update-schedule --market us            # canli: bitis tarihini siler, kampanya ve sonra baslayan ad group baslangicini simdiye (+15 dk) ceker
     node scripts/apple-ads-setup.mjs --update-bids --market us --factor 1.33 [--dry-run]  # canli: ad group ve keyword tekliflerini CSV x carpan PUT eder, GET ile dogrular
+    node scripts/apple-ads-setup.mjs --update-bids --market us --adgroup SearchMatch --bid 0.80 [--dry-run]  # canli: yalniz o ad group defaultBidAmount PUT eder, GET ile dogrular
     node scripts/apple-ads-status.mjs enabled ZS-US-Test                      # yayina alir
     node scripts/apple-ads-status.mjs paused ZS-US-Test                       # durdurur
 

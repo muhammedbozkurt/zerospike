@@ -67,7 +67,7 @@ const MARKETS = {
       'ZS-US-Test': '3.50',
     },
     discoveryCampaign: 'ZS-US-Test',
-    searchMatchBid: '0.60',
+    searchMatchBid: '0.80',
     devices: ['IPHONE', 'IPAD'],
     newUsersOnly: false,
     acceptsSchedule: true,
@@ -1067,6 +1067,39 @@ async function cmdUpdateBids(args) {
   }
 }
 
+async function cmdUpdateAdGroupBid(args) {
+  const marketKeys = resolveMarkets(args.market);
+  if (marketKeys.length !== 1 || !MARKETS[marketKeys[0]].acceptsSchedule) throw new UserError('--update-bids yalniz --market us ile kullanilir.');
+  if (!args.adgroup || args.bid == null || args.factor != null) throw new UserError('Hedefli kullanim: --update-bids --market us --adgroup <ad> --bid <tutar> (--factor ile birlesmez).');
+  const bidNum = Number(args.bid);
+  if (!(bidNum > 0) || bidNum > 20) throw new UserError(`--bid gecersiz: "${args.bid}". Ornek: --bid 0.80`);
+  const newBid = bidNum.toFixed(2);
+  const plan = buildPlan(marketKeys[0]);
+  const live = args.dryRun !== true;
+  const client = live ? new AdsClient(loadConfig({ requireOrgId: true })) : null;
+  console.log(`MOD: update-bids hedefli (${live ? 'canli' : 'dry-run, ag cagrisi yok'}). Ad group ${args.adgroup} -> ${newBid} ${CURRENCY}; keyword ve diger ad group dokunulmaz.`);
+  for (const c of plan.campaigns) {
+    if (!c.adGroups.has(args.adgroup)) throw new UserError(`Ad group planda yok: ${args.adgroup}`);
+    const body = { defaultBidAmount: money(newBid) };
+    console.log(`### ${c.name}: PUT /campaigns/<c>/adgroups/<a> govde: ${JSON.stringify(body)}`);
+    if (!live) continue;
+    const campaign = await findCampaignByName(client, c.name);
+    if (!campaign) throw new UserError(`Kampanya bulunamadi: ${c.name}`);
+    const adGroup = await findAdGroupByName(client, campaign.id, args.adgroup);
+    if (!adGroup) throw new UserError(`Ad group bulunamadi: ${args.adgroup}`);
+    const base = `/campaigns/${campaign.id}/adgroups/${adGroup.id}`;
+    const have = adGroup.defaultBidAmount && adGroup.defaultBidAmount.amount;
+    if (Number(have) === Number(newBid)) console.log(`Teklif zaten ${newBid}, PUT gonderilmedi.`);
+    else { await client.request('PUT', base, { body }); console.log(`PUT ${base} tamam (${have} -> ${newBid}).`); }
+    const groups = (await listAll(client, `/campaigns/${campaign.id}/adgroups`)).filter((g) => !g.deleted);
+    for (const g of groups) {
+      const ok = g.name !== args.adgroup || Number(g.defaultBidAmount && g.defaultBidAmount.amount) === Number(newBid);
+      console.log(`  Ad group ${pad(g.name, 12)} id ${g.id}, teklif ${g.defaultBidAmount && g.defaultBidAmount.amount} ${CURRENCY}, durum ${g.status}, servingStatus ${g.servingStatus} ${ok ? '' : 'FARKLI'}`);
+      if (!ok) process.exitCode = 1;
+    }
+  }
+}
+
 async function cmdWhoami() {
   const config = loadConfig({ requireOrgId: false });
   const client = new AdsClient(config);
@@ -1183,7 +1216,7 @@ function cmdSelftestJwt(keyPath) {
 }
 
 function parseArgs(argv) {
-  const args = { mode: 'dry-run', dryRun: false, updateSchedule: false, updateBids: false, factor: null, market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30, start: null, end: null, createDefaultAd: false };
+  const args = { mode: 'dry-run', dryRun: false, updateSchedule: false, updateBids: false, factor: null, adgroup: null, bid: null, market: 'all', campaign: null, findApp: null, selftestJwt: null, days: 30, start: null, end: null, createDefaultAd: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--dry-run') { args.mode = 'dry-run'; args.dryRun = true; }
@@ -1191,6 +1224,8 @@ function parseArgs(argv) {
     else if (a === '--update-schedule') args.updateSchedule = true;
     else if (a === '--update-bids') args.updateBids = true;
     else if (a === '--factor') args.factor = argv[++i] ?? '';
+    else if (a === '--adgroup') args.adgroup = argv[++i] ?? '';
+    else if (a === '--bid') args.bid = argv[++i] ?? '';
     else if (a === '--whoami') args.mode = 'whoami';
     else if (a === '--export-search-terms') args.mode = 'search-terms';
     else if (a === '--find-app') { args.mode = 'find-app'; args.findApp = argv[++i]; }
@@ -1222,6 +1257,8 @@ function printHelp() {
     '                         --start/--end verilmezse bitis tarihi temizlenir ve baslangic simdiye (+15 dk) cekilir.',
     '  --update-bids          Mevcut US kampanyasinda CSV tekliflerini --factor ile carpip 2 ondalik yuvarlar; ad group',
     '                         defaultBidAmount ve keyword bidAmount PUT eder, GET ile dogrular (--market us --factor 1.33).',
+    '                         --adgroup <ad> --bid <tutar> ile yalniz o ad group defaultBidAmount degerini PUT eder (keyword ve',
+    '                         diger ad group dokunulmaz): --update-bids --market us --adgroup SearchMatch --bid 0.80.',
     '  --whoami               /acls ve /me cagirir, orgId listesini basar',
     '  --find-app <metin>     adamId arar',
     '  --export-search-terms  --campaign <ad> ile Search Terms raporunu CSV basar',
@@ -1254,7 +1291,8 @@ async function main() {
     if (args.mode !== 'dry-run' && args.mode !== 'apply') {
       throw new UserError('--update-bids diger komutlarla birlestirilemez; yalniz --market us, --factor ve --dry-run ile kullanilir.');
     }
-    await cmdUpdateBids(args);
+    if (args.adgroup != null || args.bid != null) await cmdUpdateAdGroupBid(args);
+    else await cmdUpdateBids(args);
     return;
   }
   if (args.updateSchedule) {
