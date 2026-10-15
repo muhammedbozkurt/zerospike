@@ -72,7 +72,7 @@ const MARKETS = {
     newUsersOnly: false,
     acceptsSchedule: true,
     checkDefaultAd: true,
-    expected: { campaigns: 1, csvAdGroups: 2, keywords: 13, sharedNegatives: 70, discoveryNegatives: 0 },
+    expected: { campaigns: 1, csvAdGroups: 2, keywords: 13, sharedNegatives: 79, discoveryNegatives: 0 },
   },
 };
 
