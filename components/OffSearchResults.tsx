@@ -102,20 +102,20 @@ export function OffSearchResults({ query, lang, onPicked }: Props) {
       <Button
         label={ctaLabel}
         variant="secondary"
-        icon={<Ionicons name="cloud-download-outline" size={16} color={THEME.ink} />}
+        icon={<Ionicons name="cloud-download-outline" size={16} color={THEME.text} />}
         loading={isLoading}
         disabled={cooldown && !isLoading}
         onPress={runSearch}
       />
 
       {status === "error" || status === "limited" ? (
-        <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 8 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 12, marginTop: 8 }}>
           {status === "limited" ? t("offSearch.rateLimited") : t("offSearch.error")}
         </Text>
       ) : null}
 
       {status === "done" && results.length === 0 ? (
-        <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 8 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 12, marginTop: 8 }}>
           {t("offSearch.noResults")}
         </Text>
       ) : null}
@@ -134,23 +134,23 @@ export function OffSearchResults({ query, lang, onPicked }: Props) {
             >
               <View className="flex-1 pr-2">
                 <Text
-                  style={{ color: THEME.ink, fontWeight: "700", fontSize: 14 }}
+                  style={{ color: THEME.text, fontWeight: "700", fontSize: 14 }}
                   numberOfLines={1}
                 >
                   {product.names[lang]}
                 </Text>
                 {product.brand ? (
                   <Text
-                    style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}
+                    style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}
                     numberOfLines={1}
                   >
                     {product.brand}
                   </Text>
                 ) : null}
               </View>
-              <Text style={[TABULAR, { color: THEME.ink, fontWeight: "800", fontSize: 14 }]}>
+              <Text style={[TABULAR, { color: THEME.text, fontWeight: "800", fontSize: 14 }]}>
                 {num(product.carb100g)}
-                <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}>
                   {t("common.grams")}
                 </Text>
               </Text>
@@ -160,13 +160,13 @@ export function OffSearchResults({ query, lang, onPicked }: Props) {
                 <DirIcon
                   name="chevron-forward"
                   size={16}
-                  color={THEME.muted}
+                  color={THEME.textMuted}
                   style={{ marginLeft: 8 }}
                 />
               )}
             </Pressable>
           ))}
-          <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 10, marginTop: 2 }}>
             {t("offSearch.attribution")}
           </Text>
         </View>

@@ -9,7 +9,11 @@ import { SELECTABLE_SITES, SITE_POINTS, canonicalSite } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
 import { HIT_TARGET, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlassCard, withAlpha } from "./rich";
+import { SCRIM } from "./SheetShell";
 import {
+  BODY_BOTTOM,
+  BODY_TOP,
+  INK_DARK,
   absorptionKey,
   daysSince,
   heatFill,
@@ -99,8 +103,6 @@ function pointIntensity(p: PointUsage | undefined, maxPointCount: number, now: n
   return Math.min(1, freq * 0.65 + recent * 0.35);
 }
 
-const UNUSED_DOT = "rgba(255,255,255,0.14)";
-
 /** The four points of a region as small heat dots (cards + selector grid). */
 function RegionMiniDots({
   usage,
@@ -123,9 +125,9 @@ function RegionMiniDots({
               width: 10,
               height: 10,
               borderRadius: 5,
-              backgroundColor: used ? heatFill(pointIntensity(p, maxPointCount, now)) : UNUSED_DOT,
+              backgroundColor: used ? heatFill(pointIntensity(p, maxPointCount, now)) : THEME.track,
               borderWidth: 1,
-              borderColor: "rgba(10,20,26,0.5)",
+              borderColor: withAlpha(INK_DARK, 0.5),
             }}
           />
         );
@@ -222,21 +224,21 @@ function RegionIllustration({
     >
       <Defs>
         <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#eef7fb" />
-          <Stop offset="1" stopColor="#c2d5df" />
+          <Stop offset="0" stopColor={BODY_TOP} />
+          <Stop offset="1" stopColor={BODY_BOTTOM} />
         </LinearGradient>
       </Defs>
       <Path
         d={spec.shape}
         fill={`url(#${gradId})`}
-        stroke="rgba(255,255,255,0.22)"
+        stroke={THEME.border}
         strokeWidth={1.4}
       />
       {spec.extras ? (
         <>
           <Path
             d={`M ${spec.extras.midline[0]} ${spec.extras.midline[1]} L ${spec.extras.midline[0]} ${spec.extras.midline[2]}`}
-            stroke="rgba(10,20,26,0.18)"
+            stroke={withAlpha(INK_DARK, 0.18)}
             strokeWidth={1}
             strokeDasharray="2 5"
           />
@@ -244,7 +246,7 @@ function RegionIllustration({
             cx={spec.extras.navel[0]}
             cy={spec.extras.navel[1]}
             r={2.4}
-            fill="rgba(10,20,26,0.30)"
+            fill={withAlpha(INK_DARK, 0.3)}
           />
         </>
       ) : null}
@@ -271,8 +273,8 @@ function RegionIllustration({
               cx={x}
               cy={y}
               r={8}
-              fill={used ? heatFill(pointIntensity(p, maxPointCount, now)) : UNUSED_DOT}
-              stroke={on ? THEME.accent : "rgba(10,20,26,0.5)"}
+              fill={used ? heatFill(pointIntensity(p, maxPointCount, now)) : THEME.track}
+              stroke={on ? THEME.accent : withAlpha(INK_DARK, 0.5)}
               strokeWidth={on ? 1.9 : 1.1}
             />
             <SvgText
@@ -280,7 +282,7 @@ function RegionIllustration({
               y={y + 3}
               fontSize={8}
               fontWeight="bold"
-              fill="#0a141a"
+              fill={INK_DARK}
               textAnchor="middle"
             >
               {String(point)}
@@ -343,7 +345,7 @@ function PointRows({
               borderRadius: RADIUS.lg,
               borderWidth: on ? 1.6 : 1,
               borderColor: on ? THEME.accent : THEME.border,
-              backgroundColor: withAlpha("#ffffff", on ? 0.06 : 0.03),
+              backgroundColor: on ? THEME.surfaceInset : THEME.surface,
               paddingVertical: 10,
               paddingHorizontal: 12,
             }}
@@ -357,16 +359,16 @@ function PointRows({
                 justifyContent: "center",
                 backgroundColor: used
                   ? heatFill(pointIntensity(p, maxPointCount, now))
-                  : withAlpha("#ffffff", 0.06),
+                  : THEME.surfaceInset,
                 borderWidth: 1,
-                borderColor: withAlpha("#0a141a", 0.35),
+                borderColor: withAlpha(INK_DARK, 0.35),
               }}
             >
-              <Text style={{ color: THEME.ink, fontWeight: "800", fontSize: 14 }}>{point}</Text>
+              <Text style={{ color: THEME.text, fontWeight: "800", fontSize: 14 }}>{point}</Text>
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text numberOfLines={1} style={{ color: THEME.ink, fontWeight: "700", fontSize: 14 }}>
+                <Text numberOfLines={1} style={{ color: THEME.text, fontWeight: "700", fontSize: 14 }}>
                   {t("injection.pointLabel", { n: point })}
                 </Text>
                 {isLast ? (
@@ -386,13 +388,13 @@ function PointRows({
                   </View>
                 ) : null}
               </View>
-              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+              <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}>
                 {recencyPhrase(p?.lastUsedAt ?? null)}
               </Text>
             </View>
             <Text
               style={{
-                color: used ? THEME.ink : THEME.muted,
+                color: used ? THEME.text : THEME.textMuted,
                 fontWeight: "800",
                 fontSize: 17,
                 minWidth: 22,
@@ -494,7 +496,7 @@ export function InjectionSiteBoard({
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.8}
-          style={{ color: THEME.ink, fontSize: 12, fontWeight: "700", marginLeft: 8, flex: 1 }}
+          style={{ color: THEME.text, fontSize: 12, fontWeight: "700", marginLeft: 8, flex: 1 }}
         >
           {stripText}
         </Text>
@@ -535,12 +537,12 @@ export function InjectionSiteBoard({
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text
                     numberOfLines={1}
-                    style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", flex: 1 }}
+                    style={{ color: THEME.text, fontSize: 13, fontWeight: "700", flex: 1 }}
                   >
                     {t(`injectionSite.${site}`)}
                   </Text>
                   {count > 0 ? (
-                    <Text style={[TABULAR, { color: THEME.muted, fontSize: 11, fontWeight: "800" }]}>
+                    <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 11, fontWeight: "800" }]}>
                       {count}
                     </Text>
                   ) : null}
@@ -553,7 +555,7 @@ export function InjectionSiteBoard({
                     it once, so the per-card caption only appears once real usage
                     exists. */}
                 {loggedTotal > 0 ? (
-                  <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, marginTop: 8 }}>
+                  <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, marginTop: 8 }}>
                     {count > 0 ? recencyPhrase(u?.lastUsedAt ?? null) : t("injection.usedNever")}
                   </Text>
                 ) : null}
@@ -566,7 +568,7 @@ export function InjectionSiteBoard({
       {/* Cycle row: window / cycle stamp on the left, "new cycle" on the right. */}
       <GlassCard style={{ marginTop: 10, flexDirection: "row", alignItems: "center" }}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11 }}>
+          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11 }}>
             {cycleStart
               ? t("injection.cycleSince", { date: formatDate(cycleStart) })
               : t("injection.usageWindow", { n: windowDays })}
@@ -603,13 +605,13 @@ export function InjectionSiteBoard({
       {legacyCount > 0 || noSiteCount > 0 ? (
         <GlassCard style={{ marginTop: 10, gap: 4 }}>
           {legacyCount > 0 ? (
-            <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16 }}>
               {t("injection.legacyRegions", { n: legacyCount })}
               {legacyLastUsedAt ? ` · ${recencyPhrase(legacyLastUsedAt)}` : ""}
             </Text>
           ) : null}
           {noSiteCount > 0 ? (
-            <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16 }}>
               {t("injection.noRegionCount", { n: noSiteCount })}
             </Text>
           ) : null}
@@ -619,7 +621,7 @@ export function InjectionSiteBoard({
       {/* Same card language as every block above it, so the screen doesn't end
           on a bare line floating over the background. */}
       <GlassCard style={{ marginTop: 10 }}>
-        <Text style={{ color: THEME.muted, fontSize: 11, textAlign: "center", lineHeight: 16 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 11, textAlign: "center", lineHeight: 16 }}>
           {t("injection.pointNeutral")}
         </Text>
       </GlassCard>
@@ -632,7 +634,7 @@ export function InjectionSiteBoard({
         onRequestClose={() => setOpenRegion(null)}
       >
         <Pressable
-          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={() => setOpenRegion(null)}
           accessible={false}
           focusable={false}
@@ -651,7 +653,7 @@ export function InjectionSiteBoard({
                 borderLeftWidth: 1,
                 borderRightWidth: 1,
                 borderColor: THEME.border,
-                backgroundColor: THEME.bg.g1,
+                backgroundColor: THEME.bg.base,
                 paddingHorizontal: 18,
                 paddingTop: 8,
               },
@@ -663,10 +665,10 @@ export function InjectionSiteBoard({
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: THEME.ink, fontSize: 18, fontWeight: "800" }}>
+                <Text style={{ color: THEME.text, fontSize: 18, fontWeight: "800" }}>
                   {openRegion ? t(`injectionSite.${openRegion}`) : ""}
                 </Text>
-                <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 2 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 12, marginTop: 2 }}>
                   {t("injection.selectPoint")}
                 </Text>
               </View>
@@ -681,12 +683,12 @@ export function InjectionSiteBoard({
                   borderRadius: 15,
                   alignItems: "center",
                   justifyContent: "center",
-                  backgroundColor: withAlpha("#ffffff", 0.06),
+                  backgroundColor: THEME.surfaceInset,
                   borderWidth: 1,
                   borderColor: THEME.border,
                 }}
               >
-                <Text style={{ color: THEME.muted, fontSize: 15, fontWeight: "700", lineHeight: 17 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 15, fontWeight: "700", lineHeight: 17 }}>
                   ×
                 </Text>
               </Pressable>
@@ -750,7 +752,7 @@ export function InjectionSiteBoard({
               {/* The region's own recent entries: log excerpt, nothing more. */}
               <Text
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   fontSize: 11,
                   letterSpacing: 1.1,
                   fontWeight: "800",
@@ -761,7 +763,7 @@ export function InjectionSiteBoard({
                 {upper(t("injection.regionRecent"))}
               </Text>
               {recentForOpen.length === 0 ? (
-                <Text style={{ color: THEME.muted, fontSize: 12 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 12 }}>
                   {t("injection.regionNoRecords")}
                 </Text>
               ) : (
@@ -775,15 +777,15 @@ export function InjectionSiteBoard({
                         borderRadius: RADIUS.md,
                         borderWidth: 1,
                         borderColor: THEME.border,
-                        backgroundColor: THEME.glass,
+                        backgroundColor: THEME.surface,
                         paddingHorizontal: 12,
                         paddingVertical: 8,
                       }}
                     >
-                      <Text style={{ color: THEME.muted, fontSize: 11, flex: 1 }} numberOfLines={1}>
+                      <Text style={{ color: THEME.textMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
                         {relativeDay(inj.logged_at, dateLabels)} · {formatTime(inj.logged_at)}
                       </Text>
-                      <Text style={[TABULAR, { color: THEME.ink, fontSize: 12, fontWeight: "700" }]}>
+                      <Text style={[TABULAR, { color: THEME.text, fontSize: 12, fontWeight: "700" }]}>
                         {inj.dose_units != null ? `${num(inj.dose_units)} ${unitLetter}` : "-"}
                         {inj.site_point != null
                           ? ` · ${t("injection.pointLabel", { n: inj.site_point })}`
@@ -796,7 +798,7 @@ export function InjectionSiteBoard({
 
               <Text
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   fontSize: 11,
                   textAlign: "center",
                   lineHeight: 16,
@@ -862,7 +864,7 @@ export function SitePointSelector({
                   borderRadius: RADIUS.md,
                   borderWidth: 1,
                   borderColor: on ? THEME.accent : THEME.border,
-                  backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.glass,
+                  backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.surface,
                   paddingHorizontal: 10,
                   paddingVertical: 8,
                 },
@@ -872,7 +874,7 @@ export function SitePointSelector({
               <Text
                 numberOfLines={1}
                 style={{
-                  color: on ? THEME.accent : THEME.muted,
+                  color: on ? THEME.accent : THEME.textMuted,
                   fontSize: 12,
                   fontWeight: on ? "800" : "600",
                 }}
@@ -891,7 +893,7 @@ export function SitePointSelector({
         })}
       </View>
 
-      <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", marginTop: 12, marginBottom: 6 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginTop: 12, marginBottom: 6 }}>
         {t("injection.selectPoint")}
       </Text>
       <PointRows

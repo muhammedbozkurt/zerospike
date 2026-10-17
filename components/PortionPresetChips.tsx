@@ -73,7 +73,7 @@ export function PortionPresetChips({
               paddingVertical: 7,
               borderWidth: 1,
               borderColor: active ? THEME.accent : THEME.border,
-              backgroundColor: active ? withAlpha(THEME.accent, 0.16) : THEME.glass,
+              backgroundColor: active ? withAlpha(THEME.accent, 0.16) : THEME.surface,
             }}
           >
             <Text
@@ -81,7 +81,7 @@ export function PortionPresetChips({
               style={{
                 fontSize: 12,
                 fontWeight: active ? "700" : "500",
-                color: active ? THEME.accent : THEME.ink,
+                color: active ? THEME.accent : THEME.text,
               }}
             >
               {label}

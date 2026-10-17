@@ -42,7 +42,7 @@ function BodyMark() {
         cy={15}
         rx={11}
         ry={13}
-        fill="rgba(255,255,255,0.03)"
+        fill={THEME.surface}
         stroke={THEME.border}
         strokeWidth={1.5}
       />
@@ -96,7 +96,7 @@ function InjectionGuideScreen() {
             <Text style={{ color: GLUCOSE_RICH.high, fontWeight: "800", fontSize: 13 }}>
               {t("disclaimer.title")}
             </Text>
-            <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18, marginTop: 2, opacity: 0.85 }}>
+            <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 18, marginTop: 2, opacity: 0.85 }}>
               {t("injectionGuide.disclaimer")}
             </Text>
           </View>
@@ -130,13 +130,13 @@ function InjectionGuideScreen() {
                     size={16}
                     color={THEME.accent}
                   />
-                  <Text style={{ color: THEME.ink, fontSize: 15, fontWeight: "800" }}>
+                  <Text style={{ color: THEME.text, fontSize: 15, fontWeight: "800" }}>
                     {t(step.titleKey)}
                   </Text>
                 </View>
                 <Text
                   style={{
-                    color: THEME.muted,
+                    color: THEME.textMuted,
                     fontSize: 13,
                     lineHeight: 20,
                     textAlign: "center",

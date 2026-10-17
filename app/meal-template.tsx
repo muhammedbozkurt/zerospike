@@ -72,8 +72,7 @@ import {
 import { applyAfterDelete } from "../lib/afterDelete";
 import { num } from "../lib/format";
 import { uuid } from "../lib/uuid";
-import { HIT_TARGET, INPUT_TEXT, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";
-import { upper } from "../lib/upper";
+import { HIT_TARGET, INPUT_TEXT, MODAL_TOP_PAD, TABULAR, THEME } from "../lib/theme/tokens";import { upper } from "../lib/upper";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
@@ -510,23 +509,23 @@ function MealTemplateScreen() {
         />
         <View className="flex-1 pr-2">
           <Text
-            style={{ color: THEME.ink, fontSize: 14, fontWeight: "700" }}
+            style={{ color: THEME.text, fontSize: 14, fontWeight: "700" }}
             numberOfLines={1}
           >
             {item.name}
           </Text>
           {item.missingFood ? (
             <Text
-              style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}
+              style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}
               numberOfLines={2}
             >
               {t("templates.missingFood")}
             </Text>
           ) : null}
         </View>
-        <Text style={[TABULAR, { color: THEME.ink, fontSize: 15, fontWeight: "800" }]}>
+        <Text style={[TABULAR, { color: THEME.text, fontSize: 15, fontWeight: "800" }]}>
           {num(item.carbs_g)}
-          <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}>
             {t("common.grams")}
           </Text>
         </Text>
@@ -544,7 +543,7 @@ function MealTemplateScreen() {
               justifyContent: "center",
             }}
           >
-            <Ionicons name="close-circle-outline" size={19} color={THEME.muted} />
+            <Ionicons name="close-circle-outline" size={19} color={THEME.textMuted} />
           </Pressable>
         )}
       </View>
@@ -552,7 +551,7 @@ function MealTemplateScreen() {
       {/* An item stored with a carb total outright has no per-100 value under it,
           so there is no portion to step - the recorded grams are shown as they are. */}
       {item.carbs_g_fixed != null ? (
-        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 6 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 6 }}>
           {t("templates.fixedCarbs")}: {num(item.carbs_g)} {t("common.grams")}
         </Text>
       ) : (
@@ -628,7 +627,7 @@ function MealTemplateScreen() {
                 />
                 <Text
                   style={{
-                    color: THEME.ink,
+                    color: THEME.text,
                     fontSize: 12,
                     lineHeight: 17,
                     opacity: 0.85,
@@ -656,7 +655,7 @@ function MealTemplateScreen() {
               ) : (
                 <Text
                   style={{
-                    color: THEME.ink,
+                    color: THEME.text,
                     fontSize: 17,
                     fontWeight: "800",
                     marginBottom: 12,
@@ -678,7 +677,7 @@ function MealTemplateScreen() {
                 />
                 {nameTaken ? (
                   <Text
-                    style={{ color: THEME.muted, fontSize: 11, marginTop: -6, marginBottom: 10 }}
+                    style={{ color: THEME.textMuted, fontSize: 11, marginTop: -6, marginBottom: 10 }}
                   >
                     {t("templates.nameExists")}
                   </Text>
@@ -699,7 +698,7 @@ function MealTemplateScreen() {
                   value={slot}
                   onChange={setSlot}
                 />
-                <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 8, marginBottom: 14 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 8, marginBottom: 14 }}>
                   {t("templates.slotHint")}
                 </Text>
               </>
@@ -711,7 +710,7 @@ function MealTemplateScreen() {
                   <View className="flex-row items-center justify-between">
                     <Text
                       style={{
-                        color: THEME.muted,
+                        color: THEME.textMuted,
                         fontSize: 11,
                         letterSpacing: 1.3,
                         fontWeight: "800",
@@ -735,7 +734,7 @@ function MealTemplateScreen() {
                           {num(totals.carbs_g)}
                         </Text>
                       )}
-                      <Text style={{ color: THEME.muted, fontSize: 12 }}>
+                      <Text style={{ color: THEME.textMuted, fontSize: 12 }}>
                         {t("common.grams")}
                       </Text>
                     </View>
@@ -747,7 +746,7 @@ function MealTemplateScreen() {
                     {upper(t("templates.items"))}
                   </Text>
                   {templateLoading ? null : (
-                    <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                    <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                       {t("templates.itemCount", { count: items.length })}
                     </Text>
                   )}
@@ -777,7 +776,7 @@ function MealTemplateScreen() {
                   </>
                 ) : items.length === 0 ? (
                   <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
-                    <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+                    <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
                       {/* isLog hides the add-item button below (see the isLog
                           check further down), so its empty state must not
                           point at a control that isn't on screen. */}
@@ -826,9 +825,9 @@ function MealTemplateScreen() {
                   <Ionicons
                     name={savePortions ? "checkbox" : "square-outline"}
                     size={20}
-                    color={savePortions ? THEME.accent : THEME.muted}
+                    color={savePortions ? THEME.accent : THEME.textMuted}
                   />
-                  <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 10, flex: 1 }}>
+                  <Text style={{ color: THEME.text, fontSize: 13, marginLeft: 10, flex: 1 }}>
                     {t("templates.saveToTemplate")}
                   </Text>
                 </Pressable>
@@ -903,14 +902,14 @@ function MealTemplateScreen() {
               className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 mb-3"
               style={{ minHeight: 52 }}
             >
-              <Ionicons name="search" size={18} color={THEME.muted} />
+              <Ionicons name="search" size={18} color={THEME.textMuted} />
               <TextInput
                 value={query}
                 onChangeText={setQuery}
                 placeholder={t("food.searchPlaceholder")}
-                placeholderTextColor="rgba(137,163,176,0.7)"
+                placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
                 className="flex-1 py-3 px-2.5"
-                style={[INPUT_TEXT, { color: THEME.ink, fontSize: 15 }]}
+                style={[INPUT_TEXT, { color: THEME.text, fontSize: 15 }]}
                 accessibilityLabel={t("food.searchPlaceholder")}
                 autoFocus
               />
@@ -927,7 +926,7 @@ function MealTemplateScreen() {
                     justifyContent: "center",
                   }}
                 >
-                  <Ionicons name="close-circle" size={19} color={THEME.muted} />
+                  <Ionicons name="close-circle" size={19} color={THEME.textMuted} />
                 </Pressable>
               ) : null}
             </View>
@@ -950,14 +949,14 @@ function MealTemplateScreen() {
                     <DirIcon name="chevron-back" size={20} color={THEME.accent} />
                     <FoodPlate category={pickerCategory} size={28} radius={10} style={{ marginLeft: 6 }} />
                     <Text
-                      style={{ color: THEME.ink, fontWeight: "800", fontSize: 15, marginLeft: 10 }}
+                      style={{ color: THEME.text, fontWeight: "800", fontSize: 15, marginLeft: 10 }}
                       numberOfLines={1}
                     >
                       {t(`category.${pickerCategory}`)}
                     </Text>
                   </Pressable>
                   {pickerCategoryLoading ? (
-                    <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 10 }}>
+                    <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 10 }}>
                       {t("common.loading")}
                     </Text>
                   ) : null}
@@ -968,7 +967,7 @@ function MealTemplateScreen() {
                     <View style={{ marginBottom: 14 }}>
                       <Text
                         style={{
-                          color: THEME.muted,
+                          color: THEME.textMuted,
                           fontSize: 11,
                           letterSpacing: 1.2,
                           fontWeight: "800",
@@ -987,7 +986,7 @@ function MealTemplateScreen() {
                     <View style={{ marginBottom: 14 }}>
                       <Text
                         style={{
-                          color: THEME.muted,
+                          color: THEME.textMuted,
                           fontSize: 11,
                           letterSpacing: 1.2,
                           fontWeight: "800",
@@ -1005,7 +1004,7 @@ function MealTemplateScreen() {
                   <View style={{ marginBottom: 8 }}>
                     <Text
                       style={{
-                        color: THEME.muted,
+                        color: THEME.textMuted,
                         fontSize: 11,
                         letterSpacing: 1.2,
                         fontWeight: "800",
@@ -1026,12 +1025,12 @@ function MealTemplateScreen() {
                           >
                             <FoodPlate category={c} size={30} radius={11} />
                             <Text
-                              style={{ color: THEME.ink, fontSize: 11, fontWeight: "700", marginTop: 8 }}
+                              style={{ color: THEME.text, fontSize: 11, fontWeight: "700", marginTop: 8 }}
                               numberOfLines={2}
                             >
                               {t(`category.${c}`)}
                             </Text>
-                            <Text style={[TABULAR, { color: THEME.muted, fontSize: 10, marginTop: 2 }]}>
+                            <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 10, marginTop: 2 }]}>
                               {pickerCatCounts[c] ?? 0}
                             </Text>
                           </Pressable>

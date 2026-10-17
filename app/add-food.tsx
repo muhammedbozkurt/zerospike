@@ -342,7 +342,7 @@ function AddFoodScreen() {
               >
                 <Ionicons name="lock-closed-outline" size={18} color={GLUCOSE_RICH.high} />
                 <View style={{ marginLeft: 12, flex: 1 }}>
-                  <Text style={{ color: THEME.ink, fontSize: 13 }}>
+                  <Text style={{ color: THEME.text, fontSize: 13 }}>
                     {t("paywall.limitTitleFoods")}
                   </Text>
                   <Text
@@ -357,7 +357,7 @@ function AddFoodScreen() {
             {barcode || loadedBarcode ? (
               <View className="rounded-2xl bg-glass border border-hair p-3.5 mb-4 flex-row items-center">
                 <Ionicons name="barcode-outline" size={18} color={THEME.accent} />
-                <Text style={[TABULAR, { color: THEME.ink, marginLeft: 12, fontSize: 13 }]}>
+                <Text style={[TABULAR, { color: THEME.text, marginLeft: 12, fontSize: 13 }]}>
                   {barcode ?? loadedBarcode}
                 </Text>
               </View>
@@ -411,7 +411,7 @@ function AddFoodScreen() {
                         borderColor: active ? THEME.accent : THEME.border,
                         backgroundColor: active
                           ? withAlpha(THEME.accent, 0.16)
-                          : THEME.glass,
+                          : THEME.surface,
                       }}
                     >
                       <IconTile
@@ -420,12 +420,12 @@ function AddFoodScreen() {
                         size={24}
                         radius={9}
                         hero={active}
-                        tint={active ? THEME.accent : THEME.muted}
+                        tint={active ? THEME.accent : THEME.textMuted}
                       />
                       <Text
                         numberOfLines={1}
                         style={{
-                          color: active ? THEME.accent : THEME.ink,
+                          color: active ? THEME.accent : THEME.text,
                           fontSize: 13,
                           fontWeight: active ? "700" : "500",
                           marginLeft: 7,
@@ -492,7 +492,7 @@ function AddFoodScreen() {
                           borderColor: active ? THEME.accent : THEME.border,
                           backgroundColor: active
                             ? withAlpha(THEME.accent, 0.16)
-                            : THEME.glass,
+                            : THEME.surface,
                         }}
                       >
                         <Text style={{ fontSize: 20 }}>{option}</Text>
@@ -591,13 +591,13 @@ function AddFoodScreen() {
                               borderColor: active ? THEME.accent : THEME.border,
                               backgroundColor: active
                                 ? withAlpha(THEME.accent, 0.16)
-                                : THEME.glass,
+                                : THEME.surface,
                             }}
                           >
                             <Text
                               numberOfLines={1}
                               style={{
-                                color: active ? THEME.accent : THEME.ink,
+                                color: active ? THEME.accent : THEME.text,
                                 fontSize: 12,
                                 fontWeight: active ? "700" : "500",
                               }}
@@ -621,7 +621,7 @@ function AddFoodScreen() {
                         justifyContent: "center",
                       }}
                     >
-                      <Ionicons name="close-circle-outline" size={19} color={THEME.muted} />
+                      <Ionicons name="close-circle-outline" size={19} color={THEME.textMuted} />
                     </Pressable>
                   </View>
                   <View className="flex-row items-center" style={{ gap: 8 }}>
@@ -630,12 +630,12 @@ function AddFoodScreen() {
                       onChangeText={(text) => setPresetGrams(row.id, text)}
                       keyboardType="number-pad"
                       placeholder="0"
-                      placeholderTextColor={THEME.muted}
+                      placeholderTextColor={THEME.textMuted}
                       accessibilityLabel={`${t(`portion.${row.labelKey}`)}, ${t("common.grams")}`}
                       className="rounded-xl bg-glass border border-hair px-4 py-2.5 text-ink"
                       style={[INPUT_TEXT, { flex: 1 }]}
                     />
-                    <Text style={{ color: THEME.muted, fontSize: 13 }}>
+                    <Text style={{ color: THEME.textMuted, fontSize: 13 }}>
                       {t("common.grams")}
                     </Text>
                   </View>
