@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { cacheBarcodeFood, getFoodByBarcode } from "../lib/db/foods";
 import { lookupBarcode, OFF_SOURCE } from "../lib/services/openFoodFacts";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
-import { AppBackground, GradientCTA, IconTile } from "../components/rich";
+import { AppBackground, GradientCTA, IconTile, withAlpha } from "../components/rich";
 import { THEME, glow } from "../lib/theme/tokens";
 
 export default function ScanScreen() {
@@ -96,7 +96,7 @@ export default function ScanScreen() {
       <View
         className="w-64 h-44 rounded-3xl items-center justify-center"
         style={[
-          { borderWidth: 2, borderColor: THEME.accent, backgroundColor: "rgba(46,230,255,0.06)" },
+          { borderWidth: 2, borderColor: THEME.accent, backgroundColor: withAlpha(THEME.accent, 0.06) },
           glow(THEME.accent, 40, 0.7),
         ]}
       >
@@ -109,7 +109,7 @@ export default function ScanScreen() {
             top: 14,
             bottom: 14,
             borderWidth: 1,
-            borderColor: "rgba(46,230,255,0.5)",
+            borderColor: withAlpha(THEME.accent, 0.5),
             borderStyle: "dashed",
           }}
         />
@@ -122,7 +122,7 @@ export default function ScanScreen() {
         />
       </View>
       <Text
-        style={{ color: THEME.ink, marginTop: 20, textAlign: "center", paddingHorizontal: 40 }}
+        style={{ color: THEME.text, marginTop: 20, textAlign: "center", paddingHorizontal: 40 }}
       >
         {t("scan.hint")}
       </Text>
@@ -131,10 +131,10 @@ export default function ScanScreen() {
       <Pressable
         onPress={() => router.replace({ pathname: "/add-food" })}
         className="flex-row items-center rounded-full px-4 py-2 mt-4 active:opacity-80"
-        style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
+        style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.surface }}
       >
         <Ionicons name="create-outline" size={14} color={THEME.accent} />
-        <Text style={{ color: THEME.ink, fontSize: 12, marginLeft: 6 }}>
+        <Text style={{ color: THEME.text, fontSize: 12, marginLeft: 6 }}>
           {t("scan.saveAsNew")}
         </Text>
       </Pressable>
@@ -152,7 +152,7 @@ export default function ScanScreen() {
       hitSlop={10}
       accessibilityLabel={t("common.close")}
     >
-      <IconTile icon="close" size={38} radius={19} tint={THEME.ink} />
+      <IconTile icon="close" size={38} radius={19} tint={THEME.text} />
     </Pressable>
   );
 
@@ -161,7 +161,7 @@ export default function ScanScreen() {
     if (!permission) {
       return (
         <View className="flex-1 items-center justify-center">
-          <Text style={{ color: THEME.muted }}>{t("scan.requesting")}</Text>
+          <Text style={{ color: THEME.textMuted }}>{t("scan.requesting")}</Text>
         </View>
       );
     }
@@ -173,7 +173,7 @@ export default function ScanScreen() {
       return (
         <View className="flex-1 items-center justify-center px-8">
           <IconTile icon="camera-outline" size={64} radius={20} hero />
-          <Text style={{ color: THEME.muted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
+          <Text style={{ color: THEME.textMuted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
             {t("scan.permissionIntro")}
           </Text>
           <View className="w-full">
@@ -189,7 +189,7 @@ export default function ScanScreen() {
       return (
         <View className="flex-1 items-center justify-center px-8">
           <IconTile icon="camera-outline" size={64} radius={20} hero />
-          <Text style={{ color: THEME.muted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
+          <Text style={{ color: THEME.textMuted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
             {t("scan.permissionDenied")}
           </Text>
           <View className="w-full">
@@ -210,7 +210,7 @@ export default function ScanScreen() {
       return (
         <View className="flex-1 items-center justify-center px-8">
           <IconTile icon="alert-circle-outline" size={64} radius={20} hero />
-          <Text style={{ color: THEME.muted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
+          <Text style={{ color: THEME.textMuted, textAlign: "center", marginVertical: 16, lineHeight: 20 }}>
             {t("scan.cameraError")}
           </Text>
           <View className="w-full">
@@ -271,11 +271,11 @@ export default function ScanScreen() {
             style={{
               borderWidth: 1,
               borderColor: THEME.border,
-              backgroundColor: "rgba(8,14,20,0.92)",
+              backgroundColor: withAlpha(THEME.bg.g1, 0.92),
             }}
           >
             <ActivityIndicator size="small" color={THEME.accent} />
-            <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 10 }}>
+            <Text style={{ color: THEME.text, fontSize: 13, marginLeft: 10 }}>
               {t("scan.searching")}
             </Text>
           </View>

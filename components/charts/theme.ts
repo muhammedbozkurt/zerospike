@@ -1,4 +1,3 @@
-import { STATUS_COLOR } from "../../lib/glucose";
 import { THEME } from "../../lib/theme/tokens";
 
 /**
@@ -10,24 +9,53 @@ import { THEME } from "../../lib/theme/tokens";
  * survive a greyscale print and the common forms of colour blindness. No chart
  * relies on colour alone: every series carries a text label.
  */
-export const CHART = {
-  /** Median curve and single-series lines. Midnight Monitor cyan. */
-  line: "#2ee6ff",
-  lineDeep: "#12c6e0",
-  /** Inter-quartile ribbon. */
-  band: "#2ee6ff",
+export const CHART = { // theme-ok: live getters, read at render time
+  /** Median curve and single-series lines. */
+  get line() {
+    return THEME.chart.line;
+  },
+  get lineDeep() {
+    return THEME.accentFill;
+  },
+  /** Inter-quartile ribbon (drawn with a fill opacity). */
+  get band() {
+    return THEME.chart.line;
+  },
   /** The 70-180 target band. */
-  target: STATUS_COLOR.normal, // mint
+  get target() {
+    return THEME.glucose.normal;
+  },
 
-  low: STATUS_COLOR.low, // rose
-  inRange: STATUS_COLOR.normal, // mint
-  high: STATUS_COLOR.elevated, // amber
+  get low() {
+    return THEME.glucose.low;
+  },
+  get inRange() {
+    return THEME.glucose.normal;
+  },
+  get high() {
+    return THEME.glucose.elevated;
+  },
 
-  grid: "rgba(255,255,255,0.08)",
-  axis: "#89a3b0",
-  bar: "#2ee6ff",
-  barMuted: THEME.border, // hairline track for an empty bar
-} as const;
+  get grid() {
+    return THEME.border;
+  },
+  get axis() {
+    return THEME.textMuted;
+  },
+  get bar() {
+    return THEME.chart.line;
+  },
+  /** Hairline track for an empty bar. */
+  get barMuted() {
+    return THEME.border;
+  },
+};
+
+/** Text on a glucose-colored fill: near-black on the bright dark-theme fills,
+ *  white on the deeper light-theme fills. */
+export function onGlucoseFill(): string {
+  return THEME.scheme === "light" ? THEME.surface : THEME.bg.base;
+}
 
 /** Chart heights, in points. Tuned so three charts do not bury the tiles. */
 export const CHART_HEIGHT = {

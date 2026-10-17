@@ -60,7 +60,7 @@ export function InlineTimePicker({
           hitSlop={8}
           className="px-4 py-1.5 rounded-lg bg-brand"
         >
-          <Text className="text-black font-semibold text-sm">
+          <Text className="text-onAccent font-semibold text-sm">
             {t("common.done")}
           </Text>
         </Pressable>

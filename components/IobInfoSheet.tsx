@@ -42,10 +42,10 @@ export function IobInfoSheet({
       title={t("dashboard.activeInsulin")}
       closeLabel={t("common.close")}
     >
-      <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, marginBottom: 10 }}>
+      <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, marginBottom: 10 }}>
         {t("dashboard.iobInfoWhat")}
       </Text>
-      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginBottom: 16 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 16 }}>
         {isGeneric
           ? t("dashboard.iobInfoGeneric", {
               duration: num(bolusProfile.durationHours),
@@ -63,23 +63,23 @@ export function IobInfoSheet({
           className="flex-1 px-3.5 py-3"
           style={{ borderRightWidth: 1, borderRightColor: THEME.border }}
         >
-          <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10 }}>
+          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10 }}>
             {t("dashboard.iobInfoTodayBolus")}
           </Text>
           <Text
             numberOfLines={1}
-            style={{ color: THEME.ink, fontSize: 15, fontWeight: "800", marginTop: 2 }}
+            style={{ color: THEME.text, fontSize: 15, fontWeight: "800", marginTop: 2 }}
           >
             {num(todayBolusUnits)} {t("common.units")}
           </Text>
         </View>
         <View className="flex-1 px-3.5 py-3">
-          <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10 }}>
+          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10 }}>
             {t("dashboard.iobInfoTodayBasal")}
           </Text>
           <Text
             numberOfLines={1}
-            style={{ color: THEME.ink, fontSize: 15, fontWeight: "800", marginTop: 2 }}
+            style={{ color: THEME.text, fontSize: 15, fontWeight: "800", marginTop: 2 }}
           >
             {num(todayBasalUnits)} {t("common.units")}
           </Text>

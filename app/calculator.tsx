@@ -108,7 +108,7 @@ import type {
 } from "../lib/db/types";
 import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
-import { SheetShell } from "../components/SheetShell";
+import { SCRIM, SheetShell } from "../components/SheetShell";
 import { Stepper, useStepperValidity } from "../components/Stepper";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
@@ -261,7 +261,7 @@ function ReadoutCard({
       <View className="flex-row items-center justify-between">
         <Text
           style={{
-            color: THEME.muted,
+            color: THEME.textMuted,
             fontSize: 11,
             letterSpacing: 1.3,
             fontWeight: "800",
@@ -274,13 +274,13 @@ function ReadoutCard({
           <Text
             style={[
               TABULAR,
-              { color: color ?? THEME.ink, fontSize: 26, fontWeight: "800" },
+              { color: color ?? THEME.text, fontSize: 26, fontWeight: "800" },
             ]}
           >
             {value}
           </Text>
           {suffix ? (
-            <Text style={{ color: THEME.muted, fontSize: 12 }}>{suffix}</Text>
+            <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{suffix}</Text>
           ) : null}
           {accessory}
         </View>
@@ -320,7 +320,7 @@ function NoticeCard({
             {title}
           </Text>
         ) : null}
-        <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 17, opacity: 0.85 }}>
+        <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 17, opacity: 0.85 }}>
           {body}
         </Text>
       </View>
@@ -374,7 +374,7 @@ function NoticeGroup({
                   {item.title}
                 </Text>
               ) : null}
-              <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 17, opacity: 0.85 }}>
+              <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 17, opacity: 0.85 }}>
                 {item.body}
               </Text>
             </View>
@@ -442,7 +442,7 @@ function CalcSetupSheet({
       footer={
         <View>
           {saveError ? (
-            <Text style={{ color: THEME.caution, fontSize: 12, marginBottom: 8 }}>
+            <Text style={{ color: THEME.warning, fontSize: 12, marginBottom: 8 }}>
               {t("common.saveFailed")}
             </Text>
           ) : null}
@@ -459,14 +459,14 @@ function CalcSetupSheet({
             accessibilityLabel={t("calculator.setup.later")}
             style={{ minHeight: 44, alignItems: "center", justifyContent: "center", marginTop: 4 }}
           >
-            <Text style={{ color: THEME.muted, fontSize: 15, fontWeight: "500" }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 15, fontWeight: "500" }}>
               {t("calculator.setup.later")}
             </Text>
           </Pressable>
         </View>
       }
     >
-      <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 19, marginBottom: 16 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 16 }}>
         {t("calculator.setup.body")}
       </Text>
 
@@ -484,10 +484,10 @@ function CalcSetupSheet({
         size="lg"
         accessibilityLabel={t("calculator.setup.carbLabel")}
       />
-      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
         {t("calculator.setup.carbHint")}
       </Text>
-      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 4 }}>
         {t("calculator.setup.perMealNote")}
       </Text>
 
@@ -506,7 +506,7 @@ function CalcSetupSheet({
           size="lg"
           accessibilityLabel={t("calculator.setup.isfLabel")}
         />
-        <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
           {t("calculator.setup.isfHint")}
         </Text>
       </View>
@@ -519,7 +519,7 @@ function DetailLabel({ children }: { children: React.ReactNode }) {
   return (
     <Text
       style={{
-        color: THEME.muted,
+        color: THEME.textMuted,
         fontSize: 12,
         fontWeight: "700",
         marginBottom: 6,
@@ -530,15 +530,16 @@ function DetailLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-const inputStyle = {
-  borderRadius: RADIUS.md,
-  borderWidth: 1,
-  borderColor: THEME.border,
-  backgroundColor: THEME.glass,
-  paddingHorizontal: 14,
-  paddingVertical: 12,
-  color: THEME.ink,
-} as const;
+const inputStyle = () =>
+  ({
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    backgroundColor: THEME.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: THEME.text,
+  }) as const;
 
 /**
  * Region picker, as a modal over the silhouette (InjectionBodyMap) instead of
@@ -579,7 +580,7 @@ function SitePickerModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
-        style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+        style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
         onPress={onClose}
         accessible={false}
         focusable={false}
@@ -610,7 +611,7 @@ function SitePickerModal({
             <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
           </View>
           <View className="flex-row items-center justify-between mb-3">
-            <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
+            <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800" }}>
               {t("injection.selectSite")}
             </Text>
             <Pressable
@@ -620,7 +621,7 @@ function SitePickerModal({
               accessibilityLabel={t("common.close")}
               className="p-1"
             >
-              <Ionicons name="close" size={22} color={THEME.muted} />
+              <Ionicons name="close" size={22} color={THEME.textMuted} />
             </Pressable>
           </View>
 
@@ -1670,10 +1671,10 @@ function CalculatorScreen() {
         <Pressable
           onPress={() => setTimePickerOpen((v) => !v)}
           className="flex-row items-center mb-4"
-          style={inputStyle}
+          style={inputStyle()}
         >
-          <Ionicons name="time-outline" size={16} color={THEME.muted} />
-          <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+          <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+          <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
             {relativeDay((loggedAt ?? new Date()).toISOString(), {
               today: t("common.today"),
               yesterday: t("common.yesterday"),
@@ -1706,17 +1707,17 @@ function CalculatorScreen() {
                 accessibilityState={{ selected: siteTouched, disabled: !doseActive }}
                 accessibilityLabel={siteSummaryLabel}
                 className="flex-row items-center flex-1"
-                style={[inputStyle, { minHeight: 44, opacity: doseActive ? 1 : 0.45 }]}
+                style={[inputStyle(), { minHeight: 44, opacity: doseActive ? 1 : 0.45 }]}
               >
                 <Ionicons
                   name="location-outline"
                   size={16}
-                  color={siteTouched ? THEME.accent : THEME.muted}
+                  color={siteTouched ? THEME.accent : THEME.textMuted}
                 />
                 <Text
                   numberOfLines={1}
                   style={{
-                    color: siteTouched ? THEME.ink : THEME.muted,
+                    color: siteTouched ? THEME.text : THEME.textMuted,
                     marginLeft: 8,
                     fontSize: 13,
                     flex: 1,
@@ -1724,7 +1725,7 @@ function CalculatorScreen() {
                 >
                   {siteSummaryLabel}
                 </Text>
-                <DirIcon name="chevron-forward-outline" size={16} color={THEME.muted} />
+                <DirIcon name="chevron-forward-outline" size={16} color={THEME.textMuted} />
               </Pressable>
               {siteTouched ? (
                 <Pressable
@@ -1740,7 +1741,7 @@ function CalculatorScreen() {
                   accessibilityLabel={t("common.delete")}
                   style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
                 >
-                  <Ionicons name="close-circle-outline" size={18} color={THEME.muted} />
+                  <Ionicons name="close-circle-outline" size={18} color={THEME.textMuted} />
                 </Pressable>
               ) : null}
             </View>
@@ -1807,7 +1808,7 @@ function CalculatorScreen() {
               accessibilityRole="button"
               accessibilityLabel={t("common.delete")}
               className="absolute top-2 right-2 rounded-full p-1.5"
-              style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+              style={{ backgroundColor: SCRIM }}
             >
               <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
             </Pressable>
@@ -1818,8 +1819,8 @@ function CalculatorScreen() {
             className="flex-row items-center justify-center rounded-2xl py-4 mb-4"
             style={{ borderWidth: 1, borderStyle: "dashed", borderColor: THEME.border }}
           >
-            <Ionicons name="camera-outline" size={18} color={THEME.muted} />
-            <Text style={{ color: THEME.muted, marginLeft: 8 }}>
+            <Ionicons name="camera-outline" size={18} color={THEME.textMuted} />
+            <Text style={{ color: THEME.textMuted, marginLeft: 8 }}>
               {t("calculator.addPhoto")}
             </Text>
           </Pressable>
@@ -1833,9 +1834,9 @@ function CalculatorScreen() {
             setDirty(true);
           }}
           placeholder={t("calculator.notePlaceholder")}
-          placeholderTextColor="rgba(137,163,176,0.7)"
+          placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
           multiline
-          style={[inputStyle, INPUT_TEXT, { marginBottom: 16, minHeight: 72 }]}
+          style={[inputStyle(), INPUT_TEXT, { marginBottom: 16, minHeight: 72 }]}
           textAlignVertical="top"
         />
 
@@ -1894,9 +1895,9 @@ function CalculatorScreen() {
               accessibilityRole="button"
               accessibilityLabel={t("common.close")}
             >
-              <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
+              <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
             </Pressable>
-            <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
+            <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
               {isEdit
                 ? t("calculator.editTitle")
                 : showsDose
@@ -1934,17 +1935,17 @@ function CalculatorScreen() {
             <GlassCard style={{ marginBottom: 10 }}>
               <View className="flex-row items-center justify-between">
                 <Text
-                  style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
+                  style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
                 >
                   {upper(t("calculator.estCarbs"))}
                 </Text>
                 <View className="flex-row items-baseline" style={{ gap: 4 }}>
                   <Skeleton width={48} height={26} radius={6} />
-                  <Text style={{ color: THEME.muted, fontSize: 12 }}>{t("common.grams")}</Text>
+                  <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("common.grams")}</Text>
                 </View>
               </View>
               <View className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
-                <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                   {t("calculator.portion")}
                 </Text>
                 <Stepper
@@ -1982,7 +1983,7 @@ function CalculatorScreen() {
             <GlassCard style={{ marginBottom: 10 }}>
               <View className="flex-row items-center justify-between">
                 <Text
-                  style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
+                  style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
                 >
                   {upper(t("calculator.currentGlucose"))}
                 </Text>
@@ -1992,13 +1993,13 @@ function CalculatorScreen() {
                     onChangeText={onGlucoseChange}
                     keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
                     placeholder="-"
-                    placeholderTextColor="rgba(137,163,176,0.7)"
+                    placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
                     maxLength={unit === "mmol" ? 4 : 3}
                     style={[
                       TABULAR,
                       INPUT_TEXT,
                       {
-                        color: THEME.ink,
+                        color: THEME.text,
                         fontSize: 26,
                         fontWeight: "800",
                         minWidth: 58,
@@ -2007,7 +2008,7 @@ function CalculatorScreen() {
                       },
                     ]}
                   />
-                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                  <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                     {glucoseUnitLabel(unit)}
                   </Text>
                 </View>
@@ -2036,14 +2037,14 @@ function CalculatorScreen() {
 
                 <View className="items-center mt-1">
                   <Skeleton width={90} height={54} radius={10} />
-                  <Text style={{ color: THEME.muted, fontSize: 12, marginTop: -2 }}>
+                  <Text style={{ color: THEME.textMuted, fontSize: 12, marginTop: -2 }}>
                     {t("common.units")}
                   </Text>
                 </View>
 
                 <View className="mt-3" style={{ gap: 5 }}>
                   <View className="flex-row justify-between">
-                    <Text style={{ color: THEME.muted, fontSize: 12 }}>
+                    <Text style={{ color: THEME.textMuted, fontSize: 12 }}>
                       {t("calculator.mealDose")}
                     </Text>
                     <Skeleton width={48} height={14} />
@@ -2079,7 +2080,7 @@ function CalculatorScreen() {
                     setDoseText(sanitizeNumberText(s, true));
                   }}
                   keyboardType="decimal-pad"
-                  style={[inputStyle, INPUT_TEXT, { marginBottom: 10 }]}
+                  style={[inputStyle(), INPUT_TEXT, { marginBottom: 10 }]}
                 />
               </>
             ) : null}
@@ -2122,9 +2123,9 @@ function CalculatorScreen() {
             accessibilityRole="button"
             accessibilityLabel={t("common.close")}
           >
-            <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
+            <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
           </Pressable>
-          <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
+          <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
             {isEdit
               ? t("calculator.editTitle")
               : showsDose
@@ -2146,12 +2147,12 @@ function CalculatorScreen() {
           <View className="flex-row items-center mb-3">
             <FoodIconTile food={food} size={34} radius={11} style={{ marginRight: 10 }} />
             <View className="flex-1">
-              <Text style={{ color: THEME.ink, fontSize: 15, fontWeight: "800" }} numberOfLines={1}>
+              <Text style={{ color: THEME.text, fontSize: 15, fontWeight: "800" }} numberOfLines={1}>
                 {foodName(food, lang)}
               </Text>
               {/* The synthetic template food has no real per-100 g value (it is the
                   total), so printing one here would read as a measured figure. */}
-              <Text style={{ color: THEME.muted, fontSize: 11 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                 {templateCtx ? (
                   t("templates.itemCount", { count: templateCtx.items.length })
                 ) : (
@@ -2168,7 +2169,7 @@ function CalculatorScreen() {
             </View>
           </View>
           {food.source ? (
-            <Text style={{ color: THEME.muted, fontSize: 11, marginBottom: 10 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, marginBottom: 10 }}>
               {t("food.dataSource", { source: foodSourceLabel(food.source) })}
               {" · "}
               {t("food.estimatedValues")}
@@ -2186,7 +2187,7 @@ function CalculatorScreen() {
                 of them. The portions are edited where they live instead. */}
             {templateCtx ? (
               <View className="mt-2">
-                <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16 }}>
                   {t("templates.calcFromItems")}
                 </Text>
                 <Pressable
@@ -2209,7 +2210,7 @@ function CalculatorScreen() {
             ) : (
               <>
                 <View className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
-                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                  <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                     {t("calculator.portion")}
                   </Text>
                   {/* Typeable / steppable so any gram value is reachable (e.g. 237 g,
@@ -2264,7 +2265,7 @@ function CalculatorScreen() {
             <View className="flex-row items-center justify-between">
               <Text
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   fontSize: 11,
                   letterSpacing: 1.3,
                   fontWeight: "800",
@@ -2279,13 +2280,13 @@ function CalculatorScreen() {
                   onChangeText={onGlucoseChange}
                   keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
                   placeholder="-"
-                  placeholderTextColor="rgba(137,163,176,0.7)"
+                  placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
                   maxLength={unit === "mmol" ? 4 : 3}
                   style={[
                     TABULAR,
                     INPUT_TEXT,
                     {
-                      color: glucoseStatus ? RICH_BY_STATUS[glucoseStatus] : THEME.ink,
+                      color: glucoseStatus ? RICH_BY_STATUS[glucoseStatus] : THEME.text,
                       fontSize: 26,
                       fontWeight: "800",
                       minWidth: 58,
@@ -2309,7 +2310,7 @@ function CalculatorScreen() {
                     }
                   />
                 ) : (
-                  <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                  <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                     {glucoseUnitLabel(unit)}
                   </Text>
                 )}
@@ -2383,7 +2384,7 @@ function CalculatorScreen() {
                       >
                         {heroDose}
                       </Text>
-                      <Text style={{ color: THEME.muted, fontSize: 12, marginTop: -2 }}>
+                      <Text style={{ color: THEME.textMuted, fontSize: 12, marginTop: -2 }}>
                         {t("common.units")}
                       </Text>
                     </View>
@@ -2420,7 +2421,7 @@ function CalculatorScreen() {
                         so the read-out stays uncluttered (regulation note below is
                         always visible). */}
                     <View className="flex-row items-center justify-end" style={{ marginTop: 8, gap: 6 }}>
-                      <Text style={{ color: THEME.muted, fontSize: 11 }}>
+                      <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                         {t("common.note")}
                       </Text>
                       <Tooltip
@@ -2526,7 +2527,7 @@ function CalculatorScreen() {
                 }}
                 keyboardType="decimal-pad"
                 style={[
-                  inputStyle,
+                  inputStyle(),
                   INPUT_TEXT,
                   { marginBottom: typedDose == null || typedDose === 0 ? 10 : 16 },
                 ]}
@@ -2639,10 +2640,10 @@ function Breakdown({
   return (
     <View className="flex-row justify-between">
       <View className="flex-row items-center" style={{ flex: 1, paddingRight: 8, gap: 4 }}>
-        <Text style={{ color: tint ?? THEME.muted, fontSize: 12 }}>{label}</Text>
+        <Text style={{ color: tint ?? THEME.textMuted, fontSize: 12 }}>{label}</Text>
         {tooltip ? <Tooltip text={tooltip} size={12} tint={tint} /> : null}
       </View>
-      <Text style={[TABULAR, { color: tint ?? THEME.ink, fontSize: 12, fontWeight: "700" }]}>
+      <Text style={[TABULAR, { color: tint ?? THEME.text, fontSize: 12, fontWeight: "700" }]}>
         {value}
       </Text>
     </View>

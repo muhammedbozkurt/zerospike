@@ -52,7 +52,7 @@ export function IconTile({
           justifyContent: "center",
           borderWidth: 1,
           borderColor: THEME.border,
-          backgroundColor: hero ? withAlpha(THEME.accent, 0.13) : THEME.glass,
+          backgroundColor: hero ? withAlpha(THEME.accent, 0.13) : THEME.surface,
         },
         style,
       ]}

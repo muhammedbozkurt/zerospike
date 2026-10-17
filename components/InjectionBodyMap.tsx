@@ -23,7 +23,7 @@ import type { InjectionSite, SitePoint } from "../lib/db/types";
 import { SITE_POINTS, pointGrid } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
 import { pointHeatLevel, regionHeatLevel } from "../lib/injectionHeat";
-import { GLUCOSE_COLORS, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { PALETTES, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
@@ -315,16 +315,20 @@ function lerp(a: number, b: number, t: number): number {
  */
 export function heatFill(intensity: number): string {
   const i = Math.min(1, Math.max(0, intensity));
-  if (i <= 0) return "rgba(255,255,255,0.05)";
+  if (i <= 0) return THEME.surfaceInset;
   if (i < 0.5) {
     const t = i / 0.5;
-    return `rgba(46,230,255,${lerp(0.14, 0.6, t).toFixed(2)})`;
+    return withAlpha(THEME.accentFill, Number(lerp(0.14, 0.6, t).toFixed(2)));
   }
   const t = (i - 0.5) / 0.5;
-  const r = Math.round(lerp(46, 255, t));
-  const g = Math.round(lerp(230, 122, t));
-  const b = Math.round(lerp(255, 60, t));
-  return `rgba(${r},${g},${b},${lerp(0.6, 0.85, t).toFixed(2)})`;
+  const hot = mixHex(THEME.accentFill, THEME.glucose.veryHigh, t);
+  return withAlpha(hot, Number(lerp(0.6, 0.85, t).toFixed(2)));
+}
+
+function mixHex(a: string, b: string, t: number): string {
+  const ch = (h: string, k: number): number => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
+  const out = [0, 1, 2].map((k) => Math.round(lerp(ch(a, k), ch(b, k), t)).toString(16).padStart(2, "0"));
+  return `#${out.join("")}`;
 }
 
 /**
@@ -381,7 +385,7 @@ function rampRgb(stops: readonly Rgb[], t: number): Rgb {
 }
 
 function rgbCss(c: Rgb): string {
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
+  return `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function frequencyFill(t: number): string {
@@ -393,8 +397,20 @@ function surfaceRgb(surface: Surface, t: number): Rgb {
   return rampRgb(surface === "back" ? BACK_STOPS : FREQ_STOPS, t);
 }
 
-const INK_DARK = "#08161d";
-const INK_LIGHT = "#eaf6fa";
+export const INK_DARK = PALETTES.dark.accentOnFill;
+const INK_LIGHT = PALETTES.dark.text;
+export const BODY_TOP = mixHex(PALETTES.dark.text, PALETTES.dark.textMuted, 0.05);
+export const BODY_BOTTOM = mixHex(PALETTES.dark.text, PALETTES.dark.textMuted, 0.4);
+const BODY_TOP_WARM = "#F1EBDF"; // theme-ok
+const BODY_BOTTOM_WARM = "#DDD4C4"; // theme-ok
+
+/** Silhouette gradient stops: light theme draws a warm neutral figure so the cool
+ *  teal plates separate from it; dark keeps the pale slate figure. */
+export function bodyStops(): { top: string; bottom: string } {
+  return THEME.scheme === "light"
+    ? { top: BODY_TOP_WARM, bottom: BODY_BOTTOM_WARM }
+    : { top: BODY_TOP, bottom: BODY_BOTTOM };
+}
 
 /**
  * Label colour that keeps its contrast on ANY plate. The two inks swap at the
@@ -442,8 +458,8 @@ export function absorptionKey(site: InjectionSite): string {
 }
 
 /** Near-black region outline, derived from the darkest background token. */
-const EDGE = withAlpha(THEME.bg.g1, 0.88);
-const BODY_EDGE = withAlpha(THEME.bg.g1, 0.34);
+const EDGE = withAlpha(PALETTES.dark.wash.g1, 0.88);
+const BODY_EDGE = withAlpha(PALETTES.dark.wash.g1, 0.34);
 
 /** Offset of the accent ring around a selected region. Kept small enough that the
  *  ring still clears the narrowest region (the upper arm) without crossing the
@@ -474,7 +490,7 @@ const POINT_RING_INNER = 1.3;
  *  - THEME.accent (cyan, hue ~187deg): this green sits at hue ~157deg, a
  *    ~30deg hue separation, so a selected AND suggested region/point (both
  *    rings drawn at once) never reads as one colour.
- *  - THEME.caution (amber, hue ~33deg, used elsewhere on this same screen for
+ *  - THEME.warning (amber, hue ~33deg, used elsewhere on this same screen for
  *    the repeat-point notice): ~124deg apart, not close.
  *  - Legibility: 7.5:1 (WCAG luminance) against the darkest back-surface
  *    (buttock) plate, and ~1.1-1.5:1 against the lightest front plate/skin -
@@ -483,7 +499,7 @@ const POINT_RING_INNER = 1.3;
  *    light ground both rings read by hue and stroke shape (solid/dashed), not
  *    by darkness, same as the rest of this map's outline language.
  */
-const ROTATION_COLOR = GLUCOSE_COLORS.normal;
+const ROTATION_COLOR = PALETTES.dark.glucose.normal;
 
 /** Fade-out then fade-in around the instant viewBox swap (ms). */
 const FADE_OUT = 110;
@@ -593,7 +609,7 @@ export function InjectionBodyMap({
       justifyContent: "center" as const,
       borderWidth: 1,
       borderColor: THEME.border,
-      backgroundColor: withAlpha("#ffffff", 0.07),
+      backgroundColor: THEME.surfaceInset,
     };
     // Physical anchor, pre-swapped for RTL: RN flips left<->right automatically
     // (swapLeftAndRightInRTL), so writing the opposite key here cancels that
@@ -753,7 +769,7 @@ export function InjectionBodyMap({
                 justifyContent: "center",
                 borderWidth: 1,
                 borderColor: THEME.border,
-                backgroundColor: withAlpha("#ffffff", 0.06),
+                backgroundColor: THEME.surfaceInset,
                 [rtl ? "marginLeft" : "marginRight"]: 10,
               }}
             >
@@ -761,16 +777,16 @@ export function InjectionBodyMap({
             </Pressable>
             <Text
               numberOfLines={1}
-              style={{ color: THEME.ink, fontWeight: "800", fontSize: 14, flex: 1 }}
+              style={{ color: THEME.text, fontWeight: "800", fontSize: 14, flex: 1 }}
             >
               {t(`injectionSite.${openSite}`)}
             </Text>
-            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "700" }}>
               {t("injectionMap.entries", { n: openCount })}
             </Text>
           </>
         ) : (
-          <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, flex: 1 }}>
+          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, flex: 1 }}>
             {t("injectionMap.overviewHint")}
           </Text>
         )}
@@ -835,8 +851,8 @@ export function InjectionBodyMap({
           <Svg width={svgW} height={svgH} viewBox={`${vx} ${vy} ${vw} ${vh}`}>
             <Defs>
               <LinearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor="#eef7fb" />
-                <Stop offset="1" stopColor="#c2d5df" />
+                <Stop offset="0" stopColor={bodyStops().top} />
+                <Stop offset="1" stopColor={bodyStops().bottom} />
               </LinearGradient>
             </Defs>
 
@@ -847,7 +863,7 @@ export function InjectionBodyMap({
                 stroke={BODY_EDGE}
                 strokeWidth={1.2 * upx}
               />
-              <Circle cx={120} cy={170} r={2} fill="rgba(10,20,26,0.28)" />
+              <Circle cx={120} cy={170} r={2} fill={withAlpha(INK_DARK, 0.28)} />
             </G>
 
             {REGIONS.map((r) => {
@@ -1072,7 +1088,7 @@ export function InjectionBodyMap({
                 >
                   <Text
                     numberOfLines={1}
-                    style={{ color: THEME.muted, fontSize: 10, fontWeight: "800" }}
+                    style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "800" }}
                   >
                     {t(`injectionMap.${b.key}`)}
                   </Text>
@@ -1112,7 +1128,7 @@ export function InjectionBodyMap({
                 </Svg>
                 <Text
                   numberOfLines={1}
-                  style={{ color: THEME.muted, fontSize: 10, fontWeight: "700" }}
+                  style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "700" }}
                 >
                   {t(`injectionMap.${s.key}`)}
                 </Text>
@@ -1133,7 +1149,7 @@ export function InjectionBodyMap({
                 </Svg>
                 <Text
                   numberOfLines={1}
-                  style={{ color: THEME.muted, fontSize: 10, fontWeight: "700" }}
+                  style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "700" }}
                 >
                   {t("injectionMap.rotationHint")}
                 </Text>
@@ -1201,7 +1217,7 @@ export function InjectionBodyMap({
 
       {onStartNewCycle ? (
         <View className="flex-row items-center justify-between mt-3">
-          <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, flex: 1 }}>
+          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, flex: 1 }}>
             {cycleStart ? t("injection.cycleSince", { date: formatDate(cycleStart) }) : ""}
           </Text>
           <Pressable

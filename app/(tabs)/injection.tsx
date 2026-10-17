@@ -90,19 +90,20 @@ const HISTORY_INITIAL_DAYS = 14;
 
 type Segment = "save" | "map" | "history";
 
-const inputStyle = {
-  borderRadius: RADIUS.md,
-  borderWidth: 1,
-  borderColor: THEME.border,
-  backgroundColor: THEME.glass,
-  paddingHorizontal: 14,
-  paddingVertical: 12,
-  color: THEME.ink,
-} as const;
+const inputStyle = () =>
+  ({
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    backgroundColor: THEME.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: THEME.text,
+  }) as const;
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
       {children}
     </Text>
   );
@@ -129,12 +130,12 @@ function SegmentOption({
         {
           borderWidth: 1,
           borderColor: on ? THEME.accent : THEME.border,
-          backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.glass,
+          backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.surface,
         },
         on ? glow(THEME.accent, 12, 0.35) : undefined,
       ]}
     >
-      <Text style={{ color: on ? THEME.accent : THEME.muted, fontWeight: on ? "800" : "600" }}>
+      <Text style={{ color: on ? THEME.accent : THEME.textMuted, fontWeight: on ? "800" : "600" }}>
         {label}
       </Text>
     </Pressable>
@@ -634,7 +635,7 @@ export default function InjectionScreen() {
         </View>
         <View className="flex-1 ml-3">
           <Text
-            style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
+            style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.85}
@@ -656,13 +657,13 @@ export default function InjectionScreen() {
                 ? t("injection.siteWithPoint", { site: t(`injectionSite.${inj.site}`), n: inj.site_point })
                 : t(`injectionSite.${inj.site}`)}
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 1 }}>
             {formatTime(inj.logged_at)}
             {inj.source === "calculator" ? ` · ${t("injection.fromCalculator")}` : ""}
             {inj.source === "reminder" ? ` · ${t("report.fromReminder")}` : ""}
           </Text>
         </View>
-        <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
+        <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
       </Pressable>
     ),
     [onRowLongPress, t]
@@ -681,7 +682,7 @@ export default function InjectionScreen() {
             flexDirection: "row",
             alignItems: "center",
             gap: 6,
-            backgroundColor: THEME.sheet,
+            backgroundColor: THEME.surfaceRaised,
             borderWidth: 1,
             borderColor: THEME.border,
             borderRadius: RADIUS.full,
@@ -689,11 +690,11 @@ export default function InjectionScreen() {
             paddingVertical: 4,
           }}
         >
-          <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+          <Text style={{ color: THEME.text, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
             {upper(section.title)}
           </Text>
           {section.dateLabel !== section.title ? (
-            <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}>
               {section.dateLabel}
             </Text>
           ) : null}
@@ -710,8 +711,8 @@ export default function InjectionScreen() {
     if (!historyLoaded) return null;
     return (
       <View className="items-center py-12">
-        <Ionicons name="document-text-outline" size={36} color={THEME.muted} />
-        <Text style={{ color: THEME.muted, textAlign: "center", marginTop: 8 }}>
+        <Ionicons name="document-text-outline" size={36} color={THEME.textMuted} />
+        <Text style={{ color: THEME.textMuted, textAlign: "center", marginTop: 8 }}>
           {t("injection.empty")}
         </Text>
         <Pressable
@@ -764,17 +765,17 @@ export default function InjectionScreen() {
     <GlassCard style={{ marginBottom: 16 }}>
       <View className="flex-row items-center mb-2">
         <Ionicons name="sync-outline" size={16} color={THEME.accent} />
-        <Text style={{ color: THEME.ink, fontWeight: "700", marginLeft: 8 }}>
+        <Text style={{ color: THEME.text, fontWeight: "700", marginLeft: 8 }}>
           {t("injection.rotationTitle")}
         </Text>
       </View>
-      <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("injection.leastUsedPoint")}</Text>
-      <Text style={{ color: THEME.ink, fontSize: 18, fontWeight: "800", marginTop: 2 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{t("injection.leastUsedPoint")}</Text>
+      <Text style={{ color: THEME.text, fontSize: 18, fontWeight: "800", marginTop: 2 }}>
         {leastUsed
           ? t("injection.siteWithPoint", { site: t(`injectionSite.${leastUsed.site}`), n: leastUsed.point })
           : "-"}
       </Text>
-      <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16, marginTop: 8 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, marginTop: 8 }}>
         {t("injection.rotationDisclaimer")}
       </Text>
       {leastUsed ? (
@@ -801,10 +802,10 @@ export default function InjectionScreen() {
       }}
       className="rounded-2xl bg-glass border border-hair p-4 mb-4 flex-row items-center active:opacity-80"
     >
-      <IconTile icon="lock-closed" size={36} radius={12} tint={THEME.muted} style={{ marginRight: 12 }} />
+      <IconTile icon="lock-closed" size={36} radius={12} tint={THEME.textMuted} style={{ marginRight: 12 }} />
       <View className="flex-1">
-        <Text style={{ color: THEME.ink, fontWeight: "700" }}>{t("injection.rotationTitle")}</Text>
-        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+        <Text style={{ color: THEME.text, fontWeight: "700" }}>{t("injection.rotationTitle")}</Text>
+        <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}>
           {t("paywall.limitTitleRotation")}
         </Text>
         <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
@@ -812,7 +813,7 @@ export default function InjectionScreen() {
         </Text>
       </View>
       <View className="rounded-full bg-brand px-2 py-0.5">
-        <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
+        <Text className="text-onAccent text-[10px] font-bold">{t("common.pro")}</Text>
       </View>
     </Pressable>
   );
@@ -828,7 +829,7 @@ export default function InjectionScreen() {
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
       <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
-        <Text style={{ color: THEME.ink, fontSize: 24, fontWeight: "800" }}>
+        <Text style={{ color: THEME.text, fontSize: 24, fontWeight: "800" }}>
           {t("injection.title")}
         </Text>
         <View className="flex-row items-center" style={{ gap: 10 }}>
@@ -847,7 +848,7 @@ export default function InjectionScreen() {
       {/* Segment control: KAYDET / HARITA / GECMIS */}
       <View
         className="flex-row rounded-full border border-hair mx-4 mb-2 p-1"
-        style={{ backgroundColor: THEME.glass }}
+        style={{ backgroundColor: THEME.surface }}
       >
         {SEGMENTS.map((s) => {
           const on = segment === s.key;
@@ -868,9 +869,9 @@ export default function InjectionScreen() {
               // from the neighbouring segment.
               hitSlop={{ top: 8, bottom: 8 }}
               className="flex-1 items-center rounded-full py-2"
-              style={{ backgroundColor: on ? THEME.accent : "transparent" }}
+              style={{ backgroundColor: on ? THEME.accentFill : "transparent" }}
             >
-              <Text style={{ color: on ? "#00171c" : THEME.muted, fontWeight: "800", fontSize: 12 }}>
+              <Text style={{ color: on ? THEME.accentOnFill : THEME.textMuted, fontWeight: "800", fontSize: 12 }}>
                 {upper(s.label)}
               </Text>
             </Pressable>
@@ -926,7 +927,7 @@ export default function InjectionScreen() {
               <GlassCard style={{ marginBottom: 12 }}>
                 <Text
                   style={{
-                    color: THEME.muted,
+                    color: THEME.textMuted,
                     fontSize: 11,
                     letterSpacing: 1.3,
                     fontWeight: "800",
@@ -946,10 +947,10 @@ export default function InjectionScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={t("injection.time")}
                   className="flex-row items-center mb-4"
-                  style={inputStyle}
+                  style={inputStyle()}
                 >
-                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
-                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                  <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
                     {relativeDay(loggedAt.toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
@@ -1013,7 +1014,7 @@ export default function InjectionScreen() {
                   style={{ marginBottom: injectionDoseOk(dose) ? 16 : 6 }}
                 />
                 {injectionDoseOk(dose) ? null : (
-                  <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 12 }}>
+                  <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 12 }}>
                     {t("basalConfirm.doseRequired")}
                   </Text>
                 )}
@@ -1073,17 +1074,17 @@ export default function InjectionScreen() {
                     style={{
                       borderWidth: 1,
                       borderColor: selected ? withAlpha(THEME.accent, 0.4) : THEME.border,
-                      backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+                      backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.surface,
                     }}
                   >
                     <Ionicons
                       name="location-outline"
                       size={15}
-                      color={selected ? THEME.accent : THEME.muted}
+                      color={selected ? THEME.accent : THEME.textMuted}
                     />
                     <Text
                       style={{
-                        color: selected ? THEME.accent : THEME.muted,
+                        color: selected ? THEME.accent : THEME.textMuted,
                         fontSize: 13,
                         fontWeight: "700",
                         marginLeft: 8,
@@ -1109,13 +1110,13 @@ export default function InjectionScreen() {
                         marginTop: -8,
                         marginBottom: 16,
                         borderWidth: 1,
-                        borderColor: withAlpha(THEME.caution, 0.4),
-                        backgroundColor: withAlpha(THEME.caution, 0.12),
+                        borderColor: withAlpha(THEME.warning, 0.4),
+                        backgroundColor: withAlpha(THEME.warning, 0.12),
                       }}
                     >
-                      <Ionicons name="alert-circle-outline" size={14} color={THEME.caution} />
+                      <Ionicons name="alert-circle-outline" size={14} color={THEME.warning} />
                       <Text
-                        style={{ color: THEME.ink, fontSize: 11, lineHeight: 15, marginLeft: 8, flex: 1 }}
+                        style={{ color: THEME.text, fontSize: 11, lineHeight: 15, marginLeft: 8, flex: 1 }}
                       >
                         {pointNote}
                       </Text>
@@ -1127,9 +1128,9 @@ export default function InjectionScreen() {
                     value={note}
                     onChangeText={setNote}
                     placeholder={t("injection.notePlaceholder")}
-                    placeholderTextColor="rgba(137,163,176,0.7)"
+                    placeholderTextColor={THEME.textMuted}
                     returnKeyType="done"
-                    style={[inputStyle, INPUT_TEXT, { marginBottom: 16 }]}
+                    style={[inputStyle(), INPUT_TEXT, { marginBottom: 16 }]}
                   />
 
                   <GradientCTA
@@ -1152,7 +1153,7 @@ export default function InjectionScreen() {
               >
                 <Ionicons name="medical-outline" size={15} color={GLUCOSE_RICH.high} />
                 <Text
-                  style={{ color: THEME.ink, fontSize: 12, lineHeight: 17, marginLeft: 10, flex: 1, opacity: 0.85 }}
+                  style={{ color: THEME.text, fontSize: 12, lineHeight: 17, marginLeft: 10, flex: 1, opacity: 0.85 }}
                   numberOfLines={2}
                 >
                   {t("disclaimer.short")}

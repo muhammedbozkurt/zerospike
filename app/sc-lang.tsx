@@ -6,6 +6,7 @@ import { isScreenshotMode } from "../lib/screenshotMode";
 import { SUPPORTED_LANGS } from "../lib/i18n";
 import { useApp } from "../lib/store/AppContext";
 import type { Lang } from "../lib/db/types";
+import { THEME } from "../lib/theme/tokens";
 
 /**
  * Store-screenshot ONLY (I7): a route that sets the in-app language from a ROUTE
@@ -32,5 +33,5 @@ export default function ScLang() {
       router.replace("/(tabs)");
     })();
   }, [lang, setLanguage, router]);
-  return <View style={{ flex: 1, backgroundColor: "#04161d" }} />;
+  return <View style={{ flex: 1, backgroundColor: THEME.bg.deep }} />;
 }

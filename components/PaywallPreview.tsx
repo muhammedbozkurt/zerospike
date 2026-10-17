@@ -24,7 +24,7 @@ export function PaywallPreview({ compact = false }: { compact?: boolean }) {
         accessible
         accessibilityLabel={`${t("paywall.previewLabel")}. ${t("insights.inRange")}. ${t("paywall.featureShortPdf")}`}
       >
-        <Text style={{ color: THEME.muted, fontSize: 10, letterSpacing: 1.2, fontWeight: "800" }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 10, letterSpacing: 1.2, fontWeight: "800" }}>
           {upper(t("paywall.previewLabel"))}
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
@@ -36,12 +36,12 @@ export function PaywallPreview({ compact = false }: { compact?: boolean }) {
             size={96}
           />
           <View style={{ flex: 1, marginStart: 16 }}>
-            <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>
+            <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}>
               {t("insights.inRange")}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
               <Ionicons name="document-text-outline" size={16} color={THEME.accent} />
-              <Text style={{ color: THEME.muted, fontSize: 12, flex: 1, marginStart: 8 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, flex: 1, marginStart: 8 }}>
                 {t("paywall.featureShortPdf")}
               </Text>
             </View>

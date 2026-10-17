@@ -67,7 +67,7 @@ export function BigInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={THEME.muted}
+        placeholderTextColor={THEME.textMuted}
         keyboardType={keyboardType}
         autoFocus={autoFocus}
         maxLength={maxLength}
@@ -76,7 +76,7 @@ export function BigInput({
         style={{
           ...INPUT_TEXT,
           flex: 1,
-          color: THEME.ink,
+          color: THEME.text,
           fontSize: 18,
           fontWeight: "600",
           paddingVertical: 0,
@@ -90,10 +90,10 @@ export function BigInput({
           borderRadius: RADIUS.full,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: THEME.accent,
+          backgroundColor: THEME.accentFill,
         }}
       >
-        <Ionicons name="checkmark" size={15} color="#062126" />
+        <Ionicons name="checkmark" size={15} color={THEME.accentOnFill} />
       </View>
     </View>
   );

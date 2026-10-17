@@ -38,6 +38,8 @@ import {
 } from "../lib/store/AppContext";
 import { FeedbackProvider, FeedbackHost, useFeedback } from "../components/Feedback";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ThemeProvider, ThemeRemount, useTheme } from "../lib/theme/ThemeProvider";
+import { THEME } from "../lib/theme/tokens";
 import { logCrash, logEvent } from "../lib/analytics";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSink";
@@ -218,7 +220,10 @@ function hrefForWidgetRoute(route: WidgetRoute): Href | null {
   }
 }
 
+let coldStartHandled = false;
+
 function RootNavigator() {
+  const { scheme } = useTheme();
   const { ready, onboarded, isProUser, activeProfile, completeOnboarding, bumpData, lang, setLanguage, refreshPro, setActiveProfileId } = useApp();
   const segments = useSegments();
   const router = useRouter();
@@ -399,7 +404,6 @@ function RootNavigator() {
   // onboarding is done, so a tap never fights the onboarding redirect.
   const onboardedRef = useRef(onboarded);
   onboardedRef.current = onboarded;
-  const coldStartHandled = useRef(false);
 
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -416,8 +420,8 @@ function RootNavigator() {
   }, [router]);
 
   useEffect(() => {
-    if (!ready || !onboarded || coldStartHandled.current) return;
-    coldStartHandled.current = true;
+    if (!ready || !onboarded || coldStartHandled) return;
+    coldStartHandled = true;
     (async () => {
       try {
         const last = await Notifications.getLastNotificationResponseAsync();
@@ -729,7 +733,7 @@ function RootNavigator() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: "#0f1f29" },
+        contentStyle: { backgroundColor: THEME.bg.base },
         animation: "slide_from_right",
       }}
     >
@@ -820,7 +824,7 @@ function RootNavigator() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: "#04161d",
+          backgroundColor: scheme === "light" ? THEME.bg.base : "#04161d", // theme-ok: matches the native splash
           zIndex: 10,
         }}
       />
@@ -829,27 +833,38 @@ function RootNavigator() {
   );
 }
 
-export default function RootLayout() {
+function ThemedRoot() {
+  const { scheme } = useTheme();
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0f1f29" }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: THEME.bg.base }}>
       <SafeAreaProvider>
         <AppProvider>
-          <FeedbackProvider>
-            <StatusBar style="light" />
-            {/* Catches a render error anywhere in the routed screens: without it,
-                React unmounts the whole failing subtree and only the dark
-                AppBackground wash is left on screen (WP6 - reported as a totally
-                blank page recoverable only by an app restart). */}
-            <ErrorBoundary>
-              <RootNavigator />
-            </ErrorBoundary>
-            {/* Serves the tabs and every non-modal route. Modal routes present a
-                separate view controller this cannot reach, so each mounts its
-                own host and takes over while it is on screen. */}
-            <FeedbackHost />
-          </FeedbackProvider>
+          <ThemeRemount>
+            <FeedbackProvider>
+              <StatusBar style={scheme === "light" ? "dark" : "light"} />
+              {/* Catches a render error anywhere in the routed screens: without it,
+                  React unmounts the whole failing subtree and only the AppBackground
+                  wash is left on screen (WP6 - reported as a totally blank page
+                  recoverable only by an app restart). */}
+              <ErrorBoundary>
+                <RootNavigator />
+              </ErrorBoundary>
+              {/* Serves the tabs and every non-modal route. Modal routes present a
+                  separate view controller this cannot reach, so each mounts its
+                  own host and takes over while it is on screen. */}
+              <FeedbackHost />
+            </FeedbackProvider>
+          </ThemeRemount>
         </AppProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <ThemedRoot />
+    </ThemeProvider>
   );
 }

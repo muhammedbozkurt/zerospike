@@ -177,7 +177,7 @@ function SectionHeading({
     <View className="flex-row items-center justify-between mb-2">
       <Text
         style={{
-          color: THEME.muted,
+          color: THEME.textMuted,
           fontSize: 11,
           letterSpacing: 1.2,
           fontWeight: "800",
@@ -267,7 +267,7 @@ function TemplateConfirmSheet({
     >
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
         <Pressable
-          style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.7)" }]}
+          style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.7)" }]} // theme-ok
           onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel={t("common.cancel")}
@@ -299,7 +299,7 @@ function TemplateConfirmSheet({
             </View>
 
             <Text
-              style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", marginBottom: 12 }}
+              style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 12 }}
               numberOfLines={2}
             >
               {entry.template.name}
@@ -310,7 +310,7 @@ function TemplateConfirmSheet({
             </Text>
             {entry.items.length === 0 ? (
               <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
-                <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
                   {t("templates.emptyItemsLog")}
                 </Text>
               </View>
@@ -329,23 +329,23 @@ function TemplateConfirmSheet({
                     />
                     <View className="flex-1 pr-2">
                       <Text
-                        style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
+                        style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}
                         numberOfLines={1}
                       >
                         {item.name}
                       </Text>
                       {item.missingFood ? (
                         <Text
-                          style={{ color: THEME.muted, fontSize: 10, marginTop: 1 }}
+                          style={{ color: THEME.textMuted, fontSize: 10, marginTop: 1 }}
                           numberOfLines={1}
                         >
                           {t("templates.missingFood")}
                         </Text>
                       ) : null}
                     </View>
-                    <Text style={[TABULAR, { color: THEME.ink, fontSize: 13, fontWeight: "800" }]}>
+                    <Text style={[TABULAR, { color: THEME.text, fontSize: 13, fontWeight: "800" }]}>
                       {Math.round(item.carbs_g)}
-                      <Text style={{ color: THEME.muted, fontSize: 10, fontWeight: "600" }}>
+                      <Text style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "600" }}>
                         {t("common.grams")}
                       </Text>
                     </Text>
@@ -360,7 +360,7 @@ function TemplateConfirmSheet({
               </Text>
               <Text style={[TABULAR, { color: THEME.accent, fontSize: 20, fontWeight: "800" }]}>
                 {Math.round(entry.carbs_g)}
-                <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
                   {t("common.grams")}
                 </Text>
               </Text>
@@ -373,8 +373,8 @@ function TemplateConfirmSheet({
               className="flex-row items-center rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-3"
               style={{ minHeight: HIT_TARGET }}
             >
-              <Ionicons name="time-outline" size={16} color={THEME.muted} />
-              <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+              <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+              <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
                 {relativeDay(shown.toISOString(), {
                   today: t("common.today"),
                   yesterday: t("common.yesterday"),
@@ -981,14 +981,14 @@ export default function FoodScreen() {
       className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 mb-3"
       style={{ minHeight: 52 }}
     >
-      <Ionicons name="search" size={18} color={THEME.muted} />
+      <Ionicons name="search" size={18} color={THEME.textMuted} />
       <TextInput
         value={query}
         onChangeText={setQuery}
         placeholder={t("food.searchPlaceholder")}
-        placeholderTextColor="rgba(137,163,176,0.7)"
+        placeholderTextColor={THEME.textMuted}
         className="flex-1 py-3 px-2.5"
-        style={[INPUT_TEXT, { color: THEME.ink, fontSize: 15 }]}
+        style={[INPUT_TEXT, { color: THEME.text, fontSize: 15 }]}
         returnKeyType="search"
         accessibilityLabel={t("food.searchPlaceholder")}
       />
@@ -1005,7 +1005,7 @@ export default function FoodScreen() {
             justifyContent: "center",
           }}
         >
-          <Ionicons name="close-circle" size={19} color={THEME.muted} />
+          <Ionicons name="close-circle" size={19} color={THEME.textMuted} />
         </Pressable>
       ) : null}
       <Pressable
@@ -1022,9 +1022,9 @@ export default function FoodScreen() {
       >
         <View
           className="w-8 h-8 rounded-xl items-center justify-center"
-          style={{ backgroundColor: THEME.accent }}
+          style={{ backgroundColor: THEME.accentFill }}
         >
-          <Ionicons name="barcode-outline" size={17} color="#03181c" />
+          <Ionicons name="barcode-outline" size={17} color={THEME.accentOnFill} />
         </View>
       </Pressable>
     </View>
@@ -1052,7 +1052,7 @@ export default function FoodScreen() {
           a search that finds nothing is exactly where "add it yourself" belongs. */}
       <View className="flex-row items-center justify-between mb-3">
         <Text
-          style={{ color: THEME.ink, fontSize: 24, fontWeight: "800", flexShrink: 1 }}
+          style={{ color: THEME.text, fontSize: 24, fontWeight: "800", flexShrink: 1 }}
           numberOfLines={1}
         >
           {t("food.title")}
@@ -1081,7 +1081,7 @@ export default function FoodScreen() {
         >
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: 11,
               letterSpacing: 1.3,
               fontWeight: "800",
@@ -1101,7 +1101,7 @@ export default function FoodScreen() {
             >
               {todayCarbs}
             </Text>
-            <Text style={[TABULAR, { color: THEME.muted, fontSize: 13 }]}>
+            <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 13 }]}>
               / {carbMin}-{carbMax} {t("common.grams")}
             </Text>
           </View>
@@ -1119,7 +1119,7 @@ export default function FoodScreen() {
 
       {/* The debounce gap used to look like "no results"; it now says so. */}
       {mode === "search" && searchPending ? (
-        <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 10 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 10 }}>
           {t("common.loading")}
         </Text>
       ) : null}
@@ -1136,7 +1136,7 @@ export default function FoodScreen() {
           {plateFor(selected, 30)}
           <Text
             style={{
-              color: THEME.ink,
+              color: THEME.text,
               fontWeight: "800",
               fontSize: 16,
               marginLeft: 10,
@@ -1146,7 +1146,7 @@ export default function FoodScreen() {
           >
             {titleFor(selected)}
           </Text>
-          <Text style={[TABULAR, { color: THEME.muted, fontSize: 12, marginLeft: 8 }]}>
+          <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 12, marginLeft: 8 }]}>
             {listData.length}
           </Text>
         </Pressable>
@@ -1166,7 +1166,7 @@ export default function FoodScreen() {
             label={upper(t("common.today"))}
             right={
               todayMeals.length > 0 ? (
-                <Text style={[TABULAR, { color: THEME.muted, fontSize: 11 }]}>
+                <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 11 }]}>
                   {todayMeals.length}
                 </Text>
               ) : null
@@ -1183,7 +1183,7 @@ export default function FoodScreen() {
             </View>
           ) : todayMeals.length === 0 ? (
             <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
-              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
                 {t("food.noMealsToday")}
               </Text>
             </View>
@@ -1216,17 +1216,17 @@ export default function FoodScreen() {
                     />
                     <View className="flex-1 pr-2">
                       <Text
-                        style={{ color: THEME.ink, fontSize: 14, fontWeight: "700" }}
+                        style={{ color: THEME.text, fontSize: 14, fontWeight: "700" }}
                         numberOfLines={1}
                       >
                         {t(`slot.${slot}`)}
-                        <Text style={{ color: THEME.muted, fontWeight: "500" }}>
+                        <Text style={{ color: THEME.textMuted, fontWeight: "500" }}>
                           {"  "}
                           {formatTime(meal.logged_at)}
                         </Text>
                       </Text>
                       <Text
-                        style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}
+                        style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}
                         numberOfLines={2}
                       >
                         {meal.display_name}
@@ -1235,12 +1235,12 @@ export default function FoodScreen() {
                     <Text
                       style={[
                         TABULAR,
-                        { color: THEME.ink, fontSize: 15, fontWeight: "800" },
+                        { color: THEME.text, fontSize: 15, fontWeight: "800" },
                       ]}
                     >
                       {Math.round(meal.calculated_carbs_g)}
                       <Text
-                        style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}
+                        style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}
                       >
                         {t("common.grams")}
                       </Text>
@@ -1317,7 +1317,7 @@ export default function FoodScreen() {
             </View>
           ) : rankedTemplates.length === 0 ? (
             <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
-              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
                 {t("templates.empty")}
               </Text>
               <Pressable
@@ -1364,13 +1364,13 @@ export default function FoodScreen() {
                   />
                   <View className="flex-1 pr-2">
                     <Text
-                      style={{ color: THEME.ink, fontSize: 14, fontWeight: "700" }}
+                      style={{ color: THEME.text, fontSize: 14, fontWeight: "700" }}
                       numberOfLines={1}
                     >
                       {entry.template.name}
                     </Text>
                     <Text
-                      style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}
+                      style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}
                       numberOfLines={1}
                     >
                       {t("templates.itemCount", { count: entry.items.length })}
@@ -1379,12 +1379,12 @@ export default function FoodScreen() {
                   <Text
                     style={[
                       TABULAR,
-                      { color: THEME.ink, fontSize: 15, fontWeight: "800" },
+                      { color: THEME.text, fontSize: 15, fontWeight: "800" },
                     ]}
                   >
                     {Math.round(entry.carbs_g)}
                     <Text
-                      style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}
+                      style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}
                     >
                       {t("common.grams")}
                     </Text>
@@ -1469,13 +1469,13 @@ export default function FoodScreen() {
                   radius={9}
                 />
                 <Text
-                  style={{ color: THEME.ink, fontSize: 13, marginLeft: 8, maxWidth: 150 }}
+                  style={{ color: THEME.text, fontSize: 13, marginLeft: 8, maxWidth: 150 }}
                   numberOfLines={1}
                 >
                   {r.food ? foodName(r.food, lang) : r.name}
                 </Text>
                 <Text
-                  style={[TABULAR, { color: THEME.muted, fontSize: 11, marginLeft: 8 }]}
+                  style={[TABULAR, { color: THEME.textMuted, fontSize: 11, marginLeft: 8 }]}
                 >
                   {Math.round(r.carbs_g)}
                   {t("common.grams")}
@@ -1512,7 +1512,7 @@ export default function FoodScreen() {
                   {plateFor(tile.sel, 34)}
                   <Text
                     style={{
-                      color: THEME.ink,
+                      color: THEME.text,
                       fontSize: 12,
                       fontWeight: "700",
                       marginTop: 8,
@@ -1522,7 +1522,7 @@ export default function FoodScreen() {
                     {titleFor(tile.sel)}
                   </Text>
                   <Text
-                    style={[TABULAR, { color: THEME.muted, fontSize: 11, marginTop: 2 }]}
+                    style={[TABULAR, { color: THEME.textMuted, fontSize: 11, marginTop: 2 }]}
                   >
                     {tile.count}
                   </Text>

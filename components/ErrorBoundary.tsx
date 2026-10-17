@@ -81,13 +81,13 @@ function ErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }
       >
         <IconTile icon="warning-outline" size={56} radius={18} style={{ marginBottom: 18 }} />
         <Text
-          style={{ color: THEME.ink, fontSize: 19, fontWeight: "800", textAlign: "center" }}
+          style={{ color: THEME.text, fontSize: 19, fontWeight: "800", textAlign: "center" }}
         >
           {i18n.t("errorBoundary.title")}
         </Text>
         <Text
           style={{
-            color: THEME.muted,
+            color: THEME.textMuted,
             fontSize: 13,
             textAlign: "center",
             marginTop: 8,
@@ -103,11 +103,11 @@ function ErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }
               borderWidth: 1,
               borderColor: THEME.border,
               borderRadius: 12,
-              backgroundColor: THEME.glass,
+              backgroundColor: THEME.surface,
               padding: 10,
             }}
           >
-            <Text style={{ color: THEME.muted, fontSize: 11 }} selectable>
+            <Text style={{ color: THEME.textMuted, fontSize: 11 }} selectable>
               {String(error.stack || error.message || error)}
             </Text>
           </ScrollView>

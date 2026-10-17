@@ -41,7 +41,7 @@ import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
 import { formatDate, formatLocale, formatTime } from "../../lib/format";
-import { GLUCOSE_RICH, TABULAR, THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
@@ -66,7 +66,7 @@ function HealthDetailRow({
 }) {
   return (
     <View className="flex-row items-start">
-      <Ionicons name={icon} size={16} color={THEME.muted} style={{ marginTop: 1 }} />
+      <Ionicons name={icon} size={16} color={THEME.textMuted} style={{ marginTop: 1 }} />
       <View className="flex-1 ml-2.5">
         <Text className="text-ink text-xs font-semibold">{title}</Text>
         <Text className="text-mut text-xs mt-0.5 leading-5">{body}</Text>
@@ -510,9 +510,9 @@ export default function DataSettings() {
         onPress={onExport}
         right={
           exporting ? (
-            <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+            <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} />
           ) : !isProUser ? (
-            <Ionicons name="lock-closed" size={16} color={THEME.muted} />
+            <Ionicons name="lock-closed" size={16} color={THEME.textMuted} />
           ) : undefined
         }
       />
@@ -523,9 +523,9 @@ export default function DataSettings() {
         onPress={onExportPdf}
         right={
           exportingPdf ? (
-            <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+            <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} />
           ) : !isProUser ? (
-            <Ionicons name="lock-closed" size={16} color={THEME.muted} />
+            <Ionicons name="lock-closed" size={16} color={THEME.textMuted} />
           ) : undefined
         }
       />
@@ -554,11 +554,11 @@ export default function DataSettings() {
             className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1"
             style={{ opacity: 0.5 }}
           >
-            <Ionicons name="heart-outline" size={19} color={THEME.muted} />
+            <Ionicons name="heart-outline" size={19} color={THEME.textMuted} />
             <Text className="flex-1 ml-3 font-medium text-ink">
               {t("settings.healthWrite", { health: healthName })}
             </Text>
-            <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+            <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} />
           </View>
         </>
       ) : showsHealthUpdateRow ? (
@@ -593,7 +593,7 @@ export default function DataSettings() {
               <Ionicons
                 name={healthDetailsOpen ? "chevron-up" : "chevron-down"}
                 size={16}
-                color={THEME.muted}
+                color={THEME.textMuted}
               />
             </View>
             <Text className="text-mut text-xs mt-2 leading-5">
@@ -635,7 +635,7 @@ export default function DataSettings() {
           </Pressable>
           <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
             <View className="flex-row items-center">
-              <Ionicons name="heart-outline" size={19} color={THEME.muted} />
+              <Ionicons name="heart-outline" size={19} color={THEME.textMuted} />
               <Text className="flex-1 ml-3 font-medium text-ink">
                 {t("settings.healthWrite", { health: healthName })}
               </Text>
@@ -646,11 +646,10 @@ export default function DataSettings() {
                 <Switch
                   value={healthWrite}
                   onValueChange={onToggleHealthWrite}
-                  trackColor={{ true: THEME.accent, false: THEME.border }}
-                  thumbColor={THEME.ink}
+                  {...switchColors()}
                 />
               ) : (
-                <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+                <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} />
               )}
             </View>
             <Text className="text-mut text-xs mt-2">
@@ -712,7 +711,7 @@ export default function DataSettings() {
       <SectionLabel>{t("settings.analytics.section")}</SectionLabel>
       <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
         <View className="flex-row items-center">
-          <Ionicons name="stats-chart-outline" size={19} color={THEME.muted} />
+          <Ionicons name="stats-chart-outline" size={19} color={THEME.textMuted} />
           <Text className="flex-1 ml-3 font-medium text-ink">
             {t("settings.analytics.title")}
           </Text>
@@ -720,19 +719,18 @@ export default function DataSettings() {
             <Switch
               value={analyticsOn}
               onValueChange={onToggleAnalytics}
-              trackColor={{ true: THEME.accent, false: THEME.border }}
-              thumbColor={THEME.ink}
+              {...switchColors()}
               accessibilityLabel={t("settings.analytics.title")}
             />
           ) : (
-            <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+            <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} />
           )}
         </View>
         <Text className="text-mut text-xs mt-2">{t("settings.analytics.hint")}</Text>
       </View>
       <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-2 mt-1">
         <View className="flex-row items-center">
-          <Ionicons name="finger-print-outline" size={19} color={THEME.muted} />
+          <Ionicons name="finger-print-outline" size={19} color={THEME.textMuted} />
           <Text className="flex-1 ml-3 font-medium text-ink">
             {t("settings.analytics.installId")}
           </Text>
@@ -746,7 +744,7 @@ export default function DataSettings() {
             <Ionicons
               name="share-outline"
               size={20}
-              color={installId ? THEME.accent : THEME.muted}
+              color={installId ? THEME.accent : THEME.textMuted}
             />
           </Pressable>
         </View>
@@ -790,9 +788,9 @@ export default function DataSettings() {
           </Text>
         </View>
         {deletingServer ? (
-          <Ionicons name="hourglass-outline" size={18} color={THEME.muted} />
+          <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} />
         ) : (
-          <DirIcon name="chevron-forward" size={18} color={THEME.muted} />
+          <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
         )}
       </Pressable>
 
@@ -801,13 +799,12 @@ export default function DataSettings() {
           <SectionLabel>{t("settings.developerSection")}</SectionLabel>
           <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1">
             <View className="flex-row items-center">
-              <Ionicons name="construct-outline" size={19} color={THEME.muted} />
+              <Ionicons name="construct-outline" size={19} color={THEME.textMuted} />
               <Text className="flex-1 ml-3 font-medium text-ink">{t("settings.simulatePro")}</Text>
               <Switch
                 value={isProUser}
                 onValueChange={onToggleSimPro}
-                trackColor={{ true: THEME.accent, false: THEME.border }}
-                thumbColor={THEME.ink}
+                {...switchColors()}
               />
             </View>
             <Text className="text-mut text-xs mt-2">{t("settings.simulateProHint")}</Text>

@@ -8,7 +8,8 @@ import {
   insulinProductById,
   productsByCategory,
 } from "../lib/insulinCatalog";
-import { THEME } from "../lib/theme/tokens";
+import { ELEVATION, THEME } from "../lib/theme/tokens";
+import { withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
 import { useLayout } from "../lib/useLayout";
@@ -113,7 +114,7 @@ export function InsulinProductPicker({
         >
           {displayText}
         </Text>
-        <Ionicons name="chevron-down" size={16} color={THEME.muted} />
+        <Ionicons name="chevron-down" size={16} color={THEME.textMuted} />
       </Pressable>
 
       {selectedProduct && !isOther ? (
@@ -149,12 +150,8 @@ export function InsulinProductPicker({
             style={[
               {
                 maxHeight: "80%",
-                backgroundColor: THEME.sheet,
-                shadowColor: "#000",
-                shadowOpacity: 0.5,
-                shadowRadius: 28,
-                shadowOffset: { width: 0, height: 12 },
-                elevation: 16,
+                backgroundColor: THEME.surfaceRaised,
+                ...ELEVATION.sheet,
               },
               isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
@@ -215,7 +212,7 @@ export function InsulinOtherField({
         value={value ?? ""}
         onChangeText={(text) => onChange(text.length > 0 ? text : null)}
         placeholder={t("insulinPicker.otherPlaceholder")}
-        placeholderTextColor="rgba(137,163,176,0.7)"
+        placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
         maxLength={40}
         returnKeyType="done"
         accessibilityLabel={label ?? t("insulinPicker.otherPlaceholder")}

@@ -90,16 +90,16 @@ export function TrialCard() {
     >
       <IconTile icon="sparkles" size={34} radius={11} hero />
       <View style={{ flex: 1, marginHorizontal: 12 }}>
-        <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800", lineHeight: 19 }}>
+        <Text style={{ color: THEME.text, fontSize: 14, fontWeight: "800", lineHeight: 19 }}>
           {title}
         </Text>
         {sub ? (
-          <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 2 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 }}>
             {sub}
           </Text>
         ) : null}
       </View>
-      <DirIcon name="chevron-forward" size={18} color={THEME.muted} />
+      <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
     </Pressable>
   );
 }

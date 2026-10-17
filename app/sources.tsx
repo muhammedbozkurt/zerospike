@@ -105,22 +105,22 @@ function SourcesScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginBottom: 14 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 }}>
           {t("sources.intro")}
         </Text>
 
         {/* The arithmetic, in words */}
         <GlassCard glow style={{ marginBottom: 18 }}>
-          <Text style={{ color: THEME.ink, fontWeight: "800", marginBottom: 6 }}>
+          <Text style={{ color: THEME.text, fontWeight: "800", marginBottom: 6 }}>
             {t("sources.methodTitle")}
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 21 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 21 }}>
             {t("sources.method")}
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 17, marginTop: 12 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 17, marginTop: 12 }}>
             {t("sources.methodNote")}
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 17, marginTop: 8 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 17, marginTop: 8 }}>
             {t("sources.iobNote")}
           </Text>
         </GlassCard>
@@ -140,10 +140,10 @@ function SourcesScreen() {
             accessibilityHint={t("sources.openHint")}
           >
             <GlassCard style={{ marginBottom: 8 }}>
-              <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "800" }}>
+              <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "800" }}>
                 {ref.org}
               </Text>
-              <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}>
                 {t(ref.labelKey)}
               </Text>
               <View className="flex-row items-center mt-2">
@@ -161,7 +161,7 @@ function SourcesScreen() {
           </Pressable>
         ))}
 
-        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 6, paddingHorizontal: 4 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 6, paddingHorizontal: 4 }}>
           {t("sources.openHint")}
         </Text>
       </ScrollView>

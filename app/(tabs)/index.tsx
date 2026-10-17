@@ -202,7 +202,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { DirIcon } from "../../components/DirIcon";
 import Animated from "react-native-reanimated";
 import { listEntering, PressableScale } from "../../lib/theme/motion";
-import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS, ELEVATION, HIT_TARGET } from "../../lib/theme/tokens";
+import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS, ELEVATION, HIT_TARGET, switchColors } from "../../lib/theme/tokens";
 import {
   AppBackground,
   GlassCard,
@@ -1002,7 +1002,7 @@ export default function DashboardScreen() {
       todayAvg,
       todayReadings,
       todayStatus,
-      todayColor: todayStatus ? RICH_BY_STATUS[todayStatus] : THEME.muted,
+      todayColor: todayStatus ? RICH_BY_STATUS[todayStatus] : THEME.textMuted,
       todayBasalRecord,
       todayBolusTotal: Math.round(todayBolusTotal * 100) / 100,
       todayBasalTotal: Math.round(todayBasalTotal * 100) / 100,
@@ -1019,10 +1019,10 @@ export default function DashboardScreen() {
       avgColor:
         weekAvg != null && activeProfile
           ? STATUS_COLOR[classifyGlucose(weekAvg, "manual", activeProfile)]
-          : THEME.ink,
+          : THEME.text,
       tirColor:
         weekTIR == null
-          ? THEME.ink
+          ? THEME.text
           : weekTIR >= 70
             ? STATUS_COLOR.normal
             : weekTIR >= 50
@@ -1660,7 +1660,7 @@ export default function DashboardScreen() {
   const renderItem = useCallback(
     ({ item, index }: { item: JournalEntry; index: number }) =>
       activeProfile ? (
-        <View style={journalPanelSide}>
+        <View style={journalPanelSide()}>
           <Animated.View entering={listEntering.delay(Math.min(index, 8) * 40)}>
             <JournalItem
               entry={item}
@@ -1792,14 +1792,14 @@ export default function DashboardScreen() {
           <GlucoseRing
             display="-"
             caption={glucoseUnitLabel(unit)}
-            color={THEME.muted}
-            gradientTo={THEME.muted}
+            color={THEME.textMuted}
+            gradientTo={THEME.textMuted}
             fraction={0}
             size={132}
           />
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: 12,
               lineHeight: 17,
               textAlign: "center",
@@ -1814,7 +1814,7 @@ export default function DashboardScreen() {
 
       <GlassCard accent style={{ marginBottom: 12, gap: 8 }}>
         <Text
-          style={{ color: THEME.muted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
+          style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
         >
           {upper(t("dashboard.startTitle", { n: startSteps.length }))}
         </Text>
@@ -1836,7 +1836,7 @@ export default function DashboardScreen() {
                 justifyContent: "center",
                 borderWidth: 1,
                 borderColor: THEME.border,
-                backgroundColor: THEME.glass,
+                backgroundColor: THEME.surface,
               }}
             >
               <Text style={[TABULAR, { color: THEME.accent, fontSize: 11, fontWeight: "800" }]}>
@@ -1845,14 +1845,14 @@ export default function DashboardScreen() {
             </View>
             <IconTile icon={step.icon} size={38} radius={12} hero />
             <Text
-              style={{ color: THEME.ink, fontSize: 14, fontWeight: "700", flex: 1 }}
+              style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flex: 1 }}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.85}
             >
               {step.label}
             </Text>
-            <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
+            <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
           </Pressable>
         ))}
         <GradientCTA
@@ -1872,7 +1872,7 @@ export default function DashboardScreen() {
     // inside the container instead.
     <View className={journalEntries.length > 0 ? "" : "pb-2"}>
       <View className="flex-row items-center justify-between mb-4">
-        <Text style={{ color: THEME.ink, fontSize: 24, fontWeight: "800" }}>
+        <Text style={{ color: THEME.text, fontSize: 24, fontWeight: "800" }}>
           {t("common.today")}
         </Text>
         <View className="flex-row items-center" style={{ gap: 10 }}>
@@ -1895,7 +1895,7 @@ export default function DashboardScreen() {
             hitSlop={8}
             accessibilityLabel={t("sos.title")}
           >
-            <IconTile icon="medical" size={32} radius={10} tint="#ff7a8a" />
+            <IconTile icon="medical" size={32} radius={10} tint={THEME.danger} />
           </Pressable>
           <ProfileSwitcher />
         </View>
@@ -1926,14 +1926,14 @@ export default function DashboardScreen() {
               stays out of the way for the FirstRunGuide branch above. */}
           {lastGlucose ? (
             <GlassCard
-              glow={todayAvg != null ? todayColor : THEME.muted}
+              glow={todayAvg != null ? todayColor : THEME.textMuted}
               style={{ paddingVertical: 14, marginBottom: 12 }}
             >
               <View className="flex-row items-center justify-between px-1 mb-1">
                 <Text
                   numberOfLines={1}
                   style={{
-                    color: THEME.muted,
+                    color: THEME.textMuted,
                     fontSize: 11,
                     letterSpacing: 1.3,
                     fontWeight: "800",
@@ -1966,15 +1966,15 @@ export default function DashboardScreen() {
                       ? t("dashboard.todayReadingCount", { count: todayReadings })
                       : t("dashboard.todayNoReading")
                   }
-                  color={todayAvg != null ? todayColor : THEME.muted}
-                  gradientTo={todayAvg != null ? undefined : THEME.muted}
+                  color={todayAvg != null ? todayColor : THEME.textMuted}
+                  gradientTo={todayAvg != null ? undefined : THEME.textMuted}
                   fraction={todayAvg != null ? undefined : 0}
                   size={152}
                 />
               </View>
               <Text
                 numberOfLines={1}
-                style={{ color: THEME.muted, fontSize: 11, textAlign: "center", marginTop: 10 }}
+                style={{ color: THEME.textMuted, fontSize: 11, textAlign: "center", marginTop: 10 }}
               >
                 {t("dashboard.lastReadingLine", {
                   // "value unit · when" is one purely-LTR run (digits + unit +
@@ -1998,7 +1998,7 @@ export default function DashboardScreen() {
           {hasWeekData ? (
             <View style={{ marginBottom: 12 }}>
               <View className="flex-row items-center justify-between mb-1.5 px-1">
-                <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "700" }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "700" }}>
                   {t("dashboard.thisWeek")}
                 </Text>
                 {weekSparkline.length > 1 ? (
@@ -2075,7 +2075,7 @@ export default function DashboardScreen() {
             <View className="flex-row items-center" style={{ gap: 8, marginBottom: 12 }}>
               <Ionicons name="restaurant-outline" size={18} color={THEME.accent} />
               <Text
-                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", flex: 1 }}
+                style={{ color: THEME.text, fontSize: 13, fontWeight: "700", flex: 1 }}
                 numberOfLines={2}
               >
                 {t("dashboard.quickPostMealTitle")}
@@ -2114,7 +2114,7 @@ export default function DashboardScreen() {
                   width: "100%",
                   minHeight: 48,
                   borderRadius: RADIUS.full,
-                  backgroundColor: THEME.accent,
+                  backgroundColor: THEME.accentFill,
                   alignItems: "center",
                   justifyContent: "center",
                   opacity: startingTimer ? 0.6 : 1,
@@ -2124,7 +2124,7 @@ export default function DashboardScreen() {
             >
               <Text
                 numberOfLines={1}
-                style={{ color: "#00171c", fontWeight: "800", fontSize: 15 }}
+                style={{ color: THEME.accentOnFill, fontWeight: "800", fontSize: 15 }}
               >
                 {t("dashboard.startedEating")}
               </Text>
@@ -2140,7 +2140,7 @@ export default function DashboardScreen() {
         <View className="rounded-2xl border border-hair bg-glass p-3.5 mb-3 flex-row items-center">
           <Ionicons name="phone-portrait-outline" size={18} color={THEME.accent} />
           <View className="flex-1 ml-2.5">
-            <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}>
+            <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}>
               {t("dashboard.widgetTipTitle")}
             </Text>
             <Pressable
@@ -2168,7 +2168,7 @@ export default function DashboardScreen() {
             accessibilityRole="button"
             accessibilityLabel={t("common.close")}
           >
-            <Ionicons name="close" size={16} color={THEME.muted} />
+            <Ionicons name="close" size={16} color={THEME.textMuted} />
           </Pressable>
         </View>
       ) : null}
@@ -2205,25 +2205,25 @@ export default function DashboardScreen() {
                 <Ionicons name="hourglass-outline" size={11} color={THEME.accent} />
                 <Text
                   numberOfLines={1}
-                  style={{ color: THEME.muted, fontSize: 10, flexShrink: 1 }}
+                  style={{ color: THEME.textMuted, fontSize: 10, flexShrink: 1 }}
                 >
                   {t("dashboard.activeInsulin")}
                 </Text>
                 {/* "What does this number include?" now opens the full sheet
                     (components/IobInfoSheet.tsx) - the whole card is the
                     tap target, this icon is only the affordance. */}
-                <Ionicons name="information-circle-outline" size={12} color={THEME.muted} />
+                <Ionicons name="information-circle-outline" size={12} color={THEME.textMuted} />
               </View>
               <Text
                 numberOfLines={1}
-                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", marginTop: 2 }}
+                style={{ color: THEME.text, fontSize: 13, fontWeight: "700", marginTop: 2 }}
               >
                 {num(iob)} {t("common.units")}
               </Text>
               {/* Bolus only: basal is a background dose, not a stacking risk
                   the way a fresh mealtime dose is, so it stays off this
                   headline figure entirely (see lib/iob.ts's own note). */}
-              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 9, marginTop: 1 }}>
+              <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 9, marginTop: 1 }}>
                 {t("dashboard.activeInsulinBolusOnly")}
               </Text>
             </Pressable>
@@ -2256,11 +2256,11 @@ export default function DashboardScreen() {
                         : "notifications-outline"
                   }
                   size={11}
-                  color={nextReminder.mode === "alarm" ? THEME.accent : THEME.muted}
+                  color={nextReminder.mode === "alarm" ? THEME.accent : THEME.textMuted}
                 />
                 <Text
                   numberOfLines={1}
-                  style={{ color: THEME.muted, fontSize: 10, flexShrink: 1 }}
+                  style={{ color: THEME.textMuted, fontSize: 10, flexShrink: 1 }}
                 >
                   {t("dashboard.nextReminder")}
                 </Text>
@@ -2273,7 +2273,7 @@ export default function DashboardScreen() {
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.8}
-                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700", marginTop: 2 }}
+                style={{ color: THEME.text, fontSize: 13, fontWeight: "700", marginTop: 2 }}
               >
                 {nextReminderLabel(nextReminder)}
               </Text>
@@ -2324,15 +2324,15 @@ export default function DashboardScreen() {
         >
           <View className="flex-row items-center justify-between">
             <IconTile icon="stats-chart" size={28} radius={9} />
-            <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
+            <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
           </View>
           <Text
             numberOfLines={1}
-            style={{ color: THEME.ink, fontWeight: "700", fontSize: 13, marginTop: 8 }}
+            style={{ color: THEME.text, fontWeight: "700", fontSize: 13, marginTop: 8 }}
           >
             {t("insights.title")}
           </Text>
-          <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
+          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10, marginTop: 2 }}>
             {t("insights.cardSub")}
           </Text>
         </Pressable>
@@ -2349,7 +2349,7 @@ export default function DashboardScreen() {
               <IconTile icon="pulse" size={28} radius={9} />
               {!isProUser ? (
                 <View className="rounded-full bg-brand px-2 py-0.5">
-                  <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
+                  <Text className="text-onAccent text-[10px] font-bold">{t("common.pro")}</Text>
                 </View>
               ) : cgmOn === null ? (
                 // The persisted preference has not been read yet: a Pro user
@@ -2361,15 +2361,14 @@ export default function DashboardScreen() {
                 <Switch
                   value={cgmOn}
                   onValueChange={toggleCgm}
-                  trackColor={{ true: THEME.accent, false: THEME.border }}
-                  thumbColor={THEME.ink}
+                  {...switchColors()}
                   style={{ transform: [{ scale: 0.75 }], marginVertical: -6 }}
                 />
               )}
             </View>
             <Text
               numberOfLines={1}
-              style={{ color: THEME.ink, fontWeight: "700", fontSize: 13, marginTop: 8 }}
+              style={{ color: THEME.text, fontWeight: "700", fontSize: 13, marginTop: 8 }}
             >
               {HEALTH_NAME}
             </Text>
@@ -2378,7 +2377,7 @@ export default function DashboardScreen() {
             ) : (
               <Text
                 numberOfLines={isProUser ? 1 : 2}
-                style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}
+                style={{ color: THEME.textMuted, fontSize: 10, marginTop: 2 }}
               >
                 {!isProUser
                   ? t(proCta.key, proCta.params)
@@ -2403,7 +2402,7 @@ export default function DashboardScreen() {
         <View className="flex-row items-start rounded-2xl border border-hair bg-glass px-3.5 py-3 mb-3">
           <View style={{ flex: 1 }}>
             <Text
-              style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}
+              style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}
               numberOfLines={1}
             >
               {t("dashboard.finishSetupTitle")}
@@ -2426,7 +2425,7 @@ export default function DashboardScreen() {
                     size={12}
                     color={s.done ? GLUCOSE_RICH.target : THEME.accent}
                   />
-                  <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "700" }}>
+                  <Text style={{ color: THEME.text, fontSize: 11, fontWeight: "700" }}>
                     {s.label}
                   </Text>
                 </Pressable>
@@ -2439,7 +2438,7 @@ export default function DashboardScreen() {
             accessibilityRole="button"
             accessibilityLabel={t("common.close")}
           >
-            <Ionicons name="close" size={16} color={THEME.muted} />
+            <Ionicons name="close" size={16} color={THEME.textMuted} />
           </Pressable>
         </View>
       ) : null}
@@ -2470,7 +2469,7 @@ export default function DashboardScreen() {
                 hitSlop={10}
                 accessibilityLabel={t("common.close")}
               >
-                <Ionicons name="close" size={16} color={THEME.muted} />
+                <Ionicons name="close" size={16} color={THEME.textMuted} />
               </Pressable>
             </View>
           ) : null}
@@ -2512,7 +2511,7 @@ export default function DashboardScreen() {
                   variant="secondary"
                   onPress={openFullJournal}
                   className="border border-hair"
-                  icon={<Ionicons name="arrow-forward" size={16} color={THEME.ink} />}
+                  icon={<Ionicons name="arrow-forward" size={16} color={THEME.text} />}
                 />
               </JournalPanelBottom>
               <JournalDisclaimerNote />
@@ -2714,7 +2713,7 @@ function PostMealCountdown({
         <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
           <Ionicons name="time" size={16} color={THEME.accent} />
           <Text
-            style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", flex: 1 }}
+            style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", flex: 1 }}
             numberOfLines={1}
           >
             {/* The feature name alone. The window length used to be appended
@@ -2741,12 +2740,12 @@ function PostMealCountdown({
               borderRadius: 15,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: THEME.glass,
+              backgroundColor: THEME.surface,
               borderWidth: 1,
               borderColor: THEME.border,
             }}
           >
-            <Ionicons name="close" size={15} color={THEME.muted} />
+            <Ionicons name="close" size={15} color={THEME.textMuted} />
           </Pressable>
         </View>
       </View>
@@ -2767,12 +2766,12 @@ function PostMealCountdown({
             accessibilityLabel={restartLabel}
             style={{ flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 }}
           >
-            <Ionicons name="refresh" size={13} color={THEME.muted} />
+            <Ionicons name="refresh" size={13} color={THEME.textMuted} />
             {/* Two lines allowed: the longest translations ("Für die Mahlzeit um
                 14:30 neu starten") do not fit one line at this size, and this is
                 the only action on the row. */}
             <Text
-              style={{ color: THEME.muted, fontSize: 11, fontWeight: "700", flexShrink: 1 }}
+              style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "700", flexShrink: 1 }}
               numberOfLines={2}
             >
               {restartLabel}
@@ -2800,7 +2799,7 @@ function PostMealCountdown({
           style={{
             height: "100%",
             width: `${Math.round(progress * 100)}%`,
-            backgroundColor: THEME.accent,
+            backgroundColor: THEME.accentFill,
             borderRadius: 3,
           }}
         />

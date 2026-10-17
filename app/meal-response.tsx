@@ -72,7 +72,7 @@ function ChipSkeleton({ label }: { label: string }) {
   return (
     <View
       className="rounded-2xl p-4"
-      style={{ flex: 1, backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }}
+      style={{ flex: 1, backgroundColor: THEME.surface, borderWidth: 1, borderColor: THEME.border }}
     >
       <View className="flex-row items-center mb-1">
         <Text
@@ -129,7 +129,7 @@ function MealResponseSkeleton({ isWide }: { isWide: boolean }) {
       <GlassCard style={{ marginBottom: 12 }}>
         <Text
           style={{
-            color: THEME.muted,
+            color: THEME.textMuted,
             fontSize: 11,
             letterSpacing: 1.3,
             fontWeight: "800",
@@ -141,7 +141,7 @@ function MealResponseSkeleton({ isWide }: { isWide: boolean }) {
         <Skeleton height={100} radius={12} />
         <View className="flex-row justify-between mt-1">
           {["0", "1", "2", "3"].map((h) => (
-            <Text key={h} style={{ color: THEME.muted, fontSize: 10 }}>
+            <Text key={h} style={{ color: THEME.textMuted, fontSize: 10 }}>
               {h}
             </Text>
           ))}
@@ -310,7 +310,7 @@ export default function MealResponseScreen() {
         </ScrollView>
       ) : !meal ? (
         <View className="flex-1 items-center justify-center px-8">
-          <Text style={{ color: THEME.muted, textAlign: "center" }}>
+          <Text style={{ color: THEME.textMuted, textAlign: "center" }}>
             {t("mealResponse.notFound")}
           </Text>
         </View>
@@ -344,10 +344,10 @@ export default function MealResponseScreen() {
                 />
               )}
               <View className="flex-1">
-                <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }} numberOfLines={2}>
+                <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800" }} numberOfLines={2}>
                   {displayName}
                 </Text>
-                <Text style={[TABULAR, { color: THEME.muted, fontSize: 12, marginTop: 3 }]}>
+                <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 12, marginTop: 3 }]}>
                   {Math.round(meal.calculated_carbs_g)} {t("common.grams")} ·{" "}
                   {relativeDay(meal.logged_at, { today: t("common.today"), yesterday: t("common.yesterday") })}{" "}
                   {formatTime(meal.logged_at)}
@@ -361,7 +361,7 @@ export default function MealResponseScreen() {
                 <GlassCard style={{ marginBottom: 12 }}>
                   <Text
                     style={{
-                      color: THEME.muted,
+                      color: THEME.textMuted,
                       fontSize: 11,
                       letterSpacing: 1.3,
                       fontWeight: "800",
@@ -382,7 +382,7 @@ export default function MealResponseScreen() {
                   />
                   <View className="flex-row justify-between mt-1">
                     {["0", "1", "2", "3"].map((h) => (
-                      <Text key={h} style={{ color: THEME.muted, fontSize: 10 }}>
+                      <Text key={h} style={{ color: THEME.textMuted, fontSize: 10 }}>
                         {h}
                       </Text>
                     ))}
@@ -415,7 +415,7 @@ export default function MealResponseScreen() {
                   <>
                     <Text
                       style={{
-                        color: THEME.muted,
+                        color: THEME.textMuted,
                         fontSize: 11,
                         letterSpacing: 1.3,
                         fontWeight: "800",
@@ -440,7 +440,7 @@ export default function MealResponseScreen() {
                             }}
                           >
                             <Text
-                              style={{ color: THEME.muted, fontSize: 11, width: 88 }}
+                              style={{ color: THEME.textMuted, fontSize: 11, width: 88 }}
                               numberOfLines={1}
                             >
                               {relativeDay(h.meal.logged_at, {
@@ -466,7 +466,7 @@ export default function MealResponseScreen() {
                               numberOfLines={1}
                               style={[
                                 TABULAR,
-                                { color: THEME.ink, fontSize: 11, fontWeight: "700", width: 64, textAlign: "right" },
+                                { color: THEME.text, fontSize: 11, fontWeight: "700", width: 64, textAlign: "right" },
                               ]}
                             >
                               {fmtDelta(h.response?.delta ?? null)}
@@ -482,17 +482,17 @@ export default function MealResponseScreen() {
                         className="rounded-2xl bg-glass border border-hair p-4 flex-row items-center active:opacity-80"
                         style={{ minHeight: HIT_TARGET + 20 }}
                       >
-                        <IconTile icon="lock-closed" size={36} radius={12} tint={THEME.muted} style={{ marginRight: 12 }} />
+                        <IconTile icon="lock-closed" size={36} radius={12} tint={THEME.textMuted} style={{ marginRight: 12 }} />
                         <View className="flex-1">
-                          <Text style={{ color: THEME.ink, fontWeight: "700" }}>
+                          <Text style={{ color: THEME.text, fontWeight: "700" }}>
                             {t("mealResponse.previousTitle")}
                           </Text>
-                          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
+                          <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}>
                             {t("paywall.limitTitleMealResponse")}
                           </Text>
                         </View>
                         <View className="rounded-full bg-brand px-2 py-0.5">
-                          <Text className="text-black text-[10px] font-bold">{t("common.pro")}</Text>
+                          <Text className="text-onAccent text-[10px] font-bold">{t("common.pro")}</Text>
                         </View>
                       </Pressable>
                     )}
@@ -501,13 +501,13 @@ export default function MealResponseScreen() {
               </>
             ) : (
               <View className="items-center py-10">
-                <Ionicons name="pulse-outline" size={40} color={THEME.muted} />
-                <Text style={{ color: THEME.ink, textAlign: "center", marginTop: 14, fontWeight: "700" }}>
+                <Ionicons name="pulse-outline" size={40} color={THEME.textMuted} />
+                <Text style={{ color: THEME.text, textAlign: "center", marginTop: 14, fontWeight: "700" }}>
                   {t("mealResponse.emptyTitle")}
                 </Text>
                 <Text
                   style={{
-                    color: THEME.muted,
+                    color: THEME.textMuted,
                     textAlign: "center",
                     marginTop: 8,
                     lineHeight: 18,
@@ -523,8 +523,8 @@ export default function MealResponseScreen() {
               className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mt-5"
               style={{ borderColor: GLUCOSE_RICH.high + "4d" }}
             >
-              <Ionicons name="information-circle-outline" size={15} color={THEME.muted} />
-              <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 17, marginLeft: 10, flex: 1 }}>
+              <Ionicons name="information-circle-outline" size={15} color={THEME.textMuted} />
+              <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 17, marginLeft: 10, flex: 1 }}>
                 {t("mealResponse.disclaimer")}
               </Text>
             </View>

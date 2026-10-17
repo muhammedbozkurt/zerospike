@@ -4,7 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { RADIUS, THEME } from "../lib/theme/tokens";
+import { ELEVATION, RADIUS, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 
 /** Cap for a centered, content-sized dialog card on a tablet (does not
@@ -24,7 +24,7 @@ const DIALOG_MAX_WIDTH = 520;
 export function Tooltip({
   text,
   size = 15,
-  tint = THEME.muted,
+  tint = THEME.textMuted,
   style,
 }: {
   text: string;
@@ -61,8 +61,8 @@ export function Tooltip({
             className="rounded-3xl border border-hair p-4"
             style={[
               {
-                backgroundColor: THEME.sheet,
-                shadowColor: "#000",
+                backgroundColor: THEME.surfaceRaised,
+                shadowColor: ELEVATION.sheet.shadowColor,
                 shadowOpacity: 0.5,
                 shadowRadius: 28,
                 shadowOffset: { width: 0, height: 12 },
@@ -79,7 +79,7 @@ export function Tooltip({
               style={{ maxHeight: 380 }}
               showsVerticalScrollIndicator={false}
             >
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19 }}>
+              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19 }}>
                 {text}
               </Text>
             </ScrollView>
@@ -98,7 +98,7 @@ export function Tooltip({
               }}
             >
               <Text
-                style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}
+                style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}
               >
                 {t("common.close")}
               </Text>

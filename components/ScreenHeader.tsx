@@ -74,17 +74,17 @@ export function ScreenHeader({
               borderRadius: 10,
               borderWidth: 1,
               borderColor: THEME.border,
-              backgroundColor: THEME.glass,
+              backgroundColor: THEME.surface,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <DirIcon name={backIcon} size={14} color={THEME.muted} />
+            <DirIcon name={backIcon} size={14} color={THEME.textMuted} />
           </View>
         </Pressable>
       ) : null}
       <Text
-        style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", flex: 1, textAlign: "left" }}
+        style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flex: 1, textAlign: "left" }}
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}

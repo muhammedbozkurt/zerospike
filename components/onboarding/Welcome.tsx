@@ -57,7 +57,7 @@ function Dot({ active }: { active: boolean }) {
           height: 6,
           borderRadius: RADIUS.full,
           marginHorizontal: 4,
-          backgroundColor: active ? THEME.accent : "rgba(255,255,255,0.18)",
+          backgroundColor: active ? THEME.accentFill : THEME.track,
         },
       ]}
     />
@@ -144,7 +144,7 @@ export function Welcome({ onStart }: { onStart: () => void }) {
               borderRadius: RADIUS["2xl"],
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: THEME.glass,
+              backgroundColor: THEME.surface,
               borderWidth: 1,
               borderColor: withAlpha(THEME.accent, 0.35),
             },
@@ -188,7 +188,7 @@ export function Welcome({ onStart }: { onStart: () => void }) {
                   </View>
                   <Text
                     style={{
-                      color: THEME.ink,
+                      color: THEME.text,
                       fontSize: dense ? 28 : 34,
                       lineHeight: dense ? 34 : 40,
                       fontWeight: "800",
@@ -202,7 +202,7 @@ export function Welcome({ onStart }: { onStart: () => void }) {
                 <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
                   <Text
                     style={{
-                      color: THEME.muted,
+                      color: THEME.textMuted,
                       fontSize: 16,
                       lineHeight: 23,
                       textAlign: "center",

@@ -26,7 +26,7 @@ import {
 } from "../glucose";
 import { num, pct, formatDate, formatTime, formatDateKey } from "../format";
 import { insulinModeOf, insulinModeUsesInsulin } from "../insulinMode";
-import { GLUCOSE_COLORS, GLUCOSE_VERY_LOW } from "../theme/tokens";
+import { FROZEN_GLUCOSE_COLORS as GLUCOSE_COLORS, FROZEN_GLUCOSE_VERY_LOW as GLUCOSE_VERY_LOW } from "./pdfColors";
 import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";

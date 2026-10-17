@@ -131,7 +131,7 @@ export function AnalyticsConsentSheet(): React.ReactElement {
         </View>
       }
     >
-      <Text style={{ color: THEME.ink, fontSize: 14, lineHeight: 21, marginTop: 4, marginBottom: 8 }}>
+      <Text style={{ color: THEME.text, fontSize: 14, lineHeight: 21, marginTop: 4, marginBottom: 8 }}>
         {t("onboarding.analyticsConsentBody")}
       </Text>
     </SheetShell>

@@ -49,19 +49,20 @@ type LoadState =
   | { kind: "duplicate"; ctx: BasalConfirmContext; existing: RecentInjection }
   | { kind: "ready"; ctx: BasalConfirmContext };
 
-const inputStyle = {
+const inputStyle = () =>
+  ({
   borderRadius: RADIUS.md,
   borderWidth: 1,
   borderColor: THEME.border,
-  backgroundColor: THEME.glass,
+  backgroundColor: THEME.surface,
   paddingHorizontal: 14,
   paddingVertical: 12,
-  color: THEME.ink,
-} as const;
+  color: THEME.text,
+  }) as const;
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
       {children}
     </Text>
   );
@@ -318,7 +319,7 @@ function BasalConfirmScreen() {
         {differentProfile ? (
           <Text
             numberOfLines={1}
-            style={{ color: THEME.muted, fontSize: 12, paddingHorizontal: 20, marginTop: -4, marginBottom: 6 }}
+            style={{ color: THEME.textMuted, fontSize: 12, paddingHorizontal: 20, marginTop: -4, marginBottom: 6 }}
           >
             {t("basalConfirm.forProfile", { name: ctx?.profile.name })}
           </Text>
@@ -332,14 +333,14 @@ function BasalConfirmScreen() {
           </View>
         ) : load.kind === "error" ? (
           <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 24 }}>
-            <Text style={{ color: THEME.ink, fontSize: 15, marginBottom: 16 }}>
+            <Text style={{ color: THEME.text, fontSize: 15, marginBottom: 16 }}>
               {t("basalConfirm.loadError")}
             </Text>
             <GradientCTA label={t("common.close")} onPress={dismiss} />
           </View>
         ) : load.kind === "chooseProfile" ? (
           <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 12 }}>
-            <Text style={{ color: THEME.ink, fontSize: 20, fontWeight: "800", marginBottom: 16 }}>
+            <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 16 }}>
               {t("basalConfirm.chooseProfile")}
             </Text>
             <View style={{ gap: 10 }}>
@@ -349,25 +350,25 @@ function BasalConfirmScreen() {
                   onPress={() => selectProfileCandidate(c)}
                   accessibilityRole="button"
                   className="flex-row items-center justify-between"
-                  style={inputStyle}
+                  style={inputStyle()}
                 >
                   <Text
                     numberOfLines={1}
-                    style={{ color: THEME.ink, fontSize: 14, fontWeight: "700", flexShrink: 1 }}
+                    style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flexShrink: 1 }}
                   >
                     {c.profile.name}
                   </Text>
-                  <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
+                  <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
                 </Pressable>
               ))}
             </View>
           </View>
         ) : load.kind === "duplicate" ? (
           <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 24 }}>
-            <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", marginBottom: 8 }}>
+            <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 8 }}>
               {t("basalConfirm.duplicateTitle")}
             </Text>
-            <Text style={{ color: THEME.muted, fontSize: 14, marginBottom: 24 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 24 }}>
               {/* time/n stay separate params (not merged into one, unlike
                   CarbRatioLine): tr and ja embed them non-adjacently inside
                   their own sentence ("{{time}} saatinde {{n}} Ü olarak..."),
@@ -411,10 +412,10 @@ function BasalConfirmScreen() {
           </ScrollView>
         ) : step === "ask" ? (
           <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 12 }}>
-            <Text style={{ color: THEME.ink, fontSize: 20, fontWeight: "800", marginBottom: 10 }}>
+            <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 10 }}>
               {t("basalConfirm.askTitle")}
             </Text>
-            <Text style={{ color: THEME.muted, fontSize: 14, marginBottom: 28 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 28 }}>
               {/* Not a t() template - built straight from three pieces, so the
                   fix is in code, not a locale file: the dose and the time are
                   each their own isolated LTR run (lib/format's LRI/PDI wrap);
@@ -465,10 +466,10 @@ function BasalConfirmScreen() {
             <Pressable
               onPress={() => setTimePickerOpen((v) => !v)}
               className="flex-row items-center mb-5"
-              style={inputStyle}
+              style={inputStyle()}
             >
-              <Ionicons name="time-outline" size={16} color={THEME.muted} />
-              <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+              <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+              <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
                 {relativeDay(loggedAt.toISOString(), {
                   today: t("common.today"),
                   yesterday: t("common.yesterday"),
@@ -506,23 +507,23 @@ function BasalConfirmScreen() {
             <Pressable
               onPress={() => setPicking(true)}
               className="flex-row items-center justify-between mb-6"
-              style={inputStyle}
+              style={inputStyle()}
             >
-              <Text numberOfLines={1} style={{ color: THEME.ink, fontSize: 13, flexShrink: 1 }}>
+              <Text numberOfLines={1} style={{ color: THEME.text, fontSize: 13, flexShrink: 1 }}>
                 {siteSummaryLabel}
               </Text>
-              <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
+              <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
             </Pressable>
 
             {dose > 0 && stepperFields.allValid ? null : (
-              <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 8 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 8 }}>
                 {doseInvalidKind === "range"
                   ? t("settings.rangeOutOfBounds", { min: num(0), max: num(150) })
                   : t("basalConfirm.doseRequired")}
               </Text>
             )}
             {saveError ? (
-              <Text style={{ color: THEME.caution, fontSize: 12, marginBottom: 8 }}>
+              <Text style={{ color: THEME.warning, fontSize: 12, marginBottom: 8 }}>
                 {t("common.saveFailed")}
               </Text>
             ) : null}

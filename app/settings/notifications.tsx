@@ -35,7 +35,7 @@ import {
 import { POST_MEAL_WINDOW_MIN } from "../../lib/postMealTimer";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
-import { GLUCOSE_RICH, THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, THEME, switchColors } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
 
@@ -268,7 +268,7 @@ export default function NotificationSettings() {
           >
             <Ionicons name="notifications-outline" size={18} color={THEME.accent} />
           </View>
-          <Text className="flex-1 ml-3 text-[15px] font-semibold" style={{ color: THEME.ink }}>
+          <Text className="flex-1 ml-3 text-[15px] font-semibold" style={{ color: THEME.text }}>
             {t("settings.notifPermissionRow")}
           </Text>
         </View>
@@ -315,7 +315,7 @@ export default function NotificationSettings() {
             backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
           }}
         >
-          <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+          <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
             {t("reminders.alarmPermissionDenied")}
           </Text>
           <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
@@ -333,8 +333,7 @@ export default function NotificationSettings() {
               <Switch
                 value={prefs.enabled}
                 onValueChange={(v) => updatePrefs({ enabled: v })}
-                trackColor={{ true: THEME.accent, false: THEME.border }}
-                thumbColor={THEME.ink}
+                {...switchColors()}
               />
             }
           />
@@ -355,7 +354,7 @@ export default function NotificationSettings() {
                 backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
               }}
             >
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
                 {permission === "deniedPermanently"
                   ? t("notifications.permissionDeniedPermanently")
                   : t("notifications.permissionDenied")}
@@ -376,10 +375,10 @@ export default function NotificationSettings() {
                 backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
               }}
             >
-              <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "700" }}>
+              <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}>
                 {t("settings.exactAlarmTitle")}
               </Text>
-              <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 17, marginTop: 2, opacity: 0.85 }}>
+              <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 17, marginTop: 2, opacity: 0.85 }}>
                 {t("settings.exactAlarmBody")}
               </Text>
               <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 6 }}>
@@ -403,8 +402,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.postMeal}
                     onValueChange={(v) => updatePrefs({ postMeal: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
+                    {...switchColors()}
                   />
                 }
               />
@@ -436,8 +434,7 @@ export default function NotificationSettings() {
                           value={prefs.postMealAlarm}
                           onValueChange={(v) => void togglePostMealAlarm(v)}
                           disabled={alarmBusy}
-                          trackColor={{ true: THEME.accent, false: THEME.border }}
-                          thumbColor={THEME.ink}
+                          {...switchColors()}
                         />
                       </View>
                       <Text className="text-mut text-xs mt-1">
@@ -470,8 +467,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.idleReminder}
                     onValueChange={(v) => updatePrefs({ idleReminder: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
+                    {...switchColors()}
                   />
                 }
               />
@@ -488,8 +484,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.weekly}
                     onValueChange={(v) => updatePrefs({ weekly: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
+                    {...switchColors()}
                   />
                 }
               />
@@ -511,7 +506,7 @@ export default function NotificationSettings() {
                               on ? "bg-brand" : "bg-glass"
                             }`}
                           >
-                            <Text className={`text-xs font-semibold ${on ? "text-black" : "text-ink"}`}>
+                            <Text className={`text-xs font-semibold ${on ? "text-onAccent" : "text-ink"}`}>
                               {t(`settings.weekdayShort_${d}`)}
                             </Text>
                           </Pressable>
@@ -541,8 +536,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.lowFollowup}
                     onValueChange={(v) => updatePrefs({ lowFollowup: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.ink}
+                    {...switchColors()}
                   />
                 }
               />

@@ -2,7 +2,7 @@ import React from "react";
 import { Platform, View } from "react-native";
 import type { ViewProps, StyleProp, ViewStyle } from "react-native";
 
-import { THEME, RADIUS, glow } from "../../lib/theme/tokens";
+import { THEME, ELEVATION, RADIUS, glow } from "../../lib/theme/tokens";
 
 interface GlassCardProps extends ViewProps {
   /** Colored glow shadow. `true` uses the cyan accent; a hex string tints it to
@@ -51,15 +51,16 @@ export function GlassCard({
           borderRadius: radius,
           borderWidth: 1,
           borderColor: accent ? withAlpha(THEME.accent, 0.35) : THEME.border,
-          backgroundColor: accent ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+          backgroundColor: accent ? withAlpha(THEME.accent, 0.1) : THEME.surface,
           padding: 12,
         },
+        THEME.scheme === "light" && !glowColor ? ELEVATION.card : undefined,
         glowStyle,
         style,
       ]}
       {...rest}
     >
-      {/* top inset highlight - the `inset 0 1px 0 rgba(255,255,255,.06)` line */}
+      {/* top inset highlight - the inset top hairline */}
       <View
         pointerEvents="none"
         style={{
@@ -68,7 +69,7 @@ export function GlassCard({
           left: radius,
           right: radius,
           height: 1,
-          backgroundColor: THEME.glassInset,
+          backgroundColor: THEME.surfaceInset,
           borderTopLeftRadius: radius,
           borderTopRightRadius: radius,
         }}
@@ -84,5 +85,5 @@ export function withAlpha(hex: string, alpha: number): string {
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
+  return `rgba(${r},${g},${b},${alpha})`; // theme-ok
 }

@@ -18,7 +18,8 @@ import type { Reminder, ReminderType } from "../lib/db/types";
 import { Segmented } from "./ui";
 import { InlineTimePicker } from "./InlineTimePicker";
 import { MedNamePicker } from "./MedNamePicker";
-import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow, switchColors } from "../lib/theme/tokens";
+import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
 import {
@@ -28,15 +29,15 @@ import {
 } from "../modules/zerospike-alarmkit";
 import { reminderLabelFields, resolveReminderLabel } from "../lib/reminderLabel";
 
-const inputStyle = {
+const inputStyle = () => ({
   borderRadius: RADIUS.md,
   borderWidth: 1,
   borderColor: THEME.border,
-  backgroundColor: THEME.glass,
+  backgroundColor: THEME.surface,
   paddingHorizontal: 14,
   paddingVertical: 12,
-  color: THEME.ink,
-} as const;
+  color: THEME.text,
+});
 
 const DEFAULT_TIME = "08:00";
 
@@ -46,7 +47,7 @@ const SHEET_MAX_WIDTH = 600;
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
       {children}
     </Text>
   );
@@ -269,7 +270,7 @@ export function ReminderEditSheet({
         className="flex-1"
       >
         <Pressable
-          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={onClose}
           accessible={false}
           focusable={false}
@@ -302,7 +303,7 @@ export function ReminderEditSheet({
             <View className="flex-row items-center justify-between mb-4">
               <Text
                 numberOfLines={1}
-                style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
+                style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
               >
                 {isEdit ? t("reminders.editTitle") : t("reminders.addTitle")}
               </Text>
@@ -313,7 +314,7 @@ export function ReminderEditSheet({
                 accessibilityLabel={t("common.close")}
                 className="p-1"
               >
-                <Ionicons name="close" size={22} color={THEME.muted} />
+                <Ionicons name="close" size={22} color={THEME.textMuted} />
               </Pressable>
             </View>
 
@@ -332,10 +333,10 @@ export function ReminderEditSheet({
               <Pressable
                 onPress={() => setTimePickerOpen((v) => !v)}
                 className="flex-row items-center mb-1"
-                style={inputStyle}
+                style={inputStyle()}
               >
-                <Ionicons name="alarm-outline" size={16} color={THEME.muted} />
-                <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 14 }}>{time}</Text>
+                <Ionicons name="alarm-outline" size={16} color={THEME.textMuted} />
+                <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 14 }}>{time}</Text>
               </Pressable>
               <View style={{ marginBottom: 16 }}>
                 <InlineTimePicker
@@ -351,10 +352,10 @@ export function ReminderEditSheet({
                   value={customLabel}
                   onChangeText={setCustomLabel}
                   placeholder={t("reminders.labelPlaceholder")}
-                  placeholderTextColor={THEME.muted}
+                  placeholderTextColor={THEME.textMuted}
                   accessibilityLabel={t("reminders.labelPlaceholder")}
                   returnKeyType="done"
-                  style={[inputStyle, { marginBottom: 18 }]}
+                  style={[inputStyle(), { marginBottom: 18 }]}
                 />
               ) : type === "med" ? (
                 <MedNamePicker
@@ -369,10 +370,10 @@ export function ReminderEditSheet({
                   value={glucoseName}
                   onChangeText={setGlucoseName}
                   placeholder={t("reminders.namePlaceholderOptional")}
-                  placeholderTextColor={THEME.muted}
+                  placeholderTextColor={THEME.textMuted}
                   accessibilityLabel={t("reminders.namePlaceholderOptional")}
                   returnKeyType="done"
-                  style={[inputStyle, { marginBottom: 18 }]}
+                  style={[inputStyle(), { marginBottom: 18 }]}
                 />
               ) : null}
 
@@ -380,12 +381,12 @@ export function ReminderEditSheet({
                 <View style={{ marginTop: 4, marginBottom: 18 }}>
                   <View
                     className="flex-row items-center justify-between"
-                    style={inputStyle}
+                    style={inputStyle()}
                   >
                     <View className="flex-row items-center" style={{ flex: 1, marginRight: 8 }}>
-                      <Ionicons name="alarm" size={16} color={THEME.muted} />
+                      <Ionicons name="alarm" size={16} color={THEME.textMuted} />
                       <Text
-                        style={{ color: THEME.ink, marginLeft: 8, fontSize: 14, flexShrink: 1 }}
+                        style={{ color: THEME.text, marginLeft: 8, fontSize: 14, flexShrink: 1 }}
                       >
                         {t("reminders.playAsAlarm")}
                       </Text>
@@ -394,13 +395,12 @@ export function ReminderEditSheet({
                       value={alarmEnabled}
                       onValueChange={(v) => void onToggleAlarm(v)}
                       disabled={alarmBusy}
-                      trackColor={{ true: THEME.accent, false: THEME.border }}
-                      thumbColor={THEME.ink}
+                      {...switchColors()}
                     />
                   </View>
                   {alarmDenied ? (
                     <Pressable onPress={() => Linking.openSettings()} className="mt-2 px-1">
-                      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+                      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
                         {t("reminders.alarmPermissionDenied")}{" "}
                         <Text style={{ color: THEME.accent, fontWeight: "700" }}>
                           {t("settings.openSystemSettings")}
@@ -413,14 +413,14 @@ export function ReminderEditSheet({
                     // notification for now.
                     <Text
                       className="mt-2 px-1"
-                      style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}
+                      style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}
                     >
                       {t("reminders.alarmPermissionHint")}
                     </Text>
                   ) : !isEdit ? (
                     <Text
                       className="mt-2 px-1"
-                      style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}
+                      style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}
                     >
                       {t("reminders.alarmDefaultHint")}
                     </Text>
@@ -440,7 +440,7 @@ export function ReminderEditSheet({
                 className="items-center py-1"
                 style={{ minHeight: HIT_TARGET }}
               >
-                <Text style={{ color: THEME.muted, fontSize: 13 }}>{t("common.cancel")}</Text>
+                <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("common.cancel")}</Text>
               </Pressable>
 
               {isEdit ? (

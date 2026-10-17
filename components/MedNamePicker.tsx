@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { listSavedMeds, upsertMedUse } from "../lib/db/meds";
 import type { SavedMed } from "../lib/db/types";
 import { hapticSelect } from "../lib/haptics";
-import { RADIUS, THEME } from "../lib/theme/tokens";
+import { ELEVATION, RADIUS, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 import { SavedMedEditSheet } from "./SavedMedEditSheet";
 
@@ -185,20 +185,20 @@ export function MedNamePicker({
           borderRadius: RADIUS.md,
           borderWidth: 1,
           borderColor: THEME.border,
-          backgroundColor: THEME.glass,
+          backgroundColor: THEME.surface,
           paddingHorizontal: 14,
           paddingVertical: 12,
           opacity: loaded ? 1 : 0.6,
         }}
       >
-        <Ionicons name="medical-outline" size={16} color={THEME.muted} />
+        <Ionicons name="medical-outline" size={16} color={THEME.textMuted} />
         <Text
-          style={{ color: THEME.ink, marginLeft: 8, fontSize: 14, flex: 1 }}
+          style={{ color: THEME.text, marginLeft: 8, fontSize: 14, flex: 1 }}
           numberOfLines={1}
         >
           {displayText}
         </Text>
-        <Ionicons name="chevron-down" size={16} color={THEME.muted} />
+        <Ionicons name="chevron-down" size={16} color={THEME.textMuted} />
       </Pressable>
 
       <Modal
@@ -219,12 +219,8 @@ export function MedNamePicker({
             style={[
               {
                 maxHeight: "80%",
-                backgroundColor: THEME.sheet,
-                shadowColor: "#000",
-                shadowOpacity: 0.5,
-                shadowRadius: 28,
-                shadowOffset: { width: 0, height: 12 },
-                elevation: 16,
+                backgroundColor: THEME.surfaceRaised,
+                ...ELEVATION.sheet,
               },
               isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}

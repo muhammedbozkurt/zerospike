@@ -107,7 +107,7 @@ export function GlucoseRing({
           {centre}
         </Text>
         {caption ? (
-          <Text style={{ color: THEME.muted, fontSize: size * 0.075, marginTop: 1 }}>{caption}</Text>
+          <Text style={{ color: THEME.textMuted, fontSize: size * 0.075, marginTop: 1 }}>{caption}</Text>
         ) : null}
       </View>
     </View>

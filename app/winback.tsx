@@ -26,6 +26,7 @@ import { OfferCard } from "../components/OfferCard";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
 import { isolateLtr, pct } from "../lib/format";
 
 /**
@@ -38,6 +39,7 @@ function WinbackScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  useThemeRemountLock();
   const { refreshPro } = useApp();
   const { toast } = useFeedback();
   const { width } = useWindowDimensions();
@@ -133,7 +135,7 @@ function WinbackScreen() {
             hitSlop={10}
             accessibilityLabel={t("common.close")}
           >
-            <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
+            <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
           </Pressable>
         </View>
 
@@ -141,7 +143,7 @@ function WinbackScreen() {
           {loading ? (
             <View className="items-center">
               <ActivityIndicator color={THEME.accent} />
-              <Text style={{ color: THEME.muted, marginTop: 10, textAlign: "center" }}>
+              <Text style={{ color: THEME.textMuted, marginTop: 10, textAlign: "center" }}>
                 {t("common.loading")}
               </Text>
             </View>
@@ -150,7 +152,7 @@ function WinbackScreen() {
               <Text style={{ fontSize: 34 }}>👋</Text>
               <Text
                 style={{
-                  color: THEME.ink,
+                  color: THEME.text,
                   fontSize: 24,
                   fontWeight: "800",
                   textAlign: "center",
@@ -191,21 +193,21 @@ function WinbackScreen() {
               disabled={busy}
               className="py-3 items-center mt-1"
             >
-              <Text style={{ color: THEME.muted, fontWeight: "600" }}>
+              <Text style={{ color: THEME.textMuted, fontWeight: "600" }}>
                 {t("winback.decline")}
               </Text>
             </Pressable>
             <View className="flex-row justify-center" style={{ gap: 24 }}>
               <Pressable onPress={() => Linking.openURL(privacyUrl())}>
                 <Text
-                  style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                  style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
                 >
                   {t("settings.privacy")}
                 </Text>
               </Pressable>
               <Pressable onPress={() => Linking.openURL(termsUrl())}>
                 <Text
-                  style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                  style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
                 >
                   {t("settings.terms")}
                 </Text>

@@ -5,6 +5,7 @@ import { DEFAULT_TARGET_BAND, type TargetBand } from "../../lib/agpChart";
 import { formatGlucose } from "../../lib/glucose";
 import type { GlucoseUnit } from "../../lib/db/types";
 import { CHART } from "./theme";
+import { THEME } from "../../lib/theme/tokens";
 
 const PAD_L = 34;
 const PAD_R = 6;
@@ -164,7 +165,7 @@ export function HourlyChart({
               y={top - 4}
               fontSize={10}
               fontWeight="600"
-              fill="#e4e4e7"
+              fill={THEME.text}
               textAnchor="middle"
             >
               {formatGlucose(bar.value, unit)}

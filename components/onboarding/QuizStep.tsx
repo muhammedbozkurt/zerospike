@@ -93,7 +93,7 @@ export function QuizStep({
           {
             height: "100%",
             borderRadius: RADIUS.full,
-            backgroundColor: THEME.accent,
+            backgroundColor: THEME.accentFill,
             width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`,
           },
           glow(THEME.accent, 8, 0.8),
@@ -107,7 +107,7 @@ export function QuizStep({
       <FadeSlideIn>
         <Text
           style={{
-            color: THEME.ink,
+            color: THEME.text,
             fontSize: dense ? 22 : 28,
             lineHeight: dense ? 28 : 34,
             fontWeight: "700",
@@ -120,7 +120,7 @@ export function QuizStep({
         <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: dense ? 15 : 16,
               lineHeight: dense ? 20 : 22,
               marginTop: 10,
@@ -192,7 +192,7 @@ export function QuizStep({
           <View
             style={{
               flexShrink: 1,
-              backgroundColor: THEME.sheet,
+              backgroundColor: THEME.surfaceRaised,
               borderRadius: RADIUS["2xl"],
               borderWidth: 1,
               borderColor: THEME.border,

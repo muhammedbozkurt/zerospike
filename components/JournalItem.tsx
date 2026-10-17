@@ -43,6 +43,7 @@ import {
 
 
 
+
 /** The single red action a swipe reveals: a trash icon over the word for
  *  "Delete", so it reads the same way whether the user gets there by icon or
  *  by label. `onPress` already carries the confirm - see useJournalRows.tsx's
@@ -102,17 +103,17 @@ function SwipeDeleteAction({
           flex: 1,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: RICH_BY_STATUS.low,
+          backgroundColor: THEME.dangerFill,
         }}
       >
         <Animated.View style={[{ alignItems: "center" }, contentStyle]}>
-          <Ionicons name="trash-outline" size={18} color="#fff" />
+          <Ionicons name="trash-outline" size={18} color={THEME.onDanger} />
           {/* Opacity only, never `display`: the word keeps its box at every
               width, so the icon does not hop vertically as the label arrives. */}
           <Animated.Text
             numberOfLines={1}
             style={[
-              { color: "#fff", fontSize: 10, fontWeight: "700", marginTop: 3 },
+              { color: THEME.onDanger, fontSize: 10, fontWeight: "700", marginTop: 3 },
               labelStyle,
             ]}
           >
@@ -228,7 +229,7 @@ function Row({
               borderColor: THEME.border,
               borderLeftWidth: 3,
               borderLeftColor: accent,
-              backgroundColor: THEME.glass,
+              backgroundColor: THEME.surface,
               paddingVertical: 9,
               paddingHorizontal: 10,
               marginBottom: onDelete ? 0 : 9,
@@ -497,7 +498,7 @@ function JournalItemBase({
               a bold clinical classification like a period tag. */}
           <Text
             style={{
-              color: isHealthSource ? THEME.muted : THEME.ink,
+              color: isHealthSource ? THEME.textMuted : THEME.text,
               fontSize: 12,
               fontWeight: "700",
             }}
@@ -515,7 +516,7 @@ function JournalItemBase({
         {/* The time is the row's right edge: at a large accessibility font size
             it shrinks rather than wrapping the clock onto two lines. */}
         <Text
-          style={{ color: THEME.muted, fontSize: 10, marginLeft: 6 }}
+          style={{ color: THEME.textMuted, fontSize: 10, marginLeft: 6 }}
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.8}
@@ -572,7 +573,7 @@ function JournalItemBase({
         ) : null}
         <View className="flex-1">
           <Text
-            style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}
+            style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.85}
@@ -583,14 +584,14 @@ function JournalItemBase({
             {typeLabel ? ` · ${typeLabel}` : ""}
           </Text>
           {entry.note ? (
-            <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
+            <Text style={{ color: THEME.textMuted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
               {`“${entry.note}”`}
             </Text>
           ) : null}
           <TagBadges tags={entry.tags} />
         </View>
         <Text
-          style={{ color: THEME.muted, fontSize: 10, marginLeft: 6 }}
+          style={{ color: THEME.textMuted, fontSize: 10, marginLeft: 6 }}
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.8}
@@ -629,7 +630,7 @@ function JournalItemBase({
             justifyContent: "center",
             borderWidth: 1,
             borderColor: THEME.border,
-            backgroundColor: THEME.glass,
+            backgroundColor: THEME.surface,
             marginRight: 10,
           }}
         >
@@ -637,7 +638,7 @@ function JournalItemBase({
         </View>
         <View className="flex-1">
           <Text
-            style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}
+            style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.85}
@@ -646,7 +647,7 @@ function JournalItemBase({
           </Text>
         </View>
         <Text
-          style={{ color: THEME.muted, fontSize: 10, marginLeft: 6 }}
+          style={{ color: THEME.textMuted, fontSize: 10, marginLeft: 6 }}
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.8}
@@ -674,7 +675,7 @@ function JournalItemBase({
   return (
     <Row
       {...chrome}
-      accent={THEME.muted}
+      accent={THEME.textMuted}
       label={mealLabel}
       onPress={() => onPress?.(entry)}
       onLongPress={() => onLongPress?.(entry)}
@@ -709,10 +710,10 @@ function JournalItemBase({
       )}
       <View className="flex-1">
         {/* Food name is user data: wraps to two lines rather than clipping. */}
-        <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }} numberOfLines={2}>
+        <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }} numberOfLines={2}>
           {entry.display_name}
         </Text>
-        <Text style={{ color: THEME.muted, fontSize: 10, marginTop: 1 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 10, marginTop: 1 }}>
           {Math.round(entry.portion_g)} {t("common.grams")} ·{" "}
           {t("journal.carbsLabel", {
             carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
@@ -722,7 +723,7 @@ function JournalItemBase({
             : ""}
         </Text>
         {entry.personal_note ? (
-          <Text style={{ color: THEME.muted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
+          <Text style={{ color: THEME.textMuted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
             “{entry.personal_note}”
           </Text>
         ) : null}
@@ -730,7 +731,7 @@ function JournalItemBase({
       </View>
       <View className="items-end" style={{ marginLeft: 6 }}>
         <Text
-          style={{ color: THEME.muted, fontSize: 10 }}
+          style={{ color: THEME.textMuted, fontSize: 10 }}
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.8}

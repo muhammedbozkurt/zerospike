@@ -151,3 +151,12 @@ export function ribbonPath(
   // bottom starts with its own "M"; replace it with "L" to keep one single path.
   return `${top} L${bottomReversed[0].x.toFixed(1)},${bottomReversed[0].y.toFixed(1)} ${bottom.replace(/^M[^ ]+/, "")} Z`;
 }
+
+export function lerpHex(a: string, b: string, t: number): string {
+  const pa = a.replace("#", "");
+  const pb = b.replace("#", "");
+  const ai = [0, 2, 4].map((i) => parseInt(pa.slice(i, i + 2), 16));
+  const bi = [0, 2, 4].map((i) => parseInt(pb.slice(i, i + 2), 16));
+  const ci = ai.map((v, i) => Math.round(v + (bi[i] - v) * t));
+  return `#${ci.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}

@@ -98,14 +98,16 @@ const FeedbackInternalContext = createContext<FeedbackInternal | null>(null);
 let nextHostId = 0;
 
 /** Mockup 10: a glass card with a glowing status dot, tinted per kind. */
-const TOAST_STYLE: Record<
-  ToastKind,
-  { icon: keyof typeof Ionicons.glyphMap; color: string }
-> = {
-  success: { icon: "checkmark-circle", color: GLUCOSE_RICH.target },
-  info: { icon: "information-circle", color: THEME.accent },
-  error: { icon: "alert-circle", color: GLUCOSE_RICH.low },
-};
+function toastStyle(kind: ToastKind): { icon: keyof typeof Ionicons.glyphMap; color: string } {
+  switch (kind) {
+    case "success":
+      return { icon: "checkmark-circle", color: GLUCOSE_RICH.target };
+    case "info":
+      return { icon: "information-circle", color: THEME.accent };
+    default:
+      return { icon: "alert-circle", color: GLUCOSE_RICH.low };
+  }
+}
 
 /** How long a toast stays up. */
 const TOAST_MS = 2200;
@@ -379,7 +381,7 @@ function FeedbackOverlays() {
     closeSheet,
     runSheetAction,
   } = internal;
-  const ts = TOAST_STYLE[toastKind];
+  const ts = toastStyle(toastKind);
 
   return (
     <View
@@ -420,7 +422,7 @@ function FeedbackOverlays() {
           style={{
             flexDirection: "row",
             alignItems: "center",
-            backgroundColor: THEME.bg.g2,
+            backgroundColor: THEME.surfaceRaised,
             borderRadius: RADIUS.lg,
             borderWidth: 1,
             borderColor: `${ts.color}55`,
@@ -445,7 +447,7 @@ function FeedbackOverlays() {
           <Text
             accessible
             accessibilityRole="text"
-            style={{ color: THEME.ink, fontWeight: "600", marginLeft: 10, flex: 1 }}
+            style={{ color: THEME.text, fontWeight: "600", marginLeft: 10, flex: 1 }}
           >
             {toastMsg}
           </Text>
@@ -459,13 +461,13 @@ function FeedbackOverlays() {
                 marginLeft: 10,
                 minHeight: 44,
                 justifyContent: "center",
-                backgroundColor: THEME.accent,
+                backgroundColor: THEME.accentFill,
                 borderRadius: RADIUS.full,
                 paddingHorizontal: 14,
                 paddingVertical: 7,
               }}
             >
-              <Text style={{ color: "#00171c", fontWeight: "800", fontSize: 13 }}>
+              <Text style={{ color: THEME.accentOnFill, fontWeight: "800", fontSize: 13 }}>
                 {toastAction.label}
               </Text>
             </Pressable>
@@ -552,11 +554,15 @@ function ConfirmOverlay({
       accessibilityLabel={confirmLabel}
       className={`${width} rounded-2xl py-3.5 px-3 ${
         opts.destructive
-          ? "bg-low active:opacity-80"
+          ? "bg-dangerFill active:opacity-80"
           : "bg-brand active:bg-brandDark"
       }`}
     >
-      <DialogLabel className="text-black font-semibold">{confirmLabel}</DialogLabel>
+      <DialogLabel
+        className={`font-semibold ${opts.destructive ? "text-onDanger" : "text-onAccent"}`}
+      >
+        {confirmLabel}
+      </DialogLabel>
     </Pressable>
   );
 
@@ -592,8 +598,8 @@ function ConfirmOverlay({
             className="rounded-3xl border border-hair p-5"
             style={[
               {
-                backgroundColor: THEME.sheet,
-                shadowColor: "#000",
+                backgroundColor: THEME.surfaceRaised,
+                shadowColor: ELEVATION.sheet.shadowColor,
                 shadowOpacity: 0.5,
                 shadowRadius: 28,
                 shadowOffset: { width: 0, height: 12 },

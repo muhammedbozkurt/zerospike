@@ -4,7 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
 import { THEME, glow } from "../../lib/theme/tokens";
-import { polar } from "./svgGeom";
+import { lerpHex, polar } from "./svgGeom";
 
 interface ConicAvatarProps {
   /** Initials or a single glyph (e.g. an emblem char) rendered in the centre. */
@@ -17,15 +17,6 @@ interface ConicAvatarProps {
   style?: StyleProp<ViewStyle>;
 }
 
-function lerpHex(a: string, b: string, t: number): string {
-  const pa = a.replace("#", "");
-  const pb = b.replace("#", "");
-  const ai = [0, 2, 4].map((i) => parseInt(pa.slice(i, i + 2), 16));
-  const bi = [0, 2, 4].map((i) => parseInt(pb.slice(i, i + 2), 16));
-  const ci = ai.map((v, i) => Math.round(v + (bi[i] - v) * t));
-  return `#${ci.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-}
-
 /** Sample the conic gradient (a list of stops looping to the start) at 0..1. */
 function conicColor(stops: string[], t: number): string {
   const loop = [...stops, stops[0]];
@@ -35,11 +26,6 @@ function conicColor(stops: string[], t: number): string {
   return lerpHex(loop[i], loop[i + 1], scaled - i);
 }
 
-/** Default conic stops, hoisted so a caller that omits `stops` (every current
- *  one) hands useMemo below the SAME array reference on every render instead
- *  of a fresh literal - an inline default parameter would defeat the memo. */
-const DEFAULT_STOPS = [THEME.accent, THEME.violet, THEME.accent];
-
 /**
  * A conic-gradient avatar, drawn as SVG wedges (react-native-svg has no native
  * conic gradient) with a color-matched glow and centered initials. Doubles as
@@ -48,10 +34,11 @@ const DEFAULT_STOPS = [THEME.accent, THEME.violet, THEME.accent];
 export function ConicAvatar({
   label,
   size = 28,
-  stops = DEFAULT_STOPS,
+  stops: stopsProp,
   fromDeg = 200,
   style,
 }: ConicAvatarProps) {
+  const stops = useMemo(() => stopsProp ?? [THEME.accent, THEME.violet, THEME.accent], [stopsProp, THEME.scheme]);
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2;
@@ -91,7 +78,7 @@ export function ConicAvatar({
         {wedges}
       </Svg>
       {label ? (
-        <Text style={{ color: "#03181c", fontWeight: "800", fontSize: size * 0.42 }}>{label}</Text>
+        <Text style={{ color: THEME.accentOnFill, fontWeight: "800", fontSize: size * 0.42 }}>{label}</Text>
       ) : null}
     </View>
   );

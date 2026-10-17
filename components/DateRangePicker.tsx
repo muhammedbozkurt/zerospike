@@ -7,6 +7,7 @@ import DateTimePicker, {
 import { useTranslation } from "react-i18next";
 
 import { THEME, RADIUS } from "../lib/theme/tokens";
+import { SCRIM } from "./SheetShell";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
@@ -121,7 +122,7 @@ export function DateRangePicker({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <Pressable
-        style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+        style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
         onPress={onCancel}
         accessible={false}
         focusable={false}
@@ -148,7 +149,7 @@ export function DateRangePicker({
           <View className="items-center mb-1.5">
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: THEME.border }} />
           </View>
-          <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800", textAlign: "center", marginBottom: 12 }}>
+          <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800", textAlign: "center", marginBottom: 12 }}>
             {t("report.rangeTitle")}
           </Text>
 
@@ -164,10 +165,10 @@ export function DateRangePicker({
             className="rounded-2xl mt-3 py-3.5 items-center"
             style={{ backgroundColor: THEME.accent, opacity: valid ? 1 : 0.4 }}
           >
-            <Text style={{ color: "#00171c", fontWeight: "800" }}>{t("common.confirm")}</Text>
+            <Text style={{ color: THEME.accentOnFill, fontWeight: "800" }}>{t("common.confirm")}</Text>
           </Pressable>
           <Pressable onPress={onCancel} className="py-3 items-center mt-1" accessibilityRole="button">
-            <Text style={{ color: THEME.muted, fontWeight: "600" }}>{t("common.cancel")}</Text>
+            <Text style={{ color: THEME.textMuted, fontWeight: "600" }}>{t("common.cancel")}</Text>
           </Pressable>
         </Pressable>
       </Pressable>

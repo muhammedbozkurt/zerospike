@@ -1,7 +1,7 @@
 import React from "react";
 import { I18nManager, Text, View } from "react-native";
 
-import { CHART } from "./theme";
+import { CHART, onGlucoseFill } from "./theme";
 import { pct } from "../../lib/format";
 import { THEME } from "../../lib/theme/tokens";
 
@@ -61,7 +61,7 @@ export function TimeInRangeBar({
                 <Text
                   numberOfLines={1}
                   className="text-[11px] font-bold"
-                  style={{ color: THEME.bg.g1 }}
+                  style={{ color: onGlucoseFill() }}
                 >
                   {pct(s.pct)}
                 </Text>

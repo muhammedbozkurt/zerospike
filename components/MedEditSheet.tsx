@@ -22,6 +22,7 @@ import { hapticSuccess } from "../lib/haptics";
 import { logEvent } from "../lib/analytics";
 import { formatTime, relativeDay } from "../lib/format";
 import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
 
@@ -34,19 +35,19 @@ export interface MedEditTarget {
   logged_at: string;
 }
 
-const inputStyle = {
+const inputStyle = () => ({
   borderRadius: RADIUS.md,
   borderWidth: 1,
   borderColor: THEME.border,
-  backgroundColor: THEME.glass,
+  backgroundColor: THEME.surface,
   paddingHorizontal: 14,
   paddingVertical: 12,
-  color: THEME.ink,
-} as const;
+  color: THEME.text,
+});
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
       {children}
     </Text>
   );
@@ -150,7 +151,7 @@ export function MedEditSheet({
         className="flex-1"
       >
         <Pressable
-          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={onClose}
           accessible={false}
           focusable={false}
@@ -183,7 +184,7 @@ export function MedEditSheet({
             <View className="flex-row items-center justify-between mb-4">
               <Text
                 numberOfLines={1}
-                style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
+                style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
               >
                 {t("calculator.editTitle")}
               </Text>
@@ -194,7 +195,7 @@ export function MedEditSheet({
                 accessibilityLabel={t("common.close")}
                 className="p-1"
               >
-                <Ionicons name="close" size={22} color={THEME.muted} />
+                <Ionicons name="close" size={22} color={THEME.textMuted} />
               </Pressable>
             </View>
 
@@ -216,10 +217,10 @@ export function MedEditSheet({
                   setTimePickerOpen((v) => !v);
                 }}
                 className="flex-row items-center mb-5"
-                style={inputStyle}
+                style={inputStyle()}
               >
-                <Ionicons name="time-outline" size={16} color={THEME.muted} />
-                <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+                <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
                   {relativeDay(loggedAt.toISOString(), {
                     today: t("common.today"),
                     yesterday: t("common.yesterday"),
@@ -248,10 +249,10 @@ export function MedEditSheet({
                 value={note}
                 onChangeText={setNote}
                 placeholder={t("injection.notePlaceholder")}
-                placeholderTextColor={THEME.muted}
+                placeholderTextColor={THEME.textMuted}
                 accessibilityLabel={t("injection.notePlaceholder")}
                 returnKeyType="done"
-                style={[inputStyle, { marginBottom: 20 }]}
+                style={[inputStyle(), { marginBottom: 20 }]}
               />
 
               <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />

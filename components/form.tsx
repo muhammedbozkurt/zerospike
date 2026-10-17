@@ -35,7 +35,7 @@ export function FormCard({
         <View className="flex-row items-center mb-2 ml-1">
           {icon ? (
             <View className="w-6 h-6 rounded-lg bg-brand/15 items-center justify-center mr-2">
-              <Ionicons name={icon} size={13} color="#2ee6ff" />
+              <Ionicons name={icon} size={13} color={THEME.accent} />
             </View>
           ) : null}
           <Text className="text-xs font-semibold tracking-wider text-mut">
@@ -77,7 +77,7 @@ export function InputRow({
           <Ionicons
             name={icon}
             size={large ? 20 : 18}
-            color={THEME.muted}
+            color={THEME.textMuted}
             style={{ marginRight: 12 }}
           />
         ) : null}
@@ -100,7 +100,7 @@ export function InputRow({
               writingDirection is pinned LTR too since this field only ever
               holds digits and a decimal separator. */}
           <TextInput
-            placeholderTextColor={THEME.muted}
+            placeholderTextColor={THEME.textMuted}
             accessibilityLabel={suffix ? `${label}, ${suffix}` : label}
             accessibilityHint={hint}
             className="font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
@@ -147,11 +147,11 @@ export function ActionRow({
         className="flex-row items-center px-4 py-3.5"
       >
         {icon ? (
-          <Ionicons name={icon} size={18} color={THEME.muted} style={{ marginRight: 12 }} />
+          <Ionicons name={icon} size={18} color={THEME.textMuted} style={{ marginRight: 12 }} />
         ) : null}
         <Text className="flex-1 text-[15px] text-ink">{label}</Text>
         <Text className="text-ink font-semibold mr-1.5">{value}</Text>
-        <DirIcon name="chevron-forward" size={16} color={THEME.muted} />
+        <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
       </Pressable>
       {!last ? <View className="h-px bg-glass ml-4" /> : null}
     </View>
@@ -196,7 +196,7 @@ export function AcceptCheck({
         // 1.5 in both states so ticking the box never shifts the row.
         borderWidth: 1.5,
         borderColor: checked ? THEME.accent : THEME.border,
-        backgroundColor: checked ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+        backgroundColor: checked ? withAlpha(THEME.accent, 0.1) : THEME.surface,
       }}
     >
       <View
@@ -207,18 +207,18 @@ export function AcceptCheck({
           alignItems: "center",
           justifyContent: "center",
           borderWidth: 1.5,
-          borderColor: checked ? THEME.accent : "rgba(255,255,255,0.22)",
-          backgroundColor: checked ? THEME.accent : "transparent",
+          borderColor: checked ? THEME.accentFill : THEME.borderStrong,
+          backgroundColor: checked ? THEME.accentFill : "transparent",
         }}
       >
         <Animated.View style={{ opacity: anim, transform: [{ scale: anim }] }}>
-          <Ionicons name="checkmark" size={15} color="#062126" />
+          <Ionicons name="checkmark" size={15} color={THEME.accentOnFill} />
         </Animated.View>
       </View>
       <Text
         style={{
           flex: 1,
-          color: THEME.ink,
+          color: THEME.text,
           fontSize: 16,
           lineHeight: 22,
           fontWeight: "600",

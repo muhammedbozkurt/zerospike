@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit && node scripts/i18n-check.js",
     "i18n:check": "node scripts/i18n-check.js && node scripts/reg-check.js",
     "reg:check": "node scripts/reg-check.js",
+    "theme:lint": "node scripts/theme-lint.mjs --strict",
     "postinstall": "patch-package",
     "i18n-check": "node scripts/i18n-check.js"
   },

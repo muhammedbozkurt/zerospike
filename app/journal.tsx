@@ -175,7 +175,7 @@ function JournalScreen() {
   const renderItem = useCallback(
     ({ item, index }: { item: JournalEntry; index: number }) =>
       activeProfile ? (
-        <View style={journalPanelSide}>
+        <View style={journalPanelSide()}>
           <JournalItem
             entry={item}
             profile={activeProfile}
@@ -266,7 +266,7 @@ function JournalScreen() {
                     variant="secondary"
                     onPress={showMore}
                     className="border border-hair"
-                    icon={<Ionicons name="chevron-down" size={16} color={THEME.ink} />}
+                    icon={<Ionicons name="chevron-down" size={16} color={THEME.text} />}
                   />
                 ) : null}
               </JournalPanelBottom>

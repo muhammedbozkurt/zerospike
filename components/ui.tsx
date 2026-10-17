@@ -38,7 +38,7 @@ const VARIANT_BG: Record<ButtonVariant, string> = {
 };
 
 const VARIANT_TEXT: Record<ButtonVariant, string> = {
-  primary: "text-black",
+  primary: "text-onAccent",
   secondary: "text-ink",
   danger: "text-low",
   ghost: "text-mut",
@@ -80,7 +80,7 @@ export function Button({
       className={`flex-row items-center justify-center rounded-2xl ${SIZE_PAD[size]} ${VARIANT_BG[variant]} ${isOff ? "opacity-50" : ""} ${className}`}
     >
       {loading ? (
-        <ActivityIndicator color={variant === "primary" ? "#000" : THEME.muted} />
+        <ActivityIndicator color={variant === "primary" ? THEME.accentOnFill : THEME.textMuted} />
       ) : (
         <>
           {icon ? <View className="mr-2">{icon}</View> : null}
@@ -158,7 +158,7 @@ export const Field = React.forwardRef<TextInput, FieldProps>(function Field(
           would also set a lineHeight, which iOS clips the glyphs against. */}
       <TextInput
         ref={ref}
-        placeholderTextColor={THEME.muted}
+        placeholderTextColor={THEME.textMuted}
         className={`rounded-xl bg-glass border border-hair px-4 py-3 text-ink ${className}`}
         {...rest}
         style={[INPUT_TEXT, style]}
@@ -206,7 +206,7 @@ export function Segmented<T extends string>({
           >
             <Text
               className={`text-sm font-medium ${
-                active ? "text-black" : "text-mut"
+                active ? "text-onAccent" : "text-mut"
               }`}
             >
               {opt.label}
@@ -263,7 +263,7 @@ export function IconRow({
       </View>
       <View className="flex-1">
         <Text className="font-semibold"
-          style={{ color: destructive ? GLUCOSE_RICH.low : THEME.ink }}>
+          style={{ color: destructive ? GLUCOSE_RICH.low : THEME.text }}>
           {label}
         </Text>
         {sublabel ? <Text className="text-mut text-xs mt-0.5">{sublabel}</Text> : null}
@@ -276,7 +276,7 @@ export function IconRow({
         </Text>
       ) : null}
       {onPress ? (
-        <DirIcon name="chevron-forward" size={18} color={THEME.muted} />
+        <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
       ) : null}
     </>
   );
@@ -325,7 +325,7 @@ export function SegmentedStat({
               fixed-width column, so both lines must be allowed to shrink instead
               of being clipped mid-word. */}
           <Text
-            style={[{ color: item.accent ?? THEME.ink }, TABULAR]}
+            style={[{ color: item.accent ?? THEME.text }, TABULAR]}
             className="text-lg font-extrabold"
             numberOfLines={1}
             adjustsFontSizeToFit

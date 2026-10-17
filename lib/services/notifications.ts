@@ -128,6 +128,8 @@ const FOLLOWUP_CHANNEL_ID = "followup-v1";
 // REMINDER_CHANNEL_ID via POSTMEAL_ID, untouched by this one.
 const POSTMEAL_CHANNEL_ID = "postmeal-v1";
 
+const LED_COLOR = "#22d3ee"; // theme-ok
+
 /**
  * Ensures the Android reminders channel exists, named from i18n and carrying
  * the custom reminder.wav sound. Called on every schedule (not cached) so the
@@ -148,7 +150,7 @@ export async function ensureAndroidChannel(): Promise<void> {
     name: i18n.t("notifications.channelName"),
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#22d3ee",
+    lightColor: LED_COLOR,
     sound: "reminder.wav",
   });
   // Separate MAX-importance (heads-up) channel for the low-value follow-up
@@ -159,7 +161,7 @@ export async function ensureAndroidChannel(): Promise<void> {
     name: i18n.t("notifications.channelName"),
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#22d3ee",
+    lightColor: LED_COLOR,
     sound: "reminder.wav",
   });
   // Post-meal countdown channel (C1): LOW importance, no sound/vibration -

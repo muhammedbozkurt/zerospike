@@ -132,7 +132,7 @@ export default function MedicationsScreen() {
       }
     >
       <View style={columnPad()}>
-        <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
           {t("meds.manageHint")}
         </Text>
 
@@ -157,7 +157,7 @@ export default function MedicationsScreen() {
           </>
         ) : meds.length === 0 ? (
           <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
-            <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
               {t("meds.empty")}
             </Text>
           </View>

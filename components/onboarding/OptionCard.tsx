@@ -7,12 +7,6 @@ import { withAlpha } from "../rich/GlassCard";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
-/** Ink used on top of the accent fill (check marks) - the darkest tone of the
- *  Midnight wash, so a filled cyan disc never carries pure black. */
-const ON_ACCENT = "#062126";
-/** The unselected mark's ring. Lighter than THEME.border so an empty radio is
- *  visible as a control rather than reading as another card edge. */
-const MARK_RING = "rgba(255,255,255,0.22)";
 
 /**
  * A full-width quiz answer card. Three shapes, all driven by the props:
@@ -57,12 +51,12 @@ export function OptionCard({
           width: size,
           height: size,
           borderRadius: RADIUS.full,
-          backgroundColor: THEME.accent,
+          backgroundColor: THEME.accentFill,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Ionicons name="checkmark" size={Math.round(size * 0.58)} color={ON_ACCENT} />
+        <Ionicons name="checkmark" size={Math.round(size * 0.58)} color={THEME.accentOnFill} />
       </View>
     ) : (
       <View
@@ -71,7 +65,7 @@ export function OptionCard({
           height: size,
           borderRadius: RADIUS.full,
           borderWidth: 1.5,
-          borderColor: MARK_RING,
+          borderColor: THEME.borderStrong,
         }}
       />
     );
@@ -96,7 +90,7 @@ export function OptionCard({
           // point (the accent edge is drawn over the hairline, not beside it).
           borderWidth: 1.5,
           borderColor: selected ? THEME.accent : THEME.border,
-          backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.glass,
+          backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.surface,
         },
         selected ? glow(THEME.accent, 26, 0.35) : undefined,
       ]}
@@ -111,10 +105,10 @@ export function OptionCard({
             justifyContent: "center",
             backgroundColor: selected
               ? withAlpha(THEME.accent, 0.14)
-              : "rgba(255,255,255,0.06)",
+              : THEME.surfaceInset,
           }}
         >
-          <Ionicons name={icon} size={22} color={selected ? THEME.accent : THEME.muted} />
+          <Ionicons name={icon} size={22} color={selected ? THEME.accent : THEME.textMuted} />
         </View>
       ) : (
         checkMark(24)
@@ -123,7 +117,7 @@ export function OptionCard({
       <View style={{ flex: 1, gap: description ? 3 : 0 }}>
         <Text
           style={{
-            color: THEME.ink,
+            color: THEME.text,
             fontSize: rich ? 18 : 17,
             lineHeight: rich ? 24 : 23,
             fontWeight: selected || icon ? "600" : "500",
@@ -132,7 +126,7 @@ export function OptionCard({
           {label}
         </Text>
         {description ? (
-          <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18 }}>
             {description}
           </Text>
         ) : null}

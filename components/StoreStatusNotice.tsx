@@ -27,12 +27,12 @@ export function StoreStatusNotice({
   return (
     <GlassCard style={{ marginBottom: 12 }}>
       <View className="flex-row items-start" style={{ gap: 10 }}>
-        <IconTile icon="cloud-offline-outline" size={32} radius={10} tint={THEME.muted} />
+        <IconTile icon="cloud-offline-outline" size={32} radius={10} tint={THEME.textMuted} />
         <View style={{ flex: 1 }}>
-          <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "800", lineHeight: 18 }}>
+          <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "800", lineHeight: 18 }}>
             {t("trial.storeErrorTitle")}
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 3 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 3 }}>
             {t("trial.storeErrorBody")}
           </Text>
         </View>

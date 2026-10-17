@@ -17,7 +17,7 @@ import { useLayout } from "../../lib/useLayout";
 
 /** Row's default right-side chevron implies in-app navigation; rows that hand
  *  off to the system browser get this instead, so the two don't look the same. */
-const EXTERNAL_LINK_ICON = <Ionicons name="open-outline" size={16} color={THEME.muted} />;
+const externalLinkIcon = () => <Ionicons name="open-outline" size={16} color={THEME.textMuted} />;
 
 /** Settings > About & Legal: guides, SOS/emergency, sources, legal, version. */
 export default function AboutSettings() {
@@ -60,7 +60,7 @@ export default function AboutSettings() {
           onPress={() => {
             Linking.openURL(rateUrl).catch(() => {});
           }}
-          right={EXTERNAL_LINK_ICON}
+          right={externalLinkIcon()}
         />
         </>
       ) : null}
@@ -70,13 +70,13 @@ export default function AboutSettings() {
         icon="shield-checkmark-outline"
         label={t("settings.privacy")}
         onPress={() => Linking.openURL(privacyUrl())}
-        right={EXTERNAL_LINK_ICON}
+        right={externalLinkIcon()}
       />
       <Row
         icon="reader-outline"
         label={t("settings.terms")}
         onPress={() => Linking.openURL(termsUrl())}
-        right={EXTERNAL_LINK_ICON}
+        right={externalLinkIcon()}
       />
       <Row icon="medkit-outline" label={t("sources.link")} onPress={() => router.push("/sources")} />
 

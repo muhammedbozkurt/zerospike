@@ -72,7 +72,7 @@ export function Row({
       <View className="flex-1 ml-3">
         <Text
           className="text-[15px] font-semibold"
-          style={{ color: danger ? GLUCOSE_RICH.low : THEME.ink }}
+          style={{ color: danger ? GLUCOSE_RICH.low : THEME.text }}
           numberOfLines={2}
         >
           {label}
@@ -92,7 +92,7 @@ export function Row({
           {value}
         </Text>
       ) : null}
-      {right ?? (onPress ? <DirIcon name="chevron-forward" size={18} color={THEME.muted} /> : null)}
+      {right ?? (onPress ? <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} /> : null)}
     </Pressable>
   );
 }
@@ -112,7 +112,7 @@ export function InlineConfigCard({
   return (
     <View className="flex-row bg-glass border border-hair rounded-2xl px-3 py-3 mb-2">
       <View className="w-9 items-center pt-0.5">
-        <Ionicons name={icon} size={16} color={THEME.muted} />
+        <Ionicons name={icon} size={16} color={THEME.textMuted} />
       </View>
       <View className="flex-1 ml-3">{children}</View>
     </View>

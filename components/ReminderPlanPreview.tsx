@@ -82,7 +82,7 @@ export function ReminderPlanPreview({
             borderRadius: RADIUS.lg,
             borderWidth: 1,
             borderColor: THEME.border,
-            backgroundColor: THEME.glass,
+            backgroundColor: THEME.surface,
           }}
         >
           <View
@@ -98,12 +98,12 @@ export function ReminderPlanPreview({
             <Ionicons name="water-outline" size={20} color={THEME.accent} />
           </View>
           <Text
-            style={{ color: THEME.ink, fontSize: 15, lineHeight: 21, flex: 1 }}
+            style={{ color: THEME.text, fontSize: 15, lineHeight: 21, flex: 1 }}
             numberOfLines={1}
           >
             {presetLabel(preset.bucket)}
           </Text>
-          <Text style={[TABULAR, { color: THEME.ink, fontSize: 16, fontWeight: "700" }]}>
+          <Text style={[TABULAR, { color: THEME.text, fontSize: 16, fontWeight: "700" }]}>
             {preset.time}
           </Text>
           <Pressable
@@ -120,10 +120,10 @@ export function ReminderPlanPreview({
               borderRadius: RADIUS.full,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: "rgba(255,255,255,0.06)",
+              backgroundColor: THEME.surfaceInset,
             }}
           >
-            <Ionicons name="close" size={14} color={THEME.muted} />
+            <Ionicons name="close" size={14} color={THEME.textMuted} />
           </Pressable>
         </View>
       ))}
