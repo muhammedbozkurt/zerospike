@@ -13,7 +13,7 @@ import {
   type LiveData,
 } from "./liveData";
 import { MGDL_PER_MMOL } from "../glucose";
-import { GLUCOSE_RICH, THEME } from "../theme/tokens";
+import { FROZEN_GLUCOSE_RICH as GLUCOSE_RICH, FROZEN_THEME as THEME } from "./pdfColors";
 import { VERY_HIGH_MGDL } from "../glucose";
 import { formatTimeForLang } from "../format";
 
