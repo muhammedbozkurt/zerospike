@@ -960,25 +960,35 @@ function wiring(): void {
   }
 
   const onb = src("app/onboarding.tsx");
-  ok("the disclaimer switch starts off", /const \[analyticsOptIn, setAnalyticsOptIn\] = useState\(false\);/.test(onb));
-  const disclaimer = between(onb, 'case "disclaimer":', "// ── Per-step footer");
-  ok("the disclaimer step shows it", disclaimer.includes("<ConsentSwitchRow") && disclaimer.includes("analyticsOptIn"));
-  ok(
-    "Continue never waits on it",
-    !/analyticsOptIn/.test(between(onb, 'if (step === "disclaimer") {', "// Two explicit paths"))
-  );
-  const finish = between(onb, "async function finishToReveal", "function goToDashboard");
+  ok("the analytics switch starts off until the stored answer is read", /const \[analyticsOptIn, setAnalyticsOptIn\] = useState\(false\);/.test(onb) && onb.includes("setAnalyticsOptIn(state === \"granted\")"));
+  const analyticsStep = between(onb, 'case "analytics":', "// ── Per-step footer");
+  ok("the analytics step shows it", analyticsStep.includes("<ConsentSwitchRow") && analyticsStep.includes("analyticsOptIn"));
+  ok("the disclaimer step no longer carries it", !/<ConsentSwitchRow/.test(between(onb, 'case "disclaimer":', 'case "analytics":')));
+  const footer = between(onb, 'if (step === "analytics") {', 'if (step === "disclaimer") {');
+  ok("Continue on the analytics step runs the consent write", footer.includes("continueFromAnalytics") && !/disabled/.test(footer));
+  const cont = between(onb, "async function continueFromAnalytics", "function hintFor");
   ok(
     "only an explicit on is recorded",
-    /if \(analyticsOptIn\) \{\s*try \{\s*await setAnalyticsConsent\("granted"\);/.test(finish)
+    /const stored = await getAnalyticsConsent\(\);\s*if \(wantOn && stored !== "granted"\) \{\s*await setAnalyticsConsent\("granted"\);/.test(onb)
   );
-  ok("a switch left off never writes declined", !/setAnalyticsConsent\("declined"\)/.test(onb));
-  ok("the question counts as asked either way", finish.includes("await markAnalyticsConsentPrompted();"));
   ok(
-    "consent goes in before onboarding_done",
-    finish.indexOf('setAnalyticsConsent("granted")') !== -1 &&
-      finish.indexOf('setAnalyticsConsent("granted")') < finish.indexOf('logEvent("onboarding_done"')
+    "declined is written only to withdraw a stored grant, from the freshly read state",
+    (onb.match(/setAnalyticsConsent\("declined"\)/g) ?? []).length === 1 &&
+      /else if \(!wantOn && stored === "granted"\) \{\s*await setAnalyticsConsent\("declined"\);/.test(onb)
   );
+  ok("a failed write stops Continue and shows the error", /if \(!\(await syncConsent\(analyticsOptIn\)\)\) return;/.test(cont) && onb.includes('toast(t("common.saveFailed"), "error")'));
+  ok("the switch writes as it moves and is disabled until loaded", onb.includes("void toggleAnalytics(next)") && onb.includes("disabled={!consentLoaded || savingConsent}"));
+  ok(
+    "a synchronous busy ref guards both handlers and Continue waits for the stored read",
+    (onb.match(/if \(consentBusy\.current/g) ?? []).length === 2 &&
+      (onb.match(/consentBusy\.current = false;/g) ?? []).length === 2 &&
+      footer.includes("loading={savingConsent || !consentLoaded}")
+  );
+  ok("the question counts as asked either way", cont.includes("await markAnalyticsConsentPrompted();"));
+  const finish = between(onb, "async function finishToReveal", "function goToDashboard");
+  ok("finishing no longer touches consent", !/setAnalyticsConsent|markAnalyticsConsentPrompted/.test(finish));
+  ok("onboarding_done is still sent at the end", finish.includes('logEvent("onboarding_done"'));
+  ok("the analytics step is the first quiz step", /BASE_STEPS[^\n]*\["analytics"/.test(src("lib/onboardingSteps.ts")));
 
   const sheet = src("lib/analytics/ConsentSheet.tsx");
   ok("the sheet is a SheetShell like the others", sheet.includes("<SheetShell"));
@@ -1170,7 +1180,7 @@ function copy(): void {
   for (const lang of LANGS) {
     const text = src(`lib/i18n/locales/${lang}.ts`);
     const strings: [string, string][] = [];
-    for (const key of ["analyticsConsentTitle", "analyticsConsentBody"]) {
+    for (const key of ["analyticsConsentTitle", "analyticsConsentBody", "qAnalytics", "analyticsHelpCollect", "analyticsHelpNever", "analyticsHelpOff"]) {
       const m = new RegExp(`\\n {4}${key}: "([^"]+)"`).exec(text);
       ok(`${lang} has onboarding.${key}`, m !== null);
       if (m) strings.push([`onboarding.${key}`, m[1]]);

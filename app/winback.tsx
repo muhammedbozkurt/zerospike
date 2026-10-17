@@ -92,6 +92,15 @@ function WinbackScreen() {
       const res = await purchaseDownsell();
       await refreshPro();
       const feedback = purchaseToastFor(res);
+      logEvent("purchase_result", {
+        result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
+        product: "downsell_annual",
+        reason: "direct",
+        variant: "default",
+        trial: false,
+        detail:
+          res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
+      });
       if (res.ok) {
         logEvent("downsell_accept", { trigger: "winback" });
         logEvent("purchase_completed", { tier: "annual", source: "winback" });

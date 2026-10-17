@@ -77,6 +77,9 @@ import { shouldAutoOpenWelcome, withHealthMirror } from "../lib/proWelcome";
 import { getProWelcomeState } from "../lib/services/proWelcome";
 import { getHealthSyncEnabled } from "../lib/services/health";
 
+// RevenueCat's offering id is not exposed by loadOfferings, so there is one fixed variant.
+const PAYWALL_VARIANT = "default";
+
 /**
  * A plan row in the mockup's 08 composition: the plan name and its terms on the
  * left, and the BILLED AMOUNT as the dominant figure on the right. The selected
@@ -305,6 +308,7 @@ function PaywallScreen() {
 
   const plans = offer?.plans ?? {};
   const annualTrial = plans.annual?.hasFreeTrial ?? false;
+  const eventTrial = annualTrial;
   // Store-reported trial length (RC intro offer), so an A/B on the trial
   // length never needs a code change; falls back to the shipped default.
   const trialDays = plans.annual?.freeTrialDays || DEFAULT_TRIAL_DAYS;
@@ -315,6 +319,7 @@ function PaywallScreen() {
       source: reason ?? "direct",
       trial_eligible: annualTrial,
       context,
+      variant: PAYWALL_VARIANT,
     });
   }, [offer, reason, annualTrial, context]);
 
@@ -512,9 +517,19 @@ function PaywallScreen() {
     if (busy) return;
     setBusy(true);
     try {
+      logEvent("paywall_cta", { tier: plan });
       const res = await purchasePro(plan);
       await refreshPro();
       const feedback = purchaseToastFor(res);
+      logEvent("purchase_result", {
+        result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
+        product: plan,
+        reason: reason ?? "direct",
+        variant: PAYWALL_VARIANT,
+        trial: plan === "annual" && eventTrial,
+        detail:
+          res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
+      });
       if (res.ok) {
         clearPaywallTrial();
         logEvent("purchase_completed", { tier: plan, source: reason ?? "direct" });

@@ -1,12 +1,12 @@
 /**
- * Analytics event schema v1: the one list of event names and fields the
+ * Analytics event schema v2: the one list of event names and fields the
  * Supabase sink may send. The server (supabase/functions/_shared/event-schema.json)
  * drops anything outside it as well, and scripts/analyticsSchema.test.ts fails
  * when the two lists drift. Dependency-free on purpose so that test can run
  * under plain node.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * What a log entry is, as far as analytics may know: a glucose reading, a meal,
@@ -26,6 +26,24 @@ export type LogKind = (typeof LOG_KINDS)[number];
 export type FieldSpec = "string" | "int" | "bool" | "logKind" | readonly string[];
 export type EventSpec = Readonly<Record<string, FieldSpec>>;
 
+/**
+ * Where a paywall visit came from (the route's `reason` param), as a closed
+ * set. "rotation" never leaves the device: it is folded into "feature".
+ */
+export const PAYWALL_REASONS = [
+  "after_logs",
+  "direct",
+  "health",
+  "foods",
+  "profiles",
+  "feature",
+  "mealResponse",
+  "spike",
+  "insights",
+  "export",
+  "settings",
+] as const;
+
 export const EVENT_SCHEMA = {
   app_open: { cold: "bool" },
   onboarding_step: { step: "string", index: "int" },
@@ -33,10 +51,24 @@ export const EVENT_SCHEMA = {
   first_log: { kind: LOG_KINDS },
   log_added: { kind: "logKind" },
   log_edited: { kind: "logKind" },
-  paywall_view: { source: "string", context: "string", trial_eligible: "bool" },
+  paywall_view: {
+    source: "string",
+    context: "string",
+    trial_eligible: "bool",
+    variant: ["default"],
+  },
   paywall_tier_selected: { tier: ["monthly", "annual", "lifetime"] },
+  paywall_cta: { tier: ["monthly", "annual", "lifetime"] },
   paywall_dismiss: { source: "string" },
   purchase_completed: { tier: "string", source: "string" },
+  purchase_result: {
+    result: ["success", "cancelled", "error"],
+    product: ["monthly", "annual", "lifetime", "downsell_annual"],
+    reason: PAYWALL_REASONS,
+    variant: ["default"],
+    trial: "bool",
+    detail: ["store_error", "already_owned", "none"],
+  },
   trial_started: { tier: "string" },
   pro_welcome_view: {},
   pro_welcome_step: { step: ["health", "insights", "reminders"], done: "bool" },
@@ -134,6 +166,7 @@ const FOLDED_VALUES: Readonly<
   paywall_view: { source: { rotation: "feature" }, context: { rotation: "feature" } },
   paywall_dismiss: { source: { rotation: "feature" } },
   purchase_completed: { source: { rotation: "feature" } },
+  purchase_result: { reason: { rotation: "feature" } },
   spike_action_tap: { action: { open_injection_map: "open_feature" } },
 };
 

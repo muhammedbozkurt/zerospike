@@ -67,3 +67,5 @@ __pycache__/
 # Apple Ads API kimlikleri, repo disinda ~/.apple-ads/ altinda tutulur
 credentials.txt
 *.pem
+scratchpad/metrics/
+scratchpad/**/.asc-raw

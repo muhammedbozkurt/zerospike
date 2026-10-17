@@ -31,6 +31,7 @@ export const TREATMENT_OPTIONS = ["insulin", "pills", "both", "none"] as const;
 export type TreatmentOption = (typeof TREATMENT_OPTIONS)[number];
 
 export type OnboardingStepId =
+  | "analytics"
   | "name"
   | "unit"
   | "diabetes"
@@ -46,7 +47,7 @@ export type OnboardingPhase = "welcome" | "quiz" | "reveal";
 export type OnboardingPath = "insulin" | "pills" | "none";
 
 /** The fixed head of the quiz; everything after it branches on the answers. */
-export const BASE_STEPS: readonly OnboardingStepId[] = ["name", "unit", "diabetes"];
+export const BASE_STEPS: readonly OnboardingStepId[] = ["analytics", "name", "unit", "diabetes"];
 
 /** Screens a user can walk past with no write and no answer. */
 export const OPTIONAL_STEPS: readonly OnboardingStepId[] = ["insulinProducts", "medReminder"];

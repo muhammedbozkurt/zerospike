@@ -76,7 +76,12 @@ import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InsulinProductPicker } from "../components/InsulinProductPicker";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logCrash, logEvent } from "../lib/analytics";
-import { markAnalyticsConsentPrompted, setAnalyticsConsent } from "../lib/analytics/optOut";
+import {
+  getAnalyticsConsent,
+  markAnalyticsConsentPrompted,
+  setAnalyticsConsent,
+} from "../lib/analytics/optOut";
+import { useFeedback } from "../components/Feedback";
 import { hapticSelect } from "../lib/haptics";
 import { SectionLabel } from "../components/ui";
 import { AcceptCheck } from "../components/form";
@@ -433,20 +438,22 @@ function RationaleText({
 }
 
 /**
- * The optional usage-data switch on the disclaimer step. It starts off, and
- * leaving it off asks nothing more of the user: the answer stays "unanswered"
- * (never "declined") and Settings > Data can still turn it on later. Module
+ * The optional usage-data switch on the analytics step. It starts off, and
+ * leaving it off asks nothing more of the user; a never-answered choice stays
+ * unanswered and Settings > Data can still turn it on later. Module
  * level so toggling it never remounts the card.
  */
 function ConsentSwitchRow({
   title,
   body,
   value,
+  disabled,
   onValueChange,
 }: {
   title: string;
-  body: string;
+  body?: string;
   value: boolean;
+  disabled?: boolean;
   onValueChange: (next: boolean) => void;
 }) {
   return (
@@ -467,15 +474,18 @@ function ConsentSwitchRow({
         </Text>
         <Switch
           value={value}
+          disabled={disabled}
           onValueChange={onValueChange}
           trackColor={{ true: THEME.accent, false: THEME.border }}
           thumbColor={THEME.ink}
           accessibilityLabel={title}
         />
       </View>
-      <Text style={{ color: THEME.muted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
-        {body}
-      </Text>
+      {body ? (
+        <Text style={{ color: THEME.muted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
+          {body}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -602,10 +612,14 @@ export default function OnboardingScreen() {
   // REALLY written (see lib/revealPlan.ts). Empty until finishToReveal fills it.
   const [revealPlan, setRevealPlan] = useState<RevealPlanItem[]>([]);
   const [accepted, setAccepted] = useState(false);
-  // The disclaimer step's optional usage-data switch. Off by default: only an
-  // explicit "on" becomes consent, anything else leaves the answer unanswered
-  // (see the end of finishToReveal).
+  // The analytics step's optional usage-data switch. Off by default: only an
+  // explicit "on" is written as a grant; turning it off later withdraws a
+  // stored grant (see syncConsent).
   const [analyticsOptIn, setAnalyticsOptIn] = useState(false);
+  const [savingConsent, setSavingConsent] = useState(false);
+  const [consentLoaded, setConsentLoaded] = useState(false);
+  const consentBusy = useRef(false);
+  const { toast } = useFeedback();
   const [saving, setSaving] = useState(false);
 
   // Re-derived every render instead of trusting the raw answers: a treatment
@@ -839,23 +853,6 @@ export default function OnboardingScreen() {
 
       bumpData();
       await completeOnboarding();
-      // Only an explicit "on" is recorded; a switch left off keeps the answer
-      // "unanswered" (not "declined"), and Settings can still turn it on. It
-      // goes in before onboarding_done so that event is covered by it, and the
-      // question counts as put to the user either way, so the dashboard's
-      // one-time sheet (for installs that predate it) never repeats it.
-      if (analyticsOptIn) {
-        try {
-          await setAnalyticsConsent("granted");
-        } catch (err) {
-          logCrash(err, { screen: "onboarding", op: "analyticsConsent" });
-        }
-      }
-      try {
-        await markAnalyticsConsentPrompted();
-      } catch (err) {
-        logCrash(err, { screen: "onboarding", op: "analyticsConsentPrompted" });
-      }
       logEvent("onboarding_done", onboardingDoneEvent(steps));
       setPhase("reveal");
     } finally {
@@ -869,6 +866,74 @@ export default function OnboardingScreen() {
     // opens later, once this profile's own log count first reaches 3 (see
     // lib/afterLogsPaywall.ts), not as a tax on finishing the quiz.
     router.replace("/(tabs)");
+  }
+
+  useEffect(() => {
+    let alive = true;
+    getAnalyticsConsent()
+      .then((state) => {
+        if (!alive) return;
+        setAnalyticsOptIn(state === "granted");
+      })
+      .catch((err) => logCrash(err, { screen: "onboarding", op: "analyticsConsentRead" }))
+      .finally(() => {
+        if (alive) setConsentLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // The stored answer always follows the switch: a grant is written when it is
+  // turned on and withdrawn when it is turned off, so leaving the step any way
+  // (including the back arrow or a killed app) never leaves them out of step.
+  // A switch that was never on writes nothing and the answer stays "unanswered".
+  async function syncConsent(wantOn: boolean): Promise<boolean> {
+    try {
+      const stored = await getAnalyticsConsent();
+      if (wantOn && stored !== "granted") {
+        await setAnalyticsConsent("granted");
+      } else if (!wantOn && stored === "granted") {
+        await setAnalyticsConsent("declined");
+      }
+      return true;
+    } catch (err) {
+      logCrash(err, { screen: "onboarding", op: "analyticsConsent" });
+      toast(t("common.saveFailed"), "error");
+      return false;
+    }
+  }
+
+  async function toggleAnalytics(next: boolean) {
+    if (consentBusy.current) return;
+    consentBusy.current = true;
+    hapticSelect();
+    setAnalyticsOptIn(next);
+    setSavingConsent(true);
+    try {
+      if (!(await syncConsent(next))) setAnalyticsOptIn(!next);
+    } finally {
+      consentBusy.current = false;
+      setSavingConsent(false);
+    }
+  }
+
+  async function continueFromAnalytics() {
+    if (consentBusy.current || !consentLoaded) return;
+    consentBusy.current = true;
+    setSavingConsent(true);
+    try {
+      if (!(await syncConsent(analyticsOptIn))) return;
+      try {
+        await markAnalyticsConsentPrompted();
+      } catch (err) {
+        logCrash(err, { screen: "onboarding", op: "analyticsConsentPrompted" });
+      }
+    } finally {
+      consentBusy.current = false;
+      setSavingConsent(false);
+    }
+    next();
   }
 
   // Optional subtitle per step (the title is derived from the step id). Steps
@@ -1504,19 +1569,27 @@ export default function OnboardingScreen() {
                 label={t("disclaimer.accept")}
               />
             </View>
-            {/* Separate from the accept check on purpose: Continue never waits
-                on it, and it is off until the user turns it on. */}
-            <View style={{ marginTop: 12 }}>
-              <ConsentSwitchRow
-                title={t("onboarding.analyticsConsentTitle")}
-                body={t("onboarding.analyticsConsentBody")}
-                value={analyticsOptIn}
-                onValueChange={(next) => {
-                  hapticSelect();
-                  setAnalyticsOptIn(next);
-                }}
-              />
-            </View>
+          </FadeSlideIn>
+        );
+
+      case "analytics":
+        return (
+          <FadeSlideIn delay={optDelay(0)}>
+            <RationaleCard icon="eye-outline" style={{ marginBottom: 12 }}>
+              <RationaleText>{t("onboarding.analyticsHelpCollect")}</RationaleText>
+            </RationaleCard>
+            <RationaleCard icon="lock-closed-outline" style={{ marginBottom: 12 }}>
+              <RationaleText>{t("onboarding.analyticsHelpNever")}</RationaleText>
+            </RationaleCard>
+            <RationaleCard icon="toggle-outline" style={{ marginBottom: 16 }}>
+              <RationaleText>{t("onboarding.analyticsHelpOff")}</RationaleText>
+            </RationaleCard>
+            <ConsentSwitchRow
+              title={t("onboarding.analyticsConsentTitle")}
+              value={analyticsOptIn}
+              disabled={!consentLoaded || savingConsent}
+              onValueChange={(next) => void toggleAnalytics(next)}
+            />
           </FadeSlideIn>
         );
     }
@@ -1526,6 +1599,16 @@ export default function OnboardingScreen() {
   function renderFooter(): React.ReactNode {
     // Single-select steps auto-advance and have no footer.
     if (step === "insulin" || step === "pillsOnly") return null;
+
+    if (step === "analytics") {
+      return (
+        <PrimaryCta
+          label={t("onboarding.continue")}
+          loading={savingConsent || !consentLoaded}
+          onPress={continueFromAnalytics}
+        />
+      );
+    }
 
     if (step === "disclaimer") {
       return (

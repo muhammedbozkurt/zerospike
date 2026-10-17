@@ -351,11 +351,25 @@ section("B. every call names an event of the schema");
   for (const call of named) {
     const name = call.name as string;
     ok(
-      `${where(call)} "${name}" is in schema v1 or the Firebase-only list`,
+      `${where(call)} "${name}" is in the schema or the Firebase-only list`,
       hasOwn(SCHEMA, name) || FIREBASE_ONLY.includes(name)
     );
     ok(`${where(call)} "${name}" is not a retired name`, !RETIRED.includes(name));
   }
+}
+
+section("B2. the paywall funnel events are sent from the paywall screen");
+{
+  const inPaywall = (n: string) => named.filter((c) => c.name === n && c.file === "app/paywall.tsx");
+  eq("paywall_cta has one call site", inPaywall("paywall_cta").length, 1);
+  eq("purchase_result has one call site", inPaywall("purchase_result").length, 1);
+  const pr = inPaywall("purchase_result")[0];
+  const result = pr?.entries.find((e) => e.key === "result");
+  ok(
+    "purchase_result reports success, cancelled and error",
+    !!result && ["success", "cancelled", "error"].every((v) => result.value.includes(`"${v}"`))
+  );
+  ok("paywall_view carries the variant", inPaywall("paywall_view")[0]?.entries.some((e) => e.key === "variant") === true);
 }
 
 section("C. literal fields fit the event they are sent with");

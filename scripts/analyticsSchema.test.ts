@@ -28,6 +28,7 @@ import {
   LOG_KINDS,
   SCHEMA_VERSION,
   isFirebaseOnlyEvent,
+  normalizeEventParams,
   normalizeLogKind,
   sanitizeEvent,
   type EventSpec,
@@ -141,7 +142,7 @@ function canonicalSchema(): Canonical {
 // The card's own text, parsed independently of eventSchema.ts. A field written
 // without a type is a string.
 function matchesContract(): void {
-  section("A. schema v1 matches the written contract");
+  section("A. schema v2 matches the written contract");
   const CONTRACT = [
     "app_open{cold:bool}",
     "onboarding_step{step:string,index:int}",
@@ -149,10 +150,12 @@ function matchesContract(): void {
     "first_log{kind:glucose|meal|other}",
     "log_added{kind:glucose|meal|other}",
     "log_edited{kind:glucose|meal|other}",
-    "paywall_view{source,context,trial_eligible:bool}",
+    "paywall_view{source,context,trial_eligible:bool,variant:enum:default}",
     "paywall_tier_selected{tier:monthly|annual|lifetime}",
+    "paywall_cta{tier:monthly|annual|lifetime}",
     "paywall_dismiss{source}",
     "purchase_completed{tier,source}",
+    "purchase_result{result:success|cancelled|error,product:monthly|annual|lifetime|downsell_annual,reason:after_logs|direct|health|foods|profiles|feature|mealResponse|spike|insights|export|settings,variant:enum:default,trial:bool,detail:store_error|already_owned|none}",
     "trial_started{tier}",
     "pro_welcome_view{}",
     "pro_welcome_step{step:health|insights|reminders,done:bool}",
@@ -185,6 +188,7 @@ function matchesContract(): void {
     for (const part of m[2] === "" ? [] : m[2].split(",")) {
       const [field, rawType] = part.split(":");
       if (rawType === undefined) fields.set(field, "string");
+      else if (rawType === "enum") fields.set(field, "enum:" + (part.split(":")[2] ?? ""));
       else if (rawType.includes("|")) {
         fields.set(field, "enum:" + rawType.split("|").sort().join("|"));
       } else fields.set(field, rawType);
@@ -193,7 +197,8 @@ function matchesContract(): void {
   }
 
   const actual = canonicalSchema();
-  eq("33 events in the contract", expected.size, 33);
+  eq("35 events in the contract", expected.size, 35);
+  eq("schema version is 2", SCHEMA_VERSION, 2);
   eq("event count", actual.size, expected.size);
   for (const [name, fields] of expected) {
     const got = actual.get(name);
@@ -315,6 +320,32 @@ function sanitizer(): void {
       badEnum.issues.length === 1 && badEnum.issues[0].includes("one of")
     );
   }
+
+  const sale = normalizeEventParams("purchase_result", {
+    result: "error",
+    product: "annual",
+    reason: "rotation",
+    variant: "default",
+    trial: true,
+    detail: "store_error",
+  });
+  const saleOut = sanitizeEvent("purchase_result", sale);
+  ok("purchase_result carries only its six closed fields", saleOut.ok && saleOut.issues.length === 0);
+  if (saleOut.ok) {
+    eq("the insulin-only paywall entry leaves as feature", saleOut.props.reason, "feature");
+    eq("six fields, no free text", Object.keys(saleOut.props).sort(), ["detail", "product", "reason", "result", "trial", "variant"]);
+  }
+  const badSale = sanitizeEvent("purchase_result", {
+    result: "error",
+    product: "annual",
+    reason: "my own words here",
+    variant: "default",
+    trial: false,
+    detail: "boom",
+  });
+  ok("an unknown reason and detail are dropped, not carried", badSale.ok && !("reason" in badSale.props) && !("detail" in badSale.props));
+  const badVariant = sanitizeEvent("paywall_view", { source: "direct", context: "inapp", trial_eligible: true, variant: "two words" });
+  ok("a variant with a space is dropped", badVariant.ok && !("variant" in badVariant.props));
 
   // String props are ASCII identifiers: a letter, no spaces, 64 chars at most.
   const idents: [string, boolean][] = [
