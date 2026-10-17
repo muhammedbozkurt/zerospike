@@ -54,14 +54,14 @@ import { privacyUrl, termsUrl } from "../lib/legal";
 import { logCrash, logEvent, type PaywallViewSource } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
-import { insulinModeUsesInsulin } from "../lib/insulinMode";
 import { useLayout } from "../lib/useLayout";
 import { StoreStatusNotice } from "../components/StoreStatusNotice";
 import { listManualSugarLogs } from "../lib/db/logs";
 import { rangeFromWindow } from "../lib/insights";
 import { targetBandFor } from "../lib/agpChart";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
-import { upper } from "../lib/upper";
+import { resetPaywallTrialCache } from "../lib/proCta";
+import { PaywallPreview } from "../components/PaywallPreview";
 import {
   DEFAULT_TRIAL_DAYS,
   PERSONAL_WINDOW_DAYS,
@@ -349,6 +349,7 @@ function PaywallScreen() {
 
   // Leaves the paywall.
   async function exit() {
+    resetPaywallTrialCache();
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -496,6 +497,7 @@ function PaywallScreen() {
       await getHealthSyncEnabled(profileId)
     );
     if (shouldAutoOpenWelcome(steps, healthAvailable)) {
+      resetPaywallTrialCache();
       router.replace("/pro-welcome");
       return;
     }
@@ -588,29 +590,26 @@ function PaywallScreen() {
   const loading = offer === null;
   const unavailable = offer?.status === "unavailable";
 
-  const shortFeatures = [
+  const benefits = [
+    { icon: "document-text-outline" as const, text: t("paywall.benefitPdf") },
+    { icon: "analytics-outline" as const, text: t("paywall.benefitTrends") },
     ...(healthAvailable
-      ? [t("paywall.featureShortHealth", { health: healthName })]
-      : []),
-    t("paywall.featureShortInsights"),
-    t("paywall.featureShortFamily"),
-    t("paywall.featureShortPdf"),
-    ...(insulinModeUsesInsulin(activeProfile?.insulin_mode)
-      ? [t("paywall.featureShortInjection")]
+      ? [
+          {
+            icon: "heart-outline" as const,
+            text: t(Platform.OS === "ios" ? "paywall.benefitImportIos" : "paywall.benefitImportAndroid"),
+          },
+        ]
       : []),
   ];
-  const featureGrid = shortFeatures.slice(0, 4);
 
-  // One 22pt headline, one 13pt subline. A limit context (health/foods/...)
-  // takes over both slots with its own title/body instead of sitting in a
-  // second box underneath - the generic offer headline is not the point when
-  // the visitor already hit a specific wall.
+  // A limit context (health/foods/...) takes over the headline with its own
+  // title: the generic offer is not the point when the visitor hit a wall.
   const heroHeadline = limit
     ? limit.title
     : annualTrial
       ? t("paywall.headlineTrial", { days: trialDays })
       : t("paywall.headline");
-  const heroSubline = limit ? limit.body : t("paywall.heroValue");
 
   return (
     <AppBackground>
@@ -663,55 +662,70 @@ function PaywallScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero: one headline, one subline underneath. A limit context
-              (health/foods/...) takes over both slots with its own
-              title/body instead of a second box below - the offer has to be
-              stated in the visitor's own terms when they already hit a wall.
-              Neither line is a health claim: both describe where things are
-              kept, not what they will do for anyone. */}
-          <GlassCard glow style={{ alignItems: "center", paddingVertical: 20, marginBottom: 14 }}>
+          {/* Compact headline; a limit context (health/foods/...) puts its own
+              title/body in the same slots. Neither line is a health claim. */}
+          <View style={{ alignItems: "center", marginBottom: 12 }}>
             <Text
               style={{
                 color: THEME.ink,
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: "800",
-                lineHeight: 28,
+                lineHeight: 26,
                 textAlign: "center",
               }}
             >
               {heroHeadline}
             </Text>
-            {heroSubline ? (
+            {limit ? (
               <Text
                 style={{
                   color: THEME.muted,
                   fontSize: 13,
                   lineHeight: 18,
                   textAlign: "center",
-                  marginTop: 6,
+                  marginTop: 4,
                 }}
               >
-                {heroSubline}
+                {limit.body}
               </Text>
             ) : null}
-          </GlassCard>
+          </View>
 
-          {/* The user's own last two weeks, one line: shown only with enough
-              manual readings of their own (personalSummary). Descriptive, a
-              restatement of what they logged, never an assessment of it. */}
-          {personal ? (
-            <GlassCard style={{ paddingVertical: 14, marginBottom: 14 }}>
-              <Text
-                style={{
-                  color: THEME.muted,
-                  fontSize: 11,
-                  letterSpacing: 1.3,
-                  fontWeight: "800",
-                }}
+          <PaywallPreview compact />
+
+          <View style={{ marginBottom: 6, paddingHorizontal: 4 }}>
+            {benefits.map((b) => (
+              <View
+                key={b.icon}
+                style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
               >
-                {upper(t("paywall.timeline.personalLabel"))}
+                <Ionicons name={b.icon} size={16} color={THEME.accent} />
+                <Text
+                  style={{ color: THEME.ink, flex: 1, marginStart: 10, fontSize: 13, lineHeight: 18 }}
+                >
+                  {b.text}
+                </Text>
+              </View>
+            ))}
+            <Text style={{ color: THEME.muted, fontSize: 12, marginStart: 26, marginBottom: 6 }}>
+              {t("paywall.featureShortFamily")}
+            </Text>
+          </View>
+
+          {personal ? (
+            <View
+              style={{
+                borderStartWidth: 2,
+                borderStartColor: THEME.border,
+                paddingStart: 10,
+                marginHorizontal: 4,
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700", marginBottom: 2 }}>
+                {t("paywall.timeline.personalLabel")}
               </Text>
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, marginTop: 6 }}>
+              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
                 {t("paywall.timeline.personal", {
                   n: personal.readings,
                   avg: isolateLtr(
@@ -720,45 +734,8 @@ function PaywallScreen() {
                   inRange: isolateLtr(pct(personal.inRangePct)),
                 })}
               </Text>
-            </GlassCard>
-          ) : null}
-
-          {/* Benefits: a 2x2 grid of short labels instead of four full
-              sentences, so the four benefits read at a glance in every
-              language. Health sync now shows on both platforms (HealthKit /
-              Health Connect), so a profile that also doses can push the
-              injection label off the 4-slot cap - that label itself only
-              applies to a profile that actually doses, so an insulin-free /
-              undiagnosed user never loses a slot to it. */}
-          <GlassCard style={{ paddingVertical: 16, marginBottom: 16 }}>
-            <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-              {featureGrid.map((text, i) => (
-                <View
-                  key={i}
-                  style={{
-                    width: "50%",
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingRight: i % 2 === 0 ? 8 : 0,
-                    paddingLeft: i % 2 === 1 ? 8 : 0,
-                    marginTop: i >= 2 ? 12 : 0,
-                  }}
-                >
-                  <Ionicons name="checkmark-circle" size={14} color={THEME.accent} />
-                  {/* numberOfLines: outcome-phrased labels (2.3.5) run longer
-                      in German/French than the old single-word ones; two
-                      lines keeps a long translation from being clipped
-                      instead of shrinking the whole row. */}
-                  <Text
-                    style={{ color: THEME.ink, flex: 1, marginLeft: 8, fontSize: 12 }}
-                    numberOfLines={2}
-                  >
-                    {text}
-                  </Text>
-                </View>
-              ))}
             </View>
-          </GlassCard>
+          ) : null}
 
           {/* Only while the last store read failed: says so and puts a real
               "Restore purchases" button within reach (the small link at the
@@ -845,9 +822,21 @@ function PaywallScreen() {
             </>
           )}
 
+          <Text
+            style={{
+              color: THEME.muted,
+              fontSize: 11,
+              textAlign: "center",
+              paddingHorizontal: 8,
+              lineHeight: 16,
+              marginTop: 16,
+            }}
+          >
+            {t("paywall.legalNote")}
+          </Text>
           {/* Bottom band: restore + privacy + terms, one 11pt row. */}
           <View
-            className="flex-row items-center justify-center flex-wrap mt-4"
+            className="flex-row items-center justify-center flex-wrap mt-2"
             style={{ gap: 6 }}
           >
             <Pressable onPress={onRestore} disabled={busy}>
@@ -880,18 +869,6 @@ function PaywallScreen() {
             </Pressable>
           </View>
 
-          <Text
-            style={{
-              color: THEME.muted,
-              fontSize: 11,
-              textAlign: "center",
-              paddingHorizontal: 8,
-              lineHeight: 16,
-              marginTop: 10,
-            }}
-          >
-            {t("paywall.legalNote")}
-          </Text>
         </ScrollView>
 
         {/* Pinned CTA band: only once real plans are on screen (loading /

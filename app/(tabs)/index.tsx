@@ -73,6 +73,7 @@ import {
   markAfterLogsPaywallShown,
 } from "../../lib/services/afterLogsPaywall";
 import { isPro } from "../../lib/services/purchases";
+import { useProCta } from "../../lib/proCta";
 import { syncLiveData } from "../../lib/services/liveData";
 import {
   importHealthGlucose,
@@ -300,6 +301,7 @@ export default function DashboardScreen() {
   // alone is not enough on Android.
   const healthAvailable = useHealthAvailable();
   const showsHealthCard = healthAvailable && !androidSourceShot;
+  const proCta = useProCta(!isProUser && showsHealthCard);
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   // The visible journal list only: same window, but with the calculator's own
@@ -2374,9 +2376,12 @@ export default function DashboardScreen() {
             {isProUser && cgmOn === null ? (
               <Skeleton width={110} height={10} radius={4} style={{ marginTop: 4 }} />
             ) : (
-              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}>
+              <Text
+                numberOfLines={isProUser ? 1 : 2}
+                style={{ color: THEME.muted, fontSize: 10, marginTop: 2 }}
+              >
                 {!isProUser
-                  ? t("dashboard.cgmProHint")
+                  ? t(proCta.key, proCta.params)
                   : syncing
                     ? t("dashboard.syncing")
                     : cgmOn

@@ -25,6 +25,7 @@ import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
+import { PaywallPreview } from "../components/PaywallPreview";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
@@ -157,6 +158,9 @@ function DownsellScreen() {
             </View>
           ) : discount ? (
             <View className="items-center" style={{ gap: 14 }}>
+              <View style={{ width: "100%", maxWidth: 420 }}>
+                <PaywallPreview />
+              </View>
               <OfferCard
                 // Bidi: same "just the number+sign pair" isolate proven on the
                 // paywall's own savePercent badge (writingDirection alone was

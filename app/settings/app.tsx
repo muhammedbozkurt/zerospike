@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
+import { useProCta } from "../../lib/proCta";
 import type { Lang } from "../../lib/db/types";
 import { applyNotificationPrefs } from "../../lib/services/notifications";
 import {
@@ -35,6 +36,7 @@ export default function AppSettings() {
   const router = useRouter();
   const { toast, confirm } = useFeedback();
   const { lang, setLanguage, isProUser, refreshPro, activeProfile } = useApp();
+  const proCta = useProCta(!isProUser);
   const { columnPad } = useLayout();
   const healthAvailable = useHealthAvailable();
   const profileId = activeProfile?.id;
@@ -176,7 +178,7 @@ export default function AppSettings() {
       ) : (
         <Row
           icon="sparkles-outline"
-          label={t("settings.goPro")}
+          label={t(proCta.key, proCta.params)}
           onPress={() => router.push({ pathname: "/paywall", params: { reason: "settings" } })}
         />
       )}

@@ -7,6 +7,7 @@ import Constants from "expo-constants";
 
 import { AppBackgroundFill } from "../../components/rich";
 import { useApp } from "../../lib/store/AppContext";
+import { useProCta } from "../../lib/proCta";
 import {
   getNotificationPermission,
   type NotificationPermission,
@@ -27,6 +28,7 @@ export default function SettingsHub() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, isProUser } = useApp();
+  const proCta = useProCta(!isProUser);
   // Tablet: hub title and rows share one centred column instead of full-width
   // rows with a lone chevron at the far edge. No-op padding on phones.
   const { columnPad } = useLayout();
@@ -83,10 +85,8 @@ export default function SettingsHub() {
         <Row
           icon="phone-portrait-outline"
           label={t("settings.appSection")}
-          // A free user's row was blank here, which is the one place the
-          // offer is actually looked for; the existing "Go Pro" label is
-          // reused rather than a second wording for one thing.
-          value={isProUser ? t("settings.proActive") : t("settings.goPro")}
+          // Free users see the shared Pro lock label here (trial or upgrade).
+          value={isProUser ? t("settings.proActive") : t(proCta.key, proCta.params)}
           onPress={go("/settings/app")}
         />
         <Row icon="information-circle-outline" label={t("settings.hubAbout")} onPress={go("/settings/about")} />

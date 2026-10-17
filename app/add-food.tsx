@@ -10,6 +10,7 @@ import { GLUCOSE_RICH, HIT_TARGET, INPUT_TEXT, MODAL_TOP_PAD, TABULAR, THEME } f
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
+import { useProCta } from "../lib/proCta";
 import { addCustomFood, getFood, listPortions, replacePortions, updateFood } from "../lib/db/foods";
 import {
   DEFAULT_FOOD_CATEGORY,
@@ -50,6 +51,7 @@ function AddFoodScreen() {
     foodId?: string;
   }>();
   const { isProUser, bumpData } = useApp();
+  const proCta = useProCta(!isProUser);
   const { toast } = useFeedback();
   const { columnPad } = useLayout();
 
@@ -339,9 +341,16 @@ function AddFoodScreen() {
                 }}
               >
                 <Ionicons name="lock-closed-outline" size={18} color={GLUCOSE_RICH.high} />
-                <Text style={{ color: THEME.ink, fontSize: 13, marginLeft: 12, flex: 1 }}>
-                  {t("paywall.limitTitleFoods")}
-                </Text>
+                <View style={{ marginLeft: 12, flex: 1 }}>
+                  <Text style={{ color: THEME.ink, fontSize: 13 }}>
+                    {t("paywall.limitTitleFoods")}
+                  </Text>
+                  <Text
+                    style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}
+                  >
+                    {t(proCta.key, proCta.params)}
+                  </Text>
+                </View>
               </Pressable>
             ) : null}
 

@@ -84,6 +84,7 @@ import { Skeleton } from "../components/Skeleton";
 import { useFeedback } from "../components/Feedback";
 import { logEvent } from "../lib/analytics";
 import { formatLocale, num, pct, pctParts } from "../lib/format";
+import { useProCta } from "../lib/proCta";
 import {
   AppBackground,
   GlassCard,
@@ -388,6 +389,7 @@ export default function InsightsScreen() {
   const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const { activeProfile, isProUser, dataVersion } = useApp();
+  const proCta = useProCta(!isProUser);
   const { isWide } = useLayout();
   const { actionSheet } = useFeedback();
   const rtl = I18nManager.isRTL;
@@ -2271,7 +2273,7 @@ export default function InsightsScreen() {
                       {t("insights.lockedBody")}
                     </Text>
                     <GradientCTA
-                      label={t("paywall.cta")}
+                      label={t(proCta.key, proCta.params)}
                       onPress={() =>
                         router.push({ pathname: "/paywall", params: { reason: "insights" } })
                       }

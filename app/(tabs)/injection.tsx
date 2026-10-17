@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import Animated from "react-native-reanimated";
 
 import { useApp } from "../../lib/store/AppContext";
+import { useProCta } from "../../lib/proCta";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
@@ -146,6 +147,7 @@ export default function InjectionScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ compose?: string; segment?: string; zoom?: string }>();
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
+  const proCta = useProCta(!isProUser);
   const { confirm, actionSheet, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
   const guardEntry = useEntryGuardConfirm();
@@ -804,6 +806,9 @@ export default function InjectionScreen() {
         <Text style={{ color: THEME.ink, fontWeight: "700" }}>{t("injection.rotationTitle")}</Text>
         <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }}>
           {t("paywall.limitTitleRotation")}
+        </Text>
+        <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+          {t(proCta.key, proCta.params)}
         </Text>
       </View>
       <View className="rounded-full bg-brand px-2 py-0.5">
