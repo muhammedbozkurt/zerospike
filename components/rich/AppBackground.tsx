@@ -28,6 +28,9 @@ import { THEME } from "../../lib/theme/tokens";
  * element object on a re-render and skips the subtree outright.
  */
 const Wash = React.memo(function Wash() {
+  if (THEME.scheme === "light") {
+    return <LightWash id="bgLight" />;
+  }
   return (
     <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
       <Defs>
@@ -56,6 +59,22 @@ const Wash = React.memo(function Wash() {
   );
 });
 
+/** Light theme: a flat cream with one very faint accent radial at the top. */
+function LightWash({ id }: { id: string }) {
+  return (
+    <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+      <Defs>
+        <RadialGradient id={id} cx="50%" cy="-10%" rx="120%" ry="55%">
+          <Stop offset="0" stopColor={THEME.accentFill} stopOpacity={0.06} />
+          <Stop offset="1" stopColor={THEME.accentFill} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Rect x="0" y="0" width="100%" height="100%" fill={THEME.bg.base} />
+      <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
 const WASH_ELEMENT = <Wash />;
 
 export function AppBackground({
@@ -66,7 +85,7 @@ export function AppBackground({
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <View style={[styles.root, style]}>
+    <View style={[styles.root, { backgroundColor: THEME.bg.base }, style]}>
       {WASH_ELEMENT}
       {children}
     </View>
@@ -74,8 +93,7 @@ export function AppBackground({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#0f1f29" },
-  fill: { backgroundColor: "#0f1f29" },
+  root: { flex: 1 },
 });
 
 /**
@@ -85,7 +103,13 @@ const styles = StyleSheet.create({
  */
 const FillWash = React.memo(function FillWash() {
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.fill]}>
+    <View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { backgroundColor: THEME.bg.base }]}
+    >
+      {THEME.scheme === "light" ? (
+        <LightWash id="bgfLight" />
+      ) : (
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>
           <LinearGradient id="bgfLinear" x1="0" y1="0" x2="0" y2="1">
@@ -106,6 +130,7 @@ const FillWash = React.memo(function FillWash() {
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgfTeal)" />
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#bgfCyan)" />
       </Svg>
+      )}
     </View>
   );
 });

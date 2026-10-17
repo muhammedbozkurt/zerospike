@@ -22,7 +22,9 @@ import { getHealthSyncEnabled } from "../../lib/services/health";
 import { useHealthAvailable } from "../../lib/services/healthAvailability";
 import { incompleteCount, withHealthMirror } from "../../lib/proWelcome";
 import { StoreStatusNotice } from "../../components/StoreStatusNotice";
-import { SectionLabel } from "../../components/ui";
+import { SectionLabel, Segmented } from "../../components/ui";
+import { useTheme } from "../../lib/theme/ThemeProvider";
+import type { ThemePref } from "../../lib/theme/themePref";
 import { LanguagePicker } from "../../components/LanguagePicker";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { useFeedback } from "../../components/Feedback";
@@ -38,6 +40,7 @@ export default function AppSettings() {
   const { lang, setLanguage, isProUser, refreshPro, activeProfile } = useApp();
   const proCta = useProCta(!isProUser);
   const { columnPad } = useLayout();
+  const { pref, setPref } = useTheme();
   const healthAvailable = useHealthAvailable();
   const profileId = activeProfile?.id;
   const [restoring, setRestoring] = useState(false);
@@ -148,6 +151,17 @@ export default function AppSettings() {
       <View style={columnPad()}>
       <SectionLabel>{t("settings.language")}</SectionLabel>
       <LanguagePicker value={lang} onChange={onChangeLang} />
+
+      <SectionLabel>{t("settings.appearance")}</SectionLabel>
+      <Segmented<ThemePref>
+        options={[
+          { value: "light", label: t("settings.appearanceLight") },
+          { value: "dark", label: t("settings.appearanceDark") },
+          { value: "system", label: t("settings.appearanceSystem") },
+        ]}
+        value={pref}
+        onChange={(next) => void setPref(next)}
+      />
 
       {spikeConfigured ? (
         <>
