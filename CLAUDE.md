@@ -6,6 +6,7 @@ zerospike: diyabet gunlugu uygulamasi (Expo + RN + TS, iOS + Android). Saglik ve
 
 - npm run typecheck (i18n-check dahil)
 - npm run i18n:check
+- npm run theme:lint
 
 ## Sert kurallar (ihlali store reddi)
 
@@ -16,4 +17,6 @@ zerospike: diyabet gunlugu uygulamasi (Expo + RN + TS, iOS + Android). Saglik ve
 - HITAP: her dil TEK bir hitap kullanir, resmi olan. de = Sie/Ihr, fr = vous/votre, es = usted/su, tr = cogul-nazik ("-niz/-iniz"), it = Lei/Suo, pt = voce/sua (pt-BR), ar = resmi MSA, ja = teineigo (desu/masu). Ayni ekranda iki hitap karisamaz; yeni string eklerken o dosyanin hitabina uy.
 - Yuzde isareti elle yazilmaz: lib/format pct() / pctParts() kullanilir (tr "%92", en "92%", de/fr/es "92 %"). Para icin money(); Intl'e undefined locale gecilmez.
 - Buyuk harf her zaman lib/upper upper() ile; duz toUpperCase() Turkce "i" yi bozar.
+- Tema: yeni renk yalniz lib/theme token'indan (THEME / useTheme) gelir; app, components ve lib UI kodunda sabit hex ve rgba( yasak (kapsam disi: report.ts, androidWidget.ts, pdfColors.ts, scWidgets, wear). Kapi: npm run theme:lint.
+- Hedef aralik varsayilanlarinin tek kaynagi lib/diabetesDefaults.ts (TARGET_DEFAULTS_MGDL, mg/dL, tipe gore); esik ve donusum lib/glucose.ts. Yeni kopya sabit eklenmez.
 - Yeni UI metninde tasma kontrolu en uzun ceviriyle (genelde Almanca) yapilir; iOS metin API'leri (adjustsFontSizeToFit) Android'de sessizce kirpar. de/fr/es gercek odeme yapan kullanici dilleridir.
