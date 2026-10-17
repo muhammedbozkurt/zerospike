@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/brand/icon-1024.png",
     "scheme": "zerospike",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "locales": {
       "tr": "./ios-locales/tr.json",
       "de": "./ios-locales/de.json",
@@ -324,10 +324,14 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/brand/splash-glyph.png",
+          "image": "./assets/brand/splash-glyph-light.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#04161d"
+          "backgroundColor": "#F5EFE6",
+          "dark": {
+            "image": "./assets/brand/splash-glyph.png",
+            "backgroundColor": "#04161d"
+          }
         }
       ],
       "expo-sqlite",
