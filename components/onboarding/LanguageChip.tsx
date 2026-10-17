@@ -65,11 +65,11 @@ export function LanguageChip() {
         className="flex-row items-center rounded-full border border-hair bg-glass"
         style={{ gap: 6, paddingHorizontal: 14, paddingVertical: 8 }}
       >
-        <Ionicons name="language-outline" size={16} color={THEME.ink} />
-        <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "600" }}>
+        <Ionicons name="language-outline" size={16} color={THEME.text} />
+        <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "600" }}>
           {lang.toUpperCase()}
         </Text>
-        <Ionicons name="chevron-down" size={12} color={THEME.muted} />
+        <Ionicons name="chevron-down" size={12} color={THEME.textMuted} />
       </Pressable>
 
       <Modal
@@ -89,8 +89,8 @@ export function LanguageChip() {
             className="rounded-t-3xl border-t border-hair p-4 pb-8"
             style={[
               {
-                backgroundColor: THEME.sheet,
-                shadowColor: "#000",
+                backgroundColor: THEME.surfaceRaised,
+                shadowColor: "#000", // theme-ok
                 shadowOpacity: 0.5,
                 shadowRadius: 28,
                 shadowOffset: { width: 0, height: -8 },
@@ -134,7 +134,7 @@ export function LanguageChip() {
                       <Ionicons
                         name="checkmark-circle"
                         size={20}
-                        color="#2ee6ff"
+                        color={THEME.accent}
                       />
                     ) : null}
                   </Pressable>

@@ -69,7 +69,7 @@ function CardCaption({ children }: { children: string }) {
   return (
     <Text
       style={{
-        color: THEME.muted,
+        color: THEME.textMuted,
         fontSize: 11,
         lineHeight: 14,
         letterSpacing: 1.2,
@@ -103,12 +103,12 @@ function TargetRow({
       accessible
       accessibilityLabel={`${label}, ${formatGlucose(minMgdl, unit)} - ${formatGlucose(maxMgdl, unit)} ${glucoseUnitLabel(unit)}`}
     >
-      <Text style={{ color: THEME.ink, fontSize: 15 }}>{label}</Text>
+      <Text style={{ color: THEME.text, fontSize: 15 }}>{label}</Text>
       <View className="flex-row items-baseline" style={{ gap: 4 }}>
         <RangeEnd mgdl={minMgdl} unit={unit} onSettle={onSettle} />
-        <Text style={{ color: THEME.muted, fontSize: 16, fontWeight: "700" }}>-</Text>
+        <Text style={{ color: THEME.textMuted, fontSize: 16, fontWeight: "700" }}>-</Text>
         <RangeEnd mgdl={maxMgdl} unit={unit} />
-        <Text style={{ color: THEME.muted, fontSize: 12, marginLeft: 2 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 12, marginLeft: 2 }}>
           {glucoseUnitLabel(unit)}
         </Text>
       </View>
@@ -144,7 +144,7 @@ function PlanRow({
   return (
     <View className="flex-row items-center" style={{ gap: 10, marginBottom: 12 }}>
       <Ionicons name={icon} size={18} color={THEME.accent} />
-      <Text style={{ color: THEME.ink, fontSize: 15, flex: 1 }} numberOfLines={2}>
+      <Text style={{ color: THEME.text, fontSize: 15, flex: 1 }} numberOfLines={2}>
         {label}
       </Text>
       {mode ? (
@@ -155,7 +155,7 @@ function PlanRow({
         <Ionicons
           name={mode === "alarm" ? "alarm" : wantsAlarm ? "alarm-outline" : "notifications-outline"}
           size={14}
-          color={mode === "alarm" ? THEME.accent : THEME.muted}
+          color={mode === "alarm" ? THEME.accent : THEME.textMuted}
           accessibilityLabel={
             mode === "alarm" ? t("reminders.modeAlarm") : t("reminders.modeNotification")
           }
@@ -166,7 +166,7 @@ function PlanRow({
           style={[
             TABULAR,
             {
-              color: valueTone === "muted" ? THEME.muted : THEME.ink,
+              color: valueTone === "muted" ? THEME.textMuted : THEME.text,
               fontSize: 15,
               fontWeight: valueTone === "muted" ? "400" : "700",
             },
@@ -275,7 +275,7 @@ export function Reveal({
         <FadeSlideIn delay={D_LABEL}>
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: 10,
               letterSpacing: 1.4,
               fontWeight: "800",
@@ -288,7 +288,7 @@ export function Reveal({
         <FadeSlideIn delay={D_TITLE}>
           <Text
             style={{
-              color: THEME.ink,
+              color: THEME.text,
               fontSize: 26,
               fontWeight: "800",
               textAlign: "center",
@@ -299,7 +299,7 @@ export function Reveal({
           </Text>
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               textAlign: "center",
               marginTop: 6,
               marginBottom: 16,
@@ -316,7 +316,7 @@ export function Reveal({
             <View className="flex-row items-center justify-between mb-2">
               <Text
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   fontSize: 11,
                   letterSpacing: 1.3,
                   fontWeight: "800",
@@ -344,7 +344,7 @@ export function Reveal({
               targetBand={band}
               style={{ alignSelf: "stretch", width: "100%" }}
             />
-            <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 8, textAlign: "center" }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 8, textAlign: "center" }}>
               {t("onboarding.previewCaption")}
             </Text>
           </GlassCard>
@@ -391,7 +391,7 @@ export function Reveal({
                 there: this states what the reminder's own tap already does,
                 never a new promise of its own. */}
             {plan.some((item) => item.kind === "basal") ? (
-              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 16 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16 }}>
                 {t("onboarding.revealBasalTip")}
               </Text>
             ) : null}

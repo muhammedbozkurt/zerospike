@@ -28,7 +28,7 @@ export function StepGlyph({
   spacing?: number;
 }) {
   const size = dense ? 64 : 76;
-  const hue = tone === "caution" ? THEME.caution : THEME.accent;
+  const hue = tone === "caution" ? THEME.warning : THEME.accent;
   return (
     <View style={{ alignItems: "center", marginBottom: spacing ?? (dense ? 12 : 18) }}>
       <View
@@ -40,7 +40,7 @@ export function StepGlyph({
           justifyContent: "center",
           borderWidth: 1,
           borderColor: tone === "caution" ? withAlpha(hue, 0.35) : THEME.border,
-          backgroundColor: tone === "caution" ? withAlpha(hue, 0.1) : THEME.glass,
+          backgroundColor: tone === "caution" ? withAlpha(hue, 0.1) : THEME.surface,
         }}
       >
         <Ionicons name={icon} size={dense ? 28 : 34} color={hue} />

@@ -503,25 +503,25 @@ function ProfileSetupScreen() {
         <View className="items-center mb-5" style={{ gap: 8 }}>
           <ConicAvatar label={initials(name)} size={66} />
           <Text
-            style={{ color: THEME.ink, fontSize: 22, fontWeight: "800" }}
+            style={{ color: THEME.text, fontSize: 22, fontWeight: "800" }}
             numberOfLines={1}
           >
             {name || t("profiles.defaultName")}
           </Text>
           <View
             className="rounded-full px-3 py-1"
-            style={{ backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }}
+            style={{ backgroundColor: THEME.surface, borderWidth: 1, borderColor: THEME.border }}
           >
             {/* Bidi: "mg/dL · 70-180" holds a hyphenated number range, which
                 reorders under RTL unless pinned LTR (same fix as insights'
                 target-band line). */}
-            <Text style={{ color: THEME.muted, fontSize: 11, writingDirection: "ltr" }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, writingDirection: "ltr" }}>
               {summary}
             </Text>
           </View>
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: 11,
               lineHeight: 16,
               textAlign: "center",
