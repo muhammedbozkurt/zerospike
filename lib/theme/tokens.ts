@@ -41,6 +41,8 @@ export interface Palette {
   success: string;
   warning: string;
   danger: string;
+  dangerFill: string;
+  onDanger: string;
   violet: string;
   glucose: Record<GKey, string>;
   glucoseText: Record<GKey, string>;
@@ -83,6 +85,8 @@ export const DARK: Palette = {
   success: "#22e39a",
   warning: "#ffa02a",
   danger: "#ff5468",
+  dangerFill: "#ff5468",
+  onDanger: "#04161d",
   violet: "#7c5cff",
   glucose: {
     low: "#ff5468",
@@ -131,6 +135,8 @@ export const LIGHT: Palette = {
   success: "#157A52",
   warning: "#8F5F00",
   danger: "#BE2F43",
+  dangerFill: "#BE2F43",
+  onDanger: "#FFFFFF",
   violet: "#5B3FE0",
   glucose: {
     low: "#D6304A",
@@ -341,6 +347,8 @@ export const THEME = live((p) => ({
   success: p.success,
   warning: p.warning,
   danger: p.danger,
+  dangerFill: p.dangerFill,
+  onDanger: p.onDanger,
   glucose: p.glucose,
   glucoseText: p.glucoseText,
   glucoseTint: p.glucoseTint,

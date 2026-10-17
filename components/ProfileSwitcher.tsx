@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { createProfile } from "../lib/db/profiles";
 import { Button } from "./ui";
-import { INPUT_TEXT, THEME } from "../lib/theme/tokens";
+import { ELEVATION, INPUT_TEXT, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 
 /** Cap for a centered, content-sized dialog card on a tablet (does not
@@ -158,7 +158,7 @@ export function ProfileSwitcher({
               style={[
                 {
                   backgroundColor: THEME.surfaceRaised,
-                  shadowColor: "#000", // theme-ok
+                  shadowColor: ELEVATION.sheet.shadowColor,
                   shadowOpacity: 0.5,
                   shadowRadius: 28,
                   shadowOffset: { width: 0, height: 12 },

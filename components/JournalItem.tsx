@@ -43,7 +43,6 @@ import {
 
 
 
-const ON_DANGER = "#fff"; // theme-ok
 
 /** The single red action a swipe reveals: a trash icon over the word for
  *  "Delete", so it reads the same way whether the user gets there by icon or
@@ -104,17 +103,17 @@ function SwipeDeleteAction({
           flex: 1,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: RICH_BY_STATUS.low,
+          backgroundColor: THEME.dangerFill,
         }}
       >
         <Animated.View style={[{ alignItems: "center" }, contentStyle]}>
-          <Ionicons name="trash-outline" size={18} color={ON_DANGER} />
+          <Ionicons name="trash-outline" size={18} color={THEME.onDanger} />
           {/* Opacity only, never `display`: the word keeps its box at every
               width, so the icon does not hop vertically as the label arrives. */}
           <Animated.Text
             numberOfLines={1}
             style={[
-              { color: ON_DANGER, fontSize: 10, fontWeight: "700", marginTop: 3 },
+              { color: THEME.onDanger, fontSize: 10, fontWeight: "700", marginTop: 3 },
               labelStyle,
             ]}
           >

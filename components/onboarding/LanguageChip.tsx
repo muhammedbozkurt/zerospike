@@ -14,7 +14,7 @@ import type { Lang } from "../../lib/db/types";
 import { LANG_LABELS, SUPPORTED_LANGS } from "../../lib/i18n";
 import { useApp } from "../../lib/store/AppContext";
 import { hapticSelect } from "../../lib/haptics";
-import { THEME } from "../../lib/theme/tokens";
+import { ELEVATION, THEME } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 
 /** Widest the sheet gets on a tablet before it stops stretching and centres
@@ -90,7 +90,7 @@ export function LanguageChip() {
             style={[
               {
                 backgroundColor: THEME.surfaceRaised,
-                shadowColor: "#000", // theme-ok
+                shadowColor: ELEVATION.sheet.shadowColor,
                 shadowOpacity: 0.5,
                 shadowRadius: 28,
                 shadowOffset: { width: 0, height: -8 },

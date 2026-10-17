@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 
-import { contrastTable } from "../lib/theme/contrast";
+import { contrast, contrastTable } from "../lib/theme/contrast";
 import {
   loadThemePref,
   resolveScheme,
@@ -107,6 +107,15 @@ async function main() {
     assert.equal(THEME.glass, DARK.surface);
     assert.equal(GLUCOSE_COLORS.low, DARK.glucose.low);
     setActiveScheme(before);
+  });
+
+  await check("destructive fill pair: onDanger on dangerFill >= 4.5 in both schemes", () => {
+    for (const p of [LIGHT, DARK]) {
+      const r = contrast(p.onDanger, p.dangerFill, p.bg);
+      assert.ok(r >= 4.5, `${p.scheme} ${r.toFixed(2)}`);
+    }
+    assert.equal(LIGHT.dangerFill, "#BE2F43");
+    assert.equal(LIGHT.onDanger, "#FFFFFF");
   });
 
   const rows = contrastTable();

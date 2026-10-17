@@ -1,9 +1,10 @@
 import React from "react";
 import Svg, { Path } from "react-native-svg";
+import { THEME } from "../lib/theme/tokens";
 
 export function Logo({
   size = 64,
-  brand = "#ffffff",
+  brand = THEME.text,
 }: {
   size?: number;
   brand?: string;

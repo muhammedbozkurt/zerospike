@@ -48,7 +48,7 @@ export function InsulinModeSection({
           value={oralMeds}
           onValueChange={onChangeOralMeds}
           trackColor={{ true: THEME.accent, false: THEME.border }}
-          thumbColor={THEME.ink}
+          thumbColor={THEME.text}
         />
       </View>
     </FormCard>

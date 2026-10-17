@@ -85,6 +85,8 @@ export function contrastTable(): ContrastRow[] {
       }
     }
     add("accentOnFill on accentFill", p.accentOnFill, p.accentFill, 4.5);
+    add("onDanger on dangerFill", p.onDanger, p.dangerFill, 4.5);
+    add("dangerFill on bg", p.dangerFill, p.bg, 3);
   }
   return rows;
 }

@@ -18,6 +18,8 @@ module.exports = {
         brand: "rgb(var(--c-brand) / <alpha-value>)",
         brandDark: "rgb(var(--c-brandDark) / <alpha-value>)",
         onAccent: "rgb(var(--c-onAccent) / <alpha-value>)",
+        dangerFill: "rgb(var(--c-dangerFill) / <alpha-value>)",
+        onDanger: "rgb(var(--c-onDanger) / <alpha-value>)",
         low: "rgb(var(--c-low) / <alpha-value>)",
         normal: "rgb(var(--c-normal) / <alpha-value>)",
         elevated: "rgb(var(--c-elevated) / <alpha-value>)",

@@ -554,11 +554,15 @@ function ConfirmOverlay({
       accessibilityLabel={confirmLabel}
       className={`${width} rounded-2xl py-3.5 px-3 ${
         opts.destructive
-          ? "bg-low active:opacity-80"
+          ? "bg-dangerFill active:opacity-80"
           : "bg-brand active:bg-brandDark"
       }`}
     >
-      <DialogLabel className="text-onAccent font-semibold">{confirmLabel}</DialogLabel>
+      <DialogLabel
+        className={`font-semibold ${opts.destructive ? "text-onDanger" : "text-onAccent"}`}
+      >
+        {confirmLabel}
+      </DialogLabel>
     </Pressable>
   );
 
@@ -595,7 +599,7 @@ function ConfirmOverlay({
             style={[
               {
                 backgroundColor: THEME.surfaceRaised,
-                shadowColor: "#000", // theme-ok
+                shadowColor: ELEVATION.sheet.shadowColor,
                 shadowOpacity: 0.5,
                 shadowRadius: 28,
                 shadowOffset: { width: 0, height: 12 },

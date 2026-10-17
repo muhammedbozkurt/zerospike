@@ -3,6 +3,7 @@
  *  1. module-level uses of THEME / GLUCOSE_* / RICH_BY_STATUS / ELEVATION that
  *     freeze the first palette (a top-level const that is not a function),
  *  2. hard-coded hex and rgba() colors in app code.
+ * A bare alias of a live export (`export const A = LIVE;`) is not a freeze.
  * Out of scope: lib/services/report.ts, lib/services/androidWidget.ts,
  * components/scWidgets/*, lib/theme/tokens.ts. A line marked `// theme-ok`
  * (or `{/* theme-ok *\/}`) is allowed.
@@ -17,6 +18,7 @@ const SCAN = ["app", "components", "lib"];
 const SKIP = [
   "lib/services/report.ts",
   "lib/services/androidWidget.ts",
+  "lib/services/pdfColors.ts",
   "components/scWidgets/",
   "lib/theme/tokens.ts",
   "lib/theme/contrast.ts",
@@ -34,7 +36,8 @@ function walk(dir, out) {
   return out;
 }
 
-const TOKEN = /\b(THEME\b|GLUCOSE_COLORS|GLUCOSE_TINT|GLUCOSE_TEXT|GLUCOSE_RICH|RICH_BY_STATUS|ELEVATION)/;
+const TOKEN = /\b(THEME\b|GLUCOSE_COLORS|GLUCOSE_TINT|GLUCOSE_TEXT|GLUCOSE_RICH|RICH_BY_STATUS|ELEVATION|STATUS_COLOR)/;
+const LIVE_ALIAS = /^(export\s+)?const\s+\w+(\s*:\s*[^=]+)?\s*=\s*[A-Z_]+;\s*$/;
 const HEX = /#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g;
 const RGBA = /rgba?\(/g;
 
@@ -62,7 +65,7 @@ for (const top of SCAN) {
         if (m) {
           const before = stmt.slice(0, m.index);
           const inFn = /=>|\bfunction\b/.test(before);
-          if (!inFn && !/theme-ok/.test(stmt)) {
+          if (!inFn && !/theme-ok/.test(stmt) && !LIVE_ALIAS.test(stmt.trim())) {
             const ln = i + 1 + stmt.slice(0, m.index).split("\n").length - 1;
             moduleLevel.push(`${rel}:${ln}`);
           }

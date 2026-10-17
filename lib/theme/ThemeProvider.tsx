@@ -54,6 +54,8 @@ function cssVars(p: Palette) {
     "--c-brand": channels(p.accentFill),
     "--c-brandDark": channels(p.accentPressed),
     "--c-onAccent": channels(p.accentOnFill),
+    "--c-dangerFill": channels(p.dangerFill),
+    "--c-onDanger": channels(p.onDanger),
     "--c-ink": channels(p.text),
     "--c-mut": channels(p.textMuted),
     "--c-low": channels(p.glucose.low),
