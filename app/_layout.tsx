@@ -42,6 +42,7 @@ import { logCrash, logEvent } from "../lib/analytics";
 import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSink";
 import { watchEntitlement, winbackHasRealDiscount } from "../lib/services/purchases";
+import { clearPaywallTrial, refreshPaywallTrialOnce } from "../lib/proCta";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
@@ -551,6 +552,12 @@ function RootNavigator() {
     });
     return () => sub.remove();
   }, [ready, onboarded]);
+
+  useEffect(() => {
+    if (!ready || !onboarded) return;
+    if (isProUser) clearPaywallTrial();
+    else void refreshPaywallTrialOnce();
+  }, [ready, onboarded, isProUser]);
 
   // One-time winback: when the Pro entitlement is lost, offer the discounted
   // annual once (only if a real discount is configured).

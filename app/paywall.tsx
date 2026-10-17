@@ -60,7 +60,7 @@ import { listManualSugarLogs } from "../lib/db/logs";
 import { rangeFromWindow } from "../lib/insights";
 import { targetBandFor } from "../lib/agpChart";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
-import { resetPaywallTrialCache } from "../lib/proCta";
+import { clearPaywallTrial, getPaywallTrialGen, primePaywallTrial, resetPaywallTrialCache } from "../lib/proCta";
 import { PaywallPreview } from "../components/PaywallPreview";
 import {
   DEFAULT_TRIAL_DAYS,
@@ -288,8 +288,12 @@ function PaywallScreen() {
   useEffect(() => {
     let alive = true;
     setOffer(null);
+    const trialGen = getPaywallTrialGen();
     loadOfferings()
-      .then((r) => alive && setOffer(r))
+      .then((r) => {
+        if (trialGen === getPaywallTrialGen()) primePaywallTrial(r);
+        if (alive) setOffer(r);
+      })
       .catch((err) => {
         logCrash(err, { screen: "paywall", load: "offerings" });
         if (alive) setOffer({ status: "unavailable", isDevFallback: false, plans: {} });
@@ -512,6 +516,7 @@ function PaywallScreen() {
       await refreshPro();
       const feedback = purchaseToastFor(res);
       if (res.ok) {
+        clearPaywallTrial();
         logEvent("purchase_completed", { tier: plan, source: reason ?? "direct" });
         await settleTrial(res);
         hapticSuccess();
@@ -537,6 +542,7 @@ function PaywallScreen() {
       const result = await restore();
       await refreshPro();
       if (result === "restored") {
+        clearPaywallTrial();
         await settleRestoredTrial();
         hapticSuccess();
         toast(t("paywall.restored"), "success");

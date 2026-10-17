@@ -24,6 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.greeneyeapp.zerospike",
+      "appStoreUrl": "https://apps.apple.com/app/id6778782351",
       "appleTeamId": "YWRPV58T86",
       "buildNumber": "77",
       "googleServicesFile": "./GoogleService-Info.plist",
@@ -147,6 +148,7 @@
     },
     "android": {
       "package": "com.greeneyeapp.zerospike",
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.greeneyeapp.zerospike",
       "versionCode": 78,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {

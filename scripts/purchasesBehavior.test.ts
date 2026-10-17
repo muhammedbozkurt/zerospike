@@ -366,6 +366,28 @@ const eligibilityOf = (status: number) => ({
     }
 
     reset();
+    {
+      const Q = loadPurchases();
+      rc.offerings = () => ({ current: { availablePackages: [] } });
+      await Q.loadOfferings({ silent: true });
+      eq("silent offerings failure fires no fallback event", events.filter((e) => e.name === "offerings_fallback_shown").length, 0);
+      await Q.loadOfferings();
+      eq("default offerings failure still fires the event", events.filter((e) => e.name === "offerings_fallback_shown").length, 1);
+    }
+
+    reset();
+    {
+      const Q = loadPurchases();
+      rc.offerings = () => {
+        throw new Error("offline");
+      };
+      const r = await Q.loadOfferings({ silent: true });
+      eq("silent fetch_error is unavailable", r.status, "unavailable");
+      eq("silent fetch_error fires no fallback event", events.filter((e) => e.name === "offerings_fallback_shown").length, 0);
+      eq("silent fetch_error still marks the store status error", Q.getStoreStatus(), "error");
+    }
+
+    reset();
     let P = loadPurchases();
     rc.offerings = () => iosOffering();
     rc.eligibility = () => ({});

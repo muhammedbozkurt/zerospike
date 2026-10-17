@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 
 import { loadOfferings, type OfferingsResult } from "./services/purchases";
@@ -21,29 +22,55 @@ export function proCtaLabel(input: {
   return { kind: "upgrade", key: "proCta.upgrade", params: {} };
 }
 
-let offeringsPromise: Promise<OfferingsResult> | null = null;
+const STORAGE_KEY = "zerospike.proCtaTrial";
 
-function sharedOfferings(): Promise<OfferingsResult> {
-  if (!offeringsPromise) {
-    const p = loadOfferings();
-    offeringsPromise = p;
-    p.then(
-      (r) => {
-        if (r.status !== "ready" && offeringsPromise === p) offeringsPromise = null;
-      },
-      () => {
-        if (offeringsPromise === p) offeringsPromise = null;
-      }
-    );
-  }
-  return offeringsPromise;
-}
+const MAX_STORED_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Forget the cached offerings (after a purchase or restore changes eligibility). */
-export function resetPaywallTrialCache(): void {
-  offeringsPromise = null;
+let cachedTrial: PaywallTrial | null = null;
+let gen = 0;
+
+function notify(): void {
   cacheVersion++;
   listeners.forEach((fn) => fn());
+}
+
+function parseStored(raw: string | null): PaywallTrial | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    if (typeof v?.e !== "boolean" || !Number.isInteger(v?.d) || v.d < 0) return null;
+    if (typeof v?.t !== "number" || !Number.isFinite(v.t) || Date.now() - v.t > MAX_STORED_AGE_MS) return null;
+    return { trialEligible: v.e, trialDays: v.d };
+  } catch {
+    return null;
+  }
+}
+
+/** Fills from storage only when memory is empty; hooks then read the cache synchronously. */
+export async function hydratePaywallTrial(): Promise<void> {
+  const startGen = gen;
+  try {
+    const stored = parseStored(await AsyncStorage.getItem(STORAGE_KEY));
+    if (startGen !== gen) return;
+    if (stored && !cachedTrial) {
+      cachedTrial = stored;
+      notify();
+    }
+  } catch {}
+}
+
+/** Re-reads the persisted value (after a paywall exit or purchase screen); never invalidates it. */
+export function resetPaywallTrialCache(): void {
+  notify();
+  void hydratePaywallTrial();
+}
+
+/** Drops memory and storage (Pro gained, or a purchase or restore just landed), so no stale trial promise survives. */
+export function clearPaywallTrial(): void {
+  gen++;
+  cachedTrial = null;
+  void AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+  notify();
 }
 
 let cacheVersion = 0;
@@ -53,7 +80,7 @@ export function getPaywallTrialCacheVersion(): number {
   return cacheVersion;
 }
 
-/** Calls fn after every resetPaywallTrialCache(); returns the unsubscribe. */
+/** Calls fn after every cache change or reset; returns the unsubscribe. */
 export function subscribePaywallTrialReset(fn: () => void): () => void {
   listeners.add(fn);
   return () => {
@@ -76,36 +103,49 @@ export function trialFromOfferings(r: OfferingsResult | null | undefined): Paywa
   return { trialEligible: true, trialDays: Number.isInteger(days) && days > 0 ? days : 0 };
 }
 
-/** Cached one-shot read; any failure reads as "no trial". */
-export function getPaywallTrial(): Promise<PaywallTrial> {
-  return sharedOfferings().then(trialFromOfferings, () => NO_TRIAL);
+/** Stores the store's answer; only a real ready result writes, anything else keeps the old value. */
+export function primePaywallTrial(r: OfferingsResult | null | undefined): void {
+  if (!r || r.status !== "ready" || r.isDevFallback) return;
+  const next = trialFromOfferings(r);
+  const same = cachedTrial && cachedTrial.trialEligible === next.trialEligible && cachedTrial.trialDays === next.trialDays;
+  gen++;
+  cachedTrial = next;
+  void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ e: next.trialEligible, d: next.trialDays, t: Date.now() })).catch(() => {});
+  if (!same) notify();
 }
 
+let refreshedThisLaunch = false;
+
+/** The single quiet launch refresh; the hooks themselves never touch the network. */
+export async function refreshPaywallTrialOnce(): Promise<void> {
+  if (refreshedThisLaunch) return;
+  refreshedThisLaunch = true;
+  const g = gen;
+  try {
+    const r = await loadOfferings({ silent: true });
+    if (g === gen) primePaywallTrial(r);
+  } catch {}
+}
+
+export function getPaywallTrialGen(): number {
+  return gen;
+}
+
+void hydratePaywallTrial();
+
 /**
- * Never promises a trial until the store answered with a real, eligible one.
- * enabled=false (Pro users, or no lock rendered) never touches the store.
+ * Reads only the in-memory cache (hydrated from storage, filled by the paywall and the launch refresh); empty or unknown means "no trial".
+ * enabled=false (Pro users, or no lock rendered) is always "no trial".
  */
 export function usePaywallTrial(enabled: boolean = true): PaywallTrial {
-  const [state, setState] = useState<PaywallTrial>(NO_TRIAL);
-  const [version, setVersion] = useState(getPaywallTrialCacheVersion());
-  useEffect(
-    () => subscribePaywallTrialReset(() => setVersion(getPaywallTrialCacheVersion())),
-    []
-  );
+  const [, setVersion] = useState(getPaywallTrialCacheVersion());
   useEffect(() => {
-    if (!enabled) {
-      setState(NO_TRIAL);
-      return;
-    }
-    let alive = true;
-    getPaywallTrial().then((r) => {
-      if (alive) setState(r);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [enabled, version]);
-  return enabled ? state : NO_TRIAL;
+    if (!enabled) return;
+    const unsub = subscribePaywallTrialReset(() => setVersion(getPaywallTrialCacheVersion()));
+    setVersion(getPaywallTrialCacheVersion());
+    return unsub;
+  }, [enabled]);
+  return enabled && cachedTrial ? cachedTrial : NO_TRIAL;
 }
 
 /** The label for any Pro lock button: render with t(label.key, label.params). */

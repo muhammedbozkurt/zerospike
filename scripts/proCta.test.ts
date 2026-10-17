@@ -1,7 +1,7 @@
 /**
  * lib/proCta.ts harness: the Pro lock button label (trial only for a definite,
  * eligible, positive whole-day trial), the offerings reduction behind it, the
- * shared one-promise cache, and a few wiring checks on the lock surfaces.
+ * persistent cache (hydrate + prime), and a few wiring checks on the lock surfaces.
  *
  * Run from the repo root: npx tsx scripts/proCta.test.ts
  */
@@ -12,13 +12,32 @@ declare function require(id: string): any;
 let loadCalls = 0;
 let loader: () => Promise<any> = async () => ({ status: "unavailable", isDevFallback: false, plans: {} });
 
+let lastOpts: any = undefined;
+const store = new Map<string, string>();
+let holdReads = false;
+const releases: (() => void)[] = [];
+const AsyncStorageStub = {
+  getItem: async (k: string) => {
+    const v = store.has(k) ? (store.get(k) as string) : null;
+    if (holdReads) await new Promise<void>((res) => releases.push(res));
+    return v;
+  },
+  setItem: async (k: string, v: string) => void store.set(k, String(v)),
+  removeItem: async (k: string) => void store.delete(k),
+};
+
 const Module = require("module");
 const realLoad = Module._load;
 Module._load = function (request: string, parent: any) {
-  if (request === "react") return { useState: (v: unknown) => [v, () => {}], useEffect: () => {} };
+  if (request === "react") return { useState: (v: unknown) => [v, () => {}], useEffect: (fn: () => void) => {
+      fn();
+    },
+  };
+  if (request === "@react-native-async-storage/async-storage") return { __esModule: true, default: AsyncStorageStub };
   if (request === "./services/purchases") {
     return {
-      loadOfferings: () => {
+      loadOfferings: (opts?: unknown) => {
+        lastOpts = opts;
         loadCalls++;
         return loader();
       },
@@ -30,7 +49,10 @@ Module._load = function (request: string, parent: any) {
 const {
   proCtaLabel,
   trialFromOfferings,
-  getPaywallTrial,
+  primePaywallTrial,
+  hydratePaywallTrial,
+  clearPaywallTrial,
+  refreshPaywallTrialOnce,
   resetPaywallTrialCache,
   subscribePaywallTrialReset,
   getPaywallTrialCacheVersion,
@@ -75,39 +97,130 @@ async function main(): Promise<void> {
   const noDays = trialFromOfferings(annual(true, 0));
   ok("trial without real days => upgrade label", proCtaLabel(noDays).kind === "upgrade");
 
-  resetPaywallTrialCache();
+  clearPaywallTrial();
   loadCalls = 0;
+  ok("empty cache => no trial, no network", usePaywallTrial(true).trialEligible === false && useProCta(true).kind === "upgrade" && loadCalls === 0, String(loadCalls));
+
+  primePaywallTrial(annual(true, 7));
+  ok("after prime trial shows", useProCta(true).kind === "trial" && usePaywallTrial(true).trialDays === 7);
+  ok("prime never calls network", loadCalls === 0);
+  ok("ready prime is persisted", /^\{"e":true,"d":7,"t":\d+\}$/.test(String(store.get("zerospike.proCtaTrial"))), String(store.get("zerospike.proCtaTrial")));
+
+  primePaywallTrial({ status: "unavailable", isDevFallback: false, plans: {} });
+  ok("non-ready prime keeps the stored value", useProCta(true).kind === "trial" && store.has("zerospike.proCtaTrial"));
+  primePaywallTrial({ ...annual(true, 3), isDevFallback: true });
+  ok("dev fallback prime keeps the stored value", usePaywallTrial(true).trialDays === 7);
+
+  resetPaywallTrialCache();
+  await hydratePaywallTrial();
+  ok("reset does not invalidate cache or storage", useProCta(true).kind === "trial" && store.has("zerospike.proCtaTrial"));
+
+  clearPaywallTrial();
+  await Promise.resolve();
+  ok("clear (Pro gained) => upgrade and storage empty", useProCta(true).kind === "upgrade" && !store.has("zerospike.proCtaTrial"));
+
+  store.set("zerospike.proCtaTrial", JSON.stringify({ e: true, d: 14, t: Date.now() }));
+  await hydratePaywallTrial();
+  ok("stored eligibility is read synchronously after hydrate", usePaywallTrial(true).trialDays === 14 && useProCta(true).kind === "trial" && loadCalls === 0);
+  clearPaywallTrial();
+  store.set("zerospike.proCtaTrial", "garbage");
+  await hydratePaywallTrial();
+  ok("corrupt stored value => upgrade", useProCta(true).kind === "upgrade");
+  clearPaywallTrial();
+
   loader = async () => annual(true, 7);
-  const [a, b] = await Promise.all([getPaywallTrial(), getPaywallTrial()]);
-  ok("two calls, one loadOfferings", loadCalls === 1, String(loadCalls));
-  ok("shared result", a.trialEligible && b.trialDays === 7);
-
-  resetPaywallTrialCache();
-  loader = async () => annual(true, 14);
-  const c = await getPaywallTrial();
-  ok("reload after reset", loadCalls === 2 && c.trialDays === 14, String(loadCalls));
-
-  resetPaywallTrialCache();
   loadCalls = 0;
-  loader = async () => {
-    throw new Error("boom");
+  await refreshPaywallTrialOnce();
+  await refreshPaywallTrialOnce();
+  ok("launch refresh runs once and primes", loadCalls === 1 && useProCta(true).kind === "trial", String(loadCalls));
+  ok("launch refresh is silent", lastOpts?.silent === true, JSON.stringify(lastOpts));
+  clearPaywallTrial();
+
+  const entry = (e: boolean, d: number, t?: number) => JSON.stringify(t === undefined ? { e, d } : { e, d, t });
+  const flush = () => new Promise((res) => setTimeout(res, 0));
+  const DAY = 24 * 60 * 60 * 1000;
+
+  store.set("zerospike.proCtaTrial", entry(true, 7, Date.now() - 6 * DAY));
+  await hydratePaywallTrial();
+  ok("a 6 day old stored value is used", useProCta(true).kind === "trial");
+  clearPaywallTrial();
+  store.set("zerospike.proCtaTrial", entry(true, 7, Date.now() - 8 * DAY));
+  await hydratePaywallTrial();
+  ok("an 8 day old stored value is ignored", useProCta(true).kind === "upgrade");
+  store.set("zerospike.proCtaTrial", entry(true, 7));
+  await hydratePaywallTrial();
+  ok("a stored value without a timestamp is ignored", useProCta(true).kind === "upgrade");
+  clearPaywallTrial();
+
+  store.set("zerospike.proCtaTrial", entry(true, 7, Date.now()));
+  holdReads = true;
+  const pending = hydratePaywallTrial();
+  await flush();
+  primePaywallTrial(annual(false, 0));
+  holdReads = false;
+  releases.splice(0).forEach((f) => f());
+  await pending;
+  ok("a late hydrate never overwrites a fresher ineligible prime", useProCta(true).kind === "upgrade");
+  clearPaywallTrial();
+
+  store.set("zerospike.proCtaTrial", entry(true, 14, Date.now()));
+  holdReads = true;
+  const slow = hydratePaywallTrial();
+  store.set("zerospike.proCtaTrial", entry(true, 7, Date.now()));
+  const fast = hydratePaywallTrial();
+  await flush();
+  holdReads = false;
+  releases.splice(1).forEach((f) => f());
+  await fast;
+  releases.splice(0).forEach((f) => f());
+  await slow;
+  ok("a second hydrate never replaces an already hydrated cache", usePaywallTrial(true).trialDays === 7, String(usePaywallTrial(true).trialDays));
+  clearPaywallTrial();
+
+  store.set("zerospike.proCtaTrial", entry(true, 7, Date.now()));
+  holdReads = true;
+  resetPaywallTrialCache();
+  await flush();
+  clearPaywallTrial();
+  holdReads = false;
+  releases.splice(0).forEach((f) => f());
+  await flush();
+  ok("clear during an in-flight hydrate is not undone", useProCta(true).kind === "upgrade");
+  clearPaywallTrial();
+
+  const oldT = Date.now() - 5 * DAY;
+  store.set("zerospike.proCtaTrial", entry(true, 7, oldT));
+  await hydratePaywallTrial();
+  primePaywallTrial(annual(true, 7));
+  await flush();
+  ok("priming the same value refreshes the stored timestamp", JSON.parse(String(store.get("zerospike.proCtaTrial"))).t > oldT + 4 * DAY);
+  clearPaywallTrial();
+
+  const freshModule = () => {
+    delete require.cache[require.resolve("../lib/proCta")];
+    return require("../lib/proCta");
   };
-  const d = await getPaywallTrial();
-  ok("reject => false", d.trialEligible === false);
-  loader = async () => annual(true, 7);
-  const e = await getPaywallTrial();
-  ok("rejected promise not cached", loadCalls === 2 && e.trialEligible === true, String(loadCalls));
 
-  resetPaywallTrialCache();
-  loader = async () => ({ status: "unavailable", isDevFallback: false, plans: {} });
-  ok("unavailable via cache => false", (await getPaywallTrial()).trialEligible === false);
+  const m1 = freshModule();
+  m1.clearPaywallTrial();
+  m1.primePaywallTrial(annual(true, 7));
+  const before = store.get("zerospike.proCtaTrial");
+  loader = async () => {
+    throw new Error("offline");
+  };
+  await m1.refreshPaywallTrialOnce();
+  ok("a throwing loader leaves cache and storage unchanged", m1.usePaywallTrial(true).trialDays === 7 && store.get("zerospike.proCtaTrial") === before);
+  m1.clearPaywallTrial();
 
-  resetPaywallTrialCache();
-  loadCalls = 0;
-  loader = async () => ({ status: "unavailable", isDevFallback: false, plans: {} });
-  await getPaywallTrial();
-  await getPaywallTrial();
-  ok("non-ready result not cached", loadCalls === 2, String(loadCalls));
+  const m2 = freshModule();
+  let answer: (v: unknown) => void = () => {};
+  loader = () => new Promise((res) => (answer = res));
+  const inflight = m2.refreshPaywallTrialOnce();
+  m2.clearPaywallTrial();
+  answer(annual(true, 7));
+  await inflight;
+  await flush();
+  ok("a refresh answered after a clear is not primed", m2.usePaywallTrial(true).trialEligible === false && !store.has("zerospike.proCtaTrial"));
 
   let notified = 0;
   const unsub = subscribePaywallTrialReset(() => notified++);
@@ -118,8 +231,10 @@ async function main(): Promise<void> {
   resetPaywallTrialCache();
   ok("unsubscribed listener not called", notified === 1);
 
-  loadCalls = 0;
-  ok("disabled hook does not load", usePaywallTrial(false).trialEligible === false && useProCta(false).kind === "upgrade" && loadCalls === 0);
+  primePaywallTrial(annual(true, 7));
+  ok("disabled hook ignores a primed trial", usePaywallTrial(false).trialEligible === false && useProCta(false).kind === "upgrade");
+  ok("enabled hook sees the primed trial", useProCta(true).kind === "trial");
+  clearPaywallTrial();
 
   const fs = require("fs");
   const root = process.cwd();
@@ -127,6 +242,11 @@ async function main(): Promise<void> {
   for (const f of ["app/insights.tsx", "app/(tabs)/settings.tsx", "app/settings/app.tsx", "app/(tabs)/injection.tsx", "app/add-food.tsx", "app/(tabs)/index.tsx"]) {
     ok(`${f} gates useProCta on !isProUser`, read(f).includes("useProCta(!isProUser"));
   }
+  const layout = read("app/_layout.tsx");
+  ok("_layout clears on Pro and refreshes otherwise", /if \(isProUser\) clearPaywallTrial\(\);\s*else void refreshPaywallTrialOnce\(\);/.test(layout));
+  const paywall = read("app/paywall.tsx");
+  ok("paywall primes the trial from offerings", paywall.includes("primePaywallTrial(r)"));
+  ok("paywall clears the trial on purchase and restore", /if \(res\.ok\) \{\s*clearPaywallTrial\(\);/.test(paywall) && /if \(result === "restored"\) \{\s*clearPaywallTrial\(\);/.test(paywall));
   console.log(`proCta: ${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }
