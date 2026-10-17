@@ -196,7 +196,7 @@ export function SheetShell({
               borderLeftWidth: 1,
               borderRightWidth: 1,
               borderColor: THEME.border,
-              backgroundColor: THEME.bg.base,
+              backgroundColor: THEME.bg.g1,
               paddingHorizontal: 18,
               paddingTop: 8,
             },

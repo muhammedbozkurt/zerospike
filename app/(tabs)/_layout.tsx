@@ -28,7 +28,7 @@ export default function TabsLayout() {
         tabBarActiveTintColor: THEME.accent,
         tabBarInactiveTintColor: THEME.textMuted,
         tabBarStyle: {
-          backgroundColor: THEME.bg.base,
+          backgroundColor: THEME.bg.g1,
           borderTopColor: THEME.border,
           borderTopWidth: 1,
         },

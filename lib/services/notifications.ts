@@ -128,6 +128,8 @@ const FOLLOWUP_CHANNEL_ID = "followup-v1";
 // REMINDER_CHANNEL_ID via POSTMEAL_ID, untouched by this one.
 const POSTMEAL_CHANNEL_ID = "postmeal-v1";
 
+const LED_COLOR = "#22d3ee"; // theme-ok
+
 /**
  * Ensures the Android reminders channel exists, named from i18n and carrying
  * the custom reminder.wav sound. Called on every schedule (not cached) so the
@@ -142,8 +144,6 @@ const POSTMEAL_CHANNEL_ID = "postmeal-v1";
  * denied the permission (or never reached the prompt) - see the permission
  * flow fixed below.
  */
-const LED_COLOR = "#22d3ee"; // theme-ok
-
 export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== "android") return;
   await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {

@@ -19,6 +19,7 @@ import {
 } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { GLUCOSE_RICH, MODAL_TOP_PAD, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
 import { isolateLtr, money, num, pct } from "../lib/format";
 import { useTranslation } from "react-i18next";
 
@@ -151,7 +152,7 @@ function PlanCard({
                   direction cannot reorder the sign to the front. */}
               <Text
                 style={{
-                  color: GLUCOSE_RICH.target,
+                  color: THEME.scheme === "light" ? THEME.text : GLUCOSE_RICH.target,
                   fontSize: 10,
                   fontWeight: "800",
                   writingDirection: "ltr",
@@ -221,6 +222,7 @@ function PaywallScreen() {
   // grid) were dropped with it. Kept as a DownsellTrigger rather than a bare
   // string literal in case a future entry point needs its own value again.
   const context: DownsellTrigger = "inapp";
+  useThemeRemountLock();
   const { refreshPro, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
   const [busy, setBusy] = useState(false);
@@ -900,7 +902,7 @@ function PaywallScreen() {
               {
                 borderTopWidth: 1,
                 borderTopColor: THEME.border,
-                backgroundColor: THEME.bg.base,
+                backgroundColor: THEME.bg.g1,
                 paddingTop: 12,
                 paddingBottom: insets.bottom + 12,
               },

@@ -20,6 +20,12 @@ import {
   type ThemePref,
 } from "./themePref";
 import {
+  acquireRemountLock,
+  heldScheme,
+  isRemountLocked,
+  subscribeRemountLock,
+} from "./remountLock";
+import {
   PALETTES,
   THEME,
   setActiveScheme,
@@ -85,7 +91,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const scheme: Scheme = resolveScheme(pref ?? "dark", system);
+  const [, bumpLock] = useState(0);
+  useEffect(() => subscribeRemountLock(() => bumpLock((n) => n + 1)), []);
+  const appliedRef = useRef<Scheme | null>(null);
+  const scheme: Scheme = heldScheme(
+    resolveScheme(pref ?? "dark", system),
+    appliedRef.current,
+    isRemountLocked(),
+  );
+  appliedRef.current = scheme;
   // Set during render, before any child reads a token: the first paint of the
   // routed tree must already see the right palette.
   setActiveScheme(scheme);
@@ -161,6 +175,12 @@ export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error("useTheme must be used inside ThemeProvider");
   return ctx;
+}
+
+/** Holds an OS-driven scheme change while the calling screen is mounted, so a
+ *  remount cannot wipe its state (plan choice, purchase in flight). */
+export function useThemeRemountLock(): void {
+  useEffect(() => acquireRemountLock(), []);
 }
 
 /** Remounts its subtree when the resolved scheme changes, so every module that

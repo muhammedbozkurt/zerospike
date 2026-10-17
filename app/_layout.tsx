@@ -220,6 +220,8 @@ function hrefForWidgetRoute(route: WidgetRoute): Href | null {
   }
 }
 
+let coldStartHandled = false;
+
 function RootNavigator() {
   const { scheme } = useTheme();
   const { ready, onboarded, isProUser, activeProfile, completeOnboarding, bumpData, lang, setLanguage, refreshPro, setActiveProfileId } = useApp();
@@ -402,7 +404,6 @@ function RootNavigator() {
   // onboarding is done, so a tap never fights the onboarding redirect.
   const onboardedRef = useRef(onboarded);
   onboardedRef.current = onboarded;
-  const coldStartHandled = useRef(false);
 
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -419,8 +420,8 @@ function RootNavigator() {
   }, [router]);
 
   useEffect(() => {
-    if (!ready || !onboarded || coldStartHandled.current) return;
-    coldStartHandled.current = true;
+    if (!ready || !onboarded || coldStartHandled) return;
+    coldStartHandled = true;
     (async () => {
       try {
         const last = await Notifications.getLastNotificationResponseAsync();

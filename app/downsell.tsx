@@ -29,6 +29,7 @@ import { PaywallPreview } from "../components/PaywallPreview";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
 import { isolateLtr, pct } from "../lib/format";
 
 /**
@@ -48,6 +49,7 @@ function DownsellScreen() {
   // just the same fallback paywall.tsx's own `exit()` uses for an unparsed
   // route.
   const trigger = triggerParam ?? "inapp";
+  useThemeRemountLock();
   const { refreshPro } = useApp();
   const { toast } = useFeedback();
   const [offer, setOffer] = useState<DownsellOffer | null>(null);

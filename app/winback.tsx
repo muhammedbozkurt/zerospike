@@ -26,6 +26,7 @@ import { OfferCard } from "../components/OfferCard";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
 import { isolateLtr, pct } from "../lib/format";
 
 /**
@@ -38,6 +39,7 @@ function WinbackScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  useThemeRemountLock();
   const { refreshPro } = useApp();
   const { toast } = useFeedback();
   const { width } = useWindowDimensions();

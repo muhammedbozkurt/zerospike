@@ -359,7 +359,7 @@ function ProWelcomeScreen() {
             {
               borderTopWidth: 1,
               borderTopColor: THEME.border,
-              backgroundColor: THEME.bg.base,
+              backgroundColor: THEME.bg.g1,
               paddingTop: 12,
               paddingBottom: insets.bottom + 12,
             },

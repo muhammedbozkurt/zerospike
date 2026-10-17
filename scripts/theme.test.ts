@@ -7,6 +7,12 @@ import assert from "node:assert/strict";
 
 import { contrast, contrastTable } from "../lib/theme/contrast";
 import {
+  acquireRemountLock,
+  heldScheme,
+  isRemountLocked,
+  subscribeRemountLock,
+} from "../lib/theme/remountLock";
+import {
   loadThemePref,
   resolveScheme,
   saveThemePref,
@@ -116,6 +122,25 @@ async function main() {
     }
     assert.equal(LIGHT.dangerFill, "#BE2F43");
     assert.equal(LIGHT.onDanger, "#FFFFFF");
+  });
+
+  await check("remount lock: scheme change waits while locked, applies on release", () => {
+    assert.equal(heldScheme("light", "dark", true), "dark");
+    assert.equal(heldScheme("light", "dark", false), "light");
+    assert.equal(heldScheme("light", null, true), "light");
+    let fired = 0;
+    const off = subscribeRemountLock(() => (fired += 1));
+    const a = acquireRemountLock();
+    const b = acquireRemountLock();
+    assert.equal(isRemountLocked(), true);
+    a();
+    a();
+    assert.equal(isRemountLocked(), true);
+    assert.equal(fired, 0);
+    b();
+    assert.equal(isRemountLocked(), false);
+    assert.equal(fired, 1);
+    off();
   });
 
   const rows = contrastTable();

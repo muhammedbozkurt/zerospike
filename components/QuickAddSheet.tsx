@@ -223,7 +223,7 @@ export function QuickAddSheet({
           <View
             style={[
               {
-                backgroundColor: THEME.bg.base,
+                backgroundColor: THEME.bg.g1,
                 borderTopLeftRadius: RADIUS["2xl"],
                 borderTopRightRadius: RADIUS["2xl"],
                 borderTopWidth: 1,

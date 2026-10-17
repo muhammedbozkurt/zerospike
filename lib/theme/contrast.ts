@@ -84,6 +84,32 @@ export function contrastTable(): ContrastRow[] {
         add(`glucose.${k} on ${gn}`, p.glucose[k], g, 3);
       }
     }
+    const rgba = (c: string, a: number) => {
+      const [r, g, b] = parseColor(c);
+      return `rgba(${r},${g},${b},${a})`;
+    };
+    const flat = (fg: string, base: string) => {
+      const [r, g, b] = over(parseColor(fg), parseColor(base));
+      const h = (v: number) => Math.round(v).toString(16).padStart(2, "0");
+      return `#${h(r)}${h(g)}${h(b)}`;
+    };
+    const badgeFg = p.scheme === "light" ? p.text : p.glucose.normal;
+    const badgeTint = rgba(p.glucose.normal, 0.16);
+    const unselectedFlat = flat(p.surface, p.bg);
+    const selectedFlat = flat(rgba(p.accent, 0.12), unselectedFlat);
+    for (const [label, base] of [
+      ["unselected", unselectedFlat],
+      ["selected", selectedFlat],
+    ] as const) {
+      rows.push({
+        scheme: p.scheme,
+        name: `paywall save badge on ${label} card`,
+        fg: badgeFg,
+        bg: badgeTint,
+        min: 4.5,
+        ratio: contrast(badgeFg, badgeTint, base),
+      });
+    }
     add("accentOnFill on accentFill", p.accentOnFill, p.accentFill, 4.5);
     add("onDanger on dangerFill", p.onDanger, p.dangerFill, 4.5);
     add("dangerFill on bg", p.dangerFill, p.bg, 3);

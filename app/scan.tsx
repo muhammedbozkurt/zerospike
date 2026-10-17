@@ -271,7 +271,7 @@ export default function ScanScreen() {
             style={{
               borderWidth: 1,
               borderColor: THEME.border,
-              backgroundColor: withAlpha(THEME.bg.base, 0.92),
+              backgroundColor: withAlpha(THEME.bg.g1, 0.92),
             }}
           >
             <ActivityIndicator size="small" color={THEME.accent} />

@@ -727,7 +727,7 @@ function SheetOverlay({
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
             style={[
               {
-                backgroundColor: THEME.bg.base,
+                backgroundColor: THEME.bg.g1,
                 paddingBottom: insets.bottom + 20,
               },
               isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
