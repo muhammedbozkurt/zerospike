@@ -4,6 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 import { PressableScale } from "../../lib/theme/motion";
+import { lerpHex } from "./svgGeom";
 import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../../lib/theme/tokens";
 
 interface GradientCTAProps {
@@ -47,11 +48,12 @@ export function GradientCTA({
   const sub = variant === "sub";
   const metrics = CTA_SIZE[size];
   const isOff = disabled || loading;
+  const light = THEME.scheme === "light";
   const stops: [string, string] = danger
-    ? ["#ff7a8a", GLUCOSE_RICH.low]
-    : [THEME.accentSoft, THEME.accent];
-  const glowColor = danger ? GLUCOSE_RICH.low : THEME.accent;
-  const textColor = sub ? THEME.ink : danger ? "#fff" : "#00232b";
+    ? [light ? GLUCOSE_RICH.low : lerpHex(GLUCOSE_RICH.low, THEME.text, 0.3), GLUCOSE_RICH.low]
+    : [light ? THEME.accentFill : THEME.accentStrong, THEME.accentFill];
+  const glowColor = danger ? GLUCOSE_RICH.low : THEME.accentFill;
+  const textColor = sub ? THEME.text : THEME.accentOnFill;
 
   return (
     <PressableScale
@@ -71,7 +73,7 @@ export function GradientCTA({
           opacity: isOff ? 0.5 : 1,
           borderWidth: sub ? 1 : 0,
           borderColor: THEME.border,
-          backgroundColor: sub ? THEME.glass : undefined,
+          backgroundColor: sub ? THEME.surface : undefined,
         },
         !sub ? glow(glowColor, 22, 0.5, "fill") : undefined,
         style,

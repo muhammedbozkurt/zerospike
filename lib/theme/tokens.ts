@@ -330,6 +330,7 @@ export const THEME = live((p) => ({
   textMuted: p.textMuted,
   surface: p.surface,
   surfaceRaised: p.surfaceRaised,
+  surfaceInset: p.surfaceInset,
   border: p.border,
   borderStrong: p.borderStrong,
   track: p.track,

@@ -91,7 +91,7 @@ export function TIRDonut({
             style={[
               TABULAR,
               {
-                color: THEME.ink,
+                color: THEME.text,
                 fontSize: size * 0.22,
                 fontWeight: "800",
                 writingDirection: "ltr",
@@ -102,11 +102,11 @@ export function TIRDonut({
             minimumFontScale={0.7}
           >
             {centerSuffix && centerSuffixFirst ? (
-              <Text style={{ fontSize: size * 0.12, color: THEME.muted }}>{centerSuffix}</Text>
+              <Text style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
             ) : null}
             {centerValue}
             {centerSuffix && !centerSuffixFirst ? (
-              <Text style={{ fontSize: size * 0.12, color: THEME.muted }}>{centerSuffix}</Text>
+              <Text style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
             ) : null}
           </Text>
         </View>

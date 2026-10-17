@@ -40,8 +40,8 @@ const Wash = React.memo(function Wash() {
               black shadow over the last rows of tall screens (worst right above
               the tab bar). Hold a lighter floor instead; the tab bar itself
               stays g1 and separates with its own border. */}
-          <Stop offset="0.7" stopColor="#0e1c26" />
-          <Stop offset="1" stopColor="#0f1f29" />
+          <Stop offset="0.7" stopColor="#0e1c26" />{/* theme-ok */}
+          <Stop offset="1" stopColor={THEME.bg.base} />
         </LinearGradient>
         <RadialGradient id="bgTeal" cx="15%" cy="-5%" rx="130%" ry="70%">
           <Stop offset="0" stopColor={THEME.bg.gg} stopOpacity={1} />
@@ -114,8 +114,8 @@ const FillWash = React.memo(function FillWash() {
         <Defs>
           <LinearGradient id="bgfLinear" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={THEME.bg.g2} />
-            <Stop offset="0.7" stopColor="#0e1c26" />
-            <Stop offset="1" stopColor="#0f1f29" />
+            <Stop offset="0.7" stopColor="#0e1c26" />{/* theme-ok */}
+            <Stop offset="1" stopColor={THEME.bg.base} />
           </LinearGradient>
           <RadialGradient id="bgfTeal" cx="15%" cy="-5%" rx="130%" ry="70%">
             <Stop offset="0" stopColor={THEME.bg.gg} stopOpacity={1} />
