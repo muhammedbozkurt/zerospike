@@ -74,7 +74,7 @@ function FoodRowBase({
       <View className="flex-1 pr-2">
         <View className="flex-row items-center">
           <Text
-            style={{ color: THEME.ink, fontWeight: "700", fontSize: 14, flexShrink: 1 }}
+            style={{ color: THEME.text, fontWeight: "700", fontSize: 14, flexShrink: 1 }}
             numberOfLines={1}
           >
             {name}
@@ -93,7 +93,7 @@ function FoodRowBase({
         >
           {food.brand_name ? (
             <Text
-              style={{ color: THEME.muted, fontSize: 11, maxWidth: 150 }}
+              style={{ color: THEME.textMuted, fontSize: 11, maxWidth: 150 }}
               numberOfLines={1}
             >
               {food.brand_name}
@@ -109,11 +109,11 @@ function FoodRowBase({
                   className="w-2 h-2 rounded-full mr-1.5"
                   style={{ backgroundColor: giColor(food.glycemic_index) }}
                 />
-                <Text style={[TABULAR, { color: THEME.muted, fontSize: 11 }]}>
+                <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 11 }]}>
                   {t("food.gi")} {food.glycemic_index}
                 </Text>
               </View>
-              <Text style={[TABULAR, { color: THEME.muted, fontSize: 11 }]}>
+              <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 11 }]}>
                 {t("food.gl")} {food.glycemic_load}
               </Text>
             </>
@@ -122,9 +122,9 @@ function FoodRowBase({
       </View>
 
       {/* Carbohydrate grams, the row's headline figure */}
-      <Text style={[TABULAR, { color: THEME.ink, fontWeight: "800", fontSize: 15 }]}>
+      <Text style={[TABULAR, { color: THEME.text, fontWeight: "800", fontSize: 15 }]}>
         {num(food.carb_100g)}
-        <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}>
           {t("common.grams")}
         </Text>
       </Text>
@@ -147,7 +147,7 @@ function FoodRowBase({
           <Ionicons
             name={favorite ? "star" : "star-outline"}
             size={19}
-            color={favorite ? GLUCOSE_RICH.high : THEME.muted}
+            color={favorite ? GLUCOSE_RICH.high : THEME.textMuted}
           />
         </Pressable>
       ) : null}

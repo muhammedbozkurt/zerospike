@@ -9,7 +9,7 @@ import { withAlpha } from "./rich/GlassCard";
 /**
  * Permanent, visible medical disclaimer banner (Settings + onboarding).
  *
- * The hue is THEME.caution, not a raw amber: this is the one "read this"
+ * The hue is THEME.warning, not a raw amber: this is the one "read this"
  * surface in the app and it has to come from the same token as every other
  * caution, so it can never drift into an alarm red.
  */
@@ -21,15 +21,15 @@ export function DisclaimerBanner({ full = false }: { full?: boolean }) {
         padding: 20,
         borderRadius: RADIUS.xl,
         borderWidth: 1,
-        borderColor: withAlpha(THEME.caution, 0.35),
-        backgroundColor: withAlpha(THEME.caution, 0.08),
+        borderColor: withAlpha(THEME.warning, 0.35),
+        backgroundColor: withAlpha(THEME.warning, 0.08),
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <Ionicons name="medical-outline" size={18} color={THEME.caution} />
+        <Ionicons name="medical-outline" size={18} color={THEME.warning} />
         <Text
           style={{
-            color: THEME.caution,
+            color: THEME.warning,
             fontSize: 16,
             lineHeight: 22,
             fontWeight: "600",
@@ -41,7 +41,7 @@ export function DisclaimerBanner({ full = false }: { full?: boolean }) {
       </View>
       {/* The body is INK, not a dimmed amber: it is the text a user is being
           asked to accept, so it has to be the most readable line on the card. */}
-      <Text style={{ color: THEME.ink, fontSize: 15, lineHeight: 22, marginTop: 10 }}>
+      <Text style={{ color: THEME.text, fontSize: 15, lineHeight: 22, marginTop: 10 }}>
         {full ? t("disclaimer.body") : t("disclaimer.short")}
       </Text>
     </View>

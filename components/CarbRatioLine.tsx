@@ -62,19 +62,19 @@ export function CarbRatioLine({
       <Ionicons
         name="water-outline"
         size={13}
-        color={hasRatio ? THEME.muted : THEME.accent}
+        color={hasRatio ? THEME.textMuted : THEME.accent}
       />
       <Text
         numberOfLines={2}
         style={{
-          color: hasRatio ? THEME.muted : THEME.accent,
+          color: hasRatio ? THEME.textMuted : THEME.accent,
           fontSize: 12,
           flex: 1,
         }}
       >
         {label}
       </Text>
-      <DirIcon name="chevron-forward-outline" size={13} color={THEME.muted} />
+      <DirIcon name="chevron-forward-outline" size={13} color={THEME.textMuted} />
     </Pressable>
   );
 }

@@ -125,7 +125,7 @@ export function ProfileSwitcher({
           accessibilityLabel={t("profiles.switch")}
           className="flex-row items-center rounded-full bg-glass border border-hair px-3 py-1.5"
         >
-          <Ionicons name="person-circle-outline" size={18} color={THEME.muted} />
+          <Ionicons name="person-circle-outline" size={18} color={THEME.textMuted} />
           <Text
             className="text-ink font-medium text-sm mx-1.5"
             numberOfLines={1}
@@ -135,7 +135,7 @@ export function ProfileSwitcher({
           >
             {activeProfile?.name ?? "-"}
           </Text>
-          <Ionicons name="chevron-down" size={14} color={THEME.muted} />
+          <Ionicons name="chevron-down" size={14} color={THEME.textMuted} />
         </Pressable>
       ) : null}
 
@@ -157,8 +157,8 @@ export function ProfileSwitcher({
               className="rounded-3xl border border-hair p-5"
               style={[
                 {
-                  backgroundColor: THEME.sheet,
-                  shadowColor: "#000",
+                  backgroundColor: THEME.surfaceRaised,
+                  shadowColor: "#000", // theme-ok
                   shadowOpacity: 0.5,
                   shadowRadius: 28,
                   shadowOffset: { width: 0, height: 12 },
@@ -200,7 +200,7 @@ export function ProfileSwitcher({
                       <Ionicons
                         name={active ? "person" : "person-outline"}
                         size={18}
-                        color={active ? "#2ee6ff" : THEME.muted}
+                        color={active ? THEME.accent : THEME.textMuted}
                       />
                       <Text
                         className={`flex-1 ml-3 font-medium ${
@@ -210,7 +210,7 @@ export function ProfileSwitcher({
                         {p.name}
                       </Text>
                       {active ? (
-                        <Ionicons name="checkmark-circle" size={18} color="#2ee6ff" />
+                        <Ionicons name="checkmark-circle" size={18} color={THEME.accent} />
                       ) : null}
                     </Pressable>
                   );
@@ -224,7 +224,7 @@ export function ProfileSwitcher({
                     onChangeText={setName}
                     autoFocus
                     placeholder={t("profiles.newNamePlaceholder")}
-                    placeholderTextColor={THEME.muted}
+                    placeholderTextColor={THEME.textMuted}
                     className="rounded-xl bg-glass border border-hair px-4 py-3 text-ink mb-3"
                     style={INPUT_TEXT}
                   />
@@ -252,7 +252,7 @@ export function ProfileSwitcher({
                     <Ionicons
                       name={isProUser ? "add" : "lock-closed"}
                       size={isProUser ? 18 : 15}
-                      color={THEME.ink}
+                      color={THEME.text}
                     />
                   }
                   onPress={handleAddPress}

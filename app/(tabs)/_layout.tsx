@@ -26,9 +26,9 @@ export default function TabsLayout() {
         // same screen where the user left it.
         freezeOnBlur: true,
         tabBarActiveTintColor: THEME.accent,
-        tabBarInactiveTintColor: THEME.muted,
+        tabBarInactiveTintColor: THEME.textMuted,
         tabBarStyle: {
-          backgroundColor: THEME.bg.g1,
+          backgroundColor: THEME.bg.base,
           borderTopColor: THEME.border,
           borderTopWidth: 1,
         },

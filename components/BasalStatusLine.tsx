@@ -34,11 +34,11 @@ export function BasalStatusLine({
         <Ionicons
           name="water-outline"
           size={14}
-          color={record ? THEME.accent : THEME.muted}
+          color={record ? THEME.accent : THEME.textMuted}
         />
         <Text
           numberOfLines={1}
-          style={{ color: THEME.ink, fontSize: 12, fontWeight: "700", flexShrink: 1 }}
+          style={{ color: THEME.text, fontSize: 12, fontWeight: "700", flexShrink: 1 }}
         >
           {record
             ? t("dashboard.basalTodayLine", {
@@ -63,7 +63,7 @@ export function BasalStatusLine({
           accessibilityLabel={t("dashboard.basalConfirmCta")}
           className="rounded-full bg-brand px-3 py-1.5 active:opacity-80"
         >
-          <Text numberOfLines={1} className="text-black text-xs font-bold">
+          <Text numberOfLines={1} className="text-onAccent text-xs font-bold">
             {t("dashboard.basalConfirmCta")}
           </Text>
         </Pressable>

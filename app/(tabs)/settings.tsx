@@ -98,10 +98,10 @@ export default function SettingsHub() {
             source={require("../../assets/brand/icon-1024.png")}
             style={{ width: 60, height: 60, borderRadius: 15 }}
           />
-          <Text style={{ color: THEME.ink, fontWeight: "700", fontSize: 15, marginTop: 10 }}>
+          <Text style={{ color: THEME.text, fontWeight: "700", fontSize: 15, marginTop: 10 }}>
             zerospike
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 12, marginTop: 3 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 12, marginTop: 3 }}>
             {t("settings.version")} {version}
           </Text>
         </View>

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { hapticSelect } from "../lib/haptics";
 import { RADIUS, THEME } from "../lib/theme/tokens";
+import { withAlpha } from "./rich/GlassCard";
 import { upper } from "../lib/upper";
 import type { JournalEntry } from "../lib/db/journal";
 
@@ -20,19 +21,20 @@ import type { JournalEntry } from "../lib/db/journal";
  * never an option; what is shared instead is every piece of the chrome, so the
  * two screens cannot drift apart.
  *
- * Opaque (THEME.sheet) rather than the usual translucent glass, because the day
+ * Opaque (THEME.surfaceRaised) rather than the usual translucent glass, because the day
  * separators are STICKY: rows scroll underneath them, and anything see-through
  * would show the feed sliding past behind the date.
  */
 export const JOURNAL_PANEL_PAD = 12;
 
 /** The sides, carried by every piece between the top and the bottom. */
-export const journalPanelSide = {
-  backgroundColor: THEME.sheet,
-  borderLeftWidth: 1,
-  borderRightWidth: 1,
-  borderColor: THEME.border,
-} as const;
+export const journalPanelSide = () =>
+  ({
+    backgroundColor: THEME.surfaceRaised,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: THEME.border,
+  }) as const;
 
 export type JournalSection = {
   title: string;
@@ -53,7 +55,7 @@ export function JournalDayHeader({ section }: { section: JournalSection }) {
   return (
     <View
       style={{
-        ...journalPanelSide,
+        ...journalPanelSide(),
         flexDirection: "row",
         alignItems: "center",
         flexWrap: "wrap",
@@ -63,11 +65,11 @@ export function JournalDayHeader({ section }: { section: JournalSection }) {
         paddingBottom: 6,
       }}
     >
-      <Text style={{ color: THEME.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+      <Text style={{ color: THEME.text, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
         {upper(section.title)}
       </Text>
       {section.dateLabel !== section.title ? (
-        <Text style={{ color: THEME.muted, fontSize: 11, fontWeight: "600" }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}>
           {section.dateLabel}
         </Text>
       ) : null}
@@ -107,7 +109,7 @@ export function JournalFilterChips({
               on ? "bg-brand border-brand" : "bg-glass border-hair"
             }`}
           >
-            <Text className={`text-xs font-semibold ${on ? "text-black" : "text-mut"}`}>
+            <Text className={`text-xs font-semibold ${on ? "text-onAccent" : "text-mut"}`}>
               {c.label}
             </Text>
           </Pressable>
@@ -129,7 +131,7 @@ export function JournalPanelTop({
   return (
     <View
       style={{
-        ...journalPanelSide,
+        ...journalPanelSide(),
         borderTopWidth: 1,
         borderTopLeftRadius: RADIUS.lg,
         borderTopRightRadius: RADIUS.lg,
@@ -153,7 +155,7 @@ export function JournalPanelBottom({ children }: { children?: React.ReactNode })
   return (
     <View
       style={{
-        ...journalPanelSide,
+        ...journalPanelSide(),
         borderBottomWidth: 1,
         borderBottomLeftRadius: RADIUS.lg,
         borderBottomRightRadius: RADIUS.lg,
@@ -176,9 +178,15 @@ export function JournalPanelBottom({ children }: { children?: React.ReactNode })
 export function JournalDisclaimerNote() {
   const { t } = useTranslation();
   return (
-    <View className="flex-row items-start rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 mt-3">
-      <Ionicons name="medical-outline" size={15} color="#f59e0b" />
-      <Text className="text-amber-200/80 text-xs leading-4 ml-2.5 flex-1">
+    <View
+      className="flex-row items-start rounded-xl border px-3.5 py-3 mt-3"
+      style={{
+        borderColor: withAlpha(THEME.warning, 0.25),
+        backgroundColor: withAlpha(THEME.warning, 0.1),
+      }}
+    >
+      <Ionicons name="medical-outline" size={15} color={THEME.warning} />
+      <Text className="text-xs leading-4 ml-2.5 flex-1" style={{ color: THEME.textMuted }}>
         {t("disclaimer.short")}
       </Text>
     </View>
@@ -190,8 +198,8 @@ export function JournalDisclaimerNote() {
 export function JournalEmptyFilter({ onClearFilter }: { onClearFilter: () => void }) {
   const { t } = useTranslation();
   return (
-    <View style={{ ...journalPanelSide, alignItems: "center", paddingVertical: 40 }}>
-      <Ionicons name="funnel-outline" size={32} color={THEME.muted} />
+    <View style={{ ...journalPanelSide(), alignItems: "center", paddingVertical: 40 }}>
+      <Ionicons name="funnel-outline" size={32} color={THEME.textMuted} />
       <Text className="text-mut text-center mt-3 px-8">{t("dashboard.emptyFilter")}</Text>
       <Pressable
         onPress={() => {

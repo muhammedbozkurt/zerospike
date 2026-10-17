@@ -62,7 +62,7 @@ export function StatCard({
   style,
   className = "",
 }: StatCardProps) {
-  const valueColor = accent ?? THEME.ink;
+  const valueColor = accent ?? THEME.text;
   const glowColor = glow === true ? THEME.accent : typeof glow === "string" ? glow : undefined;
   // RTL EXEMPTION: suffixFirst already places the sign on the correct side of
   // the value (pctParts' own signFirst rule, e.g. Turkish "%92"); RN's
@@ -82,7 +82,7 @@ export function StatCard({
       className={glass ? `rounded-2xl p-4 ${className}` : `rounded-2xl bg-glass border border-hair p-4 ${className}`}
       style={[
         glass
-          ? { backgroundColor: THEME.glass, borderWidth: 1, borderColor: THEME.border }
+          ? { backgroundColor: THEME.surface, borderWidth: 1, borderColor: THEME.border }
           : undefined,
         glass && glowColor ? glowShadow(glowColor, 26, 0.4, "fill") : undefined,
         style,
@@ -90,7 +90,7 @@ export function StatCard({
     >
       <View className="flex-row items-center mb-1">
         {icon ? (
-          <Ionicons name={icon} size={13} color={THEME.muted} style={{ marginRight: 5 }} />
+          <Ionicons name={icon} size={13} color={THEME.textMuted} style={{ marginRight: 5 }} />
         ) : null}
         <Text
           className="text-[11px] font-semibold tracking-wider text-mut"

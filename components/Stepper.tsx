@@ -288,7 +288,7 @@ export function Stepper({
           justifyContent: "center",
           borderWidth: 1,
           borderColor: primary ? withAlpha(THEME.accent, 0.4) : THEME.border,
-          backgroundColor: primary ? withAlpha(THEME.accent, 0.12) : THEME.glass,
+          backgroundColor: primary ? withAlpha(THEME.accent, 0.12) : THEME.surface,
         }}
       >
         <Ionicons name={icon} size={24} color={THEME.accent} />
@@ -330,7 +330,7 @@ export function Stepper({
                 style={[
                   TABULAR,
                   {
-                    color: THEME.ink,
+                    color: THEME.text,
                     fontSize: HERO_VALUE,
                     fontWeight: "800",
                     textAlign: "center",
@@ -351,7 +351,7 @@ export function Stepper({
               <Text
                 style={[
                   TABULAR,
-                  { color: THEME.ink, fontSize: HERO_VALUE, fontWeight: "800" },
+                  { color: THEME.text, fontSize: HERO_VALUE, fontWeight: "800" },
                 ]}
                 accessibilityLabel={
                   accessibilityLabel ? `${accessibilityLabel}, ${valueText}` : valueText
@@ -366,7 +366,7 @@ export function Stepper({
                 adjustsFontSizeToFit
                 minimumFontScale={0.7}
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   fontSize: 18,
                   fontWeight: "600",
                   marginLeft: 8,
@@ -386,7 +386,7 @@ export function Stepper({
               height: 3,
               borderRadius: RADIUS.full,
               marginTop: 4,
-              backgroundColor: outOfRange ? THEME.caution : withAlpha(THEME.accent, focused ? 0.9 : 0.5),
+              backgroundColor: outOfRange ? THEME.warning : withAlpha(THEME.accent, focused ? 0.9 : 0.5),
             }}
           />
         </View>
@@ -404,7 +404,7 @@ export function Stepper({
           borderRadius: wide ? RADIUS.lg : RADIUS.md,
           borderWidth: 1,
           borderColor: THEME.border,
-          backgroundColor: THEME.glass,
+          backgroundColor: THEME.surface,
           overflow: "hidden",
         },
         style,
@@ -452,7 +452,7 @@ export function Stepper({
             style={[
               TABULAR,
               {
-                color: THEME.ink,
+                color: THEME.text,
                 fontSize: 20,
                 fontWeight: "800",
                 textAlign: "center",
@@ -471,7 +471,7 @@ export function Stepper({
                 borderRadius: wide ? 10 : RADIUS.sm,
                 borderWidth: 1,
                 borderColor: outOfRange
-                  ? THEME.caution
+                  ? THEME.warning
                   : withAlpha(THEME.accent, focused ? 0.75 : 0.3),
                 backgroundColor: withAlpha(THEME.accent, focused ? 0.14 : 0.06),
               },
@@ -479,7 +479,7 @@ export function Stepper({
           />
         ) : (
           <Text
-            style={[TABULAR, { color: THEME.ink, fontSize: 20, fontWeight: "800" }]}
+            style={[TABULAR, { color: THEME.text, fontSize: 20, fontWeight: "800" }]}
             accessibilityLabel={
               accessibilityLabel ? `${accessibilityLabel}, ${valueText}` : valueText
             }
@@ -493,7 +493,7 @@ export function Stepper({
             adjustsFontSizeToFit
             minimumFontScale={0.7}
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: wide ? 14 : 12,
               fontWeight: "600",
               flexShrink: 1,
