@@ -160,7 +160,7 @@ function AssistantBubble({ text, disclaimer }: { text: string; disclaimer: strin
         glow(THEME.accent, 18, 0.25),
       ]}
     >
-      <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19 }}>{text}</Text>
+      <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19 }}>{text}</Text>
       <View
         style={{
           marginTop: 6,
@@ -169,7 +169,7 @@ function AssistantBubble({ text, disclaimer }: { text: string; disclaimer: strin
           borderTopColor: THEME.border,
         }}
       >
-        <Text style={{ color: THEME.muted, fontSize: 11 }}>{disclaimer}</Text>
+        <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{disclaimer}</Text>
       </View>
     </View>
   );
@@ -205,7 +205,7 @@ function FeedbackButton({
       accessibilityState={{ selected: chosen, disabled: meta.feedback != null }}
       style={{ paddingHorizontal: 8, paddingVertical: 5 }}
     >
-      <Ionicons name={icon} size={16} color={chosen ? THEME.accent : THEME.muted} />
+      <Ionicons name={icon} size={16} color={chosen ? THEME.accent : THEME.textMuted} />
     </Pressable>
   );
 }
@@ -261,7 +261,7 @@ function ReplyExtras({
       ) : null}
       {meta.sources.length > 0 ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-          <Text style={{ color: THEME.muted, fontSize: 11 }}>{t("spike.sourcesLabel")}</Text>
+          <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{t("spike.sourcesLabel")}</Text>
           {meta.sources.map((source) => (
             <Pressable
               key={source.id}
@@ -277,13 +277,13 @@ function ReplyExtras({
                 borderRadius: 999,
                 borderWidth: 1,
                 borderColor: THEME.border,
-                backgroundColor: THEME.glass,
+                backgroundColor: THEME.surface,
                 paddingHorizontal: 9,
                 paddingVertical: 4,
               }}
             >
-              <Ionicons name="open-outline" size={11} color={THEME.muted} />
-              <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, flexShrink: 1 }}>
+              <Ionicons name="open-outline" size={11} color={THEME.textMuted} />
+              <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, flexShrink: 1 }}>
                 {source.title}
               </Text>
             </Pressable>
@@ -294,7 +294,7 @@ function ReplyExtras({
         <FeedbackButton value="up" meta={meta} label={t("spike.feedbackUp")} onRate={onRate} />
         <FeedbackButton value="down" meta={meta} label={t("spike.feedbackDown")} onRate={onRate} />
         {meta.feedback ? (
-          <Text style={{ color: THEME.muted, fontSize: 11, marginStart: 4 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, marginStart: 4 }}>
             {t("spike.feedbackThanks")}
           </Text>
         ) : null}
@@ -315,7 +315,7 @@ function ConsentBullet({
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
       <Ionicons name={icon} size={16} color={color} style={{ marginTop: 1 }} />
-      <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, flex: 1 }}>{text}</Text>
+      <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, flex: 1 }}>{text}</Text>
     </View>
   );
 }
@@ -353,7 +353,7 @@ function ContextConsentView({
           accessibilityRole="button"
           accessibilityLabel={t("common.close")}
         >
-          <Ionicons name="close" size={26} color={THEME.muted} />
+          <Ionicons name="close" size={26} color={THEME.textMuted} />
         </Pressable>
       </View>
       <ScrollView
@@ -364,15 +364,15 @@ function ContextConsentView({
         showsVerticalScrollIndicator={false}
       >
         <ConicAvatar label="✦" size={56} />
-        <Text style={{ color: THEME.ink, fontSize: 22, fontWeight: "800", textAlign: "center" }}>
+        <Text style={{ color: THEME.text, fontSize: 22, fontWeight: "800", textAlign: "center" }}>
           {t("spike.ctxTitle")}
         </Text>
-        <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 20, textAlign: "center" }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 20, textAlign: "center" }}>
           {t("spike.ctxIntro")}
         </Text>
         <GlassCard style={{ width: "100%" }}>
           <View style={{ gap: 8 }}>
-            <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
+            <Text style={{ color: THEME.text, fontSize: 14, fontWeight: "800" }}>
               {t("spike.ctxSharedTitle")}
             </Text>
             <ConsentBullet icon="checkmark-circle-outline" color={THEME.accent} text={t("spike.ctxShared1")} />
@@ -384,20 +384,20 @@ function ContextConsentView({
         </GlassCard>
         <GlassCard style={{ width: "100%" }}>
           <View style={{ gap: 8 }}>
-            <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
+            <Text style={{ color: THEME.text, fontSize: 14, fontWeight: "800" }}>
               {t("spike.ctxNotSharedTitle")}
             </Text>
-            <ConsentBullet icon="close-circle-outline" color={THEME.muted} text={t("spike.ctxNotShared1")} />
-            <ConsentBullet icon="close-circle-outline" color={THEME.muted} text={t("spike.ctxNotShared2")} />
-            <ConsentBullet icon="close-circle-outline" color={THEME.muted} text={t("spike.ctxNotShared3")} />
-            <ConsentBullet icon="close-circle-outline" color={THEME.muted} text={t("spike.ctxNotShared4")} />
+            <ConsentBullet icon="close-circle-outline" color={THEME.textMuted} text={t("spike.ctxNotShared1")} />
+            <ConsentBullet icon="close-circle-outline" color={THEME.textMuted} text={t("spike.ctxNotShared2")} />
+            <ConsentBullet icon="close-circle-outline" color={THEME.textMuted} text={t("spike.ctxNotShared3")} />
+            <ConsentBullet icon="close-circle-outline" color={THEME.textMuted} text={t("spike.ctxNotShared4")} />
           </View>
         </GlassCard>
         <View style={{ gap: 4, width: "100%" }}>
-          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
             {t("spike.ctxRecipient")}
           </Text>
-          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
             {t("spike.ctxPromise")}
           </Text>
         </View>
@@ -413,14 +413,14 @@ function ContextConsentView({
           <Text
             accessibilityRole="alert"
             accessibilityLiveRegion="polite"
-            style={{ color: "#ff7a8a", fontSize: 12, lineHeight: 18, textAlign: "center" }}
+            style={{ color: THEME.danger, fontSize: 12, lineHeight: 18, textAlign: "center" }}
           >
             {t("spike.errorContextSave")}
           </Text>
         ) : null}
         <GradientCTA label={t("spike.ctxAccept")} onPress={onAccept} style={{ width: "100%" }} />
         <Pressable onPress={onDecline} hitSlop={8}>
-          <Text style={{ color: THEME.muted, fontSize: 12 }}>{t("spike.ctxDecline")}</Text>
+          <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("spike.ctxDecline")}</Text>
         </Pressable>
       </ScrollView>
     </AppBackground>
@@ -843,7 +843,7 @@ function SpikeScreen() {
       <AppBackground style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
         <View className="flex-row items-center justify-end px-4 py-2">
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-            <Ionicons name="close" size={26} color={THEME.muted} />
+            <Ionicons name="close" size={26} color={THEME.textMuted} />
           </Pressable>
         </View>
         {/* The gate is avatar + title + four-line card + scope box + device-id
@@ -862,21 +862,21 @@ function SpikeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <ConicAvatar label="✦" size={64} />
-          <Text style={{ color: THEME.ink, fontSize: 22, fontWeight: "800" }}>
+          <Text style={{ color: THEME.text, fontSize: 22, fontWeight: "800" }}>
             {t("spike.consentTitle")}
           </Text>
           <GlassCard style={{ width: "100%" }}>
             <View style={{ gap: 8 }}>
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 20 }}>
+              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
                 {t("spike.consentSent")}
               </Text>
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 20 }}>
+              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
                 {t("spike.consentRecipient")}
               </Text>
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 20 }}>
+              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
                 {t("spike.consentNotSent")}
               </Text>
-              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>
                 {t("spike.consentSummaryNote")}
               </Text>
             </View>
@@ -888,15 +888,15 @@ function SpikeScreen() {
             style={{
               width: "100%",
               borderWidth: 1,
-              borderColor: "rgba(245,158,11,0.3)",
-              backgroundColor: "rgba(245,158,11,0.1)",
+              borderColor: withAlpha(THEME.warning, 0.3),
+              backgroundColor: withAlpha(THEME.warning, 0.1),
             }}
           >
             <View className="flex-row items-start">
-              <Ionicons name="medical-outline" size={16} color="#f59e0b" />
+              <Ionicons name="medical-outline" size={16} color={THEME.warning} />
               <Text
                 style={{
-                  color: "rgba(253,230,138,0.85)",
+                  color: THEME.warning,
                   fontSize: 12,
                   lineHeight: 18,
                   marginLeft: 8,
@@ -907,7 +907,7 @@ function SpikeScreen() {
               </Text>
             </View>
           </View>
-          <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
             {t("spike.consentDeviceId")}
           </Text>
           {/* The trailing chevron promised a link and nothing happened on a tap;
@@ -922,7 +922,7 @@ function SpikeScreen() {
           </Pressable>
           <GradientCTA label={t("spike.accept")} onPress={accept} style={{ width: "100%" }} />
           <Pressable onPress={() => router.back()} hitSlop={8}>
-            <Text style={{ color: THEME.muted, fontSize: 12 }}>{t("spike.notNow")}</Text>
+            <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("spike.notNow")}</Text>
           </Pressable>
         </ScrollView>
       </AppBackground>
@@ -968,10 +968,10 @@ function SpikeScreen() {
       >
         <View className="flex-row items-center py-2" style={[{ gap: 8 }, columnPad(12)]}>
           <Pressable onPress={() => router.back()} hitSlop={10} className="p-1">
-            <DirIcon name="chevron-back" size={26} color={THEME.muted} />
+            <DirIcon name="chevron-back" size={26} color={THEME.textMuted} />
           </Pressable>
           <ConicAvatar label="✦" size={24} />
-          <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800" }}>
+          <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800" }}>
             {t("spike.title")}
           </Text>
           <View className="flex-1" />
@@ -983,15 +983,15 @@ function SpikeScreen() {
               accessibilityRole="button"
               accessibilityLabel={t("spike.clearChat")}
             >
-              <Ionicons name="trash-outline" size={19} color={THEME.muted} />
+              <Ionicons name="trash-outline" size={19} color={THEME.textMuted} />
             </Pressable>
           ) : null}
           {usage ? (
             <View
               className="rounded-full px-2.5 py-1"
-              style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.glass }}
+              style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.surface }}
             >
-              <Text style={{ color: THEME.muted, fontSize: 10, fontWeight: "700" }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "700" }}>
                 {t("spike.remaining", { n: usage.remaining })}
               </Text>
             </View>
@@ -1013,19 +1013,19 @@ function SpikeScreen() {
                 borderRadius: 14,
                 borderWidth: 1,
                 borderColor: contextOn ? withAlpha(THEME.accent, 0.3) : THEME.border,
-                backgroundColor: THEME.glass,
+                backgroundColor: THEME.surface,
               }}
             >
               <Ionicons
                 name={contextOn ? "shield-checkmark-outline" : "shield-outline"}
                 size={18}
-                color={contextOn ? THEME.accent : THEME.muted}
+                color={contextOn ? THEME.accent : THEME.textMuted}
               />
               <View style={{ flex: 1 }}>
-                <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700" }}>
+                <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}>
                   {t("spike.ctxToggle")}
                 </Text>
-                <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 15, marginTop: 1 }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15, marginTop: 1 }}>
                   {contextOn ? t("spike.ctxToggleOn") : t("spike.ctxToggleOff")}
                 </Text>
               </View>
@@ -1034,7 +1034,7 @@ function SpikeScreen() {
                 onValueChange={(next) => void toggleContext(next)}
                 disabled={sending}
                 trackColor={{ true: THEME.accent, false: THEME.border }}
-                thumbColor={THEME.ink}
+                thumbColor={THEME.text}
                 accessibilityLabel={t("spike.ctxToggle")}
               />
             </View>
@@ -1059,7 +1059,7 @@ function SpikeScreen() {
         >
           {messages.length === 0 ? (
             <GlassCard style={{ alignSelf: "flex-start", maxWidth: "88%" }}>
-              <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 20 }}>
+              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
                 {t("spike.intro")}
               </Text>
             </GlassCard>
@@ -1084,7 +1084,7 @@ function SpikeScreen() {
                     borderRadius: 999,
                     borderWidth: 1,
                     borderColor: withAlpha(THEME.accent, 0.25),
-                    backgroundColor: THEME.glass,
+                    backgroundColor: THEME.surface,
                     paddingHorizontal: 12,
                     paddingVertical: 7,
                   }}
@@ -1102,7 +1102,7 @@ function SpikeScreen() {
                 style={{
                   alignSelf: "flex-end",
                   maxWidth: "82%",
-                  backgroundColor: THEME.glass,
+                  backgroundColor: THEME.surface,
                   borderWidth: 1,
                   borderColor: THEME.border,
                   borderRadius: 14,
@@ -1111,7 +1111,7 @@ function SpikeScreen() {
                   paddingHorizontal: 12,
                 }}
               >
-                <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19 }}>{m.content}</Text>
+                <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19 }}>{m.content}</Text>
               </View>
             ) : (
               <View key={i} style={{ alignSelf: "flex-start", maxWidth: "88%", gap: 6 }}>
@@ -1153,7 +1153,7 @@ function SpikeScreen() {
                 gap: 10,
               }}
             >
-              <Text style={{ color: "#ff7a8a", fontSize: 12, flexShrink: 1 }}>{errorText}</Text>
+              <Text style={{ color: THEME.danger, fontSize: 12, flexShrink: 1 }}>{errorText}</Text>
               <Pressable
                 onPress={retry}
                 hitSlop={8}
@@ -1163,7 +1163,7 @@ function SpikeScreen() {
                   borderRadius: 999,
                   borderWidth: 1,
                   borderColor: THEME.border,
-                  backgroundColor: THEME.glass,
+                  backgroundColor: THEME.surface,
                   paddingHorizontal: 12,
                   paddingVertical: 5,
                 }}
@@ -1175,7 +1175,7 @@ function SpikeScreen() {
             </View>
           ) : null}
           {!effectiveConfigured ? (
-            <Text style={{ color: THEME.muted, fontSize: 12, alignSelf: "center" }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 12, alignSelf: "center" }}>
               {t("spike.notConfigured")}
             </Text>
           ) : null}
@@ -1185,10 +1185,10 @@ function SpikeScreen() {
         {exhausted ? (
           <View style={columnPad()}>
           <GlassCard accent style={{ marginHorizontal: 12, marginBottom: 8 }}>
-            <Text style={{ color: THEME.ink, fontSize: 14, fontWeight: "800" }}>
+            <Text style={{ color: THEME.text, fontSize: 14, fontWeight: "800" }}>
               {t("spike.limitTitle")}
             </Text>
-            <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginTop: 4 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginTop: 4 }}>
               {isProUser
                 ? t("spike.limitProBody", { n: PRO_DAILY_MESSAGES })
                 : t("spike.limitFreeBody", {
@@ -1214,7 +1214,7 @@ function SpikeScreen() {
           className="flex-row items-center mx-3 mb-2 px-3"
           style={{
             marginBottom: insets.bottom + 8,
-            backgroundColor: THEME.glass,
+            backgroundColor: THEME.surface,
             borderWidth: 1,
             borderColor: THEME.border,
             borderRadius: 16,
@@ -1225,11 +1225,11 @@ function SpikeScreen() {
             value={input}
             onChangeText={setInput}
             placeholder={t("spike.inputPlaceholder")}
-            placeholderTextColor={THEME.muted}
+            placeholderTextColor={THEME.textMuted}
             editable={effectiveConfigured && !sending && !exhausted && !screenshotChat}
             onSubmitEditing={send}
             returnKeyType="send"
-            style={[INPUT_TEXT, { flex: 1, color: THEME.ink, paddingVertical: 11, fontSize: 14 }]}
+            style={[INPUT_TEXT, { flex: 1, color: THEME.text, paddingVertical: 11, fontSize: 14 }]}
           />
           <Pressable
             onPress={send}
@@ -1244,14 +1244,14 @@ function SpikeScreen() {
                 borderRadius: 10,
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: THEME.accent,
+                backgroundColor: THEME.accentFill,
                 opacity:
                   !input.trim() || sending || !effectiveConfigured || exhausted || screenshotChat ? 0.4 : 1,
               },
-              glow(THEME.accent, 10, 0.5),
+              glow(THEME.accentFill, 10, 0.5),
             ]}
           >
-            <Ionicons name="arrow-up" size={20} color="#03181c" />
+            <Ionicons name="arrow-up" size={20} color={THEME.accentOnFill} />
           </Pressable>
         </View>
         </View>

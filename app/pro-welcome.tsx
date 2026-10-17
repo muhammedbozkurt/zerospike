@@ -88,20 +88,20 @@ function StepCard({
           tint={done ? GLUCOSE_RICH.target : THEME.accent}
         />
         <Text
-          style={{ color: THEME.ink, fontSize: 15, fontWeight: "800", flex: 1, lineHeight: 20 }}
+          style={{ color: THEME.text, fontSize: 15, fontWeight: "800", flex: 1, lineHeight: 20 }}
           accessibilityRole="header"
         >
           {title}
         </Text>
         {done ? <DoneChip label={doneLabel} /> : null}
       </View>
-      <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 19, marginTop: 8 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 19, marginTop: 8 }}>
         {body}
       </Text>
       {!done ? (
         <View style={{ marginTop: 12 }}>
           {skipped ? (
-            <Text style={{ color: THEME.muted, fontSize: 11, marginBottom: 6 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, marginBottom: 6 }}>
               {skippedLabel}
             </Text>
           ) : null}
@@ -114,7 +114,7 @@ function StepCard({
               className="items-center justify-center"
               style={{ minHeight: HIT_TARGET }}
             >
-              <Text style={{ color: THEME.muted, fontSize: 13 }}>{skipLabel}</Text>
+              <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{skipLabel}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -306,7 +306,7 @@ function ProWelcomeScreen() {
                 ) : null}
                 <Text
                   style={{
-                    color: THEME.ink,
+                    color: THEME.text,
                     fontSize: 13,
                     lineHeight: 19,
                     marginTop: trial?.active === true ? 2 : 0,
@@ -342,7 +342,7 @@ function ProWelcomeScreen() {
           {allDone ? (
             <Text
               style={{
-                color: THEME.muted,
+                color: THEME.textMuted,
                 fontSize: 13,
                 lineHeight: 19,
                 textAlign: "center",
@@ -359,7 +359,7 @@ function ProWelcomeScreen() {
             {
               borderTopWidth: 1,
               borderTopColor: THEME.border,
-              backgroundColor: THEME.bg.g1,
+              backgroundColor: THEME.bg.base,
               paddingTop: 12,
               paddingBottom: insets.bottom + 12,
             },

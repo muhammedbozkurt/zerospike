@@ -62,27 +62,27 @@ export function OfferCard({
       </View>
 
       <Text
-        style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", textAlign: "center" }}
+        style={{ color: THEME.text, fontSize: 17, fontWeight: "800", textAlign: "center" }}
       >
         {title}
       </Text>
 
       {/* The billed amount dominates */}
       <View className="flex-row items-baseline" style={{ gap: 10 }}>
-        <Text style={[TABULAR, { color: THEME.ink, fontSize: 34, fontWeight: "800" }]}>
+        <Text style={[TABULAR, { color: THEME.text, fontSize: 34, fontWeight: "800" }]}>
           {discountedPrice}
         </Text>
         <Text
           style={[
             TABULAR,
-            { color: THEME.muted, fontSize: 15, textDecorationLine: "line-through" },
+            { color: THEME.textMuted, fontSize: 15, textDecorationLine: "line-through" },
           ]}
         >
           {standardPrice}
         </Text>
       </View>
 
-      <Text style={{ color: THEME.muted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
         {disclosure}
       </Text>
     </View>

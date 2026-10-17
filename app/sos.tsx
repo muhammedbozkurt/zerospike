@@ -57,12 +57,12 @@ function sameList<T>(a: T[], b: T[]): boolean {
 /** The mockup's warm red wash - this one screen departs from the cyan wash. */
 function SosBackground() {
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: "#080a0d" }]}>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: THEME.bg.base }]}>
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>
           <RadialGradient id="sosGlow" cx="50%" cy="26%" rx="120%" ry="60%">
-            <Stop offset="0" stopColor="#2a1418" stopOpacity={1} />
-            <Stop offset="1" stopColor="#080a0d" stopOpacity={1} />
+            <Stop offset="0" stopColor={THEME.glucose.low} stopOpacity={THEME.scheme === "dark" ? 0.16 : 0.1} />
+            <Stop offset="1" stopColor={THEME.bg.base} stopOpacity={1} />
           </RadialGradient>
         </Defs>
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#sosGlow)" />
@@ -191,11 +191,11 @@ function SosScreen() {
                 glow(GLUCOSE_RICH.low, 34, 0.6),
               ]}
             >
-              <Ionicons name="medical" size={30} color="#ff7a8a" />
+              <Ionicons name="medical" size={30} color={THEME.glucoseText.low} />
             </View>
             <Text
               style={{
-                color: THEME.ink,
+                color: THEME.text,
                 fontSize: 24,
                 fontWeight: "800",
                 marginTop: 12,
@@ -205,7 +205,7 @@ function SosScreen() {
             </Text>
             <Text
               style={{
-                color: THEME.muted,
+                color: THEME.textMuted,
                 fontSize: 13,
                 lineHeight: 19,
                 textAlign: "center",
@@ -221,7 +221,7 @@ function SosScreen() {
           <GradientCTA
             danger
             label={t("sos.callEmergency", { number: emergencyNumber })}
-            icon={<Ionicons name="call" size={17} color="#fff" />}
+            icon={<Ionicons name="call" size={17} color={THEME.accentOnFill} />}
             onPress={callEmergency}
             style={{ marginBottom: 10 }}
           />
@@ -240,7 +240,7 @@ function SosScreen() {
                 borderRadius: RADIUS.lg,
                 borderWidth: 1,
                 borderColor: THEME.border,
-                backgroundColor: THEME.glass,
+                backgroundColor: THEME.surface,
                 paddingVertical: 13,
                 paddingHorizontal: 14,
                 marginBottom: 18,
@@ -252,7 +252,7 @@ function SosScreen() {
             <GradientCTA
               variant="sub"
               label={t("sos.messageContact")}
-              icon={<Ionicons name="chatbubble-ellipses" size={17} color={THEME.ink} />}
+              icon={<Ionicons name="chatbubble-ellipses" size={17} color={THEME.text} />}
               onPress={() => messageContact(primaryContact.phone)}
               style={{ marginBottom: 18 }}
             />
@@ -260,7 +260,7 @@ function SosScreen() {
             <GradientCTA
               variant="sub"
               label={t("sos.addContact")}
-              icon={<Ionicons name="person-add-outline" size={17} color={THEME.ink} />}
+              icon={<Ionicons name="person-add-outline" size={17} color={THEME.text} />}
               onPress={() => router.push("/emergency-contacts")}
               style={{ marginBottom: 18 }}
             />
@@ -270,10 +270,10 @@ function SosScreen() {
             <>
               {contacts.map((c, i) => (
                 <GlassCard key={`${c.phone}-${i}`} style={{ marginBottom: 10 }}>
-                  <Text style={{ color: THEME.ink, fontSize: 15, fontWeight: "800" }}>
+                  <Text style={{ color: THEME.text, fontSize: 15, fontWeight: "800" }}>
                     {c.name}
                   </Text>
-                  <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 10 }}>
+                  <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 10 }}>
                     {c.phone}
                   </Text>
                   <View className="flex-row" style={{ gap: 8 }}>
@@ -318,7 +318,7 @@ function SosScreen() {
 
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: 11,
               textAlign: "center",
               lineHeight: 16,
@@ -353,12 +353,12 @@ function ContactAction({
       style={{
         borderWidth: 1,
         borderColor: THEME.border,
-        backgroundColor: THEME.glass,
+        backgroundColor: THEME.surface,
       }}
     >
       <Ionicons name={icon} size={18} color={THEME.accent} />
       <Text
-        style={{ color: THEME.muted, fontSize: 10, marginTop: 4 }}
+        style={{ color: THEME.textMuted, fontSize: 10, marginTop: 4 }}
         numberOfLines={1}
       >
         {label}

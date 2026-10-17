@@ -161,7 +161,7 @@ function DownsellScreen() {
           {loading ? (
             <View className="items-center">
               <ActivityIndicator color={THEME.accent} />
-              <Text style={{ color: THEME.muted, marginTop: 10, textAlign: "center" }}>
+              <Text style={{ color: THEME.textMuted, marginTop: 10, textAlign: "center" }}>
                 {t("common.loading")}
               </Text>
             </View>
@@ -196,7 +196,7 @@ function DownsellScreen() {
               {/* Kept outside the card, well below the CTA: a quiet way out that
                   never competes with the offer itself. */}
               <Pressable onPress={decline} disabled={busy} hitSlop={8} style={{ marginTop: 12 }}>
-                <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}>
+                <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
                   {t("downsell.decline")}
                 </Text>
               </Pressable>
@@ -207,10 +207,10 @@ function DownsellScreen() {
                   would be a bare claim, so the no-offer branch says so plainly.
                   The tile is the same visual anchor its sibling states carry, so
                   this branch is not two lines of text floating in empty space. */}
-              <IconTile icon="pricetag-outline" size={44} radius={14} tint={THEME.muted} />
+              <IconTile icon="pricetag-outline" size={44} radius={14} tint={THEME.textMuted} />
               <Text
                 style={{
-                  color: THEME.ink,
+                  color: THEME.text,
                   fontSize: 22,
                   fontWeight: "800",
                   textAlign: "center",
@@ -220,7 +220,7 @@ function DownsellScreen() {
               </Text>
               <Text
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   textAlign: "center",
                   lineHeight: 20,
                   maxWidth: 280,
@@ -238,14 +238,14 @@ function DownsellScreen() {
               <View className="flex-row justify-center" style={{ gap: 24 }}>
                 <Pressable onPress={() => Linking.openURL(privacyUrl())}>
                   <Text
-                    style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                    style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
                   >
                     {t("settings.privacy")}
                   </Text>
                 </Pressable>
                 <Pressable onPress={() => Linking.openURL(termsUrl())}>
                   <Text
-                    style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                    style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
                   >
                     {t("settings.terms")}
                   </Text>

@@ -117,7 +117,7 @@ function PlanCard({
         {
           borderWidth: 1,
           borderColor: selected ? THEME.accent : THEME.border,
-          backgroundColor: selected ? withAlpha(THEME.accent, 0.12) : THEME.glass,
+          backgroundColor: selected ? withAlpha(THEME.accent, 0.12) : THEME.surface,
         },
         selected ? glow(THEME.accent, 24, 0.45) : undefined,
       ]}
@@ -128,17 +128,17 @@ function PlanCard({
       >
         {selected ? (
           <View
-            style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: THEME.accent }}
+            style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: THEME.accentFill }}
           />
         ) : null}
       </View>
 
       <View className="flex-1">
         <View className="flex-row items-center flex-wrap" style={{ gap: 6 }}>
-          <Text style={{ color: THEME.ink, fontWeight: "800", fontSize: 15 }}>{name}</Text>
+          <Text style={{ color: THEME.text, fontWeight: "800", fontSize: 15 }}>{name}</Text>
           {badge ? (
             <View className="rounded-full bg-brand px-2 py-0.5">
-              <Text className="text-black text-[10px] font-bold">{badge}</Text>
+              <Text className="text-onAccent text-[10px] font-bold">{badge}</Text>
             </View>
           ) : null}
           {save ? (
@@ -163,12 +163,12 @@ function PlanCard({
           ) : null}
         </View>
         {desc ? (
-          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 2 }} numberOfLines={2}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }} numberOfLines={2}>
             {desc}
           </Text>
         ) : null}
         {foot ? (
-          <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 1 }}>{foot}</Text>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 1 }}>{foot}</Text>
         ) : null}
       </View>
 
@@ -176,7 +176,7 @@ function PlanCard({
           placeholder bar instead of an empty slot in the loudest spot on the row. */}
       <View className="items-end ml-2">
         {price ? (
-          <Text style={[TABULAR, { color: THEME.ink, fontSize: 20, fontWeight: "800" }]}>
+          <Text style={[TABULAR, { color: THEME.text, fontSize: 20, fontWeight: "800" }]}>
             {price}
           </Text>
         ) : (
@@ -189,7 +189,7 @@ function PlanCard({
             }}
           />
         )}
-        <Text style={{ color: THEME.muted, fontSize: 11 }}>{period}</Text>
+        <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{period}</Text>
       </View>
     </Pressable>
   );
@@ -647,7 +647,7 @@ function PaywallScreen() {
           <View style={{ width: 30 }} />
           <Text
             style={{
-              color: THEME.ink,
+              color: THEME.text,
               fontSize: 16,
               fontWeight: "800",
               flexShrink: 1,
@@ -664,7 +664,7 @@ function PaywallScreen() {
               hitSlop={10}
               accessibilityLabel={t("common.close")}
             >
-              <IconTile icon="close" size={30} radius={10} tint={THEME.muted} />
+              <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
             </Pressable>
           </View>
         </View>
@@ -688,7 +688,7 @@ function PaywallScreen() {
           <View style={{ alignItems: "center", marginBottom: 12 }}>
             <Text
               style={{
-                color: THEME.ink,
+                color: THEME.text,
                 fontSize: 20,
                 fontWeight: "800",
                 lineHeight: 26,
@@ -700,7 +700,7 @@ function PaywallScreen() {
             {limit ? (
               <Text
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   fontSize: 13,
                   lineHeight: 18,
                   textAlign: "center",
@@ -722,13 +722,13 @@ function PaywallScreen() {
               >
                 <Ionicons name={b.icon} size={16} color={THEME.accent} />
                 <Text
-                  style={{ color: THEME.ink, flex: 1, marginStart: 10, fontSize: 13, lineHeight: 18 }}
+                  style={{ color: THEME.text, flex: 1, marginStart: 10, fontSize: 13, lineHeight: 18 }}
                 >
                   {b.text}
                 </Text>
               </View>
             ))}
-            <Text style={{ color: THEME.muted, fontSize: 12, marginStart: 26, marginBottom: 6 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 12, marginStart: 26, marginBottom: 6 }}>
               {t("paywall.featureShortFamily")}
             </Text>
           </View>
@@ -743,10 +743,10 @@ function PaywallScreen() {
                 marginBottom: 12,
               }}
             >
-              <Text style={{ color: THEME.ink, fontSize: 12, fontWeight: "700", marginBottom: 2 }}>
+              <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700", marginBottom: 2 }}>
                 {t("paywall.timeline.personalLabel")}
               </Text>
-              <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
                 {t("paywall.timeline.personal", {
                   n: personal.readings,
                   avg: isolateLtr(
@@ -768,7 +768,7 @@ function PaywallScreen() {
             // the wait so the plan slot never reads as a broken empty band.
             <GlassCard style={{ alignItems: "center", paddingVertical: 28 }}>
               <ActivityIndicator color={THEME.accent} />
-              <Text style={{ color: THEME.muted, marginTop: 10 }}>
+              <Text style={{ color: THEME.textMuted, marginTop: 10 }}>
                 {t("common.loading")}
               </Text>
             </GlassCard>
@@ -776,9 +776,9 @@ function PaywallScreen() {
             // Release-only: prices could not be loaded. Never show fake prices;
             // offer a retry instead.
             <GlassCard style={{ alignItems: "center", paddingVertical: 20 }}>
-              <IconTile icon="cloud-offline-outline" size={44} radius={14} tint={THEME.muted} />
+              <IconTile icon="cloud-offline-outline" size={44} radius={14} tint={THEME.textMuted} />
               <Text
-                style={{ color: THEME.muted, textAlign: "center", marginTop: 12, marginBottom: 14 }}
+                style={{ color: THEME.textMuted, textAlign: "center", marginTop: 12, marginBottom: 14 }}
               >
                 {t("paywall.pricesUnavailable")}
               </Text>
@@ -845,7 +845,7 @@ function PaywallScreen() {
 
           <Text
             style={{
-              color: THEME.muted,
+              color: THEME.textMuted,
               fontSize: 11,
               textAlign: "center",
               paddingHorizontal: 8,
@@ -863,7 +863,7 @@ function PaywallScreen() {
             <Pressable onPress={onRestore} disabled={busy}>
               <Text
                 style={{
-                  color: THEME.muted,
+                  color: THEME.textMuted,
                   fontSize: 11,
                   fontWeight: "600",
                   opacity: busy ? 0.5 : 1,
@@ -872,18 +872,18 @@ function PaywallScreen() {
                 {t("paywall.restore")}
               </Text>
             </Pressable>
-            <Text style={{ color: THEME.muted, fontSize: 11 }}>·</Text>
+            <Text style={{ color: THEME.textMuted, fontSize: 11 }}>·</Text>
             <Pressable onPress={() => Linking.openURL(privacyUrl())}>
               <Text
-                style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
               >
                 {t("settings.privacy")}
               </Text>
             </Pressable>
-            <Text style={{ color: THEME.muted, fontSize: 11 }}>·</Text>
+            <Text style={{ color: THEME.textMuted, fontSize: 11 }}>·</Text>
             <Pressable onPress={() => Linking.openURL(termsUrl())}>
               <Text
-                style={{ color: THEME.muted, fontSize: 11, textDecorationLine: "underline" }}
+                style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
               >
                 {t("settings.terms")}
               </Text>
@@ -900,7 +900,7 @@ function PaywallScreen() {
               {
                 borderTopWidth: 1,
                 borderTopColor: THEME.border,
-                backgroundColor: THEME.bg.g1,
+                backgroundColor: THEME.bg.base,
                 paddingTop: 12,
                 paddingBottom: insets.bottom + 12,
               },
@@ -926,7 +926,7 @@ function PaywallScreen() {
                         borderRadius: 4,
                         marginTop: 4,
                         marginEnd: 8,
-                        backgroundColor: row.kind === "charge" ? THEME.muted : THEME.accent,
+                        backgroundColor: row.kind === "charge" ? THEME.textMuted : THEME.accentFill,
                       }}
                     />
                     {/* Label and body are one wrapping paragraph (no fixed
@@ -934,9 +934,9 @@ function PaywallScreen() {
                         just takes a second line. */}
                     <Text
                       maxFontSizeMultiplier={1.3}
-                      style={{ color: THEME.muted, fontSize: 12, lineHeight: 16, flex: 1 }}
+                      style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, flex: 1 }}
                     >
-                      <Text style={{ color: THEME.ink, fontWeight: "800" }}>{row.label}</Text>
+                      <Text style={{ color: THEME.text, fontWeight: "800" }}>{row.label}</Text>
                       {"  "}
                       {row.body}
                     </Text>
@@ -944,7 +944,7 @@ function PaywallScreen() {
                 ))}
                 <Text
                   maxFontSizeMultiplier={1.3}
-                  style={{ color: THEME.muted, fontSize: 11, lineHeight: 15, marginTop: 8 }}
+                  style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15, marginTop: 8 }}
                 >
                   {cancelLine}
                 </Text>

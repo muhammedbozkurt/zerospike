@@ -129,16 +129,16 @@ function AlarmTourScreen() {
           <GlassCard>
             <View className="flex-row items-center mb-3" style={{ gap: 10 }}>
               <IconTile icon={step.icon} size={36} radius={12} hero />
-              <Text style={{ color: THEME.ink, fontSize: 16, fontWeight: "800", flex: 1 }}>
+              <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800", flex: 1 }}>
                 {step.title}
               </Text>
             </View>
-            <Text style={{ color: THEME.ink, fontSize: 14, lineHeight: 21, opacity: 0.9 }}>
+            <Text style={{ color: THEME.text, fontSize: 14, lineHeight: 21, opacity: 0.9 }}>
               {step.body}
             </Text>
             {step.note ? (
               <Text
-                style={{ color: THEME.muted, fontSize: 12, lineHeight: 18, marginTop: 8 }}
+                style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginTop: 8 }}
               >
                 {step.note}
               </Text>
@@ -153,7 +153,7 @@ function AlarmTourScreen() {
                     backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
                   }}
                 >
-                  <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18 }}>
+                  <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 18 }}>
                     {t("reminders.alarmPermissionDenied")}{" "}
                     <Text style={{ color: THEME.accent, fontWeight: "700" }}>
                       {t("settings.openSystemSettings")}
@@ -175,7 +175,7 @@ function AlarmTourScreen() {
                     width: i === stepIdx ? 18 : 6,
                     height: 6,
                     borderRadius: 3,
-                    backgroundColor: i === stepIdx ? THEME.accent : THEME.border,
+                    backgroundColor: i === stepIdx ? THEME.accentFill : THEME.border,
                   }}
                 />
               ))}
@@ -187,7 +187,7 @@ function AlarmTourScreen() {
               className="items-center py-3"
               style={{ minHeight: HIT_TARGET }}
             >
-              <Text style={{ color: THEME.muted, fontSize: 13 }}>{t("alarmTour.skip")}</Text>
+              <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("alarmTour.skip")}</Text>
             </Pressable>
           </View>
         </View>
