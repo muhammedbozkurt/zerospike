@@ -69,3 +69,10 @@ credentials.txt
 *.pem
 scratchpad/metrics/
 scratchpad/**/.asc-raw
+
+# Yerel durum dosyalari ve cekim ciktilari
+supabase/.temp/
+firebase-debug.log*
+scratchpad/**/*.png
+scratchpad/**/*.jpg
+scratchpad/**/*.zip
