@@ -180,6 +180,26 @@ select_shots() {
   fi
 }
 
+cold_ring() { # $1 = lang
+  local lang="$1" i
+  if [[ "$PLATFORM" == "ios" ]]; then
+    for i in 1 2; do
+      app_terminate
+      sleep 4
+      open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${lang}"
+      sleep "$COLD_SETTLE"
+    done
+    status_bar_ios
+  else
+    open_url "${SCHEME}://${DASHBOARD_PATH}?scLang=${lang}"
+    sleep 8
+    app_terminate
+    sleep 3
+    adb shell monkey -p "$BUNDLE_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    sleep 22
+  fi
+}
+
 capture_lang() { # $1 = device output dir label, $2 = lang
   local devdir="$1" lang="$2"
   echo " lang: $lang"
@@ -190,6 +210,11 @@ capture_lang() { # $1 = device output dir label, $2 = lang
     sep="?"; [[ "$path" == *"?"* ]] && sep="&"
     # Unwind to the dashboard first so this shot starts from the same place
     # every time. Skipped for the dashboard shot itself, which IS that state.
+    if [[ "$key" == "01-ring" ]]; then
+      cold_ring "$lang"
+      shoot "$devdir" "$lang" "$key"
+      continue
+    fi
     if [[ "$path" != "$DASHBOARD_PATH" ]]; then reset_to_dashboard "$lang"; fi
     open_url "${SCHEME}://${path}${sep}scLang=${lang}"
     sleep "${SHOTS_PANEL_SETTLE:-9}"
