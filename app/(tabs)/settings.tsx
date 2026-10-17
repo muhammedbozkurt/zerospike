@@ -95,7 +95,7 @@ export default function SettingsHub() {
         <View style={{ flex: 1, minHeight: 32 }} />
         <View style={{ alignItems: "center", paddingTop: 16 }}>
           <Image
-            source={require("../../assets/icon.png")}
+            source={require("../../assets/brand/icon-1024.png")}
             style={{ width: 60, height: 60, borderRadius: 15 }}
           />
           <Text style={{ color: THEME.ink, fontWeight: "700", fontSize: 15, marginTop: 10 }}>

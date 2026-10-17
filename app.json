@@ -4,7 +4,7 @@
     "slug": "zerospike",
     "version": "2.3.7",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/brand/icon-1024.png",
     "scheme": "zerospike",
     "userInterfaceStyle": "dark",
     "locales": {
@@ -152,8 +152,10 @@
       "versionCode": 78,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/brand/adaptive-foreground-1024.png",
+        "backgroundImage": "./assets/brand/adaptive-background-1024.png",
+        "monochromeImage": "./assets/brand/monochrome-1024.png",
+        "backgroundColor": "#0f92bd"
       },
       "permissions": [
         "android.permission.CAMERA",
@@ -192,8 +194,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
-          "color": "#22d3ee",
+          "icon": "./assets/brand/notification-icon-96.png",
+          "color": "#26d9ea",
           "sounds": [
             "./assets/sounds/reminder.wav"
           ]
@@ -250,7 +252,7 @@
               "minWidth": "180dp",
               "minHeight": "110dp",
               "description": "zerospike",
-              "previewImage": "./assets/icon.png",
+              "previewImage": "./assets/brand/icon-1024.png",
               "targetCellWidth": 3,
               "targetCellHeight": 2,
               "resizeMode": "horizontal|vertical",
@@ -262,7 +264,7 @@
               "minWidth": "110dp",
               "minHeight": "40dp",
               "description": "zerospike",
-              "previewImage": "./assets/icon.png",
+              "previewImage": "./assets/brand/icon-1024.png",
               "targetCellWidth": 2,
               "targetCellHeight": 1,
               "resizeMode": "horizontal",
@@ -274,7 +276,7 @@
               "minWidth": "250dp",
               "minHeight": "60dp",
               "description": "zerospike",
-              "previewImage": "./assets/icon.png",
+              "previewImage": "./assets/brand/icon-1024.png",
               "targetCellWidth": 4,
               "targetCellHeight": 1,
               "resizeMode": "horizontal"
@@ -285,7 +287,7 @@
               "minWidth": "80dp",
               "minHeight": "80dp",
               "description": "zerospike",
-              "previewImage": "./assets/icon.png",
+              "previewImage": "./assets/brand/icon-1024.png",
               "targetCellWidth": 1,
               "targetCellHeight": 1,
               "resizeMode": "none",
@@ -297,7 +299,7 @@
               "minWidth": "80dp",
               "minHeight": "80dp",
               "description": "zerospike",
-              "previewImage": "./assets/icon.png",
+              "previewImage": "./assets/brand/icon-1024.png",
               "targetCellWidth": 1,
               "targetCellHeight": 1,
               "resizeMode": "none",
@@ -309,7 +311,7 @@
               "minWidth": "80dp",
               "minHeight": "80dp",
               "description": "zerospike",
-              "previewImage": "./assets/icon.png",
+              "previewImage": "./assets/brand/icon-1024.png",
               "targetCellWidth": 1,
               "targetCellHeight": 1,
               "resizeMode": "none",
@@ -322,7 +324,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
+          "image": "./assets/brand/splash-glyph.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#04161d"

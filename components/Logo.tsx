@@ -1,42 +1,22 @@
 import React from "react";
 import Svg, { Path } from "react-native-svg";
 
-/**
- * The zerospike mark - a "Z" (two slate bars) whose diagonal is a cyan
- * glucose/ECG spike. Pure vector so it scales crisply anywhere in-app.
- */
 export function Logo({
   size = 64,
-  brand = "#2ee6ff",
-  bar = "#e4e4e7",
+  brand = "#ffffff",
 }: {
   size?: number;
   brand?: string;
   bar?: string;
 }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 1024 1024">
+    <Svg width={size} height={size} viewBox="0 0 100 100">
       <Path
-        d="M312 372 H712"
-        stroke={bar}
-        strokeWidth={38}
-        strokeLinecap="round"
-        fill="none"
-      />
-      <Path
-        d="M312 652 H712"
-        stroke={bar}
-        strokeWidth={38}
-        strokeLinecap="round"
-        fill="none"
-      />
-      <Path
-        d="M712 372 L560 560 L512 468 L464 560 L312 652"
+        d="M26 31H74C58 31 42 69 26 69H74"
         stroke={brand}
-        strokeWidth={34}
+        strokeWidth={12}
         strokeLinecap="round"
-        strokeLinejoin="miter"
-        strokeMiterlimit={4}
+        strokeLinejoin="round"
         fill="none"
       />
     </Svg>

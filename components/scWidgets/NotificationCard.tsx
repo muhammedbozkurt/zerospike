@@ -65,7 +65,7 @@ export function NotificationCard({
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: Math.round(icon * 0.34) }}>
         <Image
-          source={require("../../assets/icon.png")}
+          source={require("../../assets/brand/icon-1024.png")}
           style={{ width: icon, height: icon, borderRadius: Math.round(icon * 0.24) }}
         />
         <Text
