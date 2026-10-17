@@ -15,7 +15,15 @@ try {
 
 const args = process.argv.slice(2);
 const chartIdx = args.indexOf('--chart');
-const chartName = chartIdx >= 0 ? args[chartIdx + 1] : null;
+const chartArg = chartIdx >= 0 ? args[chartIdx + 1] : null;
+const chartName = chartArg === 'active_subscriptions' ? 'actives' : chartArg;
+const opt = (n, d) => (args.indexOf(n) >= 0 ? args[args.indexOf(n) + 1] : d);
+const days = Number(opt('--days', 90));
+const resolution = opt('--resolution', 'month');
+const raw = args.includes('--raw');
+const PICK = {
+  trial_conversion: ['New Customers', 'Started Trials', 'Start Rate', 'Conversion Rate', 'Converted Trials', 'Abandoned Trials'],
+};
 
 function get(p) {
   return new Promise((resolve, reject) => {
@@ -111,7 +119,30 @@ for (const pr of projects) {
   }
 
   if (chartName) {
-    const ch = await soft(() => get(`/projects/${id}/charts/${chartName}`), `chart ${chartName}`);
-    if (ch) console.log(`\nChart ${chartName}:\n${JSON.stringify(ch, null, 1).slice(0, 4000)}`);
+    const day = (d) => d.toISOString().slice(0, 10);
+    const q = `resolution=${resolution}&start_date=${day(new Date(Date.now() - days * 864e5))}&end_date=${day(new Date())}`;
+    const ch = await soft(() => get(`/projects/${id}/charts/${chartName}?${q}`), `chart ${chartName}`);
+    if (ch && raw) console.log(JSON.stringify(ch, null, 1));
+    else if (ch) {
+      const ms = ch.measures || [];
+      const want = PICK[chartName];
+      const idx = ms.map((m, i) => i).filter((i) => !want || want.includes(ms[i].display_name));
+      const byT = new Map();
+      for (const v of ch.values || []) {
+        const t = v.cohort ?? v.timestamp ?? v.date;
+        if (!byT.has(t)) byT.set(t, { incomplete: false });
+        const r = byT.get(t);
+        r[v.measure] = v.value;
+        if (v.incomplete) r.incomplete = true;
+      }
+      const fmt = (i, val) => (val === undefined || val === null ? '' : ms[i]?.unit === '%' ? `${Number(val).toFixed(1)}%` : String(val));
+      const rows = [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([t, r]) => {
+        const row = { donem: new Date(t * 1000).toISOString().slice(0, 10) + (r.incomplete ? '*' : '') };
+        idx.forEach((i) => (row[ms[i].display_name] = fmt(i, r[i])));
+        return row;
+      });
+      console.log(`\nChart ${chartName} (${ch.display_name}), ${resolution}, son ${days} gun  (* = donem tamamlanmadi)`);
+      table(rows, ['donem', ...idx.map((i) => ms[i].display_name)]);
+    }
   }
 }
