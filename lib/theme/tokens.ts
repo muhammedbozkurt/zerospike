@@ -24,7 +24,7 @@ type GKey = GlucoseStatus | "veryLow";
 export interface Palette {
   scheme: Scheme;
   bg: string;
-  wash: { g1: string; g2: string; gg: string; glowCyan: string };
+  wash: { g1: string; g2: string; gg: string; glowCyan: string; sos: { base: string; top: string }; deep: string };
   surface: string;
   surfaceRaised: string;
   surfaceInset: string;
@@ -68,6 +68,8 @@ export const DARK: Palette = {
     g2: "#0f2029",
     gg: "#123141",
     glowCyan: "rgba(46,230,255,0.12)",
+    sos: { base: "#080a0d", top: "#2a1418" },
+    deep: "#04161d",
   },
   surface: "rgba(255,255,255,0.05)",
   surfaceRaised: "#16232e",
@@ -118,7 +120,14 @@ export const DARK: Palette = {
 export const LIGHT: Palette = {
   scheme: "light",
   bg: "#F5EFE6",
-  wash: { g1: "#F5EFE6", g2: "#F5EFE6", gg: "#F5EFE6", glowCyan: "rgba(14,155,184,0.06)" },
+  wash: {
+    g1: "#F5EFE6",
+    g2: "#F5EFE6",
+    gg: "#F5EFE6",
+    glowCyan: "rgba(14,155,184,0.06)",
+    sos: { base: "#F5EFE6", top: "#F6E1DD" },
+    deep: "#F5EFE6",
+  },
   surface: "#FFFFFF",
   surfaceRaised: "#FFFFFF",
   surfaceInset: "rgba(15,34,48,0.04)",

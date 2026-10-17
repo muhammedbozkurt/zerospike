@@ -57,12 +57,12 @@ function sameList<T>(a: T[], b: T[]): boolean {
 /** The mockup's warm red wash - this one screen departs from the cyan wash. */
 function SosBackground() {
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: THEME.bg.base }]}>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: THEME.bg.sos.base }]}>
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>
           <RadialGradient id="sosGlow" cx="50%" cy="26%" rx="120%" ry="60%">
-            <Stop offset="0" stopColor={THEME.glucose.low} stopOpacity={THEME.scheme === "dark" ? 0.16 : 0.1} />
-            <Stop offset="1" stopColor={THEME.bg.base} stopOpacity={1} />
+            <Stop offset="0" stopColor={THEME.bg.sos.top} stopOpacity={1} />
+            <Stop offset="1" stopColor={THEME.bg.sos.base} stopOpacity={1} />
           </RadialGradient>
         </Defs>
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#sosGlow)" />

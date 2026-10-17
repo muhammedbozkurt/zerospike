@@ -33,5 +33,5 @@ export default function ScLang() {
       router.replace("/(tabs)");
     })();
   }, [lang, setLanguage, router]);
-  return <View style={{ flex: 1, backgroundColor: THEME.bg.base }} />;
+  return <View style={{ flex: 1, backgroundColor: THEME.bg.deep }} />;
 }
