@@ -28,7 +28,7 @@ import type { ThemePref } from "../../lib/theme/themePref";
 import { LanguagePicker } from "../../components/LanguagePicker";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { useFeedback } from "../../components/Feedback";
-import { THEME } from "../../lib/theme/tokens";
+import { SPACE, THEME } from "../../lib/theme/tokens";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
 import { useLayout } from "../../lib/useLayout";
 
@@ -165,6 +165,7 @@ export default function AppSettings() {
 
       {spikeConfigured ? (
         <>
+          {THEME.scheme === "light" ? <View style={{ height: SPACE.lg }} /> : null}
           <SectionLabel>{t("spike.title")}</SectionLabel>
           <Row icon="sparkles-outline" label={t("spike.settingsRow")} onPress={() => router.push("/spike")} />
           {spikeConsent ? (

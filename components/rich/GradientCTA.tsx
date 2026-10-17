@@ -53,7 +53,8 @@ export function GradientCTA({
     ? [light ? GLUCOSE_RICH.low : lerpHex(GLUCOSE_RICH.low, THEME.text, 0.3), GLUCOSE_RICH.low]
     : [light ? THEME.accentFill : THEME.accentStrong, THEME.accentFill];
   const glowColor = danger ? GLUCOSE_RICH.low : THEME.accentFill;
-  const textColor = sub ? THEME.text : THEME.accentOnFill;
+  const flatOff = isOff && !loading && !sub && light;
+  const textColor = sub ? THEME.text : flatOff ? THEME.textMuted : THEME.accentOnFill;
 
   return (
     <PressableScale
@@ -70,16 +71,16 @@ export function GradientCTA({
         {
           borderRadius: RADIUS.lg,
           overflow: "hidden",
-          opacity: isOff ? 0.5 : 1,
-          borderWidth: sub ? 1 : 0,
-          borderColor: THEME.border,
-          backgroundColor: sub ? THEME.surface : undefined,
+          opacity: isOff && !flatOff ? 0.5 : 1,
+          borderWidth: sub || flatOff ? 1 : 0,
+          borderColor: flatOff ? THEME.borderStrong : THEME.border,
+          backgroundColor: sub ? THEME.surface : flatOff ? THEME.track : undefined,
         },
-        !sub ? glow(glowColor, 22, 0.5, "fill") : undefined,
+        !sub && !flatOff ? glow(glowColor, 22, 0.5, "fill") : undefined,
         style,
       ]}
     >
-      {!sub ? (
+      {!sub && !flatOff ? (
         <Svg style={{ position: "absolute", width: "100%", height: "100%" }}>
           <Defs>
             <LinearGradient id={`cta-${stops[0]}${stops[1]}`.replace(/[^a-z0-9]/gi, "")} x1="0" y1="0" x2="0" y2="1">

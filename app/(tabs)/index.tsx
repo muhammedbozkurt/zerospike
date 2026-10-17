@@ -202,7 +202,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { DirIcon } from "../../components/DirIcon";
 import Animated from "react-native-reanimated";
 import { listEntering, PressableScale } from "../../lib/theme/motion";
-import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS, ELEVATION, HIT_TARGET } from "../../lib/theme/tokens";
+import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS, ELEVATION, HIT_TARGET, switchColors } from "../../lib/theme/tokens";
 import {
   AppBackground,
   GlassCard,
@@ -2361,8 +2361,7 @@ export default function DashboardScreen() {
                 <Switch
                   value={cgmOn}
                   onValueChange={toggleCgm}
-                  trackColor={{ true: THEME.accent, false: THEME.border }}
-                  thumbColor={THEME.text}
+                  {...switchColors()}
                   style={{ transform: [{ scale: 0.75 }], marginVertical: -6 }}
                 />
               )}

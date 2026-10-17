@@ -433,3 +433,18 @@ export function glow(
   const ring = { borderWidth: 1, borderColor: hexAlpha(color, 0.3), elevation: 0 } as const;
   return androidMode === "fill" ? { ...ring, backgroundColor: hexAlpha(color, 0.1) } : ring;
 }
+
+/** Shared Switch colors. Light: white thumb on a borderStrong (off) or accentFill
+ *  (on) track, so the thumb never reads as a black knob; dark keeps its own. */
+export function switchColors(): {
+  trackColor: { true: string; false: string };
+  thumbColor: string;
+} {
+  const p = activePalette();
+  return p.scheme === "light"
+    ? {
+        trackColor: { true: p.accentFill, false: p.borderStrong },
+        thumbColor: "#FFFFFF", // theme-ok
+      }
+    : { trackColor: { true: p.accent, false: p.border }, thumbColor: p.text };
+}

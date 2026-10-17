@@ -39,7 +39,7 @@ import {
   sanitizeNumberText,
 } from "../lib/numberInput";
 import { withAlpha } from "./rich/GlassCard";
-import { GLUCOSE_RICH, INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { ELEVATION, GLUCOSE_RICH, INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { HEALTH_NAME } from "../lib/services/health";
 import { GradientCTA } from "./rich/GradientCTA";
@@ -462,10 +462,13 @@ export function GlucoseInputSheet({
                       marginBottom: 20,
                     }
                   : undefined,
-                glow(liveStatus ? numColor : THEME.accent, 34, 0.35),
+                THEME.scheme === "light"
+                  ? ELEVATION.sheet
+                  : glow(liveStatus ? numColor : THEME.accent, 34, 0.35),
               ]}
             >
               {/* The mockup's bottom radial glow, tinted to the live status. */}
+{THEME.scheme === "dark" ? (
               <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
                 <Defs>
                   <RadialGradient id="sheetGlow" cx="50%" cy="118%" rx="110%" ry="55%">
@@ -475,6 +478,7 @@ export function GlucoseInputSheet({
                 </Defs>
                 <Rect x="0" y="0" width="100%" height="100%" fill="url(#sheetGlow)" />
               </Svg>
+) : null}
 
               <View {...pan.panHandlers}>
                 {/* The grabber's own row IS the gap under it; the sheet's
@@ -603,19 +607,13 @@ export function GlucoseInputSheet({
                   </View>
                 ) : null}
 
-                {/* Period as pill buttons, the mockup's row of small CTAs.
-                    A horizontal scroller, not a wrap: at DE/FR label lengths a
-                    wrapping row breaks unevenly onto a second line and leaves
-                    a lopsided one- or two-pill remainder centered under it. A
-                    single scrollable row keeps every language on one line. */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  bounces={false}
-                  style={{ marginTop: compact ? 12 : 20 }}
-                  contentContainerStyle={{
-                    flexGrow: 1,
+                {/* Period as pill buttons. A wrapping, centered row: a horizontal scroller
+                    clipped the long DE/TR labels at the edge with no cue. */}
+                <View
+                  style={{
+                    marginTop: compact ? 12 : 20,
                     flexDirection: "row",
+                    flexWrap: "wrap",
                     justifyContent: "center",
                     gap: 6,
                   }}
@@ -657,7 +655,7 @@ export function GlucoseInputSheet({
                       </PressableScale>
                     );
                   })}
-                </ScrollView>
+                </View>
 
                 {/* When the reading was taken (date + time, never in the future) */}
                 <Pressable

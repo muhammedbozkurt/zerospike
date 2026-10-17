@@ -401,6 +401,16 @@ export const INK_DARK = PALETTES.dark.accentOnFill;
 const INK_LIGHT = PALETTES.dark.text;
 export const BODY_TOP = mixHex(PALETTES.dark.text, PALETTES.dark.textMuted, 0.05);
 export const BODY_BOTTOM = mixHex(PALETTES.dark.text, PALETTES.dark.textMuted, 0.4);
+const BODY_TOP_WARM = "#F1EBDF"; // theme-ok
+const BODY_BOTTOM_WARM = "#DDD4C4"; // theme-ok
+
+/** Silhouette gradient stops: light theme draws a warm neutral figure so the cool
+ *  teal plates separate from it; dark keeps the pale slate figure. */
+export function bodyStops(): { top: string; bottom: string } {
+  return THEME.scheme === "light"
+    ? { top: BODY_TOP_WARM, bottom: BODY_BOTTOM_WARM }
+    : { top: BODY_TOP, bottom: BODY_BOTTOM };
+}
 
 /**
  * Label colour that keeps its contrast on ANY plate. The two inks swap at the
@@ -841,8 +851,8 @@ export function InjectionBodyMap({
           <Svg width={svgW} height={svgH} viewBox={`${vx} ${vy} ${vw} ${vh}`}>
             <Defs>
               <LinearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor={BODY_TOP} />
-                <Stop offset="1" stopColor={BODY_BOTTOM} />
+                <Stop offset="0" stopColor={bodyStops().top} />
+                <Stop offset="1" stopColor={bodyStops().bottom} />
               </LinearGradient>
             </Defs>
 

@@ -300,9 +300,9 @@ export function RangeInput({
             width: THUMB,
             height: THUMB,
             borderRadius: THUMB / 2,
-            backgroundColor: THEME.text,
+            backgroundColor: THEME.scheme === "light" ? THEME.accentFill : THEME.text,
             borderWidth: 3,
-            borderColor: bandColor,
+            borderColor: THEME.scheme === "light" ? "#FFFFFF" : bandColor, // theme-ok
             transform: [{ scale: lift }],
           },
           dragging === which
@@ -323,7 +323,7 @@ export function RangeInput({
 
   return (
     <GlassCard
-      glow={hasBand && !showsError ? GLUCOSE_RICH.target : undefined}
+      glow={THEME.scheme === "dark" && hasBand && !showsError ? GLUCOSE_RICH.target : undefined}
       radius={RADIUS.xl}
       style={[{ marginBottom: 12, paddingVertical: 14 }, columnPad(14)]}
     >

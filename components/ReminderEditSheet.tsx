@@ -18,7 +18,7 @@ import type { Reminder, ReminderType } from "../lib/db/types";
 import { Segmented } from "./ui";
 import { InlineTimePicker } from "./InlineTimePicker";
 import { MedNamePicker } from "./MedNamePicker";
-import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow, switchColors } from "../lib/theme/tokens";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
@@ -395,8 +395,7 @@ export function ReminderEditSheet({
                       value={alarmEnabled}
                       onValueChange={(v) => void onToggleAlarm(v)}
                       disabled={alarmBusy}
-                      trackColor={{ true: THEME.accent, false: THEME.border }}
-                      thumbColor={THEME.text}
+                      {...switchColors()}
                     />
                   </View>
                   {alarmDenied ? (

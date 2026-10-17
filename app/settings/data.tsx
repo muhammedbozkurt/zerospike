@@ -41,7 +41,7 @@ import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
 import { formatDate, formatLocale, formatTime } from "../../lib/format";
-import { GLUCOSE_RICH, TABULAR, THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
@@ -646,8 +646,7 @@ export default function DataSettings() {
                 <Switch
                   value={healthWrite}
                   onValueChange={onToggleHealthWrite}
-                  trackColor={{ true: THEME.accent, false: THEME.border }}
-                  thumbColor={THEME.text}
+                  {...switchColors()}
                 />
               ) : (
                 <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} />
@@ -720,8 +719,7 @@ export default function DataSettings() {
             <Switch
               value={analyticsOn}
               onValueChange={onToggleAnalytics}
-              trackColor={{ true: THEME.accent, false: THEME.border }}
-              thumbColor={THEME.text}
+              {...switchColors()}
               accessibilityLabel={t("settings.analytics.title")}
             />
           ) : (
@@ -806,8 +804,7 @@ export default function DataSettings() {
               <Switch
                 value={isProUser}
                 onValueChange={onToggleSimPro}
-                trackColor={{ true: THEME.accent, false: THEME.border }}
-                thumbColor={THEME.text}
+                {...switchColors()}
               />
             </View>
             <Text className="text-mut text-xs mt-2">{t("settings.simulateProHint")}</Text>

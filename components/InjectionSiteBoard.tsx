@@ -11,8 +11,7 @@ import { HIT_TARGET, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlassCard, withAlpha } from "./rich";
 import { SCRIM } from "./SheetShell";
 import {
-  BODY_BOTTOM,
-  BODY_TOP,
+  bodyStops,
   INK_DARK,
   absorptionKey,
   daysSince,
@@ -224,8 +223,8 @@ function RegionIllustration({
     >
       <Defs>
         <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={BODY_TOP} />
-          <Stop offset="1" stopColor={BODY_BOTTOM} />
+          <Stop offset="0" stopColor={bodyStops().top} />
+          <Stop offset="1" stopColor={bodyStops().bottom} />
         </LinearGradient>
       </Defs>
       <Path

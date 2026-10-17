@@ -35,7 +35,7 @@ import {
 import { POST_MEAL_WINDOW_MIN } from "../../lib/postMealTimer";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
-import { GLUCOSE_RICH, THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, THEME, switchColors } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
 
@@ -333,8 +333,7 @@ export default function NotificationSettings() {
               <Switch
                 value={prefs.enabled}
                 onValueChange={(v) => updatePrefs({ enabled: v })}
-                trackColor={{ true: THEME.accent, false: THEME.border }}
-                thumbColor={THEME.text}
+                {...switchColors()}
               />
             }
           />
@@ -403,8 +402,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.postMeal}
                     onValueChange={(v) => updatePrefs({ postMeal: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.text}
+                    {...switchColors()}
                   />
                 }
               />
@@ -436,8 +434,7 @@ export default function NotificationSettings() {
                           value={prefs.postMealAlarm}
                           onValueChange={(v) => void togglePostMealAlarm(v)}
                           disabled={alarmBusy}
-                          trackColor={{ true: THEME.accent, false: THEME.border }}
-                          thumbColor={THEME.text}
+                          {...switchColors()}
                         />
                       </View>
                       <Text className="text-mut text-xs mt-1">
@@ -470,8 +467,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.idleReminder}
                     onValueChange={(v) => updatePrefs({ idleReminder: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.text}
+                    {...switchColors()}
                   />
                 }
               />
@@ -488,8 +484,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.weekly}
                     onValueChange={(v) => updatePrefs({ weekly: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.text}
+                    {...switchColors()}
                   />
                 }
               />
@@ -541,8 +536,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.lowFollowup}
                     onValueChange={(v) => updatePrefs({ lowFollowup: v })}
-                    trackColor={{ true: THEME.accent, false: THEME.border }}
-                    thumbColor={THEME.text}
+                    {...switchColors()}
                   />
                 }
               />

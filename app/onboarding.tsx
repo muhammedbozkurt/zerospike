@@ -95,7 +95,7 @@ import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
 import { AppBackground, GradientCTA, withAlpha } from "../components/rich";
-import { RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
+import { RADIUS, TABULAR, THEME, switchColors } from "../lib/theme/tokens";
 import { parseDecimalText } from "../lib/numberInput";
 import { useLayout } from "../lib/useLayout";
 
@@ -473,8 +473,12 @@ function ConsentSwitchRow({
           value={value}
           disabled={disabled}
           onValueChange={onValueChange}
-          trackColor={{ true: THEME.accentFill, false: THEME.borderStrong }}
-          thumbColor={THEME.scheme === "dark" ? THEME.text : THEME.surfaceRaised}
+          {...(THEME.scheme === "light"
+            ? switchColors()
+            : {
+                trackColor: { true: THEME.accentFill, false: THEME.borderStrong },
+                thumbColor: THEME.text,
+              })}
           accessibilityLabel={title}
         />
       </View>

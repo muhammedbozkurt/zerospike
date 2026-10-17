@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import type { DiabetesType, InsulinMode } from "../lib/db/types";
 import { isNoInsulinDiabetesType } from "../lib/diabetesDefaults";
-import { THEME } from "../lib/theme/tokens";
+import { THEME, switchColors } from "../lib/theme/tokens";
 import { FormCard } from "./form";
 import { Segmented } from "./ui";
 
@@ -47,8 +47,7 @@ export function InsulinModeSection({
         <Switch
           value={oralMeds}
           onValueChange={onChangeOralMeds}
-          trackColor={{ true: THEME.accent, false: THEME.border }}
-          thumbColor={THEME.text}
+          {...switchColors()}
         />
       </View>
     </FormCard>

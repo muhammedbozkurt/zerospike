@@ -35,7 +35,7 @@ import { SettingsScaffold } from "../../components/settingsUi";
 import { ReminderEditSheet, type ReminderSavePayload } from "../../components/ReminderEditSheet";
 import { useFeedback } from "../../components/Feedback";
 import { withAlpha } from "../../components/rich";
-import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME } from "../../lib/theme/tokens";
+import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 import { useLayout } from "../../lib/useLayout";
 
@@ -199,8 +199,7 @@ function ReminderRow({
         <Switch
           value={row.enabled === 1}
           onValueChange={onToggleEnabled}
-          trackColor={{ true: THEME.accent, false: THEME.border }}
-          thumbColor={THEME.text}
+          {...switchColors()}
         />
       </View>
     </Pressable>

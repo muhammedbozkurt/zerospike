@@ -22,7 +22,7 @@ import { AppBackground, ConicAvatar, GlassCard, GradientCTA, withAlpha } from ".
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { DirIcon } from "../components/DirIcon";
 import { privacyUrl } from "../lib/legal";
-import { INPUT_TEXT, MODAL_TOP_PAD, THEME, glow, HIT_TARGET } from "../lib/theme/tokens";
+import { INPUT_TEXT, MODAL_TOP_PAD, THEME, glow, HIT_TARGET, switchColors } from "../lib/theme/tokens";
 import {
   askSpike,
   isConfigured,
@@ -1033,8 +1033,7 @@ function SpikeScreen() {
                 value={contextOn}
                 onValueChange={(next) => void toggleContext(next)}
                 disabled={sending}
-                trackColor={{ true: THEME.accent, false: THEME.border }}
-                thumbColor={THEME.text}
+                {...switchColors()}
                 accessibilityLabel={t("spike.ctxToggle")}
               />
             </View>

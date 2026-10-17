@@ -110,6 +110,9 @@ export function contrastTable(): ContrastRow[] {
         ratio: contrast(badgeFg, badgeTint, base),
       });
     }
+    add("textMuted on track (disabled CTA)", p.textMuted, p.track, 4.5);
+    add("borderStrong on bg (disabled CTA edge)", p.borderStrong, p.bg, 3);
+    add("white thumb on borderStrong track", "#FFFFFF", p.borderStrong, 3);
     add("accentOnFill on accentFill", p.accentOnFill, p.accentFill, 4.5);
     add("onDanger on dangerFill", p.onDanger, p.dangerFill, 4.5);
     add("dangerFill on bg", p.dangerFill, p.bg, 3);
