@@ -56,7 +56,7 @@ import {
 import { getRotationCycleStart } from "../lib/rotationCycle";
 import { InjectionBodyMap, type PointSelection } from "../components/InjectionBodyMap";
 import { logCrash, logEvent } from "../lib/analytics";
-import { noteLogAndMaybeReview } from "../lib/services/review";
+import { noteLog, maybeRequestReview } from "../lib/services/review";
 import { noteFirstLog } from "../lib/services/firstLog";
 import {
   checkDose,
@@ -1497,7 +1497,7 @@ function CalculatorScreen() {
       if (createdSugarLogId) void noteFirstLog("glucose");
       if (wroteInjection) void noteFirstLog("injection");
 
-      void noteLogAndMaybeReview("log_meal");
+      void noteLog();
       void noteJournalActivity();
       hapticSuccess();
       // Logging a meal asks the post-meal service to schedule the 2-hour glucose
@@ -1565,6 +1565,7 @@ function CalculatorScreen() {
         },
       });
       dismiss();
+      if (glucoseStatus !== "low") void maybeRequestReview("log_saved");
     } catch (err) {
       // Only reachable while the record is still unwritten, so staying on the
       // screen is right - but it used to stay in silence, with the button simply

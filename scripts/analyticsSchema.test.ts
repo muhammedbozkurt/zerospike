@@ -175,7 +175,7 @@ function matchesContract(): void {
     "spike_action_tap{action}",
     "spike_context_consent{granted:bool}",
     "analytics_opt_out{enabled:bool}",
-    "store_review_prompt{}",
+    "store_review_prompt{trigger:log_saved|streak_7|weekly_insights_view|pdf_export_success}",
   ];
   const expected: Canonical = new Map();
   for (const line of CONTRACT) {

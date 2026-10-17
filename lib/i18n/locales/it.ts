@@ -629,6 +629,7 @@ const it: TranslationSchema = {
     terms: "Condizioni d'uso",
     aboutSection: "Informazioni",
     appSection: "App",
+    rateApp: "Valuti zerospike",
     hubProfile: "Profilo e target",
     hubMedications: "I miei farmaci",
     hubData: "Dati ed esportazione",

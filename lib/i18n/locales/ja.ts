@@ -629,6 +629,7 @@ const ja: TranslationSchema = {
     terms: "利用規約",
     aboutSection: "このアプリについて",
     appSection: "アプリ",
+    rateApp: "zerospikeを評価する",
     hubProfile: "プロフィールと目標",
     hubMedications: "お薬リスト",
     hubData: "データと書き出し",

@@ -439,7 +439,7 @@ export default function InjectionScreen() {
       const kind = insulinType === "basal" ? "basal" : "injection";
       logEvent("log_added", { kind });
       void noteFirstLog(kind);
-      void noteLogAndMaybeReview("log_insulin");
+      void noteLogAndMaybeReview();
       void noteJournalActivity();
       hapticSuccess();
       toast(t("injection.saved"), "success");

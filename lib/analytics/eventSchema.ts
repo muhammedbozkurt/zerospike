@@ -64,7 +64,9 @@ export const EVENT_SCHEMA = {
   spike_action_tap: { action: "string" },
   spike_context_consent: { granted: "bool" },
   analytics_opt_out: { enabled: "bool" },
-  store_review_prompt: {},
+  store_review_prompt: {
+    trigger: ["log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"],
+  },
 } as const satisfies Record<string, EventSpec>;
 
 export type SchemaEventName = keyof typeof EVENT_SCHEMA;

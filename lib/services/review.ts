@@ -28,6 +28,14 @@ const FIRST_SEEN_KEY = "zerospike.reviewFirstSeenAt";
 const LOG_COUNT_KEY = "zerospike.reviewLogCount";
 const LAST_PROMPT_AT_KEY = "zerospike.reviewLastPromptAt";
 const LAST_PROMPT_VERSION_KEY = "zerospike.reviewLastPromptVersion";
+const STREAK_7_DONE_KEY = "zerospike.reviewStreak7Done";
+const STREAK_TARGET = 7;
+
+export type ReviewTrigger =
+  | "log_saved"
+  | "streak_7"
+  | "weekly_insights_view"
+  | "pdf_export_success";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_DAYS_SINCE_FIRST_SEEN = 3;
@@ -99,29 +107,76 @@ async function recordPromptAttempt(): Promise<void> {
 }
 
 /** Single entry point for every review-prompt trigger. `trigger` names the
- *  calling site (e.g. "log_meal", "weekly_insights_view") for the reader of that
- *  call; schema v1's store_review_prompt carries no fields, so it is not sent. */
-export async function maybeRequestReview(trigger: string): Promise<void> {
+ *  calling site (e.g. "log_saved", "weekly_insights_view") for the reader of that
+ *  call and is reported on store_review_prompt. Resolves true only when the
+ *  native request was actually attempted. */
+// Synchronous guard: two concurrent triggers must not both pass the caps
+// before either has recorded its attempt.
+let inFlight = false;
+
+export async function maybeRequestReview(trigger: ReviewTrigger): Promise<boolean> {
   // Never let the native review sheet steal a store-screenshot capture.
-  if (isScreenshotMode()) return;
+  if (isScreenshotMode()) return false;
+  if (inFlight) return false;
+  inFlight = true;
   try {
-    if (!(await meetsBaselineEligibility())) return;
-    if (!(await canAttemptPrompt())) return;
-    if (!(await StoreReview.isAvailableAsync())) return;
+    if (!(await meetsBaselineEligibility())) return false;
+    if (!(await canAttemptPrompt())) return false;
+    if (!(await StoreReview.isAvailableAsync())) return false;
     // Record the attempt before requesting: the native API never reports
     // whether it actually showed, so this is the standard way to guarantee
     // the per-version/30-day caps above regardless of what iOS/Android did.
     await recordPromptAttempt();
-    logEvent("store_review_prompt");
+    logEvent("store_review_prompt", { trigger });
     await StoreReview.requestReview();
+    return true;
   } catch {
-    // review unavailable; never block a user flow
+    return false;
+  } finally {
+    inFlight = false;
   }
 }
 
-/** Call after each new log (glucose/insulin/meal). Counts it toward the
- *  log-count gate, then attempts a prompt through the same gateway. */
-export async function noteLogAndMaybeReview(trigger: string): Promise<void> {
+/** Counts a saved log toward the log-count gate without prompting, for call
+ *  sites that must hold the prompt back while another sheet is up. */
+export async function noteLog(): Promise<void> {
   await bumpLogCount();
-  await maybeRequestReview(trigger);
+}
+
+export async function noteLogAndMaybeReview(): Promise<void> {
+  await noteLog();
+  await maybeRequestReview("log_saved");
+}
+
+/** True only on the save that lifts the streak from below 7 to 7 or more. */
+export function crossedStreak7(before: number, after: number): boolean {
+  return before < STREAK_TARGET && after >= STREAK_TARGET;
+}
+
+/** The once-flag is spent only when the gateway really attempted a prompt; a
+ *  crossing blocked by the baseline caps gets no new chance until the streak
+ *  breaks and reaches 7 again. */
+export async function noteStreakAndMaybeReview(streak: number): Promise<void> {
+  if (streak < STREAK_TARGET) return;
+  try {
+    if (await AsyncStorage.getItem(STREAK_7_DONE_KEY)) return;
+    if (await maybeRequestReview("streak_7")) {
+      await AsyncStorage.setItem(STREAK_7_DONE_KEY, "1");
+    }
+  } catch {
+    // best-effort
+  }
+}
+
+/** Store write-review URL from app.json (never hardcoded). Null when the
+ *  config carries no store id/package, so the caller can stay inert. */
+export function writeReviewUrl(platform: string): string | null {
+  const cfg = Constants.expoConfig;
+  if (platform === "android") {
+    const pkg = cfg?.android?.package;
+    return pkg ? `https://play.google.com/store/apps/details?id=${pkg}` : null;
+  }
+  const base = StoreReview.storeUrl();
+  if (!base) return null;
+  return `${base}${base.includes("?") ? "&" : "?"}action=write-review`;
 }

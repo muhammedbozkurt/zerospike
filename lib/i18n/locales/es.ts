@@ -629,6 +629,7 @@ const es: TranslationSchema = {
     terms: "Términos de uso",
     aboutSection: "Acerca de",
     appSection: "Aplicación",
+    rateApp: "Valorar zerospike",
     hubProfile: "Perfil y objetivos",
     hubMedications: "Mis medicamentos",
     hubData: "Datos y exportación",

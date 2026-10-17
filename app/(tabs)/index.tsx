@@ -94,7 +94,7 @@ import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
 import { useHealthAvailable } from "../../lib/services/healthAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
-import { noteLogAndMaybeReview } from "../../lib/services/review";
+import { noteLog, maybeRequestReview, noteStreakAndMaybeReview, crossedStreak7 } from "../../lib/services/review";
 import { noteFirstLog, seedFirstLogFlags } from "../../lib/services/firstLog";
 import { logCrash, logEvent } from "../../lib/analytics";
 import { TrialCard } from "../../components/TrialCard";
@@ -993,6 +993,7 @@ export default function DashboardScreen() {
       // Encouraging consistency count ("X days in a row"), never a streak to
       // protect.
       logStreak: consecutiveLogDays(logDates),
+      logDates,
       // Hero ring: TODAY's average (device local day), in its status color -
       // never the widgets' own "last 7 days" figure, so the two never read as
       // disagreeing about the same number.
@@ -1046,6 +1047,7 @@ export default function DashboardScreen() {
     lastGlucose,
     lastGlucoseIsToday,
     logStreak,
+    logDates,
     weekAvg,
     weekTIR,
     hasWeekData,
@@ -1341,6 +1343,7 @@ export default function DashboardScreen() {
     // loggedAt is null when the user left the time untouched ("now"); a
     // backdated reading must not arm/cancel today's timers or nudges.
     const isNow = loggedAt == null;
+    const streakBefore = consecutiveLogDays(logDates);
     const addedSugar = await addSugarLog({
       profile_id: activeProfile.id,
       glucose_level_mgdl: value,
@@ -1360,7 +1363,7 @@ export default function DashboardScreen() {
     void noteJournalActivity();
     logEvent("log_added", { kind: "glucose" });
     void noteFirstLog("glucose");
-    void noteLogAndMaybeReview("log_glucose");
+    void noteLog();
     hapticSuccess();
     // NOTHING is armed here. A reading is a measurement, not a meal: logging a
     // fasting or manual value used to start the post-meal countdown by itself, so
@@ -1397,9 +1400,15 @@ export default function DashboardScreen() {
       );
     }
     bumpData();
-    if (isNow) void maybeOfferLowFollowup(value);
+    const followupShown = isNow ? await maybeOfferLowFollowup(value) : false;
     // Not on top of the low-reading follow-up sheet.
-    if (classifyGlucose(value, period, activeProfile) !== "low") void maybeAskHealthWrite(addedSugar);
+    const isLow = classifyGlucose(value, period, activeProfile) === "low";
+    const healthAsked = isLow ? false : await maybeAskHealthWrite(addedSugar);
+    if (!isLow && !followupShown && !healthAsked) {
+      const streakAfter = consecutiveLogDays([...logDates, addedSugar.logged_at]);
+      if (crossedStreak7(streakBefore, streakAfter)) void noteStreakAndMaybeReview(streakAfter);
+      else void maybeRequestReview("log_saved");
+    }
   }
 
   // One-time question for a profile that never turned Health writing on: asked
@@ -1411,14 +1420,14 @@ export default function DashboardScreen() {
       : t("dashboard.healthWriteOn", { health: HEALTH_NAME });
   }
 
-  async function maybeAskHealthWrite(log: SugarLog) {
+  async function maybeAskHealthWrite(log: SugarLog): Promise<boolean> {
     try {
-      if (log.source === "health" || !hasHealthProvider() || !healthAvailable) return;
-      if (await getHealthWriteEnabled(log.profile_id)) return;
-      if (await healthWriteAskSeen()) return;
+      if (log.source === "health" || !hasHealthProvider() || !healthAvailable) return false;
+      if (await getHealthWriteEnabled(log.profile_id)) return false;
+      if (await healthWriteAskSeen()) return false;
       // Marked only once Health is known to be usable here: an unavailable
       // Health Connect must not use up the one question.
-      if (!(await isHealthAvailable())) return;
+      if (!(await isHealthAvailable())) return false;
       await markHealthWriteAskSeen();
       const many = profiles.length > 1 ? activeProfile?.name : undefined;
       const yes = await confirm({
@@ -1430,29 +1439,31 @@ export default function DashboardScreen() {
         cancelLabel: t("dashboard.healthWriteAskLater"),
         icon: "heart-outline",
       });
-      if (!yes) return;
+      if (!yes) return true;
       if (!(await requestHealthWritePermission())) {
         await onHealthWriteDenied();
-        return;
+        return true;
       }
       await setHealthWriteEnabled(true, log.profile_id);
       void writeGlucoseToHealthIfEnabled(log);
       toast(writeOnMessage(), "success");
       await healthBackfill.offerOnce(log.profile_id);
+      return true;
     } catch (err) {
       logCrash(err, { screen: "dashboard", op: "askHealthWrite" });
+      return true;
     }
   }
 
   // Neutral follow-up: after the user LOGS a reading below their own profile's
   // low threshold, offer (never force) a 15-minute re-measure reminder and a
   // shortcut to reach an emergency contact. No diagnosis, no automatic alert.
-  async function maybeOfferLowFollowup(mgdl: number) {
+  async function maybeOfferLowFollowup(mgdl: number): Promise<boolean> {
     const prefs = await getNotificationPrefs();
-    if (!prefs.enabled || !prefs.lowFollowup) return;
+    if (!prefs.enabled || !prefs.lowFollowup) return false;
     // UX#1: one low threshold, not two that could disagree - always the active
     // profile's own low threshold from Profile (see lowFollowupThresholdMgdl).
-    if (mgdl >= (await lowFollowupThresholdMgdl())) return;
+    if (mgdl >= (await lowFollowupThresholdMgdl())) return false;
     actionSheet({
       title: t("dashboard.lowFollowTitle", {
         value: formatGlucose(mgdl, unit),
@@ -1477,6 +1488,7 @@ export default function DashboardScreen() {
         },
       ],
     });
+    return true;
   }
 
   async function toggleCgm(next: boolean) {

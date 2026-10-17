@@ -629,6 +629,7 @@ const ar: TranslationSchema = {
     terms: "شروط الاستخدام",
     aboutSection: "حول التطبيق",
     appSection: "التطبيق",
+    rateApp: "تقييم zerospike",
     hubProfile: "الملف الشخصي والأهداف",
     hubMedications: "أدويتي",
     hubData: "البيانات والتصدير",

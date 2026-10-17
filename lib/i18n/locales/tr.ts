@@ -627,6 +627,7 @@ const tr = {
     terms: "Kullanım Koşulları",
     aboutSection: "Hakkında",
     appSection: "Uygulama",
+    rateApp: "zerospike'ı değerlendirin",
     hubProfile: "Profil ve Hedefler",
     hubMedications: "İlaçlarım",
     hubData: "Veri ve Dışa Aktarım",
