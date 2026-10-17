@@ -795,10 +795,14 @@ export function InjectionBodyMap({
               justifyContent: "center",
             }}
           >
-            <Text className="text-mut" style={{ fontSize: 10, marginBottom: 6 }}>
+            <Text
+              className="text-mut"
+              numberOfLines={1}
+              style={{ fontSize: 10, marginBottom: 6, width: 56, alignSelf: "flex-start" }}
+            >
               {t("injection.heatHigh")}
             </Text>
-            <Svg width={14} height={legendH}>
+            <Svg width={14} height={legendH} style={{ alignSelf: "flex-start", marginLeft: 5 }}>
               <Defs>
                 <LinearGradient id="freqLegend" x1="0" y1="0" x2="0" y2="1">
                   <Stop offset="0" stopColor={frequencyFill(1)} />
@@ -817,7 +821,11 @@ export function InjectionBodyMap({
                 strokeWidth={1.2}
               />
             </Svg>
-            <Text className="text-mut" style={{ fontSize: 10, marginTop: 6 }}>
+            <Text
+              className="text-mut"
+              numberOfLines={1}
+              style={{ fontSize: 10, marginTop: 6, width: 56, alignSelf: "flex-start" }}
+            >
               {t("injection.heatLow")}
             </Text>
           </View>

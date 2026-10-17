@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 
 import type { HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
+import { isScreenshotMode } from "../screenshotMode";
 import type { GlucoseSample, HealthProvider, HealthSummary } from "./healthTypes";
 
 /**
@@ -11,6 +12,8 @@ import type { GlucoseSample, HealthProvider, HealthSummary } from "./healthTypes
  */
 
 export function readMockGlucose(): GlucoseSample[] {
+  // Store captures run on a seeded DB; fresh random rows every launch would leak into the dashboard.
+  if (isScreenshotMode()) return [];
   const now = Date.now();
   const samples: GlucoseSample[] = [];
   let baseline = 95 + Math.round(Math.random() * 20);
