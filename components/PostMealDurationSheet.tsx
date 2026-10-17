@@ -71,7 +71,7 @@ function LateChips({
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.8}
-              className={`text-sm font-medium ${active ? "text-black" : "text-mut"}`}
+              className={`text-sm font-medium ${active ? "text-onAccent" : "text-mut"}`}
             >
               {label}
             </Text>
@@ -172,7 +172,7 @@ export function PostMealDurationSheet({
         />
       }
     >
-      <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginBottom: 14 }}>
+      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 14 }}>
         {t("dashboard.postMealLateHint", { n: POST_MEAL_WINDOW_MIN })}
       </Text>
 
@@ -210,7 +210,7 @@ export function PostMealDurationSheet({
               borderRadius: RADIUS.md,
               borderWidth: 1,
               borderColor: THEME.border,
-              backgroundColor: THEME.glass,
+              backgroundColor: THEME.surface,
               overflow: "hidden",
             }}
           >
@@ -246,7 +246,7 @@ export function PostMealDurationSheet({
                 style={[
                   TABULAR,
                   {
-                    color: THEME.ink,
+                    color: THEME.text,
                     fontSize: 20,
                     fontWeight: "800",
                     textAlign: "center",
@@ -259,7 +259,7 @@ export function PostMealDurationSheet({
                   },
                 ]}
               />
-              <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "600" }}>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
                 {t("insights.minShort")}
               </Text>
             </View>
@@ -274,7 +274,7 @@ export function PostMealDurationSheet({
             </Pressable>
           </View>
           {minutesAgo == null || capped ? (
-            <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 }}>
               {minutesAgo == null
                 ? t("dashboard.postMealLateNeedValue")
                 : t("dashboard.postMealLateMax", { n: POST_MEAL_LATE_MAX_MIN })}
@@ -284,7 +284,7 @@ export function PostMealDurationSheet({
       ) : null}
 
       {reminder ? (
-        <Text style={{ color: THEME.ink, fontSize: 13, fontWeight: "600", lineHeight: 18, marginTop: 12 }}>
+        <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "600", lineHeight: 18, marginTop: 12 }}>
           {t("dashboard.postMealLatePreview", {
             time: isolateLtr(formatTime(new Date(reminder.atMs).toISOString())),
             left: reminder.leftMin,
@@ -301,7 +301,7 @@ export function PostMealDurationSheet({
             backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
           }}
         >
-          <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18 }}>
+          <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 18 }}>
             {t("dashboard.postMealLatePassed", { n: POST_MEAL_WINDOW_MIN })}
           </Text>
         </View>

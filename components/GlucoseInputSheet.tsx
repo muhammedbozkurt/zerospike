@@ -38,6 +38,7 @@ import {
   parseDecimalText,
   sanitizeNumberText,
 } from "../lib/numberInput";
+import { withAlpha } from "./rich/GlassCard";
 import { GLUCOSE_RICH, INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { HEALTH_NAME } from "../lib/services/health";
@@ -339,7 +340,7 @@ export function GlucoseInputSheet({
   const mgdlNow = valid && typed != null ? glucoseFromDisplay(typed, unit) : null;
   const liveStatus: GlucoseStatus | null =
     mgdlNow == null ? null : classifyGlucose(mgdlNow, period, profile ?? {});
-  const numColor = liveStatus ? RICH_BY_STATUS[liveStatus] : THEME.ink;
+  const numColor = liveStatus ? RICH_BY_STATUS[liveStatus] : THEME.text;
 
   function statusLabel(status: GlucoseStatus): string {
     switch (status) {
@@ -371,7 +372,7 @@ export function GlucoseInputSheet({
           style={[
             StyleSheet.absoluteFill,
             {
-              backgroundColor: "#000",
+              backgroundColor: "#000", // theme-ok
               opacity: backdrop.interpolate({
                 inputRange: [0, 1],
                 outputRange: [0, 0.72],
@@ -447,7 +448,7 @@ export function GlucoseInputSheet({
                   borderLeftWidth: 1,
                   borderRightWidth: 1,
                   borderColor: THEME.border,
-                  backgroundColor: THEME.bg.g1,
+                  backgroundColor: THEME.bg.base,
                   paddingHorizontal: 18,
                   // ONE gap above the grabber; the row below carries the rest.
                   paddingTop: 8,
@@ -490,7 +491,7 @@ export function GlucoseInputSheet({
                 </View>
                 <View className="flex-row items-center justify-between">
                   <View style={{ width: 28 }} />
-                  <Text style={{ color: THEME.ink, fontSize: 17, fontWeight: "800" }}>
+                  <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800" }}>
                     {edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}
                   </Text>
                   <Pressable
@@ -500,7 +501,7 @@ export function GlucoseInputSheet({
                     accessibilityLabel={t("common.close")}
                     style={{ width: 28, alignItems: "flex-end" }}
                   >
-                    <Ionicons name="close" size={22} color={THEME.muted} />
+                    <Ionicons name="close" size={22} color={THEME.textMuted} />
                   </Pressable>
                 </View>
               </View>
@@ -527,7 +528,7 @@ export function GlucoseInputSheet({
                     onChangeText={onType}
                     keyboardType={mmol ? "decimal-pad" : "number-pad"}
                     placeholder={mmol ? num(6.1) : "110"}
-                    placeholderTextColor="rgba(137,163,176,0.7)"
+                    placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
                     accessibilityLabel={`${edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}, ${glucoseUnitLabel(unit)}`}
                     style={[
                       TABULAR,
@@ -547,7 +548,7 @@ export function GlucoseInputSheet({
                   />
                   <Text
                     style={{
-                      color: THEME.muted,
+                      color: THEME.textMuted,
                       fontSize: 12,
                       marginTop: compact ? 0 : -4,
                     }}
@@ -588,7 +589,7 @@ export function GlucoseInputSheet({
                     >
                       {t("glucose.veryHighTitle")}
                     </Text>
-                    <Text style={{ color: THEME.ink, fontSize: 12, lineHeight: 18, opacity: 0.85 }}>
+                    <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 18, opacity: 0.85 }}>
                       {aboveMeterRange
                         ? t("glucose.aboveMeterRange", {
                             max: num(GLUCOSE_INPUT_CEILING[unit]),
@@ -639,14 +640,14 @@ export function GlucoseInputSheet({
                             paddingVertical: 11,
                             borderWidth: 1,
                             borderColor: on ? THEME.accent : THEME.border,
-                            backgroundColor: on ? "rgba(46,230,255,0.16)" : THEME.glass,
+                            backgroundColor: on ? withAlpha(THEME.accent, 0.16) : THEME.surface,
                           },
                           on ? glow(THEME.accent, 12, 0.4) : undefined,
                         ]}
                       >
                         <Text
                           style={{
-                            color: on ? THEME.accent : THEME.muted,
+                            color: on ? THEME.accent : THEME.textMuted,
                             fontSize: 12,
                             fontWeight: "700",
                           }}
@@ -670,13 +671,13 @@ export function GlucoseInputSheet({
                     borderRadius: RADIUS.md,
                     borderWidth: 1,
                     borderColor: THEME.border,
-                    backgroundColor: THEME.glass,
+                    backgroundColor: THEME.surface,
                     paddingHorizontal: 14,
                     paddingVertical: 12,
                   }}
                 >
-                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
-                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                  <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
                     {relativeDay((loggedAt ?? new Date()).toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),

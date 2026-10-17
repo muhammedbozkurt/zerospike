@@ -42,6 +42,7 @@ import { useLayout } from "../lib/useLayout";
 import { listEntering, listExiting, listLayout } from "../lib/theme/motion";
 import { GradientCTA } from "./rich/GradientCTA";
 import { withAlpha } from "./rich/GlassCard";
+import { SCRIM } from "./SheetShell";
 
 /** The stored injection being corrected (structurally matches Injection). */
 export interface InjectionEditTarget {
@@ -70,19 +71,19 @@ const USAGE_WINDOW_DAYS = 30;
  *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
 const SHEET_MAX_WIDTH = 600;
 
-const inputStyle = {
+const inputStyle = () => ({
   borderRadius: RADIUS.md,
   borderWidth: 1,
   borderColor: THEME.border,
-  backgroundColor: THEME.glass,
+  backgroundColor: THEME.surface,
   paddingHorizontal: 14,
   paddingVertical: 12,
-  color: THEME.ink,
-} as const;
+  color: THEME.text,
+});
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.muted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
       {children}
     </Text>
   );
@@ -112,7 +113,7 @@ function Chip({
           paddingVertical: 10,
           borderWidth: 1,
           borderColor: on ? THEME.accent : THEME.border,
-          backgroundColor: on ? withAlpha(THEME.accent, 0.14) : THEME.glass,
+          backgroundColor: on ? withAlpha(THEME.accent, 0.14) : THEME.surface,
         },
         on ? glow(THEME.accent, 12, 0.35) : undefined,
         style,
@@ -120,7 +121,7 @@ function Chip({
     >
       <Text
         style={{
-          color: on ? THEME.accent : THEME.muted,
+          color: on ? THEME.accent : THEME.textMuted,
           fontSize: 12,
           fontWeight: on ? "800" : "600",
           textAlign: "center",
@@ -356,7 +357,7 @@ export function InjectionEditSheet({
         className="flex-1"
       >
         <Pressable
-          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={onClose}
           accessible={false}
           focusable={false}
@@ -376,7 +377,7 @@ export function InjectionEditSheet({
                 borderLeftWidth: 1,
                 borderRightWidth: 1,
                 borderColor: THEME.border,
-                backgroundColor: THEME.bg.g1,
+                backgroundColor: THEME.bg.base,
                 paddingHorizontal: 18,
                 paddingTop: 8,
               },
@@ -402,12 +403,12 @@ export function InjectionEditSheet({
                     style={{ marginLeft: -4 }}
                     className="p-1"
                   >
-                    <DirIcon name="chevron-back" size={22} color={THEME.muted} />
+                    <DirIcon name="chevron-back" size={22} color={THEME.textMuted} />
                   </Pressable>
                 ) : null}
                 <Text
                   numberOfLines={1}
-                  style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
+                  style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
                 >
                   {step === "site" ? t("injection.selectSite") : t("calculator.editTitle")}
                 </Text>
@@ -419,7 +420,7 @@ export function InjectionEditSheet({
                 accessibilityLabel={t("common.close")}
                 className="p-1"
               >
-                <Ionicons name="close" size={22} color={THEME.muted} />
+                <Ionicons name="close" size={22} color={THEME.textMuted} />
               </Pressable>
             </View>
 
@@ -465,10 +466,10 @@ export function InjectionEditSheet({
                     setTimePickerOpen((v) => !v);
                   }}
                   className="flex-row items-center mb-5"
-                  style={inputStyle}
+                  style={inputStyle()}
                 >
-                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
-                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                  <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
                     {relativeDay(loggedAt.toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
@@ -517,7 +518,7 @@ export function InjectionEditSheet({
                   style={{ marginBottom: injectionDoseOk(dose, injection?.dose_units ?? null) ? 16 : 6 }}
                 />
                 {injectionDoseOk(dose, injection?.dose_units ?? null) ? null : (
-                  <Text style={{ color: THEME.muted, fontSize: 12, marginBottom: 12 }}>
+                  <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 12 }}>
                     {t("basalConfirm.doseRequired")}
                   </Text>
                 )}
@@ -565,17 +566,17 @@ export function InjectionEditSheet({
                       accessibilityState={{ selected: hasSite }}
                       accessibilityLabel={siteSummaryLabel}
                       className="flex-row items-center flex-1"
-                      style={[inputStyle, { minHeight: 44 }]}
+                      style={[inputStyle(), { minHeight: 44 }]}
                     >
                       <Ionicons
                         name="location-outline"
                         size={16}
-                        color={hasSite ? THEME.accent : THEME.muted}
+                        color={hasSite ? THEME.accent : THEME.textMuted}
                       />
                       <Text
                         numberOfLines={1}
                         style={{
-                          color: hasSite ? THEME.ink : THEME.muted,
+                          color: hasSite ? THEME.text : THEME.textMuted,
                           marginLeft: 8,
                           fontSize: 13,
                           flex: 1,
@@ -583,7 +584,7 @@ export function InjectionEditSheet({
                       >
                         {siteSummaryLabel}
                       </Text>
-                      <DirIcon name="chevron-forward-outline" size={16} color={THEME.muted} />
+                      <DirIcon name="chevron-forward-outline" size={16} color={THEME.textMuted} />
                     </Pressable>
                     {hasSite ? (
                       <Pressable
@@ -598,7 +599,7 @@ export function InjectionEditSheet({
                         accessibilityLabel={t("common.delete")}
                         style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
                       >
-                        <Ionicons name="close-circle-outline" size={18} color={THEME.muted} />
+                        <Ionicons name="close-circle-outline" size={18} color={THEME.textMuted} />
                       </Pressable>
                     ) : null}
                   </View>

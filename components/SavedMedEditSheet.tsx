@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
 
@@ -20,15 +21,15 @@ import { GradientCTA } from "./rich/GradientCTA";
  *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
 const SHEET_MAX_WIDTH = 600;
 
-const inputStyle = {
+const inputStyle = () => ({
   borderRadius: RADIUS.md,
   borderWidth: 1,
   borderColor: THEME.border,
-  backgroundColor: THEME.glass,
+  backgroundColor: THEME.surface,
   paddingHorizontal: 14,
   paddingVertical: 12,
-  color: THEME.ink,
-} as const;
+  color: THEME.text,
+});
 
 /**
  * Modal editor for one saved medication name (app/settings/medications.tsx),
@@ -91,7 +92,7 @@ export function SavedMedEditSheet({
         className="flex-1"
       >
         <Pressable
-          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.72)" }}
+          style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={onClose}
           accessible={false}
           focusable={false}
@@ -105,7 +106,7 @@ export function SavedMedEditSheet({
                 borderLeftWidth: 1,
                 borderRightWidth: 1,
                 borderColor: THEME.border,
-                backgroundColor: THEME.bg.g1,
+                backgroundColor: THEME.bg.base,
                 paddingHorizontal: 18,
                 paddingTop: 8,
                 paddingBottom: 8,
@@ -124,7 +125,7 @@ export function SavedMedEditSheet({
             <View className="flex-row items-center justify-between mb-4">
               <Text
                 numberOfLines={1}
-                style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
+                style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
               >
                 {isEdit ? t("meds.editSavedTitle") : t("meds.addSavedTitle")}
               </Text>
@@ -135,7 +136,7 @@ export function SavedMedEditSheet({
                 accessibilityLabel={t("common.close")}
                 className="p-1"
               >
-                <Ionicons name="close" size={22} color={THEME.muted} />
+                <Ionicons name="close" size={22} color={THEME.textMuted} />
               </Pressable>
             </View>
 
@@ -150,12 +151,12 @@ export function SavedMedEditSheet({
                 value={name}
                 onChangeText={setName}
                 placeholder={t("meds.savedNamePlaceholder")}
-                placeholderTextColor={THEME.muted}
+                placeholderTextColor={THEME.textMuted}
                 accessibilityLabel={t("meds.savedNamePlaceholder")}
                 autoFocus
                 returnKeyType="done"
                 onSubmitEditing={submit}
-                style={[inputStyle, { marginBottom: 18 }]}
+                style={[inputStyle(), { marginBottom: 18 }]}
               />
 
               <GradientCTA
@@ -170,7 +171,7 @@ export function SavedMedEditSheet({
                 className="items-center py-1"
                 style={{ minHeight: HIT_TARGET }}
               >
-                <Text style={{ color: THEME.muted, fontSize: 13 }}>{t("common.cancel")}</Text>
+                <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("common.cancel")}</Text>
               </Pressable>
 
               {isEdit ? (

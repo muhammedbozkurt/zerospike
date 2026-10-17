@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { THEME, RADIUS } from "../lib/theme/tokens";
+import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { IconTile, GradientCTA } from "./rich";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
@@ -196,7 +197,7 @@ export function QuickAddSheet({
     >
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
         <Pressable
-          style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.7)" }]}
+          style={[StyleSheet.absoluteFill, { backgroundColor: SCRIM }]}
           onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel={t("common.close")}
@@ -222,7 +223,7 @@ export function QuickAddSheet({
           <View
             style={[
               {
-                backgroundColor: THEME.bg.g1,
+                backgroundColor: THEME.bg.base,
                 borderTopLeftRadius: RADIUS["2xl"],
                 borderTopRightRadius: RADIUS["2xl"],
                 borderTopWidth: 1,
@@ -258,7 +259,7 @@ export function QuickAddSheet({
                       flex: 1,
                       alignItems: "center",
                       justifyContent: "center",
-                      backgroundColor: THEME.glass,
+                      backgroundColor: THEME.surface,
                       borderWidth: 1,
                       borderColor: THEME.border,
                       borderRadius: RADIUS.lg,
@@ -270,7 +271,7 @@ export function QuickAddSheet({
                   >
                     <IconTile icon={opt.icon} size={48} radius={14} hero />
                     <Text
-                      style={{ color: THEME.ink, fontWeight: "700", fontSize: 13 }}
+                      style={{ color: THEME.text, fontWeight: "700", fontSize: 13 }}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.85}
@@ -290,11 +291,11 @@ export function QuickAddSheet({
                     accessibilityLabel={t("common.back")}
                     style={{ padding: 4, marginLeft: -4 }}
                   >
-                    <DirIcon name="chevron-back" size={22} color={THEME.muted} />
+                    <DirIcon name="chevron-back" size={22} color={THEME.textMuted} />
                   </Pressable>
                   <Text
                     style={{
-                      color: THEME.ink,
+                      color: THEME.text,
                       fontSize: 16,
                       fontWeight: "800",
                       flex: 1,
@@ -323,14 +324,14 @@ export function QuickAddSheet({
                     borderRadius: RADIUS.md,
                     borderWidth: 1,
                     borderColor: THEME.border,
-                    backgroundColor: THEME.glass,
+                    backgroundColor: THEME.surface,
                     paddingHorizontal: 14,
                     paddingVertical: 12,
                     marginBottom: 14,
                   }}
                 >
-                  <Ionicons name="time-outline" size={16} color={THEME.muted} />
-                  <Text style={{ color: THEME.ink, marginLeft: 8, fontSize: 13 }}>
+                  <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
                     {relativeDay((medAt ?? new Date()).toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
@@ -352,17 +353,17 @@ export function QuickAddSheet({
                   value={medNote}
                   onChangeText={setMedNote}
                   placeholder={t("injection.notePlaceholder")}
-                  placeholderTextColor={THEME.muted}
+                  placeholderTextColor={THEME.textMuted}
                   accessibilityLabel={t("injection.notePlaceholder")}
                   returnKeyType="done"
                   style={{
                     borderRadius: RADIUS.md,
                     borderWidth: 1,
                     borderColor: THEME.border,
-                    backgroundColor: THEME.glass,
+                    backgroundColor: THEME.surface,
                     paddingHorizontal: 14,
                     paddingVertical: 12,
-                    color: THEME.ink,
+                    color: THEME.text,
                     fontSize: 14,
                     marginBottom: 14,
                   }}

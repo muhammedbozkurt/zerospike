@@ -22,6 +22,8 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { THEME, glow } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 
+export const SCRIM = "rgba(0,0,0,0.72)"; // theme-ok
+
 /**
  * Shared shell for every bottom-aligned Modal (`justifyContent: "flex-end"`).
  * Fixes the class of bug the old post-meal "I started late" sheet had (since
@@ -171,7 +173,7 @@ export function SheetShell({
         style={{
           flex: 1,
           justifyContent: "flex-end",
-          backgroundColor: "rgba(0,0,0,0.72)",
+          backgroundColor: SCRIM,
           paddingBottom: keyboardAnim,
         }}
         onPress={onClose}
@@ -194,7 +196,7 @@ export function SheetShell({
               borderLeftWidth: 1,
               borderRightWidth: 1,
               borderColor: THEME.border,
-              backgroundColor: THEME.bg.g1,
+              backgroundColor: THEME.bg.base,
               paddingHorizontal: 18,
               paddingTop: 8,
             },
@@ -211,7 +213,7 @@ export function SheetShell({
             <View className="flex-row items-center justify-between mb-1">
               <Text
                 numberOfLines={2}
-                style={{ color: THEME.ink, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
+                style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
               >
                 {title}
               </Text>
@@ -222,7 +224,7 @@ export function SheetShell({
                 accessibilityLabel={closeLabel}
                 className="p-1"
               >
-                <Ionicons name="close" size={22} color={THEME.muted} />
+                <Ionicons name="close" size={22} color={THEME.textMuted} />
               </Pressable>
             </View>
           ) : null}
@@ -277,7 +279,7 @@ export function KeyboardDoneBar({
         style={{
           flexDirection: "row",
           justifyContent: "flex-end",
-          backgroundColor: THEME.sheet,
+          backgroundColor: THEME.surfaceRaised,
           paddingHorizontal: 14,
           paddingVertical: 8,
           borderTopWidth: 1,
