@@ -124,7 +124,7 @@ function ModeMark({ mode, onPress }: { mode: BadgeMode; onPress: () => void }) {
                 : "alarm-outline"
         }
         size={15}
-        color={live ? THEME.accent : THEME.muted}
+        color={live ? THEME.accent : THEME.textMuted}
       />
     </Pressable>
   );
@@ -183,12 +183,12 @@ function ReminderRow({
       <View className="flex-1 ml-3" style={{ gap: 2 }}>
         <Text
           numberOfLines={1}
-          style={{ color: THEME.ink, fontSize: 15, fontWeight: "600" }}
+          style={{ color: THEME.text, fontSize: 15, fontWeight: "600" }}
         >
           {label}
         </Text>
         <View className="flex-row items-center" style={{ gap: 6 }}>
-          <Text style={[TABULAR, { color: THEME.muted, fontSize: 12 }]}>
+          <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 12 }]}>
             {day ? `${row.time} · ${day}` : row.time}
           </Text>
           {badge ? <ModeMark mode={badge} onPress={onToggleMode} /> : null}
@@ -200,7 +200,7 @@ function ReminderRow({
           value={row.enabled === 1}
           onValueChange={onToggleEnabled}
           trackColor={{ true: THEME.accent, false: THEME.border }}
-          thumbColor={THEME.ink}
+          thumbColor={THEME.text}
         />
       </View>
     </Pressable>
@@ -559,7 +559,7 @@ export default function RemindersScreen() {
       }
     >
       <View style={columnPad()}>
-        <Text style={{ color: THEME.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
           {t("settings.remindersHint")}
           {alarmKitAvailable ? ` ${t("reminders.modeHint")}` : ""}
           {/* The one place that says why a row set to "Alarm" still arrives as
@@ -594,7 +594,7 @@ export default function RemindersScreen() {
               backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
             }}
           >
-            <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+            <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
               {t("reminders.masterOffHint")}
             </Text>
             <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
@@ -618,7 +618,7 @@ export default function RemindersScreen() {
               backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
             }}
           >
-            <Text style={{ color: THEME.ink, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+            <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
               {permission === "deniedPermanently"
                 ? t("notifications.permissionDeniedPermanently")
                 : t("notifications.permissionDenied")}
@@ -650,7 +650,7 @@ export default function RemindersScreen() {
           </>
         ) : reminders.length === 0 ? (
           <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
-            <Text style={{ color: THEME.muted, fontSize: 12, lineHeight: 17 }}>
+            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
               {t("reminders.empty")}
             </Text>
           </View>
@@ -671,7 +671,7 @@ export default function RemindersScreen() {
         )}
 
         {atLimit ? (
-          <Text style={{ color: THEME.muted, fontSize: 12, textAlign: "center", marginTop: 4 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 12, textAlign: "center", marginTop: 4 }}>
             {t("reminders.limitReached")}
           </Text>
         ) : (

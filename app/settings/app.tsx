@@ -211,7 +211,7 @@ export default function AppSettings() {
         icon="refresh-outline"
         label={t("settings.restorePurchases")}
         onPress={onRestore}
-        right={restoring ? <Ionicons name="hourglass-outline" size={18} color={THEME.muted} /> : undefined}
+        right={restoring ? <Ionicons name="hourglass-outline" size={18} color={THEME.textMuted} /> : undefined}
       />
 
       <Row

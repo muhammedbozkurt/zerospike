@@ -35,6 +35,7 @@ import { SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
 import { useFeedback } from "../../components/Feedback";
 import { useLayout } from "../../lib/useLayout";
+import { THEME } from "../../lib/theme/tokens";
 
 /**
  * Settings > Profile & Targets. Moved verbatim from the old single-scroll
@@ -610,7 +611,7 @@ export default function ProfileSettings() {
             <View
               key={slot}
               className="px-4 py-3"
-              style={i < arr.length - 1 ? { borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)" } : undefined}
+              style={i < arr.length - 1 ? { borderBottomWidth: 1, borderBottomColor: THEME.border } : undefined}
             >
               <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
               <Stepper

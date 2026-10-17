@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "expo-router";
 import { useTranslation } from "react-i18next";
 
-import { GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { ELEVATION, GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlassCard, withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
 import { upper } from "../lib/upper";
@@ -300,7 +300,7 @@ export function RangeInput({
             width: THUMB,
             height: THUMB,
             borderRadius: THUMB / 2,
-            backgroundColor: THEME.ink,
+            backgroundColor: THEME.text,
             borderWidth: 3,
             borderColor: bandColor,
             transform: [{ scale: lift }],
@@ -308,11 +308,7 @@ export function RangeInput({
           dragging === which
             ? glow(bandColor, 14, 0.75, "shadowless")
             : {
-                shadowColor: "#000",
-                shadowOpacity: 0.35,
-                shadowRadius: 6,
-                shadowOffset: { width: 0, height: 2 },
-                elevation: 4,
+                ...ELEVATION.card,
               },
         ]}
       />
@@ -333,7 +329,7 @@ export function RangeInput({
     >
       <Text
         style={{
-          color: THEME.muted,
+          color: THEME.textMuted,
           fontSize: 11,
           letterSpacing: 1.3,
           fontWeight: "800",
@@ -356,7 +352,7 @@ export function RangeInput({
           style={[
             TABULAR,
             {
-              color: showsError ? GLUCOSE_RICH.low : THEME.ink,
+              color: showsError ? GLUCOSE_RICH.low : THEME.text,
               fontSize: 21,
               lineHeight: 25,
               fontWeight: "800",
@@ -365,12 +361,12 @@ export function RangeInput({
           ]}
         >
           {minText || "-"}
-          <Text style={{ color: THEME.muted, fontWeight: "700" }}>-</Text>
+          <Text style={{ color: THEME.textMuted, fontWeight: "700" }}>-</Text>
           {maxText || "-"}
         </Text>
         <Text
           numberOfLines={1}
-          style={{ color: THEME.muted, fontSize: 12, marginLeft: 7, flexShrink: 0 }}
+          style={{ color: THEME.textMuted, fontSize: 12, marginLeft: 7, flexShrink: 0 }}
         >
           {unit}
         </Text>
@@ -447,10 +443,10 @@ export function RangeInput({
 
       {/* Axis ends, so the rail's scale is readable without dragging it. */}
       <View className="flex-row justify-between" style={{ marginTop: -2, marginBottom: 10 }}>
-        <Text style={[TABULAR, { color: THEME.muted, fontSize: 10 }]}>
+        <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 10 }]}>
           {fmtVal(axisMin)}
         </Text>
-        <Text style={[TABULAR, { color: THEME.muted, fontSize: 10 }]}>
+        <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 10 }]}>
           {fmtVal(axisMax)}
         </Text>
       </View>
@@ -480,7 +476,7 @@ export function RangeInput({
       </View>
 
       {hint ? (
-        <Text style={{ color: THEME.muted, fontSize: 11, marginTop: 10, lineHeight: 16 }}>
+        <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 10, lineHeight: 16 }}>
           {hint}
         </Text>
       ) : null}
@@ -543,7 +539,7 @@ function End({
           borderRadius: RADIUS.lg,
           borderWidth: 1,
           borderColor,
-          backgroundColor: focused ? withAlpha(THEME.accent, 0.08) : THEME.glass,
+          backgroundColor: focused ? withAlpha(THEME.accent, 0.08) : THEME.surface,
           paddingHorizontal: 10,
           paddingTop: 6,
           paddingBottom: 7,
@@ -556,14 +552,14 @@ function End({
       <View className="flex-row items-center justify-between">
         <Text
           numberOfLines={1}
-          style={{ color: THEME.muted, fontSize: 10, fontWeight: "700", flexShrink: 1 }}
+          style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "700", flexShrink: 1 }}
         >
           {label}
         </Text>
         <Ionicons
           name="keypad-outline"
           size={12}
-          color={focused ? THEME.accent : THEME.muted}
+          color={focused ? THEME.accent : THEME.textMuted}
         />
       </View>
       <View className="flex-row items-baseline" style={{ marginTop: 1 }}>
@@ -589,7 +585,7 @@ function End({
           style={[
             TABULAR,
             {
-              color: THEME.ink,
+              color: THEME.text,
               fontSize: 17,
               fontWeight: "800",
               padding: 0,
@@ -600,7 +596,7 @@ function End({
             },
           ]}
         />
-        <Text numberOfLines={1} style={{ color: THEME.muted, fontSize: 11, marginLeft: 4 }}>
+        <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, marginLeft: 4 }}>
           {unit}
         </Text>
       </View>

@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import type { Lang } from "../lib/db/types";
 import { LANG_LABELS, SUPPORTED_LANGS } from "../lib/i18n";
-import { THEME } from "../lib/theme/tokens";
+import { ELEVATION, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 
 /** Cap for a centered, content-sized dialog card on a tablet (does not
@@ -63,12 +63,12 @@ export function LanguagePicker({
         onPress={() => setOpen(true)}
         className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3"
       >
-        <Ionicons name="language-outline" size={19} color={THEME.muted} />
+        <Ionicons name="language-outline" size={19} color={THEME.textMuted} />
         <Text className="flex-1 ml-3 font-medium text-ink">
           {t("settings.language")}
         </Text>
         <Text className="text-mut mr-2">{LANG_LABELS[value]}</Text>
-        <Ionicons name="chevron-down" size={16} color={THEME.muted} />
+        <Ionicons name="chevron-down" size={16} color={THEME.textMuted} />
       </Pressable>
 
       <Modal
@@ -88,12 +88,8 @@ export function LanguagePicker({
             className="rounded-3xl border border-hair p-4"
             style={[
               {
-                backgroundColor: THEME.sheet,
-                shadowColor: "#000",
-                shadowOpacity: 0.5,
-                shadowRadius: 28,
-                shadowOffset: { width: 0, height: 12 },
-                elevation: 16,
+                backgroundColor: THEME.surfaceRaised,
+                ...ELEVATION.sheet,
               },
               isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
@@ -133,7 +129,7 @@ export function LanguagePicker({
                       <Ionicons
                         name="checkmark-circle"
                         size={20}
-                        color="#2ee6ff"
+                        color={THEME.accent}
                       />
                     ) : null}
                   </Pressable>
