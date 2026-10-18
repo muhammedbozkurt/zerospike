@@ -373,6 +373,7 @@ export function InjectionBodyMap({
     : t("injection.tapRegion");
 
   const bodyFill = mixHex(THEME.surfaceRaised, THEME.text, 0.05);
+  const plateFill = mixHex(THEME.surfaceRaised, THEME.text, 0.02);
   const pointRadius = 23 * upx;
   const pointFont = 15 * upx;
   const countFont = 9 * upx;
@@ -489,8 +490,8 @@ export function InjectionBodyMap({
                   width={vw}
                   height={vh}
                   rx={18 * upx}
-                  fill={bodyFill}
-                  stroke={THEME.borderStrong}
+                  fill={plateFill}
+                  stroke={THEME.heatEdge}
                   strokeWidth={1 * upx}
                 />
               ) : (
@@ -554,7 +555,7 @@ export function InjectionBodyMap({
                   const p = openUsage?.points.find((x) => x.point === pp.point);
                   const count = p?.count ?? 0;
                   const tier = heatTier(pointHeatLevel(count, openCount));
-                  const fill = tierFill(tier);
+                  const fill = tierFill(tier < 2 ? 2 : tier);
                   const ink = inkFor(fill);
                   const on = selected?.site === open.region.site && selected.point === pp.point;
                   const isLeast =

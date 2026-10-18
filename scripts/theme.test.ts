@@ -144,6 +144,19 @@ async function main() {
     }
   });
 
+  await check("zoom plate: plate reads against bg, saturated points keep 3:1 on the plate", () => {
+    const ch = (h: string, k: number) => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
+    for (const p of [DARK, LIGHT]) {
+      const plate = `#${[0, 1, 2]
+        .map((k) => Math.round(ch(p.surfaceRaised, k) + (ch(p.text, k) - ch(p.surfaceRaised, k)) * 0.02).toString(16).padStart(2, "0"))
+        .join("")}`;
+      assert.ok(contrast(p.heatEdge, plate, p.bg) >= 1.5, `${p.scheme} plate edge`);
+      [p.heatRamp[2], p.heatRamp[3]].forEach((c, i) =>
+        assert.ok(contrast(c, plate, p.bg) >= 3, `${p.scheme} point tier${i + 2}/plate ${contrast(c, plate, p.bg).toFixed(2)}`)
+      );
+    }
+  });
+
   await check("remount lock: scheme change waits while locked, applies on release", () => {
     assert.equal(heldScheme("light", "dark", true), "dark");
     assert.equal(heldScheme("light", "dark", false), "light");
