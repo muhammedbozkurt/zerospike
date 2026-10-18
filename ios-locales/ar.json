@@ -3,7 +3,7 @@
     "CFBundleDisplayName": "zerospike",
     "NSCameraUsageDescription": "يستخدم zerospike الكاميرا لمسح باركود الأطعمة وإضافة صور الوجبات.",
     "NSPhotoLibraryUsageDescription": "يصل zerospike إلى مكتبة صورك لإضافة صور إلى دفتر وجباتك.",
-    "NSHealthShareUsageDescription": "يقرأ zerospike بيانات سكر الدم والإنسولين ودقائق النشاط من Apple Health لعرضها في دفترك وملخصاتك. ويمكنه أيضًا استيراد قياسات سكر الدم الجديدة في الخلفية، حتى عندما يكون التطبيق مغلقًا.",
+    "NSHealthShareUsageDescription": "يقرأ zerospike بيانات سكر الدم والإنسولين ودقائق النشاط من Apple Health لعرضها في دفترك وملخصاتك. ويمكنه أيضًا استيراد قياسات سكر الدم الجديدة في الخلفية عندما يسمح النظام بذلك.",
     "NSHealthUpdateUsageDescription": "يكتب zerospike إلى Apple Health بإذنك فقط: من الإعدادات، أو عند الربط مع Apple Health، أو عند السؤال بعد حفظ سجل. ويشمل ذلك قراءات سكر الدم التي تدخلها يدويًا، وإذا فعّلت ذلك، سجلات الكربوهيدرات والإنسولين التي تضيفها إلى دفترك. لا يُكتب شيء آخر، وعند حذف سجل في zerospike يُحذف أيضًا من Apple Health.",
     "NSLocationWhenInUseUsageDescription": "يستطيع zerospike إرفاق موقعك الحالي برسالة ترسلها من شاشة SOS، ليصل إليك أحد بسرعة أكبر.",
     "NSContactsUsageDescription": "يتيح لك zerospike اختيار جهة اتصال للطوارئ من جهات اتصالك لاستخدامها في شاشة SOS.",
