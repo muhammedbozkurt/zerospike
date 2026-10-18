@@ -137,6 +137,8 @@ async function main() {
       const floors = p.scheme === "dark" ? [3, 3, 3] : [1.5, 2.5, 3];
       [1, 2, 3].forEach((i) => assert.ok(r[i] >= floors[i - 1], `${p.scheme} tier${i} ${r[i].toFixed(2)}`));
       assert.ok(contrast(p.borderStrong, body, p.bg) >= 3, `${p.scheme} outline/body`);
+      assert.ok(contrast(p.heatEdge, body, p.bg) >= 1.5, `${p.scheme} heatEdge/body`);
+      assert.ok(contrast(p.heatEdge, p.heatRamp[0], p.bg) >= 1.5, `${p.scheme} heatEdge/tier0`);
       const step = contrast(p.heatRamp[3], p.heatRamp[2], p.bg);
       assert.ok(step >= 1.4, `${p.scheme} tier3/tier2 ${step.toFixed(2)}`);
     }

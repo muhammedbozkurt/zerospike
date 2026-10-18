@@ -191,7 +191,7 @@ export function RegionShape({
         height={bh}
         rx={region.rx}
         fill={fill}
-        stroke={THEME.borderStrong}
+        stroke={THEME.heatEdge}
         strokeWidth={tierStroke(tier) * upx}
       />
       {next && selected ? (

@@ -154,6 +154,8 @@ const BADGE_TOP_Y = 84;
 const BADGE_H = 18;
 /** Budgeted for the longest label, Arabic "يمين"; a single letter just centres. */
 const BADGE_MAX_W = 52;
+/** Screen height not given to the figure: header, tab bar, safe areas, zoom bar and legend. */
+const CHROME_RESERVE = 520;
 
 export function InjectionBodyMap({
   usage,
@@ -195,7 +197,8 @@ export function InjectionBodyMap({
   // swapLeftAndRightInRTL flip.
   const rtl = I18nManager.isRTL;
   const { width: winW, height: winH } = useWindowDimensions();
-  const svgW = Math.min(Math.round(winW * 0.78), 384);
+  const fitW = Math.round(((winH - CHROME_RESERVE) * VB_W) / VB_H);
+  const svgW = Math.max(200, Math.min(Math.round(winW * 0.78), 384, fitW));
   const svgH = Math.round((svgW * VB_H) / VB_W);
 
   const badges = useMemo(() => {
@@ -596,7 +599,7 @@ export function InjectionBodyMap({
                         cy={pp.y}
                         r={pointRadius}
                         fill={fill}
-                        stroke={THEME.borderStrong}
+                        stroke={THEME.heatEdge}
                         strokeWidth={tierStroke(tier) * 1.2 * upx}
                       />
                       <SvgText
@@ -679,7 +682,7 @@ export function InjectionBodyMap({
                 height={11}
                 rx={4}
                 fill={c}
-                stroke={THEME.borderStrong}
+                stroke={THEME.heatEdge}
                 strokeWidth={i === 3 ? 1.5 : 1}
               />
             ))}
