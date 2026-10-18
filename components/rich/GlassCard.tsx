@@ -41,7 +41,7 @@ export function GlassCard({
       : {
           borderColor: withAlpha(glowColor, 0.5),
           backgroundColor: withAlpha(glowColor, 0.1),
-          elevation: 3,
+          elevation: THEME.scheme === "light" ? 0 : 3,
         }
     : undefined;
   return (

@@ -1,4 +1,5 @@
 import type { GlucoseStatus } from "../glucose";
+import { elevationFor } from "./elevation";
 
 /**
  * zerospike design tokens: the single source of truth for color, spacing,
@@ -251,40 +252,33 @@ export const RADIUS = {
 /* ── Elevation: dark reads as depth, light as a soft drop shadow ───────────*/
 export const ELEVATION = {
   get card() {
-    return activePalette().scheme === "light"
-      ? ({
-          shadowColor: "#0F2230",
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 4 },
-          elevation: 2,
-        } as const)
-      : ({
-          shadowColor: "#000",
-          shadowOpacity: 0.25,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 4 },
-          elevation: 3,
-        } as const);
+    return elevationForActive("card") as ElevationStyle;
   },
   get sheet() {
-    return activePalette().scheme === "light"
-      ? ({
-          shadowColor: "#0F2230",
-          shadowOpacity: 0.12,
-          shadowRadius: 24,
-          shadowOffset: { width: 0, height: -8 },
-          elevation: 10,
-        } as const)
-      : ({
-          shadowColor: "#000",
-          shadowOpacity: 0.4,
-          shadowRadius: 24,
-          shadowOffset: { width: 0, height: -8 },
-          elevation: 12,
-        } as const);
+    return elevationForActive("sheet") as ElevationStyle;
+  },
+  get popover() {
+    return elevationForActive("popover") as { elevation: number; borderWidth?: number; borderColor?: string };
   },
 };
+
+type ElevationStyle = {
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowRadius: number;
+  shadowOffset: { width: number; height: number };
+  elevation: number;
+  borderWidth?: number;
+  borderTopWidth?: number;
+  borderColor?: string;
+};
+
+function elevationForActive(kind: "card" | "sheet" | "popover") {
+  // Lazy require: see glow(); pure-Node scripts import this module.
+  const os = (require("react-native") as typeof import("react-native")).Platform.OS;
+  const p = activePalette();
+  return elevationFor(kind, p.scheme, os, p.border);
+}
 
 /* ── Type scale ────────────────────────────────────────────────────────────
  *

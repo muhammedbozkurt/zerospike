@@ -425,11 +425,11 @@ function FeedbackOverlays() {
             backgroundColor: THEME.surfaceRaised,
             borderRadius: RADIUS.lg,
             borderWidth: 1,
-            borderColor: `${ts.color}55`,
             paddingVertical: 12,
             paddingHorizontal: 14,
             overflow: "hidden",
             ...ELEVATION.card,
+            borderColor: `${ts.color}55`,
           }}
         >
           {/* Kind color as a left strip only (never the fill) */}
@@ -603,7 +603,7 @@ function ConfirmOverlay({
                 shadowOpacity: 0.5,
                 shadowRadius: 28,
                 shadowOffset: { width: 0, height: 12 },
-                elevation: 16,
+                ...ELEVATION.popover,
               },
               isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}

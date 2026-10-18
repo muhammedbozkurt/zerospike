@@ -22,6 +22,7 @@ const SKIP = [
   "lib/services/pdfColors.ts",
   "lib/theme/tokens.ts",
   "lib/theme/contrast.ts",
+  "lib/theme/elevation.ts",
   "lib/i18n/",
 ];
 const strict = process.argv.includes("--strict");

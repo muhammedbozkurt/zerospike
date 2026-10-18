@@ -94,7 +94,7 @@ export function LanguageChip() {
                 shadowOpacity: 0.5,
                 shadowRadius: 28,
                 shadowOffset: { width: 0, height: -8 },
-                elevation: 16,
+                ...ELEVATION.popover,
               },
               isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}

@@ -163,7 +163,7 @@ export function ProfileSwitcher({
                   shadowOpacity: 0.5,
                   shadowRadius: 28,
                   shadowOffset: { width: 0, height: 12 },
-                  elevation: 16,
+                  ...ELEVATION.popover,
                 },
                 isWide ? { maxWidth: DIALOG_MAX_WIDTH, alignSelf: "center" } : undefined,
               ]}
