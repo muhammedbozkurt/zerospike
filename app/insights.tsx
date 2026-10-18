@@ -69,7 +69,7 @@ import {
   openLtrIsolate,
   stripBidiMarks,
 } from "../lib/format";
-import { isScreenshotMode } from "../lib/screenshotMode";
+import { isScreenshotMode, weeklyCompareNow } from "../lib/screenshotMode";
 import { maybeRequestReview } from "../lib/services/review";
 import { getTrialStatus } from "../lib/services/purchases";
 import { ChartCard } from "../components/charts/ChartCard";
@@ -799,7 +799,7 @@ export default function InsightsScreen() {
 
   // a) This calendar week vs. the previous full week.
   const weeklyCompare = useMemo(
-    () => weeklyComparison(sugar, Date.now(), weekAnchor, tirBand),
+    () => weeklyComparison(sugar, weeklyCompareNow(Date.now()), weekAnchor, tirBand),
     [sugar, tirBand, weekAnchor]
   );
   const weekDeltaText = (delta: number | null, fmt: (abs: number) => string): string | undefined => {

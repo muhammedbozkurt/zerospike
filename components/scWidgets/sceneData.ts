@@ -18,7 +18,7 @@ import type { LiveData } from "../../lib/services/liveData";
  * derived from it:
  *
  *   last reading   112 mg/dL, logged 12 minutes before the anchor
- *   7-day average  118 mg/dL, fixed
+ *   7-day average  125 mg/dL, fixed (the dashboard's 7-day average)
  *   post-meal      72 of 120 minutes left -> "1:12:00", a 40% bar
  *   next reminder  49 minutes after the anchor
  *
@@ -28,7 +28,7 @@ import type { LiveData } from "../../lib/services/liveData";
  * never show a string the shipped widgets do not.
  */
 export const SCENE_LAST_MGDL = 112;
-export const SCENE_AVG_MGDL = 118;
+export const SCENE_AVG_MGDL = 125;
 export const SCENE_ELAPSED_MIN = 12;
 export const SCENE_TIMER_TOTAL_MIN = 120;
 export const SCENE_TIMER_REMAINING_MIN = 72;

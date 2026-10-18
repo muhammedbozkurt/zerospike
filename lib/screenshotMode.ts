@@ -17,6 +17,20 @@ export function isScreenshotMode(): boolean {
 }
 
 /**
+ * The "now" the weekly comparison is computed at. A calendar-week window ends
+ * at the real clock, so on a Monday morning a Monday-anchored language would
+ * see "this week" as a few hours of today, or nothing. In screenshot mode the
+ * window ends at the end of today instead, which always contains today's four
+ * seeded readings. Outside screenshot mode it is `now`, unchanged.
+ */
+export function weeklyCompareNow(now: number): number {
+  if (!isScreenshotMode()) return now;
+  const d = new Date(now);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+/**
  * Capture-only platform override (?scPlatform=android on any screenshot
  * deep-link). The Android store art is composed from the SAME iOS captures, so
  * a frame meant for Play must leave out chrome that only exists on iOS (the

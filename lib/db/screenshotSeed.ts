@@ -11,8 +11,9 @@ import { isFavorite, toggleFavorite } from "./favorites";
 import { getProfile, updateProfile } from "./profiles";
 import { getDb, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
 import { SELECTABLE_SITES, SITE_POINTS } from "./types";
-import type { InsulinType, Lang, MealSlot, PeriodTag, ReminderType, SitePoint } from "./types";
+import type { InsulinType, Lang, MealSlot, ReminderType, SitePoint } from "./types";
 import type { FoodCategory } from "./categories";
+import { buildGlucoseSchedule, rng } from "./screenshotGlucose";
 import { setProOverride } from "../services/purchases";
 import i18n from "../i18n";
 
@@ -72,23 +73,6 @@ const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
 // Mirrors app/(tabs)/index.tsx: the dashboard's "finish setting up" row is a
 // nudge for a real user and has no place in a store frame.
 const FINISH_SETUP_DISMISSED_KEY = "zerospike.finishSetupDismissed";
-
-/** Deterministic pseudo-random in [0,1) so the seed is stable across runs. */
-function rng(seed: number): number {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
-
-/** A plausible reading (mg/dL) for a given day/slot, weighted toward target. */
-function reading(day: number, slot: number): number {
-  const r = rng(day * 7 + slot);
-  // ~78% target (80-140), ~5% low, ~17% high.
-  if (r < 0.05) return Math.round(58 + rng(day + slot) * 20); // low
-  if (r < 0.22) return Math.round(150 + rng(day * 3 + slot) * 70); // high
-  return Math.round(88 + rng(day * 5 + slot) * 48); // target band
-}
-
-const PERIODS: PeriodTag[] = ["fasting", "pre_meal", "post_meal_2h", "bedtime", "manual"];
 
 const MEALS: Record<Lang, { name: string; carbs: number }[]> = {
   tr: [
@@ -566,58 +550,9 @@ async function seedScreenshotDataLocked(
         });
       }
 
-      // 30 days of glucose. Skip day 12 so the recent streak is exactly 12.
-      // Readings span the whole CLOCK so the AGP median covers 00-24 with no empty
-      // edge: fasting 07, post-breakfast 09, lunch 13, afternoon 17, post-dinner 20,
-      // bedtime ~23:40 every day, plus a post-midnight ~00:30 reading every other
-      // day for the 00:00 edge.
-      const hoursBySlot = [7, 9, 13, 17, 20, 23];
-      const periodBySlot: PeriodTag[] = [
-        PERIODS[0], PERIODS[2], PERIODS[1], PERIODS[4], PERIODS[2], PERIODS[3],
-      ];
-      // Today's first 3 slots (fasting/post-breakfast/pre-lunch) are fixed
-      // in-target values, not the weighted-random `reading()` used for every
-      // other day: the dashboard's hero ring now averages TODAY's readings
-      // (not just the last one), so a stray low/high from the RNG here would
-      // pull that average - and the ring's color - off target in the
-      // screenshot. Together with the fixed 112 hero (slot 3) below, today's
-      // 4-reading average lands around 108 mg/dL (~6.0 mmol), just like the
-      // "~110 mg/dL / 6.1 mmol" the story targets.
-      const TODAY_TARGET_MGDL = [100, 115, 105];
-      for (let day = 0; day < 30; day++) {
-        if (day === 12) continue;
-        const slots = day === 0 ? 4 : hoursBySlot.length; // today: up to the ~evening hero
-        for (let slot = 0; slot < slots; slot++) {
-          const isTodayHero = day === 0 && slot === 3;
-          // Today's hero is an in-target post-meal check at ~18:22; the last slot
-          // is a bedtime reading at ~23:40 so the curve reaches the right edge.
-          const hour = isTodayHero ? 18 : hoursBySlot[slot];
-          const minute = isTodayHero
-            ? 22
-            : slot === 5
-              ? 40 + Math.round(rng(day + slot) * 8)
-              : Math.round(rng(day + slot) * 40);
-          const glucoseLevel = isTodayHero
-            ? 112
-            : day === 0
-              ? TODAY_TARGET_MGDL[slot]
-              : reading(day, slot);
-          await addSugarLog({
-            profile_id: profileId,
-            glucose_level_mgdl: glucoseLevel,
-            period_tag: isTodayHero ? "post_meal_2h" : periodBySlot[slot],
-            logged_at: at(day, hour, minute),
-          });
-        }
-        // Post-midnight (~00:30) reading every other day so the median reaches 00:00.
-        if (day !== 0 && day % 2 === 0) {
-          await addSugarLog({
-            profile_id: profileId,
-            glucose_level_mgdl: reading(day, 6),
-            period_tag: PERIODS[0],
-            logged_at: at(day, 0, 25 + Math.round(rng(day) * 10)),
-          });
-        }
+      // 30 days of glucose: see buildGlucoseSchedule (screenshotGlucose.ts).
+      for (const g of buildGlucoseSchedule(new Date())) {
+        await addSugarLog({ profile_id: profileId, ...g });
       }
 
       // Injections across every selectable site + point over the window; the first
