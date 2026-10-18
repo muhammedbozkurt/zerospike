@@ -18,6 +18,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const nodeModule = require("module");
 
+// Sabit "simdi" (Cuma 12:00 yerel): sonuc calistirma gunune ve saatine bagli olmasin.
+const FIXED_NOW = process.env.TEST_NOW_MS ? Number(process.env.TEST_NOW_MS) : new Date(2026, 9, 16, 12, 0, 0).getTime();
+Date.now = () => FIXED_NOW;
+
 let passed = 0;
 let failed = 0;
 function ok(name: string, cond: boolean, detail = ""): void {
