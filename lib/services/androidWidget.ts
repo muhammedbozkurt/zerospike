@@ -13,7 +13,7 @@ import {
   type LiveData,
 } from "./liveData";
 import { MGDL_PER_MMOL } from "../glucose";
-import { FROZEN_GLUCOSE_RICH as GLUCOSE_RICH, FROZEN_THEME as THEME } from "./pdfColors";
+import { WIDGET_DARK, WIDGET_LIGHT, type WidgetPalette } from "./widgetColors";
 import { VERY_HIGH_MGDL } from "../glucose";
 import { formatTimeForLang } from "../format";
 
@@ -60,42 +60,8 @@ const URI_POST_MEAL_2H = "zerospike:///?sheet=post_meal_2h";
  *  as the iOS twin (see buildTimerWidget). */
 const URI_START_POST_MEAL = "zerospike:///?sheet=post_meal_start";
 
-/**
- * Pre-mixed tile colours.
- *
- * The iOS twin paints each Quick Add tile as `tint.opacity(0.16)` with a
- * `tint.opacity(0.34)` hairline. Android cannot: the widget's native colour
- * parser is `Color.parseColor`, which only understands `#rrggbb` / `#aarrggbb`,
- * so a translucent rgba string is a render-time throw, not a soft failure.
- *
- * These are therefore the SAME colours, flattened by hand over the widget
- * ground (#080e14): `round(bg + (tint - bg) * alpha)` per channel. Change the
- * tint or the ground and these must be recomputed, which is why the source
- * values and the alphas are written down beside each one.
- */
-const TILE = {
-  /** #2ee6ff @ 0.16 / 0.34, plus the raised primary at 0.22 / 0.44. */
-  glucose: { fill: "#0e313a", border: "#155764" },
-  glucosePrimary: { fill: "#103e48", border: "#196d7b" },
-  /** #22e39a @ 0.16 / 0.34. */
-  meal: { fill: "#0c3029", border: "#115642" },
-  /** #7c5cff @ 0.16 / 0.34. */
-  injection: { fill: "#1b1a3a", border: "#2f2964" },
-  /** #ffa02a @ 0.16 / 0.34. */
-  med: { fill: "#302518", border: "#5c401b" },
-  /** #2ee6ff @ 0.14 / 0.28 - the countdown pill on the glance widget. */
-  countdown: { fill: "#0d2c35", border: "#134a56" },
-} as const;
-
-/** The identity hue of each Quick Add flow, at full strength (glyph colour). */
-const TILE_INK = {
-  glucose: THEME.accent,
-  meal: GLUCOSE_RICH.target,
-  injection: THEME.violet,
-  // The one warm hue left once cyan, mint and violet are taken. This widget
-  // prints no reading, so the amber cannot be misread as a classification of one.
-  med: THEME.caution,
-} as const;
+/* Tile fills are pre-mixed opaque hex (Color.parseColor reads no rgba); the
+ * flattening formula and the per-ground values live in ./widgetColors. */
 
 /** The current dp footprint of a placed widget (subset of the library's
  *  WidgetInfo), delivered on WIDGET_RESIZED and on every render request. */
@@ -132,21 +98,22 @@ function sizesFor(size?: WidgetSize) {
  *  written before R7. A glance, not a classification; the value is always shown. */
 function readingColor(
   mgdl: number | null,
-  band: LiveData["band"] | undefined
+  band: LiveData["band"] | undefined,
+  pal: WidgetPalette
 ): ColorProp {
   // The token palette is hex throughout, which is exactly what the widget wants.
-  if (mgdl == null) return THEME.muted as ColorProp;
+  if (mgdl == null) return pal.muted as ColorProp;
   const hypo = band?.hypo ?? 70;
   const high = band?.high ?? 180;
   const veryHigh = band?.veryHigh ?? VERY_HIGH_MGDL;
-  if (mgdl < hypo) return GLUCOSE_RICH.low as ColorProp;
-  if (mgdl >= veryHigh) return GLUCOSE_RICH.veryHigh as ColorProp;
-  if (mgdl <= high) return GLUCOSE_RICH.target as ColorProp;
+  if (mgdl < hypo) return pal.glucose.low as ColorProp;
+  if (mgdl >= veryHigh) return pal.glucose.veryHigh as ColorProp;
+  if (mgdl <= high) return pal.glucose.target as ColorProp;
   // The step above the band mirrors classifyGlucose (lib/glucose.ts) and the iOS
   // widget: up to 1.25x the band's top is the yellow "above" step, past that the
   // amber "well above" one, so all five colours read the same on every surface.
-  if (mgdl <= high * 1.25) return GLUCOSE_RICH.high as ColorProp;
-  return GLUCOSE_RICH.wellAbove as ColorProp;
+  if (mgdl <= high * 1.25) return pal.glucose.high as ColorProp;
+  return pal.glucose.wellAbove as ColorProp;
 }
 
 function formatReading(data: LiveData | null): string {
@@ -185,7 +152,8 @@ function nextReminderTimeLabel(data: LiveData | null, now = Date.now()): string 
  *  about; `size` (when known) tiers the layout to the placed footprint. */
 export function buildZerospikeWidget(
   data: LiveData | null,
-  size?: WidgetSize
+  size?: WidgetSize,
+  pal: WidgetPalette = WIDGET_DARK
 ): React.JSX.Element {
   const remaining = nextReminderTimeLabel(data);
   const s = sizesFor(size);
@@ -206,8 +174,8 @@ export function buildZerospikeWidget(
         // parser is Color.parseColor. No border on this element - a gradient
         // background replaces the border drawable in the library.
         backgroundGradient: {
-          from: THEME.bg.g2 as ColorProp,
-          to: THEME.bg.g1 as ColorProp,
+          from: pal.bgFrom as ColorProp,
+          to: pal.bgTo as ColorProp,
           orientation: "TOP_BOTTOM",
         },
         borderRadius: s.radius,
@@ -226,7 +194,7 @@ export function buildZerospikeWidget(
         text: data?.labels?.avgGlucose ?? data?.labels?.lastReading ?? "",
         truncate: "END",
         maxLines: 1,
-        style: { fontSize: s.label, fontWeight: "bold", color: THEME.muted as ColorProp },
+        style: { fontSize: s.label, fontWeight: "bold", color: pal.muted as ColorProp },
       }),
       React.createElement(
         FlexWidget,
@@ -237,13 +205,13 @@ export function buildZerospikeWidget(
           style: {
             fontSize: s.value,
             fontWeight: "bold",
-            color: readingColor(data?.avgGlucoseMgdl ?? data?.lastGlucoseMgdl ?? null, data?.band),
+            color: readingColor(data?.avgGlucoseMgdl ?? data?.lastGlucoseMgdl ?? null, data?.band, pal),
           },
         }),
         React.createElement(TextWidget, {
           text: ` ${unitLabel(data)}`,
           maxLines: 1,
-          style: { fontSize: s.unit, color: THEME.muted as ColorProp, marginBottom: 5 },
+          style: { fontSize: s.unit, color: pal.muted as ColorProp, marginBottom: 5 },
         })
       ),
       // The context line now stays put under the value instead of being swapped
@@ -254,7 +222,7 @@ export function buildZerospikeWidget(
             text: metaText,
             truncate: "END",
             maxLines: 1,
-            style: { fontSize: s.meta, color: THEME.muted as ColorProp },
+            style: { fontSize: s.meta, color: pal.muted as ColorProp },
           })
         : null
     ),
@@ -266,19 +234,19 @@ export function buildZerospikeWidget(
             text: data?.labels?.nextReminder ?? "",
             truncate: "END",
             maxLines: 1,
-            style: { fontSize: s.label, fontWeight: "bold", color: THEME.muted as ColorProp },
+            style: { fontSize: s.label, fontWeight: "bold", color: pal.muted as ColorProp },
           }),
           // The target time as its own pill, matching the iOS small family: the
           // fill and the hairline are the accent pre-mixed over the ground (see
-          // TILE), because rgba is not parseable here.
+          // widgetColors), because rgba is not parseable here.
           React.createElement(
             FlexWidget,
             {
               style: {
                 flexDirection: "row",
                 alignItems: "center",
-                backgroundColor: TILE.countdown.fill as ColorProp,
-                borderColor: TILE.countdown.border as ColorProp,
+                backgroundColor: pal.tile.countdown.fill as ColorProp,
+                borderColor: pal.tile.countdown.border as ColorProp,
                 borderWidth: 1,
                 // ~half the pill's own height at every tier, so it reads as a
                 // capsule without relying on an out-of-bounds radius.
@@ -294,7 +262,7 @@ export function buildZerospikeWidget(
               style: {
                 fontSize: s.remaining,
                 fontWeight: "bold",
-                color: THEME.accent as ColorProp,
+                color: pal.accent as ColorProp,
               },
             })
           )
@@ -304,7 +272,7 @@ export function buildZerospikeWidget(
             text: metaText,
             truncate: "END",
             maxLines: 1,
-            style: { fontSize: s.meta, color: THEME.muted as ColorProp },
+            style: { fontSize: s.meta, color: pal.muted as ColorProp },
           })
         : null
   );
@@ -324,7 +292,8 @@ export function buildZerospikeWidget(
  */
 export function buildReadingWidget(
   data: LiveData | null,
-  size?: WidgetSize
+  size?: WidgetSize,
+  pal: WidgetPalette = WIDGET_DARK
 ): React.JSX.Element {
   const compact = (size?.width ?? 140) < 130 || (size?.height ?? 60) < 50;
   const mgdl = data?.lastGlucoseMgdl ?? null;
@@ -347,8 +316,8 @@ export function buildReadingWidget(
         flexDirection: "column",
         justifyContent: "center",
         backgroundGradient: {
-          from: THEME.bg.g2 as ColorProp,
-          to: THEME.bg.g1 as ColorProp,
+          from: pal.bgFrom as ColorProp,
+          to: pal.bgTo as ColorProp,
           orientation: "TOP_BOTTOM",
         },
         borderRadius: 20,
@@ -375,7 +344,7 @@ export function buildReadingWidget(
         style: {
           fontSize: compact ? 9 : 10,
           fontWeight: "bold",
-          color: THEME.muted as ColorProp,
+          color: pal.muted as ColorProp,
         },
       }),
       React.createElement(TextWidget, {
@@ -385,7 +354,7 @@ export function buildReadingWidget(
         style: {
           fontSize: compact ? 9 : 10,
           fontWeight: "bold",
-          color: THEME.muted as ColorProp,
+          color: pal.muted as ColorProp,
           marginTop: 1,
         },
       })
@@ -399,7 +368,7 @@ export function buildReadingWidget(
         style: {
           fontSize: compact ? 24 : 30,
           fontWeight: "bold",
-          color: readingColor(mgdl, data?.band),
+          color: readingColor(mgdl, data?.band, pal),
         },
       }),
       React.createElement(TextWidget, {
@@ -408,7 +377,7 @@ export function buildReadingWidget(
         maxLines: 1,
         style: {
           fontSize: compact ? 10 : 11,
-          color: THEME.muted as ColorProp,
+          color: pal.muted as ColorProp,
           marginBottom: 4,
         },
       })
@@ -429,7 +398,7 @@ export function buildReadingWidget(
  *  explicit `true` shows it. A snapshot written before the flag existed must not
  *  grow a fourth tile behind the user's back. Still a visibility flag only -
  *  nothing here reads or interprets the user's data. */
-function quickAddShortcuts(data: LiveData | null) {
+function quickAddShortcuts(data: LiveData | null, pal: WidgetPalette) {
   const usesInsulin = data?.usesInsulin !== false;
   const usesOralMeds = data?.usesOralMeds === true;
   return [
@@ -440,32 +409,32 @@ function quickAddShortcuts(data: LiveData | null) {
       // Weighted wider than the other two: glucose is the flow this widget
       // exists for, so it is the primary tile here exactly as it is on iOS.
       weight: 4,
-      ink: TILE_INK.glucose as ColorProp,
-      tile: TILE.glucosePrimary,
+      ink: pal.tileInk.glucose as ColorProp,
+      tile: pal.tile.glucosePrimary,
     },
     {
       key: "meal",
       label: data?.labels?.addMeal ?? "Meal",
       uri: URI_ADD_MEAL,
       weight: 3,
-      ink: TILE_INK.meal as ColorProp,
-      tile: TILE.meal,
+      ink: pal.tileInk.meal as ColorProp,
+      tile: pal.tile.meal,
     },
     {
       key: "injection",
       label: data?.labels?.addInjection ?? "Injection",
       uri: URI_ADD_INJECTION,
       weight: 3,
-      ink: TILE_INK.injection as ColorProp,
-      tile: TILE.injection,
+      ink: pal.tileInk.injection as ColorProp,
+      tile: pal.tile.injection,
     },
     {
       key: "med",
       label: data?.labels?.addMed ?? "Medication",
       uri: URI_ADD_MED,
       weight: 3,
-      ink: TILE_INK.med as ColorProp,
-      tile: TILE.med,
+      ink: pal.tileInk.med as ColorProp,
+      tile: pal.tile.med,
     },
     // The weights are proportions, not widths, so dropping either optional tile
     // leaves the rest sharing the full row at the same 4:3 emphasis, and showing
@@ -482,10 +451,11 @@ function quickAddShortcuts(data: LiveData | null) {
  *  Purely navigational; nothing here interprets anything. */
 export function buildQuickAddWidget(
   data: LiveData | null,
-  size?: WidgetSize
+  size?: WidgetSize,
+  pal: WidgetPalette = WIDGET_DARK
 ): React.JSX.Element {
   const compact = (size?.height ?? 70) < 60;
-  const shortcuts = quickAddShortcuts(data);
+  const shortcuts = quickAddShortcuts(data, pal);
   // A fourth tile takes its width out of the other three, so the gutters give
   // back what they can before the labels have to.
   const gutter = shortcuts.length > 3 ? 4 : 6;
@@ -497,8 +467,8 @@ export function buildQuickAddWidget(
         width: "match_parent",
         flexDirection: "column",
         backgroundGradient: {
-          from: THEME.bg.g2 as ColorProp,
-          to: THEME.bg.g1 as ColorProp,
+          from: pal.bgFrom as ColorProp,
+          to: pal.bgTo as ColorProp,
           orientation: "TOP_BOTTOM",
         },
         borderRadius: 20,
@@ -514,7 +484,7 @@ export function buildQuickAddWidget(
           style: {
             fontSize: 9,
             fontWeight: "bold",
-            color: THEME.muted as ColorProp,
+            color: pal.muted as ColorProp,
             marginBottom: 5,
             marginLeft: 2,
           },
@@ -544,7 +514,7 @@ export function buildQuickAddWidget(
               alignItems: "center",
               // Each flow carries its OWN identity colour instead of the one flat
               // grey they used to share. Pre-mixed opaque hex, never rgba: the
-              // widget's native colour parser only reads #rrggbb (see TILE).
+              // widget's native colour parser only reads #rrggbb (see widgetColors).
               backgroundColor: shortcut.tile.fill as ColorProp,
               borderColor: shortcut.tile.border as ColorProp,
               borderWidth: 1,
@@ -583,7 +553,7 @@ export function buildQuickAddWidget(
               width: "match_parent",
               fontSize: compact ? 9 : 10,
               fontWeight: "bold",
-              color: THEME.ink as ColorProp,
+              color: pal.ink as ColorProp,
               marginTop: 1,
               textAlign: "center",
               adjustsFontSizeToFit: true,
@@ -607,6 +577,7 @@ export function buildQuickAddWidget(
  */
 function buildLogShortcutWidget(
   size: WidgetSize | undefined,
+  pal: WidgetPalette,
   action: {
     label: string;
     uri: string;
@@ -624,8 +595,8 @@ function buildLogShortcutWidget(
         flexDirection: "column",
         justifyContent: "flex-end",
         backgroundGradient: {
-          from: THEME.bg.g2 as ColorProp,
-          to: THEME.bg.g1 as ColorProp,
+          from: pal.bgFrom as ColorProp,
+          to: pal.bgTo as ColorProp,
           orientation: "TOP_BOTTOM",
         },
         borderRadius: 20,
@@ -643,7 +614,7 @@ function buildLogShortcutWidget(
           borderRadius: compact ? 11 : 14,
           alignItems: "center",
           justifyContent: "center",
-          // Pre-mixed opaque hex over the ground, same reasoning as TILE's own
+          // Pre-mixed opaque hex over the ground, same reasoning as widgetColors'
           // doc comment: the widget's colour parser cannot read rgba.
           backgroundColor: action.tile.fill as ColorProp,
           borderColor: action.tile.border as ColorProp,
@@ -661,7 +632,7 @@ function buildLogShortcutWidget(
       text: action.label,
       truncate: "END",
       maxLines: 2,
-      style: { fontSize: compact ? 12 : 14, fontWeight: "bold", color: THEME.ink as ColorProp },
+      style: { fontSize: compact ? 12 : 14, fontWeight: "bold", color: pal.ink as ColorProp },
     })
   );
 }
@@ -671,13 +642,14 @@ function buildLogShortcutWidget(
  *  Add widget's own glucose tile uses. */
 export function buildLogGlucoseWidget(
   data: LiveData | null,
-  size?: WidgetSize
+  size?: WidgetSize,
+  pal: WidgetPalette = WIDGET_DARK
 ): React.JSX.Element {
-  return buildLogShortcutWidget(size, {
+  return buildLogShortcutWidget(size, pal, {
     label: data?.labels?.addGlucose ?? "Glucose",
     uri: URI_ADD_GLUCOSE,
-    ink: TILE_INK.glucose as ColorProp,
-    tile: TILE.glucosePrimary,
+    ink: pal.tileInk.glucose as ColorProp,
+    tile: pal.tile.glucosePrimary,
   });
 }
 
@@ -685,13 +657,14 @@ export function buildLogGlucoseWidget(
  *  meal entry form. */
 export function buildLogMealWidget(
   data: LiveData | null,
-  size?: WidgetSize
+  size?: WidgetSize,
+  pal: WidgetPalette = WIDGET_DARK
 ): React.JSX.Element {
-  return buildLogShortcutWidget(size, {
+  return buildLogShortcutWidget(size, pal, {
     label: data?.labels?.addMeal ?? "Meal",
     uri: URI_ADD_MEAL,
-    ink: TILE_INK.meal as ColorProp,
-    tile: TILE.meal,
+    ink: pal.tileInk.meal as ColorProp,
+    tile: pal.tile.meal,
   });
 }
 
@@ -718,14 +691,18 @@ function postMealEndsTimeLabel(data: LiveData | null, now = Date.now()): string 
  * through to the app's own start surface - the widget never arms a timer
  * itself, exactly like its iOS twin (see URI_START_POST_MEAL).
  */
-export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): React.JSX.Element {
+export function buildTimerWidget(
+  data: LiveData | null,
+  size?: WidgetSize,
+  pal: WidgetPalette = WIDGET_DARK
+): React.JSX.Element {
   const endsAtLabel = postMealEndsTimeLabel(data);
   if (endsAtLabel == null) {
-    return buildLogShortcutWidget(size, {
+    return buildLogShortcutWidget(size, pal, {
       label: data?.labels?.startCountdown ?? "zerospike",
       uri: URI_START_POST_MEAL,
-      ink: THEME.accent as ColorProp,
-      tile: TILE.countdown,
+      ink: pal.accent as ColorProp,
+      tile: pal.tile.countdown,
     });
   }
   const compact = (size?.width ?? 150) < 130 || (size?.height ?? 80) < 70;
@@ -743,8 +720,8 @@ export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): Reac
         flexDirection: "column",
         justifyContent: "center",
         backgroundGradient: {
-          from: THEME.bg.g2 as ColorProp,
-          to: THEME.bg.g1 as ColorProp,
+          from: pal.bgFrom as ColorProp,
+          to: pal.bgTo as ColorProp,
           orientation: "TOP_BOTTOM",
         },
         borderRadius: 20,
@@ -766,7 +743,7 @@ export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): Reac
         width: "match_parent",
         fontSize: compact ? 9 : 10,
         fontWeight: "bold",
-        color: THEME.muted as ColorProp,
+        color: pal.muted as ColorProp,
         adjustsFontSizeToFit: true,
       },
     }),
@@ -779,8 +756,8 @@ export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): Reac
           // No alignSelf in this library's style props; a row FlexWidget with
           // no explicit width already wraps its content instead of stretching,
           // the same as the glance widget's own countdown pill above.
-          backgroundColor: TILE.countdown.fill as ColorProp,
-          borderColor: TILE.countdown.border as ColorProp,
+          backgroundColor: pal.tile.countdown.fill as ColorProp,
+          borderColor: pal.tile.countdown.border as ColorProp,
           borderWidth: 1,
           borderRadius: 14,
           paddingHorizontal: 8,
@@ -794,7 +771,7 @@ export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): Reac
         style: {
           fontSize: compact ? 15 : 18,
           fontWeight: "bold",
-          color: THEME.accent as ColorProp,
+          color: pal.accent as ColorProp,
         },
       })
     )
@@ -805,7 +782,7 @@ export function buildTimerWidget(data: LiveData | null, size?: WidgetSize): Reac
  *  per call) since every entry is a stable function reference. */
 const WIDGET_BUILDERS: Record<
   string,
-  (data: LiveData | null, size?: WidgetSize) => React.JSX.Element
+  (data: LiveData | null, size?: WidgetSize, pal?: WidgetPalette) => React.JSX.Element
 > = {
   [ANDROID_QUICK_ADD_WIDGET_NAME]: buildQuickAddWidget,
   [ANDROID_READING_WIDGET_NAME]: buildReadingWidget,
@@ -831,7 +808,10 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
     case "WIDGET_UPDATE":
     case "WIDGET_RESIZED":
     case "WIDGET_CLICK":
-      props.renderWidget(build(data, props.widgetInfo));
+      props.renderWidget({
+        light: build(data, props.widgetInfo, WIDGET_LIGHT),
+        dark: build(data, props.widgetInfo, WIDGET_DARK),
+      });
       break;
     case "WIDGET_DELETED":
       break;

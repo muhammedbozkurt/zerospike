@@ -198,9 +198,9 @@ const IPHONE: IosSpec = {
   //             past the 748 cut. Its header, title and one-line body all
   //             land above the cut; only its lower padding bleeds.
   // The 674 probe therefore lands 27 pt inside that card, which is the one
-  // element on this screen with a light fill (white 0.14) rather than a widget
+  // element on this screen with a light fill (ink 0.14) rather than a widget
   // gradient - the failure mode 6c caught on android-phone was a bleed element
-  // DARKER than the page margin, and a #080e14 card would repeat it.
+  // DARKER than the page margin, and a darkest-wash card would repeat it.
   probeY: 674,
   visibleH: 748,
 };
@@ -279,7 +279,7 @@ const ANDROID_PHONE: AndroidSpec = {
   // The filler carries the rest to the cut: one icon row (372..430), then the
   // search pill (444..486) - which is what has to sit on the 463.8 bleed
   // probe, because every widget card's own background gradient bottoms out at
-  // THEME.bg.g1 (#080e14, luminance ~13), darker than the page margin check 6c
+  // the darkest wash stop (luminance ~13 on dark), darker than the page margin check 6c
   // compares against - then the dock bar (498..618) across the 520.9 cut.
   filler: {
     top: 372,

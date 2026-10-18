@@ -23,6 +23,7 @@ object Ink {
     val Muted = Color(0xFF89A3B0)
     /** THEME.accent - the cyan brand highlight. */
     val Accent = Color(0xFF2EE6FF)
+    val AccentFill = Color(0xFF22C7E0)
     /** THEME.bg.glowCyan - the soft cyan radial at the bottom of the wash. */
     val GlowCyan = Color(0x1F2EE6FF)
     /** THEME.border. */
@@ -96,7 +97,7 @@ fun relativeAgo(elapsedMs: Long, labels: LiveDataSnapshot.Labels?): String? {
  * colour) land on the brand ground instead of the platform's plain black.
  */
 fun zerospikeColorScheme(): ColorScheme = ColorScheme(
-    primary = Ink.Accent,
+    primary = Ink.AccentFill,
     onPrimary = Ink.Ground,
     background = Ink.Ground,
     onBackground = Ink.Primary,

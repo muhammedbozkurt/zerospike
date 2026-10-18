@@ -2,7 +2,8 @@ import React from "react";
 import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { THEME } from "../../lib/theme/tokens";
+import { DARK } from "../../lib/theme/tokens";
+import { withAlpha } from "../rich/GlassCard";
 import type { LiveData } from "../../lib/services/liveData";
 import { formatCountdown } from "./common";
 
@@ -47,18 +48,18 @@ export function DynamicIslandBar({
           borderRadius: height / 2,
           paddingHorizontal: 16,
           justifyContent: "center",
-          backgroundColor: "#000000",
+          backgroundColor: "#000000", // theme-ok: the Dynamic Island capsule is always black
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-          <Ionicons name="hourglass-outline" size={13} color={THEME.accent} />
+          <Ionicons name="hourglass-outline" size={13} color={DARK.accent} />
           <Text
-            style={{ flex: 1, fontSize: 11, fontWeight: "600", color: THEME.ink }}
+            style={{ flex: 1, fontSize: 11, fontWeight: "600", color: DARK.text }}
             numberOfLines={1}
           >
             {countdown ? title : (data?.labels?.lastReading ?? "")}
           </Text>
-          <Text style={{ fontSize: 14, fontWeight: "700", color: THEME.accent }} numberOfLines={1}>
+          <Text style={{ fontSize: 14, fontWeight: "700", color: DARK.accent }} numberOfLines={1}>
             {countdown ?? (data?.lastGlucoseDisplay ?? "-")}
           </Text>
         </View>
@@ -69,7 +70,7 @@ export function DynamicIslandBar({
               height: 3,
               borderRadius: 2,
               overflow: "hidden",
-              backgroundColor: "rgba(255,255,255,0.16)",
+              backgroundColor: withAlpha(DARK.text, 0.16),
             }}
           >
             <View
@@ -77,7 +78,7 @@ export function DynamicIslandBar({
                 width: `${Math.round(fraction * 100)}%`,
                 height: 3,
                 borderRadius: 2,
-                backgroundColor: THEME.accent,
+                backgroundColor: DARK.accent,
               }}
             />
           </View>

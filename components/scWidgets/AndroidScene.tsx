@@ -12,6 +12,8 @@ import {
   buildZerospikeWidget,
 } from "../../lib/services/androidWidget";
 import type { LiveData } from "../../lib/services/liveData";
+import { WIDGET_DARK, WIDGET_LIGHT } from "../../lib/services/widgetColors";
+import { THEME } from "../../lib/theme/tokens";
 import { SectionHeading } from "./SectionHeading";
 import { spanW, type AndroidSpec } from "./layout";
 
@@ -39,6 +41,7 @@ import { spanW, type AndroidSpec } from "./layout";
  */
 export function AndroidScene({ data, spec }: { data: LiveData | null; spec: AndroidSpec }) {
   const { t } = useTranslation();
+  const pal = THEME.scheme === "light" ? WIDGET_LIGHT : WIDGET_DARK;
   const one = spanW(spec, 1);
   const two = spanW(spec, 2);
   const four = spanW(spec, 4);
@@ -59,18 +62,18 @@ export function AndroidScene({ data, spec }: { data: LiveData | null; spec: Andr
   const tabletRows = (
     <>
       <View style={{ flexDirection: "row", gap: spec.gutter }}>
-        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildZerospikeWidget(data, s)} />
-        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildReadingWidget(data, s)} />
-        <WidgetPreview width={one} height={spec.glanceH} renderWidget={(s) => buildTimerWidget(data, s)} />
-        <WidgetPreview width={one} height={spec.glanceH} renderWidget={(s) => buildLogGlucoseWidget(data, s)} />
+        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildZerospikeWidget(data, s, pal)} />
+        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildReadingWidget(data, s, pal)} />
+        <WidgetPreview width={one} height={spec.glanceH} renderWidget={(s) => buildTimerWidget(data, s, pal)} />
+        <WidgetPreview width={one} height={spec.glanceH} renderWidget={(s) => buildLogGlucoseWidget(data, s, pal)} />
       </View>
       <SectionGap height={spec.sectionGap} />
       <SectionHeading size={spec.headingSize} height={spec.headingH}>
         {t("scWidgets.miniWidgets")}
       </SectionHeading>
       <View style={{ flexDirection: "row", gap: spec.gutter }}>
-        <WidgetPreview width={five} height={spec.quickAddH} renderWidget={(s) => buildQuickAddWidget(data, s)} />
-        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildLogMealWidget(data, s)} />
+        <WidgetPreview width={five} height={spec.quickAddH} renderWidget={(s) => buildQuickAddWidget(data, s, pal)} />
+        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildLogMealWidget(data, s, pal)} />
       </View>
     </>
   );
@@ -86,19 +89,19 @@ export function AndroidScene({ data, spec }: { data: LiveData | null; spec: Andr
   const phoneRows = (
     <>
       <View style={{ flexDirection: "row", gap: spec.gutter }}>
-        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildZerospikeWidget(data, s)} />
-        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildReadingWidget(data, s)} />
+        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildZerospikeWidget(data, s, pal)} />
+        <WidgetPreview width={two} height={spec.glanceH} renderWidget={(s) => buildReadingWidget(data, s, pal)} />
       </View>
       <View style={{ height: spec.rowGap }} />
-      <WidgetPreview width={four} height={spec.quickAddH} renderWidget={(s) => buildQuickAddWidget(data, s)} />
+      <WidgetPreview width={four} height={spec.quickAddH} renderWidget={(s) => buildQuickAddWidget(data, s, pal)} />
       <SectionGap height={spec.sectionGap} />
       <SectionHeading size={spec.headingSize} height={spec.headingH}>
         {t("scWidgets.miniWidgets")}
       </SectionHeading>
       <View style={{ flexDirection: "row", gap: spec.gutter }}>
-        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildLogGlucoseWidget(data, s)} />
-        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildLogMealWidget(data, s)} />
-        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildTimerWidget(data, s)} />
+        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildLogGlucoseWidget(data, s, pal)} />
+        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildLogMealWidget(data, s, pal)} />
+        <WidgetPreview width={one} height={spec.singleH} renderWidget={(s) => buildTimerWidget(data, s, pal)} />
       </View>
     </>
   );

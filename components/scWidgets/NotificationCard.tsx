@@ -2,6 +2,8 @@ import React from "react";
 import { Image, Text, View } from "react-native";
 
 import { formatTime } from "../../lib/format";
+import { THEME } from "../../lib/theme/tokens";
+import { inkA } from "./common";
 
 /**
  * A real zerospike lock-screen notification, and the only element of the iOS
@@ -19,11 +21,11 @@ import { formatTime } from "../../lib/format";
  * (DEFAULT_PREFS in lib/services/notificationPrefs.ts), run through the app's
  * own locale formatter, so it reads 22:00 in tr/de and 10:00 PM in en.
  *
- * The fill is deliberately LIGHT (white 0.14 over the wash). selftest-v2's
- * check 6c samples the canvas centre two rows above the bottom scrim and fails
- * anything less than 20 luminance over the page margin - the check the dark
- * #080e14 android-phone bleed failed last round. This card is what carries
- * that row on both iOS profiles.
+ * The fill is deliberately LIGHT on the dark theme (ink at 0.14 over the
+ * wash). selftest-v2's check 6c samples the canvas centre two rows above the
+ * bottom scrim and fails anything less than 20 luminance over the page margin
+ * - the check a dark android-phone bleed failed last round. This card is what
+ * carries that row on both iOS profiles.
  *
  * Plain "row": RN's own forceRTL mirrors the header under Arabic.
  */
@@ -58,9 +60,9 @@ export function NotificationCard({
         borderRadius: Math.round(height * 0.18),
         padding: pad,
         overflow: "hidden",
-        backgroundColor: "rgba(255,255,255,0.14)",
+        backgroundColor: inkA(0.14),
         borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.14)",
+        borderColor: inkA(0.14),
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: Math.round(icon * 0.34) }}>
@@ -69,13 +71,13 @@ export function NotificationCard({
           style={{ width: icon, height: icon, borderRadius: Math.round(icon * 0.24) }}
         />
         <Text
-          style={{ fontSize: metaSize, fontWeight: "600", color: "rgba(255,255,255,0.78)" }}
+          style={{ fontSize: metaSize, fontWeight: "600", color: inkA(0.78) }}
           numberOfLines={1}
         >
           zerospike
         </Text>
         <View style={{ flex: 1 }} />
-        <Text style={{ fontSize: metaSize, color: "rgba(255,255,255,0.52)" }} numberOfLines={1}>
+        <Text style={{ fontSize: metaSize, color: inkA(0.52) }} numberOfLines={1}>
           {formatTime(stamp.toISOString())}
         </Text>
       </View>
@@ -86,7 +88,7 @@ export function NotificationCard({
           fontSize: titleSize,
           lineHeight: Math.round(titleSize * 1.3),
           fontWeight: "700",
-          color: "#ffffff",
+          color: THEME.text,
         }}
         numberOfLines={1}
       >
@@ -97,7 +99,7 @@ export function NotificationCard({
           marginTop: 8,
           fontSize: bodySize,
           lineHeight: Math.round(bodySize * 1.32),
-          color: "rgba(255,255,255,0.80)",
+          color: inkA(0.8),
         }}
         numberOfLines={2}
       >

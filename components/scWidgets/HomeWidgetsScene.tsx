@@ -3,9 +3,9 @@ import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../lib/theme/tokens";
-import { GlassCard } from "../rich/GlassCard";
+import { GlassCard, withAlpha } from "../rich/GlassCard";
 import type { LiveData } from "../../lib/services/liveData";
-import { elapsedLabel, formatCountdown, nextReminderIcon, readingColor, unitLabel } from "./common";
+import { elapsedLabel, formatCountdown, inkA, nextReminderIcon, readingColor, unitLabel } from "./common";
 
 /**
  * Home-screen replica: the systemMedium summary widget (ZerospikeWidgetView.
@@ -92,7 +92,7 @@ function MediumWidget({ data, now, unit }: { data: LiveData | null; now: number;
           ) : null}
         </View>
 
-        <View style={{ width: 1, backgroundColor: "rgba(255,255,255,0.08)", marginHorizontal: pad * 0.8 }} />
+        <View style={{ width: 1, backgroundColor: inkA(0.08), marginHorizontal: pad * 0.8 }} />
 
         <View style={{ flex: 1, justifyContent: "center", gap: Math.round(unit * 0.06) }}>
           {data?.lastGlucoseDisplay ? (
@@ -137,8 +137,8 @@ function MediumWidget({ data, now, unit }: { data: LiveData | null; now: number;
                   marginTop: 2,
                   borderRadius: 999,
                   borderWidth: 1,
-                  borderColor: "rgba(46,230,255,0.28)",
-                  backgroundColor: "rgba(46,230,255,0.14)",
+                  borderColor: withAlpha(THEME.accent, 0.28),
+                  backgroundColor: withAlpha(THEME.accent, 0.14),
                   paddingHorizontal: Math.round(unit * 0.07),
                   paddingVertical: 2,
                 }}

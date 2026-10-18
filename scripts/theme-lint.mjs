@@ -5,7 +5,7 @@
  *  2. hard-coded hex and rgba() colors in app code.
  * A bare alias of a live export (`export const A = LIVE;`) is not a freeze.
  * Out of scope: lib/services/report.ts, lib/services/androidWidget.ts,
- * components/scWidgets/*, lib/theme/tokens.ts. A line marked `// theme-ok`
+ * lib/theme/tokens.ts. A line marked `// theme-ok`
  * (or `{/* theme-ok *\/}`) is allowed.
  * Run: node scripts/theme-lint.mjs [--strict] [--files]   (strict: exit 1 on findings)
  */
@@ -18,8 +18,8 @@ const SCAN = ["app", "components", "lib"];
 const SKIP = [
   "lib/services/report.ts",
   "lib/services/androidWidget.ts",
+  "lib/services/widgetColors.ts",
   "lib/services/pdfColors.ts",
-  "components/scWidgets/",
   "lib/theme/tokens.ts",
   "lib/theme/contrast.ts",
   "lib/i18n/",

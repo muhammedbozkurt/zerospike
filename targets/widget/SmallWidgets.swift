@@ -22,15 +22,15 @@ import WidgetKit
 private enum SmallPalette {
   // Same sRGB components as lib/theme/tokens.ts, matching QuickAdd.swift tile
   // for tile so the two widgets cannot drift apart by a shade.
-  static let ink = Color(red: 0.9176, green: 0.9647, blue: 0.9804)      // #eaf6fa
-  static let muted = Color(red: 0.5373, green: 0.6392, blue: 0.6902)    // #89a3b0
-  static let glucose = Color(red: 0.1804, green: 0.9020, blue: 1.0)     // #2ee6ff accent
-  static let meal = Color(red: 0.1333, green: 0.8902, blue: 0.6039)     // #22e39a target mint
-  static let injection = Color(red: 0.4863, green: 0.3608, blue: 1.0)   // #7c5cff violet
+  static let ink = WidgetPalette.ink
+  static let muted = WidgetPalette.muted
+  static let glucose = WidgetPalette.accent
+  static let meal = WidgetPalette.target
+  static let injection = WidgetPalette.violet
   /// The countdown's hue. Amber is the one warm colour left once cyan, mint and
   /// violet are taken; the timer tile prints no reading, so it cannot be read as
   /// a classification of one.
-  static let countdown = Color(red: 1.0, green: 0.6275, blue: 0.1647)   // #ffa02a
+  static let countdown = WidgetPalette.warning
 
   static let tileFillOpacity = 0.16
   static let tileStrokeOpacity = 0.34
@@ -49,7 +49,7 @@ private struct SmallGround: View {
     case .accessoryRectangular, .accessoryInline, .accessoryCircular:
       Color.clear
     default:
-      Color("WidgetBackground")
+      WidgetPalette.background
     }
   }
 }

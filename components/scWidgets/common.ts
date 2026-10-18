@@ -1,6 +1,7 @@
 import { GLUCOSE_RICH, THEME } from "../../lib/theme/tokens";
 import { VERY_HIGH_MGDL } from "../../lib/glucose";
 import type { LiveData } from "../../lib/services/liveData";
+import { withAlpha } from "../rich/GlassCard";
 
 /**
  * W1a screenshot-only widget mock scene. Shared colours and helpers so the
@@ -12,13 +13,23 @@ import type { LiveData } from "../../lib/services/liveData";
 
 /** Mirrors SmallPalette in targets/widget/SmallWidgets.swift and TILE_INK in
  *  lib/services/androidWidget.ts: one identity hue per logging flow. */
-export const TILE_INK = {
-  glucose: THEME.accent,
-  meal: GLUCOSE_RICH.target,
-  injection: THEME.violet,
-  med: THEME.caution,
-  countdown: THEME.caution,
-} as const;
+export const TILE_INK = { // theme-ok: getters read the live palette
+  get glucose() {
+    return THEME.accent;
+  },
+  get meal() {
+    return GLUCOSE_RICH.target;
+  },
+  get injection() {
+    return THEME.violet;
+  },
+  get med() {
+    return THEME.caution;
+  },
+  get countdown() {
+    return THEME.caution;
+  },
+};
 
 /** Colours a reading against the profile's own band, same ramp as
  *  androidWidget.ts's readingColor / GlucoseColor.forReading in index.swift. */
@@ -75,4 +86,9 @@ export function elapsedLabel(data: LiveData | null, now: number): string | null 
   const minutes = totalMinutes % 60;
   const duration = hours > 0 ? `${hours} ${labels.hourShort} ${minutes} ${labels.minuteShort}` : `${minutes} ${labels.minuteShort}`;
   return labels.agoTemplate.replace("{{t}}", duration);
+}
+
+/** Ink at an alpha: the translucent fills and rules of every scene, theme-following. */
+export function inkA(alpha: number): string {
+  return withAlpha(THEME.text, alpha);
 }

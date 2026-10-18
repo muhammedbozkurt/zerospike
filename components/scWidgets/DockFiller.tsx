@@ -2,6 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
+import { inkA } from "./common";
 import type { FillerSpec } from "./layout";
 
 /**
@@ -26,10 +27,10 @@ import type { FillerSpec } from "./layout";
  * this never needs `isRTL ? "row-reverse" : "row"` on top of it.
  */
 
-const GLASS = "rgba(255,255,255,0.12)";
-const GLASS_EDGE = "rgba(255,255,255,0.16)";
-const GLASS_DOCK = "rgba(255,255,255,0.09)";
-const GLYPH = "rgba(255,255,255,0.62)";
+const GLASS = () => inkA(0.12);
+const GLASS_EDGE = () => inkA(0.16);
+const GLASS_DOCK = () => inkA(0.09);
+const GLYPH = () => inkA(0.62);
 
 /** Generic system-app glyphs, in the order a home screen would carry them. */
 const ROW_GLYPHS: (keyof typeof Ionicons.glyphMap)[][] = [
@@ -55,12 +56,12 @@ function GlassSquare({ size, radius, glyph, icon }: { size: number; radius: numb
         borderRadius: radius,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: GLASS,
+        backgroundColor: GLASS(),
         borderWidth: 1,
-        borderColor: GLASS_EDGE,
+        borderColor: GLASS_EDGE(),
       }}
     >
-      <Ionicons name={icon} size={glyph} color={GLYPH} />
+      <Ionicons name={icon} size={glyph} color={GLYPH()} />
     </View>
   );
 }
@@ -94,12 +95,12 @@ export function DockFiller({ spec, width }: { spec: FillerSpec; width: number })
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: GLASS,
+          backgroundColor: GLASS(),
           borderWidth: 1,
-          borderColor: GLASS_EDGE,
+          borderColor: GLASS_EDGE(),
         }}
       >
-        <Ionicons name="search-outline" size={Math.round(spec.pillH * 0.44)} color={GLYPH} />
+        <Ionicons name="search-outline" size={Math.round(spec.pillH * 0.44)} color={GLYPH()} />
       </View>
 
       <View
@@ -111,9 +112,9 @@ export function DockFiller({ spec, width }: { spec: FillerSpec; width: number })
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-evenly",
-          backgroundColor: GLASS_DOCK,
+          backgroundColor: GLASS_DOCK(),
           borderWidth: 1,
-          borderColor: GLASS_EDGE,
+          borderColor: GLASS_EDGE(),
         }}
       >
         {DOCK_GLYPHS.map((icon) => (

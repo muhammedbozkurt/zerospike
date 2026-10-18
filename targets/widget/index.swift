@@ -12,16 +12,14 @@ import WidgetKit
 // ramp, and a second copy of the band logic is exactly how the two tiles would
 // end up disagreeing about the same number.
 enum GlucoseColor {
-  // Exact sRGB components of the tokens in lib/theme/tokens.ts, so the widget,
-  // the app, the watch and the Android widget cannot drift apart by a shade.
-  static let low = Color(red: 1.0, green: 0.3294, blue: 0.4078)        // #ff5468
-  static let target = Color(red: 0.1333, green: 0.8902, blue: 0.6039)  // #22e39a
-  static let high = Color(red: 1.0, green: 0.8235, blue: 0.2471)       // #ffd23f (E1: yellow)
-  static let wellAbove = Color(red: 1.0, green: 0.6275, blue: 0.1647)  // #ffa02a (amber, mid-ramp)
-  static let veryHigh = Color(red: 1.0, green: 0.5412, blue: 0.0)      // #ff8a00 (E1: deep orange)
-  static let accent = Color(red: 0.1804, green: 0.9020, blue: 1.0)     // #2ee6ff
-  static let ink = Color(red: 0.9176, green: 0.9647, blue: 0.9804)     // #eaf6fa
-  static let muted = Color(red: 0.5373, green: 0.6392, blue: 0.6902)   // #89a3b0
+  static let low = WidgetPalette.low
+  static let target = WidgetPalette.target
+  static let high = WidgetPalette.high
+  static let wellAbove = WidgetPalette.wellAbove
+  static let veryHigh = WidgetPalette.veryHigh
+  static let accent = WidgetPalette.accent
+  static let ink = WidgetPalette.ink
+  static let muted = WidgetPalette.muted
 
   /// Colours a reading against the PROFILE's own band (mg/dL) when the snapshot
   /// carries one, falling back to the population defaults + the fixed clinical
@@ -59,7 +57,7 @@ private struct WidgetGround: View {
     case .accessoryRectangular, .accessoryInline, .accessoryCircular:
       Color.clear
     default:
-      Color("WidgetBackground")
+      WidgetPalette.background
     }
   }
 }

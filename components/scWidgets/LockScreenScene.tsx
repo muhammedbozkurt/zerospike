@@ -5,7 +5,8 @@ import Svg, { Circle } from "react-native-svg";
 
 import { formatDate, formatTime, formatWeekday } from "../../lib/format";
 import type { LiveData } from "../../lib/services/liveData";
-import { formatCountdown, nextReminderIcon, readingColor, unitLabel } from "./common";
+import { THEME } from "../../lib/theme/tokens";
+import { formatCountdown, inkA, nextReminderIcon, readingColor, unitLabel } from "./common";
 
 /**
  * The lock screen itself, stacked the way iOS stacks it rather than as a row
@@ -72,7 +73,7 @@ export function LockScreenScene({
           fontSize: clockSize,
           lineHeight: clockLine,
           fontWeight: "300",
-          color: "#ffffff",
+          color: THEME.text,
           letterSpacing: -1,
         }}
         numberOfLines={1}
@@ -80,7 +81,7 @@ export function LockScreenScene({
         {formatTime(nowIso)}
       </Text>
       <Text
-        style={{ fontSize: dateSize, lineHeight: dateLine, fontWeight: "600", color: "#ffffff" }}
+        style={{ fontSize: dateSize, lineHeight: dateLine, fontWeight: "600", color: THEME.text }}
         numberOfLines={1}
       >
         {formatWeekday(nowIso)}, {formatDate(nowIso)}
@@ -114,9 +115,9 @@ function CircularAccessory({ size, reading, color }: { size: number; reading: st
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
       <Svg width={size} height={size} style={{ position: "absolute" }}>
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.24)" strokeWidth={stroke} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={r} stroke={inkA(0.24)} strokeWidth={stroke} fill="none" />
       </Svg>
-      <Text style={{ fontSize: Math.round(size * 0.3), fontWeight: "700", color: "#ffffff" }} numberOfLines={1}>
+      <Text style={{ fontSize: Math.round(size * 0.3), fontWeight: "700", color: THEME.text }} numberOfLines={1}>
         {reading}
       </Text>
       <Ionicons name="water" size={Math.round(size * 0.19)} color={color} />
@@ -152,17 +153,17 @@ function RectangularAccessory({
         borderRadius: Math.round(size * 0.24),
         paddingHorizontal: Math.round(size * 0.14),
         justifyContent: "center",
-        backgroundColor: "rgba(255,255,255,0.08)",
+        backgroundColor: inkA(0.08),
       }}
     >
       {countdown ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Ionicons name={nextReminderIcon(data?.nextReminderMode ?? null)} size={label} color="#ffffff" />
-          <Text style={{ fontSize: label, fontWeight: "600", color: "#ffffff", flexShrink: 1 }} numberOfLines={1}>
+          <Ionicons name={nextReminderIcon(data?.nextReminderMode ?? null)} size={label} color={THEME.text} />
+          <Text style={{ fontSize: label, fontWeight: "600", color: THEME.text, flexShrink: 1 }} numberOfLines={1}>
             {data?.nextReminderLabel ?? data?.labels?.nextReminder ?? ""}
           </Text>
           <View style={{ flex: 1 }} />
-          <Text style={{ fontSize: label, fontWeight: "700", color: "#ffffff" }} numberOfLines={1}>
+          <Text style={{ fontSize: label, fontWeight: "700", color: THEME.text }} numberOfLines={1}>
             {countdown}
           </Text>
         </View>
@@ -171,7 +172,7 @@ function RectangularAccessory({
         <Text style={{ fontSize: value, lineHeight: Math.round(value * 1.15), fontWeight: "700", color }}>
           {reading}
         </Text>
-        <Text style={{ fontSize: label, color: "rgba(255,255,255,0.62)", marginBottom: Math.round(size * 0.03) }}>
+        <Text style={{ fontSize: label, color: inkA(0.62), marginBottom: Math.round(size * 0.03) }}>
           {unitLabel(data?.unit)}
         </Text>
       </View>
@@ -179,7 +180,7 @@ function RectangularAccessory({
           reading is the whole tile - with a lead row above it the caption is
           what gives way, not the number. */}
       {countdown ? null : (
-        <Text style={{ fontSize: label, fontWeight: "500", color: "rgba(255,255,255,0.62)" }} numberOfLines={1}>
+        <Text style={{ fontSize: label, fontWeight: "500", color: inkA(0.62) }} numberOfLines={1}>
           {data?.labels?.lastReading ?? ""}
         </Text>
       )}
@@ -202,8 +203,8 @@ function InlineAccessory({
   const font = Math.round(height * 0.75);
   return (
     <View style={{ height, flexDirection: "row", alignItems: "center", gap: Math.round(height * 0.3) }}>
-      <Ionicons name="water" size={font} color="#ffffff" />
-      <Text style={{ fontSize: font, lineHeight: height, fontWeight: "600", color: "#ffffff" }} numberOfLines={1}>
+      <Ionicons name="water" size={font} color={THEME.text} />
+      <Text style={{ fontSize: font, lineHeight: height, fontWeight: "600", color: THEME.text }} numberOfLines={1}>
         {`${reading} ${unitLabel(unit)}`}
       </Text>
     </View>

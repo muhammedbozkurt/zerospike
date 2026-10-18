@@ -4,7 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../lib/theme/tokens";
 import type { LiveData } from "../../lib/services/liveData";
-import { formatCountdown, unitLabel } from "./common";
+import { withAlpha } from "../rich/GlassCard";
+import { formatCountdown, inkA, unitLabel } from "./common";
 
 /**
  * Replica of the lock-screen HStack in targets/widget/PostMealActivity.swift:
@@ -53,9 +54,9 @@ export function LiveActivityScene({
         gap: pad,
         borderRadius: Math.round(height * 0.22),
         paddingHorizontal: pad,
-        backgroundColor: "#080e14",
+        backgroundColor: THEME.scheme === "light" ? THEME.surface : THEME.bg.g1,
         borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.06)",
+        borderColor: THEME.scheme === "light" ? THEME.border : inkA(0.06),
       }}
     >
       <View
@@ -65,7 +66,7 @@ export function LiveActivityScene({
           borderRadius: Math.round(badge * 0.32),
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "rgba(46,230,255,0.18)",
+          backgroundColor: withAlpha(THEME.accent, 0.18),
         }}
       >
         <Ionicons name={countdown ? "hourglass-outline" : "water"} size={Math.round(badge * 0.46)} color={THEME.accent} />
@@ -91,7 +92,7 @@ export function LiveActivityScene({
               height: 4,
               borderRadius: 2,
               overflow: "hidden",
-              backgroundColor: "rgba(255,255,255,0.12)",
+              backgroundColor: inkA(0.12),
             }}
           >
             <View
@@ -110,9 +111,9 @@ export function LiveActivityScene({
             paddingHorizontal: Math.round(height * 0.1),
             paddingVertical: Math.round(height * 0.06),
             borderRadius: 999,
-            backgroundColor: "rgba(255,255,255,0.06)",
+            backgroundColor: inkA(0.06),
             borderWidth: 1,
-            borderColor: "rgba(255,255,255,0.10)",
+            borderColor: inkA(0.1),
           }}
         >
           <Text style={{ fontSize: Math.round(height * 0.17), fontWeight: "700", color: THEME.ink }}>{reading}</Text>
