@@ -2,42 +2,30 @@ import { getDb } from "./index";
 import { uuid } from "../uuid";
 import { foodName } from "./types";
 import { DEFAULT_FOOD_CATEGORY, type FoodCategory } from "./categories";
-import { queryExpansion, rankBoost } from "../foodMeta";
+import { isLocalStaple, queryExpansion, rankBoost } from "../foodMeta";
+import {
+  fold,
+  foodMatchesAny,
+  queryVariants,
+  rankFoods,
+  synonymAlternates,
+  type FoodUsage,
+} from "../foodSearch";
 import { OFF_SOURCE, type OffProduct } from "../services/openFoodFacts";
 import type { Food, FoodPortion, Lang, PortionLabelKey } from "./types";
 
 /** Free-tier custom-food cap. */
 export const FREE_CUSTOM_FOOD_LIMIT = 10;
 
-// Common Turkish everyday foods surfaced first on the default (unsearched) list
-// for TR users, so the first screen is not dominated by world dishes. Light
-// regional signal with no schema change; other locales are a future item.
-const TR_STAPLE_NAMES = new Set([
-  "Ekmek", "Pilav", "Bulgur pilavı", "Makarna", "Çay", "Kahve", "Su", "Süt",
-  "Yumurta", "Peynir", "Beyaz peynir", "Kaşar peyniri", "Zeytin", "Domates",
-  "Salatalık", "Elma", "Muz", "Portakal", "Yoğurt", "Ayran", "Çorba",
-  "Mercimek çorbası", "Simit", "Poğaça", "Börek", "Köfte", "Tavuk", "Pirinç",
-  "Patates", "Soğan", "Bal", "Reçel", "Tereyağı",
-]);
-
-/** Locale-aware, diacritic-insensitive normalization for search matching. */
-function norm(s: string, lang: Lang): string {
-  return s
-    .toLocaleLowerCase(lang)
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "");
-}
-
-/** Default (unsearched) ordering: customs first, TR staples next, then the
- *  active-language name in that language's alphabetical order. */
+/** Default (unsearched) ordering: customs first, the active market's staples
+ *  next (lib/foodMeta isLocalStaple: tr/de/fr/es/en), then the active-language
+ *  name in that language's alphabetical order. */
 function defaultOrder(lang: Lang) {
   return (a: Food, b: Food) => {
     if (a.is_custom !== b.is_custom) return b.is_custom - a.is_custom;
-    if (lang === "tr") {
-      const sa = TR_STAPLE_NAMES.has(a.name_tr) ? 0 : 1;
-      const sb = TR_STAPLE_NAMES.has(b.name_tr) ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-    }
+    const sa = isLocalStaple(a, lang) ? 0 : 1;
+    const sb = isLocalStaple(b, lang) ? 0 : 1;
+    if (sa !== sb) return sa - sb;
     return foodName(a, lang).localeCompare(foodName(b, lang), lang);
   };
 }
@@ -69,19 +57,51 @@ function buildFtsQuery(input: string, extraTerms: readonly string[] = []): strin
   return clauses.length > 1 ? clauses.map((c) => `(${c})`).join(" OR ") : clauses[0];
 }
 
+/** meal_logs usage (count and latest log) of the given foods. Every profile
+ *  counts unless `profileId` is given. A failure just means no usage signal. */
+async function loadUsage(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ids: readonly string[],
+  profileId?: string
+): Promise<Map<string, FoodUsage>> {
+  const out = new Map<string, FoodUsage>();
+  try {
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      const marks = chunk.map(() => "?").join(",");
+      const rows = await db.getAllAsync<{ food_id: string; c: number; last: string | null }>(
+        `SELECT food_id, COUNT(*) AS c, MAX(logged_at) AS last
+           FROM meal_logs
+          WHERE food_id IN (${marks})${profileId ? " AND profile_id = ?" : ""}
+          GROUP BY food_id;`,
+        profileId ? [...chunk, profileId] : chunk
+      );
+      for (const r of rows) out.set(r.food_id, { count: r.c, last: r.last });
+    }
+  } catch {
+    return new Map();
+  }
+  return out;
+}
+
 /**
  * Multi-language instant search. Matching stays cross-language (FTS across all
- * five name columns + aliases + brand, LIKE fallback) so a custom food or a
- * foreign-language name is still found, but RANKING is by the active UI
- * language: names whose active-language form prefixes the query come first, then
- * active-language substring matches, then everything else. Ordering is done in
- * JS with localeCompare so Turkish/French alphabets sort correctly (expo-sqlite
- * has no ICU collation).
+ * name columns + aliases + brand) so a custom food or a foreign-language name
+ * is still found, but RANKING (lib/foodSearch rankFoods) follows the active UI
+ * language: exact name, then prefix / word-prefix, then substring, then other
+ * languages; inside a group the foods the user has logged come first, then
+ * customs, the market's staples and the language's alphabet. Accents, the
+ * Turkish dotted/dotless i and German ae/oe/ue/ss are folded, and the TR/DE
+ * synonym table adds alternative names. FTS only folds accents, so when it
+ * returns few rows a folded scan of the whole table fills in (kasarli,
+ * weissbrot). Ordering is done in JS with localeCompare so Turkish/French
+ * alphabets sort correctly (expo-sqlite has no ICU collation).
  */
 export async function searchFoods(
   query: string,
   lang: Lang,
-  limit = 50
+  limit = 50,
+  profileId?: string
 ): Promise<Food[]> {
   const db = await getDb();
   const trimmed = query.trim();
@@ -95,15 +115,15 @@ export async function searchFoods(
   const pool = Math.max(limit * 4, 120);
   // it/pt have no name column of their own (foodName falls back to English),
   // so a query typed in Italian or Portuguese matches nothing on its own;
-  // this widens the CANDIDATE POOL only - the tier/localeCompare ranking
-  // below is unchanged, so search result ORDERING still behaves exactly as
-  // it did for every language, tr/en/de/es/fr included.
+  // this widens the CANDIDATE POOL only.
   const expansionTerms = queryExpansion(trimmed, lang);
-  let rows: Food[] = [];
-  const ftsQuery = buildFtsQuery(trimmed, expansionTerms);
+  const synonymTerms = synonymAlternates(trimmed, lang);
+  const variants = queryVariants(trimmed, lang);
+  const ftsQuery = buildFtsQuery(trimmed, [...expansionTerms, ...synonymTerms]);
+  const byId = new Map<string, Food>();
   if (ftsQuery) {
     try {
-      rows = await db.getAllAsync<Food>(
+      const rows = await db.getAllAsync<Food>(
         `SELECT f.* FROM foods_fts fts
            JOIN foods f ON f.id = fts.food_id
          WHERE foods_fts MATCH ?
@@ -111,47 +131,33 @@ export async function searchFoods(
          LIMIT ?;`,
         [ftsQuery, pool]
       );
+      for (const r of rows) byId.set(r.id, r);
+      // Logged foods must not fall off a short query's pool.
+      const used = await db.getAllAsync<Food>(
+        `SELECT f.* FROM foods_fts fts
+           JOIN foods f ON f.id = fts.food_id
+         WHERE foods_fts MATCH ?
+           AND f.id IN (SELECT DISTINCT food_id FROM meal_logs WHERE food_id IS NOT NULL)
+         LIMIT 60;`,
+        [ftsQuery]
+      );
+      for (const r of used) byId.set(r.id, r);
     } catch {
-      rows = [];
+      // A syntax the sanitiser missed: the folded scan below still answers.
     }
   }
-  if (rows.length === 0) {
-    const like = `%${trimmed}%`;
-    const extraLikes = expansionTerms.map((t) => `%${t}%`);
-    const extraClause = extraLikes.map(() => "name_en LIKE ? OR aliases_json LIKE ?").join(" OR ");
-    rows = await db.getAllAsync<Food>(
-      `SELECT * FROM foods
-         WHERE name_tr LIKE ? OR name_en LIKE ? OR name_de LIKE ?
-            OR name_es LIKE ? OR name_fr LIKE ? OR name_it LIKE ?
-            OR name_pt LIKE ? OR name_ar LIKE ? OR name_ja LIKE ?
-            OR aliases_json LIKE ?
-            OR brand_name LIKE ?
-            ${extraClause ? `OR ${extraClause}` : ""}
-       LIMIT ?;`,
-      [
-        like, like, like, like, like, like, like, like, like, like, like,
-        ...extraLikes.flatMap((t) => [t, t]),
-        pool,
-      ]
-    );
+  const synonyms = [...expansionTerms, ...synonymTerms].map(fold).filter(Boolean);
+  if (byId.size < 10) {
+    const all = await db.getAllAsync<Food>("SELECT * FROM foods;");
+    const phrases = [...variants, ...synonyms];
+    for (const f of all) {
+      if (!byId.has(f.id) && foodMatchesAny(f, phrases)) byId.set(f.id, f);
+    }
   }
 
-  const q = norm(trimmed, lang);
-  const tier = (f: Food): number => {
-    const n = norm(foodName(f, lang), lang);
-    if (n.startsWith(q)) return 0;
-    if (n.includes(q)) return 1;
-    return 2;
-  };
-  return rows
-    .sort((a, b) => {
-      const ta = tier(a);
-      const tb = tier(b);
-      if (ta !== tb) return ta - tb;
-      if (a.is_custom !== b.is_custom) return b.is_custom - a.is_custom;
-      return foodName(a, lang).localeCompare(foodName(b, lang), lang);
-    })
-    .slice(0, limit);
+  const rows = [...byId.values()];
+  const usage = await loadUsage(db, rows.map((r) => r.id), profileId);
+  return rankFoods(rows, { lang, variants, synonyms, usage, now: Date.now() }).slice(0, limit);
 }
 
 /** The name column (or expression) SQLite orders a page by, per active

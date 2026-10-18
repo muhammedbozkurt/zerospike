@@ -1290,3 +1290,71 @@ export function queryExpansion(query: string, lang: Lang): string[] {
   }
   return [...terms];
 }
+
+/** Turkish staples by catalogue Turkish name: the pre-existing list the
+ *  default food list used, moved here so every locale's staples sit together. */
+const TR_STAPLE_NAMES: ReadonlySet<string> = new Set([
+  "Ekmek", "Pilav", "Bulgur pilavı", "Makarna", "Çay", "Kahve", "Su", "Süt",
+  "Yumurta", "Peynir", "Beyaz peynir", "Kaşar peyniri", "Zeytin", "Domates",
+  "Salatalık", "Elma", "Muz", "Portakal", "Yoğurt", "Ayran", "Çorba",
+  "Mercimek çorbası", "Simit", "Poğaça", "Börek", "Köfte", "Tavuk", "Pirinç",
+  "Patates", "Soğan", "Bal", "Reçel", "Tereyağı",
+]);
+
+/**
+ * A market's first ~20 everyday foods by exact catalogue ENGLISH name (the
+ * one column every row carries), for de/fr/es/en. Distinct from
+ * STAPLE_KEYWORDS above: that one is a loose keyword boost for category
+ * shelves, this one is a short exact list used to order the unsearched list
+ * and to break ties in search results. Every name is pinned against the seed
+ * catalogue by scripts/foodSearch.test.ts.
+ */
+const LOCAL_STAPLES_EN: Partial<Record<Lang, ReadonlySet<string>>> = {
+  de: new Set([
+    "White bread", "Whole wheat bread", "Rye bread", "Mixed rye bread",
+    "Bread roll", "Pretzel", "Toast bread", "Multigrain bread", "Potato",
+    "Boiled potato", "Pasta", "Spätzle", "Curd cheese", "Milk", "Egg",
+    "Butter", "Muesli", "Sausage", "Bratwurst", "Potato salad",
+  ]),
+  fr: new Set([
+    "Baguette", "Croissant", "Pain au chocolat", "White bread",
+    "Whole wheat bread", "Sourdough bread", "Toast bread", "Pasta",
+    "White rice", "Potato", "French fries", "Milk", "Egg", "Butter",
+    "Yogurt", "Jam", "Honey", "Orange juice", "Crepe", "Quiche",
+  ]),
+  es: new Set([
+    "White bread", "Whole wheat bread", "Toast bread", "Tortilla",
+    "Spanish omelette", "Pasta", "Spaghetti", "White rice", "Paella",
+    "Potato", "Lentils", "Chickpeas", "Milk", "Egg", "Yogurt",
+    "Orange juice", "Churros", "Chorizo", "Jamón serrano", "Gazpacho",
+  ]),
+  en: new Set([
+    "White bread", "Whole wheat bread", "Toast bread", "Egg", "Bacon",
+    "Sausage", "Milk", "Butter", "Potato", "Mashed potato", "French fries",
+    "Pasta", "White rice", "Oatmeal", "Cornflakes", "Cheddar cheese",
+    "Baked beans in tomato sauce", "Fish and chips", "Cheeseburger",
+    "Orange juice",
+  ]),
+};
+
+export const LOCAL_STAPLE_COUNTS: Readonly<Record<string, number>> = {
+  tr: TR_STAPLE_NAMES.size,
+  de: LOCAL_STAPLES_EN.de!.size,
+  fr: LOCAL_STAPLES_EN.fr!.size,
+  es: LOCAL_STAPLES_EN.es!.size,
+  en: LOCAL_STAPLES_EN.en!.size,
+};
+
+/** English names behind each non-tr staple list, for the catalogue pin test. */
+export function localStapleNamesEn(lang: Lang): readonly string[] {
+  return [...(LOCAL_STAPLES_EN[lang] ?? [])];
+}
+
+/** Whether a food is one of `lang`'s local staples (it/pt/ar/ja: never). */
+export function isLocalStaple(
+  food: { name_tr: string; name_en: string },
+  lang: Lang
+): boolean {
+  if (lang === "tr") return TR_STAPLE_NAMES.has(food.name_tr);
+  return LOCAL_STAPLES_EN[lang]?.has(food.name_en) ?? false;
+}
