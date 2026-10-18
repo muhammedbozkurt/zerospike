@@ -32,6 +32,16 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.healthFirstImportDone",
   /** lib/reportName.ts - the optional name printed on the PDF report. */
   "zerospike.reportName",
+  /** lib/services/health.ts - per-type Health write switches, background sync, last sync. */
+  "zerospike.healthWriteCarbs",
+  "zerospike.healthWriteInsulin",
+  "zerospike.healthBgSync",
+  "zerospike.healthLastSync",
+  "zerospike.healthWriteStatus",
+  /** lib/services/health.ts - retry queues, `<base>.<kind>.<profileId>`. */
+  "zerospike.healthWritePending",
+  "zerospike.healthWritePending.carbs",
+  "zerospike.healthWritePending.insulin",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

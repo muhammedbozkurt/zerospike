@@ -319,10 +319,9 @@ export async function getCalculatorInjectionForMeal(
 export async function deleteInjection(id: string): Promise<void> {
   const db = await getDb();
   const link = await db.getFirstAsync<{ health_uuid: string | null }>(
-    "SELECT health_uuid FROM injection_logs WHERE id = ?;",
+    "DELETE FROM injection_logs WHERE id = ? RETURNING health_uuid;",
     [id]
   );
-  await db.runAsync("DELETE FROM injection_logs WHERE id = ?;", [id]);
   if (link) emitRemoved("insulin", [{ id, uuid: link.health_uuid ?? null }]);
 }
 

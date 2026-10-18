@@ -400,18 +400,16 @@ export async function insertHealthSugarLogs(
   const rangeFrom = new Date(Date.parse(from) - windowMs).toISOString();
   const rangeTo = new Date(Date.parse(to) + windowMs).toISOString();
 
-  const existing = await db.getAllAsync<ExistingSugarReading>(
-    `SELECT logged_at, glucose_level_mgdl FROM sugar_logs
-      WHERE profile_id = ? AND logged_at BETWEEN ? AND ?;`,
-    [profileId, rangeFrom, rangeTo]
-  );
-
-  const toInsert = planHealthImport(samples, existing);
-
   let inserted = 0;
-  await db.withTransactionAsync(async () => {
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    const existing = await txn.getAllAsync<ExistingSugarReading>(
+      `SELECT logged_at, glucose_level_mgdl FROM sugar_logs
+        WHERE profile_id = ? AND logged_at BETWEEN ? AND ?;`,
+      [profileId, rangeFrom, rangeTo]
+    );
+    const toInsert = planHealthImport(samples, existing);
     for (const s of toInsert) {
-      await db.runAsync(
+      await txn.runAsync(
         `INSERT INTO sugar_logs
            (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags)
          VALUES (?, ?, ?, ?, 'health', ?, '[]');`,
@@ -582,19 +580,14 @@ export async function listRecentMealLogs(
  */
 export async function deleteMealLog(id: string): Promise<void> {
   const db = await getDb();
-  const mealLink = await db.getFirstAsync<{ health_uuid: string | null }>(
-    "SELECT health_uuid FROM meal_logs WHERE id = ?;",
-    [id]
-  );
   const boluses = await db.getAllAsync<RemovedHealthRecord>(
-    "SELECT id, health_uuid AS uuid FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator';",
+    "DELETE FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator' RETURNING id, health_uuid AS uuid;",
     [id]
   );
-  await db.runAsync(
-    "DELETE FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator';",
+  const mealLink = await db.getFirstAsync<{ health_uuid: string | null }>(
+    "DELETE FROM meal_logs WHERE id = ? RETURNING health_uuid;",
     [id]
   );
-  await db.runAsync("DELETE FROM meal_logs WHERE id = ?;", [id]);
   if (mealLink) emitRemoved("carbs", [{ id, uuid: mealLink.health_uuid ?? null }]);
   emitRemoved("insulin", boluses);
 }

@@ -1,4 +1,7 @@
 import { getDb } from "./index";
+import { emitInjectionSaved, emitMealSaved } from "./healthRecordHooks";
+import { getMealLog } from "./logs";
+import { getInjection } from "./injections";
 import { planRestoreSteps, type DeletionSnapshot, type Row } from "./undoSql";
 
 export type { DeletionSnapshot, Row, RestoreStep } from "./undoSql";
@@ -114,5 +117,20 @@ export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
         );
       }
     }
+  }
+  await remirrorRestoredRecords(snap);
+}
+
+/** The restored meal and insulin rows come back with health_uuid NULL (the
+ *  delete revoked their samples), so each is announced as a fresh save and the
+ *  health mirror writes it again when its switch is on. */
+export async function remirrorRestoredRecords(snap: DeletionSnapshot): Promise<void> {
+  for (const row of snap.meals ?? []) {
+    const meal = await getMealLog(String(row.id));
+    if (meal) emitMealSaved(meal, null);
+  }
+  for (const row of snap.injections ?? []) {
+    const injection = await getInjection(String(row.id));
+    if (injection) emitInjectionSaved(injection, null);
   }
 }

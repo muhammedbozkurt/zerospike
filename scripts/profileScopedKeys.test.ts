@@ -59,6 +59,14 @@ section("A. every base name is really written by the file that owns it");
     "zerospike.calcSetupDismissed": "lib/calcSetup.ts",
     "zerospike.healthFirstImportDone": "lib/healthFirstImport.ts",
     "zerospike.reportName": "lib/reportName.ts",
+    "zerospike.healthWriteCarbs": "lib/services/health.ts",
+    "zerospike.healthWriteInsulin": "lib/services/health.ts",
+    "zerospike.healthBgSync": "lib/services/health.ts",
+    "zerospike.healthLastSync": "lib/services/health.ts",
+    "zerospike.healthWriteStatus": "lib/services/health.ts",
+    "zerospike.healthWritePending": "lib/services/health.ts",
+    "zerospike.healthWritePending.carbs": "lib/services/health.ts",
+    "zerospike.healthWritePending.insulin": "lib/services/health.ts",
   };
   for (const base of PROFILE_SCOPED_KEY_BASES) {
     const file = owners[base];
@@ -66,7 +74,7 @@ section("A. every base name is really written by the file that owns it");
     if (!file) continue;
     // Some owners quote the base ("zerospike.x"), others embed it in a
     // template literal (`zerospike.x.${profileId}`), so match the bare name.
-    ok(`${base} still appears in ${file}`, read(file).includes(base));
+    ok(`${base} still appears in ${file}`, read(file).includes(base.replace(/(\.healthWritePending)\.(carbs|insulin)$/, "$1")));
   }
   eq(
     "the list and the owner map are the same size",

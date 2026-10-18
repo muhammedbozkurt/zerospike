@@ -42,6 +42,12 @@ function stripHealthUuid(row: Row): Row {
   return "healthkit_uuid" in row ? { ...row, healthkit_uuid: null } : row;
 }
 
+/** Same reasoning for meal_logs / injection_logs.health_uuid: the delete
+ *  revoked that sample, so the row returns unlinked and is re-mirrored. */
+function stripRecordUuid(row: Row): Row {
+  return "health_uuid" in row ? { ...row, health_uuid: null } : row;
+}
+
 /**
  * The pure plan behind restoreDeletion: which tables get which rows back, and in
  * what order. Foods and meals go back before injections so a bolus row's
@@ -53,7 +59,7 @@ function stripHealthUuid(row: Row): Row {
 export function planRestoreSteps(snap: DeletionSnapshot): RestoreStep[] {
   const steps: RestoreStep[] = [];
   if (snap.foods && snap.foods.length > 0) steps.push({ op: "insert", table: "foods", rows: snap.foods });
-  if (snap.meals && snap.meals.length > 0) steps.push({ op: "insert", table: "meal_logs", rows: snap.meals });
+  if (snap.meals && snap.meals.length > 0) steps.push({ op: "insert", table: "meal_logs", rows: snap.meals.map(stripRecordUuid) });
   if (snap.sugar && snap.sugar.length > 0) {
     steps.push({ op: "insert", table: "sugar_logs", rows: snap.sugar.map(stripHealthUuid) });
   }
@@ -66,7 +72,7 @@ export function planRestoreSteps(snap: DeletionSnapshot): RestoreStep[] {
     });
   }
   if (snap.injections && snap.injections.length > 0) {
-    steps.push({ op: "insert", table: "injection_logs", rows: snap.injections });
+    steps.push({ op: "insert", table: "injection_logs", rows: snap.injections.map(stripRecordUuid) });
   }
   // Medication rows reference nothing but their profile, so their order in here
   // does not matter; they go last to keep the linked tables above together.

@@ -27,4 +27,10 @@ if (Platform.OS === "android") {
   }
 }
 
+try {
+  require("./lib/services/healthBackground");
+} catch {
+  // Background health sync unavailable; the app starts without it.
+}
+
 require("expo-router/entry");
