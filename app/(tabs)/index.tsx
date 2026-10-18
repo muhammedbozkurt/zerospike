@@ -818,7 +818,10 @@ export default function DashboardScreen() {
         // openHealthFlow returns early, so the card cannot be used at all.
         logCrash(err, { screen: "dashboard", load: "cgmPref" });
       }
-      if (isProUser) {
+      if (isProUser && isScreenshotMode()) {
+        // Store frames show the connected card; no real HealthKit read or prompt in the simulator.
+        setCgmOn(true);
+      } else if (isProUser) {
         setCgmOn(saved);
         if (saved) runSync(false);
       } else {
@@ -828,6 +831,10 @@ export default function DashboardScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile?.id, isProUser]);
+
+  useEffect(() => {
+    if (isScreenshotMode() && isProUser && cgmOn === false) setCgmOn(true);
+  }, [cgmOn, isProUser]);
 
   async function maybeShowHealthProNotice() {
     try {
