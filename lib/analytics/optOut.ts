@@ -32,8 +32,7 @@ export function getAnalyticsConsent(): Promise<ConsentState> {
  * dashboard sheet). `next` is an answer the user gave, "granted" or "declined";
  * "unanswered" is only ever the absence of one (see ./consent). Persists first
  * and throws if that fails, so the choice is never lost. The sinks then react in
- * the background (the Supabase outbox starts or is emptied, Firebase collection
- * and the RevenueCat device_id attribute follow the switch), so this resolves as
+ * the background (the Supabase outbox starts or is emptied, and the RevenueCat device_id attribute follow the switch), so this resolves as
  * soon as the choice is stored. Only "granted" lets anything out: declining
  * sends nothing, not even a note that it was switched off.
  */

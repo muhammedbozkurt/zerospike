@@ -38,10 +38,10 @@ modules/*/android/.cxx/
 *.p12
 *.mobileprovision
 keystore.properties
-google-services.json
-GoogleService-Info.plist
 .env*.local
 .env
+google-services.json
+GoogleService-Info.plist
 
 # Metro
 .metro-health-check*
@@ -70,7 +70,6 @@ credentials.txt
 
 # Yerel durum dosyalari ve cekim ciktilari
 supabase/.temp/
-firebase-debug.log*
 # scratchpad: yalniz .md izlenir
 scratchpad/**/*
 !scratchpad/**/

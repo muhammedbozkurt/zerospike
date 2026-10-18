@@ -32,10 +32,6 @@ expo-env.d.ts
 .env
 .env*.local
 
-# Firebase config: kept out of git (.gitignore) but MUST reach EAS Build, since
-# the config plugin copies googleServicesFile during prebuild. Intentionally
-# NOT listed here (client-side config, not a secret).
-
 # VCS / editor / OS noise
 .git
 .gitignore
@@ -72,7 +68,6 @@ __pycache__/
 credentials.txt
 *.pem
 supabase/.temp/
-firebase-debug.log*
 scratchpad/**/*
 !scratchpad/**/
 !scratchpad/**/*.md

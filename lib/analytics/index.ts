@@ -1,20 +1,10 @@
-import {
-  isFirebaseOnlyEvent,
-  normalizeEventParams,
-  sanitizeEvent,
-  type FirebaseOnlyEventName,
-  type SchemaEventName,
-} from "./eventSchema";
+import { normalizeEventParams, sanitizeEvent, type SchemaEventName } from "./eventSchema";
 
 /**
  * Analytics facade. Event emission is decoupled from the provider: the app doses
- * typed events through logEvent, and sinks (Firebase in lib/analytics/firebaseSink.ts,
- * Supabase in lib/analytics/supabaseSink.ts) are attached at bootstrap. Dev builds
- * also print every event to the console. Analytics must NEVER break a user flow,
+ * typed events through logEvent, and the sink (Supabase, lib/analytics/supabaseSink.ts)
+ * is attached at bootstrap. Dev builds also print every event to the console. Analytics must NEVER break a user flow,
  * so every call is wrapped and swallows its own errors.
- *
- * Firebase reserved event names are avoided on purpose (e.g. no app_open,
- * screen_view, session_start, first_open, purchase, ad_*).
  *
  * The Supabase sink only accepts the names and fields of schema v1
  * (./eventSchema). app_open and analytics_opt_out are produced by that sink
@@ -30,8 +20,7 @@ import {
  */
 
 export type AnalyticsEventName =
-  | FirebaseOnlyEventName
-  | Exclude<SchemaEventName, "app_open" | "analytics_opt_out">;
+  Exclude<SchemaEventName, "app_open" | "analytics_opt_out">;
 
 export type AnalyticsParams = Record<
   string,
@@ -63,14 +52,12 @@ export type PaywallViewSource =
   | (string & {});
 
 type AnalyticsSink = (name: string, params?: AnalyticsParams) => void;
-type CrashSink = (error: unknown, context?: AnalyticsParams) => void;
 
 const analyticsSinks = new Map<string, AnalyticsSink>();
-let crashSink: CrashSink | null = null;
 
 /**
  * Registers an analytics provider under a slot name; every registered sink gets
- * every event. Firebase keeps the default slot, so its call shape is unchanged.
+ * every event.
  * Pass null to detach the slot.
  */
 export function setAnalyticsSink(
@@ -81,12 +68,7 @@ export function setAnalyticsSink(
   else analyticsSinks.delete(slot);
 }
 
-/** Registers the real crash reporter (Crashlytics). Pass null to detach. */
-export function setCrashSink(sink: CrashSink | null): void {
-  crashSink = sink;
-}
-
-// Firebase rejects undefined param values, so strip them before forwarding.
+// Undefined param values are stripped before forwarding.
 function clean(params?: AnalyticsParams): AnalyticsParams | undefined {
   if (!params) return undefined;
   const out: AnalyticsParams = {};
@@ -101,7 +83,6 @@ const warnedSchemaIssues = new Set<string>();
 // Dev only, once per distinct problem: the Supabase sink drops these silently in
 // production, so this is the only place a stale call site gets noticed.
 function warnSchemaIssues(name: string, params?: AnalyticsParams): void {
-  if (isFirebaseOnlyEvent(name)) return;
   for (const issue of sanitizeEvent(name, params).issues) {
     const key = `${name}|${issue}`;
     if (warnedSchemaIssues.has(key)) continue;
@@ -113,8 +94,7 @@ function warnSchemaIssues(name: string, params?: AnalyticsParams): void {
 export function logEvent(name: AnalyticsEventName, params?: AnalyticsParams): void {
   try {
     const cleaned = normalizeEventParams(name, clean(params));
-    // Dev always mirrors to the console so the event stream stays inspectable
-    // even once the real Firebase sink is attached in production builds.
+    // Dev mirrors every event to the console so the event stream stays inspectable.
     if (__DEV__) {
       console.log(`[analytics] ${name}`, cleaned ?? {});
       warnSchemaIssues(name, cleaned);
@@ -131,11 +111,13 @@ export function logEvent(name: AnalyticsEventName, params?: AnalyticsParams): vo
   }
 }
 
+/** Local error log only: console output, nothing is sent over the network or to an SDK. */
 export function logCrash(error: unknown, context?: AnalyticsParams): void {
   try {
-    if (__DEV__) console.warn("[analytics:crash]", error, context ?? {});
-    if (crashSink) crashSink(error, clean(context));
+    const detail = error instanceof Error ? (error.stack ?? String(error)) : error;
+    const log = __DEV__ ? console.warn : console.error;
+    log("[crash]", detail, clean(context) ?? {});
   } catch {
-    // never let crash reporting break a user flow
+    // never let error logging break a user flow
   }
 }

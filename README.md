@@ -77,8 +77,8 @@ the Injection tab and the whole dose apparatus.
 journal never leaves the device. What can leave it is opt-in or on request:
 Spike messages (and, only with its own consent, the 14-day summary), usage
 analytics (off until the user agrees) and the RevenueCat purchase records.
-Crash reports (Crashlytics) and Open Food Facts lookups (barcode, food name) are
-not behind a switch. `docs/apple-ads/privacy-2.3.7.md` has the exact lists.
+Open Food Facts lookups (barcode, food name) are not behind a switch. Error
+logs stay on the device (console only; no crash-reporting SDK since 2.4). `docs/apple-ads/privacy-2.3.7.md` has the exact lists.
 
 ```
 app/                 expo-router screens (tabs + modal routes)

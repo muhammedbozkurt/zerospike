@@ -915,21 +915,19 @@ async function trialEligibleProductIds(productIds: string[]): Promise<Set<string
 /**
  * Loads the current offering as display-ready plan metadata. In release, when
  * the offering cannot be fetched or mapped, returns status 'unavailable' (never
- * a hardcoded fallback) and fires offerings_fallback_shown so the paywall can
- * show a retry state instead of fake prices. With silent the event is skipped
- * (background refresh), but store status bookkeeping still happens.
+ * a hardcoded fallback) so the paywall can
+ * show a retry state instead of fake prices. Store status bookkeeping happens
+ * either way.
  */
-export async function loadOfferings(options?: { silent?: boolean }): Promise<OfferingsResult> {
+export async function loadOfferings(): Promise<OfferingsResult> {
   if (DEBUG_MOCK_PURCHASES) {
     return { status: "ready", isDevFallback: true, plans: devFallbackPlans() };
   }
-  let reason = "fetch_error";
   try {
     await ensureConfigured();
     const offerings = await rc().getOfferings();
     setStoreStatus("ok");
     const pkgs = offerings?.current?.availablePackages ?? [];
-    reason = pkgs.length === 0 ? "empty_offering" : "no_mappable_packages";
     const mapped: { meta: PlanMeta; plan: PlanId; productId: string }[] = [];
     for (const p of pkgs) {
       const m = mapRcPackage(p);
@@ -951,10 +949,8 @@ export async function loadOfferings(options?: { silent?: boolean }): Promise<Off
       return { status: "ready", isDevFallback: false, plans };
     }
   } catch (err) {
-    reason = "fetch_error";
     noteStoreFailure("getOfferings", err);
   }
-  if (!options?.silent) logEvent("offerings_fallback_shown", { reason });
   return { status: "unavailable", isDevFallback: false, plans: {} };
 }
 

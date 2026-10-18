@@ -103,20 +103,6 @@ export const EVENT_SCHEMA = {
 
 export type SchemaEventName = keyof typeof EVENT_SCHEMA;
 
-/**
- * Events that predate schema v1 and only ever reach Firebase. They are not
- * schema mistakes, so the dev check stays quiet about them and the Supabase
- * sink skips them without a warning.
- */
-export const FIREBASE_ONLY_EVENTS = [
-  "tokluk_timer_started",
-  "sos_opened",
-  "sos_action",
-  "offerings_fallback_shown",
-] as const;
-
-export type FirebaseOnlyEventName = (typeof FIREBASE_ONLY_EVENTS)[number];
-
 export type PropValue = string | number | boolean;
 
 export type SanitizeResult =
@@ -131,10 +117,6 @@ const HAS_LETTER = /[A-Za-z]/;
 
 const hasOwn = (obj: object, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(obj, key);
-
-export function isFirebaseOnlyEvent(name: string): boolean {
-  return (FIREBASE_ONLY_EVENTS as readonly string[]).includes(name);
-}
 
 /**
  * Folds a log kind into LOG_KINDS: glucose and meal stay, every other
@@ -172,8 +154,8 @@ const FOLDED_VALUES: Readonly<
 
 /**
  * The one place a call site's own wording is reduced to what analytics may
- * carry. logEvent runs it before any sink sees the event, so Firebase and the
- * Supabase outbox get the same folded values: a log `kind` becomes glucose,
+ * carry. logEvent runs it before any sink sees the event, so the
+ * Supabase outbox gets the folded values: a log `kind` becomes glucose,
  * meal or other (and is removed when it is not an identifier), and the values
  * in FOLDED_VALUES become their neutral name. Other events and fields pass
  * through untouched.

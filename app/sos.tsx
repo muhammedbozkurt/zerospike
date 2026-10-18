@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Linking,
   Platform,
@@ -23,7 +23,6 @@ import {
   emergencyNumberForRegion,
   type EmergencyContact,
 } from "../lib/services/emergency";
-import { logEvent } from "../lib/analytics";
 import { hapticSelect } from "../lib/haptics";
 import { FeedbackHost } from "../components/Feedback";
 import { GlassCard, GradientCTA } from "../components/rich";
@@ -92,10 +91,6 @@ function SosScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    logEvent("sos_opened");
-  }, []);
-
   // Re-read on focus, not just on mount: adding a contact and coming back from
   // /emergency-contacts must show it immediately, with no manual refresh.
   useFocusEffect(
@@ -121,7 +116,6 @@ function SosScreen() {
 
   async function messageContact(phone: string) {
     hapticSelect();
-    logEvent("sos_action", { method: "sms" });
     const body = await buildMessage();
     const to = normalizePhone(phone);
     try {
@@ -138,7 +132,6 @@ function SosScreen() {
 
   async function whatsappContact(phone: string) {
     hapticSelect();
-    logEvent("sos_action", { method: "contact" });
     const body = await buildMessage();
     const to = normalizePhone(phone).replace("+", "");
     Linking.openURL(`https://wa.me/${to}?text=${encodeURIComponent(body)}`).catch(
@@ -148,13 +141,11 @@ function SosScreen() {
 
   function callNumber(phone: string) {
     hapticSelect();
-    logEvent("sos_action", { method: "call" });
     Linking.openURL(`tel:${normalizePhone(phone)}`).catch(() => {});
   }
 
   function callEmergency() {
     hapticSelect();
-    logEvent("sos_action", { method: "call" });
     Linking.openURL(`tel:${emergencyNumber}`).catch(() => {});
   }
 

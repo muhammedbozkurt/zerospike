@@ -69,11 +69,10 @@ export function classifyDeleteStatus(status: number): DeleteResult {
  *  2. the outbox is emptied, so nothing logged earlier is uploaded after it;
  *  3. the server is asked to delete;
  *  4. after a success the outbox is emptied again, for whatever was logged while
- *     the request ran, and the other holder of the installation's data (Firebase's
- *     app instance) is told to forget it;
+ *     the request ran, and the optional afterDeleted hook runs;
  *  5. uploads go on, whatever the answer was.
  * A failed deletion leaves the outbox as the first clear left it and does not
- * touch Firebase. A pause or a Firebase reset that fails never stops the deletion
+ * run the hook. A pause or a hook that fails never stops the deletion
  * or changes its result.
  */
 export async function runDeleteFlow(deps: {

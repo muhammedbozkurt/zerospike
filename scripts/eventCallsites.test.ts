@@ -10,8 +10,7 @@
  *   && node .tmp/scripts/eventCallsites.test.js
  *
  * Run from the repo root. What it enforces:
- * - the event name is in the schema (or in the Firebase-only list, whose fields
- *   are not checked), and is not one of the retired names;
+ * - the event name is in the schema, and is not one of the retired names;
  * - the literal field names of the call are a subset of the schema's fields, and
  *   literal values fit their field type (enum member, identifier string, int,
  *   a real boolean);
@@ -31,7 +30,6 @@ declare function require(id: string): any;
 
 import {
   EVENT_SCHEMA,
-  FIREBASE_ONLY_EVENTS,
   sanitizeEvent,
   type EventSpec,
 } from "../lib/analytics/eventSchema";
@@ -86,7 +84,6 @@ const ROOT = (() => {
 })();
 
 const SCHEMA = EVENT_SCHEMA as Record<string, EventSpec>;
-const FIREBASE_ONLY = FIREBASE_ONLY_EVENTS as readonly string[];
 // Names the app used to send under another shape; a call site using one has
 // missed its rename.
 const RETIRED = ["report_generated", "review_prompted"];
@@ -351,8 +348,8 @@ section("B. every call names an event of the schema");
   for (const call of named) {
     const name = call.name as string;
     ok(
-      `${where(call)} "${name}" is in the schema or the Firebase-only list`,
-      hasOwn(SCHEMA, name) || FIREBASE_ONLY.includes(name)
+      `${where(call)} "${name}" is in the schema`,
+      hasOwn(SCHEMA, name)
     );
     ok(`${where(call)} "${name}" is not a retired name`, !RETIRED.includes(name));
   }
@@ -480,12 +477,6 @@ section("Calls the scanner could not read (listed, not failed)");
   }
   if (unreadable.length === 0) console.log("  none");
 
-  const legacy = named.filter((c) => FIREBASE_ONLY.includes(c.name as string));
-  console.log(
-    `\nFirebase-only calls (fields not checked): ${
-      legacy.map((c) => `${c.name} @ ${where(c)}`).join(", ") || "none"
-    }`
-  );
 }
 
 console.log(

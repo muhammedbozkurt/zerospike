@@ -41,7 +41,6 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ThemeProvider, ThemeRemount, useTheme } from "../lib/theme/ThemeProvider";
 import { THEME } from "../lib/theme/tokens";
 import { logCrash, logEvent } from "../lib/analytics";
-import { initAnalyticsSink } from "../lib/analytics/firebaseSink";
 import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSink";
 import { watchEntitlement, winbackHasRealDiscount } from "../lib/services/purchases";
 import { clearPaywallTrial, refreshPaywallTrialOnce } from "../lib/proCta";
@@ -73,10 +72,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 // nav taps) during captures. Double-locked; a normal dev build keeps LogBox.
 if (isScreenshotMode()) LogBox.ignoreAllLogs(true);
 
-// Attach Firebase (Analytics + Crashlytics) as the analytics sink once, before
-// any screen renders. No-op in dev; every event still mirrors to the console.
-initAnalyticsSink();
-// Second sink: schema v1 events to Supabase (outbox + batched POST). Self-gating
+// Schema v1 events to Supabase (outbox + batched POST). Self-gating
 // (off in dev, in screenshot mode, without extra.trackFnUrl, and when opted out).
 initSupabaseSink();
 

@@ -24,10 +24,8 @@ declare function require(id: string): any;
 
 import {
   EVENT_SCHEMA,
-  FIREBASE_ONLY_EVENTS,
   LOG_KINDS,
   SCHEMA_VERSION,
-  isFirebaseOnlyEvent,
   normalizeEventParams,
   normalizeLogKind,
   sanitizeEvent,
@@ -214,16 +212,12 @@ function matchesContract(): void {
 function schemaHygiene(): void {
   section("B. schema hygiene");
   const names = Object.keys(EVENT_SCHEMA);
-  // Firebase's own rules (also a fair bar for the server): 40 chars, snake_case.
+  // 40 chars, snake_case.
   ok(
     "event and field names are snake_case and at most 40 chars",
     names.every(
       (n) => SNAKE.test(n) && Object.keys(specOf(n)).every((f) => SNAKE.test(f))
     )
-  );
-  ok(
-    "no Firebase-reserved prefix",
-    names.every((n) => !/^(firebase_|google_|ga_)/.test(n))
   );
   ok(
     "every enum is non-empty and duplicate free",
@@ -233,14 +227,6 @@ function schemaHygiene(): void {
           typeof spec === "string" || (spec.length > 0 && new Set(spec).size === spec.length)
       )
     )
-  );
-  ok(
-    "Firebase-only events are not in the schema",
-    FIREBASE_ONLY_EVENTS.every((n) => !(n in EVENT_SCHEMA))
-  );
-  ok(
-    "isFirebaseOnlyEvent",
-    isFirebaseOnlyEvent("sos_opened") && !isFirebaseOnlyEvent("log_added")
   );
   // The data boundary: no schema field may carry a health value.
   const HEALTH_FIELD = /glucose|mgdl|mmol|carb|insulin|dose|unit|weight|bmi|a1c|reading/;
@@ -268,8 +254,8 @@ function schemaHygiene(): void {
   }
   eq("no enum value names an insulin, injection or medication kind", fine, []);
   ok(
-    "the retired Firebase-only names are gone",
-    !FIREBASE_ONLY_EVENTS.some((n) => ["report_generated", "review_prompted"].includes(n))
+    "the retired names are gone",
+    !["report_generated", "review_prompted"].some((n) => n in EVENT_SCHEMA)
   );
 }
 
@@ -1209,7 +1195,7 @@ function wiringAndCopy(): void {
 
   const layout = src("app/_layout.tsx");
   ok("the root layout starts the Supabase sink", /^initSupabaseSink\(\);$/m.test(layout));
-  ok("and still the Firebase one", /^initAnalyticsSink\(\);$/m.test(layout));
+  ok("and no other sink is started", !/initAnalyticsSink/.test(layout));
   ok(
     "and hands it the entitlement once ready",
     /if \(ready\) setAnalyticsIsPro\(isProUser\);/.test(layout)

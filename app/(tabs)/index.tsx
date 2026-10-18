@@ -1288,7 +1288,6 @@ export default function DashboardScreen() {
       return;
     }
     if (outcome.kind === "started") {
-      logEvent("tokluk_timer_started");
       hapticSuccess();
       // Same function and same clock formatting as the duration sheet's preview,
       // so the toast names exactly the time the user saw before tapping Start.

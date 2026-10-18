@@ -1,8 +1,7 @@
 /**
  * plugins/withSceneLifecycle.js: UIScene life cycle adoption (iOS 27 SDK).
  * The AppDelegate and the Xcode project come from the installed expo
- * template (node_modules/expo/template.tgz), the AppDelegate after the
- * @react-native-firebase/app plugin has run on it, exactly as prebuild sees it.
+ * template (node_modules/expo/template.tgz).
  *
  * Run: npx tsx scripts/withSceneLifecycle.test.ts
  */
@@ -16,7 +15,6 @@ const nodePath = require("path");
 const { execFileSync } = require("child_process");
 const xcode = require("xcode");
 const plugin = require("../plugins/withSceneLifecycle");
-const { modifySwiftAppDelegate } = require("../node_modules/@react-native-firebase/app/plugin/build/ios/appDelegate.js");
 
 const {
   transformAppDelegate,
@@ -57,29 +55,12 @@ const TEMPLATE: string = fs.readFileSync(nodePath.join(templateIos, "HelloWorld/
 // --- AppDelegate ---------------------------------------------------------
 
 ok("fixture: template still starts React Native in the AppDelegate", TEMPLATE.includes("factory.startReactNative("));
-const withFirebase: string = modifySwiftAppDelegate(TEMPLATE);
-ok(
-  "fixture: RNFB inserted its block above startReactNative",
-  /FirebaseApp\.configure\(\)\n\/\/ @generated end [^\n]*\n {4}factory\.startReactNative\(/.test(withFirebase),
-);
-
 const warnings: string[] = [];
 const collect = (m: string) => warnings.push(m);
-const out: string = transformAppDelegate(withFirebase, collect);
+const out: string = transformAppDelegate(TEMPLATE, collect);
 ok("conforms to ExpoReactNativeFactoryProvider", out.includes("class AppDelegate: ExpoAppDelegate, ExpoReactNativeFactoryProvider {"));
 ok("no window creation left", !out.includes("UIWindow(frame:"));
 ok("no startReactNative left", !out.includes("startReactNative("));
-ok("RNFB generated markers removed", !out.includes("@react-native-firebase/app-didFinishLaunchingWithOptions"));
-ok("FirebaseApp.configure() exactly once", count(out, "FirebaseApp.configure()") === 1);
-ok("import FirebaseCore kept once", count(out, "import FirebaseCore") === 1);
-ok(
-  "FirebaseApp.configure() is the first statement of didFinishLaunching",
-  /-> Bool \{\n {4}FirebaseApp\.configure\(\)\n\n {4}let delegate = ReactNativeDelegate\(\)/.test(out),
-);
-ok(
-  "FirebaseApp.configure() runs before super.application",
-  out.indexOf("FirebaseApp.configure()") < out.indexOf("return super.application(application, didFinishLaunchingWithOptions"),
-);
 ok("factory still stored for the scene delegate", out.includes("reactNativeFactory = factory"));
 ok("legacy openURL override removed", !out.includes("open url: URL"));
 ok("legacy continueUserActivity override removed", !out.includes("continue userActivity"));
@@ -87,16 +68,11 @@ ok("no warnings for the stock template", warnings.length === 0);
 ok("no triple blank lines", !/\n\n\n/.test(out));
 ok("ReactNativeDelegate untouched", out.includes("class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {"));
 ok("idempotent: second pass is a no-op", transformAppDelegate(out, collect) === out);
-ok("idempotent: RNFB on transformed output is a no-op", modifySwiftAppDelegate(out) === out);
-
-const noFirebase: string = transformAppDelegate(TEMPLATE, collect);
-ok("without Firebase no configure() is added", !noFirebase.includes("FirebaseApp"));
-ok("without Firebase startReactNative is still removed", !noFirebase.includes("startReactNative("));
 
 ok(
   "unknown code inside the window block fails loudly",
   throws(() =>
-    transformAppDelegate(withFirebase.replace("    factory.startReactNative(", "    SomeVendor.setup()\n    factory.startReactNative("), collect),
+    transformAppDelegate(TEMPLATE.replace("    factory.startReactNative(", "    SomeVendor.setup()\n    factory.startReactNative("), collect),
   ),
 );
 ok(

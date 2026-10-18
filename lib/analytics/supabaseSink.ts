@@ -19,7 +19,7 @@ import { isTrackConfigured, postBatch } from "./transport";
  * survives a kill. The sink produces app_open itself, and analytics_opt_out
  * (enabled: true) when the user switches usage analytics on.
  *
- * Off in dev builds, like the Firebase sink (set EXPO_PUBLIC_ANALYTICS_DEV=1 to
+ * Off in dev builds (set EXPO_PUBLIC_ANALYTICS_DEV=1 to
  * try it against the real function) and in screenshot mode, and off when
  * extra.trackFnUrl is unset.
  *
@@ -228,7 +228,7 @@ function startSink(): SinkController {
   };
 }
 
-/** Called once from app/_layout.tsx at module load, next to the Firebase sink. */
+/** Called once from app/_layout.tsx at module load. */
 export function initSupabaseSink(): void {
   if (controller || !isTrackConfigured || isScreenshotMode()) return;
   if (__DEV__ && process.env.EXPO_PUBLIC_ANALYTICS_DEV !== "1") return;

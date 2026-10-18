@@ -215,7 +215,7 @@ Sehr geehrte Damen und Herren,
 
 ich bin Muhammed Bozkurt, Einzelentwickler unter greeneyeapp aus der Türkei. Ich habe zerospike entwickelt, ein Diabetes-Tagebuch für iOS und Android, mit einem klaren Datenschutzansatz: kein Konto, keine Registrierung, keine Cloud-Synchronisation. Blutzuckerwerte, Mahlzeiten und Insulindaten verlassen das Gerät nicht.
 
-Transparent möchte ich sagen, was das Gerät verlässt: anonyme Nutzungsereignisse und Absturzberichte über Firebase (zum Beispiel, welcher Bildschirm geöffnet wurde), die Kaufabwicklung über RevenueCat, Suchbegriffe bei der optionalen Lebensmittelsuche über Open Food Facts und der eingegebene Text im optionalen KI-Chat. Gesundheitseinträge (Blutzucker, Mahlzeiten, Insulin) werden dabei nie übertragen. Es gibt keine Werbe-SDKs und keine Werbe-ID.
+Transparent möchte ich sagen, was das Gerät verlässt: anonyme Nutzungsereignisse (zum Beispiel, welcher Bildschirm geöffnet wurde), die Kaufabwicklung über RevenueCat, Suchbegriffe bei der optionalen Lebensmittelsuche über Open Food Facts und der eingegebene Text im optionalen KI-Chat. Gesundheitseinträge (Blutzucker, Mahlzeiten, Insulin) werden dabei nie übertragen. Es gibt keine Werbe-SDKs und keine Werbe-ID.
 
 Die App ist kein Medizinprodukt und gibt keine medizinische Beratung, sie dient ausschließlich dem eigenen Führen von Aufzeichnungen.
 
@@ -236,7 +236,7 @@ Sayın yetkili,
 
 Ben Muhammed Bozkurt, Türkiye'den, greeneyeapp çatısı altında tek başıma çalışan bir geliştiriciyim. zerospike'ı geliştirdim; iOS ve Android için bir diyabet günlüğü, net bir gizlilik yaklaşımıyla: hesap yok, kayıt yok, bulut senkronizasyonu yok. Kan şekeri değerleri, öğünler ve insülin verileri cihazdan çıkmıyor.
 
-Cihazdan neyin çıktığını açıkça söylemek isterim: Firebase üzerinden anonim kullanım olayları ve çökme raporları (örneğin hangi ekranın açıldığı), satın alma işlemleri için RevenueCat, isteğe bağlı besin aramasında Open Food Facts'e giden arama metni ve isteğe bağlı yapay zeka sohbetinde yazılan metin. Sağlık kayıtları (kan şekeri, öğün, insülin) bu sırada hiçbir zaman aktarılmıyor. Reklam SDK'sı ve reklam kimliği yok.
+Cihazdan neyin çıktığını açıkça söylemek isterim: anonim kullanım olayları (örneğin hangi ekranın açıldığı), satın alma işlemleri için RevenueCat, isteğe bağlı besin aramasında Open Food Facts'e giden arama metni ve isteğe bağlı yapay zeka sohbetinde yazılan metin. Sağlık kayıtları (kan şekeri, öğün, insülin) bu sırada hiçbir zaman aktarılmıyor. Reklam SDK'sı ve reklam kimliği yok.
 
 Uygulama tıbbi cihaz değildir, tıbbi tavsiye vermez, yalnızca kişisel kayıt tutmaya yarar.
 

@@ -369,10 +369,9 @@ const eligibilityOf = (status: number) => ({
     {
       const Q = loadPurchases();
       rc.offerings = () => ({ current: { availablePackages: [] } });
-      await Q.loadOfferings({ silent: true });
-      eq("silent offerings failure fires no fallback event", events.filter((e) => e.name === "offerings_fallback_shown").length, 0);
       await Q.loadOfferings();
-      eq("default offerings failure still fires the event", events.filter((e) => e.name === "offerings_fallback_shown").length, 1);
+      await Q.loadOfferings();
+      eq("a failed offerings load emits no analytics event", events.length, 0);
     }
 
     reset();
@@ -381,10 +380,9 @@ const eligibilityOf = (status: number) => ({
       rc.offerings = () => {
         throw new Error("offline");
       };
-      const r = await Q.loadOfferings({ silent: true });
-      eq("silent fetch_error is unavailable", r.status, "unavailable");
-      eq("silent fetch_error fires no fallback event", events.filter((e) => e.name === "offerings_fallback_shown").length, 0);
-      eq("silent fetch_error still marks the store status error", Q.getStoreStatus(), "error");
+      const r = await Q.loadOfferings();
+      eq("fetch_error is unavailable", r.status, "unavailable");
+      eq("fetch_error still marks the store status error", Q.getStoreStatus(), "error");
     }
 
     reset();

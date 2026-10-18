@@ -27,7 +27,6 @@
       "appStoreUrl": "https://apps.apple.com/app/id6778782351",
       "appleTeamId": "YWRPV58T86",
       "buildNumber": "79",
-      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -134,14 +133,6 @@
               "NSPrivacyCollectedDataTypePurposeAppFunctionality",
               "NSPrivacyCollectedDataTypePurposeAnalytics"
             ]
-          },
-          {
-            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
-            "NSPrivacyCollectedDataTypeLinked": false,
-            "NSPrivacyCollectedDataTypeTracking": false,
-            "NSPrivacyCollectedDataTypePurposes": [
-              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
-            ]
           }
         ]
       }
@@ -150,7 +141,6 @@
       "package": "com.greeneyeapp.zerospike",
       "playStoreUrl": "https://play.google.com/store/apps/details?id=com.greeneyeapp.zerospike",
       "versionCode": 79,
-      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/adaptive-foreground-1024.png",
         "backgroundImage": "./assets/brand/adaptive-background-1024.png",
@@ -236,10 +226,6 @@
           }
         }
       ],
-      "./plugins/withFirebaseNoAdIdSupport",
-      "@react-native-firebase/app",
-      "@react-native-firebase/analytics",
-      "@react-native-firebase/crashlytics",
       "./plugins/withSceneLifecycle",
       "@bacons/apple-targets",
       [

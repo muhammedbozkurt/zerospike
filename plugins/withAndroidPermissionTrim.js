@@ -9,14 +9,9 @@ const { withAndroidManifest } = require("expo/config-plugins");
 // tools:node="remove" is required (not just omitting the entry) because the
 // manifest merger re-adds whatever the library manifests declare; a plain
 // array edit would be overwritten on the next merge.
-// AD_ID is injected by @react-native-firebase/analytics (via the transitive
-// play-services-measurement AAR). zerospike ships no advertising SDK at all,
-// and iOS already resolves the IdentitySupport-free FirebaseAnalytics variant
-// through withFirebaseNoAdIdSupport - that plugin only edits the Podfile, so
-// Android was still handing Play an advertising-ID permission the app never
-// reads. Dropping it here makes both platforms consistent and lets the Play
-// Console advertising-ID declaration honestly answer "no". Analytics keeps
-// working; only ad-ID-based attribution, which this app does not use, is lost.
+// zerospike ships no advertising SDK and never reads an advertising ID. Stripping
+// AD_ID guarantees the Play advertising-ID declaration stays "no" even if a
+// library (or a future dependency) adds the permission transitively.
 const REMOVED_PERMISSIONS = [
   "android.permission.WRITE_CONTACTS",
   "android.permission.RECORD_AUDIO",

@@ -122,7 +122,7 @@ export async function refreshPaywallTrialOnce(): Promise<void> {
   refreshedThisLaunch = true;
   const g = gen;
   try {
-    const r = await loadOfferings({ silent: true });
+    const r = await loadOfferings();
     if (g === gen) primePaywallTrial(r);
   } catch {}
 }

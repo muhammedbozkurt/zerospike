@@ -15,14 +15,14 @@
  *
  * Sections A to J run the pure parts and pin the screens by reading their source,
  * the way scripts/onboardingSteps.test.ts pins its screen. Sections K and K2 run
- * the REAL Supabase and Firebase sinks, the facade, the consent store, the outbox
+ * the REAL Supabase sink, the facade, the consent store, the outbox
  * (a real SQLite) and the delete flow, with only the native edge stubbed at the
- * module loader (React Native, AsyncStorage, expo modules, the Firebase and
- * RevenueCat SDKs, fetch, the app database), the way scripts/purchasesBehavior.test.ts
+ * module loader (React Native, AsyncStorage, expo modules, the
+ * RevenueCat SDK, fetch, the app database), the way scripts/purchasesBehavior.test.ts
  * runs purchases.ts. What must not leave the device is read from the fetch log, the
- * outbox and the Firebase calls. The sinks are compiled next to this file through
- * the type-only imports at the top; the process exits by itself because the sinks
- * keep a timer while the app is in the foreground.
+ * outbox and the console. The sink is compiled next to this file through
+ * the type-only imports at the top; the process exits by itself because the sink
+ * keeps a timer while the app is in the foreground.
  */
 
 declare const console: { log: (...a: unknown[]) => void };
@@ -64,7 +64,6 @@ import { V24_CREATE_ANALYTICS_QUEUE } from "../lib/db/v24Sql";
 // Type-only: it makes tsc compile the real sinks (and what they import) next to
 // this file without loading them before the stubs in section K are in place.
 import type * as FacadeApi from "../lib/analytics/index";
-import type * as FirebaseSinkApi from "../lib/analytics/firebaseSink";
 import type * as OptOutApi from "../lib/analytics/optOut";
 import type * as ServerRecordsApi from "../lib/analytics/serverRecords";
 import type * as SupabaseSinkApi from "../lib/analytics/supabaseSink";
@@ -716,7 +715,7 @@ async function deletion(): Promise<void> {
   }
 
   // The full order: nothing may be uploading while the server deletes, and
-  // Firebase is only told after the server said yes.
+  // The after-delete hook only runs after the server said yes.
   const wired = (calls: string[], post: () => Promise<DeleteResult>, extra: object = {}) => ({
     pauseSending: async () => {
       calls.push("pause");
@@ -742,7 +741,7 @@ async function deletion(): Promise<void> {
     const calls: string[] = [];
     const result = await runDeleteFlow(wired(calls, async () => ({ ok: true })));
     eq(
-      "uploads stop and settle first, then the outbox is cleared, the server asked, the outbox cleared again, Firebase told, uploads resumed",
+      "uploads stop and settle first, then the outbox is cleared, the server asked, the outbox cleared again, the hook run, uploads resumed",
       calls,
       ["pause", "paused", "clear", "post", "clear", "forget", "resume"]
     );
@@ -752,7 +751,7 @@ async function deletion(): Promise<void> {
     const calls: string[] = [];
     const failure: DeleteResult = { ok: false, reason: "unavailable" };
     const result = await runDeleteFlow(wired(calls, async () => failure));
-    eq("a failed deletion leaves Firebase alone and still lets uploads go on", calls, ["pause", "paused", "clear", "post", "resume"]);
+    eq("a failed deletion skips the hook and still lets uploads go on", calls, ["pause", "paused", "clear", "post", "resume"]);
     eq("and reports why", result, failure);
   }
   {
@@ -765,7 +764,7 @@ async function deletion(): Promise<void> {
         },
       })
     );
-    eq("a Firebase reset that fails changes nothing", result, { ok: true });
+    eq("an after-delete hook that fails changes nothing", result, { ok: true });
     eq("and uploads still resume", calls[calls.length - 1], "resume");
   }
   {
@@ -894,24 +893,6 @@ function wiring(): void {
     /paused = true;\s*await flusher\.flush\(\);\s*return \(\) => \{\s*paused = false;/.test(sink)
   );
 
-  const fb = src("lib/analytics/firebaseSink.ts");
-  ok("Firebase collection follows the stored answer at every launch", /setAnalyticsCollectionEnabled\(state === "granted"\)/.test(fb));
-  ok(
-    "and the live switch",
-    /onAnalyticsEnabledChange\(\(enabled\) =>\s*analytics\(\)\.setAnalyticsCollectionEnabled\(enabled\)/.test(fb)
-  );
-  ok("events reach Firebase only while granted", /if \(isAnalyticsEnabledNow\(\)\) await analytics\(\)\.logEvent\(name, params\)/.test(fb));
-  ok("collection is never forced on by a literal", !/setAnalyticsCollectionEnabled\(true\)/.test(fb));
-  ok("Crashlytics is not behind the consent", /crashlytics\(\)\.recordError\(e\)/.test(fb) && !/isAnalyticsEnabledNow[\s\S]{0,120}recordError/.test(fb));
-  ok(
-    "a successful deletion has Firebase forget its app instance, and never throws",
-    /export async function resetFirebaseAnalyticsData\(\): Promise<void>/.test(fb) &&
-      /await analytics\(\)\.resetAnalyticsData\(\);\s*\} catch \{/.test(fb)
-  );
-
-  const firebaseJson = JSON.parse(src("firebase.json")) as { "react-native"?: Record<string, unknown> };
-  eq("firebase.json turns auto collection off in the native build", firebaseJson["react-native"]?.analytics_auto_collection_enabled, false);
-  eq("and keeps crash reports on", firebaseJson["react-native"]?.crashlytics_auto_collection_enabled, true);
 
   const app = JSON.parse(src("app.json")) as {
     expo: {
@@ -920,9 +901,8 @@ function wiring(): void {
       ios: { privacyManifests: { NSPrivacyTracking: boolean; NSPrivacyCollectedDataTypes: Record<string, any>[] } };
     };
   };
-  for (const plugin of ["@react-native-firebase/app", "@react-native-firebase/analytics", "@react-native-firebase/crashlytics"]) {
-    ok(`app.json installs ${plugin}`, app.expo.plugins.includes(plugin));
-  }
+  ok("app.json installs no Firebase plugin", !JSON.stringify(app.expo.plugins).toLowerCase().includes("firebase"));
+  ok("app.json names no Google services file", !JSON.stringify(app.expo).includes("googleServicesFile"));
   eq(
     "app.json carries the delete-device URL",
     app.expo.extra.deleteDeviceFnUrl,
@@ -936,14 +916,14 @@ function wiring(): void {
   }
   eq("nothing is tracking", manifest.NSPrivacyTracking, false);
   eq(
-    "the nine declared types",
+    "the eight declared types",
     [...byType.keys()].sort(),
-    ["AdvertisingData", "CrashData", "DeviceID", "Health", "OtherDiagnosticData", "OtherUserContent", "PerformanceData", "ProductInteraction", "PurchaseHistory"]
+    ["AdvertisingData", "DeviceID", "Health", "OtherDiagnosticData", "OtherUserContent", "PerformanceData", "ProductInteraction", "PurchaseHistory"]
   );
   for (const type of ["Health", "PurchaseHistory", "AdvertisingData", "ProductInteraction", "DeviceID", "PerformanceData", "OtherDiagnosticData"]) {
     eq(`${type} is linked`, byType.get(type)?.NSPrivacyCollectedDataTypeLinked, true);
   }
-  for (const type of ["OtherUserContent", "CrashData"]) {
+  for (const type of ["OtherUserContent"]) {
     eq(`${type} is not linked`, byType.get(type)?.NSPrivacyCollectedDataTypeLinked, false);
   }
   ok(
@@ -1037,8 +1017,8 @@ function wiring(): void {
 
   const records = src("lib/analytics/serverRecords.ts");
   ok(
-    "the button runs the delete flow: pause, outbox, server, Firebase",
-    /runDeleteFlow\(\{\s*pauseSending: pauseAnalyticsSending,\s*clearQueue: clearAnalyticsQueue,\s*post: \(\) => postDeleteDevice\(\),\s*afterDeleted: resetFirebaseAnalyticsData,\s*\}\)/.test(records)
+    "the button runs the delete flow: pause, outbox, server",
+    /runDeleteFlow\(\{\s*pauseSending: pauseAnalyticsSending,\s*clearQueue: clearAnalyticsQueue,\s*post: \(\) => postDeleteDevice\(\),\s*\}\)/.test(records)
   );
   const transport = src("lib/analytics/transport.ts");
   ok("the delete URL is read from app config", transport.includes(".deleteDeviceFnUrl as string | undefined"));
@@ -1243,12 +1223,12 @@ function copy(): void {
 }
 
 // ── K. the real sinks ───────────────────────────────────────────────────────
-// The real facade, consent store, Supabase sink (flusher, outbox, transport) and
-// Firebase sink run end to end. Only the native edge is stood in for: React
-// Native, AsyncStorage, expo modules, the Firebase and RevenueCat SDKs, fetch,
+// The real facade, consent store and Supabase sink (flusher, outbox, transport)
+// run end to end. Only the native edge is stood in for: React
+// Native, AsyncStorage, expo modules, the RevenueCat SDK, fetch,
 // and the app database, which is a real SQLite with the real analytics_queue
 // DDL. "Nothing leaves" is then read where it counts: the fetch log, the outbox
-// and the Firebase calls.
+// and the console.
 
 const TRACK_URL = "https://track.test/fn";
 const DELETE_URL = "https://delete.test/fn";
@@ -1271,7 +1251,6 @@ const rig = {
   holdClear: null as Promise<void> | null,
   status: { track: 202, delete: 200 } as Record<string, number>,
   rc: { configured: true, userId: RC_USER_ID as unknown, fails: false, hangs: false },
-  firebase: { events: [] as { name: string; params: any }[], collection: [] as boolean[], resets: 0 },
   appState: { current: "active", listeners: [] as ((state: string) => void)[] },
   bytes: 0,
 };
@@ -1286,7 +1265,6 @@ function resetRig(stored: Record<string, string>, beforeBoot?: () => void): void
   rig.holdClear = null;
   rig.status = { track: 202, delete: 200 };
   rig.rc = { configured: true, userId: RC_USER_ID, fails: false, hangs: false };
-  rig.firebase = { events: [], collection: [], resets: 0 };
   rig.appState = { current: "active", listeners: [] };
   if (beforeBoot) beforeBoot();
 }
@@ -1315,11 +1293,6 @@ function installStubs(): void {
         return { remove() {} };
       },
     },
-  };
-  const analyticsApi = {
-    logEvent: async (name: string, params: any) => void rig.firebase.events.push({ name, params }),
-    setAnalyticsCollectionEnabled: async (on: boolean) => void rig.firebase.collection.push(on),
-    resetAnalyticsData: async () => void (rig.firebase.resets += 1),
   };
   const purchasesApi = {
     isConfigured: async () => rig.rc.configured,
@@ -1373,10 +1346,6 @@ function installStubs(): void {
         };
       case "../i18n":
         return { currentLang: () => "en" };
-      case "@react-native-firebase/analytics":
-        return { default: () => analyticsApi };
-      case "@react-native-firebase/crashlytics":
-        return { default: () => ({ recordError() {} }) };
       case "react-native-purchases":
         return { default: purchasesApi };
       default:
@@ -1400,7 +1369,6 @@ interface Booted {
   facade: typeof FacadeApi;
   optOut: typeof OptOutApi;
   supabase: typeof SupabaseSinkApi;
-  firebase: typeof FirebaseSinkApi;
   records: typeof ServerRecordsApi;
 }
 
@@ -1415,7 +1383,6 @@ function loadSinks(): Booted {
     facade: require("../lib/analytics/index"),
     optOut: require("../lib/analytics/optOut"),
     supabase: require("../lib/analytics/supabaseSink"),
-    firebase: require("../lib/analytics/firebaseSink"),
     records: require("../lib/analytics/serverRecords"),
   };
 }
@@ -1425,7 +1392,6 @@ async function boot(stored: Record<string, string> = {}, beforeBoot?: () => void
   installStubs();
   resetRig(stored, beforeBoot);
   const m = loadSinks();
-  m.firebase.initAnalyticsSink();
   m.supabase.initSupabaseSink();
   m.supabase.setAnalyticsIsPro(false);
   await settle();
@@ -1436,7 +1402,6 @@ async function boot(stored: Record<string, string> = {}, beforeBoot?: () => void
 async function bootGranted(): Promise<Booted> {
   const m = await boot({ [CONSENT_KEY]: "granted" });
   rig.calls.length = 0;
-  rig.firebase.events.length = 0;
   return m;
 }
 
@@ -1478,8 +1443,6 @@ async function sinks(): Promise<void> {
     await settle();
     eq(`${label}: no request leaves the device`, rig.calls.length, 0);
     eq(`${label}: nothing is written to the outbox`, queueCount(), 0);
-    eq(`${label}: Firebase gets no event`, rig.firebase.events.length, 0);
-    eq(`${label}: Firebase collection is told off`, rig.firebase.collection, [false]);
     await end();
 
     await boot(stored, () => {
@@ -1519,10 +1482,6 @@ async function sinks(): Promise<void> {
     eq("granted: the injection map button leaves as open_feature", propsOf("spike_action_tap", 0)?.action, "open_feature");
     eq("granted: the other buttons are untouched", propsOf("spike_action_tap", 1)?.action, "open_reminders");
     ok("granted: nothing insulin shaped is anywhere in what was sent", !/rotation|injection|basal/.test(JSON.stringify(events)));
-    const fbPaywall = rig.firebase.events.find((e) => e.name === "paywall_view");
-    eq("granted: Firebase gets the same folded values", fbPaywall?.params?.source, "feature");
-    eq("granted: and the folded kind", rig.firebase.events.find((e) => e.name === "log_added")?.params?.kind, "other");
-    eq("granted: Firebase collection is on", rig.firebase.collection, [true]);
     await end();
   }
 
@@ -1533,7 +1492,6 @@ async function sinks(): Promise<void> {
     await settle();
     ok("granted, then switched off: it was sending until then", tracks().length >= 1);
     rig.calls.length = 0;
-    rig.firebase.events.length = 0;
     emitAppState("active");
     await settle();
     logIt(m, "paywall_view", PAYWALL);
@@ -1541,7 +1499,6 @@ async function sinks(): Promise<void> {
     ok("an event is waiting in the outbox when the user says no", queueCount() >= 1);
     await m.optOut.setAnalyticsConsent("declined");
     await m.optOut.analyticsConsentSettled();
-    rig.firebase.events.length = 0;
     logIt(m, "paywall_view", PAYWALL);
     emitAppState("background");
     await settle();
@@ -1549,8 +1506,6 @@ async function sinks(): Promise<void> {
     await settle();
     eq("switched off: not one request leaves, not even a note that it was switched off", rig.calls.length, 0);
     eq("switched off: what was waiting is forgotten", queueCount(), 0);
-    eq("switched off: Firebase hears nothing more", rig.firebase.events.length, 0);
-    eq("switched off: Firebase collection is told off", rig.firebase.collection[rig.firebase.collection.length - 1], false);
     await end();
   }
 
@@ -1601,8 +1556,56 @@ async function sinks(): Promise<void> {
     const events = sent();
     ok("switched on: the events after the choice are sent", events.some((e) => e.name === "paywall_view"));
     eq("switched on: it says so, in the one direction it ever says anything", events.filter((e) => e.name === "analytics_opt_out").map((e) => e.props), [{ enabled: true }]);
-    eq("switched on: Firebase collection was off at launch and is on now", rig.firebase.collection, [false, true]);
-    ok("switched on: and Firebase gets events from then on", rig.firebase.events.some((e) => e.name === "paywall_view"));
+    await end();
+  }
+
+  {
+    const m = await bootGranted();
+    const errors: unknown[][] = [];
+    const realError = (console as any).error;
+    const realXhr = (globalThis as any).XMLHttpRequest;
+    let xhrCalls = 0;
+    (globalThis as any).XMLHttpRequest = function () {
+      xhrCalls += 1;
+    };
+    (console as any).error = (...a: unknown[]) => void errors.push(a);
+    try {
+      m.facade.logCrash(new Error("boom"), { screen: "home" });
+      await settle();
+    } finally {
+      (console as any).error = realError;
+      (globalThis as any).XMLHttpRequest = realXhr;
+    }
+    eq("logCrash writes the error to the console, once", errors.length, 1);
+    ok(
+      "and the console line carries the stack, not a bracketed message",
+      errors[0]?.some((x) => typeof x === "string" && x.startsWith("Error: boom") && x.includes("\n    at ")) === true
+    );
+    eq("logCrash makes no fetch call", rig.calls.length, 0);
+    eq("logCrash makes no XMLHttpRequest", xhrCalls, 0);
+    eq("logCrash writes nothing to the outbox", queueCount(), 0);
+    await end();
+  }
+
+  {
+    const m = await bootGranted();
+    const errors: unknown[][] = [];
+    const warns: unknown[][] = [];
+    const realError = (console as any).error;
+    const realWarn = (console as any).warn;
+    (console as any).error = (...a: unknown[]) => void errors.push(a);
+    (console as any).warn = (...a: unknown[]) => void warns.push(a);
+    (globalThis as any).__DEV__ = true;
+    try {
+      m.facade.logCrash(new Error("devboom"), { screen: "home" });
+      await settle();
+    } finally {
+      (globalThis as any).__DEV__ = false;
+      (console as any).error = realError;
+      (console as any).warn = realWarn;
+    }
+    eq("logCrash in dev warns once and does not use console.error", [warns.length, errors.length], [1, 0]);
+    ok("dev warn carries the Error stack", warns[0]?.some((x) => typeof x === "string" && x.includes("devboom") && x.includes("\n    at ")) === true);
     await end();
   }
 
@@ -1624,7 +1627,6 @@ async function sinks(): Promise<void> {
     const request = rig.calls[1];
     eq("with the installation ID", request.headers["x-device-id"], DEVICE_ID);
     eq("and the RevenueCat app user id", request.headers[APP_USER_ID_HEADER], RC_USER_ID);
-    eq("Firebase is told to forget its app instance, once", rig.firebase.resets, 1);
     eq("the outbox is empty", queueCount(), 0);
     logIt(m, "paywall_view", PAYWALL);
     emitAppState("active");
@@ -1662,7 +1664,6 @@ async function sinks(): Promise<void> {
     logIt(m, "paywall_view", PAYWALL);
     request.release();
     eq("a failed deletion says why", await deleting, { ok: false, reason: "unavailable" });
-    eq("and leaves Firebase alone", rig.firebase.resets, 0);
     emitAppState("background");
     await settle();
     eq("uploads go on, with what was logged meanwhile", tracks().length, 1);
@@ -1673,7 +1674,6 @@ async function sinks(): Promise<void> {
     const m = await bootGranted();
     rig.status.delete = 400;
     eq("a request the function refuses is reported as rejected", await m.records.deleteMyServerRecords(), { ok: false, reason: "rejected" });
-    eq("and does not touch Firebase either", rig.firebase.resets, 0);
     await end();
   }
   for (const [label, setup] of [
