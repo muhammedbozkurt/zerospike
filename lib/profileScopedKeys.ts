@@ -28,6 +28,10 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.screenshotSeededLang.v16",
   /** lib/calcSetup.ts - the calculator's first-use number sheet, put away once. */
   "zerospike.calcSetupDismissed",
+  /** lib/healthFirstImport.ts - the one-time first Apple Health import marker. */
+  "zerospike.healthFirstImportDone",
+  /** lib/reportName.ts - the optional name printed on the PDF report. */
+  "zerospike.reportName",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

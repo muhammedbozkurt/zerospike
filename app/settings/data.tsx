@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Linking, Platform, Pressable, Share, Switch, Text, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -8,7 +9,7 @@ import { useApp } from "../../lib/store/AppContext";
 import { deleteProfile, listProfiles } from "../../lib/db/profiles";
 import { clearAllLogs } from "../../lib/db/index";
 import { exportLogsCsv } from "../../lib/services/export";
-import { exportLogsPdf } from "../../lib/services/report";
+import { exportLogsPdf, type ReportMode } from "../../lib/services/report";
 import { maybeRequestReview } from "../../lib/services/review";
 import {
   cancelPostMealTimer,
@@ -36,7 +37,7 @@ import type { GlucoseUnit } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { DirIcon } from "../../components/DirIcon";
 import { withAlpha } from "../../components/rich/GlassCard";
-import { SectionLabel } from "../../components/ui";
+import { SectionLabel, Segmented } from "../../components/ui";
 import { displayProfileName } from "../../lib/profileName";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
@@ -54,6 +55,50 @@ import {
 } from "../../lib/analytics/optOut";
 import { deleteMyServerRecords } from "../../lib/analytics/serverRecords";
 import { getDeviceId } from "../../lib/identity/deviceId";
+
+const PDF_MODE_KEY = "zerospike.pdfMode";
+
+/** Row's sub line is fixed at one line, and long translations (German at large
+ *  font sizes) were cut off; this is the Row layout with a two-line sub. */
+function TwoLineRow({
+  icon,
+  label,
+  sub,
+  onPress,
+  right,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  sub: string;
+  onPress?: () => void;
+  right?: React.ReactNode;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 active:opacity-80"
+      style={{ minHeight: 60 }}
+    >
+      <View
+        className="w-9 h-9 rounded-xl items-center justify-center"
+        style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
+      >
+        <Ionicons name={icon} size={18} color={THEME.accent} />
+      </View>
+      <View className="flex-1 ml-3">
+        <Text className="text-[15px] font-semibold" style={{ color: THEME.text }} numberOfLines={2}>
+          {label}
+        </Text>
+        <Text className="text-mut text-[12px] mt-0.5" numberOfLines={2}>
+          {sub}
+        </Text>
+      </View>
+      {right ?? <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />}
+    </Pressable>
+  );
+}
 
 /** One bullet inside the Apple Health transparency card's expanded detail. */
 function HealthDetailRow({
@@ -105,6 +150,20 @@ export default function DataSettings() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [rangePicker, setRangePicker] = useState<null | "pdf" | "csv">(null);
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
+  const [pdfMode, setPdfModeState] = useState<ReportMode>("full");
+
+  useEffect(() => {
+    AsyncStorage.getItem(PDF_MODE_KEY)
+      .then((v) => {
+        if (v === "summary" || v === "full") setPdfModeState(v);
+      })
+      .catch(() => {});
+  }, []);
+
+  function setPdfMode(m: ReportMode) {
+    setPdfModeState(m);
+    AsyncStorage.setItem(PDF_MODE_KEY, m).catch(() => {});
+  }
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
@@ -142,7 +201,7 @@ export default function DataSettings() {
   async function runPdf(days: number, range?: PickedRange) {
     if (!activeProfile) return;
     setExportingPdf(true);
-    const res = await exportLogsPdf(activeProfile, days, range);
+    const res = await exportLogsPdf(activeProfile, days, range, { mode: pdfMode });
     setExportingPdf(false);
     if (res.ok) {
       toast(t("report.created"), "success");
@@ -504,7 +563,7 @@ export default function DataSettings() {
       }
     >
       <View style={columnPad()}>
-      <Row
+      <TwoLineRow
         icon="document-text-outline"
         label={t("settings.exportCsv")}
         sub={t("settings.exportCsvSub")}
@@ -517,7 +576,7 @@ export default function DataSettings() {
           ) : undefined
         }
       />
-      <Row
+      <TwoLineRow
         icon="newspaper-outline"
         label={t("settings.exportPdf")}
         sub={t("settings.exportPdfSub")}
@@ -530,6 +589,17 @@ export default function DataSettings() {
           ) : undefined
         }
       />
+      <View className="bg-glass border border-hair rounded-2xl px-3 py-3 mb-2">
+        <Text className="text-mut text-[12px] mb-2">{t("settings.pdfModeLabel")}</Text>
+        <Segmented<ReportMode>
+          options={[
+            { value: "full", label: t("settings.pdfModeFull") },
+            { value: "summary", label: t("settings.pdfModeSummary") },
+          ]}
+          value={pdfMode}
+          onChange={setPdfMode}
+        />
+      </View>
       <Row
         icon="people-outline"
         label={t("settings.multiProfile")}
@@ -565,7 +635,7 @@ export default function DataSettings() {
       ) : showsHealthUpdateRow ? (
         <>
           <SectionLabel>{healthName}</SectionLabel>
-          <Row
+          <TwoLineRow
             icon="cloud-download-outline"
             label={healthName}
             sub={t("settings.healthUpdateRequired")}
@@ -688,7 +758,7 @@ export default function DataSettings() {
             ) : null}
           </View>
           {healthWrite ? (
-            <Row
+            <TwoLineRow
               icon="cloud-upload-outline"
               label={t("settings.healthBackfill")}
               sub={

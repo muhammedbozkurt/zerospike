@@ -65,7 +65,7 @@ server-sent events (`delta`... `done`); every `done` carries the final text in `
 streamed words; a filtered reply ends with `done{filtered: true, reply: <safe text>}`,
 and `truncated: true` marks a reply the model cut off at its token ceiling. The full
 contract and error codes are in the header of `supabase/functions/ai-ask-spike/index.ts`.
-Under every reply render `spike.disclaimer`.
+Render `spike.disclaimer` as a fixed note at the top of the chat.
 
 Limits: the app meters free 3 / pro 50 messages a day for the user's benefit. The
 function does not trust that: the `tier` field comes from the client and cannot be

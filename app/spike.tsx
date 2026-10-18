@@ -145,7 +145,7 @@ function actionLabel(id: SpikeActionId, t: Translate): string {
   }
 }
 
-function AssistantBubble({ text, disclaimer }: { text: string; disclaimer: string }) {
+function AssistantBubble({ text }: { text: string }) {
   return (
     <View
       style={[
@@ -161,16 +161,6 @@ function AssistantBubble({ text, disclaimer }: { text: string; disclaimer: strin
       ]}
     >
       <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19 }}>{text}</Text>
-      <View
-        style={{
-          marginTop: 6,
-          paddingTop: 5,
-          borderTopWidth: 1,
-          borderTopColor: THEME.border,
-        }}
-      >
-        <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{disclaimer}</Text>
-      </View>
     </View>
   );
 }
@@ -430,8 +420,8 @@ function ContextConsentView({
 /**
  * Spike - the in-app assistant. States behind one route: a fail-closed consent
  * gate (Apple 5.1.1) stating the data boundary, the chat, and a second, separate
- * consent for the optional 14-day summary. Every assistant reply carries the
- * fixed "no medical advice" note. The summary packet is built on this device
+ * consent for the optional 14-day summary. The chat shows a fixed
+ * "no medical advice" note at the top. The summary packet is built on this device
  * (lib/ai/spikeContext.ts) and goes out only while that second consent is on.
  */
 function SpikeScreen() {
@@ -998,6 +988,12 @@ function SpikeScreen() {
           ) : null}
         </View>
 
+        <View style={[{ paddingBottom: 6 }, columnPad(14)]}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15 }}>
+            {t("spike.disclaimer")}
+          </Text>
+        </View>
+
         {/* The 14-day summary is off until the user turns it on and accepts its
             own consent screen; turning it off here takes effect on the next send. */}
         {isConfigured && !screenshotChat ? (
@@ -1118,7 +1114,6 @@ function SpikeScreen() {
                   text={
                     typing && typing.index === i ? wordPrefix(m.content, typing.count) : m.content
                   }
-                  disclaimer={t("spike.disclaimer")}
                 />
                 {!screenshotChat && !(typing && typing.index === i) ? (
                   <ReplyExtras
@@ -1135,7 +1130,7 @@ function SpikeScreen() {
 
           {streaming ? (
             <View style={{ alignSelf: "flex-start", maxWidth: "88%" }}>
-              <AssistantBubble text={streamText ?? ""} disclaimer={t("spike.disclaimer")} />
+              <AssistantBubble text={streamText ?? ""} />
             </View>
           ) : null}
           {sending && !streaming ? (

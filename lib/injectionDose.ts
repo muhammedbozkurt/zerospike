@@ -4,6 +4,11 @@
  * for an old dose-less record): such a record may stay dose-less so its site,
  * time and note can still be corrected. Omit it for a new record.
  */
+/** The "dose required" hint stays hidden until the user has touched the stepper. */
+export function doseHintVisible(doseOk: boolean, touched: boolean): boolean {
+  return touched && !doseOk;
+}
+
 export function injectionDoseOk(dose: number, original?: number | null): boolean {
   if (!Number.isFinite(dose) || dose < 0) return false;
   if (dose > 0) return true;

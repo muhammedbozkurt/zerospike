@@ -29,6 +29,23 @@ Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode
 - Huni olayları, ayrı rıza adımı, haftalık rapor ve SQL görünümleri.
 - Sıra: `track` fonksiyonu önce deploy edilir.
 
+### PDF rapor
+- Hedef aralık çubuğu ilk sayfada; karşılaştırma bölümü veri yokken gizli.
+- Sayfa kırılımı düzeltmeleri: yetim başlık yok, kutular bölünmüyor, boş
+  sayfa oluşmuyor.
+- "Profil:" satırı yalnız Rapor adı girildiyse yazılır (yeni Ayarlar > Profil
+  "Rapor adı" alanı, cihazda saklanır).
+- "Tek sayfa özet" dışa aktarma modu.
+
+### Spike ve diğer
+- Spike: ana ekran giriş kartı; baloncuk altı not kaldırıldı (ekran üstünde
+  tek sabit satır); cevap açılış dili kuralı (sunucu istemi, `ai-ask-spike`
+  yeniden deploy gerekir).
+- iOS ilk Sağlık içe aktarımı 0 kayıtsa tarafsız not gösterilir.
+- Veri ekranı alt metinleri iki satır.
+- Enjeksiyon formunda doz uyarısı dokunmadan görünmez.
+- Android açık temada kart elevation yerine ince kenarlık.
+
 ## 2.3.7 (build 77 / versionCode 78)
 
 ### Deneme ve Pro karşılama

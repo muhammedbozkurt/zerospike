@@ -7,12 +7,14 @@ import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
+import { firstImportOutcome, HEALTH_FIRST_IMPORT_KEY } from "../../lib/healthFirstImport";
 import { displayProfileName } from "../../lib/profileName";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
 import { bolusProfileFor, basalProfileFor } from "../../lib/insulinCatalog";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
+import { FREE_DAILY_MESSAGES } from "../../lib/ai/spikeLimit";
 import { isScreenshotMode, useScreenshotAndroidSource } from "../../lib/screenshotMode";
 import {
   insulinModeOf,
@@ -889,8 +891,21 @@ export default function DashboardScreen() {
         if (takeHealthWriteFailureNotice()) {
           toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
         } else {
-          const { msg, tone } = describeSync(res);
-          toast(msg, tone);
+          let firstEmpty = false;
+          try {
+            const done = await readProfileFlag(HEALTH_FIRST_IMPORT_KEY, activeProfile.id);
+            const first = firstImportOutcome(res, Platform.OS === "ios", done);
+            firstEmpty = first.showEmptyNote;
+            if (first.markDone) await writeProfileFlag(HEALTH_FIRST_IMPORT_KEY, activeProfile.id, true);
+          } catch {
+            // best-effort note
+          }
+          if (firstEmpty) {
+            toast(t("dashboard.healthFirstImportEmpty", { health: HEALTH_NAME }), "info");
+          } else {
+            const { msg, tone } = describeSync(res);
+            toast(msg, tone);
+          }
         }
       }
       return res;
@@ -1906,6 +1921,35 @@ export default function DashboardScreen() {
       {/* Free-trial card: days left and open Pro welcome steps. Renders nothing
           unless the store reports a running trial. */}
       <TrialCard />
+
+      {loaded && !isFirstRun && spikeConfigured ? (
+        <Pressable
+          onPress={() => router.push("/spike")}
+          accessibilityRole="button"
+          accessibilityLabel={t("spike.title")}
+          style={{ marginBottom: 12 }}
+        >
+          <GlassCard style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
+            <View className="flex-row items-center" style={{ gap: 10 }}>
+              <IconTile icon="sparkles" size={32} radius={10} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}>
+                  {t("spike.title")}
+                </Text>
+                <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, marginTop: 1 }}>
+                  {t("spike.entryBody")}
+                </Text>
+                {!isProUser ? (
+                  <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700", marginTop: 3 }}>
+                    {t("spike.entryFree", { n: FREE_DAILY_MESSAGES })}
+                  </Text>
+                ) : null}
+              </View>
+              <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
+            </View>
+          </GlassCard>
+        </Pressable>
+      ) : null}
 
       {!loaded ? (
         // Unknown yet whether this is a first run or an existing user: neither

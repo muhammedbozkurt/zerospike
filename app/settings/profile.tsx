@@ -36,6 +36,7 @@ import { SectionLabel } from "../../components/ui";
 import { useFeedback } from "../../components/Feedback";
 import { useLayout } from "../../lib/useLayout";
 import { THEME } from "../../lib/theme/tokens";
+import { getReportName, setReportName, REPORT_NAME_MAX } from "../../lib/reportName";
 
 /**
  * Settings > Profile & Targets. Moved verbatim from the old single-scroll
@@ -55,6 +56,7 @@ export default function ProfileSettings() {
   // value on screen, not just a loading state.
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
   const [name, setName] = useState(() => activeProfile?.name ?? "");
+  const [reportName, setReportNameText] = useState("");
   const [isf, setIsf] = useState(() =>
     activeProfile ? glucoseToDisplay(activeProfile.insulin_sensitivity_factor, unit) : 0
   );
@@ -105,6 +107,17 @@ export default function ProfileSettings() {
   ));
   const oralMeds = activeProfile?.oral_meds_enabled === 1;
   const diabetesType: DiabetesType = activeProfile?.diabetes_type ?? "unknown";
+
+  useEffect(() => {
+    if (!activeProfile) return;
+    let live = true;
+    void getReportName(activeProfile.id).then((v) => {
+      if (live) setReportNameText(v);
+    });
+    return () => {
+      live = false;
+    };
+  }, [activeProfile?.id]);
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -364,6 +377,17 @@ export default function ProfileSettings() {
           onEndEditing={() =>
             persist({ name: name.trim() })
           }
+        />
+        <InputRow
+          icon="document-text-outline"
+          label={t("settings.reportName")}
+          hint={t("settings.reportNameHint")}
+          value={reportName}
+          onChangeText={setReportNameText}
+          maxLength={REPORT_NAME_MAX}
+          onEndEditing={() => {
+            if (activeProfile) void setReportName(activeProfile.id, reportName);
+          }}
           last
         />
       </FormCard>

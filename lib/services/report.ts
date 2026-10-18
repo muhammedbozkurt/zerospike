@@ -32,7 +32,7 @@ import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
 import { EXPORT_MAX_ROWS, type ExportResult } from "./export";
 import { isDuringTrial } from "./purchases";
-import { displayProfileName } from "../profileName";
+import { getReportName } from "../reportName";
 import {
   weeklyComparison,
   weekAnchorForLang,
@@ -292,8 +292,10 @@ function buildTimeline(
       );
     })
     .join("");
-  return `<h2 class="pbreak">${tf("report.timelineTitle")}</h2><div class="cap">${tf("report.timelineCaption")}</div>${buildTimelineLegend(tf, showDoses)}${bands}`;
+  return `<h2>${tf("report.timelineTitle")}</h2><div class="cap">${tf("report.timelineCaption")}</div>${buildTimelineLegend(tf, showDoses)}${bands}`;
 }
+
+const SUMMARY_HYPO_ROWS = 6;
 
 /** The events page: low events (+ follow-up), the highest five readings, and a
  *  basal/bolus dose summary bar. */
@@ -304,7 +306,9 @@ function buildEvents(
   unit: GlucoseUnit,
   tf: Tf,
   /** insulin_mode "none": the basal/bolus dose bar is not drawn. */
-  showDoses: boolean
+  showDoses: boolean,
+  /** One-page summary: only the low-readings table, capped, no page break. */
+  summary = false
 ): string {
   const u = glucoseUnitLabel(unit);
   const byNewest = [...sugar].sort((a, b) => (a.logged_at < b.logged_at ? 1 : -1));
@@ -327,7 +331,7 @@ function buildEvents(
     return best;
   };
   const hypoRows = hypos
-    .slice(0, 20)
+    .slice(0, summary ? SUMMARY_HYPO_ROWS : 20)
     .map((s) => {
       const { date, time } = fmtDateTime(s.logged_at);
       const f = followUp(s);
@@ -349,6 +353,14 @@ function buildEvents(
       ? `<div class="tirbar"><div style="width:${basalPct}%;background:${BRAND}"></div><div style="width:${100 - basalPct}%;background:#f59e0b"></div></div>` +
         `<div class="tirleg"><span><i style="background:${BRAND}"></i>${tf("insights.basal")} ${esc(num(Math.round(insights.basalUnits * 10) / 10))}</span><span><i style="background:#f59e0b"></i>${tf("insights.bolus")} ${esc(num(Math.round(insights.bolusUnits * 10) / 10))}</span></div>`
       : "";
+  if (summary) {
+    const tail = hypos.length > SUMMARY_HYPO_ROWS
+      ? ` <span class="cap">${tf("report.lowTableTail", { shown: SUMMARY_HYPO_ROWS, n: hypos.length })}</span>`
+      : "";
+    return hypoRows
+      ? `<div class="sec"><h2>${tf("report.hypoEvents")}${tail}</h2><table><thead><tr><th>${tf("export.colDate")}</th><th>${tf("export.colGlucose")}</th><th>${tf("report.followUp", { n: LOW_FOLLOWUP_MINUTES })}</th></tr></thead><tbody>${hypoRows}</tbody></table></div>`
+      : "";
+  }
   const hypoSection = hypoRows
     ? `<h3 class="evh">${tf("report.hypoEvents")}</h3><table><thead><tr><th>${tf("export.colDate")}</th><th>${tf("export.colGlucose")}</th><th>${tf("report.followUp", { n: LOW_FOLLOWUP_MINUTES })}</th></tr></thead><tbody>${hypoRows}</tbody></table>`
     : "";
@@ -357,7 +369,7 @@ function buildEvents(
     : "";
   const doseSection = doseBar ? `<h3 class="evh">${tf("report.doseSummary")}</h3>${doseBar}` : "";
   if (!hypoSection && !topSection && !doseSection) return "";
-  return `<h2 class="pbreak">${tf("report.eventsTitle")}</h2>${hypoSection}${topSection}${doseSection}`;
+  return `<h2>${tf("report.eventsTitle")}</h2>${hypoSection}${topSection}${doseSection}`;
 }
 
 /** A KPI tile identical in shape to buildHtml's own `.kpi` cards, plus an
@@ -398,7 +410,7 @@ function buildWeeklyCompareHtml(
     low: band.low,
     high: band.high,
   });
-  if (wc.currentReadingCount === 0 && wc.previousReadingCount === 0) return "";
+  if (wc.currentReadingCount === 0 || wc.previousReadingCount === 0) return "";
   const vsPrev = tf("insights.vsPrevious");
   const tiles =
     kpiTile(
@@ -588,7 +600,15 @@ function buildCvTrendHtml(readings: SugarLog[], range: DateRange, tf: Tf): strin
   return `<h2>${tf("insights.cvTrendTitle")}</h2><div class="cap">${tf("insights.cvTrendSub")}</div>${svg}${deltaLine}`;
 }
 
-function buildHtml(
+export type ReportMode = "full" | "summary";
+
+export interface ReportHtmlOpts {
+  /** Printed as the "Profile:" line; blank or missing prints no such line. */
+  reportName?: string;
+  mode?: ReportMode;
+}
+
+export function buildHtml(
   profile: UserProfile,
   range: DateRange,
   insights: ReturnType<typeof computeInsights>,
@@ -604,8 +624,11 @@ function buildHtml(
    *  trend sections, already built and concatenated (each "" when the range
    *  or the data does not clear its own threshold - see report.ts's build*Html
    *  functions), so this stays a single optional splice into the template. */
-  proInsightsHtml = ""
+  proInsightsHtml = "",
+  opts: ReportHtmlOpts = {}
 ): string {
+  const summaryMode = opts.mode === "summary";
+  const reportName = (opts.reportName ?? "").trim();
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
   const u = glucoseUnitLabel(unit);
   // The band the caption states is the profile's own, matching the chart above.
@@ -784,7 +807,11 @@ function buildHtml(
 <meta charset="utf-8" />
 <style>
   @page { size: A4; margin: 24px; }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h2, h3, .cap { break-after: avoid; page-break-after: avoid; }
+  h2 .cap { font-weight: 400; }
+  .sec, .kpis, .kpi, .tirbar, .tirleg, .heatstrip, .foot, svg, tr { break-inside: avoid; page-break-inside: avoid; }
+  thead { display: table-header-group; }
   body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: #111; font-size: 12px; margin: 0; }
   .head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px; }
   .head .brand { color: ${BRAND}; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
@@ -815,7 +842,6 @@ function buildHtml(
   .band { page-break-inside: avoid; margin-bottom: 5px; }
   .bandhead { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
   .bandhead .bd { font-weight: 700; color: #222; }
-  .pbreak { page-break-before: always; }
   .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }
   .kpi .kd { font-size: 10px; color: #777; margin-top: 4px; }
   /* Physically LTR always (00 -> 24 left to right), same fixed-order lock as
@@ -825,30 +851,43 @@ function buildHtml(
   .heatstrip { display: flex; gap: 4px; margin: 4px 0 12px; direction: ltr; }
   .hbcell { flex: 1; border-radius: 6px; padding: 6px 2px; text-align: center; color: #1a1a1a; }
   .hbcell .hbv { font-size: 11px; font-weight: 700; }
-  .hbcell .hbl { font-size: 8px; opacity: .75; margin-top: 2px; }${rtlCss}
+  .hbcell .hbl { font-size: 8px; opacity: .75; margin-top: 2px; }
+  .one { font-size: 11px; }
+  .one .head .title { font-size: 20px; }
+  .one .headsep { margin: 4px 0 8px; }
+  .one h2 { margin: 10px 0 4px; }
+  .one .kpis { gap: 6px; margin: 2px 0 8px; }
+  .one .kpi { flex: 1 1 30%; min-width: 0; padding: 7px 10px; }
+  .one .kpi .kv { font-size: 17px; }
+  .one .kpi .kl { font-size: 10px; margin-top: 1px; }
+  .one .agp svg { height: 290px; width: 100%; }
+  .one th, .one td { padding: 3px 6px; }
+  .one .foot { margin-top: 10px; padding-top: 6px; font-size: 9px; line-height: 1.35; }${rtlCss}
 </style>
 </head>
-<body${dirAttr}>
+<body${dirAttr}${summaryMode ? ' class="one"' : ""}>
   <div class="head">
     <div>
       <div class="brand">zerospike</div>
       <div class="title">${t("report.reportTitle")}</div>
     </div>
     <div class="info">
-      <div><b>${t("report.profile")}:</b> ${esc(displayProfileName(profile, (k) => i18n.t(k)))}</div>
+      ${reportName ? `<div><b>${t("report.profile")}:</b> ${esc(reportName)}</div>` : ""}
       <div><b>${t("report.dateRange")}:</b> ${fmtDay(start)} - ${fmtDay(rangeEnd)}</div>
       <div><b>${t("report.generated")}:</b> ${fmtDay(generated)} ${two(generated.getHours())}:${two(generated.getMinutes())}</div>
     </div>
   </div>
   <hr class="headsep" />
 
-  <h2>${t("report.summary")}</h2>
-  ${kpiCards}
-  ${tirBar ? `<div class="cap">${t("insights.timeInRange")}</div>${tirBar}` : ""}
+  <div class="sec">
+    <h2>${t("report.summary")}</h2>
+    ${kpiCards}
+    ${tirBar ? `<div class="cap">${t("insights.timeInRange")}</div>${tirBar}` : ""}
+  </div>
 
-  ${agpSvg ? `<h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(reportBand.low, unit)), high: esc(formatGlucose(reportBand.high, unit)) })}</div>` : ""}
+  ${agpSvg ? `<div class="sec agp"><h2>${t("report.agpTitle")}</h2>${agpSvg}<div class="cap">${t("report.agpCaption", { low: esc(formatGlucose(reportBand.low, unit)), high: esc(formatGlucose(reportBand.high, unit)) })}</div></div>` : ""}
 
-  ${proInsightsHtml}
+  ${summaryMode ? eventsHtml : `${proInsightsHtml}
 
   <h2>${t("report.summary")}</h2>
   ${summaryTable}
@@ -859,7 +898,7 @@ function buildHtml(
 
   ${glucoseSection}
   ${injectionSection}${medBlock}
-  ${mealSection}
+  ${mealSection}`}
 
   <div class="foot">
     ${t("disclaimer.body")}<br/>
@@ -944,49 +983,18 @@ function splitJournalFeed(
   return { sugar, meals, injections };
 }
 
-// Never awaited by the export: the trial lookup can reach the store, and the
-// caller is already holding a finished PDF.
-function reportExported(): void {
-  void isDuringTrial()
-    .then((duringTrial) => logEvent("export_pdf", { during_trial: duringTrial }))
-    .catch(() => {});
-}
-
-export async function exportLogsPdf(
+/** Pure core of the export: the journal feed in, the finished HTML out (null
+ *  when the range holds no entries). Kept free of I/O so it can be run in a
+ *  plain Node harness. */
+export function buildReportDocument(
   profile: UserProfile,
-  windowDays: number,
-  /** Optional explicit range; when given it overrides the windowDays shortcut. */
-  range?: DateRange,
-  /** Store-screenshot only: skip the share sheet and (optionally) copy the PDF to
-   *  a deterministic path so the capture pipeline can pull it headlessly. */
-  opts?: { skipShare?: boolean; copyTo?: string }
-): Promise<ExportResult> {
-  const lang = currentLang();
-  // One conversion: a shortcut window OR a hand-picked range, same downstream.
-  const r = range ?? rangeFromWindow(windowDays);
+  r: DateRange,
+  entries: Awaited<ReturnType<typeof getJournal>>,
+  opts: ReportHtmlOpts
+): { html: string; count: number } | null {
   const effectiveDays = rangeWindowDays(r);
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
-
-  // The range is a SQL filter, not a JS pass over the newest N rows: a report of
-  // a month further back than the row cap used to be quietly incomplete.
-  //
-  // ONE read of the three log tables, not two. The journal feed already unions
-  // sugar_logs / meal_logs / injection_logs over this exact range (and resolves
-  // meal names through the foods join), and the raw per-table queries that used to
-  // run alongside it re-read the very same rows to hand the metric functions their
-  // own copy. Splitting the feed back out costs one pass over rows already in
-  // memory; the queries cost a second trip through every table.
-  //
-  // EXPORT_MAX_ROWS now caps the merged feed rather than each table separately,
-  // which only matters for a range holding more than 20 000 entries in total. Past
-  // that point the document was already truncated - and now its charts, its
-  // metrics and its tables all describe the SAME rows, where before the metrics
-  // could cover readings the tables had no room to list.
-  const entries = await getJournal(profile.id, lang, EXPORT_MAX_ROWS, r);
-  const { sugar, meals: mealsRaw, injections: inj } = splitJournalFeed(
-    profile.id,
-    entries
-  );
+  const { sugar, meals: mealsRaw, injections: inj } = splitJournalFeed(profile.id, entries);
 
   // The report measures against the profile's own range, exactly like the app.
   const reportBand = targetBandFor(profile);
@@ -1014,7 +1022,7 @@ export async function exportLogsPdf(
   // Tables are built from the journal feed (resolved names) within the window,
   // oldest-first for natural reading order.
   const inWindow = [...entries].reverse();
-  if (inWindow.length === 0) return { ok: false, reason: "noData" };
+  if (inWindow.length === 0) return null;
 
   const glucose = inWindow
     .filter((e) => e.kind === "glucose")
@@ -1081,7 +1089,15 @@ export async function exportLogsPdf(
   // in this exact range (inj comes from the same getJournal fetch above).
   const usesInsulin = insulinModeUsesInsulin(insulinModeOf(profile)) || inj.length > 0;
   const timelineHtml = buildTimeline(sugarInRange, mealsRaw, inj, reportBand, unit, tf, usesInsulin);
-  const eventsHtml = buildEvents(sugarInRange, insights, hypoThreshold(profile), unit, tf, usesInsulin);
+  const eventsHtml = buildEvents(
+    sugarInRange,
+    insights,
+    hypoThreshold(profile),
+    unit,
+    tf,
+    usesInsulin,
+    opts.mode === "summary"
+  );
 
   // D10g: meal display names, already resolved by the journal feed (the same
   // names printed in the meals table below) - keyed by id so
@@ -1090,12 +1106,13 @@ export async function exportLogsPdf(
   const mealNameById = new Map<string, string>();
   for (const e of inWindow) if (e.kind === "meal") mealNameById.set(e.id, e.display_name);
 
+  const sec = (html: string) => (html ? `<div class="sec">${html}</div>` : "");
   const proInsightsHtml =
-    buildWeeklyCompareHtml(sugarInRange, r, reportBand, unit, tf) +
-    buildHourBandHtml(sugarInRange, effectiveDays, reportBand, unit, tf) +
-    buildBestDayHtml(sugarInRange, r, reportBand, unit, tf) +
-    buildCvTrendHtml(sugarInRange, r, tf) +
-    buildMealResponseHtml(mealsRaw, sugarInRange, mealNameById, unit, tf);
+    sec(buildWeeklyCompareHtml(sugarInRange, r, reportBand, unit, tf)) +
+    sec(buildHourBandHtml(sugarInRange, effectiveDays, reportBand, unit, tf)) +
+    sec(buildBestDayHtml(sugarInRange, r, reportBand, unit, tf)) +
+    sec(buildCvTrendHtml(sugarInRange, r, tf)) +
+    sec(buildMealResponseHtml(mealsRaw, sugarInRange, mealNameById, unit, tf));
 
   const html = buildHtml(
     profile,
@@ -1109,8 +1126,56 @@ export async function exportLogsPdf(
     injections,
     meds,
     meals,
-    proInsightsHtml
+    proInsightsHtml,
+    { reportName: opts.reportName, mode: opts.mode }
   );
+  return { html, count: inWindow.length };
+}
+
+// Never awaited by the export: the trial lookup can reach the store, and the
+// caller is already holding a finished PDF.
+function reportExported(): void {
+  void isDuringTrial()
+    .then((duringTrial) => logEvent("export_pdf", { during_trial: duringTrial }))
+    .catch(() => {});
+}
+
+export async function exportLogsPdf(
+  profile: UserProfile,
+  windowDays: number,
+  /** Optional explicit range; when given it overrides the windowDays shortcut. */
+  range?: DateRange,
+  /** Store-screenshot only: skip the share sheet and (optionally) copy the PDF to
+   *  a deterministic path so the capture pipeline can pull it headlessly. */
+  opts?: { skipShare?: boolean; copyTo?: string; mode?: ReportMode }
+): Promise<ExportResult> {
+  const mode: ReportMode = opts?.mode ?? "full";
+  const lang = currentLang();
+  // One conversion: a shortcut window OR a hand-picked range, same downstream.
+  const r = range ?? rangeFromWindow(windowDays);
+  const effectiveDays = rangeWindowDays(r);
+  const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
+
+  // The range is a SQL filter, not a JS pass over the newest N rows: a report of
+  // a month further back than the row cap used to be quietly incomplete.
+  //
+  // ONE read of the three log tables, not two. The journal feed already unions
+  // sugar_logs / meal_logs / injection_logs over this exact range (and resolves
+  // meal names through the foods join), and the raw per-table queries that used to
+  // run alongside it re-read the very same rows to hand the metric functions their
+  // own copy. Splitting the feed back out costs one pass over rows already in
+  // memory; the queries cost a second trip through every table.
+  //
+  // EXPORT_MAX_ROWS now caps the merged feed rather than each table separately,
+  // which only matters for a range holding more than 20 000 entries in total. Past
+  // that point the document was already truncated - and now its charts, its
+  // metrics and its tables all describe the SAME rows, where before the metrics
+  // could cover readings the tables had no room to list.
+  const entries = await getJournal(profile.id, lang, EXPORT_MAX_ROWS, r);
+  const reportName = await getReportName(profile.id);
+  const doc = buildReportDocument(profile, r, entries, { reportName, mode });
+  if (!doc) return { ok: false, reason: "noData" };
+  const { html } = doc;
 
   const { uri } = await Print.printToFileAsync({ html });
 
@@ -1128,7 +1193,7 @@ export async function exportLogsPdf(
       }
     }
     reportExported();
-    return { ok: true, uri: finalUri, count: inWindow.length };
+    return { ok: true, uri: finalUri, count: doc.count };
   }
 
   if (!(await Sharing.isAvailableAsync())) {
@@ -1142,5 +1207,5 @@ export async function exportLogsPdf(
   });
 
   reportExported();
-  return { ok: true, uri, count: inWindow.length };
+  return { ok: true, uri, count: doc.count };
 }

@@ -19,6 +19,7 @@ import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logCrash, logEvent } from "../lib/analytics";
 import { noteFirstLog } from "../lib/services/firstLog";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
+import { doseHintVisible } from "../lib/injectionDose";
 import { useApp } from "../lib/store/AppContext";
 import { SELECTABLE_SITES, type InjectionSite, type SitePoint } from "../lib/db/types";
 import { getSiteUsageHistory, type RecentInjection, type SiteUsage } from "../lib/db/injections";
@@ -95,6 +96,7 @@ function BasalConfirmScreen() {
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
   const [step, setStep] = useState<"ask" | "site">(params.step === "site" ? "site" : "ask");
   const [dose, setDose] = useState(0);
+  const [doseInteracted, setDoseInteracted] = useState(false);
   const [loggedAt, setLoggedAt] = useState(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [site, setSite] = useState<InjectionSite>(SELECTABLE_SITES[0]);
@@ -491,7 +493,10 @@ function BasalConfirmScreen() {
             <FieldLabel>{t("injection.dose")}</FieldLabel>
             <Stepper
               value={dose}
-              onChange={setDose}
+              onChange={(v) => {
+                setDoseInteracted(true);
+                setDose(v);
+              }}
               onValidityChange={stepperFields.reporter("dose")}
               onInvalidKindChange={setDoseInvalidKind}
               step={0.5}
@@ -516,13 +521,13 @@ function BasalConfirmScreen() {
               <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
             </Pressable>
 
-            {dose > 0 && stepperFields.allValid ? null : (
+            {doseHintVisible(dose > 0 && stepperFields.allValid, doseInteracted || doseInvalidKind === "range") ? (
               <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 8 }}>
                 {doseInvalidKind === "range"
                   ? t("settings.rangeOutOfBounds", { min: num(0), max: num(150) })
                   : t("basalConfirm.doseRequired")}
               </Text>
-            )}
+            ) : null}
             {saveError ? (
               <Text style={{ color: THEME.warning, fontSize: 12, marginBottom: 8 }}>
                 {t("common.saveFailed")}

@@ -1,4 +1,4 @@
-import { injectionDoseOk } from "../lib/injectionDose";
+import { doseHintVisible, injectionDoseOk } from "../lib/injectionDose";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -171,6 +171,7 @@ export function InjectionEditSheet({
   const sheetHeight = Math.round(winH * 0.86);
   // Dose in units (0 = no dose). Stepper-driven, keyboard-editable.
   const [dose, setDose] = useState(0);
+  const [doseInteracted, setDoseInteracted] = useState(false);
   const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
   const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
   const [site, setSite] = useState<InjectionSite>("abdomen_left");
@@ -199,6 +200,7 @@ export function InjectionEditSheet({
   useEffect(() => {
     if (visible && injection) {
       setDose(injection.dose_units ?? 0);
+      setDoseInteracted(false);
       setInsulinType(injection.insulin_type ?? "bolus");
       setBolusKind(injection.bolus_kind);
       // A row logged without a region (a calculator bolus) opens on the first
@@ -506,7 +508,10 @@ export function InjectionEditSheet({
                 <FieldLabel>{t("injection.dose")}</FieldLabel>
                 <Stepper
                   value={dose}
-                  onChange={setDose}
+                  onChange={(v) => {
+                    setDoseInteracted(true);
+                    setDose(v);
+                  }}
                   onValidityChange={stepperFields.reporter("dose")}
                   step={0.5}
                   longStep={1}
@@ -515,13 +520,13 @@ export function InjectionEditSheet({
                   decimals={1}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
-                  style={{ marginBottom: injectionDoseOk(dose, injection?.dose_units ?? null) ? 16 : 6 }}
+                  style={{ marginBottom: doseHintVisible(injectionDoseOk(dose, injection?.dose_units ?? null), doseInteracted) ? 6 : 16 }}
                 />
-                {injectionDoseOk(dose, injection?.dose_units ?? null) ? null : (
+                {doseHintVisible(injectionDoseOk(dose, injection?.dose_units ?? null), doseInteracted) ? (
                   <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 12 }}>
                     {t("basalConfirm.doseRequired")}
                   </Text>
-                )}
+                ) : null}
 
                 {/* Reflows smoothly when the bolus-label row appears/disappears,
                     same motion language as the create form (WP3). */}

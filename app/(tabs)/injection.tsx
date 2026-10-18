@@ -1,4 +1,4 @@
-import { injectionDoseOk } from "../../lib/injectionDose";
+import { doseHintVisible, injectionDoseOk } from "../../lib/injectionDose";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Keyboard,
@@ -205,6 +205,7 @@ export default function InjectionScreen() {
   // True once the dose has been hand-edited this session; while false, an
   // insulin-type switch is still allowed to prefill/clear it.
   const doseTouched = useRef(false);
+  const [doseInteracted, setDoseInteracted] = useState(false);
   // True once the user has hand-picked a time this session. While false,
   // loggedAt tracks "now" on every focus (see the useFocusEffect below): the
   // tab never unmounts (freezeOnBlur), so without this a form left open from
@@ -389,6 +390,7 @@ export default function InjectionScreen() {
   function resetForm() {
     setSelected(null);
     doseTouched.current = false;
+    setDoseInteracted(false);
     // Re-applies the current insulinType's dose prefill rule (profile's
     // daily basal for basal, 0 for bolus) now that the "touched" flag is
     // clear again - a plain setDose(0) here made the NEXT entry start from
@@ -1001,6 +1003,7 @@ export default function InjectionScreen() {
                   value={dose}
                   onChange={(v) => {
                     doseTouched.current = true;
+                    setDoseInteracted(true);
                     setDose(v);
                   }}
                   onValidityChange={stepperFields.reporter("dose")}
@@ -1011,13 +1014,13 @@ export default function InjectionScreen() {
                   decimals={1}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
-                  style={{ marginBottom: injectionDoseOk(dose) ? 16 : 6 }}
+                  style={{ marginBottom: doseHintVisible(injectionDoseOk(dose), doseInteracted) ? 6 : 16 }}
                 />
-                {injectionDoseOk(dose) ? null : (
+                {doseHintVisible(injectionDoseOk(dose), doseInteracted) ? (
                   <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 12 }}>
                     {t("basalConfirm.doseRequired")}
                   </Text>
-                )}
+                ) : null}
                 {insulinType === "basal" && activeProfile?.basal_daily_units == null ? (
                   <Pressable
                     onPress={() => router.push("/settings/profile")}
