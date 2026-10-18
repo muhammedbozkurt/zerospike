@@ -68,8 +68,6 @@ modules/*/android/.gradle/
 modules/*/android/.cxx/
 /zerospike-store
 keystore.properties
-google-services.json
-GoogleService-Info.plist
 __pycache__/
 credentials.txt
 *.pem
