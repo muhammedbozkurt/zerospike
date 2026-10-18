@@ -360,8 +360,9 @@ export default function ProfileSettings() {
           label={t("settings.name")}
           value={name}
           onChangeText={setName}
+          placeholder={t("profiles.defaultName")}
           onEndEditing={() =>
-            persist({ name: name.trim() || t("profiles.defaultName") })
+            persist({ name: name.trim() })
           }
           last
         />

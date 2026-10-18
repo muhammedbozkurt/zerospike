@@ -32,6 +32,7 @@ import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
 import { EXPORT_MAX_ROWS, type ExportResult } from "./export";
 import { isDuringTrial } from "./purchases";
+import { displayProfileName } from "../profileName";
 import {
   weeklyComparison,
   weekAnchorForLang,
@@ -834,7 +835,7 @@ function buildHtml(
       <div class="title">${t("report.reportTitle")}</div>
     </div>
     <div class="info">
-      <div><b>${t("report.profile")}:</b> ${esc(profile.name)}</div>
+      <div><b>${t("report.profile")}:</b> ${esc(displayProfileName(profile, (k) => i18n.t(k)))}</div>
       <div><b>${t("report.dateRange")}:</b> ${fmtDay(start)} - ${fmtDay(rangeEnd)}</div>
       <div><b>${t("report.generated")}:</b> ${fmtDay(generated)} ${two(generated.getHours())}:${two(generated.getMinutes())}</div>
     </div>

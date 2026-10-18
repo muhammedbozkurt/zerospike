@@ -9,7 +9,7 @@ import { listTemplates, deleteTemplate, createTemplate } from "./mealTemplates";
 import { addCustomFood, updateFood } from "./foods";
 import { isFavorite, toggleFavorite } from "./favorites";
 import { getProfile, updateProfile } from "./profiles";
-import { getDb, defaultProfileName, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
+import { getDb, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
 import { SELECTABLE_SITES, SITE_POINTS } from "./types";
 import type { InsulinType, Lang, MealSlot, PeriodTag, ReminderType, SitePoint } from "./types";
 import type { FoodCategory } from "./categories";
@@ -32,8 +32,7 @@ import i18n from "../i18n";
  * (keyed per profile - see seedMarkerKey - so the two variants never read or
  * clobber each other's marker). When the capture pipeline switches language
  * (scLang) and cold-relaunches, the seed re-runs and re-materialises everything
- * that carries visible language: the profile NAME (-> profiles.defaultName for
- * that locale) and the MEAL names (custom_food_name). Glucose (numeric) and
+ * that carries visible language: the MEAL names (custom_food_name). Glucose (numeric) and
  * injections (site/point CODES, localised at display) are language-neutral, so
  * they are seeded once on the first pass and left intact on later language
  * switches. This guarantees one language per shot (no Turkish profile name /
@@ -457,7 +456,7 @@ export async function ensureTrackingProfile(): Promise<string> {
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         created_at)
      VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, ?);`,
-    [SCREENSHOT_TRACKING_PROFILE_ID, defaultProfileName(), now]
+    [SCREENSHOT_TRACKING_PROFILE_ID, "", now]
   );
   return SCREENSHOT_TRACKING_PROFILE_ID;
 }
@@ -522,9 +521,7 @@ async function seedScreenshotDataLocked(
     const seededLang = await AsyncStorage.getItem(markerKey);
     if (seededLang === lang) return; // already fully seeded in this language
 
-    // Profile NAME follows the active locale on every language pass.
-    const defaultName = i18n.t("profiles.defaultName", { lng: lang }) as string;
-    await updateProfile(profileId, { name: defaultName });
+    await updateProfile(profileId, { name: "" });
 
     if (seededLang == null) {
       // FIRST pass: wipe any stale data (e.g. an older single-language seed) so a

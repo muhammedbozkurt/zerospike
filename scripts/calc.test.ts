@@ -534,8 +534,12 @@ section("O. source guards (data scope, profile hand-over, input filters)");
     /clearAllLogs\(activeProfile\.id\)/.test(dataScreen)
   );
   ok(
+    "the post-delete switch toast resolves the profile name",
+    /switchedTo", \{ name: displayProfileName\(next, t\) \}/.test(dataScreen)
+  );
+  ok(
     "the confirm dialog names the profile",
-    /clearLogsConfirm", \{ name: activeProfile\.name \}/.test(dataScreen)
+    /clearLogsConfirm", \{ name: displayProfileName\(activeProfile, t\) \}/.test(dataScreen)
   );
   ok(
     "deleting a profile hands over to a remaining one",

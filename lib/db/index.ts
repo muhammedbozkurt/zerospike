@@ -20,6 +20,7 @@ import {
   migrateToV22,
   migrateToV23,
   migrateToV24,
+  migrateToV25,
   missingColumns,
   ensureFoodNameColumns,
   stampSchemaVersion,
@@ -52,15 +53,9 @@ import {
   type SeedFoodUpdate,
 } from "./seedVersion";
 import type { SeedFood } from "./seed";
-import i18n from "../i18n";
-
-/** Localized default profile name (resolved at creation time / device language). */
-export function defaultProfileName(): string {
-  return i18n.t("profiles.defaultName");
-}
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -359,6 +354,12 @@ export async function initDatabase(): Promise<void> {
   // table touched.
   if (currentVersion >= 1 && currentVersion < 24) {
     await migrateToV24(db);
+  }
+
+  // v24 → v25: profile names equal to a locale's default text become '' (the
+  // label is resolved at display time, see ./v25Sql + lib/profileName.ts).
+  if (currentVersion >= 1 && currentVersion < 25) {
+    await migrateToV25(db);
   }
 
   // The fresh-install stamp, and a backstop for a database that entered the chain
@@ -668,7 +669,7 @@ async function ensureDefaultProfile(db: SQLite.SQLiteDatabase): Promise<void> {
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         created_at)
      VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, ?);`,
-    [DEFAULT_PROFILE_ID, defaultProfileName(), now]
+    [DEFAULT_PROFILE_ID, "", now]
   );
 }
 

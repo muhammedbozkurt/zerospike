@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { profileScopedKeys } from "../profileScopedKeys";
-import { getDb, DEFAULT_PROFILE_ID, defaultProfileName } from "./index";
+import { getDb, DEFAULT_PROFILE_ID } from "./index";
 import { uuid } from "../uuid";
 import type { DiabetesType, InsulinMode, UserProfile } from "./types";
 
@@ -38,7 +38,7 @@ export async function getDefaultProfile(): Promise<UserProfile> {
         basal_insulin_other, bolus_insulin_other,
         created_at)
      VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, NULL, NULL, ?);`,
-    [DEFAULT_PROFILE_ID, defaultProfileName(), now]
+    [DEFAULT_PROFILE_ID, "", now]
   );
   return (await getProfile(DEFAULT_PROFILE_ID))!;
 }
@@ -86,7 +86,7 @@ export async function createProfile(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
-      input.name.trim() || defaultProfileName(),
+      input.name.trim(),
       input.insulin_sensitivity_factor ?? 40,
       input.carb_ratio_breakfast ?? 10,
       input.carb_ratio_lunch ?? 12,

@@ -19,6 +19,7 @@ import { createProfile } from "../lib/db/profiles";
 import { Button } from "./ui";
 import { ELEVATION, INPUT_TEXT, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
+import { displayProfileName } from "../lib/profileName";
 
 /** Cap for a centered, content-sized dialog card on a tablet (does not
  *  stretch edge to edge like a bottom sheet). */
@@ -133,7 +134,7 @@ export function ProfileSwitcher({
             minimumFontScale={0.85}
             style={{ maxWidth: 120 }}
           >
-            {activeProfile?.name ?? "-"}
+            {activeProfile ? displayProfileName(activeProfile, t) : "-"}
           </Text>
           <Ionicons name="chevron-down" size={14} color={THEME.textMuted} />
         </Pressable>
@@ -190,7 +191,7 @@ export function ProfileSwitcher({
                       onPress={() => handleSelect(p.id)}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
-                      accessibilityLabel={p.name}
+                      accessibilityLabel={displayProfileName(p, t)}
                       className={`flex-row items-center rounded-2xl px-4 py-3 mb-2 border ${
                         active
                           ? "bg-brand/10 border-brand/40"
@@ -207,7 +208,7 @@ export function ProfileSwitcher({
                           active ? "text-brand" : "text-ink"
                         }`}
                       >
-                        {p.name}
+                        {displayProfileName(p, t)}
                       </Text>
                       {active ? (
                         <Ionicons name="checkmark-circle" size={18} color={THEME.accent} />

@@ -64,6 +64,7 @@ import {
   V23_REBUILD_FTS,
 } from "./v23Sql";
 import { V24_CREATE } from "./v24Sql";
+import { V25_EMPTY_DEFAULT_NAMES } from "./v25Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -107,7 +108,8 @@ export type SchemaStamp =
   | 21
   | 22
   | 23
-  | 24;
+  | 24
+  | 25;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -762,5 +764,17 @@ export async function migrateToV24(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(statement);
     }
     await stampSchemaVersion(db, 24);
+  });
+}
+
+/**
+ * The v24 → v25 migration: profile names that are exactly a locale's default
+ * text become '' (see ./v25Sql). Data-only UPDATE, idempotent; the stamp lands
+ * in the same transaction.
+ */
+export async function migrateToV25(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.execAsync(V25_EMPTY_DEFAULT_NAMES);
+    await stampSchemaVersion(db, 25);
   });
 }

@@ -46,6 +46,7 @@ import {
   migrateToV22,
   migrateToV23,
   migrateToV24,
+  migrateToV25,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -4208,7 +4209,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 24", /const SCHEMA_VERSION = 24;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 25", /const SCHEMA_VERSION = 25;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4786,6 +4787,10 @@ async function main() {
       /currentVersion < 24\)\s*\{\s*await migrateToV24\(db\);/.test(indexSrc)
     );
     ok(
+      "the v24 → v25 step runs the real migration",
+      /currentVersion < 25\)\s*\{\s*await migrateToV25\(db\);/.test(indexSrc)
+    );
+    ok(
       "and createSchemaV1 creates the table from the same V24_CREATE statements",
       /for \(const statement of V24_CREATE\)/.test(indexSrc)
     );
@@ -4832,7 +4837,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 24`, readUserVersion(db), 24);
+    eq(`v${start}: ends at 25`, readUserVersion(db), 25);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -5022,7 +5027,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      24
+      25
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -5038,7 +5043,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 24", readUserVersion(db), 24);
+    eq("the next launch still ends at 25", readUserVersion(db), 25);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -5136,7 +5141,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 24 again", readUserVersion(db), 24);
+    eq("the chain lands on 25 again", readUserVersion(db), 25);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -5795,8 +5800,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 22) await migrateToV22(target);
   if (currentVersion >= 1 && currentVersion < 23) await migrateToV23(target);
   if (currentVersion >= 1 && currentVersion < 24) await migrateToV24(target);
+  if (currentVersion >= 1 && currentVersion < 25) await migrateToV25(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 24;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 25;");
 }
 
 function count(db: DatabaseSync, table: string): number {

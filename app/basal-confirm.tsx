@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AppBackground, GradientCTA } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { displayProfileName } from "../lib/profileName";
 import { Skeleton } from "../components/Skeleton";
 import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
@@ -321,7 +322,7 @@ function BasalConfirmScreen() {
             numberOfLines={1}
             style={{ color: THEME.textMuted, fontSize: 12, paddingHorizontal: 20, marginTop: -4, marginBottom: 6 }}
           >
-            {t("basalConfirm.forProfile", { name: ctx?.profile.name })}
+            {t("basalConfirm.forProfile", { name: ctx ? displayProfileName(ctx.profile, t) : "" })}
           </Text>
         ) : null}
 
@@ -356,7 +357,7 @@ function BasalConfirmScreen() {
                     numberOfLines={1}
                     style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flexShrink: 1 }}
                   >
-                    {c.profile.name}
+                    {displayProfileName(c.profile, t)}
                   </Text>
                   <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
                 </Pressable>

@@ -38,6 +38,7 @@ import { AppBackground, ConicAvatar, GradientCTA } from "../components/rich";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
 import { parseDecimalText } from "../lib/numberInput";
 import { upper } from "../lib/upper";
+import { displayProfileName } from "../lib/profileName";
 import { useLayout } from "../lib/useLayout";
 
 /** Two-letter mark for the conic avatar (mockup 07's profile hero). */
@@ -104,7 +105,7 @@ function ProfileSetupScreen() {
   const showsBasal = insulinModeShowsBasal(insulinMode);
 
   const [name, setName] = useState(
-    activeProfile?.name ?? t("profiles.defaultName")
+    activeProfile?.name ?? ""
   );
   const [fastingMin, setFastingMin] = useState(
     String(glucoseToDisplay(activeProfile?.target_fasting_min ?? 80, unit))
@@ -405,7 +406,7 @@ function ProfileSetupScreen() {
     await withWriteInFlight(async () => {
       try {
         await updateProfile(profileId, {
-          name: name.trim() || t("profiles.defaultName"),
+          name: name.trim(),
           glucose_unit: unit,
           diabetes_type: diabetesType,
           insulin_mode: insulinMode,
@@ -501,12 +502,12 @@ function ProfileSetupScreen() {
       >
         {/* Identity hero (mockup 07) */}
         <View className="items-center mb-5" style={{ gap: 8 }}>
-          <ConicAvatar label={initials(name)} size={66} />
+          <ConicAvatar label={initials(displayProfileName(name, t))} size={66} />
           <Text
             style={{ color: THEME.text, fontSize: 22, fontWeight: "800" }}
             numberOfLines={1}
           >
-            {name || t("profiles.defaultName")}
+            {displayProfileName(name, t)}
           </Text>
           <View
             className="rounded-full px-3 py-1"

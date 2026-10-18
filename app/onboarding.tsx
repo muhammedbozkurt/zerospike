@@ -531,7 +531,7 @@ export default function OnboardingScreen() {
   const [stepIdx, setStepIdx] = useState(scDiabetes ? DIABETES_STEP_IDX : 0);
 
   const [name, setName] = useState(
-    activeProfile?.name ?? t("profiles.defaultName")
+    activeProfile?.name ?? ""
   );
   const [unit, setUnit] = useState<GlucoseUnit>(
     activeProfile?.glucose_unit ?? "mgdl"
@@ -720,11 +720,13 @@ export default function OnboardingScreen() {
   const back = () => setStepIdx((i) => Math.max(0, i - 1));
 
   // Android hardware back mirrors the in-UI arrow during the quiz: step 0
-  // returns to the welcome phase, later steps go back one step. Welcome and
-  // reveal keep the system default.
+  // returns to the welcome phase, later steps go back one step. Welcome keeps
+  // the system default; the reveal swallows it so a back press cannot leave
+  // onboarding unfinished.
   useEffect(() => {
-    if (Platform.OS !== "android" || phase !== "quiz") return;
+    if (Platform.OS !== "android" || (phase !== "quiz" && phase !== "reveal")) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (phase === "reveal") return true;
       if (stepIdxClamped === 0) setPhase("welcome");
       else back();
       return true;
@@ -791,7 +793,7 @@ export default function OnboardingScreen() {
       const dbDiabetesType = diabetesTypeOf(diabetes);
       const carbDefaults = CARB_TARGET_DEFAULTS_G[dbDiabetesType];
       const patch: ProfileUpdate = {
-        name: name.trim() || t("profiles.defaultName"),
+        name: name.trim(),
         target_fasting_min: fastingMinMgdl,
         target_fasting_max: fastingMgdl,
         target_postmeal_min: postmealMinMgdl,
@@ -881,6 +883,9 @@ export default function OnboardingScreen() {
 
       bumpData();
       setPhase("reveal");
+    } catch (err) {
+      logCrash(err, { screen: "onboarding", op: "finishToReveal" });
+      toast(t("common.saveFailed"), "error");
     } finally {
       setSaving(false);
     }
@@ -894,6 +899,7 @@ export default function OnboardingScreen() {
       await completeOnboarding();
     } catch (err) {
       logCrash(err, { screen: "onboarding", op: "completeOnboarding" });
+      toast(t("common.saveFailed"), "error");
       doneRef.current = false;
       setSaving(false);
       return;

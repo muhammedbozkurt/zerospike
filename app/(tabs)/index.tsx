@@ -7,6 +7,7 @@ import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
+import { displayProfileName } from "../../lib/profileName";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
 import { bolusProfileFor, basalProfileFor } from "../../lib/insulinCatalog";
@@ -1418,7 +1419,7 @@ export default function DashboardScreen() {
   // either way it is never asked again; Settings > Data keeps the switch.
   function writeOnMessage(): string {
     return profiles.length > 1 && activeProfile
-      ? t("dashboard.healthWriteOnNamed", { name: activeProfile.name, health: HEALTH_NAME })
+      ? t("dashboard.healthWriteOnNamed", { name: displayProfileName(activeProfile, t), health: HEALTH_NAME })
       : t("dashboard.healthWriteOn", { health: HEALTH_NAME });
   }
 
@@ -1431,7 +1432,7 @@ export default function DashboardScreen() {
       // Health Connect must not use up the one question.
       if (!(await isHealthAvailable())) return false;
       await markHealthWriteAskSeen();
-      const many = profiles.length > 1 ? activeProfile?.name : undefined;
+      const many = profiles.length > 1 && activeProfile ? displayProfileName(activeProfile, t) : undefined;
       const yes = await confirm({
         title: t("dashboard.healthWriteAskTitle", { health: HEALTH_NAME }),
         message:

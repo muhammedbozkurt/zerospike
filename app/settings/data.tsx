@@ -37,6 +37,7 @@ import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { DirIcon } from "../../components/DirIcon";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { SectionLabel } from "../../components/ui";
+import { displayProfileName } from "../../lib/profileName";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
@@ -112,7 +113,7 @@ export default function DataSettings() {
     setExporting(true);
     const res = await exportLogsCsv(
       activeProfile.id,
-      activeProfile.name,
+      displayProfileName(activeProfile, t),
       unit,
       range,
       insulinModeUsesInsulin(insulinModeOf(activeProfile))
@@ -179,7 +180,7 @@ export default function DataSettings() {
     const ok = await confirm({
       title: t("settings.clearLogs"),
       message:
-        t("settings.clearLogsConfirm", { name: activeProfile.name }) +
+        t("settings.clearLogsConfirm", { name: displayProfileName(activeProfile, t) }) +
         (copies > 0 ? `\n\n${t("settings.healthDeleteCopiesNote", { health: healthName })}` : ""),
       confirmLabel: t("common.delete"),
       destructive: true,
@@ -193,7 +194,7 @@ export default function DataSettings() {
     const runningTimer = await getPostMealTimerState();
     if (runningTimer?.profileId === activeProfile.id) await cancelPostMealTimer();
     bumpData();
-    toast(t("settings.clearLogsDone", { name: activeProfile.name }), "success");
+    toast(t("settings.clearLogsDone", { name: displayProfileName(activeProfile, t) }), "success");
   }
 
   async function onDeleteProfile() {
@@ -206,7 +207,7 @@ export default function DataSettings() {
     const ok = await confirm({
       title: t("profiles.delete"),
       message:
-        t("profiles.deleteConfirm", { name: activeProfile.name }) +
+        t("profiles.deleteConfirm", { name: displayProfileName(activeProfile, t) }) +
         (copies > 0 ? `\n\n${t("settings.healthDeleteCopiesNote", { health: healthName })}` : ""),
       confirmLabel: t("common.delete"),
       destructive: true,
@@ -238,7 +239,7 @@ export default function DataSettings() {
       return;
     }
     await setActiveProfileId(next.id);
-    toast(t("profiles.switchedTo", { name: next.name }), "info");
+    toast(t("profiles.switchedTo", { name: displayProfileName(next, t) }), "info");
     router.back();
   }
 

@@ -1,6 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useReducedMotion } from "react-native-reanimated";
 import { useTranslation } from "react-i18next";
 
 import { GLUCOSE_RICH, RADIUS, TABULAR, THEME } from "../../lib/theme/tokens";
@@ -61,7 +62,12 @@ function RangeEnd({
 }) {
   const value = useCountUp(mgdl, undefined, onSettle);
   return (
-    <Text style={[TABULAR, { color: GLUCOSE_RICH.target, fontSize: 20, fontWeight: "800" }]}>
+    <Text
+      style={[
+        TABULAR,
+        { color: GLUCOSE_RICH.target, fontSize: 20, fontWeight: "800" },
+      ]}
+    >
       {formatGlucose(value, unit)}
     </Text>
   );
@@ -70,7 +76,9 @@ function RangeEnd({
 /** The headline time-in-range chip, its number counting up like the range ends. */
 function TirChip({ tir, label }: { tir: number; label: string }) {
   const value = useCountUp(tir);
-  return <GlucoseChip status="normal" dot={false} label={`${label} ${pct(value)}`} />;
+  return (
+    <GlucoseChip status="normal" dot={false} label={`${label} ${pct(value)}`} />
+  );
 }
 
 /** The small caps caption both closing cards open with. */
@@ -115,7 +123,11 @@ function TargetRow({
       <Text style={{ color: THEME.text, fontSize: 15 }}>{label}</Text>
       <View className="flex-row items-baseline" style={{ gap: 4 }}>
         <RangeEnd mgdl={minMgdl} unit={unit} onSettle={onSettle} />
-        <Text style={{ color: THEME.textMuted, fontSize: 16, fontWeight: "700" }}>-</Text>
+        <Text
+          style={{ color: THEME.textMuted, fontSize: 16, fontWeight: "700" }}
+        >
+          -
+        </Text>
         <RangeEnd mgdl={maxMgdl} unit={unit} />
         <Text style={{ color: THEME.textMuted, fontSize: 12, marginLeft: 2 }}>
           {glucoseUnitLabel(unit)}
@@ -151,9 +163,15 @@ function PlanRow({
 }) {
   const { t } = useTranslation();
   return (
-    <View className="flex-row items-center" style={{ gap: 10, marginBottom: 12 }}>
+    <View
+      className="flex-row items-center"
+      style={{ gap: 10, marginBottom: 12 }}
+    >
       <Ionicons name={icon} size={18} color={THEME.accent} />
-      <Text style={{ color: THEME.text, fontSize: 15, flex: 1 }} numberOfLines={2}>
+      <Text
+        style={{ color: THEME.text, fontSize: 15, flex: 1 }}
+        numberOfLines={2}
+      >
         {label}
       </Text>
       {mode ? (
@@ -162,11 +180,19 @@ function PlanRow({
         // and a plain notification. `wantsAlarm` is the stored intent, `mode`
         // is what will really happen.
         <Ionicons
-          name={mode === "alarm" ? "alarm" : wantsAlarm ? "alarm-outline" : "notifications-outline"}
+          name={
+            mode === "alarm"
+              ? "alarm"
+              : wantsAlarm
+                ? "alarm-outline"
+                : "notifications-outline"
+          }
           size={14}
           color={mode === "alarm" ? THEME.accent : THEME.textMuted}
           accessibilityLabel={
-            mode === "alarm" ? t("reminders.modeAlarm") : t("reminders.modeNotification")
+            mode === "alarm"
+              ? t("reminders.modeAlarm")
+              : t("reminders.modeNotification")
           }
         />
       ) : null}
@@ -239,6 +265,16 @@ export function Reveal({
   aboveDisclaimer?: React.ReactNode;
 }) {
   const { t } = useTranslation();
+  const reduced = useReducedMotion();
+  const [ctaReady, setCtaReady] = useState(reduced);
+  useEffect(() => {
+    if (reduced) {
+      setCtaReady(true);
+      return;
+    }
+    const id = setTimeout(() => setCtaReady(true), D_CTA + DURATION.base);
+    return () => clearTimeout(id);
+  }, [reduced]);
 
   /** The line, split into what it is and when it happens: the reminder's OWN
    *  name when it has one (every preset row is named after its part of the day
@@ -254,11 +290,15 @@ export function Reveal({
     if (item.kind === "postMeal") {
       return {
         label: t("onboarding.planPostMeal"),
-        value: item.minutes != null ? t("settings.minutes", { n: item.minutes }) : undefined,
+        value:
+          item.minutes != null
+            ? t("settings.minutes", { n: item.minutes })
+            : undefined,
         valueTone: "muted",
       };
     }
-    if (item.kind === "lowFollowup") return { label: t("onboarding.planLowFollow") };
+    if (item.kind === "lowFollowup")
+      return { label: t("onboarding.planLowFollow") };
     const name =
       item.label ??
       t(
@@ -266,7 +306,7 @@ export function Reveal({
           ? "reminders.typeMed"
           : item.kind === "basal"
             ? "reminders.typeBasal"
-            : "reminders.typeGlucose"
+            : "reminders.typeGlucose",
       );
     return { label: name, value: item.time ?? undefined };
   }
@@ -276,7 +316,7 @@ export function Reveal({
     const agp = computeAgp(readings, 14);
     const vals = readings.map((r) => r.glucose_level_mgdl);
     const inRange = vals.filter(
-      (v) => v >= fastingMinMgdl && v <= postmealMgdl
+      (v) => v >= fastingMinMgdl && v <= postmealMgdl,
     ).length;
     return {
       curve: agp.bands.map((b) => b.p50),
@@ -353,12 +393,28 @@ export function Reveal({
                 was cut off there. Measured instead, the series is SCALED to
                 fit - seriesPoints already insets both ends by 3pt, so the
                 stroke's round caps sit inside the canvas symmetrically. */}
-            <ClipReveal height={84} delay={D_HERO + 200} duration={DURATION.count}>
+            <ClipReveal
+              height={84}
+              delay={D_HERO + 200}
+              duration={DURATION.count}
+            >
               {(w) => (
-                <GradientAreaChart data={curve} width={w} height={84} targetBand={band} />
+                <GradientAreaChart
+                  data={curve}
+                  width={w}
+                  height={84}
+                  targetBand={band}
+                />
               )}
             </ClipReveal>
-            <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 8, textAlign: "center" }}>
+            <Text
+              style={{
+                color: THEME.textMuted,
+                fontSize: 11,
+                marginTop: 8,
+                textAlign: "center",
+              }}
+            >
               {t("onboarding.previewCaption")}
             </Text>
           </GlassCard>
@@ -366,7 +422,10 @@ export function Reveal({
 
         {/* The user's own range, one band per row */}
         <FadeSlideIn delay={D_TARGETS}>
-          <GlassCard radius={RADIUS.xl} style={{ marginBottom: 12, padding: 20 }}>
+          <GlassCard
+            radius={RADIUS.xl}
+            style={{ marginBottom: 12, padding: 20 }}
+          >
             <CardCaption>{t("onboarding.revealTargetsTitle")}</CardCaption>
             <TargetRow
               label={t("period.fasting")}
@@ -405,7 +464,9 @@ export function Reveal({
                 there: this states what the reminder's own tap already does,
                 never a new promise of its own. */}
             {plan.some((item) => item.kind === "basal") ? (
-              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16 }}>
+              <Text
+                style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16 }}
+              >
                 {t("onboarding.revealBasalTip")}
               </Text>
             ) : null}
@@ -419,20 +480,22 @@ export function Reveal({
       </ScrollView>
 
       <FadeSlideIn delay={D_CTA} style={{ marginTop: 12 }}>
-        <View style={{ marginBottom: 12 }}>
-          <AcceptCheck
-            checked={accepted}
-            onToggle={onToggleAccepted}
-            label={t("disclaimer.accept")}
+        <View pointerEvents={ctaReady ? "auto" : "none"}>
+          <View style={{ marginBottom: 12 }}>
+            <AcceptCheck
+              checked={accepted}
+              onToggle={onToggleAccepted}
+              label={t("disclaimer.accept")}
+            />
+          </View>
+          <GradientCTA
+            label={t("onboarding.getStarted")}
+            size="lg"
+            style={{ borderRadius: RADIUS.full }}
+            disabled={saving || !accepted}
+            onPress={onContinue}
           />
         </View>
-        <GradientCTA
-          label={t("onboarding.getStarted")}
-          size="lg"
-          style={{ borderRadius: RADIUS.full }}
-          disabled={saving || !accepted}
-          onPress={onContinue}
-        />
       </FadeSlideIn>
     </View>
   );
