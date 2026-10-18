@@ -25,7 +25,7 @@
 // cap, see Retry-After); 500 not_configured; 503 storage (database).
 
 import {
-  callerIp,
+  resolveCallerIp,
   hashIp,
   isRecord,
   json,
@@ -112,7 +112,7 @@ async function handle(req: Request): Promise<Response> {
   const now = Date.now();
   const [deviceBucket, ipBucket] = await Promise.all([
     hashIp(deviceId, creds.key, now),
-    hashIp(callerIp(req), creds.key, now),
+    hashIp(await resolveCallerIp(req), creds.key, now),
   ]);
   const ok = await allowed(creds, deviceBucket, ipBucket);
   if (ok === null) return json({ error: "storage" }, 503);

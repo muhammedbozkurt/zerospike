@@ -73,6 +73,51 @@ export function callerIp(req: Request): string {
   return hops.at(-1) ?? "unknown";
 }
 
+/** Compares SHA-256 digests so timing does not reveal how much of the secret matched. */
+export async function sameSecret(given: string, expected: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(given)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
+function validIp(ip: string): boolean {
+  if (ip.length > 45) return false;
+  if (/^[0-9.]+$/.test(ip)) {
+    const parts = ip.split(".");
+    return parts.length === 4 && parts.every((n) => /^(0|[1-9]\d{0,2})$/.test(n) && Number(n) <= 255);
+  }
+  if (!/^[0-9a-fA-F:]+$/.test(ip)) return false;
+  const halves = ip.split("::");
+  if (halves.length > 2) return false;
+  const groups = (h: string) => (h === "" ? [] : h.split(":"));
+  const all = halves.flatMap(groups);
+  if (!all.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))) return false;
+  return halves.length === 2 ? all.length <= 7 : all.length === 8;
+}
+
+/**
+ * Caller IP behind the legacy forwarders: they send the real client address in
+ * the first X-Forwarded-For entry together with X-Zs-Forwarder. The address is
+ * believed only when that header equals FORWARDER_SECRET; otherwise (or with no
+ * secret configured) the connection IP from callerIp() applies.
+ */
+export async function resolveCallerIp(req: Request): Promise<string> {
+  const secret = env("FORWARDER_SECRET");
+  const given = req.headers.get("x-zs-forwarder");
+  if (secret && given && (await sameSecret(given, secret))) {
+    const first = (req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim();
+    if (first && validIp(first)) return first;
+  }
+  return callerIp(req);
+}
+
 /**
  * Keyed hash of an IP that changes every UTC day: the rate-limit table never
  * holds an IP, and a hash can be neither reversed without the key nor linked

@@ -88,6 +88,8 @@ export function forward(
     }
     const ip = clientIp(req);
     if (ip) headers.set("x-forwarded-for", ip);
+    const secret = (globalThis as any).Deno?.env?.get?.("FORWARDER_SECRET");
+    if (typeof secret === "string" && secret !== "") headers.set("x-zs-forwarder", secret);
 
     let body: Uint8Array<ArrayBuffer> | undefined;
     if (req.method !== "GET" && req.method !== "HEAD") {

@@ -285,3 +285,32 @@ Deno.test("served end to end: stream survives and completes through Deno.serve",
     await upstream.shutdown();
   }
 });
+
+Deno.test("forwarder drops incoming x-zs-forwarder and adds its own secret", async () => {
+  Deno.env.set("FORWARDER_SECRET", "own-secret");
+  try {
+    await withUpstream(
+      () => new Response("ok"),
+      async (base, seen) => {
+        const f = forward("x", 5000, base);
+        await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "x-zs-forwarder": "forged", "x-forwarded-for": "1.2.3.4" } }));
+        assertEq(seen[0].headers.get("x-zs-forwarder"), "own-secret");
+        assertEq(seen[0].headers.get("x-forwarded-for"), "1.2.3.4");
+      },
+    );
+  } finally {
+    Deno.env.delete("FORWARDER_SECRET");
+  }
+});
+
+Deno.test("without FORWARDER_SECRET no x-zs-forwarder is sent, even if the client sets one", async () => {
+  Deno.env.delete("FORWARDER_SECRET");
+  await withUpstream(
+    () => new Response("ok"),
+    async (base, seen) => {
+      const f = forward("x", 5000, base);
+      await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "x-zs-forwarder": "forged" } }));
+      assertEq(seen[0].headers.get("x-zs-forwarder"), null);
+    },
+  );
+});

@@ -23,7 +23,7 @@
 // batch_id"; events over the device's daily budget are dropped and counted.
 
 import {
-  callerIp,
+  resolveCallerIp,
   env,
   hashIp,
   json,
@@ -137,7 +137,7 @@ async function handle(req: Request): Promise<Response> {
   if (!batch) return json({ error: "bad_request" }, 400);
   if (batch.events.length === 0) return json({ accepted: 0, dropped: batch.dropped }, 202);
 
-  const ipHash = await hashIp(callerIp(req), creds.key, Date.now());
+  const ipHash = await hashIp(await resolveCallerIp(req), creds.key, Date.now());
   const stored = await ingest(creds, deviceId, ipHash, batch);
   // 503 so the client keeps the batch and retries it later.
   if (stored === null) return json({ error: "storage" }, 503);

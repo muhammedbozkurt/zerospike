@@ -43,6 +43,7 @@
 //   400 bad_request, 502 upstream, 503 unavailable (500 not_configured, 405 method_not_allowed).
 //   No CORS headers: the app is not a browser. OPTIONS answers 204 with no body.
 
+import { resolveCallerIp } from "../_shared/http.ts";
 import { bedrockClient, buildParams, logUpstream, spikeModel, usageOf, type BedrockClient, type ChatMessage, type TokenUsage } from "./bedrock.ts";
 import { MAX_CONTEXT_BYTES, SYSTEM_PROMPT, dynamicSystem, normalizeLocale, sanitizeContext, type ActionId, type ContextPacket, type Locale } from "./prompt.ts";
 import { StreamGuard, blockedOutcome, finalizeReply, type ReplyOutcome } from "./filter.ts";
@@ -116,18 +117,13 @@ async function rpc(creds: Creds, fn: string, args: Record<string, unknown>): Pro
 }
 
 // ── Caller address ──────────────────────────────────────────────────────────
+// The address itself comes from resolveCallerIp (_shared/http.ts), which also
+// honours the legacy forwarders' real-IP header when the shared secret matches.
 // cf-connecting-ip is set by Cloudflare in front of the platform. X-Forwarded-For
 // starts with whatever the client chose to write, and only its last entry was
 // added by a proxy we trust, so that is the one used when there is no Cloudflare
 // header. An IPv6 address is reduced to its /64: one subscriber holds the whole
 // prefix, and counting single addresses would let them rotate for free.
-
-function clientIp(req: Request): string {
-  const cf = req.headers.get("cf-connecting-ip")?.trim();
-  if (cf) return cf;
-  const entries = (req.headers.get("x-forwarded-for") ?? "").split(",").map((e) => e.trim()).filter(Boolean);
-  return entries[entries.length - 1] ?? "unknown";
-}
 
 function ipBucket(raw: string): string {
   const ip = raw.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
@@ -555,7 +551,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const countsDevice = !takeReplay(replay, now);
   const slot = await reserveSlot(creds, {
     deviceId,
-    ipHash: await ipHash(creds, clientIp(req)),
+    ipHash: await ipHash(creds, await resolveCallerIp(req)),
     day,
     deviceCap: tier === "pro" ? PRO_DAILY_CAP : FREE_DAILY_CAP,
     countDevice: countsDevice,

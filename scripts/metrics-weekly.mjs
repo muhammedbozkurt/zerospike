@@ -139,6 +139,7 @@ async function sbSource(start, end, downloads) {
   const range = `day=gte.${start}&day=lte.${end}`;
   const sum = (arr, f) => arr.reduce((a, r) => a + (Number(r[f]) || 0), 0);
   const rows = [];
+  const unavailable = [];
   const add = (key2, label, val, n) => rows.push({ key: key2, label, val, n, scope: 'app' });
   try {
     const ret = await sbGet(key, 'v_retention_cohort', `cohort_day=gte.${addDays(start, -30)}&cohort_day=lte.${end}&limit=10000`);
@@ -186,12 +187,21 @@ async function sbSource(start, end, downloads) {
       const f = ev.filter((r) => r.name === nm);
       add(`app.ev.${nm}`, label, sum(f, 'events'), sum(f, 'devices'));
     }
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/spike_calls?select=id&${range}&limit=0`, { headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'count=exact' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const total = Number((res.headers.get('content-range') || '').split('/')[1]);
+      if (!Number.isFinite(total)) throw new Error('count yok');
+      add('app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls)', total, total);
+    } catch {
+      unavailable.push('Supabase spike_calls sayimi (erisilemedi)');
+    }
   } catch (e) {
     const m = /HTTP (\d+)/.exec(String(e.message));
     const why = m ? `HTTP ${m[1]}` : 'ag hatasi';
     return { rows, unavailable: [`Supabase v_* sorgusu (${why}; supabase login/link ve ~/.supabase/zerospike.service.key)`] };
   }
-  return { rows, unavailable: [], downloads };
+  return { rows, unavailable, downloads };
 }
 
 function loadPrev(file) {
@@ -225,7 +235,7 @@ async function main() {
     unavailable.push(...s.unavailable);
   } else {
     for (const [k, l] of [['asc.imp.TOPLAM', 'Gosterim Toplam'], ['asc.dl.TOPLAM', 'Indirme Toplam'], ['rc.trials', 'Deneme baslangici'], ['rc.conv', 'Denemeden donusum (adet)'], ['rc.actives', 'Aktif abonelik'], ['rc.mrr', 'MRR']]) store.push({ key: k, label: l, val: null, scope: 'store' });
-    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
+    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls)'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
   }
 
   const dl = downloads;
@@ -248,6 +258,7 @@ async function main() {
     '\nUygulama ici olaylar rizali ornekleme: yalniz analitik rizasi veren cihazlar sayilir, daha ilgili kullanicilara yanli olabilir. Riza orani paydasi ASC haftalik indirme sayisidir (yalniz iOS); pay iOS ve Android cihazlarini birlikte sayar, bu yuzden oran yaklasiktir ve ustten sapabilir.',
     '\n## Magaza ve RevenueCat (tam kapsam)\n', head, ...storeRows,
     '\n## Uygulama ici huni (rizali ornek)\n', head, ...appRows,
+    '\nSpike 429 (hiz siniri) sayisi ve orani: olculmuyor. spike_calls yalniz model cagrisini kaydeder (status/429 kolonu yok), reddedilen istekler modele ulasmadan doner. Olcmek icin sunucu tarafinda red kaydi (ornegin spike_calls.status veya ayri sayac) gerekir.',
     ...(unavailable.length ? ['\n## Erisilemeyen kaynaklar\n', ...unavailable.map((u) => `KULLANICI YENILEYECEK: ${u}`)] : []),
     args.dry ? '' : '\nKULLANICI YENILEYECEK: Play Console (script yok, elle bak)',
     `\n<!-- DATA ${JSON.stringify(Object.fromEntries(store.filter((r) => r.val !== null && r.val !== undefined).map((r) => [r.key, r.val])))} -->`,
