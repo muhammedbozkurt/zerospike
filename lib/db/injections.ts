@@ -20,6 +20,7 @@ import {
   serializeTags,
 } from "./types";
 import { pickLeastRecentlyUsedPoint, pointKey } from "../rotationPick";
+import { emitInjectionSaved, emitRemoved } from "./healthRecordHooks";
 
 export { pointKey };
 
@@ -151,12 +152,23 @@ export async function logInjection(
     ]
   );
 
-  return mapInjection(
+  const injection = mapInjection(
     (await db.getFirstAsync<InjectionRow>(
       "SELECT * FROM injection_logs WHERE id = ?;",
       [id]
     ))!
   );
+  emitInjectionSaved(injection, null);
+  return injection;
+}
+
+export async function getInjection(id: string): Promise<Injection | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<InjectionRow>(
+    "SELECT * FROM injection_logs WHERE id = ?;",
+    [id]
+  );
+  return row ? mapInjection(row) : null;
 }
 
 export async function getInjections(
@@ -204,6 +216,13 @@ export async function updateInjection(
   patch: InjectionUpdate
 ): Promise<Injection | null> {
   const db = await getDb();
+  const mirrored =
+    patch.dose_units !== undefined ||
+    patch.insulin_type !== undefined ||
+    patch.logged_at !== undefined;
+  const beforeRow = mirrored
+    ? await db.getFirstAsync<InjectionRow>("SELECT * FROM injection_logs WHERE id = ?;", [id])
+    : null;
 
   // bolus_kind is only ever valid on a bolus row; resolveBolusKindPatch decides
   // whether this patch touches it at all, and needs the row's CURRENT type only
@@ -275,7 +294,9 @@ export async function updateInjection(
     "SELECT * FROM injection_logs WHERE id = ?;",
     [id]
   );
-  return row ? mapInjection(row) : null;
+  const after = row ? mapInjection(row) : null;
+  if (after && beforeRow) emitInjectionSaved(after, mapInjection(beforeRow));
+  return after;
 }
 
 /**
@@ -297,7 +318,36 @@ export async function getCalculatorInjectionForMeal(
 /** Deletes an injection (its history row only; no stock accounting). */
 export async function deleteInjection(id: string): Promise<void> {
   const db = await getDb();
+  const link = await db.getFirstAsync<{ health_uuid: string | null }>(
+    "SELECT health_uuid FROM injection_logs WHERE id = ?;",
+    [id]
+  );
   await db.runAsync("DELETE FROM injection_logs WHERE id = ?;", [id]);
+  if (link) emitRemoved("insulin", [{ id, uuid: link.health_uuid ?? null }]);
+}
+
+/** Links (or clears) the health-store sample id of an injection's insulin
+ *  delivery (schema v26). False when the row is gone. */
+export async function setInjectionHealthUuid(
+  id: string,
+  healthUuid: string | null
+): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.runAsync("UPDATE injection_logs SET health_uuid = ? WHERE id = ?;", [
+    healthUuid,
+    id,
+  ]);
+  return res.changes > 0;
+}
+
+/** Health sample ids of every injection of this profile that carries one. */
+export async function listInjectionHealthUuids(profileId: string): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ health_uuid: string }>(
+    "SELECT health_uuid FROM injection_logs WHERE profile_id = ? AND health_uuid IS NOT NULL;",
+    [profileId]
+  );
+  return rows.map((r) => r.health_uuid);
 }
 
 /** The bare fields lib/entryGuard.ts asks about, not a full row read. `id` is

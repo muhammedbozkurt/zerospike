@@ -9,6 +9,7 @@ import {
   type ExistingSugarReading,
   type HealthSugarSample,
 } from "./healthImportSql";
+import { emitMealSaved, emitRemoved, type RemovedHealthRecord } from "./healthRecordHooks";
 
 export {
   planHealthImport,
@@ -499,12 +500,14 @@ export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
       input.meal_template_id ?? null,
     ]
   );
-  return mapMeal(
+  const meal = mapMeal(
     (await db.getFirstAsync<MealRow>(
       "SELECT * FROM meal_logs WHERE id = ?;",
       [id]
     ))!
   );
+  emitMealSaved(meal, null);
+  return meal;
 }
 
 export async function listMealLogs(
@@ -579,11 +582,44 @@ export async function listRecentMealLogs(
  */
 export async function deleteMealLog(id: string): Promise<void> {
   const db = await getDb();
+  const mealLink = await db.getFirstAsync<{ health_uuid: string | null }>(
+    "SELECT health_uuid FROM meal_logs WHERE id = ?;",
+    [id]
+  );
+  const boluses = await db.getAllAsync<RemovedHealthRecord>(
+    "SELECT id, health_uuid AS uuid FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator';",
+    [id]
+  );
   await db.runAsync(
     "DELETE FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator';",
     [id]
   );
   await db.runAsync("DELETE FROM meal_logs WHERE id = ?;", [id]);
+  if (mealLink) emitRemoved("carbs", [{ id, uuid: mealLink.health_uuid ?? null }]);
+  emitRemoved("insulin", boluses);
+}
+
+/** Links (or clears) the health-store sample id of a meal's carbohydrates
+ *  (schema v26). False when the meal is gone, so a sample just written for it
+ *  has nothing to belong to. */
+export async function setMealHealthUuid(id: string, healthUuid: string | null): Promise<boolean> {
+  const db = await getDb();
+  const res = await db.runAsync("UPDATE meal_logs SET health_uuid = ? WHERE id = ?;", [
+    healthUuid,
+    id,
+  ]);
+  return res.changes > 0;
+}
+
+/** Health sample ids of every meal of this profile that carries one, for
+ *  revoking the app's own copies before the rows are deleted. */
+export async function listMealHealthUuids(profileId: string): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ health_uuid: string }>(
+    "SELECT health_uuid FROM meal_logs WHERE profile_id = ? AND health_uuid IS NOT NULL;",
+    [profileId]
+  );
+  return rows.map((r) => r.health_uuid);
 }
 
 /**
@@ -630,6 +666,10 @@ export async function updateMealLog(
   patch: MealLogUpdate
 ): Promise<MealLog | null> {
   const db = await getDb();
+  const mirrored = patch.calculated_carbs_g !== undefined || patch.logged_at !== undefined;
+  const beforeRow = mirrored
+    ? await db.getFirstAsync<MealRow>("SELECT * FROM meal_logs WHERE id = ?;", [id])
+    : null;
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
   for (const [key, value] of Object.entries(patch)) {
@@ -653,7 +693,9 @@ export async function updateMealLog(
     "SELECT * FROM meal_logs WHERE id = ?;",
     [id]
   );
-  return row ? mapMeal(row) : null;
+  const after = row ? mapMeal(row) : null;
+  if (after && beforeRow) emitMealSaved(after, mapMeal(beforeRow));
+  return after;
 }
 
 export async function getMealLog(id: string): Promise<MealLog | null> {

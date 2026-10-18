@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
 import { firstImportOutcome, HEALTH_FIRST_IMPORT_KEY } from "../../lib/healthFirstImport";
+import { retryHealthRecords } from "../../lib/healthRecords";
 import { displayProfileName } from "../../lib/profileName";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
@@ -781,7 +782,10 @@ export default function DashboardScreen() {
       // the other of the two moments this retries pending writes, alongside
       // a manual sync (runSync below). Not gated on Pro - see
       // retryPendingHealthWrites's own doc comment.
-      if (profileId) void retryPendingHealthWrites(profileId);
+      if (profileId) {
+        void retryPendingHealthWrites(profileId);
+        void retryHealthRecords(profileId);
+      }
     });
     return () => sub.remove();
   }, [refreshPostMealTimer, refreshNextReminder, profileId, glucoseUnit]);
@@ -864,10 +868,11 @@ export default function DashboardScreen() {
   async function runSync(announce: boolean): Promise<SyncResult | null> {
     if (!activeProfile) return null;
     void retryPendingHealthWrites(activeProfile.id);
+    void retryHealthRecords(activeProfile.id);
     if (syncing || !isProUser) return null;
     setSyncing(true);
     try {
-      const res = await importHealthGlucose(activeProfile.id);
+      const res = await importHealthGlucose(activeProfile.id, announce ? "manual" : "foreground");
       if (res.inserted > 0) {
         // One event per sync (not per row) to keep health-import volume sane. Its
         // own kind keeps imports out of the counts of what the user logged, and

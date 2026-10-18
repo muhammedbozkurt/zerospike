@@ -1,4 +1,6 @@
 import "../global.css";
+import "../lib/services/healthBackground";
+import "../lib/healthRecords";
 import React, { useEffect, useRef, useState } from "react";
 import { AppState, I18nManager, Linking, LogBox, View } from "react-native";
 import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams, type Href } from "expo-router";
@@ -54,6 +56,12 @@ import {
 } from "../modules/zerospike-alarmkit";
 import { listReminders } from "../lib/db/reminders";
 import { widgetRouteForUrl, type WidgetRoute } from "../lib/widgetRoute";
+import { registerHealthBackground } from "../lib/services/healthBackground";
+import {
+  hasHealthProvider,
+  setHealthBackgroundEntitled,
+  subscribeHealthBackgroundImport,
+} from "../lib/services/health";
 
 // One-shot guard for the startup RTL auto-reload below, persisted (not just an
 // in-memory ref) because Updates.reloadAsync() throws away the whole JS
@@ -237,6 +245,27 @@ function RootNavigator() {
   useEffect(() => {
     if (ready) setAnalyticsIsPro(isProUser);
   }, [ready, isProUser]);
+
+  // Background health sync: a headless run cannot ask React for the Pro state,
+  // so the foreground stores it; registration then follows the switches,
+  // entitlement and permissions (also re-checked each time the app comes back,
+  // since the user can change them in the system's Health settings).
+  useEffect(() => {
+    if (!ready || !hasHealthProvider()) return;
+    const sync = () => {
+      void setHealthBackgroundEntitled(isProUser).then(() => registerHealthBackground());
+    };
+    sync();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") sync();
+    });
+    return () => sub.remove();
+  }, [ready, isProUser, activeProfile?.id]);
+
+  useEffect(() => {
+    if (!ready || !hasHealthProvider()) return;
+    return subscribeHealthBackgroundImport(bumpData);
+  }, [ready, bumpData]);
 
   // AppContext.setLanguage lives in AppProvider, an ANCESTOR of FeedbackProvider
   // in the tree below, so it cannot call useFeedback() itself. RootNavigator is

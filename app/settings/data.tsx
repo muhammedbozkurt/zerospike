@@ -20,18 +20,36 @@ import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { setProOverride } from "../../lib/services/purchases";
 import {
   countHealthCopies,
+  getHealthBackgroundBlocker,
+  getHealthBgSyncEnabled,
   getHealthConnectStatus,
+  getHealthKindWriteEnabled,
+  getHealthLastSync,
   getHealthPendingWriteCount,
   getHealthWriteEnabled,
   getHealthWriteStatus,
   hasHealthProvider,
+  isHealthConnectPermissionBlocked,
+  isHealthKindWriteSupported,
+  openHealthSettings,
+  requestHealthKindWritePermission,
   requestHealthWritePermission,
   retryPendingHealthWrites,
   revokeHealthCopiesBeforeDelete,
+  setHealthBgSyncEnabled,
+  setHealthKindWriteEnabled,
   setHealthWriteEnabled,
+  type HealthBackgroundSkip,
   type HealthConnectStatus,
   type HealthWriteStatusRecord,
 } from "../../lib/services/health";
+import { registerHealthBackground, requestHealthBackgroundAccess } from "../../lib/services/healthBackground";
+import type { HealthLastSync, HealthWriteKind } from "../../lib/services/healthTypes";
+import {
+  countHealthRecordCopies,
+  retryHealthRecords,
+  revokeHealthRecordsBeforeDelete,
+} from "../../lib/healthRecords";
 import { healthWriteStatusKey } from "../../lib/healthWriteRetry";
 import type { GlucoseUnit } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
@@ -235,7 +253,8 @@ export default function DataSettings() {
   // shows one person's data, so it may never touch anybody else's history.
   async function onClearLogs() {
     if (!activeProfile) return;
-    const copies = await countHealthCopies(activeProfile.id);
+    const copies =
+      (await countHealthCopies(activeProfile.id)) + (await countHealthRecordCopies(activeProfile.id));
     const ok = await confirm({
       title: t("settings.clearLogs"),
       message:
@@ -246,6 +265,7 @@ export default function DataSettings() {
     });
     if (!ok) return;
     // Before the rows go: their Health ids live only on those rows.
+    await revokeHealthRecordsBeforeDelete(activeProfile.id);
     await revokeHealthCopiesBeforeDelete(activeProfile.id);
     await clearAllLogs(activeProfile.id);
     // The countdown was armed for a meal in the history that was just erased:
@@ -262,7 +282,8 @@ export default function DataSettings() {
       toast(t("profiles.cannotDeleteLast"), "error");
       return;
     }
-    const copies = await countHealthCopies(activeProfile.id);
+    const copies =
+      (await countHealthCopies(activeProfile.id)) + (await countHealthRecordCopies(activeProfile.id));
     const ok = await confirm({
       title: t("profiles.delete"),
       message:
@@ -274,6 +295,7 @@ export default function DataSettings() {
     });
     if (!ok) return;
     await revokeHealthCopiesBeforeDelete(activeProfile.id);
+    await revokeHealthRecordsBeforeDelete(activeProfile.id);
     // Read BEFORE the delete: afterwards there is no way to tell whether the
     // countdown belonged to the profile that just went.
     const runningTimer = await getPostMealTimerState();
@@ -496,11 +518,100 @@ export default function DataSettings() {
     }
   }
 
+  // Carbohydrate and insulin mirror switches (off by default), the background
+  // read switch and the last sync record, all per profile. null = still reading.
+  const [kindOn, setKindOn] = useState<Record<HealthWriteKind, boolean> | null>(null);
+  const [bgOn, setBgOn] = useState<boolean | null>(null);
+  const [bgBlocker, setBgBlocker] = useState<HealthBackgroundSkip | null>(null);
+  const [lastSync, setLastSync] = useState<HealthLastSync | null>(null);
+  const insulinWritable = isHealthKindWriteSupported("insulin");
+  useFocusEffect(
+    useCallback(() => {
+      if (!healthWriteProfileId) {
+        setKindOn(null);
+        setBgOn(null);
+        setLastSync(null);
+        return;
+      }
+      let alive = true;
+      void (async () => {
+        const [carbs, insulin, bg, last, blocker] = await Promise.all([
+          getHealthKindWriteEnabled("carbs", healthWriteProfileId),
+          getHealthKindWriteEnabled("insulin", healthWriteProfileId),
+          getHealthBgSyncEnabled(healthWriteProfileId),
+          getHealthLastSync(healthWriteProfileId),
+          getHealthBackgroundBlocker(),
+        ]);
+        if (!alive) return;
+        setKindOn({ carbs, insulin });
+        setBgOn(bg);
+        setLastSync(last);
+        setBgBlocker(blocker);
+      })();
+      return () => {
+        alive = false;
+      };
+    }, [healthWriteProfileId])
+  );
+
+  async function onToggleHealthKind(kind: HealthWriteKind, value: boolean) {
+    if (!healthWriteProfileId) return;
+    if (!value) {
+      await setHealthKindWriteEnabled(kind, false, healthWriteProfileId);
+      setKindOn((prev) => (prev ? { ...prev, [kind]: false } : prev));
+      return;
+    }
+    const granted = await requestHealthKindWritePermission(kind);
+    if (!granted) {
+      // The switch is controlled, so it simply stays off; say why.
+      toast(
+        t(kind === "carbs" ? "settings.healthCarbsDenied" : "settings.healthInsulinDenied", {
+          health: healthName,
+        }),
+        "info"
+      );
+      if (Platform.OS === "android" && isHealthConnectPermissionBlocked("write")) {
+        void openHealthSettings();
+      }
+      return;
+    }
+    await setHealthKindWriteEnabled(kind, true, healthWriteProfileId);
+    setKindOn((prev) => (prev ? { ...prev, [kind]: true } : prev));
+  }
+
+  async function refreshBackground() {
+    await registerHealthBackground();
+    setBgBlocker(await getHealthBackgroundBlocker());
+  }
+
+  async function onToggleBgSync(value: boolean) {
+    if (!healthWriteProfileId) return;
+    await setHealthBgSyncEnabled(value, healthWriteProfileId);
+    setBgOn(value);
+    await refreshBackground();
+  }
+
+  async function onRequestBackgroundAccess() {
+    await requestHealthBackgroundAccess();
+    setBgBlocker(await getHealthBackgroundBlocker());
+  }
+
+  const lastSyncErrorKey =
+    lastSync?.error === "unavailable"
+      ? "healthSync.errUnavailable"
+      : lastSync?.error === "denied"
+        ? "healthSync.errDenied"
+        : lastSync?.error === "read_failed"
+          ? "healthSync.errReadFailed"
+          : null;
+  const iosReadNote = Platform.OS === "ios" && lastSync?.status === "ok" && lastSync.read === 0;
+
   async function onRetryHealthWrites() {
     if (!healthWriteProfileId || retrying) return;
     setRetrying(true);
     try {
       const res = await retryPendingHealthWrites(healthWriteProfileId);
+      await retryHealthRecords(healthWriteProfileId);
       setWriteStatus(await getHealthWriteStatus(healthWriteProfileId));
       setPendingWrites(await getHealthPendingWriteCount(healthWriteProfileId));
       toast(
@@ -757,6 +868,116 @@ export default function DataSettings() {
               </View>
             ) : null}
           </View>
+          {kindOn ? (
+            <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1 mt-1">
+              <View className="flex-row items-center">
+                <Ionicons name="restaurant-outline" size={19} color={THEME.textMuted} />
+                <Text className="flex-1 ml-3 font-medium text-ink">
+                  {t("settings.healthCarbs", { health: healthName })}
+                </Text>
+                <Switch
+                  value={kindOn.carbs}
+                  onValueChange={(v) => void onToggleHealthKind("carbs", v)}
+                  {...switchColors()}
+                />
+              </View>
+              <Text className="text-mut text-xs mt-2">
+                {t("settings.healthCarbsHint", { health: healthName })}
+              </Text>
+              {insulinWritable ? (
+                <>
+                  <View className="flex-row items-center mt-4">
+                    <Ionicons name="water-outline" size={19} color={THEME.textMuted} />
+                    <Text className="flex-1 ml-3 font-medium text-ink">
+                      {t("settings.healthInsulin", { health: healthName })}
+                    </Text>
+                    <Switch
+                      value={kindOn.insulin}
+                      onValueChange={(v) => void onToggleHealthKind("insulin", v)}
+                      {...switchColors()}
+                    />
+                  </View>
+                  <Text className="text-mut text-xs mt-2">
+                    {t("settings.healthInsulinHint", { health: healthName })}
+                  </Text>
+                </>
+              ) : (
+                <Text className="text-mut text-xs mt-3">
+                  {t("settings.healthInsulinUnsupported", { health: healthName })}
+                </Text>
+              )}
+            </View>
+          ) : null}
+          {lastSync || (isProUser && bgOn !== null) ? (
+            <View className="bg-glass border border-hair rounded-2xl px-4 py-3.5 mb-1 mt-1">
+              {lastSync ? (
+                <>
+                  <Text className="text-ink text-[13px] font-medium">
+                    {t("healthSync.lastSync", {
+                      time: `${formatDate(lastSync.atIso)} ${formatTime(lastSync.atIso)}`,
+                      source: t(`healthSync.source.${lastSync.source}`),
+                    })}
+                  </Text>
+                  {lastSyncErrorKey ? (
+                    <Text className="text-mut text-xs mt-1.5 leading-5">
+                      {t(lastSyncErrorKey, { health: healthName })}
+                    </Text>
+                  ) : (
+                    <Text className="text-mut text-xs mt-1.5">
+                      {t("healthSync.lastSyncAdded", { count: lastSync.inserted })}
+                    </Text>
+                  )}
+                  {iosReadNote ? (
+                    <Text className="text-mut text-xs mt-1.5 leading-5">
+                      {t("healthSync.iosReadNote", { health: healthName })}
+                    </Text>
+                  ) : null}
+                </>
+              ) : null}
+              {isProUser && bgOn !== null ? (
+                <>
+                  <View className={`flex-row items-center ${lastSync ? "mt-4" : ""}`}>
+                    <Ionicons name="sync-outline" size={19} color={THEME.textMuted} />
+                    <Text className="flex-1 ml-3 font-medium text-ink">
+                      {t("settings.healthBgSync")}
+                    </Text>
+                    <Switch
+                      value={bgOn}
+                      onValueChange={(v) => void onToggleBgSync(v)}
+                      {...switchColors()}
+                    />
+                  </View>
+                  <Text className="text-mut text-xs mt-2">
+                    {t(
+                      Platform.OS === "android"
+                        ? "settings.healthBgSyncHintAndroid"
+                        : "settings.healthBgSyncHint",
+                      { health: healthName }
+                    )}
+                  </Text>
+                  {Platform.OS === "android" && bgOn ? (
+                    <Pressable
+                      onPress={() => void onRequestBackgroundAccess()}
+                      disabled={bgBlocker === null}
+                      accessibilityRole="button"
+                      className="mt-3"
+                    >
+                      <Text className="text-xs font-semibold" style={{ color: THEME.accent }}>
+                        {bgBlocker === null
+                          ? t("settings.healthBgAccessOn")
+                          : t("settings.healthBgAccess")}
+                      </Text>
+                      {bgBlocker === "no_background_permission" ? (
+                        <Text className="text-mut text-xs mt-1">
+                          {t("settings.healthBgAccessSub", { health: healthName })}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  ) : null}
+                </>
+              ) : null}
+            </View>
+          ) : null}
           {healthWrite ? (
             <TwoLineRow
               icon="cloud-upload-outline"
