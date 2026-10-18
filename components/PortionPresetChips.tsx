@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import { listPortions } from "../lib/db/foods";
 import type { FoodPortion } from "../lib/db/types";
 import { num } from "../lib/format";
+import { getLastPortion, setLastPortion } from "../lib/lastPortion";
+import { pickRememberedPortion } from "../lib/lastPortionMap";
 import { hapticSelect } from "../lib/haptics";
 import { THEME } from "../lib/theme/tokens";
 import { withAlpha } from "./rich";
@@ -18,12 +20,16 @@ export function PortionPresetChips({
   foodId,
   value,
   onPick,
+  autoSelect,
   style,
 }: {
   foodId: string;
   /** Current portion in grams, so the matching preset (if any) reads selected. */
   value?: number;
   onPick: (grams: number) => void;
+  /** Pick the food's remembered preset once the list loads. Off wherever the
+   *  portion is already decided (editing a record, a re-log with a portion). */
+  autoSelect?: boolean;
   style?: ViewStyle;
 }) {
   const { t } = useTranslation();
@@ -35,11 +41,17 @@ export function PortionPresetChips({
     if (!foodId) return;
     (async () => {
       const rows = await listPortions(foodId);
-      if (alive) setPresets(rows);
+      if (!alive) return;
+      setPresets(rows);
+      if (autoSelect && rows.length > 0) {
+        const hit = pickRememberedPortion(rows, await getLastPortion(foodId));
+        if (hit && alive) onPick(hit.grams);
+      }
     })();
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [foodId]);
 
   if (presets.length === 0) return null;
@@ -60,6 +72,7 @@ export function PortionPresetChips({
             onPress={() => {
               if (!active) hapticSelect();
               onPick(p.grams);
+              void setLastPortion(foodId, p.label_key);
             }}
             hitSlop={6}
             accessibilityRole="button"

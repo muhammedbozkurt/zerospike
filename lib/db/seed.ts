@@ -1,5 +1,7 @@
 import type { Category } from "./categories";
 import type { PortionLabelKey } from "./types";
+import { PORTION_OVERLAY, type PortionSource } from "./seedPortions";
+import { SEED_CARB } from "./seedCarb";
 
 /**
  * Seed data: 1403 globally diverse foods grouped into categories, each with
@@ -43,6 +45,12 @@ export interface SeedFood {
   /** Preset serving sizes (schema v23, lib/db/foods.ts replacePortions), each
    *  a [label, grams] pair. Omitted or empty leaves the food without presets. */
   portions?: Array<[PortionLabelKey, number]>;
+  /** Where a NEW row's figures come from (rows added in ./seedCarb carry it;
+   *  scripts/seed.test.ts requires it there). Seed-level only: no DB column. */
+  src?: "usda" | "bls" | "turkomp" | "off";
+  srcId?: string;
+  /** Source of `portions` when they came from ./seedPortions. */
+  portionSrc?: PortionSource;
 }
 
 // Helper note: for proper-noun world dishes the name is the same in every
@@ -1559,4 +1567,17 @@ const SEED_ADDITIONS_D5: SeedFood[] = [
   { cat: "staples", tr: "Furikake (pirinç baharatı)", en: "Furikake (rice seasoning)", de: "Furikake (Reisgewürz)", es: "Furikake (condimento para arroz)", fr: "Furikake (assaisonnement pour riz)", it: "Furikake (condimento per riso)", pt: "Furikake (tempero para arroz)", ar: "فوريكاكي (توابل الأرز اليابانية)", ja: "ふりかけ", carb: 30, gi: 0, portion: 10, portions: [["tbsp", 10]] },
 ];
 
-export const SEED_FOODS: SeedFood[] = [...SEED_FOODS_CORE, ...SEED_ADDITIONS_D5];
+function withPortionOverlay(foods: SeedFood[]): SeedFood[] {
+  return foods.map((f) => {
+    if (f.portions && f.portions.length > 0) return f;
+    const o = PORTION_OVERLAY[f.en];
+    if (!o) return f;
+    return { ...f, portions: o.portions.map(([l, g]) => [l, g] as [PortionLabelKey, number]), portionSrc: o.src };
+  });
+}
+
+export const SEED_FOODS: SeedFood[] = withPortionOverlay([
+  ...SEED_FOODS_CORE,
+  ...SEED_ADDITIONS_D5,
+  ...SEED_CARB,
+]);

@@ -2236,6 +2236,7 @@ function CalculatorScreen() {
                     foodId={food.id}
                     value={portion}
                     onPick={setPortion}
+                    autoSelect={!isEdit && !(Number(portionParam) > 0)}
                     style={{ marginTop: 10 }}
                   />
                 ) : null}

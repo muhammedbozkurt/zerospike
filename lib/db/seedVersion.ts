@@ -18,6 +18,10 @@
  *      the version that makes syncSeedCatalog (./index.ts) start comparing
  *      every already-seeded row against the catalog's own current values, not
  *      just inserting what is missing - see selectFoodsToUpdate below.
+ *   4  household-measure presets for ~300 more foods (./seedPortions) and the
+ *      ./seedCarb file for source-tagged new rows (empty so far). Existing
+ *      untouched rows get the presets via the same update path; edited or
+ *      custom rows are never reached.
  */
 
 // A type-only import: erased at build time, so reading this module never pulls
@@ -25,7 +29,7 @@
 import type { PortionLabelKey } from "./types";
 import type { SeedFood } from "./seed";
 
-export const SEED_CATALOG_VERSION = 3;
+export const SEED_CATALOG_VERSION = 4;
 
 /** The app_meta key the number above is stored under (schema v14). */
 export const SEED_CATALOG_VERSION_KEY = "seed_catalog_version";
