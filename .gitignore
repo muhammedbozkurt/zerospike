@@ -89,3 +89,10 @@ supabase/**/cli-latest
 work/
 raw/
 docs/apple-ads/
+
+fastlane/metadata
+fastlane/screenshots
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output
+fastlane/.env*

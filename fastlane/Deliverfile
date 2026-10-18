@@ -1,0 +1,3 @@
+platform "ios"
+overwrite_screenshots true
+run_precheck_before_submit false
