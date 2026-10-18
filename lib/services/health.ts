@@ -525,16 +525,14 @@ export function isHealthConnectPermissionBlocked(kind: "read" | "write"): boolea
 
 /** Reads recent glucose from the platform health store (or the dev mock).
  *  The look-back window is per platform: Health Connect only grants 30 days
- *  by default (see ANDROID_SYNC_WINDOW_DAYS), HealthKit gets the full 90. */
+ *  by default (see ANDROID_SYNC_WINDOW_DAYS), HealthKit gets the full 90.
+ *  A native failure rejects: an empty array means "nothing to read", never
+ *  "the read failed", so the caller can keep the Android change token. */
 export async function readRecentGlucose(): Promise<GlucoseSample[]> {
   const provider = getProvider();
   if (!provider) return [];
   const windowDays = Platform.OS === "android" ? ANDROID_SYNC_WINDOW_DAYS : SYNC_WINDOW_DAYS;
-  try {
-    return await provider.readRecentGlucose(windowDays, SYNC_MAX_SAMPLES);
-  } catch {
-    return [];
-  }
+  return provider.readRecentGlucose(windowDays, SYNC_MAX_SAMPLES);
 }
 
 // ── Writes: mirror manual readings to the platform health store (opt-in) ────
