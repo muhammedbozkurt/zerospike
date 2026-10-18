@@ -160,6 +160,9 @@ const tr = {
     secProfile: "Profil",
     secReminder: "İnsülin & Hatırlatma",
   },
+  tabs: {
+    today: "Bugün",
+  },
   dashboard: {
     title: "Kontrol Paneli",
     streakDays: "Seri",
@@ -633,6 +636,7 @@ const tr = {
     appearanceLight: "Açık",
     appearanceDark: "Koyu",
     appearanceSystem: "Sistem",
+    haptics: "Dokunsal geri bildirim",
     rateApp: "zerospike'ı değerlendirin",
     hubProfile: "Profil ve Hedefler",
     hubMedications: "İlaçlarım",

@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { Linking, Platform, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Linking, Platform, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -28,7 +28,8 @@ import type { ThemePref } from "../../lib/theme/themePref";
 import { LanguagePicker } from "../../components/LanguagePicker";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { useFeedback } from "../../components/Feedback";
-import { SPACE, THEME } from "../../lib/theme/tokens";
+import { SPACE, THEME, switchColors } from "../../lib/theme/tokens";
+import { getHapticsEnabled, hapticSelect, setHapticsEnabled } from "../../lib/haptics";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
 import { useLayout } from "../../lib/useLayout";
 
@@ -48,6 +49,16 @@ export default function AppSettings() {
   // any Pro user, trial or not: the steps do not expire with the trial.
   const [stepsLeft, setStepsLeft] = useState<number | null>(null);
   const [spikeConsent, setSpikeConsent] = useState(false);
+  const [hapticsOn, setHapticsOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void getHapticsEnabled().then((v) => {
+      if (alive) setHapticsOn(v);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // Which plan unlocked Pro, so the "Pro active" row can open store subscription
   // management for a monthly/annual subscriber but not for a lifetime purchase
   // (there is no subscription to manage there). Starts null (unknown): until it
@@ -162,6 +173,27 @@ export default function AppSettings() {
         value={pref}
         onChange={(next) => void setPref(next)}
       />
+
+      <View
+        className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 mt-3"
+        style={{ minHeight: 60 }}
+      >
+        <Ionicons name="phone-portrait-outline" size={19} color={THEME.textMuted} />
+        <Text className="flex-1 ml-3 mr-2 font-medium text-ink" numberOfLines={2}>
+          {t("settings.haptics")}
+        </Text>
+        <Switch
+          value={hapticsOn ?? true}
+          disabled={hapticsOn == null}
+          onValueChange={(next) => {
+            setHapticsOn(next);
+            void setHapticsEnabled(next);
+            if (next) hapticSelect();
+          }}
+          {...switchColors()}
+          accessibilityLabel={t("settings.haptics")}
+        />
+      </View>
 
       {spikeConfigured ? (
         <>

@@ -82,7 +82,7 @@ import {
   setAnalyticsConsent,
 } from "../lib/analytics/optOut";
 import { useFeedback } from "../components/Feedback";
-import { hapticSelect } from "../lib/haptics";
+import { hapticLight, hapticSelect } from "../lib/haptics";
 import { SectionLabel } from "../components/ui";
 import { AcceptCheck } from "../components/form";
 import { BigInput } from "../components/onboarding/BigInput";
@@ -139,7 +139,6 @@ const STEP_GLYPHS: Partial<Record<StepId, IconName>> = {
   insulin: "medical-outline",
   pillsOnly: "medkit-outline",
   medReminder: "medkit-outline",
-  disclaimer: "shield-outline",
 };
 
 // Hoisted so the screenshot hook below can point at the diabetes question by
@@ -399,10 +398,20 @@ function PrimaryCta({
 
 /** The "skip / not now / I do not know" link under the CTA. The vertical
  *  padding is the touch target, and the gap the frame asks for comes out of it. */
-function SecondaryLink({ label, onPress }: { label: string; onPress: () => void }) {
+function SecondaryLink({
+  label,
+  onPress,
+  disabled = false,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
+      style={disabled ? { opacity: 0.4 } : undefined}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -607,6 +616,8 @@ export default function OnboardingScreen() {
   // is never asked for a permission they did not choose to need.
   const [basalSelected, setBasalSelected] = useState(false);
   const [basalInstalled, setBasalInstalled] = useState(false);
+  const basalInstalledRef = useRef(false);
+  const doneRef = useRef(false);
   const [basalTime, setBasalTime] = useState("22:00");
   const [showBasalTime, setShowBasalTime] = useState(false);
   // What the reveal card lists at the end, built from the rows that were
@@ -697,7 +708,15 @@ export default function OnboardingScreen() {
     setPostmealMax(String(glucoseToDisplay(postmeal.max, unit)));
   }
 
-  const next = () => setStepIdx((i) => Math.min(steps.length - 1, i + 1));
+  // The last quiz step has nothing after it but the reveal, so "next" there
+  // writes everything and opens it. One fewer step than before: the disclaimer
+  // moved onto the reveal, which also moves onboarding_step's reveal index (and
+  // the last quiz index) down by one on every path.
+  const isLastStep = stepIdxClamped === steps.length - 1;
+  const next = () => {
+    if (isLastStep) void finishToReveal();
+    else setStepIdx((i) => Math.min(steps.length - 1, i + 1));
+  };
   const back = () => setStepIdx((i) => Math.max(0, i - 1));
 
   // Android hardware back mirrors the in-UI arrow during the quiz: step 0
@@ -757,8 +776,12 @@ export default function OnboardingScreen() {
     withinBounds(postmealMax);
   const rangesOk = fastingOk && postmealOk;
 
-  // Save the profile + reminder plan, mark onboarding complete (so a kill on the
-  // upcoming paywall never re-runs the quiz), then show the reveal.
+  // Save the profile + reminder plan, then show the reveal. Onboarding is NOT
+  // marked complete here: the disclaimer is accepted on the reveal, and
+  // goToDashboard completes onboarding only once it is, so a kill before the
+  // box is ticked re-runs the quiz exactly as a kill on the old disclaimer step
+  // did. The accepted flag itself was never stored anywhere, so nothing else
+  // changes about how acceptance persists.
   async function finishToReveal() {
     if (!activeProfile || saving) return;
     setSaving(true);
@@ -816,7 +839,11 @@ export default function OnboardingScreen() {
       // restarted onboarding choosing differently would otherwise have no way
       // left to change it. This pass is also what switches a row off that was
       // written and then un-picked.
-      const basalOn = basalReminderOnAtFinish({ hasInsulin, basalSelected, basalInstalled });
+      const basalOn = basalReminderOnAtFinish({
+        hasInsulin,
+        basalSelected,
+        basalInstalled: basalInstalledRef.current,
+      });
       await setNotificationPrefs({
         ...DEFAULT_PREFS,
         basal: basalOn,
@@ -853,15 +880,25 @@ export default function OnboardingScreen() {
       }
 
       bumpData();
-      await completeOnboarding();
-      logEvent("onboarding_done", onboardingDoneEvent(steps));
       setPhase("reveal");
     } finally {
       setSaving(false);
     }
   }
 
-  function goToDashboard() {
+  async function goToDashboard() {
+    if (!accepted || saving || doneRef.current) return;
+    doneRef.current = true;
+    setSaving(true);
+    try {
+      await completeOnboarding();
+    } catch (err) {
+      logCrash(err, { screen: "onboarding", op: "completeOnboarding" });
+      doneRef.current = false;
+      setSaving(false);
+      return;
+    }
+    logEvent("onboarding_done", onboardingDoneEvent(steps));
     // 2.3.4: onboarding no longer hands off to the paywall - the reveal's
     // "Continue" now lands straight on the dashboard. The paywall itself
     // opens later, once this profile's own log count first reaches 3 (see
@@ -921,6 +958,7 @@ export default function OnboardingScreen() {
 
   async function continueFromAnalytics() {
     if (consentBusy.current || !consentLoaded) return;
+    hapticLight();
     consentBusy.current = true;
     setSavingConsent(true);
     try {
@@ -1044,6 +1082,7 @@ export default function OnboardingScreen() {
       if (planDecision.basal !== "keep") {
         const wrote = await syncBasalReminderRow(planDecision.wantBasal, basalTime, true, profileId);
         basalWritten = planDecision.wantBasal && wrote;
+        basalInstalledRef.current = basalWritten;
         setBasalInstalled(basalWritten);
       }
       const glucoseWritten =
@@ -1124,7 +1163,22 @@ export default function OnboardingScreen() {
             postmealMinMgdl={postmealMinMgdl}
             postmealMgdl={postmealMgdl}
             plan={revealPlan}
-            onContinue={goToDashboard}
+            onContinue={() => void goToDashboard()}
+            saving={saving}
+            accepted={accepted}
+            onToggleAccepted={() => {
+              hapticSelect();
+              setAccepted((a) => !a);
+            }}
+            aboveDisclaimer={
+              isTwoWayTreatment ? (
+                // C9: the prediabetes/undiagnosed path gets a single neutral
+                // pointer to the in-app Sources screen, ahead of the notice.
+                <RationaleCard icon="information-circle-outline" style={{ marginBottom: 12 }}>
+                  <RationaleText>{t("onboarding.sourcesHintTracking")}</RationaleText>
+                </RationaleCard>
+              ) : null
+            }
           />
         ) : null}
 
@@ -1135,8 +1189,6 @@ export default function OnboardingScreen() {
             title={titleFor(step)}
             hint={hintFor(step)}
             glyph={STEP_GLYPHS[step]}
-            // The disclaimer is the one step that is a notice, not a question.
-            glyphTone={step === "disclaimer" ? "caution" : "accent"}
             footer={renderFooter()}
             insetsBottom={insets.bottom}
             compact={scCompact}
@@ -1551,28 +1603,6 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
-      case "disclaimer":
-        return (
-          <FadeSlideIn delay={optDelay(0)}>
-            {/* C9: the prediabetes/undiagnosed path gets a single neutral
-                pointer to the in-app Sources screen, shown before the
-                disclaimer banner itself. */}
-            {isTwoWayTreatment ? (
-              <RationaleCard icon="information-circle-outline" style={{ marginBottom: 16 }}>
-                <RationaleText>{t("onboarding.sourcesHintTracking")}</RationaleText>
-              </RationaleCard>
-            ) : null}
-            <DisclaimerBanner full />
-            <View style={{ marginTop: 16 }}>
-              <AcceptCheck
-                checked={accepted}
-                onToggle={() => setAccepted((a) => !a)}
-                label={t("disclaimer.accept")}
-              />
-            </View>
-          </FadeSlideIn>
-        );
-
       case "analytics":
         return (
           <FadeSlideIn delay={optDelay(0)}>
@@ -1611,17 +1641,6 @@ export default function OnboardingScreen() {
       );
     }
 
-    if (step === "disclaimer") {
-      return (
-        <PrimaryCta
-          label={t("onboarding.continue")}
-          disabled={!accepted}
-          loading={saving}
-          onPress={finishToReveal}
-        />
-      );
-    }
-
     // Two explicit paths, neither of which blocks finishing onboarding: "Kur"
     // writes the reminder and moves on, "Simdi degil" just moves on.
     if (step === "medReminder") {
@@ -1646,11 +1665,15 @@ export default function OnboardingScreen() {
           {planDecision.canSetUp ? (
             <PrimaryCta
               label={t("onboarding.planSetup")}
-              loading={savingPlan}
+              loading={savingPlan || saving}
               onPress={setupReminderPlan}
             />
           ) : null}
-          <SecondaryLink label={t("onboarding.planSkip")} onPress={next} />
+          <SecondaryLink
+            label={t("onboarding.planSkip")}
+            disabled={savingPlan || saving}
+            onPress={next}
+          />
         </View>
       );
     }
@@ -1675,7 +1698,10 @@ export default function OnboardingScreen() {
             (step === "diabetes" && diabetes == null) ||
             !stepperFields.allValid
           }
-          onPress={next}
+          onPress={() => {
+            hapticLight();
+            next();
+          }}
         />
         {skipQuestion}
       </View>

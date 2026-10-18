@@ -6,12 +6,15 @@ import { useTranslation } from "react-i18next";
 import { GLUCOSE_RICH, RADIUS, TABULAR, THEME } from "../../lib/theme/tokens";
 import { pct } from "../../lib/format";
 import { upper } from "../../lib/upper";
-import { FadeSlideIn, useCountUp } from "./motion";
+import { FadeSlideIn, useCountUp, DURATION } from "./motion";
 import { computeAgp } from "../../lib/agp";
 import { formatGlucose, glucoseUnitLabel } from "../../lib/glucose";
 import type { GlucoseUnit, SugarLog } from "../../lib/db/types";
 import { hapticSuccess } from "../../lib/haptics";
 import { GlassCard } from "../rich/GlassCard";
+import { AcceptCheck } from "../form";
+import { DisclaimerBanner } from "../Disclaimer";
+import { ClipReveal } from "./ClipReveal";
 import { GlucoseChip } from "../rich/GlucoseChip";
 import { GradientAreaChart } from "../rich/GradientAreaChart";
 import { GradientCTA } from "../rich/GradientCTA";
@@ -62,6 +65,12 @@ function RangeEnd({
       {formatGlucose(value, unit)}
     </Text>
   );
+}
+
+/** The headline time-in-range chip, its number counting up like the range ends. */
+function TirChip({ tir, label }: { tir: number; label: string }) {
+  const value = useCountUp(tir);
+  return <GlucoseChip status="normal" dot={false} label={`${label} ${pct(value)}`} />;
 }
 
 /** The small caps caption both closing cards open with. */
@@ -206,6 +215,9 @@ export function Reveal({
   plan,
   onContinue,
   saving,
+  accepted,
+  onToggleAccepted,
+  aboveDisclaimer,
 }: {
   unit: GlucoseUnit;
   fastingMinMgdl: number;
@@ -218,6 +230,13 @@ export function Reveal({
   plan: RevealPlanItem[];
   onContinue: () => void;
   saving?: boolean;
+  /** The disclaimer's "read and understood" box: the CTA stays off until it
+   *  is ticked, which is what the separate disclaimer step used to enforce. */
+  accepted: boolean;
+  onToggleAccepted: () => void;
+  /** A pointer card shown right above the notice (the undiagnosed path's
+   *  Sources hint), when the caller has one. */
+  aboveDisclaimer?: React.ReactNode;
 }) {
   const { t } = useTranslation();
 
@@ -269,7 +288,7 @@ export function Reveal({
   return (
     <View className="flex-1">
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 16 }}
+        contentContainerStyle={{ paddingBottom: 8 }}
         showsVerticalScrollIndicator={false}
       >
         <FadeSlideIn delay={D_LABEL}>
@@ -324,11 +343,7 @@ export function Reveal({
               >
                 {upper(t("onboarding.sampleBadge"))}
               </Text>
-              <GlucoseChip
-                status="normal"
-                dot={false}
-                label={`${t("insights.timeInRange")} ${pct(tir)}`}
-              />
+              <TirChip tir={tir} label={t("insights.timeInRange")} />
             </View>
             {/* No fixed width: the card's inner width is what this has to fill.
                 It used to draw a 300pt canvas inside a container the style
@@ -338,12 +353,11 @@ export function Reveal({
                 was cut off there. Measured instead, the series is SCALED to
                 fit - seriesPoints already insets both ends by 3pt, so the
                 stroke's round caps sit inside the canvas symmetrically. */}
-            <GradientAreaChart
-              data={curve}
-              height={84}
-              targetBand={band}
-              style={{ alignSelf: "stretch", width: "100%" }}
-            />
+            <ClipReveal height={84} delay={D_HERO + 200} duration={DURATION.count}>
+              {(w) => (
+                <GradientAreaChart data={curve} width={w} height={84} targetBand={band} />
+              )}
+            </ClipReveal>
             <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 8, textAlign: "center" }}>
               {t("onboarding.previewCaption")}
             </Text>
@@ -397,14 +411,26 @@ export function Reveal({
             ) : null}
           </GlassCard>
         </FadeSlideIn>
+
+        <FadeSlideIn delay={D_PLAN + 120} style={{ marginTop: 12 }}>
+          {aboveDisclaimer}
+          <DisclaimerBanner full compact />
+        </FadeSlideIn>
       </ScrollView>
 
       <FadeSlideIn delay={D_CTA} style={{ marginTop: 12 }}>
+        <View style={{ marginBottom: 12 }}>
+          <AcceptCheck
+            checked={accepted}
+            onToggle={onToggleAccepted}
+            label={t("disclaimer.accept")}
+          />
+        </View>
         <GradientCTA
           label={t("onboarding.getStarted")}
           size="lg"
           style={{ borderRadius: RADIUS.full }}
-          disabled={saving}
+          disabled={saving || !accepted}
           onPress={onContinue}
         />
       </FadeSlideIn>

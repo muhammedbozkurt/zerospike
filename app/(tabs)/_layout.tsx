@@ -38,7 +38,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: t("dashboard.title"),
+          title: t("tabs.today"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="pulse-outline" size={size} color={color} />
           ),

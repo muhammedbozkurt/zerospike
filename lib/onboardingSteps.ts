@@ -40,8 +40,7 @@ export type OnboardingStepId =
   | "targets"
   | "insulinProducts"
   | "medReminder"
-  | "reminderPlan"
-  | "disclaimer";
+  | "reminderPlan";
 
 export type OnboardingPhase = "welcome" | "quiz" | "reveal";
 export type OnboardingPath = "insulin" | "pills" | "none";
@@ -91,9 +90,11 @@ export function onboardingFlags(a: OnboardingAnswers): OnboardingFlags {
 }
 
 /**
- * The quiz, in order. reminderPlan sits last before the disclaimer on every
- * path: setting it up raises the OS permission prompts, and that must come
- * after the user has seen what the reminders are.
+ * The quiz, in order. reminderPlan sits last on every path: setting it up
+ * raises the OS permission prompts, and that must come after the user has seen
+ * what the reminders are. The disclaimer is no longer a step: it lives on the
+ * reveal screen, so the quiz is one screen shorter and the reveal index in
+ * onboarding_step moves down by one with it (the step names are free strings).
  */
 export function buildOnboardingSteps(
   flags: Pick<OnboardingFlags, "isTwoWayTreatment" | "hasInsulin" | "hasOralMeds">
@@ -105,7 +106,7 @@ export function buildOnboardingSteps(
   ];
   if (flags.hasInsulin) steps.push("insulinProducts");
   if (flags.hasOralMeds) steps.push("medReminder");
-  steps.push("reminderPlan", "disclaimer");
+  steps.push("reminderPlan");
   return steps;
 }
 

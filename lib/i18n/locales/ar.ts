@@ -162,6 +162,9 @@ const ar: TranslationSchema = {
     secProfile: "الملف الشخصي",
     secReminder: "الإنسولين والتذكير",
   },
+  tabs: {
+    today: "اليوم",
+  },
   dashboard: {
     title: "لوحة المتابعة",
     streakDays: "التتابع",
@@ -635,6 +638,7 @@ const ar: TranslationSchema = {
     appearanceLight: "فاتح",
     appearanceDark: "داكن",
     appearanceSystem: "النظام",
+    haptics: "الاهتزاز عند اللمس",
     rateApp: "تقييم zerospike",
     hubProfile: "الملف الشخصي والأهداف",
     hubMedications: "أدويتي",

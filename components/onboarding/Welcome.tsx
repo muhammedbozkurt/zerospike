@@ -6,7 +6,6 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import Animated, {
   ReduceMotion,
@@ -18,6 +17,7 @@ import Animated, {
 import { Logo } from "../Logo";
 import { GradientCTA } from "../rich/GradientCTA";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "./motion";
+import { WelcomePreview } from "./WelcomePreview";
 import { RADIUS, THEME, glow } from "../../lib/theme/tokens";
 import { withAlpha } from "../rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
@@ -31,13 +31,7 @@ const COLUMN_MAX_WIDTH = 520;
  *  the three slides reading as one poster rather than a paragraph. */
 const BODY_MAX_WIDTH = 320;
 
-type IconName = keyof typeof Ionicons.glyphMap;
-
-const SLIDES: { key: string; icon: IconName }[] = [
-  { key: "slide1", icon: "flash-outline" },
-  { key: "slide2", icon: "bar-chart-outline" },
-  { key: "slide3", icon: "document-text-outline" },
-];
+const SLIDES: { key: string }[] = [{ key: "slide1" }, { key: "slide2" }, { key: "slide3" }];
 
 function Dot({ active }: { active: boolean }) {
   const reduced = useReducedMotion();
@@ -165,26 +159,22 @@ export function Welcome({ onStart }: { onStart: () => void }) {
             onScrollBeginDrag={stop}
             onMomentumScrollEnd={onMomentumEnd}
           >
-            {SLIDES.map((slide) => (
+            {SLIDES.map((slide, i) => (
               <View
                 key={slide.key}
                 style={{ width, paddingHorizontal: 16, paddingBottom: 24 }}
-                className="items-center justify-center"
+                className="items-center justify-start"
               >
                 <FadeSlideIn style={{ alignItems: "center" }}>
                   <View
                     style={{
-                      width: dense ? 84 : 108,
-                      height: dense ? 84 : 108,
-                      borderRadius: RADIUS.full,
+                      height: dense ? 156 : 164,
+                      width: "100%",
                       alignItems: "center",
                       justifyContent: "center",
-                      backgroundColor: withAlpha(THEME.accent, 0.08),
-                      borderWidth: 1,
-                      borderColor: withAlpha(THEME.accent, 0.22),
                     }}
                   >
-                    <Ionicons name={slide.icon} size={dense ? 36 : 44} color={THEME.accent} />
+                    <WelcomePreview slide={i as 0 | 1 | 2} active={i === index} />
                   </View>
                   <Text
                     style={{
@@ -193,7 +183,7 @@ export function Welcome({ onStart }: { onStart: () => void }) {
                       lineHeight: dense ? 34 : 40,
                       fontWeight: "800",
                       textAlign: "center",
-                      marginTop: dense ? 20 : 30,
+                      marginTop: dense ? 14 : 24,
                     }}
                   >
                     {t(`onboarding.${slide.key}Title`)}

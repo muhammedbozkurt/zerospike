@@ -13,12 +13,20 @@ import { withAlpha } from "./rich/GlassCard";
  * surface in the app and it has to come from the same token as every other
  * caution, so it can never drift into an alarm red.
  */
-export function DisclaimerBanner({ full = false }: { full?: boolean }) {
+export function DisclaimerBanner({
+  full = false,
+  compact = false,
+}: {
+  full?: boolean;
+  /** Tighter padding and type for a card that shares a screen (the reveal);
+   *  the words are the same as the full banner's. */
+  compact?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <View
       style={{
-        padding: 20,
+        padding: compact ? 14 : 20,
         borderRadius: RADIUS.xl,
         borderWidth: 1,
         borderColor: withAlpha(THEME.warning, 0.35),
@@ -30,8 +38,8 @@ export function DisclaimerBanner({ full = false }: { full?: boolean }) {
         <Text
           style={{
             color: THEME.warning,
-            fontSize: 16,
-            lineHeight: 22,
+            fontSize: compact ? 14 : 16,
+            lineHeight: compact ? 20 : 22,
             fontWeight: "600",
             flex: 1,
           }}
@@ -41,7 +49,14 @@ export function DisclaimerBanner({ full = false }: { full?: boolean }) {
       </View>
       {/* The body is INK, not a dimmed amber: it is the text a user is being
           asked to accept, so it has to be the most readable line on the card. */}
-      <Text style={{ color: THEME.text, fontSize: 15, lineHeight: 22, marginTop: 10 }}>
+      <Text
+        style={{
+          color: THEME.text,
+          fontSize: compact ? 13 : 15,
+          lineHeight: compact ? 19 : 22,
+          marginTop: compact ? 8 : 10,
+        }}
+      >
         {full ? t("disclaimer.body") : t("disclaimer.short")}
       </Text>
     </View>

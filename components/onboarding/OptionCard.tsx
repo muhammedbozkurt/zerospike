@@ -1,11 +1,24 @@
 import React from "react";
 import { Pressable, Text, View } from "react-native";
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
+
+import { DURATION, SPRING } from "../../lib/theme/motion";
 
 import { RADIUS, THEME, glow } from "../../lib/theme/tokens";
 import { withAlpha } from "../rich/GlassCard";
 
 type IconName = keyof typeof Ionicons.glyphMap;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const PRESS_SCALE = 0.98;
 
 
 /**
@@ -42,6 +55,9 @@ export function OptionCard({
   const rich = !!icon && !!description;
   const plate = rich ? 44 : 40;
   const mark = 26;
+  const reduced = useReducedMotion();
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   /** The trailing (or, with no icon, leading) selection mark. */
   const checkMark = (size: number) =>
@@ -71,8 +87,19 @@ export function OptionCard({
     );
 
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
+      onPressIn={() => {
+        if (!reduced) {
+          scale.value = withTiming(PRESS_SCALE, {
+            duration: DURATION.fast / 2,
+            reduceMotion: ReduceMotion.System,
+          });
+        }
+      }}
+      onPressOut={() => {
+        if (!reduced) scale.value = withSpring(1, SPRING);
+      }}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={label}
@@ -93,6 +120,7 @@ export function OptionCard({
           backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.surface,
         },
         selected ? glow(THEME.accent, 26, 0.35) : undefined,
+        pressStyle,
       ]}
     >
       {icon ? (
@@ -133,6 +161,6 @@ export function OptionCard({
       </View>
 
       {icon ? checkMark(mark) : null}
-    </Pressable>
+    </AnimatedPressable>
   );
 }

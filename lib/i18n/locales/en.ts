@@ -162,6 +162,9 @@ const en: TranslationSchema = {
     secProfile: "Profile",
     secReminder: "Insulin & Reminder",
   },
+  tabs: {
+    today: "Today",
+  },
   dashboard: {
     title: "Dashboard",
     streakDays: "Streak",
@@ -635,6 +638,7 @@ const en: TranslationSchema = {
     appearanceLight: "Light",
     appearanceDark: "Dark",
     appearanceSystem: "System",
+    haptics: "Haptic feedback",
     rateApp: "Rate zerospike",
     hubProfile: "Profile & Targets",
     hubMedications: "Medications",

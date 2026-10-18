@@ -159,7 +159,7 @@ const CASES: PathCase[] = [
     label: "insulin only (type 1)",
     answers: { diabetes: "type1", treatment: "insulin", pillsOnly: null },
     path: "insulin",
-    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "insulinProducts", "reminderPlan", "disclaimer"],
+    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "insulinProducts", "reminderPlan"],
     before: 13,
   },
   {
@@ -176,7 +176,6 @@ const CASES: PathCase[] = [
       "insulinProducts",
       "medReminder",
       "reminderPlan",
-      "disclaimer",
     ],
     before: 14,
   },
@@ -184,28 +183,28 @@ const CASES: PathCase[] = [
     label: "pills only (type 2)",
     answers: { diabetes: "type2", treatment: "pills", pillsOnly: null },
     path: "pills",
-    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "medReminder", "reminderPlan", "disclaimer"],
+    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "medReminder", "reminderPlan"],
     before: 10,
   },
   {
     label: "no medication (type 2)",
     answers: { diabetes: "type2", treatment: "none", pillsOnly: null },
     path: "none",
-    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "reminderPlan", "disclaimer"],
+    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "reminderPlan"],
     before: 9,
   },
   {
     label: "no diagnosis, pills",
     answers: { diabetes: "none", treatment: null, pillsOnly: true },
     path: "pills",
-    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "targets", "medReminder", "reminderPlan", "disclaimer"],
+    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "targets", "medReminder", "reminderPlan"],
     before: 10,
   },
   {
     label: "prediabetes, no pills",
     answers: { diabetes: "prediabetes", treatment: null, pillsOnly: false },
     path: "none",
-    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "targets", "reminderPlan", "disclaimer"],
+    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "targets", "reminderPlan"],
     before: 9,
   },
 ];
@@ -223,12 +222,9 @@ section("A. every path: order, length, and what is no longer there");
     for (const gone of REMOVED) {
       ok(`${c.label}: no ${gone} screen`, !(steps as string[]).includes(gone));
     }
-    eq(`${c.label}: eight required screens`, requiredScreenCount(steps), 8);
-    ok(`${c.label}: disclaimer is last`, steps[steps.length - 1] === "disclaimer");
-    ok(
-      `${c.label}: reminderPlan is directly before the disclaimer`,
-      steps[steps.length - 2] === "reminderPlan"
-    );
+    eq(`${c.label}: seven required screens`, requiredScreenCount(steps), 7);
+    ok(`${c.label}: reminderPlan is last`, steps[steps.length - 1] === "reminderPlan");
+    ok(`${c.label}: the disclaimer is not a step`, !(steps as string[]).includes("disclaimer"));
     eqList(`${c.label}: the head never changes`, steps.slice(0, BASE_STEPS.length), BASE_STEPS);
   }
 }
@@ -238,12 +234,12 @@ section("B. the insulin path is within the target");
   const insulin = buildOnboardingSteps(
     onboardingFlags({ diabetes: "type1", treatment: "insulin", pillsOnly: null })
   );
-  ok("nine screens at most, optional product screen included", insulin.length <= 9, `got ${insulin.length}`);
-  eq("eight without the optional product screen", requiredScreenCount(insulin), 8);
+  ok("eight screens at most, optional product screen included", insulin.length <= 8, `got ${insulin.length}`);
+  eq("seven without the optional product screen", requiredScreenCount(insulin), 7);
   eqList(
-    "required screens are exactly the agreed eight",
+    "required screens are exactly the agreed seven",
     insulin.filter((s) => !OPTIONAL_STEPS.includes(s)),
-    ["analytics", "name", "unit", "diabetes", "insulin", "targets", "reminderPlan", "disclaimer"]
+    ["analytics", "name", "unit", "diabetes", "insulin", "targets", "reminderPlan"]
   );
   eqList("the only optional screens are the two that stayed optional", OPTIONAL_STEPS, [
     "insulinProducts",
@@ -252,7 +248,7 @@ section("B. the insulin path is within the target");
   const both = buildOnboardingSteps(
     onboardingFlags({ diabetes: "type2", treatment: "both", pillsOnly: null })
   );
-  ok("insulin and pills stays at eight required screens", requiredScreenCount(both) <= 9);
+  ok("insulin and pills stays at seven required screens", requiredScreenCount(both) <= 7);
   const pills = buildOnboardingSteps(
     onboardingFlags({ diabetes: "type2", treatment: "pills", pillsOnly: null })
   );
@@ -325,10 +321,10 @@ section("E. analytics payloads: no path can be told from another");
   const first = onboardingStepEvent("quiz", "name", steps);
   eq("the first question is index 2", first.index, 2);
   eq("and keeps its own name", first.step, "name");
-  const last = onboardingStepEvent("quiz", "disclaimer", steps);
+  const last = onboardingStepEvent("quiz", "reminderPlan", steps);
   eq("the last question is index = required screens", last.index, requiredScreenCount(steps));
-  eq("reveal follows it", onboardingStepEvent("reveal", "disclaimer", steps).index, requiredScreenCount(steps) + 1);
-  eq("reveal is step 'reveal'", onboardingStepEvent("reveal", "disclaimer", steps).step, "reveal");
+  eq("reveal follows it", onboardingStepEvent("reveal", "reminderPlan", steps).index, requiredScreenCount(steps) + 1);
+  eq("reveal is step 'reveal'", onboardingStepEvent("reveal", "reminderPlan", steps).step, "reveal");
   ok(
     "indices never go back along the funnel and grow by one at every required screen",
     steps.every((s, i) => {
@@ -391,8 +387,7 @@ section("E. analytics payloads: no path can be told from another");
     'onboarding_step {"step":"treatment","index":5}',
     'onboarding_step {"step":"targets","index":6}',
     'onboarding_step {"step":"reminderPlan","index":7}',
-    'onboarding_step {"step":"disclaimer","index":8}',
-    'onboarding_step {"step":"reveal","index":9}',
+    'onboarding_step {"step":"reveal","index":8}',
     "onboarding_done {}",
   ]);
   const differing: string[] = [];
@@ -452,6 +447,14 @@ section("G. the screen: no stray permission prompt, nothing cut left behind");
 {
   const onb = src("app/onboarding.tsx");
 
+  ok(
+    "finishToReveal reads the basal write through a ref, not a stale render",
+    /basalInstalled:\s*basalInstalledRef\.current/.test(onb) &&
+      /basalInstalledRef\.current\s*=\s*basalWritten;\s*setBasalInstalled\(basalWritten\)/.test(onb) &&
+      !/basalReminderOnAtFinish\(\{[^}]*basalInstalled\s*\}/.test(onb)
+  );
+  ok("goToDashboard has a ref double-tap guard", /doneRef\.current\) return;\s*doneRef\.current = true/.test(onb));
+
   ok("imports its steps from the shared module", onb.includes('from "../lib/onboardingSteps"'));
   for (const gone of [
     '"notify"',
@@ -480,10 +483,12 @@ section("G. the screen: no stray permission prompt, nothing cut left behind");
     "finishing no longer writes the calculator's numbers",
     !/carb_ratio_|insulin_sensitivity_factor|ratios_confirmed/.test(finish)
   );
-  ok("done event is built by the shared helper", finish.includes("onboardingDoneEvent("));
+  const done = code(between(onb, "async function goToDashboard", "router.replace"));
+  ok("done event is built by the shared helper, once the disclaimer is accepted", done.includes("onboardingDoneEvent(") && done.includes("!accepted"));
+  ok("and nothing is marked done before that", !finish.includes("completeOnboarding()") && !finish.includes("onboarding_done"));
   ok(
     "and the helper is handed the steps only, never the answers",
-    finish.includes("onboardingDoneEvent(steps)")
+    done.includes("onboardingDoneEvent(steps)")
   );
   ok(
     "the basal reminder follows what the plan step wrote, not the insulin answer alone",

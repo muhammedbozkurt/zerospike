@@ -963,8 +963,8 @@ function wiring(): void {
   ok("the analytics switch starts off until the stored answer is read", /const \[analyticsOptIn, setAnalyticsOptIn\] = useState\(false\);/.test(onb) && onb.includes("setAnalyticsOptIn(state === \"granted\")"));
   const analyticsStep = between(onb, 'case "analytics":', "// ── Per-step footer");
   ok("the analytics step shows it", analyticsStep.includes("<ConsentSwitchRow") && analyticsStep.includes("analyticsOptIn"));
-  ok("the disclaimer step no longer carries it", !/<ConsentSwitchRow/.test(between(onb, 'case "disclaimer":', 'case "analytics":')));
-  const footer = between(onb, 'if (step === "analytics") {', 'if (step === "disclaimer") {');
+  ok("the disclaimer is no longer a step and the reveal does not carry it", !onb.includes('case "disclaimer":') && !/<ConsentSwitchRow/.test(between(onb, "{phase === \"reveal\" ? (", "{phase === \"quiz\" ? (")));
+  const footer = between(onb, 'if (step === "analytics") {', "// Two explicit paths");
   ok("Continue on the analytics step runs the consent write", footer.includes("continueFromAnalytics") && !/disabled/.test(footer));
   const cont = between(onb, "async function continueFromAnalytics", "function hintFor");
   ok(
@@ -987,7 +987,7 @@ function wiring(): void {
   ok("the question counts as asked either way", cont.includes("await markAnalyticsConsentPrompted();"));
   const finish = between(onb, "async function finishToReveal", "function goToDashboard");
   ok("finishing no longer touches consent", !/setAnalyticsConsent|markAnalyticsConsentPrompted/.test(finish));
-  ok("onboarding_done is still sent at the end", finish.includes('logEvent("onboarding_done"'));
+  ok("onboarding_done is still sent at the end, from the reveal's continue", between(onb, "async function goToDashboard", "router.replace").includes('logEvent("onboarding_done"'));
   ok("the analytics step is the first quiz step", /BASE_STEPS[^\n]*\["analytics"/.test(src("lib/onboardingSteps.ts")));
 
   const sheet = src("lib/analytics/ConsentSheet.tsx");

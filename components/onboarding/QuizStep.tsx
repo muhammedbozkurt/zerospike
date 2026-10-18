@@ -1,9 +1,17 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { ScrollView, Text, View } from "react-native";
 import type { ViewStyle } from "react-native";
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "./motion";
+import { FadeSlideIn, ENTRANCE_STAGGER_MS, DURATION } from "./motion";
+import { EASE_OUT } from "../../lib/theme/motion";
 import { StepGlyph } from "./StepGlyph";
 import { ELEVATION, RADIUS, SPACE, THEME, glow } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
@@ -18,6 +26,42 @@ const INTERACTIVE_MAX_WIDTH = 520;
 /** Short-screen threshold: below this the step trims its own vertical rhythm
  *  (smaller title, tighter spacing) instead of relying on scrolling alone. */
 const DENSE_HEIGHT = 700;
+
+// QuizStep remounts per step, so the fill starts from where the last step left
+// it: the bar then visibly grows instead of jumping to the new width.
+let lastFill = 0;
+
+function ProgressFill({ progress }: { progress: number }) {
+  const reduced = useReducedMotion();
+  const target = Math.min(1, Math.max(0, progress));
+  const fill = useSharedValue(reduced ? target : lastFill);
+  useEffect(() => {
+    lastFill = target;
+    if (reduced) {
+      fill.value = target;
+      return;
+    }
+    fill.value = withTiming(target, {
+      duration: DURATION.base,
+      easing: EASE_OUT,
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [target, reduced, fill]);
+  const style = useAnimatedStyle(() => ({ width: `${fill.value * 100}%` }));
+  return (
+    <Animated.View
+      style={[
+        {
+          height: "100%",
+          borderRadius: RADIUS.full,
+          backgroundColor: THEME.accentFill,
+        },
+        glow(THEME.accent, 8, 0.8),
+        style,
+      ]}
+    />
+  );
+}
 
 /**
  * One quiz question frame, in the approved three-zone rhythm: the progress
@@ -88,17 +132,7 @@ export function QuizStep({
         extra,
       ]}
     >
-      <View
-        style={[
-          {
-            height: "100%",
-            borderRadius: RADIUS.full,
-            backgroundColor: THEME.accentFill,
-            width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`,
-          },
-          glow(THEME.accent, 8, 0.8),
-        ]}
-      />
+      <ProgressFill progress={progress} />
     </View>
   );
 

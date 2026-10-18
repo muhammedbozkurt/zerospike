@@ -162,6 +162,9 @@ const pt: TranslationSchema = {
     secProfile: "Perfil",
     secReminder: "Insulina e lembrete",
   },
+  tabs: {
+    today: "Hoje",
+  },
   dashboard: {
     title: "Painel",
     streakDays: "Sequência",
@@ -635,6 +638,7 @@ const pt: TranslationSchema = {
     appearanceLight: "Claro",
     appearanceDark: "Escuro",
     appearanceSystem: "Sistema",
+    haptics: "Feedback tátil",
     rateApp: "Avaliar o zerospike",
     hubProfile: "Perfil e alvos",
     hubMedications: "Meus medicamentos",

@@ -162,6 +162,9 @@ const ja: TranslationSchema = {
     secProfile: "プロフィール",
     secReminder: "インスリンとリマインダー",
   },
+  tabs: {
+    today: "今日",
+  },
   dashboard: {
     title: "ホーム",
     streakDays: "連続記録",
@@ -635,6 +638,7 @@ const ja: TranslationSchema = {
     appearanceLight: "ライト",
     appearanceDark: "ダーク",
     appearanceSystem: "システム",
+    haptics: "触覚フィードバック",
     rateApp: "zerospikeを評価する",
     hubProfile: "プロフィールと目標",
     hubMedications: "お薬リスト",

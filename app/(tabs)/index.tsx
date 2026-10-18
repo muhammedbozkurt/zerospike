@@ -2538,7 +2538,14 @@ export default function DashboardScreen() {
           // CTA_CLEARANCE double-reserved space and left a dead ~180px band
           // at the end of the list; CTA_CLEARANCE alone is the correct
           // remaining clearance on every screen size.
-          paddingBottom: isFirstRun ? 24 : CTA_CLEARANCE,
+          // Phones have no shrunken viewport, so the list itself reserves the
+          // CTA's footprint plus the safe-area inset (and a little air): the
+          // last card, full or empty list, never ends under the bar.
+          paddingBottom: isFirstRun
+            ? 24
+            : isWide
+              ? CTA_CLEARANCE
+              : Math.max(CTA_CLEARANCE, CTA_FOOTPRINT + insets.bottom + 40),
           // Tablet: one centred reading column instead of a stretched phone
           // layout. Reduces to the plain 16 inset on phones, so the narrow
           // render is unchanged.
@@ -2681,6 +2688,9 @@ function PostMealCountdown({
     const tick = () => {
       const remaining = end - Date.now();
       if (remaining <= 0) {
+        // Only a countdown that ran out while watched: a stale timer found
+        // already past on mount, or one ending in the background, stays quiet.
+        if (-remaining < 5_000 && AppState.currentState === "active") hapticSuccess();
         onElapsed();
         return;
       }
