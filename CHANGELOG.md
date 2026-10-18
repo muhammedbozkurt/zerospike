@@ -6,6 +6,29 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`).
 
+## 2.4.0 (build 78 / versionCode 79)
+
+### Tema
+- Açık, koyu ve sistem teması; Ayarlar'dan seçilir. Yeni kullanıcıda
+  varsayılan açık, mevcut kullanıcıda koyu kalır.
+- Token tabanlı tema altyapısı ve `theme:lint` kapısı.
+- Widget ve Live Activity açık temaya uyumlu; Wear vurgu dozu.
+- Dahili: ekran görüntüsü modunda tema açığa sabit.
+
+### Onboarding ve genel
+- Yeniden düzenlenen onboarding: sorumluluk reddi son ekrana taşındı;
+  titreşim, hareket ve karşılama önizlemeleri eklendi; "Bugün" sekmesi.
+- Ayarlar'da Dokunsal geri bildirim anahtarı.
+- Varsayılan profil adı artık saklanmıyor (DB v25 migrasyonu).
+- Yeni uygulama ikonu ve adaptive katmanlar.
+- Yeni vücut haritası: sekme, 4 kademeli ısı, nefes vurgusu.
+- Kilit kartlarında deneme bilgisi önbelleği ve sadeleştirilmiş paywall.
+- Ayarlar'da değerlendirme satırı ve değerlendirme isteği tetikleyicileri.
+
+### Analitik v2
+- Huni olayları, ayrı rıza adımı, haftalık rapor ve SQL görünümleri.
+- Sıra: `track` fonksiyonu önce deploy edilir.
+
 ## 2.3.7 (build 77 / versionCode 78)
 
 ### Deneme ve Pro karşılama
