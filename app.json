@@ -348,9 +348,9 @@
       "eas": {
         "projectId": "c52316bd-99ee-4ae9-8254-2a3542585ffb"
       },
-      "spikeFnUrl": "https://zobtmenqgsradocrxdtc.supabase.co/functions/v1/ai-ask-spike",
-      "trackFnUrl": "https://zobtmenqgsradocrxdtc.supabase.co/functions/v1/track",
-      "deleteDeviceFnUrl": "https://zobtmenqgsradocrxdtc.supabase.co/functions/v1/delete-device"
+      "spikeFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/ai-ask-spike",
+      "trackFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/track",
+      "deleteDeviceFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/delete-device"
     }
   }
 }

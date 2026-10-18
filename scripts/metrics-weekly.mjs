@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const SUPABASE_URL = 'https://zobtmenqgsradocrxdtc.supabase.co';
+const SUPABASE_URL = 'https://jcpepqectdubbmchhdsn.supabase.co';
 const SERVICE_KEY_PATH = path.join(os.homedir(), '.supabase', 'zerospike.service.key');
 
 function parseArgs(argv) {

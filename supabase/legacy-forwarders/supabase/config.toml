@@ -1,0 +1,18 @@
+# Legacy forwarders for the old Supabase project (zobtmenqgsradocrxdtc). Apps
+# built as 2.3.7 still call it; each function relays the request unchanged to
+# the same-named function of the new project (jcpepqectdubbmchhdsn).
+# Separate workdir: deploy with `supabase functions deploy <name> --workdir supabase/legacy-forwarders`.
+
+project_id = "zerospike-legacy"
+
+[functions.track]
+verify_jwt = false
+
+[functions.rc-webhook]
+verify_jwt = false
+
+[functions.delete-device]
+verify_jwt = false
+
+[functions.ai-ask-spike]
+verify_jwt = false

@@ -926,7 +926,7 @@ function wiring(): void {
   eq(
     "app.json carries the delete-device URL",
     app.expo.extra.deleteDeviceFnUrl,
-    "https://zobtmenqgsradocrxdtc.supabase.co/functions/v1/delete-device"
+    "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/delete-device"
   );
 
   const manifest = app.expo.ios.privacyManifests;

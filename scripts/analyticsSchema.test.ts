@@ -1198,13 +1198,13 @@ function wiringAndCopy(): void {
   eq(
     "app.json carries trackFnUrl",
     app.expo.extra.trackFnUrl,
-    "https://zobtmenqgsradocrxdtc.supabase.co/functions/v1/track"
+    "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/track"
   );
   ok("and still spikeFnUrl", typeof app.expo.extra.spikeFnUrl === "string");
   eq(
     "and the delete-device URL behind the Privacy button",
     app.expo.extra.deleteDeviceFnUrl,
-    "https://zobtmenqgsradocrxdtc.supabase.co/functions/v1/delete-device"
+    "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/delete-device"
   );
 
   const layout = src("app/_layout.tsx");
