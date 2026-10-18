@@ -1922,7 +1922,7 @@ export default function DashboardScreen() {
           unless the store reports a running trial. */}
       <TrialCard />
 
-      {loaded && !isFirstRun && spikeConfigured ? (
+      {loaded && !isFirstRun && spikeConfigured && !isScreenshotMode() ? (
         <Pressable
           onPress={() => router.push("/spike")}
           accessibilityRole="button"
