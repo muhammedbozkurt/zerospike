@@ -916,14 +916,16 @@ function wiring(): void {
   }
   eq("nothing is tracking", manifest.NSPrivacyTracking, false);
   eq(
-    "the eight declared types",
+    "the eleven declared types",
     [...byType.keys()].sort(),
-    ["AdvertisingData", "DeviceID", "Health", "OtherDiagnosticData", "OtherUserContent", "PerformanceData", "ProductInteraction", "PurchaseHistory"]
+    ["AdvertisingData", "DeviceID", "Health", "OtherDiagnosticData", "OtherUsageData", "OtherUserContent", "PerformanceData", "ProductInteraction", "PurchaseHistory", "SearchHistory", "UserID"]
   );
-  for (const type of ["Health", "PurchaseHistory", "AdvertisingData", "ProductInteraction", "DeviceID", "PerformanceData", "OtherDiagnosticData"]) {
+  ok("no CrashData type", !byType.has("CrashData"));
+  eq("Health is for app functionality only", byType.get("Health")?.NSPrivacyCollectedDataTypePurposes, ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]);
+  for (const type of ["Health", "PurchaseHistory", "UserID", "AdvertisingData", "ProductInteraction", "OtherUsageData", "DeviceID", "PerformanceData", "OtherDiagnosticData"]) {
     eq(`${type} is linked`, byType.get(type)?.NSPrivacyCollectedDataTypeLinked, true);
   }
-  for (const type of ["OtherUserContent"]) {
+  for (const type of ["OtherUserContent", "SearchHistory"]) {
     eq(`${type} is not linked`, byType.get(type)?.NSPrivacyCollectedDataTypeLinked, false);
   }
   ok(

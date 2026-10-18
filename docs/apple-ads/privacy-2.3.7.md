@@ -337,10 +337,10 @@ Bu dosyadaki cevaplar A'ya göredir.
 
 ## 3. app.json privacy manifest (UYGULANDI)
 
-2.4: Firebase kaldırıldı, bu bölüm 2.4 manifestini yansıtır (8 tür; yalnız CrashData düştü. PerformanceData ve OtherDiagnosticData ilk taraf veri olarak kaldı: spike_reply.latency_ms ve zarf alanları, device_id ile).
+2.4: Firebase kaldırıldı, manifest formla eşitlendi (11 tür; CrashData yok, Health amacı yalnız AppFunctionality). PerformanceData ve OtherDiagnosticData ilk taraf veri olarak kaldı: spike_reply.latency_ms ve zarf alanları, device_id ile.
 
 Blok `app.json` `expo.ios.privacyManifests` içine uygulandı ve aşağıdaki JSON ile birebir
-eşleşiyor (`NSPrivacyTracking` ve 9 `NSPrivacyCollectedDataTypes` girdisi karşılaştırıldı,
+eşleşiyor (`NSPrivacyTracking` ve 11 `NSPrivacyCollectedDataTypes` girdisi karşılaştırıldı,
 2026-10-06). `NSPrivacyTracking` false kalır, `NSPrivacyTrackingDomains` bilerek yok (2.3.1 §2).
 Aşağıdaki blok referans kopyadır; `app.json` değişirse bu bölüm de güncellenmeli.
 
@@ -353,9 +353,7 @@ Aşağıdaki blok referans kopyadır; `app.json` değişirse bu bölüm de günc
             "NSPrivacyCollectedDataTypeLinked": true,
             "NSPrivacyCollectedDataTypeTracking": false,
             "NSPrivacyCollectedDataTypePurposes": [
-              "NSPrivacyCollectedDataTypePurposeAnalytics",
-              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
-              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
             ]
           },
           {
@@ -367,7 +365,24 @@ Aşağıdaki blok referans kopyadır; `app.json` değişirse bu bölüm de günc
             ]
           },
           {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeSearchHistory",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePurchaseHistory",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeAnalytics"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeUserID",
             "NSPrivacyCollectedDataTypeLinked": true,
             "NSPrivacyCollectedDataTypeTracking": false,
             "NSPrivacyCollectedDataTypePurposes": [
@@ -391,6 +406,14 @@ Aşağıdaki blok referans kopyadır; `app.json` değişirse bu bölüm de günc
             "NSPrivacyCollectedDataTypePurposes": [
               "NSPrivacyCollectedDataTypePurposeAnalytics",
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeOtherUsageData",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAnalytics"
             ]
           },
           {
