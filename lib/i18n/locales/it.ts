@@ -1258,7 +1258,7 @@ const it: TranslationSchema = {
     otherEmpty: "Inserisca il nome del prodotto.",
   },
   injectionMap: {
-    sub: "Ogni zona è divisa in quattro punti. Più una zona è scura, più spesso l'ha usata.",
+    sub: "Colore più intenso = usato più spesso",
     overviewHint: "Tocchi una zona per aprire i suoi quattro punti.",
     backToBody: "Torna alla sagoma",
     entries: "{{n}} voci",

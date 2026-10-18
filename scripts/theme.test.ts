@@ -124,6 +124,24 @@ async function main() {
     assert.equal(LIGHT.onDanger, "#FFFFFF");
   });
 
+  await check("heatRamp: used tiers separate from the figure body, tiers 3 and 4 clearly apart", () => {
+    const mix = (a: string, b: string, t: number) => {
+      const ch = (h: string, k: number) => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
+      return `#${[0, 1, 2]
+        .map((k) => Math.round(ch(a, k) + (ch(b, k) - ch(a, k)) * t).toString(16).padStart(2, "0"))
+        .join("")}`;
+    };
+    for (const p of [DARK, LIGHT]) {
+      const body = mix(p.surfaceRaised, p.text, 0.05);
+      const r = p.heatRamp.map((c) => contrast(c, body, p.bg));
+      const floors = p.scheme === "dark" ? [3, 3, 3] : [1.5, 2.5, 3];
+      [1, 2, 3].forEach((i) => assert.ok(r[i] >= floors[i - 1], `${p.scheme} tier${i} ${r[i].toFixed(2)}`));
+      assert.ok(contrast(p.borderStrong, body, p.bg) >= 3, `${p.scheme} outline/body`);
+      const step = contrast(p.heatRamp[3], p.heatRamp[2], p.bg);
+      assert.ok(step >= 1.4, `${p.scheme} tier3/tier2 ${step.toFixed(2)}`);
+    }
+  });
+
   await check("remount lock: scheme change waits while locked, applies on release", () => {
     assert.equal(heldScheme("light", "dark", true), "dark");
     assert.equal(heldScheme("light", "dark", false), "light");

@@ -1256,7 +1256,7 @@ const tr = {
     otherEmpty: "Ürün adını yazın.",
   },
   injectionMap: {
-    sub: "Her bölge dört noktaya ayrılır. Bölge ne kadar koyuysa orayı o kadar sık kullanmışsınız.",
+    sub: "Renk ne kadar yoğunsa o kadar sık kullanılmıştır",
     overviewHint: "Dört noktasını açmak için bir bölgeye dokunun.",
     backToBody: "Vücuda dön",
     entries: "{{n}} kayıt",

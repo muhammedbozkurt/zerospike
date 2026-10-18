@@ -49,6 +49,8 @@ export interface Palette {
   glucoseTint: Record<GlucoseStatus, string>;
   chart: { line: string; band: string; target: string; violet: string };
   glowK: number;
+  /** Injection map: never used, then three used tiers, opaque on the figure. */
+  heatRamp: readonly [string, string, string, string];
 }
 
 /** SINGLE source for the dark "very high" hue (>= the fixed 250 mg/dL ceiling),
@@ -115,6 +117,7 @@ export const DARK: Palette = {
   },
   chart: { line: "#2ee6ff", band: "rgba(46,230,255,0.12)", target: "#22e39a", violet: "#7c5cff" },
   glowK: 1,
+  heatRamp: ["#33454f", "#2F8A9C", "#27AFC6", "#2EE6FF"],
 };
 
 export const LIGHT: Palette = {
@@ -172,6 +175,7 @@ export const LIGHT: Palette = {
   },
   chart: { line: "#087089", band: "rgba(14,155,184,0.12)", target: "#157A52", violet: "#5B3FE0" },
   glowK: 0.3,
+  heatRamp: ["#FFFFFF", "#8FCADA", "#3F9DB8", "#0B6A82"],
 };
 
 export const PALETTES: Record<Scheme, Palette> = { light: LIGHT, dark: DARK };
@@ -363,6 +367,7 @@ export const THEME = live((p) => ({
   glucoseTint: p.glucoseTint,
   chart: p.chart,
   glowK: p.glowK,
+  heatRamp: p.heatRamp,
   ink: p.text,
   muted: p.textMuted,
   accentSoft: p.accentStrong,

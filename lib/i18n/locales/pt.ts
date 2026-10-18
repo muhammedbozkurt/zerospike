@@ -1258,7 +1258,7 @@ const pt: TranslationSchema = {
     otherEmpty: "Digite o nome do produto.",
   },
   injectionMap: {
-    sub: "Cada região é dividida em quatro pontos. Quanto mais escura a região, mais você a usou.",
+    sub: "Cor mais intensa = usado com mais frequência",
     overviewHint: "Toque em uma região para abrir seus quatro pontos.",
     backToBody: "Voltar ao corpo",
     entries: "{{n}} registros",

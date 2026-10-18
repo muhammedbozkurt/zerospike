@@ -1258,7 +1258,7 @@ const ja: TranslationSchema = {
     otherEmpty: "製品名を入力してください。",
   },
   injectionMap: {
-    sub: "各部位は4つのポイントに分かれます。色が濃い部位ほど、よく使っています。",
+    sub: "色が濃いほど使用頻度が高い",
     overviewHint: "部位をタップすると、4つのポイントが開きます。",
     backToBody: "からだの図に戻る",
     entries: "{{n}}件",
