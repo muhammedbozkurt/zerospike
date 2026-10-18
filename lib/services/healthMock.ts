@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import type { HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
 import { isScreenshotMode } from "../screenshotMode";
-import type { GlucoseSample, HealthProvider, HealthSummary } from "./healthTypes";
+import type { GlucoseSample, HealthProvider, HealthSummary, InsulinKind } from "./healthTypes";
 
 /**
  * Dev-only mock provider: simulates a health store end to end (no device or
@@ -84,5 +84,35 @@ export const healthMock: HealthProvider = {
   },
   async readSummary(windowDays: number) {
     return mockHealthSummary(windowDays);
+  },
+  async writeCarbs(grams: number, dateIso: string) {
+    return `mock-hk-carbs-${Date.parse(dateIso) || 0}-${Math.round(grams)}`;
+  },
+  async writeInsulin(units: number, kind: InsulinKind, dateIso: string) {
+    return `mock-hk-insulin-${kind}-${Date.parse(dateIso) || 0}-${Math.round(units * 100)}`;
+  },
+  async deleteCarbsBatch() {},
+  async deleteInsulinBatch() {},
+  async requestKindWritePermission() {
+    return true;
+  },
+  async isKindWriteAuthorized() {
+    return mockWriteGranted;
+  },
+  async isReadGranted() {
+    return true;
+  },
+  async startBackgroundObserver() {
+    return false;
+  },
+  async stopBackgroundObserver() {},
+  async hasBackgroundReadPermission() {
+    return true;
+  },
+  async requestBackgroundReadPermission() {
+    return true;
+  },
+  async peekGlucoseChanges() {
+    return { changed: true, commit: async () => {} };
   },
 };

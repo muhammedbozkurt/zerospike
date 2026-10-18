@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash } from "../analytics";
 import { hasValidSyncKey, toRelationToMeal, type HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
@@ -8,6 +9,8 @@ import type {
   HealthConnectStatus,
   HealthProvider,
   HealthSummary,
+  HealthWriteKind,
+  InsulinKind,
 } from "./healthTypes";
 
 /**
@@ -262,6 +265,168 @@ async function readSummary(_windowDays: number): Promise<HealthSummary> {
   return { activeMinutes: null, insulin: null };
 }
 
+const NUTRITION = "Nutrition";
+const CHANGES_TOKEN_KEY = "zerospike.healthHcChangesToken";
+
+async function writeCarbs(
+  grams: number,
+  dateIso: string,
+  meta?: HealthWriteMeta
+): Promise<string | null> {
+  if (!(await ensureReady())) return null;
+  try {
+    const HC = require("react-native-health-connect");
+    const granted: GrantedPermission[] = await HC.getGrantedPermissions();
+    if (!granted.some((p) => p.accessType === "write" && p.recordType === NUTRITION)) return null;
+    const value = Math.round(grams * 10) / 10;
+    const start = new Date(dateIso);
+    if (Number.isNaN(start.getTime()) || !Number.isFinite(value) || value <= 0) return null;
+    // An interval record: Health Connect wants endTime after startTime.
+    const end = new Date(start.getTime() + 60_000);
+    const ids: string[] = await HC.insertRecords([
+      {
+        recordType: NUTRITION,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        totalCarbohydrate: { value, unit: "grams" },
+        mealType: 0, // UNKNOWN
+        metadata:
+          meta && hasValidSyncKey(meta)
+            ? { recordingMethod: 3, clientRecordId: meta.recordId, clientRecordVersion: meta.version }
+            : { recordingMethod: 3 },
+      },
+    ]);
+    return ids?.[0] ?? null;
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "insertNutrition" });
+    return null;
+  }
+}
+
+/** Health Connect has no insulin record type: nothing is ever written. */
+async function writeInsulin(
+  _units: number,
+  _kind: InsulinKind,
+  _dateIso: string,
+  _meta?: HealthWriteMeta
+): Promise<string | null> {
+  return null;
+}
+
+async function deleteCarbsBatch(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  if (!(await ensureReady())) throw new Error("health connect unavailable");
+  const HC = require("react-native-health-connect");
+  await HC.deleteRecordsByUuids(NUTRITION, ids, []);
+}
+
+async function deleteInsulinBatch(_ids: string[]): Promise<void> {}
+
+async function requestKindWritePermission(kind: HealthWriteKind): Promise<boolean> {
+  if (kind !== "carbs") return false;
+  try {
+    if (!(await ensureReady())) return false;
+    const HC = require("react-native-health-connect");
+    const has = (list: GrantedPermission[]) =>
+      list.some((p) => p.accessType === "write" && p.recordType === NUTRITION);
+    const before: GrantedPermission[] = await HC.getGrantedPermissions();
+    if (has(before)) {
+      writePermissionBlocked = false;
+      return true;
+    }
+    const granted: GrantedPermission[] = await HC.requestPermission([
+      { accessType: "write", recordType: NUTRITION },
+    ]);
+    if (has(granted)) {
+      writePermissionBlocked = false;
+      return true;
+    }
+    const after: GrantedPermission[] = await HC.getGrantedPermissions();
+    writePermissionBlocked = permissionsEqual(before, after);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function isKindWriteAuthorized(kind: HealthWriteKind): Promise<boolean> {
+  if (kind !== "carbs") return false;
+  try {
+    if (!(await ensureReady())) return false;
+    const HC = require("react-native-health-connect");
+    const granted: GrantedPermission[] = await HC.getGrantedPermissions();
+    return granted.some((p) => p.accessType === "write" && p.recordType === NUTRITION);
+  } catch {
+    return false;
+  }
+}
+
+async function isReadGranted(): Promise<boolean> {
+  try {
+    if (!(await ensureReady())) return false;
+    const HC = require("react-native-health-connect");
+    const granted: GrantedPermission[] = await HC.getGrantedPermissions();
+    return granted.some((p) => p.accessType === "read" && p.recordType === "BloodGlucose");
+  } catch {
+    return false;
+  }
+}
+
+async function hasBackgroundReadPermission(): Promise<boolean> {
+  try {
+    if (!(await ensureReady())) return false;
+    const HC = require("react-native-health-connect");
+    const granted: GrantedPermission[] = await HC.getGrantedPermissions();
+    return granted.some(
+      (p) => p.accessType === "read" && p.recordType === "BackgroundAccessPermission"
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function requestBackgroundReadPermission(): Promise<boolean> {
+  try {
+    if (!(await ensureReady())) return false;
+    if (await hasBackgroundReadPermission()) return true;
+    const HC = require("react-native-health-connect");
+    const granted: GrantedPermission[] = await HC.requestPermission([
+      { accessType: "read", recordType: "BackgroundAccessPermission" },
+    ]);
+    return granted.some(
+      (p) => p.accessType === "read" && p.recordType === "BackgroundAccessPermission"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Without a stored token, or when it expired, the answer is "changed" so the
+ *  caller does a full window read; a fresh token is stored on commit(). */
+async function peekGlucoseChanges(): Promise<{ changed: boolean; commit(): Promise<void> }> {
+  const full = { changed: true, commit: async () => {} };
+  try {
+    if (!(await ensureReady())) return full;
+    const HC = require("react-native-health-connect");
+    const token = await AsyncStorage.getItem(CHANGES_TOKEN_KEY);
+    const res = await HC.getChanges(
+      token
+        ? { changesToken: token }
+        : { recordTypes: ["BloodGlucose"] }
+    );
+    const next: string | undefined = res?.nextChangesToken;
+    const commit = async () => {
+      if (next) await AsyncStorage.setItem(CHANGES_TOKEN_KEY, next);
+    };
+    if (!token || res?.changesTokenExpired || res?.hasMore) return { changed: true, commit };
+    const changed =
+      (res?.upsertionChanges?.length ?? 0) > 0 || (res?.deletionChanges?.length ?? 0) > 0;
+    return { changed, commit };
+  } catch {
+    return full;
+  }
+}
+
 export const healthConnect: HealthProvider = {
   isAvailable,
   requestReadPermissions,
@@ -273,6 +438,18 @@ export const healthConnect: HealthProvider = {
   deleteGlucose,
   deleteGlucoseBatch,
   readSummary,
+  writeCarbs,
+  writeInsulin,
+  deleteCarbsBatch,
+  deleteInsulinBatch,
+  requestKindWritePermission,
+  isKindWriteAuthorized,
+  isReadGranted,
+  startBackgroundObserver: async () => false,
+  stopBackgroundObserver: async () => {},
+  hasBackgroundReadPermission,
+  requestBackgroundReadPermission,
+  peekGlucoseChanges,
 };
 
 export { getStatus as getHealthConnectStatus };

@@ -3,7 +3,13 @@ import { toHealthKitMetadata, type HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
-import type { GlucoseSample, HealthProvider, HealthSummary } from "./healthTypes";
+import type {
+  GlucoseSample,
+  HealthProvider,
+  HealthSummary,
+  HealthWriteKind,
+  InsulinKind,
+} from "./healthTypes";
 
 /**
  * Apple HealthKit provider (iOS only). Every function `require()`s the native
@@ -16,6 +22,16 @@ import type { GlucoseSample, HealthProvider, HealthSummary } from "./healthTypes
  */
 
 type HKModule = typeof import("@kingstinct/react-native-healthkit");
+
+const BLOOD_GLUCOSE = "HKQuantityTypeIdentifierBloodGlucose";
+const DIETARY_CARBS = "HKQuantityTypeIdentifierDietaryCarbohydrates";
+const INSULIN_DELIVERY = "HKQuantityTypeIdentifierInsulinDelivery";
+type WriteIdentifier = typeof BLOOD_GLUCOSE | typeof DIETARY_CARBS | typeof INSULIN_DELIVERY;
+
+const KIND_IDENTIFIER: Record<HealthWriteKind, WriteIdentifier> = {
+  carbs: DIETARY_CARBS,
+  insulin: INSULIN_DELIVERY,
+};
 
 function loadHK(): HKModule {
   return require("@kingstinct/react-native-healthkit");
@@ -141,9 +157,12 @@ async function readRecentGlucose(windowDays: number, max: number): Promise<Gluco
  * native call to fail regardless. notDetermined re-prompts once; anything
  * else that is not "authorized" fails the write here, before it is attempted.
  */
-async function ensureWriteAuthorized(HK: HKModule): Promise<boolean> {
+async function ensureWriteAuthorized(
+  HK: HKModule,
+  identifier: WriteIdentifier = BLOOD_GLUCOSE
+): Promise<boolean> {
   try {
-    const statusFor = () => HK.authorizationStatusFor("HKQuantityTypeIdentifierBloodGlucose");
+    const statusFor = () => HK.authorizationStatusFor(identifier);
     const isAuthorized = () => statusFor() === HK.AuthorizationStatus.sharingAuthorized;
     if (isAuthorized()) return true;
     if (statusFor() !== HK.AuthorizationStatus.notDetermined) return false; // sharingDenied
@@ -154,7 +173,7 @@ async function ensureWriteAuthorized(HK: HKModule): Promise<boolean> {
     // reports the real decision, so it is re-checked after the prompt closes
     // rather than trusting what requestAuthorization resolved to.
     await HK.requestAuthorization({
-      toShare: ["HKQuantityTypeIdentifierBloodGlucose"],
+      toShare: [identifier],
       toRead: [],
     });
     return isAuthorized();
@@ -240,6 +259,9 @@ async function readInsulin(windowDays: number): Promise<HealthSummary["insulin"]
   let bolus = 0;
   let count = 0;
   for (const s of samples ?? []) {
+    // Loop guard for the summary: insulin this app wrote (the write switch)
+    // must not be counted again as delivery read back from Health.
+    if (s.sourceRevision?.source?.bundleIdentifier === OWN_BUNDLE_ID) continue;
     const units = Number(s.quantity) || 0;
     // HKInsulinDeliveryReason metadata: 1 = basal, 2 = bolus.
     const reason = s?.metadata?.HKInsulinDeliveryReason;
@@ -248,6 +270,117 @@ async function readInsulin(windowDays: number): Promise<HealthSummary["insulin"]
     count++;
   }
   return { basalUnits: Math.round(basal), bolusUnits: Math.round(bolus), count };
+}
+
+async function writeKindSample(
+  kind: HealthWriteKind,
+  unit: "g" | "IU",
+  value: number,
+  dateIso: string,
+  meta: HealthWriteMeta | undefined,
+  extra: Record<string, string | number | boolean>
+): Promise<string | null> {
+  const HK = loadHK();
+  const identifier = KIND_IDENTIFIER[kind];
+  if (!(await ensureWriteAuthorized(HK, identifier))) return null;
+  const when = new Date(dateIso);
+  if (Number.isNaN(when.getTime()) || !Number.isFinite(value) || value <= 0) return null;
+  const plainMeta = { HKWasUserEntered: true, ...extra };
+  const plain = () => HK.saveQuantitySample(identifier, unit, value, when, when, plainMeta);
+  if (!meta) return (await plain())?.uuid ?? null;
+  try {
+    const res = await HK.saveQuantitySample(identifier, unit, value, when, when, {
+      ...toHealthKitMetadata(meta),
+      ...extra,
+    });
+    return res?.uuid ?? null;
+  } catch (err) {
+    logCrash(err, { screen: "health", op: `saveWithMetadata.${kind}` });
+    return (await plain())?.uuid ?? null;
+  }
+}
+
+async function writeCarbs(
+  grams: number,
+  dateIso: string,
+  meta?: HealthWriteMeta
+): Promise<string | null> {
+  return writeKindSample("carbs", "g", Math.round(grams * 10) / 10, dateIso, meta, {});
+}
+
+async function writeInsulin(
+  units: number,
+  kind: InsulinKind,
+  dateIso: string,
+  meta?: HealthWriteMeta
+): Promise<string | null> {
+  // HKInsulinDeliveryReason is mandatory on InsulinDelivery: 1 basal, 2 bolus.
+  return writeKindSample("insulin", "IU", Math.round(units * 100) / 100, dateIso, meta, {
+    HKInsulinDeliveryReason: kind === "basal" ? 1 : 2,
+  });
+}
+
+async function deleteKindBatch(kind: HealthWriteKind, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const HK = loadHK();
+  await HK.deleteObjects(KIND_IDENTIFIER[kind], { uuids: ids });
+}
+
+async function requestKindWritePermission(kind: HealthWriteKind): Promise<boolean> {
+  try {
+    const HK = loadHK();
+    const identifier = KIND_IDENTIFIER[kind];
+    await HK.requestAuthorization({ toShare: [identifier], toRead: [] });
+    return HK.authorizationStatusFor(identifier) === HK.AuthorizationStatus.sharingAuthorized;
+  } catch {
+    return false;
+  }
+}
+
+async function isKindWriteAuthorized(kind: HealthWriteKind): Promise<boolean> {
+  try {
+    const HK = loadHK();
+    return (
+      HK.authorizationStatusFor(KIND_IDENTIFIER[kind]) === HK.AuthorizationStatus.sharingAuthorized
+    );
+  } catch {
+    return false;
+  }
+}
+
+let observerSub: { remove: () => void } | null = null;
+
+async function startBackgroundObserver(onChange: () => void): Promise<boolean> {
+  try {
+    const HK = loadHK();
+    const immediate = HK.UpdateFrequency?.immediate ?? 1;
+    // Persisted natively so a terminated app is relaunched with its observer
+    // (BackgroundDeliveryManager); the JS subscription below receives the
+    // change once the bridge is up.
+    await HK.configureBackgroundTypes([BLOOD_GLUCOSE], immediate);
+    const enabled = await HK.enableBackgroundDelivery(BLOOD_GLUCOSE, immediate);
+    observerSub?.remove();
+    observerSub = HK.subscribeToChanges(BLOOD_GLUCOSE, (args) => {
+      if (args.errorMessage) return;
+      onChange();
+    });
+    return enabled !== false;
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "startBackgroundObserver" });
+    return false;
+  }
+}
+
+async function stopBackgroundObserver(): Promise<void> {
+  try {
+    observerSub?.remove();
+    observerSub = null;
+    const HK = loadHK();
+    await HK.clearBackgroundTypes();
+    await HK.disableBackgroundDelivery(BLOOD_GLUCOSE);
+  } catch {
+    // best-effort: nothing to undo if the module is unavailable
+  }
 }
 
 async function readExerciseMinutes(windowDays: number): Promise<number> {
@@ -288,4 +421,16 @@ export const healthAppleKit: HealthProvider = {
   deleteGlucose,
   deleteGlucoseBatch,
   readSummary,
+  writeCarbs,
+  writeInsulin,
+  deleteCarbsBatch: (ids) => deleteKindBatch("carbs", ids),
+  deleteInsulinBatch: (ids) => deleteKindBatch("insulin", ids),
+  requestKindWritePermission,
+  isKindWriteAuthorized,
+  isReadGranted: async () => true,
+  startBackgroundObserver,
+  stopBackgroundObserver,
+  hasBackgroundReadPermission: async () => true,
+  requestBackgroundReadPermission: async () => true,
+  peekGlucoseChanges: async () => ({ changed: true, commit: async () => {} }),
 };

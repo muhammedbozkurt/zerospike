@@ -53,8 +53,13 @@ import {
 import type {
   GlucoseSample,
   HealthConnectStatus,
+  HealthLastSync,
   HealthProvider,
   HealthSummary,
+  HealthSyncError,
+  HealthSyncSource,
+  HealthWriteKind,
+  InsulinKind,
   SyncResult,
 } from "./healthTypes";
 
@@ -64,6 +69,11 @@ export type {
   SyncResult,
   HealthSummary,
   HealthConnectStatus,
+  HealthLastSync,
+  HealthSyncError,
+  HealthSyncSource,
+  HealthWriteKind,
+  InsulinKind,
 } from "./healthTypes";
 export type { HealthWriteStatusRecord } from "../healthWriteRetry";
 
@@ -105,6 +115,31 @@ const HEALTH_WRITE_PENDING_KEY = "zerospike.healthWritePending";
  *  still be retried once the profile is gone. Only ever holds ids this app
  *  wrote (see lib/healthDeleteQueue.ts). */
 const HEALTH_DELETE_PENDING_KEY = "zerospike.healthDeletePending";
+
+/** Glucose keeps its original queue keys; carbs and insulin get a kind
+ *  segment ("<base>.<kind>.<profile>" / "<base>.<kind>") so a carb id can
+ *  never be handed to the glucose delete call or retried as a reading. */
+type QueueKind = "glucose" | HealthWriteKind;
+function pendingWriteKey(profileId: string, kind: QueueKind): string {
+  return kind === "glucose"
+    ? `${HEALTH_WRITE_PENDING_KEY}.${profileId}`
+    : `${HEALTH_WRITE_PENDING_KEY}.${kind}.${profileId}`;
+}
+function deleteQueueKey(kind: QueueKind): string {
+  return kind === "glucose" ? HEALTH_DELETE_PENDING_KEY : `${HEALTH_DELETE_PENDING_KEY}.${kind}`;
+}
+
+/** Per-profile switches (default OFF except the background switch, see
+ *  getHealthBgSyncEnabled). Values "1"/"0" like the glucose mirror flag. */
+const HEALTH_BG_SYNC_KEY = "zerospike.healthBgSync";
+const HEALTH_WRITE_KIND_KEYS: Record<HealthWriteKind, string> = {
+  carbs: "zerospike.healthWriteCarbs",
+  insulin: "zerospike.healthWriteInsulin",
+};
+const HEALTH_LAST_SYNC_KEY = "zerospike.healthLastSync";
+/** Device-wide: set by the foreground (which knows the Pro state) so a
+ *  background run, which has no React context, can honour the Pro gate. */
+const HEALTH_BG_ENTITLED_KEY = "zerospike.healthBgEntitled";
 
 /** Serializes async read-modify-write cycles on one AsyncStorage queue: two
  *  overlapping mutations would otherwise both read the same snapshot and the
@@ -224,9 +259,12 @@ async function saveHealthWriteStatus(
  *  stored the queue that way, but a malformed/hand-edited entry should not
  *  crash the read): it is given a fresh `queuedAtIso` rather than dropped.
  */
-async function getPendingWriteEntries(profileId: string): Promise<PendingWriteEntry[]> {
+async function getPendingWriteEntries(
+  profileId: string,
+  kind: QueueKind = "glucose"
+): Promise<PendingWriteEntry[]> {
   try {
-    const raw = await AsyncStorage.getItem(`${HEALTH_WRITE_PENDING_KEY}.${profileId}`);
+    const raw = await AsyncStorage.getItem(pendingWriteKey(profileId, kind));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -246,10 +284,11 @@ async function getPendingWriteEntries(profileId: string): Promise<PendingWriteEn
 
 async function savePendingWriteEntries(
   profileId: string,
-  entries: readonly PendingWriteEntry[]
+  entries: readonly PendingWriteEntry[],
+  kind: QueueKind = "glucose"
 ): Promise<void> {
   try {
-    await AsyncStorage.setItem(`${HEALTH_WRITE_PENDING_KEY}.${profileId}`, JSON.stringify(entries));
+    await AsyncStorage.setItem(pendingWriteKey(profileId, kind), JSON.stringify(entries));
   } catch {
     // best-effort
   }
@@ -266,19 +305,23 @@ async function getPendingWriteIds(profileId: string): Promise<string[]> {
  *  for a row that was simply never attempted. Also prunes the queue (2.3.5
  *  fix): every add is a natural point to drop what has aged out rather than
  *  letting the queue grow unbounded between retry passes. */
-async function addPendingWriteId(profileId: string | null | undefined, id: string): Promise<void> {
+async function addPendingWriteId(
+  profileId: string | null | undefined,
+  id: string,
+  kind: QueueKind = "glucose"
+): Promise<void> {
   if (!profileId) return;
   await writeQueueLock(async () => {
     try {
       const nowMs = Date.now();
-      let entries = pruneWritePendingQueue(await getPendingWriteEntries(profileId), nowMs);
+      let entries = pruneWritePendingQueue(await getPendingWriteEntries(profileId, kind), nowMs);
       if (!entries.some((e) => e.id === id)) {
         entries = pruneWritePendingQueue(
           [...entries, { id, queuedAtIso: new Date(nowMs).toISOString() }],
           nowMs
         );
       }
-      await savePendingWriteEntries(profileId, entries);
+      await savePendingWriteEntries(profileId, entries, kind);
     } catch {
       // best-effort
     }
@@ -290,16 +333,17 @@ async function addPendingWriteId(profileId: string | null | undefined, id: strin
  *  never has to guard the call itself. */
 async function removePendingWriteIds(
   profileId: string,
-  idsToRemove: readonly string[]
+  idsToRemove: readonly string[],
+  kind: QueueKind = "glucose"
 ): Promise<void> {
   if (idsToRemove.length === 0) return;
   await writeQueueLock(async () => {
     try {
-      const entries = await getPendingWriteEntries(profileId);
+      const entries = await getPendingWriteEntries(profileId, kind);
       const remove = new Set(idsToRemove);
       const next = entries.filter((e) => !remove.has(e.id));
       if (next.length === entries.length) return;
-      await savePendingWriteEntries(profileId, next);
+      await savePendingWriteEntries(profileId, next, kind);
     } catch {
       // best-effort
     }
@@ -803,9 +847,9 @@ export function deleteGlucoseRowFromHealth(rowId: string, uuid: string | null): 
   }).catch((err) => logCrash(err, { screen: "health", op: "deleteGlucoseRow" }));
 }
 
-async function getDeleteEntries(): Promise<PendingDeleteEntry[]> {
+async function getDeleteEntries(kind: QueueKind = "glucose"): Promise<PendingDeleteEntry[]> {
   try {
-    const raw = await AsyncStorage.getItem(HEALTH_DELETE_PENDING_KEY);
+    const raw = await AsyncStorage.getItem(deleteQueueKey(kind));
     if (!raw) return [];
     return normalizeDeleteEntries(JSON.parse(raw), new Date().toISOString());
   } catch {
@@ -813,27 +857,36 @@ async function getDeleteEntries(): Promise<PendingDeleteEntry[]> {
   }
 }
 
-async function saveDeleteEntries(entries: readonly PendingDeleteEntry[]): Promise<void> {
+async function saveDeleteEntries(
+  entries: readonly PendingDeleteEntry[],
+  kind: QueueKind = "glucose"
+): Promise<void> {
   try {
-    await AsyncStorage.setItem(HEALTH_DELETE_PENDING_KEY, JSON.stringify(entries));
+    await AsyncStorage.setItem(deleteQueueKey(kind), JSON.stringify(entries));
   } catch {
     // best-effort
   }
 }
 
-async function queueHealthDeletes(uuids: readonly string[]): Promise<void> {
+async function queueHealthDeletes(
+  uuids: readonly string[],
+  kind: QueueKind = "glucose"
+): Promise<void> {
   if (uuids.length === 0) return;
   await deleteQueueLock(async () => {
-    await saveDeleteEntries(enqueueDeletes(await getDeleteEntries(), uuids, Date.now()));
+    await saveDeleteEntries(enqueueDeletes(await getDeleteEntries(kind), uuids, Date.now()), kind);
   });
 }
 
-async function dequeueHealthDeletes(uuids: readonly string[]): Promise<void> {
+async function dequeueHealthDeletes(
+  uuids: readonly string[],
+  kind: QueueKind = "glucose"
+): Promise<void> {
   await deleteQueueLock(async () => {
-    const entries = await getDeleteEntries();
+    const entries = await getDeleteEntries(kind);
     if (entries.length === 0) return;
     const next = removeDeleted(entries, uuids);
-    if (next.length !== entries.length) await saveDeleteEntries(next);
+    if (next.length !== entries.length) await saveDeleteEntries(next, kind);
   });
 }
 
@@ -1144,6 +1197,8 @@ async function runPendingHealthWrites(
   const none = { attempted: 0, succeeded: 0 };
   if (!profileId || !hasHealthProvider()) return none;
   await retryPendingHealthDeletes();
+  await retryPendingHealthRecordDeletes("carbs");
+  await retryPendingHealthRecordDeletes("insulin");
   if (healthRetryInFlight) return none;
   const scope = await readHealthWriteScope(profileId);
   if (!scope.enabled || scope.profileId !== profileId) return none;
@@ -1357,6 +1412,471 @@ export async function openHealthSettings(): Promise<void> {
   }
 }
 
+// ── Per-profile switches: background sync, carbs and insulin writes ─────────
+
+async function resolveProfileId(profileId?: string | null): Promise<string | null> {
+  return profileId ?? (await activeProfileId());
+}
+
+/** Insulin can only be written to HealthKit; Health Connect has no insulin type. */
+export function isHealthKindWriteSupported(kind: HealthWriteKind): boolean {
+  if (!hasHealthProvider()) return false;
+  return kind === "carbs" || Platform.OS === "ios";
+}
+
+export async function getHealthKindWriteEnabled(
+  kind: HealthWriteKind,
+  profileId?: string | null
+): Promise<boolean> {
+  if (!isHealthKindWriteSupported(kind)) return false;
+  try {
+    const id = await resolveProfileId(profileId);
+    if (!id) return false;
+    return (await AsyncStorage.getItem(`${HEALTH_WRITE_KIND_KEYS[kind]}.${id}`)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export async function setHealthKindWriteEnabled(
+  kind: HealthWriteKind,
+  on: boolean,
+  profileId?: string | null
+): Promise<void> {
+  try {
+    const id = await resolveProfileId(profileId);
+    if (!id) return;
+    await AsyncStorage.setItem(`${HEALTH_WRITE_KIND_KEYS[kind]}.${id}`, on ? "1" : "0");
+  } catch {
+    // best-effort
+  }
+}
+
+/** Point-of-use permission for one extra type, when its switch is turned on. */
+export async function requestHealthKindWritePermission(kind: HealthWriteKind): Promise<boolean> {
+  const provider = getProvider();
+  if (!provider || !isHealthKindWriteSupported(kind)) return false;
+  try {
+    return await provider.requestKindWritePermission(kind);
+  } catch {
+    return false;
+  }
+}
+
+export async function isHealthKindWriteAuthorized(kind: HealthWriteKind): Promise<boolean> {
+  const provider = getProvider();
+  if (!provider || !isHealthKindWriteSupported(kind)) return false;
+  try {
+    return await provider.isKindWriteAuthorized(kind);
+  } catch {
+    return false;
+  }
+}
+
+/** Background read switch. Unset follows the profile's existing Health sync
+ *  switch (cgmSync), so users who already sync keep syncing; an explicit
+ *  value (the separate switch in settings) wins. */
+export async function getHealthBgSyncEnabled(profileId?: string | null): Promise<boolean> {
+  try {
+    const id = await resolveProfileId(profileId);
+    if (!id) return false;
+    const own = await AsyncStorage.getItem(`${HEALTH_BG_SYNC_KEY}.${id}`);
+    if (own != null) return own === "1";
+    return await getHealthSyncEnabled(id);
+  } catch {
+    return false;
+  }
+}
+
+export async function setHealthBgSyncEnabled(
+  on: boolean,
+  profileId?: string | null
+): Promise<void> {
+  try {
+    const id = await resolveProfileId(profileId);
+    if (!id) return;
+    await AsyncStorage.setItem(`${HEALTH_BG_SYNC_KEY}.${id}`, on ? "1" : "0");
+  } catch {
+    // best-effort
+  }
+}
+
+/** Foreground tells the service whether the user is entitled to background
+ *  sync (Pro). A background run has no React context to ask. Fails closed. */
+export async function setHealthBackgroundEntitled(entitled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(HEALTH_BG_ENTITLED_KEY, entitled ? "1" : "0");
+  } catch {
+    // best-effort
+  }
+}
+
+export async function getHealthBackgroundEntitled(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(HEALTH_BG_ENTITLED_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// ── Last sync stamp + error state (structured, text is the caller's) ────────
+
+async function recordHealthLastSync(
+  profileId: string,
+  result: SyncResult,
+  source: HealthSyncSource
+): Promise<void> {
+  try {
+    let error: HealthSyncError | null = null;
+    if (result.status === "unavailable") error = "unavailable";
+    else if (result.status === "denied") error = "denied";
+    else if (result.status === "error") error = "read_failed";
+    const record: HealthLastSync = {
+      atIso: new Date().toISOString(),
+      status: result.status,
+      inserted: result.inserted,
+      read: result.read,
+      source,
+      error,
+    };
+    await AsyncStorage.setItem(`${HEALTH_LAST_SYNC_KEY}.${profileId}`, JSON.stringify(record));
+  } catch {
+    // best-effort
+  }
+}
+
+/** The last import attempt for the profile (default: active), or null. */
+export async function getHealthLastSync(
+  profileId?: string | null
+): Promise<HealthLastSync | null> {
+  try {
+    const id = await resolveProfileId(profileId);
+    if (!id) return null;
+    const raw = await AsyncStorage.getItem(`${HEALTH_LAST_SYNC_KEY}.${id}`);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Partial<HealthLastSync>;
+    if (typeof p.atIso !== "string") return null;
+    if (p.status !== "ok" && p.status !== "unavailable" && p.status !== "denied" && p.status !== "error") {
+      return null;
+    }
+    const source: HealthSyncSource =
+      p.source === "background" || p.source === "foreground" ? p.source : "manual";
+    const error: HealthSyncError | null =
+      p.error === "unavailable" || p.error === "denied" || p.error === "read_failed" ? p.error : null;
+    return {
+      atIso: p.atIso,
+      status: p.status,
+      inserted: Number(p.inserted) || 0,
+      read: Number(p.read) || 0,
+      source,
+      error,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── Background sync entry point (iOS observer / Android task) ───────────────
+
+export type HealthBackgroundSkip =
+  | "no_provider"
+  | "not_entitled"
+  | "no_profile"
+  | "sync_off"
+  | "no_permission"
+  | "no_background_permission"
+  | "unchanged";
+
+export interface HealthBackgroundOutcome {
+  ran: boolean;
+  skipped: HealthBackgroundSkip | null;
+  result: SyncResult | null;
+}
+
+/** Why background sync cannot run right now for the active profile, or null
+ *  when it can. Never prompts. Shared by the run and by the registration. */
+export async function getHealthBackgroundBlocker(): Promise<HealthBackgroundSkip | null> {
+  const provider = getProvider();
+  if (!provider || DEBUG_MOCK_HEALTH) return "no_provider";
+  if (!(await getHealthBackgroundEntitled())) return "not_entitled";
+  const profileId = await activeProfileId();
+  if (!profileId) return "no_profile";
+  if (!(await getHealthSyncEnabled(profileId)) || !(await getHealthBgSyncEnabled(profileId))) {
+    return "sync_off";
+  }
+  try {
+    if (!(await provider.isReadGranted())) return "no_permission";
+    if (Platform.OS === "android" && !(await provider.hasBackgroundReadPermission())) {
+      return "no_background_permission";
+    }
+  } catch {
+    return "no_permission";
+  }
+  return null;
+}
+
+/**
+ * One background pass: the ACTIVE profile only (the foreground sync is also
+ * active-profile only, and one Health account serves the device). Reuses
+ * importHealthGlucose, so source filtering and the duplicate rules are the
+ * foreground ones. Never prompts and never throws.
+ */
+export async function syncHealthInBackground(): Promise<HealthBackgroundOutcome> {
+  const skip = (skipped: HealthBackgroundSkip): HealthBackgroundOutcome => ({
+    ran: false,
+    skipped,
+    result: null,
+  });
+  try {
+    const blocker = await getHealthBackgroundBlocker();
+    if (blocker) return skip(blocker);
+    const provider = getProvider();
+    const profileId = await activeProfileId();
+    if (!provider || !profileId) return skip("no_profile");
+    let commit: (() => Promise<void>) | null = null;
+    if (Platform.OS === "android") {
+      const peek = await provider.peekGlucoseChanges();
+      if (!peek.changed) return skip("unchanged");
+      commit = peek.commit;
+    }
+    const result = await importHealthGlucose(profileId, "background");
+    if (result.status === "ok" && commit) await commit();
+    if (result.inserted > 0) bumpBackgroundListeners();
+    return { ran: true, skipped: null, result };
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "syncHealthInBackground" });
+    return { ran: false, skipped: null, result: { status: "error", inserted: 0, read: 0 } };
+  }
+}
+
+const backgroundImportListeners = new Set<() => void>();
+function bumpBackgroundListeners(): void {
+  backgroundImportListeners.forEach((l) => {
+    try {
+      l();
+    } catch {
+      // a listener must not break the sync
+    }
+  });
+}
+
+/** Fires after a background pass inserted rows, so a mounted screen can
+ *  refresh. Returns the unsubscribe. */
+export function subscribeHealthBackgroundImport(listener: () => void): () => void {
+  backgroundImportListeners.add(listener);
+  return () => {
+    backgroundImportListeners.delete(listener);
+  };
+}
+
+// ── Carbs and insulin: opt-in mirror writes, one switch per data type ───────
+
+export type HealthRecordInput =
+  | { kind: "carbs"; id: string; profileId: string; loggedAt: string; grams: number }
+  | {
+      kind: "insulin";
+      id: string;
+      profileId: string;
+      loggedAt: string;
+      units: number;
+      insulinKind: InsulinKind;
+    };
+
+export type HealthRecordOutcome = "written" | "failed" | "skipped" | "unsupported";
+
+/** `uuid` is the id to store on the row (meal_logs / injection_logs
+ *  health_uuid) when outcome is "written". Linking is the caller's: this
+ *  module has no access to those tables. */
+export interface HealthRecordResult {
+  outcome: HealthRecordOutcome;
+  uuid: string | null;
+}
+
+function recordLockKey(kind: HealthWriteKind, id: string): string {
+  return `${kind}:${id}`;
+}
+
+function nextRecordMeta(kind: HealthWriteKind, id: string): HealthWriteMeta {
+  const key = recordLockKey(kind, id);
+  const version = nextSyncVersion(lastSyncVersion.get(key), Date.now());
+  lastSyncVersion.set(key, version);
+  return { recordId: id, version, mealContext: null };
+}
+
+async function writeRecordToHealth(
+  provider: HealthProvider,
+  input: HealthRecordInput,
+  meta: HealthWriteMeta
+): Promise<string | null> {
+  // The permission sheet waits for the user, so it runs outside the timeout.
+  if (!(await provider.isKindWriteAuthorized(input.kind))) {
+    if (!(await provider.requestKindWritePermission(input.kind))) return null;
+  }
+  const op = input.kind === "carbs" ? "writeCarbs" : "writeInsulin";
+  try {
+    const call =
+      input.kind === "carbs"
+        ? provider.writeCarbs(input.grams, input.loggedAt, meta)
+        : provider.writeInsulin(input.units, input.insulinKind, input.loggedAt, meta);
+    return await withNativeTimeout(call);
+  } catch (err) {
+    logCrash(err, { screen: "health", op });
+    return null;
+  }
+}
+
+/**
+ * Writes (or rewrites after an edit) ONE carb or insulin entry. Gated like the
+ * glucose mirror: the type's switch must be on for the profile that owns the
+ * entry, and that profile must be the active one. Idempotent per entry id (the
+ * id is the sync identifier with a rising version), so an edit replaces the
+ * earlier sample; `heldUuids` (the row's stored link) are revoked AFTER the new
+ * sample landed, so a failed rewrite never costs the old one. A failure joins
+ * the type's retry queue (see getHealthRecordRetryIds).
+ */
+export function mirrorHealthRecord(
+  input: HealthRecordInput,
+  heldUuids: readonly (string | null | undefined)[] = []
+): Promise<HealthRecordResult> {
+  const provider = getProvider();
+  if (!provider) return Promise.resolve({ outcome: "skipped", uuid: null });
+  if (!isHealthKindWriteSupported(input.kind)) {
+    return Promise.resolve({ outcome: "unsupported", uuid: null });
+  }
+  if (!Number.isFinite(input.kind === "carbs" ? input.grams : input.units)) {
+    return Promise.resolve({ outcome: "skipped", uuid: null });
+  }
+  return withRowLock(recordLockKey(input.kind, input.id), async (): Promise<HealthRecordResult> => {
+    const activeId = await activeProfileId();
+    const enabled = activeId ? await getHealthKindWriteEnabled(input.kind, activeId) : false;
+    const allowed = shouldWriteToHealth({
+      writeEnabledForProfile: enabled,
+      recordProfileId: input.profileId,
+      enabledProfileId: activeId,
+    });
+    if (!allowed) return { outcome: "skipped", uuid: null };
+    const uuid = await writeRecordToHealth(provider, input, nextRecordMeta(input.kind, input.id));
+    if (!uuid) {
+      healthWriteFailureNoticePending = true;
+      await addPendingWriteId(input.profileId, input.id, input.kind);
+      return { outcome: "failed", uuid: null };
+    }
+    const stale = new Set<string>();
+    for (const u of heldUuids) if (u && u !== uuid) stale.add(u);
+    if (stale.size > 0) await revokeHealthRecords(input.kind, [...stale]);
+    await removePendingWriteIds(input.profileId, [input.id], input.kind);
+    return { outcome: "written", uuid };
+  }).catch((err) => {
+    logCrash(err, { screen: "health", op: "mirrorHealthRecord" });
+    return { outcome: "failed", uuid: null };
+  });
+}
+
+function deleteRecordBatch(
+  provider: HealthProvider,
+  kind: HealthWriteKind,
+  ids: string[]
+): Promise<void> {
+  return kind === "carbs" ? provider.deleteCarbsBatch(ids) : provider.deleteInsulinBatch(ids);
+}
+
+/** Best-effort revoke of samples this app wrote. Not gated on the switch (the
+ *  user asked for the data to go); failures are queued and retried. Returns
+ *  how many were deleted right away. */
+export async function revokeHealthRecords(
+  kind: HealthWriteKind,
+  uuids: readonly string[]
+): Promise<number> {
+  const provider = getProvider();
+  if (!provider || uuids.length === 0 || !isHealthKindWriteSupported(kind)) return 0;
+  let deleted = 0;
+  const failed: string[] = [];
+  for (const batch of chunkBatches(uuids, HEALTH_DELETE_BATCH)) {
+    try {
+      await withNativeTimeout(deleteRecordBatch(provider, kind, batch));
+      deleted += batch.length;
+    } catch (err) {
+      logCrash(err, { screen: "health", op: `deleteBatch.${kind}` });
+      failed.push(...batch);
+    }
+  }
+  await queueHealthDeletes(failed, kind);
+  return deleted;
+}
+
+/** Revoke for an entry the user just deleted, in line behind any write of it. */
+export function deleteHealthRecord(
+  kind: HealthWriteKind,
+  entryId: string,
+  uuid: string | null
+): Promise<void> {
+  return withRowLock(recordLockKey(kind, entryId), async () => {
+    if (uuid) await revokeHealthRecords(kind, [uuid]);
+  }).catch((err) => logCrash(err, { screen: "health", op: "deleteHealthRecord" }));
+}
+
+const recordDeleteRetryInFlight = new Set<HealthWriteKind>();
+
+/** Re-attempts the queued deletes of one type (bounded, oldest first). */
+export async function retryPendingHealthRecordDeletes(
+  kind: HealthWriteKind
+): Promise<{ attempted: number; succeeded: number }> {
+  const none = { attempted: 0, succeeded: 0 };
+  const provider = getProvider();
+  if (!provider || !isHealthKindWriteSupported(kind) || recordDeleteRetryInFlight.has(kind)) {
+    return none;
+  }
+  recordDeleteRetryInFlight.add(kind);
+  try {
+    const pass = await deleteQueueLock(async () => {
+      const current = await getDeleteEntries(kind);
+      const pruned = pruneDeleteQueue(current, Date.now());
+      if (pruned.length !== current.length) await saveDeleteEntries(pruned, kind);
+      return selectDeletePass(pruned);
+    });
+    if (pass.length === 0) return none;
+    const done: string[] = [];
+    for (const batch of chunkBatches(pass, HEALTH_DELETE_BATCH)) {
+      try {
+        await withNativeTimeout(deleteRecordBatch(provider, kind, batch));
+        done.push(...batch);
+      } catch {
+        // the store keeps refusing: stop instead of one native call per id
+        break;
+      }
+    }
+    if (done.length > 0) await dequeueHealthDeletes(done, kind);
+    return { attempted: pass.length, succeeded: done.length };
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "retryPendingHealthRecordDeletes" });
+    return none;
+  } finally {
+    recordDeleteRetryInFlight.delete(kind);
+  }
+}
+
+/** Entry ids whose write failed while the type's switch was on (consent
+ *  scope: only entries that were actually attempted ever join). The caller
+ *  re-reads each row and calls mirrorHealthRecord again, then clears it. */
+export async function getHealthRecordRetryIds(
+  kind: HealthWriteKind,
+  profileId: string
+): Promise<string[]> {
+  const entries = pruneWritePendingQueue(
+    await getPendingWriteEntries(profileId, kind),
+    Date.now()
+  );
+  return entries.map((e) => e.id);
+}
+
+export async function clearHealthRecordRetryIds(
+  kind: HealthWriteKind,
+  profileId: string,
+  ids: readonly string[]
+): Promise<void> {
+  await removePendingWriteIds(profileId, ids, kind);
+}
+
 // ── Import into local SQLite ───────────────────────────────────────────────
 
 /**
@@ -1369,15 +1889,49 @@ export async function openHealthSettings(): Promise<void> {
  *  - `error`       -> the native read threw
  *  - `ok`          -> read `read` samples, inserted `inserted` new ones
  */
-export async function importHealthGlucose(profileId: string): Promise<SyncResult> {
+export async function importHealthGlucose(
+  profileId: string,
+  source: HealthSyncSource = "manual"
+): Promise<SyncResult> {
+  // Overlapping triggers (observer burst, task + foreground, double tap) share
+  // the one running import for the profile instead of racing the dedup read.
+  const running = importsInFlight.get(profileId);
+  if (running) return running;
+  const run = runImportHealthGlucose(profileId, source).finally(() => {
+    importsInFlight.delete(profileId);
+  });
+  importsInFlight.set(profileId, run);
+  return run;
+}
+
+const importsInFlight = new Map<string, Promise<SyncResult>>();
+
+async function runImportHealthGlucose(
+  profileId: string,
+  source: HealthSyncSource
+): Promise<SyncResult> {
+  const result = await importGlucoseOnce(profileId, source);
+  await recordHealthLastSync(profileId, result, source);
+  return result;
+}
+
+async function importGlucoseOnce(
+  profileId: string,
+  source: HealthSyncSource
+): Promise<SyncResult> {
   // 1) Is there a health store at all?
   if (!(await isHealthAvailable())) {
     return { status: "unavailable", inserted: 0, read: 0 };
   }
 
   // 2) Permission. iOS can't reveal read access, so we can only fail closed
-  //    on Android, where the grant list is authoritative.
-  const granted = await requestHealthPermissions();
+  //    on Android, where the grant list is authoritative. A background run
+  //    only checks the grant: it must never open a system dialog.
+  const provider = getProvider();
+  const granted =
+    source === "background"
+      ? await (provider?.isReadGranted() ?? Promise.resolve(false)).catch(() => false)
+      : await requestHealthPermissions();
   if (!granted) {
     return { status: "denied", inserted: 0, read: 0 };
   }

@@ -38,6 +38,26 @@ export interface SyncResult {
   read: number;
 }
 
+/** Where a sync was triggered from; stored with the last-sync record. */
+export type HealthSyncSource = "foreground" | "background" | "manual";
+
+/** Structured failure reason for the UI (the visible text is the caller's). */
+export type HealthSyncError = "unavailable" | "denied" | "read_failed";
+
+/** Per-profile record of the last sync attempt (AsyncStorage healthLastSync). */
+export interface HealthLastSync {
+  atIso: string;
+  status: SyncStatus;
+  inserted: number;
+  read: number;
+  source: HealthSyncSource;
+  error: HealthSyncError | null;
+}
+
+/** Data types the app can write to the health store besides glucose. */
+export type HealthWriteKind = "carbs" | "insulin";
+export type InsulinKind = "bolus" | "basal";
+
 export interface HealthSummary {
   /** Total exercise/active minutes over the window (null if unavailable). */
   activeMinutes: number | null;
@@ -73,4 +93,33 @@ export interface HealthProvider {
   deleteGlucose(id: string): Promise<void>;
   deleteGlucoseBatch(ids: string[]): Promise<void>;
   readSummary(windowDays: number): Promise<HealthSummary>;
+  /** Grams of carbohydrate (HealthKit DietaryCarbohydrates / HC Nutrition). */
+  writeCarbs(grams: number, dateIso: string, meta?: HealthWriteMeta): Promise<string | null>;
+  /** iOS only (HealthKit InsulinDelivery); Health Connect has no insulin type
+   *  and always resolves null. */
+  writeInsulin(
+    units: number,
+    kind: InsulinKind,
+    dateIso: string,
+    meta?: HealthWriteMeta
+  ): Promise<string | null>;
+  /** Throw when the store could not delete, so the caller can queue a retry. */
+  deleteCarbsBatch(ids: string[]): Promise<void>;
+  deleteInsulinBatch(ids: string[]): Promise<void>;
+  /** Share/write grant for one extra data type, requested at point of use. */
+  requestKindWritePermission(kind: HealthWriteKind): Promise<boolean>;
+  isKindWriteAuthorized(kind: HealthWriteKind): Promise<boolean>;
+  /** Read grant WITHOUT prompting (background runs must never open a dialog).
+   *  iOS cannot reveal read access, so it resolves true there. */
+  isReadGranted(): Promise<boolean>;
+  /** iOS: HKObserverQuery + enableBackgroundDelivery for blood glucose. The
+   *  callback only signals "something changed"; false when unsupported. */
+  startBackgroundObserver(onChange: () => void): Promise<boolean>;
+  stopBackgroundObserver(): Promise<void>;
+  /** Android: Health Connect READ_HEALTH_DATA_IN_BACKGROUND grant. */
+  hasBackgroundReadPermission(): Promise<boolean>;
+  requestBackgroundReadPermission(): Promise<boolean>;
+  /** Android getChanges: did BloodGlucose change since the committed token?
+   *  commit() advances the token and must only run after a successful import. */
+  peekGlucoseChanges(): Promise<{ changed: boolean; commit(): Promise<void> }>;
 }
