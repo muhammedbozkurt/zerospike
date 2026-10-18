@@ -67,12 +67,25 @@ __pycache__/
 # Apple Ads API kimlikleri, repo disinda ~/.apple-ads/ altinda tutulur
 credentials.txt
 *.pem
-scratchpad/metrics/
-scratchpad/**/.asc-raw
 
 # Yerel durum dosyalari ve cekim ciktilari
 supabase/.temp/
 firebase-debug.log*
-scratchpad/**/*.png
-scratchpad/**/*.jpg
-scratchpad/**/*.zip
+# scratchpad: yalniz .md izlenir
+scratchpad/**/*
+!scratchpad/**/
+!scratchpad/**/*.md
+scratchpad/metrics/
+scratchpad/**/.asc-raw
+
+# Yerel durum, log, yedek ve calisma ciktilari
+supabase/**/.temp/
+supabase/**/cli-latest
+*.log
+*.db
+*.db-wal
+*.db-shm
+*.bak
+work/
+raw/
+docs/apple-ads/

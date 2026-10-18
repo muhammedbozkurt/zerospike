@@ -61,3 +61,43 @@ HUMAN-TODO.md
 
 # Wear OS companion — a fully separate Gradle project EAS never builds
 /wear
+
+# .gitignore kopyasi (EAS .easignore varsa .gitignore okumaz)
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/.cxx/
+/zerospike-store
+keystore.properties
+google-services.json
+GoogleService-Info.plist
+__pycache__/
+credentials.txt
+*.pem
+supabase/.temp/
+firebase-debug.log*
+scratchpad/**/*
+!scratchpad/**/
+!scratchpad/**/*.md
+scratchpad/metrics/
+scratchpad/**/.asc-raw
+supabase/**/.temp/
+supabase/**/cli-latest
+*.db
+*.db-wal
+*.db-shm
+*.bak
+work/
+raw/
+docs/apple-ads/
+
+# Build'e gerekmeyenler
+scratchpad/
+zerospike-store/
+wear/
+supabase/
+.agents/
+.claude/
+raw/
+work/
+*.md
+!README.md
