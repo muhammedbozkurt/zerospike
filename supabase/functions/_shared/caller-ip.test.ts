@@ -18,29 +18,29 @@ async function withSecret(value: string | undefined, run: () => Promise<void>) {
   }
 }
 
-Deno.test("wrong secret: forwarded ip ignored", () =>
+Deno.test("wrong secret: client ip header ignored", () =>
   withSecret("good", async () => {
-    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "bad", "x-forwarded-for": "7.7.7.7, 2.2.2.2" })), "2.2.2.2");
+    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "bad", "x-zs-client-ip": "7.7.7.7", "x-forwarded-for": "2.2.2.2" })), "2.2.2.2");
   }));
 
-Deno.test("right secret: first forwarded ip used", () =>
+Deno.test("right secret: client ip header used, xff ignored", () =>
   withSecret("good", async () => {
-    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-forwarded-for": "7.7.7.7, 2.2.2.2" })), "7.7.7.7");
+    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-zs-client-ip": "7.7.7.7", "x-forwarded-for": "6.6.6.6, 2.2.2.2" })), "7.7.7.7");
   }));
 
 Deno.test("secret undefined: header ignored", () =>
   withSecret(undefined, async () => {
-    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-forwarded-for": "7.7.7.7, 2.2.2.2" })), "2.2.2.2");
+    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-zs-client-ip": "7.7.7.7", "x-forwarded-for": "2.2.2.2" })), "2.2.2.2");
   }));
 
 Deno.test("right secret but invalid ip: falls back", () =>
   withSecret("good", async () => {
-    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-forwarded-for": "not-an-ip, 2.2.2.2" })), "2.2.2.2");
+    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-zs-client-ip": "not-an-ip", "x-forwarded-for": "2.2.2.2" })), "2.2.2.2");
   }));
 
 Deno.test("right secret but malformed ip: falls back", () =>
   withSecret("good", async () => {
     for (const bad of [":::::", "007.007.007.007"]) {
-      assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-forwarded-for": `${bad}, 2.2.2.2` })), "2.2.2.2");
+      assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-zs-client-ip": bad, "x-forwarded-for": "2.2.2.2" })), "2.2.2.2");
     }
   }));

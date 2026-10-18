@@ -104,16 +104,17 @@ function validIp(ip: string): boolean {
 
 /**
  * Caller IP behind the legacy forwarders: they send the real client address in
- * the first X-Forwarded-For entry together with X-Zs-Forwarder. The address is
- * believed only when that header equals FORWARDER_SECRET; otherwise (or with no
+ * X-Zs-Client-Ip together with X-Zs-Forwarder (the gateway rewrites
+ * X-Forwarded-For, so it cannot carry the address). The address is believed
+ * only when X-Zs-Forwarder equals FORWARDER_SECRET; otherwise (or with no
  * secret configured) the connection IP from callerIp() applies.
  */
 export async function resolveCallerIp(req: Request): Promise<string> {
   const secret = env("FORWARDER_SECRET");
   const given = req.headers.get("x-zs-forwarder");
   if (secret && given && (await sameSecret(given, secret))) {
-    const first = (req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim();
-    if (first && validIp(first)) return first;
+    const given_ip = req.headers.get("x-zs-client-ip")?.trim();
+    if (given_ip && validIp(given_ip)) return given_ip;
   }
   return callerIp(req);
 }

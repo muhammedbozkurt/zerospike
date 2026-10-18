@@ -86,10 +86,12 @@ export function forward(
       const value = req.headers.get(key);
       if (value !== null) headers.set(key, value);
     }
-    const ip = clientIp(req);
-    if (ip) headers.set("x-forwarded-for", ip);
     const secret = (globalThis as any).Deno?.env?.get?.("FORWARDER_SECRET");
-    if (typeof secret === "string" && secret !== "") headers.set("x-zs-forwarder", secret);
+    if (typeof secret === "string" && secret !== "") {
+      headers.set("x-zs-forwarder", secret);
+      const ip = clientIp(req);
+      if (ip) headers.set("x-zs-client-ip", ip);
+    }
 
     let body: Uint8Array<ArrayBuffer> | undefined;
     if (req.method !== "GET" && req.method !== "HEAD") {

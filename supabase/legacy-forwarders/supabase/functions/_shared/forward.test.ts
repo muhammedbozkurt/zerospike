@@ -58,7 +58,7 @@ Deno.test("body, status and safe headers pass through byte-identical", async () 
   );
 });
 
-Deno.test("header allowlist (x-forwarded-for is written)", async () => {
+Deno.test("header allowlist (no secret: no ip headers)", async () => {
   await withUpstream(
     () => new Response("ok"),
     async (base, seen) => {
@@ -84,22 +84,28 @@ Deno.test("header allowlist (x-forwarded-for is written)", async () => {
       assertEq(h.get("x-rc-app-user-id"), "u");
       assertEq(h.get("cookie"), null);
       assertEq(h.get("x-evil"), null);
-      assertEq(h.get("x-forwarded-for"), "1.2.3.4");
+      assertEq(h.get("x-zs-client-ip"), null);
+      assertEq(h.get("x-zs-forwarder"), null);
     },
   );
 });
 
 Deno.test("cf-connecting-ip wins; no ip means no header", async () => {
-  await withUpstream(
-    () => new Response("ok"),
-    async (base, seen) => {
-      const f = forward("track", 5000, base);
-      await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "cf-connecting-ip": "5.5.5.5", "x-forwarded-for": "1.1.1.1" } }));
-      await f(new Request("http://legacy/x", { method: "POST", body: "{}" }));
-      assertEq(seen[0].headers.get("x-forwarded-for"), "5.5.5.5");
-      assertEq(seen[1].headers.get("x-forwarded-for"), null);
-    },
-  );
+  Deno.env.set("FORWARDER_SECRET", "own-secret");
+  try {
+    await withUpstream(
+      () => new Response("ok"),
+      async (base, seen) => {
+        const f = forward("track", 5000, base);
+        await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "cf-connecting-ip": "5.5.5.5", "x-forwarded-for": "1.1.1.1" } }));
+        await f(new Request("http://legacy/x", { method: "POST", body: "{}" }));
+        assertEq(seen[0].headers.get("x-zs-client-ip"), "5.5.5.5");
+        assertEq(seen[1].headers.get("x-zs-client-ip"), null);
+      },
+    );
+  } finally {
+    Deno.env.delete("FORWARDER_SECRET");
+  }
 });
 
 Deno.test("OPTIONS answers 204 locally", async () => {
@@ -293,9 +299,9 @@ Deno.test("forwarder drops incoming x-zs-forwarder and adds its own secret", asy
       () => new Response("ok"),
       async (base, seen) => {
         const f = forward("x", 5000, base);
-        await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "x-zs-forwarder": "forged", "x-forwarded-for": "1.2.3.4" } }));
+        await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "x-zs-forwarder": "forged", "x-zs-client-ip": "9.9.9.9", "x-forwarded-for": "1.2.3.4" } }));
         assertEq(seen[0].headers.get("x-zs-forwarder"), "own-secret");
-        assertEq(seen[0].headers.get("x-forwarded-for"), "1.2.3.4");
+        assertEq(seen[0].headers.get("x-zs-client-ip"), "1.2.3.4");
       },
     );
   } finally {
@@ -309,8 +315,9 @@ Deno.test("without FORWARDER_SECRET no x-zs-forwarder is sent, even if the clien
     () => new Response("ok"),
     async (base, seen) => {
       const f = forward("x", 5000, base);
-      await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "x-zs-forwarder": "forged" } }));
+      await f(new Request("http://legacy/x", { method: "POST", body: "{}", headers: { "x-zs-forwarder": "forged", "x-zs-client-ip": "9.9.9.9" } }));
       assertEq(seen[0].headers.get("x-zs-forwarder"), null);
+      assertEq(seen[0].headers.get("x-zs-client-ip"), null);
     },
   );
 });
