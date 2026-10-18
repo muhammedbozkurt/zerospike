@@ -18,6 +18,10 @@ interface Props {
   onPress?: (food: Food) => void;
   onToggleFavorite?: (food: Food) => void;
   onLongPress?: (food: Food) => void;
+  /** Multi-select path: adds the food to the meal sheet. The row tap stays the
+   *  single-food flow. */
+  onAddToMeal?: (food: Food) => void;
+  inMeal?: boolean;
 }
 
 /** GI band color, from the one glucose language (never the sole cue - the row
@@ -45,6 +49,8 @@ function FoodRowBase({
   onPress,
   onToggleFavorite,
   onLongPress,
+  onAddToMeal,
+  inMeal,
 }: Props) {
   const { t } = useTranslation();
   const name = foodName(food, lang);
@@ -128,6 +134,29 @@ function FoodRowBase({
           {t("common.grams")}
         </Text>
       </Text>
+
+      {onAddToMeal ? (
+        <Pressable
+          hitSlop={8}
+          onPress={() => onAddToMeal(food)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: !!inMeal }}
+          accessibilityLabel={`${t("mealCompose.add")}: ${name}`}
+          style={{
+            marginLeft: 4,
+            minWidth: 36,
+            minHeight: HIT_TARGET,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons
+            name={inMeal ? "checkmark-circle" : "add-circle-outline"}
+            size={21}
+            color={inMeal ? THEME.accent : THEME.textMuted}
+          />
+        </Pressable>
+      ) : null}
 
       {onToggleFavorite ? (
         <Pressable

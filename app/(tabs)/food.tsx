@@ -40,6 +40,7 @@ import {
 } from "../../lib/db/logs";
 import { getJournal, type GlucoseEntry, type MealEntry } from "../../lib/db/journal";
 import {
+  createTemplate,
   deleteTemplate,
   listTemplatesWithItems,
   logTemplate,
@@ -47,7 +48,17 @@ import {
   setTemplateUsage,
   type TemplateWithItems,
 } from "../../lib/db/mealTemplates";
-import { rankTemplates } from "../../lib/mealTemplates";
+import { rankTemplates, templateNameTaken } from "../../lib/mealTemplates";
+import {
+  addComposeItem,
+  composeItemFromFood,
+  composeMealInput,
+  composeTemplateItems,
+  composeTotals,
+  removeComposeItem,
+  type ComposeItem,
+} from "../../lib/mealCompose";
+import { MealComposeSheet } from "../../components/MealComposeSheet";
 import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { insulinModeOf, insulinModeShowsBolus } from "../../lib/insulinMode";
 import {
@@ -77,7 +88,7 @@ import {
   withAlpha,
 } from "../../components/rich";
 import { InlineDateTimePicker } from "../../components/InlineDateTimePicker";
-import { formatDateKey, formatTime, relativeDay } from "../../lib/format";
+import { formatDateKey, formatTime, num, relativeDay } from "../../lib/format";
 import { hapticSelect, hapticSuccess } from "../../lib/haptics";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../../lib/theme/tokens";
 import { mealSlotForHour } from "../../lib/insulin";
@@ -946,6 +957,102 @@ export default function FoodScreen() {
     [router]
   );
 
+  // Multi-select path (an extra route; a row tap still opens the calculator).
+  const [composeItems, setComposeItems] = useState<ComposeItem[]>([]);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeSaving, setComposeSaving] = useState(false);
+  const composeKeys = useMemo(
+    () => new Set(composeItems.map((item) => item.key)),
+    [composeItems]
+  );
+  const composeTotal = useMemo(() => composeTotals(composeItems), [composeItems]);
+
+  const onAddToMeal = useCallback(
+    (food: Food) => {
+      hapticSelect();
+      setComposeItems((prev) =>
+        prev.some((item) => item.key === food.id)
+          ? removeComposeItem(prev, food.id)
+          : addComposeItem(prev, composeItemFromFood(food, foodName(food, lang)))
+      );
+    },
+    [lang]
+  );
+
+  function closeCompose() {
+    setComposeOpen(false);
+  }
+
+  function onComposeChange(next: ComposeItem[]) {
+    setComposeItems(next);
+    if (next.length === 0) setComposeOpen(false);
+  }
+
+  async function saveCompose() {
+    if (!activeProfile || composeSaving || composeItems.length === 0) return;
+    setComposeSaving(true);
+    try {
+      const input = composeMealInput(composeItems);
+      const meal = await addMealLog({
+        profile_id: activeProfile.id,
+        food_id: null,
+        custom_food_name: input.custom_food_name,
+        portion_g: input.portion_g,
+        calculated_carbs_g: input.calculated_carbs_g,
+        insulin_dose_units: 0,
+      });
+      logEvent("log_added", { kind: "meal" });
+      void noteFirstLog("meal");
+      hapticSuccess();
+      await schedulePostMealReminder();
+      void noteJournalActivity();
+      setComposeItems([]);
+      setComposeOpen(false);
+      bumpData();
+      toast(t("calculator.savedRecord"), "success", {
+        label: t("common.undo"),
+        onPress: () => {
+          void (async () => {
+            await deleteMealRecord(meal.id);
+            await applyAfterDelete([
+              {
+                id: meal.id,
+                profileId: meal.profile_id,
+                loggedAtMs: new Date(meal.logged_at).getTime(),
+                templateId: meal.meal_template_id,
+              },
+            ]);
+            bumpData();
+            toast(t("calculator.undone"), "info");
+          })();
+        },
+      });
+    } catch (err) {
+      logCrash(err, { screen: "food", save: "compose" });
+    } finally {
+      setComposeSaving(false);
+    }
+  }
+
+  async function saveComposeTemplate(name: string) {
+    if (!activeProfile || composeSaving || composeItems.length === 0) return;
+    setComposeSaving(true);
+    try {
+      await createTemplate({
+        profile_id: activeProfile.id,
+        name,
+        items: composeTemplateItems(composeItems),
+      });
+      hapticSuccess();
+      bumpData();
+      toast(t("mealCompose.templateSaved"), "success");
+    } catch (err) {
+      logCrash(err, { screen: "food", save: "composeTemplate" });
+    } finally {
+      setComposeSaving(false);
+    }
+  }
+
   function titleFor(sel: Selection): string {
     if (sel === "favorites") return t("food.favorites");
     if (sel === "custom") return t("food.custom");
@@ -1571,6 +1678,8 @@ export default function FoodScreen() {
                 onPress={onFoodPress}
                 onToggleFavorite={onToggleFav}
                 onLongPress={onFoodLongPress}
+                onAddToMeal={onAddToMeal}
+                inMeal={composeKeys.has(item.id)}
               />
             )}
           </View>
@@ -1636,6 +1745,47 @@ export default function FoodScreen() {
         contentContainerStyle={{ paddingBottom: 28 }}
         showsVerticalScrollIndicator={false}
       />
+
+      {composeItems.length > 0 && !composeOpen && !confirmEntry ? (
+        <Pressable
+          onPress={() => setComposeOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${t("mealCompose.title")}: ${composeItems.length}, ${t("mealCompose.total")} ${composeTotal.carbs_g} ${t("common.grams")}`}
+          className="flex-row items-center justify-between rounded-2xl border border-hair"
+          style={{
+            position: "absolute",
+            left: 16,
+            right: 16,
+            bottom: 12,
+            minHeight: HIT_TARGET,
+            paddingHorizontal: 14,
+            backgroundColor: THEME.bg.g1,
+            zIndex: 100,
+          }}
+        >
+          <Text style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flexShrink: 1 }}>
+            {t("mealCompose.bar", { count: composeItems.length })}
+          </Text>
+          <Text style={[TABULAR, { color: THEME.accent, fontSize: 15, fontWeight: "800", marginLeft: 10 }]}>
+            {num(composeTotal.carbs_g)}
+            {t("common.grams")}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {composeOpen ? (
+        <MealComposeSheet
+          items={composeItems}
+          onChange={onComposeChange}
+          saving={composeSaving}
+          templateNameTaken={(name) =>
+            templateNameTaken(name, templates.map((entry) => entry.template))
+          }
+          onClose={closeCompose}
+          onSave={() => void saveCompose()}
+          onSaveTemplate={(name) => void saveComposeTemplate(name)}
+        />
+      ) : null}
 
       {confirmEntry ? (
         <TemplateConfirmSheet
