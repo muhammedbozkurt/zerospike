@@ -34,8 +34,8 @@
         "CFBundleDisplayName": "zerospike",
         "NSCameraUsageDescription": "zerospike uses your camera to scan food barcodes and add meal photos.",
         "NSPhotoLibraryUsageDescription": "zerospike accesses your photo library to add photos to your meal journal.",
-        "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries.",
-        "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you enter by hand to Apple Health, only when you allow it: in Settings, when connecting Apple Health, or when asked after saving a reading. Nothing else is written, and a reading you delete in zerospike is deleted from Apple Health too.",
+        "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries. It can also import new glucose readings in the background, even when the app is closed.",
+        "NSHealthUpdateUsageDescription": "zerospike writes to Apple Health only when you allow it: in Settings, when connecting Apple Health, or when asked after saving an entry. This covers the blood glucose readings you enter by hand and, if you turn them on, the carbohydrate and insulin entries you log. Nothing else is written, and an entry you delete in zerospike is deleted from Apple Health too.",
         "NSLocationWhenInUseUsageDescription": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster.",
         "NSContactsUsageDescription": "zerospike lets you pick an emergency contact from your contacts for the SOS screen.",
         "NSAlarmKitUsageDescription": "zerospike uses AlarmKit so the reminders you set up, and the post-meal countdown you start, can ring as real alarms. You can switch any of them back to a notification.",
@@ -179,7 +179,9 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.POST_PROMOTED_NOTIFICATIONS",
         "android.permission.health.READ_BLOOD_GLUCOSE",
-        "android.permission.health.WRITE_BLOOD_GLUCOSE"
+        "android.permission.health.WRITE_BLOOD_GLUCOSE",
+      "android.permission.health.WRITE_NUTRITION",
+      "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
       ],
       "blockedPermissions": [
         "android.permission.USE_EXACT_ALARM"
@@ -217,9 +219,9 @@
       [
         "@kingstinct/react-native-healthkit",
         {
-          "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries.",
-          "NSHealthUpdateUsageDescription": "zerospike writes the blood glucose readings you enter by hand to Apple Health, only when you allow it: in Settings, when connecting Apple Health, or when asked after saving a reading. Nothing else is written, and a reading you delete in zerospike is deleted from Apple Health too.",
-          "background": false
+          "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries. It can also import new glucose readings in the background, even when the app is closed.",
+          "NSHealthUpdateUsageDescription": "zerospike writes to Apple Health only when you allow it: in Settings, when connecting Apple Health, or when asked after saving an entry. This covers the blood glucose readings you enter by hand and, if you turn them on, the carbohydrate and insulin entries you log. Nothing else is written, and an entry you delete in zerospike is deleted from Apple Health too.",
+          "background": true
         }
       ],
       [
@@ -250,6 +252,7 @@
         }
       ],
       "./plugins/withSceneLifecycle",
+      "./plugins/withHealthBackgroundDelivery",
       "@bacons/apple-targets",
       [
         "react-native-android-widget",
@@ -345,7 +348,8 @@
       ],
       "expo-sqlite",
       "expo-status-bar",
-      "react-native-health-connect"
+      "react-native-health-connect",
+      "expo-background-task"
     ],
     "experiments": {
       "typedRoutes": true
