@@ -26,7 +26,7 @@
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appStoreUrl": "https://apps.apple.com/app/id6778782351",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "78",
+      "buildNumber": "79",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
