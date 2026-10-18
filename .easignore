@@ -94,3 +94,6 @@ raw/
 work/
 *.md
 !README.md
+
+# fastlane metadata ve kare klasorleri build icin gerekmez
+fastlane/
