@@ -13,6 +13,7 @@ import React, {
 import { Animated, StyleSheet, useColorScheme, View } from "react-native";
 import * as SystemUI from "expo-system-ui";
 
+import { isScreenshotMode } from "../screenshotMode";
 import {
   loadThemePref,
   resolveScheme,
@@ -83,7 +84,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    void loadThemePref(AsyncStorage).then((p) => {
+    const forced: ThemePref | null = isScreenshotMode()
+      ? process.env.EXPO_PUBLIC_SHOTS_THEME === "dark"
+        ? "dark"
+        : "light"
+      : null;
+    void loadThemePref(AsyncStorage, forced).then((p) => {
       if (alive) setPrefState(p);
     });
     return () => {

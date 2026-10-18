@@ -18,7 +18,11 @@ export function isThemePref(v: unknown): v is ThemePref {
  *  the dark look they have always had and a new user gets light. The resolved
  *  default is written at once: left unwritten, a new user would flip to dark on
  *  the next launch because the onboarded flag turns true when onboarding ends. */
-export async function loadThemePref(store: PrefStore): Promise<ThemePref> {
+export async function loadThemePref(
+  store: PrefStore,
+  forced?: ThemePref | null,
+): Promise<ThemePref> {
+  if (forced) return forced;
   const [stored, onboarded] = await Promise.all([
     store.getItem(THEME_PREF_KEY).catch(() => null),
     store.getItem(ONBOARDED_KEY).catch(() => null),

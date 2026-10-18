@@ -77,6 +77,19 @@ async function main() {
     s.data[ONBOARDED_KEY] = "true";
     assert.equal(await loadThemePref(s), "light");
   });
+  await check("forced light beats onboarded, no write, stored kept", async () => {
+    const s = memStore({ [ONBOARDED_KEY]: "true", [THEME_PREF_KEY]: "dark" });
+    assert.equal(await loadThemePref(s, "light"), "light");
+    assert.equal(s.data[THEME_PREF_KEY], "dark");
+    const t = memStore({ [ONBOARDED_KEY]: "true" });
+    assert.equal(await loadThemePref(t, "light"), "light");
+    assert.equal(THEME_PREF_KEY in t.data, false);
+  });
+  await check("forced dark and null forced", async () => {
+    assert.equal(await loadThemePref(memStore(), "dark"), "dark");
+    const s = memStore({ [ONBOARDED_KEY]: "true" });
+    assert.equal(await loadThemePref(s, null), "dark");
+  });
   await check("saveThemePref persists", async () => {
     const s = memStore();
     await saveThemePref(s, "system");
