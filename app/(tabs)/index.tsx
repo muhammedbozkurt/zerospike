@@ -1746,6 +1746,7 @@ export default function DashboardScreen() {
   // WeekSkeleton below for what fills that gap instead.
   const isFirstRun = loaded && entries.length === 0;
   const isExistingUser = loaded && entries.length > 0;
+  const hasAnyLog = loaded && entries.length > 0;
 
   const startSteps: {
     key: string;
@@ -1921,35 +1922,6 @@ export default function DashboardScreen() {
       {/* Free-trial card: days left and open Pro welcome steps. Renders nothing
           unless the store reports a running trial. */}
       <TrialCard />
-
-      {loaded && !isFirstRun && spikeConfigured && !isScreenshotMode() ? (
-        <Pressable
-          onPress={() => router.push("/spike")}
-          accessibilityRole="button"
-          accessibilityLabel={t("spike.title")}
-          style={{ marginBottom: 12 }}
-        >
-          <GlassCard style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
-            <View className="flex-row items-center" style={{ gap: 10 }}>
-              <IconTile icon="sparkles" size={32} radius={10} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}>
-                  {t("spike.title")}
-                </Text>
-                <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, marginTop: 1 }}>
-                  {t("spike.entryBody")}
-                </Text>
-                {!isProUser ? (
-                  <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700", marginTop: 3 }}>
-                    {t("spike.entryFree", { n: FREE_DAILY_MESSAGES })}
-                  </Text>
-                ) : null}
-              </View>
-              <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
-            </View>
-          </GlassCard>
-        </Pressable>
-      ) : null}
 
       {!loaded ? (
         // Unknown yet whether this is a first run or an existing user: neither
@@ -2216,6 +2188,35 @@ export default function DashboardScreen() {
             <Ionicons name="close" size={16} color={THEME.textMuted} />
           </Pressable>
         </View>
+      ) : null}
+
+      {loaded && hasAnyLog && spikeConfigured && !isScreenshotMode() ? (
+        <Pressable
+          onPress={() => router.push("/spike")}
+          accessibilityRole="button"
+          accessibilityLabel={t("spike.title")}
+          style={{ marginBottom: 12 }}
+        >
+          <GlassCard style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
+            <View className="flex-row items-center" style={{ gap: 10 }}>
+              <IconTile icon="sparkles" size={32} radius={10} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}>
+                  {t("spike.title")}
+                </Text>
+                <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, marginTop: 1 }}>
+                  {t("spike.entryBody")}
+                </Text>
+                {!isProUser ? (
+                  <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700", marginTop: 3 }}>
+                    {t("spike.entryFree", { n: FREE_DAILY_MESSAGES })}
+                  </Text>
+                ) : null}
+              </View>
+              <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
+            </View>
+          </GlassCard>
+        </Pressable>
       ) : null}
 
       {/* Context strip: active insulin (IOB) and the next reminder (2.3.0's

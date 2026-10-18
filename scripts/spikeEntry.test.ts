@@ -28,4 +28,16 @@ for (const lang of ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"]) {
   check(`i18n keys in ${lang}`, ok);
 }
 
+const lineOf = (needle: string): number => {
+  const i = home.indexOf(needle);
+  return i < 0 ? -1 : home.slice(0, i).split("\n").length;
+};
+const cardLine = lineOf("loaded && hasAnyLog && spikeConfigured");
+check("card condition requires at least one log", /loaded && hasAnyLog && spikeConfigured && !isScreenshotMode\(\)/.test(home));
+check("hasAnyLog means entries exist", /const hasAnyLog = loaded && entries\.length > 0;/.test(home));
+check("card after glucose ring", cardLine > lineOf("dashboard.todayAvgLabel") && lineOf("dashboard.todayAvgLabel") > 0);
+check("card after weekly boxes", cardLine > lineOf("<SegmentedStat"));
+check("card after post-meal countdown", cardLine > lineOf("<PostMealCountdown\n"));
+check("old pre-dashboard card position is gone", cardLine > lineOf("<TrialCard />"));
+
 if (failed > 0) throw new Error(`${failed} check(s) failed`);
