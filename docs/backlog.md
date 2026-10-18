@@ -13,3 +13,6 @@ Mağaza metni veri toplama dosyaları hazır: scratchpad/hub-k4b-alanlar.md (en,
 
 ## Açık tema kullanım oranı haftalık rapora
 scripts/metrics-weekly.mjs'e açık, koyu ve sistem tercih dağılımı eklenmesi. Gerekir: tema tercihi için analitik olayı (örneğin theme_pref_set {pref: light | dark | system}, sağlık çıkarımı yok, rıza kapsamında, şema v3, track fonksiyonunun önce yeniden deploy edilmesi), Supabase görünümü (v_theme_pref_daily) ve rapor satırı (rıza oranı ve n ile). Ayarlardaki tercih değişimi ve ilk çözümlenen varsayılan (yeni kurulum açık, mevcut kullanıcı koyu) ayrı sayılmalı.
+
+## Spike 502 (upstream) ret sayacı
+`spike_reject_usage` yalnız 429 nedenlerini (ip, device, global) sayar; model hatası 502 `upstream` sayılmaz. Gerekir: `spike_release`'te 'upstream' nedeninin sayıma yazılması, `reason` check kısıtının bu değeri kabul edecek şekilde genişletilmesi (yeni göç), `v_spike_gate_daily` görünümüne upstream sütunu ve scripts/metrics-weekly.mjs'e ret ve upstream oranı satırı. PII yine yok (cihaz kimliği, adres özeti, metin tutulmaz). Kabul: upstream hatası simülasyonunda sayaç bir artar, 429 sayıları değişmez, haftalık raporda satır görünür, 90 gün sonra `purge_spike_logs` siler.

@@ -54,6 +54,7 @@ ve her tabloya bir saklama süresi konmuş durumda.
 | `track_usage` | device_id, saat, sayaçlar | 2 gün (aynı iş) |
 | `spike_usage` | device_id, gün, sayaç | 90 gün (`purge_spike_logs`) |
 | `spike_calls` | device_id, gün, model, token, gecikme, filtre | 90 gün (aynı iş) |
+| `spike_reject_usage` | saat, ret nedeni (ip, device, global), tavan, ret sayısı; kimlik, IP özeti ve metin yok | 90 gün (`purge_spike_logs`) |
 | `subscription_events` | RC olayı, device_id (yalnız analitik açıkken), app_user_id, ülke, fiyat, kampanya alanları | satırlar 24 ay, ham gövde (`raw`) 90 gün (`purge_subscription_events`) |
 
 Kimlik taşımayan sayaçlar da silinir: `track_ip_usage`, `spike_ip_usage` ve `delete_usage`

@@ -42,7 +42,11 @@ user's language) inside the edge function. Change them there.
   install id is also what analytics events and the RevenueCat record carry, which is
   why the consent text lists all four uses. `spike_ip_usage` counts requests per caller
   address and hour for rate limiting: the address is never stored, only a keyed hash
-  of it (the /64 prefix for IPv6), deleted after 2 days.
+  of it (the /64 prefix for IPv6), deleted after 2 days. `spike_reject_usage` counts
+  rejected requests (429 only) per hour and reason (`ip`, `device`, `global`) with the
+  cap and a count: no device id, no address hash, no text, so no personal data. It is
+  increased inside `spike_reserve` and deleted after 90 days (`purge_spike_logs()`);
+  the view `v_spike_gate_daily` gives the weekly report the rejection rate.
 
 ## Consent gate (Apple 5.1.1 lesson)
 

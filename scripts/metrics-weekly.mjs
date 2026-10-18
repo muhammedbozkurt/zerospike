@@ -196,6 +196,22 @@ async function sbSource(start, end, downloads) {
     } catch {
       unavailable.push('Supabase spike_calls sayimi (erisilemedi)');
     }
+    try {
+      const gate = await sbGet(key, 'v_spike_gate_daily', `${range}&limit=10000`);
+      const byReason = (r) => gate.filter((g) => g.reason === r);
+      const caps = [...new Set(byReason('device').map((g) => Number(g.cap)))].sort((a, b) => a - b);
+      for (const c of caps) add(`app.spike.rej.device.${c}`, `Spike ret: cihaz limiti (${c})`, sum(byReason('device').filter((g) => Number(g.cap) === c), 'n'), null);
+      const ip = sum(byReason('ip'), 'n');
+      const glob = sum(byReason('global'), 'n');
+      const rej = sum(gate.filter((g) => g.reason !== 'ok'), 'n');
+      const ok = sum(byReason('ok'), 'n');
+      add('app.spike.rej.ip', 'Spike ret: IP limiti', ip, null);
+      add('app.spike.rej.global', 'Spike ret: genel limit', glob, null);
+      add('app.spike.rej_rate', 'Spike ret orani (ret / ret+ok)', rej + ok ? rej / (rej + ok) : null, null);
+    } catch (e) {
+      const missing = /HTTP (404|400)/.test(String(e.message));
+      unavailable.push(missing ? 'Supabase v_spike_gate_daily (gorunum yok, migration bekliyor)' : 'Supabase v_spike_gate_daily (erisilemedi)');
+    }
   } catch (e) {
     const m = /HTTP (\d+)/.exec(String(e.message));
     const why = m ? `HTTP ${m[1]}` : 'ag hatasi';
@@ -235,12 +251,12 @@ async function main() {
     unavailable.push(...s.unavailable);
   } else {
     for (const [k, l] of [['asc.imp.TOPLAM', 'Gosterim Toplam'], ['asc.dl.TOPLAM', 'Indirme Toplam'], ['rc.trials', 'Deneme baslangici'], ['rc.conv', 'Denemeden donusum (adet)'], ['rc.actives', 'Aktif abonelik'], ['rc.mrr', 'MRR']]) store.push({ key: k, label: l, val: null, scope: 'store' });
-    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls)'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
+    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls)'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.spike.rej.device.3', 'Spike ret: cihaz limiti (3)'], ['app.spike.rej.device.50', 'Spike ret: cihaz limiti (50)'], ['app.spike.rej.ip', 'Spike ret: IP limiti'], ['app.spike.rej.global', 'Spike ret: genel limit'], ['app.spike.rej_rate', 'Spike ret orani (ret / ret+ok)'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
   }
 
   const dl = downloads;
   const line = (r) => {
-    const unit = r.key.startsWith('app.ret') ? 'pct' : 'num';
+    const unit = r.key.startsWith('app.ret') || r.key.endsWith('_rate') ? 'pct' : 'num';
     const p = prev[r.key];
     const diff = r.val !== null && r.val !== undefined && typeof p === 'number' ? fmt(r.val - p, unit) : '-';
     if (r.scope === 'store') return `| ${r.label} | ${fmt(r.val, unit)} | ${fmt(p, unit)} | ${diff} | tam kapsam | - |`;
@@ -258,7 +274,7 @@ async function main() {
     '\nUygulama ici olaylar rizali ornekleme: yalniz analitik rizasi veren cihazlar sayilir, daha ilgili kullanicilara yanli olabilir. Riza orani paydasi ASC haftalik indirme sayisidir (yalniz iOS); pay iOS ve Android cihazlarini birlikte sayar, bu yuzden oran yaklasiktir ve ustten sapabilir.',
     '\n## Magaza ve RevenueCat (tam kapsam)\n', head, ...storeRows,
     '\n## Uygulama ici huni (rizali ornek)\n', head, ...appRows,
-    '\nSpike 429 (hiz siniri) sayisi ve orani: olculmuyor. spike_calls yalniz model cagrisini kaydeder (status/429 kolonu yok), reddedilen istekler modele ulasmadan doner. Olcmek icin sunucu tarafinda red kaydi (ornegin spike_calls.status veya ayri sayac) gerekir.',
+    '\nSpike ret orani paydasi: ok = iade sonrasi net model cagrisi (bedava tekrar dahil). Veri tam kapsam, riza ornegi degil; n bos, riza sutunu "-".',
     ...(unavailable.length ? ['\n## Erisilemeyen kaynaklar\n', ...unavailable.map((u) => `KULLANICI YENILEYECEK: ${u}`)] : []),
     args.dry ? '' : '\nKULLANICI YENILEYECEK: Play Console (script yok, elle bak)',
     `\n<!-- DATA ${JSON.stringify(Object.fromEntries(store.filter((r) => r.val !== null && r.val !== undefined).map((r) => [r.key, r.val])))} -->`,
