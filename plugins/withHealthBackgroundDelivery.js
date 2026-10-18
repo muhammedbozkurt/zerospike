@@ -5,11 +5,13 @@ const { WarningAggregator, withAppDelegate } = require("expo/config-plugins");
 // Apple requires that registration inside didFinishLaunchingWithOptions, before
 // JS exists. The library's published app.plugin.js adds the entitlement but not
 // this AppDelegate call (its app.plugin.ts does, and is not what Expo loads).
-// BackgroundDeliveryManager is an @objc public class of the ReactNativeHealthkit
-// pod module; the other imports in the AppDelegate are `internal import`.
+// BackgroundDeliveryManager is an @objc NSObject subclass, so it is reached by
+// name through the Objective-C runtime instead of `import ReactNativeHealthkit`:
+// the pod builds with SWIFT_OBJC_INTEROP_MODE=objcxx and the app target has no
+// C++ interop, so importing the module could fail to compile.
 
-const MODULE_IMPORT = "internal import ReactNativeHealthkit";
-const SETUP_CALL = "BackgroundDeliveryManager.shared.setupBackgroundObservers()";
+const SETUP_CALL =
+  'if let cls = NSClassFromString("ReactNativeHealthkit.BackgroundDeliveryManager") as? NSObject.Type, let manager = cls.value(forKey: "shared") as? NSObject { _ = manager.perform(NSSelectorFromString("setupBackgroundObservers")) }';
 const LAUNCH_FUNC =
   /([ \t]*)(?:public\s+)?override func application\(\s*_ application: UIApplication,\s*didFinishLaunchingWithOptions launchOptions: \[UIApplication\.LaunchOptionsKey: Any\]\? = nil\s*\) -> Bool \{\n/;
 
@@ -19,11 +21,6 @@ function fail(message) {
 
 function transformAppDelegate(src) {
   let out = src;
-
-  if (!out.includes(MODULE_IMPORT)) {
-    if (!/^internal import Expo$/m.test(out)) fail("`internal import Expo` not found in AppDelegate.swift.");
-    out = out.replace(/^internal import Expo$/m, `internal import Expo\n${MODULE_IMPORT}`);
-  }
 
   if (!out.includes(SETUP_CALL)) {
     const match = out.match(LAUNCH_FUNC);
@@ -47,5 +44,4 @@ function withHealthBackgroundDelivery(config) {
 
 module.exports = withHealthBackgroundDelivery;
 module.exports.transformAppDelegate = transformAppDelegate;
-module.exports.MODULE_IMPORT = MODULE_IMPORT;
 module.exports.SETUP_CALL = SETUP_CALL;

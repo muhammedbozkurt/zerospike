@@ -34,7 +34,7 @@
         "CFBundleDisplayName": "zerospike",
         "NSCameraUsageDescription": "zerospike uses your camera to scan food barcodes and add meal photos.",
         "NSPhotoLibraryUsageDescription": "zerospike accesses your photo library to add photos to your meal journal.",
-        "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries. It can also import new glucose readings in the background, even when the app is closed.",
+        "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries. It can also import new glucose readings in the background when the system allows it.",
         "NSHealthUpdateUsageDescription": "zerospike writes to Apple Health only when you allow it: in Settings, when connecting Apple Health, or when asked after saving an entry. This covers the blood glucose readings you enter by hand and, if you turn them on, the carbohydrate and insulin entries you log. Nothing else is written, and an entry you delete in zerospike is deleted from Apple Health too.",
         "NSLocationWhenInUseUsageDescription": "zerospike can attach your current location to a message you send from the SOS screen, so someone can find you faster.",
         "NSContactsUsageDescription": "zerospike lets you pick an emergency contact from your contacts for the SOS screen.",
@@ -219,7 +219,7 @@
       [
         "@kingstinct/react-native-healthkit",
         {
-          "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries. It can also import new glucose readings in the background, even when the app is closed.",
+          "NSHealthShareUsageDescription": "zerospike reads your blood glucose, insulin delivery and active-minute data from Apple Health to show them in your log and summaries. It can also import new glucose readings in the background when the system allows it.",
           "NSHealthUpdateUsageDescription": "zerospike writes to Apple Health only when you allow it: in Settings, when connecting Apple Health, or when asked after saving an entry. This covers the blood glucose readings you enter by hand and, if you turn them on, the carbohydrate and insulin entries you log. Nothing else is written, and an entry you delete in zerospike is deleted from Apple Health too.",
           "background": true
         }
@@ -349,6 +349,7 @@
       "expo-sqlite",
       "expo-status-bar",
       "react-native-health-connect",
+      "./plugins/withIosNoProcessingMode",
       "expo-background-task"
     ],
     "experiments": {

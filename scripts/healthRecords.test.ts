@@ -125,11 +125,11 @@ async function main(): Promise<void> {
   fake.authorized = false;
   fake.requestGrant = false;
   const denied = await S.mirrorHealthRecord({ ...cIn, id: "m2" });
-  eq("permission refused -> failed", denied.outcome, "failed");
-  eq("asked once for the kind", fake.ops.filter((o) => o === "requestKind").length, 1);
+  eq("unauthorized -> failed", denied.outcome, "failed");
+  eq("never asks for the permission", fake.ops.filter((o) => o === "requestKind").length, 0);
   eq("refused queue holds the id", (await S.getHealthRecordRetryIds("carbs", "P")).join(), "m2");
-  fake.requestGrant = true;
-  eq("granted at point of use -> written", (await S.mirrorHealthRecord({ ...cIn, id: "m2" })).outcome, "written");
+  fake.authorized = true;
+  eq("authorized later -> written", (await S.mirrorHealthRecord({ ...cIn, id: "m2" })).outcome, "written");
   await S.clearHealthRecordRetryIds("carbs", "P", ["m2"]);
   eq("clear is explicit and idempotent", (await S.getHealthRecordRetryIds("carbs", "P")).length, 0);
 

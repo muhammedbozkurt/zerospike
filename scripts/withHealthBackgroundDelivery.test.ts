@@ -16,7 +16,7 @@ const { execFileSync } = require("child_process");
 const plugin = require("../plugins/withHealthBackgroundDelivery");
 const scene = require("../plugins/withSceneLifecycle");
 
-const { transformAppDelegate, MODULE_IMPORT, SETUP_CALL } = plugin;
+const { transformAppDelegate, SETUP_CALL } = plugin;
 
 let passed = 0;
 let failed = 0;
@@ -47,15 +47,15 @@ const TEMPLATE: string = fs.readFileSync(nodePath.join(tmp, "package/ios/HelloWo
 ok("fixture: template has didFinishLaunchingWithOptions", TEMPLATE.includes("didFinishLaunchingWithOptions launchOptions"));
 
 const out: string = transformAppDelegate(TEMPLATE);
-ok("module import added once", count(out, MODULE_IMPORT) === 1);
-ok("module import sits right after the Expo import", out.startsWith(`internal import Expo\n${MODULE_IMPORT}\n`));
+ok("no module import is added (C++ interop safe)", !out.includes("import ReactNativeHealthkit"));
+ok("runtime lookup uses the exported @objc names", SETUP_CALL.includes("ReactNativeHealthkit.BackgroundDeliveryManager") && SETUP_CALL.includes("setupBackgroundObservers"));
 ok("setup call added once", count(out, SETUP_CALL) === 1);
 
 const fnStart = out.indexOf("didFinishLaunchingWithOptions launchOptions");
 const bodyStart = out.indexOf("{\n", fnStart) + 2;
 ok("setup call is the first statement of didFinishLaunching", out.slice(bodyStart).startsWith(`    ${SETUP_CALL}\n`));
 ok("setup call precedes the React Native factory", out.indexOf(SETUP_CALL) < out.indexOf("ExpoReactNativeFactory(delegate:"));
-ok("rest of the template untouched", out.replace(`\n${MODULE_IMPORT}`, "").replace(`    ${SETUP_CALL}\n`, "") === TEMPLATE);
+ok("rest of the template untouched", out.replace(`    ${SETUP_CALL}\n`, "") === TEMPLATE);
 ok("idempotent: second pass is a no-op", transformAppDelegate(out) === out);
 
 const afterScene: string = scene.transformAppDelegate(TEMPLATE, () => undefined);
@@ -71,7 +71,6 @@ const preInjected = TEMPLATE.replace(
 );
 ok("an existing manual call is not duplicated", count(transformAppDelegate(preInjected), SETUP_CALL) === 1);
 
-ok("missing Expo import fails loudly", throws(() => transformAppDelegate(TEMPLATE.replace("internal import Expo\n", ""))));
 ok(
   "missing didFinishLaunching fails loudly",
   throws(() => transformAppDelegate(TEMPLATE.replace("didFinishLaunchingWithOptions launchOptions", "didFinishLaunchingWithOptions opts"))),

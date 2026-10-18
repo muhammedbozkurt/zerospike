@@ -352,6 +352,7 @@ let observerSub: { remove: () => void } | null = null;
 
 async function startBackgroundObserver(onChange: () => void): Promise<boolean> {
   try {
+    if (observerSub) return true;
     const HK = loadHK();
     const immediate = HK.UpdateFrequency?.immediate ?? 1;
     // Persisted natively so a terminated app is relaunched with its observer
@@ -359,7 +360,6 @@ async function startBackgroundObserver(onChange: () => void): Promise<boolean> {
     // change once the bridge is up.
     await HK.configureBackgroundTypes([BLOOD_GLUCOSE], immediate);
     const enabled = await HK.enableBackgroundDelivery(BLOOD_GLUCOSE, immediate);
-    observerSub?.remove();
     observerSub = HK.subscribeToChanges(BLOOD_GLUCOSE, (args) => {
       if (args.errorMessage) return;
       onChange();

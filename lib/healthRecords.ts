@@ -143,7 +143,18 @@ setHealthRecordHooks({
  * app, coming to the foreground), then the queued deletes. Each id's row is
  * re-read: a deleted row simply leaves the queue. Never throws.
  */
-export async function retryHealthRecords(profileId: string): Promise<void> {
+let retryInFlight: Promise<void> | null = null;
+
+export function retryHealthRecords(profileId: string): Promise<void> {
+  if (retryInFlight) return retryInFlight;
+  const run = runRetryHealthRecords(profileId).finally(() => {
+    if (retryInFlight === run) retryInFlight = null;
+  });
+  retryInFlight = run;
+  return run;
+}
+
+async function runRetryHealthRecords(profileId: string): Promise<void> {
   if (!hasHealthProvider()) return;
   for (const kind of KINDS) {
     try {

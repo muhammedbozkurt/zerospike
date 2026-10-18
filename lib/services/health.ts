@@ -1,4 +1,4 @@
-import { Linking, Platform } from "react-native";
+import { AppState, Linking, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash } from "../analytics";
 import {
@@ -1647,6 +1647,15 @@ export async function syncHealthInBackground(): Promise<HealthBackgroundOutcome>
   }
 }
 
+// A system launch (HealthKit relaunching the terminated app) starts JS while
+// the app is not active; the observer subscription is not guaranteed to fire
+// then, so run one pass directly.
+if (Platform.OS === "ios" && AppState.currentState !== "active") {
+  setTimeout(() => {
+    void syncHealthInBackground();
+  }, 0);
+}
+
 const backgroundImportListeners = new Set<() => void>();
 function bumpBackgroundListeners(): void {
   backgroundImportListeners.forEach((l) => {
@@ -1706,10 +1715,9 @@ async function writeRecordToHealth(
   input: HealthRecordInput,
   meta: HealthWriteMeta
 ): Promise<string | null> {
-  // The permission sheet waits for the user, so it runs outside the timeout.
-  if (!(await provider.isKindWriteAuthorized(input.kind))) {
-    if (!(await provider.requestKindWritePermission(input.kind))) return null;
-  }
+  // Never prompts: the permission sheet belongs to the Settings switch. A revoked
+  // grant would otherwise reopen the system screen on every save and foreground.
+  if (!(await provider.isKindWriteAuthorized(input.kind))) return null;
   const op = input.kind === "carbs" ? "writeCarbs" : "writeInsulin";
   try {
     const call =

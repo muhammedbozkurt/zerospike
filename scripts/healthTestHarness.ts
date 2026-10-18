@@ -218,7 +218,7 @@ const AsyncStorage = {
 const M = Module as unknown as { _load: (request: string, ...rest: unknown[]) => unknown };
 const realLoad = M._load;
 M._load = function (request: string, ...rest: unknown[]) {
-  if (request === "react-native") return { Platform: PLATFORM, Linking: { openURL: async () => {} } };
+  if (request === "react-native") return { Platform: PLATFORM, AppState: { currentState: "active" }, Linking: { openURL: async () => {} } };
   if (request === "@react-native-async-storage/async-storage") return { __esModule: true, default: AsyncStorage };
   if (request.endsWith("/healthAppleKit")) {
     return { healthAppleKit: provider, prepareHealthKitWrite: async () => {} };

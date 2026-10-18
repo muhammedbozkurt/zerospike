@@ -520,6 +520,11 @@ section("K. idempotent write wiring (sync id + version) and retry orphan guard")
   ok("Android read loop guard still skips our own dataOrigin", /dataOrigin !== OWN_BUNDLE_ID/.test(hc));
   const ak = readFileSync(join(import.meta.dirname, "..", "lib", "services", "healthAppleKit.ts"), "utf8");
   ok("iOS read loop guard still skips our own bundle", /bundleIdentifier !== OWN_BUNDLE_ID/.test(ak));
+  const wr = health.slice(health.indexOf("async function writeRecordToHealth"), health.indexOf("async function writeRecordToHealth") + 900);
+  ok("record write path checks authorization but never requests it", /isKindWriteAuthorized/.test(wr) && !/requestKindWritePermission/.test(wr));
+  const rec = readFileSync(join(import.meta.dirname, "..", "lib", "healthRecords.ts"), "utf8");
+  ok("retryHealthRecords shares one in-flight run", /retryInFlight/.test(rec) && /if \(retryInFlight\) return retryInFlight/.test(rec));
+  ok("iOS observer subscription is not rebuilt while active", /if \(observerSub\) return true/.test(ak));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
