@@ -12,7 +12,6 @@ declare function require(id: string): any;
 let loadCalls = 0;
 let loader: () => Promise<any> = async () => ({ status: "unavailable", isDevFallback: false, plans: {} });
 
-let lastOpts: any = undefined;
 const store = new Map<string, string>();
 let holdReads = false;
 const releases: (() => void)[] = [];
@@ -36,8 +35,7 @@ Module._load = function (request: string, parent: any) {
   if (request === "@react-native-async-storage/async-storage") return { __esModule: true, default: AsyncStorageStub };
   if (request === "./services/purchases") {
     return {
-      loadOfferings: (opts?: unknown) => {
-        lastOpts = opts;
+      loadOfferings: () => {
         loadCalls++;
         return loader();
       },
@@ -133,7 +131,6 @@ async function main(): Promise<void> {
   await refreshPaywallTrialOnce();
   await refreshPaywallTrialOnce();
   ok("launch refresh runs once and primes", loadCalls === 1 && useProCta(true).kind === "trial", String(loadCalls));
-  ok("launch refresh is silent", lastOpts?.silent === true, JSON.stringify(lastOpts));
   clearPaywallTrial();
 
   const entry = (e: boolean, d: number, t?: number) => JSON.stringify(t === undefined ? { e, d } : { e, d, t });

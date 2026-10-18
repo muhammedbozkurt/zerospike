@@ -28,6 +28,9 @@ Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode
 ### Analitik v2
 - Huni olayları, ayrı rıza adımı, haftalık rapor ve SQL görünümleri.
 - Sıra: `track` fonksiyonu önce deploy edilir.
+- Firebase Analytics ve Crashlytics kaldırıldı; kullanım olayları yalnız
+  rızayla kendi sunucumuza, çökme raporu gönderilmez (hata kaydı yalnız
+  cihazda tutulur).
 
 ### PDF rapor
 - Hedef aralık çubuğu ilk sayfada; karşılaştırma bölümü veri yokken gizli.
