@@ -65,6 +65,7 @@ import {
 } from "./v23Sql";
 import { V24_CREATE } from "./v24Sql";
 import { V25_EMPTY_DEFAULT_NAMES } from "./v25Sql";
+import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "./v26Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -109,7 +110,8 @@ export type SchemaStamp =
   | 22
   | 23
   | 24
-  | 25;
+  | 25
+  | 26;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -776,5 +778,30 @@ export async function migrateToV25(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.withTransactionAsync(async () => {
     await db.execAsync(V25_EMPTY_DEFAULT_NAMES);
     await stampSchemaVersion(db, 25);
+  });
+}
+
+/**
+ * The v25 → v26 migration: nullable health_uuid on meal_logs and
+ * injection_logs (see ./v26Sql). Guarded ADD COLUMNs so a replay is a no-op,
+ * stamp in the same transaction.
+ */
+export async function migrateToV26(db: SQLite.SQLiteDatabase): Promise<void> {
+  const mealMissing = await missingColumns(db, "meal_logs", V26_MEAL_COLUMNS);
+  const injectionMissing = await missingColumns(
+    db,
+    "injection_logs",
+    V26_INJECTION_COLUMNS
+  );
+  await db.withTransactionAsync(async () => {
+    for (const col of mealMissing) {
+      await db.execAsync(`ALTER TABLE meal_logs ADD COLUMN ${col.name} ${col.type};`);
+    }
+    for (const col of injectionMissing) {
+      await db.execAsync(
+        `ALTER TABLE injection_logs ADD COLUMN ${col.name} ${col.type};`
+      );
+    }
+    await stampSchemaVersion(db, 26);
   });
 }

@@ -238,6 +238,8 @@ export interface MealLog {
    *  renamed, re-itemised or deleted. Also the flag that keeps a template row out
    *  of the "recent meals" chips, which cannot re-log one faithfully. */
   meal_template_id: string | null;
+  /** Health sample id of the mirrored carbohydrates (schema v26), or null. */
+  health_uuid?: string | null;
 }
 
 export interface Favorite {
@@ -481,6 +483,8 @@ export interface Injection {
    *  insulin_product_id is the catalog's OTHER_PRODUCT_ID ("other"). */
   insulin_product_id: string | null;
   insulin_product_other: string | null;
+  /** Health sample id of the mirrored insulin delivery (schema v26), or null. */
+  health_uuid?: string | null;
   meal_log_id: string | null; // FK → meal_logs (SET NULL on meal delete)
   note: string | null;
   /** Where the row came from: 'manual' by default, 'calculator' for the bolus

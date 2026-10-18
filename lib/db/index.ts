@@ -21,6 +21,7 @@ import {
   migrateToV23,
   migrateToV24,
   migrateToV25,
+  migrateToV26,
   missingColumns,
   ensureFoodNameColumns,
   stampSchemaVersion,
@@ -55,7 +56,7 @@ import {
 import type { SeedFood } from "./seed";
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -362,6 +363,12 @@ export async function initDatabase(): Promise<void> {
     await migrateToV25(db);
   }
 
+  // v25 → v26: nullable health_uuid on meal_logs and injection_logs (Health
+  // mirror ids for carbohydrates / insulin, see ./v26Sql).
+  if (currentVersion >= 1 && currentVersion < 26) {
+    await migrateToV26(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -477,6 +484,8 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       -- Which meal template this row was logged from (schema v13). Provenance
       -- only, deliberately WITHOUT a foreign key: see ./v13Sql.
       meal_template_id TEXT,
+      -- Health mirror id of the carbohydrate sample (schema v26, see ./v26Sql).
+      health_uuid TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
       FOREIGN KEY (sugar_log_id) REFERENCES sugar_logs (id) ON DELETE SET NULL,
       FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL
@@ -648,6 +657,8 @@ async function createInjectionSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       -- insulin_product_id is the catalog's "other" id.
       insulin_product_id TEXT,
       insulin_product_other TEXT,
+      -- Health mirror id of the insulin sample (schema v26, see ./v26Sql).
+      health_uuid TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
       FOREIGN KEY (meal_log_id) REFERENCES meal_logs (id) ON DELETE SET NULL
     );

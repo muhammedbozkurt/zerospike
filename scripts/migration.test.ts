@@ -47,6 +47,7 @@ import {
   migrateToV23,
   migrateToV24,
   migrateToV25,
+  migrateToV26,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -106,6 +107,7 @@ import {
   V23_PORTION_LABEL_KEYS,
 } from "../lib/db/v23Sql";
 import { V24_CREATE } from "../lib/db/v24Sql";
+import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "../lib/db/v26Sql";
 import { PORTION_LABEL_KEYS } from "../lib/db/types";
 import {
   adoptOrphanReminders,
@@ -4209,7 +4211,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 25", /const SCHEMA_VERSION = 25;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 26", /const SCHEMA_VERSION = 26;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4824,6 +4826,75 @@ async function main() {
     migrated.close();
   }
 
+  section("U1. v26 health_uuid on meal_logs and injection_logs");
+  {
+    const makeV25 = (): DatabaseSync => {
+      const d = new DatabaseSync(":memory:");
+      d.exec(`
+        PRAGMA foreign_keys = ON;
+        CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE meal_logs (
+          id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+          calculated_carbs_g REAL NOT NULL DEFAULT 0, logged_at TEXT NOT NULL,
+          FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+        );
+        CREATE TABLE injection_logs (
+          id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+          dose_units REAL, insulin_type TEXT, logged_at TEXT NOT NULL,
+          FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+        );
+        INSERT INTO user_profiles VALUES ('p1', 'Me', '2026-01-01T00:00:00.000Z');
+        INSERT INTO meal_logs VALUES ('m1', 'p1', 42.5, '2026-01-02T08:00:00.000Z');
+        INSERT INTO injection_logs VALUES ('i1', 'p1', 6, 'bolus', '2026-01-02T08:05:00.000Z');
+        PRAGMA user_version = 25;
+      `);
+      return d;
+    };
+
+    eq("V26_MEAL_COLUMNS names", V26_MEAL_COLUMNS.map((c) => c.name).join(","), "health_uuid");
+    eq("V26_INJECTION_COLUMNS names", V26_INJECTION_COLUMNS.map((c) => c.name).join(","), "health_uuid");
+
+    const db = makeV25();
+    const mealBefore = snapshotRows(db, "meal_logs");
+    const injBefore = snapshotRows(db, "injection_logs");
+    await migrateToV26(adapt(db));
+    eq("migrateToV26 stamps 26", readUserVersion(db), 26);
+    for (const t of ["meal_logs", "injection_logs"]) {
+      const c = columns(db, t).get("health_uuid");
+      ok(`${t}.health_uuid exists`, c !== undefined);
+      eq(`${t}.health_uuid is nullable`, c?.notnull, 0);
+      eq(`${t}.health_uuid is TEXT`, c?.type, "TEXT");
+    }
+    const strip = (rows: Record<string, unknown>[]) =>
+      rows.map(({ health_uuid, ...rest }) => {
+        void health_uuid;
+        return rest;
+      });
+    eq("meal rows survive unchanged", JSON.stringify(strip(snapshotRows(db, "meal_logs"))), JSON.stringify(mealBefore));
+    eq("injection rows survive unchanged", JSON.stringify(strip(snapshotRows(db, "injection_logs"))), JSON.stringify(injBefore));
+    eq("existing meal health_uuid is NULL", snapshotRows(db, "meal_logs")[0].health_uuid, null);
+    eq("existing injection health_uuid is NULL", snapshotRows(db, "injection_logs")[0].health_uuid, null);
+    db.exec("UPDATE meal_logs SET health_uuid = 'u1' WHERE id = 'm1';");
+    await migrateToV26(adapt(db));
+    eq("re-running keeps a stored uuid", snapshotRows(db, "meal_logs")[0].health_uuid, "u1");
+    eq("re-running still stamps 26", readUserVersion(db), 26);
+    db.close();
+
+    const indexSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "index.ts"), "utf8");
+    ok(
+      "the v25 -> v26 step runs the real migration",
+      /currentVersion < 26\)\s*\{\s*await migrateToV26\(db\);/.test(indexSrc)
+    );
+    ok(
+      "createSchemaV1 meal_logs carries health_uuid",
+      /meal_template_id TEXT,[^;]*?health_uuid TEXT,\s*FOREIGN KEY/.test(indexSrc)
+    );
+    ok(
+      "createSchemaV1 injection_logs carries health_uuid",
+      /insulin_product_other TEXT,[^;]*?health_uuid TEXT,\s*FOREIGN KEY/.test(indexSrc)
+    );
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -4837,7 +4908,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 25`, readUserVersion(db), 25);
+    eq(`v${start}: ends at 26`, readUserVersion(db), 26);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -5027,7 +5098,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      25
+      26
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -5043,7 +5114,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 25", readUserVersion(db), 25);
+    eq("the next launch still ends at 26", readUserVersion(db), 26);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -5141,7 +5212,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 25 again", readUserVersion(db), 25);
+    eq("the chain lands on 26 again", readUserVersion(db), 26);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -5801,8 +5872,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 23) await migrateToV23(target);
   if (currentVersion >= 1 && currentVersion < 24) await migrateToV24(target);
   if (currentVersion >= 1 && currentVersion < 25) await migrateToV25(target);
+  if (currentVersion >= 1 && currentVersion < 26) await migrateToV26(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 25;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 26;");
 }
 
 function count(db: DatabaseSync, table: string): number {
