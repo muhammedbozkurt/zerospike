@@ -1542,7 +1542,6 @@ const pt: TranslationSchema = {
     placeholder: "ex.: 1 pão francês, 1 ovo cozido, um suco de laranja",
     submit: "Estimar",
     estimating: "Estimando...",
-    total: "Total aproximado",
     edit: "Editar",
     note: "Esta é uma estimativa de informação alimentar, não uma dose. Confira você mesmo a precisão.",
     noteShort: "Estimativa alimentar, não uma dose.",

@@ -1539,7 +1539,6 @@ const ja: TranslationSchema = {
     placeholder: "例：おにぎり1個、味噌汁、緑茶1杯",
     submit: "推定する",
     estimating: "推定しています...",
-    total: "おおよその合計",
     edit: "編集",
     note: "これは食品情報の推定であり、投与量ではありません。正確さはご自身でご確認ください。",
     noteShort: "食品情報の推定であり、投与量ではありません。",

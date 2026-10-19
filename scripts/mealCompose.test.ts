@@ -21,6 +21,7 @@ import {
   composeTemplateItems,
   composeTotals,
   parseGramsInput,
+  pruneDrafts,
   removeComposeItem,
   setComposePortion,
   type ComposeItem,
@@ -190,6 +191,17 @@ for (const lang of SCENE_LANGS) {
 }
 ok("scene locale normalisation", sceneLang("tr-TR") === "tr" && sceneLang("pt_BR") === "pt" && sceneLang("AR") === "ar" && sceneLang("xx") === "en" && sceneLang("") === "en");
 console.log(`  (scene foods still without a measure, P6 seedPortions fills them: ${pendingMeasures.length ? pendingMeasures.join(", ") : "none"})`);
+
+{
+  const first = addEstimateLines([], [{ name: "Bread", quantity: 2, unit: "slice", grams_carb: 28 }]);
+  const drafts = { [first[0].key]: { name: "Bread" } };
+  const removed = removeComposeItem(first, first[0].key);
+  const kept = pruneDrafts(drafts, removed);
+  ok("removing an estimate line drops its draft", Object.keys(kept).length === 0);
+  const again = addEstimateLines(removed, [{ name: "Coffee", quantity: 1, unit: "cup", grams_carb: 0 }]);
+  ok("re-added line gets a clean draft slot", kept[again[0].key] === undefined);
+  ok("prune keeps drafts of rows still listed", pruneDrafts(drafts, first) === drafts);
+}
 
 console.log(`mealCompose: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -1539,7 +1539,6 @@ const en: TranslationSchema = {
     placeholder: "e.g. 2 slices of toast, 1 egg, a glass of milk",
     submit: "Estimate",
     estimating: "Estimating...",
-    total: "Approximate total",
     edit: "Edit",
     note: "This is a food information estimate, not a dose. Please check its accuracy yourself.",
     noteShort: "Food information estimate, not a dose.",

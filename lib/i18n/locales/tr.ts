@@ -1537,7 +1537,6 @@ const tr = {
     placeholder: "ör. 1 simit, 2 dilim beyaz peynir, 1 bardak çay",
     submit: "Tahmin et",
     estimating: "Tahmin ediliyor...",
-    total: "Yaklaşık toplam",
     edit: "Düzenle",
     note: "Besin bilgisi tahminidir, doz değildir. Doğruluğunu siz kontrol edin.",
     noteShort: "Besin bilgisi tahminidir, doz değildir.",

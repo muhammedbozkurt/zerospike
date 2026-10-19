@@ -32,6 +32,7 @@ import {
   composeTotals,
   initialPortionGrams,
   parseGramsInput,
+  pruneDrafts,
   removeComposeItem,
   setComposePortion,
   updateEstimateLine,
@@ -153,6 +154,9 @@ export function MealComposeSheet({
 
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  useEffect(() => {
+    setDrafts((prev) => pruneDrafts(prev, items));
+  }, [items]);
   const adding = useRef(new Set<string>());
   /** The portion a food entered the meal with: sizes the synthetic "portion"
    *  chip of a food that has no presets, and stays put while the user edits. */
@@ -421,7 +425,11 @@ export function MealComposeSheet({
                         key={item.key}
                         line={drafts[item.key] ?? estimateToEditable(item)}
                         onChange={(next) => onEstimateChange(item, next)}
-                        onRemove={() => onChange(removeComposeItem(itemsRef.current, item.key))}
+                        onRemove={() => {
+                          const next = removeComposeItem(itemsRef.current, item.key);
+                          setDrafts((prev) => pruneDrafts(prev, next));
+                          onChange(next);
+                        }}
                       />
                     ) : (
                       <FoodCard

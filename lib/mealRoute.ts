@@ -7,7 +7,8 @@ export type MealEditMode = "calculator" | "carbOnly";
  * no catalogue food and no weight: the calculator would turn its carb total into
  * a 100 g food and show an insulin figure for it, so it opens carb-only. The name
  * is not consulted: a calculator save always writes a food_id or a weight, so a row
- * with neither (blank or "-" name included) can only come from the estimate path.
+ * with neither (blank or "-" name included, 0 g of carbs included) can only come
+ * from the estimate path.
  */
 export function mealEditMode(meal: {
   food_id: string | null;
@@ -18,7 +19,6 @@ export function mealEditMode(meal: {
 }): MealEditMode {
   if (meal.food_id) return "calculator";
   if (hasMealWeight(meal.portion_g)) return "calculator";
-  if (meal.calculated_carbs_g != null && !(meal.calculated_carbs_g > 0)) return "calculator";
   return "carbOnly";
 }
 

@@ -1544,7 +1544,6 @@ const de: TranslationSchema = {
     placeholder: "z. B. 1 Brötchen, 2 Scheiben Gouda, 1 Kaffee",
     submit: "Schätzen",
     estimating: "Wird geschätzt...",
-    total: "Ungefähre Summe",
     edit: "Bearbeiten",
     note: "Dies ist eine Schätzung zu Nahrungsmitteln, keine Dosis. Bitte prüfen Sie die Genauigkeit selbst.",
     noteShort: "Schätzung zu Nahrungsmitteln, keine Dosis.",

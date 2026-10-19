@@ -243,6 +243,20 @@ export function addEstimateLines(
   return [...items, ...lines.map((line) => estimateLineToCompose(line, `est:${next++}`))];
 }
 
+/** Drops the edit drafts of rows that are no longer in the list, so a reused
+ *  "est:N" key never opens with a removed line's text. Same object when nothing goes. */
+export function pruneDrafts<T>(
+  drafts: Record<string, T>,
+  items: readonly ComposeItem[]
+): Record<string, T> {
+  const keys = new Set(items.map((item) => item.key));
+  const stale = Object.keys(drafts).filter((key) => !keys.has(key));
+  if (stale.length === 0) return drafts;
+  const next = { ...drafts };
+  for (const key of stale) delete next[key];
+  return next;
+}
+
 /** Edits an estimate line's carbs (the editable "about 12 g" field). */
 export function setEstimateCarbs(
   items: readonly ComposeItem[],

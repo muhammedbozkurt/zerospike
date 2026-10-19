@@ -27,7 +27,7 @@ eq("template meal (weight from totals) -> calculator", mealEditMode({ food_id: n
 eq("blank name, no food, no weight -> carbOnly", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "  ", calculated_carbs_g: 60 }), "carbOnly");
 eq("dash name, no food, no weight -> carbOnly", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "-", calculated_carbs_g: 60 }), "carbOnly");
 eq("dash display name -> carbOnly", mealEditMode({ food_id: null, portion_g: 0, display_name: "-", calculated_carbs_g: 60 }), "carbOnly");
-eq("zero carbs and no weight -> calculator", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "-", calculated_carbs_g: 0 }), "calculator");
+eq("zero carbs and no weight -> carbOnly", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "-", calculated_carbs_g: 0 }), "carbOnly");
 eq("dash name with a weight stays calculator", mealEditMode({ food_id: null, portion_g: 80, custom_food_name: "-", calculated_carbs_g: 60 }), "calculator");
 eq("NaN weight counts as no weight", mealEditMode({ food_id: null, portion_g: NaN, custom_food_name: "x" }), "carbOnly");
 eq("negative weight counts as no weight", mealEditMode({ food_id: null, portion_g: -4, custom_food_name: "x" }), "carbOnly");
@@ -57,7 +57,18 @@ const fs = require("fs");
 import { templateItemsFromMeals } from "../lib/mealTemplates";
 eq("carbOnly meal makes no template item", templateItemsFromMeals([{ food_id: null, display_name: "-", category: null, portion_g: 0, calculated_carbs_g: 60 }]).length, 0);
 eq("weighed meal still makes a template item", templateItemsFromMeals([{ food_id: null, display_name: "Soup", category: null, portion_g: 120, calculated_carbs_g: 20 }]).length, 1);
+import { addEstimateLines, composeItemFromFood, composeMealInput } from "../lib/mealCompose";
+{
+  const coffee = composeMealInput(addEstimateLines([], [{ name: "Black coffee", quantity: 1, unit: "cup", grams_carb: 0 }]));
+  eq("0 g estimate meal reopens carbOnly", mealEditMode({ food_id: null, portion_g: coffee.portion_g, custom_food_name: coffee.custom_food_name, calculated_carbs_g: coffee.calculated_carbs_g }), "carbOnly");
+  eq("0 g estimate meal never becomes a template item", templateItemsFromMeals([{ food_id: null, display_name: coffee.custom_food_name, category: null, portion_g: coffee.portion_g, calculated_carbs_g: coffee.calculated_carbs_g }]), []);
+  const water = { id: "w", category: "drinks", carb_100g: 0, portion_size_g: 250 } as unknown as Parameters<typeof composeItemFromFood>[0];
+  const mixed = composeMealInput(addEstimateLines([composeItemFromFood(water, "Water")], [{ name: "Coffee", quantity: 1, unit: "cup", grams_carb: 0 }]));
+  eq("water 0 g + coffee 0 g mixed is carbOnly", mealEditMode({ food_id: null, portion_g: mixed.portion_g, calculated_carbs_g: mixed.calculated_carbs_g }), "carbOnly");
+  eq("mixed 0 g meal makes no template item", templateItemsFromMeals([{ food_id: null, display_name: mixed.custom_food_name, category: null, portion_g: mixed.portion_g, calculated_carbs_g: mixed.calculated_carbs_g }]).length, 0);
+}
 const screen = fs.readFileSync("components/CarbOnlyMealEdit.tsx", "utf8");
+eq("carb-only save accepts 0 g (parseCarbGrams 0 allowed, screen only needs a name)", /carbs != null && name\.trim\(\) !== ""/.test(screen), true);
 eq("carb-only screen has no dose arithmetic", /estimateInsulin|insulin_dose_units|logInjection|iob/i.test(screen), false);
 const calc = fs.readFileSync("app/calculator.tsx", "utf8");
 eq("calculator routes carbOnly meals away", /mode === "carbOnly"[\s\S]*<CarbOnlyMealEdit/.test(calc), true);

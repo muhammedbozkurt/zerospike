@@ -1543,7 +1543,6 @@ const es: TranslationSchema = {
     placeholder: "p. ej. 1 pan blanco, 1 huevo, un zumo de naranja",
     submit: "Estimar",
     estimating: "Estimando...",
-    total: "Total aproximado",
     edit: "Editar",
     note: "Es una estimación de información alimentaria, no una dosis. Compruebe usted mismo su exactitud.",
     noteShort: "Estimación alimentaria, no una dosis.",

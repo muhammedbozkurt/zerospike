@@ -1542,7 +1542,6 @@ const it: TranslationSchema = {
     placeholder: "es. 1 ciabatta, 1 mozzarella, un cappuccino",
     submit: "Stima",
     estimating: "Stima in corso...",
-    total: "Totale approssimativo",
     edit: "Modifica",
     note: "Questa è una stima di informazioni alimentari, non una dose. Ne verifichi Lei stesso l'accuratezza.",
     noteShort: "Stima alimentare, non una dose.",
