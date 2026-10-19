@@ -638,7 +638,7 @@ const tr = {
       deleteRow: "Sunucu kayıtlarımı sil",
       deleteSub: "Günlüğünüz cihazınızda kalır.",
       deleteConfirmTitle: "Sunucu kayıtları silinsin mi?",
-      deleteConfirmBody: "Sunucularımızın bu kuruluma ait tuttuğu kayıtlar silinir: kullanım olayları, Spike mesaj sayacı ve teknik kaydı, abonelik olay kayıtları. Günlüğünüz cihazınızda kalır ve değişmez.",
+      deleteConfirmBody: "Sunucularımızın bu kuruluma ait tuttuğu kayıtlar silinir: kullanım olayları, Spike mesaj sayacı ve teknik kaydı, abonelik olay kayıtları, geri bildirimleriniz. Günlüğünüz cihazınızda kalır ve değişmez.",
       deleteDone: "Sunucu kayıtları silindi.",
       deleteFailed: "Kayıtlar silinemedi. Bağlantınızı kontrol edip yeniden deneyin.",
       sheetTitle: "Kullanım verisi paylaşılsın mı?",

@@ -640,7 +640,7 @@ const pt: TranslationSchema = {
       deleteRow: "Excluir meus dados do servidor",
       deleteSub: "Seu diário fica no seu aparelho.",
       deleteConfirmTitle: "Excluir os dados do servidor?",
-      deleteConfirmBody: "Isso exclui os dados que nossos servidores guardam desta instalação: eventos de uso, o contador de mensagens do Spike com o registro técnico e os eventos de assinatura. Seu diário fica no seu aparelho e não é alterado.",
+      deleteConfirmBody: "Isso exclui os dados que nossos servidores guardam desta instalação: eventos de uso, o contador de mensagens do Spike com o registro técnico, os eventos de assinatura e seus comentários. Seu diário fica no seu aparelho e não é alterado.",
       deleteDone: "Dados do servidor excluídos.",
       deleteFailed: "Não foi possível excluir os dados. Verifique sua conexão e tente novamente.",
       sheetTitle: "Compartilhar dados de uso?",

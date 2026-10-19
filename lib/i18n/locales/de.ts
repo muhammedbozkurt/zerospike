@@ -640,7 +640,7 @@ const de: TranslationSchema = {
       deleteRow: "Meine Serverdaten löschen",
       deleteSub: "Ihr Tagebuch bleibt auf Ihrem Gerät.",
       deleteConfirmTitle: "Serverdaten löschen?",
-      deleteConfirmBody: "Damit werden die Daten gelöscht, die unsere Server zu dieser Installation speichern: Nutzungsereignisse, der Spike-Nachrichtenzähler samt technischem Protokoll und die Abonnement-Ereignisse. Ihr Tagebuch bleibt auf Ihrem Gerät und wird nicht verändert.",
+      deleteConfirmBody: "Damit werden die Daten gelöscht, die unsere Server zu dieser Installation speichern: Nutzungsereignisse, der Spike-Nachrichtenzähler samt technischem Protokoll, die Abonnement-Ereignisse und Ihr Feedback. Ihr Tagebuch bleibt auf Ihrem Gerät und wird nicht verändert.",
       deleteDone: "Serverdaten gelöscht.",
       deleteFailed: "Die Daten konnten nicht gelöscht werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
       sheetTitle: "Nutzungsdaten teilen?",

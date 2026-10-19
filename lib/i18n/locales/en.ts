@@ -640,7 +640,7 @@ const en: TranslationSchema = {
       deleteRow: "Delete my server records",
       deleteSub: "Your journal stays on your device.",
       deleteConfirmTitle: "Delete server records?",
-      deleteConfirmBody: "This deletes the records our servers hold for this installation: usage events, the Spike message counter and its technical log, and subscription event records. Your journal stays on your device and is not changed.",
+      deleteConfirmBody: "This deletes the records our servers hold for this installation: usage events, the Spike message counter and its technical log, subscription event records, and your feedback. Your journal stays on your device and is not changed.",
       deleteDone: "Server records deleted.",
       deleteFailed: "The records could not be deleted. Check your connection and try again.",
       sheetTitle: "Share usage data?",

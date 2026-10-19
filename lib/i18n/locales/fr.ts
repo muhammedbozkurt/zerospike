@@ -640,7 +640,7 @@ const fr: TranslationSchema = {
       deleteRow: "Supprimer mes données serveur",
       deleteSub: "Votre journal reste sur l'appareil.",
       deleteConfirmTitle: "Supprimer les données serveur ?",
-      deleteConfirmBody: "Cela supprime les données que nos serveurs conservent pour cette installation : événements d'utilisation, compteur de messages Spike et son historique technique, événements d'abonnement. Votre journal reste sur votre appareil et n'est pas modifié.",
+      deleteConfirmBody: "Cela supprime les données que nos serveurs conservent pour cette installation : événements d'utilisation, compteur de messages Spike et son historique technique, événements d'abonnement, vos retours. Votre journal reste sur votre appareil et n'est pas modifié.",
       deleteDone: "Données serveur supprimées.",
       deleteFailed: "Les données n'ont pas pu être supprimées. Vérifiez votre connexion et réessayez.",
       sheetTitle: "Partager les données d'utilisation ?",

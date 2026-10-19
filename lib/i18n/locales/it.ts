@@ -640,7 +640,7 @@ const it: TranslationSchema = {
       deleteRow: "Elimina i miei dati dal server",
       deleteSub: "Il Suo diario resta sul dispositivo.",
       deleteConfirmTitle: "Eliminare i dati dal server?",
-      deleteConfirmBody: "Verranno eliminati i dati che i nostri server conservano per questa installazione: eventi di utilizzo, contatore dei messaggi di Spike con il relativo registro tecnico ed eventi di abbonamento. Il Suo diario resta sul dispositivo e non viene modificato.",
+      deleteConfirmBody: "Verranno eliminati i dati che i nostri server conservano per questa installazione: eventi di utilizzo, contatore dei messaggi di Spike con il relativo registro tecnico, eventi di abbonamento e i Suoi commenti. Il Suo diario resta sul dispositivo e non viene modificato.",
       deleteDone: "Dati del server eliminati.",
       deleteFailed: "Impossibile eliminare i dati. Controlli la connessione e riprovi.",
       sheetTitle: "Vuole condividere i dati di utilizzo?",
