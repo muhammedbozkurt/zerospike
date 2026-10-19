@@ -58,3 +58,9 @@ Durum çubuğu saati: simctl status_bar watchOS'ta desteklenmiyor, sim saati hos
 
 ## Wear OS: kayıt akışı karesi
 Play'de Wear OS için 3 kare (glance, tile, komplikasyon). Saat uygulamasında kayıt akışı yok (yalnız glance, tile, komplikasyon); 4. kare ancak gerçek bir kayıt akışı eklenirse çekilir.
+
+## Gizlilik politikası: 7 dil çevirisi (geri bildirim dahil)
+de, fr, es, it, pt, ar, ja: 19 Ekim 2026 tr/en metnindeki yenilikler dahil. (a) bölüm 7 altındaki "Geri bildirim ve iptal anketi" başlığı, (b) bölüm 5'teki Spike karbonhidrat tahmini cümlesi, (c) Sağlık maddesindeki karbonhidrat/insülin yazma anahtarları ve arka plan okuma cümlesi, (d) kurulum kimliğinin takma adlı olduğu ve e-postanın yalnız kullanıcı yazarsa geri bildirim kaydında saklandığı düzeltmeleri (bölüm 5, 7, 11, 13), (e) saklama ve silme listelerine geri bildirim. Her dilde tek resmi hitap korunur. Çeviri yayınlanana kadar uygulama bu dillerde /en/ sayfasını açar. Kaynak: greeneyeapp-site-2.4 dalı site-2.4 (0acc7c9); main (6396f1e) bu iki gizlilik dosyasının güncel hâlini taşımıyor.
+
+## Yayın: zerospike politika ve destek sayfaları (FTP)
+11 dosya greeneyeapp-site-2.4'ten FTP/SFTP ile aynı yola yüklenir (greeneyeapp-site/README.md Deployment); klasörün tamamı senkronlanmaz (bekleyen pazarlama sayfaları var). Sonrasında .env yüklenmediği, /zerospike/support formu, 301'ler ve sitemap kontrol edilir.
