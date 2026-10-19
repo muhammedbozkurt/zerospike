@@ -1,11 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { addSugarLog, listSugarLogs, deleteSugarLog } from "./logs";
-import { addMealLog, listMealLogs, deleteMealLog } from "./logs";
-import { logInjection, getInjections, deleteInjection } from "./injections";
-import { logMed, listMeds, deleteMed } from "./meds";
 import { createReminder, listReminders, updateReminder } from "./reminders";
-import { listTemplates, deleteTemplate, createTemplate } from "./mealTemplates";
 import { addCustomFood, updateFood } from "./foods";
 import { isFavorite, toggleFavorite } from "./favorites";
 import { getProfile, updateProfile } from "./profiles";
@@ -14,6 +9,13 @@ import { SELECTABLE_SITES, SITE_POINTS } from "./types";
 import type { InsulinType, Lang, MealSlot, ReminderType, SitePoint } from "./types";
 import type { FoodCategory } from "./categories";
 import { buildGlucoseSchedule, rng } from "./screenshotGlucose";
+import {
+  replaceSeedMeals,
+  replaceSeedStory,
+  replaceSeedTemplates,
+  runSeedTransaction,
+  type SeedStory,
+} from "./screenshotSeedRows";
 import { setProOverride } from "../services/purchases";
 import i18n from "../i18n";
 
@@ -129,24 +131,22 @@ function at(daysAgo: number, hour: number, minute = 0): string {
   return d.toISOString();
 }
 
-/** Re-materialise the meals in `lang` (clears any existing meal rows first).
+/** Re-materialise the meals in `lang`: every meal row of the profile is
+ *  replaced in one transaction (see ./screenshotSeedRows for why).
  *  Tracking variant carries no dose: insulin_mode "none" has no insulin UI,
  *  so a nonzero dose here would show up as a stray "N units" on a profile
  *  that never touches insulin. */
 async function seedMeals(profileId: string, lang: Lang, variant?: "tracking"): Promise<void> {
-  for (const m of await listMealLogs(profileId)) await deleteMealLog(m.id);
   const meals = MEALS[lang] ?? MEALS.en;
   const mealHours = [8, 13, 19];
-  for (let i = 0; i < meals.length; i++) {
-    await addMealLog({
-      profile_id: profileId,
-      custom_food_name: meals[i].name,
-      portion_g: 200,
-      calculated_carbs_g: meals[i].carbs,
-      insulin_dose_units: variant === "tracking" ? 0 : Math.round((meals[i].carbs / 10) * 2) / 2,
-      logged_at: at(0, mealHours[i], 15),
-    });
-  }
+  const rows = meals.map((m, i) => ({
+    name: m.name,
+    carbs: m.carbs,
+    portionG: 200,
+    dose: variant === "tracking" ? 0 : Math.round((m.carbs / 10) * 2) / 2,
+    loggedAt: at(0, mealHours[i], 15),
+  }));
+  await runSeedTransaction(await getDb(), (txn) => replaceSeedMeals(txn, profileId, rows));
 }
 
 /**
@@ -156,32 +156,27 @@ async function seedMeals(profileId: string, lang: Lang, variant?: "tracking"): P
  * carries it as a single typed-name item (carbs_g_fixed, no catalogue link) -
  * the template feature never requires a catalogue food, and this avoids
  * inventing item names with no i18n key behind them. Re-materialised (wiped
- * and re-created) on every seed pass, same shape as seedMeals just above,
- * because both the template name and its item's name_snapshot are localized.
+ * and re-created, in one transaction) on every seed pass, same shape as
+ * seedMeals just above, because both the template name and its item's
+ * name_snapshot are localized.
  */
 async function seedMealTemplates(profileId: string, lang: Lang): Promise<void> {
-  for (const t of await listTemplates(profileId)) await deleteTemplate(t.id);
   const meals = MEALS[lang] ?? MEALS.en;
   const templates: { key: string; slot: MealSlot; mealIndex: number }[] = [
     { key: "templates.demoName1", slot: "breakfast", mealIndex: 0 },
     { key: "templates.demoName2", slot: "lunch", mealIndex: 1 },
     { key: "templates.demoName3", slot: "dinner", mealIndex: 2 },
   ];
-  for (const t of templates) {
-    const meal = meals[t.mealIndex];
-    await createTemplate({
-      profile_id: profileId,
-      name: i18n.t(t.key, { lng: lang }) as string,
-      slot: t.slot,
-      items: [
-        {
-          name_snapshot: meal.name,
-          carbs_g_fixed: meal.carbs,
-          portion_g: 200,
-        },
-      ],
-    });
-  }
+  const rows = templates.map((t) => ({
+    name: i18n.t(t.key, { lng: lang }) as string,
+    slot: t.slot,
+    itemName: meals[t.mealIndex].name,
+    carbs: meals[t.mealIndex].carbs,
+    portionG: 200,
+  }));
+  await runSeedTransaction(await getDb(), (txn) =>
+    replaceSeedTemplates(txn, profileId, rows, Date.now())
+  );
 }
 
 /** The five demo favorites (04-food panel): a custom food per row, plus the
@@ -508,13 +503,9 @@ async function seedScreenshotDataLocked(
     await updateProfile(profileId, { name: "" });
 
     if (seededLang == null) {
-      // FIRST pass: wipe any stale data (e.g. an older single-language seed) so a
-      // re-seed can never duplicate, then lay down the language-neutral story.
-      for (const s of await listSugarLogs(profileId, 5000)) await deleteSugarLog(s.id);
-      for (const inj of await getInjections(profileId)) await deleteInjection(inj.id);
-      for (const m of await listMealLogs(profileId)) await deleteMealLog(m.id);
-      for (const m of await listMeds(profileId)) await deleteMed(m.id);
-
+      // FIRST pass: the language-neutral story below replaces whatever the
+      // profile had (an older seed included) in one transaction, so a re-seed
+      // can never duplicate; meals are replaced by seedMeals further down.
       await AsyncStorage.setItem(FINISH_SETUP_DISMISSED_KEY, "true");
 
       // Pro + explicit range targets for a full-featured account.
@@ -551,15 +542,23 @@ async function seedScreenshotDataLocked(
       }
 
       // 30 days of glucose: see buildGlucoseSchedule (screenshotGlucose.ts).
-      for (const g of buildGlucoseSchedule(new Date())) {
-        await addSugarLog({ profile_id: profileId, ...g });
-      }
+      const story: SeedStory = {
+        glucose: buildGlucoseSchedule(new Date()),
+        injections: [],
+        // Both variants: one oral medication taken today. Timed 20:10, AFTER the
+        // 19:15 evening meal, so the feed (ordered by time, newest first) opens on
+        // it - the medication row is what the journal panel leads with.
+        // Language-neutral: the brand name is the same in every locale, so it
+        // stays in the first-pass block and is never re-materialised.
+        meds: [{ takenAt: new Date(at(0, 20, 10)).getTime(), name: "Metformin" }],
+      };
 
       // Injections across every selectable site + point over the window; the first
       // (site, point) pair gets the OLDEST timestamp so it reads longest-unused.
       // Tracking variant: NO injection seed - insulin_mode "none" has no
       // injection UI, so a seeded row here would never be reachable in the app.
       if (variant !== "tracking") {
+        const injections: SeedStory["injections"][number][] = [];
         let n = 0;
         for (const site of SELECTABLE_SITES) {
           for (const point of SITE_POINTS) {
@@ -569,8 +568,7 @@ async function seedScreenshotDataLocked(
             // journal kinds, so a stray injection would silently close the gap).
             let daysAgo = n === 0 ? 29 : (n * 3) % 26;
             if (daysAgo === 12) daysAgo = 13;
-            await logInjection({
-              profile_id: profileId,
+            injections.push({
               site,
               site_point: point as SitePoint,
               dose_units: type === "basal" ? 14 : Math.round((4 + rng(n) * 6) * 2) / 2,
@@ -585,27 +583,19 @@ async function seedScreenshotDataLocked(
         // seeded below (seedReminders), so the dashboard's basal status line
         // reads "done today" (see components/BasalStatusLine.tsx) rather
         // than "pending" in the screenshot.
-        await logInjection({
-          profile_id: profileId,
+        injections.push({
           site: "abdomen_left",
           site_point: 1,
           dose_units: 24,
           insulin_type: "basal",
           logged_at: at(0, 22, 30),
         });
+        story.injections = injections;
       }
 
-      // Both variants: one oral medication taken today. Timed 20:10, AFTER the
-      // 19:15 evening meal, so the feed (ordered by time, newest first) opens on
-      // it - the medication row is what the journal panel leads with.
-      // Language-neutral: the brand name is the same in every locale, so it
-      // stays in the first-pass block and is never re-materialised.
-      await logMed({
-        profileId,
-        takenAt: new Date(at(0, 20, 10)).getTime(),
-        name: "Metformin",
-        note: null,
-      });
+      await runSeedTransaction(await getDb(), (txn) =>
+        replaceSeedStory(txn, profileId, story, Date.now())
+      );
 
       // 09-reminders panel: glucose/med/basal/custom rows (see seedReminders
       // above; created once, first pass only).
@@ -624,7 +614,9 @@ async function seedScreenshotDataLocked(
     await relabelDemoReminders(profileId, lang);
 
     await AsyncStorage.setItem(markerKey, lang);
-  } catch {
-    // The seed is best-effort marketing plumbing; never crash the app.
+  } catch (err) {
+    // The seed is best-effort marketing plumbing; never crash the app. Said out
+    // loud, though: a dropped pass leaves the previous language on screen.
+    console.warn("[screenshotSeed] pass failed", lang, err);
   }
 }
