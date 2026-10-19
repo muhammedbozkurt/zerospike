@@ -58,6 +58,7 @@ import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
 import { StoreStatusNotice } from "../components/StoreStatusNotice";
 import { Button, Txt } from "../components/ui";
+import { LegalLink } from "../components/LegalLink";
 import { listManualSugarLogs } from "../lib/db/logs";
 import { rangeFromWindow } from "../lib/insights";
 import { targetBandFor } from "../lib/agpChart";
@@ -850,16 +851,12 @@ function PaywallScreen() {
               disabled={busy}
             />
             <Txt kind="micro" tone="muted">·</Txt>
-            <Button
-              variant="tertiary"
-              size="sm"
+            <LegalLink
               label={t("settings.privacy")}
               onPress={() => Linking.openURL(privacyUrl())}
             />
             <Txt kind="micro" tone="muted">·</Txt>
-            <Button
-              variant="tertiary"
-              size="sm"
+            <LegalLink
               label={t("settings.terms")}
               onPress={() => Linking.openURL(termsUrl())}
             />
