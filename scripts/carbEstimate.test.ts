@@ -302,7 +302,15 @@ function editing(): void {
   const mixed = client.estimateMealInput([...dash, ...items]);
   ok("the saved name has no dash and no blank piece", !mixed.custom_food_name.includes("-") && mixed.custom_food_name.startsWith("Bread"), mixed.custom_food_name);
   eq("blank-name items still count toward the carbs", mixed.calculated_carbs_g, 100.6);
-  eq("charged true is read", client.parseEstimateBody({ ...GOOD, charged: true }).charged, true);
+  const lines = client.editableToEstimateLines([...dash, ...edited]);
+  eq("add-to-meal lines drop the nameless item", lines.map((l: { name: string }) => l.name), ["Bread", "Egg", "Milk"]);
+  eq("add-to-meal lines carry the edited figure", lines[0].grams_carb, 30.5);
+  const cm = require("../lib/mealCompose");
+  const composed = cm.addEstimateLines([], lines);
+  const row = cm.composeMealInput(composed);
+  eq("estimate lines land in the compose list with the same total", row.calculated_carbs_g, 43.1);
+  eq("and write a carb-only row: no weight, no food, no dose", [row.portion_g, row.food_id, row.insulin_dose_units, row.carbOnly], [0, null, 0, true]);
+  eq("charged true is read",client.parseEstimateBody({ ...GOOD, charged: true }).charged, true);
   eq("charged missing is false", client.parseEstimateBody(GOOD).charged, false);
   eq("charged non-boolean is false", client.parseEstimateBody({ ...GOOD, charged: "yes" }).charged, false);
   eq("only an explicit charge counts locally", [
@@ -379,7 +387,24 @@ async function screenshotSample(): Promise<void> {
   ok("outside screenshot mode estimateCarbs never answers from the sample", threw || calls.length > 0);
   env.EXPO_PUBLIC_SCREENSHOT_MODE = "1";
   const sample = client.screenshotCarbSample("tr");
-  eq("sample total recomputed", sample?.estimate.total_grams_carb, 40.6);
+  eq("sample total recomputed", sample?.estimate.total_grams_carb, 63.1);
+  eq("tr sample is the local breakfast", sample?.estimate.items.map((i) => i.name), ["Simit", "Beyaz peynir", "Çay"]);
+  const expected: Record<string, string[]> = {
+    en: ["Toast", "Egg", "Milk"],
+    de: ["Brötchen", "Gouda", "Filterkaffee"],
+    fr: ["Baguette", "Camembert", "Café au lait"],
+    es: ["Pan blanco", "Huevo", "Zumo de naranja"],
+    it: ["Ciabatta", "Mozzarella", "Cappuccino"],
+    pt: ["Pão francês", "Ovo cozido", "Suco de laranja"],
+    ar: ["خبز بيتا", "حمص", "قهوة عربية"],
+    ja: ["おにぎり", "味噌汁", "緑茶"],
+  };
+  for (const [l, names] of Object.entries(expected)) {
+    const s = client.screenshotCarbSample(l);
+    eq(`${l} sample items are the local scene`, s?.estimate.items.map((i) => i.name), names);
+    ok(`${l} sample text names the foods and amounts`, !!s && s.text.length > 0 && s.estimate.items.every((i) => i.quantity > 0 && i.unit.length > 0 && i.grams_carb >= 0));
+    eq(`${l} sample total is the item sum`, s?.estimate.total_grams_carb, Math.round((s?.estimate.items.reduce((a, i) => a + i.grams_carb, 0) ?? 0) * 10) / 10);
+  }
   eq("flag on: no network", (await client.estimateCarbs({ text: "x", locale: "de", tier: "free" })).items.length, 3);
   eq("flag on: no request sent", calls.length, 0);
   for (const l of ["tr", "en", "de", "fr", "es", "it", "pt", "ar", "ja"]) {
