@@ -3,7 +3,12 @@ import { fetch } from "expo/fetch";
 import { getDeviceId } from "../identity/deviceId";
 import { isScreenshotMode } from "../screenshotMode";
 import { hasSpikeConsent } from "../services/spikeConsent";
-import { composeMealInput, parseGramsInput, type ComposeItem } from "../mealCompose";
+import {
+  composeMealInput,
+  parseGramsInput,
+  type ComposeItem,
+  type EstimateLineInput,
+} from "../mealCompose";
 import type { SpikeTier } from "./spikeClient";
 
 /**
@@ -158,31 +163,32 @@ const FN_URL: string | undefined =
 export const carbEstimateConfigured =
   (typeof FN_URL === "string" && FN_URL.length > 0) || isScreenshotMode();
 
-type SampleRow = readonly [name: string, unit: string];
+type SampleRow = readonly [name: string, unit: string, quantity: number, gramsCarb: number];
 
-/** Capture-only sample meals (store frame 04b), one per app language. */
+/** Capture-only sample meals (store frame 04b), a local breakfast per app
+ *  language (lib/mealScene.ts picks the same three foods for the compose
+ *  scene). Carb figures follow the catalogue: grams of the food x carb/100. */
 const SAMPLE_MEALS: Record<string, { text: string; rows: readonly [SampleRow, SampleRow, SampleRow] }> = {
-  tr: { text: "2 dilim ekmek, 1 yumurta, bir bardak süt", rows: [["Ekmek", "dilim"], ["Yumurta", "adet"], ["Süt", "bardak"]] },
-  en: { text: "2 slices of bread, 1 egg, a glass of milk", rows: [["Bread", "slices"], ["Egg", "piece"], ["Milk", "glass"]] },
-  de: { text: "2 Scheiben Brot, 1 Ei, ein Glas Milch", rows: [["Brot", "Scheiben"], ["Ei", "Stück"], ["Milch", "Glas"]] },
-  fr: { text: "2 tranches de pain, 1 œuf, un verre de lait", rows: [["Pain", "tranches"], ["Œuf", "pièce"], ["Lait", "verre"]] },
-  es: { text: "2 rebanadas de pan, 1 huevo, un vaso de leche", rows: [["Pan", "rebanadas"], ["Huevo", "unidad"], ["Leche", "vaso"]] },
-  it: { text: "2 fette di pane, 1 uovo, un bicchiere di latte", rows: [["Pane", "fette"], ["Uovo", "pezzo"], ["Latte", "bicchiere"]] },
-  pt: { text: "2 fatias de pão, 1 ovo, um copo de leite", rows: [["Pão", "fatias"], ["Ovo", "unidade"], ["Leite", "copo"]] },
-  ar: { text: "شريحتان من الخبز، بيضة واحدة، كوب حليب", rows: [["خبز", "شريحة"], ["بيض", "حبة"], ["حليب", "كوب"]] },
-  ja: { text: "食パン2枚、卵1個、牛乳コップ1杯", rows: [["食パン", "枚"], ["卵", "個"], ["牛乳", "杯"]] },
+  tr: { text: "1 simit, 2 dilim beyaz peynir, bir bardak çay", rows: [["Simit", "adet", 1, 52], ["Beyaz peynir", "dilim", 2, 1.1], ["Çay", "bardak", 1, 10]] },
+  en: { text: "2 slices of toast, 1 egg, a glass of milk", rows: [["Toast", "slices", 2, 29.4], ["Egg", "piece", 1, 0.6], ["Milk", "glass", 1, 12.2]] },
+  de: { text: "1 Brötchen, 2 Scheiben Gouda, 1 Tasse Filterkaffee", rows: [["Brötchen", "Stück", 1, 30.3], ["Gouda", "Scheiben", 2, 1.1], ["Filterkaffee", "Tasse", 1, 0]] },
+  fr: { text: "2 tranches de baguette, 2 parts de camembert, 1 café au lait", rows: [["Baguette", "tranches", 2, 35.2], ["Camembert", "parts", 2, 0.8], ["Café au lait", "tasse", 1, 8]] },
+  es: { text: "2 rebanadas de pan blanco, 1 huevo, un vaso de zumo de naranja", rows: [["Pan blanco", "rebanadas", 2, 27.4], ["Huevo", "unidad", 1, 0.6], ["Zumo de naranja", "vaso", 1, 24.8]] },
+  it: { text: "2 fette di ciabatta, 1 mozzarella, un cappuccino", rows: [["Ciabatta", "fette", 2, 31.2], ["Mozzarella", "porzione", 1, 1.5], ["Cappuccino", "tazza", 1, 10.8]] },
+  pt: { text: "2 pães franceses, 1 ovo cozido, um copo de suco de laranja", rows: [["Pão francês", "unidades", 2, 58], ["Ovo cozido", "unidade", 1, 0.6], ["Suco de laranja", "copo", 1, 24.8]] },
+  ar: { text: "رغيف خبز بيتا، ملعقتان من الحمص، فنجان قهوة عربية", rows: [["خبز بيتا", "رغيف", 1, 33], ["حمص", "ملعقة", 2, 4.2], ["قهوة عربية", "فنجان", 1, 0.6]] },
+  ja: { text: "おにぎり1個、味噌汁1杯、緑茶1杯", rows: [["おにぎり", "個", 1, 38.5], ["味噌汁", "杯", 1, 7.2], ["緑茶", "杯", 1, 0]] },
 };
-const SAMPLE_GRAMS = [28, 0.6, 12];
 
 /** Null outside screenshot mode (dev build + capture env flag): the sample never exists in a release. */
 export function screenshotCarbSample(locale: string): { text: string; estimate: CarbEstimate } | null {
   if (!isScreenshotMode()) return null;
   const sample = SAMPLE_MEALS[String(locale).slice(0, 2)] ?? SAMPLE_MEALS.en;
-  const items: CarbItem[] = sample.rows.map(([name, unit], i) => ({
+  const items: CarbItem[] = sample.rows.map(([name, unit, quantity, grams_carb]) => ({
     name,
     unit,
-    quantity: i === 0 ? 2 : 1,
-    grams_carb: SAMPLE_GRAMS[i],
+    quantity,
+    grams_carb,
   }));
   return {
     text: sample.text,
@@ -329,6 +335,17 @@ export function canAddEstimate(state: {
   return (
     state.resultShown && state.items.length > 0 && state.items.some(hasItemName) && !state.saving
   );
+}
+
+/** The named items as compose-list estimate lines (mealCompose.addEstimateLines):
+ *  "Add to meal" hands these over instead of writing the journal itself. */
+export function editableToEstimateLines(items: readonly EditableItem[]): EstimateLineInput[] {
+  return items.filter(hasItemName).map((item) => ({
+    name: item.name.trim(),
+    quantity: parseGramsInput(item.quantityText),
+    unit: item.unit.trim(),
+    grams_carb: editableGrams(item),
+  }));
 }
 
 /** Analytics only: an item count bucket, never a gram value. */

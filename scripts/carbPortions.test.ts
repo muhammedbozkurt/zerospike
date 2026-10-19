@@ -8,6 +8,14 @@ import { PORTION_OVERLAY } from "../lib/db/seedPortions";
 import { SEED_CATALOG_VERSION, selectFoodsToUpdate, seedNameKey } from "../lib/db/seedVersion";
 import { PORTION_LABEL_KEYS } from "../lib/db/types";
 import {
+  buildPortionChips,
+  chipFromGrams,
+  chipGrams,
+  initialPortionGrams,
+  type PortionChip,
+} from "../lib/mealCompose";
+import { SCENE_LANGS, sceneFoods } from "../lib/mealScene";
+import {
   LAST_PORTION_CAP,
   parseLastPortions,
   pickRememberedPortion,
@@ -111,6 +119,87 @@ console.log("D. last portion memory");
   for (let i = 0; i < LAST_PORTION_CAP + 20; i++) big = withLastPortion(big, `f${i}`, "slice");
   const ids = Object.keys(big);
   ok("cap holds, oldest dropped", ids.length === LAST_PORTION_CAP && !ids.includes("f0") && ids.includes(`f${LAST_PORTION_CAP + 19}`));
+}
+
+console.log("E. portion chips");
+{
+  const m = (label_key: (typeof PORTION_LABEL_KEYS)[number], grams: number) => ({ label_key, grams });
+  const ids = (chips: PortionChip[]) => chips.map((c) => c.id).join(",");
+
+  const one = buildPortionChips([m("slice", 30)], "slice");
+  ok("one measure: x1, x2, grams", ids(one) === "slice:1,slice:2,grams", ids(one));
+  const three = buildPortionChips([m("slice", 30), m("piece", 60), m("cup", 200)], "slice");
+  ok("three measures: primary x1/x2, others x1, grams", ids(three) === "slice:1,slice:2,piece:1,cup:1,grams", ids(three));
+  ok("at most 5 chips", three.length === 5);
+  const many = buildPortionChips(
+    [m("slice", 30), m("piece", 60), m("cup", 200), m("glass", 240), m("bowl", 300)],
+    "cup"
+  );
+  ok("measures past 3 are dropped, chips stay <= 5", many.length <= 5 && !many.some((c) => c.label_key === "glass"), ids(many));
+  const remembered = buildPortionChips([m("slice", 30), m("piece", 60)], "piece");
+  ok("remembered measure becomes primary", ids(remembered) === "piece:1,piece:2,slice:1,grams", ids(remembered));
+  const fallback = buildPortionChips([m("slice", 30), m("piece", 60)], "cup");
+  ok("unknown primary key falls back to the first measure", fallback[0].id === "slice:1");
+  const synthetic = buildPortionChips([], null, 150);
+  ok("no measure: synthetic portion from typical", ids(synthetic) === "portion:1,portion:2,grams" && synthetic[0].unit_g === 150, ids(synthetic));
+  ok("no measure and no typical: 100 g portion", buildPortionChips([], undefined, 0)[0].unit_g === 100);
+  const dup = buildPortionChips([m("slice", 30), m("slice", 99), m("piece", 0)], "slice");
+  ok("duplicate label and zero grams are dropped", ids(dup) === "slice:1,slice:2,grams", ids(dup));
+  ok("grams chip is last and the only grams chip", three[three.length - 1].kind === "grams" && three.filter((c) => c.kind === "grams").length === 1);
+
+  ok("chipGrams x1", chipGrams(one[0]) === 30);
+  ok("chipGrams x2", chipGrams(one[1]) === 60);
+  ok("chipGrams grams chip keeps the typed value", chipGrams(one[2], 47.3) === 47.3 && chipGrams(one[2]) === 0);
+  ok("chipGrams works on the one-decimal measure", chipGrams(buildPortionChips([m("slice", 33.33)], null)[1]) === 66.6);
+
+  ok("chipFromGrams exact x1", chipFromGrams(three, 30)?.id === "slice:1");
+  ok("chipFromGrams exact x2", chipFromGrams(three, 60)?.id === "slice:2");
+  ok("chipFromGrams ties go to the earlier chip", chipFromGrams(three, 60)?.id !== "piece:1");
+  ok("chipFromGrams other measure", chipFromGrams(three, 200)?.id === "cup:1");
+  ok("chipFromGrams no match -> grams mode", chipFromGrams(three, 77)?.kind === "grams");
+  ok("chipFromGrams 0 g -> grams mode", chipFromGrams(three, 0)?.kind === "grams");
+  ok("chipFromGrams NaN -> grams mode", chipFromGrams(three, NaN)?.kind === "grams");
+  ok("chipFromGrams without a grams chip -> null", chipFromGrams([three[0]], 77) === null);
+
+  const pre = [m("slice", 30), m("piece", 60)];
+  ok("initial: remembered wins", initialPortionGrams(pre, "piece", 120) === 60);
+  ok("initial: remembered label gone -> first measure", initialPortionGrams(pre, "cup", 120) === 30);
+  ok("initial: nothing remembered -> first measure", initialPortionGrams(pre, undefined, 120) === 30);
+  ok("initial: no measure -> typical", initialPortionGrams([], undefined, 120) === 120);
+  ok("initial: no measure, no typical -> 100", initialPortionGrams([], undefined, 0) === 100);
+  ok("initial: zero-gram measure skipped", initialPortionGrams([m("slice", 0), m("piece", 60)], undefined, 120) === 60);
+  ok("initial: remembered with no measure falls to typical", initialPortionGrams([], "slice", 80) === 80);
+  ok("initial: capped", initialPortionGrams([], undefined, 99999) === 9999);
+
+  // Whole catalogue: every food yields a sane chip row, and a chip's grams map back to it.
+  let chipFoods = 0;
+  for (const f of SEED_FOODS) {
+    const measures = (f.portions ?? []).map(([label_key, grams]) => ({ label_key, grams }));
+    const chips = buildPortionChips(measures, undefined, f.portion ?? 0);
+    chipFoods++;
+    if (chips.length > 5 || chips[chips.length - 1].kind !== "grams" || chips.some((c) => c.kind === "measure" && !(chipGrams(c) > 0))) {
+      ok(`${f.en}: chip row sane`, false, ids(chips));
+    }
+    const back = chipFromGrams(chips, chipGrams(chips[0]));
+    if (back?.id !== chips[0].id) ok(`${f.en}: first chip maps back`, false, `${back?.id}`);
+  }
+  ok("every catalogue food builds a chip row", chipFoods === SEED_FOODS.length);
+}
+
+console.log("F. scene foods carry measures");
+{
+  const pending: string[] = [];
+  for (const lang of SCENE_LANGS) {
+    for (const sf of sceneFoods(lang)) {
+      const f = byEn.get(seedNameKey(sf.en));
+      if (!f) {
+        ok(`${lang}: ${sf.en} in the catalogue`, false);
+        continue;
+      }
+      if (!f.portions || f.portions.length === 0) pending.push(`${lang}:${sf.en}`);
+    }
+  }
+  console.log(`  (without a measure until seedPortions gains them: ${pending.length ? pending.join(", ") : "none"})`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

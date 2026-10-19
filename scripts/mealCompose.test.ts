@@ -9,7 +9,11 @@ declare const process: { exit: (code: number) => void };
 
 import {
   addComposeItem,
+  addEstimateLines,
   composeCanSave,
+  composeCanSaveTemplate,
+  composeHasEstimate,
+  setEstimateCarbs,
   composeItemCarbs,
   composeItemFromFood,
   composeMealInput,
@@ -21,6 +25,10 @@ import {
   type ComposeItem,
 } from "../lib/mealCompose";
 import { templateCarbs } from "../lib/mealTemplates";
+import { mealEditMode } from "../lib/mealRoute";
+import { SCENE_LANGS, sceneFoods, sceneLang, sceneStarters } from "../lib/mealScene";
+import { SEED_FOODS } from "../lib/db/seed";
+import { seedNameKey } from "../lib/db/seedVersion";
 import type { Food } from "../lib/db/types";
 
 let passed = 0;
@@ -109,6 +117,73 @@ ok("meal name capped", composeMealInput([item("x".repeat(300), 1, 1)]).custom_fo
 
 const tpl = composeTemplateItems(two);
 ok("template items map", tpl.length === 2 && tpl[1].portion_g === 150 && tpl[1].carb_100g_snapshot === 28);
+
+// ── estimate lines, carb-only mixed meals (D1-A) ────────────────────────────
+const est = (name: string, qty: number, unit: string, carbs: number) => ({
+  name,
+  quantity: qty,
+  unit,
+  grams_carb: carbs,
+});
+const mixed = addEstimateLines(two, [est("Ekmek", 2, "dilim", 28), est("Süt", 1, "bardak", 12.2)]);
+ok("estimate lines appended", mixed.length === 4 && mixed[2].estimate === true && mixed[3].estimate === true);
+ok("estimate keys are fresh and unique", new Set(mixed.map((i) => i.key)).size === 4 && mixed[2].key === "est:0" && mixed[3].key === "est:1");
+ok("second batch continues numbering", addEstimateLines(mixed, [est("Çay", 1, "bardak", 10)])[4].key === "est:2");
+ok("estimate carbs are the fixed figure", composeItemCarbs(mixed[2]) === 28 && composeItemCarbs(mixed[3]) === 12.2);
+ok("estimate portion stays 0", mixed[2].portion_g === 0);
+ok("mixed total adds rows and estimates", composeTotals(mixed).carbs_g === 86.6, String(composeTotals(mixed).carbs_g));
+ok("setComposePortion leaves an estimate line alone", setComposePortion(mixed, "est:0", 500)[2].portion_g === 0);
+ok("setEstimateCarbs edits only estimate lines", setEstimateCarbs(mixed, "est:0", 31.25)[2].carbs_g_fixed === 31.3 && setEstimateCarbs(mixed, "a", 5)[0].carbs_g_fixed === undefined);
+ok("setEstimateCarbs clamps negative", setEstimateCarbs(mixed, "est:0", -4)[2].carbs_g_fixed === 0);
+ok("hasEstimate", composeHasEstimate(mixed) && !composeHasEstimate(two));
+
+const mixedMeal = composeMealInput(mixed);
+ok("mixed meal: portion_g 0", mixedMeal.portion_g === 0, String(mixedMeal.portion_g));
+ok("mixed meal: food_id null", mixedMeal.food_id === null);
+ok("mixed meal: no dose", mixedMeal.insulin_dose_units === 0);
+ok("mixed meal: carbs 86.6", mixedMeal.calculated_carbs_g === 86.6);
+ok("mixed meal: carbOnly flag", mixedMeal.carbOnly === true);
+ok("mixed meal: name carries the estimate amount", mixedMeal.custom_food_name === "a + b + Ekmek (2 dilim) + Süt (1 bardak)", mixedMeal.custom_food_name);
+ok(
+  "mixed meal reopens carb-only (mealEditMode)",
+  mealEditMode({ food_id: mixedMeal.food_id, portion_g: mixedMeal.portion_g, custom_food_name: mixedMeal.custom_food_name, calculated_carbs_g: mixedMeal.calculated_carbs_g }) === "carbOnly"
+);
+const plainMeal = composeMealInput(two);
+ok("plain meal: still its summed portion", plainMeal.portion_g === 183 && plainMeal.carbOnly === false);
+ok(
+  "plain meal still opens in the calculator",
+  mealEditMode({ food_id: plainMeal.food_id, portion_g: plainMeal.portion_g, custom_food_name: plainMeal.custom_food_name, calculated_carbs_g: plainMeal.calculated_carbs_g }) === "calculator"
+);
+const forced = composeMealInput(two, { carbOnly: true });
+ok("carbOnly option zeroes the portion", forced.portion_g === 0 && forced.calculated_carbs_g === 46.4 && forced.carbOnly);
+ok("carbOnly:false on an estimate meal is honoured only by the caller", composeMealInput(mixed, { carbOnly: false }).carbOnly === false);
+ok("zero-gram estimate (black coffee) can be saved", composeCanSave([...two, ...addEstimateLines([], [est("Kahve", 1, "fincan", 0)])]));
+ok("nameless estimate line cannot be saved", !composeCanSave(addEstimateLines([], [est("-", 1, "x", 5)])));
+ok("estimate-only meal can be saved", composeCanSave(addEstimateLines([], [est("Ekmek", 2, "dilim", 28)])));
+
+ok("template save closed with an estimate line", !composeCanSaveTemplate(mixed));
+ok("template items empty with an estimate line", composeTemplateItems(mixed).length === 0);
+ok("template save open for plain foods", composeCanSaveTemplate(two) && composeTemplateItems(two).length === 2);
+ok("template save closed for an empty meal", !composeCanSaveTemplate([]));
+
+// ── meal scene (4): 9 languages ─────────────────────────────────────────────
+const byEnName = new Map(SEED_FOODS.map((f) => [seedNameKey(f.en), f]));
+const pendingMeasures: string[] = [];
+ok("scene covers the 9 app languages", SCENE_LANGS.length === 9);
+for (const lang of SCENE_LANGS) {
+  const foods = sceneFoods(lang);
+  ok(`${lang}: three scene foods`, foods.length === 3);
+  ok(`${lang}: three distinct foods`, new Set(foods.map((f) => f.en)).size === 3);
+  ok(`${lang}: starters are the scene foods`, JSON.stringify(sceneStarters(lang)) === JSON.stringify(foods.map((f) => f.en)));
+  for (const sf of foods) {
+    const seed = byEnName.get(seedNameKey(sf.en));
+    ok(`${lang}: "${sf.en}" exists in the catalogue`, !!seed);
+    ok(`${lang}: "${sf.en}" grams sane`, sf.grams > 0 && sf.grams <= 500);
+    if (seed && !(seed.portions && seed.portions.length > 0)) pendingMeasures.push(`${lang}:${sf.en}`);
+  }
+}
+ok("scene locale normalisation", sceneLang("tr-TR") === "tr" && sceneLang("pt_BR") === "pt" && sceneLang("AR") === "ar" && sceneLang("xx") === "en" && sceneLang("") === "en");
+console.log(`  (scene foods still without a measure, P6 seedPortions fills them: ${pendingMeasures.length ? pendingMeasures.join(", ") : "none"})`);
 
 console.log(`mealCompose: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
