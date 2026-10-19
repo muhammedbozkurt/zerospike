@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,10 +24,11 @@ import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
+import { Button, Txt } from "../components/ui";
 import { PaywallPreview } from "../components/PaywallPreview";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
-import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { MODAL_TOP_PAD, SPACE, THEME } from "../lib/theme/tokens";
 import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
 import { isolateLtr, pct } from "../lib/format";
 
@@ -163,12 +163,12 @@ function DownsellScreen() {
           {loading ? (
             <View className="items-center">
               <ActivityIndicator color={THEME.accent} />
-              <Text style={{ color: THEME.textMuted, marginTop: 10, textAlign: "center" }}>
+              <Txt tone="muted" style={{ marginTop: SPACE.md, textAlign: "center" }}>
                 {t("common.loading")}
-              </Text>
+              </Txt>
             </View>
           ) : discount ? (
-            <View className="items-center" style={{ gap: 14 }}>
+            <View className="items-center" style={{ gap: SPACE.lg }}>
               <View style={{ width: "100%", maxWidth: 420 }}>
                 <PaywallPreview />
               </View>
@@ -197,39 +197,28 @@ function DownsellScreen() {
 
               {/* Kept outside the card, well below the CTA: a quiet way out that
                   never competes with the offer itself. */}
-              <Pressable onPress={decline} disabled={busy} hitSlop={8} style={{ marginTop: 12 }}>
-                <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
-                  {t("downsell.decline")}
-                </Text>
-              </Pressable>
+              <Button
+                variant="tertiary"
+                size="sm"
+                label={t("downsell.decline")}
+                onPress={decline}
+                disabled={busy}
+                className="mt-2"
+              />
             </View>
           ) : (
-            <View className="items-center" style={{ gap: 12 }}>
+            <View className="items-center" style={{ gap: SPACE.md }}>
               {/* The discount headline promises a price; with nothing to show it
                   would be a bare claim, so the no-offer branch says so plainly.
                   The tile is the same visual anchor its sibling states carry, so
                   this branch is not two lines of text floating in empty space. */}
               <IconTile icon="pricetag-outline" size={44} radius={14} tint={THEME.textMuted} />
-              <Text
-                style={{
-                  color: THEME.text,
-                  fontSize: 22,
-                  fontWeight: "800",
-                  textAlign: "center",
-                }}
-              >
+              <Txt kind="title" style={{ textAlign: "center" }}>
                 {t("downsell.noOfferTitle")}
-              </Text>
-              <Text
-                style={{
-                  color: THEME.textMuted,
-                  textAlign: "center",
-                  lineHeight: 20,
-                  maxWidth: 280,
-                }}
-              >
+              </Txt>
+              <Txt tone="muted" style={{ textAlign: "center", maxWidth: 280 }}>
                 {t("downsell.fallbackSubtitle")}
-              </Text>
+              </Txt>
             </View>
           )}
         </ScrollView>
@@ -237,21 +226,19 @@ function DownsellScreen() {
         {!loading ? (
           <View className="px-6">
             {discount ? (
-              <View className="flex-row justify-center" style={{ gap: 24 }}>
-                <Pressable onPress={() => Linking.openURL(privacyUrl())}>
-                  <Text
-                    style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
-                  >
-                    {t("settings.privacy")}
-                  </Text>
-                </Pressable>
-                <Pressable onPress={() => Linking.openURL(termsUrl())}>
-                  <Text
-                    style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
-                  >
-                    {t("settings.terms")}
-                  </Text>
-                </Pressable>
+              <View className="flex-row justify-center" style={{ gap: SPACE.sm }}>
+                <Button
+                  variant="tertiary"
+                  size="sm"
+                  label={t("settings.privacy")}
+                  onPress={() => Linking.openURL(privacyUrl())}
+                />
+                <Button
+                  variant="tertiary"
+                  size="sm"
+                  label={t("settings.terms")}
+                  onPress={() => Linking.openURL(termsUrl())}
+                />
               </View>
             ) : (
               <GradientCTA label={t("downsell.fallbackCta")} onPress={decline} />

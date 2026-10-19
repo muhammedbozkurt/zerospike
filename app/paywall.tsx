@@ -18,7 +18,7 @@ import {
   IconTile,
 } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
-import { GLUCOSE_RICH, MODAL_TOP_PAD, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
 import { isolateLtr, money, num, pct } from "../lib/format";
 import { useTranslation } from "react-i18next";
@@ -57,6 +57,7 @@ import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
 import { StoreStatusNotice } from "../components/StoreStatusNotice";
+import { Button, Txt } from "../components/ui";
 import { listManualSugarLogs } from "../lib/db/logs";
 import { rangeFromWindow } from "../lib/insights";
 import { targetBandFor } from "../lib/agpChart";
@@ -688,29 +689,13 @@ function PaywallScreen() {
           {/* Compact headline; a limit context (health/foods/...) puts its own
               title/body in the same slots. Neither line is a health claim. */}
           <View style={{ alignItems: "center", marginBottom: 12 }}>
-            <Text
-              style={{
-                color: THEME.text,
-                fontSize: 20,
-                fontWeight: "800",
-                lineHeight: 26,
-                textAlign: "center",
-              }}
-            >
+            <Txt kind="title" style={{ textAlign: "center" }}>
               {heroHeadline}
-            </Text>
+            </Txt>
             {limit ? (
-              <Text
-                style={{
-                  color: THEME.textMuted,
-                  fontSize: 13,
-                  lineHeight: 18,
-                  textAlign: "center",
-                  marginTop: 4,
-                }}
-              >
+              <Txt kind="caption" tone="muted" style={{ textAlign: "center", marginTop: SPACE.xs }}>
                 {limit.body}
-              </Text>
+              </Txt>
             ) : null}
           </View>
 
@@ -723,16 +708,14 @@ function PaywallScreen() {
                 style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
               >
                 <Ionicons name={b.icon} size={16} color={THEME.accent} />
-                <Text
-                  style={{ color: THEME.text, flex: 1, marginStart: 10, fontSize: 13, lineHeight: 18 }}
-                >
+                <Txt kind="caption" style={{ flex: 1, marginStart: SPACE.md }}>
                   {b.text}
-                </Text>
+                </Txt>
               </View>
             ))}
-            <Text style={{ color: THEME.textMuted, fontSize: 12, marginStart: 26, marginBottom: 6 }}>
+            <Txt kind="caption" tone="muted" style={{ marginStart: 26, marginBottom: 6 }}>
               {t("paywall.featureShortFamily")}
-            </Text>
+            </Txt>
           </View>
 
           {personal ? (
@@ -770,9 +753,9 @@ function PaywallScreen() {
             // the wait so the plan slot never reads as a broken empty band.
             <GlassCard style={{ alignItems: "center", paddingVertical: 28 }}>
               <ActivityIndicator color={THEME.accent} />
-              <Text style={{ color: THEME.textMuted, marginTop: 10 }}>
+              <Txt tone="muted" style={{ marginTop: SPACE.md }}>
                 {t("common.loading")}
-              </Text>
+              </Txt>
             </GlassCard>
           ) : unavailable ? (
             // Release-only: prices could not be loaded. Never show fake prices;
@@ -857,39 +840,29 @@ function PaywallScreen() {
           >
             {t("paywall.legalNote")}
           </Text>
-          {/* Bottom band: restore + privacy + terms, one 11pt row. */}
-          <View
-            className="flex-row items-center justify-center flex-wrap mt-2"
-            style={{ gap: 6 }}
-          >
-            <Pressable onPress={onRestore} disabled={busy}>
-              <Text
-                style={{
-                  color: THEME.textMuted,
-                  fontSize: 11,
-                  fontWeight: "600",
-                  opacity: busy ? 0.5 : 1,
-                }}
-              >
-                {t("paywall.restore")}
-              </Text>
-            </Pressable>
-            <Text style={{ color: THEME.textMuted, fontSize: 11 }}>·</Text>
-            <Pressable onPress={() => Linking.openURL(privacyUrl())}>
-              <Text
-                style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
-              >
-                {t("settings.privacy")}
-              </Text>
-            </Pressable>
-            <Text style={{ color: THEME.textMuted, fontSize: 11 }}>·</Text>
-            <Pressable onPress={() => Linking.openURL(termsUrl())}>
-              <Text
-                style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
-              >
-                {t("settings.terms")}
-              </Text>
-            </Pressable>
+          {/* Bottom band: restore + privacy + terms. */}
+          <View className="flex-row items-center justify-center flex-wrap mt-2">
+            <Button
+              variant="tertiary"
+              size="sm"
+              label={t("paywall.restore")}
+              onPress={onRestore}
+              disabled={busy}
+            />
+            <Txt kind="micro" tone="muted">·</Txt>
+            <Button
+              variant="tertiary"
+              size="sm"
+              label={t("settings.privacy")}
+              onPress={() => Linking.openURL(privacyUrl())}
+            />
+            <Txt kind="micro" tone="muted">·</Txt>
+            <Button
+              variant="tertiary"
+              size="sm"
+              label={t("settings.terms")}
+              onPress={() => Linking.openURL(termsUrl())}
+            />
           </View>
 
         </ScrollView>

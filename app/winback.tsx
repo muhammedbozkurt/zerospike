@@ -4,7 +4,6 @@ import {
   Linking,
   Platform,
   Pressable,
-  Text,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -23,9 +22,10 @@ import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
+import { Button, Txt } from "../components/ui";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
-import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { MODAL_TOP_PAD, SPACE, THEME } from "../lib/theme/tokens";
 import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
 import { isolateLtr, pct } from "../lib/format";
 
@@ -139,27 +139,20 @@ function WinbackScreen() {
           </Pressable>
         </View>
 
-        <View className="flex-1 px-6 justify-center items-center" style={{ gap: 12 }}>
+        <View className="flex-1 px-6 justify-center items-center" style={{ gap: SPACE.md }}>
           {loading ? (
             <View className="items-center">
               <ActivityIndicator color={THEME.accent} />
-              <Text style={{ color: THEME.textMuted, marginTop: 10, textAlign: "center" }}>
+              <Txt tone="muted" style={{ marginTop: SPACE.md, textAlign: "center" }}>
                 {t("common.loading")}
-              </Text>
+              </Txt>
             </View>
           ) : (
             <>
-              <Text style={{ fontSize: 34 }}>👋</Text>
-              <Text
-                style={{
-                  color: THEME.text,
-                  fontSize: 24,
-                  fontWeight: "800",
-                  textAlign: "center",
-                }}
-              >
+              <Txt kind="title" style={{ fontSize: 34, lineHeight: 40 }}>👋</Txt>
+              <Txt kind="title" style={{ textAlign: "center" }}>
                 {t("winback.title")}
-              </Text>
+              </Txt>
 
               <OfferCard
                 // Bidi: same "just the number+sign pair" isolate proven on the
@@ -188,30 +181,26 @@ function WinbackScreen() {
               disabled={busy}
               onPress={accept}
             />
-            <Pressable
+            <Button
+              variant="tertiary"
+              label={t("winback.decline")}
               onPress={decline}
               disabled={busy}
-              className="py-3 items-center mt-1"
-            >
-              <Text style={{ color: THEME.textMuted, fontWeight: "600" }}>
-                {t("winback.decline")}
-              </Text>
-            </Pressable>
-            <View className="flex-row justify-center" style={{ gap: 24 }}>
-              <Pressable onPress={() => Linking.openURL(privacyUrl())}>
-                <Text
-                  style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
-                >
-                  {t("settings.privacy")}
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => Linking.openURL(termsUrl())}>
-                <Text
-                  style={{ color: THEME.textMuted, fontSize: 11, textDecorationLine: "underline" }}
-                >
-                  {t("settings.terms")}
-                </Text>
-              </Pressable>
+              className="mt-1"
+            />
+            <View className="flex-row justify-center" style={{ gap: SPACE.sm }}>
+              <Button
+                variant="tertiary"
+                size="sm"
+                label={t("settings.privacy")}
+                onPress={() => Linking.openURL(privacyUrl())}
+              />
+              <Button
+                variant="tertiary"
+                size="sm"
+                label={t("settings.terms")}
+                onPress={() => Linking.openURL(termsUrl())}
+              />
             </View>
           </View>
         ) : null}
