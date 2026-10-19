@@ -325,7 +325,7 @@ function Row({
       // silhouette. That is why there is no `lastInPanel` prop to match.
       containerStyle={
         !inPanel
-          ? { borderRadius: RADIUS.md, marginBottom: SPACE.sm }
+          ? { borderRadius: 13, marginBottom: 9 }
           : firstInPanel
             ? { borderTopLeftRadius: RADIUS.lg, borderTopRightRadius: RADIUS.lg }
             : undefined
