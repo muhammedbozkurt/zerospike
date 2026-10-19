@@ -308,8 +308,8 @@ function editing(): void {
   const cmMixed = require("../lib/mealCompose");
   const mixed = cmMixed.composeMealInput(cmMixed.addEstimateLines([], client.editableToEstimateLines([...dash, ...items])));
   ok("the saved name has no dash and no blank piece", !mixed.custom_food_name.includes("-") && mixed.custom_food_name.startsWith("Bread"), mixed.custom_food_name);
-  eq("blank-name items still count toward the shown total", client.editableTotal([...dash, ...items]), 100.6);
-  eq("but the saved total only holds the named items", mixed.calculated_carbs_g, 40.6);
+  eq("blank-name items do not count toward the shown total", client.editableTotal([...dash, ...items]), 40.6);
+  eq("the shown total equals the saved total", mixed.calculated_carbs_g, client.editableTotal([...dash, ...items]));
   const lines = client.editableToEstimateLines([...dash, ...edited]);
   eq("add-to-meal lines drop the nameless item", lines.map((l: { name: string }) => l.name), ["Bread", "Egg", "Milk"]);
   eq("add-to-meal lines carry the edited figure", lines[0].grams_carb, 30.5);

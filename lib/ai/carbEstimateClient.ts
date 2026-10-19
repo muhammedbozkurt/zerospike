@@ -289,7 +289,7 @@ function composeItems(items: readonly EditableItem[]): ComposeItem[] {
 
 /** Total over the same rounded per-item figures that are written, so the sum shown is the sum saved. */
 export function editableTotal(items: readonly EditableItem[]): number {
-  return composeMealInput(composeItems(items)).calculated_carbs_g;
+  return composeMealInput(composeItems(items.filter(hasItemName))).calculated_carbs_g;
 }
 
 /** A placeholder ("", spaces, only dashes) is not a name; a saved row without one would open as a calculator meal. */
