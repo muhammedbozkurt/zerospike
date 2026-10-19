@@ -1,11 +1,12 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { THEME } from "../lib/theme/tokens";
+import { HIT_TARGET, SPACE, THEME } from "../lib/theme/tokens";
 import { formatTime, isolateLtr, num } from "../lib/format";
 import { getActiveLang } from "../lib/lang";
+import { Button, Card, Txt } from "./ui";
 
 /**
  * The dashboard's basal-dose status for TODAY (device local day): either
@@ -26,20 +27,23 @@ export function BasalStatusLine({
   const { t } = useTranslation();
 
   return (
-    <View
-      className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair mb-3"
-      style={{ paddingHorizontal: 14, paddingVertical: 10, minHeight: 46 }}
+    <Card
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: SPACE.md,
+        paddingVertical: SPACE.md,
+        minHeight: HIT_TARGET,
+      }}
     >
-      <View className="flex-row items-center flex-1" style={{ gap: 6 }}>
+      <View className="flex-row items-center flex-1" style={{ gap: SPACE.sm, minWidth: 0 }}>
         <Ionicons
           name="water-outline"
           size={14}
           color={record ? THEME.accent : THEME.textMuted}
         />
-        <Text
-          numberOfLines={1}
-          style={{ color: THEME.text, fontSize: 12, fontWeight: "700", flexShrink: 1 }}
-        >
+        <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700", flexShrink: 1 }}>
           {record
             ? t("dashboard.basalTodayLine", {
                 // "22:30, 24 U" is one purely-LTR run; composed and isolated
@@ -53,21 +57,21 @@ export function BasalStatusLine({
                 ),
               })
             : t("dashboard.basalPendingLine")}
-        </Text>
+        </Txt>
       </View>
       {!record ? (
-        <Pressable
-          onPress={onConfirm}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t("dashboard.basalConfirmCta")}
-          className="rounded-full bg-brand px-3 py-1.5 active:opacity-80"
-        >
-          <Text numberOfLines={1} className="text-onAccent text-xs font-bold">
-            {t("dashboard.basalConfirmCta")}
-          </Text>
-        </Pressable>
+        // The wrapper owns the shrink and the gap: the Button keeps its natural
+        // width up to the cap, so a long de/fr label cannot push the status text
+        // out of the row.
+        <View style={{ flexShrink: 1, maxWidth: "50%", marginStart: SPACE.md }}>
+          <Button
+            label={t("dashboard.basalConfirmCta")}
+            size="sm"
+            minHit
+            onPress={onConfirm}
+          />
+        </View>
       ) : null}
-    </View>
+    </Card>
   );
 }

@@ -26,7 +26,9 @@ import {
 } from "../lib/glucose";
 import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
-import { RICH_BY_STATUS, THEME, TABULAR, glow, HIT_TARGET, RADIUS } from "../lib/theme/tokens";
+import { RICH_BY_STATUS, THEME, TYPE, SPACE, glow, HIT_TARGET, RADIUS } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { Txt } from "./ui";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { hasMealWeight } from "../lib/mealPrefill";
 import { IconTile } from "./rich/IconTile";
@@ -100,6 +102,7 @@ function SwipeDeleteAction({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={t("journal.deleteA11y")}
+        android_ripple={{ color: withAlpha(THEME.onDanger, RIPPLE_ALPHA), foreground: true }}
         style={{
           flex: 1,
           alignItems: "center",
@@ -114,7 +117,8 @@ function SwipeDeleteAction({
           <Animated.Text
             numberOfLines={1}
             style={[
-              { color: THEME.onDanger, fontSize: 10, fontWeight: "700", marginTop: 3 },
+              TYPE.micro,
+              { color: THEME.onDanger, fontWeight: "700", marginTop: SPACE.xs },
               labelStyle,
             ]}
           >
@@ -198,6 +202,7 @@ function Row({
       }
       onPress={onPress}
       onLongPress={onLongPress}
+      android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={onLongPress ? t("journal.rowHint") : undefined}
@@ -221,19 +226,19 @@ function Row({
           ? {
               borderTopWidth: firstInPanel ? 0 : StyleSheet.hairlineWidth,
               borderTopColor: THEME.border,
-              paddingVertical: 10,
-              paddingHorizontal: 12,
+              paddingVertical: SPACE.sm,
+              paddingHorizontal: SPACE.md,
             }
           : {
-              borderRadius: 13,
+              borderRadius: RADIUS.md,
               borderWidth: 1,
               borderColor: THEME.border,
               borderLeftWidth: 3,
               borderLeftColor: accent,
               backgroundColor: THEME.surface,
-              paddingVertical: 9,
-              paddingHorizontal: 10,
-              marginBottom: onDelete ? 0 : 9,
+              paddingVertical: SPACE.sm,
+              paddingHorizontal: SPACE.md,
+              marginBottom: onDelete ? 0 : SPACE.sm,
             }),
       }}
     >
@@ -245,7 +250,7 @@ function Row({
             minHeight: 22,
             borderRadius: 2,
             backgroundColor: accent,
-            marginRight: 9,
+            marginEnd: SPACE.sm,
           }}
         />
       ) : null}
@@ -320,7 +325,7 @@ function Row({
       // silhouette. That is why there is no `lastInPanel` prop to match.
       containerStyle={
         !inPanel
-          ? { borderRadius: 13, marginBottom: 9 }
+          ? { borderRadius: RADIUS.md, marginBottom: SPACE.sm }
           : firstInPanel
             ? { borderTopLeftRadius: RADIUS.lg, borderTopRightRadius: RADIUS.lg }
             : undefined
@@ -351,12 +356,14 @@ function TagChip({ label }: { label: string }) {
         backgroundColor: withAlpha(THEME.accent, 0.12),
         borderWidth: 1,
         borderColor: withAlpha(THEME.accent, 0.22),
-        paddingHorizontal: 6,
+        paddingHorizontal: SPACE.sm,
         paddingVertical: 1,
-        marginRight: 4,
+        marginEnd: SPACE.xs,
       }}
     >
-      <Text style={{ color: THEME.accent, fontSize: 10, fontWeight: "600" }}>{label}</Text>
+      <Txt kind="micro" tone="accent" numberOfLines={1}>
+        {label}
+      </Txt>
     </View>
   );
 }
@@ -373,7 +380,8 @@ function TagBadges({ tags }: { tags: LogTag[] }) {
   const allLabel = tags.map((tag) => t(`tags.${tag}`)).join(", ");
   return (
     <View
-      className={`flex-row items-center mt-1 ${expanded ? "flex-wrap" : ""}`}
+      className={`flex-row items-center ${expanded ? "flex-wrap" : ""}`}
+      style={{ marginTop: SPACE.xs }}
       accessibilityLabel={`${t("tags.label")}: ${allLabel}`}
     >
       {visible.map((tag) => (
@@ -491,39 +499,38 @@ function JournalItemBase({
           value={formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)}
           status={status}
           dot={false}
-          style={{ marginRight: 10 }}
+          style={{ marginEnd: SPACE.md }}
         />
-        <View className="flex-1">
+        <View className="flex-1" style={{ minWidth: 0 }}>
           {/* Health-sourced rows read as a secondary "where this came from"
               badge (muted tone, same as the app's other secondary text) - not
               a bold clinical classification like a period tag. */}
-          <Text
-            style={{
-              color: isHealthSource ? THEME.textMuted : THEME.text,
-              fontSize: 12,
-              fontWeight: "700",
-            }}
+          <Txt
+            kind="caption"
+            tone={isHealthSource ? "muted" : "text"}
+            style={{ fontWeight: "700" }}
           >
             <Ionicons name="water" size={11} color={color} />{" "}
             {sourceLabel}
-          </Text>
+          </Txt>
           {status === "low" ? (
-            <Text style={{ color, fontSize: 10, fontWeight: "800", marginTop: 1 }}>
+            <Text style={[TYPE.micro, { color, fontWeight: "800" }]}>
               {t("journal.lowBadge")}
             </Text>
           ) : null}
           <TagBadges tags={entry.tags} />
         </View>
-        {/* The time is the row's right edge: at a large accessibility font size
-            it shrinks rather than wrapping the clock onto two lines. */}
-        <Text
-          style={{ color: THEME.textMuted, fontSize: 10, marginLeft: 6 }}
+        {/* The time is the row's right edge. It never shrinks (a clock is short
+            and font shrinking clips on Android); the text column beside it wraps. */}
+        <Txt
+          kind="micro"
+          tone="muted"
+          tabular
+          style={{ marginStart: SPACE.sm, flexShrink: 0, fontWeight: "400" }}
           numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
         >
           {formatTime(entry.logged_at)}
-        </Text>
+        </Txt>
       </Row>
     );
   }
@@ -553,52 +560,48 @@ function JournalItemBase({
         onPress={() => onPress?.(entry)}
         onLongPress={() => onLongPress?.(entry)}
       >
-        <IconTile icon="medical" size={30} radius={10} style={{ marginRight: 10 }} />
+        <IconTile icon="medical" size={30} radius={10} style={{ marginEnd: SPACE.md }} />
         {entry.dose_units != null ? (
           <View
             style={[
               {
                 borderRadius: 9,
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                marginRight: 8,
+                paddingHorizontal: SPACE.sm,
+                paddingVertical: SPACE.xs,
+                marginEnd: SPACE.sm,
                 backgroundColor: withAlpha(THEME.accent, 0.16),
               },
               glow(THEME.accent, 10, 0.35),
             ]}
           >
-            <Text style={[TABULAR, { color: THEME.accent, fontSize: 11, fontWeight: "800" }]}>
+            <Txt kind="micro" tone="accent" tabular style={{ fontWeight: "800" }}>
               {num(entry.dose_units)} {t("common.units")}
-            </Text>
+            </Txt>
           </View>
         ) : null}
-        <View className="flex-1">
-          <Text
-            style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-          >
+        <View className="flex-1" style={{ minWidth: 0 }}>
+          <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700" }}>
             {entry.site
               ? t(`injectionSite.${entry.site}`)
               : t("injectionSite.unassigned")}
             {typeLabel ? ` · ${typeLabel}` : ""}
-          </Text>
+          </Txt>
           {entry.note ? (
-            <Text style={{ color: THEME.textMuted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
+            <Txt kind="micro" tone="muted" style={{ fontStyle: "italic", fontWeight: "400" }} numberOfLines={2}>
               {`“${entry.note}”`}
-            </Text>
+            </Txt>
           ) : null}
           <TagBadges tags={entry.tags} />
         </View>
-        <Text
-          style={{ color: THEME.textMuted, fontSize: 10, marginLeft: 6 }}
+        <Txt
+          kind="micro"
+          tone="muted"
+          tabular
+          style={{ marginStart: SPACE.sm, flexShrink: 0, fontWeight: "400" }}
           numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
         >
           {formatTime(entry.logged_at)}
-        </Text>
+        </Txt>
       </Row>
     );
   }
@@ -632,29 +635,25 @@ function JournalItemBase({
             borderWidth: 1,
             borderColor: THEME.border,
             backgroundColor: THEME.surface,
-            marginRight: 10,
+            marginEnd: SPACE.md,
           }}
         >
           <MaterialCommunityIcons name="pill" size={16} color={THEME.accent} />
         </View>
-        <View className="flex-1">
-          <Text
-            style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-          >
+        <View className="flex-1" style={{ minWidth: 0 }}>
+          <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700" }}>
             {entry.name ? `${t("meds.entryLabel")} · ${entry.name}` : t("meds.entryLabel")}
-          </Text>
+          </Txt>
         </View>
-        <Text
-          style={{ color: THEME.textMuted, fontSize: 10, marginLeft: 6 }}
+        <Txt
+          kind="micro"
+          tone="muted"
+          tabular
+          style={{ marginStart: SPACE.sm, flexShrink: 0, fontWeight: "400" }}
           numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
         >
           {formatTime(entry.logged_at)}
-        </Text>
+        </Txt>
       </Row>
     );
   }
@@ -695,7 +694,7 @@ function JournalItemBase({
             width: MEAL_THUMB_DP,
             height: MEAL_THUMB_DP,
             borderRadius: 10,
-            marginRight: 10,
+            marginEnd: SPACE.md,
           }}
         />
       ) : (
@@ -706,15 +705,15 @@ function JournalItemBase({
           category={entry.category}
           size={MEAL_THUMB_DP}
           radius={10}
-          style={{ marginRight: 10 }}
+          style={{ marginEnd: SPACE.md }}
         />
       )}
-      <View className="flex-1">
+      <View className="flex-1" style={{ minWidth: 0 }}>
         {/* Food name is user data: wraps to two lines rather than clipping. */}
-        <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }} numberOfLines={2}>
+        <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700" }}>
           {entry.display_name}
-        </Text>
-        <Text style={{ color: THEME.textMuted, fontSize: 10, marginTop: 1 }}>
+        </Txt>
+        <Txt kind="micro" tone="muted" style={{ fontWeight: "400" }}>
           {hasMealWeight(entry.portion_g)
             ? `${Math.round(entry.portion_g)} ${t("common.grams")} · `
             : ""}
@@ -724,23 +723,18 @@ function JournalItemBase({
           {entry.insulin_dose_units > 0
             ? ` · ${t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })}`
             : ""}
-        </Text>
+        </Txt>
         {entry.personal_note ? (
-          <Text style={{ color: THEME.textMuted, fontSize: 10, fontStyle: "italic", marginTop: 1 }} numberOfLines={2}>
+          <Txt kind="micro" tone="muted" style={{ fontStyle: "italic", fontWeight: "400" }} numberOfLines={2}>
             “{entry.personal_note}”
-          </Text>
+          </Txt>
         ) : null}
         <TagBadges tags={entry.tags} />
       </View>
-      <View className="items-end" style={{ marginLeft: 6 }}>
-        <Text
-          style={{ color: THEME.textMuted, fontSize: 10 }}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-        >
+      <View className="items-end" style={{ marginStart: SPACE.sm, flexShrink: 0 }}>
+        <Txt kind="micro" tone="muted" tabular style={{ fontWeight: "400" }} numberOfLines={1}>
           {formatTime(entry.logged_at)}
-        </Text>
+        </Txt>
         {hasResponse && onOpenResponse ? (
           // Nested inside the row's own Pressable, so it has to be an
           // unmistakable target of its own: 14pt + hitSlop 8 came to ~30pt, and a
@@ -751,7 +745,7 @@ function JournalItemBase({
             hitSlop={{ top: 14, bottom: 14, left: 16, right: 16 }}
             accessibilityRole="button"
             accessibilityLabel={t("mealResponse.title")}
-            style={{ marginTop: 3 }}
+            style={{ marginTop: SPACE.xs }}
           >
             <Ionicons name="pulse-outline" size={16} color={THEME.accent} />
           </Pressable>
