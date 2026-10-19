@@ -45,16 +45,29 @@ export interface FeedbackDraft {
 
 export type DraftProblem = "empty" | "bad_email";
 
-// Same shape the server accepts: something@something.tld without spaces.
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Ported from supabase/functions/feedback/validate.ts (scripts/feedbackSurvey.test.ts
+// compares the character set against that file): the server drops these, so the
+// client counts them the same way, or it would send a message the server calls empty.
+export const BAD_CHARS =
+  "\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ud800-\\udfff";
+const EMAIL = new RegExp(`^[^\\s@${BAD_CHARS}]+@[^\\s@${BAD_CHARS}]+\\.[^\\s@${BAD_CHARS}]+$`, "u");
+// C0 controls except tab and newline, DEL and C1 controls.
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 export function isValidEmail(value: string): boolean {
   return value.length <= MAX_EMAIL_CHARS && EMAIL.test(value);
 }
 
-/** Trimmed, line breaks normalised, cut to the server's limit by code points. */
+/** What the server keeps of a message: the same steps as its cleanText, so "empty" means the same on both sides. */
 export function cleanMessage(value: string): string {
-  const text = value.replace(/\r\n?/g, "\n").trim();
+  const text = value
+    .replace(LONE_SURROGATE, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(CONTROL, "")
+    .replace(INVISIBLE, "")
+    .trim();
   const chars = Array.from(text);
   return chars.length > MAX_MESSAGE_CHARS ? chars.slice(0, MAX_MESSAGE_CHARS).join("").trim() : text;
 }
@@ -167,6 +180,9 @@ export function failureMessageKey(reason: FeedbackFailure): string {
       return "feedback.errorRateLimited";
     case "rejected":
       return "feedback.errorRejected";
+    case "not_configured":
+    case "no_device_id":
+      return "feedback.errorGeneric";
     default:
       return "feedback.errorNetwork";
   }
@@ -241,20 +257,27 @@ export async function noteProState(kv: KeyValueStore, isPro: boolean): Promise<b
   }
 }
 
-/**
- * Takes the armed survey: true exactly once per install. The asked flag is
- * written before the answer is returned, so an interrupted sheet does not come
- * back (same arrangement as the winback and the alarm tour).
- */
-export async function takePendingSurvey(kv: KeyValueStore): Promise<boolean> {
+/** True when a survey is armed and has not been asked yet. Writes nothing. */
+export async function peekPendingSurvey(kv: KeyValueStore): Promise<boolean> {
   try {
     if ((await readFlag(kv, SURVEY_ASKED_KEY)) === true) return false;
-    if ((await readFlag(kv, SURVEY_PENDING_KEY)) !== true) return false;
-    await kv.set(SURVEY_ASKED_KEY, "true");
-    await kv.set(SURVEY_PENDING_KEY, "false");
-    return true;
+    return (await readFlag(kv, SURVEY_PENDING_KEY)) === true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Called when the sheet is really on screen (the Modal's onShow), not when it
+ * was asked to open: a sheet that never appeared (another Modal was up) leaves
+ * the survey armed for the next try. After this it is never asked again.
+ */
+export async function markSurveyAsked(kv: KeyValueStore): Promise<void> {
+  try {
+    await kv.set(SURVEY_ASKED_KEY, "true");
+    await kv.set(SURVEY_PENDING_KEY, "false");
+  } catch {
+    // best-effort; the worst case is one more ask
   }
 }
 
@@ -276,6 +299,8 @@ export interface SurveyGate {
   root: string | undefined;
   /** The winback is deciding or showing; it goes first. */
   winbackHold: boolean;
+  /** Another sheet or dialog Modal is on screen (see registerOverlay). */
+  overlayOpen: boolean;
 }
 
 /** True when nothing stands in the way of presenting an armed survey right now. */
@@ -286,6 +311,7 @@ export function surveyMayPresent(g: SurveyGate): boolean {
     !g.isPro &&
     !g.screenshotMode &&
     !g.winbackHold &&
+    !g.overlayOpen &&
     isSurveyRoute(g.root)
   );
 }
@@ -295,7 +321,12 @@ export function surveyMayPresent(g: SurveyGate): boolean {
 // whether to open the winback; once the winback route closes the survey may
 // follow on the tab screens.
 let holds = 0;
+let overlays = 0;
 const releaseListeners = new Set<() => void>();
+
+function notifyIfIdle(): void {
+  if (holds === 0 && overlays === 0) releaseListeners.forEach((cb) => cb());
+}
 
 export function holdSurvey(): () => void {
   holds += 1;
@@ -304,7 +335,7 @@ export function holdSurvey(): () => void {
     if (released) return;
     released = true;
     holds = Math.max(0, holds - 1);
-    if (holds === 0) releaseListeners.forEach((cb) => cb());
+    notifyIfIdle();
   };
 }
 
@@ -312,9 +343,71 @@ export function surveyHeld(): boolean {
   return holds > 0;
 }
 
+/**
+ * Sheets and dialogs that are RN Modals register while visible. Two Modals
+ * cannot be presented together on iOS, so the survey waits for the count to
+ * fall back to zero instead of opening over (or failing under) one.
+ */
+export function registerOverlay(): () => void {
+  overlays += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    overlays = Math.max(0, overlays - 1);
+    notifyIfIdle();
+  };
+}
+
+export function overlayOpen(): boolean {
+  return overlays > 0;
+}
+
+/** Fires when neither the winback hold nor any overlay is left. */
 export function onSurveyRelease(cb: () => void): () => void {
   releaseListeners.add(cb);
   return () => {
     releaseListeners.delete(cb);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Closing and sending the sheet
+// ---------------------------------------------------------------------------
+
+export interface CloseState {
+  busy: boolean;
+  survey: boolean;
+  hasText: boolean;
+}
+
+/**
+ * The scrim, the back key and the title X close the sheet only when that costs
+ * nothing: never while a send is in flight, and in the survey (asked once, so
+ * typed text would be lost for good) not while text is typed. The footer's
+ * "Close without sending" is a deliberate choice and works except mid-send.
+ */
+export function mayCloseByGesture(s: CloseState): boolean {
+  if (s.busy) return false;
+  if (s.survey && s.hasText) return false;
+  return true;
+}
+
+export function mayCloseByButton(s: Pick<CloseState, "busy">): boolean {
+  return !s.busy;
+}
+
+/** One send at a time: tryAcquire returns true to the caller that won the slot, who must release it. */
+export function createSendSlot(): { tryAcquire(): boolean; release(): void } {
+  let inFlight = false;
+  return {
+    tryAcquire() {
+      if (inFlight) return false;
+      inFlight = true;
+      return true;
+    },
+    release() {
+      inFlight = false;
+    },
   };
 }

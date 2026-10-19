@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { OverlayModal as Modal } from "./OverlayModal";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";

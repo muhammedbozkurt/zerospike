@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { OverlayModal as Modal } from "./OverlayModal";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 

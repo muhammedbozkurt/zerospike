@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Linking,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { OverlayModal as Modal } from "./OverlayModal";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 

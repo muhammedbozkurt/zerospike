@@ -1619,7 +1619,7 @@ const en: TranslationSchema = {
     messagePlaceholder: "Write your message",
     emailPlaceholder: "Email (optional)",
     emailHint: "Only add it if you would like a reply.",
-    privacy: "Your message, your email if you add one, and your anonymous installation ID are kept for 180 days.",
+    privacy: "Your message, your email if you add one, your installation ID, app version, platform and language are kept for 180 days.",
     send: "Send",
     retry: "Try again",
     dismiss: "Close without sending",
@@ -1628,6 +1628,7 @@ const en: TranslationSchema = {
     errorRateLimited: "Too many attempts in a short time. Please try again later.",
     errorRejected: "Your message was not accepted. Check the text and email, then try again.",
     errorEmail: "That email address does not look valid.",
+    errorGeneric: "Sending is not available right now. Please try again later.",
   },
 };
 

@@ -1619,7 +1619,7 @@ const ja: TranslationSchema = {
     messagePlaceholder: "メッセージをご記入ください",
     emailPlaceholder: "メールアドレス(任意)",
     emailHint: "返信を希望する場合のみご記入ください。",
-    privacy: "メッセージ、入力した場合はメールアドレス、匿名のインストールIDは180日間保存されます。",
+    privacy: "メッセージ、入力した場合はメールアドレス、インストールID、アプリのバージョン、プラットフォーム、言語は180日間保存されます。",
     send: "送信",
     retry: "もう一度試す",
     dismiss: "送信せずに閉じる",
@@ -1628,6 +1628,7 @@ const ja: TranslationSchema = {
     errorRateLimited: "短時間に試行が多すぎます。しばらくしてからもう一度お試しください。",
     errorRejected: "メッセージが受け付けられませんでした。本文とメールアドレスを確認して、もう一度お試しください。",
     errorEmail: "メールアドレスの形式が正しくないようです。",
+    errorGeneric: "現在送信できません。しばらくしてからもう一度お試しください。",
   },
 };
 

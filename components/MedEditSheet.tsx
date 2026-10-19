@@ -2,13 +2,13 @@ import React, { useEffect, useState } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
   TextInput,
   View,
 } from "react-native";
+import { OverlayModal as Modal } from "./OverlayModal";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 

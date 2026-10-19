@@ -1618,13 +1618,13 @@ const fr: TranslationSchema = {
     reasonNotUsed: "Je ne l'ai pas utilisé",
     reasonMissingFeature: "Fonction manquante",
     reasonBug: "J'ai rencontré un bogue",
-    reasonOtherApp: "Je suis passé à une autre appli",
+    reasonOtherApp: "J'utilise une autre appli",
     reasonOther: "Autre",
     messageSurveyPlaceholder: "Quelque chose à ajouter ? (facultatif)",
     messagePlaceholder: "Écrivez votre message",
     emailPlaceholder: "E-mail (facultatif)",
     emailHint: "N'indiquez-le que si vous souhaitez une réponse.",
-    privacy: "Votre message, votre e-mail si vous en indiquez un, et votre identifiant d'installation anonyme sont conservés 180 jours.",
+    privacy: "Votre message, votre e-mail si vous en indiquez un, votre identifiant d'installation, la version de l'app, la plateforme et la langue sont conservés 180 jours.",
     send: "Envoyer",
     retry: "Réessayer",
     dismiss: "Fermer sans envoyer",
@@ -1633,6 +1633,7 @@ const fr: TranslationSchema = {
     errorRateLimited: "Trop de tentatives en peu de temps. Veuillez réessayer plus tard.",
     errorRejected: "Votre message n'a pas été accepté. Vérifiez le texte et l'e-mail, puis réessayez.",
     errorEmail: "Cette adresse e-mail semble invalide.",
+    errorGeneric: "L'envoi n'est pas possible pour le moment. Veuillez réessayer plus tard.",
   },
 };
 
