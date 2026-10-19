@@ -16,6 +16,7 @@ import { join } from "node:path";
 
 import { SEED_FOODS, type SeedFood } from "../lib/db/seed";
 import { CATEGORIES } from "../lib/db/categories";
+import { SEED_CARB } from "../lib/db/seedCarb";
 import {
   SEED_CATALOG_VERSION,
   selectMissingFoods,
@@ -379,6 +380,40 @@ console.log("\nI. the top-up survives an English rename (RENAMED_EN)");
       return dupes;
     })()
   );
+}
+
+console.log("\nJ. sourced rows (seedCarb)");
+{
+  const keyOf = (f: SeedFood) => seedNameKey(f.en);
+  const base = SEED_FOODS.filter((f) => !SEED_CARB.includes(f));
+  const baseKeys = new Set(base.map(keyOf));
+  none("src is usda or off", SEED_CARB.filter((f) => f.src !== "usda" && f.src !== "off").map((f) => f.en));
+  none("srcId is filled", SEED_CARB.filter((f) => !f.srcId || !/^\d+$/.test(f.srcId)).map((f) => f.en));
+  none("carb within 0-100", SEED_CARB.filter((f) => !(f.carb >= 0 && f.carb <= 100)).map((f) => f.en));
+  none(
+    "names are filled in tr/en/de/es/fr",
+    SEED_CARB.filter((f) => ![f.tr, f.en, f.de, f.es, f.fr].every((n) => n.trim().length > 0)).map((f) => f.en)
+  );
+  none("en name does not collide with the existing catalog", SEED_CARB.filter((f) => baseKeys.has(keyOf(f))).map((f) => f.en));
+  none(
+    "no (source, srcId) pair repeats",
+    (() => {
+      const seen = new Set<string>();
+      const dupes: string[] = [];
+      for (const f of SEED_CARB) {
+        const k = `${f.src}:${f.srcId}`;
+        if (seen.has(k)) dupes.push(k);
+        seen.add(k);
+      }
+      return dupes;
+    })()
+  );
+  for (const lang of ["tr", "de", "es", "fr"] as const) {
+    const baseNames = new Set(base.map((f) => seedNameKey(f[lang])));
+    none(`${lang} name does not collide with the existing catalog`, SEED_CARB.filter((f) => baseNames.has(seedNameKey(f[lang]))).map((f) => f[lang]));
+  }
+  const upgrade = selectMissingFoods(SEED_FOODS, base.map((f) => f.en));
+  ok("top-up inserts exactly the sourced rows into an install that lacks them", upgrade.length === SEED_CARB.length, String(upgrade.length));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
