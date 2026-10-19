@@ -23,6 +23,11 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "icon": {
+        "light": "./assets/brand/icon-1024.png",
+        "dark": "./assets/brand/icon-1024-dark.png",
+        "tinted": "./assets/brand/icon-1024-tinted.png"
+      },
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appStoreUrl": "https://apps.apple.com/app/id6778782351",
       "appleTeamId": "YWRPV58T86",
