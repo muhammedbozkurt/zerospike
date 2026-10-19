@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "events": {
     "app_open": { "cold": "bool" },
     "onboarding_step": { "step": "string", "index": "int" },
@@ -44,6 +44,10 @@
     "carb_estimate_used": { "tier": ["enum", "free", "pro"], "item_count": "int", "source": ["enum", "food_tab", "meal_sheet"] },
     "carb_estimate_blocked": { "reason": ["enum", "quota", "filtered", "error"] },
     "analytics_opt_out": { "enabled": "bool" },
-    "store_review_prompt": { "trigger": ["enum", "log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"] }
+    "store_review_prompt": { "trigger": ["enum", "log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"] },
+    "feedback_sent": {
+      "kind": ["enum", "suggestion", "bug", "other", "cancel_survey"],
+      "reason_code": ["enum", "expensive", "not_used", "missing_feature", "bug", "other_app", "other", "none"]
+    }
   }
 }

@@ -364,7 +364,8 @@
       },
       "spikeFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/ai-ask-spike",
       "trackFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/track",
-      "deleteDeviceFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/delete-device"
+      "deleteDeviceFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/delete-device",
+      "feedbackFnUrl": "https://jcpepqectdubbmchhdsn.supabase.co/functions/v1/feedback"
     }
   }
 }
