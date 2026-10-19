@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, SectionList, Switch, View } from "react-native";
+import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -161,6 +161,13 @@ async function writeProfileFlag(baseKey: string, profileId: string, value: boole
 const CTA_BOTTOM = 10;
 // What the journal has to scroll clear of: the CTA overlay plus a little air.
 const CTA_CLEARANCE = CTA_BOTTOM + 100;
+// Tablet two-column home: each column's content is capped at a readable 560 so
+// a 13in iPad landscape (1376) does not stretch the cards; the 16 inset on each
+// side of a column stays INSIDE its scroll area so card shadows are not clipped.
+// Content width per column: 800dp tablet 368; iPad 13in portrait (1032) 484;
+// 7in landscape (~960) 448; iPad 13in landscape 560 (centred); 7in portrait
+// (600) and anything under 700 wide stay one column.
+const TWO_COL_MAX_WIDTH = 2 * (560 + 16 * 2);
 // The CTA's own footprint: the wrapper's pt-2 (8) plus GradientCTA's rendered
 // height (13 vertical padding x2 plus its ~24 line of 15pt bold text) plus the
 // wrapper's own bottom inset.
@@ -297,7 +304,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string; health?: string }>();
-  const { isWide, columnPad } = useLayout();
+  const { isWide, isTwoCol, columnPad } = useLayout();
   const { activeProfile, profiles, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
   const healthBackfill = useHealthBackfill();
@@ -1894,13 +1901,10 @@ export default function DashboardScreen() {
     </>
   );
 
-  const Header = (
-    // No bottom padding when the journal panel is open: the panel's sides are
-    // drawn by the header, each day separator and each row as separate pieces
-    // of one container, so any spacing BETWEEN those pieces shows up as a gap
-    // in the border. The separator's own paddingTop provides that air from
-    // inside the container instead.
-    <View className={journalEntries.length > 0 ? "" : "pb-2"}>
+  // The header is built in three pieces so a tablet can split them over two
+  // columns (titleRow above both, headerTop left, headerRest + journal right);
+  // the phone Header below stacks the same three in the same order.
+  const titleRow = (
       <View className="flex-row items-center justify-between mb-4">
         <Txt kind="title">{t("common.today")}</Txt>
         <View className="flex-row items-center" style={{ gap: SPACE.md }}>
@@ -1928,8 +1932,10 @@ export default function DashboardScreen() {
           <ProfileSwitcher />
         </View>
       </View>
+  );
 
-
+  const headerTop = (
+    <>
       {/* Free-trial card: days left and open Pro welcome steps. Renders nothing
           unless the store reports a running trial. */}
       <TrialCard />
@@ -2067,6 +2073,11 @@ export default function DashboardScreen() {
         </>
       )}
 
+    </>
+  );
+
+  const headerRest = (
+    <>
       {/* Post-meal timer: a REAL filled pill button, not text that reads like a
           value. While the timer runs, the same slot shows the countdown + a small
           cancel action. Hidden before the first entry (and before we know which
@@ -2564,21 +2575,37 @@ export default function DashboardScreen() {
           ) : null}
         </JournalPanelTop>
       ) : null}
+    </>
+  );
+
+  // No bottom padding when the journal panel is open: the panel's sides are
+  // drawn by the header, each day separator and each row as separate pieces
+  // of one container, so any spacing BETWEEN those pieces shows up as a gap
+  // in the border. The separator's own paddingTop provides that air from
+  // inside the container instead.
+  const headerWrapClass = journalEntries.length > 0 ? "" : "pb-2";
+  const Header = (
+    <View className={headerWrapClass}>
+      {titleRow}
+      {headerTop}
+      {headerRest}
     </View>
   );
 
-  return (
-    <AppBackground style={{ paddingTop: insets.top }}>
+  // Tablet two-column home (width >= 700, existing user): the ring and week
+  // boxes on the left, the post-meal card, context cards and journal on the
+  // right. Each column scrolls on its own, so neither needs a fixed height.
+  // First run keeps the single centred column (one guide, nothing to split).
+  const twoCol = isTwoCol && !isFirstRun;
+  const wideListInset = isWide && !isFirstRun ? { paddingBottom: CTA_FOOTPRINT + insets.bottom } : undefined;
+
+  const journalList = (
       <SectionList
         // Wide screens only (see CTA_FOOTPRINT above): shrinks the list's own
         // visible viewport by the CTA's footprint so nothing is ever laid out
         // behind the floating overlay, regardless of scroll position. Phones
         // are unaffected (undefined style = today's behavior).
-        style={
-          isWide && !isFirstRun
-            ? { paddingBottom: CTA_FOOTPRINT + insets.bottom }
-            : undefined
-        }
+        style={twoCol ? [{ flex: 1 }, wideListInset] : wideListInset}
         sections={journalSections}
         keyExtractor={journalKey}
         stickySectionHeadersEnabled={true}
@@ -2586,7 +2613,9 @@ export default function DashboardScreen() {
         initialNumToRender={12}
         maxToRenderPerBatch={10}
         windowSize={7}
-        ListHeaderComponent={Header}
+        ListHeaderComponent={
+          twoCol ? <View className={headerWrapClass}>{headerRest}</View> : Header
+        }
         ListFooterComponent={
           journalEntries.length > 0 ? (
             <View>
@@ -2637,10 +2666,41 @@ export default function DashboardScreen() {
           // Tablet: one centred reading column instead of a stretched phone
           // layout. Reduces to the plain 16 inset on phones, so the narrow
           // render is unchanged.
-          ...columnPad(16),
+          ...(twoCol ? { paddingHorizontal: SPACE.lg } : columnPad(16)),
         }}
         showsVerticalScrollIndicator={false}
       />
+  );
+
+  return (
+    <AppBackground style={{ paddingTop: insets.top }}>
+      {twoCol ? (
+        <View
+          style={{
+            flex: 1,
+            width: "100%",
+            maxWidth: TWO_COL_MAX_WIDTH,
+            alignSelf: "center",
+          }}
+        >
+          <View style={{ paddingHorizontal: SPACE.lg }}>{titleRow}</View>
+          <View style={{ flex: 1, flexDirection: "row" }}>
+            <ScrollView
+              style={[{ flex: 1 }, wideListInset]}
+              contentContainerStyle={{
+                paddingHorizontal: SPACE.lg,
+                paddingBottom: CTA_CLEARANCE,
+              }}
+              showsVerticalScrollIndicator={false}
+            >
+              {headerTop}
+            </ScrollView>
+            {journalList}
+          </View>
+        </View>
+      ) : (
+        journalList
+      )}
 
       {/* Bottom CTA (mockup B03: single "add record"). During first run the
           guide carries the one primary button, so this one stands down rather
