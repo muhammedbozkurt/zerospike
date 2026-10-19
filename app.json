@@ -26,7 +26,7 @@
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appStoreUrl": "https://apps.apple.com/app/id6778782351",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "81",
+      "buildNumber": "82",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -163,7 +163,7 @@
     "android": {
       "package": "com.greeneyeapp.zerospike",
       "playStoreUrl": "https://play.google.com/store/apps/details?id=com.greeneyeapp.zerospike",
-      "versionCode": 81,
+      "versionCode": 82,
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/adaptive-foreground-1024.png",
         "backgroundImage": "./assets/brand/adaptive-background-1024.png",
@@ -180,8 +180,8 @@
         "android.permission.POST_PROMOTED_NOTIFICATIONS",
         "android.permission.health.READ_BLOOD_GLUCOSE",
         "android.permission.health.WRITE_BLOOD_GLUCOSE",
-      "android.permission.health.WRITE_NUTRITION",
-      "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
+        "android.permission.health.WRITE_NUTRITION",
+        "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
       ],
       "blockedPermissions": [
         "android.permission.USE_EXACT_ALARM"
