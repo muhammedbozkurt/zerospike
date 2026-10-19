@@ -35,6 +35,9 @@ interface StatCardProps {
   glass?: boolean;
   /** Color-matched glow (only meaningful with `glass`); `true` uses the accent. */
   glow?: boolean | string;
+  /** Fixed value/footnote sizing for narrow tiles: Android's adjustsFontSizeToFit
+   *  collapses the number to a superscript when a long suffix shares the row. */
+  fixedSize?: boolean;
   style?: StyleProp<ViewStyle>;
   className?: string;
 }
@@ -59,6 +62,7 @@ export function StatCard({
   footnote,
   glass = false,
   glow = false,
+  fixedSize = false,
   style,
   className = "",
 }: StatCardProps) {
@@ -102,9 +106,20 @@ export function StatCard({
         </Text>
       </View>
 
-      <View className="items-end" style={{ flexDirection: rtl ? "row-reverse" : "row" }}>
+      <View
+        className="items-end"
+        style={{ flexDirection: rtl ? "row-reverse" : "row", flexWrap: fixedSize ? "wrap" : "nowrap" }}
+      >
         {suffixFirst ? suffixNode : null}
-        {display !== undefined ? (
+        {display !== undefined && fixedSize ? (
+          <Text
+            style={[{ color: valueColor, fontSize: 22 }, TABULAR]}
+            className="font-extrabold"
+            numberOfLines={1}
+          >
+            {display}
+          </Text>
+        ) : display !== undefined ? (
           <Text
             style={[{ color: valueColor }, TABULAR, { flexShrink: 1 }]}
             className="text-3xl font-extrabold"
@@ -137,7 +152,11 @@ export function StatCard({
       </View>
 
       {sparkline ? <View className="mt-2">{sparkline}</View> : null}
-      {footnote ? (
+      {footnote && fixedSize ? (
+        <Text className="text-mut mt-1" style={{ fontSize: 10 }} numberOfLines={3}>
+          {footnote}
+        </Text>
+      ) : footnote ? (
         <Text
           className="text-mut text-[11px] mt-1"
           numberOfLines={1}

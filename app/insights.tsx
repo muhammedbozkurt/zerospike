@@ -382,11 +382,12 @@ function InsightsSkeleton({
 export default function InsightsScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const router = useRouter();
   const { activeProfile, isProUser, dataVersion } = useApp();
   const proCta = useProCta(!isProUser);
   const { isWide } = useLayout();
+  const narrowWeekly = isWide && windowWidth < 700;
   const { actionSheet } = useFeedback();
   const rtl = I18nManager.isRTL;
   // Tablet: the report is centred and capped instead of stretching edge to edge.
@@ -452,7 +453,7 @@ export default function InsightsScreen() {
   // "from - to" label for the 05-insights shot. Double-locked; ignored otherwise.
   useEffect(() => {
     if (!isScreenshotMode() || customParam !== "1") return;
-    const end = Date.now();
+    const end = weeklyCompareNow(Date.now());
     setCustomRange({ start: end - 21 * 86_400_000, end });
   }, [customParam]);
 
@@ -1400,6 +1401,7 @@ export default function InsightsScreen() {
                         <View className="flex-row mt-3" style={{ gap: 8 }}>
                           <StatCard
                             glass
+                            fixedSize={narrowWeekly}
                             label={t("insights.timeInRange")}
                             display={pctNum(weeklyCompare.tir.current)}
                             suffix={weeklyCompare.tir.current == null ? undefined : PCT_SIGN.sign}
@@ -1410,6 +1412,7 @@ export default function InsightsScreen() {
                           />
                           <StatCard
                             glass
+                            fixedSize={narrowWeekly}
                             label={t("insights.avgGlucose")}
                             display={fmtG(weeklyCompare.avg.current)}
                             suffix={u}
@@ -1421,6 +1424,7 @@ export default function InsightsScreen() {
                           />
                           <StatCard
                             glass
+                            fixedSize={narrowWeekly}
                             label={t("insights.cv")}
                             display={pctNum(weeklyCompare.cv.current)}
                             suffix={weeklyCompare.cv.current == null ? undefined : PCT_SIGN.sign}
