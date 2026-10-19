@@ -5,56 +5,60 @@ import {
   Text,
   TextInput,
   TextInputProps,
+  TextProps,
   View,
-  ViewProps,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { hapticSelect } from "../lib/haptics";
-import { GLUCOSE_RICH, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
-import { withAlpha } from "./rich/GlassCard";
+import {
+  activePalette,
+  GLUCOSE_RICH,
+  INPUT_TEXT,
+  SPACE,
+  TABULAR,
+  THEME,
+} from "../lib/theme/tokens";
+import {
+  RIPPLE_ALPHA,
+  ROW_MIN_HEIGHT,
+  ROW_PLATE,
+  TEXT_KIND_STYLE,
+  buttonClassName,
+  buttonHitSlop,
+  buttonTextClassName,
+  chipClassName,
+  chipTextClassName,
+  hitSlopFor,
+  isCanonicalVariant,
+  resolveVariantColors,
+  toneColor,
+  CHIP_VISUAL_HEIGHT,
+  type ButtonSize,
+  type ButtonVariant,
+  type TextKind,
+  type TextTone,
+} from "../lib/theme/uiPrimitives";
+import { GlassCard, withAlpha } from "./rich/GlassCard";
+import type { GlassCardProps } from "./rich/GlassCard";
 import { upper } from "../lib/upper";
 import { DirIcon } from "./DirIcon";
-
-type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
-type ButtonSize = "lg" | "md" | "sm";
 
 interface ButtonProps {
   label: string;
   onPress?: () => void;
+  /** Canonical names: primary, outlined (framed secondary), tertiary,
+   *  destructive. Legacy secondary/danger/ghost render exactly as before. */
   variant?: ButtonVariant;
   size?: ButtonSize;
   disabled?: boolean;
   loading?: boolean;
   icon?: React.ReactNode;
   className?: string;
+  /** Lift the touch area to 44 pt without changing the painted size. Defaults
+   *  on for the canonical names outlined/tertiary/destructive, off for legacy. */
+  minHit?: boolean;
 }
-
-const VARIANT_BG: Record<ButtonVariant, string> = {
-  primary: "bg-brand active:bg-brandDark",
-  secondary: "bg-glass active:opacity-80",
-  danger: "bg-low/15 active:opacity-80 border border-low/40",
-  ghost: "bg-transparent active:opacity-80",
-};
-
-const VARIANT_TEXT: Record<ButtonVariant, string> = {
-  primary: "text-onAccent",
-  secondary: "text-ink",
-  danger: "text-low",
-  ghost: "text-mut",
-};
-
-const SIZE_PAD: Record<ButtonSize, string> = {
-  lg: "py-4 px-5",
-  md: "py-3 px-4",
-  sm: "py-2 px-3",
-};
-
-const SIZE_TEXT: Record<ButtonSize, string> = {
-  lg: "text-base",
-  md: "text-base",
-  sm: "text-sm",
-};
 
 export function Button({
   label,
@@ -65,8 +69,11 @@ export function Button({
   loading,
   icon,
   className = "",
+  minHit,
 }: ButtonProps) {
   const isOff = disabled || loading;
+  const modern = isCanonicalVariant(variant);
+  const wantHit = minHit ?? modern;
   return (
     <Pressable
       onPress={isOff ? undefined : onPress}
@@ -77,7 +84,16 @@ export function Button({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!isOff, busy: !!loading }}
-      className={`flex-row items-center justify-center rounded-2xl ${SIZE_PAD[size]} ${VARIANT_BG[variant]} ${isOff ? "opacity-50" : ""} ${className}`}
+      hitSlop={wantHit ? buttonHitSlop(size) : undefined}
+      android_ripple={
+        modern
+          ? {
+              color: withAlpha(resolveVariantColors(variant, activePalette()).ripple, RIPPLE_ALPHA),
+              foreground: true,
+            }
+          : undefined
+      }
+      className={buttonClassName(variant, size, !!isOff, className)}
     >
       {loading ? (
         <ActivityIndicator color={variant === "primary" ? THEME.accentOnFill : THEME.textMuted} />
@@ -88,7 +104,7 @@ export function Button({
               first (tiny) width and the shrunken font sticks. Long labels
               ellipsize instead. */}
           <Text
-            className={`font-semibold ${SIZE_TEXT[size]} ${VARIANT_TEXT[variant]}`}
+            className={buttonTextClassName(variant, size)}
             style={{ flexShrink: 1 }}
             numberOfLines={1}
           >
@@ -100,18 +116,138 @@ export function Button({
   );
 }
 
-export function Card({
-  children,
-  className = "",
-  ...rest
-}: ViewProps & { className?: string }) {
+/**
+ * The one card: GlassCard body with SPACE.lg padding and RADIUS.lg. (GlassCard
+ * itself keeps its legacy padding 12 for its existing 54 call sites.)
+ */
+export function Card({ style, children, ...rest }: GlassCardProps) {
   return (
-    <View
-      className={`rounded-2xl bg-glass border border-hair p-4 ${className}`}
-      {...rest}
-    >
+    <GlassCard style={[{ padding: SPACE.lg }, style]} {...rest}>
       {children}
-    </View>
+    </GlassCard>
+  );
+}
+
+/** Typography step with the 5-kind scale (title, subtitle, body, caption, micro). */
+export function Txt({
+  kind = "body",
+  tone = "text",
+  tabular,
+  style,
+  ...rest
+}: TextProps & { kind?: TextKind; tone?: TextTone; tabular?: boolean }) {
+  return (
+    <Text
+      {...rest}
+      style={[
+        TEXT_KIND_STYLE[kind],
+        { color: toneColor(tone, activePalette()) },
+        tabular ? TABULAR : undefined,
+        style,
+      ]}
+    />
+  );
+}
+
+interface ChipProps {
+  label: string;
+  selected?: boolean;
+  onPress?: () => void;
+  icon?: React.ReactNode;
+  className?: string;
+}
+
+/** Selectable pill. Painted 36 pt, touch area lifted to 44 pt via hitSlop;
+ *  long labels wrap instead of clipping. */
+export function Chip({ label, selected = false, onPress, icon, className = "" }: ChipProps) {
+  const slop = hitSlopFor(CHIP_VISUAL_HEIGHT);
+  return (
+    <Pressable
+      onPress={() => {
+        if (!selected) hapticSelect();
+        onPress?.();
+      }}
+      hitSlop={slop > 0 ? { top: slop, bottom: slop, left: 4, right: 4 } : undefined}
+      android_ripple={{
+        color: withAlpha(selected ? activePalette().accentOnFill : activePalette().text, RIPPLE_ALPHA),
+        foreground: true,
+      }}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={label}
+      className={`${chipClassName(selected)} active:opacity-80 ${className}`}
+    >
+      {icon ? <View className="mr-1.5">{icon}</View> : null}
+      <Text className={chipTextClassName(selected)} style={{ flexShrink: 1 }}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+interface RowProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  /** One quiet line under the label. */
+  sub?: string;
+  value?: string;
+  right?: React.ReactNode;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  danger?: boolean;
+}
+
+/**
+ * The list row: 36 pt icon plate, label (up to 2 lines), one sub line, right
+ * item vertically centered, chevron when tappable. minHeight is a floor so a
+ * long DE/FR label wraps instead of clipping. Same look as settingsUi.Row;
+ * the settings batch switches to this one.
+ */
+export function Row({ icon, label, sub, value, right, onPress, onLongPress, danger }: RowProps) {
+  const tone = danger ? THEME.danger : THEME.accent;
+  const interactive = !!(onPress || onLongPress);
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      disabled={!interactive}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={label}
+      android_ripple={
+        interactive ? { color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true } : undefined
+      }
+      className={`flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 ${
+        interactive ? "active:opacity-80" : ""
+      }`}
+      style={{ minHeight: ROW_MIN_HEIGHT }}
+    >
+      <View
+        className="rounded-xl items-center justify-center"
+        style={{ width: ROW_PLATE, height: ROW_PLATE, backgroundColor: withAlpha(tone, 0.14) }}
+      >
+        <Ionicons name={icon} size={18} color={tone} />
+      </View>
+      <View className="flex-1 mx-3">
+        <Text
+          className="text-[15px] font-semibold"
+          style={{ color: danger ? THEME.danger : THEME.text }}
+          numberOfLines={2}
+        >
+          {label}
+        </Text>
+        {sub ? (
+          <Text className="text-mut text-[12px] mt-0.5" numberOfLines={1}>
+            {sub}
+          </Text>
+        ) : null}
+      </View>
+      {value ? (
+        <Text className="text-mut text-[13px] mr-1 font-medium" numberOfLines={2}>
+          {value}
+        </Text>
+      ) : null}
+      {right ?? (onPress ? <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} /> : null)}
+    </Pressable>
   );
 }
 
