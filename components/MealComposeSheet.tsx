@@ -21,6 +21,7 @@ import type { EditableItem } from "../lib/ai/carbEstimateClient";
 import { searchFoods } from "../lib/db/foods";
 import { foodName, type Food, type Lang } from "../lib/db/types";
 import { num } from "../lib/format";
+import { logEvent } from "../lib/analytics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import {
   addComposeItem,
@@ -157,6 +158,10 @@ export function MealComposeSheet({
   /** The portion a food entered the meal with: sizes the synthetic "portion"
    *  chip of a food that has no presets, and stays put while the user edits. */
   const typicalRef = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    logEvent("meal_builder_opened", {});
+  }, []);
 
   useEffect(() => {
     Animated.timing(anim, {

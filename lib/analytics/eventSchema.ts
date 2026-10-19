@@ -1,12 +1,12 @@
 /**
- * Analytics event schema v4: the one list of event names and fields the
+ * Analytics event schema v5: the one list of event names and fields the
  * Supabase sink may send. The server (supabase/functions/_shared/event-schema.json)
  * drops anything outside it as well, and scripts/analyticsSchema.test.ts fails
  * when the two lists drift. Dependency-free on purpose so that test can run
  * under plain node.
  */
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * What a log entry is, as far as analytics may know: a glucose reading, a meal,
@@ -101,6 +101,10 @@ export const EVENT_SCHEMA = {
     source: ["food_tab", "meal_sheet"],
   },
   carb_estimate_blocked: { reason: ["quota", "filtered", "error"] },
+  meal_builder_opened: {},
+  carb_estimate_requested: { tier: ["free", "pro"], source: ["food_tab", "meal_sheet"] },
+  carb_estimate_accepted: { item_count: "int" },
+  portion_chip_used: { kind: ["measure", "grams"] },
   analytics_opt_out: { enabled: "bool" },
   store_review_prompt: {
     trigger: ["log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"],

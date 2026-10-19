@@ -189,6 +189,7 @@ export function CarbEstimateSheet({
         blocked("quota");
         return;
       }
+      logEvent("carb_estimate_requested", { tier, source });
       const result = await estimateCarbs({
         text: prepared,
         locale,
@@ -419,6 +420,7 @@ export function CarbEstimateSheet({
           onPress={() => {
             if (canAdd && items) {
               onAdd(editableToEstimateLines(items));
+              logEvent("carb_estimate_accepted", { item_count: itemCountBucket(items.length) });
               close();
             }
           }}
