@@ -14,7 +14,7 @@ module.exports = {
   type: "watch",
   name: "ZerospikeWatch",
   bundleIdentifier: ".watchapp",
-  icon: "../../assets/icon.png",
+  icon: "../../assets/brand/icon-1024.png",
   entitlements: {
     "com.apple.security.application-groups": ["group.com.greeneyeapp.zerospike"],
   },

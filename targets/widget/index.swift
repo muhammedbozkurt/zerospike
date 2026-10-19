@@ -347,7 +347,7 @@ struct ZerospikeWidgetView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
 
       Rectangle()
-        .fill(Color.white.opacity(0.08))
+        .fill(WidgetPalette.muted.opacity(0.25))
         .frame(width: 1)
         .frame(maxHeight: .infinity)
 
