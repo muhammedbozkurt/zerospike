@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -13,6 +13,10 @@ import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { InjectionBodyMap } from "../components/InjectionBodyMap";
 import { DirIcon } from "../components/DirIcon";
+import { SCRIM } from "../components/SheetShell";
+import { sheetLayout } from "../lib/sheetLayout";
+import { basalPresentation } from "../lib/basalConfirmLayout";
+import { useLayout } from "../lib/useLayout";
 import { MODAL_TOP_PAD, RADIUS, THEME } from "../lib/theme/tokens";
 import { formatTime, isolateLtr, num, relativeDay } from "../lib/format";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
@@ -85,6 +89,8 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 function BasalConfirmScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const { isWide } = useLayout();
   const router = useRouter();
   const { activeProfile, isProUser, bumpData } = useApp();
   const params = useLocalSearchParams<{
@@ -294,6 +300,7 @@ function BasalConfirmScreen() {
   const differentProfile =
     ctx != null && activeProfile != null && activeProfile.id !== ctx.profile.id;
 
+  const presentation = basalPresentation({ loadKind: load.kind, step, picking });
   const headerTitle = t("basalConfirm.title");
   const headerBackIcon = picking ? "chevron-back" : "close";
   const onHeaderBack = () => {
@@ -309,6 +316,178 @@ function BasalConfirmScreen() {
       ? t("injection.siteWithPoint", { site: t(`injectionSite.${site}`), n: point })
       : t(`injectionSite.${site}`)
     : t("injection.chooseSitePoint");
+
+  if (presentation === "card") {
+    const cardMaxHeight = sheetLayout({
+      windowHeight,
+      keyboardHeight: 0,
+      insetBottom: insets.bottom,
+      contentHeight: 0,
+    }).sheetMaxHeight;
+    return (
+      <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={dismiss}
+          accessible={false}
+          focusable={false}
+        />
+        <View
+          accessibilityViewIsModal
+          style={[
+            {
+              maxHeight: cardMaxHeight,
+              borderTopLeftRadius: 26,
+              borderTopRightRadius: 26,
+              borderTopWidth: 1,
+              borderLeftWidth: 1,
+              borderRightWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: THEME.bg.g1,
+              paddingHorizontal: 20,
+              paddingTop: 8,
+              paddingBottom: insets.bottom + 16,
+            },
+            isWide ? { width: "100%", maxWidth: 600, alignSelf: "center" } : undefined,
+          ]}
+        >
+          <View className="items-center mb-1.5">
+            <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
+          </View>
+          <View className="flex-row items-center justify-between mb-2">
+            <Text
+              numberOfLines={2}
+              style={{ color: THEME.textMuted, fontSize: 13, fontWeight: "700", flexShrink: 1 }}
+            >
+              {differentProfile && ctx
+                ? `${headerTitle} · ${displayProfileName(ctx.profile, t)}`
+                : headerTitle}
+            </Text>
+            <Pressable
+              onPress={dismiss}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.close")}
+              className="p-1"
+            >
+              <Ionicons name="close" size={22} color={THEME.textMuted} />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={{ flexShrink: 1 }}
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+          >
+            {load.kind === "loading" ? (
+              <View style={{ gap: 12, paddingVertical: 8 }}>
+                <Skeleton width="100%" height={22} />
+                <Skeleton width="60%" height={16} />
+                <Skeleton width="100%" height={48} radius={RADIUS.md} />
+              </View>
+            ) : load.kind === "error" ? (
+              <View>
+                <Text style={{ color: THEME.text, fontSize: 15, marginBottom: 16 }}>
+                  {t("basalConfirm.loadError")}
+                </Text>
+                <GradientCTA label={t("common.close")} onPress={dismiss} />
+              </View>
+            ) : load.kind === "chooseProfile" ? (
+              <View>
+                <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 16 }}>
+                  {t("basalConfirm.chooseProfile")}
+                </Text>
+                <View style={{ gap: 10 }}>
+                  {load.candidates.map((c) => (
+                    <Pressable
+                      key={c.reminder?.id ?? c.profile.id}
+                      onPress={() => selectProfileCandidate(c)}
+                      accessibilityRole="button"
+                      className="flex-row items-center justify-between"
+                      style={inputStyle()}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flexShrink: 1 }}
+                      >
+                        {displayProfileName(c.profile, t)}
+                      </Text>
+                      <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : load.kind === "duplicate" ? (
+              <View>
+                <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 8 }}>
+                  {t("basalConfirm.duplicateTitle")}
+                </Text>
+                <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 20 }}>
+                  {/* time/n stay separate params (not merged into one, unlike
+                      CarbRatioLine): tr and ja embed them non-adjacently inside
+                      their own sentence ("{{time}} saatinde {{n}} Ü olarak..."),
+                      so each is isolated on its own (lib/format's LRI/PDI wrap)
+                      rather than forcing every language into one fixed order. */}
+                  {load.existing.dose_units != null
+                    ? t("basalConfirm.duplicateBody", {
+                        time: isolateLtr(formatTime(load.existing.logged_at)),
+                        n: isolateLtr(num(load.existing.dose_units)),
+                      })
+                    : t("basalConfirm.duplicateBodyNoDose", {
+                        time: isolateLtr(formatTime(load.existing.logged_at)),
+                      })}
+                </Text>
+                <GradientCTA label={t("common.close")} onPress={dismiss} />
+              </View>
+            ) : (
+              <View>
+                <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 10 }}>
+                  {t("basalConfirm.askTitle")}
+                </Text>
+                <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 20 }}>
+                  {/* Not a t() template - built straight from three pieces, so the
+                      fix is in code, not a locale file: the dose and the time are
+                      each their own isolated LTR run (lib/format's LRI/PDI wrap);
+                      "today"/"yesterday" is a real translated word and stays
+                      untouched, never isolated as LTR. */}
+                  {dose > 0 ? `${isolateLtr(`${num(dose)} ${t("common.unitsShort")}`)} · ` : ""}
+                  {relativeDay(loggedAt.toISOString(), {
+                    today: t("common.today"),
+                    yesterday: t("common.yesterday"),
+                  })}
+                  {" · "}
+                  {isolateLtr(formatTime(loggedAt.toISOString()))}
+                </Text>
+                {/* Full-width, stacked (not a two-up half-width row): the longest
+                    translation (pt "Sim, já apliquei") clipped under
+                    GradientCTA's own adjustsFontSizeToFit at half width on
+                    Android, which downscales silently there instead of wrapping -
+                    see CLAUDE.md's own warning about that API. Full width gives
+                    every language room without depending on it. */}
+                <View style={{ gap: 10 }}>
+                  <GradientCTA
+                    label={t("basalConfirm.yes")}
+                    onPress={() => {
+                      hapticSelect();
+                      setStep("site");
+                    }}
+                  />
+                  <GradientCTA
+                    label={t("basalConfirm.no")}
+                    variant="sub"
+                    onPress={() => {
+                      hapticSelect();
+                      dismiss();
+                    }}
+                  />
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <AppBackground>
@@ -333,60 +512,6 @@ function BasalConfirmScreen() {
             <Skeleton width="100%" height={22} />
             <Skeleton width="60%" height={16} />
             <Skeleton width="100%" height={48} radius={RADIUS.md} />
-          </View>
-        ) : load.kind === "error" ? (
-          <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 24 }}>
-            <Text style={{ color: THEME.text, fontSize: 15, marginBottom: 16 }}>
-              {t("basalConfirm.loadError")}
-            </Text>
-            <GradientCTA label={t("common.close")} onPress={dismiss} />
-          </View>
-        ) : load.kind === "chooseProfile" ? (
-          <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 12 }}>
-            <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 16 }}>
-              {t("basalConfirm.chooseProfile")}
-            </Text>
-            <View style={{ gap: 10 }}>
-              {load.candidates.map((c) => (
-                <Pressable
-                  key={c.reminder?.id ?? c.profile.id}
-                  onPress={() => selectProfileCandidate(c)}
-                  accessibilityRole="button"
-                  className="flex-row items-center justify-between"
-                  style={inputStyle()}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flexShrink: 1 }}
-                  >
-                    {displayProfileName(c.profile, t)}
-                  </Text>
-                  <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : load.kind === "duplicate" ? (
-          <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 24 }}>
-            <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 8 }}>
-              {t("basalConfirm.duplicateTitle")}
-            </Text>
-            <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 24 }}>
-              {/* time/n stay separate params (not merged into one, unlike
-                  CarbRatioLine): tr and ja embed them non-adjacently inside
-                  their own sentence ("{{time}} saatinde {{n}} Ü olarak..."),
-                  so each is isolated on its own (lib/format's LRI/PDI wrap)
-                  rather than forcing every language into one fixed order. */}
-              {load.existing.dose_units != null
-                ? t("basalConfirm.duplicateBody", {
-                    time: isolateLtr(formatTime(load.existing.logged_at)),
-                    n: isolateLtr(num(load.existing.dose_units)),
-                  })
-                : t("basalConfirm.duplicateBodyNoDose", {
-                    time: isolateLtr(formatTime(load.existing.logged_at)),
-                  })}
-            </Text>
-            <GradientCTA label={t("common.close")} onPress={dismiss} />
           </View>
         ) : picking ? (
           <ScrollView
@@ -413,50 +538,6 @@ function BasalConfirmScreen() {
               />
             )}
           </ScrollView>
-        ) : step === "ask" ? (
-          <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 12 }}>
-            <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 10 }}>
-              {t("basalConfirm.askTitle")}
-            </Text>
-            <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 28 }}>
-              {/* Not a t() template - built straight from three pieces, so the
-                  fix is in code, not a locale file: the dose and the time are
-                  each their own isolated LTR run (lib/format's LRI/PDI wrap);
-                  "today"/"yesterday" is a real translated word and stays
-                  untouched, never isolated as LTR. */}
-              {dose > 0 ? `${isolateLtr(`${num(dose)} ${t("common.unitsShort")}`)} · ` : ""}
-              {relativeDay(loggedAt.toISOString(), {
-                today: t("common.today"),
-                yesterday: t("common.yesterday"),
-              })}
-              {" · "}
-              {isolateLtr(formatTime(loggedAt.toISOString()))}
-            </Text>
-            <View style={{ flex: 1 }} />
-            {/* Full-width, stacked (not a two-up half-width row): the longest
-                translation (pt "Sim, já apliquei") clipped under
-                GradientCTA's own adjustsFontSizeToFit at half width on
-                Android, which downscales silently there instead of wrapping -
-                see CLAUDE.md's own warning about that API. Full width gives
-                every language room without depending on it. */}
-            <View style={{ gap: 10, marginBottom: 8 }}>
-              <GradientCTA
-                label={t("basalConfirm.yes")}
-                onPress={() => {
-                  hapticSelect();
-                  setStep("site");
-                }}
-              />
-              <GradientCTA
-                label={t("basalConfirm.no")}
-                variant="sub"
-                onPress={() => {
-                  hapticSelect();
-                  dismiss();
-                }}
-              />
-            </View>
-          </View>
         ) : (
           <ScrollView
             {...keyboardAwareScrollProps}

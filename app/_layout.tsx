@@ -805,7 +805,11 @@ function RootNavigator() {
       />
       <Stack.Screen
         name="basal-confirm"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
+        options={{
+          presentation: "transparentModal",
+          animation: "fade",
+          contentStyle: { backgroundColor: "transparent" },
+        }}
       />
       <Stack.Screen
         name="add-food"

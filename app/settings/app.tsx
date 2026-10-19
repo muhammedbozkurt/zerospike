@@ -175,7 +175,7 @@ export default function AppSettings() {
       />
 
       <View
-        className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 mt-3"
+        className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3 mt-3 mb-2"
         style={{ minHeight: 60 }}
       >
         <Ionicons name="phone-portrait-outline" size={19} color={THEME.textMuted} />

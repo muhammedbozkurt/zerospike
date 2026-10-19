@@ -93,3 +93,19 @@ export function keyboardOverlapPx(input: { containerBottom: number; keyboardTop:
   const overlap = input.containerBottom - input.keyboardTop;
   return Number.isFinite(overlap) && overlap > 0 ? Math.round(overlap) : 0;
 }
+
+/**
+ * Rendered height of a bottom sheet. `fit` (SheetShell's default) hugs the
+ * content: title row + measured content + footer + bottom padding, capped at
+ * sheetMaxHeight, so a two-button confirm opens as a short card. `fit: false`
+ * is the opt-out for a sheet that should always take the full allowance
+ * (a picker whose list length changes while it is open).
+ */
+export function sheetFitHeight(
+  input: SheetLayoutInput & { chromeHeight?: number; fit?: boolean }
+): number {
+  const { sheetMaxHeight, paddingBottom } = sheetLayout(input);
+  if (input.fit === false) return sheetMaxHeight;
+  const chrome = input.chromeHeight ?? 0;
+  return Math.min(sheetMaxHeight, Math.max(0, input.contentHeight + chrome + paddingBottom));
+}

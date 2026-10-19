@@ -37,10 +37,13 @@ export function ProfileSwitcher({
   open: controlledOpen,
   onOpenChange,
   hideTrigger,
+  nameMaxWidth = 120,
 }: {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
+  /** Cap for the profile name inside the pill; crowded headers pass a smaller one. */
+  nameMaxWidth?: number;
 } = {}) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -132,7 +135,7 @@ export function ProfileSwitcher({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.85}
-            style={{ maxWidth: 120 }}
+            style={{ maxWidth: nameMaxWidth }}
           >
             {activeProfile ? displayProfileName(activeProfile, t) : "-"}
           </Text>

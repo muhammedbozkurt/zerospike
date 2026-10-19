@@ -5,8 +5,10 @@ import {
   Pressable,
   ScrollView,
   SectionList,
+  PixelRatio,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +29,7 @@ import { useUndoBatch } from "../../components/useUndoBatch";
 import { useEntryGuardConfirm } from "../../components/useEntryGuardConfirm";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
 import { listEntering, listExiting, listLayout } from "../../lib/theme/motion";
+import { fitFontSize } from "../../lib/fitText";
 import {
   InjectionBodyMap,
   daysSince,
@@ -142,9 +145,15 @@ function SegmentOption({
   );
 }
 
+// Header row budget (pt): px-4 gutters 32 + help tile 32 + gap 10 + profile pill
+// chrome (px-3 24, icon 18, name margins 12, chevron 14) + name cap + title gap 8.
+const PROFILE_NAME_MAX_WIDTH = 72;
+const HEADER_FIXED_WIDTH = 32 + 32 + 10 + (24 + 18 + 12 + 14 + PROFILE_NAME_MAX_WIDTH) + 8;
+
 export default function InjectionScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { width: winWidth } = useWindowDimensions();
   const router = useRouter();
   const params = useLocalSearchParams<{ compose?: string; segment?: string; zoom?: string }>();
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
@@ -831,10 +840,25 @@ export default function InjectionScreen() {
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
       <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
-        <Text style={{ color: THEME.text, fontSize: 24, fontWeight: "800" }}>
-          {t("injection.title")}
-        </Text>
-        <View className="flex-row items-center" style={{ gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: THEME.text,
+              fontWeight: "800",
+              fontSize: fitFontSize({
+                text: t("injection.title"),
+                availableWidth: winWidth - HEADER_FIXED_WIDTH,
+                maxSize: 24,
+                minSize: 18,
+                fontScale: PixelRatio.getFontScale(),
+              }),
+            }}
+          >
+            {t("injection.title")}
+          </Text>
+        </View>
+        <View className="flex-row items-center" style={{ gap: 10, flexShrink: 0 }}>
           <Pressable
             onPress={() => router.push("/injection-guide")}
             hitSlop={8}
@@ -843,7 +867,7 @@ export default function InjectionScreen() {
           >
             <IconTile icon="help-circle" size={32} radius={10} />
           </Pressable>
-          <ProfileSwitcher />
+          <ProfileSwitcher nameMaxWidth={PROFILE_NAME_MAX_WIDTH} />
         </View>
       </View>
 
