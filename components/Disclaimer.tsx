@@ -1,10 +1,11 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { RADIUS, THEME } from "../lib/theme/tokens";
+import { RADIUS, SPACE, THEME } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
+import { Txt } from "./ui";
 
 /**
  * Permanent, visible medical disclaimer banner (Settings + onboarding).
@@ -26,39 +27,30 @@ export function DisclaimerBanner({
   return (
     <View
       style={{
-        padding: compact ? 14 : 20,
+        padding: compact ? SPACE.md : SPACE.lg,
         borderRadius: RADIUS.xl,
         borderWidth: 1,
         borderColor: withAlpha(THEME.warning, 0.35),
         backgroundColor: withAlpha(THEME.warning, 0.08),
       }}
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
         <Ionicons name="medical-outline" size={18} color={THEME.warning} />
-        <Text
-          style={{
-            color: THEME.warning,
-            fontSize: compact ? 14 : 16,
-            lineHeight: compact ? 20 : 22,
-            fontWeight: "600",
-            flex: 1,
-          }}
+        <Txt
+          kind={compact ? "caption" : "body"}
+          style={{ color: THEME.warning, fontWeight: "600", flex: 1 }}
         >
           {t("disclaimer.title")}
-        </Text>
+        </Txt>
       </View>
       {/* The body is INK, not a dimmed amber: it is the text a user is being
           asked to accept, so it has to be the most readable line on the card. */}
-      <Text
-        style={{
-          color: THEME.text,
-          fontSize: compact ? 13 : 15,
-          lineHeight: compact ? 19 : 22,
-          marginTop: compact ? 8 : 10,
-        }}
+      <Txt
+        kind={compact ? "caption" : "body"}
+        style={{ marginTop: compact ? SPACE.sm : SPACE.md }}
       >
         {full ? t("disclaimer.body") : t("disclaimer.short")}
-      </Text>
+      </Txt>
     </View>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -30,12 +30,12 @@ import { RangeInput } from "../components/RangeInput";
 import { Stepper, useStepperValidity } from "../components/Stepper";
 import { InlineTimePicker } from "../components/InlineTimePicker";
 import { InsulinModeSection } from "../components/InsulinModeSection";
-import { Button, Segmented } from "../components/ui";
+import { Button, Segmented, Txt } from "../components/ui";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { AppBackground, ConicAvatar, GradientCTA } from "../components/rich";
-import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { MODAL_TOP_PAD, SPACE, THEME } from "../lib/theme/tokens";
 import { parseDecimalText } from "../lib/numberInput";
 import { upper } from "../lib/upper";
 import { displayProfileName } from "../lib/profileName";
@@ -503,12 +503,9 @@ function ProfileSetupScreen() {
         {/* Identity hero (mockup 07) */}
         <View className="items-center mb-5" style={{ gap: 8 }}>
           <ConicAvatar label={initials(displayProfileName(name, t))} size={66} />
-          <Text
-            style={{ color: THEME.text, fontSize: 22, fontWeight: "800" }}
-            numberOfLines={1}
-          >
+          <Txt kind="title" numberOfLines={1}>
             {displayProfileName(name, t)}
-          </Text>
+          </Txt>
           <View
             className="rounded-full px-3 py-1"
             style={{ backgroundColor: THEME.surface, borderWidth: 1, borderColor: THEME.border }}
@@ -516,21 +513,17 @@ function ProfileSetupScreen() {
             {/* Bidi: "mg/dL · 70-180" holds a hyphenated number range, which
                 reorders under RTL unless pinned LTR (same fix as insights'
                 target-band line). */}
-            <Text style={{ color: THEME.textMuted, fontSize: 11, writingDirection: "ltr" }}>
+            <Txt kind="micro" tone="muted" style={{ fontWeight: "400", writingDirection: "ltr" }}>
               {summary}
-            </Text>
+            </Txt>
           </View>
-          <Text
-            style={{
-              color: THEME.textMuted,
-              fontSize: 11,
-              lineHeight: 16,
-              textAlign: "center",
-              paddingHorizontal: 16,
-            }}
+          <Txt
+            kind="caption"
+            tone="muted"
+            style={{ textAlign: "center", paddingHorizontal: SPACE.lg }}
           >
             {t("profiles.setupHint")}
-          </Text>
+          </Txt>
         </View>
 
         <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
@@ -759,15 +752,11 @@ function ProfileSetupScreen() {
                   />
                 </View>
               ) : null}
-              <Pressable
+              <Button
+                label={t("onboarding.planSkip")}
+                variant="tertiary"
                 onPress={() => setPlanDecided(true)}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={t("onboarding.planSkip")}
-                className="py-3 items-center"
-              >
-                <Text className="text-mut font-medium">{t("onboarding.planSkip")}</Text>
-              </Pressable>
+              />
             </View>
           </FormCard>
         ) : null}
