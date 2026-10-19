@@ -263,6 +263,17 @@ Deno.test("output gate: counting units pass and are normalised, split doses are 
   }
 });
 
+Deno.test("output gate: cans and drink measures pass, a medical name beside them does not", async () => {
+  const run = async (name: string, quantity: number, unit: string) => {
+    const text = JSON.stringify({ items: [{ name, quantity, unit, grams_carb: 10 }], total_grams_carb: 10 });
+    const { deps } = fake({ text });
+    const r = await handleCarbEstimate(req("a drink"), "3f2b8c1e-5a4d-4e6f-9b0a-1c2d3e4f5a6b", deps);
+    return (r.body as { filtered?: boolean }).filtered === false;
+  };
+  for (const [n, q, u] of [["Cola", 1, "Dose"], ["Bier", 1, "Dose"], ["Cachaça", 1, "dose"]] as const) assert.ok(await run(n, q, u), `${n}/${u}`);
+  for (const [n, q, u] of [["Insulin", 1, "Dose"], ["NovoRapid", 6, "Dose"], ["Pasta", 6, "dose"]] as const) assert.ok(!(await run(n, q, u)), `${n}/${u}`);
+});
+
 Deno.test("device id: ':' and short or odd ids are refused", () => {
   assert.ok(DEVICE_ID_RE.test("3f2b8c1e-5a4d-4e6f-9b0a-1c2d3e4f5a6b"));
   assert.ok(!DEVICE_ID_RE.test("ce:3f2b8c1e-5a4d"));

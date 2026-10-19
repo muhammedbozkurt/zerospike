@@ -95,12 +95,14 @@ $t$;
 
 insert into public.spike_usage (device_id, day, count) values ('k27p5-dev', '2099-02-01', 1), ('ce:k27p5-dev', '2099-02-01', 1);
 insert into public.spike_calls (device_id, day, model, mode) values ('k27p5-dev', '2099-02-01', 'm', 'carb_estimate');
+create temp table t_del as select public.delete_device_data_v2('k27p5-dev', null) as r;
+
 insert into t_res
 select 'f delete removes ce counter and calls',
        (r ->> 'spike_usage')::int = 2 and (r ->> 'spike_calls')::int = 1
          and not exists (select 1 from public.spike_usage where device_id in ('k27p5-dev', 'ce:k27p5-dev')),
        r::text
-from (select public.delete_device_data_v2('k27p5-dev', null) as r) x;
+from t_del;
 
 select step, ok, detail from t_res order by step;
 

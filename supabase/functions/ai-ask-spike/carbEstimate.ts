@@ -249,6 +249,12 @@ function cleanLabel(x: unknown, max: number, allowEmpty: boolean): string | null
 // Greek lookalikes the normaliser did not map, IPA) cannot be read by the gate, so the item is refused.
 const FOREIGN_LETTER = /(?![\p{scx=Latin}\p{scx=Arabic}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Han}])[\p{L}\p{M}]/u;
 
+/** A can ("Dose", "Dosen") or a drink measure ("dose" for one to three). A medical name beside it is still caught by the name and joined checks. */
+function tinUnit(unit: string, quantity: number): boolean {
+  const u = unit.trim();
+  return /^Dosen?$/.test(u) || (u === "dose" && quantity <= 3);
+}
+
 /** Schema check + output gate. The total is recomputed from the items; keys outside the schema are dropped. */
 export function parseEstimate(raw: string): ParsedEstimate {
   const root = extractJson(raw);
@@ -264,7 +270,7 @@ export function parseEstimate(raw: string): ParsedEstimate {
     }
     if (FOREIGN_LETTER.test(name) || FOREIGN_LETTER.test(unit)) return { ok: false, reason: "filtered", rule: "carb_script" };
     const unitKey = fold(unit).replace(/[^a-z0-9]/g, "");
-    const medical = [name, unit, `${name} ${it.quantity} ${unit}`].some(hasMedicalTerm) || MEDICAL_UNITS.has(unitKey);
+    const medical = [name, tinUnit(unit, it.quantity) ? "" : unit, `${name} ${it.quantity} ${unit}`].some(hasMedicalTerm) || MEDICAL_UNITS.has(unitKey);
     if (medical) return { ok: false, reason: "filtered", rule: "carb_medical" };
     const cleanUnit = COUNT_WORDS.has(unitKey) ? "" : unit;
     for (const field of [name, cleanUnit, `${name} ${it.quantity} ${cleanUnit}`]) {
