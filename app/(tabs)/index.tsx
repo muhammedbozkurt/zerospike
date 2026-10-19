@@ -2883,8 +2883,14 @@ function PostMealCountdown({
             {t("dashboard.quickPostMealTitle")}
           </Txt>
         </View>
-        <View className="flex-row items-center" style={{ gap: SPACE.md }}>
-          <Txt kind="body" tone="accent" tabular style={{ fontWeight: "700" }}>
+        <View className="flex-row items-center" style={{ gap: SPACE.md, flexShrink: 0 }}>
+          <Txt
+            kind="body"
+            tone="accent"
+            tabular
+            numberOfLines={1}
+            style={{ fontWeight: "700", flexShrink: 0 }}
+          >
             {countdown.seconds
               ? t("dashboard.postMealCountdownSec", { s: countdown.value })
               : t("dashboard.postMealCountdownMin", { m: countdown.value })}

@@ -86,7 +86,7 @@ function MediumWidget({ data, now, unit }: { data: LiveData | null; now: number;
             </Text>
           </View>
           {metaLine ? (
-            <Text style={{ fontSize: label, color: THEME.muted }} numberOfLines={1}>
+            <Text style={{ fontSize: label, color: THEME.muted }} numberOfLines={2}>
               {metaLine}
             </Text>
           ) : null}

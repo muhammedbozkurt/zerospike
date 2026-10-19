@@ -221,7 +221,7 @@ export function buildZerospikeWidget(
         ? React.createElement(TextWidget, {
             text: metaText,
             truncate: "END",
-            maxLines: 1,
+            maxLines: 2,
             style: { fontSize: s.meta, color: pal.muted as ColorProp },
           })
         : null

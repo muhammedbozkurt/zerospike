@@ -31,6 +31,14 @@ export function formatLocale(): string {
  *  files, whose numbers are written with a dot. */
 export const COMMA_DECIMAL = ["tr", "de", "es", "fr", "it", "pt"];
 
+/** A number as the starting text of an editable decimal field: the active
+ *  language's decimal mark, no digit grouping and no localized digits, so
+ *  parseGramsInput (comma or dot) reads it back unchanged. */
+export function decimalInputText(n: number): string {
+  const raw = String(n);
+  return COMMA_DECIMAL.includes(formatLocale().slice(0, 2)) ? raw.replace(".", ",") : raw;
+}
+
 function two(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }

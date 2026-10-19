@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 import { fetch } from "expo/fetch";
 import { getDeviceId } from "../identity/deviceId";
+import { decimalInputText } from "../format";
 import { isScreenshotMode } from "../screenshotMode";
 import { hasSpikeConsent } from "../services/spikeConsent";
 import {
@@ -265,9 +266,9 @@ export function editableFromEstimate(items: readonly CarbItem[]): EditableItem[]
   return items.map((item, i) => ({
     key: `ce${i}`,
     name: item.name,
-    quantityText: String(item.quantity),
+    quantityText: decimalInputText(item.quantity),
     unit: item.unit,
-    gramsText: String(item.grams_carb),
+    gramsText: decimalInputText(item.grams_carb),
   }));
 }
 

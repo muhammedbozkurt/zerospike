@@ -1176,6 +1176,10 @@ export default function InsightsScreen() {
                                   fontSize: 12,
                                   fontWeight: "700",
                                   flex: 1,
+                                  // Pinned physical-left: under an RTL base
+                                  // direction an Arabic label would otherwise
+                                  // align right, i.e. against the percent.
+                                  textAlign: "left",
                                   // RN auto-flips marginLeft/Right independently
                                   // of the flexDirection lock above, so the key
                                   // itself has to be pre-swapped (same trick as
@@ -1193,7 +1197,14 @@ export default function InsightsScreen() {
                               <Text
                                 style={[
                                   TABULAR,
-                                  { color: THEME.textMuted, fontSize: 12, writingDirection: "ltr" },
+                                  {
+                                    color: THEME.textMuted,
+                                    fontSize: 12,
+                                    writingDirection: "ltr",
+                                    // Same pre-swapped key as the label's: a
+                                    // fixed gap so the percent never touches it.
+                                    [rtl ? "marginRight" : "marginLeft"]: 8,
+                                  },
                                 ]}
                               >
                                 {isolateLtr(pctText(value))}

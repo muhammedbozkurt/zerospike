@@ -20,7 +20,7 @@ import { useTranslation } from "react-i18next";
 import type { EditableItem } from "../lib/ai/carbEstimateClient";
 import { searchFoods } from "../lib/db/foods";
 import { foodName, type Food, type Lang } from "../lib/db/types";
-import { num } from "../lib/format";
+import { decimalInputText, num } from "../lib/format";
 import { logEvent } from "../lib/analytics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import {
@@ -71,9 +71,9 @@ function estimateToEditable(item: ComposeItem): EditableItem {
   return {
     key: item.key,
     name: item.name === "-" ? "" : item.name,
-    quantityText: quantity > 0 ? String(quantity) : "",
+    quantityText: quantity > 0 ? decimalInputText(quantity) : "",
     unit: item.unit ?? "",
-    gramsText: String(item.carbs_g_fixed ?? 0),
+    gramsText: decimalInputText(item.carbs_g_fixed ?? 0),
   };
 }
 
