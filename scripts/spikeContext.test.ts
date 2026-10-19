@@ -1057,6 +1057,10 @@ function sourcePins(): void {
   ok("a source with an in-app route opens that screen", bodyOf(screen, "openSource").includes("spikeSourceRoute(source)"));
   ok("a reply cut at the token ceiling ends on an ellipsis", screen.includes("result.truncated"));
   ok("the screen never builds uppercase with toUpperCase", !screen.includes("toUpperCase"));
+  ok("accept() refuses to grant until the box is ticked", bodyOf(screen, "accept").replace(/\s+/g, " ").startsWith("{ if (!agreed) return;"));
+  ok("the accept button is disabled until the box is ticked", /<GradientCTA\s[^>]*?label=\{t\("spike\.accept"\)\}[^>]*?disabled=\{!agreed\}/.test(screen));
+  ok("the box is a checkbox bound to the agreement", /accessibilityRole="checkbox"\s*accessibilityState=\{\{ checked: agreed \}\}/.test(screen) && screen.includes('t("spike.consentAgree")'));
+  ok("the short consent is the default view and the full text sits behind the details toggle", screen.includes("detailsOpen ? (") && screen.indexOf('t("spike.consentShort1")') < screen.indexOf("detailsOpen ? (") && screen.indexOf("detailsOpen ? (") < screen.indexOf('t("spike.consentSent")'));
   ok("no em dash in the new files", ![screen, clientSrc, read("lib/ai/spikeContext.ts"), read("lib/services/spikeConsent.ts")].some((s) => s.includes(String.fromCharCode(0x2014))));
 }
 
@@ -1154,7 +1158,7 @@ function consentWording(): void {
     ar: /علاج|جرعة|تشخيص|تنبيه|إنذار/,
     ja: /治療|診断|アラーム|警告|用量/,
   };
-  const newKeys = (k: string): boolean => /^(ctx|action|feedback|error)/.test(k) || k === "filtered" || k === "sourcesLabel" || k === "consentSummaryNote";
+  const newKeys = (k: string): boolean => /^(ctx|action|feedback|error)/.test(k) || k === "filtered" || k === "sourcesLabel" || k === "consentSummaryNote" || /^consent(Short|Agree|Details)/.test(k);
   for (const lang of langs) {
     const spike = localeSpike(lang);
     ok(`${lang}: ctxShared5 exists`, typeof spike.ctxShared5 === "string" && spike.ctxShared5.length > 0);

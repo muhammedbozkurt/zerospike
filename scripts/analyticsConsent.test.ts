@@ -1123,7 +1123,7 @@ function copy(): void {
     en: /$^/,
     tr: /\b(senin|sen|sana|seni)\b/i,
     de: /\b(du|dein|deine|deinen|deinem|dir|dich)\b/i,
-    fr: /\b(tu|ton|ta|tes|toi|te)\b/i,
+    fr: /(?<![\p{L}])(tu|ton|ta|tes|toi|te)(?![\p{L}])/iu,
     es: /\b(tú|tu|tus|ti|contigo)\b/i,
     it: /\b(tu|tuo|tua|tuoi|tue)\b/i,
     pt: /\b(tu|teu|tua|teus|tuas)\b/i,
@@ -1174,7 +1174,7 @@ function copy(): void {
   for (const lang of LANGS) {
     const text = src(`lib/i18n/locales/${lang}.ts`);
     const strings: [string, string][] = [];
-    for (const key of ["analyticsConsentTitle", "analyticsConsentBody", "qAnalytics", "analyticsHelpCollect", "analyticsHelpNever", "analyticsHelpOff"]) {
+    for (const key of ["analyticsConsentTitle", "analyticsConsentBody", "qAnalytics", "analyticsHelpCollect", "analyticsHelpNever", "analyticsHelpOff", "analyticsShort1", "analyticsShort2", "analyticsShort3", "analyticsDetails"]) {
       const m = new RegExp(`\\n {4}${key}: "([^"]+)"`).exec(text);
       ok(`${lang} has onboarding.${key}`, m !== null);
       if (m) strings.push([`onboarding.${key}`, m[1]]);
@@ -1194,6 +1194,9 @@ function copy(): void {
     const deviceId = field("consentDeviceId");
     const legal = field("legalNote");
     strings.push(["spike.consentDeviceId", deviceId], ["paywall.legalNote", legal]);
+    for (const key of ["consentShort1", "consentShort2", "consentShort3", "consentShortScope", "consentAgree", "consentDetails"]) {
+      strings.push([`spike.${key}`, field(key)]);
+    }
     for (const [key, value] of strings) {
       ok(`${lang} ${key} is not empty`, value.trim().length > 0);
       ok(`${lang} ${key} has no en or em dash`, !/[–—]/.test(value));
