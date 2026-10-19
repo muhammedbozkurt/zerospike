@@ -45,3 +45,16 @@ it "terapia" ve pt "tratamento" geçen uyarı cümleleri regülasyon diliyle yen
 
 ## Eski Firebase projesini kapatma
 2.3.x payı mağaza verisinde yüzde ikinin altına inince Firebase projesi kapatılır (uygulamada Firebase 2.4'te kaldırıldı).
+
+## Apple Watch komplikasyon karesi (elle)
+Mağazada Apple Watch için tek kare (watch-01) var. Komplikasyon karesi simülatörde otomatikleştirilemedi (bu makinedeki Xcode 27'de Simulator.app yok; yüz yapılandırması enjeksiyonu Apple'ın kendi komplikasyonlarında bile render olmadı). Gerçek Simulator GUI olan makinede:
+1. ASO_Watch_S12 (watchOS 27, Series 12 46mm) simülatörünü aç, ZerospikeWatch'ı kur.
+2. Demo LiveData'yı App Group'a yaz (group.com.greeneyeapp.zerospike, 112 mg/dL; yöntem ve dil etiketleri scratchpad/k28b-shoot.py).
+3. Kadrana uzun bas, Düzenle'de Utility ya da Infograph Modular seç; köşe slotuna zerospike'ı ata (kind ZerospikeComplications).
+4. `xcrun simctl io <UDID> screenshot out.png` (416x496).
+5. Dil başına sim dilini değiştirip tekrarla; fastlane/screenshots/<yerel>/watch-02.png (en-GB=en, es-MX=es, fr-CA=fr).
+6. Yükleme: geçici Fastfile ile deliver, skip_metadata, overwrite_screenshots; öncesi ve sonrası iPhone/iPad 8/8 sayımı doğrulanır.
+Durum çubuğu saati: simctl status_bar watchOS'ta desteklenmiyor, sim saati host saatinden gelir; 9:41 için host saati geçici ayarlanır.
+
+## Wear OS: kayıt akışı karesi
+Play'de Wear OS için 3 kare (glance, tile, komplikasyon). Saat uygulamasında kayıt akışı yok (yalnız glance, tile, komplikasyon); 4. kare ancak gerçek bir kayıt akışı eklenirse çekilir.
