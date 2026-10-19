@@ -10,6 +10,7 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -87,6 +88,7 @@ import { withAlpha } from "../../components/rich/GlassCard";
 import { upper } from "../../lib/upper";
 import { isScreenshotMode } from "../../lib/screenshotMode";
 import { useLayout } from "../../lib/useLayout";
+import { injectionColumns } from "../../lib/injectionLayout";
 
 // Heat-map / rotation usage window (days). The prompt's "last 30 days" heat map.
 const USAGE_WINDOW_DAYS = 30;
@@ -138,7 +140,8 @@ export default function InjectionScreen() {
   const { confirm, actionSheet, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
   const guardEntry = useEntryGuardConfirm();
-  const { columnPad } = useLayout();
+  const { columnPad, isWide } = useLayout();
+  const { twoCol, gap: colGap } = injectionColumns(winWidth, isWide);
 
   // Which of the three faces is showing. State (form values, selected site) lives
   // at the component level, so switching segments never loses anything.
@@ -150,6 +153,11 @@ export default function InjectionScreen() {
   // rather than corrected by an effect, so a compose deep-link opens straight
   // on the form instead of flashing the map for a frame first.
   const [segment, setSegment] = useState<Segment>(params.compose ? "save" : "map");
+  // Two-column tablets show the map permanently on the left, so the right
+  // column only toggles between the form and the history: a "map" segment
+  // reads as the form there.
+  const shownSegment: Segment = twoCol && segment === "map" ? "save" : segment;
+  const mapVisible = twoCol || segment === "map";
 
   const [usage, setUsage] = useState<RotationUsage>({
     sites: [],
@@ -291,8 +299,8 @@ export default function InjectionScreen() {
   // KAYDET (or tapping the KAYDET pill directly) would otherwise keep
   // whatever loggedAt was last set at mount/focus.
   useEffect(() => {
-    if (segment === "save" && !timeTouched.current) setLoggedAt(new Date());
-  }, [segment]);
+    if (shownSegment === "save" && !timeTouched.current) setLoggedAt(new Date());
+  }, [shownSegment]);
 
   // Quick-add "compose" deep-link (from the dashboard): open the KAYDET segment
   // so the form is front and centre. Cleared so it fires once.
@@ -313,7 +321,7 @@ export default function InjectionScreen() {
   // gets evaluated on its next visit to MAP instead of being silently skipped.
   const flipNoticeChecked = useRef(false);
   useEffect(() => {
-    if (segment !== "map") return;
+    if (!mapVisible) return;
     if (flipNoticeChecked.current) return;
     if (!historyLoaded || history.length === 0) return;
     if (isScreenshotMode()) return;
@@ -323,7 +331,7 @@ export default function InjectionScreen() {
       toast(t("injectionMap.flipNotice"), "info");
       await markInjectionMapFlipNoticeSeen();
     })();
-  }, [segment, historyLoaded, history, t, toast]);
+  }, [mapVisible, historyLoaded, history, t, toast]);
 
   // Store-screenshot navigation: ?segment=map opens the heat map (the 02-bodymap
   // shot). Only honoured behind the double lock; ignored in a normal build.
@@ -790,6 +798,299 @@ export default function InjectionScreen() {
     return <Redirect href="/(tabs)" />;
   }
 
+  const mapBlock = (
+      <>
+        <View className="mb-2">
+          <InjectionBodyMap
+            usage={usage.sites}
+            noSiteCount={usage.noSiteCount}
+            selected={selected}
+            onSelect={onMapSelect}
+            windowDays={USAGE_WINDOW_DAYS}
+            initialZoom={params.zoom}
+            cycleStart={cycleStart}
+            onStartNewCycle={startNewCycle}
+            showRotationHint={isProUser}
+          />
+        </View>
+        {rotationCard}
+      </>
+  );
+
+  const formBlock = (
+      <>
+        {/* KAYDET: the log form */}
+        <Card style={{ marginBottom: SPACE.md }}>
+          <Txt
+            kind="micro"
+            tone="muted"
+            style={{ letterSpacing: 1.3, fontWeight: "800", marginBottom: SPACE.md }}
+          >
+            {upper(t("injection.formTitle"))}
+          </Txt>
+  
+          {/* 1. When: defaults to now, editable, never future (WP3). */}
+          <FieldLabel>{t("injection.time")}</FieldLabel>
+          <Pressable
+            onPress={() => {
+              Keyboard.dismiss();
+              setTimePickerOpen((v) => !v);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t("injection.time")}
+            android_ripple={pressRipple()}
+            className="flex-row items-center mb-4"
+            style={inputStyle()}
+          >
+            <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
+            <Txt style={{ marginLeft: SPACE.sm, flexShrink: 1, minWidth: 0 }}>
+              {relativeDay(loggedAt.toISOString(), {
+                today: t("common.today"),
+                yesterday: t("common.yesterday"),
+              })}
+              {" · "}
+              {formatTime(loggedAt.toISOString())}
+            </Txt>
+          </Pressable>
+          <InlineDateTimePicker
+            visible={timePickerOpen}
+            value={loggedAt}
+            max={new Date()}
+            locale={i18n.language}
+            // No min={cycleStart}: a hand-picked time before the rotation
+            // cycle started is still a real injection and stays logged and
+            // editable - it just falls outside THIS cycle's window, so the
+            // heat map and point counts read it as if it never happened
+            // (correct: it is not part of the new cycle). Left unblocked
+            // and unflagged rather than warned, same as any other
+            // pre-cycle row.
+            onChange={(d) => {
+              timeTouched.current = true;
+              setLoggedAt(d);
+            }}
+            onClose={() => setTimePickerOpen(false)}
+          />
+  
+          {/* 2. Insulin type before dose: basal pre-fills the dose below. */}
+          <FieldLabel>{t("injection.insulinType")}</FieldLabel>
+          <View className="flex-row mb-4" style={{ gap: SPACE.sm }}>
+            {(["basal", "bolus"] as const).map((type) => (
+              <Chip
+                key={type}
+                label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
+                selected={insulinType === type}
+                onPress={() => applyInsulinType(type)}
+                className="flex-1"
+              />
+            ))}
+          </View>
+  
+          {/* 3. Dose: auto-filled from the profile's daily basal while on
+              "basal" and not yet hand-edited this session. */}
+          <FieldLabel>{t("injection.dose")}</FieldLabel>
+          <Stepper
+            value={dose}
+            onChange={(v) => {
+              doseTouched.current = true;
+              setDoseInteracted(true);
+              setDose(v);
+            }}
+            onValidityChange={stepperFields.reporter("dose")}
+            step={0.5}
+            longStep={1}
+            min={0}
+            max={150}
+            decimals={1}
+            suffix={t("common.units")}
+            accessibilityLabel={t("injection.dose")}
+            style={{ marginBottom: doseHintVisible(injectionDoseOk(dose), doseInteracted) ? SPACE.sm : SPACE.lg }}
+          />
+          {doseHintVisible(injectionDoseOk(dose), doseInteracted) ? (
+            <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.md }}>
+              {t("basalConfirm.doseRequired")}
+            </Txt>
+          ) : null}
+          {insulinType === "basal" && activeProfile?.basal_daily_units == null ? (
+            <Row
+              icon="information-circle-outline"
+              label={t("injection.basalPrefillHint")}
+              onPress={() => router.push("/settings/profile")}
+            />
+          ) : null}
+  
+          {/* 4. Everything below reflows smoothly when the bolus-label row
+              (5.) appears or disappears above it (WP3 UI/UX rule). */}
+          <Animated.View layout={listLayout}>
+            {insulinType === "bolus" ? (
+              <Animated.View
+                entering={listEntering}
+                exiting={listExiting}
+                style={{ marginBottom: SPACE.lg }}
+              >
+                <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
+                <View className="flex-row" style={{ gap: SPACE.sm }}>
+                  {BOLUS_KINDS.map((kind) => (
+                    <Chip
+                      key={kind}
+                      label={
+                        kind === "meal"
+                          ? t("injection.bolusKindMeal")
+                          : t("injection.bolusKindCorrection")
+                      }
+                      selected={bolusKind === kind}
+                      onPress={() => {
+                        if (bolusKind === kind) hapticSelect();
+                        setBolusKind((prev) => (prev === kind ? null : kind));
+                      }}
+                      className="flex-1"
+                    />
+                  ))}
+                </View>
+              </Animated.View>
+            ) : null}
+  
+            {/* Site summary chip = the mini map preview: tap to open HARITA
+                (the current selection is kept). */}
+            <Pressable
+              onPress={() => {
+                    if (!twoCol) setSegment("map");
+                  }}
+              accessibilityRole="button"
+              accessibilityLabel={selectedLabel ?? t("injection.chooseSitePoint")}
+              android_ripple={pressRipple()}
+              className="flex-row items-center rounded-xl px-3 py-2.5 mb-4 active:opacity-80"
+              style={{
+                minHeight: HIT_TARGET,
+                borderWidth: 1,
+                borderColor: selected ? withAlpha(THEME.accent, 0.4) : THEME.border,
+                backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.surface,
+              }}
+            >
+              <Ionicons
+                name="location-outline"
+                size={15}
+                color={selected ? THEME.accent : THEME.textMuted}
+              />
+              <Txt
+                kind="caption"
+                tone={selected ? "accent" : "muted"}
+                style={{ fontWeight: "700", marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}
+                numberOfLines={1}
+              >
+                {selectedLabel ?? t("injection.chooseSitePoint")}
+              </Txt>
+              <Ionicons name="map-outline" size={16} color={THEME.accent} />
+            </Pressable>
+  
+            {/* Repeat-point / rotation-usage annotation: descriptive only, saving
+                stays possible. Amber rather than red, because red would make this
+                read as an alarm from a medical device, which the app is not allowed
+                to be. samePointNote (same point as the newest record) is the more
+                specific signal and wins; reusedPointNote is only the fallback when
+                it has nothing to say - the two never show together. */}
+            {pointNote ? (
+              <View
+                className="flex-row items-center rounded-xl px-3 py-2"
+                style={{
+                  marginTop: -8,
+                  marginBottom: 16,
+                  borderWidth: 1,
+                  borderColor: withAlpha(THEME.warning, 0.4),
+                  backgroundColor: withAlpha(THEME.warning, 0.12),
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={14} color={THEME.warning} />
+                <Txt kind="micro" style={{ marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}>
+                  {pointNote}
+                </Txt>
+              </View>
+            ) : null}
+  
+            <FieldLabel>{t("common.note")}</FieldLabel>
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              placeholder={t("injection.notePlaceholder")}
+              placeholderTextColor={THEME.textMuted}
+              returnKeyType="done"
+              style={[inputStyle(), INPUT_TEXT, { marginBottom: SPACE.lg }]}
+            />
+  
+            <GradientCTA
+              label={t("injection.logInjection")}
+              disabled={!selected || saving || !stepperFields.allValid || !injectionDoseOk(dose)}
+              onPress={save}
+            />
+          </Animated.View>
+        </Card>
+  
+        {/* Short disclaimer under KAYDET only. Wraps to two lines on a
+            narrow screen (numberOfLines={2}) rather than being clipped. */}
+        <View
+          className="flex-row items-start rounded-xl px-3.5 py-3"
+          style={{
+            borderWidth: 1,
+            borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
+            backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
+          }}
+        >
+          <Ionicons name="medical-outline" size={15} color={GLUCOSE_RICH.high} />
+          <Txt
+            kind="caption"
+            style={{ marginLeft: SPACE.md, flex: 1, minWidth: 0, opacity: 0.85 }}
+            numberOfLines={3}
+          >
+            {t("disclaimer.short")}
+          </Txt>
+        </View>
+      </>
+  );
+
+  const segmentRow = (keys: Segment[], inset: number) => (
+    <View className="flex-row mb-2" style={{ gap: SPACE.sm, marginHorizontal: inset }}>
+      {SEGMENTS.filter((s) => keys.includes(s.key)).map((s) => (
+        <Chip
+          key={s.key}
+          label={s.label}
+          selected={shownSegment === s.key}
+          onPress={() => setSegment(s.key)}
+          className="flex-1"
+        />
+      ))}
+    </View>
+  );
+
+  const historyList = (contentStyle: ViewStyle[]) => (
+          <SectionList
+            sections={sections}
+            keyExtractor={(inj) => inj.id}
+            renderItem={renderHistoryItem}
+            renderSectionHeader={renderHistorySectionHeader}
+            stickySectionHeadersEnabled={false}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={7}
+            // Android's default (true) recycles offscreen rows; WP6 saw the sibling
+            // food tab hand back blank recycled cells under the same default, so this
+            // list opts out too rather than risk the same class of bug here.
+            removeClippedSubviews={false}
+            ListEmptyComponent={historyEmptyComponent}
+            ListFooterComponent={historyFooterComponent}
+            contentContainerStyle={contentStyle}
+            showsVerticalScrollIndicator={false}
+          />
+  );
+
+  const formScroll = (pad: ViewStyle) => (
+    <ScrollView
+      {...keyboardAwareScrollProps}
+      contentContainerStyle={[{ paddingTop: 16, paddingBottom: insets.bottom + 32 }, pad]}
+      showsVerticalScrollIndicator={false}
+    >
+      {shownSegment === "map" ? mapBlock : formBlock}
+    </ScrollView>
+  );
+
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
       <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
@@ -824,289 +1125,39 @@ export default function InjectionScreen() {
         </View>
       </View>
 
-      {/* Segment control: KAYDET / HARITA / GECMIS */}
-      <View className="flex-row mx-4 mb-2" style={{ gap: SPACE.sm }}>
-        {SEGMENTS.map((s) => (
-          <Chip
-            key={s.key}
-            label={s.label}
-            selected={segment === s.key}
-            onPress={() => setSegment(s.key)}
-            className="flex-1"
-          />
-        ))}
-      </View>
-
-      {segment === "history" ? (
-        <SectionList
-          sections={sections}
-          keyExtractor={(inj) => inj.id}
-          renderItem={renderHistoryItem}
-          renderSectionHeader={renderHistorySectionHeader}
-          stickySectionHeadersEnabled={false}
-          initialNumToRender={20}
-          maxToRenderPerBatch={20}
-          windowSize={7}
-          // Android's default (true) recycles offscreen rows; WP6 saw the sibling
-          // food tab hand back blank recycled cells under the same default, so this
-          // list opts out too rather than risk the same class of bug here.
-          removeClippedSubviews={false}
-          ListEmptyComponent={historyEmptyComponent}
-          ListFooterComponent={historyFooterComponent}
-          contentContainerStyle={[{ paddingBottom: insets.bottom + 32, paddingTop: 4 }, columnPad()]}
-          showsVerticalScrollIndicator={false}
-        />
+      {twoCol ? (
+        <View style={{ flex: 1, flexDirection: "row" }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <ScrollView
+              {...keyboardAwareScrollProps}
+              contentContainerStyle={[
+                { paddingTop: 16, paddingBottom: insets.bottom + 32 },
+                { paddingLeft: 16 + colGap, paddingRight: 16 + colGap },
+              ]}
+              showsVerticalScrollIndicator={false}
+            >
+              {mapBlock}
+            </ScrollView>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {segmentRow(["save", "history"], 16 + colGap)}
+            {shownSegment === "history"
+              ? historyList([
+                  { paddingBottom: insets.bottom + 32, paddingTop: 4 },
+                  { paddingLeft: colGap, paddingRight: colGap },
+                ])
+              : formScroll({ paddingLeft: 16 + colGap, paddingRight: 16 + colGap })}
+          </View>
+        </View>
       ) : (
-        <ScrollView
-          {...keyboardAwareScrollProps}
-          contentContainerStyle={[{ paddingTop: 16, paddingBottom: insets.bottom + 32 }, columnPad(16)]}
-          showsVerticalScrollIndicator={false}
-        >
-          {segment === "map" ? (
-            <>
-              <View className="mb-2">
-                <InjectionBodyMap
-                  usage={usage.sites}
-                  noSiteCount={usage.noSiteCount}
-                  selected={selected}
-                  onSelect={onMapSelect}
-                  windowDays={USAGE_WINDOW_DAYS}
-                  initialZoom={params.zoom}
-                  cycleStart={cycleStart}
-                  onStartNewCycle={startNewCycle}
-                  showRotationHint={isProUser}
-                />
-              </View>
-              {rotationCard}
-            </>
-          ) : (
-            <>
-              {/* KAYDET: the log form */}
-              <Card style={{ marginBottom: SPACE.md }}>
-                <Txt
-                  kind="micro"
-                  tone="muted"
-                  style={{ letterSpacing: 1.3, fontWeight: "800", marginBottom: SPACE.md }}
-                >
-                  {upper(t("injection.formTitle"))}
-                </Txt>
-
-                {/* 1. When: defaults to now, editable, never future (WP3). */}
-                <FieldLabel>{t("injection.time")}</FieldLabel>
-                <Pressable
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setTimePickerOpen((v) => !v);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("injection.time")}
-                  android_ripple={pressRipple()}
-                  className="flex-row items-center mb-4"
-                  style={inputStyle()}
-                >
-                  <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
-                  <Txt style={{ marginLeft: SPACE.sm, flexShrink: 1, minWidth: 0 }}>
-                    {relativeDay(loggedAt.toISOString(), {
-                      today: t("common.today"),
-                      yesterday: t("common.yesterday"),
-                    })}
-                    {" · "}
-                    {formatTime(loggedAt.toISOString())}
-                  </Txt>
-                </Pressable>
-                <InlineDateTimePicker
-                  visible={timePickerOpen}
-                  value={loggedAt}
-                  max={new Date()}
-                  locale={i18n.language}
-                  // No min={cycleStart}: a hand-picked time before the rotation
-                  // cycle started is still a real injection and stays logged and
-                  // editable - it just falls outside THIS cycle's window, so the
-                  // heat map and point counts read it as if it never happened
-                  // (correct: it is not part of the new cycle). Left unblocked
-                  // and unflagged rather than warned, same as any other
-                  // pre-cycle row.
-                  onChange={(d) => {
-                    timeTouched.current = true;
-                    setLoggedAt(d);
-                  }}
-                  onClose={() => setTimePickerOpen(false)}
-                />
-
-                {/* 2. Insulin type before dose: basal pre-fills the dose below. */}
-                <FieldLabel>{t("injection.insulinType")}</FieldLabel>
-                <View className="flex-row mb-4" style={{ gap: SPACE.sm }}>
-                  {(["basal", "bolus"] as const).map((type) => (
-                    <Chip
-                      key={type}
-                      label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
-                      selected={insulinType === type}
-                      onPress={() => applyInsulinType(type)}
-                      className="flex-1"
-                    />
-                  ))}
-                </View>
-
-                {/* 3. Dose: auto-filled from the profile's daily basal while on
-                    "basal" and not yet hand-edited this session. */}
-                <FieldLabel>{t("injection.dose")}</FieldLabel>
-                <Stepper
-                  value={dose}
-                  onChange={(v) => {
-                    doseTouched.current = true;
-                    setDoseInteracted(true);
-                    setDose(v);
-                  }}
-                  onValidityChange={stepperFields.reporter("dose")}
-                  step={0.5}
-                  longStep={1}
-                  min={0}
-                  max={150}
-                  decimals={1}
-                  suffix={t("common.units")}
-                  accessibilityLabel={t("injection.dose")}
-                  style={{ marginBottom: doseHintVisible(injectionDoseOk(dose), doseInteracted) ? SPACE.sm : SPACE.lg }}
-                />
-                {doseHintVisible(injectionDoseOk(dose), doseInteracted) ? (
-                  <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.md }}>
-                    {t("basalConfirm.doseRequired")}
-                  </Txt>
-                ) : null}
-                {insulinType === "basal" && activeProfile?.basal_daily_units == null ? (
-                  <Row
-                    icon="information-circle-outline"
-                    label={t("injection.basalPrefillHint")}
-                    onPress={() => router.push("/settings/profile")}
-                  />
-                ) : null}
-
-                {/* 4. Everything below reflows smoothly when the bolus-label row
-                    (5.) appears or disappears above it (WP3 UI/UX rule). */}
-                <Animated.View layout={listLayout}>
-                  {insulinType === "bolus" ? (
-                    <Animated.View
-                      entering={listEntering}
-                      exiting={listExiting}
-                      style={{ marginBottom: SPACE.lg }}
-                    >
-                      <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
-                      <View className="flex-row" style={{ gap: SPACE.sm }}>
-                        {BOLUS_KINDS.map((kind) => (
-                          <Chip
-                            key={kind}
-                            label={
-                              kind === "meal"
-                                ? t("injection.bolusKindMeal")
-                                : t("injection.bolusKindCorrection")
-                            }
-                            selected={bolusKind === kind}
-                            onPress={() => {
-                              if (bolusKind === kind) hapticSelect();
-                              setBolusKind((prev) => (prev === kind ? null : kind));
-                            }}
-                            className="flex-1"
-                          />
-                        ))}
-                      </View>
-                    </Animated.View>
-                  ) : null}
-
-                  {/* Site summary chip = the mini map preview: tap to open HARITA
-                      (the current selection is kept). */}
-                  <Pressable
-                    onPress={() => setSegment("map")}
-                    accessibilityRole="button"
-                    accessibilityLabel={selectedLabel ?? t("injection.chooseSitePoint")}
-                    android_ripple={pressRipple()}
-                    className="flex-row items-center rounded-xl px-3 py-2.5 mb-4 active:opacity-80"
-                    style={{
-                      minHeight: HIT_TARGET,
-                      borderWidth: 1,
-                      borderColor: selected ? withAlpha(THEME.accent, 0.4) : THEME.border,
-                      backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.surface,
-                    }}
-                  >
-                    <Ionicons
-                      name="location-outline"
-                      size={15}
-                      color={selected ? THEME.accent : THEME.textMuted}
-                    />
-                    <Txt
-                      kind="caption"
-                      tone={selected ? "accent" : "muted"}
-                      style={{ fontWeight: "700", marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}
-                      numberOfLines={1}
-                    >
-                      {selectedLabel ?? t("injection.chooseSitePoint")}
-                    </Txt>
-                    <Ionicons name="map-outline" size={16} color={THEME.accent} />
-                  </Pressable>
-
-                  {/* Repeat-point / rotation-usage annotation: descriptive only, saving
-                      stays possible. Amber rather than red, because red would make this
-                      read as an alarm from a medical device, which the app is not allowed
-                      to be. samePointNote (same point as the newest record) is the more
-                      specific signal and wins; reusedPointNote is only the fallback when
-                      it has nothing to say - the two never show together. */}
-                  {pointNote ? (
-                    <View
-                      className="flex-row items-center rounded-xl px-3 py-2"
-                      style={{
-                        marginTop: -8,
-                        marginBottom: 16,
-                        borderWidth: 1,
-                        borderColor: withAlpha(THEME.warning, 0.4),
-                        backgroundColor: withAlpha(THEME.warning, 0.12),
-                      }}
-                    >
-                      <Ionicons name="alert-circle-outline" size={14} color={THEME.warning} />
-                      <Txt kind="micro" style={{ marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}>
-                        {pointNote}
-                      </Txt>
-                    </View>
-                  ) : null}
-
-                  <FieldLabel>{t("common.note")}</FieldLabel>
-                  <TextInput
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder={t("injection.notePlaceholder")}
-                    placeholderTextColor={THEME.textMuted}
-                    returnKeyType="done"
-                    style={[inputStyle(), INPUT_TEXT, { marginBottom: SPACE.lg }]}
-                  />
-
-                  <GradientCTA
-                    label={t("injection.logInjection")}
-                    disabled={!selected || saving || !stepperFields.allValid || !injectionDoseOk(dose)}
-                    onPress={save}
-                  />
-                </Animated.View>
-              </Card>
-
-              {/* Short disclaimer under KAYDET only. Wraps to two lines on a
-                  narrow screen (numberOfLines={2}) rather than being clipped. */}
-              <View
-                className="flex-row items-start rounded-xl px-3.5 py-3"
-                style={{
-                  borderWidth: 1,
-                  borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-                  backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-                }}
-              >
-                <Ionicons name="medical-outline" size={15} color={GLUCOSE_RICH.high} />
-                <Txt
-                  kind="caption"
-                  style={{ marginLeft: SPACE.md, flex: 1, minWidth: 0, opacity: 0.85 }}
-                  numberOfLines={3}
-                >
-                  {t("disclaimer.short")}
-                </Txt>
-              </View>
-            </>
-          )}
-        </ScrollView>
+        <>
+          {segmentRow(["save", "map", "history"], 16)}
+          {shownSegment === "history"
+            ? historyList([{ paddingBottom: insets.bottom + 32, paddingTop: 4 }, columnPad()])
+            : formScroll(columnPad(16))}
+        </>
       )}
+
 
       <InjectionEditSheet
         visible={editing != null}
