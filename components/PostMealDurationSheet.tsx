@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import { SheetShell } from "./SheetShell";
 import { GradientCTA } from "./rich/GradientCTA";
 import { withAlpha } from "./rich/GlassCard";
+import { Button, Txt } from "./ui";
 import {
   editPostMealLateDraft,
   parsePostMealLateInput,
@@ -18,7 +19,8 @@ import {
 import { hapticSelect } from "../lib/haptics";
 import { formatTime, isolateLtr } from "../lib/format";
 import { sanitizeDecimalText } from "../lib/numberInput";
-import { GLUCOSE_RICH, HIT_TARGET, RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, HIT_TARGET, RADIUS, SPACE, TABULAR, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 
 /** How long ago the meal began, as one tap. Short offsets, because this is
  *  for "I forgot to press it" and not for logging yesterday's dinner;
@@ -36,8 +38,9 @@ const LATE_CUSTOM_STEP = 5;
  * text and wraps, and five content-sized chips add up to more than this
  * sheet's own width leaves - so the last one dropped alone onto a second line.
  * Equal flex-basis puts all five on one line at any width instead of relying
- * on the labels staying short, and the text scales down rather than wrapping
- * in the language where it does not.
+ * on the labels staying short. A label that still does not fit (Arabic, large
+ * text scale) wraps inside its chip, which grows in height; it is never
+ * shrunk (adjustsFontSizeToFit clips silently on Android).
  */
 function LateChips({
   value,
@@ -48,7 +51,7 @@ function LateChips({
 }) {
   const { t } = useTranslation();
   return (
-    <View className="flex-row" style={{ gap: 6 }}>
+    <View className="flex-row" style={{ gap: SPACE.sm }}>
       {LATE_PRESETS.map((m) => {
         const active = m === value;
         const label = t("dashboard.postMealLateChip", { n: m });
@@ -62,19 +65,23 @@ function LateChips({
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
             accessibilityLabel={label}
-            className={`flex-1 rounded-full items-center justify-center border ${
+            hitSlop={{ top: 4, bottom: 4 }}
+            android_ripple={{
+              color: withAlpha(active ? THEME.accentOnFill : THEME.text, RIPPLE_ALPHA),
+              foreground: true,
+            }}
+            className={`flex-1 rounded-full items-center justify-center border active:opacity-80 ${
               active ? "bg-brand border-brand" : "bg-glass border-hair"
             }`}
-            style={{ paddingVertical: 8, paddingHorizontal: 2, minHeight: 36 }}
+            style={{ paddingVertical: SPACE.sm, paddingHorizontal: SPACE.xs, minHeight: 36, minWidth: 0 }}
           >
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.8}
-              className={`text-sm font-medium ${active ? "text-onAccent" : "text-mut"}`}
+            <Txt
+              kind="caption"
+              tone={active ? "onAccent" : "muted"}
+              style={{ fontWeight: "500", textAlign: "center" }}
             >
               {label}
-            </Text>
+            </Txt>
           </Pressable>
         );
       })}
@@ -172,9 +179,9 @@ export function PostMealDurationSheet({
         />
       }
     >
-      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 14 }}>
+      <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.md }}>
         {t("dashboard.postMealLateHint", { n: POST_MEAL_WINDOW_MIN })}
-      </Text>
+      </Txt>
 
       <LateChips
         value={activeLateChip ?? -1}
@@ -186,21 +193,20 @@ export function PostMealDurationSheet({
         }}
       />
 
-      <Pressable
-        onPress={() => setLateCustomOpen((v) => !v)}
-        accessibilityRole="button"
-        className="flex-row items-center mt-3"
-        style={{ minHeight: HIT_TARGET }}
-      >
-        <Ionicons
-          name={lateCustomOpen ? "chevron-down" : "chevron-forward"}
-          size={16}
-          color={THEME.accent}
+      <View style={{ marginTop: SPACE.sm }}>
+        <Button
+          label={t("dashboard.postMealLateOther")}
+          variant="tertiary"
+          onPress={() => setLateCustomOpen((v) => !v)}
+          icon={
+            <Ionicons
+              name={lateCustomOpen ? "chevron-down" : "chevron-forward"}
+              size={16}
+              color={THEME.textMuted}
+            />
+          }
         />
-        <Text style={{ color: THEME.accent, fontSize: 13, fontWeight: "700", marginLeft: 6 }}>
-          {t("dashboard.postMealLateOther")}
-        </Text>
-      </Pressable>
+      </View>
 
       {lateCustomOpen ? (
         <View className="mt-1 mb-2">
@@ -217,6 +223,7 @@ export function PostMealDurationSheet({
             <Pressable
               onPress={() => step(-LATE_CUSTOM_STEP)}
               hitSlop={6}
+              android_ripple={{ color: withAlpha(THEME.accent, RIPPLE_ALPHA), foreground: true }}
               accessibilityRole="button"
               accessibilityLabel={t("common.decrease")}
               style={{ width: HIT_TARGET, height: HIT_TARGET, alignItems: "center", justifyContent: "center" }}
@@ -227,7 +234,7 @@ export function PostMealDurationSheet({
               className="flex-row items-center justify-center"
               style={{
                 flex: 1,
-                gap: 5,
+                gap: SPACE.xs,
                 borderLeftWidth: 1,
                 borderRightWidth: 1,
                 borderColor: THEME.border,
@@ -259,13 +266,14 @@ export function PostMealDurationSheet({
                   },
                 ]}
               />
-              <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
+              <Txt kind="caption" tone="muted" style={{ fontWeight: "600" }}>
                 {t("insights.minShort")}
-              </Text>
+              </Txt>
             </View>
             <Pressable
               onPress={() => step(LATE_CUSTOM_STEP)}
               hitSlop={6}
+              android_ripple={{ color: withAlpha(THEME.accent, RIPPLE_ALPHA), foreground: true }}
               accessibilityRole="button"
               accessibilityLabel={t("common.increase")}
               style={{ width: HIT_TARGET, height: HIT_TARGET, alignItems: "center", justifyContent: "center" }}
@@ -274,36 +282,39 @@ export function PostMealDurationSheet({
             </Pressable>
           </View>
           {minutesAgo == null || capped ? (
-            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+            <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
               {minutesAgo == null
                 ? t("dashboard.postMealLateNeedValue")
                 : t("dashboard.postMealLateMax", { n: POST_MEAL_LATE_MAX_MIN })}
-            </Text>
+            </Txt>
           ) : null}
         </View>
       ) : null}
 
       {reminder ? (
-        <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "600", lineHeight: 18, marginTop: 12 }}>
+        <Txt kind="caption" style={{ fontWeight: "600", marginTop: SPACE.md }}>
           {t("dashboard.postMealLatePreview", {
             time: isolateLtr(formatTime(new Date(reminder.atMs).toISOString())),
             left: reminder.leftMin,
           })}
-        </Text>
+        </Txt>
       ) : null}
 
       {elapsed ? (
         <View
-          className="rounded-xl px-3 py-2.5 mt-3"
+          className="rounded-2xl"
           style={{
+            paddingHorizontal: SPACE.md,
+            paddingVertical: SPACE.md,
+            marginTop: SPACE.md,
             borderWidth: 1,
             borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
             backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
           }}
         >
-          <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 18 }}>
+          <Txt kind="caption">
             {t("dashboard.postMealLatePassed", { n: POST_MEAL_WINDOW_MIN })}
-          </Text>
+          </Txt>
         </View>
       ) : null}
     </SheetShell>

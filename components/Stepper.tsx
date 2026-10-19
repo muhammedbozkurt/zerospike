@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { HIT_TARGET, RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
+import { HIT_TARGET, RADIUS, SPACE, TABULAR, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { Txt } from "./ui";
 import { withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
@@ -250,6 +252,7 @@ export function Stepper({
     onPressOut: stopHold,
     delayLongPress: 280,
     hitSlop: 6,
+    android_ripple: { color: withAlpha(THEME.accent, RIPPLE_ALPHA), foreground: true },
     accessibilityRole: "button" as const,
     accessibilityLabel: label,
     accessibilityValue: { text: valueText },
@@ -286,6 +289,7 @@ export function Stepper({
           borderRadius: RADIUS.full,
           alignItems: "center",
           justifyContent: "center",
+          overflow: "hidden",
           borderWidth: 1,
           borderColor: primary ? withAlpha(THEME.accent, 0.4) : THEME.border,
           backgroundColor: primary ? withAlpha(THEME.accent, 0.12) : THEME.surface,
@@ -298,7 +302,7 @@ export function Stepper({
     return (
       <View
         style={[
-          { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16 },
+          { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: SPACE.lg },
           style,
         ]}
       >
@@ -308,7 +312,7 @@ export function Stepper({
               across platforms, so the unit is nudged up by hand instead.
               minWidth: 0 is what lets this row actually shrink inside the hero
               budget; without it a long suffix (mmol/L) pushes past the buttons
-              before adjustsFontSizeToFit ever engages. */}
+              before the suffix ellipsizes. */}
           <View style={{ flexDirection: "row", alignItems: "flex-end", flexShrink: 1, minWidth: 0 }}>
             {editable ? (
               <TextInput
@@ -348,34 +352,32 @@ export function Stepper({
                 ]}
               />
             ) : (
-              <Text
+              <Txt
                 style={[
                   TABULAR,
-                  { color: THEME.text, fontSize: HERO_VALUE, fontWeight: "800" },
+                  { fontSize: HERO_VALUE, lineHeight: HERO_VALUE + 8, fontWeight: "800" },
                 ]}
                 accessibilityLabel={
                   accessibilityLabel ? `${accessibilityLabel}, ${valueText}` : valueText
                 }
               >
                 {text}
-              </Text>
+              </Txt>
             )}
             {suffix ? (
-              <Text
+              <Txt
+                kind="subtitle"
+                tone="muted"
                 numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.7}
                 style={{
-                  color: THEME.textMuted,
-                  fontSize: 18,
-                  fontWeight: "600",
-                  marginLeft: 8,
-                  marginBottom: 12,
+                  marginLeft: SPACE.sm,
+                  marginBottom: SPACE.md,
                   flexShrink: 1,
+                  minWidth: 0,
                 }}
               >
                 {suffix}
-              </Text>
+              </Txt>
             ) : null}
           </View>
           {/* The value's own underline: this is a typeable field, and at this
@@ -385,7 +387,7 @@ export function Stepper({
               width: 96,
               height: 3,
               borderRadius: RADIUS.full,
-              marginTop: 4,
+              marginTop: SPACE.xs,
               backgroundColor: outOfRange ? THEME.warning : withAlpha(THEME.accent, focused ? 0.9 : 0.5),
             }}
           />
@@ -421,13 +423,13 @@ export function Stepper({
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
-          gap: 5,
+          gap: SPACE.xs,
           borderLeftWidth: 1,
           borderRightWidth: 1,
           borderColor: THEME.border,
           minHeight: cellSize,
-          paddingHorizontal: 6,
-          paddingVertical: 4,
+          paddingHorizontal: SPACE.xs,
+          paddingVertical: SPACE.xs,
         }}
       >
         {editable ? (
@@ -478,29 +480,24 @@ export function Stepper({
             ]}
           />
         ) : (
-          <Text
-            style={[TABULAR, { color: THEME.text, fontSize: 20, fontWeight: "800" }]}
+          <Txt
+            style={[TABULAR, { fontSize: 20, lineHeight: 26, fontWeight: "800" }]}
             accessibilityLabel={
               accessibilityLabel ? `${accessibilityLabel}, ${valueText}` : valueText
             }
           >
             {text}
-          </Text>
+          </Txt>
         )}
         {suffix ? (
-          <Text
+          <Txt
+            kind="caption"
+            tone="muted"
             numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            style={{
-              color: THEME.textMuted,
-              fontSize: wide ? 14 : 12,
-              fontWeight: "600",
-              flexShrink: 1,
-            }}
+            style={{ fontWeight: "600", flexShrink: 1, minWidth: 0 }}
           >
             {suffix}
-          </Text>
+          </Txt>
         ) : null}
       </Cell>
       {btn(1, "add", incLabel)}

@@ -1,9 +1,10 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { SheetShell } from "./SheetShell";
-import { THEME } from "../lib/theme/tokens";
+import { SPACE, THEME } from "../lib/theme/tokens";
+import { Txt } from "./ui";
 import { num } from "../lib/format";
 import type { InsulinProduct } from "../lib/insulinCatalog";
 
@@ -42,10 +43,10 @@ export function IobInfoSheet({
       title={t("dashboard.activeInsulin")}
       closeLabel={t("common.close")}
     >
-      <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, marginBottom: 10 }}>
+      <Txt kind="caption" style={{ marginBottom: SPACE.sm }}>
         {t("dashboard.iobInfoWhat")}
-      </Text>
-      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 16 }}>
+      </Txt>
+      <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.lg }}>
         {isGeneric
           ? t("dashboard.iobInfoGeneric", {
               duration: num(bolusProfile.durationHours),
@@ -56,33 +57,36 @@ export function IobInfoSheet({
               duration: num(bolusProfile.durationHours),
               peak: num(bolusProfile.peakHours ?? 0),
             })}
-      </Text>
+      </Txt>
 
       <View className="flex-row rounded-2xl bg-glass border border-hair overflow-hidden mb-2">
         <View
-          className="flex-1 px-3.5 py-3"
-          style={{ borderRightWidth: 1, borderRightColor: THEME.border }}
+          className="flex-1"
+          style={{
+            paddingHorizontal: SPACE.md,
+            paddingVertical: SPACE.md,
+            borderEndWidth: 1,
+            borderEndColor: THEME.border,
+            minWidth: 0,
+          }}
         >
-          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10 }}>
+          <Txt kind="micro" tone="muted" numberOfLines={2}>
             {t("dashboard.iobInfoTodayBolus")}
-          </Text>
-          <Text
-            numberOfLines={1}
-            style={{ color: THEME.text, fontSize: 15, fontWeight: "800", marginTop: 2 }}
-          >
+          </Txt>
+          <Txt kind="body" tabular style={{ fontWeight: "800", marginTop: SPACE.xs }}>
             {num(todayBolusUnits)} {t("common.units")}
-          </Text>
+          </Txt>
         </View>
-        <View className="flex-1 px-3.5 py-3">
-          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10 }}>
+        <View
+          className="flex-1"
+          style={{ paddingHorizontal: SPACE.md, paddingVertical: SPACE.md, minWidth: 0 }}
+        >
+          <Txt kind="micro" tone="muted" numberOfLines={2}>
             {t("dashboard.iobInfoTodayBasal")}
-          </Text>
-          <Text
-            numberOfLines={1}
-            style={{ color: THEME.text, fontSize: 15, fontWeight: "800", marginTop: 2 }}
-          >
+          </Txt>
+          <Txt kind="body" tabular style={{ fontWeight: "800", marginTop: SPACE.xs }}>
             {num(todayBasalUnits)} {t("common.units")}
-          </Text>
+          </Txt>
         </View>
       </View>
     </SheetShell>

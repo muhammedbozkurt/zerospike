@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Platform, Pressable, Text, View } from "react-native";
+import { Modal, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useTranslation } from "react-i18next";
 
-import { THEME, RADIUS } from "../lib/theme/tokens";
+import { THEME, RADIUS, SPACE } from "../lib/theme/tokens";
 import { SCRIM } from "./SheetShell";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
 import { ActionRow } from "./form";
+import { Button, Txt } from "./ui";
 
 /** Widest the sheet gets on a tablet before it stops stretching and centres
  *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
@@ -82,7 +83,7 @@ export function DateRangePicker({
     label: string,
     value: Date,
   ) => (
-    <View className="rounded-xl bg-glass border border-hair overflow-hidden mb-2">
+    <View className="rounded-2xl bg-glass border border-hair overflow-hidden mb-2">
       <ActionRow
         icon="calendar-outline"
         label={label}
@@ -126,6 +127,8 @@ export function DateRangePicker({
         onPress={onCancel}
         accessible={false}
         focusable={false}
+        accessibilityViewIsModal
+        onAccessibilityEscape={onCancel}
       >
         <Pressable
           onPress={(e) => e.stopPropagation()}
@@ -139,37 +142,36 @@ export function DateRangePicker({
               borderTopWidth: 1,
               borderColor: THEME.border,
               backgroundColor: THEME.bg.g1,
-              paddingHorizontal: 18,
-              paddingTop: 8,
-              paddingBottom: insets.bottom + 20,
+              paddingHorizontal: SPACE.lg,
+              paddingTop: SPACE.sm,
+              paddingBottom: insets.bottom + SPACE.xl,
             },
             isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
           ]}
         >
-          <View className="items-center mb-1.5">
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: THEME.border }} />
+          <View className="items-center" style={{ marginBottom: SPACE.sm }}>
+            <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: THEME.border }} />
           </View>
-          <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800", textAlign: "center", marginBottom: 12 }}>
+          <Txt kind="subtitle" style={{ textAlign: "center", marginBottom: SPACE.md }}>
             {t("report.rangeTitle")}
-          </Text>
+          </Txt>
 
           {row("start", t("report.rangeStart"), start)}
           {open === "start" ? picker("start", start) : null}
           {row("end", t("report.rangeEnd"), end)}
           {open === "end" ? picker("end", end) : null}
 
-          <Pressable
-            onPress={() => onConfirm({ start: startOfDay(start), end: endOfDay(end) })}
-            disabled={!valid}
-            accessibilityRole="button"
-            className="rounded-2xl mt-3 py-3.5 items-center"
-            style={{ backgroundColor: THEME.accent, opacity: valid ? 1 : 0.4 }}
-          >
-            <Text style={{ color: THEME.accentOnFill, fontWeight: "800" }}>{t("common.confirm")}</Text>
-          </Pressable>
-          <Pressable onPress={onCancel} className="py-3 items-center mt-1" accessibilityRole="button">
-            <Text style={{ color: THEME.textMuted, fontWeight: "600" }}>{t("common.cancel")}</Text>
-          </Pressable>
+          <View style={{ marginTop: SPACE.md }}>
+            <Button
+              label={t("common.confirm")}
+              size="lg"
+              disabled={!valid}
+              onPress={() => onConfirm({ start: startOfDay(start), end: endOfDay(end) })}
+            />
+          </View>
+          <View style={{ marginTop: SPACE.xs }}>
+            <Button label={t("common.cancel")} variant="tertiary" onPress={onCancel} />
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
