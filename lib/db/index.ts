@@ -989,6 +989,7 @@ async function applySeedFoodUpdates(
         fields.push(`${column} = ?`);
         values.push(value);
       };
+      set("name_en", u.name_en);
       set("name_tr", u.name_tr);
       set("name_de", u.name_de);
       set("name_es", u.name_es);

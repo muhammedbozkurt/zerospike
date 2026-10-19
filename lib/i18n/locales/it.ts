@@ -50,7 +50,7 @@ const it: TranslationSchema = {
     methodNote:
       "Le stime sono arrotondate a una risoluzione di 0,5 unità e sono volutamente prudenti. Le riveda e le modifichi sempre prima dell'uso. La dose di correzione punta al centro del Suo intervallo target post-prandiale.",
     foodData:
-      "Dati alimentari: USDA FoodData Central (pubblico dominio) e collaboratori di Open Food Facts (openfoodfacts.org), ODbL 1.0.",
+      "Alcuni dati alimentari: USDA FoodData Central (pubblico dominio) e collaboratori di Open Food Facts (openfoodfacts.org), ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/).",
     iobNote:
       "L'insulina attiva (IOB) è stimata dai boli registrati con una curva esponenziale di attività insulinica, definita dal tempo di picco e dalla durata d'azione dell'insulina per il bolo che seleziona nelle Impostazioni (fino ad allora si usa un profilo rapido generico). Riduce soltanto una stima di correzione, mai la dose del pasto. Le dosi di insulina lenta (basale) sono stimate allo stesso modo, ma tenute separate. È una stima, non un'indicazione.",
     listTitle: "Riferimenti",

@@ -50,7 +50,7 @@ const fr: TranslationSchema = {
     methodNote:
       "Les estimations sont arrondies à une résolution de 0,5 unité et sont volontairement prudentes. Vérifiez-les et ajustez-les toujours avant utilisation. La dose de correction vise le milieu de votre plage cible après le repas.",
     foodData:
-      "Données alimentaires : USDA FoodData Central (domaine public) et contributeurs d'Open Food Facts (openfoodfacts.org), ODbL 1.0.",
+      "Certaines données alimentaires : USDA FoodData Central (domaine public) et contributeurs d'Open Food Facts (openfoodfacts.org), ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/).",
     iobNote:
       "L'insuline active (IOB) est estimée à partir de vos doses bolus enregistrées à l'aide d'une courbe d'activité insulinique exponentielle, déterminée par le pic et la durée d'action de l'insuline bolus que vous sélectionnez dans les réglages (un profil rapide générique est utilisé tant que vous n'en avez pas sélectionné). Elle ne fait jamais que réduire une estimation de correction, jamais la dose du repas. Les doses lentes (basales) sont estimées de la même façon mais suivies séparément. C'est une estimation, pas une directive.",
     listTitle: "Références",

@@ -50,7 +50,7 @@ const ja: TranslationSchema = {
     methodNote:
       "計算結果は0.5単位ごとに丸められ、意図的に控えめにしてあります。使う前に必ず内容を確認して編集してください。補正分は食後の目標範囲の中央を基準にしています。",
     foodData:
-      "食品データ: USDA FoodData Central(パブリックドメイン)および Open Food Facts の貢献者(openfoodfacts.org)、ODbL 1.0。",
+      "一部の食品データ: USDA FoodData Central(パブリックドメイン)および Open Food Facts の貢献者(openfoodfacts.org)、ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/)。",
     iobNote:
       "残存インスリン(IOB)は、記録された追加インスリン(ボーラス)の量から、設定で選んだ製剤のピーク時間と作用時間に沿った指数曲線で推定します(製剤を選ぶまでは一般的な超速効型のプロファイルを使います)。この値が下げるのは補正分の計算だけで、食事分には影響しません。持効型(基礎)インスリンも同じ方法で、別枠として推定します。これは推定値であり、指示ではありません。",
     listTitle: "参考資料",

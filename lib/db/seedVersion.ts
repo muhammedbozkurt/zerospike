@@ -28,6 +28,10 @@
  *      Salep rows reconciled, and the 10 sourced rows in ./seedCarb now carry
  *      it/pt/ar/ja names and presets. Existing untouched rows catch up through
  *      the same update path.
+ *   6  second audit round: more 100 g carb corrections (mixed dishes, polenta,
+ *      rice pilaf), biscotti/chouquette/gummy/multigrain presets, and
+ *      selectFoodsToUpdate now follows RENAMED_EN so a renamed untouched row
+ *      (Flapjack, Chouquette) gets its name_en and values updated in place.
  */
 
 // A type-only import: erased at build time, so reading this module never pulls
@@ -35,7 +39,7 @@
 import type { PortionLabelKey } from "./types";
 import type { SeedFood } from "./seed";
 
-export const SEED_CATALOG_VERSION = 5;
+export const SEED_CATALOG_VERSION = 6;
 
 /** The app_meta key the number above is stored under (schema v14). */
 export const SEED_CATALOG_VERSION_KEY = "seed_catalog_version";
@@ -141,6 +145,8 @@ export interface ExistingSeedFoodRow {
  *  touches what changed. */
 export interface SeedFoodUpdate {
   id: string;
+  /** Present only when the row still carries a name_en listed in RENAMED_EN. */
+  name_en?: string;
   name_tr?: string;
   name_de?: string;
   name_es?: string;
@@ -182,16 +188,29 @@ export function selectFoodsToUpdate(
   const byNameEn = new Map<string, SeedFood>();
   for (const f of catalog) byNameEn.set(seedNameKey(f.en), f);
 
+  const existingKeys = new Set(existingRows.map((r) => seedNameKey(r.name_en ?? "")));
+
   const updates: SeedFoodUpdate[] = [];
   for (const row of existingRows) {
     if (row.is_custom !== 0 || row.source !== null) continue;
     const key = seedNameKey(row.name_en ?? "");
     if (!key) continue;
-    const seed = byNameEn.get(key);
-    if (!seed) continue;
+    let seed = byNameEn.get(key);
+    let renamedTo: string | undefined;
+    if (!seed) {
+      const newKey = RENAMED_EN_KEYS.get(key);
+      const target = newKey ? byNameEn.get(newKey) : undefined;
+      if (!newKey || !target || existingKeys.has(newKey)) continue;
+      seed = target;
+      renamedTo = target.en;
+    }
 
     const update: SeedFoodUpdate = { id: row.id };
     let changed = false;
+    if (renamedTo !== undefined) {
+      update.name_en = renamedTo;
+      changed = true;
+    }
 
     if (seed.tr !== row.name_tr) {
       update.name_tr = seed.tr;

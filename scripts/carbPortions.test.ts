@@ -65,7 +65,7 @@ console.log(`  (${withPortions} foods with presets, ${overlaid} from the overlay
 ok("overlay raised the preset count past 314", withPortions > 314 + 250, String(withPortions));
 ok("tsp and small are in use", SEED_FOODS.some((f) => f.portions?.some(([l]) => l === "tsp")) &&
   SEED_FOODS.some((f) => f.portions?.some(([l]) => l === "small")));
-ok("catalog version bumped", SEED_CATALOG_VERSION >= 4);
+ok("catalog version bumped", SEED_CATALOG_VERSION === 6, String(SEED_CATALOG_VERSION));
 ok("seedCarb rows all carry a source", SEED_CARB.every((f) => !!f.src));
 
 console.log("C. top-up reaches an untouched row, not an edited one");
@@ -79,6 +79,19 @@ console.log("C. top-up reaches an untouched row, not an edited one");
   const up = selectFoodsToUpdate(SEED_FOODS, [row(0, null)]);
   ok("untouched row gets the slice preset", up.length === 1 && up[0].portions?.[0]?.[0] === "slice");
   ok("edited/custom/off rows are skipped", selectFoodsToUpdate(SEED_FOODS, [row(1, null), row(0, "off")]).length === 0);
+
+  const flap = SEED_FOODS.find((x) => x.en === "Flapjack (oat bar)")!;
+  const old = (is_custom: number, source: string | null, name_en = "Flapjack") => ({
+    id: "r", name_en, name_tr: "Flapjack", name_de: flap.de, name_es: flap.es, name_fr: flap.fr,
+    name_it: null, name_pt: null, name_ar: null, name_ja: null,
+    carb_100g: 58, glycemic_index: 0, portion_size_g: 100, is_custom, source,
+  });
+  const ru = selectFoodsToUpdate(SEED_FOODS, [old(0, null)]);
+  ok("renamed untouched row gets name_en and the new carb", ru.length === 1 && ru[0].name_en === "Flapjack (oat bar)" && ru[0].carb_100g === flap.carb);
+  ok("renamed row edited by the user is left alone", selectFoodsToUpdate(SEED_FOODS, [old(1, null), old(0, "off")]).length === 0);
+  ok("rename skipped when the new name already exists", selectFoodsToUpdate(SEED_FOODS, [old(0, null), old(0, null, "Flapjack (oat bar)")]).every((u) => u.name_en === undefined));
+  const cq = selectFoodsToUpdate(SEED_FOODS, [old(0, null, "Chouquette (plain cream puff)")]);
+  ok("chouquette rename resolves", cq.length === 1 && cq[0].name_en === "Chouquette (cream puff)");
 }
 
 console.log("D. last portion memory");

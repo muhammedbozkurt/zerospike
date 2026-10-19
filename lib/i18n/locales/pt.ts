@@ -50,7 +50,7 @@ const pt: TranslationSchema = {
     methodNote:
       "As estimativas são arredondadas para uma resolução de 0,5 unidade e são propositalmente conservadoras. Revise e edite sempre antes de usar. A dose de correção mira o meio da sua faixa-alvo pós-refeição.",
     foodData:
-      "Dados de alimentos: USDA FoodData Central (domínio público) e colaboradores do Open Food Facts (openfoodfacts.org), ODbL 1.0.",
+      "Alguns dados de alimentos: USDA FoodData Central (domínio público) e colaboradores do Open Food Facts (openfoodfacts.org), ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/).",
     iobNote:
       "A insulina ativa (IOB) é estimada a partir das doses de bolus registradas, com uma curva exponencial de atividade da insulina definida pelo tempo de pico e pela duração do produto de insulina bolus que você escolhe em Configurações (até lá, é usado um perfil geral de ação rápida). Ela só reduz uma estimativa de correção, nunca a dose da refeição. As doses de ação prolongada (basal) são estimadas do mesmo modo, mas acompanhadas à parte. É uma estimativa, não uma instrução.",
     listTitle: "Referências",

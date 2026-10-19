@@ -2,6 +2,9 @@
 
 Sürüm 2.4 sonrası ve beklemedeki işler. Karara bağlanmış konular için scratchpad/hub-kararlar.md.
 
+## Veri: karma yemek karbonhidrat kaynak taraması
+Jambalaya 24, Tteokbokki 35, Chilaquiles 24, Shepherd's pie 16 ve Gumbo 14 (100 g) için kaynaklı karşılaştırma; ayrıca lifli tohum tutarsızlığı: Haşhaş 28, Hindistan cevizi 24 ve Badem 22 lif hariç değil, Chia ve Keten ise kullanılabilir karbonhidrata çekildi. Ayrıntı docs/food-sources.md "Doğrulanması gereken".
+
 ## Arapça PDF: AGP son saat etiketi
 Arapça (RTL) PDF raporunda AGP grafiğinin son saat etiketi "24:00" sağ kenarda "24" olarak kırpılıyor. Eski bir sorun, 2.4 K12 denetiminde görüldü. Kapsam: lib/services/report.ts AGP SVG'si, RTL yönde sağ kenar boşluğu veya etiket hizası. Kabul: ar PDF'te son etiket tam görünür; diğer dillerde değişiklik yok; scripts/reportLayout.test.ts'e ar için kontrol.
 

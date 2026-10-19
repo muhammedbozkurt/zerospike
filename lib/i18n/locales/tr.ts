@@ -48,7 +48,7 @@ const tr = {
     methodNote:
       "Tahminler 0,5 ünitelik çözünürlüğe yuvarlanır ve bilinçli olarak temkinlidir; kullanmadan önce her zaman gözden geçirip düzenleyin. Düzeltme dozu, tokluk hedef aralığınızın ortasını esas alır.",
     foodData:
-      "Gıda verileri: USDA FoodData Central (kamu malı) ve Open Food Facts katkıcıları (openfoodfacts.org), ODbL 1.0 lisansıyla.",
+      "Bazı gıda verileri: USDA FoodData Central (kamu malı) ve Open Food Facts katkıcıları (openfoodfacts.org), ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/).",
     iobNote:
       "Aktif insülin (IOB), kaydettiğiniz bolus dozlarından, Ayarlar'da seçtiğiniz bolus insülin ürününün zirve zamanı ve etki süresine göre şekillenen üstel bir insülin aktivite eğrisiyle tahmin edilir (bir ürün seçmediğiniz sürece genel hızlı etkili bir profil kullanılır). Yalnızca düzeltme tahminini düşürür, öğün dozunu asla. Uzun etkili (bazal) dozlar aynı yöntemle ama ayrı olarak tahmin edilir. Bu bir tahmindir, talimat değildir.",
     listTitle: "Kaynaklar",

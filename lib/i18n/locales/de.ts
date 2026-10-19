@@ -50,7 +50,7 @@ const de: TranslationSchema = {
     methodNote:
       "Schätzungen werden auf eine Auflösung von 0,5 Einheiten gerundet und sind bewusst konservativ. Vor der Verwendung immer prüfen und anpassen. Die Korrekturdosis zielt auf die Mitte Ihres Zielbereichs nach dem Essen.",
     foodData:
-      "Lebensmitteldaten: USDA FoodData Central (gemeinfrei) und Open-Food-Facts-Mitwirkende (openfoodfacts.org), ODbL 1.0.",
+      "Einige Lebensmitteldaten: USDA FoodData Central (gemeinfrei) und Open-Food-Facts-Mitwirkende (openfoodfacts.org), ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/).",
     iobNote:
       "Aktives Insulin (IOB) wird aus Ihren erfassten Bolusdosen anhand einer exponentiellen Insulinwirkkurve geschätzt, die sich nach dem Wirkgipfel und der Wirkdauer des in den Einstellungen ausgewählten Bolusinsulinprodukts richtet (bis Sie eines auswählen, wird ein allgemeines schnell wirkendes Profil verwendet). Sie senkt ausschließlich eine Korrekturschätzung, niemals die Mahlzeitendosis. Lang wirkende (Basal-)Dosen werden auf die gleiche Weise, aber separat geschätzt. Es handelt sich um eine Schätzung, keine Anweisung.",
     listTitle: "Quellen",

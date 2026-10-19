@@ -50,7 +50,7 @@ const en: TranslationSchema = {
     methodNote:
       "Estimates round to a 0.5-unit resolution and are intentionally conservative. Always review and edit before use. The correction dose aims at the middle of your post-meal target range.",
     foodData:
-      "Food data: USDA FoodData Central (public domain) and Open Food Facts contributors (openfoodfacts.org), ODbL 1.0.",
+      "Some food data: USDA FoodData Central (public domain) and Open Food Facts contributors (openfoodfacts.org), ODbL 1.0 (https://opendatacommons.org/licenses/odbl/1-0/).",
     iobNote:
       "Active insulin (IOB) is estimated from your logged bolus doses using an exponential insulin-activity curve, shaped by the peak time and duration of the bolus insulin product you select in Settings (a general fast-acting profile is used until you do). It only ever lowers a correction estimate, never the meal dose. Long-acting (basal) doses are estimated the same way but tracked separately. It is an estimate, not a directive.",
     listTitle: "References",
