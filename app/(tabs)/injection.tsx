@@ -40,12 +40,9 @@ import {
   getRotationCycleStart,
   startRotationCycle,
 } from "../../lib/rotationCycle";
-import {
-  AppBackground,
-  GlassCard,
-  GradientCTA,
-  IconTile,
-} from "../../components/rich";
+import { AppBackground, GradientCTA, IconTile } from "../../components/rich";
+import { EmptyState } from "../../components/EmptyState";
+import { Button, Card, Chip, Row, Txt } from "../../components/ui";
 import type { BolusKind, Injection, InsulinType } from "../../lib/db/types";
 import { BOLUS_KINDS, SELECTABLE_SITES, SITE_POINTS } from "../../lib/db/types";
 import {
@@ -76,7 +73,16 @@ import {
   type InjectionDaySection,
 } from "../../lib/injectionHistory";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
-import { GLUCOSE_RICH, INPUT_TEXT, RADIUS, TABULAR, THEME, glow } from "../../lib/theme/tokens";
+import {
+  GLUCOSE_RICH,
+  HIT_TARGET,
+  INPUT_TEXT,
+  RADIUS,
+  SPACE,
+  THEME,
+  glow,
+} from "../../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { upper } from "../../lib/upper";
 import { isScreenshotMode } from "../../lib/screenshotMode";
@@ -99,49 +105,20 @@ const inputStyle = () =>
     borderWidth: 1,
     borderColor: THEME.border,
     backgroundColor: THEME.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: SPACE.md,
+    paddingVertical: SPACE.md,
+    minHeight: HIT_TARGET,
     color: THEME.text,
   }) as const;
 
+const pressRipple = () =>
+  ({ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }) as const;
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Txt kind="caption" tone="muted" style={{ fontWeight: "700", marginBottom: SPACE.sm }}>
       {children}
-    </Text>
-  );
-}
-
-/** One pill of a single-select row (insulin type, bolus label): the same visual
- *  language for every segmented choice in this form. */
-function SegmentOption({
-  label,
-  on,
-  onPress,
-}: {
-  label: string;
-  on: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: on }}
-      className="flex-1 items-center rounded-xl px-3 py-2.5"
-      style={[
-        {
-          borderWidth: 1,
-          borderColor: on ? THEME.accent : THEME.border,
-          backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.surface,
-        },
-        on ? glow(THEME.accent, 12, 0.35) : undefined,
-      ]}
-    >
-      <Text style={{ color: on ? THEME.accent : THEME.textMuted, fontWeight: on ? "800" : "600" }}>
-        {label}
-      </Text>
-    </Pressable>
+    </Txt>
   );
 }
 
@@ -634,23 +611,20 @@ export default function InjectionScreen() {
       <Pressable
         onPress={() => setEditing(inj)}
         onLongPress={() => onRowLongPress(inj)}
+        android_ripple={pressRipple()}
         className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
+        style={{ minHeight: HIT_TARGET }}
       >
         <View
           className="rounded-lg px-2 py-1"
           style={[{ backgroundColor: withAlpha(THEME.accent, 0.16) }, glow(THEME.accent, 10, 0.35)]}
         >
-          <Text style={[TABULAR, { color: THEME.accent, fontWeight: "800", fontSize: 11 }]}>
+          <Txt kind="micro" tone="accent" tabular style={{ fontWeight: "800" }}>
             {inj.dose_units != null ? `${num(inj.dose_units)}${t("common.unitsShort")}` : "-"}
-          </Text>
+          </Txt>
         </View>
-        <View className="flex-1 ml-3">
-          <Text
-            style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-          >
+        <View className="flex-1 ml-3" style={{ minWidth: 0 }}>
+          <Txt kind="caption" style={{ fontWeight: "700" }} numberOfLines={2}>
             {inj.insulin_type
               ? `${inj.insulin_type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}${
                   inj.insulin_type === "bolus" && inj.bolus_kind
@@ -667,12 +641,12 @@ export default function InjectionScreen() {
               : inj.site_point != null
                 ? t("injection.siteWithPoint", { site: t(`injectionSite.${inj.site}`), n: inj.site_point })
                 : t(`injectionSite.${inj.site}`)}
-          </Text>
-          <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 1 }}>
+          </Txt>
+          <Txt kind="micro" tone="muted" style={{ marginTop: 1 }}>
             {formatTime(inj.logged_at)}
             {inj.source === "calculator" ? ` · ${t("injection.fromCalculator")}` : ""}
             {inj.source === "reminder" ? ` · ${t("report.fromReminder")}` : ""}
-          </Text>
+          </Txt>
         </View>
         <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
       </Pressable>
@@ -687,27 +661,27 @@ export default function InjectionScreen() {
 
   const renderHistorySectionHeader = useCallback(
     ({ section }: { section: InjectionDaySection }) => (
-      <View className="px-4" style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 6 }}>
+      <View className="px-4" style={{ alignItems: "flex-start", paddingTop: SPACE.md, paddingBottom: SPACE.sm }}>
         <View
           style={{
             flexDirection: "row",
             alignItems: "center",
-            gap: 6,
+            gap: SPACE.sm,
             backgroundColor: THEME.surfaceRaised,
             borderWidth: 1,
             borderColor: THEME.border,
             borderRadius: RADIUS.full,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
+            paddingHorizontal: SPACE.md,
+            paddingVertical: SPACE.xs,
           }}
         >
-          <Text style={{ color: THEME.text, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+          <Txt kind="micro" style={{ fontWeight: "800", letterSpacing: 0.8 }}>
             {upper(section.title)}
-          </Text>
+          </Txt>
           {section.dateLabel !== section.title ? (
-            <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}>
+            <Txt kind="micro" tone="muted">
               {section.dateLabel}
-            </Text>
+            </Txt>
           ) : null}
         </View>
       </View>
@@ -721,50 +695,27 @@ export default function InjectionScreen() {
   const historyEmptyComponent = useMemo(() => {
     if (!historyLoaded) return null;
     return (
-      <View className="items-center py-12">
-        <Ionicons name="document-text-outline" size={36} color={THEME.textMuted} />
-        <Text style={{ color: THEME.textMuted, textAlign: "center", marginTop: 8 }}>
-          {t("injection.empty")}
-        </Text>
-        <Pressable
-          onPress={() => setSegment("save")}
-          accessibilityRole="button"
-          accessibilityLabel={t("injection.emptyCta")}
-          className="flex-row items-center rounded-full mt-4 px-4 py-2.5 active:opacity-80"
-          style={{
-            borderWidth: 1,
-            borderColor: withAlpha(THEME.accent, 0.3),
-            backgroundColor: withAlpha(THEME.accent, 0.12),
-          }}
-        >
-          <Ionicons name="add-circle-outline" size={15} color={THEME.accent} />
-          <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
-            {t("injection.emptyCta")}
-          </Text>
-        </Pressable>
-      </View>
+      <EmptyState
+        icon="document-text-outline"
+        title={t("injection.empty")}
+        actionLabel={t("injection.emptyCta")}
+        onAction={() => setSegment("save")}
+        compact
+      />
     );
   }, [historyLoaded, t]);
 
   const historyFooterComponent = useMemo(() => {
     if (!hasMoreHistory) return null;
     return (
-      <Pressable
+      <Button
+        label={t("common.showMore")}
+        variant="outlined"
+        size="sm"
         onPress={showMoreHistory}
-        accessibilityRole="button"
-        accessibilityLabel={t("common.showMore")}
-        className="flex-row items-center justify-center rounded-full mx-4 mt-1 py-2.5 active:opacity-80"
-        style={{
-          borderWidth: 1,
-          borderColor: withAlpha(THEME.accent, 0.3),
-          backgroundColor: withAlpha(THEME.accent, 0.12),
-        }}
-      >
-        <Ionicons name="chevron-down-outline" size={14} color={THEME.accent} />
-        <Text style={{ color: THEME.accent, fontWeight: "800", fontSize: 12, marginLeft: 6 }}>
-          {upper(t("common.showMore"))}
-        </Text>
-      </Pressable>
+        icon={<Ionicons name="chevron-down-outline" size={14} color={THEME.accent} />}
+        className="mx-4 mt-1"
+      />
     );
   }, [hasMoreHistory, showMoreHistory, t]);
 
@@ -773,58 +724,60 @@ export default function InjectionScreen() {
   // helper behind leastUsed always resolves to a real point, so once loaded
   // it never reverts to empty.
   const rotationCard = isProUser && !rotationLoaded ? null : isProUser ? (
-    <GlassCard style={{ marginBottom: 16 }}>
+    <Card style={{ marginBottom: SPACE.lg }}>
       <View className="flex-row items-center mb-2">
         <Ionicons name="sync-outline" size={16} color={THEME.accent} />
-        <Text style={{ color: THEME.text, fontWeight: "700", marginLeft: 8 }}>
+        <Txt style={{ fontWeight: "700", marginLeft: SPACE.sm, flexShrink: 1, minWidth: 0 }}>
           {t("injection.rotationTitle")}
-        </Text>
+        </Txt>
       </View>
-      <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{t("injection.leastUsedPoint")}</Text>
-      <Text style={{ color: THEME.text, fontSize: 18, fontWeight: "800", marginTop: 2 }}>
+      <Txt kind="micro" tone="muted">
+        {t("injection.leastUsedPoint")}
+      </Txt>
+      <Txt kind="subtitle" style={{ fontWeight: "800", marginTop: SPACE.xs / 2 }}>
         {leastUsed
           ? t("injection.siteWithPoint", { site: t(`injectionSite.${leastUsed.site}`), n: leastUsed.point })
           : "-"}
-      </Text>
-      <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, marginTop: 8 }}>
+      </Txt>
+      <Txt kind="micro" tone="muted" style={{ marginTop: SPACE.sm }}>
         {t("injection.rotationDisclaimer")}
-      </Text>
+      </Txt>
       {leastUsed ? (
-        <Pressable
+        <Button
+          label={t("injection.useThisSite")}
+          variant="outlined"
           onPress={() => {
             hapticSelect();
             onMapSelect(leastUsed);
           }}
-          className="flex-row items-center justify-center rounded-xl py-2.5 mt-3"
-          style={{ backgroundColor: withAlpha(THEME.accent, 0.15) }}
-        >
-          <DirIcon name="arrow-forward-outline" size={16} color={THEME.accent} />
-          <Text style={{ color: THEME.accent, fontWeight: "700", marginLeft: 8, fontSize: 13 }}>
-            {t("injection.useThisSite")}
-          </Text>
-        </Pressable>
+          icon={<DirIcon name="arrow-forward-outline" size={16} color={THEME.accent} />}
+          className="mt-3"
+        />
       ) : null}
-    </GlassCard>
+    </Card>
   ) : (
     <Pressable
       onPress={() => {
         hapticWarning();
         router.push({ pathname: "/paywall", params: { reason: "rotation" } });
       }}
+      android_ripple={pressRipple()}
       className="rounded-2xl bg-glass border border-hair p-4 mb-4 flex-row items-center active:opacity-80"
     >
-      <IconTile icon="lock-closed" size={36} radius={12} tint={THEME.textMuted} style={{ marginRight: 12 }} />
-      <View className="flex-1">
-        <Text style={{ color: THEME.text, fontWeight: "700" }}>{t("injection.rotationTitle")}</Text>
-        <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}>
+      <IconTile icon="lock-closed" size={36} radius={12} tint={THEME.textMuted} style={{ marginRight: SPACE.md }} />
+      <View className="flex-1" style={{ minWidth: 0 }}>
+        <Txt style={{ fontWeight: "700" }}>{t("injection.rotationTitle")}</Txt>
+        <Txt kind="micro" tone="muted" style={{ marginTop: SPACE.xs / 2 }}>
           {t("paywall.limitTitleRotation")}
-        </Text>
-        <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+        </Txt>
+        <Txt kind="caption" tone="accent" style={{ fontWeight: "700", marginTop: SPACE.xs }}>
           {t(proCta.key, proCta.params)}
-        </Text>
+        </Txt>
       </View>
       <View className="rounded-full bg-brand px-2 py-0.5">
-        <Text className="text-onAccent text-[10px] font-bold">{t("common.pro")}</Text>
+        <Txt kind="micro" tone="onAccent" style={{ fontWeight: "700" }}>
+          {t("common.pro")}
+        </Txt>
       </View>
     </Pressable>
   );
@@ -872,37 +825,16 @@ export default function InjectionScreen() {
       </View>
 
       {/* Segment control: KAYDET / HARITA / GECMIS */}
-      <View
-        className="flex-row rounded-full border border-hair mx-4 mb-2 p-1"
-        style={{ backgroundColor: THEME.surface }}
-      >
-        {SEGMENTS.map((s) => {
-          const on = segment === s.key;
-          return (
-            <Pressable
-              key={s.key}
-              onPress={() => {
-                hapticSelect();
-                setSegment(s.key);
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              accessibilityLabel={s.label}
-              // The pill's visual height (py-2 + the label) is ~32-34pt; hitSlop
-              // widens the TOUCH area to clear the 44pt target without changing
-              // how the control looks. Left/right stay at 0 - these three sit
-              // edge-to-edge with no gap, so widening sideways would steal taps
-              // from the neighbouring segment.
-              hitSlop={{ top: 8, bottom: 8 }}
-              className="flex-1 items-center rounded-full py-2"
-              style={{ backgroundColor: on ? THEME.accentFill : "transparent" }}
-            >
-              <Text style={{ color: on ? THEME.accentOnFill : THEME.textMuted, fontWeight: "800", fontSize: 12 }}>
-                {upper(s.label)}
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View className="flex-row mx-4 mb-2" style={{ gap: SPACE.sm }}>
+        {SEGMENTS.map((s) => (
+          <Chip
+            key={s.key}
+            label={s.label}
+            selected={segment === s.key}
+            onPress={() => setSegment(s.key)}
+            className="flex-1"
+          />
+        ))}
       </View>
 
       {segment === "history" ? (
@@ -950,18 +882,14 @@ export default function InjectionScreen() {
           ) : (
             <>
               {/* KAYDET: the log form */}
-              <GlassCard style={{ marginBottom: 12 }}>
-                <Text
-                  style={{
-                    color: THEME.textMuted,
-                    fontSize: 11,
-                    letterSpacing: 1.3,
-                    fontWeight: "800",
-                    marginBottom: 10,
-                  }}
+              <Card style={{ marginBottom: SPACE.md }}>
+                <Txt
+                  kind="micro"
+                  tone="muted"
+                  style={{ letterSpacing: 1.3, fontWeight: "800", marginBottom: SPACE.md }}
                 >
                   {upper(t("injection.formTitle"))}
-                </Text>
+                </Txt>
 
                 {/* 1. When: defaults to now, editable, never future (WP3). */}
                 <FieldLabel>{t("injection.time")}</FieldLabel>
@@ -972,18 +900,19 @@ export default function InjectionScreen() {
                   }}
                   accessibilityRole="button"
                   accessibilityLabel={t("injection.time")}
+                  android_ripple={pressRipple()}
                   className="flex-row items-center mb-4"
                   style={inputStyle()}
                 >
                   <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
-                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
+                  <Txt style={{ marginLeft: SPACE.sm, flexShrink: 1, minWidth: 0 }}>
                     {relativeDay(loggedAt.toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
                     })}
                     {" · "}
                     {formatTime(loggedAt.toISOString())}
-                  </Text>
+                  </Txt>
                 </Pressable>
                 <InlineDateTimePicker
                   visible={timePickerOpen}
@@ -1006,16 +935,14 @@ export default function InjectionScreen() {
 
                 {/* 2. Insulin type before dose: basal pre-fills the dose below. */}
                 <FieldLabel>{t("injection.insulinType")}</FieldLabel>
-                <View className="flex-row mb-4" style={{ gap: 8 }}>
+                <View className="flex-row mb-4" style={{ gap: SPACE.sm }}>
                   {(["basal", "bolus"] as const).map((type) => (
-                    <SegmentOption
+                    <Chip
                       key={type}
                       label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
-                      on={insulinType === type}
-                      onPress={() => {
-                        hapticSelect();
-                        applyInsulinType(type);
-                      }}
+                      selected={insulinType === type}
+                      onPress={() => applyInsulinType(type)}
+                      className="flex-1"
                     />
                   ))}
                 </View>
@@ -1038,27 +965,19 @@ export default function InjectionScreen() {
                   decimals={1}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
-                  style={{ marginBottom: doseHintVisible(injectionDoseOk(dose), doseInteracted) ? 6 : 16 }}
+                  style={{ marginBottom: doseHintVisible(injectionDoseOk(dose), doseInteracted) ? SPACE.sm : SPACE.lg }}
                 />
                 {doseHintVisible(injectionDoseOk(dose), doseInteracted) ? (
-                  <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 12 }}>
+                  <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.md }}>
                     {t("basalConfirm.doseRequired")}
-                  </Text>
+                  </Txt>
                 ) : null}
                 {insulinType === "basal" && activeProfile?.basal_daily_units == null ? (
-                  <Pressable
+                  <Row
+                    icon="information-circle-outline"
+                    label={t("injection.basalPrefillHint")}
                     onPress={() => router.push("/settings/profile")}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("injection.basalPrefillHint")}
-                    hitSlop={10}
-                    className="flex-row items-center"
-                    style={{ marginTop: -10, marginBottom: 16, paddingVertical: 8 }}
-                  >
-                    <Ionicons name="information-circle-outline" size={13} color={THEME.accent} />
-                    <Text style={{ color: THEME.accent, fontSize: 11, lineHeight: 15, marginLeft: 6, flex: 1 }}>
-                      {t("injection.basalPrefillHint")}
-                    </Text>
-                  </Pressable>
+                  />
                 ) : null}
 
                 {/* 4. Everything below reflows smoothly when the bolus-label row
@@ -1068,23 +987,24 @@ export default function InjectionScreen() {
                     <Animated.View
                       entering={listEntering}
                       exiting={listExiting}
-                      style={{ marginBottom: 16 }}
+                      style={{ marginBottom: SPACE.lg }}
                     >
                       <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
-                      <View className="flex-row" style={{ gap: 8 }}>
+                      <View className="flex-row" style={{ gap: SPACE.sm }}>
                         {BOLUS_KINDS.map((kind) => (
-                          <SegmentOption
+                          <Chip
                             key={kind}
                             label={
                               kind === "meal"
                                 ? t("injection.bolusKindMeal")
                                 : t("injection.bolusKindCorrection")
                             }
-                            on={bolusKind === kind}
+                            selected={bolusKind === kind}
                             onPress={() => {
-                              hapticSelect();
+                              if (bolusKind === kind) hapticSelect();
                               setBolusKind((prev) => (prev === kind ? null : kind));
                             }}
+                            className="flex-1"
                           />
                         ))}
                       </View>
@@ -1097,8 +1017,10 @@ export default function InjectionScreen() {
                     onPress={() => setSegment("map")}
                     accessibilityRole="button"
                     accessibilityLabel={selectedLabel ?? t("injection.chooseSitePoint")}
+                    android_ripple={pressRipple()}
                     className="flex-row items-center rounded-xl px-3 py-2.5 mb-4 active:opacity-80"
                     style={{
+                      minHeight: HIT_TARGET,
                       borderWidth: 1,
                       borderColor: selected ? withAlpha(THEME.accent, 0.4) : THEME.border,
                       backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.surface,
@@ -1109,18 +1031,14 @@ export default function InjectionScreen() {
                       size={15}
                       color={selected ? THEME.accent : THEME.textMuted}
                     />
-                    <Text
-                      style={{
-                        color: selected ? THEME.accent : THEME.textMuted,
-                        fontSize: 13,
-                        fontWeight: "700",
-                        marginLeft: 8,
-                        flex: 1,
-                      }}
+                    <Txt
+                      kind="caption"
+                      tone={selected ? "accent" : "muted"}
+                      style={{ fontWeight: "700", marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}
                       numberOfLines={1}
                     >
                       {selectedLabel ?? t("injection.chooseSitePoint")}
-                    </Text>
+                    </Txt>
                     <Ionicons name="map-outline" size={16} color={THEME.accent} />
                   </Pressable>
 
@@ -1142,11 +1060,9 @@ export default function InjectionScreen() {
                       }}
                     >
                       <Ionicons name="alert-circle-outline" size={14} color={THEME.warning} />
-                      <Text
-                        style={{ color: THEME.text, fontSize: 11, lineHeight: 15, marginLeft: 8, flex: 1 }}
-                      >
+                      <Txt kind="micro" style={{ marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}>
                         {pointNote}
-                      </Text>
+                      </Txt>
                     </View>
                   ) : null}
 
@@ -1157,7 +1073,7 @@ export default function InjectionScreen() {
                     placeholder={t("injection.notePlaceholder")}
                     placeholderTextColor={THEME.textMuted}
                     returnKeyType="done"
-                    style={[inputStyle(), INPUT_TEXT, { marginBottom: 16 }]}
+                    style={[inputStyle(), INPUT_TEXT, { marginBottom: SPACE.lg }]}
                   />
 
                   <GradientCTA
@@ -1166,7 +1082,7 @@ export default function InjectionScreen() {
                     onPress={save}
                   />
                 </Animated.View>
-              </GlassCard>
+              </Card>
 
               {/* Short disclaimer under KAYDET only. Wraps to two lines on a
                   narrow screen (numberOfLines={2}) rather than being clipped. */}
@@ -1179,12 +1095,13 @@ export default function InjectionScreen() {
                 }}
               >
                 <Ionicons name="medical-outline" size={15} color={GLUCOSE_RICH.high} />
-                <Text
-                  style={{ color: THEME.text, fontSize: 12, lineHeight: 17, marginLeft: 10, flex: 1, opacity: 0.85 }}
-                  numberOfLines={2}
+                <Txt
+                  kind="caption"
+                  style={{ marginLeft: SPACE.md, flex: 1, minWidth: 0, opacity: 0.85 }}
+                  numberOfLines={3}
                 >
                   {t("disclaimer.short")}
-                </Text>
+                </Txt>
               </View>
             </>
           )}

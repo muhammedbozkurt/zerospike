@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -17,7 +17,10 @@ import { SCRIM } from "../components/SheetShell";
 import { sheetLayout } from "../lib/sheetLayout";
 import { basalPresentation } from "../lib/basalConfirmLayout";
 import { useLayout } from "../lib/useLayout";
-import { MODAL_TOP_PAD, RADIUS, THEME } from "../lib/theme/tokens";
+import { HIT_TARGET, MODAL_TOP_PAD, RADIUS, SPACE, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { withAlpha } from "../components/rich/GlassCard";
+import { Row, Txt } from "../components/ui";
 import { formatTime, isolateLtr, num, relativeDay } from "../lib/format";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logCrash, logEvent } from "../lib/analytics";
@@ -61,16 +64,20 @@ const inputStyle = () =>
   borderWidth: 1,
   borderColor: THEME.border,
   backgroundColor: THEME.surface,
-  paddingHorizontal: 14,
-  paddingVertical: 12,
+  paddingHorizontal: SPACE.md,
+  paddingVertical: SPACE.md,
+  minHeight: HIT_TARGET,
   color: THEME.text,
   }) as const;
 
+const fieldRipple = () =>
+  ({ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }) as const;
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Txt kind="caption" tone="muted" style={{ fontWeight: "700", marginBottom: SPACE.sm }}>
       {children}
-    </Text>
+    </Txt>
   );
 }
 
@@ -355,14 +362,16 @@ function BasalConfirmScreen() {
             <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
           </View>
           <View className="flex-row items-center justify-between mb-2">
-            <Text
+            <Txt
+              kind="caption"
+              tone="muted"
               numberOfLines={2}
-              style={{ color: THEME.textMuted, fontSize: 13, fontWeight: "700", flexShrink: 1 }}
+              style={{ fontWeight: "700", flexShrink: 1, minWidth: 0 }}
             >
               {differentProfile && ctx
                 ? `${headerTitle} · ${displayProfileName(ctx.profile, t)}`
                 : headerTitle}
-            </Text>
+            </Txt>
             <Pressable
               onPress={dismiss}
               hitSlop={12}
@@ -387,42 +396,31 @@ function BasalConfirmScreen() {
               </View>
             ) : load.kind === "error" ? (
               <View>
-                <Text style={{ color: THEME.text, fontSize: 15, marginBottom: 16 }}>
-                  {t("basalConfirm.loadError")}
-                </Text>
+                <Txt style={{ marginBottom: SPACE.lg }}>{t("basalConfirm.loadError")}</Txt>
                 <GradientCTA label={t("common.close")} onPress={dismiss} />
               </View>
             ) : load.kind === "chooseProfile" ? (
               <View>
-                <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 16 }}>
+                <Txt kind="title" style={{ marginBottom: SPACE.lg }}>
                   {t("basalConfirm.chooseProfile")}
-                </Text>
-                <View style={{ gap: 10 }}>
+                </Txt>
+                <View>
                   {load.candidates.map((c) => (
-                    <Pressable
+                    <Row
                       key={c.reminder?.id ?? c.profile.id}
+                      icon="person-outline"
+                      label={displayProfileName(c.profile, t)}
                       onPress={() => selectProfileCandidate(c)}
-                      accessibilityRole="button"
-                      className="flex-row items-center justify-between"
-                      style={inputStyle()}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flexShrink: 1 }}
-                      >
-                        {displayProfileName(c.profile, t)}
-                      </Text>
-                      <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
-                    </Pressable>
+                    />
                   ))}
                 </View>
               </View>
             ) : load.kind === "duplicate" ? (
               <View>
-                <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 8 }}>
+                <Txt kind="subtitle" style={{ marginBottom: SPACE.sm }}>
                   {t("basalConfirm.duplicateTitle")}
-                </Text>
-                <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 20 }}>
+                </Txt>
+                <Txt tone="muted" style={{ marginBottom: SPACE.lg }}>
                   {/* time/n stay separate params (not merged into one, unlike
                       CarbRatioLine): tr and ja embed them non-adjacently inside
                       their own sentence ("{{time}} saatinde {{n}} Ü olarak..."),
@@ -436,15 +434,15 @@ function BasalConfirmScreen() {
                     : t("basalConfirm.duplicateBodyNoDose", {
                         time: isolateLtr(formatTime(load.existing.logged_at)),
                       })}
-                </Text>
+                </Txt>
                 <GradientCTA label={t("common.close")} onPress={dismiss} />
               </View>
             ) : (
               <View>
-                <Text style={{ color: THEME.text, fontSize: 20, fontWeight: "800", marginBottom: 10 }}>
+                <Txt kind="title" style={{ marginBottom: SPACE.md }}>
                   {t("basalConfirm.askTitle")}
-                </Text>
-                <Text style={{ color: THEME.textMuted, fontSize: 14, marginBottom: 20 }}>
+                </Txt>
+                <Txt tone="muted" style={{ marginBottom: SPACE.lg }}>
                   {/* Not a t() template - built straight from three pieces, so the
                       fix is in code, not a locale file: the dose and the time are
                       each their own isolated LTR run (lib/format's LRI/PDI wrap);
@@ -457,14 +455,14 @@ function BasalConfirmScreen() {
                   })}
                   {" · "}
                   {isolateLtr(formatTime(loggedAt.toISOString()))}
-                </Text>
+                </Txt>
                 {/* Full-width, stacked (not a two-up half-width row): the longest
                     translation (pt "Sim, já apliquei") clipped under
                     GradientCTA's own adjustsFontSizeToFit at half width on
                     Android, which downscales silently there instead of wrapping -
                     see CLAUDE.md's own warning about that API. Full width gives
                     every language room without depending on it. */}
-                <View style={{ gap: 10 }}>
+                <View style={{ gap: SPACE.md }}>
                   <GradientCTA
                     label={t("basalConfirm.yes")}
                     onPress={() => {
@@ -499,12 +497,14 @@ function BasalConfirmScreen() {
         />
 
         {differentProfile ? (
-          <Text
+          <Txt
+            kind="caption"
+            tone="muted"
             numberOfLines={1}
-            style={{ color: THEME.textMuted, fontSize: 12, paddingHorizontal: 20, marginTop: -4, marginBottom: 6 }}
+            style={{ paddingHorizontal: SPACE.xl, marginTop: -SPACE.xs, marginBottom: SPACE.sm }}
           >
             {t("basalConfirm.forProfile", { name: ctx ? displayProfileName(ctx.profile, t) : "" })}
-          </Text>
+          </Txt>
         ) : null}
 
         {load.kind === "loading" ? (
@@ -549,18 +549,19 @@ function BasalConfirmScreen() {
             <FieldLabel>{t("injection.time")}</FieldLabel>
             <Pressable
               onPress={() => setTimePickerOpen((v) => !v)}
-              className="flex-row items-center mb-5"
-              style={inputStyle()}
+              android_ripple={fieldRipple()}
+              className="flex-row items-center"
+              style={[inputStyle(), { marginBottom: SPACE.lg }]}
             >
               <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
-              <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
+              <Txt style={{ marginLeft: SPACE.sm, flexShrink: 1, minWidth: 0 }}>
                 {relativeDay(loggedAt.toISOString(), {
                   today: t("common.today"),
                   yesterday: t("common.yesterday"),
                 })}
                 {" · "}
                 {formatTime(loggedAt.toISOString())}
-              </Text>
+              </Txt>
             </Pressable>
             <InlineDateTimePicker
               visible={timePickerOpen}
@@ -593,26 +594,27 @@ function BasalConfirmScreen() {
             <FieldLabel>{t("injection.selectSite")}</FieldLabel>
             <Pressable
               onPress={() => setPicking(true)}
-              className="flex-row items-center justify-between mb-6"
-              style={inputStyle()}
+              android_ripple={fieldRipple()}
+              className="flex-row items-center justify-between"
+              style={[inputStyle(), { marginBottom: SPACE.xl }]}
             >
-              <Text numberOfLines={1} style={{ color: THEME.text, fontSize: 13, flexShrink: 1 }}>
+              <Txt numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
                 {siteSummaryLabel}
-              </Text>
+              </Txt>
               <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
             </Pressable>
 
             {doseHintVisible(dose > 0 && stepperFields.allValid, doseInteracted || doseInvalidKind === "range") ? (
-              <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 8 }}>
+              <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.sm }}>
                 {doseInvalidKind === "range"
                   ? t("settings.rangeOutOfBounds", { min: num(0), max: num(150) })
                   : t("basalConfirm.doseRequired")}
-              </Text>
+              </Txt>
             ) : null}
             {saveError ? (
-              <Text style={{ color: THEME.warning, fontSize: 12, marginBottom: 8 }}>
+              <Txt kind="caption" style={{ color: THEME.warning, marginBottom: SPACE.sm }}>
                 {t("common.saveFailed")}
-              </Text>
+              </Txt>
             ) : null}
             <GradientCTA
               label={t("common.save")}

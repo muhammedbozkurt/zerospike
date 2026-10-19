@@ -7,7 +7,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Text,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -37,11 +36,11 @@ import { FeedbackHost, useFeedback } from "./Feedback";
 import { Stepper, useStepperValidity } from "./Stepper";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
-import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { HIT_TARGET, RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
+import { Button, Chip, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
 import { listEntering, listExiting, listLayout } from "../lib/theme/motion";
 import { GradientCTA } from "./rich/GradientCTA";
-import { withAlpha } from "./rich/GlassCard";
 import { SCRIM } from "./SheetShell";
 
 /** The stored injection being corrected (structurally matches Injection). */
@@ -76,60 +75,17 @@ const inputStyle = () => ({
   borderWidth: 1,
   borderColor: THEME.border,
   backgroundColor: THEME.surface,
-  paddingHorizontal: 14,
-  paddingVertical: 12,
+  paddingHorizontal: SPACE.md,
+  paddingVertical: SPACE.md,
+  fontSize: TYPE.body.fontSize,
   color: THEME.text,
 });
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Txt kind="caption" tone="muted" style={{ fontWeight: "700", marginBottom: SPACE.sm }}>
       {children}
-    </Text>
-  );
-}
-
-/** A selectable pill in the Midnight Monitor language. */
-function Chip({
-  label,
-  on,
-  onPress,
-  style,
-}: {
-  label: string;
-  on: boolean;
-  onPress: () => void;
-  style?: object;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: on }}
-      style={[
-        {
-          borderRadius: RADIUS.md,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          borderWidth: 1,
-          borderColor: on ? THEME.accent : THEME.border,
-          backgroundColor: on ? withAlpha(THEME.accent, 0.14) : THEME.surface,
-        },
-        on ? glow(THEME.accent, 12, 0.35) : undefined,
-        style,
-      ]}
-    >
-      <Text
-        style={{
-          color: on ? THEME.accent : THEME.textMuted,
-          fontSize: 12,
-          fontWeight: on ? "800" : "600",
-          textAlign: "center",
-        }}
-      >
-        {label}
-      </Text>
-    </Pressable>
+    </Txt>
   );
 }
 
@@ -380,7 +336,7 @@ export function InjectionEditSheet({
                 borderRightWidth: 1,
                 borderColor: THEME.border,
                 backgroundColor: THEME.bg.g1,
-                paddingHorizontal: 18,
+                paddingHorizontal: SPACE.lg,
                 paddingTop: 8,
               },
               glow(THEME.accent, 30, 0.3),
@@ -395,7 +351,7 @@ export function InjectionEditSheet({
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View className="flex-row items-center justify-between mb-4">
-              <View className="flex-row items-center flex-1" style={{ gap: 6 }}>
+              <View className="flex-row items-center flex-1" style={{ gap: SPACE.sm }}>
                 {step === "site" ? (
                   <Pressable
                     onPress={() => setStep("form")}
@@ -408,12 +364,9 @@ export function InjectionEditSheet({
                     <DirIcon name="chevron-back" size={22} color={THEME.textMuted} />
                   </Pressable>
                 ) : null}
-                <Text
-                  numberOfLines={1}
-                  style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
-                >
+                <Txt kind="subtitle" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
                   {step === "site" ? t("injection.selectSite") : t("calculator.editTitle")}
-                </Text>
+                </Txt>
               </View>
               <Pressable
                 onPress={onClose}
@@ -467,18 +420,18 @@ export function InjectionEditSheet({
                     Keyboard.dismiss();
                     setTimePickerOpen((v) => !v);
                   }}
-                  className="flex-row items-center mb-5"
-                  style={inputStyle()}
+                  className="flex-row items-center"
+                  style={[inputStyle(), { minHeight: HIT_TARGET, marginBottom: SPACE.lg }]}
                 >
                   <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
-                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
+                  <Txt style={{ marginLeft: SPACE.sm, flexShrink: 1, minWidth: 0 }}>
                     {relativeDay(loggedAt.toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
                     })}
                     {" · "}
                     {formatTime(loggedAt.toISOString())}
-                  </Text>
+                  </Txt>
                 </Pressable>
                 <InlineDateTimePicker
                   visible={timePickerOpen}
@@ -490,17 +443,14 @@ export function InjectionEditSheet({
                 />
 
                 <FieldLabel>{t("injection.insulinType")}</FieldLabel>
-                <View className="flex-row mb-4" style={{ gap: 8 }}>
+                <View className="flex-row mb-4" style={{ gap: SPACE.sm }}>
                   {(["basal", "bolus"] as const).map((type) => (
                     <Chip
                       key={type}
                       label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
-                      on={insulinType === type}
-                      onPress={() => {
-                        hapticSelect();
-                        setInsulinType(type);
-                      }}
-                      style={{ flex: 1 }}
+                      selected={insulinType === type}
+                      onPress={() => setInsulinType(type)}
+                      className="flex-1"
                     />
                   ))}
                 </View>
@@ -520,12 +470,12 @@ export function InjectionEditSheet({
                   decimals={1}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
-                  style={{ marginBottom: doseHintVisible(injectionDoseOk(dose, injection?.dose_units ?? null), doseInteracted) ? 6 : 16 }}
+                  style={{ marginBottom: doseHintVisible(injectionDoseOk(dose, injection?.dose_units ?? null), doseInteracted) ? SPACE.sm : SPACE.lg }}
                 />
                 {doseHintVisible(injectionDoseOk(dose, injection?.dose_units ?? null), doseInteracted) ? (
-                  <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 12 }}>
+                  <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.md }}>
                     {t("basalConfirm.doseRequired")}
-                  </Text>
+                  </Txt>
                 ) : null}
 
                 {/* Reflows smoothly when the bolus-label row appears/disappears,
@@ -538,7 +488,7 @@ export function InjectionEditSheet({
                       style={{ marginBottom: 16 }}
                     >
                       <FieldLabel>{t("injection.bolusKindLabel")}</FieldLabel>
-                      <View className="flex-row" style={{ gap: 8 }}>
+                      <View className="flex-row" style={{ gap: SPACE.sm }}>
                         {BOLUS_KINDS.map((kind) => (
                           <Chip
                             key={kind}
@@ -547,12 +497,12 @@ export function InjectionEditSheet({
                                 ? t("injection.bolusKindMeal")
                                 : t("injection.bolusKindCorrection")
                             }
-                            on={bolusKind === kind}
+                            selected={bolusKind === kind}
                             onPress={() => {
-                              hapticSelect();
+                              if (bolusKind === kind) hapticSelect();
                               setBolusKind((prev) => (prev === kind ? null : kind));
                             }}
-                            style={{ flex: 1 }}
+                            className="flex-1"
                           />
                         ))}
                       </View>
@@ -560,7 +510,7 @@ export function InjectionEditSheet({
                   ) : null}
 
                   <FieldLabel>{t("injection.selectSite")}</FieldLabel>
-                  <View className="flex-row items-center mb-4" style={{ gap: 8 }}>
+                  <View className="flex-row items-center mb-4" style={{ gap: SPACE.sm }}>
                     <Pressable
                       onPress={() => {
                         hapticSelect();
@@ -571,24 +521,20 @@ export function InjectionEditSheet({
                       accessibilityState={{ selected: hasSite }}
                       accessibilityLabel={siteSummaryLabel}
                       className="flex-row items-center flex-1"
-                      style={[inputStyle(), { minHeight: 44 }]}
+                      style={[inputStyle(), { minHeight: HIT_TARGET }]}
                     >
                       <Ionicons
                         name="location-outline"
                         size={16}
                         color={hasSite ? THEME.accent : THEME.textMuted}
                       />
-                      <Text
+                      <Txt
+                        tone={hasSite ? "text" : "muted"}
                         numberOfLines={1}
-                        style={{
-                          color: hasSite ? THEME.text : THEME.textMuted,
-                          marginLeft: 8,
-                          fontSize: 13,
-                          flex: 1,
-                        }}
+                        style={{ marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}
                       >
                         {siteSummaryLabel}
-                      </Text>
+                      </Txt>
                       <DirIcon name="chevron-forward-outline" size={16} color={THEME.textMuted} />
                     </Pressable>
                     {hasSite ? (
@@ -612,31 +558,13 @@ export function InjectionEditSheet({
                   <GradientCTA label={t("common.save")} disabled={saving || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)} onPress={save} />
 
                   {onDelete ? (
-                    <Pressable
+                    <Button
+                      label={t("common.delete")}
+                      variant="destructive"
                       onPress={handleDelete}
-                      accessibilityRole="button"
-                      accessibilityLabel={t("common.delete")}
-                      hitSlop={8}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        minHeight: 44,
-                        marginTop: 14,
-                      }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
-                      <Text
-                        style={{
-                          color: GLUCOSE_RICH.low,
-                          fontSize: 13,
-                          fontWeight: "700",
-                          marginLeft: 6,
-                        }}
-                      >
-                        {t("common.delete")}
-                      </Text>
-                    </Pressable>
+                      icon={<Ionicons name="trash-outline" size={16} color={THEME.danger} />}
+                      className="mt-3"
+                    />
                   ) : null}
                 </Animated.View>
               </ScrollView>
