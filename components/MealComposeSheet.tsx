@@ -206,7 +206,7 @@ export function MealComposeSheet({
         >
           <Pressable
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
-            style={{ backgroundColor: THEME.bg.g1, paddingBottom: insets.bottom + 20 }}
+            style={{ backgroundColor: THEME.bg.g1, paddingBottom: insets.bottom + 20, flexShrink: 1 }}
             onPress={(e) => e.stopPropagation()}
             accessible={false}
             focusable={false}

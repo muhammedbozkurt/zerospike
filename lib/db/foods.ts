@@ -263,6 +263,12 @@ export async function getFood(id: string): Promise<Food | null> {
   return db.getFirstAsync<Food>("SELECT * FROM foods WHERE id = ?;", [id]);
 }
 
+/** Catalogue row by its English name (store capture scenes only). */
+export async function getCatalogFoodByEnglishName(name: string): Promise<Food | null> {
+  const db = await getDb();
+  return db.getFirstAsync<Food>("SELECT * FROM foods WHERE name_en = ? AND is_custom = 0 LIMIT 1;", [name]);
+}
+
 /** Offline barcode lookup used by the camera scanner. */
 export async function getFoodByBarcode(barcode: string): Promise<Food | null> {
   const db = await getDb();

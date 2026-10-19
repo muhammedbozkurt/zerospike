@@ -1078,7 +1078,6 @@ export default function FoodScreen() {
         ["White bread", 28],
         ["Boiled egg", 50],
         ["Milk", 244],
-        ["Apple", 182],
       ];
       const foods = await Promise.all(picks.map(([name]) => getCatalogFoodByEnglishName(name)));
       if (!alive) return;

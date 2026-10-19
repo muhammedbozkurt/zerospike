@@ -20,7 +20,7 @@ import { FeedbackHost, useFeedback } from "./Feedback";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { upper } from "../lib/upper";
 
-const fieldStyle = {
+const fieldStyleOf = () => ({
   borderRadius: RADIUS.md,
   borderWidth: 1,
   borderColor: THEME.border,
@@ -28,7 +28,7 @@ const fieldStyle = {
   paddingHorizontal: 14,
   paddingVertical: 12,
   color: THEME.text,
-} as const;
+} as const);
 
 function Label({ children }: { children: string }) {
   return (
@@ -209,7 +209,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
                 setDirty(true);
               }}
               maxLength={120}
-              style={[fieldStyle, INPUT_TEXT, { marginBottom: 14 }]}
+              style={[fieldStyleOf(), INPUT_TEXT, { marginBottom: 14 }]}
               accessibilityLabel={t("calculator.carbOnlyName")}
             />
             <Label>{t("calculator.carbOnlyCarbs")}</Label>
@@ -221,7 +221,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
               }}
               keyboardType="decimal-pad"
               maxLength={6}
-              style={[fieldStyle, INPUT_TEXT, TABULAR]}
+              style={[fieldStyleOf(), INPUT_TEXT, TABULAR]}
               accessibilityLabel={t("calculator.carbOnlyCarbs")}
             />
           </GlassCard>
@@ -230,7 +230,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
           <Pressable
             onPress={() => setTimeOpen((v) => !v)}
             className="flex-row items-center mb-4"
-            style={fieldStyle}
+            style={fieldStyleOf()}
           >
             <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
             <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
@@ -264,7 +264,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
             placeholder={t("calculator.notePlaceholder")}
             placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
             multiline
-            style={[fieldStyle, INPUT_TEXT, { marginBottom: 12, minHeight: 72 }]}
+            style={[fieldStyleOf(), INPUT_TEXT, { marginBottom: 12, minHeight: 72 }]}
             textAlignVertical="top"
           />
 

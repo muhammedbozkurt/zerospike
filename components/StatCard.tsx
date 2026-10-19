@@ -90,6 +90,7 @@ export function StatCard({
           ? { backgroundColor: THEME.surface, borderWidth: 1, borderColor: THEME.border }
           : undefined,
         glass && glowColor ? glowShadow(glowColor, 26, 0.4, "fill") : undefined,
+        fixedSize ? { paddingHorizontal: 10 } : undefined,
         style,
       ]}
     >
@@ -109,12 +110,15 @@ export function StatCard({
 
       <View
         className="items-end"
-        style={{ flexDirection: rtl ? "row-reverse" : "row", flexWrap: "nowrap" }}
+        style={{
+          flexDirection: rtl ? "row-reverse" : "row",
+          flexWrap: "nowrap",
+        }}
       >
         {suffixFirst ? suffixNode : null}
         {display !== undefined && fixedSize ? (
           <Text
-            style={[{ color: valueColor, fontSize: 22 }, TABULAR]}
+            style={[{ color: valueColor, fontSize: 20 }, TABULAR]}
             className="font-extrabold"
             numberOfLines={1}
           >
