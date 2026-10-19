@@ -5,14 +5,14 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Text,
   TextInput,
   View,
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
-import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
+import { Button, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
@@ -26,8 +26,9 @@ const inputStyle = () => ({
   borderWidth: 1,
   borderColor: THEME.border,
   backgroundColor: THEME.surface,
-  paddingHorizontal: 14,
-  paddingVertical: 12,
+  paddingHorizontal: SPACE.md,
+  paddingVertical: SPACE.md,
+  fontSize: TYPE.body.fontSize,
   color: THEME.text,
 });
 
@@ -107,7 +108,7 @@ export function SavedMedEditSheet({
                 borderRightWidth: 1,
                 borderColor: THEME.border,
                 backgroundColor: THEME.bg.g1,
-                paddingHorizontal: 18,
+                paddingHorizontal: SPACE.lg,
                 paddingTop: 8,
                 paddingBottom: 8,
               },
@@ -123,12 +124,9 @@ export function SavedMedEditSheet({
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View className="flex-row items-center justify-between mb-4">
-              <Text
-                numberOfLines={1}
-                style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
-              >
+              <Txt kind="subtitle" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
                 {isEdit ? t("meds.editSavedTitle") : t("meds.addSavedTitle")}
-              </Text>
+              </Txt>
               <Pressable
                 onPress={onClose}
                 hitSlop={12}
@@ -156,39 +154,28 @@ export function SavedMedEditSheet({
                 autoFocus
                 returnKeyType="done"
                 onSubmitEditing={submit}
-                style={[inputStyle(), { marginBottom: 18 }]}
+                style={[inputStyle(), { marginBottom: SPACE.lg }]}
               />
 
               <GradientCTA
                 label={t("common.save")}
                 disabled={!canSave}
                 onPress={submit}
-                style={{ marginBottom: 10 }}
+                style={{ marginBottom: SPACE.sm }}
               />
-              <Pressable
-                onPress={onClose}
-                accessibilityRole="button"
-                className="items-center py-1"
-                style={{ minHeight: HIT_TARGET }}
-              >
-                <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("common.cancel")}</Text>
-              </Pressable>
+              <Button label={t("common.cancel")} variant="tertiary" onPress={onClose} />
 
               {isEdit ? (
-                <Pressable
+                <Button
+                  label={t("common.delete")}
+                  variant="destructive"
                   onPress={() => {
                     onClose();
                     onDelete?.();
                   }}
-                  accessibilityRole="button"
-                  className="flex-row items-center justify-center py-1 mt-2"
-                  style={{ minHeight: HIT_TARGET }}
-                >
-                  <Ionicons name="trash-outline" size={15} color={GLUCOSE_RICH.low} />
-                  <Text style={{ color: GLUCOSE_RICH.low, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>
-                    {t("common.delete")}
-                  </Text>
-                </Pressable>
+                  icon={<Ionicons name="trash-outline" size={15} color={THEME.danger} />}
+                  className="mt-2"
+                />
               ) : null}
             </ScrollView>
           </Pressable>

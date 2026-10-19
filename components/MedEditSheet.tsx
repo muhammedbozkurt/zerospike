@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Text,
   TextInput,
   View,
 } from "react-native";
@@ -21,7 +20,8 @@ import { FeedbackHost, useFeedback } from "./Feedback";
 import { hapticSuccess } from "../lib/haptics";
 import { logEvent } from "../lib/analytics";
 import { formatTime, relativeDay } from "../lib/format";
-import { GLUCOSE_RICH, RADIUS, THEME, glow } from "../lib/theme/tokens";
+import { HIT_TARGET, RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
+import { Button, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { GradientCTA } from "./rich/GradientCTA";
@@ -40,16 +40,17 @@ const inputStyle = () => ({
   borderWidth: 1,
   borderColor: THEME.border,
   backgroundColor: THEME.surface,
-  paddingHorizontal: 14,
-  paddingVertical: 12,
+  paddingHorizontal: SPACE.md,
+  paddingVertical: SPACE.md,
+  fontSize: TYPE.body.fontSize,
   color: THEME.text,
 });
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+    <Txt kind="caption" tone="muted" style={{ fontWeight: "700", marginBottom: SPACE.sm }}>
       {children}
-    </Text>
+    </Txt>
   );
 }
 
@@ -166,7 +167,7 @@ export function MedEditSheet({
                 borderRightWidth: 1,
                 borderColor: THEME.border,
                 backgroundColor: THEME.bg.g1,
-                paddingHorizontal: 18,
+                paddingHorizontal: SPACE.lg,
                 paddingTop: 8,
                 paddingBottom: 8,
               },
@@ -182,12 +183,9 @@ export function MedEditSheet({
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View className="flex-row items-center justify-between mb-4">
-              <Text
-                numberOfLines={1}
-                style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
-              >
+              <Txt kind="subtitle" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
                 {t("calculator.editTitle")}
-              </Text>
+              </Txt>
               <Pressable
                 onPress={onClose}
                 hitSlop={12}
@@ -216,18 +214,18 @@ export function MedEditSheet({
                   Keyboard.dismiss();
                   setTimePickerOpen((v) => !v);
                 }}
-                className="flex-row items-center mb-5"
-                style={inputStyle()}
+                className="flex-row items-center"
+                style={[inputStyle(), { minHeight: HIT_TARGET, marginBottom: SPACE.lg }]}
               >
                 <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
-                <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
+                <Txt style={{ marginLeft: SPACE.sm, flexShrink: 1, minWidth: 0 }}>
                   {relativeDay(loggedAt.toISOString(), {
                     today: t("common.today"),
                     yesterday: t("common.yesterday"),
                   })}
                   {" · "}
                   {formatTime(loggedAt.toISOString())}
-                </Text>
+                </Txt>
               </Pressable>
               <InlineDateTimePicker
                 visible={timePickerOpen}
@@ -252,32 +250,19 @@ export function MedEditSheet({
                 placeholderTextColor={THEME.textMuted}
                 accessibilityLabel={t("injection.notePlaceholder")}
                 returnKeyType="done"
-                style={[inputStyle(), { marginBottom: 20 }]}
+                style={[inputStyle(), { marginBottom: SPACE.lg }]}
               />
 
               <GradientCTA label={t("common.save")} disabled={saving} onPress={save} />
 
               {onDelete ? (
-                <Pressable
+                <Button
+                  label={t("common.delete")}
+                  variant="destructive"
                   onPress={handleDelete}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("common.delete")}
-                  hitSlop={8}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    minHeight: 44,
-                    marginTop: 14,
-                  }}
-                >
-                  <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
-                  <Text
-                    style={{ color: GLUCOSE_RICH.low, fontSize: 13, fontWeight: "700", marginLeft: 6 }}
-                  >
-                    {t("common.delete")}
-                  </Text>
-                </Pressable>
+                  icon={<Ionicons name="trash-outline" size={16} color={THEME.danger} />}
+                  className="mt-3"
+                />
               ) : null}
             </ScrollView>
           </Pressable>

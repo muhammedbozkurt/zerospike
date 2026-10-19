@@ -2,9 +2,7 @@ import React, { useRef, useState } from "react";
 import {
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Pressable,
   ScrollView,
-  Text,
   useWindowDimensions,
   View, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,10 +12,11 @@ import { useTranslation } from "react-i18next";
 import Svg, { Circle, Ellipse, Path } from "react-native-svg";
 
 import { INJECTION_STEPS } from "../lib/data/injectionGuide";
-import { AppBackground, GlassCard, GradientCTA } from "../components/rich";
+import { AppBackground, GradientCTA } from "../components/rich";
+import { Button, Card, Txt } from "../components/ui";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { FeedbackHost } from "../components/Feedback";
-import { GLUCOSE_RICH, MODAL_TOP_PAD, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, MODAL_TOP_PAD, SPACE, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "../components/rich/GlassCard";
 
 /**
@@ -66,7 +65,7 @@ function InjectionGuideScreen() {
   const scroller = useRef<ScrollView>(null);
 
   const pageWidth = width;
-  const cardWidth = width - 32;
+  const cardWidth = width - 2 * SPACE.lg;
 
   function onScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const next = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
@@ -93,12 +92,12 @@ function InjectionGuideScreen() {
         >
           <Ionicons name="medical-outline" size={17} color={GLUCOSE_RICH.high} />
           <View className="flex-1 ml-3">
-            <Text style={{ color: GLUCOSE_RICH.high, fontWeight: "800", fontSize: 13 }}>
+            <Txt kind="caption" style={{ color: GLUCOSE_RICH.high, fontWeight: "800" }}>
               {t("disclaimer.title")}
-            </Text>
-            <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 18, marginTop: 2, opacity: 0.85 }}>
+            </Txt>
+            <Txt kind="caption" style={{ marginTop: SPACE.xs, opacity: 0.85 }}>
               {t("injectionGuide.disclaimer")}
-            </Text>
+            </Txt>
           </View>
         </View>
 
@@ -113,45 +112,41 @@ function InjectionGuideScreen() {
           style={{ flexGrow: 0 }}
         >
           {INJECTION_STEPS.map((step, i) => (
-            <View key={step.titleKey} style={{ width: pageWidth, paddingHorizontal: 16 }}>
-              <GlassCard
+            <View key={step.titleKey} style={{ width: pageWidth, paddingHorizontal: SPACE.lg }}>
+              <Card
                 glow
-                style={{ width: cardWidth, alignItems: "center", paddingVertical: 22, gap: 10 }}
+                style={{ width: cardWidth, alignItems: "center", gap: SPACE.md }}
               >
                 <View style={glow(THEME.accent, 30, 0.45)}>
                   <BodyMark />
                 </View>
-                <View className="flex-row items-center" style={{ gap: 8 }}>
-                  <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "800" }}>
+                <View className="flex-row items-center" style={{ gap: SPACE.sm }}>
+                  <Txt kind="caption" tone="accent" tabular style={{ fontWeight: "800" }}>
                     {i + 1}
-                  </Text>
+                  </Txt>
                   <Ionicons
                     name={step.icon as keyof typeof Ionicons.glyphMap}
                     size={16}
                     color={THEME.accent}
                   />
-                  <Text style={{ color: THEME.text, fontSize: 15, fontWeight: "800" }}>
+                  <Txt kind="subtitle" style={{ flexShrink: 1, minWidth: 0 }}>
                     {t(step.titleKey)}
-                  </Text>
+                  </Txt>
                 </View>
-                <Text
-                  style={{
-                    color: THEME.textMuted,
-                    fontSize: 13,
-                    lineHeight: 20,
-                    textAlign: "center",
-                    paddingHorizontal: 8,
-                  }}
+                <Txt
+                  kind="caption"
+                  tone="muted"
+                  style={{ textAlign: "center", paddingHorizontal: SPACE.sm }}
                 >
                   {t(step.bodyKey)}
-                </Text>
-              </GlassCard>
+                </Txt>
+              </Card>
             </View>
           ))}
         </ScrollView>
 
         {/* Pager dots (mockup 07) */}
-        <View className="flex-row justify-center mt-4" style={{ gap: 6 }}>
+        <View className="flex-row justify-center mt-4" style={{ gap: SPACE.sm }}>
           {INJECTION_STEPS.map((step, i) => (
             <View
               key={step.titleKey}
@@ -169,20 +164,17 @@ function InjectionGuideScreen() {
         </View>
       </View>
 
-      <View style={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}>
+      <View style={{ paddingHorizontal: SPACE.lg, paddingBottom: insets.bottom + SPACE.lg }}>
         {/* Rotation is the one question this deck raises most; the starter goes
             into Spike's input prefilled, the user still sends it. */}
-        <Pressable
+        <Button
+          label={t("spike.askSpike")}
+          variant="tertiary"
+          size="sm"
           onPress={() => router.push({ pathname: "/spike", params: { ask: "suggest3" } })}
-          className="flex-row items-center justify-center py-2 mb-1"
-          accessibilityRole="button"
-          accessibilityLabel={t("spike.askSpike")}
-        >
-          <Ionicons name="sparkles-outline" size={14} color={THEME.accent} />
-          <Text style={{ color: THEME.accent, fontSize: 12, marginLeft: 6 }}>
-            {t("spike.askSpike")}
-          </Text>
-        </Pressable>
+          icon={<Ionicons name="sparkles-outline" size={14} color={THEME.accent} />}
+          className="mb-1"
+        />
         <GradientCTA
           label={t("common.close")}
           variant="sub"

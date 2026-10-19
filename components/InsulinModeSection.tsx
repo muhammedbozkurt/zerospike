@@ -1,12 +1,12 @@
 import React from "react";
-import { Switch, Text, View } from "react-native";
+import { Switch, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import type { DiabetesType, InsulinMode } from "../lib/db/types";
 import { isNoInsulinDiabetesType } from "../lib/diabetesDefaults";
-import { THEME, switchColors } from "../lib/theme/tokens";
+import { SPACE, switchColors } from "../lib/theme/tokens";
 import { FormCard } from "./form";
-import { Segmented } from "./ui";
+import { Segmented, Txt } from "./ui";
 
 const MODE_LABEL_KEYS: Record<InsulinMode, string> = {
   none: "modeNone",
@@ -40,9 +40,11 @@ export function InsulinModeSection({
 
   const oralCard = (
     <FormCard icon="medical-outline" title={t("meds.toggleLabel")}>
-      <View className="px-4 py-3.5 flex-row items-center">
+      <View className="px-4 py-3 flex-row items-center">
         <View className="flex-1 pr-3">
-          <Text className="text-mut text-xs leading-4">{t("meds.toggleHint")}</Text>
+          <Txt kind="caption" tone="muted">
+            {t("meds.toggleHint")}
+          </Txt>
         </View>
         <Switch
           value={oralMeds}
@@ -58,7 +60,7 @@ export function InsulinModeSection({
   return (
     <>
       <FormCard icon="layers-outline" title={t("settings.insulinMode")}>
-        <View className="px-4 py-3.5">
+        <View className="px-4 py-3">
           <Segmented
             options={(["none", "basal", "bolus", "both"] as InsulinMode[]).map((m) => ({
               value: m,
@@ -71,9 +73,9 @@ export function InsulinModeSection({
               controls (e.g. right after switching in from prediabetes/none),
               without ever writing a mode the user has not chosen themselves. */}
           {insulinMode === "none" ? (
-            <Text className="text-mut text-xs mt-2 leading-4">
+            <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
               {t("settings.chooseInsulinHint")}
-            </Text>
+            </Txt>
           ) : null}
         </View>
       </FormCard>

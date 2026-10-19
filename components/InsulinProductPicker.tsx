@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
@@ -8,7 +8,9 @@ import {
   insulinProductById,
   productsByCategory,
 } from "../lib/insulinCatalog";
-import { ELEVATION, THEME } from "../lib/theme/tokens";
+import { ELEVATION, HIT_TARGET, SPACE, THEME, TYPE } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { Txt } from "./ui";
 import { withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
@@ -101,33 +103,37 @@ export function InsulinProductPicker({
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityValue={{ text: displayText }}
+        android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
         className="flex-row items-center justify-between rounded-2xl border border-hair bg-glass"
         style={{
-          minHeight: size === "lg" ? 56 : 44,
-          paddingHorizontal: size === "lg" ? 18 : 14,
+          minHeight: size === "lg" ? 56 : HIT_TARGET,
+          paddingHorizontal: size === "lg" ? SPACE.lg : SPACE.md,
         }}
       >
-        <Text
-          className="flex-1 font-medium text-ink mr-2"
+        <Txt
           numberOfLines={1}
-          style={{ flexShrink: 1, fontSize: size === "lg" ? 16 : 15 }}
+          style={{ flex: 1, flexShrink: 1, minWidth: 0, marginRight: SPACE.sm, fontWeight: "500" }}
         >
           {displayText}
-        </Text>
+        </Txt>
         <Ionicons name="chevron-down" size={16} color={THEME.textMuted} />
       </Pressable>
 
       {selectedProduct && !isOther ? (
-        <Text className="text-mut text-xs mt-2 leading-4">
+        <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
           {t("settings.insulinDurationLabel")}
           {": ~"}
           {t("settings.hours", { n: num(selectedProduct.durationHours) })}
-        </Text>
+        </Txt>
       ) : null}
-      {hint ? <Text className="text-mut text-xs mt-2 leading-4">{hint}</Text> : null}
+      {hint ? (
+        <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
+          {hint}
+        </Txt>
+      ) : null}
 
       {isOther && onOtherChange ? (
-        <View style={{ marginTop: 10 }}>
+        <View style={{ marginTop: SPACE.md }}>
           <InsulinOtherField value={otherValue ?? null} onChange={onOtherChange} label={label} />
         </View>
       ) : null}
@@ -160,9 +166,13 @@ export function InsulinProductPicker({
             focusable={false}
             importantForAccessibility="auto"
           >
-            <Text className="text-ink text-lg font-bold mb-3 px-1" numberOfLines={1}>
+            <Txt
+              kind="subtitle"
+              numberOfLines={1}
+              style={{ marginBottom: SPACE.md, paddingHorizontal: SPACE.xs }}
+            >
               {label}
-            </Text>
+            </Txt>
             <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
               {allowNotSet ? (
                 <ProductRow
@@ -217,12 +227,12 @@ export function InsulinOtherField({
         returnKeyType="done"
         accessibilityLabel={label ?? t("insulinPicker.otherPlaceholder")}
         className="rounded-2xl border border-hair bg-glass px-3.5 text-ink"
-        style={{ minHeight: 44, fontSize: 15 }}
+        style={{ minHeight: HIT_TARGET, fontSize: TYPE.body.fontSize }}
       />
       {isEmpty ? (
-        <Text className="text-mut text-xs mt-1.5 leading-4">
+        <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
           {t("insulinPicker.otherEmpty")}
-        </Text>
+        </Txt>
       ) : null}
     </View>
   );
@@ -242,17 +252,19 @@ function ProductRow({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      className={`flex-row items-center rounded-2xl px-3 mb-1.5 border ${
+      android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+      className={`flex-row items-center rounded-2xl px-3 mb-2 border ${
         active ? "bg-brand/10 border-brand/40" : "bg-glass border-transparent"
       }`}
-      style={{ minHeight: 44 }}
+      style={{ minHeight: HIT_TARGET }}
     >
-      <Text
-        className={`flex-1 font-medium ${active ? "text-brand" : "text-ink"}`}
+      <Txt
+        tone={active ? "accent" : "text"}
+        style={{ flex: 1, minWidth: 0, fontWeight: active ? "600" : "500" }}
         numberOfLines={2}
       >
         {label}
-      </Text>
+      </Txt>
       {active ? (
         <Ionicons name="checkmark-circle" size={20} color={THEME.accent} />
       ) : null}

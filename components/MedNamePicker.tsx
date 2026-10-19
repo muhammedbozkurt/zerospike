@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { listSavedMeds, upsertMedUse } from "../lib/db/meds";
 import type { SavedMed } from "../lib/db/types";
 import { hapticSelect } from "../lib/haptics";
-import { ELEVATION, RADIUS, THEME } from "../lib/theme/tokens";
+import { ELEVATION, HIT_TARGET, RADIUS, SPACE, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { withAlpha } from "./rich/GlassCard";
+import { Button, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
 import { SavedMedEditSheet } from "./SavedMedEditSheet";
 
@@ -134,25 +137,13 @@ export function MedNamePicker({
   // dropdown).
   if (loaded && meds.length === 0 && known) {
     return (
-      <View style={{ marginBottom: 14 }}>
-        <Pressable
+      <View style={{ marginBottom: SPACE.lg }}>
+        <Button
+          label={t("meds.addSavedTitle")}
+          variant="outlined"
           onPress={() => setAddOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={t("meds.addSavedTitle")}
-          className="flex-row items-center justify-center active:opacity-80"
-          style={{
-            borderRadius: RADIUS.md,
-            borderWidth: 1,
-            borderStyle: "dashed",
-            borderColor: THEME.border,
-            paddingVertical: 12,
-          }}
-        >
-          <Ionicons name="add" size={18} color={THEME.accent} />
-          <Text style={{ color: THEME.accent, marginLeft: 8, fontSize: 14, fontWeight: "700" }}>
-            {t("meds.addSavedTitle")}
-          </Text>
-        </Pressable>
+          icon={<Ionicons name="add" size={18} color={THEME.accent} />}
+        />
 
         <SavedMedEditSheet
           visible={addOpen}
@@ -173,31 +164,30 @@ export function MedNamePicker({
     value || (loaded && !autoFillFirst ? (emptyLabel ?? t("common.loading")) : t("common.loading"));
 
   return (
-    <View style={{ marginBottom: 14 }}>
+    <View style={{ marginBottom: SPACE.lg }}>
       <Pressable
         onPress={() => setOpen(true)}
         disabled={!loaded}
         accessibilityRole="button"
         accessibilityLabel={t("meds.entryLabel")}
         accessibilityValue={{ text: displayText }}
+        android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
         className="flex-row items-center"
         style={{
           borderRadius: RADIUS.md,
           borderWidth: 1,
           borderColor: THEME.border,
           backgroundColor: THEME.surface,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
+          paddingHorizontal: SPACE.md,
+          paddingVertical: SPACE.md,
+          minHeight: HIT_TARGET,
           opacity: loaded ? 1 : 0.6,
         }}
       >
         <Ionicons name="medical-outline" size={16} color={THEME.textMuted} />
-        <Text
-          style={{ color: THEME.text, marginLeft: 8, fontSize: 14, flex: 1 }}
-          numberOfLines={1}
-        >
+        <Txt style={{ marginLeft: SPACE.sm, flex: 1, minWidth: 0 }} numberOfLines={1}>
           {displayText}
-        </Text>
+        </Txt>
         <Ionicons name="chevron-down" size={16} color={THEME.textMuted} />
       </Pressable>
 
@@ -229,27 +219,17 @@ export function MedNamePicker({
             focusable={false}
             importantForAccessibility="auto"
           >
-            <Text className="text-ink text-lg font-bold mb-3 px-1">
+            <Txt kind="subtitle" style={{ marginBottom: SPACE.md, paddingHorizontal: SPACE.xs }}>
               {t("meds.entryLabel")}
-            </Text>
+            </Txt>
 
-            <Pressable
+            <Button
+              label={t("meds.addSavedTitle")}
+              variant="outlined"
               onPress={openAddFromList}
-              accessibilityRole="button"
-              accessibilityLabel={t("meds.addSavedTitle")}
-              className="flex-row items-center rounded-2xl px-3 mb-2"
-              style={{
-                minHeight: 44,
-                borderWidth: 1,
-                borderStyle: "dashed",
-                borderColor: THEME.border,
-              }}
-            >
-              <Ionicons name="add" size={18} color={THEME.accent} />
-              <Text style={{ color: THEME.accent, marginLeft: 8, fontWeight: "700" }}>
-                {t("meds.addSavedTitle")}
-              </Text>
-            </Pressable>
+              icon={<Ionicons name="add" size={18} color={THEME.accent} />}
+              className="mb-2"
+            />
 
             <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
               {rows.map((row) => (
@@ -290,17 +270,19 @@ function MedRow({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      className={`flex-row items-center rounded-2xl px-3 mb-1.5 border ${
+      android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+      className={`flex-row items-center rounded-2xl px-3 mb-2 border ${
         active ? "bg-brand/10 border-brand/40" : "bg-glass border-transparent"
       }`}
-      style={{ minHeight: 44 }}
+      style={{ minHeight: HIT_TARGET }}
     >
-      <Text
-        className={`flex-1 font-medium ${active ? "text-brand" : "text-ink"}`}
+      <Txt
+        tone={active ? "accent" : "text"}
+        style={{ flex: 1, minWidth: 0, fontWeight: active ? "600" : "500" }}
         numberOfLines={2}
       >
         {label}
-      </Text>
+      </Txt>
       {active ? (
         <Ionicons name="checkmark-circle" size={20} color={THEME.accent} />
       ) : null}
