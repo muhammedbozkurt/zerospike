@@ -276,13 +276,6 @@ export function editableGrams(item: EditableItem): number {
   return Math.min(parseGramsInput(item.gramsText), CARB_GRAMS_MAX);
 }
 
-export function editableLabel(item: EditableItem): string {
-  const quantity = parseGramsInput(item.quantityText);
-  const amount = [quantity > 0 ? String(quantity) : "", item.unit.trim()].filter(Boolean).join(" ");
-  const name = item.name.trim();
-  return amount ? `${name} (${amount})` : name;
-}
-
 function composeItems(items: readonly EditableItem[]): ComposeItem[] {
   return items.map((item) => ({
     key: item.key,
@@ -297,24 +290,6 @@ function composeItems(items: readonly EditableItem[]): ComposeItem[] {
 /** Total over the same rounded per-item figures that are written, so the sum shown is the sum saved. */
 export function editableTotal(items: readonly EditableItem[]): number {
   return composeMealInput(composeItems(items)).calculated_carbs_g;
-}
-
-/**
- * The journal row for the edited items. Portion stays 0: a free-text amount
- * ("2 slices") is not grams of food, and no dose is attached (insulin 0 is the
- * caller's, never derived from this).
- */
-export function estimateMealInput(items: readonly EditableItem[]): {
-  custom_food_name: string;
-  portion_g: number;
-  calculated_carbs_g: number;
-} {
-  const all = composeMealInput(composeItems(items));
-  const named = items.filter(hasItemName);
-  const label = composeMealInput(
-    composeItems(named).map((item, i) => ({ ...item, name: editableLabel(named[i]) || item.name }))
-  );
-  return { custom_food_name: label.custom_food_name, portion_g: 0, calculated_carbs_g: all.calculated_carbs_g };
 }
 
 /** A placeholder ("", spaces, only dashes) is not a name; a saved row without one would open as a calculator meal. */

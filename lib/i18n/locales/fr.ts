@@ -1544,7 +1544,6 @@ const fr: TranslationSchema = {
     placeholder: "ex. 1 baguette, du camembert, un café au lait",
     submit: "Estimer",
     estimating: "Estimation en cours...",
-    total: "Total approximatif",
     edit: "Modifier",
     note: "Il s'agit d'une estimation d'information alimentaire, pas d'une dose. Vérifiez vous-même son exactitude.",
     noteShort: "Estimation alimentaire, pas une dose.",

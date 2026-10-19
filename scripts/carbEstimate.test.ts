@@ -254,6 +254,7 @@ async function requests(): Promise<void> {
 
 async function quota(): Promise<void> {
   section("D. the free daily count (UTC day)");
+  eq("the typed text was never written to storage by the requests above", [...store.values()].some((v) => /bread|insulin|aaaa/i.test(v)), false);
   store.clear();
   const before = new Date("2026-10-19T23:59:59.000Z");
   const after = new Date("2026-10-20T00:00:00.000Z");
@@ -272,6 +273,9 @@ async function quota(): Promise<void> {
   store.clear();
   const exhausted = await limit.markCarbExhausted(true, before);
   eq("the server saying 'limit' fills the Pro tally", exhausted.remaining, 0);
+  await limit.noteCarbEstimate(false, before);
+  const carbKey = [...store.keys()].find((k) => k.startsWith("zerospike.carbEstimate")) as string;
+  eq("the stored count holds a day and a number only", Object.keys(JSON.parse(store.get(carbKey) as string)).sort(), ["count", "day"]);
   eq("the key is device scoped, not profile scoped", [...store.keys()].every((k) => k.startsWith("zerospike.carbEstimate")), true);
 }
 
@@ -285,11 +289,13 @@ function editing(): void {
   const cleared = items.map((i) => ({ ...i, gramsText: "abc" }));
   eq("unreadable grams are zero", client.editableTotal(cleared), 0);
   eq("a figure above 500 is capped", client.editableGrams({ ...items[0], gramsText: "900" }), 500);
-  const meal = client.estimateMealInput(edited);
+  const editedLines = client.editableToEstimateLines(edited);
+  const cmEdited = require("../lib/mealCompose");
+  const meal = cmEdited.composeMealInput(cmEdited.addEstimateLines([], editedLines));
   eq("the journal row carries the edited total", meal.calculated_carbs_g, 43.1);
   eq("the portion stays 0, no grams of food are invented", meal.portion_g, 0);
   ok("the name lists the items", meal.custom_food_name.includes("Bread") && meal.custom_food_name.includes("Milk"), meal.custom_food_name);
-  eq("no insulin field exists on the row", Object.keys(meal).sort(), ["calculated_carbs_g", "custom_food_name", "portion_g"]);
+  eq("insulin on the row is always 0", meal.insulin_dose_units, 0);
 
   eq("no result on screen: add is off", client.canAddEstimate({ resultShown: false, items: [], saving: false }), false);
   eq("a result with items: add is on", client.canAddEstimate({ resultShown: true, items, saving: false }), true);
@@ -299,9 +305,11 @@ function editing(): void {
   eq("a dash-only item cannot be added", client.canAddEstimate({ resultShown: true, items: dash, saving: false }), false);
   eq("a blank-name item cannot be added", client.canAddEstimate({ resultShown: true, items: [{ ...dash[0], name: "   " }], saving: false }), false);
   eq("one named item among blanks can be added", client.canAddEstimate({ resultShown: true, items: [...dash, ...items], saving: false }), true);
-  const mixed = client.estimateMealInput([...dash, ...items]);
+  const cmMixed = require("../lib/mealCompose");
+  const mixed = cmMixed.composeMealInput(cmMixed.addEstimateLines([], client.editableToEstimateLines([...dash, ...items])));
   ok("the saved name has no dash and no blank piece", !mixed.custom_food_name.includes("-") && mixed.custom_food_name.startsWith("Bread"), mixed.custom_food_name);
-  eq("blank-name items still count toward the carbs", mixed.calculated_carbs_g, 100.6);
+  eq("blank-name items still count toward the shown total", client.editableTotal([...dash, ...items]), 100.6);
+  eq("but the saved total only holds the named items", mixed.calculated_carbs_g, 40.6);
   const lines = client.editableToEstimateLines([...dash, ...edited]);
   eq("add-to-meal lines drop the nameless item", lines.map((l: { name: string }) => l.name), ["Bread", "Egg", "Milk"]);
   eq("add-to-meal lines carry the edited figure", lines[0].grams_carb, 30.5);
@@ -330,7 +338,6 @@ function sourcePins(): void {
   const clientSrc = read("lib/ai/carbEstimateClient.ts");
   const limitSrc = read("lib/ai/carbEstimateLimit.ts");
   const food = read("app/(tabs)/food.tsx");
-  const schema = read("lib/analytics/eventSchema.ts");
 
   eq("onAdd is called in exactly one place", (sheet.match(/onAdd\(/g) ?? []).length, 1);
   ok("that place is the Add to meal button, behind canAdd, handing over estimate lines", /onPress=\{\(\) => \{\s*if \(canAdd && items\) \{\s*onAdd\(editableToEstimateLines\(items\)\);/.test(sheet));
@@ -340,7 +347,7 @@ function sourcePins(): void {
   ok("the short note sits above the scrolling result, not inside it", sheet.indexOf("{top}") < sheet.indexOf("<ScrollView"));
   ok("the result arriving does not call onAdd", !/estimateCarbs\([\s\S]*?onAdd\(/.test(sheet.slice(sheet.indexOf("async function submit"), sheet.indexOf("function replaceItem"))));
   ok("the fixed note is shown on the result", sheet.includes('t("carbEstimate.noteShort")'));
-  ok("food.tsx has no direct estimate save any more", !/saveEstimate|estimateMealInput/.test(food));
+  ok("food.tsx has no direct estimate save any more", !/saveEstimate/.test(food));
   ok("the estimate sheet hands its lines to the compose list", /onAdd=\{\(lines\) => \{\s*setComposeItems\(\(prev\) => addEstimateLines\(prev, lines\)\);/.test(food));
   ok("a composed meal is written through composeMealInput with insulin 0", /composeMealInput\(composeItems\)[\s\S]*insulin_dose_units: 0/.test(food));
   ok("composeMealInput writes a mixed meal carb-only (portion 0, no food)", (() => {
@@ -369,23 +376,22 @@ function sourcePins(): void {
   ok("consent: short lines and a details toggle, same keys as the Spike screen", ["consentShort1", "consentShort2", "consentShort3", "consentDetails"].every((k) => sheet.includes(`t("spike.${k}")`)));
   ok("consent: the grant call and the consent version are unchanged", sheet.includes("await grantSpikeConsent();") && read("lib/services/spikeConsent.ts").includes("SPIKE_CONSENT_VERSION = 2"));
   ok("no AsyncStorage use in the sheet", !/AsyncStorage/.test(sheet));
-  ok("the typed text is never stored: no setItem next to it in the client", !/setItem/.test(clientSrc));
-  ok("the count key holds a day and a number only", /JSON\.stringify\(\{ day: utcDayKey\(now\), count \}\)/.test(limitSrc));
   ok("no logging of the text anywhere", !/console\.|logCrash/.test(sheet + clientSrc));
   ok("food.tsx crash context has no text", /logCrash\(err, \{ screen: "food", save: "compose" \}\)/.test(food));
   ok("no adjustsFontSizeToFit in the new UI", !/adjustsFontSizeToFit/.test(sheet));
   ok("no hard-coded colour in the sheet (the scrim is the shared SCRIM)", (sheet.match(/#[0-9a-fA-F]{3,8}\b|rgba\(/g) ?? []).length === 0);
   const emDash = String.fromCharCode(0x2014);
   ok("no em dash in the new files", ![sheet, clientSrc, limitSrc].some((s) => s.includes(emDash)));
-  ok("the schema holds the two carb events", /carb_estimate_used/.test(schema) && /carb_estimate_blocked/.test(schema));
-  ok("their fields carry no text or grams", !/carb_estimate_(used|blocked): \{[^}]*(grams|text)/.test(schema.replace(/\n/g, " ")));
+  const events = require("../lib/analytics/eventSchema").EVENT_SCHEMA as Record<string, Record<string, unknown>>;
+  ok("the schema holds the two carb events", !!events.carb_estimate_used && !!events.carb_estimate_blocked);
+  ok("their fields carry no text or grams", ["carb_estimate_used", "carb_estimate_blocked"].every((e) => Object.keys(events[e]).every((f) => !/grams|text/i.test(f))));
   ok("the consent screen shows the carb paragraph", read("app/spike.tsx").includes('t("spike.consentCarb")'));
 }
 
 function locales(): void {
   section("G. nine languages");
   const langs = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
-  const keys = ["title", "help", "placeholder", "submit", "estimating", "total", "edit", "note", "noteShort", "addToMeal", "approx", "errorLimit", "errorBusy", "errorFailed", "errorInput", "errorNoFood", "entryButton", "proNudge", "itemName", "itemQuantity", "itemUnit", "itemCarbs"];
+  const keys = ["title", "help", "placeholder", "submit", "estimating", "edit", "note", "noteShort", "addToMeal", "approx", "errorLimit", "errorBusy", "errorFailed", "errorInput", "errorNoFood", "entryButton", "proNudge", "itemName", "itemQuantity", "itemUnit", "itemCarbs"];
   const dose = /doz|dose|dosis|dosi\b|dosage|جرعة|投与/i;
   for (const lang of langs) {
     const loc = require(`../lib/i18n/locales/${lang}`).default as { carbEstimate: Record<string, string>; spike: Record<string, string> };

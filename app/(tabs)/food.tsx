@@ -53,6 +53,8 @@ import { rankTemplates, templateNameTaken } from "../../lib/mealTemplates";
 import {
   addComposeItem,
   addEstimateLines,
+  composeCanSave,
+  composeCanSaveTemplate,
   composeItemFromFood,
   composeMealInput,
   composeTemplateItems,
@@ -997,7 +999,7 @@ export default function FoodScreen() {
   }
 
   async function saveCompose() {
-    if (!activeProfile || composeSaving || composeItems.length === 0) return;
+    if (!activeProfile || composeSaving || !composeCanSave(composeItems)) return;
     setComposeSaving(true);
     try {
       const input = composeMealInput(composeItems);
@@ -1043,7 +1045,7 @@ export default function FoodScreen() {
   }
 
   async function saveComposeTemplate(name: string) {
-    if (!activeProfile || composeSaving || composeItems.length === 0) return;
+    if (!activeProfile || composeSaving || !composeCanSaveTemplate(composeItems)) return;
     setComposeSaving(true);
     try {
       await createTemplate({
