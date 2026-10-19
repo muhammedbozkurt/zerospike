@@ -100,6 +100,8 @@ export function CarbEstimateSheet({
   const aborter = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
   const [consented, setConsented] = useState<boolean | null>(null);
+  const [agreed, setAgreed] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorKind | null>(null);
@@ -163,6 +165,7 @@ export function CarbEstimateSheet({
   }, []);
 
   async function accept() {
+    if (!agreed) return;
     await grantSpikeConsent();
     setConsented(await hasSpikeConsent());
   }
@@ -290,16 +293,83 @@ export function CarbEstimateSheet({
         >
           {t("spike.consentTitle")}
         </Text>
-        <View style={{ rowGap: 8, marginBottom: 14 }}>
-          <Text style={para}>{t("spike.consentSent")}</Text>
-          <Text style={para}>{t("spike.consentRecipient")}</Text>
-          <Text style={para}>{t("spike.consentNotSent")}</Text>
-          <Text style={para}>{t("spike.consentCarb")}</Text>
-          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>
-            {t("spike.consentScope")}
+        <View style={{ rowGap: 8, marginBottom: 10 }}>
+          <Text style={para}>{t("spike.consentShort1")}</Text>
+          <Text style={para}>{t("spike.consentShort2")}</Text>
+          <Text style={para}>{t("spike.consentShort3")}</Text>
+          <Text style={{ color: THEME.warning, fontSize: 12, lineHeight: 18 }}>
+            {t("spike.consentShortScope")}
           </Text>
         </View>
-        <Button label={t("spike.accept")} onPress={() => void accept()} />
+        {/* The short lines summarise the full text; every line of it sits
+            behind this toggle, as on the Spike consent screen. */}
+        <Pressable
+          onPress={() => {
+            hapticSelect();
+            setDetailsOpen((open) => !open);
+          }}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: detailsOpen }}
+          accessibilityLabel={t("spike.consentDetails")}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            columnGap: 4,
+            minHeight: HIT_TARGET,
+          }}
+        >
+          <Text style={{ color: THEME.accent, fontSize: 13 }}>{t("spike.consentDetails")}</Text>
+          <Ionicons
+            name={detailsOpen ? "chevron-up" : "chevron-down"}
+            size={14}
+            color={THEME.accent}
+          />
+        </Pressable>
+        {detailsOpen ? (
+          <View style={{ rowGap: 8, marginBottom: 10 }}>
+            <Text style={para}>{t("spike.consentSent")}</Text>
+            <Text style={para}>{t("spike.consentRecipient")}</Text>
+            <Text style={para}>{t("spike.consentNotSent")}</Text>
+            <Text style={para}>{t("spike.consentCarb")}</Text>
+            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>
+              {t("spike.consentSummaryNote")}
+            </Text>
+            <Text style={{ color: THEME.warning, fontSize: 12, lineHeight: 18 }}>
+              {t("spike.consentScope")}
+            </Text>
+            <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16 }}>
+              {t("spike.consentDeviceId")}
+            </Text>
+          </View>
+        ) : null}
+        <Pressable
+          onPress={() => {
+            hapticSelect();
+            setAgreed((v) => !v);
+          }}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: agreed }}
+          accessibilityLabel={t("spike.consentAgree")}
+          hitSlop={8}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            columnGap: 10,
+            minHeight: HIT_TARGET,
+            marginBottom: 6,
+          }}
+        >
+          <Ionicons
+            name={agreed ? "checkbox" : "square-outline"}
+            size={24}
+            color={agreed ? THEME.accent : THEME.textMuted}
+          />
+          <Text style={{ color: THEME.text, fontSize: 14, lineHeight: 20, flex: 1 }}>
+            {t("spike.consentAgree")}
+          </Text>
+        </Pressable>
+        <Button label={t("spike.accept")} disabled={!agreed} onPress={() => void accept()} />
         <View style={{ marginTop: 4 }}>
           <Button variant="tertiary" label={t("spike.notNow")} onPress={onClose} />
         </View>

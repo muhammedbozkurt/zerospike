@@ -340,12 +340,39 @@ function sourcePins(): void {
   ok("the short note sits above the scrolling result, not inside it", sheet.indexOf("{top}") < sheet.indexOf("<ScrollView"));
   ok("the result arriving does not call onAdd", !/estimateCarbs\([\s\S]*?onAdd\(/.test(sheet.slice(sheet.indexOf("async function submit"), sheet.indexOf("function replaceItem"))));
   ok("the fixed note is shown on the result", sheet.includes('t("carbEstimate.noteShort")'));
-  ok("insulin is 0 on the write", /saveEstimate[\s\S]*insulin_dose_units: 0/.test(food));
+  ok("food.tsx has no direct estimate save any more", !/saveEstimate|estimateMealInput/.test(food));
+  ok("the estimate sheet hands its lines to the compose list", /onAdd=\{\(lines\) => \{\s*setComposeItems\(\(prev\) => addEstimateLines\(prev, lines\)\);/.test(food));
+  ok("a composed meal is written through composeMealInput with insulin 0", /composeMealInput\(composeItems\)[\s\S]*insulin_dose_units: 0/.test(food));
+  ok("composeMealInput writes a mixed meal carb-only (portion 0, no food)", (() => {
+    const compose = require("../lib/mealCompose") as typeof import("../lib/mealCompose");
+    const items = compose.addEstimateLines([], [{ name: "Simit", quantity: 1, unit: "piece", grams_carb: 48 }]);
+    const input = compose.composeMealInput(items);
+    return input.carbOnly === true && input.portion_g === 0 && input.food_id === null && input.insulin_dose_units === 0;
+  })());
+  ok("a mixed meal with a catalogue food and an estimate line is carb-only too", (() => {
+    const compose = require("../lib/mealCompose") as typeof import("../lib/mealCompose");
+    const base = compose.addComposeItem([], { key: "f1", food_id: "f1", name: "Bread", category: "bread", carb_100g: 50, portion_g: 40 });
+    const input = compose.composeMealInput(compose.addEstimateLines(base, [{ name: "Tea", quantity: 1, unit: "glass", grams_carb: 8 }]));
+    return input.carbOnly === true && input.portion_g === 0 && input.calculated_carbs_g === 28;
+  })());
+  ok("a saved mixed meal reopens carb-only (mealEditMode), never in the calculator", (() => {
+    const compose = require("../lib/mealCompose") as typeof import("../lib/mealCompose");
+    const route = require("../lib/mealRoute") as typeof import("../lib/mealRoute");
+    const base = compose.addComposeItem([], { key: "f1", food_id: "f1", name: "Bread", category: "bread", carb_100g: 50, portion_g: 40 });
+    const input = compose.composeMealInput(compose.addEstimateLines(base, [{ name: "Tea", quantity: 1, unit: "glass", grams_carb: 8 }]));
+    return route.mealEditMode({ food_id: input.food_id, portion_g: input.portion_g, calculated_carbs_g: input.calculated_carbs_g }) === "carbOnly";
+  })());
+  ok("the estimate button is no longer a separate pill on the food tab", !/setEstimateSource\("food_tab"\);\s*\}\}\s*accessibilityRole/.test(food));
+  ok("the sheet opens the estimate from inside (onEstimate)", /onEstimate=\{carbEstimateConfigured \? \(\) => setEstimateSource\("meal_sheet"\)/.test(food));
+  ok("the capture scenes need screenshot mode AND __DEV__", /isScreenshotMode\(\) && __DEV__ && scScene === "carbs"/.test(food) && /isScreenshotMode\(\) && __DEV__ && scScene === "estimate"/.test(food));
+  ok("consent: agree checkbox, accept disabled until agreed, guard inside accept", /async function accept\(\) \{\s*if \(!agreed\) return;/.test(sheet) && /label=\{t\("spike\.accept"\)\} disabled=\{!agreed\}/.test(sheet) && /accessibilityRole="checkbox"/.test(sheet) && sheet.includes('t("spike.consentAgree")'));
+  ok("consent: short lines and a details toggle, same keys as the Spike screen", ["consentShort1", "consentShort2", "consentShort3", "consentDetails"].every((k) => sheet.includes(`t("spike.${k}")`)));
+  ok("consent: the grant call and the consent version are unchanged", sheet.includes("await grantSpikeConsent();") && read("lib/services/spikeConsent.ts").includes("SPIKE_CONSENT_VERSION = 2"));
   ok("no AsyncStorage use in the sheet", !/AsyncStorage/.test(sheet));
   ok("the typed text is never stored: no setItem next to it in the client", !/setItem/.test(clientSrc));
   ok("the count key holds a day and a number only", /JSON\.stringify\(\{ day: utcDayKey\(now\), count \}\)/.test(limitSrc));
   ok("no logging of the text anywhere", !/console\.|logCrash/.test(sheet + clientSrc));
-  ok("food.tsx crash context has no text", /logCrash\(err, \{ screen: "food", save: "estimate" \}\)/.test(food));
+  ok("food.tsx crash context has no text", /logCrash\(err, \{ screen: "food", save: "compose" \}\)/.test(food));
   ok("no adjustsFontSizeToFit in the new UI", !/adjustsFontSizeToFit/.test(sheet));
   ok("no hard-coded colour in the sheet (the scrim is the shared SCRIM)", (sheet.match(/#[0-9a-fA-F]{3,8}\b|rgba\(/g) ?? []).length === 0);
   const emDash = String.fromCharCode(0x2014);

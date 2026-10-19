@@ -52,6 +52,7 @@ import {
 import { rankTemplates, templateNameTaken } from "../../lib/mealTemplates";
 import {
   addComposeItem,
+  addEstimateLines,
   composeItemFromFood,
   composeMealInput,
   composeTemplateItems,
@@ -61,7 +62,8 @@ import {
 } from "../../lib/mealCompose";
 import { MealComposeSheet } from "../../components/MealComposeSheet";
 import { CarbEstimateSheet, type CarbEstimateSource } from "../../components/CarbEstimateSheet";
-import { carbEstimateConfigured, estimateMealInput, type EditableItem } from "../../lib/ai/carbEstimateClient";
+import { carbEstimateConfigured } from "../../lib/ai/carbEstimateClient";
+import { sceneFoods, sceneStarters } from "../../lib/mealScene";
 import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { insulinModeOf, insulinModeShowsBolus } from "../../lib/insulinMode";
 import {
@@ -989,9 +991,9 @@ export default function FoodScreen() {
     setComposeOpen(false);
   }
 
+  // An empty list keeps the sheet open: foods are added inside it now.
   function onComposeChange(next: ComposeItem[]) {
     setComposeItems(next);
-    if (next.length === 0) setComposeOpen(false);
   }
 
   async function saveCompose() {
@@ -1061,8 +1063,8 @@ export default function FoodScreen() {
 
   const [estimateSource, setEstimateSource] = useState<CarbEstimateSource | null>(null);
   const { scScene } = useLocalSearchParams<{ scScene?: string }>();
-  const scCarbs = isScreenshotMode() && scScene === "carbs";
-  const scEstimate = isScreenshotMode() && scScene === "estimate";
+  const scCarbs = isScreenshotMode() && __DEV__ && scScene === "carbs";
+  const scEstimate = isScreenshotMode() && __DEV__ && scScene === "estimate";
   useEffect(() => {
     if (scEstimate) {
       setComposeOpen(false);
@@ -1074,16 +1076,14 @@ export default function FoodScreen() {
     setEstimateSource(null);
     let alive = true;
     void (async () => {
-      const picks: Array<[string, number]> = [
-        ["White bread", 28],
-        ["Boiled egg", 50],
-        ["Milk", 244],
-      ];
-      const foods = await Promise.all(picks.map(([name]) => getCatalogFoodByEnglishName(name)));
+      const picks = sceneFoods(lang);
+      const foods = await Promise.all(picks.map((pick) => getCatalogFoodByEnglishName(pick.en)));
       if (!alive) return;
       setComposeItems(
         foods.flatMap((food, i) =>
-          food ? [{ ...composeItemFromFood(food, foodName(food, lang)), portion_g: picks[i][1] }] : []
+          food
+            ? [{ ...composeItemFromFood(food, foodName(food, lang)), portion_g: picks[i].grams }]
+            : []
         )
       );
       setComposeOpen(true);
@@ -1092,57 +1092,30 @@ export default function FoodScreen() {
       alive = false;
     };
   }, [scCarbs, scEstimate, lang]);
-  const [estimateSaving, setEstimateSaving] = useState(false);
-  const estimateSavingRef = useRef(false);
 
-  async function saveEstimate(items: EditableItem[]) {
-    if (!activeProfile || estimateSavingRef.current || items.length === 0) return;
-    estimateSavingRef.current = true;
-    setEstimateSaving(true);
-    try {
-      const input = estimateMealInput(items);
-      if (input.custom_food_name.trim() === "") return;
-      const meal = await addMealLog({
-        profile_id: activeProfile.id,
-        food_id: null,
-        custom_food_name: input.custom_food_name,
-        portion_g: input.portion_g,
-        calculated_carbs_g: input.calculated_carbs_g,
-        insulin_dose_units: 0,
-      });
-      logEvent("log_added", { kind: "meal" });
-      void noteFirstLog("meal");
-      hapticSuccess();
-      await schedulePostMealReminder();
-      void noteJournalActivity();
-      setEstimateSource(null);
-      bumpData();
-      toast(t("calculator.savedRecord"), "success", {
-        label: t("common.undo"),
-        onPress: () => {
-          void (async () => {
-            await deleteMealRecord(meal.id);
-            await applyAfterDelete([
-              {
-                id: meal.id,
-                profileId: meal.profile_id,
-                loggedAtMs: new Date(meal.logged_at).getTime(),
-                templateId: meal.meal_template_id,
-              },
-            ]);
-            bumpData();
-            toast(t("calculator.undone"), "info");
-          })();
-        },
-      });
-    } catch (err) {
-      logCrash(err, { screen: "food", save: "estimate" });
-      toast(t("common.saveFailed"), "error");
-    } finally {
-      estimateSavingRef.current = false;
-      setEstimateSaving(false);
-    }
-  }
+  // Empty-sheet starters: the locale's breakfast foods, by exact English name.
+  const [starterFoods, setStarterFoods] = useState<Food[]>([]);
+  useEffect(() => {
+    if (!composeOpen) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const foods = await Promise.all(
+          sceneStarters(lang).map((name) => getCatalogFoodByEnglishName(name))
+        );
+        if (alive) setStarterFoods(foods.filter((f): f is Food => f != null));
+      } catch (err) {
+        logCrash(err, { screen: "food", load: "starters" });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [composeOpen, lang]);
+  const recentFoods = useMemo(
+    () => recent.flatMap((r) => (r.food ? [r.food] : [])),
+    [recent]
+  );
 
   function titleFor(sel: Selection): string {
     if (sel === "favorites") return t("food.favorites");
@@ -1271,23 +1244,15 @@ export default function FoodScreen() {
         </Pressable>
       </View>
 
-      {carbEstimateConfigured ? (
-        <Pressable
-          onPress={() => {
-            hapticSelect();
-            setEstimateSource("food_tab");
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={t("carbEstimate.entryButton")}
-          className="flex-row items-center self-start rounded-full border border-hair mb-3"
-          style={{ minHeight: 36, paddingHorizontal: 12, columnGap: 6, maxWidth: "100%" }}
-        >
-          <Ionicons name="sparkles-outline" size={16} color={THEME.accent} />
-          <Text style={{ color: THEME.accent, fontSize: 13, fontWeight: "700", flexShrink: 1 }}>
-            {t("carbEstimate.entryButton")}
-          </Text>
-        </Pressable>
-      ) : null}
+      <GradientCTA
+        label={t("mealCompose.create")}
+        onPress={() => {
+          hapticSelect();
+          setComposeOpen(true);
+        }}
+        icon={<Ionicons name="restaurant-outline" size={18} color={THEME.accentOnFill} />}
+        style={{ marginBottom: 12 }}
+      />
 
       {/* Hero: today's carbohydrate total against the user's own range */}
       {mode === "grid" ? (
@@ -1889,6 +1854,12 @@ export default function FoodScreen() {
           onSave={() => void saveCompose()}
           onSaveTemplate={(name) => void saveComposeTemplate(name)}
           onEstimate={carbEstimateConfigured ? () => setEstimateSource("meal_sheet") : undefined}
+          targetG={scCarbs ? carbMax : activeProfile?.daily_carb_target_g ?? null}
+          todayG={todayCarbs}
+          recents={recentFoods}
+          favorites={favs}
+          starters={starterFoods}
+          lang={lang}
         />
       ) : null}
 
@@ -1897,10 +1868,12 @@ export default function FoodScreen() {
           source={estimateSource}
           isPro={isProUser}
           locale={i18n.language}
-          saving={estimateSaving}
           screenshotResult={scEstimate}
           onClose={() => setEstimateSource(null)}
-          onAdd={(items) => void saveEstimate(items)}
+          onAdd={(lines) => {
+            setComposeItems((prev) => addEstimateLines(prev, lines));
+            setComposeOpen(true);
+          }}
         />
       ) : null}
 
