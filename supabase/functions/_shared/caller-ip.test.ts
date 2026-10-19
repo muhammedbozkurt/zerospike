@@ -1,4 +1,4 @@
-import { resolveCallerIp } from "./http.ts";
+import { rateLimitKey, resolveCallerIp } from "./http.ts";
 
 function assertEq(a: unknown, b: unknown) {
   if (a !== b) throw new Error(`expected ${String(b)} got ${String(a)}`);
@@ -43,4 +43,25 @@ Deno.test("right secret but malformed ip: falls back", () =>
     for (const bad of [":::::", "007.007.007.007"]) {
       assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-zs-client-ip": bad, "x-forwarded-for": "2.2.2.2" })), "2.2.2.2");
     }
+  }));
+
+Deno.test("ipv6 reduces to its /64, ipv4 and others untouched", async () => {
+  assertEq(rateLimitKey("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), "2001:db8:1:2::/64");
+  assertEq(rateLimitKey("2001:DB8:1:2:1::1"), "2001:db8:1:2::/64");
+  assertEq(rateLimitKey("2001:0db8:0:0::1"), "2001:db8:0:0::/64");
+  assertEq(rateLimitKey("2001:db8::1"), "2001:db8:0:0::/64");
+  assertEq(rateLimitKey("::1"), "0:0:0:0::/64");
+  assertEq(rateLimitKey("1.2.3.4"), "1.2.3.4");
+  assertEq(rateLimitKey("unknown"), "unknown");
+  assertEq(rateLimitKey("::ffff:1.2.3.4"), "::ffff:1.2.3.4");
+  assertEq(
+    await resolveCallerIp(req({ "x-forwarded-for": "1.1.1.1, 2001:db8:5:6:1:2:3:4" })),
+    await resolveCallerIp(req({ "x-forwarded-for": "1.1.1.1, 2001:db8:5:6:ffff:eeee:dddd:cccc" })),
+  );
+  assertEq(await resolveCallerIp(req({ "x-forwarded-for": "9.9.9.9" })), "9.9.9.9");
+});
+
+Deno.test("forwarded ipv6 is reduced too", () =>
+  withSecret("good", async () => {
+    assertEq(await resolveCallerIp(req({ "x-zs-forwarder": "good", "x-zs-client-ip": "2001:db8:5:6:1:2:3:4" })), "2001:db8:5:6::/64");
   }));

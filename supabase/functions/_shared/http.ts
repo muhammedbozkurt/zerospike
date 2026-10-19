@@ -114,9 +114,24 @@ export async function resolveCallerIp(req: Request): Promise<string> {
   const given = req.headers.get("x-zs-forwarder");
   if (secret && given && (await sameSecret(given, secret))) {
     const given_ip = req.headers.get("x-zs-client-ip")?.trim();
-    if (given_ip && validIp(given_ip)) return given_ip;
+    if (given_ip && validIp(given_ip)) return rateLimitKey(given_ip);
   }
-  return callerIp(req);
+  return rateLimitKey(callerIp(req));
+}
+
+/**
+ * A single IPv6 subscriber holds a whole /64, so rotating the host part would
+ * dodge a per-address cap: a valid IPv6 address is reduced to its /64 prefix
+ * (first four groups, lowercase, no leading zeros). IPv4 and anything else
+ * (including "unknown" and IPv4-mapped forms) is returned as is.
+ */
+export function rateLimitKey(ip: string): string {
+  if (!ip.includes(":") || ip.includes(".") || !validIp(ip)) return ip;
+  const halves = ip.split("::");
+  const head = halves[0] === "" ? [] : halves[0].split(":");
+  const tail = halves.length === 2 && halves[1] !== "" ? halves[1].split(":") : [];
+  const groups = halves.length === 2 ? [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail] : head;
+  return groups.slice(0, 4).map((g) => g.toLowerCase().replace(/^0+(?=.)/, "")).join(":") + "::/64";
 }
 
 /**

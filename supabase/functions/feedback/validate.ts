@@ -11,12 +11,21 @@ export const MAX_MESSAGE_CHARS = 2000;
 export const MAX_EMAIL_CHARS = 254;
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// No control, bidi, zero-width or surrogate code points: the database refuses a lone
+// surrogate and a NUL, and a failed insert would answer 503 instead of 400.
+const BAD = "\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ud800-\\udfff";
+const EMAIL = new RegExp(`^[^\\s@${BAD}]+@[^\\s@${BAD}]+\\.[^\\s@${BAD}]+$`, "u");
 const APP_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/;
 const LOCALE = /^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8}){0,3}$/;
 // C0 controls except tab and newline, DEL and C1 controls.
 // deno-lint-ignore no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
+
+// A surrogate half with no partner cannot be stored as UTF-8.
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+// Bidi overrides/isolates and zero-width characters: dropped before the emptiness check so a
+// message of only these counts as empty and none can disguise text in an admin view.
+const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 export interface CleanFeedback {
   kind: Kind;
@@ -40,7 +49,12 @@ function has<T extends string>(list: readonly T[], value: unknown): value is T {
 
 /** Normalizes line breaks, drops control characters, trims, cuts to maxChars code points. */
 export function cleanText(value: string, maxChars: number): string {
-  const text = value.replace(/\r\n?/g, "\n").replace(CONTROL, "").trim();
+  const text = value
+    .replace(LONE_SURROGATE, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(CONTROL, "")
+    .replace(INVISIBLE, "")
+    .trim();
   const chars = Array.from(text);
   return chars.length > maxChars ? chars.slice(0, maxChars).join("").trim() : text;
 }
