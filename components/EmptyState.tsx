@@ -12,6 +12,9 @@ interface EmptyStateProps {
   subtitle?: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** Optional quiet second action under the primary one. */
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
   compact?: boolean;
 }
 
@@ -26,6 +29,8 @@ export function EmptyState({
   subtitle,
   actionLabel,
   onAction,
+  secondaryActionLabel,
+  onSecondaryAction,
   compact = false,
 }: EmptyStateProps) {
   return (
@@ -41,6 +46,11 @@ export function EmptyState({
         {actionLabel && onAction ? (
           <View className="mt-5">
             <Button label={actionLabel} onPress={onAction} />
+          </View>
+        ) : null}
+        {secondaryActionLabel && onSecondaryAction ? (
+          <View className="mt-2">
+            <Button label={secondaryActionLabel} onPress={onSecondaryAction} variant="tertiary" />
           </View>
         ) : null}
       </View>

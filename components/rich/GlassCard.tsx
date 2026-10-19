@@ -4,7 +4,7 @@ import type { ViewProps, StyleProp, ViewStyle } from "react-native";
 
 import { THEME, ELEVATION, RADIUS, glow } from "../../lib/theme/tokens";
 
-interface GlassCardProps extends ViewProps {
+export interface GlassCardProps extends ViewProps {
   /** Colored glow shadow. `true` uses the cyan accent; a hex string tints it to
    *  the surface's own color (a hero glucose card glows in its status color). */
   glow?: boolean | string;
