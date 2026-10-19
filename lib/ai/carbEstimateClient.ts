@@ -61,8 +61,15 @@ export const CARB_ERROR_CODES = [
 export type CarbErrorCode = (typeof CARB_ERROR_CODES)[number];
 
 /** The code is the message, like the Spike client: a plain Error survives every transpile target. */
-function carbError(code: CarbErrorCode): Error {
-  return new Error(code);
+function carbError(code: CarbErrorCode, charged = false): Error {
+  const e = new Error(code) as Error & { charged?: boolean };
+  if (charged) e.charged = true;
+  return e;
+}
+
+/** True only when the server's error body said it spent the device's allowance (502 estimate_failed). */
+export function carbErrorCharged(e: unknown): boolean {
+  return e instanceof Error && (e as Error & { charged?: boolean }).charged === true;
 }
 
 export function carbErrorCode(e: unknown): CarbErrorCode {
@@ -219,17 +226,20 @@ export async function estimateCarbs(params: EstimateCarbsParams): Promise<CarbEs
     });
     if (!res.ok) {
       let id: unknown;
+      let charged = false;
       try {
-        id = ((await res.json()) as { error?: unknown } | null)?.error;
+        const body = (await res.json()) as { error?: unknown; charged?: unknown } | null;
+        id = body?.error;
+        charged = body?.charged === true;
       } catch {
         id = undefined;
       }
-      throw carbError(mapServerError(res.status, id));
+      throw carbError(mapServerError(res.status, id), charged);
     }
     return parseEstimateBody(await res.json());
   } catch (e) {
     if (params.signal?.aborted) throw carbError("aborted");
-    throw carbError(carbErrorCode(e));
+    throw carbError(carbErrorCode(e), carbErrorCharged(e));
   } finally {
     clearTimeout(timer);
     params.signal?.removeEventListener("abort", onExternal);

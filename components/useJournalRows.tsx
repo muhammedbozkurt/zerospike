@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
+import { mealEditRoute } from "../lib/mealRoute";
 import { captureDeletion, type DeletionSnapshot } from "../lib/db/undo";
 import {
   applyAfterDeleteFromSnapshot,
@@ -263,7 +264,7 @@ export function useJournalRows(input: {
   const openEdit = useCallback(
     (entry: JournalEntry) => {
       if (entry.kind === "meal") {
-        router.push({ pathname: "/calculator", params: { mealLogId: entry.id } });
+        router.push(mealEditRoute(entry));
       } else if (entry.kind === "glucose") {
         // Owned by the screen: the dashboard reuses the same sheet instance it
         // logs NEW readings with, so the hook cannot hold that state itself.

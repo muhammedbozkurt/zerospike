@@ -254,3 +254,74 @@ Deno.test("device id: ':' and short or odd ids are refused", () => {
   assert.ok(!DEVICE_ID_RE.test("short"));
   assert.ok(!DEVICE_ID_RE.test("a".repeat(81)));
 });
+
+const wrapItem = (name: string, quantity: number, unit = "") => JSON.stringify({ items: [{ name, quantity, unit, grams_carb: 30 }], total_grams_carb: 30 });
+const outBlocked = (name: string, quantity: number, unit = "") => {
+  const r = parseEstimate(wrapItem(name, quantity, unit));
+  return !r.ok && r.reason === "filtered";
+};
+
+Deno.test("request gate round 2: compound roots, brands, separators, small caps", () => {
+  for (const t of [
+    "Pizza, dazu Mahlzeiteninsulin 6", "Pizza + Korrekturinsulin 2", "pasta\u200Binsulin 6", "PastaInsulin 6", "ピザとノボラピッド6", "ヒューマログ", "トレシーバ", "ランタス",
+    "بيتزا ونوفورابيد 6", "لانتوس", "glargine 20 und Brot", "aspart", "lispro", "degludec", "NPH", "Insulatard", "Mixtard", "Rybelsus", "Jardiance", "Tresiba", "Levemir",
+    "Wegovy", "Mounjaro", "gliclazide", "metformina 850 mg", "Korrektur", "Correction", "Corrección", "Bazal", "rapid-acting", "rapid acting",
+    "ɪɴsᴜʟɪɴ 6", "i n s u l i n 6", "in-su-lin 6", "in.su.lin", "6 I.U.", "6 i-u", "6 I U", "6 E.", "6 Einh.", "pasta, 6 dosis rápida", "2 unidades de rápida",
+    "hipoglisemi", "Hypoglykämie", "hipoglucemia", "ipoglicemia", "hypoglycemia", "hyperglykämie", "hiperglucemia", "iperglicemia",
+  ]) {
+    assert.ok(hasMedicalTerm(t), t);
+  }
+});
+
+Deno.test("request gate round 2: how-many-units and injection questions", () => {
+  for (const t of [
+    "wieviel IE für Pizza", "wie viel IE für Pizza", "combien d'UI pour une pizza", "cuántas UI para pizza", "quante UI per la pizza", "quantas UI para pizza",
+    "how many U for pizza", "kaç IU", "kaç Ü pizza", "pizza, wieviel spritzen", "pizza, quanto devo iniettare", "pizza, cuánto me inyecto", "pizza, ne kadar yapayım",
+    "makarna 80 g, 6 unite yapayim mi", "ピザ、何単位", "ピザ、どれくらい打つ", "بيتزا، كم أحقن", "كم وحدة", "6 وحدة", "وحدتين", "pasta for my injection", "what should I inject",
+  ]) {
+    assert.ok(hasMedicalTerm(t), t);
+  }
+});
+
+Deno.test("request gate round 2: meal counting words still pass", () => {
+  for (const t of [
+    "2 unidades de pan", "1 unité de biscuits", "1 unité de baguette", "1 unità di pane", "3 unità di pane", "2 units of bread", "una unidad de huevo", "a dozen donuts", "a dozen eggs",
+    "dosi per 2 persone", "1 doz eggs", "6 unidades de pasta", "Spritz Aperol", "Spritzgebäck", "injera bread", "aspartame free soda", "basilikum pesto pasta", "comida rápida",
+    "ui ui pasta", "Ei 2 Stück", "6 uova", "pasta 80 g", "bolo de chocolate", "Brot mit 2 BE", "2 KE Reis", "pão de queijo 2 unidades", "Tortellini basilico", "basmati rice",
+    "medialunas 2", "カレーライス", "خبز وحليب", "كم قطعة خبز",
+  ]) {
+    assert.ok(!hasMedicalTerm(t), t);
+  }
+});
+
+Deno.test("output gate round 2: roots, brands, abbreviations, scripts", () => {
+  const blocked: Array<[string, number, string]> = [
+    ["Mahlzeiteninsulin", 6, ""], ["Korrekturinsulin", 2, ""], ["PastaInsulin", 6, ""], ["Pasta\u200BInsulin", 6, ""], ["Glargine", 20, ""], ["NovoRapid", 6, ""],
+    ["Korrektur", 2, ""], ["Correction", 2, ""], ["Corrección", 2, ""], ["Bazal", 20, ""], ["Rybelsus", 1, "tablet"], ["Jardiance", 1, "tablet"], ["NPH", 10, ""],
+    ["ノボラピッド", 6, ""], ["ヒューマログ", 4, ""], ["نوفورابيد", 6, ""], ["ɪɴsᴜʟɪɴ", 6, ""], ["i n s u l i n", 6, ""], ["in-su-lin", 6, ""],
+    ["Pasta 6 I.U.", 1, ""], ["Pasta 6E", 1, ""], ["Rápida 6 dosis", 1, ""], ["Doz", 6, ""], ["Pasta", 6, "I.U."], ["Pasta", 6, "Einh."], ["Pasta", 6, "units"],
+    ["Pasta", 6, "dose"], ["Pasta", 6, "وحدات"], ["Pasta", 6, "単位"],
+  ];
+  for (const [n, q, u] of blocked) assert.ok(outBlocked(n, q, u), `${n}/${q}/${u}`);
+  for (const [n, q, u] of [["Пaста", 1, ""], ["Πasta", 1, ""], ["Pasta", 1, "шт"]] as Array<[string, number, string]>) {
+    const r = parseEstimate(wrapItem(n, q, u));
+    assert.ok(!r.ok && r.reason === "filtered", `${n}/${u}`);
+  }
+});
+
+Deno.test("output gate round 2: food counting words and plain meals pass", () => {
+  const ok: Array<[string, number, string]> = [
+    ["Pasta", 6, "unidades"], ["Pan", 2, "unidades"], ["Baguette", 1, "unité"], ["Pane", 3, "unità"], ["Huevo", 2, "unidades"], ["Brot", 2, "BE"],
+    ["Eggs", 1, "dozen"], ["Pesto Basilikum", 50, "g"], ["Aperol Spritz", 1, "glass"], ["Injera", 2, "piece"], ["食パン", 2, "枚"], ["خبز", 2, "شريحة"], ["Yumurta", 1, "adet"],
+    ["Çorba", 1, "kase"], ["Crème brûlée", 1, "portion"], ["Pão de queijo", 2, "unidade"],
+  ];
+  for (const [n, q, u] of ok) assert.ok(!outBlocked(n, q, u), `${n}/${q}/${u}`);
+});
+
+Deno.test("handler: estimate_failed carries charged: true", async () => {
+  const f = fake({ text: "not json" });
+  const out = await handleCarbEstimate(req("2 dilim ekmek"), "device-12345", f.deps);
+  assert.equal(out.status, 502);
+  assert.equal((out.body as { error: string }).error, "estimate_failed");
+  assert.equal((out.body as { charged: boolean }).charged, true);
+});

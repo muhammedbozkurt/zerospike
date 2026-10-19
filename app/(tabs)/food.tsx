@@ -17,6 +17,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
+import { mealEditRoute } from "../../lib/mealRoute";
 import {
   searchFoods,
   deleteFood,
@@ -1408,12 +1409,7 @@ export default function FoodScreen() {
                 return (
                   <Pressable
                     key={meal.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/calculator",
-                        params: { mealLogId: meal.id },
-                      })
-                    }
+                    onPress={() => router.push(mealEditRoute(meal))}
                     onLongPress={() => onTodayMealLongPress(meal)}
                     accessibilityRole="button"
                     accessibilityLabel={`${t(`slot.${slot}`)}, ${meal.display_name}`}

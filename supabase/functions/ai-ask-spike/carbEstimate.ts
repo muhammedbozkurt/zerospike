@@ -58,7 +58,7 @@ export interface CarbDeps {
 
 export interface CarbResponse {
   status: number;
-  body: CarbEstimateBody | { error: CarbErrorCode };
+  body: CarbEstimateBody | { error: CarbErrorCode; charged?: boolean };
   headers?: Record<string, string>;
 }
 
@@ -83,41 +83,76 @@ export function parseCarbRequest(body: Record<string, unknown>): CarbRequest | n
 
 // ── Medical-content gate ────────────────────────────────────────────────────
 // A meal description has no use for these words, so a request or a model answer that
-// carries one is not a meal estimate. Latin stems match as word prefixes, so "a dozen
-// eggs" and "community" pass. Food counting words (unidad, unité, unità, piece) are NOT
-// medical on their own: "2 unidades de pan" is a meal. They count only next to insulin
-// or a drug (stems below), after a how-many question, or as an IU-style abbreviation.
-// A dose word (dose, dosis, doz) is medical unless it is a portion count ("1 doz eggs",
-// "dosi per 2 persone").
+// carries one is not a meal estimate. Unambiguous roots (insulin, bolus, drug and brand
+// names) match as substrings of a word, so "PastaInsulin" and "Mahlzeiteninsulin" are
+// caught; ambiguous stems match as word prefixes ("a dozen eggs", "community" pass).
+// Food counting words (unidad, unité, unità, piece) are NOT medical on their own:
+// "2 unidades de pan" is a meal. They count only after a how-many question or as an
+// IU-style abbreviation. A dose word is medical unless it is a portion count ("1 doz
+// eggs", "dosi per 2 persone"). Each text is also read with separators removed
+// ("in-su-lin", "i n s u l i n", "I.U.").
 
-const LATIN_STEMS = [
-  "insulin", "inzulin", "bolus", "basal", "metformin", "medicat", "medicin", "treatment", "diagnos", "teshis", "ilac", "tedavi",
-  "hipogliseml", "hypoglyc", "hyperglyc", "dosag", "dosier", "posolog", "einheit",
-  "novorapid", "novolog", "novomix", "humalog", "humulin", "insuman", "lantus", "levemir", "tresiba", "toujeo", "basaglar", "abasaglar",
-  "semglee", "fiasp", "apidra", "lyumjev", "admelog", "actrapid", "ozempic", "victoza", "saxenda", "wegovy", "mounjaro", "trulicity", "glucophage",
+const ROOTS = [
+  "insulin", "inzulin", "bolus", "basal", "bazal", "korrektur", "correction", "correccion", "correzione", "correcao", "metformin",
+  "hipoglis", "hipoglucem", "hypoglyc", "hypoglyk", "hyperglyc", "hyperglyk", "hiperglis", "hiperglucem", "ipoglicem", "iperglicem",
+  "novorapid", "novolog", "novomix", "humalog", "humulin", "insuman", "lantus", "levemir", "tresiba", "toujeo", "basaglar",
+  "semglee", "fiasp", "apidra", "lyumjev", "admelog", "actrapid", "insulatard", "mixtard", "protaphane", "ryzodeg", "xultophy", "soliqua",
+  "glargin", "aspart", "lispro", "glulisin", "degludec", "detemir", "ozempic", "rybelsus", "victoza", "saxenda", "wegovy", "mounjaro",
+  "trulicity", "semaglutid", "liraglutid", "tirzepatid", "dulaglutid", "jardiance", "januvia", "forxiga", "farxiga", "diamicron",
+  "galvus", "glucophage", "glifage", "glimepirid", "gliclazid", "glibenclamid", "empagliflozin", "dapagliflozin", "canagliflozin",
+  "sitagliptin", "vildagliptin", "sglt",
+  "inyecc", "inyect", "inject", "iniett", "iniez", "injec", "injiz", "piqure", "enjek",
+];
+const PREFIXES = [
+  "medicat", "medicin", "treatment", "tratamien", "trattamen", "traitement", "tratament", "behandl", "diagnos", "teshis", "ilac", "tedavi",
+  "dosag", "dosier", "posolog", "einh", "piquer",
+];
+const WORDS = new Set(["nph", "isf", "icr", "amaryl", "spritze", "spritzen", "spritzt", "spritzte", "igne"]);
+const CONTEXT = [
+  /(?:rapid|fast|short|long)[\s-]*acting/, /carb\w*\s*ratio/, /sliding\s*scale/, /(?<![a-z0-9])i\s*:\s*c(?![a-z0-9])/, /(?<![a-z0-9])(?:ke|be|bie)[\s-]*faktor/,
+  /ne\s+kadar\s+(?:yapay|vuray|vurmal|yapmal)|unite\s+yapay|yapay\w*\s+unite|vuray/,
+  /(?:rapid[ao]|lent[ao]|ultrarapid[ao])\s*\d+\s*(?:dosis|dose|doses|dosi|doz|unidades?|units?)/,
+  /(?:unidades?|units?|unites?|unita|dosis|doses?|doz|dosi)\s+(?:de\s+|di\s+|of\s+|d['’])?(?:rapid|lent|ultrarapid)\w*/,
+  /[\d\u0660-\u0669]\s*وحد[ةت]|كم\s*وحد|وحدتين/,
 ];
 const DOSE_WORD = /(?<![a-z0-9])(?:dose|doses|dosi|dosis|dosing|doz|dozu|dozunu|dozum|dozlar|dozda|dozunuz)(?![a-z0-9])/g;
+const DOSE_COUNTABLE = new Set(["dose", "dosi", "dosis", "doz"]);
 const DOSE_PORTION_AFTER = /^\s*(?:(?:per|for|pour|para|por|fur|fuer|de|di|icin)\s+)?\d+\s*(?:persone|persona|personas|people|persons|personen|personnes|pessoas|kisi|servings?|portions?|porzioni|porciones|porcoes)/;
-const IU_AFTER_NUMBER = /(?<![a-z0-9])\d+(?:[.,]\d+)?\s*(?:iu|ie|ui|ue|u)(?![a-z0-9])/;
+const IU_AFTER_NUMBER = /(?<![a-z0-9])\d+(?:[.,]\d+)?\s*(?:iu|ie|ui|ue|u)(?![a-z0-9])|(?<![a-z0-9])\d+\s*e(?:\.|\s*$)/;
 const IU_WORD = /(?<![a-z0-9])iu(?![a-z0-9])/;
-const HOW_MANY_UNITS =
-  /(?:how\s+(?:many|much)|kac|wie\s*viele?|combien|cuantas?|cuantos|quante|quanti|quantas?|quantos?)\s+(?:[a-z]+['’\s]+)?(?:units?|unites?|unitas?|unidades?|unidad)(?![a-z])/;
-const OTHER_SCRIPT = ["نسولين", "جرع", "وحدات", "علاج", "دواء", "インスリン", "インシュリン", "単位", "投与", "服薬", "薬剤", "治療", "診断", "ユニット"];
+const UNIT_WORD = String.raw`(?:units?|unites?|unitas?|unidades?|unidad|einheit\w*|iu|ie|ui|ue|u)`;
+const HOW_MANY_UNITS = new RegExp(
+  String.raw`(?:how\s+(?:many|much)|kac|wie\s*viele?|combien|cuant[oa]s?|quant[eio]s?|quantas?|quantos?)\s+(?:(?:[a-z]+['’\s]+|d['’]|de\s+|di\s+)?)${UNIT_WORD}(?![a-z0-9])`,
+);
+const OTHER_SCRIPT = [
+  "نسولين", "جرع", "وحدات", "علاج", "دواء", "حقن", "نوفورابيد", "لانتوس", "توجيو", "تريسيبا", "ليفيمير", "هيومالوج", "ميتفورمين", "اوزمبيك", "أوزمبيك", "نقص السكر", "ارتفاع السكر",
+  "インスリン", "インシュリン", "単位", "投与", "服薬", "薬剤", "治療", "診断", "ユニット", "打つ", "注射", "ボーラス", "低血糖", "高血糖", "メトホルミン",
+  "ノボラ", "ヒューマログ", "ヒューマリン", "ノボリン", "ランタス", "トレシーバ", "レベミル", "ルムジェブ", "アピドラ", "リベルサス", "オゼンピック", "ビクトーザ", "ジャディアンス", "グリクラジド",
+];
 
 function fold(text: string): string {
   return text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/ı/g, "i");
 }
 
+function readings(f: string): string[] {
+  const glued = f.replace(/(?<=[a-z0-9])[.\-_·](?=[a-z0-9])/g, "");
+  const lettersJoined = (t: string) => t.replace(/(?<![a-z0-9])[a-z](?:\s+[a-z])+(?![a-z0-9])/g, (m) => m.replace(/\s+/g, ""));
+  return [f, glued, lettersJoined(f), lettersJoined(glued)];
+}
+
 function scanFolded(f: string): boolean {
   if (OTHER_SCRIPT.some((t) => f.includes(t))) return true;
-  for (const word of f.split(/[^a-z0-9]+/)) {
-    if (word && LATIN_STEMS.some((st) => word.startsWith(st))) return true;
-  }
-  if (IU_AFTER_NUMBER.test(f) || IU_WORD.test(f) || HOW_MANY_UNITS.test(f)) return true;
-  for (const m of f.matchAll(DOSE_WORD)) {
-    if (/\d\s*$/.test(f.slice(0, m.index))) continue;
-    if (DOSE_PORTION_AFTER.test(f.slice(m.index + m[0].length))) continue;
-    return true;
+  for (const text of readings(f)) {
+    for (const word of text.replace(/aspartam/g, "").split(/[^a-z0-9]+/)) {
+      if (!word) continue;
+      if (WORDS.has(word) || ROOTS.some((r) => word.includes(r)) || PREFIXES.some((st) => word.startsWith(st))) return true;
+    }
+    if (IU_AFTER_NUMBER.test(text) || IU_WORD.test(text) || HOW_MANY_UNITS.test(text) || CONTEXT.some((re) => re.test(text))) return true;
+    for (const m of text.matchAll(DOSE_WORD)) {
+      if (DOSE_COUNTABLE.has(m[0]) && /\d\s*$/.test(text.slice(0, m.index))) continue;
+      if (DOSE_PORTION_AFTER.test(text.slice(m.index + m[0].length))) continue;
+      return true;
+    }
   }
   return false;
 }
@@ -126,6 +161,7 @@ export function hasMedicalTerm(text: string): boolean {
   const plain = normalizeWithMap(text, "").norm.toLowerCase();
   if (plain.includes("ünite")) return true;
   for (const gap of ["", " "] as const) {
+    if (OTHER_SCRIPT.some((t) => normalizeWithMap(text, gap).norm.includes(t))) return true;
     if (scanFolded(fold(normalizeWithMap(text, gap, true).norm))) return true;
   }
   return false;
@@ -164,6 +200,10 @@ function cleanLabel(x: unknown, max: number, allowEmpty: boolean): string | null
   return s;
 }
 
+// Scripts a meal label can use in the nine app languages. A letter from any other script (Cyrillic or
+// Greek lookalikes the normaliser did not map, IPA) cannot be read by the gate, so the item is refused.
+const FOREIGN_LETTER = /(?![\p{scx=Latin}\p{scx=Arabic}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Han}])[\p{L}\p{M}]/u;
+
 /** Schema check + output gate. The total is recomputed from the items; keys outside the schema are dropped. */
 export function parseEstimate(raw: string): ParsedEstimate {
   const root = extractJson(raw);
@@ -177,6 +217,7 @@ export function parseEstimate(raw: string): ParsedEstimate {
     if (name === null || unit === null || !isNum(it.quantity, 0, CARB_QUANTITY_MAX) || !isNum(it.grams_carb, 0, CARB_GRAMS_MAX)) {
       return { ok: false, reason: "schema" };
     }
+    if (FOREIGN_LETTER.test(name) || FOREIGN_LETTER.test(unit)) return { ok: false, reason: "filtered", rule: "carb_script" };
     const unitKey = fold(unit).replace(/[^a-z0-9]/g, "");
     const medical = [name, unit, `${name} ${it.quantity} ${unit}`].some(hasMedicalTerm) || MEDICAL_UNITS.has(unitKey);
     if (medical) return { ok: false, reason: "filtered", rule: "carb_medical" };
@@ -242,7 +283,7 @@ export async function handleCarbEstimate(body: Record<string, unknown>, deviceId
   const parsed = result.stopReason === "max_tokens" ? ({ ok: false, reason: "schema" } as const) : parseEstimate(result.text);
   if (!parsed.ok && parsed.reason === "schema") {
     await deps.record(row(false, "schema"));
-    return err(502, "estimate_failed");
+    return { status: 502, body: { error: "estimate_failed", charged: true } };
   }
   if (!parsed.ok) {
     await deps.record(row(true, parsed.rule));

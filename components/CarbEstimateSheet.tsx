@@ -28,6 +28,7 @@ import {
   prepareMealText,
   screenshotCarbSample,
   shouldCountEstimate,
+  carbErrorCharged,
   type EditableItem,
 } from "../lib/ai/carbEstimateClient";
 import {
@@ -268,6 +269,7 @@ export function CarbEstimateSheet({
       });
     } catch (e) {
       const code = carbErrorCode(e);
+      if (carbErrorCharged(e)) await noteCarbEstimate(isPro);
       if (code === "aborted") return;
       if (code === "consent_required") {
         setConsented(false);

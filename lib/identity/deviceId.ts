@@ -4,6 +4,9 @@ import { uuid } from "../uuid";
 // Ayni anahtar lib/ai/spikeClient.ts'ten tasindi; mevcut kurulumlarin kimligi korunur.
 export const DEVICE_ID_KEY = "zerospike.deviceId";
 
+/** Sunucu DEVICE_ID_RE en az 8 karakter ister. */
+export const DEVICE_ID_FALLBACK = "unknown-device";
+
 /** Kalici anonim kurulum kimligi: Spike gunluk siniri, analitik zarfi ve RevenueCat attribute icin tek kaynak. Kimlik veya saglik verisine bagli degildir. */
 export async function getDeviceId(): Promise<string> {
   try {
@@ -13,6 +16,6 @@ export async function getDeviceId(): Promise<string> {
     await AsyncStorage.setItem(DEVICE_ID_KEY, id);
     return id;
   } catch {
-    return "unknown";
+    return DEVICE_ID_FALLBACK;
   }
 }

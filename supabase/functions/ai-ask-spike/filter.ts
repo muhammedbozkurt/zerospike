@@ -447,7 +447,11 @@ const CONTROL = /\p{Cc}/u;
 const ACCENT_MARKS = /[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]/gu;
 // Letters that read as Latin ones but have no decomposition: only the accent-stripping pass folds them, because
 // the plain pass must keep Turkish dotless i.
-const FOLD_EXTRA: Readonly<Record<string, string>> = { "\u0131": "i", "\u1d1c": "u", "\u057d": "u", "\ua4f4": "U", "\u0585": "o" };
+const FOLD_EXTRA: Readonly<Record<string, string>> = { "\u0131": "i", "\u1d1c": "u", "\u057d": "u", "\ua4f4": "U", "\u0585": "o",
+  "\u026a": "i", "\u0269": "i", "\u0274": "n", "\u029f": "l", "\u1d00": "a", "\u0251": "a", "\u0299": "b", "\u1d04": "c", "\u1d05": "d", "\u1d07": "e",
+  "\u0262": "g", "\u0261": "g", "\u029c": "h", "\u1d0a": "j", "\u1d0b": "k", "\u1d0d": "m", "\u1d0f": "o", "\u1d18": "p", "\u0280": "r", "\ua731": "s",
+  "\u1d1b": "t", "\u1d20": "v", "\u1d21": "w", "\u028f": "y", "\u1d22": "z",
+};
 
 interface Normalized {
   norm: string;
@@ -534,7 +538,7 @@ export function normalizeWithMap(text: string, gap: "" | " ", fold = false): Nor
 // forms and FOLD_EXTRA. Anything else, plain ASCII and the Arabic and Japanese the app also writes included,
 // reads the same in both passes, so the second one is skipped (math operators with a slash do change, to other
 // operators, which no rule reads).
-const MAY_FOLD = /[\u00c0-\u04ff\u057d\u0585\u1ab0-\u1aff\u1d00-\u1dff\u1e00-\u1fff\u20d0-\u20ff\u212b\ua4f4\ufe20-\ufe2f\u{1d6a4}\u{1d6a5}]/u;
+const MAY_FOLD = /[\u00c0-\u04ff\u057d\u0585\u1ab0-\u1aff\u1d00-\u1dff\u1e00-\u1fff\u20d0-\u20ff\u212b\ua4f4\ua731\ufe20-\ufe2f\u{1d6a4}\u{1d6a5}]/u;
 
 /** The normalised text to scan: with invisible characters dropped, when there
  *  were any also with each turned into a space, and, when stripping accents

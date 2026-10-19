@@ -371,6 +371,8 @@ const en: TranslationSchema = {
     activeInsulin: "Active insulin (IOB)",
     iobReduction: "Reduced for active insulin",
     editTitle: "Edit Entry",
+    carbOnlyName: "Meal name",
+    carbOnlyCarbs: "Carbs (g)",
     saveChanges: "Save Changes",
     loggedTime: "Entry date and time",
     autoInjection: "The dose was logged as a bolus injection too.",

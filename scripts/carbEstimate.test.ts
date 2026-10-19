@@ -202,6 +202,23 @@ async function requests(): Promise<void> {
   eq("429 rate_limit", await run(), "busy");
   responder = () => json(502, { error: "estimate_failed" });
   eq("502", await run(), "failed");
+  const chargedOf = async (): Promise<boolean> => {
+    try {
+      await client.estimateCarbs({ text: "bread", locale: "en", tier: "free" });
+      return false;
+    } catch (e) {
+      return client.carbErrorCharged(e);
+    }
+  };
+  responder = () => json(502, { error: "estimate_failed", charged: true });
+  eq("502 with charged:true is charged", await chargedOf(), true);
+  responder = () => json(502, { error: "estimate_failed" });
+  eq("502 without the flag is not charged", await chargedOf(), false);
+  responder = () => json(502, { error: "estimate_failed", charged: "yes" });
+  eq("a non-boolean charged is not charged", await chargedOf(), false);
+  responder = () => json(429, { error: "rate_limit", charged: false });
+  eq("charged:false is not charged", await chargedOf(), false);
+  eq("deviceId fallback matches the server pattern", /^[A-Za-z0-9_-]{8,80}$/.test(require("../lib/identity/deviceId").DEVICE_ID_FALLBACK), true);
   responder = () => json(503, { error: "unavailable" });
   eq("503", await run(), "failed");
   responder = () => json(400, { error: "bad_request" });

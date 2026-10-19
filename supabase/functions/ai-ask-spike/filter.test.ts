@@ -5,7 +5,7 @@
 // obfuscation). "Must pass" lines are what Spike should be able to say: education,
 // refusals, app help, descriptions of the logbook. Add a line to either list with any
 // change to the rules.
-import { StreamGuard, blockedOutcome, checkReply, finalizeReply, safeText } from "./filter.ts";
+import { StreamGuard, blockedOutcome, checkReply, finalizeReply, normalizeWithMap, safeText } from "./filter.ts";
 import { LOCALES, parseMeta, sanitizeContext, visibleEnd } from "./prompt.ts";
 
 // A few assertions of our own: node:assert would make Deno add @types/node to deno.lock when the tests run.
@@ -726,4 +726,9 @@ Deno.test("the summary keeps only the app's own tags, sites and periods", () => 
   assert.deepEqual(packet?.meals?.tags, { sport: 1 });
   assert.deepEqual(packet?.injections?.sites, { abdomen_left: 1 });
   assert.deepEqual(packet?.logging?.emptyPeriods, ["bedtime"]);
+});
+
+Deno.test("normalise: small-cap Latin letters fold to plain ones in the accent-stripping reading", () => {
+  assert.equal(normalizeWithMap("\u026a\u0274s\u1d1c\u029f\u026a\u0274", "", true).norm, "insulin");
+  assert.equal(normalizeWithMap("\u026a\u0274s\u1d1c\u029f\u026a\u0274", "").norm.length, 7);
 });

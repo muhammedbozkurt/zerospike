@@ -371,6 +371,8 @@ const pt: TranslationSchema = {
     activeInsulin: "Insulina ativa (IOB)",
     iobReduction: "Descontado pela insulina ativa",
     editTitle: "Editar registro",
+    carbOnlyName: "Nome da refeição",
+    carbOnlyCarbs: "Carboidratos (g)",
     saveChanges: "Salvar alterações",
     loggedTime: "Data e hora do registro",
     autoInjection: "A dose também foi registrada como aplicação de bolus.",

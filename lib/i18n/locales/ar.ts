@@ -371,6 +371,8 @@ const ar: TranslationSchema = {
     activeInsulin: "الإنسولين النشط (IOB)",
     iobReduction: "خُصم مقابل الإنسولين النشط",
     editTitle: "تعديل السجل",
+    carbOnlyName: "اسم الوجبة",
+    carbOnlyCarbs: "الكربوهيدرات (g)",
     saveChanges: "حفظ التغييرات",
     loggedTime: "تاريخ السجل ووقته",
     autoInjection: "سُجّلت الجرعة أيضًا كحقنة إنسولين سريع المفعول.",

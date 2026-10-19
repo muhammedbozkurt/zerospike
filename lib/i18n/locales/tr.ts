@@ -369,6 +369,8 @@ const tr = {
     activeInsulin: "Aktif insülin (IOB)",
     iobReduction: "Aktif insülin için düşüldü",
     editTitle: "Kaydı Düzenle",
+    carbOnlyName: "Öğün adı",
+    carbOnlyCarbs: "Karbonhidrat (g)",
     saveChanges: "Değişiklikleri Kaydet",
     loggedTime: "Kayıt tarihi ve saati",
     autoInjection: "Doz da bolus enjeksiyonu olarak kaydedildi.",

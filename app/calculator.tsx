@@ -128,6 +128,8 @@ import {
   sanitizeNumberText,
 } from "../lib/numberInput";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
+import { mealEditMode, type MealEditMode } from "../lib/mealRoute";
+import { CarbOnlyMealEdit } from "../components/CarbOnlyMealEdit";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import {
   AppBackground,
@@ -2653,9 +2655,37 @@ function Breakdown({
 }
 
 export default function CalculatorRoute() {
+  const { mealLogId } = useLocalSearchParams<{ mealLogId?: string }>();
+  const editing = typeof mealLogId === "string" && mealLogId.length > 0;
+  const [mode, setMode] = useState<MealEditMode | null>(editing ? null : "calculator");
+
+  useEffect(() => {
+    if (!editing || !mealLogId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const log = await getMealLog(mealLogId);
+        if (alive) setMode(log ? mealEditMode(log) : "calculator");
+      } catch {
+        if (alive) setMode("calculator");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [editing, mealLogId]);
+
   return (
     <SafeAreaProvider>
-      <CalculatorScreen />
+      {mode === null ? (
+        <AppBackground>
+          <View className="flex-1" />
+        </AppBackground>
+      ) : mode === "carbOnly" && mealLogId ? (
+        <CarbOnlyMealEdit mealLogId={mealLogId} />
+      ) : (
+        <CalculatorScreen />
+      )}
     </SafeAreaProvider>
   );
 }

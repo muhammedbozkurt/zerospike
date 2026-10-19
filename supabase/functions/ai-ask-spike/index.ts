@@ -43,7 +43,7 @@
 //   stream, no consent header): -> { items:[{name,quantity,unit,grams_carb}],
 //   total_grams_carb, filtered, usage }. Own daily counter (`ce:<deviceId>`, free 1 /
 //   pro 50) on top of the same address and global ceilings: 429 daily_limit_carb.
-//   502 estimate_failed when the model answer does not fit the schema (slot stays spent). See carbEstimate.ts.
+//   502 estimate_failed when the model answer does not fit the schema (slot stays spent, body carries charged: true). See carbEstimate.ts.
 //   Errors { error }: 429 daily_limit | rate_limit | capacity, 403 consent_required,
 //   400 bad_request, 502 upstream, 503 unavailable (500 not_configured, 405 method_not_allowed).
 //   No CORS headers: the app is not a browser. OPTIONS answers 204 with no body.

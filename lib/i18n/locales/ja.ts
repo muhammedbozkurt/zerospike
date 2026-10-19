@@ -371,6 +371,8 @@ const ja: TranslationSchema = {
     activeInsulin: "残存インスリン(IOB)",
     iobReduction: "残存インスリンの分を差し引き",
     editTitle: "記録を編集",
+    carbOnlyName: "食事名",
+    carbOnlyCarbs: "炭水化物(g)",
     saveChanges: "変更を保存",
     loggedTime: "記録の日時",
     autoInjection: "この量は追加インスリンの注射としても記録しました。",

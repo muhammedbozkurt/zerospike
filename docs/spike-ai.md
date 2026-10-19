@@ -93,7 +93,7 @@ estimate only; no insulin, dose, treatment or diagnosis) and its own daily count
 (`ce:<deviceId>` through `spike_reserve`: free 1, pro 50) under the same address and
 global ceilings; over the quota answers 429 `daily_limit_carb`. The same output gate
 applies to the free-text fields and a request that mentions insulin or doses is refused
-without a model call. An answer that does not fit the schema is 502 `estimate_failed` and the slot stays spent (the model ran and was billed, so the global cap keeps bounding the bill); only an upstream failure (model not reached) gives the slot back.
+without a model call. An answer that does not fit the schema is 502 `estimate_failed` and the slot stays spent, the body being `{ error: "estimate_failed", charged: true }` so the client counts the use (the model ran and was billed, so the global cap keeps bounding the bill); only an upstream failure (model not reached) gives the slot back.
 The meal text and the answer are neither stored nor logged; `spike_calls` gets only
 `mode`, token counts and latency. The note "this is an estimate, not a dose" is fixed
 client copy (i18n), not server text. Details: `supabase/functions/ai-ask-spike/README.md`.
