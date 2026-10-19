@@ -1,11 +1,12 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { hapticSelect } from "../lib/haptics";
-import { RADIUS, THEME } from "../lib/theme/tokens";
+import { RADIUS, SPACE, THEME } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
+import { Button, Chip, Txt } from "./ui";
 import { upper } from "../lib/upper";
 import type { JournalEntry } from "../lib/db/journal";
 
@@ -25,7 +26,7 @@ import type { JournalEntry } from "../lib/db/journal";
  * separators are STICKY: rows scroll underneath them, and anything see-through
  * would show the feed sliding past behind the date.
  */
-export const JOURNAL_PANEL_PAD = 12;
+export const JOURNAL_PANEL_PAD = SPACE.md;
 
 /** The sides, carried by every piece between the top and the bottom. */
 export const journalPanelSide = () =>
@@ -59,19 +60,19 @@ export function JournalDayHeader({ section }: { section: JournalSection }) {
         flexDirection: "row",
         alignItems: "center",
         flexWrap: "wrap",
-        gap: 6,
+        gap: SPACE.sm,
         paddingHorizontal: JOURNAL_PANEL_PAD,
-        paddingTop: 12,
-        paddingBottom: 6,
+        paddingTop: SPACE.md,
+        paddingBottom: SPACE.sm,
       }}
     >
-      <Text style={{ color: THEME.text, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>
+      <Txt kind="micro" style={{ fontWeight: "700", letterSpacing: 0.8 }}>
         {upper(section.title)}
-      </Text>
+      </Txt>
       {section.dateLabel !== section.title ? (
-        <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}>
+        <Txt kind="micro" tone="muted">
           {section.dateLabel}
-        </Text>
+        </Txt>
       ) : null}
     </View>
   );
@@ -91,30 +92,15 @@ export function JournalFilterChips({
   onChange: (next: JournalFilter) => void;
 }) {
   return (
-    <View className="flex-row flex-wrap" style={{ gap: 6 }}>
-      {chips.map((c) => {
-        const on = value === c.key;
-        return (
-          <Pressable
-            key={c.key}
-            onPress={() => {
-              hapticSelect();
-              onChange(c.key);
-            }}
-            hitSlop={6}
-            accessibilityRole="button"
-            accessibilityState={{ selected: on }}
-            accessibilityLabel={c.label}
-            className={`rounded-full px-3 py-1.5 border ${
-              on ? "bg-brand border-brand" : "bg-glass border-hair"
-            }`}
-          >
-            <Text className={`text-xs font-semibold ${on ? "text-onAccent" : "text-mut"}`}>
-              {c.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+    <View className="flex-row flex-wrap" style={{ gap: SPACE.sm }}>
+      {chips.map((c) => (
+        <Chip
+          key={c.key}
+          label={c.label}
+          selected={value === c.key}
+          onPress={() => onChange(c.key)}
+        />
+      ))}
     </View>
   );
 }
@@ -136,12 +122,12 @@ export function JournalPanelTop({
         borderTopLeftRadius: RADIUS.lg,
         borderTopRightRadius: RADIUS.lg,
         paddingHorizontal: JOURNAL_PANEL_PAD,
-        paddingTop: 12,
+        paddingTop: SPACE.md,
       }}
     >
-      <Text className="text-xs font-semibold tracking-wider text-mut mb-2">
+      <Txt kind="micro" tone="muted" style={{ letterSpacing: 1.3, marginBottom: SPACE.sm }}>
         {upper(title)}
-      </Text>
+      </Txt>
       {children}
     </View>
   );
@@ -160,8 +146,8 @@ export function JournalPanelBottom({ children }: { children?: React.ReactNode })
         borderBottomLeftRadius: RADIUS.lg,
         borderBottomRightRadius: RADIUS.lg,
         paddingHorizontal: JOURNAL_PANEL_PAD,
-        paddingTop: hasAction ? 4 : 12,
-        paddingBottom: hasAction ? 12 : 4,
+        paddingTop: hasAction ? SPACE.xs : SPACE.md,
+        paddingBottom: hasAction ? SPACE.md : SPACE.xs,
       }}
     >
       {children}
@@ -179,16 +165,18 @@ export function JournalDisclaimerNote() {
   const { t } = useTranslation();
   return (
     <View
-      className="flex-row items-start rounded-xl border px-3.5 py-3 mt-3"
+      className="flex-row items-start rounded-xl border"
       style={{
+        padding: SPACE.md,
+        marginTop: SPACE.md,
         borderColor: withAlpha(THEME.warning, 0.25),
         backgroundColor: withAlpha(THEME.warning, 0.1),
       }}
     >
       <Ionicons name="medical-outline" size={15} color={THEME.warning} />
-      <Text className="text-xs leading-4 ml-2.5 flex-1" style={{ color: THEME.textMuted }}>
+      <Txt kind="caption" tone="muted" style={{ flex: 1, minWidth: 0, marginStart: SPACE.sm }}>
         {t("disclaimer.short")}
-      </Text>
+      </Txt>
     </View>
   );
 }
@@ -198,21 +186,25 @@ export function JournalDisclaimerNote() {
 export function JournalEmptyFilter({ onClearFilter }: { onClearFilter: () => void }) {
   const { t } = useTranslation();
   return (
-    <View style={{ ...journalPanelSide(), alignItems: "center", paddingVertical: 40 }}>
+    <View style={{ ...journalPanelSide(), alignItems: "center", paddingVertical: SPACE.xl }}>
       <Ionicons name="funnel-outline" size={32} color={THEME.textMuted} />
-      <Text className="text-mut text-center mt-3 px-8">{t("dashboard.emptyFilter")}</Text>
-      <Pressable
-        onPress={() => {
-          hapticSelect();
-          onClearFilter();
-        }}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={t("dashboard.filterAll")}
-        className="mt-3 rounded-full border border-hair bg-glass px-3.5 py-1.5"
+      <Txt
+        tone="muted"
+        style={{ textAlign: "center", marginTop: SPACE.md, paddingHorizontal: SPACE.xl }}
       >
-        <Text className="text-xs font-semibold text-mut">{t("dashboard.filterAll")}</Text>
-      </Pressable>
+        {t("dashboard.emptyFilter")}
+      </Txt>
+      <View style={{ marginTop: SPACE.md }}>
+        <Button
+          label={t("dashboard.filterAll")}
+          variant="outlined"
+          size="sm"
+          onPress={() => {
+            hapticSelect();
+            onClearFilter();
+          }}
+        />
+      </View>
     </View>
   );
 }
