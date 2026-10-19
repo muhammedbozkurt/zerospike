@@ -47,6 +47,8 @@ const tr = {
       "• Öğün dozu = karbonhidrat ÷ insülin-karbonhidrat oranınız\n• Düzeltme dozu = (anlık şeker - hedef) ÷ insülin duyarlılık faktörünüz (ISF)\n• Tokluk (postprandiyal) şekeri yemekten 2 saat sonra ölçülür\n\nBu oranlar kişiseldir ve doktorunuz tarafından belirlenmelidir.",
     methodNote:
       "Tahminler 0,5 ünitelik çözünürlüğe yuvarlanır ve bilinçli olarak temkinlidir; kullanmadan önce her zaman gözden geçirip düzenleyin. Düzeltme dozu, tokluk hedef aralığınızın ortasını esas alır.",
+    foodData:
+      "Gıda verileri: USDA FoodData Central (kamu malı) ve Open Food Facts katkıcıları (openfoodfacts.org), ODbL 1.0 lisansıyla.",
     iobNote:
       "Aktif insülin (IOB), kaydettiğiniz bolus dozlarından, Ayarlar'da seçtiğiniz bolus insülin ürününün zirve zamanı ve etki süresine göre şekillenen üstel bir insülin aktivite eğrisiyle tahmin edilir (bir ürün seçmediğiniz sürece genel hızlı etkili bir profil kullanılır). Yalnızca düzeltme tahminini düşürür, öğün dozunu asla. Uzun etkili (bazal) dozlar aynı yöntemle ama ayrı olarak tahmin edilir. Bu bir tahmindir, talimat değildir.",
     listTitle: "Kaynaklar",
@@ -1556,7 +1558,7 @@ const tr = {
     piece: "Adet",
     bowl: "Kâse",
     plate: "Tabak",
-    cup: "Fincan",
+    cup: "Su bardağı",
     glass: "Bardak",
     tbsp: "Yemek kaşığı",
     tsp: "Çay kaşığı",

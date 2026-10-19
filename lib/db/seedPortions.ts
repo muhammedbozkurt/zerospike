@@ -9,10 +9,12 @@
  *   std   a widely used package or standard serving (a bottle, a can, a
  *         bakery piece) where USDA has no single household measure.
  *
- * Only grams that are established for the food are listed; where a gram value
- * would be a guess there is no entry, and the food keeps the plain gram field.
- * Labels are the closed set in ./types (PortionLabelKey): no new label, so no
- * migration. The key is the catalog's English name.
+ * usda grams were compared with SR Legacy / FNDDS household measures
+ * (docs/food-sources.md); where those two disagree the SR Legacy figure is kept
+ * unless noted there. std grams are conventions, not USDA values. Where no
+ * gram value is established there is no entry, and the food keeps the plain
+ * gram field. Labels are the closed set in ./types (PortionLabelKey): no new
+ * label, so no migration. The key is the catalog's English name.
  */
 import type { PortionLabelKey } from "./types";
 
@@ -33,13 +35,13 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "White rice": u(["cup", 158]),
   "Brown rice": u(["cup", 195]),
   "Basmati rice": u(["cup", 163]),
-  "Rice pilaf": u(["cup", 158]),
+  "Rice pilaf": u(["cup", 206]),
   "Bulgur pilaf": u(["cup", 182]),
   Bulgur: u(["cup", 182]),
   Pasta: u(["cup", 140]),
   Spaghetti: u(["cup", 140]),
   "Penne pasta": u(["cup", 107]),
-  "Whole wheat pasta": u(["cup", 140]),
+  "Whole wheat pasta": u(["cup", 117]),
   Noodles: u(["cup", 160]),
   Quinoa: u(["cup", 185]),
   Couscous: u(["cup", 157]),
@@ -59,22 +61,22 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "Wheat flour": u(["cup", 125], ["tbsp", 8]),
   "Whole wheat flour": u(["cup", 120], ["tbsp", 7]),
   "Corn starch": u(["tbsp", 8]),
-  "Boiled potato": u(["medium", 136], ["cup", 156]),
+  "Boiled potato": u(["medium", 167], ["cup", 156]),
   "Baked potato with skin": u(["medium", 173]),
   "Boiled sweet potato": u(["medium", 151]),
 
   // bakery
   "White bread": u(["slice", 28]),
-  "Whole wheat bread": u(["slice", 28]),
+  "Whole wheat bread": u(["slice", 32]),
   "Toast bread": s(["slice", 30]),
-  "Multigrain bread": u(["slice", 28]),
+  "Multigrain bread": u(["slice", 36]),
   "Sourdough bread": u(["slice", 32]),
   "Bran bread": u(["slice", 28]),
   "Gluten-free bread": u(["slice", 26]),
   "Rye bread": u(["slice", 32]),
   "Mixed rye bread": u(["slice", 32]),
   Pumpernickel: u(["slice", 32]),
-  Baguette: u(["slice", 20]),
+  Baguette: u(["slice", 32]),
   Simit: s(["piece", 100]),
   "Pita bread": u(["piece", 60]),
   Naan: u(["piece", 90]),
@@ -86,7 +88,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "English muffin": u(["piece", 57]),
   "Burger bun": u(["piece", 43]),
   "Hot dog bun": u(["piece", 45]),
-  "Bread roll": u(["piece", 28]),
+  "Bread roll": u(["piece", 55]),
   Roti: s(["piece", 40]),
   Chapati: s(["piece", 40]),
   Matzo: u(["piece", 28]),
@@ -119,7 +121,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "Chickpea flour": u(["cup", 92]),
 
   // vegetables
-  Potato: u(["small", 138], ["medium", 173]),
+  Potato: u(["small", 170], ["medium", 213]),
   "Baked potato": u(["medium", 173]),
   "New potatoes": u(["piece", 50]),
   "Sweet potato": u(["medium", 114]),
@@ -161,7 +163,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "Canned tomatoes": u(["cup", 240]),
   "Corn on the cob": u(["medium", 90]),
   "Canned sweet corn": u(["cup", 164]),
-  Coleslaw: u(["cup", 120]),
+  Coleslaw: u(["cup", 220]),
   "Brussels sprouts": u(["cup", 88]),
   Okra: u(["cup", 100]),
   Pumpkin: u(["cup", 116]),
@@ -191,7 +193,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   Mango: u(["cup", 165]),
   Pomegranate: u(["cup", 174]),
   Fig: u(["small", 40], ["medium", 50]),
-  Date: u(["piece", 24]),
+  Date: u(["piece", 8]),
   Blueberry: u(["cup", 148]),
   Blackberry: u(["cup", 144]),
   Raspberry: u(["cup", 123]),
@@ -206,7 +208,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   Prune: u(["piece", 9]),
   "Dried fig": u(["piece", 8]),
   Persimmon: u(["medium", 168]),
-  Grapefruit: u(["medium", 123]),
+  Grapefruit: u(["medium", 246]),
   "Frozen strawberries": u(["cup", 152]),
   "Frozen blueberries": u(["cup", 140]),
   "Frozen raspberries": u(["cup", 140]),
@@ -268,7 +270,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "French fries": u(["small", 71], ["medium", 117], ["large", 154]),
   "Pizza slice": u(["slice", 107]),
   Pizza: u(["slice", 107]),
-  "Onion rings": u(["piece", 14]),
+  "Onion rings": u(["piece", 10]),
   "Hash browns": u(["piece", 55]),
   Falafel: u(["piece", 17]),
   "Spring roll": s(["piece", 64]),
@@ -299,15 +301,15 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "Maple syrup": u(["tbsp", 20], ["tsp", 7]),
   "Granola bar": s(["piece", 24]),
   "Chocolate chip cookie": u(["piece", 30]),
-  Shortbread: u(["piece", 8]),
+  Shortbread: u(["piece", 12]),
   Marshmallow: u(["piece", 7]),
   "Gummy candy": u(["piece", 3]),
   "Cinnamon roll": u(["piece", 83]),
   Muffin: u(["medium", 113]),
   Brownie: u(["piece", 56]),
-  Cupcake: u(["piece", 35]),
-  Biscotti: u(["piece", 19]),
-  Wafer: u(["piece", 6]),
+  Cupcake: u(["piece", 75]),
+  Biscotti: u(["piece", 32]),
+  Wafer: u(["piece", 8]),
   Macaron: u(["piece", 20]),
   "Rice pudding": u(["cup", 260]),
   Jelly: u(["cup", 240]),
@@ -334,7 +336,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "Almond butter": u(["tbsp", 16]),
   "Cashew butter": u(["tbsp", 16]),
   Tahini: u(["tbsp", 15]),
-  "Chia seeds": u(["tbsp", 12]),
+  "Chia seeds": u(["tbsp", 10]),
   Flaxseed: u(["tbsp", 10]),
   "Ground flaxseed": u(["tbsp", 7]),
   "Sesame seeds": u(["tbsp", 9]),

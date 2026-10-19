@@ -49,6 +49,8 @@ const pt: TranslationSchema = {
       "• Dose da refeição = carboidratos ÷ sua razão insulina/carboidrato\n• Dose de correção = (glicemia atual - alvo) ÷ seu fator de sensibilidade à insulina (FSI)\n• A glicemia pós-refeição (pós-prandial) é medida 2 horas depois de comer\n\nEssas razões são pessoais e devem ser definidas pelo seu médico.",
     methodNote:
       "As estimativas são arredondadas para uma resolução de 0,5 unidade e são propositalmente conservadoras. Revise e edite sempre antes de usar. A dose de correção mira o meio da sua faixa-alvo pós-refeição.",
+    foodData:
+      "Dados de alimentos: USDA FoodData Central (domínio público) e colaboradores do Open Food Facts (openfoodfacts.org), ODbL 1.0.",
     iobNote:
       "A insulina ativa (IOB) é estimada a partir das doses de bolus registradas, com uma curva exponencial de atividade da insulina definida pelo tempo de pico e pela duração do produto de insulina bolus que você escolhe em Configurações (até lá, é usado um perfil geral de ação rápida). Ela só reduz uma estimativa de correção, nunca a dose da refeição. As doses de ação prolongada (basal) são estimadas do mesmo modo, mas acompanhadas à parte. É uma estimativa, não uma instrução.",
     listTitle: "Referências",

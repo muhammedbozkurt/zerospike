@@ -49,6 +49,8 @@ const en: TranslationSchema = {
       "• Meal dose = carbohydrates ÷ your insulin-to-carbohydrate ratio\n• Correction dose = (current glucose - target) ÷ your insulin sensitivity factor (ISF)\n• Post-meal (postprandial) glucose is measured 2 hours after eating\n\nThese ratios are personal and must be set by your physician.",
     methodNote:
       "Estimates round to a 0.5-unit resolution and are intentionally conservative. Always review and edit before use. The correction dose aims at the middle of your post-meal target range.",
+    foodData:
+      "Food data: USDA FoodData Central (public domain) and Open Food Facts contributors (openfoodfacts.org), ODbL 1.0.",
     iobNote:
       "Active insulin (IOB) is estimated from your logged bolus doses using an exponential insulin-activity curve, shaped by the peak time and duration of the bolus insulin product you select in Settings (a general fast-acting profile is used until you do). It only ever lowers a correction estimate, never the meal dose. Long-acting (basal) doses are estimated the same way but tracked separately. It is an estimate, not a directive.",
     listTitle: "References",

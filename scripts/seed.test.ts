@@ -387,7 +387,7 @@ console.log("\nJ. sourced rows (seedCarb)");
   const keyOf = (f: SeedFood) => seedNameKey(f.en);
   const base = SEED_FOODS.filter((f) => !SEED_CARB.includes(f));
   const baseKeys = new Set(base.map(keyOf));
-  none("src is usda or off", SEED_CARB.filter((f) => f.src !== "usda" && f.src !== "off").map((f) => f.en));
+  none("src is usda, off or std", SEED_CARB.filter((f) => f.src !== "usda" && f.src !== "off" && f.src !== "std").map((f) => f.en));
   none("srcId is filled", SEED_CARB.filter((f) => !f.srcId || !/^\d+$/.test(f.srcId)).map((f) => f.en));
   none("carb within 0-100", SEED_CARB.filter((f) => !(f.carb >= 0 && f.carb <= 100)).map((f) => f.en));
   none(

@@ -47,7 +47,7 @@ export interface SeedFood {
   portions?: Array<[PortionLabelKey, number]>;
   /** Where a NEW row's figures come from (rows added in ./seedCarb carry it;
    *  scripts/seed.test.ts requires it there). Seed-level only: no DB column. */
-  src?: "usda" | "bls" | "turkomp" | "off";
+  src?: "usda" | "bls" | "turkomp" | "off" | "std";
   srcId?: string;
   /** Source of `portions` when they came from ./seedPortions. */
   portionSrc?: PortionSource;
@@ -80,7 +80,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "dishes", tr: "Udon", en: "Udon noodles", de: "Udon-Nudeln", es: "Fideos udon", fr: "Nouilles udon", it: "Udon", pt: "Udon", ar: "أودون", ja: "うどん", carb: 21, gi: 62, portion: 300 },
   { cat: "dishes", tr: "Tempura", en: "Tempura", de: "Tempura", es: "Tempura", fr: "Tempura", it: "Tempura", pt: "Tempura", ar: "تمبورا", ja: "天ぷら", carb: 20, gi: 60, portion: 150 },
   { cat: "dishes", tr: "Teriyaki tavuk", en: "Teriyaki chicken", de: "Teriyaki-Hähnchen", es: "Pollo teriyaki", fr: "Poulet teriyaki", it: "Pollo teriyaki", pt: "Frango teriyaki", ar: "دجاج تيرياكي", ja: "照り焼きチキン", carb: 12, gi: 50, portion: 250 },
-  { cat: "dishes", tr: "Tavuklu pirinç", en: "Fried rice", de: "Gebratener Reis", es: "Arroz frito", fr: "Riz sauté", it: "Riso alla cantonese", pt: "Arroz frito", ar: "أرز مقلي", ja: "チャーハン", carb: 26, gi: 70, portion: 250 },
+  { cat: "dishes", tr: "Tavuklu pirinç", en: "Fried rice", de: "Gebratener Reis", es: "Arroz frito", fr: "Riz sauté", it: "Riso alla cantonese", pt: "Arroz frito", ar: "أرز مقلي", ja: "チャーハン", carb: 32, gi: 70, portion: 250 },
   { cat: "dishes", tr: "Çin böreği", en: "Spring roll", de: "Frühlingsrolle", es: "Rollito de primavera", fr: "Rouleau de printemps", it: "Involtino primavera", pt: "Rolinho primavera", ar: "لفائف الربيع", ja: "春巻き", carb: 22, gi: 60, portion: 80 },
   { cat: "dishes", tr: "Dim sum", en: "Dim sum", de: "Dim Sum", es: "Dim sum", fr: "Dim sum", it: "Dim sum", pt: "Dim sum", ar: "ديم سام", ja: "点心", carb: 24, gi: 60, portion: 150 },
   { cat: "dishes", tr: "Pad Thai", en: "Pad Thai", de: "Pad Thai", es: "Pad Thai", fr: "Pad Thaï", it: "Pad thai", pt: "Pad thai", ar: "باد تاي", ja: "パッタイ", carb: 30, gi: 58, portion: 300 },
@@ -130,8 +130,8 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "staples", tr: "Beyaz pirinç", en: "White rice", de: "Weißer Reis", es: "Arroz blanco", fr: "Riz blanc", it: "Riso bianco", pt: "Arroz branco", ar: "أرز أبيض", ja: "白米", carb: 28, gi: 73, portion: 150 },
   { cat: "staples", tr: "Esmer pirinç", en: "Brown rice", de: "Vollkornreis", es: "Arroz integral", fr: "Riz complet", it: "Riso integrale", pt: "Arroz integral", ar: "أرز بني", ja: "玄米", carb: 23, gi: 50, portion: 150 },
   { cat: "staples", tr: "Basmati pirinç", en: "Basmati rice", de: "Basmatireis", es: "Arroz basmati", fr: "Riz basmati", it: "Riso basmati", pt: "Arroz basmati", ar: "أرز بسمتي", ja: "バスマティライス", carb: 25, gi: 58, portion: 150 },
-  { cat: "staples", tr: "Makarna", en: "Pasta", de: "Nudeln", es: "Pasta", fr: "Pâtes", it: "Pasta", pt: "Massa", ar: "معكرونة", ja: "パスタ", carb: 25, gi: 50, portion: 200 },
-  { cat: "staples", tr: "Tam buğday makarna", en: "Whole wheat pasta", de: "Vollkornnudeln", es: "Pasta integral", fr: "Pâtes complètes", it: "Pasta integrale", pt: "Massa integral", ar: "معكرونة القمح الكامل", ja: "全粒粉パスタ", carb: 23, gi: 42, portion: 200 },
+  { cat: "staples", tr: "Makarna", en: "Pasta", de: "Nudeln", es: "Pasta", fr: "Pâtes", it: "Pasta", pt: "Massa", ar: "معكرونة", ja: "パスタ", carb: 30, gi: 50, portion: 200 },
+  { cat: "staples", tr: "Tam buğday makarna", en: "Whole wheat pasta", de: "Vollkornnudeln", es: "Pasta integral", fr: "Pâtes complètes", it: "Pasta integrale", pt: "Massa integral", ar: "معكرونة القمح الكامل", ja: "全粒粉パスタ", carb: 30, gi: 42, portion: 200 },
   { cat: "staples", tr: "Erişte", en: "Noodles", de: "Nudeln (asiatisch)", es: "Fideos", fr: "Nouilles", it: "Tagliatelle asiatiche", pt: "Macarrão asiático", ar: "نودلز", ja: "麺", carb: 25, gi: 47, portion: 200 },
   { cat: "staples", tr: "Kinoa", en: "Quinoa", de: "Quinoa", es: "Quinoa", fr: "Quinoa", it: "Quinoa", pt: "Quinoa", ar: "كينوا", ja: "キヌア", carb: 21, gi: 53, portion: 150 },
   { cat: "staples", tr: "Kuskus", en: "Couscous", de: "Couscous", es: "Cuscús", fr: "Couscous", it: "Couscous", pt: "Cuscuz", ar: "كسكسي", ja: "クスクス", carb: 23, gi: 65, portion: 150 },
@@ -139,7 +139,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "staples", tr: "Müsli", en: "Muesli", de: "Müsli", es: "Muesli", fr: "Muesli", it: "Muesli", pt: "Muesli", ar: "ميوزلي", ja: "ミューズリー", carb: 66, gi: 57, portion: 60 },
   { cat: "staples", tr: "Granola", en: "Granola", de: "Granola", es: "Granola", fr: "Granola", it: "Granola", pt: "Granola", ar: "غرانولا", ja: "グラノーラ", carb: 64, gi: 60, portion: 60 },
   { cat: "staples", tr: "Mısır gevreği", en: "Cornflakes", de: "Cornflakes", es: "Copos de maíz", fr: "Corn flakes", it: "Fiocchi di mais", pt: "Sucrilhos", ar: "رقائق الذرة", ja: "コーンフレーク", carb: 84, gi: 81, portion: 40 },
-  { cat: "staples", tr: "Polenta", en: "Polenta", de: "Polenta", es: "Polenta", fr: "Polenta", it: "Polenta", pt: "Polenta", ar: "بولينتا", ja: "ポレンタ", carb: 28, gi: 68, portion: 150 },
+  { cat: "staples", tr: "Polenta", en: "Polenta", de: "Polenta", es: "Polenta", fr: "Polenta", it: "Polenta", pt: "Polenta", ar: "بولينتا", ja: "ポレンタ", carb: 15, gi: 68, portion: 150 },
   { cat: "staples", tr: "Mısır", en: "Sweet corn", de: "Zuckermais", es: "Maíz dulce", fr: "Maïs doux", it: "Mais dolce", pt: "Milho doce", ar: "ذرة حلوة", ja: "スイートコーン", carb: 19, gi: 52, portion: 150 },
 
   // ── BAKERY (breads & pastries) ─────────────────────────────────────────
@@ -148,9 +148,9 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "bakery", tr: "Simit", en: "Simit", de: "Simit", es: "Simit", fr: "Simit", it: "Simit (ciambella al sesamo)", pt: "Simit (rosca de gergelim)", ar: "سميط", ja: "シミット(ゴマパン)", carb: 52, gi: 70, portion: 100 },
   { cat: "bakery", tr: "Baget", en: "Baguette", de: "Baguette", es: "Baguette", fr: "Baguette", it: "Baguette", pt: "Baguete", ar: "باغيت", ja: "バゲット", carb: 55, gi: 72, portion: 80 },
   { cat: "bakery", tr: "Lavaş", en: "Lavash", de: "Lavash", es: "Pan lavash", fr: "Pain lavash", it: "Lavash (pane sottile)", pt: "Lavash (pão fino)", ar: "خبز لافاش", ja: "ラヴァーシュ(薄焼きパン)", carb: 53, gi: 70, portion: 60 },
-  { cat: "bakery", tr: "Pide ekmeği", en: "Pita bread", de: "Pitabrot", es: "Pan de pita", fr: "Pain pita", it: "Pane pita", pt: "Pão pita", ar: "خبز البيتا", ja: "ピタパン", carb: 48, gi: 68, portion: 80 },
+  { cat: "bakery", tr: "Pita ekmeği", en: "Pita bread", de: "Pitabrot", es: "Pan de pita", fr: "Pain pita", it: "Pane pita", pt: "Pão pita", ar: "خبز البيتا", ja: "ピタパン", carb: 55, gi: 68, portion: 80 },
   { cat: "bakery", tr: "Naan", en: "Naan", de: "Naan", es: "Naan", fr: "Naan", it: "Naan", pt: "Naan", ar: "نان", ja: "ナン", carb: 50, gi: 71, portion: 90 },
-  { cat: "bakery", tr: "Tortilla", en: "Tortilla", de: "Tortilla", es: "Tortilla", fr: "Tortilla", it: "Tortilla", pt: "Tortilha", ar: "تورتيا", ja: "トルティーヤ", carb: 50, gi: 52, portion: 50 },
+  { cat: "bakery", tr: "Tortilla", en: "Tortilla", de: "Tortilla", es: "Tortilla de harina", fr: "Tortilla", it: "Tortilla", pt: "Tortilha", ar: "تورتيا", ja: "トルティーヤ", carb: 50, gi: 52, portion: 50 },
   { cat: "bakery", tr: "Bagel", en: "Bagel", de: "Bagel", es: "Bagel", fr: "Bagel", it: "Bagel", pt: "Bagel", ar: "بيغل", ja: "ベーグル", carb: 53, gi: 69, portion: 100 },
   { cat: "bakery", tr: "Kruvasan", en: "Croissant", de: "Croissant", es: "Cruasán", fr: "Croissant", it: "Croissant", pt: "Croissant", ar: "كرواسون", ja: "クロワッサン", carb: 45, gi: 67, portion: 60 },
   { cat: "bakery", tr: "Kraker", en: "Crackers", de: "Cracker", es: "Galletas saladas", fr: "Crackers", it: "Cracker", pt: "Biscoito salgado", ar: "بسكويت مالح", ja: "クラッカー", carb: 68, gi: 70, portion: 30 },
@@ -278,7 +278,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "nuts", tr: "Yer fıstığı", en: "Peanut", de: "Erdnuss", es: "Cacahuete", fr: "Cacahuète", it: "Arachide", pt: "Amendoim", ar: "فول سوداني", ja: "ピーナッツ", carb: 16, gi: 14, portion: 30 },
   { cat: "nuts", tr: "Kaju", en: "Cashew", de: "Cashew", es: "Anacardo", fr: "Noix de cajou", it: "Anacardo", pt: "Castanha de caju", ar: "كاجو", ja: "カシューナッツ", carb: 30, gi: 25, portion: 30 },
   { cat: "nuts", tr: "Ay çekirdeği", en: "Sunflower seeds", de: "Sonnenblumenkerne", es: "Pipas de girasol", fr: "Graines de tournesol", it: "Semi di girasole", pt: "Sementes de girassol", ar: "بذور دوار الشمس", ja: "ひまわりの種", carb: 20, gi: 15, portion: 30 },
-  { cat: "nuts", tr: "Chia tohumu", en: "Chia seeds", de: "Chiasamen", es: "Semillas de chía", fr: "Graines de chia", it: "Semi di chia", pt: "Sementes de chia", ar: "بذور الشيا", ja: "チアシード", carb: 42, gi: 30, portion: 20 },
+  { cat: "nuts", tr: "Chia tohumu", en: "Chia seeds", de: "Chiasamen", es: "Semillas de chía", fr: "Graines de chia", it: "Semi di chia", pt: "Sementes de chia", ar: "بذور الشيا", ja: "チアシード", carb: 8, gi: 30, portion: 20 },
 
   // ── BEVERAGES ──────────────────────────────────────────────────────────
   { cat: "beverages", tr: "Kola", en: "Cola", de: "Cola", es: "Cola", fr: "Cola", it: "Cola", pt: "Refrigerante de cola", ar: "كولا", ja: "コーラ", carb: 11, gi: 63, portion: 330 },
@@ -490,7 +490,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "nuts", tr: "Brezilya cevizi", en: "Brazil nut", de: "Paranuss", es: "Nuez de Brasil", fr: "Noix du Brésil", it: "Noce del Brasile", pt: "Castanha-do-pará", ar: "جوز برازيلي", ja: "ブラジルナッツ", carb: 12, gi: 10, portion: 30 },
   { cat: "nuts", tr: "Çam fıstığı", en: "Pine nuts", de: "Pinienkerne", es: "Piñones", fr: "Pignons de pin", it: "Pinoli", pt: "Pinhão", ar: "صنوبر", ja: "松の実", carb: 13, gi: 15, portion: 20 },
   { cat: "nuts", tr: "Kabak çekirdeği", en: "Pumpkin seeds", de: "Kürbiskerne", es: "Pipas de calabaza", fr: "Graines de courge", it: "Semi di zucca", pt: "Semente de abóbora", ar: "بذور اليقطين", ja: "かぼちゃの種", carb: 14, gi: 25, portion: 30 },
-  { cat: "nuts", tr: "Keten tohumu", en: "Flaxseed", de: "Leinsamen", es: "Linaza", fr: "Graines de lin", it: "Semi di lino", pt: "Semente de linhaça", ar: "بذور الكتان", ja: "亜麻仁", carb: 29, gi: 35, portion: 20 },
+  { cat: "nuts", tr: "Keten tohumu", en: "Flaxseed", de: "Leinsamen", es: "Linaza", fr: "Graines de lin", it: "Semi di lino", pt: "Semente de linhaça", ar: "بذور الكتان", ja: "亜麻仁", carb: 2, gi: 35, portion: 20 },
   { cat: "nuts", tr: "Susam", en: "Sesame seeds", de: "Sesam", es: "Sésamo", fr: "Sésame", it: "Sesamo", pt: "Gergelim", ar: "سمسم", ja: "ごま", carb: 23, gi: 35, portion: 20 },
   { cat: "nuts", tr: "Tahin", en: "Tahini", de: "Tahini", es: "Tahini", fr: "Tahini", it: "Tahina", pt: "Tahine", ar: "طحينة", ja: "タヒニ", carb: 21, gi: 25, portion: 30 },
 
@@ -513,7 +513,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "beverages", tr: "Rakı", en: "Raki", de: "Raki", es: "Raki", fr: "Raki", it: "Raki (distillato turco)", pt: "Raki (destilado turco)", ar: "عرق تركي (راكي)", ja: "ラク(トルコの蒸留酒)", carb: 0, gi: 0, portion: 50 },
   { cat: "beverages", tr: "Şalgam suyu", en: "Turnip juice", de: "Rübensaft", es: "Jugo de nabo", fr: "Jus de navet", it: "Succo di rapa fermentato", pt: "Suco de nabo fermentado", ar: "عصير اللفت المخمر", ja: "発酵かぶジュース", carb: 4, gi: 30, portion: 250, portions: [["glass", 200], ["cup", 200]] },
   { cat: "beverages", tr: "Boza", en: "Boza", de: "Boza", es: "Boza", fr: "Boza", it: "Boza (bevanda fermentata turca)", pt: "Boza (bebida fermentada turca)", ar: "بوزة (مشروب الدخن المخمر)", ja: "ボザ(トルコの発酵飲料)", carb: 22, gi: 55, portion: 250, portions: [["glass", 200], ["cup", 200]] },
-  { cat: "beverages", tr: "Sahlep", en: "Salep", de: "Salep", es: "Salep", fr: "Salep", it: "Salep (bevanda turca)", pt: "Salep (bebida turca)", ar: "سحلب", ja: "サーレップ(トルコの温かい飲み物)", carb: 25, gi: 55, portion: 250 },
+  { cat: "beverages", tr: "Sahlep", en: "Salep", de: "Salep", es: "Salep", fr: "Salep", it: "Salep (bevanda turca)", pt: "Salep (bebida turca)", ar: "سحلب", ja: "サーレップ(トルコの温かい飲み物)", carb: 14, gi: 45, portion: 200 },
   { cat: "beverages", tr: "Soğuk kahve", en: "Iced coffee", de: "Eiskaffee", es: "Café helado", fr: "Café glacé", it: "Caffè freddo", pt: "Café gelado", ar: "قهوة مثلجة", ja: "アイスコーヒー", carb: 12, gi: 45, portion: 300 },
 
   // ── EXPANSION · SWEETS & DESSERTS II (Turkish) ─────────────────────────
@@ -649,7 +649,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
 
   { cat: "staples", tr: "Bulgur", en: "Bulgur", de: "Bulgur", es: "Bulgur", fr: "Boulgour", it: "Bulgur", pt: "Bulgur", ar: "برغل", ja: "ブルグル", carb: 19, gi: 47, portion: 150 },
   { cat: "staples", tr: "Penne makarna", en: "Penne pasta", de: "Penne", es: "Pasta penne", fr: "Pâtes penne", it: "Penne", pt: "Penne", ar: "معكرونة بيني", ja: "ペンネ", carb: 25, gi: 50, portion: 200 },
-  { cat: "staples", tr: "Spagetti", en: "Spaghetti", de: "Spaghetti", es: "Espaguetis", fr: "Spaghetti", it: "Spaghetti", pt: "Espaguete", ar: "سباغيتي", ja: "スパゲッティ", carb: 25, gi: 49, portion: 200 },
+  { cat: "staples", tr: "Spagetti", en: "Spaghetti", de: "Spaghetti", es: "Espaguetis", fr: "Spaghetti", it: "Spaghetti", pt: "Espaguete", ar: "سباغيتي", ja: "スパゲッティ", carb: 30, gi: 49, portion: 200 },
   { cat: "staples", tr: "Pirinç lapası", en: "Rice porridge", de: "Reisbrei", es: "Gachas de arroz", fr: "Bouillie de riz", it: "Porridge di riso", pt: "Papa de arroz", ar: "عصيدة الأرز", ja: "お粥", carb: 14, gi: 78, portion: 250 },
   { cat: "staples", tr: "Tarhana", en: "Tarhana", de: "Tarhana", es: "Tarhana", fr: "Tarhana", it: "Tarhana (base per zuppa turca)", pt: "Tarhana (base para sopa turca)", ar: "ترحانة", ja: "タルハナ(トルコの発酵麦)", carb: 60, gi: 50, portion: 30 },
 
@@ -835,7 +835,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "staples", tr: "İri kesilmiş yulaf (pişmiş)", en: "Steel-cut oats (cooked)", de: "Hafergrütze (gekocht)", es: "Avena cortada (cocida)", fr: "Avoine concassée (cuite)", it: "Avena tagliata (cotta)", pt: "Aveia em grãos cortados (cozida)", ar: "شوفان مقطع (مطهو)", ja: "スティールカットオーツ(調理済み)", carb: 12, gi: 52, portion: 200 },
   { cat: "staples", tr: "Hazır yulaf lapası", en: "Instant oat porridge", de: "Instant-Haferbrei", es: "Gachas de avena instantáneas", fr: "Bouillie d'avoine instantanée", it: "Porridge d'avena istantaneo", pt: "Mingau de aveia instantâneo", ar: "عصيدة الشوفان سريعة التحضير", ja: "インスタントオートミール粥", carb: 12, gi: 79, portion: 200 },
   { cat: "staples", tr: "Yulaf kepeği (kuru)", en: "Oat bran (dry)", de: "Haferkleie (trocken)", es: "Salvado de avena (seco)", fr: "Son d'avoine (sec)", it: "Crusca d'avena (cruda)", pt: "Farelo de aveia (cru)", ar: "نخالة الشوفان (نيئة)", ja: "オーツブラン(未調理)", carb: 66, gi: 0, portion: 20 },
-  { cat: "staples", tr: "Haşlanmış patates", en: "Boiled potato", de: "Salzkartoffeln", es: "Patata cocida", fr: "Pomme de terre bouillie", it: "Patate bollite", pt: "Batata cozida", ar: "بطاطا مسلوقة", ja: "ゆでじゃがいも", carb: 17, gi: 78, portion: 180 },
+  { cat: "staples", tr: "Haşlanmış patates", en: "Boiled potato", de: "Salzkartoffeln", es: "Patata cocida", fr: "Pomme de terre bouillie", it: "Patate bollite", pt: "Batata cozida", ar: "بطاطا مسلوقة", ja: "ゆでじゃがいも", carb: 20, gi: 78, portion: 180 },
   { cat: "staples", tr: "Fırında patates (kabuklu)", en: "Baked potato with skin", de: "Ofenkartoffel mit Schale", es: "Patata al horno con piel", fr: "Pomme de terre au four avec la peau", it: "Patata al forno con buccia", pt: "Batata assada com casca", ar: "بطاطا مخبوزة بالقشر", ja: "皮付きベイクドポテト", carb: 21, gi: 85, portion: 180 },
   { cat: "staples", tr: "Patates knödeli", en: "Potato dumplings", de: "Kartoffelknödel", es: "Albóndigas de patata", fr: "Boulettes de pomme de terre", it: "Gnocchi di patate (knödel)", pt: "Bolinho de batata (knödel)", ar: "كرات البطاطا (كنودل)", ja: "ポテト団子(クネーデル)", carb: 22, gi: 0, portion: 150 },
   { cat: "staples", tr: "Haşlanmış tatlı patates", en: "Boiled sweet potato", de: "Gekochte Süßkartoffel", es: "Batata cocida", fr: "Patate douce bouillie", it: "Patata dolce bollita", pt: "Batata-doce cozida", ar: "بطاطا حلوة مسلوقة", ja: "ゆでさつまいも", carb: 20, gi: 46, portion: 150 },
@@ -882,7 +882,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "bakery", tr: "Hamburger ekmeği", en: "Burger bun", de: "Burgerbrötchen", es: "Pan de hamburguesa", fr: "Pain à burger", it: "Panino da hamburger", pt: "Pão de hambúrguer", ar: "خبز برغر", ja: "バーガーバンズ", carb: 48, gi: 61, portion: 60 },
   { cat: "bakery", tr: "Sosisli ekmeği", en: "Hot dog bun", de: "Hotdogbrötchen", es: "Pan de perrito caliente", fr: "Pain à hot-dog", it: "Panino da hot dog", pt: "Pão de cachorro-quente", ar: "خبز هوت دوغ", ja: "ホットドッグバンズ", carb: 50, gi: 0, portion: 55 },
   { cat: "bakery", tr: "Sandviç ekmeği", en: "Sub roll", de: "Sandwichbrötchen", es: "Pan de bocadillo", fr: "Pain à sandwich", it: "Panino sub", pt: "Pão de sanduíche", ar: "خبز ساندويتش طويل", ja: "サブロール", carb: 52, gi: 0, portion: 80 },
-  { cat: "bakery", tr: "Buğday tortillası", en: "Wheat tortilla", de: "Weizentortilla", es: "Tortilla de trigo", fr: "Tortilla de blé", it: "Tortilla di grano", pt: "Tortilha de trigo", ar: "تورتيا القمح", ja: "小麦トルティーヤ", carb: 50, gi: 30, portion: 40 },
+  { cat: "bakery", tr: "Buğday tortillası", en: "Wheat tortilla", de: "Weizentortilla", es: "Tortilla de trigo", fr: "Tortilla de blé", it: "Tortilla di grano", pt: "Tortilha de trigo", ar: "تورتيا القمح", ja: "小麦トルティーヤ", carb: 50, gi: 52, portion: 40 },
   { cat: "bakery", tr: "Mısır tortillası", en: "Corn tortilla", de: "Maistortilla", es: "Tortilla de maíz", fr: "Tortilla de maïs", it: "Tortilla di mais", pt: "Tortilha de milho", ar: "تورتيا الذرة", ja: "コーントルティーヤ", carb: 45, gi: 52, portion: 30 },
   { cat: "bakery", tr: "Piadina", en: "Piadina", de: "Piadina", es: "Piadina", fr: "Piadina", it: "Piadina", pt: "Piadina", ar: "بيادينا", ja: "ピアディーナ", carb: 50, gi: 0, portion: 80 },
   { cat: "bakery", tr: "Taralli", en: "Taralli", de: "Taralli", es: "Taralli", fr: "Taralli", it: "Taralli", pt: "Taralli", ar: "تاراللي", ja: "タラッリ", carb: 60, gi: 0, portion: 25 },
@@ -1256,7 +1256,7 @@ const SEED_FOODS_CORE: SeedFood[] = [
   { cat: "nuts", tr: "Şekerli fıstık", en: "Sugar-coated peanuts", de: "Gebrannte Erdnüsse", es: "Cacahuetes garrapiñados", fr: "Cacahuètes caramélisées", it: "Arachidi caramellate", pt: "Amendoim doce (caramelizado)", ar: "فول سوداني مغلف بالسكر", ja: "砂糖がけピーナッツ", carb: 48, gi: 0, portion: 30 },
   { cat: "nuts", tr: "Tuzlu badem", en: "Salted almonds", de: "Gesalzene Mandeln", es: "Almendras saladas", fr: "Amandes salées", it: "Mandorle salate", pt: "Amêndoa salgada", ar: "لوز مملح", ja: "塩味アーモンド", carb: 20, gi: 15, portion: 30 },
   { cat: "nuts", tr: "Yer bademi", en: "Tiger nuts", de: "Erdmandeln", es: "Chufas", fr: "Souchet", it: "Zigolo dolce (tiger nuts)", pt: "Junça (tiger nuts)", ar: "حب العزيز", ja: "タイガーナッツ", carb: 60, gi: 0, portion: 30 },
-  { cat: "nuts", tr: "Öğütülmüş keten tohumu", en: "Ground flaxseed", de: "Geschroteter Leinsamen", es: "Linaza molida", fr: "Graines de lin moulues", it: "Semi di lino macinati", pt: "Linhaça moída", ar: "بذور الكتان المطحونة", ja: "亜麻仁パウダー", carb: 29, gi: 0, portion: 15 },
+  { cat: "nuts", tr: "Öğütülmüş keten tohumu", en: "Ground flaxseed", de: "Geschroteter Leinsamen", es: "Linaza molida", fr: "Graines de lin moulues", it: "Semi di lino macinati", pt: "Linhaça moída", ar: "بذور الكتان المطحونة", ja: "亜麻仁パウダー", carb: 2, gi: 0, portion: 15 },
 
   // ── R11 EXPANSION · BEVERAGES ───────────────────────────────────────
   { cat: "beverages", tr: "Su", en: "Water", de: "Wasser", es: "Agua", fr: "Eau", it: "Acqua", pt: "Água", ar: "ماء", ja: "水", carb: 0, gi: 0, portion: 250 },
@@ -1301,7 +1301,7 @@ const SEED_ADDITIONS_D5: SeedFood[] = [
   // ---- TURKISH (ev yemekleri, sokak, tatli, icecek) (60) ----
   { cat: "dishes", tr: "Fasulye pilaki", en: "White bean pilaki (Fasulye pilaki)", de: "Bohnen-Pilaki (Fasulye pilaki)", es: "Alubias pilaki (Fasulye pilaki)", fr: "Haricots pilaki (Fasulye pilaki)", it: "Fagioli pilaki (Fasulye pilaki)", pt: "Feijão pilaki (Fasulye pilaki)", ar: "فاصولياء بيضاء بزيت الزيتون", ja: "白いんげん豆の煮込み(ピラキ)", carb: 8.8, gi: 32, portion: 200, portions: [["bowl", 200]] },
   { cat: "dishes", tr: "Etli bamya", en: "Okra stew with meat (Etli bamya)", de: "Okra-Eintopf mit Fleisch (Etli bamya)", es: "Estofado de okra con carne (Etli bamya)", fr: "Ragoût de gombo à la viande (Etli bamya)", it: "Stufato di okra con carne (Etli bamya)", pt: "Ensopado de quiabo com carne (Etli bamya)", ar: "بامية باللحم", ja: "肉入りオクラ煮込み", carb: 7, gi: 38, portion: 250, portions: [["bowl", 250], ["plate", 300]] },
-  { cat: "dishes", tr: "Ispanaklı börek", en: "Spinach borek (Ispanakli börek)", de: "Spinat-Börek (Ispanaklı börek)", es: "Börek de espinacas (Ispanaklı börek)", fr: "Börek aux épinards (Ispanaklı börek)", it: "Börek agli spinaci (Ispanaklı börek)", pt: "Börek de espinafre (Ispanaklı börek)", ar: "بوريك بالسبانخ", ja: "ほうれん草のボレッキ", carb: 54, gi: 60, portion: 150, portions: [["piece", 100], ["portion", 150]] },
+  { cat: "dishes", tr: "Ispanaklı börek", en: "Spinach borek (Ispanakli börek)", de: "Spinat-Börek (Ispanaklı börek)", es: "Börek de espinacas (Ispanaklı börek)", fr: "Börek aux épinards (Ispanaklı börek)", it: "Börek agli spinaci (Ispanaklı börek)", pt: "Börek de espinafre (Ispanaklı börek)", ar: "بوريك بالسبانخ", ja: "ほうれん草のボレッキ", carb: 28, gi: 60, portion: 150, portions: [["piece", 100], ["portion", 150]] },
   { cat: "dishes", tr: "Kıymalı börek", en: "Minced meat borek (Kiymali börek)", de: "Börek mit Hackfleisch (Kıymalı börek)", es: "Börek de carne picada (Kıymalı börek)", fr: "Börek à la viande hachée (Kıymalı börek)", it: "Börek con carne macinata (Kıymalı börek)", pt: "Börek com carne moída (Kıymalı börek)", ar: "بوريك باللحم المفروم", ja: "ひき肉のボレッキ", carb: 30, gi: 60, portion: 150, portions: [["piece", 100], ["portion", 150]] },
   { cat: "dishes", tr: "Nohutlu pilav", en: "Rice with chickpeas (Nohutlu pilav)", de: "Reis mit Kichererbsen (Nohutlu pilav)", es: "Arroz con garbanzos (Nohutlu pilav)", fr: "Riz aux pois chiches (Nohutlu pilav)", it: "Riso con ceci (Nohutlu pilav)", pt: "Arroz com grão-de-bico (Nohutlu pilav)", ar: "أرز بالحمص", ja: "ひよこ豆入りピラフ", carb: 27, gi: 65, portion: 250, portions: [["bowl", 250], ["portion", 180]] },
   { cat: "dishes", tr: "Fırın makarna", en: "Baked pasta casserole (Firin makarna)", de: "Nudelauflauf (Fırın makarna)", es: "Pasta al horno (Fırın makarna)", fr: "Gratin de pâtes (Fırın makarna)", it: "Pasta al forno (Fırın makarna)", pt: "Massa ao forno (Fırın makarna)", ar: "معكرونة بالفرن", ja: "パスタグラタン(フルンマカルナ)", carb: 22, gi: 58, portion: 250, portions: [["portion", 250], ["bowl", 300]] },
@@ -1314,7 +1314,7 @@ const SEED_ADDITIONS_D5: SeedFood[] = [
   { cat: "sweets", tr: "Tahin-pekmez", en: "Tahini with grape molasses (Tahin-pekmez)", de: "Tahini mit Traubensirup (Tahin-pekmez)", es: "Tahini con melaza de uva (Tahin-pekmez)", fr: "Tahini au mélasse de raisin (Tahin-pekmez)", it: "Tahini con melassa d'uva (Tahin-pekmez)", pt: "Tahine com melaço de uva (Tahin-pekmez)", ar: "طحينة بدبس العنب", ja: "タヒニとぶどうの糖蜜", carb: 45, gi: 45, portion: 30, portions: [["tbsp", 20]] },
   { cat: "sweets", tr: "Pişi", en: "Turkish fried dough (Pişi)", de: "Frittierter Teig (Pişi)", es: "Masa frita turca (Pişi)", fr: "Pâte frite turque (Pişi)", it: "Pasta fritta turca (Pişi)", pt: "Massa frita turca (Pişi)", ar: "بيشي (عجين مقلي)", ja: "ピシ(揚げパン)", carb: 38, gi: 70, portion: 60, portions: [["piece", 30], ["portion", 60]] },
   { cat: "sweets", tr: "Fırın sütlaç", en: "Baked rice pudding (Firin sütlaç)", de: "Gebackener Milchreis (Fırın sütlaç)", es: "Arroz con leche al horno (Fırın sütlaç)", fr: "Riz au lait au four (Fırın sütlaç)", it: "Budino di riso al forno (Fırın sütlaç)", pt: "Arroz doce assado (Fırın sütlaç)", ar: "أرز باللبن بالفرن", ja: "焼きライスプディング", carb: 23, gi: 66, portion: 150, portions: [["portion", 150], ["cup", 150]] },
-  { cat: "beverages", tr: "Salep", en: "Salep (hot orchid milk drink)", de: "Salep (heißes Orchideen-Milchgetränk)", es: "Salep (bebida caliente de orquídea con leche)", fr: "Salep (boisson chaude au lait d'orchidée)", it: "Salep (bevanda calda al latte di orchidea)", pt: "Salep (bebida quente de orquídea com leite)", ar: "سحلب ساخن بالحليب", ja: "サーレップ(蘭の根のミルク飲料)", carb: 14, gi: 45, portion: 200, portions: [["cup", 200], ["glass", 200]] },
+  { cat: "beverages", tr: "Sahlep (sütlü)", en: "Salep (hot orchid milk drink)", de: "Salep (heißes Orchideen-Milchgetränk)", es: "Salep (bebida caliente de orquídea con leche)", fr: "Salep (boisson chaude au lait d'orchidée)", it: "Salep (bevanda calda al latte di orchidea)", pt: "Salep (bebida quente de orquídea com leite)", ar: "سحلب ساخن بالحليب", ja: "サーレップ(蘭の根のミルク飲料)", carb: 14, gi: 45, portion: 200, portions: [["cup", 200], ["glass", 200]] },
   { cat: "beverages", tr: "Nane limonata", en: "Mint lemonade (Nane limonata)", de: "Minz-Limonade (Nane limonata)", es: "Limonada con menta (Nane limonata)", fr: "Citronnade à la menthe (Nane limonata)", it: "Limonata alla menta (Nane limonata)", pt: "Limonada com hortelã (Nane limonata)", ar: "ليموناضة بالنعناع", ja: "ミントレモネード", carb: 9, gi: 50, portion: 250, portions: [["glass", 250], ["cup", 250]] },
   { cat: "dairy", tr: "Dil peyniri", en: "String cheese (Dil peyniri)", de: "Fadenkäse (Dil peyniri)", es: "Queso de hebra (Dil peyniri)", fr: "Fromage à filaments (Dil peyniri)", it: "Formaggio a filo (Dil peyniri)", pt: "Queijo de fio (Dil peyniri)", ar: "جبنة الخيوط", ja: "さけるチーズ(ディルペイニリ)", carb: 1, gi: 0, portion: 30, portions: [["piece", 30], ["portion", 30]] },
   { cat: "vegetables", tr: "Zeytin", en: "Table olives (Zeytin)", de: "Tafeloliven (Zeytin)", es: "Aceitunas de mesa (Zeytin)", fr: "Olives de table (Zeytin)", it: "Olive da tavola (Zeytin)", pt: "Azeitonas de mesa (Zeytin)", ar: "زيتون المائدة", ja: "オリーブの実", carb: 4, gi: 15, portion: 30, portions: [["tbsp", 15], ["portion", 30]] },

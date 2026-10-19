@@ -164,6 +164,10 @@ function SourcesScreen() {
         <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 6, paddingHorizontal: 4 }}>
           {t("sources.openHint")}
         </Text>
+
+        <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 17, marginTop: 14, paddingHorizontal: 4 }}>
+          {t("sources.foodData")}
+        </Text>
       </ScrollView>
       <FeedbackHost />
     </AppBackground>

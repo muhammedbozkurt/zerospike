@@ -22,6 +22,12 @@
  *      ./seedCarb file for source-tagged new rows (empty so far). Existing
  *      untouched rows get the presets via the same update path; edited or
  *      custom rows are never reached.
+ *   5  value corrections from the USDA/OFF audit (docs/food-sources.md): 100 g
+ *      carb for polenta, spinach borek, pasta, pita, fried rice, boiled potato,
+ *      chia and flaxseed, corrected household grams in ./seedPortions, the
+ *      Salep rows reconciled, and the 10 sourced rows in ./seedCarb now carry
+ *      it/pt/ar/ja names and presets. Existing untouched rows catch up through
+ *      the same update path.
  */
 
 // A type-only import: erased at build time, so reading this module never pulls
@@ -29,7 +35,7 @@
 import type { PortionLabelKey } from "./types";
 import type { SeedFood } from "./seed";
 
-export const SEED_CATALOG_VERSION = 4;
+export const SEED_CATALOG_VERSION = 5;
 
 /** The app_meta key the number above is stored under (schema v14). */
 export const SEED_CATALOG_VERSION_KEY = "seed_catalog_version";
@@ -65,6 +71,8 @@ export function seedNameKey(name: string): string {
  */
 const RENAMED_EN: Readonly<Record<string, string>> = {
   Gingerbread: "Gingerbread cookie",
+  "Chouquette (plain cream puff)": "Chouquette (cream puff)",
+  Flapjack: "Flapjack (oat bar)",
 };
 
 /** RENAMED_EN, keyed and valued the same way names are compared (seedNameKey). */
