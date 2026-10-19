@@ -65,7 +65,7 @@ console.log(`  (${withPortions} foods with presets, ${overlaid} from the overlay
 ok("overlay raised the preset count past 314", withPortions > 314 + 250, String(withPortions));
 ok("tsp and small are in use", SEED_FOODS.some((f) => f.portions?.some(([l]) => l === "tsp")) &&
   SEED_FOODS.some((f) => f.portions?.some(([l]) => l === "small")));
-ok("catalog version bumped", SEED_CATALOG_VERSION === 6, String(SEED_CATALOG_VERSION));
+ok("catalog version bumped", SEED_CATALOG_VERSION === 7, String(SEED_CATALOG_VERSION));
 ok("seedCarb rows all carry a source", SEED_CARB.every((f) => !!f.src));
 
 console.log("C. top-up reaches an untouched row, not an edited one");

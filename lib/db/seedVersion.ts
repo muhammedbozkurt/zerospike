@@ -32,6 +32,9 @@
  *      rice pilaf), biscotti/chouquette/gummy/multigrain presets, and
  *      selectFoodsToUpdate now follows RENAMED_EN so a renamed untouched row
  *      (Flapjack, Chouquette) gets its name_en and values updated in place.
+ *   7  household-measure presets for the meal-compose scene foods that had
+ *      none (Ciabatta, Camembert, Filter coffee, the tea rows). Untouched rows
+ *      get them through the same update path.
  */
 
 // A type-only import: erased at build time, so reading this module never pulls
@@ -39,7 +42,7 @@
 import type { PortionLabelKey } from "./types";
 import type { SeedFood } from "./seed";
 
-export const SEED_CATALOG_VERSION = 6;
+export const SEED_CATALOG_VERSION = 7;
 
 /** The app_meta key the number above is stored under (schema v14). */
 export const SEED_CATALOG_VERSION_KEY = "seed_catalog_version";
