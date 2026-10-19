@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Linking, Platform, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -10,6 +10,7 @@ import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { SectionLabel } from "../../components/ui";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { DisclaimerBanner } from "../../components/Disclaimer";
+import { FeedbackSheet } from "../../components/feedback/FeedbackSheet";
 import { privacyUrl, termsUrl } from "../../lib/legal";
 import { THEME } from "../../lib/theme/tokens";
 import { writeReviewUrl } from "../../lib/services/review";
@@ -28,6 +29,7 @@ export default function AboutSettings() {
   const { columnPad } = useLayout();
   const usesInsulin = insulinModeUsesInsulin(insulinModeOf(activeProfile));
   const version = Constants.expoConfig?.version ?? "1.0.0";
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   return (
     <SettingsScaffold title={t("settings.aboutSection")}>
@@ -51,9 +53,13 @@ export default function AboutSettings() {
       />
       <Row icon="medical-outline" label={t("sos.openScreen")} onPress={() => router.push("/sos")} />
 
+      <SectionLabel>{t("settings.appSection")}</SectionLabel>
+      <Row
+        icon="chatbubble-ellipses-outline"
+        label={t("feedback.aboutRow")}
+        onPress={() => setFeedbackOpen(true)}
+      />
       {rateUrl ? (
-        <>
-        <SectionLabel>{t("settings.appSection")}</SectionLabel>
         <Row
           icon="star-outline"
           label={t("settings.rateApp")}
@@ -62,7 +68,6 @@ export default function AboutSettings() {
           }}
           right={externalLinkIcon()}
         />
-        </>
       ) : null}
 
       <SectionLabel>{t("settings.legalSection")}</SectionLabel>
@@ -92,6 +97,11 @@ export default function AboutSettings() {
         <DisclaimerBanner full />
       </View>
       </View>
+      <FeedbackSheet
+        visible={feedbackOpen}
+        mode="general"
+        onClose={() => setFeedbackOpen(false)}
+      />
     </SettingsScaffold>
   );
 }

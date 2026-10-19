@@ -47,6 +47,8 @@ import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSi
 import { watchEntitlement, winbackHasRealDiscount } from "../lib/services/purchases";
 import { clearPaywallTrial, refreshPaywallTrialOnce } from "../lib/proCta";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
+import { holdSurvey } from "../lib/feedbackSurvey";
+import { CancelSurveyHost } from "../components/feedback/CancelSurveyHost";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
 import {
@@ -595,11 +597,19 @@ function RootNavigator() {
     const prev = prevProRef.current;
     prevProRef.current = isProUser;
     if (prev === true && isProUser === false) {
+      // The cancellation survey (components/feedback) follows the same loss; the
+      // winback is a paid offer and goes first, so the survey waits until this
+      // has decided whether to open it (and, if it does, until it is closed).
+      const releaseSurvey = holdSurvey();
       (async () => {
-        if (await winbackAlreadyShown()) return;
-        if (await winbackHasRealDiscount()) {
-          await markWinbackShown();
-          router.push("/winback");
+        try {
+          if (await winbackAlreadyShown()) return;
+          if (await winbackHasRealDiscount()) {
+            await markWinbackShown();
+            router.push("/winback");
+          }
+        } finally {
+          releaseSurvey();
         }
       })();
     }
@@ -840,6 +850,7 @@ function RootNavigator() {
         options={{ presentation: "modal", animation: "slide_from_bottom" }}
       />
     </Stack>
+    <CancelSurveyHost root={root} />
     {needsOnboarding && !screenshotPending ? (
       <Redirect href="/onboarding" />
     ) : null}
