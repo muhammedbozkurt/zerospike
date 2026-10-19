@@ -61,12 +61,22 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
   const [saving, setSaving] = useState(false);
   const [prefillIso, setPrefillIso] = useState<string | null>(null);
 
+  function failLoad() {
+    toast(t("common.saveFailed"), "error");
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/food");
+  }
+
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const log = await getMealLog(mealLogId);
-        if (!log || !alive) return;
+        if (!alive) return;
+        if (!log) {
+          failLoad();
+          return;
+        }
         setName(log.custom_food_name ?? "");
         setCarbsText(String(Math.round(log.calculated_carbs_g * 10) / 10));
         setNote(log.personal_note ?? "");
@@ -75,6 +85,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
         setReady(true);
       } catch (err) {
         logCrash(err, { screen: "carbOnlyMeal", step: "load" });
+        if (alive) failLoad();
       }
     })();
     return () => {

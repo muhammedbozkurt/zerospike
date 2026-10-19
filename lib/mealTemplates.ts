@@ -14,6 +14,7 @@ import type { Food, Lang, MealSlot, MealTemplate, MealTemplateItem } from "./db/
 import { foodName } from "./db/types";
 import { formatDateKey } from "./format";
 import { activeMealSlot, mealSlotForHour } from "./insulin";
+import { mealEditMode } from "./mealRoute";
 
 /** Carbs and portions are carried to ONE decimal, like every other carb figure
  *  in the app (see estimateInsulin). */
@@ -297,7 +298,7 @@ export interface TemplateSourceMeal {
 export function templateItemsFromMeals(
   meals: readonly TemplateSourceMeal[]
 ): ResolvedTemplateItem[] {
-  return meals.map((meal, index) => {
+  return meals.filter((meal) => mealEditMode(meal) !== "carbOnly").map((meal, index) => {
     const portion = round1(Math.max(0, finite(meal.portion_g)));
     const carbs = round1(Math.max(0, finite(meal.calculated_carbs_g)));
     const derivable = meal.food_id != null && portion > 0;

@@ -255,7 +255,7 @@ export function CarbEstimateSheet({
         tier,
         signal: controller.signal,
       });
-      if (shouldCountEstimate(result)) await noteCarbEstimate(isPro);
+      if (shouldCountEstimate(result)) await noteCarbEstimate(isPro).catch(() => {});
       if (result.filtered || result.items.length === 0) {
         setError("noFood");
         blocked("filtered");
@@ -269,7 +269,7 @@ export function CarbEstimateSheet({
       });
     } catch (e) {
       const code = carbErrorCode(e);
-      if (carbErrorCharged(e)) await noteCarbEstimate(isPro);
+      if (carbErrorCharged(e)) await noteCarbEstimate(isPro).catch(() => {});
       if (code === "aborted") return;
       if (code === "consent_required") {
         setConsented(false);

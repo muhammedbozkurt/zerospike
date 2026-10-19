@@ -71,6 +71,21 @@ Deno.test("medical terms: meal text passes, dose questions do not", () => {
   }
 });
 
+Deno.test("medical terms: tins, drink measures and German words are meals, not doses", () => {
+  for (const t of ["eine Dose Cola", "2 Dosen Cola und Brot", "uma dose de cachaça", "Einhorn-Kuchen", "einheimische Äpfel", "Aspartam", "Spritzgebäck", "Basilikum", "Basil", "bazlama", "injera", "piquillo", "Dosentomaten", "7 u 8 galletas", "ご飯 3単位", "Lob", "nilusni"]) {
+    assert.ok(!hasMedicalTerm(t), t);
+  }
+  for (const t of ["dose for this meal", "Dose for pasta", "dosis de insulina", "uma dose para esta refeição", "uma dose de insulina", "Dosis", "Einheit", "Einh.", "2 Einheiten Brot", "Pasta 6 単位", "6U pasta"]) {
+    assert.ok(hasMedicalTerm(t), t);
+  }
+});
+
+Deno.test("medical terms: leet, split, Turkish birim, IOB, Chinese and Japanese ratio wording are blocked", () => {
+  for (const t of ["ins0lin", "in$ulin", "InsuIin", "1nsulin", "kaç birim yapayım", "kac birim vurayim", "IOB", "hypo risk", "用量", "カーボ比", "1 unit per 10g", "1 U per 10 g", "in sulin", "insul in"]) {
+    assert.ok(hasMedicalTerm(t), t);
+  }
+});
+
 Deno.test("schema: valid answer, total recomputed, extra keys dropped, fence tolerated", () => {
   const p = parseEstimate("```json\n" + GOOD.replace('"quantity":2', '"quantity":2,"advice":"x"') + "\n```");
   assert.ok(p.ok);

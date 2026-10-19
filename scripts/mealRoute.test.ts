@@ -24,8 +24,11 @@ eq("catalogue food, no weight -> calculator", mealEditMode({ food_id: "f1", port
 eq("catalogue food with weight -> calculator", mealEditMode({ food_id: "f1", portion_g: 150 }), "calculator");
 eq("weighed custom food -> calculator", mealEditMode({ food_id: null, portion_g: 120, custom_food_name: "Soup" }), "calculator");
 eq("template meal (weight from totals) -> calculator", mealEditMode({ food_id: null, portion_g: 340, custom_food_name: "Breakfast" }), "calculator");
-eq("nameless row -> calculator", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "  " }), "calculator");
-eq("journal placeholder name -> calculator", mealEditMode({ food_id: null, portion_g: 0, display_name: "-" }), "calculator");
+eq("blank name, no food, no weight -> carbOnly", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "  ", calculated_carbs_g: 60 }), "carbOnly");
+eq("dash name, no food, no weight -> carbOnly", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "-", calculated_carbs_g: 60 }), "carbOnly");
+eq("dash display name -> carbOnly", mealEditMode({ food_id: null, portion_g: 0, display_name: "-", calculated_carbs_g: 60 }), "carbOnly");
+eq("zero carbs and no weight -> calculator", mealEditMode({ food_id: null, portion_g: 0, custom_food_name: "-", calculated_carbs_g: 0 }), "calculator");
+eq("dash name with a weight stays calculator", mealEditMode({ food_id: null, portion_g: 80, custom_food_name: "-", calculated_carbs_g: 60 }), "calculator");
 eq("NaN weight counts as no weight", mealEditMode({ food_id: null, portion_g: NaN, custom_food_name: "x" }), "carbOnly");
 eq("negative weight counts as no weight", mealEditMode({ food_id: null, portion_g: -4, custom_food_name: "x" }), "carbOnly");
 eq("tiny positive weight is a weight", mealEditMode({ food_id: null, portion_g: 0.5, custom_food_name: "x" }), "calculator");
@@ -51,6 +54,9 @@ eq("open and save keeps carbs and weight 0", [patch.calculated_carbs_g, patch.po
 eq("old calculator prefill would have invented 100 g", mealPrefill({ portion_g: 0, calculated_carbs_g: 43.1 }).portion_g, 100);
 
 const fs = require("fs");
+import { templateItemsFromMeals } from "../lib/mealTemplates";
+eq("carbOnly meal makes no template item", templateItemsFromMeals([{ food_id: null, display_name: "-", category: null, portion_g: 0, calculated_carbs_g: 60 }]).length, 0);
+eq("weighed meal still makes a template item", templateItemsFromMeals([{ food_id: null, display_name: "Soup", category: null, portion_g: 120, calculated_carbs_g: 20 }]).length, 1);
 const screen = fs.readFileSync("components/CarbOnlyMealEdit.tsx", "utf8");
 eq("carb-only screen has no dose arithmetic", /estimateInsulin|insulin_dose_units|logInjection|iob/i.test(screen), false);
 const calc = fs.readFileSync("app/calculator.tsx", "utf8");

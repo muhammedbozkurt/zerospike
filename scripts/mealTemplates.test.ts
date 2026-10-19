@@ -640,7 +640,7 @@ section("G. editor helpers (name fold, portion edit, link portions)");
       food_id: null,
       display_name: "Annemin yemegi",
       category: null,
-      portion_g: 0,
+      portion_g: 90,
       calculated_carbs_g: 42,
     },
     {
@@ -669,6 +669,14 @@ section("G. editor helpers (name fold, portion edit, link portions)");
   eq("so its carbs survive", fromMeals[2].carbs_g, 17);
   eq("the order eaten is the order stored", fromMeals[1].sort_order, 1);
   eq("nothing is prefilled from nothing", templateItemsFromMeals([]).length, 0);
+  eq(
+    "an estimate meal (no food, no weight) makes no template item",
+    templateItemsFromMeals([
+      { food_id: null, display_name: "-", category: null, portion_g: 0, calculated_carbs_g: 60 },
+      { food_id: null, display_name: "Toast", category: null, portion_g: 0, calculated_carbs_g: 30 },
+    ]).length,
+    0
+  );
 }
 
 // ── P17: usage counters after the meals logged from a template are deleted ────

@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
-import { mealEditRoute } from "../lib/mealRoute";
+import { mealEditMode, mealEditRoute } from "../lib/mealRoute";
 import { captureDeletion, type DeletionSnapshot } from "../lib/db/undo";
 import {
   applyAfterDeleteFromSnapshot,
@@ -298,7 +298,7 @@ export function useJournalRows(input: {
         icon: "create-outline",
         onPress: () => openEdit(entry),
       });
-      if (entry.kind === "meal") {
+      if (entry.kind === "meal" && mealEditMode(entry) !== "carbOnly") {
         actions.push({
           label: t("templates.fromMeal"),
           icon: "bookmark-outline",

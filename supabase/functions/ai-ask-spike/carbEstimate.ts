@@ -105,20 +105,22 @@ const ROOTS = [
 ];
 const PREFIXES = [
   "medicat", "medicin", "treatment", "tratamien", "trattamen", "traitement", "tratament", "behandl", "diagnos", "teshis", "ilac", "tedavi",
-  "dosag", "dosier", "posolog", "einh", "piquer",
+  "dosag", "dosier", "posolog", "piquer",
 ];
-const WORDS = new Set(["nph", "isf", "icr", "amaryl", "spritze", "spritzen", "spritzt", "spritzte", "igne"]);
+const WORDS = new Set(["nph", "isf", "icr", "amaryl", "spritze", "spritzen", "spritzt", "spritzte", "igne", "iob", "einh", "einheit", "einheiten"]);
 const CONTEXT = [
   /(?:rapid|fast|short|long)[\s-]*acting/, /carb\w*\s*ratio/, /sliding\s*scale/, /(?<![a-z0-9])i\s*:\s*c(?![a-z0-9])/, /(?<![a-z0-9])(?:ke|be|bie)[\s-]*faktor/,
   /ne\s+kadar\s+(?:yapay|vuray|vurmal|yapmal)|unite\s+yapay|yapay\w*\s+unite|vuray/,
   /(?:rapid[ao]|lent[ao]|ultrarapid[ao])\s*\d+\s*(?:dosis|dose|doses|dosi|doz|unidades?|units?)/,
   /(?:unidades?|units?|unites?|unita|dosis|doses?|doz|dosi)\s+(?:de\s+|di\s+|of\s+|d['’])?(?:rapid|lent|ultrarapid)\w*/,
   /[\d\u0660-\u0669]\s*وحد[ةت]|كم\s*وحد|وحدتين/,
+  /ka[cç]\s*birim\w*\s+(?:yap|vur|al)/, /hypo\w*\s*risk/,
+  /(?:units?|u|ie|iu|ui|ue|einheiten|unites?|unidades?)\s*(?:per|pro|par|por|\/)\s*\d+(?:[.,]\d+)?\s*(?:g|gr|gram\w*|gramm\w*)(?![a-z0-9])/,
 ];
 const DOSE_WORD = /(?<![a-z0-9])(?:dose|doses|dosi|dosis|dosing|doz|dozu|dozunu|dozum|dozlar|dozda|dozunuz)(?![a-z0-9])/g;
 const DOSE_COUNTABLE = new Set(["dose", "dosi", "dosis", "doz"]);
 const DOSE_PORTION_AFTER = /^\s*(?:(?:per|for|pour|para|por|fur|fuer|de|di|icin)\s+)?\d+\s*(?:persone|persona|personas|people|persons|personen|personnes|pessoas|kisi|servings?|portions?|porzioni|porciones|porcoes)/;
-const IU_AFTER_NUMBER = /(?<![a-z0-9])\d+(?:[.,]\d+)?\s*(?:iu|ie|ui|ue|u)(?![a-z0-9])|(?<![a-z0-9])\d+\s*e(?:\.|\s*$)/;
+const IU_AFTER_NUMBER = /(?<![a-z0-9])\d+(?:[.,]\d+)?\s*(?:(?:iu|ie|ui|ue)(?![a-z0-9])|u(?![a-z0-9])(?!\s+\d))|(?<![a-z0-9])\d+\s*e(?:\.|\s*$)/;
 const IU_WORD = /(?<![a-z0-9])iu(?![a-z0-9])/;
 const UNIT_WORD = String.raw`(?:units?|unites?|unitas?|unidades?|unidad|einheit\w*|iu|ie|ui|ue|u)`;
 const HOW_MANY_UNITS = new RegExp(
@@ -126,7 +128,7 @@ const HOW_MANY_UNITS = new RegExp(
 );
 const OTHER_SCRIPT = [
   "نسولين", "جرع", "وحدات", "علاج", "دواء", "حقن", "نوفورابيد", "لانتوس", "توجيو", "تريسيبا", "ليفيمير", "هيومالوج", "ميتفورمين", "اوزمبيك", "أوزمبيك", "نقص السكر", "ارتفاع السكر",
-  "インスリン", "インシュリン", "単位", "投与", "服薬", "薬剤", "治療", "診断", "ユニット", "打つ", "注射", "ボーラス", "低血糖", "高血糖", "メトホルミン",
+  "インスリン", "インシュリン", "単位", "用量", "カーボ比", "投与", "服薬", "薬剤", "治療", "診断", "ユニット", "打つ", "注射", "ボーラス", "低血糖", "高血糖", "メトホルミン",
   "ノボラ", "ヒューマログ", "ヒューマリン", "ノボリン", "ランタス", "トレシーバ", "レベミル", "ルムジェブ", "アピドラ", "リベルサス", "オゼンピック", "ビクトーザ", "ジャディアンス", "グリクラジド",
 ];
 
@@ -140,6 +142,29 @@ function readings(f: string): string[] {
   return [f, glued, lettersJoined(f), lettersJoined(glued)];
 }
 
+// Look-alike digits and symbols read as the letter they stand in for; l, 1, | and i collapse to one letter
+// on both sides, so "InsuIin" (capital i for l), "1nsulin" and "ins0lin" (0 for u) meet the roots.
+const LEET_ROOTS = ROOTS.map((r) => r.replace(/l/g, "i"));
+const LEET_PREFIXES = PREFIXES.map((r) => r.replace(/l/g, "i"));
+function leetReadings(text: string): string[] {
+  if (!/[0$1|il]/.test(text)) return [];
+  return ["o", "u"].map((zero) => text.replace(/0/g, zero).replace(/\$/g, "s").replace(/[l1|]/g, "i"));
+}
+
+/** "uma dose de cachaça": a drink measure, not a dose. Only after an article and before a plain noun. */
+const PT_DOSE_BEFORE = /(?:^|[^a-z0-9])(?:uma|um|duas|outra)\s+$/;
+const PT_DOSE_AFTER = /^\s+de\s+[a-z]/;
+
+function pairJoined(text: string): boolean {
+  const words = text.split(/[^a-z0-9]+/).filter(Boolean);
+  for (let i = 0; i + 1 < words.length; i++) {
+    if (Math.min(words[i].length, words[i + 1].length) > 3) continue;
+    const joined = words[i] + words[i + 1];
+    if (ROOTS.some((r) => r.length >= 6 && joined.includes(r) && !words[i].includes(r) && !words[i + 1].includes(r))) return true;
+  }
+  return false;
+}
+
 function scanFolded(f: string): boolean {
   if (OTHER_SCRIPT.some((t) => f.includes(t))) return true;
   for (const text of readings(f)) {
@@ -147,22 +172,42 @@ function scanFolded(f: string): boolean {
       if (!word) continue;
       if (WORDS.has(word) || ROOTS.some((r) => word.includes(r)) || PREFIXES.some((st) => word.startsWith(st))) return true;
     }
+    for (const leet of leetReadings(text)) {
+      for (const word of leet.replace(/aspartam/g, "").split(/[^a-z0-9]+/)) {
+        if (word && (LEET_ROOTS.some((r) => word.includes(r)) || LEET_PREFIXES.some((st) => word.startsWith(st)))) return true;
+      }
+    }
+    if (pairJoined(text)) return true;
     if (IU_AFTER_NUMBER.test(text) || IU_WORD.test(text) || HOW_MANY_UNITS.test(text) || CONTEXT.some((re) => re.test(text))) return true;
     for (const m of text.matchAll(DOSE_WORD)) {
-      if (DOSE_COUNTABLE.has(m[0]) && /\d\s*$/.test(text.slice(0, m.index))) continue;
-      if (DOSE_PORTION_AFTER.test(text.slice(m.index + m[0].length))) continue;
+      const before = text.slice(0, m.index);
+      const after = text.slice(m.index + m[0].length);
+      if (DOSE_COUNTABLE.has(m[0]) && /\d\s*$/.test(before)) continue;
+      if (DOSE_PORTION_AFTER.test(after)) continue;
+      if (m[0] === "dose" && PT_DOSE_BEFORE.test(before) && PT_DOSE_AFTER.test(after)) continue;
       return true;
     }
   }
   return false;
 }
 
-export function hasMedicalTerm(text: string): boolean {
+// German "Dose/Dosen" (tin) mid-sentence with a capital D. Not "Dose for ...", and not the "wie viele Dosen" / "meine Dose" question shapes.
+const DE_TIN = /(?<=[\p{L}\p{N}]\s+)Dosen?(?![\p{L}\p{N}])(?!\s+(?:for|of|to|per|pro)(?![\p{L}]))/gu;
+const DE_TIN_ASKED = /(?:wie\s*viele|welche|meine|meiner|deine|ihre|richtige|empfohlene|passende)\s+$/i;
+function maskTins(text: string): string {
+  return text.replace(DE_TIN, (m, offset: number) => (DE_TIN_ASKED.test(text.slice(0, offset)) ? m : "tin"));
+}
+
+// 食品交換表 "ご飯 3単位": exchange units of a named food, not insulin units.
+const JA_EXCHANGE = /(?:ご飯|ごはん|御飯|ライス|食パン|パン|うどん|そば|めん|麺|いも|芋|牛乳|果物|みかん|りんご|バナナ)\s*[0-9]+(?:\.[0-9]+)?\s*単位/g;
+
+export function hasMedicalTerm(raw: string): boolean {
+  const text = raw.normalize("NFKC").replace(JA_EXCHANGE, " ");
   const plain = normalizeWithMap(text, "").norm.toLowerCase();
   if (plain.includes("ünite")) return true;
   for (const gap of ["", " "] as const) {
     if (OTHER_SCRIPT.some((t) => normalizeWithMap(text, gap).norm.includes(t))) return true;
-    if (scanFolded(fold(normalizeWithMap(text, gap, true).norm))) return true;
+    if (scanFolded(fold(maskTins(normalizeWithMap(text, gap, true).norm)))) return true;
   }
   return false;
 }

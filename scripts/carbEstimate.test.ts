@@ -295,6 +295,13 @@ function editing(): void {
   eq("a result with items: add is on", client.canAddEstimate({ resultShown: true, items, saving: false }), true);
   eq("saving in progress: add is off", client.canAddEstimate({ resultShown: true, items, saving: true }), false);
   eq("a result emptied by the user: add is off", client.canAddEstimate({ resultShown: true, items: [], saving: false }), false);
+  const dash = client.editableFromEstimate([{ name: "-", quantity: 0, unit: "", grams_carb: 60 }]);
+  eq("a dash-only item cannot be added", client.canAddEstimate({ resultShown: true, items: dash, saving: false }), false);
+  eq("a blank-name item cannot be added", client.canAddEstimate({ resultShown: true, items: [{ ...dash[0], name: "   " }], saving: false }), false);
+  eq("one named item among blanks can be added", client.canAddEstimate({ resultShown: true, items: [...dash, ...items], saving: false }), true);
+  const mixed = client.estimateMealInput([...dash, ...items]);
+  ok("the saved name has no dash and no blank piece", !mixed.custom_food_name.includes("-") && mixed.custom_food_name.startsWith("Bread"), mixed.custom_food_name);
+  eq("blank-name items still count toward the carbs", mixed.calculated_carbs_g, 100.6);
   eq("charged true is read", client.parseEstimateBody({ ...GOOD, charged: true }).charged, true);
   eq("charged missing is false", client.parseEstimateBody(GOOD).charged, false);
   eq("charged non-boolean is false", client.parseEstimateBody({ ...GOOD, charged: "yes" }).charged, false);

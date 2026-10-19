@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   I18nManager,
   Image,
   Modal,
@@ -2657,23 +2658,29 @@ function Breakdown({
 export default function CalculatorRoute() {
   const { mealLogId } = useLocalSearchParams<{ mealLogId?: string }>();
   const editing = typeof mealLogId === "string" && mealLogId.length > 0;
+  const { t } = useTranslation();
+  const router = useRouter();
   const [mode, setMode] = useState<MealEditMode | null>(editing ? null : "calculator");
 
   useEffect(() => {
     if (!editing || !mealLogId) return;
+    setMode(null);
     let alive = true;
     (async () => {
       try {
         const log = await getMealLog(mealLogId);
         if (alive) setMode(log ? mealEditMode(log) : "calculator");
       } catch {
-        if (alive) setMode("calculator");
+        if (!alive) return;
+        Alert.alert(t("common.saveFailed"));
+        if (router.canGoBack()) router.back();
+        else router.replace("/(tabs)/food");
       }
     })();
     return () => {
       alive = false;
     };
-  }, [editing, mealLogId]);
+  }, [editing, mealLogId, router, t]);
 
   return (
     <SafeAreaProvider>

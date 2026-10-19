@@ -17,7 +17,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
-import { mealEditRoute } from "../../lib/mealRoute";
+import { mealEditMode, mealEditRoute } from "../../lib/mealRoute";
 import {
   searchFoods,
   deleteFood,
@@ -875,6 +875,7 @@ export default function FoodScreen() {
 
   /** Long press on a logged meal: turn that day's whole slot into a template. */
   function onTodayMealLongPress(meal: MealEntry) {
+    if (mealEditMode(meal) === "carbOnly") return;
     actionSheet({
       title: meal.display_name,
       actions: [
@@ -1101,6 +1102,7 @@ export default function FoodScreen() {
     setEstimateSaving(true);
     try {
       const input = estimateMealInput(items);
+      if (input.custom_food_name.trim() === "") return;
       const meal = await addMealLog({
         profile_id: activeProfile.id,
         food_id: null,

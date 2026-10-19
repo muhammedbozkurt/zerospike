@@ -303,10 +303,17 @@ export function estimateMealInput(items: readonly EditableItem[]): {
   portion_g: number;
   calculated_carbs_g: number;
 } {
-  const base = composeMealInput(
-    composeItems(items).map((item, i) => ({ ...item, name: editableLabel(items[i]) || item.name }))
+  const all = composeMealInput(composeItems(items));
+  const named = items.filter(hasItemName);
+  const label = composeMealInput(
+    composeItems(named).map((item, i) => ({ ...item, name: editableLabel(named[i]) || item.name }))
   );
-  return { ...base, portion_g: 0 };
+  return { custom_food_name: label.custom_food_name, portion_g: 0, calculated_carbs_g: all.calculated_carbs_g };
+}
+
+/** A placeholder ("", spaces, only dashes) is not a name; a saved row without one would open as a calculator meal. */
+export function hasItemName(item: EditableItem): boolean {
+  return !/^[\s\-\u2010-\u2015]*$/.test(item.name);
 }
 
 /**
@@ -319,7 +326,9 @@ export function canAddEstimate(state: {
   items: readonly EditableItem[];
   saving: boolean;
 }): boolean {
-  return state.resultShown && state.items.length > 0 && !state.saving;
+  return (
+    state.resultShown && state.items.length > 0 && state.items.some(hasItemName) && !state.saving
+  );
 }
 
 /** Analytics only: an item count bucket, never a gram value. */
