@@ -1623,7 +1623,7 @@ const tr = {
     messagePlaceholder: "Mesajınızı yazın",
     emailPlaceholder: "E-posta (isteğe bağlı)",
     emailHint: "Yalnızca size dönmemizi istiyorsanız yazın.",
-    privacy: "Mesajınız, yazdıysanız e-postanız ve anonim kurulum kimliğiniz 180 gün saklanır.",
+    privacy: "Mesajınız, yazdıysanız e-postanız, kurulum kimliğiniz, uygulama sürümü, platform ve dil 180 gün saklanır.",
     send: "Gönder",
     retry: "Tekrar dene",
     dismiss: "Göndermeden kapat",
@@ -1632,6 +1632,7 @@ const tr = {
     errorRateLimited: "Kısa sürede çok fazla deneme yapıldı. Lütfen biraz sonra tekrar deneyin.",
     errorRejected: "Mesajınız kabul edilmedi. Metni ve e-postayı kontrol edip tekrar deneyin.",
     errorEmail: "E-posta adresi geçerli görünmüyor.",
+    errorGeneric: "Şu anda gönderilemiyor. Lütfen daha sonra tekrar deneyin.",
   },
 };
 

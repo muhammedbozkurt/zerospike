@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Platform, Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
+import { OverlayModal as Modal } from "./OverlayModal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, {
   DateTimePickerEvent,

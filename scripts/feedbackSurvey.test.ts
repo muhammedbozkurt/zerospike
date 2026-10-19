@@ -13,7 +13,8 @@
  */
 
 declare const console: { log: (...a: unknown[]) => void };
-declare const process: { exit: (code: number) => void };
+declare const process: { exit: (code: number) => void; cwd: () => string };
+declare function require(id: string): any;
 
 import {
   CANCEL_REASONS,
@@ -37,7 +38,14 @@ import {
   onSurveyRelease,
   surveyHeld,
   surveyMayPresent,
-  takePendingSurvey,
+  BAD_CHARS,
+  createSendSlot,
+  markSurveyAsked,
+  mayCloseByButton,
+  mayCloseByGesture,
+  overlayOpen,
+  peekPendingSurvey,
+  registerOverlay,
   type FeedbackDraft,
   type KeyValueStore,
   type SurveyGate,
@@ -138,7 +146,8 @@ async function main(): Promise<void> {
   eq("rate limit text key", failureMessageKey("rate_limited"), "feedback.errorRateLimited");
   eq("rejected text key", failureMessageKey("rejected"), "feedback.errorRejected");
   eq("network text key", failureMessageKey("unavailable"), "feedback.errorNetwork");
-  eq("unconfigured reads as network", failureMessageKey("not_configured"), "feedback.errorNetwork");
+  eq("unconfigured is a generic error", failureMessageKey("not_configured"), "feedback.errorGeneric");
+  eq("no installation id is a generic error", failureMessageKey("no_device_id"), "feedback.errorGeneric");
 
   section("D. analytics carries kind and reason only");
   eq("survey props", feedbackEventProps(draft({ kind: "cancel_survey", reasonCode: "expensive", message: "SECRET", email: "a@b.co" })), {
@@ -160,18 +169,20 @@ async function main(): Promise<void> {
   {
     const kv = memoryKv();
     ok("first look while free arms nothing", !(await noteProState(kv, false)));
-    ok("nothing to take", !(await takePendingSurvey(kv)));
+    ok("nothing pending", !(await peekPendingSurvey(kv)));
     ok("pro seen: nothing armed", !(await noteProState(kv, true)));
     ok("loss arms", await noteProState(kv, false));
     eq("pending written", kv.data[SURVEY_PENDING_KEY], "true");
     ok("a second look keeps it armed", await noteProState(kv, false));
-    ok("take returns true", await takePendingSurvey(kv));
-    eq("asked written", kv.data[SURVEY_ASKED_KEY], "true");
+    ok("peek says due", await peekPendingSurvey(kv));
+    ok("peek writes nothing: a sheet that never appeared leaves it armed", !(SURVEY_ASKED_KEY in kv.data) && (await peekPendingSurvey(kv)));
+    await markSurveyAsked(kv);
+    eq("asked written once the sheet is shown", kv.data[SURVEY_ASKED_KEY], "true");
     eq("pending cleared", kv.data[SURVEY_PENDING_KEY], "false");
-    ok("never again", !(await takePendingSurvey(kv)));
+    ok("never again", !(await peekPendingSurvey(kv)));
     await noteProState(kv, true);
     ok("a second loss does not re-arm", !(await noteProState(kv, false)));
-    ok("and cannot be taken", !(await takePendingSurvey(kv)));
+    ok("and is not due", !(await peekPendingSurvey(kv)));
   }
   {
     const kv = memoryKv();
@@ -179,7 +190,7 @@ async function main(): Promise<void> {
     await noteProState(kv, false);
     ok("regaining pro disarms an unshown survey", !(await noteProState(kv, true)));
     eq("pending cleared on regain", kv.data[SURVEY_PENDING_KEY], "false");
-    ok("nothing to take after regain", !(await takePendingSurvey(kv)));
+    ok("nothing due after regain", !(await peekPendingSurvey(kv)));
   }
   {
     const broken: KeyValueStore = {
@@ -191,15 +202,18 @@ async function main(): Promise<void> {
       },
     };
     ok("storage failure never arms", !(await noteProState(broken, false)));
-    ok("storage failure never shows", !(await takePendingSurvey(broken)));
+    ok("storage failure never shows", !(await peekPendingSurvey(broken)));
+    await markSurveyAsked(broken);
+    ok("storage failure on mark does not throw", true);
   }
 
   section("G. when the survey may open");
-  const gate: SurveyGate = { ready: true, onboarded: true, isPro: false, screenshotMode: false, root: "(tabs)", winbackHold: false };
+  const gate: SurveyGate = { ready: true, onboarded: true, isPro: false, screenshotMode: false, root: "(tabs)", winbackHold: false, overlayOpen: false };
   ok("open on the tabs", surveyMayPresent(gate));
   ok("open on the bare root", surveyMayPresent({ ...gate, root: undefined }));
   ok("not while the winback decides", !surveyMayPresent({ ...gate, winbackHold: true }));
-  ok("not over the winback", !surveyMayPresent({ ...gate, root: "winback" }));
+  ok("not while another Modal is open", !surveyMayPresent({ ...gate, overlayOpen: true }));
+  ok("not over the winback",!surveyMayPresent({ ...gate, root: "winback" }));
   ok("not over the paywall", !surveyMayPresent({ ...gate, root: "paywall" }));
   ok("not over the downsell", !surveyMayPresent({ ...gate, root: "downsell" }));
   ok("not over onboarding", !surveyMayPresent({ ...gate, root: "onboarding" }));
@@ -232,6 +246,78 @@ async function main(): Promise<void> {
     off();
     holdSurvey()();
     eq("unsubscribed listener stays quiet", released, 1);
+  }
+
+  section("I. another Modal on screen keeps the survey out");
+  {
+    let released = 0;
+    const off = onSurveyRelease(() => {
+      released++;
+    });
+    ok("no overlay at start", !overlayOpen());
+    const sheet = registerOverlay();
+    const dialog = registerOverlay();
+    ok("overlay open", overlayOpen());
+    ok("the gate closes with it", !surveyMayPresent({ ...gate, overlayOpen: overlayOpen() }));
+    sheet();
+    sheet();
+    ok("one still open", overlayOpen());
+    eq("not told yet", released, 0);
+    dialog();
+    ok("all closed", !overlayOpen());
+    ok("the gate reopens", surveyMayPresent({ ...gate, overlayOpen: overlayOpen() }));
+    eq("told once when the last closes", released, 1);
+    const hold = holdSurvey();
+    const o = registerOverlay();
+    hold();
+    eq("a hold released under an open overlay does not tell", released, 1);
+    o();
+    eq("the overlay closing does", released, 2);
+    off();
+  }
+
+  section("J. sending and closing");
+  {
+    const slot = createSendSlot();
+    ok("first press wins the slot", slot.tryAcquire());
+    ok("a second press before the answer is refused", !slot.tryAcquire());
+    slot.release();
+    ok("after the answer it can send again", slot.tryAcquire());
+    slot.release();
+    ok("gesture close while sending is refused", !mayCloseByGesture({ busy: true, survey: false, hasText: false }));
+    ok("button close while sending is refused", !mayCloseByButton({ busy: true }));
+    ok("survey with text: scrim and back stay shut", !mayCloseByGesture({ busy: false, survey: true, hasText: true }));
+    ok("survey without text closes by gesture", mayCloseByGesture({ busy: false, survey: true, hasText: false }));
+    ok("general sheet closes by gesture even with text (the draft is kept)", mayCloseByGesture({ busy: false, survey: false, hasText: true }));
+    ok("the button works when idle", mayCloseByButton({ busy: false }));
+  }
+
+  section("K. client text rules are the server's");
+  {
+    const fs = require("fs");
+    const nodePath = require("path");
+    const server: string = fs.readFileSync(nodePath.join(process.cwd(), "supabase/functions/feedback/validate.ts"), "utf8");
+    const bad = /const BAD = "([^"]*)";/.exec(server);
+    ok("server BAD set found", bad !== null);
+    eq("client email character set equals the server's", BAD_CHARS, bad ? bad[1].replace(/\\\\/g, "\\") : "");
+    const strip = (name: string) => {
+      const m = new RegExp("const " + name + " = (/.*/[a-z]*);").exec(server);
+      return m ? m[1] : "";
+    };
+    const client: string = fs.readFileSync(nodePath.join(process.cwd(), "lib/feedbackSurvey.ts"), "utf8");
+    for (const name of ["CONTROL", "LONE_SURROGATE", "INVISIBLE"]) {
+      const s = strip(name);
+      ok(`server ${name} found`, s !== "");
+      ok(`client ${name} is the server's`, s !== "" && client.includes(`const ${name} = ${s};`));
+    }
+    eq("only zero-width characters count as empty", draftProblem(draft({ message: "\u200b\u200e\u202e" })), "empty");
+    eq("control characters count as empty", draftProblem(draft({ message: "\u0001\u0007\u007f" })), "empty");
+    eq("a lone surrogate counts as empty", draftProblem(draft({ message: "\ud800" })), "empty");
+    eq("tab and newline are not stripped from inside", cleanMessage("a\tb\nc"), "a\tb\nc");
+    eq("zero-width inside text is dropped", cleanMessage("a\u200bb"), "ab");
+    eq("an e-mail with a zero-width character is bad", draftProblem(draft({ message: "x", email: "a\u200b@b.co" })), "bad_email");
+    eq("an e-mail with a bidi override is bad", draftProblem(draft({ message: "x", email: "a@b\u202e.co" })), "bad_email");
+    eq("a normal e-mail is fine", draftProblem(draft({ message: "x", email: "ali@örnek.com.tr" })), null);
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

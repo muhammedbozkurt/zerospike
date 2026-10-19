@@ -4,7 +4,6 @@ import {
   Easing,
   InputAccessoryView,
   Keyboard,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -13,6 +12,7 @@ import {
   type KeyboardEvent as RNKeyboardEvent,
   type TextInputProps,
 } from "react-native";
+import { OverlayModal as Modal } from "./OverlayModal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -61,6 +61,8 @@ export interface SheetShellProps {
   /** Pinned to the sheet's bottom, outside the scrolling content. */
   footer?: React.ReactNode;
   testID?: string;
+  /** Fires once the Modal is really on screen (RN Modal onShow). */
+  onShown?: () => void;
 }
 
 const ANDROID_KEYBOARD_ANIM_MS = 180;
@@ -79,6 +81,7 @@ export function SheetShell({
   children,
   footer,
   testID,
+  onShown,
 }: SheetShellProps): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -173,7 +176,7 @@ export function SheetShell({
   const onContentSizeChange = useCallback((_w: number, h: number) => setContentHeight(h), []);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onShow={onShown}>
       <AnimatedPressable
         style={{
           flex: 1,

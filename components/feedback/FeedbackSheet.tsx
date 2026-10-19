@@ -14,8 +14,12 @@ import {
   MAX_MESSAGE_CHARS,
   USER_FEEDBACK_KINDS,
   canSend,
+  cleanMessage,
+  createSendSlot,
   draftProblem,
   failureMessageKey,
+  mayCloseByButton,
+  mayCloseByGesture,
   type CancelReason,
   type FeedbackDraft,
   type FeedbackKind,
@@ -52,10 +56,13 @@ export function FeedbackSheet({
   visible,
   mode,
   onClose,
+  onShown,
 }: {
   visible: boolean;
   mode: FeedbackSheetMode;
   onClose: (sent: boolean) => void;
+  /** The sheet is really on screen (the survey writes its asked flag here). */
+  onShown?: () => void;
 }) {
   const { t } = useTranslation();
   const isSurvey = mode === "survey";
@@ -67,6 +74,8 @@ export function FeedbackSheet({
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const alive = useRef(true);
+  // A state flag is one render late: two quick presses would both pass `busy`.
+  const sendSlot = useRef(createSendSlot());
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -95,16 +104,21 @@ export function FeedbackSheet({
   );
 
   async function send() {
-    if (busy) return;
     const problem = draftProblem(draft);
     if (problem === "bad_email") {
       setErrorKey("feedback.errorEmail");
       return;
     }
     if (problem) return;
+    if (!sendSlot.current.tryAcquire()) return;
     setBusy(true);
     setErrorKey(null);
-    const result = await submitFeedback(draft);
+    let result;
+    try {
+      result = await submitFeedback(draft);
+    } finally {
+      sendSlot.current.release();
+    }
     if (!alive.current) return;
     setBusy(false);
     if (result.ok) {
@@ -146,14 +160,26 @@ export function FeedbackSheet({
         loading={busy}
         disabled={!canSend(draft)}
       />
-      <Button label={t("feedback.dismiss")} variant="ghost" onPress={() => close(false)} disabled={busy} />
+      <Button
+        label={t("feedback.dismiss")}
+        variant="ghost"
+        onPress={() => mayCloseByButton({ busy }) && close(false)}
+        disabled={busy}
+      />
     </View>
   );
+
+  // Scrim, back key and the title X: see mayCloseByGesture.
+  const closeByGesture = () => {
+    if (sent) return close(true);
+    if (mayCloseByGesture({ busy, survey: isSurvey, hasText: cleanMessage(message).length > 0 })) close(false);
+  };
 
   return (
     <SheetShell
       visible={visible}
-      onClose={() => close(sent)}
+      onClose={closeByGesture}
+      onShown={onShown}
       title={isSurvey ? t("feedback.surveyTitle") : t("feedback.title")}
       closeLabel={t("common.close")}
       maxHeightRatio={0.92}
