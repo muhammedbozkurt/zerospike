@@ -16,7 +16,7 @@ import Svg, { Circle, Defs, G, LinearGradient, Path, Rect, Stop, Text as SvgText
 
 import type { InjectionSite, SitePoint } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
-import { pointHeatLevel, regionHeatLevel } from "../lib/injectionHeat";
+import { HEAT_TIER_LABELS, heatTierForCount } from "../lib/injectionHeat";
 import { PALETTES, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { formatDate } from "../lib/format";
@@ -36,7 +36,7 @@ import {
   VB_W,
   type Surface,
 } from "./injectionMap/silhouette";
-import { heatTier, tierStroke } from "./injectionMap/tiers";
+import { tierStroke } from "./injectionMap/tiers";
 import { BreathCircle, RegionShape, inkFor, tierFill } from "./injectionMap/RegionShape";
 import { SurfaceTabs } from "./injectionMap/SurfaceTabs";
 
@@ -45,8 +45,8 @@ import { SurfaceTabs } from "./injectionMap/SurfaceTabs";
  *
  * One silhouette with a Front | Back switch; the eight selectable regions sit
  * on the face they belong to. A region's plate is one of four tiers (never
- * used, then three used steps) driven by COUNT alone, on the rotation-aware
- * scale in lib/injectionHeat. Counts are hidden on the overview and shown on
+ * used, then three used steps) driven by the region's or point's OWN COUNT on
+ * the absolute scale in lib/injectionHeat (0, 1-2, 3-5, 6+). Counts are hidden on the overview and shown on
  * the selected region and in the zoom. Tapping a region zooms onto it and
  * reveals its four rotation points at full touch size.
  *
@@ -496,6 +496,7 @@ export function InjectionBodyMap({
                 />
               ) : (
                 <>
+                  <Path d={TORSO_PATH} fill="url(#figFill)" stroke="url(#figEdge)" strokeWidth={1.1 * upx} />
                   {ARM_PATHS.map((d) => (
                     <Path
                       key={d}
@@ -505,7 +506,6 @@ export function InjectionBodyMap({
                       strokeWidth={1.1 * upx}
                     />
                   ))}
-                  <Path d={TORSO_PATH} fill="url(#figFill)" stroke="url(#figEdge)" strokeWidth={1.1 * upx} />
                 </>
               )}
               {open ? null : shown === "front" ? (
@@ -523,7 +523,7 @@ export function InjectionBodyMap({
 
             {REGIONS.filter((r) => r.surface === shown).map((r) => {
               const count = model.bySite.get(r.site)?.count ?? 0;
-              const tier = heatTier(regionHeatLevel(count, model.total));
+              const tier = heatTierForCount(count);
               const isOpen = openSite === r.site;
               const holdsLeast = showRotationHint && model.least?.site === r.site;
               // While a region is zoomed, its neighbours are backdrop only: no
@@ -554,8 +554,8 @@ export function InjectionBodyMap({
               ? open.points.map((pp) => {
                   const p = openUsage?.points.find((x) => x.point === pp.point);
                   const count = p?.count ?? 0;
-                  const tier = heatTier(pointHeatLevel(count, openCount));
-                  const fill = tierFill(tier < 2 ? 2 : tier);
+                  const tier = heatTierForCount(count);
+                  const fill = tierFill(tier);
                   const ink = inkFor(fill);
                   const on = selected?.site === open.region.site && selected.point === pp.point;
                   const isLeast =
@@ -669,15 +669,11 @@ export function InjectionBodyMap({
           marginTop: 10,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%" }}>
-          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10, flexShrink: 1 }}>
-            {t("injection.heatLow")}
-          </Text>
-          <Svg width={64} height={12}>
-            {THEME.heatRamp.map((c, i) => (
+        {THEME.heatRamp.map((c, i) => (
+          <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Svg width={16} height={12}>
               <Rect
-                key={i}
-                x={i * 16 + 0.5}
+                x={0.5}
                 y={0.5}
                 width={15}
                 height={11}
@@ -686,12 +682,12 @@ export function InjectionBodyMap({
                 stroke={THEME.heatEdge}
                 strokeWidth={i === 3 ? 1.5 : 1}
               />
-            ))}
-          </Svg>
-          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10, flexShrink: 1 }}>
-            {t("injection.heatHigh")}
-          </Text>
-        </View>
+            </Svg>
+            <Text style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "700" }}>
+              {HEAT_TIER_LABELS[i]}
+            </Text>
+          </View>
+        ))}
         {showRotationHint ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 5, maxWidth: "100%" }}>
             <Svg width={20} height={12}>
