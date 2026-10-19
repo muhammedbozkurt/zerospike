@@ -53,6 +53,10 @@ export interface SheetShellProps {
   /** i18n-sourced (t("common.close")); labels the title row's close button. */
   closeLabel: string;
   maxHeightRatio?: number;
+  /** Default true: the sheet hugs its content (maxHeight only caps it), so a
+   *  confirm or a short pick opens as a short card. False pins it at the full
+   *  allowance (lib/sheetLayout.ts sheetFitHeight) for content that grows. */
+  fit?: boolean;
   children: React.ReactNode;
   /** Pinned to the sheet's bottom, outside the scrolling content. */
   footer?: React.ReactNode;
@@ -71,6 +75,7 @@ export function SheetShell({
   title,
   closeLabel,
   maxHeightRatio,
+  fit = true,
   children,
   footer,
   testID,
@@ -201,7 +206,7 @@ export function SheetShell({
               paddingTop: 8,
             },
             glow(THEME.accent, 30, 0.3),
-            { maxHeight: sheetMaxHeightAnim },
+            fit ? { maxHeight: sheetMaxHeightAnim } : { height: sheetMaxHeightAnim },
             isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
           ]}
         >
