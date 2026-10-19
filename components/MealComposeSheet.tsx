@@ -57,7 +57,7 @@ import { SCRIM } from "./SheetShell";
 import { Button } from "./ui";
 
 const SEARCH_DEBOUNCE_MS = 180;
-const SHEET_MAX_WIDTH = 600;
+const SHEET_MAX_WIDTH = 560;
 /** Share of the container the sheet takes: tall enough to be a form, short
  *  enough that the scrim above it stays tappable. With the keyboard up the
  *  sheet uses nearly all the room left above it. */

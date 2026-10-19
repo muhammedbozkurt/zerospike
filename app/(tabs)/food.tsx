@@ -128,6 +128,14 @@ const ENGLISH_SEARCH_LANGS: readonly Lang[] = ["it", "pt", "ar", "ja"];
  */
 type GridBand = "today" | "templates" | "recent" | "categories";
 const GRID_BANDS: readonly GridBand[] = ["today", "templates", "recent", "categories"];
+/** Two-column tablet: today and templates live in the right column, so the
+ *  left list only carries the catalogue bands. */
+const GRID_BANDS_LEFT: readonly GridBand[] = ["recent", "categories"];
+
+/** Two columns only from this window width up; 600-700 stays one column. */
+const TWO_COL_MIN_DP = 700;
+/** Cap for each of the two columns (the columns carry their own 16 inset). */
+const COL_MAX_WIDTH = 560;
 
 type ListRow = GridBand | Food;
 
@@ -433,8 +441,11 @@ export default function FoodScreen() {
   const deleteWithUndo = useUndoBatch(bumpData);
   // Tablets get more columns and a capped reading column; a phone render is
   // untouched (columnPad reduces to the plain inset below the wide threshold).
-  const { isWide, columnPad } = useLayout();
-  const gridColumns = isWide ? 4 : 3;
+  const { isWide, width: winWidth, columnPad } = useLayout();
+  const twoCol = isWide && winWidth >= TWO_COL_MIN_DP;
+  // A half-width column is phone-sized, so the shelf grid keeps 3 across there.
+  const gridColumns = isWide && !twoCol ? 4 : 3;
+  const colPad = twoCol ? { paddingLeft: 16, paddingRight: 16 } : columnPad(16);
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
@@ -1214,13 +1225,52 @@ export default function FoodScreen() {
     ? rankedTemplates
     : rankedTemplates.slice(0, TEMPLATE_PREVIEW);
 
+  const HeroCard = (
+    <GlassCard
+      glow
+      style={{ alignItems: "center", paddingVertical: 16, marginBottom: 14 }}
+    >
+      <Text
+        style={{
+          color: THEME.textMuted,
+          fontSize: 11,
+          letterSpacing: 1.3,
+          fontWeight: "800",
+          textAlign: "center",
+        }}
+        numberOfLines={2}
+      >
+        {upper(t("dashboard.dailyCarbs"))}
+      </Text>
+      <View
+        className="flex-row items-baseline flex-wrap justify-center mt-1"
+        style={{ columnGap: 6 }}
+      >
+        <Text
+          style={[TABULAR, { color: THEME.accent, fontSize: 36, fontWeight: "800" }]}
+          numberOfLines={1}
+        >
+          {todayCarbs}
+        </Text>
+        <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 13 }]}>
+          / {carbMin}-{carbMax} {t("common.grams")}
+        </Text>
+      </View>
+      <NeonProgressBar
+        value={todayCarbs}
+        max={carbMax}
+        style={{ alignSelf: "stretch", marginTop: 12 }}
+      />
+    </GlassCard>
+  );
+
   // The ONE ListHeaderComponent, identical in every mode: title row, the hero
   // card (grid only), the search field and the pending/back line. Nothing here
   // grows with the data - the catalogue bands that used to live in this ~440-line
   // block are FlatList rows now, so a focus reload can no longer change the
   // header's height while the list is scrolled.
   const HeaderTop = (
-    <View style={[{ paddingTop: 4 }, columnPad(16)]}>
+    <View style={[{ paddingTop: 4 }, colPad]}>
       {/* Title row: the screen's name and its one add action, in every mode -
           a search that finds nothing is exactly where "add it yourself" belongs. */}
       <View className="flex-row items-center justify-between mb-3">
@@ -1257,46 +1307,9 @@ export default function FoodScreen() {
       />
 
       {/* Hero: today's carbohydrate total against the user's own range */}
-      {mode === "grid" ? (
-        <GlassCard
-          glow
-          style={{ alignItems: "center", paddingVertical: 16, marginBottom: 14 }}
-        >
-          <Text
-            style={{
-              color: THEME.textMuted,
-              fontSize: 11,
-              letterSpacing: 1.3,
-              fontWeight: "800",
-              textAlign: "center",
-            }}
-            numberOfLines={2}
-          >
-            {upper(t("dashboard.dailyCarbs"))}
-          </Text>
-          <View
-            className="flex-row items-baseline flex-wrap justify-center mt-1"
-            style={{ columnGap: 6 }}
-          >
-            <Text
-              style={[TABULAR, { color: THEME.accent, fontSize: 36, fontWeight: "800" }]}
-              numberOfLines={1}
-            >
-              {todayCarbs}
-            </Text>
-            <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 13 }]}>
-              / {carbMin}-{carbMax} {t("common.grams")}
-            </Text>
-          </View>
-          <NeonProgressBar
-            value={todayCarbs}
-            max={carbMax}
-            style={{ alignSelf: "stretch", marginTop: 12 }}
-          />
-        </GlassCard>
-      ) : null}
+      {mode === "grid" && !twoCol ? HeroCard : null}
 
-      {mode === "grid" ? <CarbRatioLine /> : null}
+      {mode === "grid" && !twoCol ? <CarbRatioLine /> : null}
 
       {SearchBar}
 
@@ -1718,106 +1731,110 @@ export default function FoodScreen() {
   // the search field's position in the tree do not - and there is deliberately
   // no `key` here, since a key on `mode` would bring back exactly the remount
   // (and the lost keyboard focus) this shape exists to avoid.
-  const rows: readonly ListRow[] = mode === "grid" ? GRID_BANDS : listData;
+  const rows: readonly ListRow[] =
+    mode === "grid" ? (twoCol ? GRID_BANDS_LEFT : GRID_BANDS) : listData;
 
   // The drilled-in custom shelf, genuinely empty: not a search with nothing
   // found, so it gets its own (favorites-like) empty state instead of "no
   // results found".
   const customShelfEmpty = mode === "list" && selected === "custom";
 
-  return (
-    <AppBackground style={{ paddingTop: insets.top }}>
-      <FlatList
-        {...keyboardAwareScrollProps}
-        data={rows}
-        keyExtractor={rowKeyExtractor}
-        ListHeaderComponent={HeaderTop}
-        initialNumToRender={12}
-        // Android's default (true) recycles offscreen rows against a header whose
-        // size still changes between list and search (back row vs. pending text);
-        // false trades a little memory for never handing back a blank recycled cell.
-        removeClippedSubviews={false}
-        renderItem={({ item }) => (
-          <View style={columnPad(16)}>
-            {typeof item === "string" ? (
-              renderGridBand(item)
-            ) : (
-              <FoodRow
-                food={item}
-                lang={lang}
-                favorite={favIds.has(item.id)}
-                onPress={onFoodPress}
-                onToggleFavorite={onToggleFav}
-                onLongPress={onFoodLongPress}
-                onAddToMeal={onAddToMeal}
-                inMeal={composeKeys.has(item.id)}
-              />
-            )}
+  const catalogList = (
+    <FlatList
+      {...keyboardAwareScrollProps}
+      data={rows}
+      keyExtractor={rowKeyExtractor}
+      ListHeaderComponent={HeaderTop}
+      initialNumToRender={12}
+      // Android's default (true) recycles offscreen rows against a header whose
+      // size still changes between list and search (back row vs. pending text);
+      // false trades a little memory for never handing back a blank recycled cell.
+      removeClippedSubviews={false}
+      renderItem={({ item }) => (
+        <View style={colPad}>
+          {typeof item === "string" ? (
+            renderGridBand(item)
+          ) : (
+            <FoodRow
+              food={item}
+              lang={lang}
+              favorite={favIds.has(item.id)}
+              onPress={onFoodPress}
+              onToggleFavorite={onToggleFav}
+              onLongPress={onFoodLongPress}
+              onAddToMeal={onAddToMeal}
+              inMeal={composeKeys.has(item.id)}
+            />
+          )}
+        </View>
+      )}
+      // Grid mode always carries its four bands, so this only ever speaks for
+      // an empty category/favourites shelf or a search that found nothing.
+      ListEmptyComponent={
+        !categoryLoading && !searchPending ? (
+          <View style={colPad}>
+            <EmptyState
+              compact
+              icon={
+                selected === "favorites"
+                  ? "star-outline"
+                  : customShelfEmpty
+                    ? "create-outline"
+                    : "search-outline"
+              }
+              title={
+                selected === "favorites"
+                  ? t("food.noFavorites")
+                  : customShelfEmpty
+                    ? t("food.noCustomFoods")
+                    : t("food.noResults")
+              }
+              // Only under the "no results" title, and only in the four
+              // languages the catalogue carries no names in.
+              subtitle={
+                selected !== "favorites" &&
+                mode === "search" &&
+                ENGLISH_SEARCH_LANGS.includes(lang)
+                  ? t("food.searchEnglishHint")
+                  : undefined
+              }
+              actionLabel={
+                mode === "search" || customShelfEmpty
+                  ? t("food.addCustom")
+                  : undefined
+              }
+              onAction={
+                mode === "search" || customShelfEmpty
+                  ? () => router.push("/add-food")
+                  : undefined
+              }
+            />
           </View>
-        )}
-        // Grid mode always carries its four bands, so this only ever speaks for
-        // an empty category/favourites shelf or a search that found nothing.
-        ListEmptyComponent={
-          !categoryLoading && !searchPending ? (
-            <View style={columnPad(16)}>
-              <EmptyState
-                compact
-                icon={
-                  selected === "favorites"
-                    ? "star-outline"
-                    : customShelfEmpty
-                      ? "create-outline"
-                      : "search-outline"
-                }
-                title={
-                  selected === "favorites"
-                    ? t("food.noFavorites")
-                    : customShelfEmpty
-                      ? t("food.noCustomFoods")
-                      : t("food.noResults")
-                }
-                // Only under the "no results" title, and only in the four
-                // languages the catalogue carries no names in.
-                subtitle={
-                  selected !== "favorites" &&
-                  mode === "search" &&
-                  ENGLISH_SEARCH_LANGS.includes(lang)
-                    ? t("food.searchEnglishHint")
-                    : undefined
-                }
-                actionLabel={
-                  mode === "search" || customShelfEmpty
-                    ? t("food.addCustom")
-                    : undefined
-                }
-                onAction={
-                  mode === "search" || customShelfEmpty
-                    ? () => router.push("/add-food")
-                    : undefined
-                }
-              />
-            </View>
-          ) : null
-        }
-        // Rendered whether the local search came up empty (below
-        // ListEmptyComponent, VirtualizedList draws both) or just short - the
-        // one difference from every row above is that this one is not local
-        // catalogue data, so it lives outside `rows`/renderItem entirely.
-        ListFooterComponent={
-          showOffSearch ? (
-            <View style={columnPad(16)}>
-              <OffSearchResults query={query.trim()} lang={lang} onPicked={onFoodPress} />
-            </View>
-          ) : null
-        }
-        // The tab bar takes its own layout space (and its own safe-area inset),
-        // so adding insets.bottom here again only left a dead dark band under
-        // the last row.
-        contentContainerStyle={{ paddingBottom: 28 }}
-        showsVerticalScrollIndicator={false}
-      />
+        ) : null
+      }
+      // Rendered whether the local search came up empty (below
+      // ListEmptyComponent, VirtualizedList draws both) or just short - the
+      // one difference from every row above is that this one is not local
+      // catalogue data, so it lives outside `rows`/renderItem entirely.
+      ListFooterComponent={
+        showOffSearch ? (
+          <View style={colPad}>
+            <OffSearchResults query={query.trim()} lang={lang} onPicked={onFoodPress} />
+          </View>
+        ) : null
+      }
+      // The tab bar takes its own layout space (and its own safe-area inset),
+      // so adding insets.bottom here again only left a dead dark band under
+      // the last row.
+      contentContainerStyle={{ paddingBottom: 28 }}
+      showsVerticalScrollIndicator={false}
+    />
+  );
 
-      {composeItems.length > 0 && !composeOpen && !confirmEntry ? (
+  const composeBarShown = composeItems.length > 0 && !composeOpen && !confirmEntry;
+  const composeBar = (
+    <>
+      {composeBarShown ? (
         <Pressable
           onPress={() => setComposeOpen(true)}
           accessibilityRole="button"
@@ -1843,6 +1860,36 @@ export default function FoodScreen() {
           </Text>
         </Pressable>
       ) : null}
+    </>
+  );
+
+  return (
+    <AppBackground style={{ paddingTop: insets.top }}>
+      {twoCol ? (
+        <View style={{ flex: 1, flexDirection: "row", justifyContent: "center" }}>
+          <View style={{ flex: 1, maxWidth: COL_MAX_WIDTH }}>{catalogList}</View>
+          <View style={{ flex: 1, maxWidth: COL_MAX_WIDTH }}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: composeBarShown ? 92 : 28 }}
+            >
+              <View style={[{ paddingTop: 4 }, colPad]}>
+                {HeroCard}
+                <CarbRatioLine />
+                {renderGridBand("today")}
+                {renderGridBand("templates")}
+              </View>
+            </ScrollView>
+            {composeBar}
+          </View>
+        </View>
+      ) : (
+        <>
+          {catalogList}
+          {composeBar}
+        </>
+      )}
 
       {composeOpen ? (
         <MealComposeSheet
