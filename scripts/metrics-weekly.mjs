@@ -187,6 +187,35 @@ async function sbSource(start, end, downloads) {
       const f = ev.filter((r) => r.name === nm);
       add(`app.ev.${nm}`, label, sum(f, 'events'), sum(f, 'devices'));
     }
+    const evOf = (nm) => ev.filter((r) => r.name === nm);
+    const carbEv = {};
+    for (const [nm, label] of [['meal_builder_opened', 'Ogun olusturucu acildi'], ['carb_estimate_requested', 'Besin tahmini istegi (istemci)'], ['carb_estimate_accepted', 'Besin tahmini ogune eklendi'], ['portion_chip_used', 'Porsiyon cipi kullanildi']]) {
+      const f = evOf(nm);
+      carbEv[nm] = { events: sum(f, 'events'), devices: sum(f, 'devices') };
+      add(`app.carb.${nm}`, `${label} (haftalik)`, carbEv[nm].events, carbEv[nm].devices);
+      add(`app.carb.${nm}.daily`, `${label} (gunluk ortalama)`, carbEv[nm].events / 7, carbEv[nm].devices);
+    }
+    const req = carbEv.carb_estimate_requested.events;
+    add('app.carb.accept_rate', 'Besin tahmini kabul orani (eklendi / istek)', req ? carbEv.carb_estimate_accepted.events / req : null, carbEv.carb_estimate_requested.devices);
+    try {
+      const fb = await sbGet(key, 'v_feedback_sent_daily', `${range}&limit=10000`);
+      const group = (field, prefix, label) => {
+        const m = new Map();
+        for (const r of fb) {
+          const k = r[field] || 'yok';
+          const o = m.get(k) || { e: 0, d: 0 };
+          o.e += Number(r.events) || 0; o.d += Number(r.devices) || 0;
+          m.set(k, o);
+        }
+        if (!m.size) add(`${prefix}.none`, `${label} (olay henuz yok)`, 0, 0);
+        for (const [k, o] of [...m.entries()].sort()) add(`${prefix}.${k}`, `${label}: ${k}`, o.e, o.d);
+      };
+      group('kind', 'app.fb.kind', 'Geri bildirim turu');
+      group('reason_code', 'app.fb.reason', 'Geri bildirim neden kodu');
+    } catch (e) {
+      const missing = /HTTP (404|400)/.test(String(e.message));
+      unavailable.push(missing ? 'Supabase v_feedback_sent_daily (gorunum yok, migration 20261020140000 bekliyor)' : 'Supabase v_feedback_sent_daily (erisilemedi)');
+    }
     const countCalls = async (extra) => {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/spike_calls?select=id&${range}${extra}&limit=0`, { headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'count=exact' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -263,7 +292,7 @@ async function main() {
     unavailable.push(...s.unavailable);
   } else {
     for (const [k, l] of [['asc.imp.TOPLAM', 'Gosterim Toplam'], ['asc.dl.TOPLAM', 'Indirme Toplam'], ['rc.trials', 'Deneme baslangici'], ['rc.conv', 'Denemeden donusum (adet)'], ['rc.actives', 'Aktif abonelik'], ['rc.mrr', 'MRR']]) store.push({ key: k, label: l, val: null, scope: 'store' });
-    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls, tum modlar)'], ['app.carb.calls', 'Besin tahmini model cagrisi (sunucu)'], ['app.carb.filtered', 'Besin tahmini suzulen cagri (sunucu)'], ['app.ev.carb_estimate_used', 'Besin tahmini kullanildi (istemci)'], ['app.ev.carb_estimate_blocked', 'Besin tahmini engellendi (istemci)'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.spike.rej.device.3', 'Spike ret: cihaz limiti (3)'], ['app.spike.rej.device.50', 'Spike ret: cihaz limiti (50)'], ['app.spike.rej.ip', 'Spike ret: IP limiti'], ['app.spike.rej.global', 'Spike ret: genel limit'], ['app.spike.rej_rate', 'Spike ret orani (ret / ret+ok)'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
+    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls, tum modlar)'], ['app.carb.calls', 'Besin tahmini model cagrisi (sunucu)'], ['app.carb.filtered', 'Besin tahmini suzulen cagri (sunucu)'], ['app.ev.carb_estimate_used', 'Besin tahmini kullanildi (istemci)'], ['app.ev.carb_estimate_blocked', 'Besin tahmini engellendi (istemci)'], ['app.carb.meal_builder_opened', 'Ogun olusturucu acildi (haftalik)'], ['app.carb.meal_builder_opened.daily', 'Ogun olusturucu acildi (gunluk ortalama)'], ['app.carb.carb_estimate_requested', 'Besin tahmini istegi (istemci) (haftalik)'], ['app.carb.carb_estimate_requested.daily', 'Besin tahmini istegi (istemci) (gunluk ortalama)'], ['app.carb.carb_estimate_accepted', 'Besin tahmini ogune eklendi (haftalik)'], ['app.carb.carb_estimate_accepted.daily', 'Besin tahmini ogune eklendi (gunluk ortalama)'], ['app.carb.portion_chip_used', 'Porsiyon cipi kullanildi (haftalik)'], ['app.carb.portion_chip_used.daily', 'Porsiyon cipi kullanildi (gunluk ortalama)'], ['app.carb.accept_rate', 'Besin tahmini kabul orani (eklendi / istek)'], ['app.fb.kind.suggestion', 'Geri bildirim turu: suggestion'], ['app.fb.reason.expensive', 'Geri bildirim neden kodu: expensive'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.spike.rej.device.3', 'Spike ret: cihaz limiti (3)'], ['app.spike.rej.device.50', 'Spike ret: cihaz limiti (50)'], ['app.spike.rej.ip', 'Spike ret: IP limiti'], ['app.spike.rej.global', 'Spike ret: genel limit'], ['app.spike.rej_rate', 'Spike ret orani (ret / ret+ok)'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
   }
 
   const dl = downloads;

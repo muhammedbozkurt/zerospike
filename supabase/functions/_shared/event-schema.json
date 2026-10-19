@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "events": {
     "app_open": { "cold": "bool" },
     "onboarding_step": { "step": "string", "index": "int" },
@@ -43,6 +43,10 @@
     "spike_context_consent": { "granted": "bool" },
     "carb_estimate_used": { "tier": ["enum", "free", "pro"], "item_count": "int", "source": ["enum", "food_tab", "meal_sheet"] },
     "carb_estimate_blocked": { "reason": ["enum", "quota", "filtered", "error"] },
+    "meal_builder_opened": {},
+    "carb_estimate_requested": { "tier": ["enum", "free", "pro"], "source": ["enum", "food_tab", "meal_sheet"] },
+    "carb_estimate_accepted": { "item_count": "int" },
+    "portion_chip_used": { "kind": ["enum", "measure", "grams"] },
     "analytics_opt_out": { "enabled": "bool" },
     "store_review_prompt": { "trigger": ["enum", "log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"] },
     "feedback_sent": {

@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import { useTranslation } from "react-i18next";
 
+import { logEvent } from "../../lib/analytics";
 import { num } from "../../lib/format";
 import { hapticSelect } from "../../lib/haptics";
 import type { PortionChip } from "../../lib/mealCompose";
@@ -47,7 +48,10 @@ export function PortionSegment({
           <Pressable
             key={chip.id}
             onPress={() => {
-              if (!active) hapticSelect();
+              if (!active) {
+                hapticSelect();
+                logEvent("portion_chip_used", { kind: chip.kind });
+              }
               onSelect(chip);
             }}
             accessibilityRole="radio"
