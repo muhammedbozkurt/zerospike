@@ -92,14 +92,30 @@ begin
     and not exists (select 1 from public.feedback_usage where bucket = 'i:old'),
     format('deleted=%s', v_n));
 
-  -- (f) delete_device_data_v2 removes this install's feedback and only this install's
+  -- (f) delete_device_data_v2 removes this install's rows in every store, 'ce:' counter
+  -- included, and only this install's
+  insert into public.app_events (device_id, name) values (v_id, 'k_test');
+  insert into public.track_batches (device_id, batch_id) values (v_id, gen_random_uuid());
+  insert into public.track_usage (device_id, hour_start) values (v_id, date_trunc('hour', now(), 'UTC'));
+  insert into public.spike_usage (device_id, day, count) values (v_id, '2099-02-01', 1), ('ce:' || v_id, '2099-02-01', 1);
+  insert into public.spike_calls (device_id, day, model) values (v_id, '2099-02-01', 'k-test');
+  insert into public.subscription_events (rc_event_id, device_id) values ('k-test-' || v_id, v_id);
+  insert into public.app_events (device_id, name) values (v_other, 'k_test');
   select count(*) into v_n from public.feedback where install_id = v_id;
   v_del := public.delete_device_data_v2(v_id, null);
   insert into t_res values ('f delete scope',
     (v_del->>'feedback')::integer = v_n and v_n >= 2
+    and (v_del->>'app_events')::integer = 1
+    and (v_del->>'track_batches')::integer = 1
+    and (v_del->>'track_usage')::integer = 1
+    and (v_del->>'spike_usage')::integer = 2
+    and (v_del->>'spike_calls')::integer = 1
+    and (v_del->>'subscription_events')::integer = 1
     and not exists (select 1 from public.feedback where install_id = v_id)
+    and not exists (select 1 from public.spike_usage where device_id in (v_id, 'ce:' || v_id))
+    and not exists (select 1 from public.app_events where device_id = v_id)
     and exists (select 1 from public.feedback where install_id = v_other)
-    and v_del ? 'app_events' and v_del ? 'spike_usage' and v_del ? 'subscription_events',
+    and exists (select 1 from public.app_events where device_id = v_other),
     v_del::text);
 end
 $t$;

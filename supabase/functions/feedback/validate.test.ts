@@ -96,3 +96,28 @@ Deno.test("install id: header wins, body fallback, uuid only", () => {
   assertEq(installIdFrom(null, {}), null);
   assertEq(installIdFrom(null, "str"), null);
 });
+
+Deno.test("emails the database would refuse are rejected", () => {
+  for (const bad of ["a\u0085b@c.de", "a\u0000b@c.de", "a\ud800b@c.de", "a\u200bb@c.de", "a\u202eb@c.de"]) {
+    assertEq(validEmail(bad), false);
+    assertEq(err({ kind: "other", message: "x", contact_email: bad }), "bad_contact_email");
+  }
+  assertEq(validEmail("ğ\u{1F600}@örnek.de"), true);
+});
+
+Deno.test("lone surrogates are removed from messages, pairs kept", () => {
+  assertEq(cleanText("hi\ud800", 100), "hi");
+  assertEq(cleanText("\udc00hi", 100), "hi");
+  assertEq(cleanText("a\u{1F600}b", 100), "a\u{1F600}b");
+  const r = parseFeedback({ kind: "other", message: "hi\ud800" });
+  if (!r.ok) throw new Error("expected ok");
+  assertEq(r.value.message, "hi");
+  assertEq(err({ kind: "other", message: "\ud800" }), "empty_feedback");
+});
+
+Deno.test("zero-width and bidi characters are dropped before the empty check", () => {
+  assertEq(err({ kind: "other", message: "\u200b\u200d\u202e\u2066 " }), "empty_feedback");
+  assertEq(cleanText("a\u200bb\u202ec\u2069", 100), "abc");
+  assertEq(err({ kind: "cancel_survey", message: "\u200b" }), "empty_feedback");
+  assertEq(err({ kind: "cancel_survey", message: "\u200b", reason_code: "other" }), "ok");
+});
