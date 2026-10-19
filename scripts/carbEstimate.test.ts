@@ -1,0 +1,382 @@
+/**
+ * Meal-text carb estimate, client side (lib/ai/carbEstimateClient.ts,
+ * carbEstimateLimit.ts, the consent version, the sheet's wiring):
+ *
+ *   npx tsx scripts/carbEstimate.test.ts
+ *
+ * The client imports Expo modules, so in-memory stand-ins for expo-constants,
+ * expo/fetch, AsyncStorage and expo-crypto are registered before it loads.
+ */
+declare const console: { log: (...a: unknown[]) => void };
+declare const process: { exit: (code: number) => void; cwd: () => string };
+declare const require: (id: string) => any;
+
+let passed = 0;
+let failed = 0;
+function ok(name: string, cond: boolean, detail = ""): void {
+  if (cond) passed++;
+  else {
+    failed++;
+    console.log(`  FAIL ${name}${detail ? ": " + detail : ""}`);
+  }
+}
+function eq<T>(name: string, actual: T, expected: T): void {
+  ok(name, JSON.stringify(actual) === JSON.stringify(expected), `got ${JSON.stringify(actual)}, want ${JSON.stringify(expected)}`);
+}
+function section(title: string): void {
+  console.log(`\n${title}`);
+}
+
+const nodeModule = require("module");
+const FN_URL = "https://example.test/functions/v1/ai-ask-spike";
+const store = new Map<string, string>();
+const storageApi = {
+  getItem: async (k: string): Promise<string | null> => (store.has(k) ? (store.get(k) as string) : null),
+  setItem: async (k: string, v: string): Promise<void> => void store.set(k, v),
+  removeItem: async (k: string): Promise<void> => void store.delete(k),
+};
+
+interface FetchCall {
+  url: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}
+const calls: FetchCall[] = [];
+let responder: () => Response | Promise<Response> = () => {
+  throw new Error("no responder");
+};
+const fetchStub = async (url: string, init: { headers: Record<string, string>; body: string; signal?: AbortSignal }) => {
+  calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+  if (init.signal?.aborted) {
+    const abort = new Error("aborted");
+    abort.name = "AbortError";
+    throw abort;
+  }
+  return responder();
+};
+const stubs: Record<string, unknown> = {
+  "expo-constants": { __esModule: true, default: { expoConfig: { extra: { spikeFnUrl: FN_URL } } } },
+  "expo/fetch": { fetch: fetchStub },
+  "@react-native-async-storage/async-storage": { __esModule: true, default: storageApi },
+  "expo-crypto": { getRandomBytes: (n: number) => new Uint8Array(n).fill(7) },
+};
+const realLoad = nodeModule._load;
+nodeModule._load = function (request: string, ...rest: unknown[]) {
+  if (Object.prototype.hasOwnProperty.call(stubs, request)) return stubs[request];
+  return realLoad.call(this, request, ...rest);
+};
+
+(globalThis as unknown as { __DEV__: boolean }).__DEV__ = true;
+const client = require("../lib/ai/carbEstimateClient") as typeof import("../lib/ai/carbEstimateClient");
+const limit = require("../lib/ai/carbEstimateLimit") as typeof import("../lib/ai/carbEstimateLimit");
+const consent = require("../lib/services/spikeConsent") as typeof import("../lib/services/spikeConsent");
+const fs = require("fs") as { readFileSync: (p: string, enc: string) => string };
+const read = (rel: string): string => fs.readFileSync(process.cwd() + "/" + rel, "utf8");
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const GOOD = {
+  items: [
+    { name: "Bread", quantity: 2, unit: "slice", grams_carb: 28 },
+    { name: "Egg", quantity: 1, unit: "piece", grams_carb: 0.6 },
+    { name: "Milk", quantity: 1, unit: "glass", grams_carb: 12 },
+  ],
+  total_grams_carb: 40.6,
+  filtered: false,
+  usage: { model: "x", input_tokens: 1, output_tokens: 1 },
+};
+
+function requestAndMapping(): void {
+  section("A. request and response mapping");
+  eq("text is trimmed and whitespace collapsed", client.prepareMealText("  2 slices   of\nbread "), "2 slices of bread");
+  eq("empty text cannot be sent", client.prepareMealText("   "), null);
+  eq("300 characters pass", client.prepareMealText("a".repeat(300)) !== null, true);
+  eq("301 characters do not", client.prepareMealText("a".repeat(301)), null);
+  eq("emoji count as one character each", client.prepareMealText("🍞".repeat(300)) !== null, true);
+  eq("request body", client.buildRequestBody("bread", "de-DE-x", "pro"), { mode: "carb_estimate", locale: "de-DE", tier: "pro", text: "bread" });
+  eq("empty locale falls back to en", client.buildRequestBody("bread", "", "free").locale, "en");
+
+  eq("daily_limit_carb -> limit", client.mapServerError(429, "daily_limit_carb"), "limit");
+  eq("rate_limit -> busy", client.mapServerError(429, "rate_limit"), "busy");
+  eq("capacity -> busy", client.mapServerError(429, "capacity"), "busy");
+  eq("an unnamed 429 -> busy", client.mapServerError(429, undefined), "busy");
+  eq("estimate_failed -> failed", client.mapServerError(502, "estimate_failed"), "failed");
+  eq("upstream -> failed", client.mapServerError(502, "upstream"), "failed");
+  eq("unavailable -> failed", client.mapServerError(503, "unavailable"), "failed");
+  eq("bad_request -> input", client.mapServerError(400, "bad_request"), "input");
+  eq("an unknown id -> failed", client.mapServerError(500, "boom"), "failed");
+
+  const parsed = client.parseEstimateBody(GOOD);
+  eq("three items", parsed.items.length, 3);
+  eq("total is the sum of the items", parsed.total_grams_carb, 40.6);
+  eq("not filtered", parsed.filtered, false);
+  const dirty = client.parseEstimateBody({
+    items: [
+      { name: "", quantity: 1, unit: "g", grams_carb: 5 },
+      { name: "A", quantity: "x", unit: 3, grams_carb: 9999 },
+      { name: "B", quantity: 1, unit: "g", grams_carb: -4 },
+      { name: "C", quantity: 1, unit: "g", grams_carb: null },
+      null,
+      { name: "D", quantity: -2, unit: "g", grams_carb: 10 },
+    ],
+  });
+  eq("only usable items survive", dirty.items.map((i) => i.name), ["A", "B", "D"]);
+  eq("grams are capped at 500 and floored at 0", dirty.items.map((i) => i.grams_carb), [500, 0, 10]);
+  eq("a bad quantity becomes 1, a negative one 0", dirty.items.map((i) => i.quantity), [1, 1, 0]);
+  eq("a non-string unit is empty", dirty.items[0].unit, "");
+  const many = client.parseEstimateBody({ items: Array.from({ length: 20 }, (_, i) => ({ name: `f${i}`, quantity: 1, unit: "g", grams_carb: 1 })) });
+  eq("at most 12 items", many.items.length, 12);
+  const empty = client.parseEstimateBody({ items: [], filtered: true });
+  eq("filtered stays filtered with no items", [empty.filtered, empty.items.length, empty.total_grams_carb], [true, 0, 0]);
+  eq("no items at all counts as filtered", client.parseEstimateBody({ items: [], filtered: false }).filtered, true);
+  let threw = "";
+  try {
+    client.parseEstimateBody("nope");
+  } catch (e) {
+    threw = client.carbErrorCode(e);
+  }
+  eq("a non-object body is a failure", threw, "failed");
+}
+
+async function consentGate(): Promise<void> {
+  section("B. consent version and the gate");
+  store.clear();
+  calls.length = 0;
+  responder = () => json(200, GOOD);
+  eq("fresh install: no consent", await consent.hasSpikeConsent(), false);
+  const code = async (): Promise<string> => {
+    try {
+      await client.estimateCarbs({ text: "bread", locale: "en", tier: "free" });
+      return "sent";
+    } catch (e) {
+      return client.carbErrorCode(e);
+    }
+  };
+  eq("no consent: consent_required", await code(), "consent_required");
+  eq("and no request left the device", calls.length, 0);
+
+  store.set("zerospike.spikeConsent", "true");
+  eq("a v1 consent (no version) no longer counts", await consent.hasSpikeConsent(), false);
+  eq("so the text is still held back", await code(), "consent_required");
+  eq("still no request", calls.length, 0);
+  store.set("zerospike.spikeConsentVersion", "1");
+  eq("an older version does not count either", await consent.hasSpikeConsent(), false);
+  eq("the summary consent needs the current chat consent", await consent.hasSpikeContextConsent(), false);
+
+  await consent.grantSpikeConsent();
+  eq("granting stores the current version", store.get("zerospike.spikeConsentVersion"), String(consent.SPIKE_CONSENT_VERSION));
+  eq("the version is 2", consent.SPIKE_CONSENT_VERSION, 2);
+  eq("granted: consent stands", await consent.hasSpikeConsent(), true);
+  eq("granted: the text goes", await code(), "sent");
+  eq("one request", calls.length, 1);
+  await consent.withdrawSpikeConsent();
+  eq("withdrawing clears the version", store.has("zerospike.spikeConsentVersion"), false);
+  eq("and the flag", await consent.hasSpikeConsent(), false);
+}
+
+async function requests(): Promise<void> {
+  section("C. the request on the wire and the error mapping");
+  store.clear();
+  await consent.grantSpikeConsent();
+  calls.length = 0;
+  responder = () => json(200, GOOD);
+  const result = await client.estimateCarbs({ text: " 2 slices of bread ", locale: "tr", tier: "free" });
+  eq("POST to the function url", calls[0].url, FN_URL);
+  eq("device id header", typeof calls[0].headers["x-device-id"] === "string" && calls[0].headers["x-device-id"].length > 0, true);
+  eq("body", calls[0].body, { mode: "carb_estimate", locale: "tr", tier: "free", text: "2 slices of bread" });
+  eq("nothing else in the body", Object.keys(calls[0].body).sort(), ["locale", "mode", "text", "tier"]);
+  eq("items parsed", result.items.length, 3);
+
+  const run = async (): Promise<string> => {
+    try {
+      await client.estimateCarbs({ text: "bread", locale: "en", tier: "free" });
+      return "ok";
+    } catch (e) {
+      return client.carbErrorCode(e);
+    }
+  };
+  responder = () => json(429, { error: "daily_limit_carb" });
+  eq("429 daily_limit_carb", await run(), "limit");
+  responder = () => json(429, { error: "rate_limit" });
+  eq("429 rate_limit", await run(), "busy");
+  responder = () => json(502, { error: "estimate_failed" });
+  eq("502", await run(), "failed");
+  responder = () => json(503, { error: "unavailable" });
+  eq("503", await run(), "failed");
+  responder = () => json(400, { error: "bad_request" });
+  eq("400", await run(), "input");
+  responder = () => new Response("<html>", { status: 500 });
+  eq("a non-JSON error body", await run(), "failed");
+  responder = () => {
+    throw new Error("network down");
+  };
+  eq("a network failure", await run(), "failed");
+  responder = () => json(200, { items: [], total_grams_carb: 0, filtered: true });
+  const filtered = await client.estimateCarbs({ text: "how much insulin", locale: "en", tier: "free" });
+  eq("a filtered answer is returned, not thrown", [filtered.filtered, filtered.items.length], [true, 0]);
+
+  const controller = new AbortController();
+  controller.abort();
+  responder = () => json(200, GOOD);
+  try {
+    await client.estimateCarbs({ text: "bread", locale: "en", tier: "free", signal: controller.signal });
+    ok("abort throws", false);
+  } catch (e) {
+    eq("an aborted call is 'aborted'", client.carbErrorCode(e), "aborted");
+  }
+  let tooLong = "";
+  calls.length = 0;
+  try {
+    await client.estimateCarbs({ text: "a".repeat(301), locale: "en", tier: "free" });
+  } catch (e) {
+    tooLong = client.carbErrorCode(e);
+  }
+  eq("an over-long text is 'input' and never sent", [tooLong, calls.length], ["input", 0]);
+}
+
+async function quota(): Promise<void> {
+  section("D. the free daily count (UTC day)");
+  store.clear();
+  const before = new Date("2026-10-19T23:59:59.000Z");
+  const after = new Date("2026-10-20T00:00:00.000Z");
+  eq("limits: free 1, pro 50", [limit.carbDailyLimit(false), limit.carbDailyLimit(true)], [1, 50]);
+  eq("fresh: one left for a free user", (await limit.getCarbUsage(false, before)).remaining, 1);
+  const first = await limit.noteCarbEstimate(false, before);
+  eq("after one estimate: none left", [first.used, first.remaining], [1, 0]);
+  eq("still none left a second before UTC midnight", (await limit.getCarbUsage(false, before)).remaining, 0);
+  eq("one left again at UTC midnight", (await limit.getCarbUsage(false, after)).remaining, 1);
+  const pro = await limit.getCarbUsage(true, before);
+  eq("a Pro user has 49 left on the same count", [pro.limit, pro.remaining], [50, 49]);
+  eq("the day key is the UTC date", limit.utcDayKey(new Date("2026-01-01T00:30:00+05:00")), "2025-12-31");
+  eq("a stored count of another day is zero", limit.countForDay(JSON.stringify({ day: "2026-10-18", count: 5 }), "2026-10-19"), 0);
+  eq("a corrupt value is zero", limit.countForDay("{nope", "2026-10-19"), 0);
+  eq("a negative count is zero", limit.countForDay(JSON.stringify({ day: "2026-10-19", count: -3 }), "2026-10-19"), 0);
+  store.clear();
+  const exhausted = await limit.markCarbExhausted(true, before);
+  eq("the server saying 'limit' fills the Pro tally", exhausted.remaining, 0);
+  eq("the key is device scoped, not profile scoped", [...store.keys()].every((k) => k.startsWith("zerospike.carbEstimate")), true);
+}
+
+function editing(): void {
+  section("E. editing, totals, and no save without a tap");
+  const items = client.editableFromEstimate(client.parseEstimateBody(GOOD).items);
+  eq("rows are built from the result", items.map((i) => i.name), ["Bread", "Egg", "Milk"]);
+  eq("total over the rows", client.editableTotal(items), 40.6);
+  const edited = items.map((i) => (i.name === "Bread" ? { ...i, gramsText: "30,5" } : i));
+  eq("an edited figure (comma decimal) moves the total", client.editableTotal(edited), 43.1);
+  const cleared = items.map((i) => ({ ...i, gramsText: "abc" }));
+  eq("unreadable grams are zero", client.editableTotal(cleared), 0);
+  eq("a figure above 500 is capped", client.editableGrams({ ...items[0], gramsText: "900" }), 500);
+  const meal = client.estimateMealInput(edited);
+  eq("the journal row carries the edited total", meal.calculated_carbs_g, 43.1);
+  eq("the portion stays 0, no grams of food are invented", meal.portion_g, 0);
+  ok("the name lists the items", meal.custom_food_name.includes("Bread") && meal.custom_food_name.includes("Milk"), meal.custom_food_name);
+  eq("no insulin field exists on the row", Object.keys(meal).sort(), ["calculated_carbs_g", "custom_food_name", "portion_g"]);
+
+  eq("no result on screen: add is off", client.canAddEstimate({ resultShown: false, items: [], saving: false }), false);
+  eq("a result with items: add is on", client.canAddEstimate({ resultShown: true, items, saving: false }), true);
+  eq("saving in progress: add is off", client.canAddEstimate({ resultShown: true, items, saving: true }), false);
+  eq("a result emptied by the user: add is off", client.canAddEstimate({ resultShown: true, items: [], saving: false }), false);
+  eq("charged true is read", client.parseEstimateBody({ ...GOOD, charged: true }).charged, true);
+  eq("charged missing is false", client.parseEstimateBody(GOOD).charged, false);
+  eq("charged non-boolean is false", client.parseEstimateBody({ ...GOOD, charged: "yes" }).charged, false);
+  eq("only an explicit charge counts locally", [
+    client.shouldCountEstimate({ charged: true }),
+    client.shouldCountEstimate({ charged: false }),
+  ], [true, false]);
+  const guard = { current: false };
+  eq("first tap takes the slot, a second in the same frame does not", [client.enterGuard(guard), client.enterGuard(guard)], [true, false]);
+  guard.current = false;
+  eq("released slot can be taken again", client.enterGuard(guard), true);
+  eq("item count bucket is a plain count", [client.itemCountBucket(3), client.itemCountBucket(99), client.itemCountBucket(-1)], [3, 12, 0]);
+}
+
+function sourcePins(): void {
+  section("F. wiring pins");
+  const sheet = read("components/CarbEstimateSheet.tsx");
+  const clientSrc = read("lib/ai/carbEstimateClient.ts");
+  const limitSrc = read("lib/ai/carbEstimateLimit.ts");
+  const food = read("app/(tabs)/food.tsx");
+  const schema = read("lib/analytics/eventSchema.ts");
+
+  eq("onAdd is called in exactly one place", (sheet.match(/onAdd\(/g) ?? []).length, 1);
+  ok("that place is the Add button, behind canAdd", /onPress=\{\(\) => \{\s*if \(canAdd && items\) onAdd\(items\);/.test(sheet));
+  ok("the result arriving does not call onAdd", !/estimateCarbs\([\s\S]*?onAdd\(/.test(sheet.slice(sheet.indexOf("async function submit"), sheet.indexOf("function patchItem"))));
+  ok("the fixed note is shown on the result", sheet.includes('t("carbEstimate.note")'));
+  ok("insulin is 0 on the write", /saveEstimate[\s\S]*insulin_dose_units: 0/.test(food));
+  ok("no AsyncStorage use in the sheet", !/AsyncStorage/.test(sheet));
+  ok("the typed text is never stored: no setItem next to it in the client", !/setItem/.test(clientSrc));
+  ok("the count key holds a day and a number only", /JSON\.stringify\(\{ day: utcDayKey\(now\), count \}\)/.test(limitSrc));
+  ok("no logging of the text anywhere", !/console\.|logCrash/.test(sheet + clientSrc));
+  ok("food.tsx crash context has no text", /logCrash\(err, \{ screen: "food", save: "estimate" \}\)/.test(food));
+  ok("no adjustsFontSizeToFit in the new UI", !/adjustsFontSizeToFit/.test(sheet));
+  ok("no hard-coded colour in the sheet beyond the marked scrim", (sheet.match(/#[0-9a-fA-F]{3,8}\b|rgba\(/g) ?? []).length === 1);
+  const emDash = String.fromCharCode(0x2014);
+  ok("no em dash in the new files", ![sheet, clientSrc, limitSrc].some((s) => s.includes(emDash)));
+  ok("the schema holds the two carb events", /carb_estimate_used/.test(schema) && /carb_estimate_blocked/.test(schema));
+  ok("their fields carry no text or grams", !/carb_estimate_(used|blocked): \{[^}]*(grams|text)/.test(schema.replace(/\n/g, " ")));
+  ok("the consent screen shows the carb paragraph", read("app/spike.tsx").includes('t("spike.consentCarb")'));
+}
+
+function locales(): void {
+  section("G. nine languages");
+  const langs = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
+  const keys = ["title", "help", "placeholder", "submit", "estimating", "total", "add", "edit", "note", "errorLimit", "errorBusy", "errorFailed", "errorInput", "errorNoFood", "entryButton", "proNudge", "itemName", "itemQuantity", "itemUnit", "itemCarbs"];
+  const dose = /doz|dose|dosis|dosi\b|dosage|جرعة|投与/i;
+  for (const lang of langs) {
+    const loc = require(`../lib/i18n/locales/${lang}`).default as { carbEstimate: Record<string, string>; spike: Record<string, string> };
+    ok(`${lang}: every carbEstimate key exists`, keys.every((k) => typeof loc.carbEstimate[k] === "string" && loc.carbEstimate[k].length > 0));
+    ok(`${lang}: spike.consentCarb exists`, typeof loc.spike.consentCarb === "string" && loc.spike.consentCarb.length > 20);
+    ok(`${lang}: the dose word appears only in the fixed note`, keys.filter((k) => k !== "note").every((k) => !dose.test(loc.carbEstimate[k])) && !dose.test(loc.spike.consentCarb));
+    ok(`${lang}: the fixed note says it is not a dose`, dose.test(loc.carbEstimate.note));
+    ok(`${lang}: no dash punctuation, no percent sign`, [...keys.map((k) => loc.carbEstimate[k]), loc.spike.consentCarb].every((v) => !/[%–—]/.test(v)));
+  }
+  const tr = require("../lib/i18n/locales/tr").default.carbEstimate as Record<string, string>;
+  const en = require("../lib/i18n/locales/en").default.carbEstimate as Record<string, string>;
+  eq("tr note is the approved text", tr.note, "Besin bilgisi tahminidir, doz değildir. Doğruluğunu siz kontrol edin.");
+  ok("tr errorNoFood uses the plural 'çıkaramadık'", tr.errorNoFood.includes("çıkaramadık") && !tr.errorNoFood.includes("çıkaramadım"));
+  ok("en errorNoFood starts 'We could not'", en.errorNoFood.startsWith("We could not"));
+}
+
+async function screenshotSample(): Promise<void> {
+  section("screenshot sample");
+  const env = (process as unknown as { env: Record<string, string | undefined> }).env;
+  const saved = env.EXPO_PUBLIC_SCREENSHOT_MODE;
+  delete env.EXPO_PUBLIC_SCREENSHOT_MODE;
+  eq("no sample without the capture flag", client.screenshotCarbSample("tr"), null);
+  calls.length = 0;
+  let threw = false;
+  try {
+    await client.estimateCarbs({ text: "x", locale: "tr", tier: "free" });
+  } catch {
+    threw = true;
+  }
+  ok("outside screenshot mode estimateCarbs never answers from the sample", threw || calls.length > 0);
+  env.EXPO_PUBLIC_SCREENSHOT_MODE = "1";
+  const sample = client.screenshotCarbSample("tr");
+  eq("sample total recomputed", sample?.estimate.total_grams_carb, 40.6);
+  eq("flag on: no network", (await client.estimateCarbs({ text: "x", locale: "de", tier: "free" })).items.length, 3);
+  eq("flag on: no request sent", calls.length, 0);
+  for (const l of ["tr", "en", "de", "fr", "es", "it", "pt", "ar", "ja"]) {
+    ok(`sample ${l}`, (client.screenshotCarbSample(l)?.estimate.items.length ?? 0) === 3);
+  }
+  if (saved === undefined) delete env.EXPO_PUBLIC_SCREENSHOT_MODE;
+  else env.EXPO_PUBLIC_SCREENSHOT_MODE = saved;
+}
+
+(async () => {
+  requestAndMapping();
+  await screenshotSample();
+  await consentGate();
+  await requests();
+  await quota();
+  editing();
+  sourcePins();
+  locales();
+  console.log(`\n${passed} passed, ${failed} failed`);
+  process.exit(failed === 0 ? 0 : 1);
+})().catch((e) => {
+  console.log(`\nharness crashed: ${e instanceof Error ? e.stack : String(e)}`);
+  process.exit(1);
+});

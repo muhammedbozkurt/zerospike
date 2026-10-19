@@ -4,7 +4,7 @@ zerospike's in-app assistant. The regulation-critical core (system prompt, outpu
 filter, data boundary) ships as the edge function `supabase/functions/ai-ask-spike/`,
 which calls Claude on Amazon Bedrock. The RN side is `lib/ai/spikeClient.ts` (request,
 streaming), `lib/ai/spikeContext.ts` (summary packet) and `lib/services/spikeConsent.ts`
-(the two consents).
+(the two consents; the chat consent is versioned, see below).
 
 ## What Spike is (and is not)
 
@@ -81,6 +81,51 @@ device that lies gets 50, never more); a caller address gets `SPIKE_IP_HOURLY_CA
 whole service gets `SPIKE_GLOBAL_DAILY_CAP` (3000) calls per UTC day, which bounds
 the bill whatever else happens.
 
+## Carb estimate mode
+
+`mode: "carb_estimate"` on the same function turns a free-text meal description into an
+approximate carbohydrate estimate for the user's own log. Request
+`{ mode, locale, tier, text }` (text 1-300 characters), response
+`{ items: [{ name, quantity, unit, grams_carb }], total_grams_carb, filtered, charged, usage }`
+(`charged`: true = a model call ran and the device slot is spent; false = refused by the medical pre-filter before any model call),
+JSON only, one turn, no stream. It has its own system prompt (food carbohydrate
+estimate only; no insulin, dose, treatment or diagnosis) and its own daily counter
+(`ce:<deviceId>` through `spike_reserve`: free 1, pro 50) under the same address and
+global ceilings; over the quota answers 429 `daily_limit_carb`. The same output gate
+applies to the free-text fields and a request that mentions insulin or doses is refused
+without a model call. An answer that does not fit the schema is 502 `estimate_failed` and the slot stays spent (the model ran and was billed, so the global cap keeps bounding the bill); only an upstream failure (model not reached) gives the slot back.
+The meal text and the answer are neither stored nor logged; `spike_calls` gets only
+`mode`, token counts and latency. The note "this is an estimate, not a dose" is fixed
+client copy (i18n), not server text. Details: `supabase/functions/ai-ask-spike/README.md`.
+
+### Carb estimate, app side (K27-P6)
+
+- Files: `lib/ai/carbEstimateClient.ts` (one JSON POST, 45 s ceiling, error mapping:
+  `daily_limit_carb` limit, `rate_limit`/`capacity` busy, `estimate_failed`/`upstream`/
+  `unavailable` failed, `bad_request` input), `lib/ai/carbEstimateLimit.ts` (device-scoped
+  daily tally, free 1 / pro 50, day key = UTC date like the server), `components/CarbEstimateSheet.tsx`.
+- Entry: the Food tab (chip under the title row) and a button inside the meal sheet
+  (`MealComposeSheet`, `onEstimate`). Hidden when `extra.spikeFnUrl` is unset.
+- Consent: the same Spike consent, now **version 2** (`SPIKE_CONSENT_VERSION`, key
+  `zerospike.spikeConsentVersion`). The version adds the paragraph `spike.consentCarb`. A
+  consent stored without a version (v1) no longer counts, so existing users see the consent
+  screen once more; without a current consent `estimateCarbs` throws `consent_required` and
+  nothing is sent. The sheet shows the same consent text when it opens without consent.
+- Flow: text (300 characters, example placeholder) -> "Estimate" -> editable rows (name,
+  amount, unit, grams of carbohydrate) and a total, with the fixed note
+  `carbEstimate.note` under every result -> "Add to log". Nothing is written when the
+  result arrives: the journal row (`addMealLog`, insulin 0, portion 0) is written only by
+  the Add button, from the edited figures. There is no dose calculation anywhere in the flow.
+- Quota: the local tally only saves a free user a refused request; the server count binds.
+  A `daily_limit_carb` answer fills the local tally. A free user at the limit sees the
+  limit text plus a Pro line and the usual Pro button (paywall reason `spike`).
+- Privacy: the meal text lives in component state only. It is not put in AsyncStorage, not
+  logged and not in any crash context. Analytics (schema v3, counts only, no text and no
+  grams): `carb_estimate_used {tier, item_count, source: food_tab|meal_sheet}` and
+  `carb_estimate_blocked {reason: quota|filtered|error}`.
+- Weekly report (`scripts/metrics-weekly.mjs`): server calls by mode from
+  `spike_calls.mode` (`carb_estimate`, and how many were filtered) plus the two client events.
+
 ## HUMAN steps
 
 1. `supabase db push` (applies `spike_calls`, 90-day retention, service-role-only grants,
@@ -102,3 +147,7 @@ the bill whatever else happens.
    all nine languages; keep them in step with any change here). The App Store privacy
    label and the Play Data safety form follow `docs/apple-ads/privacy-2.3.7.md`.
 6. Eval before rollout: see `supabase/functions/ai-ask-spike/README.md`.
+7. Carb estimate rollout: `supabase db push` for `20261019100000_spike_calls_mode.sql`, then
+   deploy `ai-ask-spike` and **redeploy `track`** (event schema v3 adds the two carb events;
+   until then the server drops them). Update the privacy policy, the App Store privacy label
+   and the Play Data safety form for the meal text sent to the processor (not stored).

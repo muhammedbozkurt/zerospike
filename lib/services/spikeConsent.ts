@@ -13,10 +13,23 @@ import { clearHistory } from "../ai/spikeHistory";
  */
 const CONSENT_KEY = "zerospike.spikeConsent";
 const CONTEXT_CONSENT_KEY = "zerospike.spikeContextConsent";
+const CONSENT_VERSION_KEY = "zerospike.spikeConsentVersion";
+
+/**
+ * Version 2 added the meal-text paragraph (spike.consentCarb). A consent stored
+ * without a version (v1) or with an older one no longer counts, so existing
+ * users see the screen once more before any meal text can leave the device.
+ */
+export const SPIKE_CONSENT_VERSION = 2;
+
+async function consentStands(): Promise<boolean> {
+  if ((await AsyncStorage.getItem(CONSENT_KEY)) !== "true") return false;
+  return Number(await AsyncStorage.getItem(CONSENT_VERSION_KEY)) === SPIKE_CONSENT_VERSION;
+}
 
 export async function hasSpikeConsent(): Promise<boolean> {
   try {
-    return (await AsyncStorage.getItem(CONSENT_KEY)) === "true";
+    return await consentStands();
   } catch {
     return false; // fail-closed
   }
@@ -25,6 +38,7 @@ export async function hasSpikeConsent(): Promise<boolean> {
 export async function grantSpikeConsent(): Promise<void> {
   try {
     await AsyncStorage.setItem(CONSENT_KEY, "true");
+    await AsyncStorage.setItem(CONSENT_VERSION_KEY, String(SPIKE_CONSENT_VERSION));
   } catch {
     // best-effort
   }
@@ -33,7 +47,7 @@ export async function grantSpikeConsent(): Promise<void> {
 /** True only when BOTH the chat consent and the summary consent are on. */
 export async function hasSpikeContextConsent(): Promise<boolean> {
   try {
-    if ((await AsyncStorage.getItem(CONSENT_KEY)) !== "true") return false;
+    if (!(await consentStands())) return false;
     return (await AsyncStorage.getItem(CONTEXT_CONSENT_KEY)) === "true";
   } catch {
     return false; // fail-closed
@@ -69,6 +83,11 @@ export async function setSpikeContextConsent(granted: boolean): Promise<boolean>
 export async function withdrawSpikeConsent(): Promise<void> {
   try {
     await AsyncStorage.removeItem(CONSENT_KEY);
+  } catch {
+    // best-effort
+  }
+  try {
+    await AsyncStorage.removeItem(CONSENT_VERSION_KEY);
   } catch {
     // best-effort
   }

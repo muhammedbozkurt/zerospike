@@ -866,6 +866,9 @@ function SpikeScreen() {
               <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
                 {t("spike.consentNotSent")}
               </Text>
+              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
+                {t("spike.consentCarb")}
+              </Text>
               <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>
                 {t("spike.consentSummaryNote")}
               </Text>

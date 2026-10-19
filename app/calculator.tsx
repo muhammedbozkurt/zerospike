@@ -138,6 +138,7 @@ import {
   withAlpha,
 } from "../components/rich";
 import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { mealPrefill } from "../lib/mealPrefill";
 import { useLayout } from "../lib/useLayout";
 import { upper } from "../lib/upper";
 
@@ -171,8 +172,8 @@ function foodFromMeal(log: {
   // NOT rounded: at the stored portion this has to reproduce the stored carbs
   // exactly, or merely opening the entry and saving it again would nudge the
   // user's own figure. The screen rounds it for display (see num()).
-  const per100 =
-    log.portion_g > 0 ? (log.calculated_carbs_g * 100) / log.portion_g : 0;
+  const prefill = mealPrefill(log);
+  const per100 = prefill.carb_100g;
   return {
     id: "",
     name_tr: name,
@@ -186,7 +187,7 @@ function foodFromMeal(log: {
     carb_100g: per100,
     glycemic_index: 0,
     glycemic_load: 0,
-    portion_size_g: log.portion_g,
+    portion_size_g: prefill.portion_g,
     brand_name: null,
     custom_notes: null,
     is_custom: 1,
@@ -865,7 +866,7 @@ function CalculatorScreen() {
       // No catalogue row (typed name, or the food was deleted since): stand one in
       // from the meal's own values instead of leaving the screen loading forever.
       setFood(catalogueFood ?? foodFromMeal(log));
-      setPortion(log.portion_g);
+      setPortion(catalogueFood ? log.portion_g : mealPrefill(log).portion_g);
       setDoseText(num(log.insulin_dose_units));
       setNote(log.personal_note ?? "");
       setPhoto(log.photo_uri_local);

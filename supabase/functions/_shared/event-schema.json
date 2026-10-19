@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "events": {
     "app_open": { "cold": "bool" },
     "onboarding_step": { "step": "string", "index": "int" },
@@ -41,6 +41,8 @@
     "spike_feedback": { "value": ["enum", "up", "down"] },
     "spike_action_tap": { "action": "string" },
     "spike_context_consent": { "granted": "bool" },
+    "carb_estimate_used": { "tier": ["enum", "free", "pro"], "item_count": "int", "source": ["enum", "food_tab", "meal_sheet"] },
+    "carb_estimate_blocked": { "reason": ["enum", "quota", "filtered", "error"] },
     "analytics_opt_out": { "enabled": "bool" },
     "store_review_prompt": { "trigger": ["enum", "log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"] }
   }

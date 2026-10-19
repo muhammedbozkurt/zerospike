@@ -39,6 +39,11 @@
 //     way as a blocked one, with the neutral text, filter_rule "empty" and the
 //     slot kept spent, so a retry that costs a second call never happens.
 //     Other failures (no reply at all) send {type:"error",code:"upstream"}.
+//   Mode "carb_estimate" (body { mode, locale, tier, text }, one turn, JSON out, no
+//   stream, no consent header): -> { items:[{name,quantity,unit,grams_carb}],
+//   total_grams_carb, filtered, usage }. Own daily counter (`ce:<deviceId>`, free 1 /
+//   pro 50) on top of the same address and global ceilings: 429 daily_limit_carb.
+//   502 estimate_failed when the model answer does not fit the schema (slot stays spent). See carbEstimate.ts.
 //   Errors { error }: 429 daily_limit | rate_limit | capacity, 403 consent_required,
 //   400 bad_request, 502 upstream, 503 unavailable (500 not_configured, 405 method_not_allowed).
 //   No CORS headers: the app is not a browser. OPTIONS answers 204 with no body.
@@ -48,12 +53,14 @@ import { bedrockClient, buildParams, logUpstream, spikeModel, usageOf, type Bedr
 import { MAX_CONTEXT_BYTES, SYSTEM_PROMPT, dynamicSystem, normalizeLocale, sanitizeContext, type ActionId, type ContextPacket, type Locale } from "./prompt.ts";
 import { StreamGuard, blockedOutcome, finalizeReply, type ReplyOutcome } from "./filter.ts";
 import type { SourceRef } from "./sources.ts";
+import { CARB_MODE, DEVICE_ID_RE } from "../_shared/carb-estimate.ts";
+import { handleCarbEstimate, type CarbCallRow, type CarbDeps } from "./carbEstimate.ts";
 
 const MAX_MESSAGES = 16; // trailing chat window the client may send
 const MAX_CHARS = 1500; // per message, defensive cap
 const MAX_BODY_BYTES = 256 * 1024; // declared Content-Length
 const MAX_UNDECLARED_BODY_BYTES = 64 * 1024; // chunked body with no Content-Length: read no more than this
-const DEVICE_ID = /^[A-Za-z0-9._:-]{1,100}$/;
+const DEVICE_ID = DEVICE_ID_RE;
 
 // ── Limits ──────────────────────────────────────────────────────────────────
 // Keep the two daily numbers in sync with FREE_DAILY_MESSAGES / PRO_DAILY_MESSAGES
@@ -238,6 +245,7 @@ async function recordCall(creds: Creds, row: {
   filtered: boolean;
   filter_rule: string | null;
   stream: boolean;
+  mode: "chat" | "carb_estimate";
 }): Promise<void> {
   try {
     const res = await fetch(`${creds.url}/rest/v1/spike_calls`, {
@@ -376,6 +384,7 @@ function logCall(call: Call, result: { filtered: boolean; rule: string | null },
     filtered: result.filtered,
     filter_rule: result.rule,
     stream,
+    mode: "chat",
   });
 }
 
@@ -514,6 +523,44 @@ async function streamReply(call: Call): Promise<Response> {
   return new Response(body, { headers: SSE_HEADERS });
 }
 
+// ── carb_estimate ───────────────────────────────────────────────────────────
+
+async function carbEstimate(req: Request, body: Obj, deviceId: string): Promise<Response> {
+  const creds = supabaseServiceCreds();
+  if (!creds) return json({ error: "not_configured" }, 500);
+  const client = bedrockClient();
+  if (!client) return json({ error: "not_configured" }, 500);
+  const now = Date.now();
+  const day = utcDayKey(now);
+  const model = spikeModel();
+  const hash = await ipHash(creds, await resolveCallerIp(req));
+  const deps: CarbDeps = {
+    model,
+    nowMs: now,
+    reserve: (key, deviceCap) => reserveSlot(creds, { deviceId: key, ipHash: hash, day, deviceCap, countDevice: true }),
+    release: (key) => releaseSlot(creds, key, day, true),
+    call: async (system, dynamic, userText) => {
+      const started = Date.now();
+      try {
+        const params = buildParams(model, system, dynamic, [{ role: "user", content: userText }]);
+        const message = await client.messages.create({ ...params, max_tokens: Math.max(params.max_tokens, 900) });
+        return {
+          text: message.content.map((block) => (block.type === "text" ? block.text : "")).join(""),
+          stopReason: message.stop_reason,
+          usage: usageOf(message.usage),
+          latencyMs: Date.now() - started,
+        };
+      } catch (e) {
+        logUpstream(e);
+        throw e;
+      }
+    },
+    record: (row: CarbCallRow) => recordCall(creds, { device_id: deviceId, day, model, stream: false, ...row }),
+  };
+  const out = await handleCarbEstimate(body, deviceId, deps);
+  return json(out.body, out.status, out.headers);
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -525,6 +572,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const body = await readBody(req);
   if (!body) return json({ error: "bad_request" }, 400);
+  if (body.mode !== undefined && body.mode !== "chat") {
+    return body.mode === CARB_MODE ? await carbEstimate(req, body, deviceId) : json({ error: "bad_request" }, 400);
+  }
   const messages = parseMessages(body.messages);
   if (!messages) return json({ error: "bad_request" }, 400);
 

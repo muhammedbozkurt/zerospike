@@ -140,7 +140,7 @@ function canonicalSchema(): Canonical {
 // The card's own text, parsed independently of eventSchema.ts. A field written
 // without a type is a string.
 function matchesContract(): void {
-  section("A. schema v2 matches the written contract");
+  section("A. schema v3 matches the written contract");
   const CONTRACT = [
     "app_open{cold:bool}",
     "onboarding_step{step:string,index:int}",
@@ -175,6 +175,8 @@ function matchesContract(): void {
     "spike_feedback{value:up|down}",
     "spike_action_tap{action}",
     "spike_context_consent{granted:bool}",
+    "carb_estimate_used{tier:free|pro,item_count:int,source:food_tab|meal_sheet}",
+    "carb_estimate_blocked{reason:quota|filtered|error}",
     "analytics_opt_out{enabled:bool}",
     "store_review_prompt{trigger:log_saved|streak_7|weekly_insights_view|pdf_export_success}",
   ];
@@ -195,8 +197,8 @@ function matchesContract(): void {
   }
 
   const actual = canonicalSchema();
-  eq("35 events in the contract", expected.size, 35);
-  eq("schema version is 2", SCHEMA_VERSION, 2);
+  eq("37 events in the contract", expected.size, 37);
+  eq("schema version is 3", SCHEMA_VERSION, 3);
   eq("event count", actual.size, expected.size);
   for (const [name, fields] of expected) {
     const got = actual.get(name);

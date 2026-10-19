@@ -182,19 +182,31 @@ async function sbSource(start, end, downloads) {
     if (!byRes.size) add('app.pr.none', 'Satin alma sonucu (olay henuz yok)', 0, 0);
     for (const [k, o] of [...byRes.entries()].sort()) add(`app.pr.${k}`, `Satin alma sonucu: ${k}`, o.v, o.d);
     const ev = await sbGet(key, 'v_event_daily', `${range}&limit=10000`);
-    const names = [['paywall_cta', 'Paywall CTA'], ['trial_started', 'Deneme baslatma (istemci)'], ['downsell_view', 'Downsell goruntuleme'], ['downsell_accept', 'Downsell kabul'], ['store_review_prompt', 'Degerlendirme istemi'], ['spike_message_sent', 'Spike cagrisi']];
+    const names = [['paywall_cta', 'Paywall CTA'], ['trial_started', 'Deneme baslatma (istemci)'], ['downsell_view', 'Downsell goruntuleme'], ['downsell_accept', 'Downsell kabul'], ['store_review_prompt', 'Degerlendirme istemi'], ['spike_message_sent', 'Spike cagrisi'], ['carb_estimate_used', 'Besin tahmini kullanildi (istemci)'], ['carb_estimate_blocked', 'Besin tahmini engellendi (istemci)']];
     for (const [nm, label] of names) {
       const f = ev.filter((r) => r.name === nm);
       add(`app.ev.${nm}`, label, sum(f, 'events'), sum(f, 'devices'));
     }
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/spike_calls?select=id&${range}&limit=0`, { headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'count=exact' } });
+    const countCalls = async (extra) => {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/spike_calls?select=id&${range}${extra}&limit=0`, { headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'count=exact' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const total = Number((res.headers.get('content-range') || '').split('/')[1]);
-      if (!Number.isFinite(total)) throw new Error('count yok');
-      add('app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls)', total, total);
+      const n = Number((res.headers.get('content-range') || '').split('/')[1]);
+      if (!Number.isFinite(n)) throw new Error('count yok');
+      return n;
+    };
+    try {
+      const total = await countCalls('');
+      add('app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls, tum modlar)', total, total);
     } catch {
       unavailable.push('Supabase spike_calls sayimi (erisilemedi)');
+    }
+    try {
+      const carb = await countCalls('&mode=eq.carb_estimate');
+      const carbFiltered = await countCalls('&mode=eq.carb_estimate&filtered=eq.true');
+      add('app.carb.calls', 'Besin tahmini model cagrisi (sunucu, spike_calls.mode=carb_estimate)', carb, carb);
+      add('app.carb.filtered', 'Besin tahmini suzulen cagri (sunucu)', carbFiltered, carbFiltered);
+    } catch {
+      unavailable.push('Supabase spike_calls.mode sayimi (kolon yok: migration 20261019100000 bekliyor, ya da erisilemedi)');
     }
     try {
       const gate = await sbGet(key, 'v_spike_gate_daily', `${range}&limit=10000`);
@@ -251,7 +263,7 @@ async function main() {
     unavailable.push(...s.unavailable);
   } else {
     for (const [k, l] of [['asc.imp.TOPLAM', 'Gosterim Toplam'], ['asc.dl.TOPLAM', 'Indirme Toplam'], ['rc.trials', 'Deneme baslangici'], ['rc.conv', 'Denemeden donusum (adet)'], ['rc.actives', 'Aktif abonelik'], ['rc.mrr', 'MRR']]) store.push({ key: k, label: l, val: null, scope: 'store' });
-    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls)'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.spike.rej.device.3', 'Spike ret: cihaz limiti (3)'], ['app.spike.rej.device.50', 'Spike ret: cihaz limiti (50)'], ['app.spike.rej.ip', 'Spike ret: IP limiti'], ['app.spike.rej.global', 'Spike ret: genel limit'], ['app.spike.rej_rate', 'Spike ret orani (ret / ret+ok)'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
+    for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls, tum modlar)'], ['app.carb.calls', 'Besin tahmini model cagrisi (sunucu)'], ['app.carb.filtered', 'Besin tahmini suzulen cagri (sunucu)'], ['app.ev.carb_estimate_used', 'Besin tahmini kullanildi (istemci)'], ['app.ev.carb_estimate_blocked', 'Besin tahmini engellendi (istemci)'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.spike.rej.device.3', 'Spike ret: cihaz limiti (3)'], ['app.spike.rej.device.50', 'Spike ret: cihaz limiti (50)'], ['app.spike.rej.ip', 'Spike ret: IP limiti'], ['app.spike.rej.global', 'Spike ret: genel limit'], ['app.spike.rej_rate', 'Spike ret orani (ret / ret+ok)'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
   }
 
   const dl = downloads;

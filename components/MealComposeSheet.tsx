@@ -136,6 +136,7 @@ export function MealComposeSheet({
   onClose,
   onSave,
   onSaveTemplate,
+  onEstimate,
 }: {
   items: ComposeItem[];
   onChange: (items: ComposeItem[]) => void;
@@ -145,6 +146,8 @@ export function MealComposeSheet({
   onClose: () => void;
   onSave: () => void;
   onSaveTemplate: (name: string) => void;
+  /** Opens the text estimate; the button shows only when the caller offers it. */
+  onEstimate?: () => void;
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -242,6 +245,21 @@ export function MealComposeSheet({
                 ))}
               </ScrollView>
             )}
+
+            {onEstimate ? (
+              <Pressable
+                onPress={onEstimate}
+                accessibilityRole="button"
+                accessibilityLabel={t("carbEstimate.entryButton")}
+                className="flex-row items-center self-start rounded-full border border-hair mt-1"
+                style={{ minHeight: 36, paddingHorizontal: 12, columnGap: 6, maxWidth: "100%" }}
+              >
+                <Ionicons name="sparkles-outline" size={16} color={THEME.accent} />
+                <Text style={{ color: THEME.accent, fontSize: 13, fontWeight: "700", flexShrink: 1 }}>
+                  {t("carbEstimate.entryButton")}
+                </Text>
+              </Pressable>
+            ) : null}
 
             <View
               className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-3 mt-1"

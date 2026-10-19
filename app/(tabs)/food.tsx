@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -59,6 +59,8 @@ import {
   type ComposeItem,
 } from "../../lib/mealCompose";
 import { MealComposeSheet } from "../../components/MealComposeSheet";
+import { CarbEstimateSheet, type CarbEstimateSource } from "../../components/CarbEstimateSheet";
+import { carbEstimateConfigured, estimateMealInput, type EditableItem } from "../../lib/ai/carbEstimateClient";
 import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { insulinModeOf, insulinModeShowsBolus } from "../../lib/insulinMode";
 import {
@@ -70,6 +72,8 @@ import { logCrash, logEvent } from "../../lib/analytics";
 import { noteFirstLog } from "../../lib/services/firstLog";
 import type { Food, Lang, MealSlot } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
+import { getCatalogFoodByEnglishName } from "../../lib/db/foods";
+import { isScreenshotMode } from "../../lib/screenshotMode";
 import { CATEGORIES, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
 import { OffSearchResults } from "../../components/OffSearchResults";
@@ -416,10 +420,10 @@ function TemplateConfirmSheet({
 }
 
 export default function FoodScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { activeProfile, lang, dataVersion, bumpData } = useApp();
+  const { activeProfile, lang, dataVersion, bumpData, isProUser } = useApp();
   const { actionSheet, confirm, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
   // Tablets get more columns and a capped reading column; a phone render is
@@ -1053,6 +1057,91 @@ export default function FoodScreen() {
     }
   }
 
+  const [estimateSource, setEstimateSource] = useState<CarbEstimateSource | null>(null);
+  const { scScene } = useLocalSearchParams<{ scScene?: string }>();
+  const scCarbs = isScreenshotMode() && scScene === "carbs";
+  const scEstimate = isScreenshotMode() && scScene === "estimate";
+  useEffect(() => {
+    if (scEstimate) {
+      setComposeOpen(false);
+      setComposeItems([]);
+      setEstimateSource("food_tab");
+      return;
+    }
+    if (!scCarbs) return;
+    setEstimateSource(null);
+    let alive = true;
+    void (async () => {
+      const picks: Array<[string, number]> = [
+        ["White bread", 28],
+        ["Boiled egg", 50],
+        ["Milk", 244],
+        ["Apple", 182],
+      ];
+      const foods = await Promise.all(picks.map(([name]) => getCatalogFoodByEnglishName(name)));
+      if (!alive) return;
+      setComposeItems(
+        foods.flatMap((food, i) =>
+          food ? [{ ...composeItemFromFood(food, foodName(food, lang)), portion_g: picks[i][1] }] : []
+        )
+      );
+      setComposeOpen(true);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [scCarbs, scEstimate, lang]);
+  const [estimateSaving, setEstimateSaving] = useState(false);
+  const estimateSavingRef = useRef(false);
+
+  async function saveEstimate(items: EditableItem[]) {
+    if (!activeProfile || estimateSavingRef.current || items.length === 0) return;
+    estimateSavingRef.current = true;
+    setEstimateSaving(true);
+    try {
+      const input = estimateMealInput(items);
+      const meal = await addMealLog({
+        profile_id: activeProfile.id,
+        food_id: null,
+        custom_food_name: input.custom_food_name,
+        portion_g: input.portion_g,
+        calculated_carbs_g: input.calculated_carbs_g,
+        insulin_dose_units: 0,
+      });
+      logEvent("log_added", { kind: "meal" });
+      void noteFirstLog("meal");
+      hapticSuccess();
+      await schedulePostMealReminder();
+      void noteJournalActivity();
+      setEstimateSource(null);
+      bumpData();
+      toast(t("calculator.savedRecord"), "success", {
+        label: t("common.undo"),
+        onPress: () => {
+          void (async () => {
+            await deleteMealRecord(meal.id);
+            await applyAfterDelete([
+              {
+                id: meal.id,
+                profileId: meal.profile_id,
+                loggedAtMs: new Date(meal.logged_at).getTime(),
+                templateId: meal.meal_template_id,
+              },
+            ]);
+            bumpData();
+            toast(t("calculator.undone"), "info");
+          })();
+        },
+      });
+    } catch (err) {
+      logCrash(err, { screen: "food", save: "estimate" });
+      toast(t("common.saveFailed"), "error");
+    } finally {
+      estimateSavingRef.current = false;
+      setEstimateSaving(false);
+    }
+  }
+
   function titleFor(sel: Selection): string {
     if (sel === "favorites") return t("food.favorites");
     if (sel === "custom") return t("food.custom");
@@ -1179,6 +1268,24 @@ export default function FoodScreen() {
           <IconTile icon="add" size={34} radius={11} />
         </Pressable>
       </View>
+
+      {carbEstimateConfigured ? (
+        <Pressable
+          onPress={() => {
+            hapticSelect();
+            setEstimateSource("food_tab");
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={t("carbEstimate.entryButton")}
+          className="flex-row items-center self-start rounded-full border border-hair mb-3"
+          style={{ minHeight: 36, paddingHorizontal: 12, columnGap: 6, maxWidth: "100%" }}
+        >
+          <Ionicons name="sparkles-outline" size={16} color={THEME.accent} />
+          <Text style={{ color: THEME.accent, fontSize: 13, fontWeight: "700", flexShrink: 1 }}>
+            {t("carbEstimate.entryButton")}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {/* Hero: today's carbohydrate total against the user's own range */}
       {mode === "grid" ? (
@@ -1784,6 +1891,19 @@ export default function FoodScreen() {
           onClose={closeCompose}
           onSave={() => void saveCompose()}
           onSaveTemplate={(name) => void saveComposeTemplate(name)}
+          onEstimate={carbEstimateConfigured ? () => setEstimateSource("meal_sheet") : undefined}
+        />
+      ) : null}
+
+      {estimateSource ? (
+        <CarbEstimateSheet
+          source={estimateSource}
+          isPro={isProUser}
+          locale={i18n.language}
+          saving={estimateSaving}
+          screenshotResult={scEstimate}
+          onClose={() => setEstimateSource(null)}
+          onAdd={(items) => void saveEstimate(items)}
         />
       ) : null}
 

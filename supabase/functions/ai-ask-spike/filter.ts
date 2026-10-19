@@ -470,7 +470,7 @@ interface Normalized {
  * marks removed, NFKC) and folds FOLD_EXTRA, so "\u00FAnits" and "un\u0131ts" read as
  * "units"; it is a third reading of the same text, scanned next to the plain one.
  */
-function normalizeWithMap(text: string, gap: "" | " ", fold = false): Normalized {
+export function normalizeWithMap(text: string, gap: "" | " ", fold = false): Normalized {
   let norm = "";
   const at: number[] = [];
   let dropped = false;

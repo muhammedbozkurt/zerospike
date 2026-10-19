@@ -28,6 +28,7 @@ import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
 import { RICH_BY_STATUS, THEME, TABULAR, glow, HIT_TARGET, RADIUS } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
+import { hasMealWeight } from "../lib/mealPrefill";
 import { IconTile } from "./rich/IconTile";
 import { withAlpha } from "./rich/GlassCard";
 import {
@@ -661,7 +662,7 @@ function JournalItemBase({
   // meal entry: neutral (muted) accent, on-palette instead of slate hexes.
   const mealLabel = [
     entry.display_name,
-    `${Math.round(entry.portion_g)} ${t("common.grams")}`,
+    hasMealWeight(entry.portion_g) ? `${Math.round(entry.portion_g)} ${t("common.grams")}` : null,
     t("journal.carbsLabel", {
       carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
     }),
@@ -714,7 +715,9 @@ function JournalItemBase({
           {entry.display_name}
         </Text>
         <Text style={{ color: THEME.textMuted, fontSize: 10, marginTop: 1 }}>
-          {Math.round(entry.portion_g)} {t("common.grams")} ·{" "}
+          {hasMealWeight(entry.portion_g)
+            ? `${Math.round(entry.portion_g)} ${t("common.grams")} · `
+            : ""}
           {t("journal.carbsLabel", {
             carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
           })}

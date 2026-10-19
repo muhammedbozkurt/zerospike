@@ -625,6 +625,18 @@ function kinds(): void {
     const wire = res.ok ? JSON.stringify(res.props) : "";
     ok(`${name} puts no 'rotation' or injection map on the wire`, res.ok && !/rotation|injection/.test(wire), wire);
   }
+  const used = sanitizeEvent("carb_estimate_used", {
+    tier: "free",
+    item_count: 3,
+    source: "food_tab",
+    text: "2 slices of bread",
+    grams_carb: 48,
+    total_grams_carb: 48.5,
+  });
+  ok("a carb estimate event carries tier, count and source only", used.ok && Object.keys(used.props).sort().join() === "item_count,source,tier", JSON.stringify(used));
+  ok("meal text and grams are stripped", used.ok && used.issues.filter((i) => i.includes("(dropped)")).length === 3, JSON.stringify(used.issues));
+  const blocked = sanitizeEvent("carb_estimate_blocked", { reason: "a long sentence about bread" });
+  ok("a blocked reason outside the closed set is dropped", blocked.ok && !("reason" in blocked.props));
 }
 
 async function deletion(): Promise<void> {
