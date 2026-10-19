@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, SectionList, Switch, Text, View } from "react-native";
+import { Alert, AppState, Platform, Pressable, SectionList, Switch, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -202,15 +202,16 @@ import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
 import { Sparkline } from "../../components/Sparkline";
-import { Button, SegmentedStat } from "../../components/ui";
+import { Button, Card, Chip, SegmentedStat, Txt } from "../../components/ui";
+import { withAlpha } from "../../components/rich/GlassCard";
+import { RIPPLE_ALPHA, ROW_MIN_HEIGHT } from "../../lib/theme/uiPrimitives";
 import { EmptyState } from "../../components/EmptyState";
 import { DirIcon } from "../../components/DirIcon";
 import Animated from "react-native-reanimated";
 import { listEntering, PressableScale } from "../../lib/theme/motion";
-import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, TABULAR, RADIUS, ELEVATION, HIT_TARGET, switchColors } from "../../lib/theme/tokens";
+import { RICH_BY_STATUS, GLUCOSE_RICH, THEME, RADIUS, SPACE, ELEVATION, HIT_TARGET, switchColors } from "../../lib/theme/tokens";
 import {
   AppBackground,
-  GlassCard,
   GlucoseRing,
   GlucoseChip,
   GradientCTA,
@@ -230,6 +231,13 @@ import { upper } from "../../lib/upper";
 
 const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
 
+/** Android press feedback for card-like tap targets; read at render so it
+ *  follows the live theme. iOS keeps the Pressable's opacity feedback. */
+const cardRipple = () => ({
+  color: withAlpha(THEME.text, RIPPLE_ALPHA),
+  foreground: true,
+});
+
 /** No countdown running, so the card is not drawn at all and neither action
  *  applies. A shared constant so the memo below keeps one identity. */
 const NO_POST_MEAL_ACTIONS: PostMealCardActions = {
@@ -248,7 +256,7 @@ const NO_POST_MEAL_ACTIONS: PostMealCardActions = {
  */
 function HeroSkeleton() {
   return (
-    <GlassCard style={{ paddingVertical: 14, marginBottom: 12 }}>
+    <Card style={{ marginBottom: SPACE.md }}>
       <View className="flex-row items-center justify-between px-1 mb-1">
         <Skeleton width={90} height={11} radius={4} />
         <Skeleton width={54} height={18} radius={9} />
@@ -256,7 +264,7 @@ function HeroSkeleton() {
       <View className="items-center">
         <Skeleton width={152} height={152} radius={76} />
       </View>
-    </GlassCard>
+    </Card>
   );
 }
 
@@ -264,7 +272,7 @@ function HeroSkeleton() {
 function WeekSkeleton() {
   return (
     <View style={{ marginBottom: 12 }}>
-      <View className="flex-row items-center justify-between mb-1.5 px-1">
+      <View className="flex-row items-center justify-between mb-2 px-1">
         <Skeleton width={70} height={11} radius={4} />
         <Skeleton width={72} height={20} radius={4} />
       </View>
@@ -1818,7 +1826,7 @@ export default function DashboardScreen() {
     <>
       {/* The hero ring, empty: same shape and size the first reading will take,
           in a neutral track colour, with the invitation under it. */}
-      <GlassCard style={{ paddingVertical: 16, marginBottom: 12 }}>
+      <Card style={{ marginBottom: SPACE.md }}>
         <View className="items-center">
           {/* Both colours stay HEX: the ring's glow runs them through the
               token helper, which parses hex (an rgba token comes out NaN). */}
@@ -1830,35 +1838,29 @@ export default function DashboardScreen() {
             fraction={0}
             size={132}
           />
-          <Text
-            style={{
-              color: THEME.textMuted,
-              fontSize: 12,
-              lineHeight: 17,
-              textAlign: "center",
-              marginTop: 10,
-              paddingHorizontal: 8,
-            }}
+          <Txt
+            kind="caption"
+            tone="muted"
+            style={{ textAlign: "center", marginTop: SPACE.md, paddingHorizontal: SPACE.sm }}
           >
             {t("dashboard.empty")}
-          </Text>
+          </Txt>
         </View>
-      </GlassCard>
+      </Card>
 
-      <GlassCard accent style={{ marginBottom: 12, gap: 8 }}>
-        <Text
-          style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
-        >
+      <Card accent style={{ marginBottom: SPACE.md, gap: SPACE.sm }}>
+        <Txt kind="micro" tone="muted" style={{ letterSpacing: 1.3, fontWeight: "700" }}>
           {upper(t("dashboard.startTitle", { n: startSteps.length }))}
-        </Text>
+        </Txt>
         {startSteps.map((step, i) => (
           <Pressable
             key={step.key}
             onPress={step.onPress}
             accessibilityRole="button"
             accessibilityLabel={`${i + 1}. ${step.label}`}
+            android_ripple={cardRipple()}
             className="flex-row items-center active:opacity-80"
-            style={{ gap: 10, paddingVertical: 3 }}
+            style={{ gap: SPACE.md, paddingVertical: SPACE.xs, minHeight: HIT_TARGET }}
           >
             <View
               style={{
@@ -1872,28 +1874,23 @@ export default function DashboardScreen() {
                 backgroundColor: THEME.surface,
               }}
             >
-              <Text style={[TABULAR, { color: THEME.accent, fontSize: 11, fontWeight: "800" }]}>
+              <Txt kind="micro" tone="accent" tabular style={{ fontWeight: "800" }}>
                 {i + 1}
-              </Text>
+              </Txt>
             </View>
             <IconTile icon={step.icon} size={38} radius={12} hero />
-            <Text
-              style={{ color: THEME.text, fontSize: 14, fontWeight: "700", flex: 1 }}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.85}
-            >
+            <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700", flex: 1, minWidth: 0 }}>
               {step.label}
-            </Text>
+            </Txt>
             <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
           </Pressable>
         ))}
         <GradientCTA
           label={t("dashboard.firstCta")}
           onPress={() => setQuickAddOpen(true)}
-          style={{ marginTop: 4 }}
+          style={{ marginTop: SPACE.xs }}
         />
-      </GlassCard>
+      </Card>
     </>
   );
 
@@ -1905,10 +1902,8 @@ export default function DashboardScreen() {
     // inside the container instead.
     <View className={journalEntries.length > 0 ? "" : "pb-2"}>
       <View className="flex-row items-center justify-between mb-4">
-        <Text style={{ color: THEME.text, fontSize: 24, fontWeight: "800" }}>
-          {t("common.today")}
-        </Text>
-        <View className="flex-row items-center" style={{ gap: 10 }}>
+        <Txt kind="title">{t("common.today")}</Txt>
+        <View className="flex-row items-center" style={{ gap: SPACE.md }}>
           {/* Spike's entry point only exists when the function URL is actually
               configured. A visible button that opens a dead end is worse than
               no button; see lib/ai/spikeClient.ts. K4: also shown in store-
@@ -1958,23 +1953,19 @@ export default function DashboardScreen() {
               `lastGlucose` existing at all: with no reading EVER logged this
               stays out of the way for the FirstRunGuide branch above. */}
           {lastGlucose ? (
-            <GlassCard
+            <Card
               glow={todayAvg != null ? todayColor : THEME.textMuted}
-              style={{ paddingVertical: 14, marginBottom: 12 }}
+              style={{ marginBottom: SPACE.md }}
             >
               <View className="flex-row items-center justify-between px-1 mb-1">
-                <Text
+                <Txt
+                  kind="micro"
+                  tone="muted"
                   numberOfLines={1}
-                  style={{
-                    color: THEME.textMuted,
-                    fontSize: 11,
-                    letterSpacing: 1.3,
-                    fontWeight: "800",
-                    flexShrink: 1,
-                  }}
+                  style={{ letterSpacing: 1.3, fontWeight: "700", flexShrink: 1 }}
                 >
                   {upper(t("dashboard.todayAvgLabel"))}
-                </Text>
+                </Txt>
                 {todayStatus ? (
                   <GlucoseChip
                     status={todayStatus}
@@ -2005,9 +1996,11 @@ export default function DashboardScreen() {
                   size={152}
                 />
               </View>
-              <Text
-                numberOfLines={1}
-                style={{ color: THEME.textMuted, fontSize: 11, textAlign: "center", marginTop: 10 }}
+              <Txt
+                kind="caption"
+                tone="muted"
+                numberOfLines={2}
+                style={{ textAlign: "center", marginTop: SPACE.md }}
               >
                 {t("dashboard.lastReadingLine", {
                   // "value unit · when" is one purely-LTR run (digits + unit +
@@ -2022,31 +2015,27 @@ export default function DashboardScreen() {
                     }`
                   ),
                 })}
-              </Text>
-            </GlassCard>
+              </Txt>
+            </Card>
           ) : null}
 
           {/* This-week strip: numbers that were computed but never shown (avg, TIR,
               streak) with a small sparkline of the week's readings. One compact row. */}
           {weekView === "firstHint" ? (
-            <Text
-              style={{
-                color: THEME.textMuted,
-                fontSize: 12,
-                fontWeight: "600",
-                marginBottom: 12,
-                paddingHorizontal: 4,
-              }}
+            <Txt
+              kind="caption"
+              tone="muted"
+              style={{ fontWeight: "600", marginBottom: SPACE.md, paddingHorizontal: SPACE.xs }}
             >
               {t("dashboard.weekEmptyHint")}
-            </Text>
+            </Txt>
           ) : null}
           {weekView === "boxes" ? (
-            <View style={{ marginBottom: 12 }}>
-              <View className="flex-row items-center justify-between mb-1.5 px-1">
-                <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "700" }}>
+            <View style={{ marginBottom: SPACE.md }}>
+              <View className="flex-row items-center justify-between mb-2 px-1">
+                <Txt kind="micro" tone="muted" style={{ fontWeight: "700" }}>
                   {t("dashboard.thisWeek")}
-                </Text>
+                </Txt>
                 {weekSparkline.length > 1 ? (
                   <Sparkline
                     data={weekSparkline}
@@ -2094,7 +2083,7 @@ export default function DashboardScreen() {
           proves the pill and the CTA's own label both still fit the
           narrowest supported screen at max Dynamic Type. */}
       {isExistingUser ? (
-      <GlassCard accent style={{ marginBottom: 12, paddingVertical: 14 }}>
+      <Card accent style={{ marginBottom: SPACE.md }}>
         {postMealTimerForProfile != null ? (
           <PostMealCountdown
             timer={postMealTimerForProfile}
@@ -2118,35 +2107,39 @@ export default function DashboardScreen() {
                 value to show here. Tapping it opens the sheet that carries
                 BOTH settings (the length for this one timer, and "when did
                 you actually start eating") as its two sections. */}
-            <View className="flex-row items-center" style={{ gap: 8, marginBottom: 12 }}>
+            <View className="flex-row items-center" style={{ gap: SPACE.sm, marginBottom: SPACE.md }}>
               <Ionicons name="restaurant-outline" size={18} color={THEME.accent} />
-              <Text
-                style={{ color: THEME.text, fontSize: 13, fontWeight: "700", flex: 1 }}
+              <Txt
+                kind="caption"
                 numberOfLines={2}
+                style={{ fontWeight: "700", flex: 1, minWidth: 0 }}
               >
                 {t("dashboard.quickPostMealTitle")}
-              </Text>
+              </Txt>
+              {/* Stays a Pressable, not a Button: Button always speaks its
+                  visible label, and this action needs the longer
+                  postMealDurationA11y name. Same frame as Button outlined. */}
               <Pressable
                 onPress={() => setDurationSheetOpen(true)}
                 disabled={startingTimer}
                 accessibilityRole="button"
                 accessibilityLabel={t("dashboard.postMealDurationA11y")}
+                android_ripple={cardRipple()}
                 className="items-center justify-center active:opacity-70"
                 style={{
                   minHeight: HIT_TARGET,
-                  paddingHorizontal: 12,
-                  borderRadius: RADIUS.full,
+                  maxWidth: "55%",
+                  flexShrink: 1,
+                  paddingHorizontal: SPACE.md,
+                  borderRadius: RADIUS.lg,
                   borderWidth: 1,
                   borderColor: THEME.border,
-                  opacity: startingTimer ? 0.6 : 1,
+                  opacity: startingTimer ? 0.5 : 1,
                 }}
               >
-                <Text
-                  numberOfLines={1}
-                  style={{ color: THEME.accent, fontSize: 13, fontWeight: "800" }}
-                >
+                <Txt kind="caption" tone="accent" numberOfLines={1} style={{ fontWeight: "700" }}>
                   {t("dashboard.postMealDurationPick")}
-                </Text>
+                </Txt>
               </Pressable>
             </View>
 
@@ -2155,11 +2148,15 @@ export default function DashboardScreen() {
               disabled={startingTimer}
               accessibilityRole="button"
               accessibilityLabel={t("dashboard.startedEating")}
+              android_ripple={{
+                color: withAlpha(THEME.accentOnFill, RIPPLE_ALPHA),
+                foreground: true,
+              }}
               style={[
                 {
                   width: "100%",
                   minHeight: 48,
-                  borderRadius: RADIUS.full,
+                  borderRadius: RADIUS.lg,
                   backgroundColor: THEME.accentFill,
                   alignItems: "center",
                   justifyContent: "center",
@@ -2168,55 +2165,52 @@ export default function DashboardScreen() {
                 ELEVATION.card,
               ]}
             >
-              <Text
+              <Txt
+                kind="body"
+                tone="onAccent"
                 numberOfLines={1}
-                style={{ color: THEME.accentOnFill, fontWeight: "800", fontSize: 15 }}
+                style={{ fontWeight: "700", flexShrink: 1 }}
               >
                 {t("dashboard.startedEating")}
-              </Text>
+              </Txt>
             </PressableScale>
           </View>
         )}
-      </GlassCard>
+      </Card>
       ) : null}
 
       {/* One-time tip after the first meal timer: the countdown is also a native
           lock-screen surface. Dismissible; points at the widget guide. */}
       {showWidgetTip ? (
-        <View className="rounded-2xl border border-hair bg-glass p-3.5 mb-3 flex-row items-center">
+        <Card style={{ marginBottom: SPACE.md, flexDirection: "row", alignItems: "center" }}>
           <Ionicons name="phone-portrait-outline" size={18} color={THEME.accent} />
-          <View className="flex-1 ml-2.5">
-            <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}>
+          <View style={{ flex: 1, minWidth: 0, marginStart: SPACE.md }}>
+            <Txt kind="caption" style={{ fontWeight: "700" }}>
               {t("dashboard.widgetTipTitle")}
-            </Text>
-            <Pressable
-              onPress={() => {
-                void dismissWidgetTip();
-                router.push("/widget-guide");
-              }}
-              // 11px text with hitSlop 6 is a ~23pt target. The slop is widened
-              // instead of the type, so the tip keeps its size while the tap
-              // area clears 44pt.
-              hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel={t("dashboard.widgetTipCta")}
-            >
-              <Text
-                style={{ color: THEME.accent, fontSize: 11, marginTop: 2, minHeight: 16 }}
-              >
-                {t("dashboard.widgetTipCta")}
-              </Text>
-            </Pressable>
+            </Txt>
+            {/* The button's own inset is cancelled so the label lines up with
+                the title above it. */}
+            <View style={{ alignSelf: "flex-start", marginStart: -SPACE.md }}>
+              <Button
+                label={t("dashboard.widgetTipCta")}
+                variant="tertiary"
+                size="sm"
+                onPress={() => {
+                  void dismissWidgetTip();
+                  router.push("/widget-guide");
+                }}
+              />
+            </View>
           </View>
           <Pressable
             onPress={dismissWidgetTip}
-            hitSlop={10}
+            hitSlop={14}
             accessibilityRole="button"
             accessibilityLabel={t("common.close")}
           >
             <Ionicons name="close" size={16} color={THEME.textMuted} />
           </Pressable>
-        </View>
+        </Card>
       ) : null}
 
       {loaded && hasAnyLog && spikeConfigured && !isScreenshotMode() ? (
@@ -2224,27 +2218,29 @@ export default function DashboardScreen() {
           onPress={() => router.push("/spike")}
           accessibilityRole="button"
           accessibilityLabel={t("spike.title")}
-          style={{ marginBottom: 12 }}
+          android_ripple={cardRipple()}
+          className="active:opacity-80"
+          style={{ marginBottom: SPACE.md, borderRadius: RADIUS.lg }}
         >
-          <GlassCard style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
-            <View className="flex-row items-center" style={{ gap: 10 }}>
+          <Card>
+            <View className="flex-row items-center" style={{ gap: SPACE.md }}>
               <IconTile icon="sparkles" size={32} radius={10} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Txt kind="caption" style={{ fontWeight: "700" }}>
                   {t("spike.title")}
-                </Text>
-                <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, marginTop: 1 }}>
+                </Txt>
+                <Txt kind="caption" tone="muted">
                   {t("spike.entryBody")}
-                </Text>
+                </Txt>
                 {!isProUser ? (
-                  <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700", marginTop: 3 }}>
+                  <Txt kind="micro" tone="accent" style={{ marginTop: SPACE.xs }}>
                     {t("spike.entryFree", { n: FREE_DAILY_MESSAGES })}
-                  </Text>
+                  </Txt>
                 ) : null}
               </View>
               <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
             </View>
-          </GlassCard>
+          </Card>
         </Pressable>
       ) : null}
 
@@ -2267,40 +2263,47 @@ export default function DashboardScreen() {
           value on one line at this width, and every string here is single-line
           clipped rather than allowed to reflow the strip. */}
       {(iob > 0 && showsInsulin) || nextReminder ? (
-        <View className="flex-row rounded-2xl bg-glass border border-hair mb-3 overflow-hidden">
+        <View
+          className="flex-row rounded-2xl bg-glass border border-hair overflow-hidden"
+          style={{ marginBottom: SPACE.md }}
+        >
           {iob > 0 && showsInsulin ? (
             <Pressable
               onPress={() => setIobInfoOpen(true)}
               accessibilityRole="button"
               accessibilityLabel={t("dashboard.activeInsulin")}
-              className="flex-1 px-3 justify-center active:opacity-70"
-              style={{ minHeight: 58, paddingVertical: 8 }}
+              android_ripple={cardRipple()}
+              className="flex-1 justify-center active:opacity-70"
+              style={{
+                minHeight: ROW_MIN_HEIGHT,
+                paddingVertical: SPACE.sm,
+                paddingHorizontal: SPACE.md,
+              }}
             >
-              <View className="flex-row items-center" style={{ gap: 5 }}>
-                <Ionicons name="hourglass-outline" size={11} color={THEME.accent} />
-                <Text
-                  numberOfLines={1}
-                  style={{ color: THEME.textMuted, fontSize: 10, flexShrink: 1 }}
-                >
+              <View className="flex-row items-center" style={{ gap: SPACE.xs }}>
+                <Ionicons name="hourglass-outline" size={12} color={THEME.accent} />
+                <Txt kind="micro" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
                   {t("dashboard.activeInsulin")}
-                </Text>
+                </Txt>
                 {/* "What does this number include?" now opens the full sheet
                     (components/IobInfoSheet.tsx) - the whole card is the
                     tap target, this icon is only the affordance. */}
                 <Ionicons name="information-circle-outline" size={12} color={THEME.textMuted} />
               </View>
-              <Text
+              <Txt
+                kind="caption"
+                tabular
                 numberOfLines={1}
-                style={{ color: THEME.text, fontSize: 13, fontWeight: "700", marginTop: 2 }}
+                style={{ fontWeight: "700" }}
               >
                 {num(iob)} {t("common.units")}
-              </Text>
+              </Txt>
               {/* Bolus only: basal is a background dose, not a stacking risk
                   the way a fresh mealtime dose is, so it stays off this
                   headline figure entirely (see lib/iob.ts's own note). */}
-              <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 9, marginTop: 1 }}>
+              <Txt kind="micro" tone="muted" numberOfLines={1} style={{ fontWeight: "400" }}>
                 {t("dashboard.activeInsulinBolusOnly")}
-              </Text>
+              </Txt>
             </Pressable>
           ) : null}
 
@@ -2313,10 +2316,15 @@ export default function DashboardScreen() {
               onPress={() => router.push("/settings/reminders")}
               accessibilityRole="button"
               accessibilityLabel={t("dashboard.nextReminderA11y")}
-              className="flex-1 px-3 justify-center active:opacity-70"
-              style={{ minHeight: 46, paddingVertical: 8 }}
+              android_ripple={cardRipple()}
+              className="flex-1 justify-center active:opacity-70"
+              style={{
+                minHeight: ROW_MIN_HEIGHT,
+                paddingVertical: SPACE.sm,
+                paddingHorizontal: SPACE.md,
+              }}
             >
-              <View className="flex-row items-center" style={{ gap: 5 }}>
+              <View className="flex-row items-center" style={{ gap: SPACE.xs }}>
                 {/* Three states, the same vocabulary the reminders list uses: a
                     working alarm (accent `alarm`), an alarm this device is not
                     allowed to ring yet (muted `alarm-outline`), or a
@@ -2330,28 +2338,24 @@ export default function DashboardScreen() {
                         ? "alarm-outline"
                         : "notifications-outline"
                   }
-                  size={11}
+                  size={12}
                   color={nextReminder.mode === "alarm" ? THEME.accent : THEME.textMuted}
                 />
-                <Text
-                  numberOfLines={1}
-                  style={{ color: THEME.textMuted, fontSize: 10, flexShrink: 1 }}
-                >
+                <Txt kind="micro" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
                   {t("dashboard.nextReminder")}
-                </Text>
+                </Txt>
               </View>
-              {/* Time-first (see nextReminderLabel) AND allowed to shrink: on
-                  a narrow screen the longest names in de/fr/es still overrun
-                  half a strip, and shrinking keeps the whole line readable
-                  instead of ending it in an ellipsis. */}
-              <Text
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}
-                style={{ color: THEME.text, fontSize: 13, fontWeight: "700", marginTop: 2 }}
+              {/* Time-first (see nextReminderLabel), and allowed to wrap onto a
+                  second line: on a narrow screen the longest names in de/fr/es
+                  overrun half a strip, and font shrinking would clip on
+                  Android. */}
+              <Txt
+                kind="caption"
+                numberOfLines={2}
+                style={{ fontWeight: "700" }}
               >
                 {nextReminderLabel(nextReminder)}
-              </Text>
+              </Txt>
             </Pressable>
           ) : null}
         </View>
@@ -2386,30 +2390,33 @@ export default function DashboardScreen() {
           waits for it (and for `loaded`, so it never shows during the moment we
           don't yet know which case this is). */}
       {isExistingUser ? (
-      <View className="flex-row mb-3" style={{ gap: 8 }}>
+      <View className="flex-row" style={{ gap: SPACE.sm, marginBottom: SPACE.md }}>
         <Pressable
           onPress={() => router.push("/insights")}
           accessibilityRole="button"
           accessibilityLabel={t("insights.title")}
-          className="rounded-2xl bg-glass border border-hair p-3 active:opacity-80"
+          android_ripple={cardRipple()}
+          className="active:opacity-80"
           // Android has no Health card next to it, and a lone flex:1 card
           // stretched the full row width around a small icon and two short
           // lines. There it takes a card's width instead of the row's.
-          style={showsHealthCard ? { flex: 1 } : { width: 220, maxWidth: "100%" }}
+          style={[
+            { borderRadius: RADIUS.lg },
+            showsHealthCard ? { flex: 1 } : { width: 220, maxWidth: "100%" },
+          ]}
         >
-          <View className="flex-row items-center justify-between">
-            <IconTile icon="stats-chart" size={28} radius={9} />
-            <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
-          </View>
-          <Text
-            numberOfLines={1}
-            style={{ color: THEME.text, fontWeight: "700", fontSize: 13, marginTop: 8 }}
-          >
-            {t("insights.title")}
-          </Text>
-          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 10, marginTop: 2 }}>
-            {t("insights.cardSub")}
-          </Text>
+          <Card style={{ flex: 1 }}>
+            <View className="flex-row items-center justify-between">
+              <IconTile icon="stats-chart" size={28} radius={9} />
+              <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
+            </View>
+            <Txt kind="caption" numberOfLines={1} style={{ fontWeight: "700", marginTop: SPACE.sm }}>
+              {t("insights.title")}
+            </Txt>
+            <Txt kind="micro" tone="muted" numberOfLines={1} style={{ fontWeight: "400" }}>
+              {t("insights.cardSub")}
+            </Txt>
+          </Card>
         </Pressable>
 
         {showsHealthCard ? (
@@ -2418,13 +2425,18 @@ export default function DashboardScreen() {
             disabled={isProUser && syncing}
             accessibilityRole="button"
             accessibilityLabel={HEALTH_NAME}
-            className="flex-1 rounded-2xl bg-glass border border-hair p-3 active:opacity-80"
+            android_ripple={cardRipple()}
+            className="active:opacity-80"
+            style={{ flex: 1, borderRadius: RADIUS.lg }}
           >
+            <Card style={{ flex: 1 }}>
             <View className="flex-row items-center justify-between">
               <IconTile icon="pulse" size={28} radius={9} />
               {!isProUser ? (
                 <View className="rounded-full bg-brand px-2 py-0.5">
-                  <Text className="text-onAccent text-[10px] font-bold">{t("common.pro")}</Text>
+                  <Txt kind="micro" tone="onAccent" style={{ fontWeight: "700" }}>
+                    {t("common.pro")}
+                  </Txt>
                 </View>
               ) : cgmOn === null ? (
                 // The persisted preference has not been read yet: a Pro user
@@ -2441,18 +2453,17 @@ export default function DashboardScreen() {
                 />
               )}
             </View>
-            <Text
-              numberOfLines={1}
-              style={{ color: THEME.text, fontWeight: "700", fontSize: 13, marginTop: 8 }}
-            >
+            <Txt kind="caption" numberOfLines={1} style={{ fontWeight: "700", marginTop: SPACE.sm }}>
               {HEALTH_NAME}
-            </Text>
+            </Txt>
             {isProUser && cgmOn === null ? (
-              <Skeleton width={110} height={10} radius={4} style={{ marginTop: 4 }} />
+              <Skeleton width={110} height={10} radius={4} style={{ marginTop: SPACE.xs }} />
             ) : (
-              <Text
+              <Txt
+                kind="micro"
+                tone="muted"
                 numberOfLines={isProUser ? 1 : 2}
-                style={{ color: THEME.textMuted, fontSize: 10, marginTop: 2 }}
+                style={{ fontWeight: "400" }}
               >
                 {!isProUser
                   ? t(proCta.key, proCta.params)
@@ -2461,8 +2472,9 @@ export default function DashboardScreen() {
                     : cgmOn
                       ? t("dashboard.cgmOnTapToSync")
                       : t("dashboard.cgmSubtitle")}
-              </Text>
+              </Txt>
             )}
+            </Card>
           </Pressable>
         ) : null}
       </View>
@@ -2474,48 +2486,43 @@ export default function DashboardScreen() {
           (setupAllDone) - the close button below still works independently,
           same persisted flag as before. */}
       {isExistingUser && showFinishSetup && !setupAllDone ? (
-        <View className="flex-row items-start rounded-2xl border border-hair bg-glass px-3.5 py-3 mb-3">
-          <View style={{ flex: 1 }}>
-            <Text
-              style={{ color: THEME.text, fontSize: 12, fontWeight: "700" }}
-              numberOfLines={1}
-            >
+        <Card style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: SPACE.md }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700" }}>
               {t("dashboard.finishSetupTitle")}
-            </Text>
-            <View className="flex-row items-center flex-wrap" style={{ gap: 6, marginTop: 8 }}>
+            </Txt>
+            <View
+              className="flex-row items-center flex-wrap"
+              style={{ gap: SPACE.sm, marginTop: SPACE.sm }}
+            >
               {setupShortcuts.map((s) => (
-                <Pressable
+                <Chip
                   key={s.key}
+                  label={s.label}
                   onPress={s.onPress}
-                  accessibilityRole="button"
-                  accessibilityLabel={s.label}
-                  className="flex-row items-center rounded-full border border-hair bg-sheet px-3 py-1.5 active:opacity-80"
-                  style={{ gap: 5 }}
-                >
-                  {/* Ticked once its own state (health-sync / native widget
-                      detection) confirms it; an unresolved/unknown state
-                      (s.done === undefined) keeps the plain step icon. */}
-                  <Ionicons
-                    name={s.done ? "checkmark-circle" : s.icon}
-                    size={12}
-                    color={s.done ? GLUCOSE_RICH.target : THEME.accent}
-                  />
-                  <Text style={{ color: THEME.text, fontSize: 11, fontWeight: "700" }}>
-                    {s.label}
-                  </Text>
-                </Pressable>
+                  icon={
+                    // Ticked once its own state (health-sync / native widget
+                    // detection) confirms it; an unresolved/unknown state
+                    // (s.done === undefined) keeps the plain step icon.
+                    <Ionicons
+                      name={s.done ? "checkmark-circle" : s.icon}
+                      size={14}
+                      color={s.done ? GLUCOSE_RICH.target : THEME.accent}
+                    />
+                  }
+                />
               ))}
             </View>
           </View>
           <Pressable
             onPress={dismissFinishSetup}
-            hitSlop={10}
+            hitSlop={14}
             accessibilityRole="button"
             accessibilityLabel={t("common.close")}
           >
             <Ionicons name="close" size={16} color={THEME.textMuted} />
           </Pressable>
-        </View>
+        </Card>
       ) : null}
 
       {/* The journal panel's TOP: heading and filter chips, sharing the
@@ -2534,14 +2541,21 @@ export default function DashboardScreen() {
           {/* One-time tap-to-edit discoverability hint, inside the panel top so
               it reads as part of the journal rather than a page-level notice. */}
           {showEditHint ? (
-            <View className="flex-row items-center rounded-xl border border-hair bg-glass px-3 py-2.5 mt-2">
+            <View
+              className="flex-row items-center rounded-xl border border-hair bg-glass"
+              style={{ marginTop: SPACE.sm, padding: SPACE.md }}
+            >
               <Ionicons name="create-outline" size={14} color={THEME.accent} />
-              <Text className="text-mut text-xs ml-2 flex-1">
+              <Txt
+                kind="caption"
+                tone="muted"
+                style={{ flex: 1, minWidth: 0, marginStart: SPACE.sm }}
+              >
                 {t("journal.editHint")}
-              </Text>
+              </Txt>
               <Pressable
                 onPress={dismissEditHint}
-                hitSlop={10}
+                hitSlop={14}
                 accessibilityLabel={t("common.close")}
               >
                 <Ionicons name="close" size={16} color={THEME.textMuted} />
@@ -2583,9 +2597,8 @@ export default function DashboardScreen() {
               <JournalPanelBottom>
                 <Button
                   label={t("journal.seeAll")}
-                  variant="secondary"
+                  variant="outlined"
                   onPress={openFullJournal}
-                  className="border border-hair"
                   icon={<Ionicons name="arrow-forward" size={16} color={THEME.text} />}
                 />
               </JournalPanelBottom>
@@ -2794,11 +2807,13 @@ function PostMealCountdown({
 
   return (
     <View>
-      <View className="flex-row items-center justify-between" style={{ marginBottom: 10 }}>
-        <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
+      <View className="flex-row items-center justify-between" style={{ marginBottom: SPACE.md }}>
+        <View className="flex-row items-center flex-1" style={{ gap: SPACE.sm }}>
           <Ionicons name="time" size={16} color={THEME.accent} />
-          <Text
-            style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", flex: 1 }}
+          <Txt
+            kind="caption"
+            tone="muted"
+            style={{ fontWeight: "700", flex: 1, minWidth: 0 }}
             numberOfLines={1}
           >
             {/* The feature name alone. The window length used to be appended
@@ -2806,14 +2821,14 @@ function PostMealCountdown({
                 the live countdown sits immediately to the right, so it read as
                 the same number twice on one row. */}
             {t("dashboard.quickPostMealTitle")}
-          </Text>
+          </Txt>
         </View>
-        <View className="flex-row items-center" style={{ gap: 10 }}>
-          <Text style={[TABULAR, { color: THEME.accent, fontSize: 15, fontWeight: "800" }]}>
+        <View className="flex-row items-center" style={{ gap: SPACE.md }}>
+          <Txt kind="body" tone="accent" tabular style={{ fontWeight: "700" }}>
             {countdown.seconds
               ? t("dashboard.postMealCountdownSec", { s: countdown.value })
               : t("dashboard.postMealCountdownMin", { m: countdown.value })}
-          </Text>
+          </Txt>
           <Pressable
             onPress={onCancel}
             hitSlop={10}
@@ -2843,55 +2858,39 @@ function PostMealCountdown({
           log a meal they had visibly just logged. A second meal mid-window
           still goes through the dashboard's own "+" flow. */}
       {actions.restart && restartEntry ? (
-        <View className="flex-row items-center" style={{ marginBottom: 10 }}>
+        <View className="flex-row items-center" style={{ marginBottom: SPACE.md }}>
           <Pressable
             onPress={() => onRestart(restartEntry)}
-            hitSlop={8}
+            hitSlop={{ top: 14, bottom: 14, left: SPACE.sm, right: SPACE.sm }}
             accessibilityRole="button"
             accessibilityLabel={restartLabel}
-            style={{ flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 }}
+            android_ripple={cardRipple()}
+            style={{ flexDirection: "row", alignItems: "center", gap: SPACE.xs, flexShrink: 1 }}
           >
             <Ionicons name="refresh" size={13} color={THEME.textMuted} />
             {/* Two lines allowed: the longest translations ("Für die Mahlzeit um
                 14:30 neu starten") do not fit one line at this size, and this is
                 the only action on the row. */}
-            <Text
-              style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "700", flexShrink: 1 }}
+            <Txt
+              kind="micro"
+              tone="muted"
+              style={{ fontWeight: "700", flexShrink: 1, minWidth: 0 }}
               numberOfLines={2}
             >
               {restartLabel}
-            </Text>
+            </Txt>
           </Pressable>
         </View>
       ) : actions.logMeal ? (
-        <View style={{ marginBottom: 10 }}>
-          {/* Secondary (outlined) button: the bare accent text link did not read
-              as something to press. Full width, 44pt floor, accent edge. */}
-          <Pressable
+        <View style={{ marginBottom: SPACE.md }}>
+          {/* Outlined button: the bare accent text link did not read as
+              something to press. Full width (the parent stretches it). */}
+          <Button
+            label={t("dashboard.postMealLogMeal")}
+            variant="outlined"
             onPress={onLogMeal}
-            accessibilityRole="button"
-            accessibilityLabel={t("dashboard.postMealLogMeal")}
-            className="active:opacity-70"
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              minHeight: HIT_TARGET,
-              paddingHorizontal: 14,
-              borderRadius: RADIUS.full,
-              borderWidth: 1.5,
-              borderColor: THEME.accent,
-            }}
-          >
-            <Ionicons name="restaurant-outline" size={15} color={THEME.accent} />
-            <Text
-              style={{ color: THEME.accent, fontSize: 13, fontWeight: "800", flexShrink: 1 }}
-              numberOfLines={1}
-            >
-              {t("dashboard.postMealLogMeal")}
-            </Text>
-          </Pressable>
+            icon={<Ionicons name="restaurant-outline" size={16} color={THEME.text} />}
+          />
         </View>
       ) : null}
       {/* Track edge is a token held at >= 3:1 against the card in both themes

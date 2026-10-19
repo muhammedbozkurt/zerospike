@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
 import { insulinModeUsesInsulin } from "../../lib/insulinMode";
-import { THEME } from "../../lib/theme/tokens";
+import { THEME, TYPE } from "../../lib/theme/tokens";
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -32,7 +32,7 @@ export default function TabsLayout() {
           borderTopColor: THEME.border,
           borderTopWidth: 1,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: TYPE.micro.fontSize, fontWeight: TYPE.micro.fontWeight },
       }}
     >
       <Tabs.Screen
