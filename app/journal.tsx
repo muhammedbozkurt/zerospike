@@ -263,9 +263,8 @@ function JournalScreen() {
                 {canShowMore ? (
                   <Button
                     label={t("journal.showMore")}
-                    variant="secondary"
+                    variant="outlined"
                     onPress={showMore}
-                    className="border border-hair"
                     icon={<Ionicons name="chevron-down" size={16} color={THEME.text} />}
                   />
                 ) : null}
