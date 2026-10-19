@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
-import { AppBackground, GlassCard, GradientCTA, IconTile } from "../components/rich";
+import { AppBackground, GradientCTA, IconTile } from "../components/rich";
+import { Button, Card, Txt } from "../components/ui";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { FeedbackHost } from "../components/Feedback";
-import { GLUCOSE_RICH, HIT_TARGET, THEME } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, SPACE, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 import { logCrash, logEvent } from "../lib/analytics";
 import { useApp } from "../lib/store/AppContext";
@@ -39,9 +40,9 @@ function DoneChip({ label }: { label: string }) {
       style={{ gap: 4, backgroundColor: withAlpha(GLUCOSE_RICH.target, 0.16) }}
     >
       <Ionicons name="checkmark-circle" size={13} color={GLUCOSE_RICH.target} />
-      <Text style={{ color: GLUCOSE_RICH.target, fontSize: 11, fontWeight: "800" }}>
+      <Txt kind="micro" style={{ color: GLUCOSE_RICH.target }}>
         {label}
-      </Text>
+      </Txt>
     </View>
   );
 }
@@ -78,8 +79,8 @@ function StepCard({
   onSkip: () => void;
 }) {
   return (
-    <GlassCard style={{ marginBottom: 12 }}>
-      <View className="flex-row items-center" style={{ gap: 10 }}>
+    <Card style={{ marginBottom: SPACE.md }}>
+      <View className="flex-row items-center" style={{ gap: SPACE.md }}>
         <IconTile
           icon={done ? "checkmark" : icon}
           size={36}
@@ -87,39 +88,28 @@ function StepCard({
           hero={!done}
           tint={done ? GLUCOSE_RICH.target : THEME.accent}
         />
-        <Text
-          style={{ color: THEME.text, fontSize: 15, fontWeight: "800", flex: 1, lineHeight: 20 }}
-          accessibilityRole="header"
-        >
+        <Txt kind="subtitle" style={{ flex: 1 }} accessibilityRole="header">
           {title}
-        </Text>
+        </Txt>
         {done ? <DoneChip label={doneLabel} /> : null}
       </View>
-      <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 19, marginTop: 8 }}>
+      <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
         {body}
-      </Text>
+      </Txt>
       {!done ? (
-        <View style={{ marginTop: 12 }}>
+        <View style={{ marginTop: SPACE.md }}>
           {skipped ? (
-            <Text style={{ color: THEME.textMuted, fontSize: 11, marginBottom: 6 }}>
+            <Txt kind="micro" tone="muted" style={{ marginBottom: SPACE.sm }}>
               {skippedLabel}
-            </Text>
+            </Txt>
           ) : null}
           <GradientCTA label={cta} variant={primary ? "primary" : "sub"} onPress={onCta} />
           {!skipped ? (
-            <Pressable
-              onPress={onSkip}
-              accessibilityRole="button"
-              accessibilityLabel={skipLabel}
-              className="items-center justify-center"
-              style={{ minHeight: HIT_TARGET }}
-            >
-              <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{skipLabel}</Text>
-            </Pressable>
+            <Button variant="tertiary" size="sm" label={skipLabel} onPress={onSkip} />
           ) : null}
         </View>
       ) : null}
-    </GlassCard>
+    </Card>
   );
 }
 
@@ -291,32 +281,23 @@ function ProWelcomeScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          <GlassCard glow style={{ marginBottom: 14, paddingVertical: 16 }}>
-            <View className="flex-row items-center" style={{ gap: 10 }}>
+          <Card glow style={{ marginBottom: SPACE.lg }}>
+            <View className="flex-row items-center" style={{ gap: SPACE.md }}>
               <IconTile icon="sparkles" size={40} radius={13} hero />
               <View style={{ flex: 1 }}>
                 {trial?.active === true ? (
-                  <Text
-                    style={{ color: THEME.accent, fontSize: 12, fontWeight: "800", lineHeight: 17 }}
-                  >
+                  <Txt kind="caption" tone="accent" style={{ fontWeight: "800" }}>
                     {trial.daysLeft != null
                       ? t("settings.trialDaysLeft", { count: trial.daysLeft })
                       : t("settings.trialActive")}
-                  </Text>
+                  </Txt>
                 ) : null}
-                <Text
-                  style={{
-                    color: THEME.text,
-                    fontSize: 13,
-                    lineHeight: 19,
-                    marginTop: trial?.active === true ? 2 : 0,
-                  }}
-                >
+                <Txt kind="caption" style={{ marginTop: trial?.active === true ? 2 : 0 }}>
                   {t("proWelcome.subtitle")}
-                </Text>
+                </Txt>
               </View>
             </View>
-          </GlassCard>
+          </Card>
 
           {steps.map((step) => {
             const c = copy[step];
@@ -340,17 +321,9 @@ function ProWelcomeScreen() {
           })}
 
           {allDone ? (
-            <Text
-              style={{
-                color: THEME.textMuted,
-                fontSize: 13,
-                lineHeight: 19,
-                textAlign: "center",
-                marginTop: 4,
-              }}
-            >
+            <Txt kind="caption" tone="muted" style={{ textAlign: "center", marginTop: SPACE.xs }}>
               {t("proWelcome.allDone")}
-            </Text>
+            </Txt>
           ) : null}
         </ScrollView>
 

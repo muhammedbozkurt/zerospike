@@ -3,7 +3,8 @@ import { Text, View, useWindowDimensions } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 
 import { withAlpha } from "./rich/GlassCard";
-import { TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { Txt } from "./ui";
+import { RADIUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 
 interface OfferCardProps {
   /** Small rounded pill above the title, e.g. "20% off". */
@@ -38,15 +39,17 @@ export function OfferCard({
 
   return (
     <View
-      className="items-center rounded-3xl p-5"
+      className="items-center"
       style={[
         {
+          padding: SPACE.lg,
+          borderRadius: RADIUS.lg,
           width: cardWidth,
           alignSelf: "center",
           borderWidth: 1,
           borderColor: THEME.accent,
           backgroundColor: withAlpha(THEME.accent, 0.08),
-          gap: 10,
+          gap: SPACE.md,
         },
         glow(THEME.accent, 34, 0.4),
         style,
@@ -56,35 +59,28 @@ export function OfferCard({
         className="rounded-full px-3 py-1"
         style={{ backgroundColor: withAlpha(THEME.accent, 0.18) }}
       >
-        <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "800" }}>
+        <Txt kind="micro" tone="accent">
           {badgeText}
-        </Text>
+        </Txt>
       </View>
 
-      <Text
-        style={{ color: THEME.text, fontSize: 17, fontWeight: "800", textAlign: "center" }}
-      >
+      <Txt kind="subtitle" style={{ textAlign: "center" }}>
         {title}
-      </Text>
+      </Txt>
 
       {/* The billed amount dominates */}
-      <View className="flex-row items-baseline" style={{ gap: 10 }}>
+      <View className="flex-row items-baseline" style={{ gap: SPACE.md }}>
         <Text style={[TABULAR, { color: THEME.text, fontSize: 34, fontWeight: "800" }]}>
           {discountedPrice}
         </Text>
-        <Text
-          style={[
-            TABULAR,
-            { color: THEME.textMuted, fontSize: 15, textDecorationLine: "line-through" },
-          ]}
-        >
+        <Txt tone="muted" tabular style={{ textDecorationLine: "line-through" }}>
           {standardPrice}
-        </Text>
+        </Txt>
       </View>
 
-      <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
+      <Txt kind="caption" tone="muted" style={{ textAlign: "center" }}>
         {disclosure}
-      </Text>
+      </Txt>
     </View>
   );
 }

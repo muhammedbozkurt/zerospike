@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Pressable, Text, View } from "react-native";
+import { AppState, Pressable, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { IconTile } from "./rich";
 import { DirIcon } from "./DirIcon";
-import { THEME } from "../lib/theme/tokens";
+import { RADIUS, SPACE, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { Txt } from "./ui";
+import { withAlpha } from "./rich/GlassCard";
 import { logCrash } from "../lib/analytics";
 import { useApp } from "../lib/store/AppContext";
 import { getTrialStatus, type TrialStatus } from "../lib/services/purchases";
@@ -86,17 +89,23 @@ export function TrialCard() {
       onPress={() => router.push("/pro-welcome")}
       accessibilityRole="button"
       accessibilityLabel={sub ? `${title}. ${sub}` : title}
-      className="flex-row items-center rounded-2xl border border-hair bg-glass px-3.5 py-3 mb-3 active:opacity-80"
+      android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+      className="flex-row items-center border border-hair bg-glass active:opacity-80"
+      style={{
+        borderRadius: RADIUS.lg,
+        paddingHorizontal: SPACE.lg,
+        paddingVertical: SPACE.md,
+        marginBottom: SPACE.md,
+        minHeight: 44,
+      }}
     >
       <IconTile icon="sparkles" size={34} radius={11} hero />
-      <View style={{ flex: 1, marginHorizontal: 12 }}>
-        <Text style={{ color: THEME.text, fontSize: 14, fontWeight: "800", lineHeight: 19 }}>
-          {title}
-        </Text>
+      <View style={{ flex: 1, marginHorizontal: SPACE.md }}>
+        <Txt style={{ fontWeight: "700" }}>{title}</Txt>
         {sub ? (
-          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 }}>
+          <Txt kind="caption" tone="muted" style={{ marginTop: 2 }}>
             {sub}
-          </Text>
+          </Txt>
         ) : null}
       </View>
       <DirIcon name="chevron-forward" size={18} color={THEME.textMuted} />
