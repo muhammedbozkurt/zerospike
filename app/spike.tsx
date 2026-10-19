@@ -438,6 +438,8 @@ function SpikeScreen() {
 
   const [ready, setReady] = useState(false);
   const [consented, setConsented] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [contextOn, setContextOn] = useState(false);
   const [contextView, setContextView] = useState(false);
   const [contextSaveFailed, setContextSaveFailed] = useState(false);
@@ -596,6 +598,7 @@ function SpikeScreen() {
   }, []);
 
   async function accept() {
+    if (!agreed) return;
     hapticSuccess();
     await grantSpikeConsent();
     setConsented(true);
@@ -858,19 +861,13 @@ function SpikeScreen() {
           <GlassCard style={{ width: "100%" }}>
             <View style={{ gap: 8 }}>
               <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
-                {t("spike.consentSent")}
+                {t("spike.consentShort1")}
               </Text>
               <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
-                {t("spike.consentRecipient")}
+                {t("spike.consentShort2")}
               </Text>
               <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
-                {t("spike.consentNotSent")}
-              </Text>
-              <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
-                {t("spike.consentCarb")}
-              </Text>
-              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>
-                {t("spike.consentSummaryNote")}
+                {t("spike.consentShort3")}
               </Text>
             </View>
           </GlassCard>
@@ -896,13 +893,55 @@ function SpikeScreen() {
                   flex: 1,
                 }}
               >
-                {t("spike.consentScope")}
+                {t("spike.consentShortScope")}
               </Text>
             </View>
           </View>
-          <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
-            {t("spike.consentDeviceId")}
-          </Text>
+          {/* The short card is a summary of the full text, not a replacement:
+              every line of the full consent sits behind this toggle, unchanged. */}
+          <Pressable
+            onPress={() => {
+              hapticSelect();
+              setDetailsOpen((open) => !open);
+            }}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: detailsOpen }}
+            accessibilityLabel={t("spike.consentDetails")}
+            style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+          >
+            <Text style={{ color: THEME.accent, fontSize: 13 }}>{t("spike.consentDetails")}</Text>
+            <Ionicons name={detailsOpen ? "chevron-up" : "chevron-down"} size={14} color={THEME.accent} />
+          </Pressable>
+          {detailsOpen ? (
+            <View style={{ width: "100%", gap: 14 }}>
+              <GlassCard style={{ width: "100%" }}>
+                <View style={{ gap: 8 }}>
+                  <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
+                    {t("spike.consentSent")}
+                  </Text>
+                  <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
+                    {t("spike.consentRecipient")}
+                  </Text>
+                  <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
+                    {t("spike.consentNotSent")}
+                  </Text>
+                  <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>
+                    {t("spike.consentCarb")}
+                  </Text>
+                  <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>
+                    {t("spike.consentSummaryNote")}
+                  </Text>
+                </View>
+              </GlassCard>
+              <Text style={{ color: THEME.warning, fontSize: 12, lineHeight: 18 }}>
+                {t("spike.consentScope")}
+              </Text>
+              <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, textAlign: "center" }}>
+                {t("spike.consentDeviceId")}
+              </Text>
+            </View>
+          ) : null}
           {/* The trailing chevron promised a link and nothing happened on a tap;
               it now opens the policy, like every other privacy line in the app. */}
           <Pressable
@@ -913,7 +952,38 @@ function SpikeScreen() {
           >
             <Text style={{ color: THEME.accent, fontSize: 11 }}>{t("spike.privacy")} ›</Text>
           </Pressable>
-          <GradientCTA label={t("spike.accept")} onPress={accept} style={{ width: "100%" }} />
+          <Pressable
+            onPress={() => {
+              hapticSelect();
+              setAgreed((v) => !v);
+            }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: agreed }}
+            accessibilityLabel={t("spike.consentAgree")}
+            hitSlop={8}
+            style={{
+              width: "100%",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              minHeight: HIT_TARGET,
+            }}
+          >
+            <Ionicons
+              name={agreed ? "checkbox" : "square-outline"}
+              size={24}
+              color={agreed ? THEME.accent : THEME.textMuted}
+            />
+            <Text style={{ color: THEME.text, fontSize: 14, lineHeight: 20, flex: 1 }}>
+              {t("spike.consentAgree")}
+            </Text>
+          </Pressable>
+          <GradientCTA
+            label={t("spike.accept")}
+            onPress={accept}
+            disabled={!agreed}
+            style={{ width: "100%" }}
+          />
           <Pressable onPress={() => router.back()} hitSlop={8}>
             <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("spike.notNow")}</Text>
           </Pressable>
