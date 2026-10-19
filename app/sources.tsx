@@ -6,10 +6,12 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { AppBackground, GlassCard } from "../components/rich";
+import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { DirIcon } from "../components/DirIcon";
 import { FeedbackHost } from "../components/Feedback";
 import { MODAL_TOP_PAD, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { upper } from "../lib/upper";
 import { useLayout } from "../lib/useLayout";
 
@@ -134,6 +136,7 @@ function SourcesScreen() {
           <Pressable
             key={ref.url}
             onPress={() => Linking.openURL(ref.url)}
+            android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
             className="active:opacity-80"
             accessibilityRole="link"
             accessibilityLabel={`${ref.org}. ${t(ref.labelKey)}`}

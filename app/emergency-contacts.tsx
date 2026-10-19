@@ -21,6 +21,7 @@ import {
 } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { Button } from "../components/ui";
 import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, THEME } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
 import { useTranslation } from "react-i18next";
@@ -311,6 +312,7 @@ function EmergencyContactsScreen() {
               <Pressable
                 onPress={openPicker}
                 hitSlop={8}
+                accessibilityRole="button"
                 accessibilityLabel={t("emergency.pickFromContacts")}
               >
                 <IconTile icon="add" size={30} radius={10} />
@@ -328,25 +330,12 @@ function EmergencyContactsScreen() {
                 <Text style={{ color: THEME.textMuted, fontSize: 13 }}>
                   {t("emergency.selectedCount", { n: selected.size })}
                 </Text>
-                <Pressable
+                <Button
+                  size="sm"
                   onPress={addSelected}
                   disabled={selected.size === 0}
-                  className="rounded-xl px-5 py-2.5"
-                  style={{
-                    backgroundColor: selected.size === 0 ? THEME.surface : THEME.accentFill,
-                    borderWidth: 1,
-                    borderColor: selected.size === 0 ? THEME.border : THEME.accentFill,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontWeight: "800",
-                      color: selected.size === 0 ? THEME.textMuted : THEME.accentOnFill,
-                    }}
-                  >
-                    {t("emergency.add")}
-                  </Text>
-                </Pressable>
+                  label={t("emergency.add")}
+                />
               </View>
             ) : null}
 
@@ -536,6 +525,7 @@ function EmergencyContactsScreen() {
                     onPress={() => remove(i)}
                     hitSlop={10}
                     className="p-1"
+                    accessibilityRole="button"
                     accessibilityLabel={t("common.delete")}
                   >
                     <Ionicons name="trash-outline" size={18} color={GLUCOSE_RICH.low} />

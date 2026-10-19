@@ -1,10 +1,10 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { GlassCard, IconTile } from "./rich";
-import { withAlpha } from "./rich/GlassCard";
-import { HIT_TARGET, THEME } from "../lib/theme/tokens";
+import { THEME } from "../lib/theme/tokens";
+import { Button } from "./ui";
 import { useStoreStatus } from "../lib/services/purchases";
 
 /**
@@ -37,28 +37,14 @@ export function StoreStatusNotice({
           </Text>
         </View>
       </View>
-      <Pressable
+      <Button
+        variant="outlined"
+        size="sm"
         onPress={onRestore}
         disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={t("settings.restorePurchases")}
-        accessibilityState={{ disabled: busy, busy }}
-        className="items-center justify-center rounded-xl active:opacity-80"
-        style={{
-          minHeight: HIT_TARGET,
-          marginTop: 10,
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-          borderWidth: 1,
-          borderColor: withAlpha(THEME.accent, 0.35),
-          backgroundColor: withAlpha(THEME.accent, 0.12),
-          opacity: busy ? 0.5 : 1,
-        }}
-      >
-        <Text style={{ color: THEME.accent, fontSize: 13, fontWeight: "800", textAlign: "center" }}>
-          {t("settings.restorePurchases")}
-        </Text>
-      </Pressable>
+        label={t("settings.restorePurchases")}
+        className="mt-2.5"
+      />
     </GlassCard>
   );
 }

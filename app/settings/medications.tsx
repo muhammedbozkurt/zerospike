@@ -13,6 +13,7 @@ import {
 } from "../../lib/db/meds";
 import type { SavedMed } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { Button } from "../../components/ui";
 import { SavedMedEditSheet } from "../../components/SavedMedEditSheet";
 import { useFeedback } from "../../components/Feedback";
 import { withAlpha } from "../../components/rich";
@@ -173,23 +174,13 @@ export default function MedicationsScreen() {
           ))
         )}
 
-        <Pressable
+        <Button
+          variant="outlined"
           onPress={openAdd}
-          accessibilityRole="button"
-          accessibilityLabel={t("meds.addSavedTitle")}
-          className="flex-row items-center justify-center rounded-2xl py-3.5 mb-2 active:opacity-80"
-          style={{
-            borderWidth: 1,
-            borderStyle: "dashed",
-            borderColor: THEME.border,
-            minHeight: HIT_TARGET + 8,
-          }}
-        >
-          <Ionicons name="add" size={18} color={THEME.accent} />
-          <Text style={{ color: THEME.accent, marginLeft: 8, fontSize: 13, fontWeight: "700" }}>
-            {t("meds.addSavedTitle")}
-          </Text>
-        </Pressable>
+          label={t("meds.addSavedTitle")}
+          icon={<Ionicons name="add" size={18} color={THEME.accent} />}
+          className="mb-2"
+        />
       </View>
     </SettingsScaffold>
   );

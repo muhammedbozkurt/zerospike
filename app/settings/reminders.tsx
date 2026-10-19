@@ -31,11 +31,13 @@ import {
   isAlarmKitAvailable,
   requestAlarmAuthorization,
 } from "../../modules/zerospike-alarmkit";
-import { SettingsScaffold } from "../../components/settingsUi";
+import { NoticeBanner, SettingsScaffold } from "../../components/settingsUi";
+import { Button } from "../../components/ui";
 import { ReminderEditSheet, type ReminderSavePayload } from "../../components/ReminderEditSheet";
 import { useFeedback } from "../../components/Feedback";
 import { withAlpha } from "../../components/rich";
 import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 import { useLayout } from "../../lib/useLayout";
 
@@ -170,6 +172,7 @@ function ReminderRow({
       onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
       className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-2.5 mb-2 active:opacity-80"
       style={{ minHeight: HIT_TARGET + 12 }}
     >
@@ -582,16 +585,10 @@ export default function RemindersScreen() {
             Settings > Notifications, and sending this user to system settings
             would be sending them to the wrong place. */}
         {anyMasterOff ? (
-          <Pressable
+          <NoticeBanner
             onPress={() => router.push("/settings/notifications")}
-            accessibilityRole="button"
             accessibilityLabel={t("reminders.masterOffHint")}
-            className="rounded-2xl px-4 py-3 mb-3"
-            style={{
-              borderWidth: 1,
-              borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-              backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-            }}
+            className="mb-3"
           >
             <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
               {t("reminders.masterOffHint")}
@@ -599,7 +596,7 @@ export default function RemindersScreen() {
             <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
               {t("reminders.masterOffCta")}
             </Text>
-          </Pressable>
+          </NoticeBanner>
         ) : null}
 
         {/* Store screenshots must never show a "permission not granted" banner
@@ -608,15 +605,7 @@ export default function RemindersScreen() {
             hence the isScreenshotMode() gate ahead of the real condition rather
             than instead of it. Real users never hit this branch. */}
         {!isScreenshotMode() && permission && permission !== "granted" ? (
-          <Pressable
-            onPress={() => void retryPermission()}
-            className="rounded-2xl px-4 py-3 mb-3"
-            style={{
-              borderWidth: 1,
-              borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-              backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-            }}
-          >
+          <NoticeBanner onPress={() => void retryPermission()} className="mb-3">
             <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
               {permission === "deniedPermanently"
                 ? t("notifications.permissionDeniedPermanently")
@@ -625,7 +614,7 @@ export default function RemindersScreen() {
             <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
               {t("settings.openSystemSettings")}
             </Text>
-          </Pressable>
+          </NoticeBanner>
         ) : null}
 
         {!loaded ? (
@@ -674,23 +663,13 @@ export default function RemindersScreen() {
             {t("reminders.limitReached")}
           </Text>
         ) : (
-          <Pressable
+          <Button
+            variant="outlined"
             onPress={openAddSheet}
-            accessibilityRole="button"
-            accessibilityLabel={t("reminders.addTitle")}
-            className="flex-row items-center justify-center rounded-2xl py-3.5 mb-2 active:opacity-80"
-            style={{
-              borderWidth: 1,
-              borderStyle: "dashed",
-              borderColor: THEME.border,
-              minHeight: HIT_TARGET + 8,
-            }}
-          >
-            <Ionicons name="add" size={18} color={THEME.accent} />
-            <Text style={{ color: THEME.accent, marginLeft: 8, fontSize: 13, fontWeight: "700" }}>
-              {t("reminders.addTitle")}
-            </Text>
-          </Pressable>
+            label={t("reminders.addTitle")}
+            icon={<Ionicons name="add" size={18} color={THEME.accent} />}
+            className="mb-2"
+          />
         )}
       </View>
     </SettingsScaffold>

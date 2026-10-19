@@ -55,7 +55,8 @@ import type { GlucoseUnit } from "../../lib/db/types";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { DirIcon } from "../../components/DirIcon";
 import { withAlpha } from "../../components/rich/GlassCard";
-import { SectionLabel, Segmented } from "../../components/ui";
+import { Button, SectionLabel, Segmented } from "../../components/ui";
+import { RIPPLE_ALPHA, ROW_MIN_HEIGHT } from "../../lib/theme/uiPrimitives";
 import { displayProfileName } from "../../lib/profileName";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
@@ -96,8 +97,9 @@ function TwoLineRow({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
       className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 active:opacity-80"
-      style={{ minHeight: 60 }}
+      style={{ minHeight: ROW_MIN_HEIGHT }}
     >
       <View
         className="w-9 h-9 rounded-xl items-center justify-center"
@@ -854,17 +856,14 @@ export default function DataSettings() {
                 <Text className="flex-1 text-mut text-[11px]">
                   {t("settings.healthPendingWrites", { count: pendingWrites })}
                 </Text>
-                <Pressable
+                <Button
+                  variant="tertiary"
+                  size="sm"
                   onPress={onRetryHealthWrites}
                   disabled={retrying}
-                  accessibilityRole="button"
-                  hitSlop={8}
+                  label={retrying ? "..." : t("settings.healthRetryNow")}
                   className="ml-3"
-                >
-                  <Text className="text-xs font-semibold" style={{ color: THEME.accent }}>
-                    {retrying ? "..." : t("settings.healthRetryNow")}
-                  </Text>
-                </Pressable>
+                />
               </View>
             ) : null}
           </View>
@@ -956,23 +955,24 @@ export default function DataSettings() {
                     )}
                   </Text>
                   {Platform.OS === "android" && bgOn ? (
-                    <Pressable
-                      onPress={() => void onRequestBackgroundAccess()}
-                      disabled={bgBlocker === null}
-                      accessibilityRole="button"
-                      className="mt-3"
-                    >
-                      <Text className="text-xs font-semibold" style={{ color: THEME.accent }}>
-                        {bgBlocker === null
-                          ? t("settings.healthBgAccessOn")
-                          : t("settings.healthBgAccess")}
-                      </Text>
+                    <View className="mt-3">
+                      <Button
+                        variant="outlined"
+                        size="sm"
+                        onPress={() => void onRequestBackgroundAccess()}
+                        disabled={bgBlocker === null}
+                        label={
+                          bgBlocker === null
+                            ? t("settings.healthBgAccessOn")
+                            : t("settings.healthBgAccess")
+                        }
+                      />
                       {bgBlocker === "no_background_permission" ? (
                         <Text className="text-mut text-xs mt-1">
                           {t("settings.healthBgAccessSub", { health: healthName })}
                         </Text>
                       ) : null}
-                    </Pressable>
+                    </View>
                   ) : null}
                 </>
               ) : null}
@@ -1058,8 +1058,9 @@ export default function DataSettings() {
         onPress={onDeleteServerRecords}
         accessibilityRole="button"
         accessibilityLabel={t("settings.analytics.deleteRow")}
+        android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
         className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2 active:opacity-80"
-        style={{ minHeight: 60 }}
+        style={{ minHeight: ROW_MIN_HEIGHT }}
       >
         <View
           className="w-9 h-9 rounded-xl items-center justify-center"

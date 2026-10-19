@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { AppBackground, GlassCard, GradientCTA, IconTile } from "../components/rich";
 import { withAlpha } from "../components/rich/GlassCard";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { Button } from "../components/ui";
 import { markAlarmTourSeen } from "../lib/services/alarmTour";
 import {
   getAlarmAuthorizationStatus,
@@ -144,7 +145,11 @@ function AlarmTourScreen() {
               </Text>
             ) : null}
             {stepIdx === 1 && denied ? (
-              <Pressable onPress={() => Linking.openSettings()} className="mt-3">
+              <Pressable
+                onPress={() => Linking.openSettings()}
+                accessibilityRole="button"
+                className="mt-3"
+              >
                 <View
                   className="rounded-xl px-3 py-2.5"
                   style={{
@@ -181,14 +186,7 @@ function AlarmTourScreen() {
               ))}
             </View>
             <GradientCTA label={step.cta} disabled={busy} onPress={onCta} />
-            <Pressable
-              onPress={() => router.back()}
-              accessibilityRole="button"
-              className="items-center py-3"
-              style={{ minHeight: HIT_TARGET }}
-            >
-              <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("alarmTour.skip")}</Text>
-            </Pressable>
+            <Button variant="tertiary" onPress={() => router.back()} label={t("alarmTour.skip")} />
           </View>
         </View>
       </View>

@@ -10,7 +10,8 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { INPUT_TEXT, RADIUS, THEME } from "../lib/theme/tokens";
+import { HIT_TARGET, INPUT_TEXT, RADIUS, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { upper } from "../lib/upper";
 import { DirIcon } from "./DirIcon";
 import { withAlpha } from "./rich/GlassCard";
@@ -144,7 +145,9 @@ export function ActionRow({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? `${label}: ${value}`}
-        className="flex-row items-center px-4 py-3.5"
+        android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+        className="flex-row items-center px-4 py-3.5 active:opacity-80"
+        style={{ minHeight: HIT_TARGET }}
       >
         {icon ? (
           <Ionicons name={icon} size={18} color={THEME.textMuted} style={{ marginRight: 12 }} />
