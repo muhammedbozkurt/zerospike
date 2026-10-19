@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
@@ -7,8 +7,10 @@ import Svg, { Circle, Defs, LinearGradient, Path, Stop, Text as SvgText } from "
 import type { Injection, InjectionSite, SitePoint } from "../lib/db/types";
 import { SELECTABLE_SITES, SITE_POINTS, canonicalSite } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
-import { HIT_TARGET, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
-import { GlassCard, withAlpha } from "./rich";
+import { HIT_TARGET, RADIUS, SPACE, THEME, glow } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { withAlpha } from "./rich";
+import { Button, Card, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import {
   bodyStops,
@@ -320,7 +322,7 @@ function PointRows({
     return t("injection.daysAgo", { n: d });
   }
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ gap: SPACE.sm }}>
       {SITE_POINTS.map((point) => {
         const p = usage?.points.find((x) => x.point === point);
         const on = selectedPoint === point;
@@ -336,17 +338,18 @@ function PointRows({
               site: t(`injectionSite.${site}`),
               n: point,
             })} · ${recencyPhrase(p?.lastUsedAt ?? null)}`}
+            android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
             style={{
               flexDirection: "row",
               alignItems: "center",
-              gap: 12,
+              gap: SPACE.md,
               minHeight: HIT_TARGET,
               borderRadius: RADIUS.lg,
               borderWidth: on ? 1.6 : 1,
               borderColor: on ? THEME.accent : THEME.border,
               backgroundColor: on ? THEME.surfaceInset : THEME.surface,
-              paddingVertical: 10,
-              paddingHorizontal: 12,
+              paddingVertical: SPACE.md,
+              paddingHorizontal: SPACE.md,
             }}
           >
             <View
@@ -363,45 +366,49 @@ function PointRows({
                 borderColor: withAlpha(INK_DARK, 0.35),
               }}
             >
-              <Text style={{ color: THEME.text, fontWeight: "800", fontSize: 14 }}>{point}</Text>
+              <Txt kind="caption" tabular style={{ fontWeight: "800" }}>
+                {point}
+              </Txt>
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text numberOfLines={1} style={{ color: THEME.text, fontWeight: "700", fontSize: 14 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
+                <Txt numberOfLines={1} style={{ fontWeight: "700", flexShrink: 1, minWidth: 0 }}>
                   {t("injection.pointLabel", { n: point })}
-                </Text>
+                </Txt>
                 {isLast ? (
                   <View
                     style={{
                       borderRadius: 999,
-                      paddingHorizontal: 7,
-                      paddingVertical: 2,
+                      paddingHorizontal: SPACE.sm,
+                      paddingVertical: SPACE.xs / 2,
                       backgroundColor: withAlpha(THEME.accent, 0.14),
                       borderWidth: 1,
                       borderColor: withAlpha(THEME.accent, 0.35),
                     }}
                   >
-                    <Text style={{ color: THEME.accent, fontSize: 9, fontWeight: "800" }}>
+                    <Txt kind="micro" tone="accent" style={{ fontWeight: "800" }}>
                       {t("injection.lastPointBadge")}
-                    </Text>
+                    </Txt>
                   </View>
                 ) : null}
               </View>
-              <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }}>
+              <Txt
+                kind="micro"
+                tone="muted"
+                numberOfLines={1}
+                style={{ marginTop: SPACE.xs / 2 }}
+              >
                 {recencyPhrase(p?.lastUsedAt ?? null)}
-              </Text>
+              </Txt>
             </View>
-            <Text
-              style={{
-                color: used ? THEME.text : THEME.textMuted,
-                fontWeight: "800",
-                fontSize: 17,
-                minWidth: 22,
-                textAlign: "right",
-              }}
+            <Txt
+              kind="subtitle"
+              tone={used ? "text" : "muted"}
+              tabular
+              style={{ fontWeight: "800", minWidth: 22, textAlign: "right" }}
             >
               {p?.count ?? 0}
-            </Text>
+            </Txt>
           </Pressable>
         );
       })}
@@ -489,20 +496,19 @@ export function InjectionSiteBoard({
   return (
     <View>
       {/* Status strip: one purely descriptive line, no instruction. */}
-      <GlassCard style={{ marginBottom: 10, flexDirection: "row", alignItems: "center" }}>
+      <Card style={{ marginBottom: SPACE.md, flexDirection: "row", alignItems: "center" }}>
         <Ionicons name="time-outline" size={15} color={THEME.accent} />
-        <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-          style={{ color: THEME.text, fontSize: 12, fontWeight: "700", marginLeft: 8, flex: 1 }}
+        <Txt
+          kind="caption"
+          numberOfLines={2}
+          style={{ fontWeight: "700", marginLeft: SPACE.sm, flex: 1, minWidth: 0 }}
         >
           {stripText}
-        </Text>
-      </GlassCard>
+        </Txt>
+      </Card>
 
       {/* Eight region cards, two per row. */}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: SPACE.md }}>
         {SELECTABLE_SITES.map((site) => {
           const u = model.bySite.get(site);
           const count = u?.count ?? 0;
@@ -522,7 +528,7 @@ export function InjectionSiteBoard({
               className="active:opacity-80"
               style={{ flexBasis: "47%", flexGrow: 1 }}
             >
-              <GlassCard
+              <Card
                 style={[
                   { minHeight: 92 },
                   isSelected
@@ -534,19 +540,20 @@ export function InjectionSiteBoard({
                 ]}
               >
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text
+                  <Txt
+                    kind="caption"
                     numberOfLines={1}
-                    style={{ color: THEME.text, fontSize: 13, fontWeight: "700", flex: 1 }}
+                    style={{ fontWeight: "700", flex: 1, minWidth: 0 }}
                   >
                     {t(`injectionSite.${site}`)}
-                  </Text>
+                  </Txt>
                   {count > 0 ? (
-                    <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 11, fontWeight: "800" }]}>
+                    <Txt kind="micro" tone="muted" tabular style={{ fontWeight: "800" }}>
                       {count}
-                    </Text>
+                    </Txt>
                   ) : null}
                 </View>
-                <View style={{ marginTop: 10 }}>
+                <View style={{ marginTop: SPACE.md }}>
                   <RegionMiniDots usage={u} maxPointCount={model.maxPointCount} now={now} />
                 </View>
                 {/* Before any log exists every card would repeat the same "never
@@ -554,76 +561,62 @@ export function InjectionSiteBoard({
                     it once, so the per-card caption only appears once real usage
                     exists. */}
                 {loggedTotal > 0 ? (
-                  <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, marginTop: 8 }}>
+                  <Txt kind="micro" tone="muted" numberOfLines={1} style={{ marginTop: SPACE.sm }}>
                     {count > 0 ? recencyPhrase(u?.lastUsedAt ?? null) : t("injection.usedNever")}
-                  </Text>
+                  </Txt>
                 ) : null}
-              </GlassCard>
+              </Card>
             </Pressable>
           );
         })}
       </View>
 
       {/* Cycle row: window / cycle stamp on the left, "new cycle" on the right. */}
-      <GlassCard style={{ marginTop: 10, flexDirection: "row", alignItems: "center" }}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11 }}>
+      <Card style={{ marginTop: SPACE.md, flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flex: 1, minWidth: 0, marginRight: SPACE.sm }}>
+          <Txt kind="micro" tone="muted" numberOfLines={2}>
             {cycleStart
               ? t("injection.cycleSince", { date: formatDate(cycleStart) })
               : t("injection.usageWindow", { n: windowDays })}
-          </Text>
+          </Txt>
         </View>
         {onStartNewCycle ? (
-          <Pressable
+          <Button
+            label={t("injection.newCycle")}
+            variant="outlined"
+            size="sm"
             onPress={onStartNewCycle}
-            accessibilityRole="button"
-            accessibilityLabel={t("injection.newCycle")}
-            className="active:opacity-80"
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              borderRadius: 999,
-              paddingHorizontal: 12,
-              paddingVertical: 7,
-              backgroundColor: withAlpha(THEME.accent, 0.14),
-              borderWidth: 1,
-              borderColor: withAlpha(THEME.accent, 0.3),
-            }}
-          >
-            <Ionicons name="refresh-outline" size={13} color={THEME.accent} />
-            <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "800" }}>
-              {t("injection.newCycle")}
-            </Text>
-          </Pressable>
+            icon={<Ionicons name="refresh-outline" size={13} color={THEME.accent} />}
+            className="flex-shrink"
+          />
         ) : null}
-      </GlassCard>
+      </Card>
 
       {/* History that belongs to no card above: retired regions as one legacy
           total, and doses recorded without a region. Descriptive counts only. */}
       {legacyCount > 0 || noSiteCount > 0 ? (
-        <GlassCard style={{ marginTop: 10, gap: 4 }}>
+        <Card style={{ marginTop: SPACE.md, gap: SPACE.xs }}>
           {legacyCount > 0 ? (
-            <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16 }}>
+            <Txt kind="micro" tone="muted">
               {t("injection.legacyRegions", { n: legacyCount })}
               {legacyLastUsedAt ? ` · ${recencyPhrase(legacyLastUsedAt)}` : ""}
-            </Text>
+            </Txt>
           ) : null}
           {noSiteCount > 0 ? (
-            <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16 }}>
+            <Txt kind="micro" tone="muted">
               {t("injection.noRegionCount", { n: noSiteCount })}
-            </Text>
+            </Txt>
           ) : null}
-        </GlassCard>
+        </Card>
       ) : null}
 
       {/* Same card language as every block above it, so the screen doesn't end
           on a bare line floating over the background. */}
-      <GlassCard style={{ marginTop: 10 }}>
-        <Text style={{ color: THEME.textMuted, fontSize: 11, textAlign: "center", lineHeight: 16 }}>
+      <Card style={{ marginTop: SPACE.md }}>
+        <Txt kind="micro" tone="muted" style={{ textAlign: "center" }}>
           {t("injection.pointNeutral")}
-        </Text>
-      </GlassCard>
+        </Txt>
+      </Card>
 
       {/* Region detail: illustration + full-size point rows + the region's log. */}
       <Modal
@@ -653,7 +646,7 @@ export function InjectionSiteBoard({
                 borderRightWidth: 1,
                 borderColor: THEME.border,
                 backgroundColor: THEME.bg.g1,
-                paddingHorizontal: 18,
+                paddingHorizontal: SPACE.lg,
                 paddingTop: 8,
               },
               glow(THEME.accent, 30, 0.3),
@@ -663,33 +656,20 @@ export function InjectionSiteBoard({
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: THEME.text, fontSize: 18, fontWeight: "800" }}>
-                  {openRegion ? t(`injectionSite.${openRegion}`) : ""}
-                </Text>
-                <Text style={{ color: THEME.textMuted, fontSize: 12, marginTop: 2 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Txt kind="subtitle">{openRegion ? t(`injectionSite.${openRegion}`) : ""}</Txt>
+                <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs / 2 }}>
                   {t("injection.selectPoint")}
-                </Text>
+                </Txt>
               </View>
               <Pressable
                 onPress={() => setOpenRegion(null)}
                 accessibilityRole="button"
                 accessibilityLabel={t("common.close")}
-                hitSlop={10}
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 15,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: THEME.surfaceInset,
-                  borderWidth: 1,
-                  borderColor: THEME.border,
-                }}
+                hitSlop={12}
+                className="p-1"
               >
-                <Text style={{ color: THEME.textMuted, fontSize: 15, fontWeight: "700", lineHeight: 17 }}>
-                  ×
-                </Text>
+                <Ionicons name="close" size={22} color={THEME.textMuted} />
               </Pressable>
             </View>
 
@@ -702,12 +682,12 @@ export function InjectionSiteBoard({
                 <View
                   style={{
                     alignSelf: "flex-start",
-                    marginTop: 8,
+                    marginTop: SPACE.sm,
                     flexDirection: "row",
                     alignItems: "center",
-                    gap: 6,
-                    paddingVertical: 5,
-                    paddingHorizontal: 10,
+                    gap: SPACE.sm,
+                    paddingVertical: SPACE.xs,
+                    paddingHorizontal: SPACE.md,
                     borderRadius: 999,
                     backgroundColor: withAlpha(THEME.accent, 0.12),
                     borderWidth: 1,
@@ -715,14 +695,14 @@ export function InjectionSiteBoard({
                   }}
                 >
                   <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: THEME.accent }} />
-                  <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }}>
+                  <Txt kind="micro" tone="accent" style={{ flexShrink: 1, minWidth: 0 }}>
                     {t(absorptionKey(openRegion))}
-                  </Text>
+                  </Txt>
                 </View>
               ) : null}
 
               {openRegion ? (
-                <View style={{ alignItems: "center", marginTop: 12 }}>
+                <View style={{ alignItems: "center", marginTop: SPACE.md }}>
                   <RegionIllustration
                     site={openRegion}
                     usage={openUsage}
@@ -734,7 +714,7 @@ export function InjectionSiteBoard({
                 </View>
               ) : null}
 
-              <View style={{ marginTop: 14 }}>
+              <View style={{ marginTop: SPACE.lg }}>
                 {openRegion ? (
                   <PointRows
                     site={openRegion}
@@ -749,24 +729,19 @@ export function InjectionSiteBoard({
               </View>
 
               {/* The region's own recent entries: log excerpt, nothing more. */}
-              <Text
-                style={{
-                  color: THEME.textMuted,
-                  fontSize: 11,
-                  letterSpacing: 1.1,
-                  fontWeight: "800",
-                  marginTop: 18,
-                  marginBottom: 8,
-                }}
+              <Txt
+                kind="micro"
+                tone="muted"
+                style={{ letterSpacing: 1.1, fontWeight: "800", marginTop: SPACE.xl, marginBottom: SPACE.sm }}
               >
                 {upper(t("injection.regionRecent"))}
-              </Text>
+              </Txt>
               {recentForOpen.length === 0 ? (
-                <Text style={{ color: THEME.textMuted, fontSize: 12 }}>
+                <Txt kind="caption" tone="muted">
                   {t("injection.regionNoRecords")}
-                </Text>
+                </Txt>
               ) : (
-                <View style={{ gap: 6 }}>
+                <View style={{ gap: SPACE.sm }}>
                   {recentForOpen.map((inj) => (
                     <View
                       key={inj.id}
@@ -777,35 +752,27 @@ export function InjectionSiteBoard({
                         borderWidth: 1,
                         borderColor: THEME.border,
                         backgroundColor: THEME.surface,
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
+                        paddingHorizontal: SPACE.md,
+                        paddingVertical: SPACE.sm,
                       }}
                     >
-                      <Text style={{ color: THEME.textMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
+                      <Txt kind="micro" tone="muted" style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
                         {relativeDay(inj.logged_at, dateLabels)} · {formatTime(inj.logged_at)}
-                      </Text>
-                      <Text style={[TABULAR, { color: THEME.text, fontSize: 12, fontWeight: "700" }]}>
+                      </Txt>
+                      <Txt kind="caption" tabular style={{ fontWeight: "700", flexShrink: 1, textAlign: "right" }}>
                         {inj.dose_units != null ? `${num(inj.dose_units)} ${unitLetter}` : "-"}
                         {inj.site_point != null
                           ? ` · ${t("injection.pointLabel", { n: inj.site_point })}`
                           : ""}
-                      </Text>
+                      </Txt>
                     </View>
                   ))}
                 </View>
               )}
 
-              <Text
-                style={{
-                  color: THEME.textMuted,
-                  fontSize: 11,
-                  textAlign: "center",
-                  lineHeight: 16,
-                  marginTop: 14,
-                }}
-              >
+              <Txt kind="micro" tone="muted" style={{ textAlign: "center", marginTop: SPACE.lg }}>
                 {t("injection.pointNeutral")}
-              </Text>
+              </Txt>
             </ScrollView>
           </Pressable>
         </Pressable>
@@ -843,7 +810,7 @@ export function SitePointSelector({
 
   return (
     <View style={style}>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: SPACE.sm }}>
         {SELECTABLE_SITES.map((s) => {
           const on = site === s;
           return (
@@ -856,31 +823,31 @@ export function SitePointSelector({
               accessibilityRole="button"
               accessibilityState={{ selected: on }}
               accessibilityLabel={t(`injectionSite.${s}`)}
+              android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
               style={[
                 {
+                  minHeight: HIT_TARGET,
                   flexBasis: "48%",
                   flexGrow: 1,
                   borderRadius: RADIUS.md,
                   borderWidth: 1,
                   borderColor: on ? THEME.accent : THEME.border,
                   backgroundColor: on ? withAlpha(THEME.accent, 0.12) : THEME.surface,
-                  paddingHorizontal: 10,
-                  paddingVertical: 8,
+                  paddingHorizontal: SPACE.md,
+                  paddingVertical: SPACE.sm,
                 },
                 on ? glow(THEME.accent, 12, 0.35) : null,
               ]}
             >
-              <Text
+              <Txt
+                kind="caption"
+                tone={on ? "accent" : "muted"}
                 numberOfLines={1}
-                style={{
-                  color: on ? THEME.accent : THEME.textMuted,
-                  fontSize: 12,
-                  fontWeight: on ? "800" : "600",
-                }}
+                style={{ fontWeight: on ? "800" : "600" }}
               >
                 {t(`injectionSite.${s}`)}
-              </Text>
-              <View style={{ marginTop: 6 }}>
+              </Txt>
+              <View style={{ marginTop: SPACE.sm }}>
                 <RegionMiniDots
                   usage={model.bySite.get(s)}
                   maxPointCount={model.maxPointCount}
@@ -892,9 +859,13 @@ export function SitePointSelector({
         })}
       </View>
 
-      <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "700", marginTop: 12, marginBottom: 6 }}>
+      <Txt
+        kind="caption"
+        tone="muted"
+        style={{ fontWeight: "700", marginTop: SPACE.md, marginBottom: SPACE.sm }}
+      >
         {t("injection.selectPoint")}
-      </Text>
+      </Txt>
       <PointRows
         site={site}
         usage={model.bySite.get(site)}
