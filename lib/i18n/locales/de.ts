@@ -1545,7 +1545,6 @@ const de: TranslationSchema = {
     submit: "Schätzen",
     estimating: "Wird geschätzt...",
     total: "Ungefähre Summe",
-    add: "Zum Tagebuch hinzufügen",
     edit: "Bearbeiten",
     note: "Dies ist eine Schätzung zu Nahrungsmitteln, keine Dosis. Bitte prüfen Sie die Genauigkeit selbst.",
     noteShort: "Schätzung zu Nahrungsmitteln, keine Dosis.",

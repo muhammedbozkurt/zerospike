@@ -1540,7 +1540,6 @@ const ja: TranslationSchema = {
     submit: "推定する",
     estimating: "推定しています...",
     total: "おおよその合計",
-    add: "記録に追加",
     edit: "編集",
     note: "これは食品情報の推定であり、投与量ではありません。正確さはご自身でご確認ください。",
     noteShort: "食品情報の推定であり、投与量ではありません。",

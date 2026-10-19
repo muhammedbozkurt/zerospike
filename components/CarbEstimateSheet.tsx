@@ -4,12 +4,15 @@ import {
   Animated,
   BackHandler,
   Easing,
+  Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,6 +32,7 @@ import {
   screenshotCarbSample,
   shouldCountEstimate,
   carbErrorCharged,
+  editableToEstimateLines,
   type EditableItem,
 } from "../lib/ai/carbEstimateClient";
 import {
@@ -43,8 +47,10 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useProCta } from "../lib/proCta";
 import { grantSpikeConsent, hasSpikeConsent } from "../lib/services/spikeConsent";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
-import { upper } from "../lib/upper";
-import { GradientCTA } from "./rich";
+import type { EstimateLineInput } from "../lib/mealCompose";
+import { EstimateResultCard, LiveTotalHeader } from "./meal";
+import { SCRIM } from "./SheetShell";
+import { Button } from "./ui";
 
 export type CarbEstimateSource = "food_tab" | "meal_sheet";
 
@@ -58,97 +64,11 @@ const ERROR_KEY: Record<ErrorKind, string> = {
   noFood: "carbEstimate.errorNoFood",
 };
 
-/** A function: THEME resolves the active scheme at read time, a module-level const froze the first one. */
-const fieldStyle = () => [
-  INPUT_TEXT,
-  {
-    minHeight: 40,
-    color: THEME.text,
-    fontSize: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    backgroundColor: THEME.surface,
-    paddingHorizontal: 10,
-  },
-];
-
-function ItemRow({
-  item,
-  onChange,
-  onRemove,
-}: {
-  item: EditableItem;
-  onChange: (patch: Partial<EditableItem>) => void;
-  onRemove: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <View className="rounded-2xl bg-glass border border-hair px-3 py-2.5 mb-2">
-      <View className="flex-row items-center" style={{ columnGap: 8 }}>
-        <TextInput
-          value={item.name}
-          onChangeText={(name) => onChange({ name })}
-          maxLength={60}
-          accessibilityLabel={t("carbEstimate.itemName")}
-          placeholder={t("carbEstimate.itemName")}
-          placeholderTextColor={THEME.textMuted}
-          style={[...fieldStyle(), { flex: 1, fontWeight: "700" }]}
-        />
-        <Pressable
-          onPress={onRemove}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`${t("mealCompose.remove")}: ${item.name}`}
-          style={{ minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" }}
-        >
-          <Ionicons name="close-circle" size={20} color={THEME.textMuted} />
-        </Pressable>
-      </View>
-      <View className="flex-row items-center" style={{ marginTop: 8, columnGap: 8 }}>
-        <TextInput
-          value={item.quantityText}
-          onChangeText={(quantityText) => onChange({ quantityText })}
-          keyboardType="decimal-pad"
-          selectTextOnFocus
-          maxLength={7}
-          accessibilityLabel={`${t("carbEstimate.itemQuantity")}: ${item.name}`}
-          placeholder={t("carbEstimate.itemQuantity")}
-          placeholderTextColor={THEME.textMuted}
-          style={[...fieldStyle(), TABULAR, { width: 70, textAlign: "center" }]}
-        />
-        <TextInput
-          value={item.unit}
-          onChangeText={(unit) => onChange({ unit })}
-          maxLength={20}
-          accessibilityLabel={`${t("carbEstimate.itemUnit")}: ${item.name}`}
-          placeholder={t("carbEstimate.itemUnit")}
-          placeholderTextColor={THEME.textMuted}
-          style={[...fieldStyle(), { flex: 1 }]}
-        />
-        <TextInput
-          value={item.gramsText}
-          onChangeText={(gramsText) => onChange({ gramsText })}
-          keyboardType="decimal-pad"
-          selectTextOnFocus
-          maxLength={6}
-          accessibilityLabel={`${t("carbEstimate.itemCarbs")} (${t("common.grams")}): ${item.name}`}
-          style={[
-            ...fieldStyle(),
-            TABULAR,
-            { width: 64, textAlign: "center", fontWeight: "800", color: THEME.accent },
-          ]}
-        />
-        <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("common.grams")}</Text>
-      </View>
-    </View>
-  );
-}
-
 /**
- * Carb estimate from a typed meal description. Presentational about the
- * journal: the caller writes the meal when onAdd fires, and onAdd fires only
- * from the "Add to log" button, never when a result arrives. Consent comes
+ * Carb estimate from a typed meal description. It never writes the journal:
+ * "Add to meal" hands the edited lines to the caller (estimate lines in the
+ * meal compose list), and onAdd fires only from that button, never when a
+ * result arrives. Consent comes
  * first: without the current Spike consent no text is sent. The typed text
  * lives in this component's state only and is never stored or logged.
  */
@@ -156,7 +76,7 @@ export function CarbEstimateSheet({
   source,
   isPro,
   locale,
-  saving,
+  saving = false,
   screenshotResult,
   onClose,
   onAdd,
@@ -164,14 +84,17 @@ export function CarbEstimateSheet({
   source: CarbEstimateSource;
   isPro: boolean;
   locale: string;
-  saving: boolean;
+  /** Optional: the caller has no save of its own now; true only disables "Add to meal". */
+  saving?: boolean;
   /** Store capture only (honoured in screenshot mode): open on the filled sample result. */
   screenshotResult?: boolean;
   onClose: () => void;
-  onAdd: (items: EditableItem[]) => void;
+  /** The named, edited lines (editableToEstimateLines). The sheet closes itself right after. */
+  onAdd: (lines: EstimateLineInput[]) => void;
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const anim = useRef(new Animated.Value(0)).current;
   const aborter = useRef<AbortController | null>(null);
@@ -181,6 +104,7 @@ export function CarbEstimateSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorKind | null>(null);
   const [items, setItems] = useState<EditableItem[] | null>(null);
+  const [keyboardH, setKeyboardH] = useState(0);
   const proCta = useProCta(!isPro);
   const tier = isPro ? "pro" : "free";
 
@@ -220,6 +144,19 @@ export function CarbEstimateSheet({
     });
     return () => sub.remove();
   }, [onClose]);
+
+  // iOS only: Android is adjustResize and already lifts the sheet.
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const show = Keyboard.addListener("keyboardWillShow", (e) =>
+      setKeyboardH(e?.endCoordinates?.height ?? 0)
+    );
+    const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardH(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const blocked = useCallback((reason: "quota" | "filtered" | "error") => {
     logEvent("carb_estimate_blocked", { reason });
@@ -296,8 +233,8 @@ export function CarbEstimateSheet({
     onClose();
   }
 
-  function patchItem(key: string, patch: Partial<EditableItem>) {
-    setItems((prev) => prev && prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
+  function replaceItem(next: EditableItem) {
+    setItems((prev) => prev && prev.map((it) => (it.key === next.key ? next : it)));
   }
 
   function removeItem(key: string) {
@@ -311,91 +248,123 @@ export function CarbEstimateSheet({
   const canAdd = canAddEstimate({ resultShown, items: items ?? [], saving });
   const total = items ? editableTotal(items) : 0;
 
+  const title = (
+    <Text
+      accessibilityRole="header"
+      numberOfLines={2}
+      style={{
+        color: THEME.text,
+        fontSize: 18,
+        fontWeight: "800",
+        paddingEnd: HIT_TARGET,
+        marginBottom: 6,
+      }}
+    >
+      {t("carbEstimate.title")}
+    </Text>
+  );
+  const fixedNote = (
+    <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 10 }}>
+      {t("carbEstimate.noteShort")}
+    </Text>
+  );
+
+  let top: React.ReactNode = null;
   let body: React.ReactNode;
+  let footer: React.ReactNode = null;
   if (consented === null) {
     body = <ActivityIndicator color={THEME.accent} style={{ marginVertical: 24 }} />;
   } else if (!consented) {
+    const para = { color: THEME.text, fontSize: 13, lineHeight: 20 } as const;
     body = (
       <View>
         <Text
           accessibilityRole="header"
-          style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 10 }}
+          style={{
+            color: THEME.text,
+            fontSize: 17,
+            fontWeight: "800",
+            marginBottom: 10,
+            paddingEnd: HIT_TARGET,
+          }}
         >
           {t("spike.consentTitle")}
         </Text>
         <View style={{ rowGap: 8, marginBottom: 14 }}>
-          <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>{t("spike.consentSent")}</Text>
-          <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>{t("spike.consentRecipient")}</Text>
-          <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>{t("spike.consentNotSent")}</Text>
-          <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 20 }}>{t("spike.consentCarb")}</Text>
-          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>{t("spike.consentScope")}</Text>
+          <Text style={para}>{t("spike.consentSent")}</Text>
+          <Text style={para}>{t("spike.consentRecipient")}</Text>
+          <Text style={para}>{t("spike.consentNotSent")}</Text>
+          <Text style={para}>{t("spike.consentCarb")}</Text>
+          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18 }}>
+            {t("spike.consentScope")}
+          </Text>
         </View>
-        <GradientCTA label={t("spike.accept")} onPress={() => void accept()} />
-        <Pressable onPress={onClose} hitSlop={8} style={{ alignItems: "center", paddingVertical: 12 }}>
-          <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("spike.notNow")}</Text>
-        </Pressable>
+        <Button label={t("spike.accept")} onPress={() => void accept()} />
+        <View style={{ marginTop: 4 }}>
+          <Button variant="tertiary" label={t("spike.notNow")} onPress={onClose} />
+        </View>
       </View>
     );
   } else if (items) {
+    top = (
+      <View>
+        {title}
+        {fixedNote}
+      </View>
+    );
     body = (
       <View>
-        <Text
-          accessibilityRole="header"
-          style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 4 }}
+        <View
+          accessible
+          accessibilityLabel={`${t("carbEstimate.approx")} ${t("mealCompose.totalLine", {
+            value: num(total),
+          })}`}
+          style={{ flexDirection: "row", alignItems: "center", columnGap: 6, marginBottom: 12 }}
         >
-          {t("carbEstimate.title")}
-        </Text>
-        <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 10 }}>
-          {t("carbEstimate.edit")}
-        </Text>
+          <Text
+            importantForAccessibility="no"
+            style={{ color: THEME.textMuted, fontSize: 28, fontWeight: "700" }}
+          >
+            ≈
+          </Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <LiveTotalHeader totalG={total} targetG={null} />
+          </View>
+        </View>
         {items.map((item) => (
-          <ItemRow
+          <EstimateResultCard
             key={item.key}
-            item={item}
-            onChange={(patch) => patchItem(item.key, patch)}
+            line={item}
+            onChange={replaceItem}
             onRemove={() => removeItem(item.key)}
           />
         ))}
-        <View
-          className="flex-row items-center justify-between rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-2 mt-1"
-          accessible
-          accessibilityLabel={`${t("carbEstimate.total")}: ${num(total)} ${t("common.grams")}`}
-        >
-          <Text
-            className="text-xs font-semibold tracking-wider text-mut"
-            style={{ flexShrink: 1, paddingRight: 8 }}
-          >
-            {upper(t("carbEstimate.total"))}
-          </Text>
-          <Text style={[TABULAR, { color: THEME.accent, fontSize: 20, fontWeight: "800" }]}>
-            {num(total)}
-            <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
-              {t("common.grams")}
-            </Text>
-          </Text>
-        </View>
-        <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 12 }}>
-          {t("carbEstimate.note")}
-        </Text>
-        <GradientCTA
-          label={t("carbEstimate.add")}
+      </View>
+    );
+    footer = (
+      <View style={{ paddingTop: 10 }}>
+        <Button
+          label={t("carbEstimate.addToMeal")}
           disabled={!canAdd}
           onPress={() => {
-            if (canAdd && items) onAdd(items);
+            if (canAdd && items) {
+              onAdd(editableToEstimateLines(items));
+              close();
+            }
           }}
         />
       </View>
     );
   } else {
     const len = [...text].length;
+    top = (
+      <View>
+        {title}
+        {fixedNote}
+      </View>
+    );
     body = (
       <View>
-        <Text
-          accessibilityRole="header"
-          style={{ color: THEME.text, fontSize: 17, fontWeight: "800", marginBottom: 6 }}
-        >
-          {t("carbEstimate.title")}
-        </Text>
         <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 12 }}>
           {t("carbEstimate.help")}
         </Text>
@@ -414,17 +383,18 @@ export function CarbEstimateSheet({
           style={[
             INPUT_TEXT,
             {
-              minHeight: 88,
+              minHeight: 96,
               maxHeight: 160,
               textAlignVertical: "top",
               color: THEME.text,
-              fontSize: 14,
+              fontSize: 16,
               borderRadius: 16,
               borderWidth: 1,
               borderColor: THEME.border,
               backgroundColor: THEME.surface,
               paddingHorizontal: 14,
               paddingVertical: 10,
+              opacity: busy ? 0.6 : 1,
             },
           ]}
         />
@@ -433,10 +403,7 @@ export function CarbEstimateSheet({
         </Text>
         {error ? (
           <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3 mt-2">
-            <Text
-              accessibilityRole="alert"
-              style={{ color: THEME.text, fontSize: 13, lineHeight: 19 }}
-            >
+            <Text accessibilityRole="alert" style={{ color: THEME.text, fontSize: 13, lineHeight: 19 }}>
               {t(ERROR_KEY[error])}
             </Text>
             {error === "limit" && !isPro ? (
@@ -444,7 +411,7 @@ export function CarbEstimateSheet({
                 <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 10 }}>
                   {t("carbEstimate.proNudge")}
                 </Text>
-                <GradientCTA
+                <Button
                   label={t(proCta.key, proCta.params)}
                   onPress={() => {
                     hapticSelect();
@@ -456,30 +423,32 @@ export function CarbEstimateSheet({
             ) : null}
           </View>
         ) : null}
-        <View style={{ marginTop: 12 }}>
-          {busy ? (
-            <View
-              className="flex-row items-center justify-center rounded-2xl border border-hair"
-              style={{ minHeight: HIT_TARGET, columnGap: 8 }}
-              accessibilityLiveRegion="polite"
-            >
-              <ActivityIndicator color={THEME.accent} />
-              <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("carbEstimate.estimating")}</Text>
-            </View>
-          ) : (
-            <GradientCTA
-              label={t("carbEstimate.submit")}
-              disabled={text.trim().length === 0}
-              onPress={() => void submit()}
-            />
-          )}
-        </View>
-        <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 16, marginTop: 10 }}>
-          {t("carbEstimate.note")}
-        </Text>
+      </View>
+    );
+    footer = (
+      <View style={{ paddingTop: 10 }}>
+        {busy ? (
+          <View
+            className="flex-row items-center justify-center rounded-2xl border border-hair"
+            style={{ minHeight: HIT_TARGET, columnGap: 8 }}
+            accessibilityLiveRegion="polite"
+          >
+            <ActivityIndicator color={THEME.accent} />
+            <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("carbEstimate.estimating")}</Text>
+          </View>
+        ) : (
+          <Button
+            label={t("carbEstimate.submit")}
+            disabled={text.trim().length === 0}
+            onPress={() => void submit()}
+          />
+        )}
       </View>
     );
   }
+
+  const maxHeight = Math.min(windowHeight * 0.92, windowHeight - keyboardH - insets.top - 8);
+  const bottomPad = keyboardH > 0 ? 12 : insets.bottom + 16;
 
   return (
     <View
@@ -490,16 +459,19 @@ export function CarbEstimateSheet({
     >
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
         <Pressable
-          style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.7)" }]} // theme-ok
+          style={[StyleSheet.absoluteFill, { backgroundColor: SCRIM }]}
           onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel={t("common.cancel")}
         />
       </Animated.View>
-      <View style={{ flex: 1, justifyContent: "flex-end" }} pointerEvents="box-none">
+      <View
+        style={{ flex: 1, justifyContent: "flex-end", paddingBottom: keyboardH }}
+        pointerEvents="box-none"
+      >
         <Animated.View
           style={{
-            maxHeight: "92%",
+            maxHeight,
             transform: [
               { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
             ],
@@ -507,7 +479,7 @@ export function CarbEstimateSheet({
         >
           <Pressable
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
-            style={{ backgroundColor: THEME.bg.g1, paddingBottom: insets.bottom + 20, flexShrink: 1 }}
+            style={{ backgroundColor: THEME.bg.g1, paddingBottom: bottomPad, flexShrink: 1 }}
             onPress={(e) => e.stopPropagation()}
             accessible={false}
             focusable={false}
@@ -534,6 +506,7 @@ export function CarbEstimateSheet({
             >
               <Ionicons name="close" size={22} color={THEME.textMuted} />
             </Pressable>
+            {top}
             <ScrollView
               {...keyboardAwareScrollProps}
               style={{ flexShrink: 1 }}
@@ -541,6 +514,7 @@ export function CarbEstimateSheet({
             >
               {body}
             </ScrollView>
+            {footer}
           </Pressable>
         </Animated.View>
       </View>

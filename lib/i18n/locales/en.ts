@@ -1540,7 +1540,6 @@ const en: TranslationSchema = {
     submit: "Estimate",
     estimating: "Estimating...",
     total: "Approximate total",
-    add: "Add to log",
     edit: "Edit",
     note: "This is a food information estimate, not a dose. Please check its accuracy yourself.",
     noteShort: "Food information estimate, not a dose.",
