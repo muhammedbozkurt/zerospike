@@ -9,7 +9,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from "react-native";
@@ -39,12 +38,11 @@ import {
   sanitizeNumberText,
 } from "../lib/numberInput";
 import { withAlpha } from "./rich/GlassCard";
-import { ELEVATION, GLUCOSE_RICH, INPUT_TEXT, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { ELEVATION, INPUT_TEXT, RADIUS, RICH_BY_STATUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { HEALTH_NAME } from "../lib/services/health";
 import { GradientCTA } from "./rich/GradientCTA";
-import { PressableScale } from "../lib/theme/motion";
-import { hapticSelect } from "../lib/haptics";
+import { Button, Chip, Row, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { useEntryGuardConfirm } from "./useEntryGuardConfirm";
@@ -442,24 +440,24 @@ export function GlucoseInputSheet({
               importantForAccessibility="auto"
               style={[
                 {
-                  borderTopLeftRadius: 26,
-                  borderTopRightRadius: 26,
+                  borderTopLeftRadius: RADIUS["2xl"],
+                  borderTopRightRadius: RADIUS["2xl"],
                   borderTopWidth: 1,
                   borderLeftWidth: 1,
                   borderRightWidth: 1,
                   borderColor: THEME.border,
                   backgroundColor: THEME.bg.g1,
-                  paddingHorizontal: 18,
+                  paddingHorizontal: SPACE.lg,
                   // ONE gap above the grabber; the row below carries the rest.
-                  paddingTop: 8,
+                  paddingTop: SPACE.sm,
                   overflow: "hidden",
                 },
                 isWide
                   ? {
-                      borderBottomLeftRadius: 26,
-                      borderBottomRightRadius: 26,
+                      borderBottomLeftRadius: RADIUS["2xl"],
+                      borderBottomRightRadius: RADIUS["2xl"],
                       borderBottomWidth: 1,
-                      marginBottom: 20,
+                      marginBottom: SPACE.xl,
                     }
                   : undefined,
                 THEME.scheme === "light"
@@ -483,7 +481,7 @@ export function GlucoseInputSheet({
               <View {...pan.panHandlers}>
                 {/* The grabber's own row IS the gap under it; the sheet's
                     paddingTop is the one above. No stacked py + mb. */}
-                <View className="items-center" style={{ paddingBottom: 10 }}>
+                <View className="items-center" style={{ paddingBottom: SPACE.md }}>
                   <View
                     style={{
                       width: 38,
@@ -495,9 +493,9 @@ export function GlucoseInputSheet({
                 </View>
                 <View className="flex-row items-center justify-between">
                   <View style={{ width: 28 }} />
-                  <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800" }}>
+                  <Txt kind="subtitle" numberOfLines={2} style={{ flex: 1, textAlign: "center" }}>
                     {edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}
-                  </Text>
+                  </Txt>
                   <Pressable
                     onPress={animateClose}
                     hitSlop={12}
@@ -518,8 +516,8 @@ export function GlucoseInputSheet({
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{
-                  paddingBottom: compact ? 16 : 30,
-                  paddingTop: compact ? 4 : 12,
+                  paddingBottom: compact ? SPACE.lg : SPACE.xl + SPACE.xs,
+                  paddingTop: compact ? SPACE.xs : SPACE.md,
                 }}
               >
                 {/* Hero: the numeral is the screen. On a short phone with the
@@ -550,16 +548,10 @@ export function GlucoseInputSheet({
                     ]}
                     maxLength={mmol ? 4 : 3}
                   />
-                  <Text
-                    style={{
-                      color: THEME.textMuted,
-                      fontSize: 12,
-                      marginTop: compact ? 0 : -4,
-                    }}
-                  >
+                  <Txt kind="caption" tone="muted" style={{ marginTop: compact ? 0 : -SPACE.xs }}>
                     {glucoseUnitLabel(unit)}
-                  </Text>
-                  <View style={{ minHeight: 26, marginTop: compact ? 5 : 8 }}>
+                  </Txt>
+                  <View style={{ minHeight: 26, marginTop: compact ? SPACE.xs : SPACE.sm }}>
                     {liveStatus ? (
                       <GlucoseChip status={liveStatus} label={statusLabel(liveStatus)} />
                     ) : null}
@@ -576,24 +568,27 @@ export function GlucoseInputSheet({
                     meter-range note only when the value is past the ceiling. */}
                 {liveStatus === "veryHigh" ? (
                   <View
-                    className="rounded-2xl px-3.5 py-3 mt-3"
+                    className="rounded-2xl"
                     style={{
+                      paddingHorizontal: SPACE.md,
+                      paddingVertical: SPACE.md,
+                      marginTop: SPACE.md,
                       borderWidth: 1,
                       borderColor: `${RICH_BY_STATUS.veryHigh}4d`,
                       backgroundColor: `${RICH_BY_STATUS.veryHigh}1a`,
                     }}
                   >
-                    <Text
+                    <Txt
+                      kind="caption"
                       style={{
                         color: RICH_BY_STATUS.veryHigh,
-                        fontSize: 12,
                         fontWeight: "800",
-                        marginBottom: 2,
+                        marginBottom: SPACE.xs,
                       }}
                     >
                       {t("glucose.veryHighTitle")}
-                    </Text>
-                    <Text style={{ color: THEME.text, fontSize: 12, lineHeight: 18, opacity: 0.85 }}>
+                    </Txt>
+                    <Txt kind="caption" style={{ opacity: 0.85 }}>
                       {aboveMeterRange
                         ? t("glucose.aboveMeterRange", {
                             max: num(GLUCOSE_INPUT_CEILING[unit]),
@@ -603,7 +598,7 @@ export function GlucoseInputSheet({
                             value: formatGlucose(VERY_HIGH_MGDL, unit),
                             unit: glucoseUnitLabel(unit),
                           })}
-                    </Text>
+                    </Txt>
                   </View>
                 ) : null}
 
@@ -611,79 +606,38 @@ export function GlucoseInputSheet({
                     clipped the long DE/TR labels at the edge with no cue. */}
                 <View
                   style={{
-                    marginTop: compact ? 12 : 20,
+                    marginTop: compact ? SPACE.md : SPACE.lg,
                     flexDirection: "row",
                     flexWrap: "wrap",
                     justifyContent: "center",
-                    gap: 6,
+                    gap: SPACE.sm,
                   }}
                 >
-                  {PERIODS.map((p) => {
-                    const on = p === period;
-                    return (
-                      <PressableScale
-                        key={p}
-                        onPress={() => {
-                          hapticSelect();
-                          setPeriod(p);
-                        }}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: on }}
-                        accessibilityLabel={t(`period.${p}`)}
-                        style={[
-                          {
-                            borderRadius: RADIUS.md,
-                            paddingHorizontal: 12,
-                            paddingVertical: 11,
-                            borderWidth: 1,
-                            borderColor: on ? THEME.accent : THEME.border,
-                            backgroundColor: on ? withAlpha(THEME.accent, 0.16) : THEME.surface,
-                          },
-                          on ? glow(THEME.accent, 12, 0.4) : undefined,
-                        ]}
-                      >
-                        <Text
-                          style={{
-                            color: on ? THEME.accent : THEME.textMuted,
-                            fontSize: 12,
-                            fontWeight: "700",
-                          }}
-                        >
-                          {t(`period.${p}`)}
-                        </Text>
-                      </PressableScale>
-                    );
-                  })}
+                  {PERIODS.map((p) => (
+                    <Chip
+                      key={p}
+                      label={t(`period.${p}`)}
+                      selected={p === period}
+                      onPress={() => setPeriod(p)}
+                      className="max-w-full"
+                    />
+                  ))}
                 </View>
 
                 {/* When the reading was taken (date + time, never in the future) */}
-                <Pressable
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setTimePickerOpen((v) => !v);
-                  }}
-                  className="flex-row items-center"
-                  style={{
-                    marginTop: compact ? 12 : 20,
-                    borderRadius: RADIUS.md,
-                    borderWidth: 1,
-                    borderColor: THEME.border,
-                    backgroundColor: THEME.surface,
-                    paddingHorizontal: 14,
-                    paddingVertical: 12,
-                  }}
-                >
-                  <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
-                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
-                    {relativeDay((loggedAt ?? new Date()).toISOString(), {
+                <View style={{ marginTop: compact ? SPACE.md : SPACE.lg }}>
+                  <Row
+                    icon="time-outline"
+                    label={`${relativeDay((loggedAt ?? new Date()).toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
-                    })}
-                    {" · "}
-                    {formatTime((loggedAt ?? new Date()).toISOString())}
-                  </Text>
-                </Pressable>
+                    })} · ${formatTime((loggedAt ?? new Date()).toISOString())}`}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setTimePickerOpen((v) => !v);
+                    }}
+                  />
+                </View>
                 <InlineDateTimePicker
                   visible={timePickerOpen}
                   value={loggedAt ?? new Date()}
@@ -696,37 +650,20 @@ export function GlucoseInputSheet({
                 <TagPicker
                   value={tags}
                   onChange={setTags}
-                  className={compact ? "mt-3 mb-3" : "mt-4 mb-5"}
+                  className={compact ? "mt-3 mb-3" : "mt-4 mb-4"}
                 />
 
                 <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
 
                 {edit && onDelete ? (
-                  <Pressable
-                    onPress={handleDelete}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("common.delete")}
-                    hitSlop={8}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      minHeight: 44,
-                      marginTop: compact ? 8 : 14,
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={16} color={GLUCOSE_RICH.low} />
-                    <Text
-                      style={{
-                        color: GLUCOSE_RICH.low,
-                        fontSize: 13,
-                        fontWeight: "700",
-                        marginLeft: 6,
-                      }}
-                    >
-                      {t("common.delete")}
-                    </Text>
-                  </Pressable>
+                  <View style={{ marginTop: compact ? SPACE.sm : SPACE.md }}>
+                    <Button
+                      label={t("common.delete")}
+                      variant="destructive"
+                      onPress={handleDelete}
+                      icon={<Ionicons name="trash-outline" size={16} color={THEME.danger} />}
+                    />
+                  </View>
                 ) : null}
               </ScrollView>
             </Pressable>

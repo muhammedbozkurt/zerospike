@@ -8,7 +8,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from "react-native";
@@ -16,7 +15,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { THEME, RADIUS } from "../lib/theme/tokens";
+import { THEME, RADIUS, SPACE } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { withAlpha } from "./rich/GlassCard";
+import { Row, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { IconTile, GradientCTA } from "./rich";
@@ -228,17 +230,17 @@ export function QuickAddSheet({
                 borderTopRightRadius: RADIUS["2xl"],
                 borderTopWidth: 1,
                 borderColor: THEME.border,
-                paddingHorizontal: 16,
-                paddingTop: 8,
-                paddingBottom: insets.bottom + 20,
+                paddingHorizontal: SPACE.lg,
+                paddingTop: SPACE.sm,
+                paddingBottom: insets.bottom + SPACE.xl,
               },
               isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
             ]}
           >
-            <View style={{ alignItems: "center", marginBottom: 6 }}>
+            <View style={{ alignItems: "center", marginBottom: SPACE.sm }}>
               <View
                 style={{
-                  width: 40,
+                  width: 38,
                   height: 4,
                   borderRadius: 2,
                   backgroundColor: THEME.border,
@@ -248,63 +250,64 @@ export function QuickAddSheet({
             {step === "grid" ? (
               // The cards carry their own labels, so a question above them
               // would only repeat what they already say.
-              <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+              <View style={{ flexDirection: "row", gap: SPACE.sm, marginTop: SPACE.md }}>
                 {options.map((opt) => (
                   <Pressable
                     key={opt.key}
                     // "med" stays on this sheet (opens the form below) instead
                     // of closing + navigating like the other cards.
                     onPress={() => (opt.key === "med" ? opt.onPress() : select(opt.onPress))}
+                    android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
                     style={{
                       flex: 1,
+                      minWidth: 0,
                       alignItems: "center",
                       justifyContent: "center",
                       backgroundColor: THEME.surface,
                       borderWidth: 1,
                       borderColor: THEME.border,
                       borderRadius: RADIUS.lg,
-                      paddingVertical: 18,
-                      gap: 10,
+                      paddingVertical: SPACE.lg,
+                      paddingHorizontal: SPACE.xs,
+                      gap: SPACE.sm,
                     }}
                     accessibilityRole="button"
                     accessibilityLabel={opt.label}
                   >
                     <IconTile icon={opt.icon} size={48} radius={14} hero />
-                    <Text
-                      style={{ color: THEME.text, fontWeight: "700", fontSize: 13 }}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.85}
+                    <Txt
+                      kind="caption"
+                      numberOfLines={2}
+                      style={{ fontWeight: "700", textAlign: "center" }}
                     >
                       {opt.label}
-                    </Text>
+                    </Txt>
                   </Pressable>
                 ))}
               </View>
             ) : (
-              <View style={{ marginTop: 4 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 14 }}>
+              <View style={{ marginTop: SPACE.xs }}>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: SPACE.md }}>
                   <Pressable
                     onPress={() => setStep("grid")}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel={t("common.back")}
-                    style={{ padding: 4, marginLeft: -4 }}
+                    android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), borderless: true }}
+                    style={{ padding: SPACE.xs, marginLeft: -SPACE.xs }}
                   >
                     <DirIcon name="chevron-back" size={22} color={THEME.textMuted} />
                   </Pressable>
-                  <Text
+                  <Txt
+                    kind="subtitle"
                     style={{
-                      color: THEME.text,
-                      fontSize: 16,
-                      fontWeight: "800",
                       flex: 1,
                       textAlign: "center",
                       marginRight: 26,
                     }}
                   >
                     {t("meds.title")}
-                  </Text>
+                  </Txt>
                 </View>
 
                 <MedNamePicker
@@ -313,33 +316,19 @@ export function QuickAddSheet({
                   onChange={setMedName}
                 />
 
-                <Pressable
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setMedTimePickerOpen((v) => !v);
-                  }}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    borderRadius: RADIUS.md,
-                    borderWidth: 1,
-                    borderColor: THEME.border,
-                    backgroundColor: THEME.surface,
-                    paddingHorizontal: 14,
-                    paddingVertical: 12,
-                    marginBottom: 14,
-                  }}
-                >
-                  <Ionicons name="time-outline" size={16} color={THEME.textMuted} />
-                  <Text style={{ color: THEME.text, marginLeft: 8, fontSize: 13 }}>
-                    {relativeDay((medAt ?? new Date()).toISOString(), {
+                <View style={{ marginBottom: SPACE.xs }}>
+                  <Row
+                    icon="time-outline"
+                    label={`${relativeDay((medAt ?? new Date()).toISOString(), {
                       today: t("common.today"),
                       yesterday: t("common.yesterday"),
-                    })}
-                    {" · "}
-                    {formatTime((medAt ?? new Date()).toISOString())}
-                  </Text>
-                </Pressable>
+                    })} · ${formatTime((medAt ?? new Date()).toISOString())}`}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setMedTimePickerOpen((v) => !v);
+                    }}
+                  />
+                </View>
                 <InlineDateTimePicker
                   visible={medTimePickerOpen}
                   value={medAt ?? new Date()}
@@ -361,11 +350,11 @@ export function QuickAddSheet({
                     borderWidth: 1,
                     borderColor: THEME.border,
                     backgroundColor: THEME.surface,
-                    paddingHorizontal: 14,
-                    paddingVertical: 12,
+                    paddingHorizontal: SPACE.lg,
+                    paddingVertical: SPACE.md,
                     color: THEME.text,
                     fontSize: 14,
-                    marginBottom: 14,
+                    marginBottom: SPACE.lg,
                   }}
                 />
 
