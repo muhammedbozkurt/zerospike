@@ -116,6 +116,12 @@ export function contrastTable(): ContrastRow[] {
     add("accentOnFill on accentFill", p.accentOnFill, p.accentFill, 4.5);
     add("onDanger on dangerFill", p.onDanger, p.dangerFill, 4.5);
     add("dangerFill on bg", p.dangerFill, p.bg, 3);
+    // Post-meal countdown bar: the edge must stand out from every ground the
+    // card can sit on, and the accent fill must stand out from the empty track.
+    add("trackEdge on bg (progress bar edge)", p.trackEdge, p.bg, 3);
+    add("trackEdge on surface (progress bar edge)", p.trackEdge, p.surface, 3);
+    add("trackEdge on accent card (progress bar edge)", p.trackEdge, rgba(p.accent, 0.1), 3);
+    add("accent fill on track (progress bar)", p.accent, p.track, 3);
   }
   return rows;
 }

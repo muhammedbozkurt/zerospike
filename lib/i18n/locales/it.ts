@@ -166,6 +166,9 @@ const it: TranslationSchema = {
   },
   tabs: {
     today: "Oggi",
+    food: "Cibo",
+    injection: "Iniezioni",
+    settings: "Impostazioni",
   },
   dashboard: {
     title: "Panoramica",
@@ -247,6 +250,7 @@ const it: TranslationSchema = {
     injectionsToday: "{{n}} iniezioni oggi",
     thisWeek: "Questa settimana",
     noValueYet: "Nessun dato",
+    weekEmptyHint: "Con la Sua prima misurazione qui apparirà il riepilogo settimanale",
     activeInsulin: "Insulina attiva",
     activeInsulinSub: "Stimata dalle dosi registrate di recente",
     feedbackOnTarget: "Controllo post-prandiale: {{value}} {{unit}}, nel Suo intervallo target.",
@@ -1333,6 +1337,9 @@ const it: TranslationSchema = {
     suggest2: "Che cos'è il tempo in range (TIR)?",
     suggest3: "Perché è importante alternare le sedi di iniezione?",
     settingsRow: "Uso dei dati di Spike AI",
+    rowOn: "Spike: attivo · Gestisci",
+    rowOff: "Spike: disattivato",
+    manageOpen: "Apri Spike",
     consentSummaryNote: "Un riepilogo facoltativo degli ultimi 14 giorni del Suo diario viene condiviso solo se lo attiva separatamente.",
     consentCarb: "Se scrive la descrizione di un pasto, questo testo viene inviato tramite il nostro server ad Amazon Web Services (Bedrock) per produrre una stima dei carboidrati. Il testo non viene memorizzato né registrato e i Suoi dati registrati non vengono inviati.",
     ctxToggle: "Condividi il riepilogo di 14 giorni",

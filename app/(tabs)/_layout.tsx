@@ -47,7 +47,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="food"
         options={{
-          title: t("food.title"),
+          title: t("tabs.food"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="fast-food-outline" size={size} color={color} />
           ),
@@ -56,7 +56,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="injection"
         options={{
-          title: t("injection.tab"),
+          title: t("tabs.injection"),
           href: showsInjection ? undefined : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="medkit-outline" size={size} color={color} />
@@ -66,7 +66,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: t("settings.title"),
+          title: t("tabs.settings"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="settings-outline" size={size} color={color} />
           ),

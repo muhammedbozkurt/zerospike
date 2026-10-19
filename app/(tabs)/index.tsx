@@ -60,6 +60,7 @@ import {
   type PostMealTimerWindow,
 } from "../../lib/postMealTimer";
 import { PostMealDurationSheet } from "../../components/PostMealDurationSheet";
+import { weekSummaryView } from "../../lib/weekSummary";
 import { IobInfoSheet } from "../../components/IobInfoSheet";
 import { AnalyticsConsentSheet } from "../../lib/analytics/ConsentSheet";
 import { BasalStatusLine } from "../../components/BasalStatusLine";
@@ -1042,7 +1043,11 @@ export default function DashboardScreen() {
         : false,
       weekAvg,
       weekTIR,
-      hasWeekData: weekReadings > 0 || weekInjections > 0,
+      weekView: weekSummaryView({
+        hasAnyReading: lastGlucose != null,
+        weekReadings,
+        weekInjections,
+      }),
       weekSparkline: weekValuesDesc.reverse(),
       avgColor:
         weekAvg != null && activeProfile
@@ -1080,7 +1085,7 @@ export default function DashboardScreen() {
     logDates,
     weekAvg,
     weekTIR,
-    hasWeekData,
+    weekView,
     weekSparkline,
     avgColor,
     tirColor,
@@ -2023,7 +2028,20 @@ export default function DashboardScreen() {
 
           {/* This-week strip: numbers that were computed but never shown (avg, TIR,
               streak) with a small sparkline of the week's readings. One compact row. */}
-          {hasWeekData ? (
+          {weekView === "firstHint" ? (
+            <Text
+              style={{
+                color: THEME.textMuted,
+                fontSize: 12,
+                fontWeight: "600",
+                marginBottom: 12,
+                paddingHorizontal: 4,
+              }}
+            >
+              {t("dashboard.weekEmptyHint")}
+            </Text>
+          ) : null}
+          {weekView === "boxes" ? (
             <View style={{ marginBottom: 12 }}>
               <View className="flex-row items-center justify-between mb-1.5 px-1">
                 <Text style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "700" }}>
@@ -2846,28 +2864,53 @@ function PostMealCountdown({
           </Pressable>
         </View>
       ) : actions.logMeal ? (
-        <View className="flex-row items-center" style={{ marginBottom: 10 }}>
+        <View style={{ marginBottom: 10 }}>
+          {/* Secondary (outlined) button: the bare accent text link did not read
+              as something to press. Full width, 44pt floor, accent edge. */}
           <Pressable
             onPress={onLogMeal}
-            hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t("dashboard.postMealLogMeal")}
-            style={{ flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 }}
+            className="active:opacity-70"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              minHeight: HIT_TARGET,
+              paddingHorizontal: 14,
+              borderRadius: RADIUS.full,
+              borderWidth: 1.5,
+              borderColor: THEME.accent,
+            }}
           >
-            <Ionicons name="restaurant-outline" size={13} color={THEME.accent} />
-            <Text style={{ color: THEME.accent, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>
+            <Ionicons name="restaurant-outline" size={15} color={THEME.accent} />
+            <Text
+              style={{ color: THEME.accent, fontSize: 13, fontWeight: "800", flexShrink: 1 }}
+              numberOfLines={1}
+            >
               {t("dashboard.postMealLogMeal")}
             </Text>
           </Pressable>
         </View>
       ) : null}
-      <View style={{ height: 6, borderRadius: 3, backgroundColor: THEME.track, overflow: "hidden" }}>
+      {/* Track edge is a token held at >= 3:1 against the card in both themes
+          (scripts/theme.test.ts); the fill is the plain accent. */}
+      <View
+        style={{
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: THEME.track,
+          borderWidth: 1,
+          borderColor: THEME.trackEdge,
+          overflow: "hidden",
+        }}
+      >
         <View
           style={{
             height: "100%",
             width: `${Math.round(progress * 100)}%`,
-            backgroundColor: THEME.accentFill,
-            borderRadius: 3,
+            backgroundColor: THEME.accent,
           }}
         />
       </View>

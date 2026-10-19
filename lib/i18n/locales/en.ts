@@ -166,6 +166,9 @@ const en: TranslationSchema = {
   },
   tabs: {
     today: "Today",
+    food: "Food",
+    injection: "Injections",
+    settings: "Settings",
   },
   dashboard: {
     title: "Dashboard",
@@ -247,6 +250,7 @@ const en: TranslationSchema = {
     injectionsToday: "{{n}} injections today",
     thisWeek: "This week",
     noValueYet: "No data",
+    weekEmptyHint: "Your weekly summary appears here with your first measurement",
     activeInsulin: "Active insulin",
     activeInsulinSub: "Estimated from the doses you logged recently",
     feedbackOnTarget: "Post-meal check: {{value}} {{unit}}, in your target range.",
@@ -1331,6 +1335,9 @@ const en: TranslationSchema = {
     suggest2: "What is time in range (TIR)?",
     suggest3: "Why does injection site rotation matter?",
     settingsRow: "Spike AI data use",
+    rowOn: "Spike: on · Manage",
+    rowOff: "Spike: off",
+    manageOpen: "Open Spike",
     consentSummaryNote: "An optional 14-day summary of your logbook is shared only if you turn it on separately.",
     consentCarb: "If you type a meal description, that text is sent through our server to Amazon Web Services (Bedrock) to produce a carbohydrate estimate. The text is not stored or logged, and your logged data is not sent.",
     ctxToggle: "Share my 14-day summary",

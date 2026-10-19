@@ -166,6 +166,9 @@ const fr: TranslationSchema = {
   },
   tabs: {
     today: "Aujourd'hui",
+    food: "Repas",
+    injection: "Injection",
+    settings: "Réglages",
   },
   dashboard: {
     title: "Tableau de bord",
@@ -247,6 +250,7 @@ const fr: TranslationSchema = {
     injectionsToday: "{{n}} injections aujourd'hui",
     thisWeek: "Cette semaine",
     noValueYet: "Aucune donnée",
+    weekEmptyHint: "Votre résumé de la semaine apparaîtra ici dès votre première mesure",
     activeInsulin: "Insuline active",
     activeInsulinSub: "Estimé d'après les doses que vous avez enregistrées",
     feedbackOnTarget: "Contrôle post-repas : {{value}} {{unit}}, dans votre cible.",
@@ -1333,6 +1337,9 @@ const fr: TranslationSchema = {
     suggest2: "Qu'est-ce que le temps dans la cible (TIR)?",
     suggest3: "Pourquoi alterner les sites d'injection?",
     settingsRow: "Utilisation des données Spike IA",
+    rowOn: "Spike : activé · Gérer",
+    rowOff: "Spike : désactivé",
+    manageOpen: "Ouvrir Spike",
     consentSummaryNote: "Un résumé facultatif des 14 derniers jours de votre journal n'est partagé que si vous l'activez séparément.",
     consentCarb: "Si vous décrivez un repas, ce texte est envoyé via notre serveur à Amazon Web Services (Bedrock) afin de produire une estimation des glucides. Le texte n'est ni conservé ni enregistré, et vos données enregistrées ne sont pas envoyées.",
     ctxToggle: "Partager mon résumé sur 14 jours",

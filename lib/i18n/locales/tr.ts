@@ -164,6 +164,9 @@ const tr = {
   },
   tabs: {
     today: "Bugün",
+    food: "Yemek",
+    injection: "Enjeksiyon",
+    settings: "Ayarlar",
   },
   dashboard: {
     title: "Kontrol Paneli",
@@ -245,6 +248,7 @@ const tr = {
     injectionsToday: "Bugün {{n}} enjeksiyon",
     thisWeek: "Bu hafta",
     noValueYet: "Veri yok",
+    weekEmptyHint: "İlk ölçümünüzle burada haftalık özetiniz oluşur",
     activeInsulin: "Aktif insülin",
     activeInsulinSub: "Kaydettiğiniz son dozlardan hesaplanan tahmin",
     feedbackOnTarget: "Tokluk ölçümü: {{value}} {{unit}}, hedef aralığında.",
@@ -1329,6 +1333,9 @@ const tr = {
     suggest2: "TIR (aralıkta geçen süre) nedir?",
     suggest3: "Enjeksiyon bölgesi rotasyonu neden önemli?",
     settingsRow: "Spike AI veri kullanımı",
+    rowOn: "Spike: açık · Yönet",
+    rowOff: "Spike: kapalı",
+    manageOpen: "Spike'ı aç",
     consentSummaryNote: "Günlüğünüzün isteğe bağlı 14 günlük özeti, yalnızca ayrıca açarsanız paylaşılır.",
     consentCarb: "Yediklerinizi yazarsanız bu metin, karbonhidrat tahmini üretmek için sunucumuz üzerinden Amazon Web Services (Bedrock) işleyicisine gönderilir. Metin saklanmaz ve kayıt altına alınmaz; kayıtlı verileriniz gönderilmez.",
     ctxToggle: "14 günlük özetimi paylaş",
