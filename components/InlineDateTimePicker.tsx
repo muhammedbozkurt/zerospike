@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Platform, View } from "react-native";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useTranslation } from "react-i18next";
+
+import { Button } from "./ui";
+import { SPACE } from "../lib/theme/tokens";
 
 /**
  * Cross-platform date + time picker for a log's recorded moment, following the
@@ -89,16 +92,11 @@ export function InlineDateTimePicker({
 
   return (
     <View className="rounded-2xl bg-glass border border-hair mb-4 overflow-hidden">
-      <View className="flex-row items-center justify-end px-3 py-2 border-b border-hair">
-        <Pressable
-          onPress={onClose}
-          hitSlop={8}
-          className="px-4 py-1.5 rounded-lg bg-brand"
-        >
-          <Text className="text-onAccent font-semibold text-sm">
-            {t("common.done")}
-          </Text>
-        </Pressable>
+      <View
+        className="flex-row items-center justify-end border-b border-hair"
+        style={{ paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm }}
+      >
+        <Button label={t("common.done")} size="sm" minHit onPress={onClose} />
       </View>
       <DateTimePicker
         value={value}
