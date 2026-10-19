@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, I18nManager, PanResponder, Pressable, Text, TextInput, View } from "react-native";
+import { Animated, I18nManager, PanResponder, Pressable, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "expo-router";
 import { useTranslation } from "react-i18next";
 
-import { ELEVATION, GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
-import { GlassCard, withAlpha } from "./rich/GlassCard";
+import { ELEVATION, GLUCOSE_RICH, RADIUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { withAlpha } from "./rich/GlassCard";
+import { Card, Txt } from "./ui";
 import { hapticSelect } from "../lib/haptics";
 import { upper } from "../lib/upper";
 import { useLayout } from "../lib/useLayout";
@@ -322,61 +323,51 @@ export function RangeInput({
   const aboveW = Math.max(0, trackW - hiX);
 
   return (
-    <GlassCard
+    <Card
       glow={THEME.scheme === "dark" && hasBand && !showsError ? GLUCOSE_RICH.target : undefined}
-      radius={RADIUS.xl}
-      style={[{ marginBottom: 12, paddingVertical: 14 }, columnPad(14)]}
+      style={[{ marginBottom: SPACE.md }, columnPad(SPACE.lg)]}
     >
-      <Text
-        style={{
-          color: THEME.textMuted,
-          fontSize: 11,
-          letterSpacing: 1.3,
-          fontWeight: "800",
-        }}
-      >
+      <Txt kind="micro" tone="muted" style={{ letterSpacing: 1.3, fontWeight: "800" }}>
         {upper(label)}
-      </Text>
+      </Txt>
 
       {/* The range as it stands right now, in one readable line. */}
       <View
         className="flex-row items-baseline"
-        style={{ marginTop: 6 }}
+        style={{ marginTop: SPACE.sm }}
         accessible
         accessibilityLabel={`${label}. ${minLabel} ${minText || "-"} ${unit}. ${maxLabel} ${maxText || "-"} ${unit}`}
       >
-        <Text
+        <Txt
+          kind="title"
+          tabular
           numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-          style={[
-            TABULAR,
-            {
-              color: showsError ? GLUCOSE_RICH.low : THEME.text,
-              fontSize: 21,
-              lineHeight: 25,
-              fontWeight: "800",
-              flexShrink: 1,
-            },
-          ]}
+          style={{
+            color: showsError ? GLUCOSE_RICH.low : THEME.text,
+            fontWeight: "800",
+            flexShrink: 1,
+            minWidth: 0,
+          }}
         >
           {minText || "-"}
-          <Text style={{ color: THEME.textMuted, fontWeight: "700" }}>-</Text>
+          <Txt kind="title" tone="muted" style={{ fontWeight: "700" }}>-</Txt>
           {maxText || "-"}
-        </Text>
-        <Text
+        </Txt>
+        <Txt
+          kind="caption"
+          tone="muted"
           numberOfLines={1}
-          style={{ color: THEME.textMuted, fontSize: 12, marginLeft: 7, flexShrink: 0 }}
+          style={{ marginLeft: SPACE.sm, flexShrink: 0 }}
         >
           {unit}
-        </Text>
+        </Txt>
       </View>
 
       {/* Rail: below-band, band, above-band. A picture of the entered values.
           Deliberately NOT tappable: a tap that teleported the nearer end made
           near-miss grabs feel broken. Adjusting is thumbs or typing only. */}
       <View
-        style={{ height: TRACK_H, marginTop: 8, justifyContent: "center" }}
+        style={{ height: TRACK_H, marginTop: SPACE.sm, justifyContent: "center" }}
         onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
       >
         <View
@@ -442,17 +433,17 @@ export function RangeInput({
       </View>
 
       {/* Axis ends, so the rail's scale is readable without dragging it. */}
-      <View className="flex-row justify-between" style={{ marginTop: -2, marginBottom: 10 }}>
-        <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 10 }]}>
+      <View className="flex-row justify-between" style={{ marginTop: -2, marginBottom: SPACE.md }}>
+        <Txt kind="micro" tone="muted" tabular>
           {fmtVal(axisMin)}
-        </Text>
-        <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 10 }]}>
+        </Txt>
+        <Txt kind="micro" tone="muted" tabular>
           {fmtVal(axisMax)}
-        </Text>
+        </Txt>
       </View>
 
       {/* The two ends, typeable */}
-      <View className="flex-row" style={{ gap: 10 }}>
+      <View className="flex-row" style={{ gap: SPACE.md }}>
         <End
           label={minLabel}
           value={minText}
@@ -476,19 +467,20 @@ export function RangeInput({
       </View>
 
       {hint ? (
-        <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 10, lineHeight: 16 }}>
+        <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.md }}>
           {hint}
-        </Text>
+        </Txt>
       ) : null}
       {errorText ? (
-        <Text
-          style={{ color: GLUCOSE_RICH.low, fontSize: 11, marginTop: 8, lineHeight: 16 }}
+        <Txt
+          kind="caption"
+          style={{ color: GLUCOSE_RICH.low, marginTop: SPACE.sm }}
           accessibilityRole="alert"
         >
           {errorText}
-        </Text>
+        </Txt>
       ) : null}
-    </GlassCard>
+    </Card>
   );
 }
 
@@ -540,9 +532,8 @@ function End({
           borderWidth: 1,
           borderColor,
           backgroundColor: focused ? withAlpha(THEME.accent, 0.08) : THEME.surface,
-          paddingHorizontal: 10,
-          paddingTop: 6,
-          paddingBottom: 7,
+          paddingHorizontal: SPACE.md,
+          paddingVertical: SPACE.sm,
           minHeight: 46,
           justifyContent: "center",
         },
@@ -550,12 +541,9 @@ function End({
       ]}
     >
       <View className="flex-row items-center justify-between">
-        <Text
-          numberOfLines={1}
-          style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "700", flexShrink: 1 }}
-        >
+        <Txt kind="micro" tone="muted" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
           {label}
-        </Text>
+        </Txt>
         <Ionicons
           name="keypad-outline"
           size={12}
@@ -586,7 +574,7 @@ function End({
             TABULAR,
             {
               color: THEME.text,
-              fontSize: 17,
+              fontSize: 18,
               fontWeight: "800",
               padding: 0,
               minHeight: 22,
@@ -596,9 +584,9 @@ function End({
             },
           ]}
         />
-        <Text numberOfLines={1} style={{ color: THEME.textMuted, fontSize: 11, marginLeft: 4 }}>
+        <Txt kind="micro" tone="muted" numberOfLines={1} style={{ marginLeft: SPACE.xs }}>
           {unit}
-        </Text>
+        </Txt>
       </View>
     </Pressable>
   );
