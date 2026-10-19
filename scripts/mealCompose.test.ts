@@ -14,6 +14,7 @@ import {
   composeCanSaveTemplate,
   composeHasEstimate,
   setEstimateCarbs,
+  updateEstimateLine,
   composeItemCarbs,
   composeItemFromFood,
   composeMealInput,
@@ -136,6 +137,11 @@ ok("setComposePortion leaves an estimate line alone", setComposePortion(mixed, "
 ok("setEstimateCarbs edits only estimate lines", setEstimateCarbs(mixed, "est:0", 31.25)[2].carbs_g_fixed === 31.3 && setEstimateCarbs(mixed, "a", 5)[0].carbs_g_fixed === undefined);
 ok("setEstimateCarbs clamps negative", setEstimateCarbs(mixed, "est:0", -4)[2].carbs_g_fixed === 0);
 ok("hasEstimate", composeHasEstimate(mixed) && !composeHasEstimate(two));
+const edited = updateEstimateLine(mixed, "est:0", { name: " Tost ", quantity: 3, unit: " dilim ", grams_carb: 41.26 });
+ok("updateEstimateLine edits name, amount, unit and carbs", edited[2].name === "Tost" && edited[2].quantity === 3 && edited[2].unit === "dilim" && edited[2].carbs_g_fixed === 41.3);
+ok("updateEstimateLine leaves food rows and other lines alone", edited[0] === mixed[0] && edited[3] === mixed[3] && updateEstimateLine(mixed, "a", { name: "x" })[0].name === mixed[0].name);
+ok("updateEstimateLine blank name blocks saving", !composeCanSave(updateEstimateLine(mixed, "est:0", { name: "  " })));
+ok("updateEstimateLine partial patch keeps the rest", updateEstimateLine(mixed, "est:0", { grams_carb: 5 })[2].name === "Ekmek");
 
 const mixedMeal = composeMealInput(mixed);
 ok("mixed meal: portion_g 0", mixedMeal.portion_g === 0, String(mixedMeal.portion_g));

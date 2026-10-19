@@ -255,6 +255,29 @@ export function setEstimateCarbs(
   );
 }
 
+/** Edits an estimate line's name, amount, unit or carbs in place. A blank name
+ *  becomes "-" (the unfinished-row marker composeCanSave refuses). */
+export function updateEstimateLine(
+  items: readonly ComposeItem[],
+  key: string,
+  patch: Partial<EstimateLineInput>
+): ComposeItem[] {
+  return items.map((item) => {
+    if (item.key !== key || !item.estimate) return item;
+    return {
+      ...item,
+      name: patch.name !== undefined ? patch.name.trim() || "-" : item.name,
+      quantity:
+        patch.quantity !== undefined ? Math.max(0, finite(patch.quantity)) : item.quantity,
+      unit: patch.unit !== undefined ? patch.unit.trim() : item.unit,
+      carbs_g_fixed:
+        patch.grams_carb !== undefined
+          ? round1(Math.min(Math.max(0, finite(patch.grams_carb)), COMPOSE_MAX_GRAMS))
+          : item.carbs_g_fixed,
+    };
+  });
+}
+
 export interface PortionMeasure {
   label_key: PortionLabelKey;
   grams: number;

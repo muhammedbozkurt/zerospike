@@ -1573,7 +1573,6 @@ const pt: TranslationSchema = {
     add: "Adicionar à refeição",
     bar: "Refeição ({{count}})",
     total: "Total de carboidratos",
-    save: "Salvar refeição",
     saveTemplate: "Salvar como modelo",
     templateName: "Nome do modelo",
     templateNameTaken: "Você já tem um modelo com este nome.",

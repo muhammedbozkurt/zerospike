@@ -1569,7 +1569,6 @@ const ar: TranslationSchema = {
     add: "إضافة إلى الوجبة",
     bar: "الوجبة ({{count}})",
     total: "إجمالي الكربوهيدرات",
-    save: "حفظ الوجبة",
     saveTemplate: "حفظ كقالب",
     templateName: "اسم القالب",
     templateNameTaken: "لديك قالب بهذا الاسم بالفعل.",

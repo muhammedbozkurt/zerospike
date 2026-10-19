@@ -1568,7 +1568,6 @@ const tr = {
     add: "Öğüne ekle",
     bar: "Öğün ({{count}})",
     total: "Toplam karbonhidrat",
-    save: "Öğünü kaydet",
     saveTemplate: "Şablon olarak kaydet",
     templateName: "Şablon adı",
     templateNameTaken: "Bu adla bir şablonunuz zaten var.",

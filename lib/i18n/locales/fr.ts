@@ -1575,7 +1575,6 @@ const fr: TranslationSchema = {
     add: "Ajouter au repas",
     bar: "Repas ({{count}})",
     total: "Glucides au total",
-    save: "Enregistrer le repas",
     saveTemplate: "Enregistrer comme modèle",
     templateName: "Nom du modèle",
     templateNameTaken: "Vous avez déjà un modèle portant ce nom.",

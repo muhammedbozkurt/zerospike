@@ -1570,7 +1570,6 @@ const en: TranslationSchema = {
     add: "Add to meal",
     bar: "Meal ({{count}})",
     total: "Total carbohydrates",
-    save: "Save meal",
     saveTemplate: "Save as template",
     templateName: "Template name",
     templateNameTaken: "You already have a template with this name.",
