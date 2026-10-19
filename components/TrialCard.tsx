@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Pressable, View } from "react-native";
+import { AppState, Platform, Pressable, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { IconTile } from "./rich";
 import { DirIcon } from "./DirIcon";
-import { RADIUS, SPACE, THEME } from "../lib/theme/tokens";
+import { HIT_TARGET, RADIUS, SPACE, THEME } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { Txt } from "./ui";
 import { withAlpha } from "./rich/GlassCard";
@@ -90,13 +90,14 @@ export function TrialCard() {
       accessibilityRole="button"
       accessibilityLabel={sub ? `${title}. ${sub}` : title}
       android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
-      className="flex-row items-center border border-hair bg-glass active:opacity-80"
+      className={`flex-row items-center border border-hair bg-glass${Platform.OS === "ios" ? " active:opacity-80" : ""}`}
       style={{
         borderRadius: RADIUS.lg,
         paddingHorizontal: SPACE.lg,
         paddingVertical: SPACE.md,
         marginBottom: SPACE.md,
-        minHeight: 44,
+        minHeight: HIT_TARGET,
+        overflow: "hidden",
       }}
     >
       <IconTile icon="sparkles" size={34} radius={11} hero />

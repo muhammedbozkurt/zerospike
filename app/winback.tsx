@@ -23,6 +23,7 @@ import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
 import { Button, Txt } from "../components/ui";
+import { LegalLink } from "../components/LegalLink";
 import { hapticSuccess } from "../lib/haptics";
 import { AppBackground, GradientCTA, IconTile } from "../components/rich";
 import { MODAL_TOP_PAD, SPACE, THEME } from "../lib/theme/tokens";
@@ -188,16 +189,12 @@ function WinbackScreen() {
               disabled={busy}
               className="mt-1"
             />
-            <View className="flex-row justify-center" style={{ gap: SPACE.sm }}>
-              <Button
-                variant="tertiary"
-                size="sm"
+            <View className="flex-row flex-wrap items-center justify-center">
+              <LegalLink
                 label={t("settings.privacy")}
                 onPress={() => Linking.openURL(privacyUrl())}
               />
-              <Button
-                variant="tertiary"
-                size="sm"
+              <LegalLink
                 label={t("settings.terms")}
                 onPress={() => Linking.openURL(termsUrl())}
               />
