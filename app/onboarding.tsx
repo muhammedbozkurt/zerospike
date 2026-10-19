@@ -628,6 +628,7 @@ export default function OnboardingScreen() {
   // explicit "on" is written as a grant; turning it off later withdraws a
   // stored grant (see syncConsent).
   const [analyticsOptIn, setAnalyticsOptIn] = useState(false);
+  const [analyticsDetailsOpen, setAnalyticsDetailsOpen] = useState(false);
   const [savingConsent, setSavingConsent] = useState(false);
   const [consentLoaded, setConsentLoaded] = useState(false);
   const consentBusy = useRef(false);
@@ -1613,14 +1614,50 @@ export default function OnboardingScreen() {
         return (
           <FadeSlideIn delay={optDelay(0)}>
             <RationaleCard icon="eye-outline" style={{ marginBottom: 12 }}>
-              <RationaleText>{t("onboarding.analyticsHelpCollect")}</RationaleText>
+              <RationaleText>{t("onboarding.analyticsShort1")}</RationaleText>
             </RationaleCard>
             <RationaleCard icon="lock-closed-outline" style={{ marginBottom: 12 }}>
-              <RationaleText>{t("onboarding.analyticsHelpNever")}</RationaleText>
+              <RationaleText>{t("onboarding.analyticsShort2")}</RationaleText>
             </RationaleCard>
-            <RationaleCard icon="toggle-outline" style={{ marginBottom: 16 }}>
-              <RationaleText>{t("onboarding.analyticsHelpOff")}</RationaleText>
+            <RationaleCard icon="toggle-outline" style={{ marginBottom: 12 }}>
+              <RationaleText>{t("onboarding.analyticsShort3")}</RationaleText>
             </RationaleCard>
+            {/* The three lines above summarise the full text, which stays whole behind this toggle. */}
+            <Pressable
+              onPress={() => {
+                hapticSelect();
+                setAnalyticsDetailsOpen((open) => !open);
+              }}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: analyticsDetailsOpen }}
+              accessibilityLabel={t("onboarding.analyticsDetails")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                alignSelf: "flex-start",
+                gap: 4,
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: THEME.accent, fontSize: 14 }}>
+                {t("onboarding.analyticsDetails")}
+              </Text>
+              <Ionicons
+                name={analyticsDetailsOpen ? "chevron-up" : "chevron-down"}
+                size={14}
+                color={THEME.accent}
+              />
+            </Pressable>
+            {analyticsDetailsOpen ? (
+              <View style={{ gap: 8, marginBottom: 16 }}>
+                <RationaleText>{t("onboarding.analyticsHelpCollect")}</RationaleText>
+                <RationaleText>{t("onboarding.analyticsHelpNever")}</RationaleText>
+                <RationaleText>{t("onboarding.analyticsHelpOff")}</RationaleText>
+              </View>
+            ) : (
+              <View style={{ height: 4 }} />
+            )}
             <ConsentSwitchRow
               title={t("onboarding.analyticsConsentTitle")}
               value={analyticsOptIn}
