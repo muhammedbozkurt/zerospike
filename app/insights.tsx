@@ -87,7 +87,6 @@ import { formatLocale, num, pct, pctParts } from "../lib/format";
 import { useProCta } from "../lib/proCta";
 import {
   AppBackground,
-  GlassCard,
   GlucoseChip,
   GradientAreaChart,
   GradientCTA,
@@ -96,7 +95,9 @@ import {
   tirSegments,
   withAlpha,
 } from "../components/rich";
-import { GLUCOSE_RICH, RADIUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { GLUCOSE_RICH, RADIUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
+import { Button, Card } from "../components/ui";
 import { upper } from "../lib/upper";
 
 /** A hung native HealthKit call must not leave the Health card's own
@@ -211,7 +212,7 @@ function StatCardSkeleton({ label, footnote }: { label: string; footnote?: boole
 
 /**
  * Loading placeholder for the whole report. It reuses the real card shells
- * (GlassCard / ChartCard) and every STATIC label (section titles, StatCard
+ * (Card / ChartCard) and every STATIC label (section titles, StatCard
  * captions, axis ticks) exactly as the real cards render them - only the
  * data-derived parts (values, curves, the donut) are skeletonised - so the
  * swap from this to the real report lands on the same card heights instead
@@ -232,7 +233,7 @@ function InsightsSkeleton({
   return (
     <CardGrid isWide={isWide}>
       {/* Time in range */}
-      <GlassCard key="tir" glow={GLUCOSE_RICH.target} style={{ marginBottom: 10 }}>
+      <Card key="tir" glow={GLUCOSE_RICH.target} style={{ marginBottom: SPACE.md }}>
         <View className="flex-row items-center justify-between mb-1">
           <Text
             style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
@@ -259,10 +260,10 @@ function InsightsSkeleton({
         <View style={{ marginTop: 10 }}>
           <Skeleton width="60%" height={11} />
         </View>
-      </GlassCard>
+      </Card>
 
       {/* AGP gradient curve */}
-      <GlassCard key="agp" style={{ marginBottom: 10 }}>
+      <Card key="agp" style={{ marginBottom: SPACE.md }}>
         <Text
           style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", marginBottom: 8 }}
         >
@@ -285,7 +286,7 @@ function InsightsSkeleton({
         <View style={{ marginTop: 6 }}>
           <Skeleton width="80%" height={11} />
         </View>
-      </GlassCard>
+      </Card>
 
       {/* StatCard strip */}
       <React.Fragment key="stats">
@@ -314,7 +315,7 @@ function InsightsSkeleton({
       ) : null}
 
       {premium ? (
-        <GlassCard key="pctile" style={{ marginTop: 12 }}>
+        <Card key="pctile" style={{ marginTop: SPACE.md }}>
           <Text style={{ color: THEME.text, fontWeight: "800" }}>
             {t("insights.percentileTitle")}
           </Text>
@@ -331,7 +332,7 @@ function InsightsSkeleton({
               </View>
             ))}
           </View>
-        </GlassCard>
+        </Card>
       ) : null}
 
       {premium ? (
@@ -993,9 +994,17 @@ export default function InsightsScreen() {
         right={
           <Pressable
             onPress={openWindowPicker}
-            hitSlop={8}
-            className="flex-row items-center rounded-full px-3 py-1.5"
-            style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.surface }}
+            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+            android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+            accessibilityRole="button"
+            className="flex-row items-center rounded-full px-3 py-1.5 active:opacity-80"
+            style={{
+              borderWidth: 1,
+              borderColor: THEME.border,
+              backgroundColor: THEME.surface,
+              flexShrink: 1,
+              minWidth: 0,
+            }}
           >
             {/* A custom range puts two dates in one chip next to the back arrow
                 and the title; on a narrow screen that overflowed. Bidi: root
@@ -1009,8 +1018,6 @@ export default function InsightsScreen() {
             <Text
               style={{ color: THEME.text, fontSize: 11, fontWeight: "700", writingDirection: "ltr" }}
               numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.8}
             >
               {customRange
                 ? isolateLtr(
@@ -1076,7 +1083,7 @@ export default function InsightsScreen() {
                     every card below is gated on readings, so the report rendered
                     as a blank page under the header with no explanation. */}
                 {!hasReadings ? (
-                  <View className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mb-1">
+                  <Card style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: SPACE.xs }}>
                     <Ionicons name="water-outline" size={15} color={THEME.textMuted} />
                     <Text
                       style={{
@@ -1089,12 +1096,12 @@ export default function InsightsScreen() {
                     >
                       {t("insights.noReadings")}
                     </Text>
-                  </View>
+                  </Card>
                 ) : null}
                 <CardGrid isWide={isWide}>
                   {/* ── Glucose ───────────────────────────────────────────── */}
                   {hasReadings ? (
-                    <GlassCard key="tir" glow={GLUCOSE_RICH.target} style={{ marginBottom: 10 }}>
+                    <Card key="tir" glow={GLUCOSE_RICH.target} style={{ marginBottom: SPACE.md }}>
                       <View className="flex-row items-center justify-between mb-1">
                         <Text
                           style={{
@@ -1220,12 +1227,12 @@ export default function InsightsScreen() {
                           unit: u,
                         })}
                       </Text>
-                    </GlassCard>
+                    </Card>
                   ) : null}
 
                   {/* AGP as the mockup's gradient area curve */}
                   {hasReadings ? (
-                    <GlassCard key="agp" style={{ marginBottom: 10 }}>
+                    <Card key="agp" style={{ marginBottom: SPACE.md }}>
                       <Text
                         style={{
                           color: THEME.textMuted,
@@ -1320,7 +1327,7 @@ export default function InsightsScreen() {
                           {t("insights.chartNeedMore")}
                         </Text>
                       )}
-                    </GlassCard>
+                    </Card>
                   ) : null}
 
                   {/* The mockup's StatCard strip, with the note that qualifies it */}
@@ -1388,7 +1395,7 @@ export default function InsightsScreen() {
 
                   {/* D10a: this calendar week vs the previous full week - TIR/avg/CV, delta arrows */}
                   {hasReadings && premium ? (
-                    <GlassCard key="weeklyCompare" style={{ marginTop: 12 }}>
+                    <Card key="weeklyCompare" style={{ marginTop: SPACE.md }}>
                       <Text style={{ color: THEME.text, fontWeight: "800" }}>
                         {t("insights.weeklyCompareTitle")}
                       </Text>
@@ -1434,12 +1441,12 @@ export default function InsightsScreen() {
                           />
                         </View>
                       )}
-                    </GlassCard>
+                    </Card>
                   ) : null}
 
                   {/* Weekly digest (Pro): this week vs last, in sentences */}
                   {hasReadings && isProUser && digest.length > 0 ? (
-                      <GlassCard key="digest" accent style={{ marginTop: 12 }}>
+                      <Card key="digest" accent style={{ marginTop: SPACE.md }}>
                         <View className="flex-row items-center mb-2">
                           <Ionicons name="calendar-outline" size={15} color={THEME.accent} />
                           <Text
@@ -1469,13 +1476,13 @@ export default function InsightsScreen() {
                             </Text>
                           </View>
                         ))}
-                      </GlassCard>
+                      </Card>
                     ) : null}
 
                   {/* D10d: best single day (by TIR) in the last 30 days, plus a
                       day-in-target streak and a plain logging streak */}
                   {hasReadings && premium ? (
-                    <GlassCard key="bestDayStreaks" style={{ marginTop: 12 }}>
+                    <Card key="bestDayStreaks" style={{ marginTop: SPACE.md }}>
                       <Text style={{ color: THEME.text, fontWeight: "800" }}>
                         {t("insights.bestDayStreaksTitle")}
                       </Text>
@@ -1537,7 +1544,7 @@ export default function InsightsScreen() {
                       >
                         {t("insights.streaksNote", { pct: pct(DAY_IN_TARGET_TIR_PCT) })}
                       </Text>
-                    </GlassCard>
+                    </Card>
                   ) : null}
 
                   {/* Daily average over the window, with a neutral delta chip */}
@@ -1589,7 +1596,7 @@ export default function InsightsScreen() {
 
                   {/* Percentile band summary (AGP numeric), Pro */}
                   {hasReadings && premium && pctile ? (
-                      <GlassCard key="pctile" style={{ marginTop: 12 }}>
+                      <Card key="pctile" style={{ marginTop: SPACE.md }}>
                         <Text style={{ color: THEME.text, fontWeight: "800" }}>
                           {t("insights.percentileTitle")}
                         </Text>
@@ -1625,13 +1632,13 @@ export default function InsightsScreen() {
                             </View>
                           ))}
                         </View>
-                      </GlassCard>
+                      </Card>
                     ) : null}
 
                   {/* D10e: average glucose change after a meal - lowest/highest
                       AVERAGE CHANGE by the user's own meal name, never "best"/"worst" food */}
                   {hasReadings && premium ? (
-                    <GlassCard key="mealResponse" style={{ marginTop: 12 }}>
+                    <Card key="mealResponse" style={{ marginTop: SPACE.md }}>
                       <Text style={{ color: THEME.text, fontWeight: "800" }}>
                         {t("insights.mealResponseTitle")}
                       </Text>
@@ -1696,7 +1703,7 @@ export default function InsightsScreen() {
                           ) : null}
                         </>
                       )}
-                    </GlassCard>
+                    </Card>
                   ) : null}
 
                   {/* Period averages, variability and lows */}
@@ -1762,7 +1769,7 @@ export default function InsightsScreen() {
                   {/* D10f: weekly %CV mini trend - a Sparkline (the app's existing
                       mini-chart pattern), plus the current value and a two-point delta */}
                   {hasReadings && premium ? (
-                    <GlassCard key="cvTrend" style={{ marginTop: 12 }}>
+                    <Card key="cvTrend" style={{ marginTop: SPACE.md }}>
                       <View className="flex-row items-center justify-between">
                         <View style={{ flex: 1 }}>
                           <Text style={{ color: THEME.text, fontWeight: "800" }}>
@@ -1799,7 +1806,7 @@ export default function InsightsScreen() {
                           ) : null}
                         </View>
                       )}
-                    </GlassCard>
+                    </Card>
                   ) : null}
 
                   {/* Average by time of day */}
@@ -1826,7 +1833,7 @@ export default function InsightsScreen() {
                   {/* D10b: finer-grained companion to the 4-slice chart above -
                       8 bands of 3h, colored by the existing glucose color scale */}
                   {hasReadings && premium ? (
-                    <GlassCard key="heatStrip" style={{ marginTop: 12 }}>
+                    <Card key="heatStrip" style={{ marginTop: SPACE.md }}>
                       <Text style={{ color: THEME.text, fontWeight: "800" }}>
                         {t("insights.heatStripTitle")}
                       </Text>
@@ -1892,7 +1899,7 @@ export default function InsightsScreen() {
                           ) : null}
                         </>
                       )}
-                    </GlassCard>
+                    </Card>
                   ) : null}
 
                   {/* ── Patterns (descriptive observations) ───────────────── */}
@@ -1900,9 +1907,9 @@ export default function InsightsScreen() {
                     <React.Fragment key="patterns">
                     <SectionTitle>{t("insights.patternsTitle")}</SectionTitle>
                     {patterns.map((p, i) => (
-                      <View
+                      <Card
                         key={`${p.kind}-${i}`}
-                        className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mb-2"
+                        style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: SPACE.sm }}
                       >
                         <Ionicons name="bulb-outline" size={16} color={THEME.accent} />
                         <Text
@@ -1916,7 +1923,7 @@ export default function InsightsScreen() {
                         >
                           {patternText(p)}
                         </Text>
-                      </View>
+                      </Card>
                     ))}
                     </React.Fragment>
                   ) : null}
@@ -1960,7 +1967,7 @@ export default function InsightsScreen() {
 
                         {/* Basal / Bolus split */}
                         {data.basalPct != null ? (
-                          <GlassCard style={{ marginTop: 12 }}>
+                          <Card style={{ marginTop: SPACE.md }}>
                             <Text style={{ color: THEME.text, fontWeight: "800", marginBottom: 12 }}>
                               {t("insights.basalBolus")}
                             </Text>
@@ -1995,12 +2002,12 @@ export default function InsightsScreen() {
                                 </Text>
                               </View>
                             </View>
-                          </GlassCard>
+                          </Card>
                         ) : null}
 
                         {/* Most-used site */}
                         {data.mostUsedSite ? (
-                          <GlassCard style={{ marginTop: 12, flexDirection: "row", alignItems: "center" }}>
+                          <Card style={{ marginTop: 12, flexDirection: "row", alignItems: "center" }}>
                             <IconTile icon="body-outline" size={38} radius={12} hero />
                             <View className="flex-1 ml-3">
                               <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
@@ -2015,12 +2022,12 @@ export default function InsightsScreen() {
                             >
                               {data.mostUsedSiteCount}
                             </Text>
-                          </GlassCard>
+                          </Card>
                         ) : null}
 
                         {/* Site distribution */}
                         {usedSites.length > 0 ? (
-                          <GlassCard style={{ marginTop: 12 }}>
+                          <Card style={{ marginTop: SPACE.md }}>
                             <Text style={{ color: THEME.text, fontWeight: "800", marginBottom: 12 }}>
                               {t("insights.siteDistribution")}
                             </Text>
@@ -2034,8 +2041,6 @@ export default function InsightsScreen() {
                                 <Text
                                   style={{ color: THEME.textMuted, fontSize: 11, width: 132, paddingRight: 8 }}
                                   numberOfLines={2}
-                                  adjustsFontSizeToFit
-                                  minimumFontScale={0.7}
                                 >
                                   {t(`injectionSite.${sc.site}`)}
                                 </Text>
@@ -2061,7 +2066,7 @@ export default function InsightsScreen() {
                                 </Text>
                               </View>
                             ))}
-                          </GlassCard>
+                          </Card>
                         ) : null}
                       </>
                     )}
@@ -2136,7 +2141,7 @@ export default function InsightsScreen() {
                 </CardGrid>
 
                 {/* Descriptive disclaimer */}
-                <View className="flex-row items-start rounded-2xl bg-glass border border-hair p-3.5 mt-5">
+                <Card style={{ flexDirection: "row", alignItems: "flex-start", marginTop: SPACE.xl }}>
                   <Ionicons name="information-circle-outline" size={15} color={THEME.textMuted} />
                   <Text
                     style={{
@@ -2149,34 +2154,30 @@ export default function InsightsScreen() {
                   >
                     {t("insights.disclaimer")}
                   </Text>
-                </View>
+                </Card>
 
                 {/* Sources link */}
-                <Pressable
-                  onPress={() => router.push("/sources")}
-                  className="flex-row items-center justify-center mt-4 py-2"
-                >
-                  <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />
-                  <Text style={{ color: THEME.accent, fontSize: 12, marginLeft: 6 }}>
-                    {t("sources.calcLink")}
-                  </Text>
-                </Pressable>
+                <View style={{ marginTop: SPACE.md }}>
+                  <Button
+                    label={t("sources.calcLink")}
+                    variant="tertiary"
+                    size="sm"
+                    onPress={() => router.push("/sources")}
+                    icon={<Ionicons name="information-circle-outline" size={14} color={THEME.accent} />}
+                  />
+                </View>
 
                 {/* The terms on this screen (TIR, GMI) are exactly what Spike
                     explains, so the question starts prefilled - not sent. */}
-                <Pressable
+                <Button
+                  label={t("spike.askSpike")}
+                  variant="tertiary"
+                  size="sm"
                   onPress={() =>
                     router.push({ pathname: "/spike", params: { ask: "suggest2" } })
                   }
-                  className="flex-row items-center justify-center py-2"
-                  accessibilityRole="button"
-                  accessibilityLabel={t("spike.askSpike")}
-                >
-                  <Ionicons name="sparkles-outline" size={14} color={THEME.accent} />
-                  <Text style={{ color: THEME.accent, fontSize: 12, marginLeft: 6 }}>
-                    {t("spike.askSpike")}
-                  </Text>
-                </Pressable>
+                  icon={<Ionicons name="sparkles-outline" size={14} color={THEME.accent} />}
+                />
 
                 {/* Free 7-day: nudge to Pro for the longer windows */}
                 {!premium ? (
@@ -2184,8 +2185,11 @@ export default function InsightsScreen() {
                     onPress={() =>
                       router.push({ pathname: "/paywall", params: { reason: "insights" } })
                     }
+                    android_ripple={{ color: withAlpha(THEME.accent, RIPPLE_ALPHA), foreground: true }}
+                    accessibilityRole="button"
                     className="rounded-2xl p-4 mt-4 flex-row items-center active:opacity-80"
                     style={{
+                      minHeight: 44,
                       borderWidth: 1,
                       borderColor: withAlpha(THEME.accent, 0.3),
                       backgroundColor: withAlpha(THEME.accent, 0.1),
@@ -2216,8 +2220,10 @@ export default function InsightsScreen() {
                     onPress={() =>
                       router.push({ pathname: "/paywall", params: { reason: "export" } })
                     }
+                    android_ripple={{ color: withAlpha(THEME.accent, RIPPLE_ALPHA), foreground: true }}
                     className="rounded-2xl p-4 mt-2 flex-row items-center active:opacity-80"
                     style={{
+                      minHeight: 44,
                       borderWidth: 1,
                       borderColor: withAlpha(THEME.accent, 0.3),
                       backgroundColor: withAlpha(THEME.accent, 0.1),
