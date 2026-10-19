@@ -34,7 +34,7 @@ import {
 } from "../../modules/zerospike-alarmkit";
 import { POST_MEAL_WINDOW_MIN } from "../../lib/postMealTimer";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
-import { InlineConfigCard, Row, SettingsScaffold } from "../../components/settingsUi";
+import { InlineConfigCard, NoticeBanner, Row, SettingsScaffold } from "../../components/settingsUi";
 import { GLUCOSE_RICH, THEME, switchColors } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
@@ -306,22 +306,14 @@ export default function NotificationSettings() {
           nothing - it already opened settings. Hidden in screenshot mode, the
           same store-frame reasoning as the notification banner right below. */}
       {!isScreenshotMode() && alarmKitAvailable && alarmPermState === "denied" ? (
-        <Pressable
-          onPress={() => void requestAlarmPermission()}
-          className="rounded-2xl px-4 py-3 mb-2"
-          style={{
-            borderWidth: 1,
-            borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-            backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-          }}
-        >
+        <NoticeBanner onPress={() => void requestAlarmPermission()}>
           <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
             {t("reminders.alarmPermissionDenied")}
           </Text>
           <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
             {t("settings.openSystemSettings")}
           </Text>
-        </Pressable>
+        </NoticeBanner>
       ) : null}
 
       {prefs ? (
@@ -345,15 +337,7 @@ export default function NotificationSettings() {
               the real condition rather than instead of it. Real users never
               hit this branch. */}
           {!isScreenshotMode() && prefs.enabled && notifDenied ? (
-            <Pressable
-              onPress={() => void retryPermission()}
-              className="rounded-2xl px-4 py-3 mb-2"
-              style={{
-                borderWidth: 1,
-                borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-                backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-              }}
-            >
+            <NoticeBanner onPress={() => void retryPermission()}>
               <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
                 {permission === "deniedPermanently"
                   ? t("notifications.permissionDeniedPermanently")
@@ -362,19 +346,11 @@ export default function NotificationSettings() {
               <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
                 {t("settings.openSystemSettings")}
               </Text>
-            </Pressable>
+            </NoticeBanner>
           ) : null}
 
           {prefs.enabled && !notifDenied && reliability && remindersMayBeLimited(reliability) ? (
-            <Pressable
-              onPress={() => Linking.openSettings()}
-              className="rounded-2xl px-4 py-3 mb-2"
-              style={{
-                borderWidth: 1,
-                borderColor: withAlpha(GLUCOSE_RICH.high, 0.3),
-                backgroundColor: withAlpha(GLUCOSE_RICH.high, 0.1),
-              }}
-            >
+            <NoticeBanner onPress={() => Linking.openSettings()}>
               <Text style={{ color: THEME.text, fontSize: 13, fontWeight: "700" }}>
                 {t("settings.exactAlarmTitle")}
               </Text>
@@ -384,7 +360,7 @@ export default function NotificationSettings() {
               <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 6 }}>
                 {t("settings.openSystemSettings")}
               </Text>
-            </Pressable>
+            </NoticeBanner>
           ) : null}
 
           {prefs.enabled ? (
@@ -447,7 +423,12 @@ export default function NotificationSettings() {
                           ring, with nothing on screen saying why. */}
                       {!isScreenshotMode() &&
                       (alarmDenied || (prefs.postMealAlarm && !alarmAuthorized)) ? (
-                        <Pressable onPress={() => Linking.openSettings()} className="mt-2">
+                        <Pressable
+                          onPress={() => Linking.openSettings()}
+                          accessibilityRole="button"
+                          hitSlop={8}
+                          className="mt-2"
+                        >
                           <Text className="text-mut text-xs">
                             {t("reminders.alarmPermissionDenied")}{" "}
                             <Text style={{ color: THEME.accent, fontWeight: "700" }}>
@@ -500,6 +481,7 @@ export default function NotificationSettings() {
                           <Pressable
                             key={d}
                             onPress={() => updatePrefs({ weeklyDay: d })}
+                            hitSlop={4}
                             accessibilityRole="button"
                             accessibilityState={{ selected: on }}
                             className={`w-9 h-9 rounded-full items-center justify-center ${

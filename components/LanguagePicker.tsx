@@ -12,7 +12,9 @@ import { useTranslation } from "react-i18next";
 
 import type { Lang } from "../lib/db/types";
 import { LANG_LABELS, SUPPORTED_LANGS } from "../lib/i18n";
-import { ELEVATION, THEME } from "../lib/theme/tokens";
+import { ELEVATION, HIT_TARGET, THEME } from "../lib/theme/tokens";
+import { RIPPLE_ALPHA, ROW_MIN_HEIGHT } from "../lib/theme/uiPrimitives";
+import { withAlpha } from "./rich/GlassCard";
 import { useLayout } from "../lib/useLayout";
 
 /** Cap for a centered, content-sized dialog card on a tablet (does not
@@ -61,7 +63,11 @@ export function LanguagePicker({
     <View className="mb-4">
       <Pressable
         onPress={() => setOpen(true)}
-        className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3"
+        accessibilityRole="button"
+        accessibilityLabel={`${t("settings.language")}: ${LANG_LABELS[value]}`}
+        android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+        className="flex-row items-center bg-glass border border-hair rounded-2xl px-4 py-3 active:opacity-80"
+        style={{ minHeight: ROW_MIN_HEIGHT }}
       >
         <Ionicons name="language-outline" size={19} color={THEME.textMuted} />
         <Text className="flex-1 ml-3 font-medium text-ink">
@@ -111,6 +117,10 @@ export function LanguagePicker({
                   <Pressable
                     key={l}
                     onPress={() => select(l)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+                    style={{ minHeight: HIT_TARGET }}
                     className={`flex-row items-center rounded-2xl px-3 py-2.5 mb-1.5 border ${
                       active
                         ? "bg-brand/10 border-brand/40"

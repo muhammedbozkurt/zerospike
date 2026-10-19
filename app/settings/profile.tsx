@@ -25,7 +25,7 @@ import {
 } from "../../lib/services/notifications";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../../lib/insulinCatalog";
 import { parseDecimalText } from "../../lib/numberInput";
-import { Segmented } from "../../components/ui";
+import { Button, Segmented } from "../../components/ui";
 import { FormCard, InputRow } from "../../components/form";
 import { RangeInput } from "../../components/RangeInput";
 import { Stepper } from "../../components/Stepper";
@@ -547,7 +547,8 @@ export default function ProfileSettings() {
                 void persist({ basal_insulin_other: text, bolus_insulin_other: text })
               }
             />
-            <Pressable
+            <Button
+              variant="tertiary"
               onPress={() => {
                 setMixModeUi(false);
                 void persist({
@@ -557,12 +558,9 @@ export default function ProfileSettings() {
                   bolus_insulin_other: null,
                 });
               }}
-              hitSlop={8}
-              className="py-3 items-center"
-              style={{ marginTop: 6 }}
-            >
-              <Text className="text-mut font-medium">{t("insulinPicker.mixOff")}</Text>
-            </Pressable>
+              label={t("insulinPicker.mixOff")}
+              className="mt-1.5"
+            />
           </View>
         </FormCard>
       ) : null}
@@ -585,14 +583,12 @@ export default function ProfileSettings() {
               notSetLabel={t("settings.insulinProductNotSet")}
             />
             {mixEligible ? (
-              <Pressable
+              <Button
+                variant="tertiary"
                 onPress={() => setMixModeUi(true)}
-                hitSlop={8}
-                className="py-3 items-center"
-                style={{ marginTop: 6 }}
-              >
-                <Text className="text-mut font-medium">{t("insulinPicker.mixUse")}</Text>
-              </Pressable>
+                label={t("insulinPicker.mixUse")}
+                className="mt-1.5"
+              />
             ) : null}
           </View>
         </FormCard>

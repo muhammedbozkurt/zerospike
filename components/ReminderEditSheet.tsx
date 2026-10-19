@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { Reminder, ReminderType } from "../lib/db/types";
-import { Segmented } from "./ui";
+import { Button, Segmented } from "./ui";
 import { InlineTimePicker } from "./InlineTimePicker";
 import { MedNamePicker } from "./MedNamePicker";
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow, switchColors } from "../lib/theme/tokens";
@@ -332,6 +332,8 @@ export function ReminderEditSheet({
               <FieldLabel>{t("settings.reminderTime")}</FieldLabel>
               <Pressable
                 onPress={() => setTimePickerOpen((v) => !v)}
+                accessibilityRole="button"
+                accessibilityLabel={`${t("settings.reminderTime")}: ${time}`}
                 className="flex-row items-center mb-1"
                 style={inputStyle()}
               >
@@ -434,30 +436,19 @@ export function ReminderEditSheet({
                 onPress={submit}
                 style={{ marginBottom: 10 }}
               />
-              <Pressable
-                onPress={onClose}
-                accessibilityRole="button"
-                className="items-center py-1"
-                style={{ minHeight: HIT_TARGET }}
-              >
-                <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("common.cancel")}</Text>
-              </Pressable>
+              <Button variant="tertiary" onPress={onClose} label={t("common.cancel")} />
 
               {isEdit ? (
-                <Pressable
+                <Button
+                  variant="destructive"
                   onPress={() => {
                     onClose();
                     onDelete?.();
                   }}
-                  accessibilityRole="button"
-                  className="flex-row items-center justify-center py-1 mt-2"
-                  style={{ minHeight: HIT_TARGET }}
-                >
-                  <Ionicons name="trash-outline" size={15} color={GLUCOSE_RICH.low} />
-                  <Text style={{ color: GLUCOSE_RICH.low, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>
-                    {t("common.delete")}
-                  </Text>
-                </Pressable>
+                  label={t("common.delete")}
+                  icon={<Ionicons name="trash-outline" size={15} color={GLUCOSE_RICH.low} />}
+                  className="mt-2"
+                />
               ) : null}
             </ScrollView>
           </Pressable>
