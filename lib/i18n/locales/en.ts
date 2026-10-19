@@ -1601,6 +1601,14 @@ const en: TranslationSchema = {
     body: "This screen ran into an unexpected problem. Your logged data is safe.",
     retry: "Try again",
   },
+  whatsNew: {
+    title: "What's new",
+    itemTheme: "The light theme is now in Settings: you choose the appearance.",
+    itemBodyMap: "New body map: see your recent injection sites in color.",
+    itemMeal: "Meal builder and household measures: add foods by slice, cup and similar measures, and the total carbs show instantly.",
+    itemSpike: "Spike carb estimate: type your meal and see approximate carbs (an estimate from food data, not a dose).",
+    ok: "OK",
+  },
   feedback: {
     aboutRow: "Send feedback",
     title: "Feedback",

@@ -1599,6 +1599,14 @@ const tr = {
     body: "Bu ekranda beklenmeyen bir sorun oluştu. Kayıtlı verileriniz güvende.",
     retry: "Tekrar dene",
   },
+  whatsNew: {
+    title: "Yenilikler",
+    itemTheme: "Açık tema artık Ayarlar'da: görünümü siz seçersiniz.",
+    itemBodyMap: "Yeni vücut haritası: son enjeksiyon bölgelerinizi renklerle görün.",
+    itemMeal: "Öğün oluşturma ve ev ölçüleri: yiyecekleri dilim, bardak gibi ölçülerle ekleyin, toplam karbonhidrat anında görünür.",
+    itemSpike: "Spike karbonhidrat tahmini: öğününüzü yazın, yaklaşık karbonhidratı görün (besin bilgisi tahminidir, doz değildir).",
+    ok: "Tamam",
+  },
   feedback: {
     aboutRow: "Geri bildirim gönderin",
     title: "Geri bildirim",

@@ -26,6 +26,7 @@ import i18nInstance, {
 import { isProCached, verifyProWithStore } from "../services/purchases";
 import { markAlarmTourSeen } from "../services/alarmTour";
 import { armAfterLogsPaywall } from "../services/afterLogsPaywall";
+import { markWhatsNewSeenNow } from "../whatsNewStore";
 import { takePendingAlarmRoute } from "../../modules/zerospike-alarmkit";
 import { isScreenshotMode } from "../screenshotMode";
 
@@ -286,6 +287,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // check instead (lib/services/afterLogsPaywall.ts) - the same
     // new-install-vs-upgrade split markAlarmTourSeen relies on above.
     await armAfterLogsPaywall();
+    // A fresh install is not an update: the "What's new" sheet is only for an
+    // already-onboarded user whose flag is still absent (lib/whatsNew.ts).
+    await markWhatsNewSeenNow();
     setOnboarded(true);
   }, []);
 

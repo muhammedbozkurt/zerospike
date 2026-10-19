@@ -1606,6 +1606,14 @@ const fr: TranslationSchema = {
     body: "Cet écran a rencontré un problème inattendu. Vos données enregistrées sont en sécurité.",
     retry: "Réessayer",
   },
+  whatsNew: {
+    title: "Nouveautés",
+    itemTheme: "Le thème clair est maintenant dans les réglages : vous choisissez l'apparence.",
+    itemBodyMap: "Nouvelle carte du corps : visualisez en couleurs vos dernières zones d'injection.",
+    itemMeal: "Création de repas et mesures ménagères : ajoutez les aliments par tranche, tasse ou mesure similaire, le total des glucides s'affiche aussitôt.",
+    itemSpike: "Estimation des glucides par Spike : saisissez votre repas et voyez les glucides approximatifs (une estimation à partir de données nutritionnelles, pas une dose).",
+    ok: "OK",
+  },
   feedback: {
     aboutRow: "Envoyer un commentaire",
     title: "Commentaires",
