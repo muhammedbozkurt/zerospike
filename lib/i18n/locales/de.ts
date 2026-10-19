@@ -1575,7 +1575,6 @@ const de: TranslationSchema = {
     add: "Zur Mahlzeit hinzufügen",
     bar: "Mahlzeit ({{count}})",
     total: "Kohlenhydrate insgesamt",
-    save: "Mahlzeit speichern",
     saveTemplate: "Als Vorlage speichern",
     templateName: "Name der Vorlage",
     templateNameTaken: "Sie haben bereits eine Vorlage mit diesem Namen.",

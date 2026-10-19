@@ -1570,7 +1570,6 @@ const ja: TranslationSchema = {
     add: "食事に追加",
     bar: "食事（{{count}}）",
     total: "炭水化物の合計",
-    save: "食事を保存",
     saveTemplate: "テンプレートとして保存",
     templateName: "テンプレート名",
     templateNameTaken: "この名前のテンプレートはすでにあります。",

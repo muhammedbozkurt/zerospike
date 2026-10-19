@@ -1574,7 +1574,6 @@ const es: TranslationSchema = {
     add: "Añadir a la comida",
     bar: "Comida ({{count}})",
     total: "Carbohidratos totales",
-    save: "Guardar la comida",
     saveTemplate: "Guardar como plantilla",
     templateName: "Nombre de la plantilla",
     templateNameTaken: "Ya tiene una plantilla con este nombre.",
