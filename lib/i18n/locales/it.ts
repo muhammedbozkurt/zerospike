@@ -1602,6 +1602,14 @@ const it: TranslationSchema = {
     body: "Questa schermata ha incontrato un problema imprevisto. I Suoi dati salvati sono al sicuro.",
     retry: "Riprova",
   },
+  whatsNew: {
+    title: "Novità",
+    itemTheme: "Il tema chiaro è ora nelle impostazioni: Lei sceglie l'aspetto.",
+    itemBodyMap: "Nuova mappa del corpo: veda a colori le Sue ultime sedi di iniezione.",
+    itemMeal: "Creazione dei pasti e misure casalinghe: aggiunga gli alimenti a fette, tazze e misure simili, e il totale dei carboidrati compare subito.",
+    itemSpike: "Stima dei carboidrati di Spike: scriva il Suo pasto e veda i carboidrati approssimativi (una stima basata sui dati nutrizionali, non una dose).",
+    ok: "OK",
+  },
   feedback: {
     aboutRow: "Invia un feedback",
     title: "Feedback",

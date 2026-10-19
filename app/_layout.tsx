@@ -49,6 +49,7 @@ import { clearPaywallTrial, refreshPaywallTrialOnce } from "../lib/proCta";
 import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
 import { holdSurvey } from "../lib/feedbackSurvey";
 import { CancelSurveyHost } from "../components/feedback/CancelSurveyHost";
+import { WhatsNewHost } from "../components/WhatsNewSheet";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
 import {
@@ -851,6 +852,7 @@ function RootNavigator() {
       />
     </Stack>
     <CancelSurveyHost root={root} />
+    <WhatsNewHost root={root} />
     {needsOnboarding && !screenshotPending ? (
       <Redirect href="/onboarding" />
     ) : null}

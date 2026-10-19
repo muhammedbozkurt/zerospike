@@ -1604,6 +1604,14 @@ const de: TranslationSchema = {
     body: "Auf diesem Bildschirm ist ein unerwartetes Problem aufgetreten. Ihre gespeicherten Daten sind sicher.",
     retry: "Erneut versuchen",
   },
+  whatsNew: {
+    title: "Neuigkeiten",
+    itemTheme: "Das helle Design finden Sie jetzt in den Einstellungen: Sie wählen das Erscheinungsbild selbst.",
+    itemBodyMap: "Neue Körperkarte: Sehen Sie Ihre letzten Injektionsstellen in Farbe.",
+    itemMeal: "Mahlzeiten erstellen und Haushaltsmaße: Fügen Sie Lebensmittel per Scheibe, Tasse und ähnlichen Maßen hinzu, die Gesamtkohlenhydrate erscheinen sofort.",
+    itemSpike: "Spike-Kohlenhydratschätzung: Schreiben Sie Ihre Mahlzeit und sehen Sie die ungefähren Kohlenhydrate (eine Schätzung aus Nährwertdaten, keine Dosis).",
+    ok: "OK",
+  },
   feedback: {
     aboutRow: "Feedback senden",
     title: "Feedback",
