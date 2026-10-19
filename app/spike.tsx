@@ -839,10 +839,8 @@ function SpikeScreen() {
             <Ionicons name="close" size={26} color={THEME.textMuted} />
           </Pressable>
         </View>
-        {/* The gate is avatar + title + four-line card + scope box + device-id
-            note + privacy link + two buttons. At a large accessibility text size,
-            or on a small phone, that runs past the screen: it scrolls instead of
-            being cut off with no way to reach the buttons. */}
+        {/* Scrolls: with the details open, or at a large text size, the gate
+            runs past the screen and the buttons must stay reachable. */}
         <ScrollView
           contentContainerStyle={{
             flexGrow: 1,
