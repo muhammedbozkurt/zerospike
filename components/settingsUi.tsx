@@ -12,6 +12,22 @@ import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
 
+/** Settings reading column on tablets: one centred column, never two. */
+export const SETTINGS_MAX_WIDTH = 640;
+/** At or below this window width (a 600-700dp tablet) the column stays full width. */
+export const SETTINGS_COLUMN_MIN_WIDTH = 700;
+
+/**
+ * Side gap that centres a SETTINGS_MAX_WIDTH column, 0 on phones and on narrow
+ * tablets. Applied as padding, not margin or maxWidth: Fabric drops margins on
+ * ScrollView content containers under RTL (see lib/useLayout.ts columnPad).
+ */
+export function useSettingsGap(): number {
+  const { width, isWide } = useLayout();
+  if (!isWide || width <= SETTINGS_COLUMN_MIN_WIDTH) return 0;
+  return Math.max(0, Math.floor((width - SETTINGS_MAX_WIDTH) / 2));
+}
+
 /**
  * The settings list row is the shared ui.Row (icon plate, label, sub, value,
  * chevron). One implementation, so the Settings hub, every sub-page and any
@@ -103,22 +119,33 @@ export function SettingsScaffold({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isWide } = useLayout();
+  const gap = useSettingsGap();
+  const header = (
+    <ScreenHeader
+      title={title}
+      // A settings page can be reached by deep link with no history behind
+      // it (a widget, a notification, an alarm's "Open"); back() would then
+      // do nothing and strand the user on a leaf page.
+      onBack={() =>
+        router.canGoBack() ? router.back() : router.replace("/(tabs)/settings")
+      }
+    />
+  );
   return (
     <AppBackground>
       <View className="flex-1" style={{ paddingTop: insets.top }}>
-        <ScreenHeader
-          title={title}
-          // A settings page can be reached by deep link with no history behind
-          // it (a widget, a notification, an alarm's "Open"); back() would then
-          // do nothing and strand the user on a leaf page.
-          onBack={() =>
-            router.canGoBack() ? router.back() : router.replace("/(tabs)/settings")
-          }
-        />
+        {gap > 0 ? (
+          <View style={{ paddingLeft: gap, paddingRight: gap }}>{header}</View>
+        ) : (
+          header
+        )}
         <ScrollView
           {...keyboardAwareScrollProps}
           contentContainerStyle={{
             padding: SPACE.lg,
+            ...(gap > 0
+              ? { paddingLeft: SPACE.lg + gap, paddingRight: SPACE.lg + gap }
+              : null),
             paddingBottom: insets.bottom + SPACE["2xl"],
             ...(fillHeight ? { flexGrow: 1 } : null),
             ...(fillHeight && isWide ? { justifyContent: "center" } : null),

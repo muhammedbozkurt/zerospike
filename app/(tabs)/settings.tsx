@@ -12,10 +12,9 @@ import {
   getNotificationPermission,
   type NotificationPermission,
 } from "../../lib/services/notifications";
-import { Row } from "../../components/settingsUi";
+import { Row, useSettingsGap } from "../../components/settingsUi";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { THEME } from "../../lib/theme/tokens";
-import { useLayout } from "../../lib/useLayout";
 
 /**
  * Settings HUB (R7.3). The former single 1050-line scroll is split into five
@@ -29,9 +28,14 @@ export default function SettingsHub() {
   const router = useRouter();
   const { activeProfile, isProUser } = useApp();
   const proCta = useProCta(!isProUser);
-  // Tablet: hub title and rows share one centred column instead of full-width
-  // rows with a lone chevron at the far edge. No-op padding on phones.
-  const { columnPad } = useLayout();
+  // Tablet (wider than 700dp): hub title and rows share one centred 640 column
+  // instead of full-width rows with a lone chevron at the far edge. Gap is 0 on
+  // phones and narrow tablets.
+  const gap = useSettingsGap();
+  const columnPad = (base: number) => ({
+    paddingLeft: base + gap,
+    paddingRight: base + gap,
+  });
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
 
   useEffect(() => {
