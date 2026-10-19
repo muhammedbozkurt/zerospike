@@ -17,3 +17,7 @@ verify_jwt = false
 # delete-device: app JWT gondermez, cihaz basina limit fonksiyonun icinde (track gibi).
 [functions.delete-device]
 verify_jwt = false
+
+# feedback: app JWT gondermez, kurulum ve IP basina limit fonksiyonun icinde (delete-device gibi).
+[functions.feedback]
+verify_jwt = false
