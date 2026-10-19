@@ -166,6 +166,9 @@ const ar: TranslationSchema = {
   },
   tabs: {
     today: "اليوم",
+    food: "الطعام",
+    injection: "الحقن",
+    settings: "الإعدادات",
   },
   dashboard: {
     title: "لوحة المتابعة",
@@ -233,6 +236,7 @@ const ar: TranslationSchema = {
     injectionsToday: "{{n}} حقنة اليوم",
     thisWeek: "هذا الأسبوع",
     noValueYet: "لا توجد بيانات",
+    weekEmptyHint: "مع أول قياس لك يظهر هنا ملخصك الأسبوعي",
     activeInsulin: "الإنسولين النشط",
     activeInsulinSub: "تقدير من الجرعات التي سجّلتها مؤخرًا",
     feedbackOnTarget: "فحص ما بعد الوجبة: {{value}} {{unit}}، ضمن نطاقك المستهدف.",
@@ -1331,6 +1335,9 @@ const ar: TranslationSchema = {
     suggest2: "ما هو الوقت داخل النطاق (TIR)؟",
     suggest3: "ما أهمية تدوير مناطق الحقن؟",
     settingsRow: "استخدام بيانات Spike AI",
+    rowOn: "Spike: مفعّل · إدارة",
+    rowOff: "Spike: متوقف",
+    manageOpen: "فتح Spike",
     consentSummaryNote: "لا يُشارَك ملخص اختياري لآخر 14 يومًا من سجلك إلا إذا فعّلته بشكل منفصل.",
     consentCarb: "إذا كتبت وصفًا لوجبة، يُرسل هذا النص عبر خادمنا إلى Amazon Web Services (Bedrock) لإنتاج تقدير للكربوهيدرات. لا يُخزَّن النص ولا يُسجَّل، ولا تُرسل بياناتك المسجّلة.",
     ctxToggle: "مشاركة ملخص آخر 14 يومًا",

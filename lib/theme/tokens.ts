@@ -32,6 +32,9 @@ export interface Palette {
   border: string;
   borderStrong: string;
   track: string;
+  /** Outline of a progress bar's track: >= 3:1 against bg, surface and the
+   *  accent-tinted card, so an empty bar stays visible on light. */
+  trackEdge: string;
   text: string;
   textMuted: string;
   accent: string;
@@ -81,6 +84,7 @@ export const DARK: Palette = {
   border: "rgba(255,255,255,0.10)",
   borderStrong: "#5f7a88",
   track: "rgba(255,255,255,0.08)",
+  trackEdge: "#6A8794",
   text: "#eaf6fa",
   textMuted: "#89a3b0",
   accent: "#2ee6ff",
@@ -140,6 +144,7 @@ export const LIGHT: Palette = {
   border: "rgba(15,34,48,0.12)",
   borderStrong: "#78898F",
   track: "#E2D9CB",
+  trackEdge: "#6A7D88",
   text: "#0F2230",
   textMuted: "#4A5D68",
   accent: "#087089",
@@ -350,6 +355,7 @@ export const THEME = live((p) => ({
   border: p.border,
   borderStrong: p.borderStrong,
   track: p.track,
+  trackEdge: p.trackEdge,
   accent: p.accent,
   accentFill: p.accentFill,
   accentOnFill: p.accentOnFill,

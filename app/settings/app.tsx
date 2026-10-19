@@ -37,7 +37,7 @@ import { useLayout } from "../../lib/useLayout";
 export default function AppSettings() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { toast, confirm } = useFeedback();
+  const { toast, confirm, actionSheet } = useFeedback();
   const { lang, setLanguage, isProUser, refreshPro, activeProfile } = useApp();
   const proCta = useProCta(!isProUser);
   const { columnPad } = useLayout();
@@ -106,6 +106,23 @@ export default function AppSettings() {
     await withdrawSpikeConsent();
     setSpikeConsent(false);
     toast(t("common.done"), "success");
+  }
+
+  // Consent is on: the one row opens a small management sheet. Withdrawing
+  // keeps its own destructive confirmation (onWithdrawSpikeConsent), unchanged.
+  function onManageSpike() {
+    actionSheet({
+      title: t("spike.settingsRow"),
+      actions: [
+        { label: t("spike.manageOpen"), icon: "sparkles-outline", onPress: () => router.push("/spike") },
+        {
+          label: t("spike.withdraw"),
+          icon: "close-circle-outline",
+          destructive: true,
+          onPress: () => void onWithdrawSpikeConsent(),
+        },
+      ],
+    });
   }
 
   async function onChangeLang(next: Lang) {
@@ -199,15 +216,11 @@ export default function AppSettings() {
         <>
           {THEME.scheme === "light" ? <View style={{ height: SPACE.lg }} /> : null}
           <SectionLabel>{t("spike.title")}</SectionLabel>
-          <Row icon="sparkles-outline" label={t("spike.settingsRow")} onPress={() => router.push("/spike")} />
-          {spikeConsent ? (
-            <Row
-              icon="close-circle-outline"
-              label={t("spike.withdraw")}
-              onPress={onWithdrawSpikeConsent}
-              danger
-            />
-          ) : null}
+          <Row
+            icon="sparkles-outline"
+            label={spikeConsent ? t("spike.rowOn") : t("spike.rowOff")}
+            onPress={spikeConsent ? onManageSpike : () => router.push("/spike")}
+          />
         </>
       ) : null}
 

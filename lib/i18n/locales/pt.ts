@@ -166,6 +166,9 @@ const pt: TranslationSchema = {
   },
   tabs: {
     today: "Hoje",
+    food: "Comida",
+    injection: "Aplicações",
+    settings: "Ajustes",
   },
   dashboard: {
     title: "Painel",
@@ -233,6 +236,7 @@ const pt: TranslationSchema = {
     injectionsToday: "{{n}} aplicações hoje",
     thisWeek: "Esta semana",
     noValueYet: "Sem dados",
+    weekEmptyHint: "Com a sua primeira medição, o resumo da semana aparece aqui",
     activeInsulin: "Insulina ativa",
     activeInsulinSub: "Estimativa a partir das doses que você registrou recentemente",
     feedbackOnTarget: "Medição pós-refeição: {{value}} {{unit}}, dentro da sua faixa-alvo.",
@@ -1333,6 +1337,9 @@ const pt: TranslationSchema = {
     suggest2: "O que é tempo no alvo (TIR)?",
     suggest3: "Por que alternar os locais de aplicação?",
     settingsRow: "Uso de dados do Spike AI",
+    rowOn: "Spike: ativado · Gerenciar",
+    rowOff: "Spike: desativado",
+    manageOpen: "Abrir o Spike",
     consentSummaryNote: "Um resumo opcional dos últimos 14 dias do seu diário só é compartilhado se você ativá-lo separadamente.",
     consentCarb: "Se você descrever uma refeição, esse texto é enviado pelo nosso servidor à Amazon Web Services (Bedrock) para gerar uma estimativa de carboidratos. O texto não é armazenado nem registrado, e seus dados registrados não são enviados.",
     ctxToggle: "Compartilhar meu resumo de 14 dias",

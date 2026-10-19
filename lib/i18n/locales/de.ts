@@ -166,6 +166,9 @@ const de: TranslationSchema = {
   },
   tabs: {
     today: "Heute",
+    food: "Essen",
+    injection: "Injektion",
+    settings: "Einstellungen",
   },
   dashboard: {
     title: "Übersicht",
@@ -247,6 +250,7 @@ const de: TranslationSchema = {
     injectionsToday: "{{n}} Injektionen heute",
     thisWeek: "Diese Woche",
     noValueYet: "Keine Daten",
+    weekEmptyHint: "Mit Ihrer ersten Messung erscheint hier Ihre Wochenübersicht",
     activeInsulin: "Aktives Insulin",
     activeInsulinSub: "Geschätzt aus den Dosen, die Sie zuletzt erfasst haben",
     feedbackOnTarget: "Messung nach dem Essen: {{value}} {{unit}}, im Zielbereich.",
@@ -1333,6 +1337,9 @@ const de: TranslationSchema = {
     suggest2: "Was ist Zeit im Zielbereich (TIR)?",
     suggest3: "Warum ist der Wechsel der Injektionsstellen wichtig?",
     settingsRow: "Spike-KI-Datennutzung",
+    rowOn: "Spike: an · Verwalten",
+    rowOff: "Spike: aus",
+    manageOpen: "Spike öffnen",
     consentSummaryNote: "Eine optionale Zusammenfassung Ihres Tagebuchs der letzten 14 Tage wird nur geteilt, wenn Sie sie separat einschalten.",
     consentCarb: "Wenn Sie eine Mahlzeit beschreiben, wird dieser Text über unseren Server an Amazon Web Services (Bedrock) gesendet, um eine Kohlenhydratschätzung zu erstellen. Der Text wird weder gespeichert noch protokolliert; Ihre gespeicherten Daten werden nicht gesendet.",
     ctxToggle: "14-Tage-Zusammenfassung teilen",

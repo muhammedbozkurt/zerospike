@@ -166,6 +166,9 @@ const ja: TranslationSchema = {
   },
   tabs: {
     today: "今日",
+    food: "食事",
+    injection: "注射",
+    settings: "設定",
   },
   dashboard: {
     title: "ホーム",
@@ -233,6 +236,7 @@ const ja: TranslationSchema = {
     injectionsToday: "今日の注射 {{n}}回",
     thisWeek: "今週",
     noValueYet: "データなし",
+    weekEmptyHint: "最初の測定を記録すると、ここに週間のまとめが表示されます",
     activeInsulin: "残存インスリン",
     activeInsulinSub: "最近記録した量からの推定です",
     feedbackOnTarget: "食後の測定: {{value}} {{unit}}、目標範囲内です。",
@@ -1331,6 +1335,9 @@ const ja: TranslationSchema = {
     suggest2: "目標範囲内の時間(TIR)とは何ですか？",
     suggest3: "注射部位を変えるのはなぜ大切ですか？",
     settingsRow: "Spike AIのデータ利用",
+    rowOn: "Spike: オン · 管理",
+    rowOff: "Spike: オフ",
+    manageOpen: "Spikeを開く",
     consentSummaryNote: "任意の14日間の記録の要約は、別途オンにした場合にのみ共有されます。",
     consentCarb: "食事の内容を入力すると、そのテキストは炭水化物の推定を作成するため、当社のサーバー経由で Amazon Web Services（Bedrock）に送信されます。テキストは保存も記録もされず、記録済みのデータは送信されません。",
     ctxToggle: "14日間の要約を共有する",
