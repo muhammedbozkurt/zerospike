@@ -1544,7 +1544,6 @@ const es: TranslationSchema = {
     submit: "Estimar",
     estimating: "Estimando...",
     total: "Total aproximado",
-    add: "Añadir al diario",
     edit: "Editar",
     note: "Es una estimación de información alimentaria, no una dosis. Compruebe usted mismo su exactitud.",
     noteShort: "Estimación alimentaria, no una dosis.",

@@ -1538,7 +1538,6 @@ const tr = {
     submit: "Tahmin et",
     estimating: "Tahmin ediliyor...",
     total: "Yaklaşık toplam",
-    add: "Günlüğe ekle",
     edit: "Düzenle",
     note: "Besin bilgisi tahminidir, doz değildir. Doğruluğunu siz kontrol edin.",
     noteShort: "Besin bilgisi tahminidir, doz değildir.",

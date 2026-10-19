@@ -333,9 +333,13 @@ function sourcePins(): void {
   const schema = read("lib/analytics/eventSchema.ts");
 
   eq("onAdd is called in exactly one place", (sheet.match(/onAdd\(/g) ?? []).length, 1);
-  ok("that place is the Add button, behind canAdd", /onPress=\{\(\) => \{\s*if \(canAdd && items\) onAdd\(items\);/.test(sheet));
-  ok("the result arriving does not call onAdd", !/estimateCarbs\([\s\S]*?onAdd\(/.test(sheet.slice(sheet.indexOf("async function submit"), sheet.indexOf("function patchItem"))));
-  ok("the fixed note is shown on the result", sheet.includes('t("carbEstimate.note")'));
+  ok("that place is the Add to meal button, behind canAdd, handing over estimate lines", /onPress=\{\(\) => \{\s*if \(canAdd && items\) \{\s*onAdd\(editableToEstimateLines\(items\)\);/.test(sheet));
+  ok("the sheet never writes the journal itself", !/createMeal|insertMeal|saveEstimate|db\//.test(sheet));
+  ok("the old Add to log key is not used", !sheet.includes('t("carbEstimate.add")'));
+  ok("the result keeps cards, a fixed short note and an approx mark", sheet.includes("EstimateResultCard") && sheet.includes('t("carbEstimate.noteShort")') && sheet.includes('t("carbEstimate.addToMeal")') && sheet.includes("≈"));
+  ok("the short note sits above the scrolling result, not inside it", sheet.indexOf("{top}") < sheet.indexOf("<ScrollView"));
+  ok("the result arriving does not call onAdd", !/estimateCarbs\([\s\S]*?onAdd\(/.test(sheet.slice(sheet.indexOf("async function submit"), sheet.indexOf("function replaceItem"))));
+  ok("the fixed note is shown on the result", sheet.includes('t("carbEstimate.noteShort")'));
   ok("insulin is 0 on the write", /saveEstimate[\s\S]*insulin_dose_units: 0/.test(food));
   ok("no AsyncStorage use in the sheet", !/AsyncStorage/.test(sheet));
   ok("the typed text is never stored: no setItem next to it in the client", !/setItem/.test(clientSrc));
@@ -343,7 +347,7 @@ function sourcePins(): void {
   ok("no logging of the text anywhere", !/console\.|logCrash/.test(sheet + clientSrc));
   ok("food.tsx crash context has no text", /logCrash\(err, \{ screen: "food", save: "estimate" \}\)/.test(food));
   ok("no adjustsFontSizeToFit in the new UI", !/adjustsFontSizeToFit/.test(sheet));
-  ok("no hard-coded colour in the sheet beyond the marked scrim", (sheet.match(/#[0-9a-fA-F]{3,8}\b|rgba\(/g) ?? []).length === 1);
+  ok("no hard-coded colour in the sheet (the scrim is the shared SCRIM)", (sheet.match(/#[0-9a-fA-F]{3,8}\b|rgba\(/g) ?? []).length === 0);
   const emDash = String.fromCharCode(0x2014);
   ok("no em dash in the new files", ![sheet, clientSrc, limitSrc].some((s) => s.includes(emDash)));
   ok("the schema holds the two carb events", /carb_estimate_used/.test(schema) && /carb_estimate_blocked/.test(schema));
@@ -354,14 +358,15 @@ function sourcePins(): void {
 function locales(): void {
   section("G. nine languages");
   const langs = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
-  const keys = ["title", "help", "placeholder", "submit", "estimating", "total", "add", "edit", "note", "errorLimit", "errorBusy", "errorFailed", "errorInput", "errorNoFood", "entryButton", "proNudge", "itemName", "itemQuantity", "itemUnit", "itemCarbs"];
+  const keys = ["title", "help", "placeholder", "submit", "estimating", "total", "edit", "note", "noteShort", "addToMeal", "approx", "errorLimit", "errorBusy", "errorFailed", "errorInput", "errorNoFood", "entryButton", "proNudge", "itemName", "itemQuantity", "itemUnit", "itemCarbs"];
   const dose = /doz|dose|dosis|dosi\b|dosage|جرعة|投与/i;
   for (const lang of langs) {
     const loc = require(`../lib/i18n/locales/${lang}`).default as { carbEstimate: Record<string, string>; spike: Record<string, string> };
     ok(`${lang}: every carbEstimate key exists`, keys.every((k) => typeof loc.carbEstimate[k] === "string" && loc.carbEstimate[k].length > 0));
     ok(`${lang}: spike.consentCarb exists`, typeof loc.spike.consentCarb === "string" && loc.spike.consentCarb.length > 20);
-    ok(`${lang}: the dose word appears only in the fixed note`, keys.filter((k) => k !== "note").every((k) => !dose.test(loc.carbEstimate[k])) && !dose.test(loc.spike.consentCarb));
-    ok(`${lang}: the fixed note says it is not a dose`, dose.test(loc.carbEstimate.note));
+    ok(`${lang}: the dose word appears only in the fixed note`, keys.filter((k) => k !== "note" && k !== "noteShort").every((k) => !dose.test(loc.carbEstimate[k])) && !dose.test(loc.spike.consentCarb));
+    ok(`${lang}: the fixed note says it is not a dose`, dose.test(loc.carbEstimate.note) && dose.test(loc.carbEstimate.noteShort));
+    ok(`${lang}: the old add-to-log key is gone`, !("add" in loc.carbEstimate));
     ok(`${lang}: no dash punctuation, no percent sign`, [...keys.map((k) => loc.carbEstimate[k]), loc.spike.consentCarb].every((v) => !/[%–—]/.test(v)));
   }
   const tr = require("../lib/i18n/locales/tr").default.carbEstimate as Record<string, string>;
