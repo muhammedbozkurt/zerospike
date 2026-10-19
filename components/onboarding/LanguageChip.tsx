@@ -15,6 +15,8 @@ import { LANG_LABELS, SUPPORTED_LANGS } from "../../lib/i18n";
 import { useApp } from "../../lib/store/AppContext";
 import { hapticSelect } from "../../lib/haptics";
 import { ELEVATION, THEME } from "../../lib/theme/tokens";
+import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
+import { withAlpha } from "../rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
 
 /** Widest the sheet gets on a tablet before it stops stretching and centres
@@ -62,7 +64,9 @@ export function LanguageChip() {
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={t("settings.language")}
-        className="flex-row items-center rounded-full border border-hair bg-glass"
+        hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+        android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+        className="flex-row items-center rounded-full border border-hair bg-glass active:opacity-80"
         style={{ gap: 6, paddingHorizontal: 14, paddingVertical: 8 }}
       >
         <Ionicons name="language-outline" size={16} color={THEME.text} />
@@ -116,6 +120,9 @@ export function LanguageChip() {
                   <Pressable
                     key={l}
                     onPress={() => select(l)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
                     className={`flex-row items-center rounded-2xl px-3 py-2.5 mb-1.5 border ${
                       active
                         ? "bg-brand/10 border-brand/40"

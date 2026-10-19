@@ -83,7 +83,9 @@ import {
 } from "../lib/analytics/optOut";
 import { useFeedback } from "../components/Feedback";
 import { hapticLight, hapticSelect } from "../lib/haptics";
-import { SectionLabel } from "../components/ui";
+import { Button, Card, SectionLabel, Txt } from "../components/ui";
+import { TextLink } from "../components/onboarding/TextLink";
+import { RIPPLE_ALPHA, ROW_PLATE } from "../lib/theme/uiPrimitives";
 import { AcceptCheck } from "../components/form";
 import { BigInput } from "../components/onboarding/BigInput";
 import { InlineTimePicker } from "../components/InlineTimePicker";
@@ -95,7 +97,7 @@ import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
 import { AppBackground, GradientCTA, withAlpha } from "../components/rich";
-import { RADIUS, TABULAR, THEME, switchColors } from "../lib/theme/tokens";
+import { RADIUS, SPACE, THEME, switchColors } from "../lib/theme/tokens";
 import { parseDecimalText } from "../lib/numberInput";
 import { useLayout } from "../lib/useLayout";
 
@@ -183,13 +185,14 @@ function TimeRow({
       accessibilityLabel={label}
       accessibilityValue={{ text: value }}
       className="active:opacity-80"
+      android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
       style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 14,
+        gap: SPACE.md,
         minHeight: 64,
-        paddingHorizontal: 18,
-        paddingVertical: 16,
+        paddingHorizontal: SPACE.lg,
+        paddingVertical: SPACE.lg,
         borderRadius: RADIUS.lg,
         borderWidth: 1,
         borderColor: THEME.border,
@@ -198,22 +201,22 @@ function TimeRow({
     >
       <View
         style={{
-          width: 40,
-          height: 40,
+          width: ROW_PLATE,
+          height: ROW_PLATE,
           borderRadius: RADIUS.md,
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: withAlpha(THEME.accent, 0.1),
         }}
       >
-        <Ionicons name={icon} size={22} color={THEME.accent} />
+        <Ionicons name={icon} size={20} color={THEME.accent} />
       </View>
-      <Text style={{ color: THEME.text, fontSize: 16, lineHeight: 22, flex: 1 }}>
+      <Txt kind="body" style={{ flex: 1 }}>
         {label}
-      </Text>
-      <Text style={[TABULAR, { color: THEME.text, fontSize: 19, fontWeight: "700" }]}>
+      </Txt>
+      <Txt kind="subtitle" tabular>
         {value}
-      </Text>
+      </Txt>
     </Pressable>
   );
 }
@@ -250,14 +253,15 @@ function BasalPlanRow({
         accessibilityRole="button"
         accessibilityLabel={addLabel}
         className="active:opacity-80"
+        android_ripple={{ color: withAlpha(THEME.accent, RIPPLE_ALPHA), foreground: true }}
         style={{
           flexDirection: "row",
           alignItems: "center",
-          gap: 14,
+          gap: SPACE.md,
           minHeight: 58,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          marginBottom: 12,
+          paddingHorizontal: SPACE.lg,
+          paddingVertical: SPACE.md,
+          marginBottom: SPACE.md,
           borderRadius: RADIUS.lg,
           borderWidth: 1,
           borderStyle: "dashed",
@@ -265,35 +269,27 @@ function BasalPlanRow({
         }}
       >
         <Ionicons name="add-circle-outline" size={22} color={THEME.accent} />
-        <Text
-          style={{ color: THEME.accent, fontSize: 15, lineHeight: 21, fontWeight: "600", flex: 1 }}
-        >
+        <Txt kind="body" tone="accent" style={{ fontWeight: "600", flex: 1 }}>
           {addLabel}
-        </Text>
+        </Txt>
       </Pressable>
     );
   }
   return (
-    <View
+    <Card
       style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 14,
+        gap: SPACE.md,
         minHeight: 58,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        marginBottom: 12,
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
-        borderColor: THEME.border,
-        backgroundColor: THEME.surface,
+        marginBottom: SPACE.md,
       }}
     >
       <View
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 11,
+          width: ROW_PLATE,
+          height: ROW_PLATE,
+          borderRadius: RADIUS.md,
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: withAlpha(THEME.accent, 0.1),
@@ -307,12 +303,15 @@ function BasalPlanRow({
         accessibilityLabel={label}
         accessibilityValue={{ text: time }}
         className="active:opacity-80"
-        style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 14, minHeight: 36 }}
+        android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
+        style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: SPACE.md, minHeight: 44 }}
       >
-        <Text style={{ color: THEME.text, fontSize: 15, lineHeight: 21, flex: 1 }} numberOfLines={2}>
+        <Txt kind="body" style={{ flex: 1 }} numberOfLines={2}>
           {label}
-        </Text>
-        <Text style={[TABULAR, { color: THEME.text, fontSize: 16, fontWeight: "700" }]}>{time}</Text>
+        </Txt>
+        <Txt kind="body" tabular style={{ fontWeight: "700" }}>
+          {time}
+        </Txt>
       </Pressable>
       <Pressable
         onPress={onRemove}
@@ -330,7 +329,7 @@ function BasalPlanRow({
       >
         <Ionicons name="close" size={14} color={THEME.textMuted} />
       </Pressable>
-    </View>
+    </Card>
   );
 }
 
@@ -347,24 +346,10 @@ function RationaleCard({
   style?: ViewStyle;
 }) {
   return (
-    <View
-      style={[
-        {
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: 12,
-          padding: 18,
-          borderRadius: RADIUS.lg,
-          borderWidth: 1,
-          borderColor: THEME.border,
-          backgroundColor: THEME.surface,
-        },
-        style,
-      ]}
-    >
+    <Card style={[{ flexDirection: "row", alignItems: "flex-start", gap: SPACE.md }, style]}>
       <Ionicons name={icon} size={20} color={tint} />
       <View style={{ flex: 1 }}>{children}</View>
-    </View>
+    </Card>
   );
 }
 
@@ -408,17 +393,7 @@ function SecondaryLink({
   disabled?: boolean;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={disabled ? { opacity: 0.4 } : undefined}
-      hitSlop={8}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      className="py-3.5 items-center"
-    >
-      <Text style={{ color: THEME.textMuted, fontSize: 15, fontWeight: "500" }}>{label}</Text>
-    </Pressable>
+    <Button label={label} onPress={onPress} disabled={disabled} variant="tertiary" />
   );
 }
 
@@ -431,15 +406,9 @@ function RationaleText({
   tone?: "muted" | "ink";
 }) {
   return (
-    <Text
-      style={{
-        color: tone === "ink" ? THEME.text : THEME.textMuted,
-        fontSize: 15,
-        lineHeight: 22,
-      }}
-    >
+    <Txt kind="body" tone={tone === "ink" ? "text" : "muted"}>
       {children}
-    </Text>
+    </Txt>
   );
 }
 
@@ -463,21 +432,16 @@ function ConsentSwitchRow({
   onValueChange: (next: boolean) => void;
 }) {
   return (
-    <View
+    <Card
       style={{
-        padding: 18,
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
         borderColor: value ? THEME.accent : THEME.border,
         backgroundColor: value ? withAlpha(THEME.accent, 0.1) : THEME.surface,
       }}
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <Text
-          style={{ flex: 1, color: THEME.text, fontSize: 16, lineHeight: 22, fontWeight: "600" }}
-        >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.md }}>
+        <Txt kind="body" style={{ flex: 1, fontWeight: "600" }}>
           {title}
-        </Text>
+        </Txt>
         <Switch
           value={value}
           disabled={disabled}
@@ -492,11 +456,11 @@ function ConsentSwitchRow({
         />
       </View>
       {body ? (
-        <Text style={{ color: THEME.textMuted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
+        <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
           {body}
-        </Text>
+        </Txt>
       ) : null}
-    </View>
+    </Card>
   );
 }
 
@@ -1245,11 +1209,9 @@ export default function OnboardingScreen() {
               style={{ marginTop: 18, gap: 8 }}
             >
               <Ionicons name="information-circle-outline" size={15} color={THEME.textMuted} />
-              <Text
-                style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, flexShrink: 1 }}
-              >
+              <Txt kind="caption" tone="muted" style={{ flexShrink: 1 }}>
                 {t("onboarding.qNameHint")}
-              </Text>
+              </Txt>
             </View>
           </FadeSlideIn>
         );
@@ -1406,9 +1368,9 @@ export default function OnboardingScreen() {
         const mixMode = mixModeUi || isMixSelection(basalInsulinId, bolusInsulinId);
         const basalUnitsField = (
           <View style={{ marginTop: 16 }}>
-            <Text style={{ color: THEME.text, fontSize: 14, marginBottom: 8 }}>
+            <Txt kind="body" style={{ marginBottom: SPACE.sm }}>
               {t("settings.basalDailyUnits")}
-            </Text>
+            </Txt>
             <Stepper
               value={basalDailyUnits}
               onChange={setBasalDailyUnits}
@@ -1424,9 +1386,9 @@ export default function OnboardingScreen() {
               size="lg"
               accessibilityLabel={t("settings.basalDailyUnits")}
             />
-            <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginTop: 8 }}>
+            <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
               {t("settings.basalDailyUnitsHint")}
-            </Text>
+            </Txt>
           </View>
         );
         return mixMode ? (
@@ -1455,7 +1417,8 @@ export default function OnboardingScreen() {
               }}
             />
             {basalUnitsField}
-            <Pressable
+            <TextLink
+              label={t("insulinPicker.mixOff")}
               onPress={() => {
                 setMixModeUi(false);
                 setBasalInsulinId(null);
@@ -1463,14 +1426,8 @@ export default function OnboardingScreen() {
                 setBasalInsulinOther(null);
                 setBolusInsulinOther(null);
               }}
-              hitSlop={8}
-              className="py-3.5 items-center"
-              style={{ marginTop: 10 }}
-            >
-              <Text style={{ color: THEME.accent, fontSize: 15, fontWeight: "500" }}>
-                {t("insulinPicker.mixOff")}
-              </Text>
-            </Pressable>
+              style={{ marginTop: SPACE.md }}
+            />
           </FadeSlideIn>
         ) : (
           <FadeSlideIn delay={optDelay(0)}>
@@ -1505,18 +1462,13 @@ export default function OnboardingScreen() {
               />
             </View>
 
-            <Pressable
+            {/* Accent, not muted: this is a real alternative shape of the
+                step, not the "skip" link the footer already carries. */}
+            <TextLink
+              label={t("insulinPicker.mixUse")}
               onPress={() => setMixModeUi(true)}
-              hitSlop={8}
-              className="py-3.5 items-center"
-              style={{ marginTop: 10 }}
-            >
-              {/* Accent, not muted: this is a real alternative shape of the
-                  step, not the "skip" link the footer already carries. */}
-              <Text style={{ color: THEME.accent, fontSize: 15, fontWeight: "500" }}>
-                {t("insulinPicker.mixUse")}
-              </Text>
-            </Pressable>
+              style={{ marginTop: SPACE.md }}
+            />
           </FadeSlideIn>
         );
       }
@@ -1541,9 +1493,9 @@ export default function OnboardingScreen() {
               onClose={() => setShowMedTime(false)}
             />
             {alarmKitAvailable ? (
-              <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginTop: 12 }}>
+              <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.md }}>
                 {t("onboarding.alarmNote")}
-              </Text>
+              </Txt>
             ) : null}
           </FadeSlideIn>
         );
@@ -1591,21 +1543,21 @@ export default function OnboardingScreen() {
                   onClose={() => setShowBasalTime(false)}
                 />
                 {basalSelected ? (
-                  <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 4 }}>
+                  <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.xs }}>
                     {t("onboarding.basalReminderTip")}
-                  </Text>
+                  </Txt>
                 ) : null}
               </>
             ) : null}
             {planDecision.canSetUp ? (
-              <Text style={{ color: THEME.textMuted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
+              <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
                 {t("onboarding.planPermNote")}
-              </Text>
+              </Txt>
             ) : null}
             {alarmKitAvailable && planDecision.canSetUp ? (
-              <Text style={{ color: THEME.textMuted, fontSize: 14, lineHeight: 20, marginTop: 8 }}>
+              <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>
                 {t("onboarding.alarmNote")}
-              </Text>
+              </Txt>
             ) : null}
           </FadeSlideIn>
         );
@@ -1623,32 +1575,17 @@ export default function OnboardingScreen() {
               <RationaleText>{t("onboarding.analyticsShort3")}</RationaleText>
             </RationaleCard>
             {/* The three lines above summarise the full text, which stays whole behind this toggle. */}
-            <Pressable
+            <TextLink
+              label={t("onboarding.analyticsDetails")}
               onPress={() => {
                 hapticSelect();
                 setAnalyticsDetailsOpen((open) => !open);
               }}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: analyticsDetailsOpen }}
-              accessibilityLabel={t("onboarding.analyticsDetails")}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                alignSelf: "flex-start",
-                gap: 4,
-                marginBottom: 12,
-              }}
-            >
-              <Text style={{ color: THEME.accent, fontSize: 14 }}>
-                {t("onboarding.analyticsDetails")}
-              </Text>
-              <Ionicons
-                name={analyticsDetailsOpen ? "chevron-up" : "chevron-down"}
-                size={14}
-                color={THEME.accent}
-              />
-            </Pressable>
+              chevron
+              expanded={analyticsDetailsOpen}
+              align="start"
+              style={{ marginBottom: SPACE.sm }}
+            />
             {analyticsDetailsOpen ? (
               <View style={{ gap: 8, marginBottom: 16 }}>
                 <RationaleText>{t("onboarding.analyticsHelpCollect")}</RationaleText>
