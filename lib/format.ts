@@ -188,7 +188,10 @@ export function pctParts(value: number, decimals = 0): PctParts {
         .filter((p) => p.type !== "percentSign" && p.type !== "literal")
         .map((p) => p.value)
         .join("");
-      const literal = parts.find((p) => p.type === "literal")?.value ?? "";
+      const literal = (parts.find((p) => p.type === "literal")?.value ?? "").replace(
+        /[\u0020\u202f]/g,
+        "\u00a0",
+      );
       const signFirst = signIndex === 0;
       return {
         number,
@@ -205,7 +208,7 @@ export function pctParts(value: number, decimals = 0): PctParts {
   if (lang === "tr") return { number, sign: "%", signFirst: true };
   // Only de/fr/es space the sign; en/it/pt/ja/ar write it tight to the number.
   const spaced = lang === "de" || lang === "fr" || lang === "es";
-  return { number, sign: spaced ? " %" : "%", signFirst: false };
+  return { number, sign: spaced ? "\u00a0%" : "%", signFirst: false };
 }
 
 /** A percentage in the active language's own convention. `value` is 0..100. */

@@ -76,7 +76,8 @@ export function StatCard({
   const rtl = I18nManager.isRTL;
   const suffixNode = suffix ? (
     <Text
-      className={`text-mut text-sm font-semibold mb-1 ${suffixFirst ? "mr-1" : "ml-1"}`}
+      className={`text-mut font-semibold mb-1 ${fixedSize ? "text-xs" : "text-sm"} ${suffixFirst ? "mr-1" : "ml-1"}`}
+      numberOfLines={1}
     >
       {suffix}
     </Text>
@@ -108,7 +109,7 @@ export function StatCard({
 
       <View
         className="items-end"
-        style={{ flexDirection: rtl ? "row-reverse" : "row", flexWrap: fixedSize ? "wrap" : "nowrap" }}
+        style={{ flexDirection: rtl ? "row-reverse" : "row", flexWrap: "nowrap" }}
       >
         {suffixFirst ? suffixNode : null}
         {display !== undefined && fixedSize ? (
@@ -153,7 +154,7 @@ export function StatCard({
 
       {sparkline ? <View className="mt-2">{sparkline}</View> : null}
       {footnote && fixedSize ? (
-        <Text className="text-mut mt-1" style={{ fontSize: 10 }} numberOfLines={3}>
+        <Text className="text-mut mt-1" style={{ fontSize: 10 }}>
           {footnote}
         </Text>
       ) : footnote ? (
