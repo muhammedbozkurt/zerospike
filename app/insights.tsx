@@ -1145,22 +1145,15 @@ export default function InsightsScreen() {
                               ],
                             ] as const
                           ).map(([name, color, value]) => (
-                            // RTL EXEMPTION: dot -> label -> percent is a fixed
-                            // layout (percent pinned to the row's far edge via
-                            // the label's flex:1), not a reading-direction list.
-                            // Locked to physical-row order like TimeInRangeBar's
-                            // legend, because RN's automatic row mirroring alone
-                            // breaks it: the label's default (non-swapping,
-                            // see components/form.tsx) LEFT text alignment would
-                            // stay put while the row itself reversed, gluing the
-                            // percent straight onto the label with the dot left
-                            // stranded across the whole flex gap on the other
-                            // side - on-device this read "منخفض6%" with the dot
-                            // floating away from its own row.
+                            // Plain "row": RN mirrors it natively under RTL on
+                            // both platforms, so dot -> label -> percent reads
+                            // right-to-left with the dot beside its label. A
+                            // manual row-reverse double-flipped it and sent the
+                            // dot to the far physical left.
                             <View
                               key={name}
                               className="items-center"
-                              style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+                              style={{ flexDirection: "row" }}
                             >
                               <View
                                 style={{
@@ -1175,21 +1168,16 @@ export default function InsightsScreen() {
                                   color: THEME.text,
                                   fontSize: 12,
                                   fontWeight: "700",
-                                  flex: 1,
-                                  // Pinned physical-left: under an RTL base
-                                  // direction an Arabic label would otherwise
-                                  // align right, i.e. against the percent.
-                                  textAlign: "left",
-                                  // RN auto-flips marginLeft/Right independently
-                                  // of the flexDirection lock above, so the key
-                                  // itself has to be pre-swapped (same trick as
-                                  // InjectionBodyMap's side badges) to keep
-                                  // landing on the dot's side.
-                                  [rtl ? "marginRight" : "marginLeft"]: 8,
+                                  flexShrink: 1,
+                                  marginStart: 8,
                                 }}
                               >
                                 {name}
                               </Text>
+                              {/* A spacer, not flex:1 on the label: iOS keeps
+                                  a stretched Arabic label's text on the left
+                                  of its box, away from the dot. */}
+                              <View style={{ flex: 1 }} />
                               {/* Bidi: a bare "12%" can still get its sign
                                   reordered under an RTL base paragraph
                                   direction; pin it LTR like the other
@@ -1201,9 +1189,7 @@ export default function InsightsScreen() {
                                     color: THEME.textMuted,
                                     fontSize: 12,
                                     writingDirection: "ltr",
-                                    // Same pre-swapped key as the label's: a
-                                    // fixed gap so the percent never touches it.
-                                    [rtl ? "marginRight" : "marginLeft"]: 8,
+                                    marginStart: 8,
                                   },
                                 ]}
                               >
@@ -1285,7 +1271,7 @@ export default function InsightsScreen() {
                           {premium && agpBands ? (
                             <View
                               className="flex-row flex-wrap mt-2"
-                              style={{ gap: 10, flexDirection: rtl ? "row-reverse" : "row" }}
+                              style={{ gap: 10 }}
                             >
                               {(
                                 [
@@ -1297,8 +1283,7 @@ export default function InsightsScreen() {
                               ).map((entry) => (
                                 <View
                                   key={entry.label}
-                                  className="items-center"
-                                  style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+                                  className="items-center flex-row"
                                 >
                                   <View
                                     style={{
@@ -1309,15 +1294,7 @@ export default function InsightsScreen() {
                                       opacity: entry.opacity,
                                     }}
                                   />
-                                  <Text
-                                    style={{
-                                      color: THEME.textMuted,
-                                      fontSize: 10,
-                                      [rtl ? "marginRight" : "marginLeft"]: 5,
-                                    }}
-                                  >
-                                    {entry.label}
-                                  </Text>
+                                  <LegendLabel text={entry.label} />
                                 </View>
                               ))}
                             </View>
@@ -2317,5 +2294,40 @@ export default function InsightsScreen() {
         }}
       />
     </AppBackground>
+  );
+}
+
+/**
+ * An AGP legend label whose "25-75%" range is its own Text: inside one string
+ * the Arabic word before it turns the digits into Arabic numbers (bidi rule
+ * W2), the hyphen then no longer joins them and the range reads "%75-25". As
+ * sibling Texts of a natively mirrored row the word and the range keep their
+ * reading order, and the range is a single LTR run.
+ */
+function LegendLabel({ text }: { text: string }) {
+  const m = /^(.*?)(%?\s?\d+-\d+\s?%?)(.*)$/.exec(text);
+  const parts = m
+    ? [
+        { s: m[1].trim(), range: false },
+        { s: m[2].trim(), range: true },
+        { s: m[3].trim(), range: false },
+      ].filter((p) => p.s.length > 0)
+    : [{ s: text, range: false }];
+  return (
+    <>
+      {parts.map((p, i) => (
+        <Text
+          key={i}
+          style={{
+            color: THEME.textMuted,
+            fontSize: 10,
+            marginStart: i === 0 ? 5 : 3,
+            ...(p.range ? { writingDirection: "ltr" as const } : null),
+          }}
+        >
+          {p.s}
+        </Text>
+      ))}
+    </>
   );
 }
