@@ -14,6 +14,7 @@ import { Animated, StyleSheet, useColorScheme, View } from "react-native";
 import * as SystemUI from "expo-system-ui";
 
 import { isScreenshotMode } from "../screenshotMode";
+import { publishWidgetThemePref } from "../services/widgetTheme";
 import {
   loadThemePref,
   resolveScheme,
@@ -91,6 +92,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       : null;
     void loadThemePref(AsyncStorage, forced).then((p) => {
       if (alive) setPrefState(p);
+      if (!forced) void publishWidgetThemePref(p, { onlyIfChanged: true });
     });
     return () => {
       alive = false;
@@ -122,6 +124,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setPref = useCallback(
     async (next: ThemePref) => {
       await saveThemePref(AsyncStorage, next);
+      void publishWidgetThemePref(next);
       const target = resolveScheme(next, systemRef.current);
       if (target === schemeRef.current) {
         setPrefState(next);

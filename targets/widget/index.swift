@@ -57,7 +57,7 @@ private struct WidgetGround: View {
     case .accessoryRectangular, .accessoryInline, .accessoryCircular:
       Color.clear
     default:
-      WidgetPalette.background
+      WidgetBackdrop()
     }
   }
 }
@@ -671,9 +671,11 @@ struct ZerospikeWidget: Widget {
     StaticConfiguration(kind: "ZerospikeWidget", provider: ZerospikeProvider()) { entry in
       if #available(iOS 17.0, *) {
         ZerospikeWidgetView(entry: entry)
+          .widgetThemed()
           .containerBackground(for: .widget) { WidgetGround() }
       } else {
         ZerospikeWidgetView(entry: entry)
+          .widgetThemed()
           .background { WidgetGround() }
       }
     }

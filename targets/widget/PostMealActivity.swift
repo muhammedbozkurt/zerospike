@@ -119,6 +119,31 @@ private func readingPill(_ reading: String, unit: String, tones: ActivityTones) 
   }
 }
 
+/// The lock-screen card follows the in-app appearance choice (see
+/// WidgetThemePreference), not only the system one. The two Color-valued
+/// modifiers cannot see the environment override, so they get the colour sets
+/// resolved for the effective scheme. The Dynamic Island is untouched: it is
+/// always black.
+@available(iOS 16.2, *)
+private struct ActivityThemed: ViewModifier {
+  @Environment(\.colorScheme) private var system
+
+  func body(content: Content) -> some View {
+    let scheme = WidgetThemePreference.effective(system: system)
+    content
+      .environment(\.colorScheme, scheme)
+      .activityBackgroundTint(WidgetPalette.resolved("WidgetBackground", scheme: scheme))
+      .activitySystemActionForegroundColor(WidgetPalette.resolved("ActivityAccent", scheme: scheme))
+  }
+}
+
+@available(iOS 16.2, *)
+private extension View {
+  func activityThemed() -> some View {
+    modifier(ActivityThemed())
+  }
+}
+
 @available(iOS 16.2, *)
 struct PostMealActivityWidget: Widget {
   var body: some WidgetConfiguration {
@@ -168,8 +193,7 @@ struct PostMealActivityWidget: Widget {
       // link at all before, which made the one surface showing the timer the
       // one surface that could not act on it.
       .widgetURL(DeepLinks.postMeal2h)
-      .activityBackgroundTint(WidgetPalette.background)
-      .activitySystemActionForegroundColor(ActivityTones.card.accent)
+      .activityThemed()
       // Once the countdown has actually elapsed (staleDate passed - see the
       // module's `start`), the whole card fades: the same "done" look everywhere
       // this activity renders, with no new copy needed.

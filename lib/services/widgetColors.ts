@@ -1,8 +1,10 @@
-/* Android widget colours, one fixed palette per system ground. Independent of
- * the app theme module and the PDF palette on purpose: the widget follows the
- * SYSTEM theme (react-native-android-widget renders {light, dark} trees), not the
- * in-app appearance setting. DARK is the pre-K7 (cd0a140) look, except the
- * accent family, which is the brand turquoise #22c7e0 (lib/theme DARK.accentFill). */
+/* Android widget colours, one fixed palette per ground. Independent of the app
+ * theme module and the PDF palette on purpose. react-native-android-widget
+ * renders {light, dark} trees chosen by the SYSTEM ground; which palette goes
+ * into each tree comes from the in-app appearance choice (./widgetTheme), so a
+ * pinned light/dark wins over the system. DARK is the pre-K7 (cd0a140) look,
+ * except the accent family, which is the brand turquoise #22c7e0 (lib/theme
+ * DARK.accentFill). */
 
 export interface WidgetPalette {
   bgFrom: string;

@@ -3,17 +3,22 @@ import {
   FlexWidget,
   TextWidget,
   type ColorProp,
+  requestWidgetUpdate,
   type WidgetTaskHandlerProps,
 } from "react-native-android-widget";
 
 import {
   readLiveData,
+  ANDROID_WIDGET_NAME,
   ANDROID_QUICK_ADD_WIDGET_NAME,
   ANDROID_READING_WIDGET_NAME,
   type LiveData,
 } from "./liveData";
 import { MGDL_PER_MMOL } from "../glucose";
-import { WIDGET_DARK, WIDGET_LIGHT, type WidgetPalette } from "./widgetColors";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { WIDGET_DARK, type WidgetPalette } from "./widgetColors";
+import { readWidgetThemePref, widgetPalettes } from "./widgetTheme";
+import type { ThemePref } from "../theme/themePref";
 import { VERY_HIGH_MGDL } from "../glucose";
 import { formatTimeForLang } from "../format";
 
@@ -798,7 +803,7 @@ const WIDGET_BUILDERS: Record<
  * on the widget name so every widget shares the one snapshot read.
  */
 export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
-  const data = await readLiveData();
+  const [data, pref] = await Promise.all([readLiveData(), readWidgetThemePref(AsyncStorage)]);
   // The glance widget is the DEFAULT arm on purpose: it is the one that has been
   // placed on home screens since 2.0, and an unrecognised name must keep drawing
   // it rather than falling through to a newer layout.
@@ -808,14 +813,43 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
     case "WIDGET_UPDATE":
     case "WIDGET_RESIZED":
     case "WIDGET_CLICK":
-      props.renderWidget({
-        light: build(data, props.widgetInfo, WIDGET_LIGHT),
-        dark: build(data, props.widgetInfo, WIDGET_DARK),
-      });
+      props.renderWidget(themedTrees(build, data, props.widgetInfo, pref));
       break;
     case "WIDGET_DELETED":
       break;
     default:
       break;
   }
+}
+
+/** The {light, dark} pair the library switches on the SYSTEM ground, built from
+ *  the in-app appearance choice: a pinned light/dark sends one palette down both
+ *  trees, "system" keeps light-on-light and dark-on-dark. */
+export function themedTrees(
+  build: (data: LiveData | null, size: WidgetSize, pal: WidgetPalette) => React.JSX.Element,
+  data: LiveData | null,
+  size: WidgetSize,
+  pref: ThemePref
+) {
+  const pals = widgetPalettes(pref);
+  return { light: build(data, size, pals.light), dark: build(data, size, pals.dark) };
+}
+
+const ALL_WIDGET_BUILDERS: Array<[string, (typeof WIDGET_BUILDERS)[string]]> = [
+  [ANDROID_WIDGET_NAME, buildZerospikeWidget],
+  ...Object.entries(WIDGET_BUILDERS),
+];
+
+/** Redraws every placed widget (data push or appearance change). allSettled, not
+ *  a chain: each widget is optional and independent, one rejection must not
+ *  swallow the redraw of the rest. */
+export async function refreshAndroidWidgets(data: LiveData | null, pref: ThemePref) {
+  await Promise.allSettled(
+    ALL_WIDGET_BUILDERS.map(([widgetName, build]) =>
+      requestWidgetUpdate({
+        widgetName,
+        renderWidget: (info) => themedTrees(build, data, info, pref),
+      })
+    )
+  );
 }
