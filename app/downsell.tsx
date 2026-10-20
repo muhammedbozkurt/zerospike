@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -20,6 +20,7 @@ import {
   type DownsellOffer,
 } from "../lib/services/purchases";
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
+import { recordDownsellShown } from "../lib/services/downsell";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
@@ -55,6 +56,7 @@ function DownsellScreen() {
   const { toast } = useFeedback();
   const [offer, setOffer] = useState<DownsellOffer | null>(null);
   const [busy, setBusy] = useState(false);
+  const recordedRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -78,6 +80,14 @@ function DownsellScreen() {
   useEffect(() => {
     if (!offer) return;
     logEvent("downsell_view", { trigger });
+    // The paywall exit only reserves the session slot; the lifetime show is
+    // spent here, once the discount has been confirmed a second time, so a
+    // failed second fetch never burns one. The day-7 trigger records its own
+    // show before navigating.
+    if (trigger === "inapp" && offer.hasRealDiscount && !recordedRef.current) {
+      recordedRef.current = true;
+      void recordDownsellShown("inapp", Date.now());
+    }
     // Distinguishes "no real discount configured" (e.g. sandbox missing an intro
     // price) from a bug: the honest fallback is shown, not the discount card.
     if (!offer.hasRealDiscount) {

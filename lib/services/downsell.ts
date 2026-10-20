@@ -9,11 +9,15 @@ import {
   DOWNSELL_REARM_MS,
   canShowDownsell,
   applyDownsellShown,
-  applyPaywallDismissed,
+  createPaywallExitController,
+  createSessionOfferFlag,
   initialDownsellState,
+  normalizeDownsellState,
   paywallExitLocalGate,
   shouldOfferDownsellOnPaywallExit,
   type DownsellState,
+  type PaywallExitDeps,
+  type PaywallExitNav,
   type DownsellTrigger,
 } from "../downsellGate";
 import { getDownsellOffer, isPro } from "./purchases";
@@ -42,6 +46,7 @@ export {
   initialDownsellState,
   paywallExitLocalGate,
   shouldOfferDownsellOnPaywallExit,
+  createPaywallExitController,
 };
 export type { DownsellState, DownsellTrigger };
 
@@ -54,49 +59,24 @@ export async function getDownsellState(): Promise<DownsellState> {
   try {
     const raw = await AsyncStorage.getItem(DOWNSELL_KEY);
     if (!raw) return initialDownsellState;
-    const parsed = JSON.parse(raw);
-    return {
-      count: Number(parsed.count) || 0,
-      lastShownAt: parsed.lastShownAt ?? null,
-      lastTrigger: parsed.lastTrigger ?? null,
-      // Absent on any state persisted before 2.3.4 - defaults read as "never
-      // closed under the new rule", never crash on the old shape.
-      dismissCount: Number(parsed.dismissCount) || 0,
-      firstDismissAt: parsed.firstDismissAt ?? null,
-    };
+    return normalizeDownsellState(JSON.parse(raw));
   } catch {
     return initialDownsellState;
   }
 }
 
 // Process-lifetime flag: a new app launch is a new session, which is the
-// intended reading of "once per session".
-let shownThisSession = false;
-
-export function downsellShownThisSession(): boolean {
-  return shownThisSession;
-}
+// intended reading of "once per session". Shared by the paywall exit, the
+// day-7 offer and the winback so no two discount screens open in one session.
+export const sessionOffer = createSessionOfferFlag();
 
 /** Records a downsell show and returns the updated (persisted) state. */
 export async function recordDownsellShown(
   trigger: DownsellTrigger,
   now: number
 ): Promise<DownsellState> {
-  shownThisSession = true;
+  sessionOffer.reserve();
   const next = applyDownsellShown(await getDownsellState(), trigger, now);
-  try {
-    await AsyncStorage.setItem(DOWNSELL_KEY, JSON.stringify(next));
-  } catch {
-    // best-effort persistence
-  }
-  return next;
-}
-
-/** Records a paywall close (explicit dismiss or a cancelled purchase) and
- *  returns the updated (persisted) state - call BEFORE canShowDownsell so the
- *  close that just happened is counted. */
-export async function recordPaywallDismissed(now: number): Promise<DownsellState> {
-  const next = applyPaywallDismissed(await getDownsellState(), now);
   try {
     await AsyncStorage.setItem(DOWNSELL_KEY, JSON.stringify(next));
   } catch {
@@ -164,7 +144,7 @@ async function day7AlreadyTriggered(): Promise<boolean> {
 export async function shouldShowDay7Downsell(): Promise<boolean> {
   // Never let a discount sheet land in the middle of a store capture.
   if (isScreenshotMode()) return false;
-  if (shownThisSession) return false;
+  if (sessionOffer.isReserved()) return false;
   const state = await getDownsellState();
   const local = {
     onboardedAtMs: await getDay7Anchor(),
@@ -179,7 +159,10 @@ export async function shouldShowDay7Downsell(): Promise<boolean> {
   const proNow = await isPro();
   // No point pricing an offer for someone who already holds the entitlement.
   const hasRealDiscount = proNow ? false : (await getDownsellOffer()).hasRealDiscount;
-  return shouldTriggerDay7({ ...local, isPro: proNow, hasRealDiscount });
+  if (!shouldTriggerDay7({ ...local, isPro: proNow, hasRealDiscount })) return false;
+  // Taken here, after the awaits, so a paywall exit that reserved the slot in
+  // the meantime wins and this offer simply waits for another day.
+  return sessionOffer.reserve();
 }
 
 /**
@@ -194,4 +177,17 @@ export async function markDay7DownsellShown(now: number = Date.now()): Promise<v
     // best-effort
   }
   await recordDownsellShown("day7", now);
+}
+
+/** Real wiring of the paywall-exit decision (store, storage, session flag). */
+export const paywallExitDeps: PaywallExitDeps = {
+  isScreenshotMode,
+  session: sessionOffer,
+  getState: getDownsellState,
+  getOffer: getDownsellOffer,
+  now: () => Date.now(),
+};
+
+export function newPaywallExitController(nav: PaywallExitNav) {
+  return createPaywallExitController(paywallExitDeps, nav);
 }

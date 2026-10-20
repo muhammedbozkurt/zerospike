@@ -28,11 +28,10 @@ export interface DownsellState {
   count: number;
   lastShownAt: number | null;
   lastTrigger: DownsellTrigger | null;
-  /** Times the PAYWALL has been closed (an explicit dismiss or a cancelled
-   *  purchase) - distinct from `count` above. 0 on a state persisted before
-   *  2.3.4, which is exactly the "never closed under this rule" reading. */
+  /** Legacy (2.3.4 rule). No longer written or read by the gate; kept so a
+   *  state persisted by 2.3.4 round-trips unchanged. */
   dismissCount: number;
-  /** When the first of those closes happened; null on a pre-2.3.4 state. */
+  /** Legacy, see dismissCount. */
   firstDismissAt: number | null;
 }
 
@@ -96,12 +95,117 @@ export function applyDownsellShown(
   return { ...state, count: state.count + 1, lastShownAt: now, lastTrigger: trigger };
 }
 
-/** Records a paywall close (dismiss or cancelled purchase). `firstDismissAt`
- *  is stamped only once, by the first close ever seen. */
-export function applyPaywallDismissed(state: DownsellState, now: number): DownsellState {
+/**
+ * Normalises whatever JSON.parse produced from storage into a DownsellState.
+ * Fields absent on an old-shaped blob (pre-2.3.4) read as their initial value,
+ * and anything unparseable reads as the initial state; never throws.
+ */
+export function normalizeDownsellState(parsed: unknown): DownsellState {
+  if (parsed === null || typeof parsed !== "object") return initialDownsellState;
+  const p = parsed as Record<string, unknown>;
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+  const trigger = p.lastTrigger;
   return {
-    ...state,
-    dismissCount: state.dismissCount + 1,
-    firstDismissAt: state.firstDismissAt ?? now,
+    count: Number(p.count) || 0,
+    lastShownAt: num(p.lastShownAt),
+    lastTrigger:
+      trigger === "inapp" || trigger === "winback" || trigger === "day7" ? trigger : null,
+    dismissCount: Number(p.dismissCount) || 0,
+    firstDismissAt: num(p.firstDismissAt),
+  };
+}
+
+// ── One discount screen per session ────────────────────────────────────────
+
+export interface SessionOfferFlag {
+  /** Takes the session slot; false when it is already taken. Synchronous, so
+   *  two concurrent callers can never both get true. */
+  reserve(): boolean;
+  /** Gives the slot back (the offer turned out not to exist). */
+  release(): void;
+  isReserved(): boolean;
+}
+
+export function createSessionOfferFlag(): SessionOfferFlag {
+  let taken = false;
+  return {
+    reserve() {
+      if (taken) return false;
+      taken = true;
+      return true;
+    },
+    release() {
+      taken = false;
+    },
+    isReserved: () => taken,
+  };
+}
+
+// ── Paywall exit decision ──────────────────────────────────────────────────
+
+export interface PaywallExitDeps {
+  isScreenshotMode(): boolean;
+  session: SessionOfferFlag;
+  getState(): Promise<DownsellState>;
+  getOffer(): Promise<{ hasRealDiscount: boolean }>;
+  now(): number;
+}
+
+export type PaywallExitDecision = "downsell" | "exit";
+
+/**
+ * Decides what a paywall exit does. The session slot is reserved BEFORE the
+ * awaits, so two overlapping exits cannot both pass; it is handed back when
+ * the rule says no or the store has no real discount. On "downsell" the slot
+ * stays taken (the lifetime show itself is recorded by the downsell screen
+ * once it has confirmed the discount).
+ */
+export async function decidePaywallExit(
+  deps: PaywallExitDeps,
+  input: { plan: string; isPro: boolean }
+): Promise<PaywallExitDecision> {
+  if (input.isPro || deps.isScreenshotMode()) return "exit";
+  const reserved = deps.session.reserve();
+  const base = { plan: input.plan, isPro: input.isPro, shownThisSession: !reserved };
+  try {
+    const state = await deps.getState();
+    const now = deps.now();
+    if (!paywallExitLocalGate({ ...base, state, now })) {
+      if (reserved) deps.session.release();
+      return "exit";
+    }
+    const offer = await deps.getOffer();
+    if (!shouldOfferDownsellOnPaywallExit({ ...base, state, now, hasRealDiscount: offer.hasRealDiscount })) {
+      if (reserved) deps.session.release();
+      return "exit";
+    }
+    return "downsell";
+  } catch {
+    if (reserved) deps.session.release();
+    return "exit";
+  }
+}
+
+export interface PaywallExitNav {
+  closePaywall(): void;
+  openDownsell(): void;
+}
+
+/**
+ * Re-entrancy guard around decidePaywallExit: an X tap, a back gesture and a
+ * cancelled purchase can all land within the same offer lookup, and only the
+ * first may navigate. Meant to live for one paywall screen instance.
+ */
+export function createPaywallExitController(deps: PaywallExitDeps, nav: PaywallExitNav) {
+  let exiting = false;
+  return {
+    async requestExit(input: { plan: string; isPro: boolean }): Promise<void> {
+      if (exiting) return;
+      exiting = true;
+      const decision = await decidePaywallExit(deps, input);
+      if (decision === "downsell") nav.openDownsell();
+      else nav.closePaywall();
+    },
   };
 }

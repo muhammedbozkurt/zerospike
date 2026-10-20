@@ -46,7 +46,7 @@ import { logCrash, logEvent } from "../lib/analytics";
 import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSink";
 import { watchEntitlement, winbackHasRealDiscount } from "../lib/services/purchases";
 import { clearPaywallTrial, refreshPaywallTrialOnce } from "../lib/proCta";
-import { winbackAlreadyShown, markWinbackShown } from "../lib/services/downsell";
+import { winbackAlreadyShown, markWinbackShown, sessionOffer } from "../lib/services/downsell";
 import { holdSurvey } from "../lib/feedbackSurvey";
 import { CancelSurveyHost } from "../components/feedback/CancelSurveyHost";
 import { WhatsNewHost } from "../components/WhatsNewSheet";
@@ -605,9 +605,14 @@ function RootNavigator() {
       (async () => {
         try {
           if (await winbackAlreadyShown()) return;
+          // One discount screen per session: a paywall exit or day-7 offer
+          // that already holds the slot wins, and the winback stays unspent.
+          if (!sessionOffer.reserve()) return;
           if (await winbackHasRealDiscount()) {
             await markWinbackShown();
             router.push("/winback");
+          } else {
+            sessionOffer.release();
           }
         } finally {
           releaseSurvey();
