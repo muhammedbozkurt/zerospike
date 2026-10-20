@@ -68,7 +68,6 @@ import { PaywallPreview } from "../components/PaywallPreview";
 import { lifetimeYearsOfAnnual } from "../lib/paywallPricing";
 import { PRO_DAILY_MESSAGES } from "../lib/ai/spikeLimit";
 import { CARB_PRO_DAILY } from "../lib/ai/carbEstimateLimit";
-import { ANDROID_SYNC_WINDOW_DAYS, SYNC_WINDOW_DAYS } from "../lib/services/healthTypes";
 import {
   DEFAULT_TRIAL_DAYS,
   PERSONAL_WINDOW_DAYS,
@@ -616,9 +615,7 @@ function PaywallScreen() {
       ? [
           {
             icon: "heart-outline" as const,
-            text: t(Platform.OS === "ios" ? "paywall.benefitSyncIos" : "paywall.benefitSyncAndroid", {
-              days: Platform.OS === "ios" ? SYNC_WINDOW_DAYS : ANDROID_SYNC_WINDOW_DAYS,
-            }),
+            text: t(Platform.OS === "ios" ? "paywall.benefitSyncIos" : "paywall.benefitSyncAndroid"),
           },
         ]
       : []),

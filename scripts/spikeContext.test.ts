@@ -1159,6 +1159,28 @@ function consentWording(): void {
     ja: /治療|診断|アラーム|警告|用量/,
   };
   const newKeys = (k: string): boolean => /^(ctx|action|feedback|error)/.test(k) || k === "filtered" || k === "sourcesLabel" || k === "consentSummaryNote" || /^consent(Short|Agree|Details)/.test(k);
+  const shortProvider: Record<string, RegExp> = {
+    tr: /harici bir yapay zekâ hizmet sağlayıcı/,
+    en: /external AI service provider/,
+    de: /externen KI-Dienstleister/,
+    fr: /prestataire de services d.IA externe/,
+    es: /proveedor de servicios de IA externo/,
+    it: /fornitore di servizi di IA esterno/,
+    pt: /provedor de serviços de IA externo/,
+    ar: /مزوّد خدمة ذكاء اصطناعي خارجي/,
+    ja: /外部のAIサービス事業者/,
+  };
+  const shortHistory: Record<string, RegExp> = {
+    tr: /önceki mesajları/,
+    en: /earlier messages of this chat/,
+    de: /früheren Nachrichten dieses Chats/,
+    fr: /messages précédents de cette conversation/,
+    es: /mensajes anteriores de este chat/,
+    it: /messaggi precedenti di questa chat/,
+    pt: /mensagens anteriores deste chat/,
+    ar: /الرسائل السابقة في هذه المحادثة/,
+    ja: /この会話の以前のメッセージ/,
+  };
   for (const lang of langs) {
     const spike = localeSpike(lang);
     ok(`${lang}: ctxShared5 exists`, typeof spike.ctxShared5 === "string" && spike.ctxShared5.length > 0);
@@ -1182,7 +1204,9 @@ function consentWording(): void {
       ok(`${lang}.${key} names no provider`, !/AWS|Amazon|Anthropic|Claude|Bedrock/i.test(v), v);
     }
     ok(`${lang}.consentRecipient still names the provider in Details`, /Anthropic/.test(spike.consentRecipient) && /Amazon Web Services/.test(spike.consentRecipient));
-    ok(`${lang}: the three short lines are three distinct keys`, new Set([spike.consentShort1, spike.consentShort2, spike.consentShort3]).size === 3);
+    ok(`${lang}: the three short lines are three distinct sentences`, new Set([spike.consentShort1, spike.consentShort2, spike.consentShort3]).size === 3);
+    ok(`${lang}.consentShort1 says an external AI service provider`, shortProvider[lang].test(spike.consentShort1), spike.consentShort1);
+    ok(`${lang}.consentShort2 names the 14 day summary and the earlier messages of the chat`, spike.consentShort2.includes("14") && shortHistory[lang].test(spike.consentShort2), spike.consentShort2);
   }
   const sheetSrc = read("components/CarbEstimateSheet.tsx");
   ok("the carb sheet reads the same three short keys and names no provider itself", ["consentShort1", "consentShort2", "consentShort3"].every((k) => sheetSrc.includes(`t("spike.${k}")`)) && !/AWS|Amazon|Anthropic|Bedrock/.test(sheetSrc));

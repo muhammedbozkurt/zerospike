@@ -73,6 +73,15 @@ eq("currency differs", lifetimeYearsOfAnnual(P(99.99, "USD"), P(29.99, "EUR")), 
 eq("currency empty", lifetimeYearsOfAnnual(P(99.99, ""), P(29.99, "")), null);
 eq("lifetime not dearer than a year", lifetimeYearsOfAnnual(P(29.99), P(29.99)), null);
 eq("whole years", lifetimeYearsOfAnnual(P(90), P(30)), 3);
+// Accepted behaviour: a lifetime only 5% above the annual rounds to 1.1 years and still shows.
+eq("1.05x rounds to 1.1", lifetimeYearsOfAnnual(P(31.5), P(30)), 1.1);
+eq("below 1.05x does not show", lifetimeYearsOfAnnual(P(31.4), P(30)), null);
+// num() of the years figure: Latin digits with a dot in en/ar/ja, comma decimal in tr/de.
+const YEARS_TEXT: Record<string, string> = { en: "3.3", ar: "3.3", ja: "3.3", tr: "3,3", de: "3,3" };
+for (const [l, want] of Object.entries(YEARS_TEXT)) {
+  setActiveLang(l);
+  eq(`${l} num(3.3)`, norm(num(3.3)), want);
+}
 setActiveLang("en");
 
 if (failed) {
