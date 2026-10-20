@@ -109,30 +109,37 @@ const HALF: readonly Pt[] = [
   [0, 245],
 ];
 
-const ARM_HALF: readonly Pt[] = [
-  [41, 97],
-  [47, 90],
-  [54.5, 89.5],
-  [59.5, 96.5],
-  [61, 108],
-  [60.5, 124],
-  [59.5, 140],
-  [58.5, 152],
-  [57.5, 172],
-  [56.5, 192],
-  [56, 204],
-  [58.5, 212],
-  [59, 224],
-  [56, 236],
-  [51, 236.5],
-  [48.5, 226],
-  [48, 214],
-  [48.5, 204],
-  [48.5, 192],
-  [47.5, 172],
-  [44.5, 152],
-  [42.5, 130],
-  [41.5, 112],
+/**
+ * Right arm as offsets from the midline, deltoid down to the hand. At least a
+ * quarter of the chest width (88 units) all the way to the wrist, narrowing
+ * gently from the elbow (25) to the wrist (23). The outer edge reaches 69.5
+ * units from the midline, so the shoulders read wider than the earlier 61.
+ */
+export const ARM_HALF: readonly Pt[] = [
+  [40, 98],
+  [46, 90],
+  [55, 87],
+  [63.5, 90.5],
+  [68.5, 99],
+  [69.5, 112],
+  [69, 130],
+  [68.5, 148],
+  [68, 168],
+  [67.5, 188],
+  [67, 206],
+  [66.5, 222],
+  [66, 235],
+  [63, 245],
+  [56, 248.5],
+  [49, 245],
+  [44, 235],
+  [43.5, 222],
+  [43.5, 206],
+  [43.5, 188],
+  [43, 168],
+  [42, 148],
+  [41, 130],
+  [40.5, 112],
 ];
 
 function bodyLoop(): Pt[] {
@@ -145,6 +152,60 @@ function bodyLoop(): Pt[] {
 }
 
 export const TORSO_PATH = smoothClosed(bodyLoop());
+/** The body loop and the arm loop as Catmull-Rom control points, for the
+ *  measurements in scripts/injectionMapGeometry.test.ts. */
+export function torsoPoints(): Pt[] {
+  return bodyLoop();
+}
+export function armPoints(side: "screenRight" | "screenLeft"): Pt[] {
+  const right = ARM_HALF.map(shiftX);
+  return side === "screenRight" ? right : right.map(mirrorX);
+}
+
+/**
+ * Closed outline sampled to a polyline along the SAME Catmull-Rom curve
+ * smoothClosed() draws, so a width measured on it is the drawn width.
+ */
+export function sampleClosed(pts: readonly Pt[], steps = 12): Pt[] {
+  const n = pts.length;
+  const out: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n];
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % n];
+    const p3 = pts[(i + 2) % n];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps;
+      const u = 1 - t;
+      out.push([
+        u * u * u * p1[0] + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * p2[0],
+        u * u * u * p1[1] + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * p2[1],
+      ]);
+    }
+  }
+  return out;
+}
+
+/** Horizontal extent [min, max] of a sampled closed outline at height y. */
+export function spanAt(poly: readonly Pt[], y: number): [number, number] | null {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if ((a[1] <= y && b[1] > y) || (b[1] <= y && a[1] > y)) {
+      const x = a[0] + ((y - a[1]) / (b[1] - a[1])) * (b[0] - a[0]);
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+  }
+  return lo <= hi ? [lo, hi] : null;
+}
+
 export const ARM_PATHS: readonly string[] = [
   smoothClosed(ARM_HALF.map(shiftX)),
   smoothClosed(ARM_HALF.map(shiftX).map(mirrorX)),
@@ -174,8 +235,8 @@ export const REGIONS: readonly Region[] = [
   { site: "abdomen_right", layout: "row", surface: "front", box: leftBox(4, 156, 27, 34), rx: 11 },
   { site: "thigh_left", layout: "column", surface: "front", box: rightBox(8, 252, 24, 48), rx: 11 },
   { site: "thigh_right", layout: "column", surface: "front", box: leftBox(8, 252, 24, 48), rx: 11 },
-  { site: "arm_left", layout: "column", surface: "front", box: rightBox(46, 112, 11, 34), rx: 5.5 },
-  { site: "arm_right", layout: "column", surface: "front", box: leftBox(46, 112, 11, 34), rx: 5.5 },
+  { site: "arm_left", layout: "column", surface: "front", box: rightBox(46.5, 112, 17, 34), rx: 7 },
+  { site: "arm_right", layout: "column", surface: "front", box: leftBox(46.5, 112, 17, 34), rx: 7 },
   { site: "buttock_left", layout: "row", surface: "back", box: rightBox(4, 206, 28, 34), rx: 12, rowYFactor: 0.4 },
   { site: "buttock_right", layout: "row", surface: "back", box: leftBox(4, 206, 28, 34), rx: 12, rowYFactor: 0.4 },
 ];

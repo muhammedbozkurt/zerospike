@@ -157,6 +157,28 @@ async function main() {
     }
   });
 
+  await check("heatScale: five tiers, each one step apart, used tiers read on the figure, tier 0 is framed", () => {
+    const mix = (a: string, b: string, t: number) => {
+      const ch = (h: string, k: number) => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
+      return `#${[0, 1, 2]
+        .map((k) => Math.round(ch(a, k) + (ch(b, k) - ch(a, k)) * t).toString(16).padStart(2, "0"))
+        .join("")}`;
+    };
+    for (const p of [DARK, LIGHT]) {
+      assert.equal(p.heatScale.length, 5, `${p.scheme} length`);
+      const body = mix(p.surfaceRaised, p.text, 0.05);
+      const plate = mix(p.surfaceRaised, p.text, 0.02);
+      for (let i = 1; i < 5; i++) {
+        const step = contrast(p.heatScale[i], p.heatScale[i - 1], p.bg);
+        assert.ok(step >= 1.3, `${p.scheme} tier${i}/tier${i - 1} ${step.toFixed(2)}`);
+      }
+      assert.ok(contrast(p.heatScale[3], plate, p.bg) >= 3, `${p.scheme} tier3/plate`);
+      assert.ok(contrast(p.heatScale[4], plate, p.bg) >= 3, `${p.scheme} tier4/plate`);
+      assert.ok(contrast(p.heatEdge, p.heatScale[0], p.bg) >= 1.5, `${p.scheme} frame/tier0`);
+      assert.ok(contrast(p.heatEdge, body, p.bg) >= 1.5, `${p.scheme} frame/body`);
+    }
+  });
+
   await check("zoom plate: plate reads against bg, saturated points keep 3:1 on the plate", () => {
     const ch = (h: string, k: number) => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
     for (const p of [DARK, LIGHT]) {

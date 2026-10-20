@@ -56,6 +56,10 @@ export interface Palette {
   /** Injection map: never used, then three used tiers, opaque on the figure. */
   heatRamp: readonly [string, string, string, string];
   heatEdge: string;
+  /** Injection map, five absolute count tiers (0, 1, 2, 3, 4+). Light theme:
+   *  white to deep teal, one step darker per tier. Dark theme: dim slate to
+   *  bright cyan, one step more luminous per tier. Tier 0 is drawn with a frame. */
+  heatScale: readonly [string, string, string, string, string];
 }
 
 /** SINGLE source for the dark "very high" hue (>= the fixed 250 mg/dL ceiling),
@@ -125,6 +129,7 @@ export const DARK: Palette = {
   glowK: 1,
   heatRamp: ["#33454f", "#2F8A9C", "#27AFC6", "#2EE6FF"],
   heatEdge: "#5f7a88",
+  heatScale: ["#33454f", "#26808F", "#2A9BB2", "#2DB9D2", "#2EE6FF"],
 };
 
 export const LIGHT: Palette = {
@@ -185,6 +190,7 @@ export const LIGHT: Palette = {
   glowK: 0.3,
   heatRamp: ["#FFFFFF", "#8FCADA", "#3F9DB8", "#0B6A82"],
   heatEdge: "#5E7480",
+  heatScale: ["#FFFFFF", "#C2E0EA", "#86C3D5", "#3F9DB8", "#0B6A82"],
 };
 
 export const PALETTES: Record<Scheme, Palette> = { light: LIGHT, dark: DARK };
@@ -372,6 +378,7 @@ export const THEME = live((p) => ({
   glowK: p.glowK,
   heatRamp: p.heatRamp,
   heatEdge: p.heatEdge,
+  heatScale: p.heatScale,
   ink: p.text,
   muted: p.textMuted,
   accentSoft: p.accentStrong,
