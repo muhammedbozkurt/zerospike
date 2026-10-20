@@ -38,7 +38,7 @@ const SCENES: Record<SceneLang, readonly [SceneFood, SceneFood, SceneFood]> = {
     { en: "Filter coffee", grams: 250 },
   ],
   en: [
-    { en: "Toast bread", grams: 60 },
+    { en: "Toast bread", grams: 30 },
     { en: "Egg", grams: 50 },
     { en: "Milk", grams: 244 },
   ],

@@ -303,11 +303,11 @@ export const PORTION_CHIPS_MAX = 5;
 export interface PortionChip {
   /** "slice:1", "slice:2", "grams": the selection key. */
   id: string;
-  kind: "measure" | "grams";
-  /** null for the grams chip (its text is the generic "grams..."). */
+  kind: "measure" | "grams" | "oz";
+  /** null for the grams and oz chips (their text is the generic "grams..." / "oz..."). */
   label_key: PortionLabelKey | null;
   multiplier: number;
-  /** Grams of ONE measure; 0 for the grams chip. */
+  /** Grams of ONE measure; 0 for the grams and oz chips. */
   unit_g: number;
 }
 
@@ -334,11 +334,14 @@ function cleanMeasures(measures: readonly PortionMeasure[], typicalG: number): P
 
 /** Chips for one food: the primary measure x1 and x2, the other measures x1
  *  (at most 3 measures in all), then "grams": 5 chips at most. A food without
- *  a measure gets a synthetic "portion" measure sized by its typical portion. */
+ *  a measure gets a synthetic "portion" measure sized by its typical portion.
+ *  `ozEntry` (US English) adds an "oz..." chip right before "grams...": a
+ *  second free-entry chip, so a US row can hold 6 chips. */
 export function buildPortionChips(
   measures: readonly PortionMeasure[],
   primaryKey?: PortionLabelKey | null,
-  typicalG = 0
+  typicalG = 0,
+  ozEntry = false
 ): PortionChip[] {
   const list = cleanMeasures(measures, typicalG);
   const primary = list.find((m) => m.label_key === primaryKey) ?? list[0];
@@ -352,14 +355,15 @@ export function buildPortionChips(
   const chips: PortionChip[] = [chip(primary, 1)];
   if (primary.grams * 2 <= COMPOSE_MAX_GRAMS) chips.push(chip(primary, 2));
   for (const m of list) if (m !== primary) chips.push(chip(m, 1));
+  if (ozEntry) chips.push({ id: "oz", kind: "oz", label_key: null, multiplier: 1, unit_g: 0 });
   chips.push({ id: "grams", kind: "grams", label_key: null, multiplier: 1, unit_g: 0 });
   return chips;
 }
 
-/** Grams a chip stands for. The grams chip has no size of its own: it keeps
- *  whatever was typed (currentGrams). */
+/** Grams a chip stands for. The grams and oz chips have no size of their own:
+ *  they keep whatever was typed (currentGrams). */
 export function chipGrams(chip: PortionChip, currentGrams = 0): number {
-  const grams = chip.kind === "grams" ? finite(currentGrams) : chip.unit_g * chip.multiplier;
+  const grams = chip.kind !== "measure" ? finite(currentGrams) : chip.unit_g * chip.multiplier;
   return round1(Math.min(Math.max(0, grams), COMPOSE_MAX_GRAMS));
 }
 

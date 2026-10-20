@@ -48,10 +48,12 @@ import {
   FoodCard,
   FoodSearchBlock,
   LiveTotalHeader,
+  entryUnitAfterChip,
   gramOpenAfterChip,
   loadFoodPortions,
   rememberPortion,
   useFoodPortionsMap,
+  usePortionUnitSystem,
 } from "./meal";
 import { SCRIM } from "./SheetShell";
 import { Button } from "./ui";
@@ -151,6 +153,8 @@ export function MealComposeSheet({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Food[]>([]);
   const [gramOpen, setGramOpen] = useState<Record<string, boolean>>({});
+  const [entryUnit, setEntryUnit] = useState<Record<string, "g" | "oz">>({});
+  const unitSystem = usePortionUnitSystem();
   const [drafts, setDrafts] = useState<Record<string, EditableItem>>({});
 
   const itemsRef = useRef(items);
@@ -270,11 +274,12 @@ export function MealComposeSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items.map((item) => `${item.key}:${item.estimate ? 1 : 0}`).join("|")]
   );
-  const portionViews = useFoodPortionsMap(portionFoods);
+  const portionViews = useFoodPortionsMap(portionFoods, unitSystem === "us");
 
   const onChip = (item: ComposeItem, chip: PortionChip) => {
     const open = gramOpenAfterChip(chip);
     setGramOpen((prev) => ({ ...prev, [item.key]: open }));
+    if (open) setEntryUnit((prev) => ({ ...prev, [item.key]: entryUnitAfterChip(chip) }));
     if (chip.kind === "measure" && chip.label_key) {
       rememberPortion(item.food_id, chip.label_key);
       onChange(setComposePortion(itemsRef.current, item.key, chipGrams(chip)));
@@ -442,6 +447,8 @@ export function MealComposeSheet({
                         item={item}
                         chips={portionViews[item.food_id]?.chips ?? []}
                         gramOpen={gramOpen[item.key] === true}
+                        entryUnit={entryUnit[item.key] ?? "g"}
+                        units={{ system: unitSystem, gPerFlOz: portionViews[item.food_id]?.gPerFlOz }}
                         onChip={(chip) => onChip(item, chip)}
                         onGrams={(grams) =>
                           onChange(setComposePortion(itemsRef.current, item.key, grams))

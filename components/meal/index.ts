@@ -14,14 +14,19 @@ export {
   useFoodPortionsMap,
   type FoodPortionsView,
 } from "./useFoodPortions";
+export { usePortionUnitSystem } from "./usePortionUnitSystem";
 export {
   cardPortionState,
   chipA11yLabel,
+  chipLabel,
   chipText,
+  entryUnitAfterChip,
   estimateAmountText,
   gramOpenAfterChip,
   searchBlockGroups,
   splitTotalLine,
   targetSharePct,
   visibleChips,
+  type ChipLabel,
+  type ChipUnits,
 } from "./mealCards";
