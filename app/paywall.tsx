@@ -65,6 +65,10 @@ import { targetBandFor } from "../lib/agpChart";
 import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
 import { clearPaywallTrial, getPaywallTrialGen, primePaywallTrial, resetPaywallTrialCache } from "../lib/proCta";
 import { PaywallPreview } from "../components/PaywallPreview";
+import { lifetimeYearsOfAnnual } from "../lib/paywallPricing";
+import { PRO_DAILY_MESSAGES } from "../lib/ai/spikeLimit";
+import { CARB_PRO_DAILY } from "../lib/ai/carbEstimateLimit";
+import { ANDROID_SYNC_WINDOW_DAYS, SYNC_WINDOW_DAYS } from "../lib/services/healthTypes";
 import {
   DEFAULT_TRIAL_DAYS,
   PERSONAL_WINDOW_DAYS,
@@ -343,16 +347,8 @@ function PaywallScreen() {
     annual && annualPerMonthValue != null
       ? money(annualPerMonthValue, annual.currencyCode)
       : null;
-  // What the one-off costs in years of the annual plan, from the STORE's own
-  // two prices - never a written-down number, because both move per country,
-  // per currency and per promotion. Rounded to a half year (2, 2.5, 3), which
-  // is as precise as an anchor should be. Absent whenever either price is
-  // missing, so the line disappears rather than anchoring against nothing.
   const lifetime = plans.lifetime;
-  const lifetimeYears =
-    lifetime && annual && annual.price > 0 && lifetime.price > 0
-      ? Math.round((lifetime.price / annual.price) * 2) / 2
-      : null;
+  const lifetimeYears = lifetimeYearsOfAnnual(lifetime, annual);
 
   function selectPlan(p: PlanId) {
     hapticSelect();
@@ -616,16 +612,25 @@ function PaywallScreen() {
   const unavailable = offer?.status === "unavailable";
 
   const benefits = [
-    { icon: "document-text-outline" as const, text: t("paywall.benefitPdf") },
-    { icon: "analytics-outline" as const, text: t("paywall.benefitTrends") },
     ...(healthAvailable
       ? [
           {
             icon: "heart-outline" as const,
-            text: t(Platform.OS === "ios" ? "paywall.benefitImportIos" : "paywall.benefitImportAndroid"),
+            text: t(Platform.OS === "ios" ? "paywall.benefitSyncIos" : "paywall.benefitSyncAndroid", {
+              days: Platform.OS === "ios" ? SYNC_WINDOW_DAYS : ANDROID_SYNC_WINDOW_DAYS,
+            }),
           },
         ]
       : []),
+    {
+      icon: "sparkles-outline" as const,
+      text: t("paywall.benefitSpike", {
+        messages: isolateLtr(num(PRO_DAILY_MESSAGES)),
+        carbs: isolateLtr(num(CARB_PRO_DAILY)),
+      }),
+    },
+    { icon: "document-text-outline" as const, text: t("paywall.benefitPdf") },
+    { icon: "analytics-outline" as const, text: t("paywall.benefitTrends") },
   ];
 
   // A limit context (health/foods/...) takes over the headline with its own
