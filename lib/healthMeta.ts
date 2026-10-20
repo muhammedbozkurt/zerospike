@@ -17,6 +17,8 @@ export interface HealthWriteMeta {
   /** Strictly increasing per record id (epoch ms at write time). */
   version: number;
   mealContext: MealContext | null;
+  /** Carb sample that came from a carb estimate, not a measured portion. */
+  estimated?: boolean;
 }
 
 /** Only tags that state a meal relation map; bedtime/manual/unset say nothing
@@ -79,6 +81,24 @@ export function toHealthKitMetadata(meta: HealthWriteMeta): Record<string, strin
     out.HKBloodGlucoseMealTime = 2;
   }
   return out;
+}
+
+/** Custom HealthKit metadata key (not an HK* key) that marks a carbohydrate
+ *  sample as an estimate. It is replaced together with the sample on a rewrite. */
+export const HK_ESTIMATE_KEY = "ZerospikeEstimated";
+
+/** Extra HealthKit metadata of a carbohydrate sample; empty when measured. */
+export function carbEstimateMetadata(estimated: boolean | undefined): Record<string, boolean> {
+  return estimated ? { [HK_ESTIMATE_KEY]: true } : {};
+}
+
+/** Health Connect NutritionRecord.name of an estimated meal. Its metadata has no
+ *  custom keys, so the name carries the mark: a language-independent tilde and
+ *  the app name, never the user's own meal text. */
+export const HC_ESTIMATE_NAME = "~ Zerospike";
+
+export function carbEstimateName(estimated: boolean | undefined): string | undefined {
+  return estimated ? HC_ESTIMATE_NAME : undefined;
 }
 
 /** react-native-health-connect RelationToMeal: GENERAL 1, FASTING 2,

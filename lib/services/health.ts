@@ -1679,7 +1679,15 @@ export function subscribeHealthBackgroundImport(listener: () => void): () => voi
 // ── Carbs and insulin: opt-in mirror writes, one switch per data type ───────
 
 export type HealthRecordInput =
-  | { kind: "carbs"; id: string; profileId: string; loggedAt: string; grams: number }
+  | {
+      kind: "carbs";
+      id: string;
+      profileId: string;
+      loggedAt: string;
+      grams: number;
+      /** From a carb estimate: the sample is marked as such in the store. */
+      estimated?: boolean;
+    }
   | {
       kind: "insulin";
       id: string;
@@ -1722,7 +1730,7 @@ async function writeRecordToHealth(
   try {
     const call =
       input.kind === "carbs"
-        ? provider.writeCarbs(input.grams, input.loggedAt, meta)
+        ? provider.writeCarbs(input.grams, input.loggedAt, { ...meta, estimated: input.estimated === true })
         : provider.writeInsulin(input.units, input.insulinKind, input.loggedAt, meta);
     return await withNativeTimeout(call);
   } catch (err) {

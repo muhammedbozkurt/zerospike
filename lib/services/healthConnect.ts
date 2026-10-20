@@ -1,6 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash } from "../analytics";
-import { hasValidSyncKey, toRelationToMeal, type HealthWriteMeta } from "../healthMeta";
+import {
+  carbEstimateName,
+  hasValidSyncKey,
+  toRelationToMeal,
+  type HealthWriteMeta,
+} from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
@@ -290,6 +295,8 @@ async function writeCarbs(
         endTime: end.toISOString(),
         totalCarbohydrate: { value, unit: "grams" },
         mealType: 0, // UNKNOWN
+        // A rewrite replaces the whole record, so the mark follows every edit.
+        ...(meta?.estimated ? { name: carbEstimateName(true) } : {}),
         metadata:
           meta && hasValidSyncKey(meta)
             ? { recordingMethod: 3, clientRecordId: meta.recordId, clientRecordVersion: meta.version }
