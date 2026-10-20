@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { num } from "../../lib/format";
+import { useCarbChoiceText } from "../../lib/carbDisplayPref";
 import {
   chipFromGrams,
   composeItemCarbs,
@@ -48,6 +49,7 @@ export function FoodCard({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
+  const choiceText = useCarbChoiceText();
   const state = cardPortionState(chips, item.portion_g, gramOpen);
   const selectedId = selectedChipId ?? state.selectedChipId;
   const [text, setText] = useState(String(item.portion_g));
@@ -58,6 +60,7 @@ export function FoodCard({
   }, [item.portion_g]);
 
   const carbs = composeItemCarbs(item);
+  const choices = choiceText(carbs);
   const removeLabel = `${t("mealCompose.remove")}: ${item.name}`;
 
   return (
@@ -74,15 +77,26 @@ export function FoodCard({
         </Text>
       }
       figure={
-        <Text
-          accessibilityLabel={`${num(carbs)} ${t("common.grams")}`}
-          style={[TABULAR, { color: THEME.text, fontSize: 22, fontWeight: "800" }]}
-        >
-          {num(carbs)}
-          <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
-            {t("common.grams")}
+        <View style={{ alignItems: "flex-end" }}>
+          <Text
+            accessibilityLabel={`${num(carbs)} ${t("common.grams")}${choices ? `, ${choices}` : ""}`}
+            style={[TABULAR, { color: THEME.text, fontSize: 22, fontWeight: "800" }]}
+          >
+            {num(carbs)}
+            <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600" }}>
+              {t("common.grams")}
+            </Text>
           </Text>
-        </Text>
+          {choices ? (
+            <Text
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={[TABULAR, { color: THEME.textMuted, fontSize: 11, fontWeight: "600" }]}
+            >
+              {choices}
+            </Text>
+          ) : null}
+        </View>
       }
     >
       {state.showGramField ? (

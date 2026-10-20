@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import type { EditableItem } from "../../lib/ai/carbEstimateClient";
 import { num } from "../../lib/format";
+import { useCarbChoiceText } from "../../lib/carbDisplayPref";
 import { parseGramsInput } from "../../lib/mealCompose";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../../lib/theme/tokens";
 import { withAlpha } from "../rich";
@@ -35,9 +36,11 @@ export function EstimateResultCard({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
+  const choiceText = useCarbChoiceText();
   const [editing, setEditing] = useState(false);
   const amount = estimateAmountText(parseGramsInput(line.quantityText), line.unit, num);
   const name = line.name.trim();
+  const choices = choiceText(parseGramsInput(line.gramsText));
 
   return (
     <MealCardShell
@@ -57,6 +60,7 @@ export function EstimateResultCard({
         />
       }
       figure={
+        <View style={{ alignItems: "flex-end" }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Text style={{ color: THEME.textMuted, fontSize: 18, fontWeight: "700" }}>≈ </Text>
           <TextInput
@@ -84,6 +88,12 @@ export function EstimateResultCard({
           <Text style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "600", marginStart: 3 }}>
             {t("common.grams")}
           </Text>
+        </View>
+        {choices ? (
+          <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 11, fontWeight: "600" }]}>
+            {choices}
+          </Text>
+        ) : null}
         </View>
       }
     >

@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { num, pct } from "../../lib/format";
+import { useCarbChoiceText } from "../../lib/carbDisplayPref";
 import { TABULAR, THEME } from "../../lib/theme/tokens";
 import { AnimatedNumber } from "../AnimatedNumber";
 import { splitTotalLine, targetSharePct } from "./mealCards";
@@ -27,10 +28,12 @@ export function LiveTotalHeader({
   todayG?: number;
 }) {
   const { t } = useTranslation();
+  const choiceText = useCarbChoiceText();
   const safeTotal = Number.isFinite(totalG) && totalG > 0 ? totalG : 0;
   const { before, after } = splitTotalLine(t("mealCompose.totalLine", { value: SLOT }), SLOT);
   const share = targetSharePct(safeTotal, targetG);
-  const spoken = t("mealCompose.totalLine", { value: num(safeTotal) });
+  const choices = choiceText(safeTotal);
+  const spoken = [t("mealCompose.totalLine", { value: num(safeTotal) }), choices].filter(Boolean).join(", ");
 
   return (
     <View
@@ -53,6 +56,11 @@ export function LiveTotalHeader({
         />
         <Text style={{ fontSize: 16, fontWeight: "600", color: THEME.textMuted }}>{after}</Text>
       </Text>
+      {choices ? (
+        <Text numberOfLines={1} style={[TABULAR, { marginTop: 2, fontSize: 14, color: THEME.textMuted }]}>
+          {choices}
+        </Text>
+      ) : null}
       {share !== null ? (
         <Text
           numberOfLines={2}

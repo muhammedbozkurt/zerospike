@@ -526,6 +526,17 @@ const ja: TranslationSchema = {
     addPeriodTag: "タイミングタグを追加",
     deleteA11y: "この記録を削除",
   },
+  carbDisplay: {
+    title: "炭水化物の表示",
+    gram: "グラム",
+    choice15: "15 g単位",
+    portion10: "10 g単位",
+    hint: "グラムに加えて、合計や食事カードに単位数でも表示します。計算、PDF、CSVは常にグラムを使います。",
+    regionUs: "米国で一般的",
+    regionGb: "英国で一般的",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "それでも保存しますか？",
     recentBasal: "直近{{h}}時間に基礎インスリンの記録があります({{time}}、{{units}}単位)。",

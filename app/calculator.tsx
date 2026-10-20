@@ -121,6 +121,7 @@ import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { Skeleton } from "../components/Skeleton";
 import { DirIcon } from "../components/DirIcon";
 import { CarbRatioLine } from "../components/CarbRatioLine";
+import { useCarbChoiceText } from "../lib/carbDisplayPref";
 import { formatTime, num, relativeDay } from "../lib/format";
 import {
   GLUCOSE_INPUT_CEILING,
@@ -251,6 +252,7 @@ function ReadoutCard({
   suffix,
   color,
   accessory,
+  note,
   children,
 }: {
   label: string;
@@ -258,6 +260,8 @@ function ReadoutCard({
   suffix?: string;
   color?: string;
   accessory?: React.ReactNode;
+  /** Display-only secondary line under the figure (carb choices). */
+  note?: string | null;
   children?: React.ReactNode;
 }) {
   return (
@@ -289,6 +293,11 @@ function ReadoutCard({
           {accessory}
         </View>
       </View>
+      {note ? (
+        <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 12, textAlign: "right", marginTop: 2 }]}>
+          {note}
+        </Text>
+      ) : null}
       {children}
     </GlassCard>
   );
@@ -656,6 +665,7 @@ function SitePickerModal({
 
 function CalculatorScreen() {
   const { t } = useTranslation();
+  const choiceText = useCarbChoiceText();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const {
@@ -2185,6 +2195,7 @@ function CalculatorScreen() {
             label={t("calculator.estCarbs")}
             value={num(estimate.carbs)}
             suffix={t("common.grams")}
+            note={choiceText(estimate.carbs)}
           >
             {/* A template has no single portion to drag: its carbs are the sum of its
                 items, and one slider over the lot would silently rescale every one

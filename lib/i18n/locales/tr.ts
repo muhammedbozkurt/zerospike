@@ -524,6 +524,17 @@ const tr = {
     addPeriodTag: "Dönem etiketi ekleyin",
     deleteA11y: "Bu kaydı silin",
   },
+  carbDisplay: {
+    title: "Karbonhidrat gösterimi",
+    gram: "Gram",
+    choice15: "15 g seçim",
+    portion10: "10 g porsiyon",
+    hint: "Gramın yanında toplamlarda ve öğün kartlarında miktar seçim veya porsiyon olarak da gösterilir. Hesaplamalar, PDF ve CSV her zaman gram kullanır.",
+    regionUs: "ABD'de yaygın",
+    regionGb: "İngiltere'de yaygın",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "Yine de kaydedilsin mi?",
     recentBasal: "Son {{h}} saat içinde bir bazal kaydı var ({{time}}, {{units}} ünite).",

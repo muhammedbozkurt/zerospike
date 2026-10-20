@@ -31,6 +31,7 @@ import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { Txt } from "./ui";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { hasMealWeight } from "../lib/mealPrefill";
+import { useCarbChoiceText } from "../lib/carbDisplayPref";
 import { IconTile } from "./rich/IconTile";
 import { withAlpha } from "./rich/GlassCard";
 import {
@@ -448,6 +449,7 @@ function JournalItemBase({
   firstInPanel,
 }: Props) {
   const { t } = useTranslation();
+  const choiceText = useCarbChoiceText();
   const chrome = {
     inPanel,
     firstInPanel,
@@ -665,6 +667,7 @@ function JournalItemBase({
     t("journal.carbsLabel", {
       carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
     }),
+    choiceText(entry.calculated_carbs_g),
     entry.insulin_dose_units > 0
       ? t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })
       : null,
@@ -720,6 +723,7 @@ function JournalItemBase({
           {t("journal.carbsLabel", {
             carbs: num(Math.round(entry.calculated_carbs_g * 10) / 10),
           })}
+          {choiceText(entry.calculated_carbs_g) ? ` · ${choiceText(entry.calculated_carbs_g)}` : ""}
           {entry.insulin_dose_units > 0
             ? ` · ${t("journal.doseLabel", { dose: num(entry.insulin_dose_units) })}`
             : ""}

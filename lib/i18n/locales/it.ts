@@ -526,6 +526,17 @@ const it: TranslationSchema = {
     addPeriodTag: "Aggiungere un'etichetta di periodo",
     deleteA11y: "Eliminare questa voce",
   },
+  carbDisplay: {
+    title: "Visualizzazione dei carboidrati",
+    gram: "Grammi",
+    choice15: "Scelte da 15 g",
+    portion10: "Porzioni da 10 g",
+    hint: "Accanto ai grammi, i totali e le schede dei pasti mostrano la quantità anche in scelte o porzioni. Calcoli, PDF e CSV usano sempre i grammi.",
+    regionUs: "Diffuso negli USA",
+    regionGb: "Diffuso nel Regno Unito",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "Salvare comunque?",
     recentBasal: "C'è una registrazione basale nelle ultime {{h}} ore ({{time}}, {{units}} unità).",

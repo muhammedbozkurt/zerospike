@@ -526,6 +526,17 @@ const ar: TranslationSchema = {
     addPeriodTag: "إضافة وسم للفترة",
     deleteA11y: "حذف هذا السجل",
   },
+  carbDisplay: {
+    title: "عرض الكربوهيدرات",
+    gram: "غرام",
+    choice15: "خيارات 15 g",
+    portion10: "حصص 10 g",
+    hint: "إلى جانب الغرامات، تعرض الإجماليات وبطاقات الوجبات الكمية أيضاً على شكل خيارات أو حصص. تعتمد الحسابات وملفات PDF وCSV الغرامات دائماً.",
+    regionUs: "شائع في الولايات المتحدة",
+    regionGb: "شائع في المملكة المتحدة",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "هل تحفظ على أي حال؟",
     recentBasal: "يوجد تسجيل قاعدي خلال آخر {{h}} ساعة ({{time}}، {{units}} وحدة).",

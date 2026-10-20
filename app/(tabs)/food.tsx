@@ -83,6 +83,7 @@ import { CATEGORIES, Category } from "../../lib/db/categories";
 import { FoodRow } from "../../components/FoodRow";
 import { OffSearchResults } from "../../components/OffSearchResults";
 import { CarbRatioLine } from "../../components/CarbRatioLine";
+import { useCarbChoiceText } from "../../lib/carbDisplayPref";
 import { EMOJI_RENDERS, FoodPlate } from "../../components/FoodPlate";
 import { EmptyState } from "../../components/EmptyState";
 import { Skeleton } from "../../components/Skeleton";
@@ -434,6 +435,7 @@ function TemplateConfirmSheet({
 
 export default function FoodScreen() {
   const { t, i18n } = useTranslation();
+  const choiceText = useCarbChoiceText();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, lang, dataVersion, bumpData, isProUser } = useApp();
@@ -1256,6 +1258,13 @@ export default function FoodScreen() {
           / {carbMin}-{carbMax} {t("common.grams")}
         </Text>
       </View>
+      {choiceText(todayCarbs) ? (
+        <Text
+          style={[TABULAR, { color: THEME.textMuted, fontSize: 13, textAlign: "center", marginTop: 2 }]}
+        >
+          {choiceText(todayCarbs)}
+        </Text>
+      ) : null}
       <NeonProgressBar
         value={todayCarbs}
         max={carbMax}
@@ -1423,19 +1432,28 @@ export default function FoodScreen() {
                         {meal.display_name}
                       </Text>
                     </View>
-                    <Text
-                      style={[
-                        TABULAR,
-                        { color: THEME.text, fontSize: 15, fontWeight: "800" },
-                      ]}
-                    >
-                      {Math.round(meal.calculated_carbs_g)}
+                    <View style={{ alignItems: "flex-end" }}>
                       <Text
-                        style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}
+                        style={[
+                          TABULAR,
+                          { color: THEME.text, fontSize: 15, fontWeight: "800" },
+                        ]}
                       >
-                        {t("common.grams")}
+                        {Math.round(meal.calculated_carbs_g)}
+                        <Text
+                          style={{ color: THEME.textMuted, fontSize: 11, fontWeight: "600" }}
+                        >
+                          {t("common.grams")}
+                        </Text>
                       </Text>
-                    </Text>
+                      {choiceText(meal.calculated_carbs_g) ? (
+                        <Text
+                          style={[TABULAR, { color: THEME.textMuted, fontSize: 11, fontWeight: "600" }]}
+                        >
+                          {choiceText(meal.calculated_carbs_g)}
+                        </Text>
+                      ) : null}
+                    </View>
                     {mealResponseIds.has(meal.id) ? (
                       <Pressable
                         onPress={() =>
@@ -1838,7 +1856,7 @@ export default function FoodScreen() {
         <Pressable
           onPress={() => setComposeOpen(true)}
           accessibilityRole="button"
-          accessibilityLabel={`${t("mealCompose.title")}: ${composeItems.length}, ${t("mealCompose.total")} ${composeTotal.carbs_g} ${t("common.grams")}`}
+          accessibilityLabel={`${t("mealCompose.title")}: ${composeItems.length}, ${t("mealCompose.total")} ${composeTotal.carbs_g} ${t("common.grams")}${choiceText(composeTotal.carbs_g) ? `, ${choiceText(composeTotal.carbs_g)}` : ""}`}
           className="flex-row items-center justify-between rounded-2xl border border-hair"
           style={{
             position: "absolute",
@@ -1857,6 +1875,7 @@ export default function FoodScreen() {
           <Text style={[TABULAR, { color: THEME.accent, fontSize: 15, fontWeight: "800", marginLeft: 10 }]}>
             {num(composeTotal.carbs_g)}
             {t("common.grams")}
+            {choiceText(composeTotal.carbs_g) ? `  ${choiceText(composeTotal.carbs_g)}` : ""}
           </Text>
         </Pressable>
       ) : null}

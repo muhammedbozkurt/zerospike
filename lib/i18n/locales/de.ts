@@ -526,6 +526,17 @@ const de: TranslationSchema = {
     addPeriodTag: "Zeitpunkt-Etikett hinzufügen",
     deleteA11y: "Diesen Eintrag löschen",
   },
+  carbDisplay: {
+    title: "Kohlenhydrat-Anzeige",
+    gram: "Gramm",
+    choice15: "15-g-Einheiten",
+    portion10: "KE (10 g)",
+    hint: "Neben Gramm zeigen Summen und Mahlzeitenkarten die Menge auch in Einheiten an. Berechnungen, PDF und CSV verwenden immer Gramm.",
+    regionUs: "In den USA verbreitet",
+    regionGb: "In Großbritannien verbreitet",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "Trotzdem speichern?",
     recentBasal: "In den letzten {{h}} Std. gibt es bereits einen Basal-Eintrag ({{time}}, {{units}} Einheiten).",

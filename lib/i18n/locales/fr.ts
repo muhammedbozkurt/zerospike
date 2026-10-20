@@ -526,6 +526,17 @@ const fr: TranslationSchema = {
     addPeriodTag: "Ajouter une étiquette de moment",
     deleteA11y: "Supprimer cette entrée",
   },
+  carbDisplay: {
+    title: "Affichage des glucides",
+    gram: "Grammes",
+    choice15: "Équivalents de 15 g",
+    portion10: "Portions de 10 g",
+    hint: "En plus des grammes, les totaux et les cartes de repas affichent aussi la quantité en équivalents ou en portions. Les calculs, le PDF et le CSV utilisent toujours les grammes.",
+    regionUs: "Courant aux États-Unis",
+    regionGb: "Courant au Royaume-Uni",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "Enregistrer quand même ?",
     recentBasal: "Il y a une saisie basale dans les {{h}} dernières heures ({{time}}, {{units}} unités).",

@@ -526,6 +526,17 @@ const es: TranslationSchema = {
     addPeriodTag: "Añadir una etiqueta de momento",
     deleteA11y: "Eliminar este registro",
   },
+  carbDisplay: {
+    title: "Visualización de carbohidratos",
+    gram: "Gramos",
+    choice15: "Intercambios de 15 g",
+    portion10: "Raciones de 10 g",
+    hint: "Junto a los gramos, los totales y las tarjetas de comida muestran también la cantidad en intercambios o raciones. Los cálculos, el PDF y el CSV usan siempre gramos.",
+    regionUs: "Habitual en EE. UU.",
+    regionGb: "Habitual en el Reino Unido",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "¿Guardar de todas formas?",
     recentBasal: "Hay un registro basal en las últimas {{h}} horas ({{time}}, {{units}} unidades).",

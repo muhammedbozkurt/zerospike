@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
+import { getLocales } from "expo-localization";
 
 import { useApp } from "../../lib/store/AppContext";
 import { updateProfile } from "../../lib/db/profiles";
@@ -36,6 +37,8 @@ import { SectionLabel } from "../../components/ui";
 import { useFeedback } from "../../components/Feedback";
 import { useLayout } from "../../lib/useLayout";
 import { THEME } from "../../lib/theme/tokens";
+import { carbRegionNote, type CarbDisplayMode } from "../../lib/carbDisplay";
+import { setCarbDisplayMode, useCarbDisplayMode } from "../../lib/carbDisplayPref";
 import { getReportName, setReportName, REPORT_NAME_MAX } from "../../lib/reportName";
 
 /**
@@ -44,8 +47,10 @@ import { getReportName, setReportName, REPORT_NAME_MAX } from "../../lib/reportN
  * carb ratios are now Steppers (also keyboard-editable) instead of text rows.
  */
 export default function ProfileSettings() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { activeProfile, bumpData } = useApp();
+  const carbMode = useCarbDisplayMode();
+  const regionNote = carbRegionNote(i18n.language, getLocales()[0]?.regionCode);
   const { columnPad } = useLayout();
   const { confirm, actionSheet } = useFeedback();
 
@@ -402,6 +407,26 @@ export default function ProfileSettings() {
             value={unit}
             onChange={(u: GlucoseUnit) => persist({ glucose_unit: u })}
           />
+        </View>
+      </FormCard>
+
+      <FormCard icon="nutrition-outline" title={t("carbDisplay.title")}>
+        <View className="px-4 py-3.5">
+          <Segmented
+            options={[
+              { value: "gram", label: t("carbDisplay.gram") },
+              { value: "choice15", label: t("carbDisplay.choice15") },
+              { value: "portion10", label: t("carbDisplay.portion10") },
+            ]}
+            value={carbMode}
+            onChange={(m: CarbDisplayMode) => void setCarbDisplayMode(m)}
+          />
+          <Text className="text-mut text-xs mt-2 leading-4">{t("carbDisplay.hint")}</Text>
+          {regionNote ? (
+            <Text className="text-mut text-xs mt-1 leading-4">
+              {regionNote === "us" ? t("carbDisplay.regionUs") : t("carbDisplay.regionGb")}
+            </Text>
+          ) : null}
         </View>
       </FormCard>
 

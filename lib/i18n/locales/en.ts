@@ -526,6 +526,17 @@ const en: TranslationSchema = {
     addPeriodTag: "Add a period tag",
     deleteA11y: "Delete this entry",
   },
+  carbDisplay: {
+    title: "Carbohydrate display",
+    gram: "Grams",
+    choice15: "15 g choices",
+    portion10: "10 g portions",
+    hint: "Next to grams, totals and meal cards also show the amount as choices or portions. Calculations, PDF and CSV always use grams.",
+    regionUs: "Common in the US",
+    regionGb: "Common in the UK",
+    approx: "≈ {{n}} × {{size}} {{unit}}",
+    less: "< {{n}} × {{size}} {{unit}}",
+  },
   entryGuard: {
     title: "Save anyway?",
     recentBasal: "There is a basal entry in the last {{h}} h ({{time}}, {{units}} units).",
