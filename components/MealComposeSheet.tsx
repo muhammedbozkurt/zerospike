@@ -399,7 +399,7 @@ export function MealComposeSheet({
               // the inset as well would compensate twice.
               automaticallyAdjustKeyboardInsets={false}
               style={{ flex: 1, marginTop: 12 }}
-              contentContainerStyle={{ paddingBottom: 12 }}
+              contentContainerStyle={{ paddingBottom: 28 }}
               showsVerticalScrollIndicator={false}
             >
               <FoodSearchBlock

@@ -1574,6 +1574,13 @@ export default function OnboardingScreen() {
             <RationaleCard icon="toggle-outline" style={{ marginBottom: 12 }}>
               <RationaleText>{t("onboarding.analyticsShort3")}</RationaleText>
             </RationaleCard>
+            {/* Above the details: opening them lengthens the scroller, and the switch must not slide below the fold. */}
+            <ConsentSwitchRow
+              title={t("onboarding.analyticsConsentTitle")}
+              value={analyticsOptIn}
+              disabled={!consentLoaded || savingConsent}
+              onValueChange={(next) => void toggleAnalytics(next)}
+            />
             {/* The three lines above summarise the full text, which stays whole behind this toggle. */}
             <TextLink
               label={t("onboarding.analyticsDetails")}
@@ -1595,12 +1602,6 @@ export default function OnboardingScreen() {
             ) : (
               <View style={{ height: 4 }} />
             )}
-            <ConsentSwitchRow
-              title={t("onboarding.analyticsConsentTitle")}
-              value={analyticsOptIn}
-              disabled={!consentLoaded || savingConsent}
-              onValueChange={(next) => void toggleAnalytics(next)}
-            />
           </FadeSlideIn>
         );
     }

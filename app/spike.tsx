@@ -933,6 +933,18 @@ function SpikeScreen() {
           {/* The trailing chevron promised a link and nothing happened on a tap;
               it now opens the policy, like every other privacy line in the app. */}
           <PrivacyLink t={t} />
+        </ScrollView>
+        {/* Checkbox and buttons live outside the scroll: they stay reachable above
+            the home indicator in every language and at any text size. */}
+        <View
+          style={{
+            alignItems: "center",
+            gap: SPACE.sm,
+            paddingTop: SPACE.sm,
+            paddingBottom: Math.max(insets.bottom, SPACE.md) + SPACE.sm,
+            ...columnPad(24),
+          }}
+        >
           <Pressable
             onPress={() => {
               hapticSelect();
@@ -964,7 +976,7 @@ function SpikeScreen() {
             style={{ width: "100%" }}
           />
           <Button label={t("spike.notNow")} onPress={() => router.back()} variant="tertiary" />
-        </ScrollView>
+        </View>
       </AppBackground>
     );
   }

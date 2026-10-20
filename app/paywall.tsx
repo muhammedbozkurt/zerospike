@@ -714,9 +714,12 @@ function PaywallScreen() {
                 </Txt>
               </View>
             ))}
-            <Txt kind="caption" tone="muted" style={{ marginStart: 26, marginBottom: 6 }}>
-              {t("paywall.featureShortFamily")}
-            </Txt>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+              <Ionicons name="people-outline" size={16} color={THEME.textMuted} />
+              <Txt kind="caption" tone="muted" style={{ flex: 1, marginStart: SPACE.md }}>
+                {t("paywall.featureShortFamily")}
+              </Txt>
+            </View>
           </View>
 
           {personal ? (
@@ -841,8 +844,10 @@ function PaywallScreen() {
           >
             {t("paywall.legalNote")}
           </Text>
-          {/* Bottom band: restore + privacy + terms. */}
-          <View className="flex-row items-center justify-center flex-wrap mt-2">
+          {/* Bottom band: restore + privacy + terms. No separator glyph: after a
+              wrap it would dangle at a line end, the links tell themselves apart
+              by underline and role. */}
+          <View className="flex-row items-center justify-center flex-wrap mt-2" style={{ columnGap: SPACE.xs }}>
             <Button
               variant="tertiary"
               size="sm"
@@ -850,12 +855,10 @@ function PaywallScreen() {
               onPress={onRestore}
               disabled={busy}
             />
-            <Txt kind="micro" tone="muted">·</Txt>
             <LegalLink
               label={t("settings.privacy")}
               onPress={() => Linking.openURL(privacyUrl())}
             />
-            <Txt kind="micro" tone="muted">·</Txt>
             <LegalLink
               label={t("settings.terms")}
               onPress={() => Linking.openURL(termsUrl())}

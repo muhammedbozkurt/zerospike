@@ -2424,7 +2424,7 @@ export default function DashboardScreen() {
             <Txt kind="caption" numberOfLines={1} style={{ fontWeight: "700", marginTop: SPACE.sm }}>
               {t("insights.title")}
             </Txt>
-            <Txt kind="micro" tone="muted" numberOfLines={1} style={{ fontWeight: "400" }}>
+            <Txt kind="micro" tone="muted" numberOfLines={2} style={{ fontWeight: "400" }}>
               {t("insights.cardSub")}
             </Txt>
           </Card>
@@ -2473,7 +2473,7 @@ export default function DashboardScreen() {
               <Txt
                 kind="micro"
                 tone="muted"
-                numberOfLines={isProUser ? 1 : 2}
+                numberOfLines={2}
                 style={{ fontWeight: "400" }}
               >
                 {!isProUser
