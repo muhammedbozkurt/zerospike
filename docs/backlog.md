@@ -67,3 +67,6 @@ de, fr, es, it, pt, ar, ja: 19 Ekim 2026 tr/en metnindeki yenilikler dahil. (a) 
 
 ## Health tahmin etiketi geriye dönük değil
 Health tahmin etiketi geriye dönük değil: güncellemeden önce Health'e yazılmış tahmin kökenli örnekler yalnız düzenlenince etiket alır; gerekirse bir kerelik yeniden yazım ve sürüm notu.
+
+## reg-check kurallarını modül olarak dışa aktar
+scripts/reg-check.js bir CLI ve dışa aktarma yok: ekran görüntüsü hattının selftest-brand.mjs ve selftest-warm.mjs dosyaları kaynağı metin olarak kesip `new Function` ile değerlendiriyor (işaretçi `\nfunction main()`). reg-check refactor'ü işaretçiyi iki kez bozdu (09359db). Kuralları (LOCALES, PATTERNS, SUBSTRING_LOCALES, buildAllMatcher, hasGlucoseContext, allowlist) `scripts/regRules.js` gibi bir modüle çıkarıp hem reg-check.js hem selftest'ler `require` etsin; kaynak kesme kalksın.
