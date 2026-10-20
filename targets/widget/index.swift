@@ -73,13 +73,13 @@ extension LiveData {
   /// own data; the timeline always reads the real snapshot.
   static let placeholderSample = LiveData(
     updatedAt: 0,
-    unit: "mmol",
+    unit: "mgdl",
     lang: nil,
-    lastGlucoseMgdl: 101,
-    lastGlucoseDisplay: "5.6",
+    lastGlucoseMgdl: 112,
+    lastGlucoseDisplay: "112",
     lastGlucoseAt: nil,
-    avgGlucoseMgdl: 101,
-    avgGlucoseDisplay: "5.6",
+    avgGlucoseMgdl: 125,
+    avgGlucoseDisplay: "125",
     avgWindowDays: 7,
     nextReminderAt: nil,
     nextReminderKind: nil,
