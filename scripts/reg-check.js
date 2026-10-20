@@ -190,6 +190,102 @@ const CONTEXT_TERMS_LATIN = [
 ];
 const CONTEXT_TERMS_SUBSTR = ["سكر", "血糖", "低血糖", "高血糖"];
 
+// Narrow, reasoned exemptions for locale strings. An entry excuses a hit only
+// when ALL hold: same locale, exact key path, and the matched text contains one
+// of `terms`. The same word under any other key is still a finding, and so is
+// any other banned phrase inside the excused key. `reason` is mandatory and is
+// printed with the excused count so the exemption stays auditable. Store copy
+// (aso, fastlane) gets no exemption here; it uses reg-allowlist.json anchors.
+//
+// Today the pattern list above has no bare "tedavi"/"tanı"/"treatment"
+// entries, so these keys do not trigger a finding yet. The table documents the
+// accepted wording and keeps those keys safe if a pattern ever widens.
+const DISCLAIMER_REASON =
+  "Medical disclaimer sentence (consult your doctor for treatment decisions): present since the first commit and accepted by store review; the banned word is allowed only in this disclaimer context";
+const NO_DIAGNOSIS_REASON =
+  "Onboarding diabetes-type option for people without a diagnosis (diagnosis-free tracking path); a user-chosen label, not diagnostic language";
+
+const DISCLAIMER_TERMS = {
+  en: ["treatment"],
+  tr: ["tedavi"],
+  de: ["behandlung"],
+  fr: ["traitement"],
+  es: ["tratamiento"],
+  it: ["terap"],
+  pt: ["tratamento"],
+  ar: ["علاج"],
+  ja: ["治療"],
+};
+const NO_DIAGNOSIS_TERMS = {
+  en: ["diagnosis"],
+  tr: ["tanı"],
+  de: ["diagnose"],
+  fr: ["diagnostic"],
+  es: ["diagnóstico"],
+  it: ["diagnosi"],
+  pt: ["diagnóstico"],
+  ar: ["تشخيص"],
+  ja: ["診断"],
+};
+
+const KEY_EXEMPTIONS = LOCALES.flatMap((locale) => [
+  ...["disclaimer.body", "disclaimer.short"].map((key) => ({
+    locale,
+    key,
+    terms: DISCLAIMER_TERMS[locale],
+    reason: DISCLAIMER_REASON,
+  })),
+  {
+    locale,
+    key: "onboarding.diabetes_none",
+    terms: NO_DIAGNOSIS_TERMS[locale],
+    reason: NO_DIAGNOSIS_REASON,
+  },
+]);
+
+function isKeyExempt(exemptions, locale, key, matchedText) {
+  const lower = matchedText.toLowerCase();
+  return exemptions.some(
+    (e) =>
+      e.locale === locale &&
+      e.key === key &&
+      typeof e.reason === "string" &&
+      e.reason.length > 0 &&
+      e.terms.some((t) => lower.includes(t.toLowerCase()))
+  );
+}
+
+function scanLocaleEntries(locale, entries, opts = {}) {
+  const patterns = opts.patterns || PATTERNS[locale] || [];
+  const allowlist = opts.allowlist || {};
+  const exemptions = opts.exemptions || KEY_EXEMPTIONS;
+  const substringMode = SUBSTRING_LOCALES.has(locale);
+  const matchers = patterns.map(({ pattern, requiresContext }) => ({
+    pattern,
+    requiresContext: !!requiresContext,
+    match: substringMode ? buildSubstringMatcher(pattern) : buildLatinMatcher(pattern),
+  }));
+  const findings = [];
+  let excused = 0;
+  for (const [key, value] of entries) {
+    for (const { pattern, requiresContext, match } of matchers) {
+      const m = match(value);
+      if (!m) continue;
+      if (requiresContext && !hasGlucoseContext(value)) continue;
+      const allowKey = `${locale}.${key}`;
+      if (
+        Object.prototype.hasOwnProperty.call(allowlist, allowKey) ||
+        isKeyExempt(exemptions, locale, key, m[0])
+      ) {
+        excused++;
+        continue;
+      }
+      findings.push({ locale, key, pattern, excerpt: excerpt(value, m.index, m[0].length) });
+    }
+  }
+  return { findings, excused };
+}
+
 function loadAllowlist() {
   if (!fs.existsSync(ALLOWLIST_FILE)) return {};
   const raw = fs.readFileSync(ALLOWLIST_FILE, "utf8").trim();
@@ -397,65 +493,47 @@ function scanStore(allowlist, findings) {
   return { files: files.length, excused };
 }
 
-const allowlist = loadAllowlist();
-const findings = [];
-let excusedCount = 0;
+function main() {
+  const allowlist = loadAllowlist();
+  const findings = [];
+  let excusedCount = 0;
 
-for (const locale of LOCALES) {
-  const entries = loadLocaleEntries(locale);
-  const patterns = PATTERNS[locale] || [];
-  const substringMode = SUBSTRING_LOCALES.has(locale);
-  const matchers = patterns.map(({ pattern, requiresContext }) => ({
-    pattern,
-    requiresContext: !!requiresContext,
-    match: substringMode ? buildSubstringMatcher(pattern) : buildLatinMatcher(pattern),
-  }));
-
-  for (const [key, value] of entries) {
-    for (const { pattern, requiresContext, match } of matchers) {
-      const m = match(value);
-      if (!m) continue;
-      if (requiresContext && !hasGlucoseContext(value)) continue;
-      const allowKey = `${locale}.${key}`;
-      if (Object.prototype.hasOwnProperty.call(allowlist, allowKey)) {
-        excusedCount++;
-        continue;
-      }
-      findings.push({
-        locale,
-        key,
-        pattern,
-        excerpt: excerpt(value, m.index, m[0].length),
-      });
-    }
+  for (const locale of LOCALES) {
+    const result = scanLocaleEntries(locale, loadLocaleEntries(locale), { allowlist });
+    findings.push(...result.findings);
+    excusedCount += result.excused;
   }
-}
 
-const store = scanStore(allowlist, findings);
-excusedCount += store.excused;
-const storeNote = store.files > 0 ? `, ${store.files} magaza dosyasi` : "";
+  const store = scanStore(allowlist, findings);
+  excusedCount += store.excused;
+  const storeNote = store.files > 0 ? `, ${store.files} magaza dosyasi` : "";
 
-if (findings.length === 0) {
-  console.log(
-    `reg-check: OK (${LOCALES.length} locale${storeNote}, 0 bulgu${
-      excusedCount > 0 ? `, ${excusedCount} allowlist istisnasi` : ""
-    })`
+  if (findings.length === 0) {
+    console.log(
+      `reg-check: OK (${LOCALES.length} locale${storeNote}, 0 bulgu${
+        excusedCount > 0 ? `, ${excusedCount} allowlist istisnasi` : ""
+      })`
+    );
+    process.exit(0);
+  }
+
+  console.error(`reg-check: ${findings.length} bulgu`);
+  for (const f of findings) {
+    console.error(`  [${f.locale}] ${f.key}  <-  "${f.pattern}"`);
+    console.error(`    ${f.excerpt}`);
+  }
+
+  const byLocale = {};
+  for (const f of findings) byLocale[f.locale] = (byLocale[f.locale] || 0) + 1;
+  console.error(
+    `Toplam: ${findings.length} bulgu (${Object.entries(byLocale)
+      .map(([l, c]) => `${l}:${c}`)
+      .join(", ")})${excusedCount > 0 ? `, ${excusedCount} allowlist istisnasi` : ""}`
   );
-  process.exit(0);
+
+  process.exit(1);
 }
 
-console.error(`reg-check: ${findings.length} bulgu`);
-for (const f of findings) {
-  console.error(`  [${f.locale}] ${f.key}  <-  "${f.pattern}"`);
-  console.error(`    ${f.excerpt}`);
-}
+if (require.main === module) main();
 
-const byLocale = {};
-for (const f of findings) byLocale[f.locale] = (byLocale[f.locale] || 0) + 1;
-console.error(
-  `Toplam: ${findings.length} bulgu (${Object.entries(byLocale)
-    .map(([l, c]) => `${l}:${c}`)
-    .join(", ")})${excusedCount > 0 ? `, ${excusedCount} allowlist istisnasi` : ""}`
-);
-
-process.exit(1);
+module.exports = { PATTERNS, KEY_EXEMPTIONS, scanLocaleEntries, loadLocaleEntries, LOCALES };
