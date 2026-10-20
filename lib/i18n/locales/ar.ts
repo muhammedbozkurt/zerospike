@@ -763,6 +763,9 @@ const ar: TranslationSchema = {
     errDenied: "لم يُسمح بالقراءة. اسمح بقراءة سكر الدم في {{health}} ثم أعد المزامنة.",
     errReadFailed: "تعذّرت قراءة {{health}}. يُرجى المحاولة مرة أخرى بعد قليل.",
     iosReadNote: "لا يُبلغ iOS التطبيقات بما إذا كانت القراءة مسموحًا بها. إذا لم تصل أي قراءات، فافتح تطبيق الصحة، واضغط على صورة ملفك الشخصي، ثم اختر التطبيقات، وحدد zerospike، وتحقق من سكر الدم.",
+    recordName: "zerospike · وجبة",
+    recordNameEstimated: "zerospike · وجبة (تقدير)",
+    androidNameNote: "في Health Connect تظهر الوجبات باسم «{{name}}»، وتظهر الوجبات المبنية على تقدير باسم «{{estimated}}».",
   },
   downsell: {
     title: "انتظر، لدينا سعر أفضل لك",

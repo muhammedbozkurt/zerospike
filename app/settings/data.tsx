@@ -883,6 +883,14 @@ export default function DataSettings() {
               <Text className="text-mut text-xs mt-2">
                 {t("settings.healthCarbsHint", { health: healthName })}
               </Text>
+              {Platform.OS === "android" ? (
+                <Text className="text-mut text-xs mt-2">
+                  {t("healthSync.androidNameNote", {
+                    name: t("healthSync.recordName"),
+                    estimated: t("healthSync.recordNameEstimated"),
+                  })}
+                </Text>
+              ) : null}
               {insulinWritable ? (
                 <>
                   <View className="flex-row items-center mt-4">

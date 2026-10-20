@@ -763,6 +763,9 @@ const it: TranslationSchema = {
     errDenied: "La lettura non è stata consentita. Consenta la lettura della glicemia in {{health}}, poi sincronizzi di nuovo.",
     errReadFailed: "Non è stato possibile leggere {{health}}. Riprovi tra un momento.",
     iosReadNote: "iOS non comunica alle app se la lettura è consentita. Se non arrivano misurazioni, apra l'app Salute, tocchi la Sua immagine del profilo, scelga App, selezioni zerospike e controlli Glucosio nel sangue.",
+    recordName: "zerospike · Pasto",
+    recordNameEstimated: "zerospike · Pasto (stima)",
+    androidNameNote: "In Health Connect i pasti compaiono come «{{name}}», quelli basati su una stima come «{{estimated}}».",
   },
   downsell: {
     title: "Aspetti, c'è un prezzo migliore",

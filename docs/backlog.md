@@ -64,3 +64,6 @@ de, fr, es, it, pt, ar, ja: 19 Ekim 2026 tr/en metnindeki yenilikler dahil. (a) 
 
 ## Yayın: zerospike politika ve destek sayfaları (FTP)
 11 dosya greeneyeapp-site-2.4'ten FTP/SFTP ile aynı yola yüklenir (greeneyeapp-site/README.md Deployment); klasörün tamamı senkronlanmaz (bekleyen pazarlama sayfaları var). Sonrasında .env yüklenmediği, /zerospike/support formu, 301'ler ve sitemap kontrol edilir.
+
+## Health tahmin etiketi geriye dönük değil
+Health tahmin etiketi geriye dönük değil: güncellemeden önce Health'e yazılmış tahmin kökenli örnekler yalnız düzenlenince etiket alır; gerekirse bir kerelik yeniden yazım ve sürüm notu.

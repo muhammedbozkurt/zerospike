@@ -763,6 +763,9 @@ const de: TranslationSchema = {
     errDenied: "Das Lesen wurde nicht erlaubt. Erlauben Sie das Lesen von Blutzucker in {{health}} und gleichen Sie dann erneut ab.",
     errReadFailed: "{{health}} konnte nicht gelesen werden. Bitte versuchen Sie es gleich noch einmal.",
     iosReadNote: "iOS teilt Apps nicht mit, ob das Lesen erlaubt ist. Kommen keine Werte an, öffnen Sie die Health-App, tippen Sie auf Ihr Profilbild, wählen Sie Apps, wählen Sie zerospike und prüfen Sie Blutzucker.",
+    recordName: "zerospike · Mahlzeit",
+    recordNameEstimated: "zerospike · Mahlzeit (Schätzung)",
+    androidNameNote: "In Health Connect erscheinen Mahlzeiten als „{{name}}“, geschätzte als „{{estimated}}“.",
   },
   downsell: {
     title: "Warten Sie, hier ist ein besserer Preis",
