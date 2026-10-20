@@ -314,17 +314,20 @@ const ANDROID_TABLET7: AndroidSpec = {
   gutter: 12,
   cols: 6,
   // The glance card carries the next-reminder label and its time pill under
-  // the value whenever a reminder is upcoming: ~138 dp of drawn content, which
-  // 112 dp cut off right under the "Last 7 days" line. The shortcut tiles
-  // still need only 87 dp, so they keep their own 112 dp row.
-  glanceH: 144,
+  // the value whenever a reminder is upcoming: ~145 dp of drawn content, which
+  // 112 dp cut off right under the "Last 7 days" line (and 144 still shaved
+  // the pill's bottom edge). The shortcut tiles still need only 87 dp, so
+  // they keep their own 112 dp row.
+  glanceH: 152,
   quickAddH: 112,
   singleH: 112,
   tablet: true,
   rowGutter: 12,
   headingSize: 12,
   headingH: 16,
-  sectionGap: 20,
+  // 12 (was 20) so the taller glance row still ends at 348 dp, clear of the
+  // launcher filler that starts at 354.
+  sectionGap: 12,
   rowGap: 16,
   // Content now ends at 348 dp of a 677 dp clean band, so the launcher filler
   // is what uses the rest of the tablet: three icon rows (354..626), then the
