@@ -65,7 +65,7 @@ export function useCarbChoiceText(): (grams: number) => string | null {
   return useCallback(
     (grams: number) =>
       carbChoiceText(grams, m, {
-        unit: t("common.grams"),
+        unit: lang.slice(0, 2) === "ar" ? "غ" : t("common.grams"),
         approx: (v) => t("carbDisplay.approx", v),
         less: (v) => t("carbDisplay.less", v),
       }),

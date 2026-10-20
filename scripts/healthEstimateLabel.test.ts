@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     it: ["zerospike · Pasto", "zerospike · Pasto (stima)"],
     pt: ["zerospike · Refeição", "zerospike · Refeição (estimativa)"],
     ar: ["zerospike · وجبة", "zerospike · وجبة (تقدير)"],
-    ja: ["zerospike · 食事", "zerospike · 食事 (推定)"],
+    ja: ["zerospike · 食事", "zerospike · 食事（推定）"],
   };
   const BUNDLES: Record<string, any> = {};
   for (const lang of Object.keys(NAMES)) {
