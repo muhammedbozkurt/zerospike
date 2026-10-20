@@ -51,6 +51,7 @@ import {
 } from "../../lib/services/notifications";
 import {
   formatPostMealRemaining,
+  cancelPostMealTimerAfterConfirm,
   postMealCardActions,
   postMealReminderPreview,
   postMealElapsedFraction,
@@ -414,6 +415,7 @@ export default function DashboardScreen() {
   // An arm is in flight: the ref is the actual guard (see startedEating), the
   // state only greys the two buttons out while it runs.
   const startingTimerRef = useRef(false);
+  const stopAskOpenRef = useRef(false);
   const [startingTimer, setStartingTimer] = useState(false);
 
   // Mirrored so the callback below can stay stable (it is called from effects
@@ -1616,12 +1618,24 @@ export default function DashboardScreen() {
     if (outcome === "elapsed") toast(t("dashboard.postMealRestartElapsed"), "info");
   }
 
-  // Cancelling kills a running countdown in one tap, with nothing to
-  // reconstruct it from - so it carries the same undo every other one-tap
-  // mutation on this screen does (see deleteWithUndo below, and the calculator's
-  // save toast). A blocking confirm is deliberately NOT used: this codebase
-  // reserves confirm() for losses a toast cannot undo (deleting a recipe), and
-  // a countdown is two numbers.
+  // The X asks before cancelling (a stray tap on a small button used to kill the
+  // countdown). Once confirmed, the cancel still carries the undo toast below.
+  function requestCancelEatingTimer() {
+    void cancelPostMealTimerAfterConfirm(
+      () =>
+        confirm({
+          title: t("dashboard.postMealStopTitle"),
+          message: t("dashboard.postMealStopBody"),
+          confirmLabel: t("dashboard.postMealStopConfirm"),
+          cancelLabel: t("dashboard.postMealStopKeep"),
+          destructive: true,
+          icon: "stop-circle-outline",
+        }),
+      cancelEatingTimer,
+      stopAskOpenRef
+    );
+  }
+
   async function cancelEatingTimer() {
     const previous = postMealTimerForProfile;
     await cancelPostMealTimer();
@@ -2098,7 +2112,7 @@ export default function DashboardScreen() {
         {postMealTimerForProfile != null ? (
           <PostMealCountdown
             timer={postMealTimerForProfile}
-            onCancel={cancelEatingTimer}
+            onCancel={requestCancelEatingTimer}
             onElapsed={onPostMealElapsed}
             onLogMeal={logMealFromCountdown}
             actions={postMealActions.actions}

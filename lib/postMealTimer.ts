@@ -557,3 +557,25 @@ export function postMealTimingNotice(input: {
   if (input.alarmPref && (input.authStatus === "notDetermined" || input.authStatus === "denied")) return "exactTiming";
   return "none";
 }
+
+/**
+ * The card's X button must not cancel on tap: it asks first, and only an
+ * explicit "stop" runs the cancel. `ask` resolves true for stop, false for
+ * keep-going (button or dismiss). Returns whether the cancel ran. `busy` is the
+ * caller's re-entry guard, so a second tap while the sheet is open does nothing.
+ */
+export async function cancelPostMealTimerAfterConfirm(
+  ask: () => Promise<boolean>,
+  cancel: () => Promise<void>,
+  busy: { current: boolean }
+): Promise<boolean> {
+  if (busy.current) return false;
+  busy.current = true;
+  try {
+    if (!(await ask())) return false;
+    await cancel();
+    return true;
+  } finally {
+    busy.current = false;
+  }
+}
