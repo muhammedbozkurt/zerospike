@@ -1174,7 +1174,19 @@ function consentWording(): void {
     const hits = Object.entries(spike).filter(([k, v]) => newKeys(k) && regulatory[lang].test(v)).map(([k]) => k);
     ok(`${lang}: no regulatory wording in the Spike v2 strings`, hits.length === 0, hits.join(","));
     ok(`${lang}: no percent sign, no dash punctuation in them`, Object.entries(spike).every(([k, v]) => !newKeys(k) || !/[%–—]/.test(v)));
+    // The short summary is exactly three sentences (does / is sent / is not sent), provider names live in Details only.
+    for (const key of ["consentShort1", "consentShort2", "consentShort3"]) {
+      const v = spike[key] ?? "";
+      const enders = v.match(/[.!?。！？؟]/g) ?? [];
+      ok(`${lang}.${key} is one sentence (a single terminal mark, at the end)`, enders.length === 1 && /[.!?。！？؟]$/.test(v), v);
+      ok(`${lang}.${key} names no provider`, !/AWS|Amazon|Anthropic|Claude|Bedrock/i.test(v), v);
+    }
+    ok(`${lang}.consentRecipient still names the provider in Details`, /Anthropic/.test(spike.consentRecipient) && /Amazon Web Services/.test(spike.consentRecipient));
+    ok(`${lang}: the three short lines are three distinct keys`, new Set([spike.consentShort1, spike.consentShort2, spike.consentShort3]).size === 3);
   }
+  const sheetSrc = read("components/CarbEstimateSheet.tsx");
+  ok("the carb sheet reads the same three short keys and names no provider itself", ["consentShort1", "consentShort2", "consentShort3"].every((k) => sheetSrc.includes(`t("spike.${k}")`)) && !/AWS|Amazon|Anthropic|Bedrock/.test(sheetSrc));
+  ok("the Spike screen short view carries no provider name outside the locale keys", !/AWS|Amazon Web|Anthropic|Bedrock/.test(screen));
 }
 
 (async () => {
