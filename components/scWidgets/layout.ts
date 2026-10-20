@@ -160,23 +160,23 @@ const IPHONE: IosSpec = {
   colGap: 0,
   leftW: 400,
   rightW: 400,
-  island: { compactGap: 8, gapAfter: 12 },
+  island: { compactGap: 6, gapAfter: 12 },
   headingSize: 11,
   headingH: 14,
   headingGap: 12,
   sectionGap: 24,
   inlineH: 22,
-  gapInlineToClock: 8,
-  // 44, not the 76 a real lock screen sets: the whole stack is budgeted
+  gapInlineToClock: 6,
+  // 40, not the 76 a real lock screen sets: the whole stack is budgeted
   // against a 682 pt band (66..748) and the clock is the one dial this scene
   // is allowed to turn. See the budget below.
-  clockSize: 44,
-  clockLine: 48,
+  clockSize: 40,
+  clockLine: 44,
   dateSize: 14,
   dateLine: 19,
-  gapClockToAccessory: 8,
+  gapClockToAccessory: 6,
   accessoryH: 52,
-  gapAccessoryToLive: 8,
+  gapAccessoryToLive: 6,
   liveH: 62,
   unit: 84,
   gridGap: 12,
@@ -184,20 +184,28 @@ const IPHONE: IosSpec = {
   // THE BUDGET, in points from the top of the screen. Section captions and the
   // 12/24 gaps are fixed by the brief and never absorb an overflow:
   //   66  content top (safe area)
-  //   66..206   Dynamic Island: compact 126x37 with the minimal circle beside
-  //             it (66..103), +8, expanded 83 (111..194), +12
-  //   206..220  "Kilit ekrani" caption, +12
-  //   232..254  inline accessory, +8
-  //   262..310  clock (48) - 310..329 date (19), +8
-  //   337..389  circular + rectangular accessories, +8
+  //   66..216   Dynamic Island: compact 126x37 with the minimal circle beside
+  //             it (66..103), +6, expanded 95 (109..204: 10 pad + 30 row + 6 +
+  //             29 pill + 8 + 4 bar + 8 pad; it was 83 before the progress
+  //             bar), +12
+  //   216..230  "Kilit ekrani" caption, +12
+  //   242..264  inline accessory, +6
+  //   270..314  clock (44) - 314..333 date (19), +6
+  //   339..391  circular + rectangular accessories, +6
   //   397..459  Live Activity card (62 = its natural Swift height, no
-  //             progress bar; inside the lock screen, no caption of its own:
-  //             that is where iOS itself draws it), +24
+  //             progress bar: only the island's expanded view has one;
+  //             inside the lock screen, no caption of its own: that is where
+  //             iOS itself draws it), +24
   //   483..497  "Ana ekran ve mini widget'lar" caption, +12
   //   509..593  the one mini row: systemMedium (180) + systemSmall + one mini
   //             tile (the second row of three mini tiles was dropped for the
   //             island's 98 pt, see sc-widgets.tsx), +24
-  //   617..747  the notification card, 130 pt, whole inside the 748 cut.
+  //   617..747  the notification card, 130 pt, whole inside the 748 cut
+  //             (unchanged from before the bar).
+  // The bar's 12 pt were paid for by 12 pt of lock-screen slack: the
+  // inline/clock/accessory/live gaps 8 -> 6 (-6), the island compact gap 8 -> 6
+  // (-2) and the clock 48 -> 44 line (-4). Section captions and the 12/24 gaps
+  // are untouched.
   // The 674 probe therefore lands 57 pt inside that card, which is the one
   // element on this screen with a light fill (ink 0.14) rather than a widget
   // gradient - the failure mode 6c caught on android-phone was a bleed element

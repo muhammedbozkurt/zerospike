@@ -32,6 +32,9 @@ export const SCENE_LAST_MGDL = 112;
 export const SCENE_AVG_MGDL = 125;
 export const SCENE_ELAPSED_MIN = 12;
 export const SCENE_TIMER_REMAINING_MIN = 72;
+/** The whole armed window (start..end): 48 of 120 min elapsed -> the island's
+ *  progress bar reads 40%. */
+export const SCENE_TIMER_WINDOW_MIN = 120;
 
 const MIN = 60 * 1000;
 const DAY = 24 * 60 * MIN;
@@ -69,6 +72,7 @@ export function sceneSnapshot(snapshot: LiveData, anchor: number): LiveData {
     avgGlucoseMgdl: SCENE_AVG_MGDL,
     avgGlucoseDisplay: formatGlucose(SCENE_AVG_MGDL, unit),
     postMealEndsAt: anchor + SCENE_TIMER_REMAINING_MIN * MIN,
+    postMealStartedAt: anchor + (SCENE_TIMER_REMAINING_MIN - SCENE_TIMER_WINDOW_MIN) * MIN,
     // `nextReminderAt` is deliberately NOT pinned. The seeded reminders only
     // reach computeLiveData once the capture device has granted notification
     // permission, which a fresh simulator has not, so the snapshot carries

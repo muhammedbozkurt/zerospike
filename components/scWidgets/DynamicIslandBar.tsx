@@ -13,9 +13,10 @@ import { ISLAND_COMPACT, ISLAND_EXPANDED, ISLAND_MINIMAL, ISLAND_TONES } from ".
  *
  *   compact   "timer" glyph left, countdown right, camera gap between; the
  *             minimal presentation (glyph only) sits beside it. No title and
- *             NO progress bar: the Swift has none anywhere.
+ *             no bar.
  *   expanded  leading 30x30 badge, center title, trailing countdown, bottom
- *             reading pill. All values live in islandSpec.ts, which
+ *             reading pill with the elapsed-share progress bar UNDER it (the
+ *             lock-screen card has no bar). All values live in islandSpec.ts, which
  *             scripts/scWidgetsIsland.test.ts checks against the Swift source.
  *
  * The SF Symbol "timer" has no hourglass in it; Ionicons "timer-outline" is its
@@ -41,6 +42,12 @@ export function DynamicIslandBar({
   const tone = live ? ISLAND_TONES.accent : ISLAND_TONES.muted;
   const title = data?.labels?.timerTitle ?? "";
   const reading = data?.lastGlucoseDisplay;
+  const startedAt = data?.postMealStartedAt;
+  const endsAt = data?.postMealEndsAt;
+  const elapsed =
+    startedAt != null && endsAt != null && endsAt > startedAt
+      ? Math.min(1, Math.max(0, (now - startedAt) / (endsAt - startedAt)))
+      : 0;
   const c = ISLAND_COMPACT;
   const m = ISLAND_MINIMAL;
   const e = ISLAND_EXPANDED;
@@ -174,6 +181,24 @@ export function DynamicIslandBar({
             </View>
           </View>
         ) : null}
+        <View
+          style={{
+            marginTop: reading ? e.barGap : e.rowToPill,
+            height: e.barH,
+            borderRadius: e.barH / 2,
+            overflow: "hidden",
+            backgroundColor: withAlpha(ISLAND_TONES.ink, e.barTrackAlpha),
+          }}
+        >
+          <View
+            style={{
+              width: `${elapsed * 100}%`,
+              height: e.barH,
+              borderRadius: e.barH / 2,
+              backgroundColor: ISLAND_TONES.accent,
+            }}
+          />
+        </View>
       </View>
     </View>
   );

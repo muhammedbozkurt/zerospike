@@ -54,6 +54,30 @@ private func timerRange(_ state: PostMealAttributes.ContentState) -> ClosedRange
   min(state.startedAt, state.endsAt)...state.endsAt
 }
 
+/// The elapsed share of the user's own timer window, drawn as a thin bar in the
+/// Dynamic Island's expanded bottom region. `ProgressView(timerInterval:)` is
+/// advanced by the system from the same startedAt...endsAt range as the
+/// countdown Text, so it fills with elapsed time without any push or update
+/// (iOS 16+, the target is 16.4). The built-in linear style cannot take a
+/// custom track colour, so a Capsule behind it carries the track.
+@available(iOS 16.2, *)
+private func islandProgressBar(_ state: PostMealAttributes.ContentState, tones: ActivityTones) -> some View {
+  ProgressView(timerInterval: timerRange(state), countsDown: false) {
+    EmptyView()
+  } currentValueLabel: {
+    EmptyView()
+  }
+  .progressViewStyle(.linear)
+  .labelsHidden()
+  .tint(tones.accent)
+  .frame(height: 4)
+  .clipShape(Capsule(style: .continuous))
+  .background {
+    Capsule(style: .continuous)
+      .fill(tones.ink.opacity(0.16))
+  }
+}
+
 /// The timer glyph on its accent ground, shared by the lock-screen card and the
 /// Dynamic Island's expanded leading region.
 @available(iOS 16.2, *)
@@ -179,14 +203,21 @@ struct PostMealActivityWidget: Widget {
             .foregroundColor(context.isStale ? ActivityTones.island.muted : ActivityTones.island.accent)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          if let reading = context.state.lastReading {
-            HStack(spacing: 0) {
-              readingPill(reading, unit: context.state.unitLabel, tones: .island)
-              Spacer(minLength: 0)
+          // The reading pill (when there is one) with the progress bar UNDER it;
+          // with no reading the bar stands alone. The lock-screen card has no
+          // bar by design.
+          VStack(alignment: .leading, spacing: 8) {
+            if let reading = context.state.lastReading {
+              HStack(spacing: 0) {
+                readingPill(reading, unit: context.state.unitLabel, tones: .island)
+                Spacer(minLength: 0)
+              }
             }
-            .padding(.top, 2)
-            .opacity(context.isStale ? 0.55 : 1)
+            islandProgressBar(context.state, tones: .island)
           }
+          .padding(.top, 2)
+          .padding(.bottom, 6)
+          .opacity(context.isStale ? 0.55 : 1)
         }
       } compactLeading: {
         Image(systemName: "timer")

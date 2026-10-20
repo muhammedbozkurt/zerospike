@@ -38,11 +38,15 @@ export const ISLAND_MINIMAL = {
 
 /** DynamicIslandExpandedRegion leading / center / trailing / bottom. */
 export const ISLAND_EXPANDED = {
-  h: 83,
+  h: 95,
   padX: 16,
   padTop: 10,
   rowToPill: 6,
   padBottom: 8,
+  barH: 4,
+  barGap: 8,
+  barTrackAlpha: 0.16,
+  barBottomPad: 6,
   badge: 30,
   badgeCorner: 10,
   badgeGlyph: 14,

@@ -12,6 +12,8 @@ import {
   LIVE_CARD,
 } from "../components/scWidgets/islandSpec";
 
+import { SCENE_TIMER_REMAINING_MIN, SCENE_TIMER_WINDOW_MIN } from "../components/scWidgets/sceneData";
+
 const root = join(__dirname, "..");
 const swift = readFileSync(join(root, "targets/widget/PostMealActivity.swift"), "utf8");
 const colors = readFileSync(join(root, "targets/widget/WidgetColors.swift"), "utf8");
@@ -110,7 +112,35 @@ assert.equal(Number(afterCard.match(/\.padding\(\.horizontal, (\d+)\)/)![1]), LI
 assert.equal(Number(afterCard.match(/\.padding\(\.vertical, (\d+)\)/)![1]), LIVE_CARD.padY);
 assert.equal(LIVE_CARD.naturalH, LIVE_CARD.padY * 2 + LIVE_CARD.badge);
 
-// Swift'te ilerleme cubugu yok: sahnede de olmamali
-assert.ok(!/ProgressView|progressViewStyle/.test(swift), "Swift'e cubuk eklendi: sahne guncellenmeli");
+// Ilerleme cubugu: yalniz genisletilmis adada (bottom), kilit ekraninda YOK
+const lockSection = between("// Lock screen / banner", "} dynamicIsland:");
+assert.ok(!/ProgressView/.test(lockSection), "Kilit ekrani kartinda cubuk olmamali");
+const bottom = between("DynamicIslandExpandedRegion(.bottom)", "} compactLeading:");
+assert.match(bottom, /islandProgressBar\(context\.state, tones: \.island\)/);
+assert.match(bottom, /context\.isStale \? 0\.55 : 1/);
+assert.equal(Number(bottom.match(/\.padding\(\.bottom, (\d+)\)/)![1]), ISLAND_EXPANDED.barBottomPad);
+assert.ok(ISLAND_EXPANDED.barBottomPad >= 6, "alt bosluk >= 6 pt");
+assert.equal(Number(bottom.match(/VStack\(alignment: \.leading, spacing: (\d+)\)/)![1]), ISLAND_EXPANDED.barGap);
+// Cubuk pilin ALTINDA (pill once, cubuk sonra)
+assert.ok(bottom.indexOf("readingPill(") < bottom.indexOf("islandProgressBar("), "cubuk kapsulun altinda");
+const barFn = between("private func islandProgressBar", "/// The timer glyph on its accent ground");
+assert.match(barFn, /ProgressView\(timerInterval: timerRange\(state\), countsDown: false\)/);
+assert.match(barFn, /EmptyView\(\)/);
+assert.match(barFn, /\.labelsHidden\(\)/);
+assert.match(barFn, /\.tint\(tones\.accent\)/);
+assert.equal(Number(barFn.match(/\.frame\(height: (\d+)\)/)![1]), ISLAND_EXPANDED.barH);
+assert.equal(Number(barFn.match(/opacity\(([\d.]+)\)/)![1]), ISLAND_EXPANDED.barTrackAlpha);
+assert.match(barFn, /\.fill\(tones\.ink\.opacity/);
+// Cubuk yalniz island tonuyla cizilir: accent islandAccent (= ISLAND_TONES.accent)
+assert.match(swift, /islandProgressBar\(context\.state, tones: \.island\)/);
+assert.equal(
+  ISLAND_EXPANDED.h,
+  ISLAND_EXPANDED.padTop + ISLAND_EXPANDED.badge + ISLAND_EXPANDED.rowToPill + 29 +
+    ISLAND_EXPANDED.barGap + ISLAND_EXPANDED.barH + ISLAND_EXPANDED.padBottom,
+  "genisletilmis yukseklik = dolgu + rozet + pil(29) + cubuk",
+);
+
+// Sahne: 72/120 dk kaldi -> gecen oran %40
+assert.equal((SCENE_TIMER_WINDOW_MIN - SCENE_TIMER_REMAINING_MIN) / SCENE_TIMER_WINDOW_MIN, 0.4);
 
 console.log("scWidgetsIsland: OK");
