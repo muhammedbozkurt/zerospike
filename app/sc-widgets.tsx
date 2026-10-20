@@ -19,7 +19,7 @@ import { MiniTile, MiniWidgetsScene } from "../components/scWidgets/MiniWidgetsS
 import { NotificationCard } from "../components/scWidgets/NotificationCard";
 import { AndroidScene } from "../components/scWidgets/AndroidScene";
 import { profileFor, specFor, type AndroidSpec, type IosSpec } from "../components/scWidgets/layout";
-import { SCENE_TIMER_FRACTION, sceneAnchor, sceneSnapshot } from "../components/scWidgets/sceneData";
+import { sceneAnchor, sceneSnapshot } from "../components/scWidgets/sceneData";
 
 /**
  * Store-screenshot ONLY (panel 03-widget): a widget scene, because the real
@@ -151,7 +151,7 @@ function IosScene({
         accessoryH={spec.accessoryH}
       />
       <View style={{ height: spec.gapAccessoryToLive }} />
-      <LiveActivityScene data={data} now={now} height={spec.liveH} fraction={SCENE_TIMER_FRACTION} />
+      <LiveActivityScene data={data} now={now} height={spec.liveH} />
     </>
   );
 
@@ -209,13 +209,7 @@ function IosScene({
     <>
       {spec.island ? (
         <>
-          <DynamicIslandBar
-            data={data}
-            now={now}
-            fraction={SCENE_TIMER_FRACTION}
-            width={spec.island.w}
-            height={spec.island.h}
-          />
+          <DynamicIslandBar data={data} now={now} compactGap={spec.island.compactGap} />
           <View style={{ height: spec.island.gapAfter }} />
         </>
       ) : null}
@@ -225,25 +219,17 @@ function IosScene({
         {t("scWidgets.homeAndMini")}
       </SectionHeading>
       <View style={{ height: spec.headingGap }} />
-      {/* Two rows of the SAME grid unit, both 372 pt wide: systemMedium +
-          systemSmall + the glucose tile, then the three remaining mini tiles.
-          The iPhone band cannot hold the iPad's three widget rows - see the
-          budget in layout.ts - so the mini reading tile, whose 112 mg/dL the
-          systemSmall widget beside it already prints, is the one dropped. */}
+      {/* One row, 372 pt wide: systemMedium + systemSmall + the glucose tile.
+          The Dynamic Island's compact and expanded states take 140 pt of the
+          748 pt band (budget in layout.ts), which cost the row of three mini
+          tiles (meal / third / timer) the iPhone used to carry. The iPad
+          keeps all of its widget rows. */}
       <HomeWidgetsScene
         data={data}
         now={now}
         unit={spec.unit}
         gap={spec.gridGap}
         trailing={<MiniTile tile="glucose" data={data} now={now} unit={spec.unit} />}
-      />
-      <View style={{ height: spec.gridGap }} />
-      <MiniWidgetsScene
-        data={data}
-        now={now}
-        unit={spec.unit}
-        gap={spec.gridGap}
-        rows={[["meal", "third", "timer"]]}
       />
       <View style={{ height: spec.sectionGap }} />
       {notification}

@@ -3,17 +3,21 @@ import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../lib/theme/tokens";
+import { WIDGET_DARK, WIDGET_LIGHT } from "../../lib/services/widgetColors";
 import type { LiveData } from "../../lib/services/liveData";
 import { withAlpha } from "../rich/GlassCard";
-import { activityAccent, formatCountdown, inkA, unitLabel } from "./common";
+import { activityAccent, formatCountdown, unitLabel } from "./common";
+import { LIVE_CARD } from "./islandSpec";
 
 /**
  * Replica of the lock-screen HStack in targets/widget/PostMealActivity.swift:
- * the timer badge, the activity's own title over its countdown with the
- * elapsed bar under it, and the last reading as a trailing pill. One fixed-
- * height card the width of its column; the Dynamic Island half of that same
- * Swift file is its own capsule under the status bar (DynamicIslandBar.tsx),
- * because the island reads as device chrome rather than a labeled section.
+ * the timer badge, the activity's own title over its countdown, and the last
+ * reading as a trailing pill, on WidgetBackground. No progress bar: the Swift
+ * card has none. One fixed-height card the width of its column; the Dynamic
+ * Island half of that same Swift file is DynamicIslandBar.tsx.
+ *
+ * Sizes are LIVE_CARD (islandSpec.ts, the Swift values at scale 1) times
+ * height / LIVE_CARD.naturalH, so the iPad column can run it larger.
  *
  * The title is `labels.timerTitle` verbatim - the same string
  * `context.attributes.title` prints - and carries NO meal name: PostMealAttributes
@@ -26,25 +30,20 @@ export function LiveActivityScene({
   data,
   now,
   height,
-  fraction,
 }: {
   data: LiveData | null;
   now: number;
   height: number;
-  fraction: number;
 }) {
   const remainingMs = data?.postMealEndsAt != null ? data.postMealEndsAt - now : null;
   const countdown = remainingMs != null && remainingMs > 0 ? formatCountdown(remainingMs) : null;
   const title = data?.labels?.timerTitle ?? "";
   const reading = data?.lastGlucoseDisplay;
   const accent = activityAccent();
-
-  // At least 14: the card's own breathing room is a fixed floor now, not a
-  // pure ratio, because the iPhone card is only 68 pt tall.
-  const pad = Math.max(14, Math.round(height * 0.18));
-  const badge = Math.round(height * 0.44);
-  const titleSize = Math.round(height * 0.125);
-  const valueSize = Math.round(height * 0.27);
+  const pal = THEME.scheme === "dark" ? WIDGET_DARK : WIDGET_LIGHT;
+  const k = LIVE_CARD;
+  const s = Math.min(height / k.naturalH, 1.4);
+  const px = (n: number) => Math.round(n * s);
 
   return (
     <View
@@ -52,75 +51,68 @@ export function LiveActivityScene({
         height,
         flexDirection: "row",
         alignItems: "center",
-        gap: pad,
-        borderRadius: Math.round(height * 0.22),
-        paddingHorizontal: pad,
-        backgroundColor: THEME.scheme === "light" ? THEME.surface : THEME.bg.g1,
+        gap: px(k.gap),
+        borderRadius: px(22),
+        paddingHorizontal: px(k.padX),
+        backgroundColor: pal.bgTo,
+        // The Swift card has no edge because iOS draws it over a wallpaper; here the page
+        // is the same #F5EFE6, so a hairline keeps the card readable as a card.
         borderWidth: 1,
-        borderColor: THEME.scheme === "light" ? THEME.border : inkA(0.06),
+        borderColor: withAlpha(pal.ink, 0.1),
       }}
     >
       <View
         style={{
-          width: badge,
-          height: badge,
-          borderRadius: Math.round(badge * 0.32),
+          width: px(k.badge),
+          height: px(k.badge),
+          borderRadius: px(k.badgeCorner),
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: withAlpha(accent, 0.18),
+          backgroundColor: withAlpha(accent, k.badgeAlpha),
         }}
       >
-        <Ionicons name={countdown ? "hourglass-outline" : "water"} size={Math.round(badge * 0.46)} color={accent} />
+        <Ionicons name={countdown ? "timer-outline" : "water"} size={px(k.badgeGlyph)} color={accent} />
       </View>
 
       <View style={{ flex: 1 }}>
         <Text
-          style={{ fontSize: titleSize, lineHeight: Math.round(titleSize * 1.25), fontWeight: "700", color: THEME.muted }}
+          style={{ fontSize: px(k.titleSize), fontWeight: k.titleWeight, color: pal.muted }}
           numberOfLines={1}
         >
           {countdown ? title : "zerospike"}
         </Text>
         <Text
-          style={{ fontSize: valueSize, lineHeight: Math.round(valueSize * 1.2), fontWeight: "700", color: accent }}
+          style={{
+            maxWidth: px(k.timeMaxW),
+            fontSize: px(k.timeSize),
+            fontWeight: k.timeWeight,
+            fontVariant: ["tabular-nums"],
+            color: accent,
+          }}
           numberOfLines={1}
         >
           {countdown ?? (data?.avgGlucoseDisplay ?? data?.lastGlucoseDisplay ?? "-")}
         </Text>
-        {countdown ? (
-          <View
-            style={{
-              marginTop: Math.round(height * 0.06),
-              height: 4,
-              borderRadius: 2,
-              overflow: "hidden",
-              backgroundColor: inkA(0.12),
-            }}
-          >
-            <View
-              style={{ width: `${Math.round(fraction * 100)}%`, height: 4, borderRadius: 2, backgroundColor: accent }}
-            />
-          </View>
-        ) : null}
       </View>
 
       {reading ? (
         <View
           style={{
             flexDirection: "row",
-            alignItems: "flex-end",
-            gap: 4,
-            paddingHorizontal: Math.round(height * 0.1),
-            paddingVertical: Math.round(height * 0.06),
+            alignItems: "baseline",
+            gap: px(4),
+            paddingHorizontal: px(9),
+            paddingVertical: px(5),
             borderRadius: 999,
-            backgroundColor: inkA(0.06),
+            backgroundColor: withAlpha(pal.ink, 0.06),
             borderWidth: 1,
-            borderColor: inkA(0.1),
+            borderColor: withAlpha(pal.ink, 0.1),
           }}
         >
-          <Text style={{ fontSize: Math.round(height * 0.17), fontWeight: "700", color: THEME.ink }}>{reading}</Text>
-          <Text style={{ fontSize: Math.round(height * 0.115), color: THEME.muted, marginBottom: 1 }}>
-            {unitLabel(data?.unit)}
+          <Text style={{ fontSize: px(14), fontWeight: "700", fontVariant: ["tabular-nums"], color: pal.ink }}>
+            {reading}
           </Text>
+          <Text style={{ fontSize: px(10), fontWeight: "500", color: pal.muted }}>{unitLabel(data?.unit)}</Text>
         </View>
       ) : null}
     </View>

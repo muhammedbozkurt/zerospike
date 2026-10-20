@@ -85,7 +85,7 @@ export interface IosSpec {
   leftW: number;
   rightW: number;
   /** iPad has no Dynamic Island, so it declares none. */
-  island: { w: number; h: number; gapAfter: number } | null;
+  island: { compactGap: number; gapAfter: number } | null;
   headingSize: number;
   headingH: number;
   /** W4 feedback 4: a heading and its own content are 12 pt apart, two
@@ -160,44 +160,45 @@ const IPHONE: IosSpec = {
   colGap: 0,
   leftW: 400,
   rightW: 400,
-  island: { w: 300, h: 30, gapAfter: 12 },
+  island: { compactGap: 8, gapAfter: 12 },
   headingSize: 11,
   headingH: 14,
   headingGap: 12,
   sectionGap: 24,
   inlineH: 22,
-  gapInlineToClock: 10,
-  // 52, not the 76 a real lock screen sets: the whole stack is budgeted
+  gapInlineToClock: 8,
+  // 44, not the 76 a real lock screen sets: the whole stack is budgeted
   // against a 682 pt band (66..748) and the clock is the one dial this scene
   // is allowed to turn. See the budget below.
-  clockSize: 50,
-  clockLine: 54,
+  clockSize: 44,
+  clockLine: 48,
   dateSize: 14,
   dateLine: 19,
-  gapClockToAccessory: 12,
-  accessoryH: 58,
-  gapAccessoryToLive: 16,
-  liveH: 68,
+  gapClockToAccessory: 8,
+  accessoryH: 52,
+  gapAccessoryToLive: 8,
+  liveH: 62,
   unit: 84,
   gridGap: 12,
   notif: { height: 130, pad: 14, icon: 26, titleSize: 14, bodySize: 12, metaSize: 11 },
   // THE BUDGET, in points from the top of the screen. Section captions and the
   // 12/24 gaps are fixed by the brief and never absorb an overflow:
   //   66  content top (safe area)
-  //   66..96    Dynamic Island, +12
-  //   108..122  "Kilit ekrani" caption, +12
-  //   134..156  inline accessory, +10
-  //   166..220  clock (54) - 220..239 date (19), +12
-  //   251..309  circular + rectangular accessories, +16
-  //   325..393  Live Activity card (inside the lock screen, no caption of its
-  //             own: that is where iOS itself draws it), +24
-  //   417..431  "Ana ekran ve mini widget'lar" caption, +12
-  //   443..527  row 1: systemMedium (180) + systemSmall + one mini tile
-  //   539..623  row 2: three mini tiles, +24
-  //   647..777  the notification card: 101 pt inside the frame, then 29 pt
-  //             past the 748 cut. Its header, title and one-line body all
-  //             land above the cut; only its lower padding bleeds.
-  // The 674 probe therefore lands 27 pt inside that card, which is the one
+  //   66..206   Dynamic Island: compact 126x37 with the minimal circle beside
+  //             it (66..103), +8, expanded 83 (111..194), +12
+  //   206..220  "Kilit ekrani" caption, +12
+  //   232..254  inline accessory, +8
+  //   262..310  clock (48) - 310..329 date (19), +8
+  //   337..389  circular + rectangular accessories, +8
+  //   397..459  Live Activity card (62 = its natural Swift height, no
+  //             progress bar; inside the lock screen, no caption of its own:
+  //             that is where iOS itself draws it), +24
+  //   483..497  "Ana ekran ve mini widget'lar" caption, +12
+  //   509..593  the one mini row: systemMedium (180) + systemSmall + one mini
+  //             tile (the second row of three mini tiles was dropped for the
+  //             island's 98 pt, see sc-widgets.tsx), +24
+  //   617..747  the notification card, 130 pt, whole inside the 748 cut.
+  // The 674 probe therefore lands 57 pt inside that card, which is the one
   // element on this screen with a light fill (ink 0.14) rather than a widget
   // gradient - the failure mode 6c caught on android-phone was a bleed element
   // DARKER than the page margin, and a darkest-wash card would repeat it.
@@ -231,10 +232,10 @@ const IPAD: IosSpec = {
   gapClockToAccessory: 12,
   accessoryH: 84,
   gapAccessoryToLive: 16,
-  // 112, not the 140 the column has room for: every size inside the card is a
-  // ratio of its HEIGHT, so a taller card also sets a bigger badge, a bigger
-  // reading chip and a bigger title - and at 140 the Arabic title came back
-  // truncated in a 424 pt column. 112 leaves the title 208 pt of run.
+  // 112, not the 140 the column has room for. LiveActivityScene scales its
+  // contents by height / 62 capped at 1.4 (islandSpec LIVE_CARD), so the card
+  // keeps this box and the contents centre in it; a bigger scale truncated
+  // the Arabic title in a 424 pt column.
   liveH: 112,
   unit: 156,
   gridGap: 18,

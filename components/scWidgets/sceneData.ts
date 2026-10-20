@@ -19,21 +19,19 @@ import type { LiveData } from "../../lib/services/liveData";
  *
  *   last reading   112 mg/dL, logged 12 minutes before the anchor
  *   7-day average  125 mg/dL, fixed (the dashboard's 7-day average)
- *   post-meal      72 of 120 minutes left -> "1:12:00", a 40% bar
+ *   post-meal      72 of 120 minutes left -> "1:12:00"
  *   next reminder  49 minutes after the anchor
  *
  * Only VALUES are overridden. Every label still comes from the snapshot
- * computeLiveData built (`labels.timerTitle` is the same "Tokluk olcumu" the
- * real PostMealActivity.swift and buildTimerWidget print), so this scene can
+ * computeLiveData built (`labels.timerTitle` is the same "Tokluk ölçümü" (tr) the
+ * real PostMealActivity.swift prints via context.attributes.title, and the
+ * Android twin buildTimerWidget in lib/services/androidWidget.ts), so this scene can
  * never show a string the shipped widgets do not.
  */
 export const SCENE_LAST_MGDL = 112;
 export const SCENE_AVG_MGDL = 125;
 export const SCENE_ELAPSED_MIN = 12;
-export const SCENE_TIMER_TOTAL_MIN = 120;
 export const SCENE_TIMER_REMAINING_MIN = 72;
-export const SCENE_TIMER_FRACTION =
-  (SCENE_TIMER_TOTAL_MIN - SCENE_TIMER_REMAINING_MIN) / SCENE_TIMER_TOTAL_MIN;
 
 const MIN = 60 * 1000;
 const DAY = 24 * 60 * MIN;
