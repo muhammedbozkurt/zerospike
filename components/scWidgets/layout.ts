@@ -314,35 +314,35 @@ const ANDROID_TABLET7: AndroidSpec = {
   gutter: 12,
   cols: 6,
   // The glance card carries the next-reminder label and its time pill under
-  // the value whenever a reminder is upcoming: ~145 dp of drawn content, which
-  // 112 dp cut off right under the "Last 7 days" line (and 144 still shaved
-  // the pill's bottom edge). The shortcut tiles still need only 87 dp, so
+  // the value whenever a reminder is upcoming: ~150 dp of drawn content in
+  // ja/ar, whose taller lines cut the pill's bottom edge at 152 and 160; 112 dp cut
+  // the card right under the "Last 7 days" line. The shortcut tiles still need only 87 dp, so
   // they keep their own 112 dp row.
-  glanceH: 152,
+  glanceH: 168,
   quickAddH: 112,
   singleH: 112,
   tablet: true,
   rowGutter: 12,
   headingSize: 12,
   headingH: 16,
-  // 12 (was 20) so the taller glance row still ends at 348 dp, clear of the
-  // launcher filler that starts at 354.
-  sectionGap: 12,
+  // 8 (was 20) so the taller glance row still ends at 360 dp, clear of the
+  // launcher filler that starts at 376.
+  sectionGap: 8,
   rowGap: 16,
-  // Content now ends at 348 dp of a 677 dp clean band, so the launcher filler
-  // is what uses the rest of the tablet: three icon rows (354..626), then the
+  // Content now ends at 360 dp of a 677 dp clean band, so the launcher filler
+  // is what uses the rest of the tablet: three icon rows (376..636), then the
   // search pill (640..712) centred on the 676.4 probe, then a dock bar
   // (732..872) across the 759.7 cut.
   filler: {
-    top: 354,
+    top: 376,
     padX: 18,
     iconRows: 3,
     iconCols: 5,
     iconSize: 80,
     iconRadius: 20,
     iconGlyph: 32,
-    iconRowGap: 16,
-    gapBeforePill: 14,
+    iconRowGap: 10,
+    gapBeforePill: 4,
     pillH: 72,
     gapAfterPill: 20,
     dockH: 140,

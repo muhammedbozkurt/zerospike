@@ -1290,15 +1290,7 @@ export default function InsightsScreen() {
                                       opacity: entry.opacity,
                                     }}
                                   />
-                                  <Text
-                                    style={{
-                                      color: THEME.textMuted,
-                                      fontSize: 10,
-                                      marginStart: 5,
-                                    }}
-                                  >
-                                    {entry.label.replace(/%?\s?\d+-\d+\s?%?/, isolateLtr)}
-                                  </Text>
+                                  <LegendLabel text={entry.label} />
                                 </View>
                               ))}
                             </View>
@@ -2298,5 +2290,40 @@ export default function InsightsScreen() {
         }}
       />
     </AppBackground>
+  );
+}
+
+/**
+ * An AGP legend label whose "25-75%" range is its own Text: inside one string
+ * the Arabic word before it turns the digits into Arabic numbers (bidi rule
+ * W2), the hyphen then no longer joins them and the range reads "%75-25". As
+ * sibling Texts of a natively mirrored row the word and the range keep their
+ * reading order, and the range is a single LTR run.
+ */
+function LegendLabel({ text }: { text: string }) {
+  const m = /^(.*?)(%?\s?\d+-\d+\s?%?)(.*)$/.exec(text);
+  const parts = m
+    ? [
+        { s: m[1].trim(), range: false },
+        { s: m[2].trim(), range: true },
+        { s: m[3].trim(), range: false },
+      ].filter((p) => p.s.length > 0)
+    : [{ s: text, range: false }];
+  return (
+    <>
+      {parts.map((p, i) => (
+        <Text
+          key={i}
+          style={{
+            color: THEME.textMuted,
+            fontSize: 10,
+            marginStart: i === 0 ? 5 : 3,
+            ...(p.range ? { writingDirection: "ltr" as const } : null),
+          }}
+        >
+          {p.s}
+        </Text>
+      ))}
+    </>
   );
 }
