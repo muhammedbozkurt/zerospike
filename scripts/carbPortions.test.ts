@@ -308,6 +308,7 @@ console.log("G. cooked / dry state on the cup");
       ok(`${lang}: portion.${key} is short enough for a chip`, text.length <= 24, String(text.length));
     }
     ok(`${lang}: cooked and dry differ`, tree.portion.cupCooked !== tree.portion.cupDry);
+    ok(`${lang}: cup and glass chips differ (a drink carries both)`, tree.portion.cup !== tree.portion.glass, tree.portion.cup);
   }
 }
 
