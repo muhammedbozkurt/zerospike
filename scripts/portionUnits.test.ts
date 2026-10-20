@@ -229,7 +229,7 @@ console.log("G. the en-US screenshot scene");
   const chips = buildPortionChips(measures, undefined, 0, true);
   const labels = chips.filter((c) => c.kind === "measure").map((c) => chipLabel(c, (k) => k, String, { system: "us", gPerFlOz: null }));
   ok("scene shows the 1 slice (1 oz) chip", labels[0].text === "1 slice (1 oz)", labels[0].text);
-  ok("scene's 60 g selects the 2 slices chip", chipFromGrams(chips, toast.grams)?.id === "slice:2" && labels[1].text === "2 slices (2 oz)");
+  ok("scene's 30 g selects the 1 slice (1 oz) chip", chipFromGrams(chips, toast.grams)?.id === "slice:1" && labels[0].text === "1 slice (1 oz)");
   const milk = scene[2];
   const mm = (byEn.get(seedNameKey(milk.en))?.portions ?? []).map(([label_key, grams]) => ({ label_key, grams }));
   const mc = buildPortionChips(mm, undefined, 0, true).map((c) => chipLabel(c, (k) => k, String, { system: "us", gPerFlOz: flOzGramsFor(milk.en) }));
