@@ -45,6 +45,7 @@ import { num } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { useProCta } from "../lib/proCta";
 import { grantSpikeConsent, hasSpikeConsent } from "../lib/services/spikeConsent";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
@@ -53,8 +54,6 @@ import { EstimateResultCard, LiveTotalHeader } from "./meal";
 import { SCRIM } from "./SheetShell";
 import { Button } from "./ui";
 
-/** Tablet cap, same as MealComposeSheet. */
-const SHEET_MAX_WIDTH = 560;
 
 export type CarbEstimateSource = "food_tab" | "meal_sheet";
 
@@ -99,7 +98,7 @@ export function CarbEstimateSheet({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const router = useRouter();
   const anim = useRef(new Animated.Value(0)).current;
   const aborter = useRef<AbortController | null>(null);
@@ -554,7 +553,7 @@ export function CarbEstimateSheet({
                 { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
               ],
             },
-            isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : null,
+            sheetBoxStyle(layoutWidth, isWide),
           ]}
         >
           <Pressable

@@ -47,6 +47,11 @@ declare -a SHOTS=(
   "02-bodymap|/(tabs)/injection?segment=map"
   "03-widget|/sc-widgets"
   "04-food|/(tabs)/food"
+  # Sheet scenes (food tab, screenshot params scScene): 04-carbs opens the meal
+  # compose sheet on sample foods, 04b-estimate the carb estimate sheet on its
+  # filled sample. Run them with SHOTS_ONLY=04-carbs,04b-estimate.
+  "04-carbs|/(tabs)/food?scScene=carbs"
+  "04b-estimate|/(tabs)/food?scScene=estimate"
   "05-insights|/insights?custom=1"
   "07-spike|/spike"
   "08-takip|/onboarding?scOnboarding=none"

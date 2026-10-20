@@ -17,6 +17,7 @@ import { SCRIM } from "../components/SheetShell";
 import { sheetLayout } from "../lib/sheetLayout";
 import { basalPresentation } from "../lib/basalConfirmLayout";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { HIT_TARGET, MODAL_TOP_PAD, RADIUS, SPACE, THEME } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { withAlpha } from "../components/rich/GlassCard";
@@ -97,7 +98,7 @@ function BasalConfirmScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const router = useRouter();
   const { activeProfile, isProUser, bumpData } = useApp();
   const params = useLocalSearchParams<{
@@ -329,6 +330,7 @@ function BasalConfirmScreen() {
       windowHeight,
       keyboardHeight: 0,
       insetBottom: insets.bottom,
+      insetTop: insets.top,
       contentHeight: 0,
     }).sheetMaxHeight;
     return (
@@ -355,7 +357,7 @@ function BasalConfirmScreen() {
               paddingTop: 8,
               paddingBottom: insets.bottom + 16,
             },
-            isWide ? { width: "100%", maxWidth: 600, alignSelf: "center" } : undefined,
+            sheetBoxStyle(layoutWidth, isWide),
           ]}
         >
           <View className="items-center mb-1.5">

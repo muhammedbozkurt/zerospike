@@ -21,6 +21,7 @@ import { MedNamePicker } from "./MedNamePicker";
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow, switchColors } from "../lib/theme/tokens";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { GradientCTA } from "./rich/GradientCTA";
 import {
   getAlarmAuthorizationStatus,
@@ -41,9 +42,6 @@ const inputStyle = () => ({
 
 const DEFAULT_TIME = "08:00";
 
-/** Widest the sheet gets on a tablet before it stops stretching and centres
- *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -123,7 +121,7 @@ export function ReminderEditSheet({
   onDelete?: () => void;
 }) {
   const { t } = useTranslation();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const isEdit = editingReminder != null;
 
   const typeOptions = useMemo(() => {
@@ -290,7 +288,7 @@ export function ReminderEditSheet({
                 paddingBottom: 8,
               },
               glow(THEME.accent, 30, 0.3),
-              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+              sheetBoxStyle(layoutWidth, isWide),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

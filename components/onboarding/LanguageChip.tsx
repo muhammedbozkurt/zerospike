@@ -18,10 +18,8 @@ import { ELEVATION, THEME } from "../../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
 import { withAlpha } from "../rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
+import { sheetBoxStyle } from "../../lib/tabletLayout";
 
-/** Widest the sheet gets on a tablet before it stops stretching and centres
- *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 
 /** Uppercase language-code badge (flag emojis render as "?" on some devices). */
 function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
@@ -49,7 +47,7 @@ export function LanguageChip() {
   const { t } = useTranslation();
   const { lang, setLanguage } = useApp();
   const { height } = useWindowDimensions();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const [open, setOpen] = useState(false);
 
   async function select(next: Lang) {
@@ -100,7 +98,7 @@ export function LanguageChip() {
                 shadowOffset: { width: 0, height: -8 },
                 ...ELEVATION.popover,
               },
-              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+              sheetBoxStyle(layoutWidth, isWide),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}
