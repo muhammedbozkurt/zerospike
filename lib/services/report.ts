@@ -26,7 +26,12 @@ import {
 } from "../glucose";
 import { num, pct, formatDate, formatTime, formatDateKey } from "../format";
 import { insulinModeOf, insulinModeUsesInsulin } from "../insulinMode";
-import { FROZEN_GLUCOSE_COLORS as GLUCOSE_COLORS, FROZEN_GLUCOSE_VERY_LOW as GLUCOSE_VERY_LOW } from "./pdfColors";
+import {
+  FROZEN_GLUCOSE_COLORS as GLUCOSE_COLORS,
+  FROZEN_GLUCOSE_VERY_LOW as GLUCOSE_VERY_LOW,
+  PDF_ACCENT_FILL,
+  PDF_ACCENT_INK,
+} from "./pdfColors";
 import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
@@ -63,9 +68,11 @@ import {
  * metrics with their existing disclaimers. No interpretation or advice.
  */
 
-// Print-legible accent on white paper (the Midnight neon cyan washes out on a
-// light background). Matches the mockup's light-report accent.
-const BRAND = "#0ea5b7";
+// Brand turquoise on white paper: INK (#087089, 5.69:1) for text glyphs, lines,
+// dots and legend-keyed bars; FILL (#22C7E0, 2.04:1) only for decorative
+// accents and translucent bands, never for anything that carries information.
+const BRAND = PDF_ACCENT_INK;
+const BRAND_FILL = PDF_ACCENT_FILL;
 
 function two(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
@@ -159,7 +166,7 @@ function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
     .join("");
 
   const dots = g.medianLine
-    .map((p) => `<circle cx="${f1(p.x)}" cy="${f1(p.y)}" r="2" fill="#0891b2"/>`)
+    .map((p) => `<circle cx="${f1(p.x)}" cy="${f1(p.y)}" r="2" fill="${BRAND}"/>`)
     .join("");
   const hasCurve = g.iqrPolygon.length > 0;
 
@@ -169,9 +176,9 @@ function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
     yTicks +
     // Wider 5-95% band drawn first (lighter), then the 25-75% band on top of
     // it (darker) - same layering as the app's AGP percentile ribbons.
-    (hasCurve ? `<polygon points="${pointsAttr(g.p595Polygon)}" fill="#22d3ee" fill-opacity="0.09"/>` : "") +
-    (hasCurve ? `<polygon points="${pointsAttr(g.iqrPolygon)}" fill="#22d3ee" fill-opacity="0.18"/>` : "") +
-    (hasCurve ? `<polyline points="${pointsAttr(g.medianLine)}" fill="none" stroke="#0891b2" stroke-width="2"/>` : "") +
+    (hasCurve ? `<polygon points="${pointsAttr(g.p595Polygon)}" fill="${BRAND_FILL}" fill-opacity="0.09"/>` : "") +
+    (hasCurve ? `<polygon points="${pointsAttr(g.iqrPolygon)}" fill="${BRAND_FILL}" fill-opacity="0.18"/>` : "") +
+    (hasCurve ? `<polyline points="${pointsAttr(g.medianLine)}" fill="none" stroke="${BRAND}" stroke-width="2"/>` : "") +
     dots +
     xTicks +
     `</svg>`
@@ -585,12 +592,12 @@ function buildCvTrendHtml(readings: SugarLog[], range: DateRange, tf: Tf): strin
   });
   const dots = trend.weeks
     .map((w, i) =>
-      w.cv == null ? "" : `<circle cx="${xFor(i).toFixed(1)}" cy="${yFor(w.cv).toFixed(1)}" r="2.2" fill="#0891b2"/>`
+      w.cv == null ? "" : `<circle cx="${xFor(i).toFixed(1)}" cy="${yFor(w.cv).toFixed(1)}" r="2.2" fill="${BRAND}"/>`
     )
     .join("");
   const svg =
     `<svg viewBox="0 0 ${W} ${H}" width="260" height="${H}" xmlns="http://www.w3.org/2000/svg">` +
-    `<path d="${path.trim()}" fill="none" stroke="#0891b2" stroke-width="2"/>${dots}</svg>`;
+    `<path d="${path.trim()}" fill="none" stroke="${BRAND}" stroke-width="2"/>${dots}</svg>`;
 
   const last = withCv[withCv.length - 1];
   const prev = withCv.length > 1 ? withCv[withCv.length - 2] : null;
@@ -829,7 +836,7 @@ export function buildHtml(
   .foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid #ddd; color: #777; font-size: 10px; line-height: 1.5; }
   .cap { color: #777; font-size: 10px; margin: 4px 0 2px; }
   .kpis { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
-  .kpi { flex: 1 1 28%; min-width: 120px; border: 1px solid #eee; border-top: 4px solid ${BRAND}; border-radius: 8px; padding: 11px 13px; background: #fafafa; }
+  .kpi { flex: 1 1 28%; min-width: 120px; border: 1px solid #eee; border-top: 4px solid ${BRAND_FILL}; border-radius: 8px; padding: 11px 13px; background: #fafafa; }
   .kpi .kv { font-size: 23px; font-weight: 800; color: #111; }
   .kpi .kl { font-size: 11px; color: #666; margin-top: 3px; }
   .tirbar { display: flex; width: 100%; height: 18px; border-radius: 5px; overflow: hidden; margin: 4px 0 6px; }

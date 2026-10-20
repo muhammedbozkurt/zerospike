@@ -23,7 +23,12 @@ export const FROZEN_THEME = {
   bg: { g1: "#080e14", g2: "#0f2029" },
   ink: "#eaf6fa",
   muted: "#89a3b0",
-  accent: "#2ee6ff",
+  accent: "#22c7e0",
   violet: "#7c5cff",
   caution: "#ffa02a",
 } as const;
+
+/* PDF beyaz kagitta basilir. Bilgi tasiyan metin/cizgi/nokta INK (beyazda 5,69:1);
+ * FILL (beyazda 2,04:1) yalniz dekoratif serit ve yari saydam bant icindir. */
+export const PDF_ACCENT_INK = "#087089";
+export const PDF_ACCENT_FILL = "#22c7e0";

@@ -11,7 +11,9 @@ const expected = {
 assert.deepEqual({ ...C.FROZEN_GLUCOSE_COLORS }, expected.colors);
 assert.equal(C.FROZEN_GLUCOSE_VERY_LOW, expected.veryLow);
 assert.equal(C.FROZEN_GLUCOSE_RICH.target, "#22e39a");
-assert.equal(C.FROZEN_THEME.accent, "#2ee6ff");
+assert.equal(C.FROZEN_THEME.accent, "#22c7e0");
+assert.equal(C.PDF_ACCENT_INK, "#087089");
+assert.equal(C.PDF_ACCENT_FILL, "#22c7e0");
 
 for (const f of ["lib/services/report.ts", "lib/services/androidWidget.ts", "lib/services/widgetColors.ts"]) {
   const src = readFileSync(f, "utf8");
@@ -26,7 +28,7 @@ assert.equal(WIDGET_DARK.bgTo, C.FROZEN_THEME.bg.g1);
 assert.equal(WIDGET_DARK.ink, C.FROZEN_THEME.ink);
 assert.equal(WIDGET_DARK.muted, C.FROZEN_THEME.muted);
 assert.equal(WIDGET_DARK.accent, "#22c7e0");
-assert.notEqual(WIDGET_DARK.accent, C.FROZEN_THEME.accent);
+assert.equal(WIDGET_DARK.accent, C.FROZEN_THEME.accent);
 assert.equal(WIDGET_DARK.violet, C.FROZEN_THEME.violet);
 assert.equal(WIDGET_DARK.caution, C.FROZEN_THEME.caution);
 assert.deepEqual({ ...WIDGET_DARK.glucose }, {

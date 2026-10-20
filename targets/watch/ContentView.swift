@@ -22,7 +22,7 @@ private enum GlucoseColor {
   static let high = Color(red: 1.0, green: 0.8235, blue: 0.2471)       // #ffd23f
   static let wellAbove = Color(red: 1.0, green: 0.6275, blue: 0.1647)  // #ffa02a
   static let veryHigh = Color(red: 1.0, green: 0.5412, blue: 0.0)      // #ff8a00
-  static let accent = Color(red: 0.1804, green: 0.9020, blue: 1.0)     // #2ee6ff
+  static let accent = Color(red: 0.1333, green: 0.7804, blue: 0.8784)  // #22c7e0
   static let muted = Color(red: 0.5373, green: 0.6392, blue: 0.6902)   // #89a3b0
   // Same literal as the phone widget's WidgetBackground (#080e14), so every
   // zerospike surface sits on the one Midnight Monitor ground.
