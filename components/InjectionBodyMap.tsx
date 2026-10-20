@@ -32,21 +32,31 @@ import {
   REGIONS,
   SPINE_PATH,
   TORSO_PATH,
-  VB_H,
   VB_W,
   type Surface,
 } from "./injectionMap/silhouette";
-import { tierStroke } from "./injectionMap/tiers";
-import { BreathCircle, RegionShape, inkFor, tierFill } from "./injectionMap/RegionShape";
+import { tierStroke, type Tier } from "./injectionMap/tiers";
+import { BreathCircle, RegionShape, tierFill } from "./injectionMap/RegionShape";
+import { inkFor, mixHex } from "./injectionMap/paint";
+import {
+  BADGE_H,
+  BADGE_INNER_X,
+  BADGE_MAX_W,
+  BADGE_TOP_Y,
+  dotFonts,
+  dotMetrics,
+  mapHeight,
+  mapWidth,
+} from "./injectionMap/layout";
 import { SurfaceTabs } from "./injectionMap/SurfaceTabs";
 
 /**
  * Injection-site usage map (schema v9), at ROTATION-POINT resolution.
  *
  * One silhouette with a Front | Back switch; the eight selectable regions sit
- * on the face they belong to. A region's plate is one of four tiers (never
- * used, then three used steps) driven by the region's or point's OWN COUNT on
- * the absolute scale in lib/injectionHeat (0, 1-2, 3-5, 6+). Counts are hidden on the overview and shown on
+ * on the face they belong to. A region's plate is one of five tiers (never
+ * used, then four used steps) driven by the region's or point's OWN COUNT on
+ * the absolute scale in lib/injectionHeat (0, 1, 2, 3, 4+). Counts are hidden on the overview and shown on
  * the selected region and in the zoom. Tapping a region zooms onto it and
  * reveals its four rotation points at full touch size.
  *
@@ -82,12 +92,6 @@ export function heatFill(intensity: number): string {
   const t = (i - 0.5) / 0.5;
   const hot = mixHex(THEME.accentFill, THEME.glucose.veryHigh, t);
   return withAlpha(hot, Number(lerp(0.6, 0.85, t).toFixed(2)));
-}
-
-function mixHex(a: string, b: string, t: number): string {
-  const ch = (h: string, k: number): number => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
-  const out = [0, 1, 2].map((k) => Math.round(lerp(ch(a, k), ch(b, k), t)).toString(16).padStart(2, "0"));
-  return `#${out.join("")}`;
 }
 
 export const INK_DARK = PALETTES.dark.accentOnFill;
@@ -145,18 +149,6 @@ const BREATH_MIN = 0.55;
 const POINT_RING_OUTER = 3.5;
 const POINT_RING_INNER = 1.3;
 
-/**
- * Decorative L/R side badges, anchored in viewBox units and drawn at a fixed pt
- * size, beside the shoulders. Each sits clear of the arms and of the tab row.
- */
-const BADGE_INNER_X = 56;
-const BADGE_TOP_Y = 84;
-const BADGE_H = 18;
-/** Budgeted for the longest label, Arabic "يمين"; a single letter just centres. */
-const BADGE_MAX_W = 52;
-/** Screen height not given to the figure: header, tab bar, safe areas, zoom bar and legend. */
-const CHROME_RESERVE = 520;
-
 export function InjectionBodyMap({
   usage,
   noSiteCount = 0,
@@ -197,9 +189,8 @@ export function InjectionBodyMap({
   // swapLeftAndRightInRTL flip.
   const rtl = I18nManager.isRTL;
   const { width: winW, height: winH } = useWindowDimensions();
-  const fitW = Math.round(((winH - CHROME_RESERVE) * VB_W) / VB_H);
-  const svgW = Math.max(200, Math.min(Math.round(winW * 0.78), 384, fitW));
-  const svgH = Math.round((svgW * VB_H) / VB_W);
+  const svgW = mapWidth(winW, winH);
+  const svgH = mapHeight(svgW);
 
   const badges = useMemo(() => {
     const scale = svgW / VB_W;
@@ -374,9 +365,13 @@ export function InjectionBodyMap({
 
   const bodyFill = mixHex(THEME.surfaceRaised, THEME.text, 0.05);
   const plateFill = mixHex(THEME.surfaceRaised, THEME.text, 0.02);
-  const pointRadius = 23 * upx;
-  const pointFont = 15 * upx;
-  const countFont = 9 * upx;
+  // The dot shrinks below 23 pt on a narrow screen so the zoom keeps 8 pt clear
+  // between dots and to the plate edge; its digits scale with it.
+  const dot = open ? dotMetrics(open, svgW) : null;
+  const pointRadius = (dot?.r ?? 0) * upx;
+  const pointFont = dotFonts(dot?.r ?? 0).point * upx;
+  const countFont = dotFonts(dot?.r ?? 0).count * upx;
+  const dotNudge = (dot?.r ?? 0) * (1.5 / 23) * upx;
 
   return (
     <View
@@ -605,7 +600,7 @@ export function InjectionBodyMap({
                       />
                       <SvgText
                         x={pp.x}
-                        y={pp.y - 1.5 * upx + pointFont * 0.36}
+                        y={pp.y - dotNudge + pointFont * 0.36}
                         fontSize={pointFont}
                         fontWeight="bold"
                         fill={ink}
@@ -654,7 +649,7 @@ export function InjectionBodyMap({
         </Animated.View>
       </View>
 
-      {/* Compact key: the four tiers between "less" and "more", plus the next-up
+      {/* Compact key: the five tiers between "less" and "more", plus the next-up
           outline sample. Wraps instead of clipping, so the longest translation
           drops to a second line. */}
       <View
@@ -669,7 +664,7 @@ export function InjectionBodyMap({
           marginTop: 10,
         }}
       >
-        {THEME.heatRamp.map((c, i) => (
+        {THEME.heatScale.map((c, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Svg width={16} height={12}>
               <Rect
@@ -680,7 +675,7 @@ export function InjectionBodyMap({
                 rx={4}
                 fill={c}
                 stroke={THEME.heatEdge}
-                strokeWidth={i === 3 ? 1.5 : 1}
+                strokeWidth={tierStroke(i as Tier)}
               />
             </Svg>
             <Text style={{ color: THEME.textMuted, fontSize: 10, fontWeight: "700" }}>

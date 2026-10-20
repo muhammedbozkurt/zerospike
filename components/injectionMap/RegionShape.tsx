@@ -2,8 +2,9 @@ import React from "react";
 import Animated, { useAnimatedProps, type SharedValue } from "react-native-reanimated";
 import { Circle, G, Rect, Text as SvgText } from "react-native-svg";
 
-import { PALETTES, THEME } from "../../lib/theme/tokens";
+import { THEME } from "../../lib/theme/tokens";
 import { withAlpha } from "../rich/GlassCard";
+import { inkFor } from "./paint";
 import { hitBoxFor, type Region } from "./silhouette";
 import { tierStroke, type Tier } from "./tiers";
 
@@ -20,25 +21,7 @@ const SELECT_STROKE = 1.6;
 const INNER_INSET = 2.4;
 
 export function tierFill(tier: Tier): string {
-  return THEME.heatRamp[tier];
-}
-
-function luminance(hex: string): number {
-  const lin = (v: number): number => {
-    const s = v / 255;
-    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  };
-  const c = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16)));
-  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-}
-
-/** Whichever of the two theme inks reads better on this plate. */
-export function inkFor(fill: string): string {
-  const l = luminance(fill);
-  const light = PALETTES.dark.text;
-  const dark = PALETTES.light.text;
-  const cr = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-  return cr(l, luminance(light)) >= cr(l, luminance(dark)) ? light : dark;
+  return THEME.heatScale[tier];
 }
 
 /** The single next-up cue: a thin bright outline that breathes. */
