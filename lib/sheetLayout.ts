@@ -18,6 +18,9 @@ export interface SheetLayoutInput {
   keyboardHeight: number;
   /** Safe area bottom inset. */
   insetBottom: number;
+  /** Safe area top inset (status bar, cutout). The sheet never grows into it.
+   *  Default 0, which is the old behaviour. */
+  insetTop?: number;
   /** Measured content height (e.g. ScrollView's onContentSizeChange). */
   contentHeight: number;
   /** Fraction of the available height the sheet may occupy. Default 0.9. */
@@ -52,7 +55,7 @@ export function sheetLayout(input: SheetLayoutInput): SheetLayoutResult {
   const minVisible = input.minVisible ?? DEFAULT_MIN_VISIBLE;
 
   // Never negative, even for a degenerate keyboardHeight > windowHeight.
-  const available = Math.max(0, input.windowHeight - input.keyboardHeight);
+  const available = Math.max(0, input.windowHeight - input.keyboardHeight - (input.insetTop ?? 0));
 
   const sheetMaxHeight =
     available <= minVisible ? available : clamp(available * maxHeightRatio, minVisible, available);

@@ -43,6 +43,7 @@ import {
 import { sheetLayout } from "../lib/sheetLayout";
 import { HIT_TARGET, INPUT_TEXT, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
+import { TABLET_SHEET_MAX_HEIGHT, sheetBoxStyle } from "../lib/tabletLayout";
 import {
   EstimateResultCard,
   FoodCard,
@@ -59,7 +60,6 @@ import { SCRIM } from "./SheetShell";
 import { Button } from "./ui";
 
 const SEARCH_DEBOUNCE_MS = 180;
-const SHEET_MAX_WIDTH = 560;
 /** Share of the container the sheet takes: tall enough to be a form, short
  *  enough that the scrim above it stays tappable. With the keyboard up the
  *  sheet uses nearly all the room left above it. */
@@ -140,7 +140,7 @@ export function MealComposeSheet({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
   const rootRef = useRef<View>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -316,11 +316,16 @@ export function MealComposeSheet({
             windowHeight: rootHeight,
             keyboardHeight: lift,
             insetBottom: 0,
+            insetTop: insets.top,
             contentHeight: 0,
             maxHeightRatio: lift > 0 ? SHEET_RATIO_KEYBOARD : SHEET_RATIO,
           }).sheetMaxHeight
         )
       : undefined;
+  // Tablet: the rest of the screen is no use to a 560-wide strip, so the sheet
+  // stops at TABLET_SHEET_MAX_HEIGHT and scrolls inside (phone: unchanged).
+  const sheetHeightCapped =
+    sheetHeight != null && isWide ? Math.min(sheetHeight, TABLET_SHEET_MAX_HEIGHT) : sheetHeight;
 
   return (
     <View
@@ -349,12 +354,12 @@ export function MealComposeSheet({
         <Animated.View
           style={[
             {
-              height: sheetHeight ?? "92%",
+              height: sheetHeightCapped ?? "92%",
               transform: [
                 { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
               ],
             },
-            isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : null,
+            sheetBoxStyle(layoutWidth, isWide),
           ]}
         >
           {/* flex 1 (grow AND shrink) keeps the pinned save button on screen

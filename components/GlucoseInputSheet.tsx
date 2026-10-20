@@ -44,14 +44,13 @@ import { HEALTH_NAME } from "../lib/services/health";
 import { GradientCTA } from "./rich/GradientCTA";
 import { Button, Chip, Row, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { useEntryGuardConfirm } from "./useEntryGuardConfirm";
 
 /** Below this much room left over, the sheet drops into its compact type and
  *  spacing so the hero, the pills and Save all still fit above the keyboard. */
 const COMPACT_BELOW = 520;
-/** Widest the sheet gets on a tablet before it stops stretching and centres. */
-const SHEET_MAX_WIDTH = 600;
 
 const PERIODS: PeriodTag[] = [
   "fasting",
@@ -129,7 +128,7 @@ export function GlucoseInputSheet({
   // null keeps the "log it as of now" default; a Date is an explicit pick.
   const [loggedAt, setLoggedAt] = useState<Date | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const heroRef = useRef<TextInput>(null);
   /** Height actually left for the sheet: the keyboard has already been taken out
    *  of it on both platforms (iOS via the avoiding view's padding, Android via
@@ -403,13 +402,7 @@ export function GlucoseInputSheet({
             <Animated.View
               style={[
                 { transform: [{ translateY }], maxHeight: "100%" },
-                isWide
-                  ? {
-                      width: "100%",
-                      maxWidth: SHEET_MAX_WIDTH,
-                      alignSelf: "center",
-                    }
-                  : undefined,
+                sheetBoxStyle(layoutWidth, isWide),
               ]}
               onLayout={(e) => {
                 const h = e.nativeEvent.layout.height;

@@ -21,6 +21,7 @@ import { withAlpha } from "./rich/GlassCard";
 import { Row, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { IconTile, GradientCTA } from "./rich";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { DirIcon } from "./DirIcon";
@@ -34,9 +35,6 @@ import { noteFirstLog } from "../lib/services/firstLog";
 import { noteJournalActivity } from "../lib/services/notifications";
 import { formatTime, relativeDay } from "../lib/format";
 
-/** Widest the sheet gets on a tablet before it stops stretching and centres
- *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 
 interface QuickAddSheetProps {
   visible: boolean;
@@ -72,7 +70,7 @@ export function QuickAddSheet({
 }: QuickAddSheetProps) {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const { activeProfile, bumpData } = useApp();
   const { toast } = useFeedback();
   const anim = useRef(new Animated.Value(0)).current;
@@ -234,7 +232,7 @@ export function QuickAddSheet({
                 paddingTop: SPACE.sm,
                 paddingBottom: insets.bottom + SPACE.xl,
               },
-              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+              sheetBoxStyle(layoutWidth, isWide),
             ]}
           >
             <View style={{ alignItems: "center", marginBottom: SPACE.sm }}>

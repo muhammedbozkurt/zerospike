@@ -103,6 +103,7 @@ import { hapticSelect, hapticSuccess } from "../../lib/haptics";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../../lib/theme/tokens";
 import { mealSlotForHour } from "../../lib/insulin";
 import { useLayout } from "../../lib/useLayout";
+import { isTwoColumn } from "../../lib/tabletLayout";
 import { upper } from "../../lib/upper";
 
 type Selection = Category | "favorites" | "custom";
@@ -133,8 +134,6 @@ const GRID_BANDS: readonly GridBand[] = ["today", "templates", "recent", "catego
  *  left list only carries the catalogue bands. */
 const GRID_BANDS_LEFT: readonly GridBand[] = ["recent", "categories"];
 
-/** Two columns only from this window width up; 600-700 stays one column. */
-const TWO_COL_MIN_DP = 700;
 /** Cap for each of the two columns (the columns carry their own 16 inset). */
 const COL_MAX_WIDTH = 560;
 
@@ -443,8 +442,8 @@ export default function FoodScreen() {
   const deleteWithUndo = useUndoBatch(bumpData);
   // Tablets get more columns and a capped reading column; a phone render is
   // untouched (columnPad reduces to the plain inset below the wide threshold).
-  const { isWide, width: winWidth, columnPad } = useLayout();
-  const twoCol = isWide && winWidth >= TWO_COL_MIN_DP;
+  const { isWide, width: winWidth, height: winHeight, columnPad } = useLayout();
+  const twoCol = isTwoColumn(winWidth, winHeight);
   // A half-width column is phone-sized, so the shelf grid keeps 3 across there.
   const gridColumns = isWide && !twoCol ? 4 : 3;
   const colPad = twoCol ? { paddingLeft: 16, paddingRight: 16 } : columnPad(16);
@@ -1230,7 +1229,13 @@ export default function FoodScreen() {
   const HeroCard = (
     <GlassCard
       glow
-      style={{ alignItems: "center", paddingVertical: 16, marginBottom: 14 }}
+      // Tablet two-column: this card is the right column's flexible block, so
+      // a column shorter than the viewport fills it instead of ending in a
+      // dead band (lib/tabletLayout.ts fillColumn). Phone: unchanged.
+      style={[
+        { alignItems: "center", paddingVertical: 16, marginBottom: 14 },
+        twoCol ? { flexGrow: 1, justifyContent: "center" } : null,
+      ]}
     >
       <Text
         style={{
@@ -1249,7 +1254,7 @@ export default function FoodScreen() {
         style={{ columnGap: 6 }}
       >
         <Text
-          style={[TABULAR, { color: THEME.accent, fontSize: 36, fontWeight: "800" }]}
+          style={[TABULAR, { color: THEME.accent, fontSize: twoCol ? 48 : 36, fontWeight: "800" }]}
           numberOfLines={1}
         >
           {todayCarbs}
@@ -1891,9 +1896,9 @@ export default function FoodScreen() {
             <ScrollView
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: composeBarShown ? 92 : 28 }}
+              contentContainerStyle={{ flexGrow: 1, paddingBottom: composeBarShown ? 92 : 28 }}
             >
-              <View style={[{ paddingTop: 4 }, colPad]}>
+              <View style={[{ paddingTop: 4, flexGrow: 1 }, colPad]}>
                 {HeroCard}
                 <CarbRatioLine />
                 {renderGridBand("today")}

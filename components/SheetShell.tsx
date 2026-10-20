@@ -21,6 +21,7 @@ import { sheetLayout, type SheetLayoutResult } from "../lib/sheetLayout";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { THEME, glow } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 
 export const SCRIM = "rgba(0,0,0,0.72)"; // theme-ok
 
@@ -67,9 +68,6 @@ export interface SheetShellProps {
 
 const ANDROID_KEYBOARD_ANIM_MS = 180;
 const IOS_KEYBOARD_ANIM_FALLBACK_MS = 250;
-/** Widest a sheet gets on a tablet before it stops stretching and centres
- *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 
 export function SheetShell({
   visible,
@@ -85,7 +83,7 @@ export function SheetShell({
 }: SheetShellProps): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const [contentHeight, setContentHeight] = useState(0);
 
   // Raw measured keyboard height, animated. Doubles as the outer backdrop's
@@ -139,10 +137,11 @@ export function SheetShell({
         windowHeight,
         keyboardHeight: 0,
         insetBottom: insets.bottom,
+        insetTop: insets.top,
         contentHeight,
         maxHeightRatio,
       }),
-    [windowHeight, insets.bottom, contentHeight, maxHeightRatio],
+    [windowHeight, insets.bottom, insets.top, contentHeight, maxHeightRatio],
   );
   const openLayout = useMemo<SheetLayoutResult>(
     () =>
@@ -150,10 +149,11 @@ export function SheetShell({
         windowHeight,
         keyboardHeight: keyboardDomain,
         insetBottom: insets.bottom,
+        insetTop: insets.top,
         contentHeight,
         maxHeightRatio,
       }),
-    [windowHeight, insets.bottom, contentHeight, maxHeightRatio, keyboardDomain],
+    [windowHeight, insets.bottom, insets.top, contentHeight, maxHeightRatio, keyboardDomain],
   );
 
   const sheetMaxHeightAnim =
@@ -210,7 +210,7 @@ export function SheetShell({
             },
             glow(THEME.accent, 30, 0.3),
             fit ? { maxHeight: sheetMaxHeightAnim } : { height: sheetMaxHeightAnim },
-            isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+            sheetBoxStyle(layoutWidth, isWide),
           ]}
         >
           <View className="items-center mb-1.5">

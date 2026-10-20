@@ -12,12 +12,10 @@ import { SCRIM } from "./SheetShell";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { ActionRow } from "./form";
 import { Button, Txt } from "./ui";
 
-/** Widest the sheet gets on a tablet before it stops stretching and centres
- *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 
 export interface PickedRange {
   start: number;
@@ -61,7 +59,7 @@ export function DateRangePicker({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const [start, setStart] = useState<Date>(initialStart);
   const [end, setEnd] = useState<Date>(initialEnd);
   const [open, setOpen] = useState<"start" | "end" | null>(null);
@@ -147,7 +145,7 @@ export function DateRangePicker({
               paddingTop: SPACE.sm,
               paddingBottom: insets.bottom + SPACE.xl,
             },
-            isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+            sheetBoxStyle(layoutWidth, isWide),
           ]}
         >
           <View className="items-center" style={{ marginBottom: SPACE.sm }}>

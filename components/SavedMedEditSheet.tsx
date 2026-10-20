@@ -15,11 +15,9 @@ import { RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
 import { Button, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { GradientCTA } from "./rich/GradientCTA";
 
-/** Widest the sheet gets on a tablet before it stops stretching and centres
- *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 
 const inputStyle = () => ({
   borderRadius: RADIUS.md,
@@ -70,7 +68,7 @@ export function SavedMedEditSheet({
   onDelete?: () => void;
 }) {
   const { t } = useTranslation();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const [name, setName] = useState("");
   const isEdit = editingName != null;
 
@@ -113,7 +111,7 @@ export function SavedMedEditSheet({
                 paddingBottom: 8,
               },
               glow(THEME.accent, 30, 0.3),
-              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+              sheetBoxStyle(layoutWidth, isWide),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

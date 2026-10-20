@@ -1,17 +1,9 @@
 import type { ViewStyle } from "react-native";
 import { useWindowDimensions } from "react-native";
 
-/** Tablet threshold: shortest side >= 600dp counts as a wide screen (phone
- *  landscape stays "narrow" on purpose; the stretched-phone problem this fixes
- *  only exists on tablets and iPads). */
-export const WIDE_MIN_DP = 600;
+import { TWO_COL_MIN_DP, WIDE_MIN_DP, isTwoColumn, isWideScreen } from "./tabletLayout";
 
-/** Window width (dp) from which a wide screen may lay content out in two
- *  columns. 600-699 wide stays one column: two columns there would each land
- *  below a phone's width (same 700 line app/insights.tsx uses for its narrow
- *  weekly strip). Android 7in portrait (600) = one column, 7in landscape (~960),
- *  10in (800) and iPad 13in (1032 / 1376) = two columns. */
-export const TWO_COL_MIN_DP = 700;
+export { WIDE_MIN_DP, TWO_COL_MIN_DP };
 
 /** Cap for a single reading/content column on wide screens. */
 export const CONTENT_MAX_WIDTH = 680;
@@ -44,7 +36,7 @@ export type AppLayout = {
 
 export function useLayout(): AppLayout {
   const { width, height } = useWindowDimensions();
-  const isWide = Math.min(width, height) >= WIDE_MIN_DP;
+  const isWide = isWideScreen(width, height);
   // Gap that centers a CONTENT_MAX_WIDTH column inside the full window
   // width; independent of `base` so composing base with it never changes
   // where the column sits, only how wide it is.
@@ -53,6 +45,6 @@ export function useLayout(): AppLayout {
     paddingLeft: base + gap,
     paddingRight: base + gap,
   });
-  const isTwoCol = isWide && width >= TWO_COL_MIN_DP;
+  const isTwoCol = isTwoColumn(width, height);
   return { width, height, isWide, isTwoCol, columnPad };
 }

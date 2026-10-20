@@ -24,6 +24,7 @@ import { HIT_TARGET, RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/token
 import { Button, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 import { GradientCTA } from "./rich/GradientCTA";
 
 /** The stored medication entry being corrected (structurally matches MedEntry
@@ -54,9 +55,6 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Widest the sheet gets on a tablet before it stops stretching and centres
- *  (same cap as components/GlucoseInputSheet.tsx's SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 
 /**
  * Bottom sheet for correcting a medication entry: name, time and note - the
@@ -89,7 +87,7 @@ export function MedEditSheet({
   const { t, i18n } = useTranslation();
   const { activeProfile } = useApp();
   const { confirm } = useFeedback();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [loggedAt, setLoggedAt] = useState(new Date());
@@ -172,7 +170,7 @@ export function MedEditSheet({
                 paddingBottom: 8,
               },
               glow(THEME.accent, 30, 0.3),
-              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+              sheetBoxStyle(layoutWidth, isWide),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

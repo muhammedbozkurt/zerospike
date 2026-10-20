@@ -31,6 +31,7 @@ import {
 } from "../lib/feedback";
 import { GLUCOSE_RICH, THEME, RADIUS, ELEVATION } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
+import { sheetBoxStyle } from "../lib/tabletLayout";
 
 type ToastKind = "success" | "info" | "error";
 
@@ -125,10 +126,6 @@ const TOAST_MS = 2200;
 const TOAST_ACTION_MS = UNDO_TOAST_MS;
 const TOAST_ACTION_SCREEN_READER_MS = UNDO_TOAST_SCREEN_READER_MS;
 
-/** Widest a full-bleed action sheet gets on a tablet before it stops
- *  stretching and centres (same cap as components/GlucoseInputSheet.tsx's
- *  SHEET_MAX_WIDTH). */
-const SHEET_MAX_WIDTH = 600;
 /** Cap for a centered, content-sized dialog card on a tablet (ConfirmOverlay). */
 const DIALOG_MAX_WIDTH = 520;
 
@@ -692,7 +689,7 @@ function SheetOverlay({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide } = useLayout();
+  const { isWide, width: layoutWidth } = useLayout();
   const anim = useEnterAnim();
   useBackHandler(onClose);
 
@@ -730,7 +727,7 @@ function SheetOverlay({
                 backgroundColor: THEME.bg.g1,
                 paddingBottom: insets.bottom + 20,
               },
-              isWide ? { width: "100%", maxWidth: SHEET_MAX_WIDTH, alignSelf: "center" } : undefined,
+              sheetBoxStyle(layoutWidth, isWide),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}
