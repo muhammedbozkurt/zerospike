@@ -1603,6 +1603,8 @@ const pt: TranslationSchema = {
     bowl: "Tigela",
     plate: "Prato",
     cup: "Xícara",
+    cupCooked: "Xícara, cozida",
+    cupDry: "Xícara, seca",
     glass: "Copo",
     tbsp: "Colher de sopa",
     tsp: "Colher de chá",

@@ -1598,6 +1598,8 @@ const tr = {
     bowl: "Kâse",
     plate: "Tabak",
     cup: "Su bardağı",
+    cupCooked: "Su bardağı, pişmiş",
+    cupDry: "Su bardağı, kuru",
     glass: "Bardak",
     tbsp: "Yemek kaşığı",
     tsp: "Çay kaşığı",

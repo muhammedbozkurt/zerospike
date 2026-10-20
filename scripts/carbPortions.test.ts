@@ -5,6 +5,17 @@
 import { SEED_FOODS } from "../lib/db/seed";
 import { SEED_CARB } from "../lib/db/seedCarb";
 import { PORTION_OVERLAY } from "../lib/db/seedPortions";
+import { PORTION_STATE, STATE_PORTION_LABEL, portionStateFor } from "../lib/db/seedPortionState";
+import { chipA11yLabel, chipLabel } from "../components/meal/mealCards";
+import en from "../lib/i18n/locales/en";
+import tr from "../lib/i18n/locales/tr";
+import de from "../lib/i18n/locales/de";
+import fr from "../lib/i18n/locales/fr";
+import es from "../lib/i18n/locales/es";
+import it from "../lib/i18n/locales/it";
+import pt from "../lib/i18n/locales/pt";
+import ar from "../lib/i18n/locales/ar";
+import ja from "../lib/i18n/locales/ja";
 import { SEED_CATALOG_VERSION, selectFoodsToUpdate, seedNameKey } from "../lib/db/seedVersion";
 import { PORTION_LABEL_KEYS } from "../lib/db/types";
 import {
@@ -200,6 +211,104 @@ console.log("F. scene foods carry measures");
     }
   }
   console.log(`  (without a measure until seedPortions gains them: ${pending.length ? pending.join(", ") : "none"})`);
+}
+
+console.log("G. cooked / dry state on the cup");
+{
+  const LOCALES = { en, tr, de, fr, es, it, pt, ar, ja } as const;
+  const stated = Object.entries(PORTION_STATE);
+
+  // (a) every food with a state: catalogue food, cup-only, USDA-sourced, ref text agrees
+  for (const [name, entry] of stated) {
+    const food = byEn.get(seedNameKey(name));
+    ok(`${name}: state food exists in the catalogue`, !!food);
+    const o = PORTION_OVERLAY[name];
+    ok(`${name}: has an overlay entry`, !!o);
+    ok(`${name}: only a cup is stated`, !!o && o.portions.every(([l]) => l === STATE_PORTION_LABEL), o ? o.portions.map(([l]) => l).join(",") : "");
+    ok(`${name}: overlay source is usda`, o?.src === "usda");
+    ok(`${name}: state is cooked or dry`, entry.state === "cooked" || entry.state === "dry");
+    ok(`${name}: ref carries an FDC id`, /^(SR|FN)\d+ \S/.test(entry.ref), entry.ref);
+    // (c) the state must not contradict the USDA record it was read from
+    const text = entry.ref.toLowerCase();
+    if (entry.state === "cooked") {
+      ok(`${name}: cooked ref says cooked, boiled or mush`, /cooked|boiled|mush/.test(text), entry.ref);
+    } else {
+      ok(`${name}: dry ref says raw, dry or uncooked and not cooked`, /\b(raw|dry|uncooked)\b/.test(text) && !/cooked|boiled/.test(text), entry.ref);
+    }
+    // the chip itself carries the state, for the US and the metric wording
+    const measures = (o?.portions ?? []).map(([label_key, grams]) => ({ label_key, grams }));
+    const chips = buildPortionChips(measures, undefined, 0, false, entry.state);
+    const first = chips[0];
+    const word = entry.state === "cooked" ? "cooked" : "dry";
+    ok(`${name}: US chip text says ${word}`, chipLabel(first, (k) => k, String, { system: "us" }).text === `1 cup, ${word}`, chipLabel(first, (k) => k, String, { system: "us" }).text);
+    ok(`${name}: chip a11y label says ${word}`, chipA11yLabel(first, (k) => k, String, { system: "us" }).startsWith(`1 cup, ${word}`));
+    const key = entry.state === "cooked" ? "portion.cupCooked" : "portion.cupDry";
+    ok(`${name}: metric chip uses ${key}`, chipLabel(first, (k) => k, String).text === `1 × ${key}`, chipLabel(first, (k) => k, String).text);
+  }
+  ok("at least 40 foods carry a state", stated.length >= 40, String(stated.length));
+
+  // (b) every grain / pasta / legume cup is either stated or a deliberate exception
+  const EXCEPTIONS: Readonly<Record<string, string>> = {
+    "Rice pilaf": "prepared dish, no raw counterpart",
+    "Bulgur pilaf": "prepared dish, no raw counterpart",
+    Porridge: "prepared dish, recipe not named by USDA",
+    Muesli: "ready-to-eat cereal",
+    Granola: "ready-to-eat cereal",
+    Cornflakes: "ready-to-eat cereal",
+    "Sweet corn": "USDA measure is canned, drained kernels",
+    "Boiled potato": "name already says boiled; not a grain, pasta or legume",
+    "Rice flour": "flour has no cooked state",
+    "Wheat flour": "flour has no cooked state",
+    "Whole wheat flour": "flour has no cooked state",
+    "Buckwheat flour": "flour has no cooked state",
+    "Chickpea flour": "flour has no cooked state",
+    Edamame: "USDA measure is frozen, prepared",
+    Hummus: "prepared dish",
+    "Refried beans": "USDA measure is canned",
+    "Baked beans in tomato sauce": "USDA measure is canned",
+  };
+  const unresolved: string[] = [];
+  for (const f of SEED_FOODS) {
+    if (f.cat !== "staples" && f.cat !== "legumes") continue;
+    if (!f.portions?.some(([l]) => l === STATE_PORTION_LABEL)) continue;
+    const decided = f.en in PORTION_STATE || f.en in EXCEPTIONS;
+    if (!decided) unresolved.push(f.en);
+    ok(`${f.en}: cup is stated or a deliberate exception`, decided);
+    ok(`${f.en}: not both stated and excepted`, !(f.en in PORTION_STATE && f.en in EXCEPTIONS));
+    if (/\b(cooked|boiled)\b/i.test(f.en) || /\b(dry|raw|uncooked)\b/i.test(f.en)) {
+      ok(`${f.en}: a state in the name is carried by the chip`, f.en in PORTION_STATE || f.en in EXCEPTIONS);
+    }
+  }
+  ok("no undecided cup food", unresolved.length === 0, unresolved.join(", "));
+  for (const name of Object.keys(EXCEPTIONS)) ok(`${name}: exception is a catalogue food`, byEn.has(seedNameKey(name)));
+
+  // state only lands on cup chips; other foods and custom rows get none
+  const mixed = buildPortionChips([{ label_key: "cup", grams: 158 }, { label_key: "slice", grams: 30 }], "cup", 0, false, "cooked");
+  ok("cup chips carry the state, the slice chip does not", mixed.filter((c) => c.kind === "measure").every((c) => (c.label_key === "cup") === (c.state === "cooked")));
+  ok("no state, no state on the chips", buildPortionChips([{ label_key: "cup", grams: 158 }], "cup").every((c) => c.state === undefined));
+  ok("the chip id does not change with the state", mixed[0].id === "cup:1" && mixed[1].id === "cup:2");
+  ok("portionStateFor: untouched catalogue row", portionStateFor({ name_en: "White rice", is_custom: 0, source: null }) === "cooked");
+  ok("portionStateFor: lookup ignores case and spaces", portionStateFor({ name_en: " white RICE ", is_custom: 0, source: null }) === "cooked");
+  ok("portionStateFor: edited or custom row", portionStateFor({ name_en: "White rice", is_custom: 1, source: null }) === null);
+  ok("portionStateFor: Open Food Facts row", portionStateFor({ name_en: "White rice", is_custom: 0, source: "off" }) === null);
+  ok("portionStateFor: food without a state / null food", portionStateFor({ name_en: "Apple", is_custom: 0, source: null }) === null && portionStateFor(null) === null);
+  ok("a UK chip is worded like the US one", chipLabel(mixed[0], (k) => k, String, { system: "uk" }).text === "1 cup, cooked");
+  ok("two cups read in the plural", chipLabel(mixed[1], (k) => k, String, { system: "us" }).text === "2 cups, cooked");
+
+  // (d) nine languages, filled, no em dash, no forbidden wording, one address form
+  const FORBIDDEN = /uyar[ıi]r|alarm|tan[ıi]\b|tedavi|diagnos|treatment|recommended dose|Diagnose|Behandlung|diagnostic|traitement|tratamiento|diagnóstico|trattamento|tratamento|診断|治療|تشخيص|علاج/i;
+  for (const [lang, tree] of Object.entries(LOCALES)) {
+    for (const key of ["cupCooked", "cupDry"] as const) {
+      const text = tree.portion[key];
+      ok(`${lang}: portion.${key} is filled`, typeof text === "string" && text.trim().length > 0);
+      ok(`${lang}: portion.${key} has no em dash`, !new RegExp(`[${String.fromCharCode(0x2014)}${String.fromCharCode(0x2013)}]`).test(text));
+      ok(`${lang}: portion.${key} has no forbidden wording`, !FORBIDDEN.test(text), text);
+      ok(`${lang}: portion.${key} starts with the plain cup label`, text.startsWith(tree.portion.cup), text);
+      ok(`${lang}: portion.${key} is longer than the plain cup label`, text.length > tree.portion.cup.length);
+      ok(`${lang}: portion.${key} is short enough for a chip`, text.length <= 24, String(text.length));
+    }
+    ok(`${lang}: cooked and dry differ`, tree.portion.cupCooked !== tree.portion.cupDry);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

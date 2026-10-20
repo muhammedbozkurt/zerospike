@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, ViewStyle } from "react-native";
 import { useTranslation } from "react-i18next";
 
-import { listPortions } from "../lib/db/foods";
+import { getFood, listPortions } from "../lib/db/foods";
+import { portionLabelI18nKey, portionStateFor, type PortionState } from "../lib/db/seedPortionState";
 import type { FoodPortion } from "../lib/db/types";
 import { num } from "../lib/format";
 import { getLastPortion, setLastPortion } from "../lib/lastPortion";
@@ -34,14 +35,18 @@ export function PortionPresetChips({
 }) {
   const { t } = useTranslation();
   const [presets, setPresets] = useState<FoodPortion[]>([]);
+  const [state, setState] = useState<PortionState | null>(null);
 
   useEffect(() => {
     let alive = true;
     setPresets([]);
+    setState(null);
     if (!foodId) return;
     (async () => {
       const rows = await listPortions(foodId);
+      const food = await getFood(foodId).catch(() => null);
       if (!alive) return;
+      setState(portionStateFor(food));
       setPresets(rows);
       if (autoSelect && rows.length > 0) {
         const hit = pickRememberedPortion(rows, await getLastPortion(foodId));
@@ -65,7 +70,7 @@ export function PortionPresetChips({
     >
       {presets.map((p) => {
         const active = value === p.grams;
-        const label = `${num(1)} ${t(`portion.${p.label_key}`)} · ${num(p.grams)} ${t("common.grams")}`;
+        const label = `${num(1)} ${t(portionLabelI18nKey(p.label_key, state))} ·${num(p.grams)} ${t("common.grams")}`;
         return (
           <Pressable
             key={p.id}

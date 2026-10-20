@@ -15,6 +15,7 @@
  */
 
 import type { PortionLabelKey } from "./db/types";
+import { statedFor, type PortionState } from "./db/seedPortionState";
 
 /** Grams in one avoirdupois ounce. */
 export const OZ_G = 28.3495;
@@ -142,10 +143,12 @@ export interface PortionChipInput {
   multiplier: number;
   /** Grams of ONE measure. */
   unit_g: number;
+  /** "cooked" / "dry": a stated cup reads "1 cup, cooked" (the USDA wording). */
+  state?: PortionState | null;
 }
 
 export interface PortionChipText {
-  /** "1 slice (1 oz)", "1 cup", "2 glasses (473 ml)". */
+  /** "1 slice (1 oz)", "1 cup, cooked", "2 glasses (473 ml)". */
   text: string;
   /** The gram equivalent shown small under the text: "28 g". */
   caption: string;
@@ -161,6 +164,7 @@ type FormatNumber = (n: number) => string;
  *
  *   us  slice/piece/...: "<n> <unit> (<oz> oz)"   liquid: "<n> <unit> (<fl oz> fl oz)"
  *       cup, tbsp, tsp:  "<n> <unit>"              (the gram caption carries the weight)
+ *       a stated cup:    "<n> cup, cooked" / "<n> cups, dry" (us and uk)
  *   uk  liquid:          "<n> <unit> (<ml> ml)"    anything else: "<n> <unit>"
  *
  * The ounce figure of n measures is n times the displayed ounces of ONE
@@ -179,6 +183,8 @@ export function formatPortionChip(
   const words = UNIT_WORDS[chip.label_key];
   if (!words) return null;
   let text = `${fmt(multiplier)} ${multiplier === 1 ? words[0] : words[1]}`;
+  const state = statedFor(chip.label_key, chip.state);
+  if (state) text += `, ${state}`;
 
   const density = finite(gPerFlOz);
   const liquid = density > 0 && VOLUME_LABELS.has(chip.label_key);

@@ -1603,6 +1603,8 @@ const it: TranslationSchema = {
     bowl: "Ciotola",
     plate: "Piatto",
     cup: "Tazza",
+    cupCooked: "Tazza, cotta",
+    cupDry: "Tazza, secca",
     glass: "Bicchiere",
     tbsp: "Cucchiaio",
     tsp: "Cucchiaino",
