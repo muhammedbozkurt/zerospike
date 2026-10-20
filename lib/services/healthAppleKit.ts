@@ -1,5 +1,5 @@
 import { logCrash } from "../analytics";
-import { toHealthKitMetadata, type HealthWriteMeta } from "../healthMeta";
+import { carbEstimateMetadata, toHealthKitMetadata, type HealthWriteMeta } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
@@ -305,7 +305,14 @@ async function writeCarbs(
   dateIso: string,
   meta?: HealthWriteMeta
 ): Promise<string | null> {
-  return writeKindSample("carbs", "g", Math.round(grams * 10) / 10, dateIso, meta, {});
+  return writeKindSample(
+    "carbs",
+    "g",
+    Math.round(grams * 10) / 10,
+    dateIso,
+    meta,
+    carbEstimateMetadata(meta?.estimated)
+  );
 }
 
 async function writeInsulin(

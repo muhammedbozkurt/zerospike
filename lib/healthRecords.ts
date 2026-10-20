@@ -7,6 +7,7 @@ import {
 } from "./db/injections";
 import { setHealthRecordHooks } from "./db/healthRecordHooks";
 import type { Injection, MealLog } from "./db/types";
+import { mealEditMode } from "./mealRoute";
 import {
   clearHealthRecordRetryIds,
   deleteHealthRecord,
@@ -29,10 +30,27 @@ import type { HealthWriteKind } from "./services/healthTypes";
 
 const KINDS: readonly HealthWriteKind[] = ["carbs", "insulin"];
 
+/** A meal saved from a carb estimate: no catalogue food, no weight, carbs set.
+ *  Derived from existing columns (no schema change), same rule as mealEditMode. */
+export function isEstimatedMeal(
+  meal: Pick<MealLog, "food_id" | "portion_g" | "calculated_carbs_g">
+): boolean {
+  const grams = Number(meal.calculated_carbs_g);
+  return Number.isFinite(grams) && grams > 0 && mealEditMode(meal) === "carbOnly";
+}
+
 export function mealRecordInput(meal: MealLog): HealthRecordInput | null {
   const grams = Number(meal.calculated_carbs_g);
   if (!Number.isFinite(grams) || grams <= 0) return null;
-  return { kind: "carbs", id: meal.id, profileId: meal.profile_id, loggedAt: meal.logged_at, grams };
+  const input: HealthRecordInput = {
+    kind: "carbs",
+    id: meal.id,
+    profileId: meal.profile_id,
+    loggedAt: meal.logged_at,
+    grams,
+  };
+  if (isEstimatedMeal(meal)) input.estimated = true;
+  return input;
 }
 
 export function injectionRecordInput(injection: Injection): HealthRecordInput | null {
@@ -58,7 +76,9 @@ export function needsMirror(
   if (!next) return false;
   if (!previous) return true;
   if (next.loggedAt !== previous.loggedAt) return true;
-  if (next.kind === "carbs" && previous.kind === "carbs") return next.grams !== previous.grams;
+  if (next.kind === "carbs" && previous.kind === "carbs") {
+    return next.grams !== previous.grams || Boolean(next.estimated) !== Boolean(previous.estimated);
+  }
   if (next.kind === "insulin" && previous.kind === "insulin") {
     return next.units !== previous.units || next.insulinKind !== previous.insulinKind;
   }
