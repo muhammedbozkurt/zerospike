@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getFood, listPortions } from "../../lib/db/foods";
 import { flOzGramsFor } from "../../lib/db/seedFlOz";
+import { portionStateFor, type PortionState } from "../../lib/db/seedPortionState";
 import type { PortionLabelKey } from "../../lib/db/types";
 import { getLastPortion, setLastPortion } from "../../lib/lastPortion";
 import {
@@ -26,6 +27,8 @@ interface Entry {
   remembered: PortionLabelKey | undefined;
   /** USDA grams per fluid ounce when the food is a catalog liquid, else null. */
   gPerFlOz: number | null;
+  /** Cooked / dry state of the food's cup (seedPortionState), else null. */
+  state: PortionState | null;
   at: number;
 }
 
@@ -49,6 +52,7 @@ export function loadFoodPortions(foodId: string): Promise<{
   measures: PortionMeasure[];
   remembered: PortionLabelKey | undefined;
   gPerFlOz: number | null;
+  state: PortionState | null;
 }> {
   const hit = cache.get(foodId);
   if (isFresh(hit)) return Promise.resolve(hit as Entry);
@@ -57,16 +61,18 @@ export function loadFoodPortions(foodId: string): Promise<{
   const job = (async () => {
     let measures: PortionMeasure[] = [];
     let gPerFlOz: number | null = null;
+    let state: PortionState | null = null;
     try {
       const rows = await listPortions(foodId);
       measures = rows.map((r) => ({ label_key: r.label_key, grams: r.grams }));
       const food = await getFood(foodId);
       gPerFlOz = flOzGramsFor(food?.name_en);
+      state = portionStateFor(food);
     } catch {
       // see above
     }
     const remembered = await getLastPortion(foodId);
-    const entry: Entry = { measures, remembered, gPerFlOz, at: Date.now() };
+    const entry: Entry = { measures, remembered, gPerFlOz, state, at: Date.now() };
     cache.set(foodId, entry);
     inflight.delete(foodId);
     notify();
@@ -97,6 +103,8 @@ export interface FoodPortionsView {
   remembered: PortionLabelKey | undefined;
   /** USDA grams per fluid ounce for a catalog liquid, else null. */
   gPerFlOz: number | null;
+  /** Cooked / dry state of the food's cup, else null. */
+  state: PortionState | null;
   chips: PortionChip[];
 }
 
@@ -108,7 +116,8 @@ function viewFor(foodId: string, typicalG: number, ozEntry: boolean): FoodPortio
     measures,
     remembered: entry?.remembered,
     gPerFlOz: entry?.gPerFlOz ?? null,
-    chips: buildPortionChips(measures, entry?.remembered, typicalG, ozEntry),
+    state: entry?.state ?? null,
+    chips: buildPortionChips(measures, entry?.remembered, typicalG, ozEntry, entry?.state ?? null),
   };
 }
 

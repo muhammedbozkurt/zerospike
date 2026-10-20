@@ -1600,6 +1600,8 @@ const en: TranslationSchema = {
     bowl: "Bowl",
     plate: "Plate",
     cup: "Cup",
+    cupCooked: "Cup, cooked",
+    cupDry: "Cup, dry",
     glass: "Glass",
     tbsp: "Tablespoon",
     tsp: "Teaspoon",

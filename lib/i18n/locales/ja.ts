@@ -1600,6 +1600,8 @@ const ja: TranslationSchema = {
     bowl: "ボウル",
     plate: "皿",
     cup: "カップ",
+    cupCooked: "カップ(調理後)",
+    cupDry: "カップ(乾燥)",
     glass: "グラス",
     tbsp: "大さじ",
     tsp: "小さじ",

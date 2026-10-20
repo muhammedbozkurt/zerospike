@@ -8,6 +8,7 @@ import {
   chipFromGrams,
   type PortionChip,
 } from "../../lib/mealCompose";
+import { portionLabelI18nKey } from "../../lib/db/seedPortionState";
 import { formatPortionChip, type PortionUnitSystem } from "../../lib/portionUnits";
 
 type Translate = (key: string) => string;
@@ -54,7 +55,8 @@ export interface ChipLabel {
 /** What a chip prints. A measure chip is "1 × Slice" (existing portion.*
  *  labels, no plural forms) unless the device is US / UK English, where it is
  *  "1 slice (1 oz)" with the grams under it; the grams and oz chips are the
- *  generic "grams…" / "oz…". */
+ *  generic "grams…" / "oz…". A cup of a food with a cooked / dry state carries
+ *  it: "1 cup, cooked" / "1 × Su bardağı, pişmiş". */
 export function chipLabel(
   chip: PortionChip,
   t: Translate,
@@ -66,14 +68,22 @@ export function chipLabel(
   if (!chip.label_key) return { text: t("mealCompose.gramChip"), caption: null };
   if (units && units.system !== "metric") {
     const local = formatPortionChip(
-      { label_key: chip.label_key, multiplier: chip.multiplier, unit_g: chip.unit_g },
+      {
+        label_key: chip.label_key,
+        multiplier: chip.multiplier,
+        unit_g: chip.unit_g,
+        state: chip.state,
+      },
       units.system,
       units.gPerFlOz,
       fmt
     );
     if (local) return local;
   }
-  return { text: `${fmt(chip.multiplier)} × ${t(`portion.${chip.label_key}`)}`, caption: null };
+  return {
+    text: `${fmt(chip.multiplier)} × ${t(portionLabelI18nKey(chip.label_key, chip.state))}`,
+    caption: null,
+  };
 }
 
 /** The text of a chip (see chipLabel). */

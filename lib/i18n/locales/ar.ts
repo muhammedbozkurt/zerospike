@@ -1599,6 +1599,8 @@ const ar: TranslationSchema = {
     bowl: "وعاء",
     plate: "طبق",
     cup: "فنجان",
+    cupCooked: "فنجان، مطبوخ",
+    cupDry: "فنجان، جاف",
     glass: "كوب",
     tbsp: "ملعقة كبيرة",
     tsp: "ملعقة صغيرة",

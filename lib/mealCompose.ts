@@ -11,6 +11,7 @@ import { PORTION_LABEL_KEYS, type Food, type PortionLabelKey } from "./db/types"
 import type { NewTemplateItemInput } from "./db/mealTemplates";
 import { resolveItemCarbs } from "./mealTemplates";
 import { pickRememberedPortion } from "./lastPortionMap";
+import { statedFor, type PortionState } from "./db/seedPortionState";
 
 export const COMPOSE_MAX_GRAMS = 9999;
 export const COMPOSE_NAME_MAX = 120;
@@ -309,6 +310,9 @@ export interface PortionChip {
   multiplier: number;
   /** Grams of ONE measure; 0 for the grams and oz chips. */
   unit_g: number;
+  /** "cooked" / "dry" on a cup of a food whose cup only means something with
+   *  it (lib/db/seedPortionState); absent everywhere else. */
+  state?: PortionState;
 }
 
 function cleanMeasures(measures: readonly PortionMeasure[], typicalG: number): PortionMeasure[] {
@@ -336,22 +340,28 @@ function cleanMeasures(measures: readonly PortionMeasure[], typicalG: number): P
  *  (at most 3 measures in all), then "grams": 5 chips at most. A food without
  *  a measure gets a synthetic "portion" measure sized by its typical portion.
  *  `ozEntry` (US English) adds an "oz..." chip right before "grams...": a
- *  second free-entry chip, so a US row can hold 6 chips. */
+ *  second free-entry chip, so a US row can hold 6 chips. `state` is the
+ *  food's cooked / dry state (portionStateFor); it lands on the cup chips only. */
 export function buildPortionChips(
   measures: readonly PortionMeasure[],
   primaryKey?: PortionLabelKey | null,
   typicalG = 0,
-  ozEntry = false
+  ozEntry = false,
+  state: PortionState | null = null
 ): PortionChip[] {
   const list = cleanMeasures(measures, typicalG);
   const primary = list.find((m) => m.label_key === primaryKey) ?? list[0];
-  const chip = (m: PortionMeasure, multiplier: number): PortionChip => ({
-    id: `${m.label_key}:${multiplier}`,
-    kind: "measure",
-    label_key: m.label_key,
-    multiplier,
-    unit_g: m.grams,
-  });
+  const chip = (m: PortionMeasure, multiplier: number): PortionChip => {
+    const stated = statedFor(m.label_key, state);
+    return {
+      id: `${m.label_key}:${multiplier}`,
+      kind: "measure",
+      label_key: m.label_key,
+      multiplier,
+      unit_g: m.grams,
+      ...(stated ? { state: stated } : {}),
+    };
+  };
   const chips: PortionChip[] = [chip(primary, 1)];
   if (primary.grams * 2 <= COMPOSE_MAX_GRAMS) chips.push(chip(primary, 2));
   for (const m of list) if (m !== primary) chips.push(chip(m, 1));
