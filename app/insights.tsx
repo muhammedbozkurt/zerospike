@@ -1145,22 +1145,15 @@ export default function InsightsScreen() {
                               ],
                             ] as const
                           ).map(([name, color, value]) => (
-                            // RTL EXEMPTION: dot -> label -> percent is a fixed
-                            // layout (percent pinned to the row's far edge via
-                            // the label's flex:1), not a reading-direction list.
-                            // Locked to physical-row order like TimeInRangeBar's
-                            // legend, because RN's automatic row mirroring alone
-                            // breaks it: the label's default (non-swapping,
-                            // see components/form.tsx) LEFT text alignment would
-                            // stay put while the row itself reversed, gluing the
-                            // percent straight onto the label with the dot left
-                            // stranded across the whole flex gap on the other
-                            // side - on-device this read "منخفض6%" with the dot
-                            // floating away from its own row.
+                            // Plain "row": RN mirrors it natively under RTL on
+                            // both platforms, so dot -> label -> percent reads
+                            // right-to-left with the dot beside its label. A
+                            // manual row-reverse double-flipped it and sent the
+                            // dot to the far physical left.
                             <View
                               key={name}
                               className="items-center"
-                              style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+                              style={{ flexDirection: "row" }}
                             >
                               <View
                                 style={{
@@ -1176,16 +1169,7 @@ export default function InsightsScreen() {
                                   fontSize: 12,
                                   fontWeight: "700",
                                   flex: 1,
-                                  // Pinned physical-left: under an RTL base
-                                  // direction an Arabic label would otherwise
-                                  // align right, i.e. against the percent.
-                                  textAlign: "left",
-                                  // RN auto-flips marginLeft/Right independently
-                                  // of the flexDirection lock above, so the key
-                                  // itself has to be pre-swapped (same trick as
-                                  // InjectionBodyMap's side badges) to keep
-                                  // landing on the dot's side.
-                                  [rtl ? "marginRight" : "marginLeft"]: 8,
+                                  marginStart: 8,
                                 }}
                               >
                                 {name}
@@ -1201,9 +1185,7 @@ export default function InsightsScreen() {
                                     color: THEME.textMuted,
                                     fontSize: 12,
                                     writingDirection: "ltr",
-                                    // Same pre-swapped key as the label's: a
-                                    // fixed gap so the percent never touches it.
-                                    [rtl ? "marginRight" : "marginLeft"]: 8,
+                                    marginStart: 8,
                                   },
                                 ]}
                               >
@@ -1285,7 +1267,7 @@ export default function InsightsScreen() {
                           {premium && agpBands ? (
                             <View
                               className="flex-row flex-wrap mt-2"
-                              style={{ gap: 10, flexDirection: rtl ? "row-reverse" : "row" }}
+                              style={{ gap: 10 }}
                             >
                               {(
                                 [
@@ -1297,8 +1279,7 @@ export default function InsightsScreen() {
                               ).map((entry) => (
                                 <View
                                   key={entry.label}
-                                  className="items-center"
-                                  style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+                                  className="items-center flex-row"
                                 >
                                   <View
                                     style={{
@@ -1313,10 +1294,10 @@ export default function InsightsScreen() {
                                     style={{
                                       color: THEME.textMuted,
                                       fontSize: 10,
-                                      [rtl ? "marginRight" : "marginLeft"]: 5,
+                                      marginStart: 5,
                                     }}
                                   >
-                                    {entry.label}
+                                    {entry.label.replace(/%?\s?\d+-\d+\s?%?/, isolateLtr)}
                                   </Text>
                                 </View>
                               ))}

@@ -313,11 +313,11 @@ const ANDROID_TABLET7: AndroidSpec = {
   cellW: 84,
   gutter: 12,
   cols: 6,
-  // ONE cell row for every widget. 112 dp clears the glance provider's
-  // declared 110 dp minHeight and its ~91 dp of drawn content, and the
-  // shortcut tiles need 87 dp at this width - so a card is snug around its
-  // content instead of being a tall box with an empty lower half.
-  glanceH: 112,
+  // The glance card carries the next-reminder label and its time pill under
+  // the value whenever a reminder is upcoming: ~138 dp of drawn content, which
+  // 112 dp cut off right under the "Last 7 days" line. The shortcut tiles
+  // still need only 87 dp, so they keep their own 112 dp row.
+  glanceH: 144,
   quickAddH: 112,
   singleH: 112,
   tablet: true,
@@ -326,7 +326,7 @@ const ANDROID_TABLET7: AndroidSpec = {
   headingH: 16,
   sectionGap: 20,
   rowGap: 16,
-  // Content now ends at 316 dp of a 677 dp clean band, so the launcher filler
+  // Content now ends at 348 dp of a 677 dp clean band, so the launcher filler
   // is what uses the rest of the tablet: three icon rows (354..626), then the
   // search pill (640..712) centred on the 676.4 probe, then a dock bar
   // (732..872) across the 759.7 cut.
