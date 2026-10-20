@@ -15,6 +15,7 @@ const tr = {
     unitsShort: "Ü",
     mgdl: "mg/dL",
     grams: "g",
+    oz: "oz",
     carbRatioUnit: "g/Ü",
     pro: "Pro",
     confirm: "Onayla",
@@ -1563,6 +1564,7 @@ const tr = {
     recents: "Son kullanılanlar",
     starters: "Bunlardan birini deneyin",
     gramChip: "gram…",
+    ozChip: "oz…",
     saveWithTotal: "Öğünü kaydet · {{value}} g",
     add: "Öğüne ekle",
     bar: "Öğün ({{count}})",
@@ -1574,6 +1576,7 @@ const tr = {
     empty: "Yukarıdan arayın ya da bir yiyecek seçin",
     remove: "Kaldır",
     amount: "Miktar (g)",
+    amountOz: "Miktar (oz)",
   },
   portion: {
     presetsTitle: "Porsiyon ön ayarları",

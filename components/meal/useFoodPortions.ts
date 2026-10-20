@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { listPortions } from "../../lib/db/foods";
+import { getFood, listPortions } from "../../lib/db/foods";
+import { flOzGramsFor } from "../../lib/db/seedFlOz";
 import type { PortionLabelKey } from "../../lib/db/types";
 import { getLastPortion, setLastPortion } from "../../lib/lastPortion";
 import {
@@ -23,6 +24,8 @@ import {
 interface Entry {
   measures: PortionMeasure[];
   remembered: PortionLabelKey | undefined;
+  /** USDA grams per fluid ounce when the food is a catalog liquid, else null. */
+  gPerFlOz: number | null;
   at: number;
 }
 
@@ -45,6 +48,7 @@ function isFresh(entry: Entry | undefined): boolean {
 export function loadFoodPortions(foodId: string): Promise<{
   measures: PortionMeasure[];
   remembered: PortionLabelKey | undefined;
+  gPerFlOz: number | null;
 }> {
   const hit = cache.get(foodId);
   if (isFresh(hit)) return Promise.resolve(hit as Entry);
@@ -52,14 +56,17 @@ export function loadFoodPortions(foodId: string): Promise<{
   if (pending) return pending;
   const job = (async () => {
     let measures: PortionMeasure[] = [];
+    let gPerFlOz: number | null = null;
     try {
       const rows = await listPortions(foodId);
       measures = rows.map((r) => ({ label_key: r.label_key, grams: r.grams }));
+      const food = await getFood(foodId);
+      gPerFlOz = flOzGramsFor(food?.name_en);
     } catch {
       // see above
     }
     const remembered = await getLastPortion(foodId);
-    const entry: Entry = { measures, remembered, at: Date.now() };
+    const entry: Entry = { measures, remembered, gPerFlOz, at: Date.now() };
     cache.set(foodId, entry);
     inflight.delete(foodId);
     notify();
@@ -88,17 +95,20 @@ export interface FoodPortionsView {
   loaded: boolean;
   measures: PortionMeasure[];
   remembered: PortionLabelKey | undefined;
+  /** USDA grams per fluid ounce for a catalog liquid, else null. */
+  gPerFlOz: number | null;
   chips: PortionChip[];
 }
 
-function viewFor(foodId: string, typicalG: number): FoodPortionsView {
+function viewFor(foodId: string, typicalG: number, ozEntry: boolean): FoodPortionsView {
   const entry = cache.get(foodId);
   const measures = entry?.measures ?? [];
   return {
     loaded: !!entry,
     measures,
     remembered: entry?.remembered,
-    chips: buildPortionChips(measures, entry?.remembered, typicalG),
+    gPerFlOz: entry?.gPerFlOz ?? null,
+    chips: buildPortionChips(measures, entry?.remembered, typicalG, ozEntry),
   };
 }
 
@@ -115,20 +125,21 @@ function useCacheTick(): number {
 }
 
 /** One food's chips. typicalG sizes the synthetic "portion" chip of a food
- *  that has no presets. */
-export function useFoodPortions(foodId: string, typicalG = 0): FoodPortionsView {
+ *  that has no presets; ozEntry adds the US "oz…" entry chip. */
+export function useFoodPortions(foodId: string, typicalG = 0, ozEntry = false): FoodPortionsView {
   const tick = useCacheTick();
   useEffect(() => {
     if (foodId) void loadFoodPortions(foodId);
   }, [foodId]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => viewFor(foodId, typicalG), [foodId, typicalG, tick]);
+  return useMemo(() => viewFor(foodId, typicalG, ozEntry), [foodId, typicalG, ozEntry, tick]);
 }
 
 /** The whole list in one go, for the parent that renders the cards: one effect,
  *  one re-render per finished load batch instead of one hook per card. */
 export function useFoodPortionsMap(
-  foods: readonly { id: string; typicalG?: number }[]
+  foods: readonly { id: string; typicalG?: number }[],
+  ozEntry = false
 ): Record<string, FoodPortionsView> {
   const tick = useCacheTick();
   const idKey = foods.map((f) => `${f.id}:${f.typicalG ?? 0}`).join("|");
@@ -138,8 +149,8 @@ export function useFoodPortionsMap(
   }, [idKey]);
   return useMemo(() => {
     const out: Record<string, FoodPortionsView> = {};
-    for (const f of foods) out[f.id] = viewFor(f.id, f.typicalG ?? 0);
+    for (const f of foods) out[f.id] = viewFor(f.id, f.typicalG ?? 0, ozEntry);
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idKey, tick]);
+  }, [idKey, ozEntry, tick]);
 }

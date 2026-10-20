@@ -17,6 +17,7 @@ const ar: TranslationSchema = {
     unitsShort: "U",
     mgdl: "mg/dL",
     grams: "g",
+    oz: "oz",
     carbRatioUnit: "g/U",
     pro: "Pro",
     confirm: "تأكيد",
@@ -1564,6 +1565,7 @@ const ar: TranslationSchema = {
     recents: "المستخدمة مؤخرًا",
     starters: "جرّب أحد هذه",
     gramChip: "غرامات…",
+    ozChip: "oz…",
     saveWithTotal: "حفظ الوجبة · {{value}} غ",
     add: "إضافة إلى الوجبة",
     bar: "الوجبة ({{count}})",
@@ -1575,6 +1577,7 @@ const ar: TranslationSchema = {
     empty: "ابحث بالأعلى أو اختر طعامًا",
     remove: "إزالة",
     amount: "الكمية (غ)",
+    amountOz: "الكمية (oz)",
   },
   portion: {
     presetsTitle: "إعدادات الحصة الجاهزة",

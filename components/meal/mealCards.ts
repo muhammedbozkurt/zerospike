@@ -8,44 +8,93 @@ import {
   chipFromGrams,
   type PortionChip,
 } from "../../lib/mealCompose";
+import { formatPortionChip, type PortionUnitSystem } from "../../lib/portionUnits";
 
 type Translate = (key: string) => string;
 type FormatNumber = (n: number) => string;
 
-/** The chips a segment draws: unique ids, the grams chip last, at most
- *  PORTION_CHIPS_MAX. buildPortionChips already guarantees this; a list that
- *  came from elsewhere (a stale cache, a test) is normalised the same way. */
+/** The chips a segment draws: unique ids, the free-entry chips ("oz…" then
+ *  "grams…") last, at most PORTION_CHIPS_MAX measure-and-grams chips (the "oz…"
+ *  chip rides on top of that). buildPortionChips already guarantees this; a
+ *  list that came from elsewhere (a stale cache, a test) is normalised the
+ *  same way. */
 export function visibleChips(chips: readonly PortionChip[]): PortionChip[] {
   const seen = new Set<string>();
   const measures: PortionChip[] = [];
   let grams: PortionChip | null = null;
+  let oz: PortionChip | null = null;
   for (const chip of chips) {
     if (seen.has(chip.id)) continue;
     seen.add(chip.id);
     if (chip.kind === "grams") grams = chip;
+    else if (chip.kind === "oz") oz = chip;
     else measures.push(chip);
   }
   const room = grams ? PORTION_CHIPS_MAX - 1 : PORTION_CHIPS_MAX;
   const out = measures.slice(0, room);
+  if (oz) out.push(oz);
   if (grams) out.push(grams);
   return out;
 }
 
-/** "1 × Slice" for a measure chip (existing portion.* labels, no plural
- *  forms), the generic "grams…" for the grams chip. */
-export function chipText(chip: PortionChip, t: Translate, fmt: FormatNumber): string {
-  if (chip.kind === "grams" || !chip.label_key) return t("mealCompose.gramChip");
-  return `${fmt(chip.multiplier)} × ${t(`portion.${chip.label_key}`)}`;
+/** How a device words its chips (lib/portionUnits): the unit system and, for a
+ *  liquid, the USDA grams of one fluid ounce. Undefined / "metric" = the
+ *  translated "1 × Slice" chips. */
+export interface ChipUnits {
+  system: PortionUnitSystem;
+  gPerFlOz?: number | null;
+}
+
+export interface ChipLabel {
+  text: string;
+  /** The gram equivalent under the text ("28 g"); null on the plain chips. */
+  caption: string | null;
+}
+
+/** What a chip prints. A measure chip is "1 × Slice" (existing portion.*
+ *  labels, no plural forms) unless the device is US / UK English, where it is
+ *  "1 slice (1 oz)" with the grams under it; the grams and oz chips are the
+ *  generic "grams…" / "oz…". */
+export function chipLabel(
+  chip: PortionChip,
+  t: Translate,
+  fmt: FormatNumber,
+  units?: ChipUnits
+): ChipLabel {
+  if (chip.kind === "grams") return { text: t("mealCompose.gramChip"), caption: null };
+  if (chip.kind === "oz") return { text: t("mealCompose.ozChip"), caption: null };
+  if (!chip.label_key) return { text: t("mealCompose.gramChip"), caption: null };
+  if (units && units.system !== "metric") {
+    const local = formatPortionChip(
+      { label_key: chip.label_key, multiplier: chip.multiplier, unit_g: chip.unit_g },
+      units.system,
+      units.gPerFlOz,
+      fmt
+    );
+    if (local) return local;
+  }
+  return { text: `${fmt(chip.multiplier)} × ${t(`portion.${chip.label_key}`)}`, caption: null };
+}
+
+/** The text of a chip (see chipLabel). */
+export function chipText(
+  chip: PortionChip,
+  t: Translate,
+  fmt: FormatNumber,
+  units?: ChipUnits
+): string {
+  return chipLabel(chip, t, fmt, units).text;
 }
 
 /** Spoken label: the chip text plus the grams it stands for. */
 export function chipA11yLabel(
   chip: PortionChip,
   t: Translate,
-  fmt: FormatNumber
+  fmt: FormatNumber,
+  units?: ChipUnits
 ): string {
-  const text = chipText(chip, t, fmt);
-  if (chip.kind === "grams") return text;
+  const text = chipText(chip, t, fmt, units);
+  if (chip.kind !== "measure") return text;
   const grams = Math.round(chip.unit_g * chip.multiplier * 10) / 10;
   return `${text}, ${fmt(grams)} ${t("common.grams")}`;
 }
@@ -55,7 +104,7 @@ export interface CardPortionState {
   selectedChipId: string | null;
   /** The chip row is on screen. */
   showChips: boolean;
-  /** The free gram field is on screen. */
+  /** The free entry field (grams or ounces) is on screen. */
   showGramField: boolean;
 }
 
@@ -65,11 +114,14 @@ export interface CardPortionState {
 export function cardPortionState(
   chips: readonly PortionChip[],
   portionG: number,
-  gramOpen: boolean
+  gramOpen: boolean,
+  entryUnit: "g" | "oz" = "g"
 ): CardPortionState {
   const gramsChip = chips.find((c) => c.kind === "grams") ?? null;
+  const entryChip =
+    (entryUnit === "oz" ? chips.find((c) => c.kind === "oz") : null) ?? gramsChip;
   const selected = gramOpen
-    ? gramsChip ?? chipFromGrams(chips, portionG)
+    ? entryChip ?? chipFromGrams(chips, portionG)
     : chipFromGrams(chips, portionG);
   return {
     selectedChipId: selected ? selected.id : null,
@@ -78,10 +130,16 @@ export function cardPortionState(
   };
 }
 
-/** The gram field opens when the grams chip is tapped; any other chip closes
- *  it again (the parent calls this with the tapped chip). */
+/** The entry field opens when the grams or oz chip is tapped; a measure chip
+ *  closes it again (the parent calls this with the tapped chip). */
 export function gramOpenAfterChip(chip: PortionChip): boolean {
-  return chip.kind === "grams";
+  return chip.kind !== "measure";
+}
+
+/** Which unit the open entry field is in: the oz chip means ounces, anything
+ *  else grams. */
+export function entryUnitAfterChip(chip: PortionChip): "g" | "oz" {
+  return chip.kind === "oz" ? "oz" : "g";
 }
 
 /** The share of the daily target one meal is, as a 0..100 figure for pct();

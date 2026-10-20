@@ -17,6 +17,7 @@ const ja: TranslationSchema = {
     unitsShort: "U",
     mgdl: "mg/dL",
     grams: "g",
+    oz: "oz",
     carbRatioUnit: "g/U",
     pro: "Pro",
     confirm: "確定",
@@ -1565,6 +1566,7 @@ const ja: TranslationSchema = {
     recents: "最近使ったもの",
     starters: "こちらからお試しください",
     gramChip: "グラム…",
+    ozChip: "oz…",
     saveWithTotal: "食事を保存 · {{value}} g",
     add: "食事に追加",
     bar: "食事（{{count}}）",
@@ -1576,6 +1578,7 @@ const ja: TranslationSchema = {
     empty: "上で検索するか、食品を選んでください",
     remove: "削除",
     amount: "量（g）",
+    amountOz: "量（oz）",
   },
   portion: {
     presetsTitle: "分量プリセット",

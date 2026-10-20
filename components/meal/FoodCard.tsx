@@ -3,7 +3,7 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
-import { num } from "../../lib/format";
+import { decimalInputText, num } from "../../lib/format";
 import {
   chipFromGrams,
   composeItemCarbs,
@@ -11,10 +11,11 @@ import {
   type ComposeItem,
   type PortionChip,
 } from "../../lib/mealCompose";
+import { ozFromGrams, parseOzInput } from "../../lib/portionUnits";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../../lib/theme/tokens";
 import { MealCardShell } from "./MealCardShell";
 import { PortionSegment } from "./PortionSegment";
-import { cardPortionState } from "./mealCards";
+import { cardPortionState, type ChipUnits } from "./mealCards";
 
 /**
  * One food in the meal: plate, name, this food's carbohydrates as the big
@@ -31,6 +32,8 @@ export function FoodCard({
   onGrams,
   onGramsClose,
   onRemove,
+  entryUnit = "g",
+  units,
 }: {
   item: ComposeItem;
   chips: readonly PortionChip[];
@@ -46,16 +49,25 @@ export function FoodCard({
    *  omitted the card re-selects the chip that matches the typed grams. */
   onGramsClose?: () => void;
   onRemove: () => void;
+  /** Unit of the open entry field: "oz" is the US "oz…" chip. The typed ounces
+   *  are converted to grams before onGrams, so portion_g stays grams. */
+  entryUnit?: "g" | "oz";
+  /** US / UK chip wording (lib/portionUnits); undefined = the plain chips. */
+  units?: ChipUnits;
 }) {
   const { t } = useTranslation();
-  const state = cardPortionState(chips, item.portion_g, gramOpen);
+  const state = cardPortionState(chips, item.portion_g, gramOpen, entryUnit);
   const selectedId = selectedChipId ?? state.selectedChipId;
-  const [text, setText] = useState(String(item.portion_g));
+  const inOz = entryUnit === "oz";
+  const parseEntry = inOz ? parseOzInput : parseGramsInput;
+  const entryText = (grams: number) =>
+    inOz ? decimalInputText(ozFromGrams(grams)) : String(grams);
+  const [text, setText] = useState(entryText(item.portion_g));
 
   useEffect(() => {
-    if (parseGramsInput(text) !== item.portion_g) setText(String(item.portion_g));
+    if (parseEntry(text) !== item.portion_g) setText(entryText(item.portion_g));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.portion_g]);
+  }, [item.portion_g, inOz]);
 
   const carbs = composeItemCarbs(item);
   const removeLabel = `${t("mealCompose.remove")}: ${item.name}`;
@@ -91,13 +103,13 @@ export function FoodCard({
             value={text}
             onChangeText={(next) => {
               setText(next);
-              onGrams(parseGramsInput(next));
+              onGrams(parseEntry(next));
             }}
             keyboardType="decimal-pad"
             selectTextOnFocus
             autoFocus
             maxLength={7}
-            accessibilityLabel={`${t("mealCompose.amount")}: ${item.name}`}
+            accessibilityLabel={`${t(inOz ? "mealCompose.amountOz" : "mealCompose.amount")}: ${item.name}`}
             style={[
               INPUT_TEXT,
               TABULAR,
@@ -116,7 +128,9 @@ export function FoodCard({
               },
             ]}
           />
-          <Text style={{ color: THEME.textMuted, fontSize: 13 }}>{t("common.grams")}</Text>
+          <Text style={{ color: THEME.textMuted, fontSize: 13 }}>
+            {t(inOz ? "common.oz" : "common.grams")}
+          </Text>
           <Pressable
             onPress={() => {
               if (onGramsClose) onGramsClose();
@@ -139,7 +153,7 @@ export function FoodCard({
           </Pressable>
         </View>
       ) : (
-        <PortionSegment chips={chips} selectedId={selectedId} onSelect={onChip} />
+        <PortionSegment chips={chips} selectedId={selectedId} onSelect={onChip} units={units} />
       )}
     </MealCardShell>
   );

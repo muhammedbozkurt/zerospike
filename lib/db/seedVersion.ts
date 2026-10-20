@@ -35,6 +35,10 @@
  *   7  household-measure presets for the meal-compose scene foods that had
  *      none (Ciabatta, Camembert, Filter coffee, the tea rows). Untouched rows
  *      get them through the same update path.
+ *   8  USDA household cups for cooked pasta shapes, egg noodles, sticky rice,
+ *      teff, spelt, pearl barley, oat bran, rice and buckwheat flour and a
+ *      sheep-milk glass (./seedPortions), so the US cup chips have a gram
+ *      figure for them. Untouched rows get them through the same update path.
  */
 
 // A type-only import: erased at build time, so reading this module never pulls
@@ -42,7 +46,7 @@
 import type { PortionLabelKey } from "./types";
 import type { SeedFood } from "./seed";
 
-export const SEED_CATALOG_VERSION = 7;
+export const SEED_CATALOG_VERSION = 8;
 
 /** The app_meta key the number above is stored under (schema v14). */
 export const SEED_CATALOG_VERSION_KEY = "seed_catalog_version";

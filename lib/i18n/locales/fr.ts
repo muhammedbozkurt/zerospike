@@ -17,6 +17,7 @@ const fr: TranslationSchema = {
     unitsShort: "U",
     mgdl: "mg/dL",
     grams: "g",
+    oz: "oz",
     carbRatioUnit: "g/U",
     pro: "Pro",
     confirm: "Confirmer",
@@ -1570,6 +1571,7 @@ const fr: TranslationSchema = {
     recents: "Utilisés récemment",
     starters: "Essayez l'un de ceux-ci",
     gramChip: "grammes…",
+    ozChip: "oz…",
     saveWithTotal: "Enregistrer · {{value}} g",
     add: "Ajouter au repas",
     bar: "Repas ({{count}})",
@@ -1581,6 +1583,7 @@ const fr: TranslationSchema = {
     empty: "Recherchez ci-dessus ou choisissez un aliment",
     remove: "Retirer",
     amount: "Quantité (g)",
+    amountOz: "Quantité (oz)",
   },
   portion: {
     presetsTitle: "Préréglages de portion",

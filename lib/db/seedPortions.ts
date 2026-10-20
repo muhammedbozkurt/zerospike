@@ -65,6 +65,19 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "Baked potato with skin": u(["medium", 173]),
   "Boiled sweet potato": u(["medium", 151]),
 
+  // staples added with the locale-aware cup chips (USDA SR Legacy household cup)
+  "Macaroni (cooked)": u(["cup", 120]),
+  "Fusilli (cooked)": u(["cup", 107]),
+  "Farfalle (cooked)": u(["cup", 107]),
+  "Egg noodles (cooked)": u(["cup", 160]),
+  "Sticky rice (cooked)": u(["cup", 174]),
+  "Teff (cooked)": u(["cup", 252]),
+  "Spelt berries (cooked)": u(["cup", 194]),
+  "Pearl barley (cooked)": u(["cup", 157]),
+  "Oat bran (dry)": u(["cup", 94]),
+  "Rice flour": u(["cup", 158]),
+  "Buckwheat flour": u(["cup", 120]),
+
   // bakery
   "White bread": u(["slice", 28]),
   "Whole wheat bread": u(["slice", 32]),
@@ -222,6 +235,7 @@ export const PORTION_OVERLAY: Readonly<Record<string, PortionOverlay>> = {
   "Skimmed milk": u(["glass", 245]),
   "Lactose-free milk": u(["glass", 244]),
   "Goat milk": u(["glass", 244]),
+  "Sheep milk": u(["glass", 245]),
   Buttermilk: u(["glass", 245]),
   "Almond milk": u(["glass", 240]),
   "Soy milk": u(["glass", 243]),
