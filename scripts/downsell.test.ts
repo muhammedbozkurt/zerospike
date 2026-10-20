@@ -64,7 +64,15 @@ function exitInput(over: Partial<PaywallExitInput> = {}): PaywallExitInput {
 }
 
 /** Async fake of the real wiring (storage and store both take a few ms). */
-function makeDeps(over: { discount?: boolean; screenshot?: boolean; session?: SessionOfferFlag; state?: DownsellState } = {}) {
+function makeDeps(over: {
+    discount?: boolean;
+    screenshot?: boolean;
+    session?: SessionOfferFlag;
+    state?: DownsellState;
+    proNow?: boolean;
+    failOffer?: boolean;
+    failState?: boolean;
+  } = {}) {
   const calls = { getState: 0, getOffer: 0 };
   const deps: PaywallExitDeps = {
     isScreenshotMode: () => over.screenshot ?? false,
@@ -72,12 +80,18 @@ function makeDeps(over: { discount?: boolean; screenshot?: boolean; session?: Se
     getState: async () => {
       calls.getState++;
       await sleep(5);
+      if (over.failState) throw new Error("storage down");
       return over.state ?? initialDownsellState;
     },
     getOffer: async () => {
       calls.getOffer++;
       await sleep(40);
+      if (over.failOffer) throw new Error("store down");
       return { hasRealDiscount: over.discount ?? true };
+    },
+    isProNow: async () => {
+      await sleep(1);
+      return over.proNow ?? false;
     },
     now: () => NOW,
   };
@@ -154,7 +168,7 @@ async function main(): Promise<void> {
     );
   }
 
-  section("H. the day-7 / winback trigger spends the same lifetime shows");
+  section("H. a day7 show spends one of the shared lifetime shows (winback does not)");
   {
     const viaDay7 = applyDownsellShown(initialDownsellState, "day7", NOW);
     ok("a day7 show starts the cool-off for the paywall exit", !canShowDownsell(viaDay7, NOW + 1 * DAY));
@@ -286,6 +300,63 @@ async function main(): Promise<void> {
     ]);
     eq("three overlapping exits, no discount -> a single back", xn.log, ["back"]);
     ok("slot handed back", !x.deps.session.isReserved());
+  }
+
+  section("N. error paths and fresh entitlement");
+  {
+    const fo = makeDeps({ failOffer: true });
+    eq("getOffer throws -> exit", await decidePaywallExit(fo.deps, { plan: "annual", isPro: false }), "exit");
+    ok("getOffer throws -> slot released", !fo.deps.session.isReserved());
+
+    const fs = makeDeps({ failState: true });
+    eq("getState throws -> exit", await decidePaywallExit(fs.deps, { plan: "annual", isPro: false }), "exit");
+    ok("getState throws -> slot released", !fs.deps.session.isReserved());
+
+    const fn = makeNav();
+    const fctl = createPaywallExitController(makeDeps({ failOffer: true }).deps, fn.nav);
+    await fctl.requestExit({ plan: "annual", isPro: false });
+    eq("controller: a failing store still closes the paywall once", fn.log, ["back"]);
+
+    // The screen's cached isPro is stale (false) but the user has just paid.
+    const paid = makeDeps({ proNow: true });
+    eq("paid since the screen rendered -> exit", await decidePaywallExit(paid.deps, { plan: "annual", isPro: false }), "exit");
+    ok("paid: offer never queried, slot released", paid.calls.getOffer === 0 && !paid.deps.session.isReserved());
+  }
+
+  section("O. analytics fires once per accepted exit");
+  {
+    const d = makeDeps();
+    const n = makeNav();
+    const ctl = createPaywallExitController(d.deps, n.nav);
+    let logged = 0;
+    const a = ctl.requestExit({ plan: "annual", isPro: false }, () => void logged++);
+    await sleep(10);
+    const b = ctl.requestExit({ plan: "annual", isPro: false }, () => void logged++);
+    await Promise.all([a, b]);
+    eq("onAccepted ran once", logged, 1);
+  }
+
+  section("P. user close is a no-op while a purchase or restore is busy");
+  {
+    const d = makeDeps();
+    const n = makeNav();
+    let busy = true;
+    const ctl = createPaywallExitController(d.deps, n.nav, () => busy);
+    let logged = 0;
+    await ctl.requestUserClose({ plan: "annual", isPro: false }, () => void logged++);
+    eq("busy: no navigation", n.log, []);
+    eq("busy: no analytics", logged, 0);
+    ok("busy: store never queried, slot untouched", d.calls.getOffer === 0 && !d.deps.session.isReserved());
+    // The cancelled purchase is the blocker itself and must still get through.
+    await ctl.requestExit({ plan: "annual", isPro: false });
+    eq("cancelled purchase while busy still exits (downsell)", n.log, ["downsell"]);
+
+    const d2 = makeDeps();
+    const n2 = makeNav();
+    busy = false;
+    const ctl2 = createPaywallExitController(d2.deps, n2.nav, () => busy);
+    await ctl2.requestUserClose({ plan: "annual", isPro: false });
+    eq("not busy: user close proceeds", n2.log, ["downsell"]);
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

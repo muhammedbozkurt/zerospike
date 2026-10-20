@@ -149,6 +149,9 @@ export interface PaywallExitDeps {
   session: SessionOfferFlag;
   getState(): Promise<DownsellState>;
   getOffer(): Promise<{ hasRealDiscount: boolean }>;
+  /** Fresh entitlement read, so a purchase that completed after the screen
+   *  last rendered is never offered a discount on itself. */
+  isProNow(): Promise<boolean>;
   now(): number;
 }
 
@@ -175,6 +178,10 @@ export async function decidePaywallExit(
       if (reserved) deps.session.release();
       return "exit";
     }
+    if (await deps.isProNow()) {
+      if (reserved) deps.session.release();
+      return "exit";
+    }
     const offer = await deps.getOffer();
     if (!shouldOfferDownsellOnPaywallExit({ ...base, state, now, hasRealDiscount: offer.hasRealDiscount })) {
       if (reserved) deps.session.release();
@@ -197,15 +204,36 @@ export interface PaywallExitNav {
  * cancelled purchase can all land within the same offer lookup, and only the
  * first may navigate. Meant to live for one paywall screen instance.
  */
-export function createPaywallExitController(deps: PaywallExitDeps, nav: PaywallExitNav) {
+export function createPaywallExitController(
+  deps: PaywallExitDeps,
+  nav: PaywallExitNav,
+  /** True while a purchase or restore is being processed. */
+  isBlocked: () => boolean = () => false
+) {
   let exiting = false;
-  return {
-    async requestExit(input: { plan: string; isPro: boolean }): Promise<void> {
+  const controller = {
+    /** `onAccepted` runs synchronously once this call has taken the lock, so
+     *  per-exit side effects (analytics) fire once, not once per tap. */
+    async requestExit(
+      input: { plan: string; isPro: boolean },
+      onAccepted?: () => void
+    ): Promise<void> {
       if (exiting) return;
       exiting = true;
+      onAccepted?.();
       const decision = await decidePaywallExit(deps, input);
       if (decision === "downsell") nav.openDownsell();
       else nav.closePaywall();
     },
+    /** A close the user asked for (X, back, swipe): ignored while blocked.
+     *  A cancelled purchase uses requestExit directly, as it IS the blocker. */
+    async requestUserClose(
+      input: { plan: string; isPro: boolean },
+      onAccepted?: () => void
+    ): Promise<void> {
+      if (isBlocked()) return;
+      await controller.requestExit(input, onAccepted);
+    },
   };
+  return controller;
 }

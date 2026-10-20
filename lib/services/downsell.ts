@@ -185,9 +185,10 @@ export const paywallExitDeps: PaywallExitDeps = {
   session: sessionOffer,
   getState: getDownsellState,
   getOffer: getDownsellOffer,
+  isProNow: isPro,
   now: () => Date.now(),
 };
 
-export function newPaywallExitController(nav: PaywallExitNav) {
-  return createPaywallExitController(paywallExitDeps, nav);
+export function newPaywallExitController(nav: PaywallExitNav, isBlocked?: () => boolean) {
+  return createPaywallExitController(paywallExitDeps, nav, isBlocked);
 }

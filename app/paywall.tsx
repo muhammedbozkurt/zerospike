@@ -225,7 +225,14 @@ function PaywallScreen() {
   useThemeRemountLock();
   const { refreshPro, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  // Mirrors busy synchronously so a close request landing in the same tick as
+  // a purchase or restore starting (or finishing) sees the true value.
+  const busyRef = useRef(false);
+  function setBusy(v: boolean) {
+    busyRef.current = v;
+    setBusyState(v);
+  }
   const [plan, setPlan] = useState<PlanId>("annual");
   const [offer, setOffer] = useState<OfferingsResult | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -384,13 +391,16 @@ function PaywallScreen() {
   // lifetime show itself is recorded by the downsell screen.
   const exitCtlRef = useRef<ReturnType<typeof newPaywallExitController> | null>(null);
   if (exitCtlRef.current === null) {
-    exitCtlRef.current = newPaywallExitController({
-      closePaywall: () => exit(),
-      openDownsell: () =>
-        leaveWith(() =>
-          router.replace({ pathname: "/downsell", params: { trigger: context } })
-        ),
-    });
+    exitCtlRef.current = newPaywallExitController(
+      {
+        closePaywall: () => exit(),
+        openDownsell: () =>
+          leaveWith(() =>
+            router.replace({ pathname: "/downsell", params: { trigger: context } })
+          ),
+      },
+      () => busyRef.current
+    );
   }
 
   // Leaves the paywall.
@@ -405,19 +415,24 @@ function PaywallScreen() {
     });
   }
 
+  // A cancelled purchase: it is the thing that holds busy, so it bypasses it.
   async function triggerDownsell() {
     await exitCtlRef.current!.requestExit({ plan: planRef.current, isPro: isProRef.current });
   }
 
+  // User-initiated close (X, back, swipe): ignored while a purchase or restore
+  // is being processed.
   async function dismiss() {
-    logEvent("paywall_dismiss", { source: reason ?? "direct" });
-    await triggerDownsell();
+    await exitCtlRef.current!.requestUserClose(
+      { plan: planRef.current, isPro: isProRef.current },
+      () => logEvent("paywall_dismiss", { source: reason ?? "direct" })
+    );
   }
 
   const planRef = useRef(plan);
   planRef.current = plan;
   const isProRef = useRef(isProUser);
-  isProRef.current = isProUser;
+  if (isProUser) isProRef.current = true;
   const dismissRef = useRef(dismiss);
   dismissRef.current = dismiss;
 
@@ -565,6 +580,7 @@ function PaywallScreen() {
       });
       if (res.ok) {
         clearPaywallTrial();
+        isProRef.current = true;
         logEvent("purchase_completed", { tier: plan, source: reason ?? "direct" });
         await settleTrial(res);
         hapticSuccess();
@@ -591,6 +607,7 @@ function PaywallScreen() {
       await refreshPro();
       if (result === "restored") {
         clearPaywallTrial();
+        isProRef.current = true;
         await settleRestoredTrial();
         hapticSuccess();
         toast(t("paywall.restored"), "success");
