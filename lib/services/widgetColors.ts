@@ -1,7 +1,8 @@
 /* Android widget colours, one fixed palette per system ground. Independent of
  * the app theme module and the PDF palette on purpose: the widget follows the
  * SYSTEM theme (react-native-android-widget renders {light, dark} trees), not the
- * in-app appearance setting. DARK is the pre-K7 (cd0a140) look, verbatim. */
+ * in-app appearance setting. DARK is the pre-K7 (cd0a140) look, except the
+ * accent family, which is the brand turquoise #22c7e0 (lib/theme DARK.accentFill). */
 
 export interface WidgetPalette {
   bgFrom: string;
@@ -32,8 +33,8 @@ export const WIDGET_DARK: WidgetPalette = {
   surface: "#16232e",
   ink: "#eaf6fa",
   muted: "#89a3b0",
-  accent: "#2ee6ff",
-  accentFill: "#2ee6ff",
+  accent: "#22c7e0",
+  accentFill: "#22c7e0",
   onAccentFill: "#04161d",
   violet: "#7c5cff",
   caution: "#ffa02a",
@@ -45,14 +46,14 @@ export const WIDGET_DARK: WidgetPalette = {
     veryHigh: "#ff8a00",
   },
   tile: {
-    glucose: { fill: "#0e313a", border: "#155764" },
-    glucosePrimary: { fill: "#103e48", border: "#196d7b" },
+    glucose: { fill: "#0c2c35", border: "#114d59" },
+    glucosePrimary: { fill: "#0e3741", border: "#135f6e" },
     meal: { fill: "#0c3029", border: "#115642" },
     injection: { fill: "#1b1a3a", border: "#2f2964" },
     med: { fill: "#302518", border: "#5c401b" },
-    countdown: { fill: "#0d2c35", border: "#134a56" },
+    countdown: { fill: "#0c2831", border: "#0f424d" },
   },
-  tileInk: { glucose: "#2ee6ff", meal: "#22e39a", injection: "#7c5cff", med: "#ffa02a" },
+  tileInk: { glucose: "#22c7e0", meal: "#22e39a", injection: "#7c5cff", med: "#ffa02a" },
 };
 
 export const WIDGET_LIGHT: WidgetPalette = {

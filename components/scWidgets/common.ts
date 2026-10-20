@@ -15,7 +15,7 @@ import { withAlpha } from "../rich/GlassCard";
  *  lib/services/androidWidget.ts: one identity hue per logging flow. */
 export const TILE_INK = { // theme-ok: getters read the live palette
   get glucose() {
-    return THEME.accent;
+    return widgetAccent();
   },
   get meal() {
     return GLUCOSE_RICH.target;
@@ -30,6 +30,14 @@ export const TILE_INK = { // theme-ok: getters read the live palette
     return THEME.caution;
   },
 };
+
+/** Mirrors WidgetPalette.accent (WidgetAccent colorset) and WIDGET_DARK.accent in
+ *  lib/services/widgetColors.ts: deep teal #087089 on the light ground, the
+ *  brand turquoise (accentFill #22C7E0) on the dark one, not the app's neon
+ *  text accent. */
+export function widgetAccent(): string {
+  return THEME.scheme === "dark" ? THEME.accentFill : THEME.accent;
+}
 
 /** Mirrors ActivityTones.card.accent in targets/widget/PostMealActivity.swift
  *  (the ActivityAccent colorset): the light card keeps the readable deep teal

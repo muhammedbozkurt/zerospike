@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { THEME } from "../../lib/theme/tokens";
 import { GlassCard, withAlpha } from "../rich/GlassCard";
 import type { LiveData } from "../../lib/services/liveData";
-import { elapsedLabel, formatCountdown, inkA, nextReminderIcon, readingColor, unitLabel } from "./common";
+import { elapsedLabel, formatCountdown, inkA, nextReminderIcon, readingColor, unitLabel, widgetAccent } from "./common";
 
 /**
  * Home-screen replica: the systemMedium summary widget (ZerospikeWidgetView.
@@ -137,13 +137,13 @@ function MediumWidget({ data, now, unit }: { data: LiveData | null; now: number;
                   marginTop: 2,
                   borderRadius: 999,
                   borderWidth: 1,
-                  borderColor: withAlpha(THEME.accent, 0.28),
-                  backgroundColor: withAlpha(THEME.accent, 0.14),
+                  borderColor: withAlpha(widgetAccent(), 0.28),
+                  backgroundColor: withAlpha(widgetAccent(), 0.14),
                   paddingHorizontal: Math.round(unit * 0.07),
                   paddingVertical: 2,
                 }}
               >
-                <Text style={{ fontSize: Math.round(unit * 0.12), fontWeight: "700", color: THEME.accent }}>
+                <Text style={{ fontSize: Math.round(unit * 0.12), fontWeight: "700", color: widgetAccent() }}>
                   {countdown}
                 </Text>
               </View>

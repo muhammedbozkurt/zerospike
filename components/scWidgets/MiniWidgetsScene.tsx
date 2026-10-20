@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../lib/theme/tokens";
 import type { LiveData } from "../../lib/services/liveData";
-import { elapsedLabel, formatCountdown, readingColor, TILE_INK, unitLabel } from "./common";
+import { elapsedLabel, formatCountdown, readingColor, TILE_INK, unitLabel, widgetAccent } from "./common";
 
 /**
  * The five single-purpose systemSmall tiles from targets/widget/
@@ -173,7 +173,7 @@ function ReadingTile({ data, now, unit }: { data: LiveData | null; now: number; 
   const label = Math.round(unit * 0.1);
   const value = Math.round(unit * 0.22);
   return (
-    <TileFrame tint={THEME.accent} unit={unit}>
+    <TileFrame tint={widgetAccent()} unit={unit}>
       <Text
         style={{ fontSize: label, lineHeight: Math.round(label * 1.25), fontWeight: "700", color: THEME.muted }}
         numberOfLines={2}

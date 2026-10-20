@@ -25,7 +25,8 @@ assert.equal(WIDGET_DARK.bgFrom, C.FROZEN_THEME.bg.g2);
 assert.equal(WIDGET_DARK.bgTo, C.FROZEN_THEME.bg.g1);
 assert.equal(WIDGET_DARK.ink, C.FROZEN_THEME.ink);
 assert.equal(WIDGET_DARK.muted, C.FROZEN_THEME.muted);
-assert.equal(WIDGET_DARK.accent, C.FROZEN_THEME.accent);
+assert.equal(WIDGET_DARK.accent, "#22c7e0");
+assert.notEqual(WIDGET_DARK.accent, C.FROZEN_THEME.accent);
 assert.equal(WIDGET_DARK.violet, C.FROZEN_THEME.violet);
 assert.equal(WIDGET_DARK.caution, C.FROZEN_THEME.caution);
 assert.deepEqual({ ...WIDGET_DARK.glucose }, {

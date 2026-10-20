@@ -27,4 +27,10 @@ function check(name: string, pal: WidgetPalette) {
 
 check("light", WIDGET_LIGHT);
 check("dark", WIDGET_DARK);
+assert.equal(WIDGET_DARK.accent, "#22c7e0");
+assert.equal(WIDGET_DARK.accentFill, "#22c7e0");
+assert.equal(WIDGET_DARK.tileInk.glucose, "#22c7e0");
+assert.ok(contrast(WIDGET_DARK.accentFill, WIDGET_DARK.bgTo, WIDGET_DARK.bgTo) >= 3, "dark accentFill/bg < 3");
+assert.ok(contrast(WIDGET_DARK.accentFill, WIDGET_DARK.bgFrom, WIDGET_DARK.bgFrom) >= 3, "dark accentFill/bgFrom < 3");
+assert.ok(contrast(WIDGET_DARK.accent, WIDGET_DARK.bgFrom, WIDGET_DARK.bgFrom) >= 4.5, "dark accent/bgFrom < 4.5");
 console.log("widgetColors: OK");
