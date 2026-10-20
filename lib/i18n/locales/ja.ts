@@ -763,6 +763,9 @@ const ja: TranslationSchema = {
     errDenied: "読み取りが許可されていません。{{health}}で血糖値の読み取りを許可してから、もう一度同期してください。",
     errReadFailed: "{{health}}を読み取れませんでした。しばらくしてからもう一度お試しください。",
     iosReadNote: "iOSはアプリに読み取りの許可状況を知らせません。測定値が届かない場合は、「ヘルスケア」アプリを開き、プロフィール画像をタップして「App」を選び、zerospikeを選んで「血糖値」をご確認ください。",
+    recordName: "zerospike · 食事",
+    recordNameEstimated: "zerospike · 食事 (推定)",
+    androidNameNote: "Health Connectでは、食事は「{{name}}」、推定に基づくものは「{{estimated}}」と表示されます。",
   },
   downsell: {
     title: "お待ちください。よりお得な価格があります",

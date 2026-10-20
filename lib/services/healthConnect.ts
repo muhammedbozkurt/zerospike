@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash } from "../analytics";
 import {
-  carbEstimateName,
+  carbRecordName,
   hasValidSyncKey,
   toRelationToMeal,
   type HealthWriteMeta,
@@ -35,6 +35,13 @@ import type {
 let initialized = false;
 
 /** Raw getSdkStatus() values (react-native-health-connect 4.x). */
+/** App-language translation, loaded on first use so the plain-node health tests
+ *  that import this file do not pull expo-localization. i18next falls back to en. */
+function recordNameT(key: string): string {
+  const i18n = (require("../i18n") as typeof import("../i18n")).default;
+  return i18n.t(key) as string;
+}
+
 const SDK_UNAVAILABLE = 1;
 const SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED = 2;
 const SDK_AVAILABLE = 3;
@@ -295,8 +302,9 @@ async function writeCarbs(
         endTime: end.toISOString(),
         totalCarbohydrate: { value, unit: "grams" },
         mealType: 0, // UNKNOWN
-        // A rewrite replaces the whole record, so the mark follows every edit.
-        ...(meta?.estimated ? { name: carbEstimateName(true) } : {}),
+        // A rewrite replaces the whole record, so the name (and estimate mark)
+        // follows every edit. It never takes part in clientRecordId upserts.
+        name: carbRecordName(meta?.estimated, (k) => recordNameT(k)),
         metadata:
           meta && hasValidSyncKey(meta)
             ? { recordingMethod: 3, clientRecordId: meta.recordId, clientRecordVersion: meta.version }

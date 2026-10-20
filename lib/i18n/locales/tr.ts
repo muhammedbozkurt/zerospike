@@ -761,6 +761,9 @@ const tr = {
     errDenied: "Okuma izni verilmedi. {{health}} uygulamasında kan şekeri okumaya izin verin, ardından yeniden eşitleyin.",
     errReadFailed: "{{health}} okunamadı. Lütfen biraz sonra yeniden deneyin.",
     iosReadNote: "iOS, okuma izninin verilip verilmediğini uygulamalara bildirmez. Ölçüm gelmiyorsa Sağlık uygulamasını açın, profil resminize dokunun, Uygulamalar'ı seçin, zerospike'ı seçip Kan Şekeri iznini kontrol edin.",
+    recordName: "zerospike · Öğün",
+    recordNameEstimated: "zerospike · Öğün (tahmin)",
+    androidNameNote: "Health Connect'te öğünler “{{name}}” adıyla görünür, tahmine dayalı olanlar “{{estimated}}” adını alır.",
   },
   downsell: {
     title: "Durun, sizin için daha iyi bir fiyat var",

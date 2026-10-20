@@ -1,7 +1,8 @@
 /**
  * Estimate mark on carbohydrate samples written to the health store:
  * isEstimatedMeal, the rewrite decision, the write path carrying the flag, the
- * HealthKit metadata object and the Health Connect record name.
+ * HealthKit metadata object and the Health Connect record name (per app
+ * language, present on measured meals too; iOS metadata unchanged).
  * Run: npx tsx scripts/healthEstimateLabel.test.ts
  */
 declare const console: { log: (...a: unknown[]) => void };
@@ -44,9 +45,35 @@ async function main(): Promise<void> {
   eq("measured -> no extra key", JSON.stringify(M.carbEstimateMetadata(false)), "{}");
   eq("undefined -> no extra key", JSON.stringify(M.carbEstimateMetadata(undefined)), "{}");
   eq("custom key is not an HK key", M.HK_ESTIMATE_KEY.startsWith("HK"), false);
-  eq("estimate name", M.carbEstimateName(true), "~ Zerospike");
-  ok("estimate name starts with a tilde", M.carbEstimateName(true)?.startsWith("~") === true);
-  eq("measured -> no name", M.carbEstimateName(false), undefined);
+  const NAMES: Record<string, [string, string]> = {
+    tr: ["zerospike · Öğün", "zerospike · Öğün (tahmin)"],
+    en: ["zerospike · Meal", "zerospike · Meal (estimate)"],
+    de: ["zerospike · Mahlzeit", "zerospike · Mahlzeit (Schätzung)"],
+    fr: ["zerospike · Repas", "zerospike · Repas (estimation)"],
+    es: ["zerospike · Comida", "zerospike · Comida (estimación)"],
+    it: ["zerospike · Pasto", "zerospike · Pasto (stima)"],
+    pt: ["zerospike · Refeição", "zerospike · Refeição (estimativa)"],
+    ar: ["zerospike · وجبة", "zerospike · وجبة (تقدير)"],
+    ja: ["zerospike · 食事", "zerospike · 食事 (推定)"],
+  };
+  const BUNDLES: Record<string, any> = {};
+  for (const lang of Object.keys(NAMES)) {
+    const bundle = (await import(`../lib/i18n/locales/${lang}`)).default as any;
+    BUNDLES[lang] = bundle;
+    const t = (k: string) => k.split(".").reduce((o: any, p) => o?.[p], bundle) as string;
+    eq(`${lang} measured name`, M.carbRecordName(false, t), NAMES[lang][0]);
+    eq(`${lang} measured name (undefined flag)`, M.carbRecordName(undefined, t), NAMES[lang][0]);
+    eq(`${lang} estimate name`, M.carbRecordName(true, t), NAMES[lang][1]);
+    ok(`${lang} uses U+00B7, no em-dash`, NAMES[lang][1].includes(String.fromCharCode(0xb7)) && !NAMES[lang][1].includes(String.fromCharCode(0x2014)));
+  }
+  {
+    let lang = "tr";
+    const t = (k: string) =>
+      k.split(".").reduce((o: any, p) => o?.[p], BUNDLES[lang]) as string;
+    const before = M.carbRecordName(true, t);
+    lang = "de";
+    eq("name follows the write-time language", [before, M.carbRecordName(true, t)].join("|"), `${NAMES.tr[1]}|${NAMES.de[1]}`);
+  }
   const hk = M.toHealthKitMetadata({ recordId: "m1", version: 5, mealContext: null, estimated: true });
   ok("sync pair kept", hk.HKMetadataKeySyncIdentifier === "m1" && hk.HKMetadataKeySyncVersion === 5);
   ok("shared glucose mapping does not emit the estimate key", !("ZerospikeEstimated" in hk));

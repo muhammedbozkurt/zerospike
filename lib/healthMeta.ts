@@ -92,13 +92,17 @@ export function carbEstimateMetadata(estimated: boolean | undefined): Record<str
   return estimated ? { [HK_ESTIMATE_KEY]: true } : {};
 }
 
-/** Health Connect NutritionRecord.name of an estimated meal. Its metadata has no
- *  custom keys, so the name carries the mark: a language-independent tilde and
- *  the app name, never the user's own meal text. */
-export const HC_ESTIMATE_NAME = "~ Zerospike";
+/** i18n keys of the Health Connect NutritionRecord.name. Its metadata has no
+ *  custom keys, so the name carries the estimate mark; it never holds the
+ *  user's own meal text. */
+export const HC_NAME_KEY = "healthSync.recordName";
+export const HC_NAME_ESTIMATED_KEY = "healthSync.recordNameEstimated";
 
-export function carbEstimateName(estimated: boolean | undefined): string | undefined {
-  return estimated ? HC_ESTIMATE_NAME : undefined;
+/** Record name in the language `t` translates to (the app language at write
+ *  time). Pure: the caller supplies the translator so this file stays free of
+ *  react-native and i18next. */
+export function carbRecordName(estimated: boolean | undefined, t: (key: string) => string): string {
+  return t(estimated ? HC_NAME_ESTIMATED_KEY : HC_NAME_KEY);
 }
 
 /** react-native-health-connect RelationToMeal: GENERAL 1, FASTING 2,

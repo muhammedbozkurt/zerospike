@@ -763,6 +763,9 @@ const en: TranslationSchema = {
     errDenied: "Reading was not allowed. Allow reading blood glucose in {{health}}, then sync again.",
     errReadFailed: "{{health}} could not be read. Please try again in a moment.",
     iosReadNote: "iOS does not tell apps whether reading is allowed. If no readings arrive, open the Health app, tap your profile picture, choose Apps, select zerospike and check Blood Glucose.",
+    recordName: "zerospike · Meal",
+    recordNameEstimated: "zerospike · Meal (estimate)",
+    androidNameNote: "In Health Connect, meals appear as “{{name}}” and estimate-based ones as “{{estimated}}”.",
   },
   downsell: {
     title: "Wait, here is a better price",
