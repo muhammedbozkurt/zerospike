@@ -6,27 +6,21 @@
  * lives somewhere free of that import. lib/services/downsell.ts re-exports
  * everything here; the rest of the app keeps importing from there.
  *
- * 2.3.4: the 24 Ağu - 7 Eyl iOS window showed 17 paywall views, 16 of them
- * followed immediately by a downsell, all 16 dismissed, 0 trials - the
- * downsell was firing on the very first paywall close, before the user had
- * shown any real hesitation. canShowDownsell now also requires the paywall to
- * have been closed at least DOWNSELL_MIN_DISMISSALS times AND at least
- * DOWNSELL_FIRST_SHOW_DELAY_MS to have passed since the first of those closes,
- * on top of the existing two-lifetime-shows cascade (DOWNSELL_MAX_SHOWS /
- * DOWNSELL_REARM_MS), which is unchanged.
+ * 2.4: the 2.3.4 rule (paywall closed twice, 24h after the first close) made the
+ * offer unreachable in the first session, and since onboarding no longer ends on
+ * a paywall there was no other first-session entry. The rule is now: a user on
+ * the paywall with the ANNUAL plan selected who cancels the store purchase or
+ * closes the paywall gets the discounted offer in the SAME session, once, when a
+ * real store discount exists. Afterwards the 7-day cool-off and the lifetime cap
+ * of DOWNSELL_MAX_SHOWS apply unchanged.
  */
 import { DOWNSELL_MAX_SHOWS } from "./day7Downsell";
 
 export { DOWNSELL_MAX_SHOWS };
 export const DOWNSELL_REARM_MS = 7 * 24 * 60 * 60 * 1000;
-/** Paywall must be closed this many times before a downsell can ever show. */
-export const DOWNSELL_MIN_DISMISSALS = 2;
-/** ...and this long must have passed since the FIRST of those closes. */
-export const DOWNSELL_FIRST_SHOW_DELAY_MS = 24 * 60 * 60 * 1000;
 
-// 2.3.4: onboarding no longer hands off to the paywall (app/onboarding.tsx
-// goes straight to the dashboard), so no caller ever sets "onboarding" here
-// anymore - dropped from the union.
+// Onboarding no longer hands off to the paywall (app/onboarding.tsx goes
+// straight to the dashboard), so no caller ever sets "onboarding" here.
 export type DownsellTrigger = "inapp" | "winback" | "day7";
 
 export interface DownsellState {
@@ -51,18 +45,47 @@ export const initialDownsellState: DownsellState = {
 };
 
 /**
- * Whether the discounted downsell may be shown again. An old-shaped state
- * (dismissCount/firstDismissAt missing, normalised to 0/null by
- * getDownsellState) always reads as "not yet" here rather than throwing -
- * the very next real dismiss starts counting it forward.
+ * The lifetime cap and re-arm cool-off, independent of the trigger: at most
+ * DOWNSELL_MAX_SHOWS shows ever, the second only DOWNSELL_REARM_MS after the
+ * first.
  */
 export function canShowDownsell(state: DownsellState, now: number): boolean {
-  if (state.dismissCount < DOWNSELL_MIN_DISMISSALS) return false;
-  if (state.firstDismissAt === null) return false;
-  if (now - state.firstDismissAt < DOWNSELL_FIRST_SHOW_DELAY_MS) return false;
   if (state.count >= DOWNSELL_MAX_SHOWS) return false;
   if (state.count === 0) return true;
   return state.lastShownAt !== null && now - state.lastShownAt >= DOWNSELL_REARM_MS;
+}
+
+export interface PaywallExitInput {
+  state: DownsellState;
+  now: number;
+  /** The plan selected on the paywall at the moment of the exit. */
+  plan: string;
+  isPro: boolean;
+  /** Any downsell (any trigger) already opened since the app process started. */
+  shownThisSession: boolean;
+  /** Confirmed against the store offerings, never assumed. */
+  hasRealDiscount: boolean;
+}
+
+/**
+ * Local half of the paywall-exit rule (everything except the store lookup), so
+ * the offerings round trip is only paid for once this is true.
+ */
+export function paywallExitLocalGate(
+  i: Omit<PaywallExitInput, "hasRealDiscount">
+): boolean {
+  if (i.isPro) return false;
+  if (i.plan !== "annual") return false;
+  if (i.shownThisSession) return false;
+  return canShowDownsell(i.state, i.now);
+}
+
+/**
+ * Whether a paywall exit (store purchase cancelled, or the paywall closed via
+ * X / back / swipe) should open the discounted offer instead of just leaving.
+ */
+export function shouldOfferDownsellOnPaywallExit(i: PaywallExitInput): boolean {
+  return paywallExitLocalGate(i) && i.hasRealDiscount;
 }
 
 export function applyDownsellShown(

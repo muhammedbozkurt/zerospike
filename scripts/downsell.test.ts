@@ -1,6 +1,8 @@
 /**
- * lib/downsellGate.ts correctness harness (2.3.4's downsell-timing fix). No
- * jest, same standalone style as scripts/downsellDay7.test.ts.
+ * lib/downsellGate.ts correctness harness (2.4 paywall-exit rule: annual
+ * selected + cancelled purchase or closed paywall => same-session offer once,
+ * then 7-day cool-off and a lifetime cap of 2). No jest, same standalone style
+ * as scripts/downsellDay7.test.ts.
  *
  * Run: npx tsx scripts/downsell.test.ts
  */
@@ -10,13 +12,14 @@ declare const process: { exit: (code: number) => void };
 import {
   DOWNSELL_MAX_SHOWS,
   DOWNSELL_REARM_MS,
-  DOWNSELL_MIN_DISMISSALS,
-  DOWNSELL_FIRST_SHOW_DELAY_MS,
   canShowDownsell,
   applyDownsellShown,
   applyPaywallDismissed,
   initialDownsellState,
+  paywallExitLocalGate,
+  shouldOfferDownsellOnPaywallExit,
   type DownsellState,
+  type PaywallExitInput,
 } from "../lib/downsellGate";
 
 let passed = 0;
@@ -43,69 +46,110 @@ const NOW = new Date(2026, 8, 7, 10, 0, 0).getTime();
 
 console.log("zerospike downsellGate test");
 
+function exitInput(over: Partial<PaywallExitInput> = {}): PaywallExitInput {
+  return {
+    state: initialDownsellState,
+    now: NOW,
+    plan: "annual",
+    isPro: false,
+    shownThisSession: false,
+    hasRealDiscount: true,
+    ...over,
+  };
+}
+
 section("A. constants match the spec");
 {
   eq("DOWNSELL_MAX_SHOWS", DOWNSELL_MAX_SHOWS, 2);
   eq("DOWNSELL_REARM_MS", DOWNSELL_REARM_MS, 7 * DAY);
-  eq("DOWNSELL_MIN_DISMISSALS", DOWNSELL_MIN_DISMISSALS, 2);
-  eq("DOWNSELL_FIRST_SHOW_DELAY_MS", DOWNSELL_FIRST_SHOW_DELAY_MS, DAY);
 }
 
-section("B. first paywall close -> canShowDownsell is false");
+section("B. first paywall exit, annual selected, real discount -> offered in the same session");
 {
-  const afterFirst = applyPaywallDismissed(initialDownsellState, NOW);
-  eq("dismissCount", afterFirst.dismissCount, 1);
-  eq("firstDismissAt stamped", afterFirst.firstDismissAt, NOW);
-  ok("blocked on the first close", !canShowDownsell(afterFirst, NOW));
-  ok("still blocked hours later", !canShowDownsell(afterFirst, NOW + 12 * HOUR));
+  // Cancelled store purchase and a closed paywall reach the same decision.
+  ok("fresh user, annual, real discount", shouldOfferDownsellOnPaywallExit(exitInput()));
+  const afterClose = applyPaywallDismissed(initialDownsellState, NOW);
+  ok(
+    "the close just recorded does not block (no dismissal-count or 24h wait)",
+    shouldOfferDownsellOnPaywallExit(exitInput({ state: afterClose }))
+  );
 }
 
-section("C. two closes, less than 24h since the first -> false");
+section("C. no real store discount -> never offered");
 {
-  let state = applyPaywallDismissed(initialDownsellState, NOW);
-  state = applyPaywallDismissed(state, NOW + 1 * HOUR);
-  eq("dismissCount", state.dismissCount, 2);
-  eq("firstDismissAt stays the FIRST close", state.firstDismissAt, NOW);
-  ok("blocked just under 24h", !canShowDownsell(state, NOW + 23 * HOUR + 59 * 60 * 1000));
+  ok("hasRealDiscount false", !shouldOfferDownsellOnPaywallExit(exitInput({ hasRealDiscount: false })));
+  ok("local gate alone is still open (store lookup decides)", paywallExitLocalGate(exitInput()));
 }
 
-section("D. two closes, 24h+ since the first -> true");
+section("D. other plan selected -> not offered");
 {
-  let state = applyPaywallDismissed(initialDownsellState, NOW);
-  state = applyPaywallDismissed(state, NOW + 2 * HOUR);
-  ok("allowed exactly at 24h from the FIRST close", canShowDownsell(state, NOW + DAY));
-  ok("allowed well past 24h", canShowDownsell(state, NOW + 3 * DAY));
+  ok("monthly", !shouldOfferDownsellOnPaywallExit(exitInput({ plan: "monthly" })));
+  ok("lifetime", !shouldOfferDownsellOnPaywallExit(exitInput({ plan: "lifetime" })));
 }
 
-section("E. old-shaped state (dismissCount/firstDismissAt absent) -> false, never throws");
+section("E. already Pro -> never offered");
 {
-  // Mirrors what getDownsellState() normalises a pre-2.3.4 blob to.
+  ok("isPro", !shouldOfferDownsellOnPaywallExit(exitInput({ isPro: true })));
+}
+
+section("F. never twice in one session");
+{
+  ok("shownThisSession blocks", !shouldOfferDownsellOnPaywallExit(exitInput({ shownThisSession: true })));
+  // Even after the 7-day cool-off has passed, the same session stays blocked.
+  const shown = applyDownsellShown(initialDownsellState, "inapp", NOW);
+  ok(
+    "same session blocked even past the cool-off",
+    !shouldOfferDownsellOnPaywallExit(
+      exitInput({ state: shown, now: NOW + 8 * DAY, shownThisSession: true })
+    )
+  );
+}
+
+section("G. 7-day cool-off and lifetime cap of 2");
+{
+  const first = applyDownsellShown(initialDownsellState, "inapp", NOW);
+  eq("count after first show", first.count, 1);
+  const at = (ms: number) => exitInput({ state: first, now: NOW + ms });
+  ok("blocked an hour later (new session)", !shouldOfferDownsellOnPaywallExit(at(1 * HOUR)));
+  ok("blocked just under 7 days", !shouldOfferDownsellOnPaywallExit(at(DOWNSELL_REARM_MS - 1000)));
+  ok("allowed at exactly 7 days", shouldOfferDownsellOnPaywallExit(at(DOWNSELL_REARM_MS)));
+  const second = applyDownsellShown(first, "inapp", NOW + DOWNSELL_REARM_MS);
+  eq("count after second show", second.count, DOWNSELL_MAX_SHOWS);
+  ok(
+    "lifetime cap reached -> never again",
+    !shouldOfferDownsellOnPaywallExit(exitInput({ state: second, now: NOW + 100 * DAY }))
+  );
+}
+
+section("H. the day-7 / winback trigger spends the same lifetime shows");
+{
+  const viaDay7 = applyDownsellShown(initialDownsellState, "day7", NOW);
+  ok("a day7 show starts the cool-off for the paywall exit", !canShowDownsell(viaDay7, NOW + 1 * DAY));
+  ok("and re-opens after 7 days", canShowDownsell(viaDay7, NOW + DOWNSELL_REARM_MS));
+}
+
+section("I. old-shaped state (dismissCount/firstDismissAt absent) never throws");
+{
   const oldShape = { count: 0, lastShownAt: null, lastTrigger: null } as unknown as DownsellState;
   let threw = false;
-  let result = true;
+  let result = false;
   try {
-    result = canShowDownsell({ ...oldShape, dismissCount: 0, firstDismissAt: null }, NOW);
+    result = shouldOfferDownsellOnPaywallExit(
+      exitInput({ state: { ...oldShape, dismissCount: 0, firstDismissAt: null } })
+    );
   } catch {
     threw = true;
   }
   ok("no throw", !threw);
-  ok("reads as not-yet-eligible", !result);
+  ok("reads as eligible, rule no longer depends on dismissal history", result);
 }
 
-section("F. once shown, the existing lifetime cap + re-arm cascade still applies unchanged");
+section("J. paywall close bookkeeping");
 {
   let state = applyPaywallDismissed(initialDownsellState, NOW);
-  state = applyPaywallDismissed(state, NOW + 2 * HOUR);
-  const eligibleAt = NOW + DAY;
-  ok("eligible before the first show", canShowDownsell(state, eligibleAt));
-  state = applyDownsellShown(state, "inapp", eligibleAt);
-  eq("count after first show", state.count, 1);
-  ok("blocked right after the first show (re-arm cooldown)", !canShowDownsell(state, eligibleAt + 1 * HOUR));
-  ok("blocked just under the 7-day re-arm", !canShowDownsell(state, eligibleAt + DOWNSELL_REARM_MS - 1000));
-  ok("allowed once the re-arm has elapsed", canShowDownsell(state, eligibleAt + DOWNSELL_REARM_MS));
-  state = applyDownsellShown(state, "inapp", eligibleAt + DOWNSELL_REARM_MS);
-  eq("count after second show", state.count, DOWNSELL_MAX_SHOWS);
-  ok("lifetime cap reached -> never again", !canShowDownsell(state, eligibleAt + 100 * DAY));
+  state = applyPaywallDismissed(state, NOW + HOUR);
+  eq("dismissCount", state.dismissCount, 2);
+  eq("firstDismissAt stays the FIRST close", state.firstDismissAt, NOW);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import {
   AppBackground,
   GlassCard,
@@ -36,7 +36,9 @@ import {
   PlanId,
 } from "../lib/services/purchases";
 import {
-  canShowDownsell,
+  downsellShownThisSession,
+  getDownsellState,
+  paywallExitLocalGate,
   recordDownsellShown,
   recordPaywallDismissed,
   type DownsellTrigger,
@@ -357,6 +359,7 @@ function PaywallScreen() {
 
   // Leaves the paywall.
   async function exit() {
+    leavingRef.current = true;
     resetPaywallTrialCache();
     if (router.canGoBack()) {
       router.back();
@@ -365,11 +368,11 @@ function PaywallScreen() {
     }
   }
 
-  // Downsell trigger, shared by an explicit dismiss and a cancelled purchase:
-  // the paywall must be closed at least twice, 24h apart from the first close,
-  // before a downsell can show at all (2.3.4 - the first close alone used to
-  // convert 0/16); after that gate, the existing single 7-day re-armed retry,
-  // capped at 2 lifetime shows, applies unchanged. An active Pro/trial user is
+  // Downsell trigger, shared by an explicit dismiss (X, Android back, iOS
+  // swipe) and a cancelled purchase. 2.4: with the ANNUAL plan selected, the
+  // exit opens the discounted offer in the SAME session, once, when a real
+  // store discount is confirmed; afterwards the 7-day cool-off and the
+  // two-show lifetime cap apply (lib/downsellGate). An active Pro/trial user is
   // never shown a discount on their own subscription, and a lifetime show is
   // only spent once a REAL discount is confirmed to exist - never on an empty
   // offering. Falls back to exit otherwise.
@@ -379,8 +382,16 @@ function PaywallScreen() {
       return;
     }
     const now = Date.now();
-    const state = await recordPaywallDismissed(now);
-    if (!canShowDownsell(state, now)) {
+    await recordPaywallDismissed(now);
+    const state = await getDownsellState();
+    const eligible = paywallExitLocalGate({
+      state,
+      now,
+      plan,
+      isPro: isProUser,
+      shownThisSession: downsellShownThisSession(),
+    });
+    if (!eligible) {
       await exit();
       return;
     }
@@ -390,6 +401,7 @@ function PaywallScreen() {
       return;
     }
     await recordDownsellShown(context, now);
+    leavingRef.current = true;
     router.replace({ pathname: "/downsell", params: { trigger: context } });
   }
 
@@ -397,6 +409,23 @@ function PaywallScreen() {
     logEvent("paywall_dismiss", { source: reason ?? "direct" });
     await triggerDownsell();
   }
+
+  // Every way out of the paywall that does not go through dismiss() (Android
+  // back, iOS swipe-down) is held and routed through it, so the downsell rule
+  // sees them too. leavingRef lets our own exits (exit, purchase success, the
+  // downsell replace) through without being intercepted again.
+  const navigation = useNavigation();
+  const leavingRef = useRef(false);
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+  useEffect(() => {
+    return navigation.addListener("beforeRemove", (e) => {
+      if (leavingRef.current) return;
+      e.preventDefault();
+      leavingRef.current = true;
+      void dismissRef.current();
+    });
+  }, [navigation]);
 
   // Title-only reasons (insights, export) have no matching limitBody* copy: the
   // nudge from those screens is a one-line "this is part of Pro", not a full
@@ -506,6 +535,7 @@ function PaywallScreen() {
     );
     if (shouldAutoOpenWelcome(steps, healthAvailable)) {
       resetPaywallTrialCache();
+      leavingRef.current = true;
       router.replace("/pro-welcome");
       return;
     }
