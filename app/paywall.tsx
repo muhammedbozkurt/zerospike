@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -10,7 +10,8 @@ import {
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { usePreventRemove } from "expo-router/react-navigation";
 import {
   AppBackground,
   GlassCard,
@@ -28,19 +29,13 @@ import {
   purchasePro,
   restore,
   loadOfferings,
-  getDownsellOffer,
   getTrialStatus,
   trialAfterPurchase,
   type OfferingsResult,
   type PurchaseOutcome,
   PlanId,
 } from "../lib/services/purchases";
-import {
-  canShowDownsell,
-  recordDownsellShown,
-  recordPaywallDismissed,
-  type DownsellTrigger,
-} from "../lib/services/downsell";
+import { newPaywallExitController, type DownsellTrigger } from "../lib/services/downsell";
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import {
   cancelTrialReminder,
@@ -230,7 +225,14 @@ function PaywallScreen() {
   useThemeRemountLock();
   const { refreshPro, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  // Mirrors busy synchronously so a close request landing in the same tick as
+  // a purchase or restore starting (or finishing) sees the true value.
+  const busyRef = useRef(false);
+  function setBusy(v: boolean) {
+    busyRef.current = v;
+    setBusyState(v);
+  }
   const [plan, setPlan] = useState<PlanId>("annual");
   const [offer, setOffer] = useState<OfferingsResult | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -355,48 +357,95 @@ function PaywallScreen() {
     setPlan(p);
   }
 
+  // Leaving the paywall. usePreventRemove holds EVERY removal of this screen
+  // (X, Android back, iOS swipe-down; with it set, native-stack also disables
+  // the native dismiss gesture) until a navigation of our own has set
+  // allowLeave. That is STATE, not a ref: the navigation only runs from the
+  // effect below, after the re-render that lifted the hold. navStartedRef makes
+  // the whole thing single-shot, so overlapping exits cannot navigate twice.
+  const navigation = useNavigation();
+  const [allowLeave, setAllowLeave] = useState(false);
+  const navStartedRef = useRef(false);
+  const afterAllowRef = useRef<(() => void) | null>(null);
+
+  function leaveWith(go: () => void) {
+    if (navStartedRef.current) return;
+    navStartedRef.current = true;
+    afterAllowRef.current = go;
+    setAllowLeave(true);
+  }
+
+  useEffect(() => {
+    if (!allowLeave) return;
+    const go = afterAllowRef.current;
+    afterAllowRef.current = null;
+    go?.();
+  }, [allowLeave]);
+
+  // Downsell trigger, shared by an explicit dismiss and a cancelled purchase.
+  // 2.4: with the ANNUAL plan selected, the exit opens the discounted offer in
+  // the SAME session, once, when a real store discount is confirmed; afterwards
+  // the 7-day cool-off and the two-show lifetime cap apply (lib/downsellGate).
+  // Pro users and screenshot mode just leave. The controller serialises
+  // overlapping exits and reserves the session slot before any await; the
+  // lifetime show itself is recorded by the downsell screen.
+  const exitCtlRef = useRef<ReturnType<typeof newPaywallExitController> | null>(null);
+  if (exitCtlRef.current === null) {
+    exitCtlRef.current = newPaywallExitController(
+      {
+        closePaywall: () => exit(),
+        openDownsell: () =>
+          leaveWith(() =>
+            router.replace({ pathname: "/downsell", params: { trigger: context } })
+          ),
+      },
+      () => busyRef.current
+    );
+  }
+
   // Leaves the paywall.
-  async function exit() {
+  function exit() {
     resetPaywallTrialCache();
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/(tabs)");
-    }
+    leaveWith(() => {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)");
+      }
+    });
   }
 
-  // Downsell trigger, shared by an explicit dismiss and a cancelled purchase:
-  // the paywall must be closed at least twice, 24h apart from the first close,
-  // before a downsell can show at all (2.3.4 - the first close alone used to
-  // convert 0/16); after that gate, the existing single 7-day re-armed retry,
-  // capped at 2 lifetime shows, applies unchanged. An active Pro/trial user is
-  // never shown a discount on their own subscription, and a lifetime show is
-  // only spent once a REAL discount is confirmed to exist - never on an empty
-  // offering. Falls back to exit otherwise.
+  // A cancelled purchase: it is the thing that holds busy, so it bypasses it.
   async function triggerDownsell() {
-    if (isProUser) {
-      await exit();
-      return;
-    }
-    const now = Date.now();
-    const state = await recordPaywallDismissed(now);
-    if (!canShowDownsell(state, now)) {
-      await exit();
-      return;
-    }
-    const offer = await getDownsellOffer();
-    if (!offer.hasRealDiscount) {
-      await exit();
-      return;
-    }
-    await recordDownsellShown(context, now);
-    router.replace({ pathname: "/downsell", params: { trigger: context } });
+    await exitCtlRef.current!.requestExit({ plan: planRef.current, isPro: isProRef.current });
   }
 
+  // User-initiated close (X, back, swipe): ignored while a purchase or restore
+  // is being processed.
   async function dismiss() {
-    logEvent("paywall_dismiss", { source: reason ?? "direct" });
-    await triggerDownsell();
+    await exitCtlRef.current!.requestUserClose(
+      { plan: planRef.current, isPro: isProRef.current },
+      () => logEvent("paywall_dismiss", { source: reason ?? "direct" })
+    );
   }
+
+  const planRef = useRef(plan);
+  planRef.current = plan;
+  const isProRef = useRef(isProUser);
+  if (isProUser) isProRef.current = true;
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+
+  usePreventRemove(!allowLeave, ({ data }) => {
+    const type = data.action.type;
+    if (type === "GO_BACK" || type === "POP") {
+      void dismissRef.current();
+      return;
+    }
+    // Anything else (notification tap, deep link, a layout redirect) is not a
+    // dismissal: let it reach its target.
+    leaveWith(() => navigation.dispatch(data.action));
+  });
 
   // Title-only reasons (insights, export) have no matching limitBody* copy: the
   // nudge from those screens is a one-line "this is part of Pro", not a full
@@ -506,7 +555,7 @@ function PaywallScreen() {
     );
     if (shouldAutoOpenWelcome(steps, healthAvailable)) {
       resetPaywallTrialCache();
-      router.replace("/pro-welcome");
+      leaveWith(() => router.replace("/pro-welcome"));
       return;
     }
     await exit();
@@ -531,6 +580,7 @@ function PaywallScreen() {
       });
       if (res.ok) {
         clearPaywallTrial();
+        isProRef.current = true;
         logEvent("purchase_completed", { tier: plan, source: reason ?? "direct" });
         await settleTrial(res);
         hapticSuccess();
@@ -557,6 +607,7 @@ function PaywallScreen() {
       await refreshPro();
       if (result === "restored") {
         clearPaywallTrial();
+        isProRef.current = true;
         await settleRestoredTrial();
         hapticSuccess();
         toast(t("paywall.restored"), "success");

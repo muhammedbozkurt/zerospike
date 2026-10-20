@@ -15,6 +15,13 @@ Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode
 - Widget ve Live Activity açık temaya uyumlu; Wear vurgu dozu.
 - Dahili: ekran görüntüsü modunda tema açığa sabit.
 
+### İndirim ekranı (downsell)
+- Paywall'da yıllık plan seçiliyken satın alma vazgeçilirse ya da paywall
+  kapatılırsa (X, geri, aşağı kaydırma), mağazada gerçek bir indirim varsa
+  indirimli teklif aynı oturumda bir kez gösteriliyor. Sonrasında 7 gün bekleme
+  ve toplam en fazla 2 gösterim kuralı değişmedi; aynı oturumda ikinci kez
+  gösterilmiyor. Eski "iki kapatma + 24 saat" kuralı kaldırıldı.
+
 ### Onboarding ve genel
 - Yeniden düzenlenen onboarding: sorumluluk reddi son ekrana taşındı;
   titreşim, hareket ve karşılama önizlemeleri eklendi; "Bugün" sekmesi.

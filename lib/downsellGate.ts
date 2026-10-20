@@ -6,27 +6,21 @@
  * lives somewhere free of that import. lib/services/downsell.ts re-exports
  * everything here; the rest of the app keeps importing from there.
  *
- * 2.3.4: the 24 Ağu - 7 Eyl iOS window showed 17 paywall views, 16 of them
- * followed immediately by a downsell, all 16 dismissed, 0 trials - the
- * downsell was firing on the very first paywall close, before the user had
- * shown any real hesitation. canShowDownsell now also requires the paywall to
- * have been closed at least DOWNSELL_MIN_DISMISSALS times AND at least
- * DOWNSELL_FIRST_SHOW_DELAY_MS to have passed since the first of those closes,
- * on top of the existing two-lifetime-shows cascade (DOWNSELL_MAX_SHOWS /
- * DOWNSELL_REARM_MS), which is unchanged.
+ * 2.4: the 2.3.4 rule (paywall closed twice, 24h after the first close) made the
+ * offer unreachable in the first session, and since onboarding no longer ends on
+ * a paywall there was no other first-session entry. The rule is now: a user on
+ * the paywall with the ANNUAL plan selected who cancels the store purchase or
+ * closes the paywall gets the discounted offer in the SAME session, once, when a
+ * real store discount exists. Afterwards the 7-day cool-off and the lifetime cap
+ * of DOWNSELL_MAX_SHOWS apply unchanged.
  */
 import { DOWNSELL_MAX_SHOWS } from "./day7Downsell";
 
 export { DOWNSELL_MAX_SHOWS };
 export const DOWNSELL_REARM_MS = 7 * 24 * 60 * 60 * 1000;
-/** Paywall must be closed this many times before a downsell can ever show. */
-export const DOWNSELL_MIN_DISMISSALS = 2;
-/** ...and this long must have passed since the FIRST of those closes. */
-export const DOWNSELL_FIRST_SHOW_DELAY_MS = 24 * 60 * 60 * 1000;
 
-// 2.3.4: onboarding no longer hands off to the paywall (app/onboarding.tsx
-// goes straight to the dashboard), so no caller ever sets "onboarding" here
-// anymore - dropped from the union.
+// Onboarding no longer hands off to the paywall (app/onboarding.tsx goes
+// straight to the dashboard), so no caller ever sets "onboarding" here.
 export type DownsellTrigger = "inapp" | "winback" | "day7";
 
 export interface DownsellState {
@@ -34,11 +28,10 @@ export interface DownsellState {
   count: number;
   lastShownAt: number | null;
   lastTrigger: DownsellTrigger | null;
-  /** Times the PAYWALL has been closed (an explicit dismiss or a cancelled
-   *  purchase) - distinct from `count` above. 0 on a state persisted before
-   *  2.3.4, which is exactly the "never closed under this rule" reading. */
+  /** Legacy (2.3.4 rule). No longer written or read by the gate; kept so a
+   *  state persisted by 2.3.4 round-trips unchanged. */
   dismissCount: number;
-  /** When the first of those closes happened; null on a pre-2.3.4 state. */
+  /** Legacy, see dismissCount. */
   firstDismissAt: number | null;
 }
 
@@ -51,18 +44,47 @@ export const initialDownsellState: DownsellState = {
 };
 
 /**
- * Whether the discounted downsell may be shown again. An old-shaped state
- * (dismissCount/firstDismissAt missing, normalised to 0/null by
- * getDownsellState) always reads as "not yet" here rather than throwing -
- * the very next real dismiss starts counting it forward.
+ * The lifetime cap and re-arm cool-off, independent of the trigger: at most
+ * DOWNSELL_MAX_SHOWS shows ever, the second only DOWNSELL_REARM_MS after the
+ * first.
  */
 export function canShowDownsell(state: DownsellState, now: number): boolean {
-  if (state.dismissCount < DOWNSELL_MIN_DISMISSALS) return false;
-  if (state.firstDismissAt === null) return false;
-  if (now - state.firstDismissAt < DOWNSELL_FIRST_SHOW_DELAY_MS) return false;
   if (state.count >= DOWNSELL_MAX_SHOWS) return false;
   if (state.count === 0) return true;
   return state.lastShownAt !== null && now - state.lastShownAt >= DOWNSELL_REARM_MS;
+}
+
+export interface PaywallExitInput {
+  state: DownsellState;
+  now: number;
+  /** The plan selected on the paywall at the moment of the exit. */
+  plan: string;
+  isPro: boolean;
+  /** Any downsell (any trigger) already opened since the app process started. */
+  shownThisSession: boolean;
+  /** Confirmed against the store offerings, never assumed. */
+  hasRealDiscount: boolean;
+}
+
+/**
+ * Local half of the paywall-exit rule (everything except the store lookup), so
+ * the offerings round trip is only paid for once this is true.
+ */
+export function paywallExitLocalGate(
+  i: Omit<PaywallExitInput, "hasRealDiscount">
+): boolean {
+  if (i.isPro) return false;
+  if (i.plan !== "annual") return false;
+  if (i.shownThisSession) return false;
+  return canShowDownsell(i.state, i.now);
+}
+
+/**
+ * Whether a paywall exit (store purchase cancelled, or the paywall closed via
+ * X / back / swipe) should open the discounted offer instead of just leaving.
+ */
+export function shouldOfferDownsellOnPaywallExit(i: PaywallExitInput): boolean {
+  return paywallExitLocalGate(i) && i.hasRealDiscount;
 }
 
 export function applyDownsellShown(
@@ -73,12 +95,145 @@ export function applyDownsellShown(
   return { ...state, count: state.count + 1, lastShownAt: now, lastTrigger: trigger };
 }
 
-/** Records a paywall close (dismiss or cancelled purchase). `firstDismissAt`
- *  is stamped only once, by the first close ever seen. */
-export function applyPaywallDismissed(state: DownsellState, now: number): DownsellState {
+/**
+ * Normalises whatever JSON.parse produced from storage into a DownsellState.
+ * Fields absent on an old-shaped blob (pre-2.3.4) read as their initial value,
+ * and anything unparseable reads as the initial state; never throws.
+ */
+export function normalizeDownsellState(parsed: unknown): DownsellState {
+  if (parsed === null || typeof parsed !== "object") return initialDownsellState;
+  const p = parsed as Record<string, unknown>;
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+  const trigger = p.lastTrigger;
   return {
-    ...state,
-    dismissCount: state.dismissCount + 1,
-    firstDismissAt: state.firstDismissAt ?? now,
+    count: Number(p.count) || 0,
+    lastShownAt: num(p.lastShownAt),
+    lastTrigger:
+      trigger === "inapp" || trigger === "winback" || trigger === "day7" ? trigger : null,
+    dismissCount: Number(p.dismissCount) || 0,
+    firstDismissAt: num(p.firstDismissAt),
   };
+}
+
+// ── One discount screen per session ────────────────────────────────────────
+
+export interface SessionOfferFlag {
+  /** Takes the session slot; false when it is already taken. Synchronous, so
+   *  two concurrent callers can never both get true. */
+  reserve(): boolean;
+  /** Gives the slot back (the offer turned out not to exist). */
+  release(): void;
+  isReserved(): boolean;
+}
+
+export function createSessionOfferFlag(): SessionOfferFlag {
+  let taken = false;
+  return {
+    reserve() {
+      if (taken) return false;
+      taken = true;
+      return true;
+    },
+    release() {
+      taken = false;
+    },
+    isReserved: () => taken,
+  };
+}
+
+// ── Paywall exit decision ──────────────────────────────────────────────────
+
+export interface PaywallExitDeps {
+  isScreenshotMode(): boolean;
+  session: SessionOfferFlag;
+  getState(): Promise<DownsellState>;
+  getOffer(): Promise<{ hasRealDiscount: boolean }>;
+  /** Fresh entitlement read, so a purchase that completed after the screen
+   *  last rendered is never offered a discount on itself. */
+  isProNow(): Promise<boolean>;
+  now(): number;
+}
+
+export type PaywallExitDecision = "downsell" | "exit";
+
+/**
+ * Decides what a paywall exit does. The session slot is reserved BEFORE the
+ * awaits, so two overlapping exits cannot both pass; it is handed back when
+ * the rule says no or the store has no real discount. On "downsell" the slot
+ * stays taken (the lifetime show itself is recorded by the downsell screen
+ * once it has confirmed the discount).
+ */
+export async function decidePaywallExit(
+  deps: PaywallExitDeps,
+  input: { plan: string; isPro: boolean }
+): Promise<PaywallExitDecision> {
+  if (input.isPro || deps.isScreenshotMode()) return "exit";
+  const reserved = deps.session.reserve();
+  const base = { plan: input.plan, isPro: input.isPro, shownThisSession: !reserved };
+  try {
+    const state = await deps.getState();
+    const now = deps.now();
+    if (!paywallExitLocalGate({ ...base, state, now })) {
+      if (reserved) deps.session.release();
+      return "exit";
+    }
+    if (await deps.isProNow()) {
+      if (reserved) deps.session.release();
+      return "exit";
+    }
+    const offer = await deps.getOffer();
+    if (!shouldOfferDownsellOnPaywallExit({ ...base, state, now, hasRealDiscount: offer.hasRealDiscount })) {
+      if (reserved) deps.session.release();
+      return "exit";
+    }
+    return "downsell";
+  } catch {
+    if (reserved) deps.session.release();
+    return "exit";
+  }
+}
+
+export interface PaywallExitNav {
+  closePaywall(): void;
+  openDownsell(): void;
+}
+
+/**
+ * Re-entrancy guard around decidePaywallExit: an X tap, a back gesture and a
+ * cancelled purchase can all land within the same offer lookup, and only the
+ * first may navigate. Meant to live for one paywall screen instance.
+ */
+export function createPaywallExitController(
+  deps: PaywallExitDeps,
+  nav: PaywallExitNav,
+  /** True while a purchase or restore is being processed. */
+  isBlocked: () => boolean = () => false
+) {
+  let exiting = false;
+  const controller = {
+    /** `onAccepted` runs synchronously once this call has taken the lock, so
+     *  per-exit side effects (analytics) fire once, not once per tap. */
+    async requestExit(
+      input: { plan: string; isPro: boolean },
+      onAccepted?: () => void
+    ): Promise<void> {
+      if (exiting) return;
+      exiting = true;
+      onAccepted?.();
+      const decision = await decidePaywallExit(deps, input);
+      if (decision === "downsell") nav.openDownsell();
+      else nav.closePaywall();
+    },
+    /** A close the user asked for (X, back, swipe): ignored while blocked.
+     *  A cancelled purchase uses requestExit directly, as it IS the blocker. */
+    async requestUserClose(
+      input: { plan: string; isPro: boolean },
+      onAccepted?: () => void
+    ): Promise<void> {
+      if (isBlocked()) return;
+      await controller.requestExit(input, onAccepted);
+    },
+  };
+  return controller;
 }
