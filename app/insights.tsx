@@ -1168,12 +1168,16 @@ export default function InsightsScreen() {
                                   color: THEME.text,
                                   fontSize: 12,
                                   fontWeight: "700",
-                                  flex: 1,
+                                  flexShrink: 1,
                                   marginStart: 8,
                                 }}
                               >
                                 {name}
                               </Text>
+                              {/* A spacer, not flex:1 on the label: iOS keeps
+                                  a stretched Arabic label's text on the left
+                                  of its box, away from the dot. */}
+                              <View style={{ flex: 1 }} />
                               {/* Bidi: a bare "12%" can still get its sign
                                   reordered under an RTL base paragraph
                                   direction; pin it LTR like the other
