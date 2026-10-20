@@ -38,7 +38,7 @@ private struct ActivityTones {
   let muted: Color
 
   static let card = ActivityTones(
-    accent: WidgetPalette.accent, ink: WidgetPalette.ink, muted: WidgetPalette.muted)
+    accent: WidgetPalette.activityAccent, ink: WidgetPalette.ink, muted: WidgetPalette.muted)
   static let island = ActivityTones(
     accent: WidgetPalette.islandAccent, ink: WidgetPalette.islandInk,
     muted: WidgetPalette.islandMuted)

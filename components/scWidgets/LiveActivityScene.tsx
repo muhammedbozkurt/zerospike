@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { THEME } from "../../lib/theme/tokens";
 import type { LiveData } from "../../lib/services/liveData";
 import { withAlpha } from "../rich/GlassCard";
-import { formatCountdown, inkA, unitLabel } from "./common";
+import { activityAccent, formatCountdown, inkA, unitLabel } from "./common";
 
 /**
  * Replica of the lock-screen HStack in targets/widget/PostMealActivity.swift:
@@ -37,6 +37,7 @@ export function LiveActivityScene({
   const countdown = remainingMs != null && remainingMs > 0 ? formatCountdown(remainingMs) : null;
   const title = data?.labels?.timerTitle ?? "";
   const reading = data?.lastGlucoseDisplay;
+  const accent = activityAccent();
 
   // At least 14: the card's own breathing room is a fixed floor now, not a
   // pure ratio, because the iPhone card is only 68 pt tall.
@@ -66,10 +67,10 @@ export function LiveActivityScene({
           borderRadius: Math.round(badge * 0.32),
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: withAlpha(THEME.accent, 0.18),
+          backgroundColor: withAlpha(accent, 0.18),
         }}
       >
-        <Ionicons name={countdown ? "hourglass-outline" : "water"} size={Math.round(badge * 0.46)} color={THEME.accent} />
+        <Ionicons name={countdown ? "hourglass-outline" : "water"} size={Math.round(badge * 0.46)} color={accent} />
       </View>
 
       <View style={{ flex: 1 }}>
@@ -80,7 +81,7 @@ export function LiveActivityScene({
           {countdown ? title : "zerospike"}
         </Text>
         <Text
-          style={{ fontSize: valueSize, lineHeight: Math.round(valueSize * 1.2), fontWeight: "700", color: THEME.accent }}
+          style={{ fontSize: valueSize, lineHeight: Math.round(valueSize * 1.2), fontWeight: "700", color: accent }}
           numberOfLines={1}
         >
           {countdown ?? (data?.avgGlucoseDisplay ?? data?.lastGlucoseDisplay ?? "-")}
@@ -96,7 +97,7 @@ export function LiveActivityScene({
             }}
           >
             <View
-              style={{ width: `${Math.round(fraction * 100)}%`, height: 4, borderRadius: 2, backgroundColor: THEME.accent }}
+              style={{ width: `${Math.round(fraction * 100)}%`, height: 4, borderRadius: 2, backgroundColor: accent }}
             />
           </View>
         ) : null}

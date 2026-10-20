@@ -31,6 +31,14 @@ export const TILE_INK = { // theme-ok: getters read the live palette
   },
 };
 
+/** Mirrors ActivityTones.card.accent in targets/widget/PostMealActivity.swift
+ *  (the ActivityAccent colorset): the light card keeps the readable deep teal
+ *  (accent #087089), the dark card takes the brand turquoise (accentFill
+ *  #22C7E0) instead of the old neon #2ee6ff. */
+export function activityAccent(): string {
+  return THEME.scheme === "dark" ? THEME.accentFill : THEME.accent;
+}
+
 /** Colours a reading against the profile's own band, same ramp as
  *  androidWidget.ts's readingColor / GlucoseColor.forReading in index.swift. */
 export function readingColor(
