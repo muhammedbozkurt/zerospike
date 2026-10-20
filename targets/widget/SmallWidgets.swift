@@ -49,7 +49,7 @@ private struct SmallGround: View {
     case .accessoryRectangular, .accessoryInline, .accessoryCircular:
       Color.clear
     default:
-      WidgetPalette.background
+      WidgetBackdrop()
     }
   }
 }
@@ -59,9 +59,9 @@ private struct SmallGround: View {
 @ViewBuilder
 private func grounded<Content: View>(_ content: Content) -> some View {
   if #available(iOS 17.0, *) {
-    content.containerBackground(for: .widget) { SmallGround() }
+    content.widgetThemed().containerBackground(for: .widget) { SmallGround() }
   } else {
-    content.background { SmallGround() }
+    content.widgetThemed().background { SmallGround() }
   }
 }
 

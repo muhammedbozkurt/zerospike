@@ -351,10 +351,12 @@ struct ZerospikeQuickAddWidget: Widget {
     StaticConfiguration(kind: "ZerospikeQuickAdd", provider: QuickAddProvider()) { entry in
       if #available(iOS 17.0, *) {
         QuickAddWidgetView(entry: entry)
-          .containerBackground(for: .widget) { WidgetPalette.background }
+          .widgetThemed()
+          .containerBackground(for: .widget) { WidgetBackdrop() }
       } else {
         QuickAddWidgetView(entry: entry)
-          .background(WidgetPalette.background)
+          .widgetThemed()
+          .background { WidgetBackdrop() }
       }
     }
     // Gallery-only strings, English for every user: the extension bundle carries

@@ -88,11 +88,10 @@ private func forgetIdentity(_ id: String) {
   saveIdMap(map)
 }
 
-/// The zerospike brand accent (#22d3ee - same hex `lightColor` already used for
-/// the Android reminders channel in lib/services/notifications.ts and
-/// THEME.accent in lib/theme/tokens.ts), so the system alarm screen's tint
-/// matches the rest of the app instead of AlarmKit's own default.
-private let alarmTint = Color(red: 34.0 / 255, green: 211.0 / 255, blue: 238.0 / 255)
+/// The zerospike brand turquoise (#22c7e0, the same value as the widgets' dark
+/// accent in targets/widget), so the system alarm screen's tint matches the
+/// rest of the app instead of AlarmKit's own default.
+private let alarmTint = Color(red: 34.0 / 255, green: 199.0 / 255, blue: 224.0 / 255)
 
 /// The alarm screen itself, built ONCE for both schedulers (2.3.0's K2-B).
 /// Both kinds of zerospike alarm - the daily reminder and the one-shot end of a

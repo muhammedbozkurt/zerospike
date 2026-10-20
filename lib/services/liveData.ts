@@ -401,57 +401,15 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
   }
   if (Platform.OS === "android") {
     try {
-      const { requestWidgetUpdate } = await import("react-native-android-widget");
-      const {
-        buildZerospikeWidget,
-        buildQuickAddWidget,
-        buildReadingWidget,
-        buildLogGlucoseWidget,
-        buildLogMealWidget,
-        buildTimerWidget,
-        ANDROID_LOG_GLUCOSE_WIDGET_NAME,
-        ANDROID_LOG_MEAL_WIDGET_NAME,
-        ANDROID_TIMER_WIDGET_NAME,
-      } = await import("./androidWidget");
+      const { refreshAndroidWidgets } = await import("./androidWidget");
+      const { readWidgetThemePref } = await import("./widgetTheme");
       const data = JSON.parse(json) as LiveData;
-      // allSettled, not a chain of awaits: the six widgets are independent
-      // surfaces and each is optional (the user may have placed none of them).
-      // Chained, one rejection - a name the installed launcher does not know, a
-      // widget host that went away - swallowed the redraw of every widget after
-      // it, so the newest one in the list was the most likely to go stale.
-      await Promise.allSettled([
-        requestWidgetUpdate({
-          widgetName: ANDROID_WIDGET_NAME,
-          // The callback receives the placed widget's current dp size, so the
-          // layout can tier itself (see sizesFor in androidWidget.ts).
-          renderWidget: (info) => buildZerospikeWidget(data, info),
-        }),
-        requestWidgetUpdate({
-          widgetName: ANDROID_QUICK_ADD_WIDGET_NAME,
-          renderWidget: (info) => buildQuickAddWidget(data, info),
-        }),
-        requestWidgetUpdate({
-          widgetName: ANDROID_READING_WIDGET_NAME,
-          renderWidget: (info) => buildReadingWidget(data, info),
-        }),
-        requestWidgetUpdate({
-          widgetName: ANDROID_LOG_GLUCOSE_WIDGET_NAME,
-          renderWidget: (info) => buildLogGlucoseWidget(data, info),
-        }),
-        requestWidgetUpdate({
-          widgetName: ANDROID_LOG_MEAL_WIDGET_NAME,
-          renderWidget: (info) => buildLogMealWidget(data, info),
-        }),
-        // The one most likely to go stale otherwise (C1): the countdown
-        // widget's content depends on a running post-meal timer, which is
-        // armed/ended from lib/services/notifications.ts, not from a log
-        // write - without this call it only ever redrew on its own 15-minute
-        // period (app.json) or a manual tap.
-        requestWidgetUpdate({
-          widgetName: ANDROID_TIMER_WIDGET_NAME,
-          renderWidget: (info) => buildTimerWidget(data, info),
-        }),
-      ]);
+      // The widgets are independent, optional surfaces (the user may have placed
+      // none) and the redraw honours the in-app appearance choice, not only the
+      // system ground. The Timer widget stays in the set on purpose: its content
+      // depends on a running post-meal timer armed from notifications.ts, not
+      // from a log write, so without this it only redrew on its 15-minute period.
+      await refreshAndroidWidgets(data, await readWidgetThemePref(AsyncStorage));
     } catch {
       // No widget placed on the home screen, or the module is not linked yet.
     }
