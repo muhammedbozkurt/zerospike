@@ -21,8 +21,14 @@ export type StepperRead =
 
 /** Digits plus one separator, with at most `decimals` digits after it. */
 export function sanitizeStepperText(raw: string, decimals: number): string {
-  const cleaned = sanitizeNumberText(raw, decimals > 0);
-  if (decimals <= 0) return cleaned;
+  if (decimals <= 0) {
+    // A whole-number field stops at the first separator: "45,5" is 45, never
+    // 455 (the old filter dropped the separator and kept the digit behind it,
+    // a silent tenfold on pasted text and tablet keyboards).
+    const cut = raw.search(/[.,\u066B]/);
+    return sanitizeNumberText(cut < 0 ? raw : raw.slice(0, cut), false);
+  }
+  const cleaned = sanitizeNumberText(raw, true);
   const m = cleaned.search(/[.,٫]/);
   if (m < 0) return cleaned;
   return cleaned.slice(0, m + 1 + decimals);

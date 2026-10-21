@@ -13,13 +13,37 @@ const OFFER_MIN_MGDL = 20;
 const OFFER_MAX_MGDL = 600;
 
 export interface GlucoseLogLike {
+  id?: string;
   glucose_level_mgdl: number;
   logged_at: string;
 }
 
 export interface GlucoseSuggestion {
+  /** The stored row, so a save that still shows its value can attach to it
+   *  instead of writing the same measurement a second time. */
+  id: string | null;
   mgdl: number;
   loggedAt: string;
+}
+
+/** Milliseconds until a reading stops being offered (0 when it already has). */
+export function offerExpiresInMs(loggedAt: string, now: Date): number {
+  const at = new Date(loggedAt).getTime();
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, at + RECENT_GLUCOSE_WINDOW_MINUTES * 60_000 - now.getTime() + 1000);
+}
+
+/**
+ * Whether the number in the glucose field IS the offered reading: the field
+ * shows the reading in the profile's unit (a mmol/L screen rounds to one
+ * decimal), so equality is judged on that shown number. Only then does a save
+ * use the stored mg/dL value and its row.
+ */
+export function fieldIsOffer(
+  typed: number | null,
+  offerShown: number | null
+): boolean {
+  return typed != null && offerShown != null && typed === offerShown;
 }
 
 /**
@@ -35,7 +59,7 @@ export function recentGlucoseSuggestion(
   const nowMs = now.getTime();
   if (!Number.isFinite(nowMs)) return null;
   const limitMs = RECENT_GLUCOSE_WINDOW_MINUTES * 60_000;
-  let best: { mgdl: number; loggedAt: string; at: number } | null = null;
+  let best: { id: string | null; mgdl: number; loggedAt: string; at: number } | null = null;
   for (const log of logs) {
     const at = new Date(log.logged_at).getTime();
     if (!Number.isFinite(at)) continue;
@@ -43,7 +67,7 @@ export function recentGlucoseSuggestion(
     if (age < 0 || age > limitMs) continue;
     const v = log.glucose_level_mgdl;
     if (!Number.isFinite(v) || v < OFFER_MIN_MGDL || v > OFFER_MAX_MGDL) continue;
-    if (!best || at > best.at) best = { mgdl: v, loggedAt: log.logged_at, at };
+    if (!best || at > best.at) best = { id: log.id ?? null, mgdl: v, loggedAt: log.logged_at, at };
   }
-  return best ? { mgdl: best.mgdl, loggedAt: best.loggedAt } : null;
+  return best ? { id: best.id, mgdl: best.mgdl, loggedAt: best.loggedAt } : null;
 }

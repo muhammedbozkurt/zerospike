@@ -9,7 +9,9 @@ import { AppBackground, GradientCTA } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { displayProfileName } from "../lib/profileName";
 import { Skeleton } from "../components/Skeleton";
-import { Stepper, useStepperValidity } from "../components/Stepper";
+import { useStepperValidity } from "../components/Stepper";
+import { NumericField } from "../components/NumericField";
+import { DOSE_BOUNDS } from "../lib/numericField";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { InjectionBodyMap } from "../components/InjectionBodyMap";
 import { DirIcon } from "../components/DirIcon";
@@ -122,7 +124,6 @@ function BasalConfirmScreen() {
   const usageRequestedRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const stepperFields = useStepperValidity();
-  const [doseInvalidKind, setDoseInvalidKind] = useState<null | "empty" | "range">(null);
   // Synchronous double-tap guard: `saving` (state) only actually blocks a
   // second call to save() once React has re-rendered with it true, and a
   // rapid double-tap can fire twice before that happens. The ref is set
@@ -575,19 +576,20 @@ function BasalConfirmScreen() {
             />
 
             <FieldLabel>{t("injection.dose")}</FieldLabel>
-            <Stepper
+            <NumericField
               value={dose}
               onChange={(v) => {
+                if (v == null) return;
                 setDoseInteracted(true);
                 setDose(v);
               }}
               onValidityChange={stepperFields.reporter("dose")}
-              onInvalidKindChange={setDoseInvalidKind}
-              step={0.5}
+              required
+              step={DOSE_BOUNDS.step}
               longStep={1}
-              min={0}
-              max={150}
-              decimals={1}
+              min={DOSE_BOUNDS.min}
+              max={DOSE_BOUNDS.max}
+              decimals={DOSE_BOUNDS.decimals}
               suffix={t("common.units")}
               accessibilityLabel={t("injection.dose")}
               style={{ marginBottom: 16 }}
@@ -606,11 +608,9 @@ function BasalConfirmScreen() {
               <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
             </Pressable>
 
-            {doseHintVisible(dose > 0 && stepperFields.allValid, doseInteracted || doseInvalidKind === "range") ? (
+            {doseHintVisible(dose > 0 && stepperFields.allValid, doseInteracted) ? (
               <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.sm }}>
-                {doseInvalidKind === "range"
-                  ? t("settings.rangeOutOfBounds", { min: num(0), max: num(150) })
-                  : t("basalConfirm.doseRequired")}
+                {t("basalConfirm.doseRequired")}
               </Txt>
             ) : null}
             {saveError ? (

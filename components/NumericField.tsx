@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
@@ -11,11 +11,15 @@ import { Txt } from "./ui";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
 import {
+  fieldShowsValue,
   numericError,
   numericValid,
-  readNumeric,
+  readNumericInput,
+  stepAllowed,
   stepIsBlocked,
   stepNumeric,
+  type NumericReadKind,
+  type NumericReading,
 } from "../lib/numericField";
 
 export interface NumericFieldProps {
@@ -81,13 +85,20 @@ export function NumericField({
   style,
 }: NumericFieldProps) {
   const { t } = useTranslation();
-  const [text, setText] = useState(value == null ? "" : fmt(value, decimals));
+  // The reading of whatever the box holds right now. A prop value outside the
+  // bounds is shown as what it is (an error), never counted as fine.
+  function fromValue(v: number | null): NumericReading {
+    if (v == null) return { text: "", kind: "empty", value: null };
+    const k: NumericReadKind =
+      min != null && v < min ? "below" : max != null && v > max ? "above" : "ok";
+    return { text: fmt(v, decimals), kind: k, value: k === "ok" ? v : null };
+  }
+  const [text, setText] = useState(() => fromValue(value).text);
   const [focused, setFocused] = useState(false);
-  const [blurred, setBlurred] = useState(false);
-  const [kind, setKind] = useState<"ok" | "empty" | "below" | "above">(
-    value == null ? "empty" : "ok"
-  );
+  const [blurred, setBlurred] = useState(() => fromValue(value).kind === "below");
+  const [kind, setKind] = useState<NumericReadKind>(() => fromValue(value).kind);
   const typingRef = useRef(false);
+  const readingRef = useRef<NumericReading>(fromValue(value));
   const valueRef = useRef(value);
   valueRef.current = value;
   const validRef = useRef(true);
@@ -96,7 +107,14 @@ export function NumericField({
   const cfgRef = useRef(cfg);
   cfgRef.current = cfg;
 
-  function reportValidity(k: typeof kind) {
+  function show(r: NumericReading) {
+    readingRef.current = r;
+    setText(r.text);
+    setKind(r.kind);
+    reportValidity(r.kind);
+  }
+
+  function reportValidity(k: NumericReadKind) {
     const valid = numericValid(k, cfgRef.current.required);
     if (valid !== validRef.current) {
       validRef.current = valid;
@@ -104,14 +122,17 @@ export function NumericField({
     }
   }
 
+  // The parent's value reaches the box unless it is only the echo of what is
+  // being typed: a chip, a slider or an offer that sets a different value while
+  // the box has focus must replace the text, or the box would show one number
+  // and the calculation use another.
   useEffect(() => {
-    if (typingRef.current) return;
-    setText(value == null ? "" : fmt(value, decimals));
-    const k = value == null ? "empty" : "ok";
-    setKind(k);
-    reportValidity(k);
+    if (typingRef.current && fieldShowsValue(readingRef.current, value)) return;
+    const r = fromValue(value);
+    if (r.kind === "below") setBlurred(true);
+    show(r);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, decimals]);
+  }, [value, decimals, min, max]);
 
   useEffect(
     () => () => {
@@ -124,10 +145,8 @@ export function NumericField({
   function onText(raw: string) {
     typingRef.current = true;
     setBlurred(false);
-    const r = readNumeric(raw, { min, max, decimals });
-    setText(r.text);
-    setKind(r.kind);
-    reportValidity(r.kind);
+    const r = readNumericInput(raw, readingRef.current.text, { min, max, decimals });
+    show(r);
     onChange(r.value);
   }
 
@@ -137,27 +156,28 @@ export function NumericField({
     setBlurred(true);
     // A good number is written back in the locale's own form ("5." -> "5");
     // a refused one stays visible next to its message until it is corrected.
-    if (kind === "ok" && valueRef.current != null) {
-      setText(fmt(valueRef.current, decimals));
+    if (readingRef.current.kind === "ok" && valueRef.current != null) {
+      show({ text: fmt(valueRef.current, decimals), kind: "ok", value: valueRef.current });
     }
     onBlur?.();
   }
 
   const stepCfg = { min, max, decimals, step: step ?? 1 };
 
-  function press(dir: 1 | -1, by?: number) {
+  /** One - / + press. False when nothing changed (a bound, or refused text). */
+  function press(dir: 1 | -1, by?: number): boolean {
     const c = cfgRef.current;
+    if (!stepAllowed(readingRef.current.kind)) return false;
     const current = valueRef.current;
     const next = stepNumeric(current, dir, { ...stepCfg, step: by ?? c.step });
-    if (next == null || next === current) return;
+    if (next == null || next === current) return false;
     typingRef.current = false;
     setBlurred(false);
-    setText(fmt(next, decimals));
-    setKind("ok");
     valueRef.current = next;
-    reportValidity("ok");
+    show({ text: fmt(next, decimals), kind: "ok", value: next });
     c.onChange(next);
     hapticSelect();
+    return true;
   }
 
   function stopHold() {
@@ -172,7 +192,11 @@ export function NumericField({
     let speed = 320;
     const tick = () => {
       const c = cfgRef.current;
-      press(dir, c.longStep ?? c.step);
+      // A tick that changes nothing (a bound was reached) ends the hold.
+      if (!press(dir, c.longStep ?? c.step)) {
+        stopHold();
+        return;
+      }
       speed = Math.max(60, speed - 45);
       holdRef.current = setTimeout(tick, speed);
     };
@@ -182,14 +206,14 @@ export function NumericField({
   const err = numericError(kind, { blurred, required });
   const bothBounds = min != null && max != null;
   const errorText =
-    err === "below" || err === "above"
+    err === "below" || err === "above" || err === "malformed"
       ? bothBounds
         ? t("numeric.range", {
             min: fmt(min as number, decimals),
             max: fmt(max as number, decimals),
             unit: suffix ?? "",
           }).trim()
-        : null
+        : t("numeric.required")
       : err === "required"
         ? t("numeric.required")
         : null;
@@ -200,8 +224,14 @@ export function NumericField({
   const incLabel = `${t("common.increase")}, ${accessibilityLabel}`;
   const committed = value;
 
+  // VoiceOver does not read a live region, so the message is announced; Android
+  // reads the live region itself (announcing there would read it twice).
+  useEffect(() => {
+    if (errorText && Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(errorText);
+  }, [errorText]);
+
   const stepButton = (dir: 1 | -1, icon: keyof typeof Ionicons.glyphMap, label: string) => {
-    const blocked = stepIsBlocked(committed, dir, stepCfg);
+    const blocked = stepIsBlocked(committed, dir, stepCfg) || !stepAllowed(kind);
     return (
       <Pressable
         onPress={() => press(dir)}
@@ -298,7 +328,7 @@ export function NumericField({
       {errorText ? (
         <Text
           accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
+          accessibilityLiveRegion={Platform.OS === "android" ? "polite" : "none"}
           style={{ color: THEME.warning, fontSize: 12, lineHeight: 17, marginTop: SPACE.xs }}
         >
           {errorText}

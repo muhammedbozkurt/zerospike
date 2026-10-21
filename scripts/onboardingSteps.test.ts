@@ -1008,8 +1008,9 @@ async function writerTests(): Promise<void> {
       eq("marked as the user's own", patches[0].ratios_confirmed, RATIOS_ENTERED);
       w.update({ breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 });
       const ok1 = await w.confirm(true);
+      eq("ticking writes the whole set and the confirmation as ONE patch", patches.length, 2);
       eq("the fourth completes the set", patches[1].insulin_sensitivity_factor, 35);
-      eq("ticking confirms it", JSON.stringify(patches[2]), JSON.stringify({ ratios_confirmed: 1 }));
+      eq("in that same patch the flag is 1", patches[1].ratios_confirmed, 1);
       eq("and reports that it did", ok1, true);
     }
     // ticking a set that cannot be divided by confirms nothing
@@ -1046,11 +1047,99 @@ async function writerTests(): Promise<void> {
       const ok2 = await r.writer.confirm(true);
       eq("ticking flushes the numbers, then the flag", noNumbers(r.patches).length, 1);
       eq("numbers first", noNumbers(r.patches)[0].carb_ratio_breakfast, 12);
-      eq("flag last", JSON.stringify(r.patches[r.patches.length - 1]), JSON.stringify({ ratios_confirmed: 1 }));
+      eq("the confirming patch is the last write", r.patches[r.patches.length - 1].ratios_confirmed, 1);
+      eq("and it carries the numbers it vouches for", r.patches[r.patches.length - 1].carb_ratio_breakfast, 12);
       eq("confirm reports success", ok2, true);
       const res = await r.writer.confirm(false);
       eq("unticking withdraws to 'entered', never back to defaults", JSON.stringify(r.patches[r.patches.length - 1]), JSON.stringify({ ratios_confirmed: RATIOS_ENTERED }));
       eq("and reports false (nothing was confirmed)", res, false);
+    }
+    // SQLITE_BUSY: a confirmation can never land on numbers it does not vouch for
+    {
+      const base: StoredRatios = {
+        carb_ratio_breakfast: 8,
+        carb_ratio_lunch: 9,
+        carb_ratio_dinner: 11,
+        insulin_sensitivity_factor: 45,
+        ratios_confirmed: RATIOS_ENTERED,
+      };
+      const mk = (failures: { n: number; always?: boolean }) => {
+        const db: StoredRatios = { ...base };
+        const timers: { fn: () => void; live: boolean }[] = [];
+        const w = createRatioWriter({
+          stored: { ...base },
+          setTimer: (fn) => {
+            const t = { fn, live: true };
+            timers.push(t);
+            return t;
+          },
+          clearTimer: (t) => {
+            (t as { live: boolean }).live = false;
+          },
+          persist: async (p) => {
+            if (failures.always || failures.n > 0) {
+              failures.n--;
+              throw new Error("SQLITE_BUSY");
+            }
+            Object.assign(db, p);
+          },
+          reload: () => ({ ...db }),
+        });
+        const fire = () => timers.filter((t) => t.live).forEach((t) => ((t.live = false), t.fn()));
+        return { db, w, fire };
+      };
+      const set12 = { breakfast: 12, lunch: 9, dinner: 11, isfMgdl: 45 };
+
+      // Y1: the value write fails, the user ticks: nothing is stored, no figure
+      {
+        const m = mk({ n: 0, always: true });
+        m.w.update(set12);
+        m.fire();
+        const ok1 = await m.w.confirm(true);
+        eq("Y1: the tick reports failure", ok1, false);
+        eq("Y1: the profile is exactly as it was", JSON.stringify(m.db), JSON.stringify(base));
+        eq("Y1: no confirmation reached the old numbers", m.db.ratios_confirmed, RATIOS_ENTERED);
+        eq("Y1: so the calculator shows no figure", calcFiguresAllowed({ insulin_mode: "both", ...m.db }), false);
+      }
+      // Y2: ticking before the 700 ms pause is over, with the write failing
+      {
+        const m = mk({ n: 1 });
+        m.w.update(set12);
+        const ok2 = await m.w.confirm(true);
+        eq("Y2: the tick before the pause reports failure when the write fails", ok2, false);
+        eq("Y2: the old numbers stay unconfirmed", `${m.db.carb_ratio_breakfast}/${m.db.ratios_confirmed}`, `8/${RATIOS_ENTERED}`);
+        eq("Y2: no figure", calcFiguresAllowed({ insulin_mode: "both", ...m.db }), false);
+        const ok3 = await m.w.confirm(true);
+        eq("Y2: ticking again writes the numbers on screen and the flag together", `${ok3}/${m.db.carb_ratio_breakfast}/${m.db.ratios_confirmed}`, "true/12/1");
+      }
+      // an earlier queued value write fails, the tick still cannot confirm stale numbers
+      {
+        const m = mk({ n: 1 });
+        m.w.update(set12);
+        m.fire();
+        const ok4 = await m.w.confirm(true);
+        eq("a failed queued value write does not break the tick", ok4, true);
+        eq("the stored numbers are the ones on screen", m.db.carb_ratio_breakfast, 12);
+        eq("with the confirmation", m.db.ratios_confirmed, 1);
+        eq("so the figure is for 12, not for the old 8", calcFiguresAllowed({ insulin_mode: "both", ...m.db }) && m.db.carb_ratio_breakfast === 12, true);
+      }
+      // a failed write puts the draft back for the next flush
+      {
+        const m = mk({ n: 1 });
+        m.w.update(set12);
+        await m.w.flush();
+        eq("(c) the failed write left the profile alone", m.db.carb_ratio_breakfast, 8);
+        await m.w.flush();
+        eq("(c) the next flush writes the draft again", m.db.carb_ratio_breakfast, 12);
+      }
+      // a tick with an incomplete draft writes nothing
+      {
+        const m = mk({ n: 0 });
+        m.w.update({ breakfast: 12, lunch: 9, dinner: 11, isfMgdl: null });
+        const okp = await m.w.confirm(true);
+        eq("an incomplete draft cannot be confirmed", okp, false);
+        ok("and the flag is never 1", m.db.ratios_confirmed !== 1);
+      }
     }
     // a failed write hands the writer a fresh stored set
     {

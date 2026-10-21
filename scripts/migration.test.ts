@@ -4958,6 +4958,33 @@ async function main() {
     );
   }
 
+  section("U3. a profile created on an upgraded database is born unconfirmed");
+  {
+    // The v8 column default is 1, so an INSERT that does not name the flag makes a
+    // new profile "confirmed" on any upgraded install. Run every real INSERT from
+    // the sources against a table shaped like that.
+    const files = ["lib/db/profiles.ts", "lib/db/index.ts", "lib/db/screenshotSeed.ts"];
+    let statements = 0;
+    for (const rel of files) {
+      const text = readFileSync(join(import.meta.dirname, "..", rel), "utf8");
+      const re = /INSERT (?:OR IGNORE )?INTO user_profiles\s*\(([^)]*)\)\s*VALUES \(([^;]*?)\);/g;
+      for (const m of text.matchAll(re)) {
+        statements++;
+        const cols = m[1].split(",").map((c) => c.trim()).filter(Boolean);
+        const marks = (m[2].match(/\?/g) ?? []).length;
+        const d = new DatabaseSync(":memory:");
+        d.exec(
+          `CREATE TABLE user_profiles (${cols.filter((c) => c !== "ratios_confirmed").map((c, i) => (i === 0 ? `${c} TEXT PRIMARY KEY` : c)).join(", ")}, ratios_confirmed INTEGER NOT NULL DEFAULT 1);`
+        );
+        d.prepare(`INSERT ${m[0].slice("INSERT ".length)}`).run(...Array.from({ length: marks }, (_, i) => `v${i}`));
+        const row = d.prepare("SELECT ratios_confirmed AS r FROM user_profiles;").get() as { r: number };
+        eq(`${rel}: a new profile row is unconfirmed (${cols.length} columns)`, row.r, 0);
+        d.close();
+      }
+    }
+    eq("all four profile INSERTs were found", statements, 4);
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {

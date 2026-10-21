@@ -46,7 +46,8 @@ import { CATEGORIES, type Category } from "../lib/db/categories";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { Field, Segmented } from "../components/ui";
 import { DirIcon } from "../components/DirIcon";
-import { Stepper, useStepperValidity } from "../components/Stepper";
+import { useStepperValidity } from "../components/Stepper";
+import { NumericField } from "../components/NumericField";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { FoodRow } from "../components/FoodRow";
 import { FoodPlate } from "../components/FoodPlate";
@@ -556,10 +557,13 @@ function MealTemplateScreen() {
         </Text>
       ) : (
         <>
-          <Stepper
+          <NumericField
             value={item.portion_g}
-            onChange={(v) => setItemPortion(item.id, v)}
+            onChange={(v) => {
+              if (v != null) setItemPortion(item.id, v);
+            }}
             onValidityChange={stepperFields.reporter(`portion:${item.id}`)}
+            required
             step={5}
             longStep={25}
             min={0}

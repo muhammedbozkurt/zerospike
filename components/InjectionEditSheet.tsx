@@ -33,7 +33,9 @@ import { logCrash, logEvent } from "../lib/analytics";
 import { hapticSuccess, hapticSelect } from "../lib/haptics";
 import { useApp } from "../lib/store/AppContext";
 import { FeedbackHost, useFeedback } from "./Feedback";
-import { Stepper, useStepperValidity } from "./Stepper";
+import { useStepperValidity } from "./Stepper";
+import { NumericField } from "./NumericField";
+import { DOSE_BOUNDS } from "../lib/numericField";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { HIT_TARGET, RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
@@ -470,18 +472,20 @@ export function InjectionEditSheet({
                 </View>
 
                 <FieldLabel>{t("injection.dose")}</FieldLabel>
-                <Stepper
+                <NumericField
                   value={dose}
                   onChange={(v) => {
+                    if (v == null) return;
                     setDoseInteracted(true);
                     setDose(v);
                   }}
                   onValidityChange={stepperFields.reporter("dose")}
-                  step={0.5}
+                  required
+                  step={DOSE_BOUNDS.step}
                   longStep={1}
-                  min={0}
-                  max={150}
-                  decimals={1}
+                  min={DOSE_BOUNDS.min}
+                  max={DOSE_BOUNDS.max}
+                  decimals={DOSE_BOUNDS.decimals}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
                   style={{ marginBottom: doseHintVisible(injectionDoseOk(dose, injection?.dose_units ?? null), doseInteracted) ? SPACE.sm : SPACE.lg }}

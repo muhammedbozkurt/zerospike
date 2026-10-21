@@ -1,4 +1,5 @@
 import {
+  ratioConfirmDraftPatch,
   ratioConfirmPatch,
   ratioDraftDiffers,
   ratioDraftPatch,
@@ -22,7 +23,11 @@ import type { GlucoseUnit } from "./db/types";
  *  - writes go through one queue, strictly in the order they were planned;
  *  - the first edit of a CONFIRMED set withdraws the confirmation at once (a
  *    flag-only write), so the figures never outlive the numbers they came from
- *    while the new value waits for its pause.
+ *    while the new value waits for its pause;
+ *  - ticking the box writes the draft's four numbers AND the flag as ONE patch,
+ *    so a confirmation can never be stored beside numbers it does not vouch for,
+ *    and a failed write leaves the profile exactly as it was;
+ *  - a failed write puts the draft back, so the next flush tries it again.
  *
  * One writer serves the calculator's sheet and Profile and Targets, so both
  * write the same profile record in the same way. Values are kept as soon as
@@ -44,8 +49,9 @@ export interface RatioWriter {
   update(draft: RatioFields): void;
   /** Write whatever is pending now; resolves once the queue has drained. */
   flush(): Promise<void>;
-  /** Tick or untick the box: flushes first, then queues the flag. Resolves true
-   *  only when the box was ticked and every write reached the profile. */
+  /** Tick or untick the box. Ticking writes the draft on screen together with
+   *  the flag (one patch); resolves true only when that write reached the
+   *  profile. Unticking withdraws the confirmation and resolves false. */
   confirm(checked: boolean): Promise<boolean>;
   /** Drop the pending timer (the screen is going away after a final flush). */
   cancelTimer(): void;
@@ -72,20 +78,24 @@ export function createRatioWriter(opts: {
   const unitOf = () => opts.unit?.() ?? "mgdl";
   let written: StoredRatios | null = opts.stored;
   let pending: RatioFields | null = null;
+  let lastDraft: RatioFields | null = null;
   let timer: unknown = null;
   let tail: Promise<void> = Promise.resolve();
-  let failed = false;
 
-  function enqueue(patch: RatioPatch): void {
-    tail = tail.then(async () => {
+  function enqueue(patch: RatioPatch, onFail?: () => void): Promise<boolean> {
+    const task = tail.then(async () => {
       try {
         await opts.persist(patch);
+        return true;
       } catch (e) {
-        failed = true;
         opts.onError?.(e);
         if (opts.reload) written = opts.reload();
+        onFail?.();
+        return false;
       }
     });
+    tail = task.then(() => undefined);
+    return task;
   }
 
   function cancelTimer(): void {
@@ -102,12 +112,15 @@ export function createRatioWriter(opts: {
     const patch = ratioDraftPatch(written, draft, unitOf());
     if (!patch) return;
     written = { ...written, ...patch };
-    enqueue(patch);
+    void enqueue(patch, () => {
+      if (!pending) pending = draft;
+    });
   }
 
   return {
     update(draft) {
       pending = draft;
+      lastDraft = draft;
       if (
         written &&
         written.ratios_confirmed === 1 &&
@@ -115,7 +128,7 @@ export function createRatioWriter(opts: {
       ) {
         const patch = { ratios_confirmed: unconfirmedFlag(written) };
         written = { ...written, ...patch };
-        enqueue(patch);
+        void enqueue(patch);
       }
       cancelTimer();
       timer = setTimer(() => {
@@ -129,20 +142,30 @@ export function createRatioWriter(opts: {
       return tail;
     },
     async confirm(checked) {
-      failed = false;
       cancelTimer();
-      plan();
-      let queued = false;
-      if (written) {
-        const patch = ratioConfirmPatch(written, checked);
-        if (patch) {
-          written = { ...written, ...patch };
-          enqueue(patch);
-          queued = true;
+      if (!written) return false;
+      if (!checked) {
+        plan();
+        const off = ratioConfirmPatch(written, false);
+        if (off) {
+          written = { ...written, ...off };
+          void enqueue(off);
         }
+        await tail;
+        return false;
       }
-      await tail;
-      return checked && queued && !failed;
+      const draft = pending ?? lastDraft;
+      const patch = draft ? ratioConfirmDraftPatch(draft) : ratioConfirmPatch(written, true);
+      if (!patch) {
+        plan();
+        await tail;
+        return false;
+      }
+      pending = null;
+      written = { ...written, ...patch };
+      return enqueue(patch, () => {
+        if (!pending) pending = draft ?? null;
+      });
     },
     cancelTimer,
   };

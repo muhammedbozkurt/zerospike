@@ -25,7 +25,8 @@ import { FOOD_EMOJI_PICKER_OPTIONS } from "../lib/foodMeta";
 import { canAddCustomFood } from "../lib/guardrails";
 import { logCrash } from "../lib/analytics";
 import { Field } from "../components/ui";
-import { Stepper, useStepperValidity } from "../components/Stepper";
+import { useStepperValidity } from "../components/Stepper";
+import { NumericField } from "../components/NumericField";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { hapticSelect } from "../lib/haptics";
@@ -505,10 +506,13 @@ function AddFoodScreen() {
 
             <View className="mb-3">
               <Text className="text-sm font-medium text-mut mb-1.5">{t("food.carbs")}</Text>
-              <Stepper
+              <NumericField
                 value={carb}
-                onChange={setCarb}
+                onChange={(v) => {
+                  if (v != null) setCarb(v);
+                }}
                 onValidityChange={stepperFields.reporter("carb")}
+                required
                 step={1}
                 longStep={5}
                 min={0}
@@ -531,10 +535,13 @@ function AddFoodScreen() {
             />
             <View className="mb-3">
               <Text className="text-sm font-medium text-mut mb-1.5">{t("food.portionSize")}</Text>
-              <Stepper
+              <NumericField
                 value={portion}
-                onChange={setPortion}
+                onChange={(v) => {
+                  if (v != null) setPortion(v);
+                }}
                 onValidityChange={stepperFields.reporter("portion")}
+                required
                 step={5}
                 longStep={25}
                 min={1}

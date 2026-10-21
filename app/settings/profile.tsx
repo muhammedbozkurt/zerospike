@@ -34,6 +34,7 @@ import { NumericField } from "../../components/NumericField";
 import { CarbRatioInput, IsfInput } from "../../components/RatioInput";
 import { ConfirmCheckbox } from "../../components/ConfirmCheckbox";
 import {
+  ratioFieldsComplete,
   ratioFieldsInitial,
   ratioSetMatchesStored,
   type RatioFields,
@@ -65,7 +66,7 @@ export default function ProfileSettings() {
   const carbMode = useCarbDisplayMode();
   const regionNote = carbRegionNote(i18n.language, getLocales()[0]?.regionCode);
   const { columnPad } = useLayout();
-  const { confirm, actionSheet } = useFeedback();
+  const { confirm, actionSheet, toast } = useFeedback();
 
   // activeProfile is already in context by the time this screen mounts (see
   // profile-setup.tsx for the same pattern), so every field is seeded straight
@@ -150,6 +151,58 @@ export default function ProfileSettings() {
     setBasalUnits(activeProfile.basal_daily_units ?? 0);
   }, [activeProfile?.id, activeProfile?.glucose_unit]);
 
+  // The long-acting daily dose is written once the value has settled (a pause,
+  // or leaving the field), and only while it is a valid number: typing "160"
+  // over a 150 limit must not store 16 on the way and then lose the old value.
+  // Refused text returns to what is stored when the field is left.
+  const basalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const basalInvalidRef = useRef(false);
+  const basalPendingRef = useRef<number | null | undefined>(undefined);
+  const [basalKey, setBasalKey] = useState(0);
+  const persistRef = useRef<typeof persist | null>(null);
+
+  function clearBasalTimer() {
+    if (basalTimerRef.current) {
+      clearTimeout(basalTimerRef.current);
+      basalTimerRef.current = null;
+    }
+  }
+
+  function flushBasal() {
+    clearBasalTimer();
+    const v = basalPendingRef.current;
+    basalPendingRef.current = undefined;
+    if (v === undefined || basalInvalidRef.current) return;
+    void persistRef.current?.({ basal_daily_units: v != null && v > 0 ? v : null });
+  }
+
+  function onBasalChange(v: number | null) {
+    setBasalUnits(v ?? 0);
+    basalPendingRef.current = v;
+    clearBasalTimer();
+    basalTimerRef.current = setTimeout(flushBasal, 700);
+  }
+
+  function onBasalBlur() {
+    if (basalInvalidRef.current) {
+      clearBasalTimer();
+      basalPendingRef.current = undefined;
+      basalInvalidRef.current = false;
+      setBasalUnits(activeProfile?.basal_daily_units ?? 0);
+      setBasalKey((k) => k + 1);
+      return;
+    }
+    flushBasal();
+  }
+
+  useEffect(
+    () => () => {
+      flushBasal();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   function n(v: string, fallback: number): number {
     const x = (parseDecimalText(v) ?? NaN);
     return Number.isFinite(x) && x > 0 ? x : fallback;
@@ -160,6 +213,7 @@ export default function ProfileSettings() {
     await updateProfile(activeProfile.id, patch);
     bumpData();
   }
+  persistRef.current = persist;
 
   /**
    * The nightly basal reminder belongs to the insulin mode, not only to the
@@ -221,7 +275,9 @@ export default function ProfileSettings() {
   // sheet, comparing against what it last sent rather than the profile in
   // context, which lags behind a write. Every value typed is kept, even with the
   // others still empty; a changed set withdraws the confirmation.
-  const ratioWriters = useRatioWriter();
+  // A failed write is said out loud; the writer keeps the draft and the next
+  // blur or tick tries it again.
+  const ratioWriters = useRatioWriter(() => toast(t("common.saveFailed"), "error"));
   const ratioTouchedRef = useRef(false);
 
   // The sheet on the calculator may have written the numbers a moment before this
@@ -572,11 +628,13 @@ export default function ProfileSettings() {
           <View className="px-4 py-3">
             <Text className="text-mut text-xs mb-2">{t("settings.basalDailyUnitsHint")}</Text>
 <NumericField
+              key={basalKey}
               value={basalUnits > 0 ? basalUnits : null}
-              onChange={(v) => {
-                setBasalUnits(v ?? 0);
-                void persist({ basal_daily_units: v != null && v > 0 ? v : null });
+              onChange={onBasalChange}
+              onValidityChange={(valid) => {
+                basalInvalidRef.current = !valid;
               }}
+              onBlur={onBasalBlur}
               step={0.5}
               longStep={1}
               min={0}
@@ -706,7 +764,7 @@ export default function ProfileSettings() {
               onToggle={(next) => void onRatioConfirm(next)}
               label={t("calculator.setup.confirm")}
               hint={t("calculator.setup.hint")}
-              disabled={!ratioDraftIsStored}
+              disabled={!ratioFieldsComplete(ratioDraft)}
             />
             <Text className="text-mut text-xs mt-1">{t("settings.ratiosReconfirmHint")}</Text>
           </View>

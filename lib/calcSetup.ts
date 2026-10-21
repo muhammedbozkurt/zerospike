@@ -29,7 +29,7 @@ export const CARB_RATIO_BOUNDS = { min: 1, max: 100 } as const;
 /** ISF bounds in the profile's display unit. */
 export const ISF_BOUNDS = {
   mgdl: { min: 1, max: 500 },
-  mmol: { min: 0.1, max: 27.8 },
+  mmol: { min: 0.1, max: 27.7 },
 } as const;
 
 /**
@@ -293,6 +293,29 @@ export function ratioDraftDiffers(
     ratios_confirmed: 0 as const,
   };
   return !sameNumbers(profile, next, unit);
+}
+
+/**
+ * Ticking the box with a draft on screen: the four numbers AND the flag in one
+ * patch, so the confirmation can never be stored without the numbers it vouches
+ * for (a failed number write used to leave the flag landing on the OLD set).
+ * Null while any value cannot be divided by.
+ */
+export function ratioConfirmDraftPatch(draft: RatioFields): {
+  carb_ratio_breakfast: number;
+  carb_ratio_lunch: number;
+  carb_ratio_dinner: number;
+  insulin_sensitivity_factor: number;
+  ratios_confirmed: 1;
+} | null {
+  if (!ratioFieldsComplete(draft)) return null;
+  return {
+    carb_ratio_breakfast: draft.breakfast,
+    carb_ratio_lunch: draft.lunch,
+    carb_ratio_dinner: draft.dinner,
+    insulin_sensitivity_factor: draft.isfMgdl,
+    ratios_confirmed: 1,
+  };
 }
 
 /** The box. Ticking confirms the stored set (null when any stored number cannot

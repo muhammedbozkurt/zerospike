@@ -32,7 +32,12 @@ import {
 import { useRatioWriter } from "../lib/useRatioWriter";
 import type { RatioWriter } from "../lib/ratioWriter";
 import { DOSE_BOUNDS, glucoseEntryBounds } from "../lib/numericField";
-import { recentGlucoseSuggestion } from "../lib/glucoseSuggestion";
+import {
+  RECENT_GLUCOSE_WINDOW_MINUTES,
+  fieldIsOffer,
+  offerExpiresInMs,
+  recentGlucoseSuggestion,
+} from "../lib/glucoseSuggestion";
 import { getFood } from "../lib/db/foods";
 import {
   addMealLog,
@@ -40,7 +45,7 @@ import {
   deleteMealLog,
   deleteMealRecord,
   findMatchingSugarLog,
-  getLatestSugarLog,
+  listRecentSugarLogs,
   getMealLog,
   getSugarLog,
   updateMealLog,
@@ -454,6 +459,7 @@ function CalcSetupSheet({
   const [fields, setFields] = useState<RatioFields>(initial);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   // Every open starts from what the profile holds now, with a writer that
   // starts from it too. The box always starts unticked.
@@ -472,15 +478,23 @@ function CalcSetupSheet({
     getWriter()?.update(next);
   }
 
+  // The box shows ticked only once the numbers on screen AND the confirmation
+  // reached the profile in one write (lib/ratioWriter.ts confirm). A failed
+  // write leaves the profile as it was and the box unticked; it is locked
+  // while the write is in flight.
   async function toggle(next: boolean) {
-    if (!ratioFieldsComplete(fields)) return;
-    setConfirmed(next);
-    const ok = await getWriter()?.confirm(next);
+    if (!ratioFieldsComplete(fields) || confirming) return;
+    setConfirming(true);
+    let ok: boolean | undefined;
+    try {
+      ok = await getWriter()?.confirm(next);
+    } finally {
+      setConfirming(false);
+    }
     if (next && ok) {
+      setConfirmed(true);
       hapticSuccess();
       onConfirmed();
-    } else if (next) {
-      setConfirmed(false);
     }
   }
 
@@ -570,7 +584,7 @@ function CalcSetupSheet({
           onToggle={(next) => void toggle(next)}
           label={t("calculator.setup.confirm")}
           hint={t("calculator.setup.hint")}
-          disabled={!complete}
+          disabled={!complete || confirming}
         />
       </View>
     </SheetShell>
@@ -983,19 +997,28 @@ function CalculatorScreen() {
     setDoseText(v == null ? "" : String(v));
   }
 
-  // The newest reading, fetched once for a new record. It is only OFFERED under
-  // the glucose field (recentGlucoseSuggestion: 15 minutes at most); the field
-  // stays empty and the calculation ignores it until the user taps it.
-  const [latestReading, setLatestReading] = useState<{
-    glucose_level_mgdl: number;
-    logged_at: string;
-  } | null>(null);
+  // Readings from the last quarter hour, fetched for a new record. They are only
+  // OFFERED under the glucose field (recentGlucoseSuggestion); the field stays
+  // empty and the calculation ignores them until the user taps the offer.
+  const [offerLogs, setOfferLogs] = useState<
+    { id: string; glucose_level_mgdl: number; logged_at: string }[]
+  >([]);
+  const [offerTick, setOfferTick] = useState(0);
+  // The reading the user tapped. While the field still shows that reading, the
+  // save attaches to its stored row and uses its mg/dL value, so a mmol/L round
+  // trip (111 -> 6.2 -> 112) or a minutes-old tap never writes it a second time.
+  const [offerBinding, setOfferBinding] = useState<{ id: string | null; mgdl: number } | null>(
+    null
+  );
   useEffect(() => {
     if (isEdit || !activeProfile) return;
     let alive = true;
-    getLatestSugarLog(activeProfile.id)
-      .then((l) => {
-        if (alive) setLatestReading(l);
+    const since = new Date(
+      Date.now() - RECENT_GLUCOSE_WINDOW_MINUTES * 60_000
+    ).toISOString();
+    listRecentSugarLogs(activeProfile.id, since)
+      .then((rows) => {
+        if (alive) setOfferLogs(rows);
       })
       .catch(() => {
         // no offer is the safe direction
@@ -1003,18 +1026,36 @@ function CalculatorScreen() {
     return () => {
       alive = false;
     };
-  }, [activeProfile?.id, isEdit]);
+  }, [activeProfile?.id, isEdit, dataVersion]);
+
+  // The offer disappears on its own when its reading turns 15 minutes old.
+  useEffect(() => {
+    if (offerLogs.length === 0) return;
+    const now = new Date();
+    const s = recentGlucoseSuggestion(offerLogs, now);
+    if (!s) return;
+    const timer = setTimeout(() => setOfferTick((n) => n + 1), offerExpiresInMs(s.loggedAt, now));
+    return () => clearTimeout(timer);
+  }, [offerLogs, offerTick]);
 
   // ONE numeric normalizer for the whole app (lib/numberInput): a comma is a
   // decimal separator, not a digit to be dropped - "5,5" must stay 5.5 mmol/L
   // and never become 55.
   const glucoseTyped = useMemo(() => parseDecimalText(glucose), [glucose]);
 
-  const glucoseMgdl = useMemo(() => {
-    return glucoseTyped != null && glucoseTyped > 0
-      ? glucoseFromDisplay(glucoseTyped, unit)
+  // The tapped reading counts only while the field still shows it, and only for
+  // a record logged "now" (a meal moved to another time keeps the plain flow).
+  const boundOffer =
+    offerBinding &&
+    loggedAt == null &&
+    fieldIsOffer(glucoseTyped, glucoseToDisplay(offerBinding.mgdl, unit))
+      ? offerBinding
       : null;
-  }, [glucoseTyped, unit]);
+
+  const glucoseMgdl = useMemo(() => {
+    if (glucoseTyped == null || !(glucoseTyped > 0)) return null;
+    return boundOffer ? boundOffer.mgdl : glucoseFromDisplay(glucoseTyped, unit);
+  }, [glucoseTyped, unit, boundOffer]);
 
   // Descriptive only: a reading past what a consumer meter reports is still
   // accepted and stored, it just gets said out loud.
@@ -1030,14 +1071,19 @@ function CalculatorScreen() {
       : null;
 
   const glucoseBounds = glucoseEntryBounds(unit);
+  // Offered only on a new record logged "now", while the field is empty and the
+  // reading is under 15 minutes old.
   const glucoseOffer =
-    !isEdit && glucose === "" ? recentGlucoseSuggestion(latestReading ? [latestReading] : null, new Date()) : null;
+    !isEdit && glucose === "" && loggedAt == null
+      ? recentGlucoseSuggestion(offerLogs, new Date())
+      : null;
 
   function useOfferedGlucose() {
-    const offer = recentGlucoseSuggestion(latestReading ? [latestReading] : null, new Date());
+    const offer = recentGlucoseSuggestion(offerLogs, new Date());
     if (!offer) return;
     hapticSelect();
     setDirty(true);
+    setOfferBinding({ id: offer.id, mgdl: offer.mgdl });
     setGlucose(String(glucoseToDisplay(offer.mgdl, unit)));
   }
 
@@ -1505,11 +1551,10 @@ function CalculatorScreen() {
       let sugarLogId: string | null = null;
       let createdSugarLogId: string | null = null;
       if (glucoseMgdl != null) {
-        const existingReading = await findMatchingSugarLog(
-          activeProfile.id,
-          glucoseMgdl,
-          at
-        );
+        // A tapped offer that the field still shows IS that stored reading.
+        const existingReading = boundOffer?.id
+          ? { id: boundOffer.id }
+          : await findMatchingSugarLog(activeProfile.id, glucoseMgdl, at);
         if (existingReading) {
           sugarLogId = existingReading.id;
         } else {
@@ -2091,7 +2136,7 @@ function CalculatorScreen() {
             {showsDose ? <CarbRatioLine slot={slot} returnAfterConfirm /> : null}
 
             {showsDose ? (
-              activeProfile?.ratios_confirmed !== 1 ? (
+              activeProfile?.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile) ? (
                 <PendingDoseCard />
               ) : !calcFiguresAllowed(activeProfile) ? null : (
               <View
@@ -2458,7 +2503,9 @@ function CalculatorScreen() {
                   </View>
                 </>
               ) : null}
-              {!doseEst && activeProfile.ratios_confirmed !== 1 ? <PendingDoseCard /> : null}
+              {!doseEst && activeProfile.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile) ? (
+                <PendingDoseCard />
+              ) : null}
               {/* Without confirmed ratios there is no figure: the one line above
                   (CarbRatioLine, "Enter your ratios") leads to Profile and
                   Targets, and nothing is computed or shown in its place. */}

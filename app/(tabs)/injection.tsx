@@ -29,7 +29,9 @@ import { useProCta } from "../../lib/proCta";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
-import { Stepper, useStepperValidity } from "../../components/Stepper";
+import { useStepperValidity } from "../../components/Stepper";
+import { NumericField } from "../../components/NumericField";
+import { DOSE_BOUNDS } from "../../lib/numericField";
 import { InlineDateTimePicker } from "../../components/InlineDateTimePicker";
 import { useFeedback } from "../../components/Feedback";
 import { useUndoBatch } from "../../components/useUndoBatch";
@@ -990,19 +992,21 @@ export default function InjectionScreen() {
           {/* 3. Dose: auto-filled from the profile's daily basal while on
               "basal" and not yet hand-edited this session. */}
           <FieldLabel>{t("injection.dose")}</FieldLabel>
-          <Stepper
+          <NumericField
             value={dose}
             onChange={(v) => {
+              if (v == null) return;
               doseTouched.current = true;
               setDoseInteracted(true);
               setDose(v);
             }}
             onValidityChange={stepperFields.reporter("dose")}
-            step={0.5}
+            required
+            step={DOSE_BOUNDS.step}
             longStep={1}
-            min={0}
-            max={150}
-            decimals={1}
+            min={DOSE_BOUNDS.min}
+            max={DOSE_BOUNDS.max}
+            decimals={DOSE_BOUNDS.decimals}
             suffix={t("common.units")}
             accessibilityLabel={t("injection.dose")}
             style={{ marginBottom: doseHintVisible(injectionDoseOk(dose), doseInteracted) ? SPACE.sm : SPACE.lg }}
