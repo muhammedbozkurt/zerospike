@@ -488,6 +488,7 @@ function CalcSetupSheet({
 
   return (
     <SheetShell
+      scrollHintId="calculator-setup"
       visible={visible}
       onClose={onClose}
       title={t("calculator.setup.title")}

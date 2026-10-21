@@ -198,6 +198,7 @@ export function FeedbackSheet({
 
   return (
     <SheetShell
+      scrollHintId="feedback"
       visible={visible}
       onClose={closeByGesture}
       onShown={onShown}

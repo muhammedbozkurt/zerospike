@@ -160,6 +160,7 @@ export function PostMealDurationSheet({
 
   return (
     <SheetShell
+      scrollHintId="post-meal-duration"
       visible={visible}
       onClose={onClose}
       title={t("dashboard.postMealLateTitle")}

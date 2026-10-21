@@ -411,7 +411,7 @@ export default function ProfileSettings() {
   }
 
   return (
-    <SettingsScaffold title={t("onboarding.secProfile")}>
+    <SettingsScaffold scrollHintId="profile" title={t("onboarding.secProfile")}>
       <View style={columnPad()}>
       <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
         <InputRow

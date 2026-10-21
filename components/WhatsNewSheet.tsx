@@ -22,6 +22,7 @@ export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose:
   const { t } = useTranslation();
   return (
     <SheetShell
+      scrollHintId="whats-new"
       visible={visible}
       onClose={onClose}
       title={t("whatsNew.title")}

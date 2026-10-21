@@ -656,6 +656,7 @@ export default function DataSettings() {
 
   return (
     <SettingsScaffold
+      scrollHintId="data"
       title={t("settings.dataSection")}
       overlay={
         <DateRangePicker

@@ -45,6 +45,7 @@ export function InjectionSiteSheet({
 
   return (
     <SheetShell
+      scrollHintId="injection-site"
       visible={visible}
       onClose={onClose}
       title={t("injection.selectSite")}

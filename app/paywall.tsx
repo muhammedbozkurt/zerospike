@@ -88,6 +88,9 @@ import { trialSettleAction, type TrialSettleAction } from "../lib/trialSettle";
 import { shouldAutoOpenWelcome, withHealthMirror } from "../lib/proWelcome";
 import { getProWelcomeState } from "../lib/services/proWelcome";
 import { getHealthSyncEnabled } from "../lib/services/health";
+import { useScrollHint } from "../lib/useScrollHint";
+import { hintBottomOffset } from "../lib/scrollHint";
+import { ScrollHint } from "../components/ScrollHint";
 
 // RevenueCat's offering id is not exposed by loadOfferings, so there is one fixed variant.
 const PAYWALL_VARIANT = "default";
@@ -261,6 +264,7 @@ function PaywallScreen() {
   // not sell it either.
   const healthAvailable = useHealthAvailable();
   const insets = useSafeAreaInsets();
+  const scrollHint = useScrollHint("paywall");
   const { columnPad, height: windowHeight } = useLayout();
   const router = useRouter();
   const { reason } = useLocalSearchParams<{
@@ -851,6 +855,10 @@ function PaywallScreen() {
             columnPad(20),
           ]}
           showsVerticalScrollIndicator={false}
+          onScroll={scrollHint.onScroll}
+          onContentSizeChange={scrollHint.onContentSizeChange}
+          onLayout={scrollHint.onLayout}
+          scrollEventThrottle={scrollHint.scrollEventThrottle}
         >
           {/* Order (lib/paywallLayout): headline, short promise, three plans,
               [pinned CTA below the scroll], trial timeline, small sample
@@ -1071,6 +1079,12 @@ function PaywallScreen() {
           </View>
 
         </ScrollView>
+        {/* The ScrollView ends where the pinned CTA band begins, so the hint
+            (anchored at the ScrollView's bottom edge) sits above the CTA. */}
+        <ScrollHint
+          visible={scrollHint.visible}
+          bottomOffset={hintBottomOffset({ insetBottom: loading || unavailable ? insets.bottom : 0 })}
+        />
 
         {/* Pinned CTA band: only once real plans are on screen (loading /
             unavailable keep their own in-scroll composition, no CTA to pin).

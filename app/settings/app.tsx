@@ -175,7 +175,7 @@ export default function AppSettings() {
   const canManage = onTrial || proPlan !== "lifetime";
 
   return (
-    <SettingsScaffold title={t("settings.appSection")}>
+    <SettingsScaffold scrollHintId="app" title={t("settings.appSection")}>
       <View style={columnPad()}>
       <SectionLabel>{t("settings.language")}</SectionLabel>
       <LanguagePicker value={lang} onChange={onChangeLang} />

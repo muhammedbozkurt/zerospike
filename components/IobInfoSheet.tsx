@@ -38,6 +38,7 @@ export function IobInfoSheet({
 
   return (
     <SheetShell
+      scrollHintId="iob-info"
       visible={visible}
       onClose={onClose}
       title={t("dashboard.activeInsulin")}
