@@ -10,6 +10,7 @@ declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void };
 declare function setTimeout(fn: () => void, ms: number): unknown;
 
+import { shouldTriggerDay7 } from "../lib/day7Downsell";
 import {
   DOWNSELL_MAX_SHOWS,
   DOWNSELL_REARM_MS,
@@ -20,6 +21,11 @@ import {
   createSessionOfferFlag,
   decidePaywallExit,
   createPaywallExitController,
+  applyDownsellStamp,
+  downsellCooldownElapsed,
+  downsellEligible,
+  entitlementBlocksDownsell,
+  type EntitlementNow,
   paywallExitLocalGate,
   shouldOfferDownsellOnPaywallExit,
   type DownsellState,
@@ -70,10 +76,17 @@ function makeDeps(over: {
     session?: SessionOfferFlag;
     state?: DownsellState;
     proNow?: boolean;
+    trialActive?: boolean;
+    lifetime?: boolean;
+    onboardingIncomplete?: boolean;
     failOffer?: boolean;
     failState?: boolean;
+    failStamp?: boolean;
+    now?: number;
+    /** Shared persisted state: markOffered writes it, getState reads it. */
+    store?: { state: DownsellState };
   } = {}) {
-  const calls = { getState: 0, getOffer: 0 };
+  const calls = { getState: 0, getOffer: 0, stamps: 0 };
   const deps: PaywallExitDeps = {
     isScreenshotMode: () => over.screenshot ?? false,
     session: over.session ?? createSessionOfferFlag(),
@@ -81,7 +94,7 @@ function makeDeps(over: {
       calls.getState++;
       await sleep(5);
       if (over.failState) throw new Error("storage down");
-      return over.state ?? initialDownsellState;
+      return over.store ? over.store.state : (over.state ?? initialDownsellState);
     },
     getOffer: async () => {
       calls.getOffer++;
@@ -89,11 +102,21 @@ function makeDeps(over: {
       if (over.failOffer) throw new Error("store down");
       return { hasRealDiscount: over.discount ?? true };
     },
-    isProNow: async () => {
+    entitlementNow: async () => {
       await sleep(1);
-      return over.proNow ?? false;
+      return {
+        isPro: over.proNow ?? false,
+        trialActive: over.trialActive ?? false,
+        lifetime: over.lifetime ?? false,
+      };
     },
-    now: () => NOW,
+    onboardingIncomplete: async () => over.onboardingIncomplete ?? false,
+    markOffered: async (at) => {
+      calls.stamps++;
+      if (over.failStamp) throw new Error("storage down");
+      if (over.store) over.store.state = applyDownsellStamp(over.store.state, "inapp", at);
+    },
+    now: () => over.now ?? NOW,
   };
   return { deps, calls };
 }
@@ -357,6 +380,149 @@ async function main(): Promise<void> {
     const ctl2 = createPaywallExitController(d2.deps, n2.nav, () => busy);
     await ctl2.requestUserClose({ plan: "annual", isPro: false });
     eq("not busy: user close proceeds", n2.log, ["downsell"]);
+  }
+
+  section("Q. persisted 7-day window: stamped when the offer opens, honoured by a NEW session");
+  {
+    const store = { state: initialDownsellState };
+    const s1 = makeDeps({ store, now: NOW });
+    eq("session 1: first exit -> downsell", await decidePaywallExit(s1.deps, { plan: "annual", isPro: false }), "downsell");
+    eq("the date is stamped at once (one write)", s1.calls.stamps, 1);
+    eq("stamp keeps the lifetime count untouched", store.state.count, 0);
+    eq("stamp carries the time", store.state.lastShownAt, NOW);
+
+    // Profile > "Try Pro" > paywall > close, in the same session.
+    eq("same session, second exit -> exit", await decidePaywallExit(s1.deps, { plan: "annual", isPro: false }), "exit");
+
+    // App relaunched an hour later: fresh session flag, same persisted state.
+    const s2 = makeDeps({ store, now: NOW + HOUR });
+    eq("new session 1 h later -> exit (persisted date)", await decidePaywallExit(s2.deps, { plan: "annual", isPro: false }), "exit");
+    ok("blocked before any store lookup", s2.calls.getOffer === 0);
+    ok("and the session slot is handed back", !s2.deps.session.isReserved());
+
+    const s3 = makeDeps({ store, now: NOW + DOWNSELL_REARM_MS - 1000 });
+    eq("new session just under 7 days -> exit", await decidePaywallExit(s3.deps, { plan: "annual", isPro: false }), "exit");
+
+    const s4 = makeDeps({ store, now: NOW + DOWNSELL_REARM_MS });
+    eq("new session at 7 days -> one more downsell", await decidePaywallExit(s4.deps, { plan: "annual", isPro: false }), "downsell");
+  }
+
+  section("R. the screen's own record (accept or decline alike) and the lifetime total of 2");
+  {
+    const store = { state: initialDownsellState };
+    const d1 = makeDeps({ store });
+    await decidePaywallExit(d1.deps, { plan: "annual", isPro: false });
+    // downsell.tsx records the show once the discount is confirmed: accept and decline both come after it.
+    store.state = applyDownsellShown(store.state, "inapp", NOW);
+    eq("record after the stamp keeps one show", store.state.count, 1);
+    eq("and the same date", store.state.lastShownAt, NOW);
+
+    const d2 = makeDeps({ store, now: NOW + 2 * DAY });
+    eq("2 days later, declined or accepted alike -> exit", await decidePaywallExit(d2.deps, { plan: "annual", isPro: false }), "exit");
+
+    const d3 = makeDeps({ store, now: NOW + 8 * DAY });
+    eq("8 days later -> second show", await decidePaywallExit(d3.deps, { plan: "annual", isPro: false }), "downsell");
+    store.state = applyDownsellShown(store.state, "inapp", NOW + 8 * DAY);
+    eq("lifetime total is now 2", store.state.count, DOWNSELL_MAX_SHOWS);
+
+    const d4 = makeDeps({ store, now: NOW + 400 * DAY });
+    eq("a year later, still never a third", await decidePaywallExit(d4.deps, { plan: "annual", isPro: false }), "exit");
+  }
+
+  section("S. a stamped offer that never reached the screen's record still starts the window");
+  {
+    const store = { state: initialDownsellState };
+    const a = makeDeps({ store });
+    await decidePaywallExit(a.deps, { plan: "annual", isPro: false });
+    // The user closed the screen before it could record (or the 2nd fetch had no discount).
+    const b = makeDeps({ store, now: NOW + 3 * DAY });
+    eq("count 0 but stamped: still blocked", await decidePaywallExit(b.deps, { plan: "annual", isPro: false }), "exit");
+    ok("the lifetime show was not burned", store.state.count === 0);
+    const c = makeDeps({ store, failStamp: true, now: NOW + 9 * DAY });
+    eq("a failing stamp write never blocks the offer itself", await decidePaywallExit(c.deps, { plan: "annual", isPro: false }), "downsell");
+  }
+
+  section("T. day-7 and winback share the same persisted window");
+  {
+    const stamped = applyDownsellStamp(initialDownsellState, "inapp", NOW);
+    eq("cooldownElapsed: never stamped", downsellCooldownElapsed(null, NOW), true);
+    eq("cooldownElapsed: 1 day", downsellCooldownElapsed(NOW, NOW + DAY), false);
+    eq("cooldownElapsed: exactly 7 days", downsellCooldownElapsed(NOW, NOW + 7 * DAY), true);
+    eq("cooldownElapsed: date in the future (clock moved back)", downsellCooldownElapsed(NOW + DAY, NOW), false);
+    ok("canShowDownsell uses the date even at count 0", !canShowDownsell(stamped, NOW + DAY));
+    ok("and opens after 7 days", canShowDownsell(stamped, NOW + 7 * DAY));
+    ok("a counted show without a date blocks (cannot prove the window)", !canShowDownsell({ ...initialDownsellState, count: 1 }, NOW));
+    const day7 = {
+      onboardedAtMs: NOW - 30 * DAY,
+      now: NOW + 2 * DAY,
+      shownCount: stamped.count,
+      alreadyTriggered: false,
+      lastShownAt: stamped.lastShownAt,
+      rearmMs: DOWNSELL_REARM_MS,
+      isPro: false,
+      hasRealDiscount: true,
+    };
+    ok("day-7 after a paywall stamp 2 days ago -> no", !shouldTriggerDay7(day7));
+    ok("day-7 after 7 days -> yes", shouldTriggerDay7({ ...day7, now: NOW + 7 * DAY }));
+    const winback = applyDownsellStamp(initialDownsellState, "winback", NOW);
+    eq("winback stamp does not spend a lifetime show", winback.count, 0);
+    ok("winback stamp blocks the paywall exit for 7 days", !canShowDownsell(winback, NOW + 3 * DAY));
+  }
+
+  section("U. never for a trial, subscription or lifetime; never during onboarding; never without a real discount");
+  {
+    const ent = (over: Partial<EntitlementNow> = {}): EntitlementNow => ({ isPro: false, trialActive: false, lifetime: false, ...over });
+    ok("free user passes the entitlement check", !entitlementBlocksDownsell(ent()));
+    ok("subscription (isPro) blocks", entitlementBlocksDownsell(ent({ isPro: true })));
+    ok("running trial alone blocks", entitlementBlocksDownsell(ent({ trialActive: true })));
+    ok("lifetime alone blocks", entitlementBlocksDownsell(ent({ lifetime: true })));
+
+    const base = {
+      state: initialDownsellState,
+      now: NOW,
+      sessionTaken: false,
+      entitlement: ent(),
+      onboardingIncomplete: false,
+      hasRealDiscount: true,
+    };
+    ok("baseline eligible", downsellEligible(base));
+    ok("subscription -> never", !downsellEligible({ ...base, entitlement: ent({ isPro: true }) }));
+    ok("trial -> never", !downsellEligible({ ...base, entitlement: ent({ trialActive: true }) }));
+    ok("lifetime -> never", !downsellEligible({ ...base, entitlement: ent({ lifetime: true }) }));
+    ok("onboarding first session -> never", !downsellEligible({ ...base, onboardingIncomplete: true }));
+    ok("no real discount -> never", !downsellEligible({ ...base, hasRealDiscount: false }));
+    ok("session slot taken -> never", !downsellEligible({ ...base, sessionTaken: true }));
+    ok("7-day window -> never", !downsellEligible({ ...base, state: applyDownsellShown(initialDownsellState, "inapp", NOW - DAY) }));
+    ok("lifetime cap 2 -> never", !downsellEligible({ ...base, state: { ...initialDownsellState, count: 2, lastShownAt: NOW - 30 * DAY } }));
+
+    const held: [string, { trialActive?: boolean; lifetime?: boolean; proNow?: boolean }][] = [
+      ["trial", { trialActive: true }],
+      ["lifetime", { lifetime: true }],
+      ["subscription", { proNow: true }],
+    ];
+    for (const [label, over] of held) {
+      const d = makeDeps(over);
+      eq(`decidePaywallExit: ${label} -> exit`, await decidePaywallExit(d.deps, { plan: "annual", isPro: false }), "exit");
+      ok(`decidePaywallExit: ${label}: offer never priced, nothing stamped, slot back`, d.calls.getOffer === 0 && d.calls.stamps === 0 && !d.deps.session.isReserved());
+    }
+    const ob = makeDeps({ onboardingIncomplete: true });
+    eq("decidePaywallExit: onboarding unfinished -> exit", await decidePaywallExit(ob.deps, { plan: "annual", isPro: false }), "exit");
+    ok("onboarding: offer never priced, nothing stamped", ob.calls.getOffer === 0 && ob.calls.stamps === 0 && !ob.deps.session.isReserved());
+    const nd = makeDeps({ discount: false });
+    eq("decidePaywallExit: no real discount -> exit", await decidePaywallExit(nd.deps, { plan: "annual", isPro: false }), "exit");
+    ok("no discount: nothing stamped (the window is not started by an empty offer)", nd.calls.stamps === 0);
+  }
+
+  section("V. old persisted shapes still normalise and gate");
+  {
+    const v1 = normalizeDownsellState(JSON.parse('{"count":1,"lastShownAt":1700000000000,"lastTrigger":"inapp"}'));
+    ok("count 1 with a date: blocked inside 7 days", !canShowDownsell(v1, 1700000000000 + DAY));
+    ok("count 1 with a date: open after 7 days", canShowDownsell(v1, 1700000000000 + 7 * DAY));
+    const noDate = normalizeDownsellState(JSON.parse('{"count":1}'));
+    ok("count 1 without a date: blocked", !canShowDownsell(noDate, NOW));
+    const stampOnly = normalizeDownsellState(JSON.parse('{"count":0,"lastShownAt":1700000000000,"lastTrigger":"winback"}'));
+    ok("stamp-only blob round-trips and blocks inside the window", !canShowDownsell(stampOnly, 1700000000000 + DAY));
+    eq("JSON round trip of a stamped state", normalizeDownsellState(JSON.parse(JSON.stringify(applyDownsellStamp(initialDownsellState, "winback", NOW)))), applyDownsellStamp(initialDownsellState, "winback", NOW));
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

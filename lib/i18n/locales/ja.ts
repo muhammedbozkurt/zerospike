@@ -864,6 +864,11 @@ const ja: TranslationSchema = {
     savePercent: "{{percent}}お得",
     securePayment: "App StoreとGoogle Playによる安全なお支払い。",
     ctaTrial: "{{days}}日間の無料トライアルを開始",
+    ctaMonthly: "月額プランを開始 · {{price}} / 月",
+    ctaAnnual: "年額プランを開始 · {{price}} / 年",
+    ctaLifetime: "1回限りの購入 · {{price}}",
+    promise: "傾向、主治医向けレポート、同期をひとつの記録帳で。",
+    chipSpike: "Spikeのメッセージ増量",
     trialNote: "本日のお支払いはありません。終了前にお知らせします。いつでも解約できます。",
     annualTrialDesc: "{{days}}日間無料、その後は年額課金。いつでも解約できます。",
     timeline: {

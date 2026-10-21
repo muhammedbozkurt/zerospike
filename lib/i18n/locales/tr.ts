@@ -861,7 +861,12 @@ const tr = {
     mostPopular: "En popüler",
     savePercent: "{{percent}} tasarruf",
     securePayment: "App Store ve Google Play üzerinden güvenli ödeme.",
-    ctaTrial: "{{days}} günlük ücretsiz denemeyi başlat",
+    ctaTrial: "{{days}} günlük ücretsiz denemeyi başlatın",
+    ctaMonthly: "Aylık planı başlatın · {{price}} / ay",
+    ctaAnnual: "Yıllık planı başlatın · {{price}} / yıl",
+    ctaLifetime: "Tek seferlik satın alın · {{price}}",
+    promise: "Trendler, doktor raporları ve senkron tek günlükte.",
+    chipSpike: "Daha çok Spike mesajı",
     trialNote: "Bugün ödeme yok. Bitmeden hatırlatacağız. İstediğiniz an iptal.",
     annualTrialDesc: "{{days}} gün ücretsiz, sonra yıllık ücretlendirilir. İstediğiniz an iptal.",
     timeline: {

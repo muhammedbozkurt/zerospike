@@ -864,6 +864,11 @@ const ar: TranslationSchema = {
     savePercent: "وفّر {{percent}}",
     securePayment: "دفع آمن عبر App Store وGoogle Play.",
     ctaTrial: "ابدأ تجربة مجانية لمدة {{days}} أيام",
+    ctaMonthly: "ابدأ الخطة الشهرية · {{price}} / شهر",
+    ctaAnnual: "ابدأ الخطة السنوية · {{price}} / سنة",
+    ctaLifetime: "شراء لمرة واحدة · {{price}}",
+    promise: "الاتجاهات وتقارير طبيبك والمزامنة في سجل واحد.",
+    chipSpike: "رسائل Spike أكثر",
     trialNote: "لا دفع اليوم. سنذكّرك قبل انتهائها. ويمكنك الإلغاء متى شئت.",
     annualTrialDesc: "{{days}} أيام مجانًا، ثم فوترة سنوية. ويمكنك الإلغاء متى شئت.",
     timeline: {

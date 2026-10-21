@@ -61,8 +61,19 @@ import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
 import { clearPaywallTrial, getPaywallTrialGen, primePaywallTrial, resetPaywallTrialCache } from "../lib/proCta";
 import { PaywallPreview } from "../components/PaywallPreview";
 import { lifetimeYearsOfAnnual } from "../lib/paywallPricing";
-import { PRO_DAILY_MESSAGES } from "../lib/ai/spikeLimit";
-import { CARB_PRO_DAILY } from "../lib/ai/carbEstimateLimit";
+import { PAYWALL_LAYOUT, paywallPreviewVisible } from "../lib/paywallLayout";
+import {
+  paywallCtaKind,
+  purchaseOutcomeEvent,
+  purchaseUiAcceptsPress,
+  purchaseUiBusy,
+  purchaseUiReduce,
+  shouldOpenWelcomeAfterPurchase,
+  showTrialTimeline,
+  type PurchaseUiEvent,
+  type PurchaseUiState,
+} from "../lib/paywallPurchase";
+import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
 import {
   DEFAULT_TRIAL_DAYS,
   PERSONAL_WINDOW_DAYS,
@@ -113,9 +124,11 @@ function PlanCard({
       onPress={onSelect}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      className="rounded-2xl p-4 flex-row items-center mb-3"
+      className="rounded-2xl px-4 flex-row items-center"
       style={[
         {
+          paddingVertical: PAYWALL_LAYOUT.planPadV,
+          marginBottom: PAYWALL_LAYOUT.planGap,
           borderWidth: 1,
           borderColor: selected ? THEME.accent : THEME.border,
           backgroundColor: selected ? withAlpha(THEME.accent, 0.12) : THEME.surface,
@@ -196,6 +209,44 @@ function PlanCard({
   );
 }
 
+/**
+ * One row of the trial timeline: a dot, a bold when-label and a body in a single
+ * wrapping paragraph (no fixed column, no line cap), so the longest translation
+ * just takes a second line.
+ */
+function TimelineRow({
+  row,
+  first,
+}: {
+  row: { kind: string; label: string; body: string };
+  first: boolean;
+}) {
+  return (
+    <View
+      style={{ flexDirection: "row", alignItems: "flex-start", marginTop: first ? 0 : 5 }}
+    >
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          marginTop: 4,
+          marginEnd: 8,
+          backgroundColor: row.kind === "charge" ? THEME.textMuted : THEME.accentFill,
+        }}
+      />
+      <Text
+        maxFontSizeMultiplier={1.3}
+        style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, flex: 1 }}
+      >
+        <Text style={{ color: THEME.text, fontWeight: "800" }}>{row.label}</Text>
+        {"  "}
+        {row.body}
+      </Text>
+    </View>
+  );
+}
+
 function PaywallScreen() {
   const { t } = useTranslation();
   // Same brand-name pick as app/settings/data.tsx: iOS's is localized under
@@ -210,7 +261,7 @@ function PaywallScreen() {
   // not sell it either.
   const healthAvailable = useHealthAvailable();
   const insets = useSafeAreaInsets();
-  const { columnPad } = useLayout();
+  const { columnPad, height: windowHeight } = useLayout();
   const router = useRouter();
   const { reason } = useLocalSearchParams<{
     reason?: PaywallViewSource;
@@ -225,14 +276,21 @@ function PaywallScreen() {
   useThemeRemountLock();
   const { refreshPro, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
-  const [busy, setBusyState] = useState(false);
-  // Mirrors busy synchronously so a close request landing in the same tick as
-  // a purchase or restore starting (or finishing) sees the true value.
+  // The purchase button's state machine (lib/paywallPurchase). uiRef mirrors it
+  // synchronously, and busyRef mirrors "something is in flight", so a press or a
+  // close request landing in the same tick as a purchase or restore starting
+  // (or finishing) sees the true value, not last render's.
+  const [ui, setUi] = useState<PurchaseUiState>("idle");
+  const uiRef = useRef<PurchaseUiState>("idle");
   const busyRef = useRef(false);
-  function setBusy(v: boolean) {
-    busyRef.current = v;
-    setBusyState(v);
+  function dispatchUi(event: PurchaseUiEvent) {
+    const next = purchaseUiReduce(uiRef.current, event);
+    uiRef.current = next;
+    busyRef.current = purchaseUiBusy(next);
+    setUi(next);
   }
+  const busy = purchaseUiBusy(ui);
+  const failed = ui === "failed";
   const [plan, setPlan] = useState<PlanId>("annual");
   const [offer, setOffer] = useState<OfferingsResult | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -329,6 +387,7 @@ function PaywallScreen() {
       trial_eligible: annualTrial,
       context,
       variant: PAYWALL_VARIANT,
+      paywall_version: PAYWALL_VERSION,
     });
   }, [offer, reason, annualTrial, context]);
 
@@ -353,7 +412,10 @@ function PaywallScreen() {
 
   function selectPlan(p: PlanId) {
     hapticSelect();
-    logEvent("paywall_tier_selected", { tier: p });
+    logEvent("paywall_tier_selected", { tier: p, paywall_version: PAYWALL_VERSION });
+    // A failed purchase leaves "try again" on the button; choosing another plan
+    // gives that plan's own label back.
+    dispatchUi("planChanged");
     setPlan(p);
   }
 
@@ -425,7 +487,11 @@ function PaywallScreen() {
   async function dismiss() {
     await exitCtlRef.current!.requestUserClose(
       { plan: planRef.current, isPro: isProRef.current },
-      () => logEvent("paywall_dismiss", { source: reason ?? "direct" })
+      () =>
+        logEvent("paywall_dismiss", {
+          source: reason ?? "direct",
+          paywall_version: PAYWALL_VERSION,
+        })
     );
   }
 
@@ -546,14 +612,20 @@ function PaywallScreen() {
     }
   }
 
-  // A new trial or purchase lands on the Pro welcome. `replace`, so back never
-  // returns to the paywall; skipped when every step is already done.
-  async function leaveAfterPurchase() {
-    const steps = withHealthMirror(
-      await getProWelcomeState(),
-      await getHealthSyncEnabled(profileId)
-    );
-    if (shouldAutoOpenWelcome(steps, healthAvailable)) {
+  // A new trial or purchase always lands on the Pro welcome (one page, three
+  // steps, one button). `replace`, so back never returns to the paywall. Only an
+  // already-owned recovery keeps the older rule: the welcome opens for it just
+  // while a step is still open.
+  async function leaveAfterPurchase(recovered: boolean) {
+    let stepsLeft = false;
+    if (recovered) {
+      const steps = withHealthMirror(
+        await getProWelcomeState(),
+        await getHealthSyncEnabled(profileId)
+      );
+      stepsLeft = shouldAutoOpenWelcome(steps, healthAvailable);
+    }
+    if (shouldOpenWelcomeAfterPurchase({ recovered, stepsLeft })) {
       resetPaywallTrialCache();
       leaveWith(() => router.replace("/pro-welcome"));
       return;
@@ -562,10 +634,13 @@ function PaywallScreen() {
   }
 
   async function buy() {
-    if (busy) return;
-    setBusy(true);
+    // First line, read from the synchronous mirror: a second tap in the same
+    // tick (before React re-renders the disabled button) never reaches the store.
+    if (!purchaseUiAcceptsPress(uiRef.current)) return;
+    dispatchUi("press");
+    let last: PurchaseUiEvent = "settled";
     try {
-      logEvent("paywall_cta", { tier: plan });
+      logEvent("paywall_cta", { tier: plan, paywall_version: PAYWALL_VERSION });
       const res = await purchasePro(plan);
       await refreshPro();
       const feedback = purchaseToastFor(res);
@@ -577,31 +652,49 @@ function PaywallScreen() {
         trial: plan === "annual" && eventTrial,
         detail:
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
+        paywall_version: PAYWALL_VERSION,
       });
       if (res.ok) {
         clearPaywallTrial();
+        dispatchUi("success");
         isProRef.current = true;
-        logEvent("purchase_completed", { tier: plan, source: reason ?? "direct" });
+        logEvent("purchase_completed", {
+          tier: plan,
+          source: reason ?? "direct",
+          paywall_version: PAYWALL_VERSION,
+        });
         await settleTrial(res);
         hapticSuccess();
         // Success, or an already-owned recovery ("this is already yours").
         if (feedback) toast(t(feedback.key), feedback.kind);
-        await leaveAfterPurchase();
+        await leaveAfterPurchase(res.recovered === true);
       } else if (res.cancelled) {
-        // A cancelled purchase is a downsell trigger too (same lifetime cap).
+        // Silent: no message. The button stays disabled through the downsell
+        // lookup (the cancel IS the exit), then returns to normal.
+        last = purchaseOutcomeEvent(res);
         await triggerDownsell();
-      } else if (feedback) {
-        // Real store error: an honest message instead of a silent stay.
-        toast(t(feedback.key), feedback.kind);
+      } else {
+        // Real store error: a short message, and the button offers "try again"
+        // on the same selected plan.
+        last = purchaseOutcomeEvent(res);
+        if (feedback) toast(t(feedback.key), feedback.kind);
+      }
+    } catch (err) {
+      logCrash(err, { screen: "paywall", op: "purchase" });
+      // Past the store success nothing here is a purchase failure.
+      if (uiRef.current !== "done") {
+        last = "failed";
+        toast(t("paywall.purchaseError"), "error");
       }
     } finally {
-      setBusy(false);
+      dispatchUi(last);
+      if (last !== "settled") dispatchUi("settled");
     }
   }
 
   async function onRestore() {
-    if (busy) return;
-    setBusy(true);
+    if (!purchaseUiAcceptsPress(uiRef.current)) return;
+    dispatchUi("restoreStart");
     try {
       const result = await restore();
       await refreshPro();
@@ -618,11 +711,11 @@ function PaywallScreen() {
         toast(t("paywall.restoreFailed"), "error");
       }
     } finally {
-      setBusy(false);
+      dispatchUi("settled");
     }
   }
 
-  const ctaTrial = plan === "annual" && annualTrial;
+  const ctaTrial = showTrialTimeline(plan, annualTrial);
 
   // The timeline under the CTA: today, the reminder (only when one is really
   // armed, buildTrialTimeline drops it for a trial too short to leave room) and
@@ -654,31 +747,50 @@ function PaywallScreen() {
     Platform.OS === "ios"
       ? t("paywall.timeline.cancelIos")
       : t("paywall.timeline.cancelAndroid");
-  const ctaLabel = ctaTrial
-    ? t("paywall.ctaTrial", { days: trialDays })
-    : t("paywall.cta");
+  // The CTA follows the SELECTED plan. The price is the store's own localized
+  // string from the offering (never written down here), isolated LTR so a
+  // right-to-left sentence cannot reorder it.
+  const selectedPrice = priceStr(plan);
+  const ctaKind = paywallCtaKind({
+    plan,
+    annualTrial,
+    hasPrice: selectedPrice !== null,
+    failed,
+  });
+  const ctaLabel =
+    ctaKind === "retry"
+      ? t("paywall.retry")
+      : ctaKind === "trial"
+        ? t("paywall.ctaTrial", { days: trialDays })
+        : ctaKind === "monthly"
+          ? t("paywall.ctaMonthly", { price: isolateLtr(selectedPrice ?? "") })
+          : ctaKind === "annual"
+            ? t("paywall.ctaAnnual", { price: isolateLtr(selectedPrice ?? "") })
+            : ctaKind === "lifetime"
+              ? t("paywall.ctaLifetime", { price: isolateLtr(selectedPrice ?? "") })
+              : t("paywall.cta");
+  const purchasing = ui === "purchasing" || ui === "done";
+  const chargeRow = timelineRows.find((row) => row.kind === "charge") ?? null;
+  const previewVisible = paywallPreviewVisible(windowHeight);
 
   const loading = offer === null;
   const unavailable = offer?.status === "unavailable";
 
-  const benefits = [
+  // Two-column chips: short labels (a long benefit sentence is not a chip). The
+  // Health chip only where Health is really reachable on this device.
+  const chips = [
     ...(healthAvailable
       ? [
           {
             icon: "heart-outline" as const,
-            text: t(Platform.OS === "ios" ? "paywall.benefitSyncIos" : "paywall.benefitSyncAndroid"),
+            text: t("paywall.featureShortHealth", { health: healthName }),
           },
         ]
       : []),
-    {
-      icon: "sparkles-outline" as const,
-      text: t("paywall.benefitSpike", {
-        messages: isolateLtr(num(PRO_DAILY_MESSAGES)),
-        carbs: isolateLtr(num(CARB_PRO_DAILY)),
-      }),
-    },
-    { icon: "document-text-outline" as const, text: t("paywall.benefitPdf") },
+    { icon: "sparkles-outline" as const, text: t("paywall.chipSpike") },
     { icon: "analytics-outline" as const, text: t("paywall.benefitTrends") },
+    { icon: "document-text-outline" as const, text: t("paywall.featureShortPdf") },
+    { icon: "people-outline" as const, text: t("paywall.featureShortFamily") },
   ];
 
   // A limit context (health/foods/...) takes over the headline with its own
@@ -688,6 +800,7 @@ function PaywallScreen() {
     : annualTrial
       ? t("paywall.headlineTrial", { days: trialDays })
       : t("paywall.headline");
+  const heroSubline = limit ? limit.body : t("paywall.promise");
 
   return (
     <AppBackground>
@@ -730,75 +843,30 @@ function PaywallScreen() {
           contentContainerStyle={[
             // No pinned CTA band while loading/unavailable (see the band's own
             // guard below), so nothing needs clearing beyond the flat 24; once
-            // real plans render, the band is pinned outside the scroll and the
-            // scroll's own bottom padding has to clear it plus the safe area.
+            // real plans render, the band is pinned outside the scroll.
             {
-              paddingTop: 20,
+              paddingTop: PAYWALL_LAYOUT.scrollTop,
               paddingBottom: loading || unavailable ? insets.bottom + 24 : 24,
             },
             columnPad(20),
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Compact headline; a limit context (health/foods/...) puts its own
-              title/body in the same slots. Neither line is a health claim. */}
-          <View style={{ alignItems: "center", marginBottom: 12 }}>
+          {/* Order (lib/paywallLayout): headline, short promise, three plans,
+              [pinned CTA below the scroll], trial timeline, small sample
+              preview, two-column benefit chips, then the legal text and links.
+              A limit context (health/foods/...) puts its own title/body in the
+              headline slots. Neither line is a health claim. */}
+          <View style={{ alignItems: "center", marginBottom: PAYWALL_LAYOUT.gapAfterHero }}>
             <Txt kind="title" style={{ textAlign: "center" }}>
               {heroHeadline}
             </Txt>
-            {limit ? (
+            {heroSubline ? (
               <Txt kind="caption" tone="muted" style={{ textAlign: "center", marginTop: SPACE.xs }}>
-                {limit.body}
+                {heroSubline}
               </Txt>
             ) : null}
           </View>
-
-          <PaywallPreview compact />
-
-          <View style={{ marginBottom: 6, paddingHorizontal: 4 }}>
-            {benefits.map((b) => (
-              <View
-                key={b.icon}
-                style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
-              >
-                <Ionicons name={b.icon} size={16} color={THEME.accent} />
-                <Txt kind="caption" style={{ flex: 1, marginStart: SPACE.md }}>
-                  {b.text}
-                </Txt>
-              </View>
-            ))}
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-              <Ionicons name="people-outline" size={16} color={THEME.textMuted} />
-              <Txt kind="caption" tone="muted" style={{ flex: 1, marginStart: SPACE.md }}>
-                {t("paywall.featureShortFamily")}
-              </Txt>
-            </View>
-          </View>
-
-          {personal ? (
-            <View
-              style={{
-                borderStartWidth: 2,
-                borderStartColor: THEME.border,
-                paddingStart: 10,
-                marginHorizontal: 4,
-                marginBottom: 12,
-              }}
-            >
-              <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700", marginBottom: 2 }}>
-                {t("paywall.timeline.personalLabel")}
-              </Text>
-              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
-                {t("paywall.timeline.personal", {
-                  n: personal.readings,
-                  avg: isolateLtr(
-                    `${formatGlucose(personal.avgMgdl, glucoseUnit)} ${glucoseUnitLabel(glucoseUnit)}`
-                  ),
-                  inRange: isolateLtr(pct(personal.inRangePct)),
-                })}
-              </Text>
-            </View>
-          ) : null}
 
           {/* Only while the last store read failed: says so and puts a real
               "Restore purchases" button within reach (the small link at the
@@ -885,6 +953,90 @@ function PaywallScreen() {
             </>
           )}
 
+          {/* The trial's today / reminder rows, only for the annual plan with a
+              trial. The first-charge row and its price sit in the pinned band
+              next to the button. */}
+          {!loading && !unavailable && timelineRows.length > 0 ? (
+            <View style={{ marginTop: SPACE.xs, marginBottom: SPACE.md, paddingHorizontal: 4 }}>
+              {timelineRows
+                .filter((row) => row.kind !== "charge")
+                .map((row, i) => (
+                  <TimelineRow key={row.kind} row={row} first={i === 0} />
+                ))}
+              <Text
+                maxFontSizeMultiplier={1.3}
+                style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15, marginTop: 8 }}
+              >
+                {cancelLine}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Sample preview: small, below the plans, and not drawn at all on a
+              short window (SE class), where the plans and the CTA come first. */}
+          {previewVisible ? <PaywallPreview compact /> : null}
+
+          {personal ? (
+            <View
+              style={{
+                borderStartWidth: 2,
+                borderStartColor: THEME.border,
+                paddingStart: 10,
+                marginHorizontal: 4,
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: THEME.text, fontSize: 12, fontWeight: "700", marginBottom: 2 }}>
+                {t("paywall.timeline.personalLabel")}
+              </Text>
+              <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
+                {t("paywall.timeline.personal", {
+                  n: personal.readings,
+                  avg: isolateLtr(
+                    `${formatGlucose(personal.avgMgdl, glucoseUnit)} ${glucoseUnitLabel(glucoseUnit)}`
+                  ),
+                  inRange: isolateLtr(pct(personal.inRangePct)),
+                })}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Benefits: short two-column chips. Text wraps (no line cap, no font
+              shrinking), so the longest translation just takes a second line. */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
+            {chips.map((chip) => (
+              <View
+                key={chip.icon}
+                style={{
+                  width: "48.5%",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingVertical: PAYWALL_LAYOUT.chipPadV,
+                  paddingHorizontal: 10,
+                  marginBottom: PAYWALL_LAYOUT.chipRowGap,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: THEME.border,
+                  backgroundColor: THEME.surface,
+                }}
+              >
+                <Ionicons name={chip.icon} size={14} color={THEME.accent} />
+                <Text
+                  maxFontSizeMultiplier={1.3}
+                  style={{
+                    flex: 1,
+                    marginStart: 8,
+                    color: THEME.text,
+                    fontSize: 12,
+                    lineHeight: PAYWALL_LAYOUT.chipLineHeight,
+                  }}
+                >
+                  {chip.text}
+                </Text>
+              </View>
+            ))}
+          </View>
+
           <Text
             style={{
               color: THEME.textMuted,
@@ -892,7 +1044,7 @@ function PaywallScreen() {
               textAlign: "center",
               paddingHorizontal: 8,
               lineHeight: 16,
-              marginTop: 16,
+              marginTop: 8,
             }}
           >
             {t("paywall.legalNote")}
@@ -921,7 +1073,9 @@ function PaywallScreen() {
         </ScrollView>
 
         {/* Pinned CTA band: only once real plans are on screen (loading /
-            unavailable keep their own in-scroll composition, no CTA to pin). */}
+            unavailable keep their own in-scroll composition, no CTA to pin).
+            The label follows the selected plan; the first-charge line shows
+            only for the annual trial. */}
         {!loading && !unavailable ? (
           <View
             style={[
@@ -929,53 +1083,21 @@ function PaywallScreen() {
                 borderTopWidth: 1,
                 borderTopColor: THEME.border,
                 backgroundColor: THEME.bg.g1,
-                paddingTop: 12,
-                paddingBottom: insets.bottom + 12,
+                paddingTop: PAYWALL_LAYOUT.bandPadTop,
+                paddingBottom: insets.bottom + PAYWALL_LAYOUT.bandPadBottom,
               },
               columnPad(20),
             ]}
           >
-            <GradientCTA label={ctaLabel} disabled={busy} onPress={buy} />
-            {timelineRows.length > 0 ? (
-              <View style={{ marginTop: 10, paddingHorizontal: 4 }}>
-                {timelineRows.map((row, i) => (
-                  <View
-                    key={row.kind}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "flex-start",
-                      marginTop: i === 0 ? 0 : 5,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 4,
-                        marginTop: 4,
-                        marginEnd: 8,
-                        backgroundColor: row.kind === "charge" ? THEME.textMuted : THEME.accentFill,
-                      }}
-                    />
-                    {/* Label and body are one wrapping paragraph (no fixed
-                        column, no single-line clip), so the longest translation
-                        just takes a second line. */}
-                    <Text
-                      maxFontSizeMultiplier={1.3}
-                      style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, flex: 1 }}
-                    >
-                      <Text style={{ color: THEME.text, fontWeight: "800" }}>{row.label}</Text>
-                      {"  "}
-                      {row.body}
-                    </Text>
-                  </View>
-                ))}
-                <Text
-                  maxFontSizeMultiplier={1.3}
-                  style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15, marginTop: 8 }}
-                >
-                  {cancelLine}
-                </Text>
+            <GradientCTA
+              label={ctaLabel}
+              loading={purchasing}
+              disabled={busy}
+              onPress={buy}
+            />
+            {chargeRow ? (
+              <View style={{ marginTop: PAYWALL_LAYOUT.bandDisclosureMargin, paddingHorizontal: 4 }}>
+                <TimelineRow row={chargeRow} first />
               </View>
             ) : null}
           </View>

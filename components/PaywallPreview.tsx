@@ -31,9 +31,9 @@ export function PaywallPreview({ compact = false }: { compact?: boolean }) {
             centerValue={parts.number}
             centerSuffix={parts.sign}
             centerSuffixFirst={parts.signFirst}
-            size={96}
+            size={compact ? 64 : 96}
           />
-          <View style={{ flex: 1, marginStart: SPACE.lg }}>
+          <View style={{ flex: 1, marginStart: compact ? SPACE.md : SPACE.lg }}>
             <Txt kind="caption" style={{ fontWeight: "700" }}>
               {t("insights.inRange")}
             </Txt>

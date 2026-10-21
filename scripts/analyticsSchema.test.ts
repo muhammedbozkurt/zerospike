@@ -148,12 +148,12 @@ function matchesContract(): void {
     "first_log{kind:glucose|meal|other}",
     "log_added{kind:glucose|meal|other}",
     "log_edited{kind:glucose|meal|other}",
-    "paywall_view{source,context,trial_eligible:bool,variant:enum:default}",
-    "paywall_tier_selected{tier:monthly|annual|lifetime}",
-    "paywall_cta{tier:monthly|annual|lifetime}",
-    "paywall_dismiss{source}",
-    "purchase_completed{tier,source}",
-    "purchase_result{result:success|cancelled|error,product:monthly|annual|lifetime|downsell_annual,reason:after_logs|direct|health|foods|profiles|feature|mealResponse|spike|insights|export|settings,variant:enum:default,trial:bool,detail:store_error|already_owned|none}",
+    "paywall_view{source,context,trial_eligible:bool,variant:enum:default,paywall_version:int}",
+    "paywall_tier_selected{tier:monthly|annual|lifetime,paywall_version:int}",
+    "paywall_cta{tier:monthly|annual|lifetime,paywall_version:int}",
+    "paywall_dismiss{source,paywall_version:int}",
+    "purchase_completed{tier,source,paywall_version:int}",
+    "purchase_result{result:success|cancelled|error,product:monthly|annual|lifetime|downsell_annual,reason:after_logs|direct|health|foods|profiles|feature|mealResponse|spike|insights|export|settings,variant:enum:default,trial:bool,detail:store_error|already_owned|none,paywall_version:int}",
     "trial_started{tier}",
     "pro_welcome_view{}",
     "pro_welcome_step{step:health|insights|reminders,done:bool}",
@@ -305,8 +305,8 @@ function sanitizer(): void {
   ok("health values never pass", health.ok);
   if (health.ok) eq("only the kind survives", health.props, { kind: "glucose" });
 
-  const badEnum = sanitizeEvent("paywall_tier_selected", { tier: "weekly" });
-  ok("enum violation is stripped", badEnum.ok && Object.keys(badEnum.props).length === 0);
+  const badEnum = sanitizeEvent("paywall_tier_selected", { tier: "weekly", paywall_version: 2 });
+  ok("enum violation is stripped", badEnum.ok && Object.keys(badEnum.props).length === 1 && badEnum.props.paywall_version === 2);
   if (badEnum.ok) {
     ok(
       "and reported once as wrong, not as missing",
@@ -321,12 +321,13 @@ function sanitizer(): void {
     variant: "default",
     trial: true,
     detail: "store_error",
+    paywall_version: 2,
   });
   const saleOut = sanitizeEvent("purchase_result", sale);
-  ok("purchase_result carries only its six closed fields", saleOut.ok && saleOut.issues.length === 0);
+  ok("purchase_result carries only its seven closed fields", saleOut.ok && saleOut.issues.length === 0);
   if (saleOut.ok) {
     eq("the insulin-only paywall entry leaves as feature", saleOut.props.reason, "feature");
-    eq("six fields, no free text", Object.keys(saleOut.props).sort(), ["detail", "product", "reason", "result", "trial", "variant"]);
+    eq("seven fields, no free text, no identity or price", Object.keys(saleOut.props).sort(), ["detail", "paywall_version", "product", "reason", "result", "trial", "variant"]);
   }
   const badSale = sanitizeEvent("purchase_result", {
     result: "error",

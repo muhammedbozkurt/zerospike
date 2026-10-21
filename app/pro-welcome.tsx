@@ -58,12 +58,9 @@ function StepCard({
   cta,
   done,
   skipped,
-  primary,
   doneLabel,
   skippedLabel,
-  skipLabel,
   onCta,
-  onSkip,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -71,12 +68,9 @@ function StepCard({
   cta: string;
   done: boolean;
   skipped: boolean;
-  primary: boolean;
   doneLabel: string;
   skippedLabel: string;
-  skipLabel: string;
   onCta: () => void;
-  onSkip: () => void;
 }) {
   return (
     <Card style={{ marginBottom: SPACE.md }}>
@@ -103,10 +97,9 @@ function StepCard({
               {skippedLabel}
             </Txt>
           ) : null}
-          <GradientCTA label={cta} variant={primary ? "primary" : "sub"} onPress={onCta} />
-          {!skipped ? (
-            <Button variant="tertiary" size="sm" label={skipLabel} onPress={onSkip} />
-          ) : null}
+          {/* Quiet on purpose: the one primary button of this page is the
+              pinned Continue below. */}
+          <Button variant="outlined" size="sm" label={cta} onPress={onCta} />
         </View>
       ) : null}
     </Card>
@@ -187,11 +180,6 @@ function ProWelcomeScreen() {
   function close() {
     if (router.canGoBack()) router.back();
     else router.replace("/(tabs)");
-  }
-
-  async function skip(step: ProWelcomeStep) {
-    await markProWelcomeStep(step, "skipped");
-    await load();
   }
 
   function connectHealth() {
@@ -310,12 +298,9 @@ function ProWelcomeScreen() {
                 cta={c.cta}
                 done={state[step] === "done"}
                 skipped={state[step] === "skipped"}
-                primary={step === firstOpen}
                 doneLabel={t("proWelcome.stepDone")}
                 skippedLabel={t("proWelcome.stepSkipped")}
-                skipLabel={t("proWelcome.notNow")}
                 onCta={c.onCta}
-                onSkip={() => void skip(step)}
               />
             );
           })}

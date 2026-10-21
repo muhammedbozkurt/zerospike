@@ -864,6 +864,11 @@ const en: TranslationSchema = {
     savePercent: "Save {{percent}}",
     securePayment: "Secure payment via the App Store and Google Play.",
     ctaTrial: "Start {{days}}-day free trial",
+    ctaMonthly: "Start monthly plan · {{price}} / month",
+    ctaAnnual: "Start annual plan · {{price}} / year",
+    ctaLifetime: "One-time purchase · {{price}}",
+    promise: "Trends, doctor reports and sync in one logbook.",
+    chipSpike: "More Spike messages",
     trialNote: "No payment today. We will remind you before it ends. Cancel anytime.",
     annualTrialDesc: "{{days}} days free, then billed yearly. Cancel anytime.",
     timeline: {

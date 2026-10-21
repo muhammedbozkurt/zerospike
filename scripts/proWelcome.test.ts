@@ -192,7 +192,7 @@ section("I. wiring: the welcome opens from the paywall and the dashboard");
     "a successful purchase replaces the paywall with the welcome",
     /router\.replace\("\/pro-welcome"\)/.test(paywall)
   );
-  ok("the paywall only opens it when steps are left", /shouldAutoOpenWelcome\(/.test(paywall));
+  ok("a recovered purchase keeps the steps-left rule, a new purchase always opens the welcome", /shouldAutoOpenWelcome\(/.test(paywall) && /shouldOpenWelcomeAfterPurchase\(\{ recovered, stepsLeft \}\)/.test(paywall) && /leaveAfterPurchase\(res\.recovered === true\)/.test(paywall));
   const screen = src("app/pro-welcome.tsx");
   ok("the screen reports its view", /logEvent\("pro_welcome_view"/.test(screen));
   ok("every step goes through the service", /markProWelcomeStep\(/.test(screen));
