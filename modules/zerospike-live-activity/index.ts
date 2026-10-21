@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { getWidgetInfo } from "react-native-android-widget";
+import { parseFatalReport, type FatalReport } from "../../lib/fatalReport";
 
 /**
  * JS side of the post-meal Live Activity (and, since 2.1.0, the small "is a
@@ -23,6 +24,8 @@ interface LiveActivityNativeModule {
   update(lastReading: string | null, unitLabel: string): Promise<boolean>;
   end(): Promise<void>;
   isWidgetInstalled(): Promise<boolean | null>;
+  getLastFatalReport?(): string | null;
+  clearLastFatalReport?(): boolean;
 }
 
 /**
@@ -113,6 +116,28 @@ export function endPostMealActivity(): Promise<void> {
   return enqueue(async () => {
     await native?.end();
   }, undefined);
+}
+
+/**
+ * The fatal report the native uncaught-exception hook left on the device on
+ * the previous run (see lib/fatalReport.ts for the shape), or null. Optional
+ * methods: a binary built before the hook existed simply has none.
+ */
+export function getLastFatalReport(): FatalReport | null {
+  try {
+    return parseFatalReport(native?.getLastFatalReport?.() ?? null);
+  } catch {
+    return null;
+  }
+}
+
+/** Deletes the stored report; true when nothing is left on the device. */
+export function clearLastFatalReport(): boolean {
+  try {
+    return native?.clearLastFatalReport?.() ?? false;
+  } catch {
+    return false;
+  }
 }
 
 /** Mirrors ANDROID_WIDGET_NAME / ANDROID_QUICK_ADD_WIDGET_NAME in

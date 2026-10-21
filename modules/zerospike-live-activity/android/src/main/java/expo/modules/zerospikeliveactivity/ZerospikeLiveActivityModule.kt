@@ -8,7 +8,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
 
 /**
  * Android counterpart of ../ios/ZerospikeLiveActivityModule.swift, matching
- * its five JS-visible functions (index.ts) exactly.
+ * its JS-visible functions (index.ts) exactly.
  *
  * There is no ActivityKit on Android; PostMealNotification.kt posts a plain
  * ongoing/chronometer notification instead (optionally "promoted" on Android
@@ -22,6 +22,22 @@ class ZerospikeLiveActivityModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("ZerospikeLiveActivity")
+
+    // Installed while the module registry is built, before the JS bundle runs,
+    // so a fatal error during JS start-up is covered (FatalReportStore.kt).
+    OnCreate {
+      appContext.reactContext?.let { FatalReportStore.install(it) }
+    }
+
+    /** The last fatal report as a JSON string, or null when there is none. */
+    Function("getLastFatalReport") {
+      appContext.reactContext?.let { FatalReportStore.read(it) }
+    }
+
+    /** Deletes the stored report. True when nothing is left. */
+    Function("clearLastFatalReport") {
+      appContext.reactContext?.let { FatalReportStore.clear(it) } ?: false
+    }
 
     /** Whether the OS will actually let a notification through right now -
      *  the Android analogue of iOS's ActivityAuthorizationInfo check. Does

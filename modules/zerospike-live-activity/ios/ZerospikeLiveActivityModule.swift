@@ -29,9 +29,104 @@ struct PostMealAttributes: ActivityAttributes {
   var title: String
 }
 
+// Last fatal report (A3). An uncaught NSException, which is also how a fatal
+// JS error ends in a release build (RCTExceptionsManager -> RCTFatal throws
+// "RCTFatalException: Unhandled JS Exception: ..."), is written to one JSON file
+// on the device before the process dies. Nothing is sent anywhere; JS reads it
+// on the next launch with getLastFatalReport(). A file, not UserDefaults: a
+// synchronous atomic write is the only store that reliably lands while the
+// process is being torn down.
+private let fatalReportFileName = "zerospike-last-fatal.json"
+nonisolated(unsafe) private var previousUncaughtHandler: (@convention(c) (NSException) -> Void)?
+nonisolated(unsafe) private var fatalHandlerInstalled = false
+
+private func fatalReportURL() -> URL? {
+  guard
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first
+  else { return nil }
+  return base.appendingPathComponent(fatalReportFileName, isDirectory: false)
+}
+
+private func clipped(_ text: String, _ limit: Int) -> String {
+  text.count > limit ? String(text.prefix(limit)) : text
+}
+
+private func recordFatalException(_ exception: NSException) {
+  let info = Bundle.main.infoDictionary
+  var report: [String: Any] = [
+    "platform": "ios",
+    "kind": "NSException",
+    "name": clipped(exception.name.rawValue, 500),
+    "reason": clipped(exception.reason ?? "", 4000),
+    "stack": exception.callStackSymbols.prefix(40).map { clipped($0, 300) },
+    "build": (info?["CFBundleVersion"] as? String) ?? "",
+    "version": (info?["CFBundleShortVersionString"] as? String) ?? "",
+    "at": ISO8601DateFormatter().string(from: Date()),
+  ]
+  // RCTFatal truncates `reason` to 175 characters; the full JS message and
+  // stack ride in userInfo under RCTUntruncatedMessageKey.
+  if let full = exception.userInfo?["RCTUntruncatedMessageKey"] as? String {
+    report["jsMessage"] = clipped(full, 8000)
+  }
+  guard JSONSerialization.isValidJSONObject(report),
+    let data = try? JSONSerialization.data(withJSONObject: report, options: []),
+    let url = fatalReportURL()
+  else { return }
+  try? FileManager.default.createDirectory(
+    at: url.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+  )
+  try? data.write(to: url, options: .atomic)
+}
+
+private func installFatalExceptionHandler() {
+  if fatalHandlerInstalled { return }
+  fatalHandlerInstalled = true
+  // Chained, not replaced: whatever was installed before still runs, so the
+  // system crash report is unchanged.
+  previousUncaughtHandler = NSGetUncaughtExceptionHandler()
+  NSSetUncaughtExceptionHandler { exception in
+    recordFatalException(exception)
+    previousUncaughtHandler?(exception)
+  }
+}
+
+private func readFatalReport() -> String? {
+  guard let url = fatalReportURL(), let data = try? Data(contentsOf: url) else { return nil }
+  return String(data: data, encoding: .utf8)
+}
+
+private func clearFatalReport() -> Bool {
+  guard let url = fatalReportURL() else { return false }
+  guard FileManager.default.fileExists(atPath: url.path) else { return true }
+  do {
+    try FileManager.default.removeItem(at: url)
+    return true
+  } catch {
+    return false
+  }
+}
+
 public class ZerospikeLiveActivityModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ZerospikeLiveActivity")
+
+    // Module creation runs while the app context is built, before the JS
+    // bundle is evaluated, so a fatal error during JS start-up is covered.
+    OnCreate {
+      installFatalExceptionHandler()
+    }
+
+    /// The last fatal report as a JSON string, or nil when there is none.
+    Function("getLastFatalReport") { () -> String? in
+      readFatalReport()
+    }
+
+    /// Deletes the stored report. True when nothing is left on disk.
+    Function("clearLastFatalReport") { () -> Bool in
+      clearFatalReport()
+    }
 
     /// Whether the OS and the user's settings allow a Live Activity right now.
     Function("isAvailable") { () -> Bool in

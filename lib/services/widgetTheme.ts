@@ -1,3 +1,4 @@
+import { logCrash } from "../analytics";
 import { isThemePref, resolveScheme, THEME_PREF_KEY, type ThemePref } from "../theme/themePref";
 import type { Scheme } from "../theme/tokens";
 import { WIDGET_DARK, WIDGET_LIGHT, type WidgetPalette } from "./widgetColors";
@@ -113,7 +114,9 @@ export async function publishWidgetThemePref(
     if (d.platform === "android" && !opts.onlyIfChanged) {
       await d.refreshAndroid(pref);
     }
-  } catch {
-    // Expo Go / no widget placed: nothing to update.
+  } catch (err) {
+    // Expo Go has no native module and resolves to no-ops, so reaching here is
+    // a real native failure: logged, never rethrown (this runs at app start).
+    logCrash(err, { screen: "widget", op: "publishWidgetThemePref" });
   }
 }
