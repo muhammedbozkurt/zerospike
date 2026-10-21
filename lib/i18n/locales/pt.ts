@@ -295,6 +295,15 @@ const pt: TranslationSchema = {
     lunch: "Almoço",
     dinner: "Jantar / noite",
   },
+  numeric: {
+    range: "Informe um valor de {{min}} a {{max}} {{unit}}",
+    required: "Informe um valor",
+    carbRatioExample: "ex.: 10",
+    isfExampleMgdl: "ex.: 50",
+    isfExampleMmol: "ex.: 2,8",
+    glucoseExampleMgdl: "ex.: 120",
+    glucoseExampleMmol: "ex.: 6,7",
+  },
   ratio: {
     line: "Sua razão ({{slot}}): {{ratio}}",
     enter: "Informe suas razões",
@@ -375,6 +384,8 @@ const pt: TranslationSchema = {
     calcNotAdvice: "Não é orientação médica. Defina sua dose com sua equipe de saúde.",
     manualDose: "Dose aplicada (unidades)",
     currentGlucose: "Glicemia atual (opcional)",
+    glucoseOffer: "Última medição {{value}} {{unit}}, toque para usar",
+    pending: "Aguardando confirmação",
     addPhoto: "Adicionar foto",
     takePhoto: "Tirar foto",
     choosePhoto: "Escolher da galeria",
@@ -425,6 +436,7 @@ const pt: TranslationSchema = {
       bodyFilled: "Seus valores estão salvos. Basta confirmá-los.",
       teamNote: "Defina suas razões com sua equipe de diabetes.",
       confirm: "Defini estes valores com minha equipe de diabetes",
+      hint: "O total calculado aparece quando você marca a caixa",
     },
   },
   iob: {

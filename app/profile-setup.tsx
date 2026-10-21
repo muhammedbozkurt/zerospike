@@ -27,11 +27,10 @@ import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G, isNoInsulinDiabetesType }
 import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { RangeInput } from "../components/RangeInput";
-import { RatioInput } from "../components/RatioInput";
+import { CarbRatioInput, IsfInput } from "../components/RatioInput";
 import { ConfirmCheckbox } from "../components/ConfirmCheckbox";
 import {
-  CARB_RATIO_BOUNDS,
-  ISF_BOUNDS,
+  RATIOS_ENTERED,
   ratioFieldsInitial,
   type RatioFields,
 } from "../lib/calcSetup";
@@ -441,7 +440,7 @@ function ProfileSetupScreen() {
           daily_carb_target_min_g: clampCarbTarget(n(carbMin, 160)),
           daily_carb_target_g: clampCarbTarget(n(carbMax, 200)),
           // Confirmed only when the user typed all four numbers AND ticked the box.
-          ...(ratioSetComplete ? { ratios_confirmed: ratiosTick ? 1 : 0 } : {}),
+          ...(ratioSetComplete ? { ratios_confirmed: ratiosTick ? 1 : RATIOS_ENTERED } : {}),
         });
         // From here the profile is the user's own, so the cancel path above must
         // never take it back - set after the write, not before, so a failed one
@@ -666,16 +665,12 @@ function ProfileSetupScreen() {
             {(["breakfast", "lunch", "dinner"] as const).map((slot) => (
               <View key={slot} className="px-4 py-3">
                 <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
-                <RatioInput
+<CarbRatioInput
                   value={ratios[slot]}
                   onChange={(v) => {
                     setRatios((r) => ({ ...r, [slot]: v }));
                     setRatiosTick(false);
                   }}
-                  min={CARB_RATIO_BOUNDS.min}
-                  max={CARB_RATIO_BOUNDS.max}
-                  decimals={1}
-                  suffix={t("common.carbRatioUnit")}
                   accessibilityLabel={t(`slot.${slot}`)}
                 />
               </View>
@@ -688,19 +683,13 @@ function ProfileSetupScreen() {
             {showsBolus ? (
               <View className="px-4 py-3">
                 <Text className="text-mut text-xs mb-2">{t("settings.isfHint")}</Text>
-                <RatioInput
-                  value={ratios.isfMgdl == null ? null : glucoseToDisplay(ratios.isfMgdl, unit)}
-                  onChange={(v) => {
-                    setRatios((r) => ({
-                      ...r,
-                      isfMgdl: v == null ? null : glucoseFromDisplay(v, unit),
-                    }));
+<IsfInput
+                  valueMgdl={ratios.isfMgdl}
+                  onChangeMgdl={(v) => {
+                    setRatios((r) => ({ ...r, isfMgdl: v }));
                     setRatiosTick(false);
                   }}
-                  min={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].min}
-                  max={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].max}
-                  decimals={unit === "mmol" ? 1 : 0}
-                  suffix={glucoseUnitLabel(unit)}
+                  unit={unit}
                   accessibilityLabel={t("settings.isf")}
                 />
                 <Text className="text-mut text-xs mt-3">{t("calculator.setup.teamNote")}</Text>
@@ -708,6 +697,7 @@ function ProfileSetupScreen() {
                   checked={ratiosTick}
                   onToggle={setRatiosTick}
                   label={t("calculator.setup.confirm")}
+                  hint={t("calculator.setup.hint")}
                   disabled={!ratioSetComplete}
                 />
               </View>

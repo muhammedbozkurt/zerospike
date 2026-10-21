@@ -295,6 +295,15 @@ const it: TranslationSchema = {
     lunch: "Pranzo",
     dinner: "Cena / Notte",
   },
+  numeric: {
+    range: "Inserisca un valore da {{min}} a {{max}} {{unit}}",
+    required: "Inserisca un valore",
+    carbRatioExample: "es. 10",
+    isfExampleMgdl: "es. 50",
+    isfExampleMmol: "es. 2,8",
+    glucoseExampleMgdl: "es. 120",
+    glucoseExampleMmol: "es. 6,7",
+  },
   ratio: {
     line: "Il Suo rapporto ({{slot}}): {{ratio}}",
     enter: "Inserisca i Suoi rapporti",
@@ -375,6 +384,8 @@ const it: TranslationSchema = {
     calcNotAdvice: "Non è un consiglio medico. Decida la dose con il Suo team di cura.",
     manualDose: "Dose somministrata (unità)",
     currentGlucose: "Glicemia attuale (facoltativo)",
+    glucoseOffer: "Ultima misurazione {{value}} {{unit}}, tocchi per usarla",
+    pending: "In attesa di conferma",
     addPhoto: "Aggiungi foto",
     takePhoto: "Scatta una foto",
     choosePhoto: "Scegli dalla galleria",
@@ -425,6 +436,7 @@ const it: TranslationSchema = {
       bodyFilled: "I Suoi valori sono salvati. Basta confermarli.",
       teamNote: "Stabilisca i Suoi rapporti con il Suo team diabetologico.",
       confirm: "Ho stabilito questi valori con il mio team diabetologico",
+      hint: "Il totale calcolato compare quando spunta la casella",
     },
   },
   iob: {

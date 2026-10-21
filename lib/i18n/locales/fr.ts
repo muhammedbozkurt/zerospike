@@ -295,6 +295,15 @@ const fr: TranslationSchema = {
     lunch: "Déjeuner",
     dinner: "Dîner / Nuit",
   },
+  numeric: {
+    range: "Saisissez une valeur de {{min}} à {{max}} {{unit}}",
+    required: "Saisissez une valeur",
+    carbRatioExample: "ex. 10",
+    isfExampleMgdl: "ex. 50",
+    isfExampleMmol: "ex. 2,8",
+    glucoseExampleMgdl: "ex. 120",
+    glucoseExampleMmol: "ex. 6,7",
+  },
   ratio: {
     line: "Votre ratio ({{slot}}) : {{ratio}}",
     enter: "Saisissez vos ratios",
@@ -375,6 +384,8 @@ const fr: TranslationSchema = {
     calcNotAdvice: "Pas un avis médical. Décidez votre dose avec votre équipe soignante.",
     manualDose: "Dose appliquée (unités)",
     currentGlucose: "Glycémie actuelle (facultatif)",
+    glucoseOffer: "Dernière mesure {{value}} {{unit}}, touchez pour l'utiliser",
+    pending: "En attente de confirmation",
     addPhoto: "Ajouter une photo",
     takePhoto: "Prendre une photo",
     choosePhoto: "Choisir dans la galerie",
@@ -425,6 +436,7 @@ const fr: TranslationSchema = {
       bodyFilled: "Vos valeurs sont enregistrées. Il vous suffit de les confirmer.",
       teamNote: "Définissez vos ratios avec votre équipe diabète.",
       confirm: "J'ai défini ces ratios avec mon équipe diabète",
+      hint: "Le total calculé s'affiche dès que vous cochez la case",
     },
   },
   iob: {

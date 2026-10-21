@@ -295,6 +295,15 @@ const en: TranslationSchema = {
     lunch: "Lunch",
     dinner: "Dinner / Night",
   },
+  numeric: {
+    range: "Enter a value from {{min}} to {{max}} {{unit}}",
+    required: "Enter a value",
+    carbRatioExample: "e.g. 10",
+    isfExampleMgdl: "e.g. 50",
+    isfExampleMmol: "e.g. 2.8",
+    glucoseExampleMgdl: "e.g. 120",
+    glucoseExampleMmol: "e.g. 6.7",
+  },
   ratio: {
     line: "Your ratio ({{slot}}): {{ratio}}",
     enter: "Enter your ratios",
@@ -375,6 +384,8 @@ const en: TranslationSchema = {
     calcNotAdvice: "Not medical advice. Decide your dose with your care team.",
     manualDose: "Applied dose (units)",
     currentGlucose: "Current glucose (optional)",
+    glucoseOffer: "Last reading {{value}} {{unit}}, tap to use",
+    pending: "Awaiting confirmation",
     addPhoto: "Add photo",
     takePhoto: "Take photo",
     choosePhoto: "Choose from gallery",
@@ -425,6 +436,7 @@ const en: TranslationSchema = {
       bodyFilled: "Your values are saved. Just confirm them.",
       teamNote: "Set your ratios with your diabetes team.",
       confirm: "I set these ratios with my diabetes team",
+      hint: "The calculated total appears once you tick this",
     },
   },
   iob: {

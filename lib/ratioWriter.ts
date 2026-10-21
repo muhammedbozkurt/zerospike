@@ -1,8 +1,11 @@
 import {
   ratioConfirmPatch,
-  ratioSetPatch,
+  ratioDraftDiffers,
+  ratioDraftPatch,
+  unconfirmedFlag,
   type RatioFields,
 } from "./calcSetup";
+import type { GlucoseUnit } from "./db/types";
 
 /**
  * Writes the calculator's four numbers from Profile and Targets without losing
@@ -16,7 +19,14 @@ import {
  *    explicit flush (blur, leaving the screen, ticking the box);
  *  - "what is stored" is the last set this writer sent, held in the writer, not
  *    the possibly stale profile;
- *  - writes go through one queue, strictly in the order they were planned.
+ *  - writes go through one queue, strictly in the order they were planned;
+ *  - the first edit of a CONFIRMED set withdraws the confirmation at once (a
+ *    flag-only write), so the figures never outlive the numbers they came from
+ *    while the new value waits for its pause.
+ *
+ * One writer serves the calculator's sheet and Profile and Targets, so both
+ * write the same profile record in the same way. Values are kept as soon as
+ * they are typed, even with other fields still empty.
  */
 
 export interface StoredRatios {
@@ -34,8 +44,9 @@ export interface RatioWriter {
   update(draft: RatioFields): void;
   /** Write whatever is pending now; resolves once the queue has drained. */
   flush(): Promise<void>;
-  /** Tick or untick the box: flushes first, then queues the flag. */
-  confirm(checked: boolean): Promise<void>;
+  /** Tick or untick the box: flushes first, then queues the flag. Resolves true
+   *  only when the box was ticked and every write reached the profile. */
+  confirm(checked: boolean): Promise<boolean>;
   /** Drop the pending timer (the screen is going away after a final flush). */
   cancelTimer(): void;
 }
@@ -47,6 +58,8 @@ export function createRatioWriter(opts: {
   persist: (patch: RatioPatch) => Promise<void>;
   /** After a failed write: the freshest stored set to compare against. */
   reload?: () => StoredRatios | null;
+  /** The profile's glucose unit, for comparing the correction factor as shown. */
+  unit?: () => GlucoseUnit;
   onError?: (e: unknown) => void;
   delayMs?: number;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -56,16 +69,19 @@ export function createRatioWriter(opts: {
   const setTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
   const clearTimer = opts.clearTimer ?? ((t) => clearTimeout(t as ReturnType<typeof setTimeout>));
 
+  const unitOf = () => opts.unit?.() ?? "mgdl";
   let written: StoredRatios | null = opts.stored;
   let pending: RatioFields | null = null;
   let timer: unknown = null;
   let tail: Promise<void> = Promise.resolve();
+  let failed = false;
 
   function enqueue(patch: RatioPatch): void {
     tail = tail.then(async () => {
       try {
         await opts.persist(patch);
       } catch (e) {
+        failed = true;
         opts.onError?.(e);
         if (opts.reload) written = opts.reload();
       }
@@ -83,16 +99,7 @@ export function createRatioWriter(opts: {
     const draft = pending;
     pending = null;
     if (!draft || !written) return;
-    const complete =
-      draft.breakfast != null && draft.lunch != null && draft.dinner != null && draft.isfMgdl != null;
-    let patch: RatioPatch | null = null;
-    if (complete) {
-      patch = ratioSetPatch(written, draft);
-    } else if (written.ratios_confirmed === 1) {
-      // A field was emptied: the numbers the box vouched for are no longer all
-      // there, so the confirmation goes with them.
-      patch = { ratios_confirmed: 0 };
-    }
+    const patch = ratioDraftPatch(written, draft, unitOf());
     if (!patch) return;
     written = { ...written, ...patch };
     enqueue(patch);
@@ -101,6 +108,15 @@ export function createRatioWriter(opts: {
   return {
     update(draft) {
       pending = draft;
+      if (
+        written &&
+        written.ratios_confirmed === 1 &&
+        ratioDraftDiffers(written, draft, unitOf())
+      ) {
+        const patch = { ratios_confirmed: unconfirmedFlag(written) };
+        written = { ...written, ...patch };
+        enqueue(patch);
+      }
       cancelTimer();
       timer = setTimer(() => {
         timer = null;
@@ -113,16 +129,20 @@ export function createRatioWriter(opts: {
       return tail;
     },
     async confirm(checked) {
+      failed = false;
       cancelTimer();
       plan();
+      let queued = false;
       if (written) {
         const patch = ratioConfirmPatch(written, checked);
         if (patch) {
           written = { ...written, ...patch };
           enqueue(patch);
+          queued = true;
         }
       }
       await tail;
+      return checked && queued && !failed;
     },
     cancelTimer,
   };

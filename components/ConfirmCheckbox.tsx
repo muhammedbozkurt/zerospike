@@ -1,24 +1,31 @@
 import React from "react";
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { HIT_TARGET, SPACE, THEME } from "../lib/theme/tokens";
 import { hapticSelect } from "../lib/haptics";
 import { Txt } from "./ui";
 
-/** A plain labelled checkbox row; the label wraps instead of clipping. */
+/**
+ * A plain labelled checkbox row; the label wraps instead of clipping. `hint`
+ * is a line under the row that says what ticking does; it shows only while the
+ * box is unticked, so the meaning of the tick is visible before it is used.
+ */
 export function ConfirmCheckbox({
   checked,
   onToggle,
   label,
   disabled,
+  hint,
 }: {
   checked: boolean;
   onToggle: (next: boolean) => void;
   label: string;
   disabled?: boolean;
+  hint?: string;
 }) {
   return (
+    <View>
     <Pressable
       onPress={() => {
         if (disabled) return;
@@ -44,5 +51,11 @@ export function ConfirmCheckbox({
       />
       <Txt style={{ flex: 1 }}>{label}</Txt>
     </Pressable>
+    {hint && !checked ? (
+      <Txt kind="caption" tone="muted" style={{ marginStart: 24 + SPACE.md, marginTop: 2 }}>
+        {hint}
+      </Txt>
+    ) : null}
+    </View>
   );
 }

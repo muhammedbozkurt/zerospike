@@ -1,4 +1,5 @@
-import type { InsulinMode } from "./db/types";
+import type { GlucoseUnit, InsulinMode } from "./db/types";
+import { glucoseToDisplay } from "./glucose";
 import { insulinModeShowsBolus } from "./insulinMode";
 
 /**
@@ -24,11 +25,11 @@ export const RATIOS_CONFIRM_PROMPTED_KEY = "zerospike.ratiosConfirmPrompted";
  *  profile still sweeps it; nothing reads it any more. */
 export const LEGACY_CALC_SETUP_DISMISSED_KEY = "zerospike.calcSetupDismissed";
 
-export const CARB_RATIO_BOUNDS = { min: 1, max: 50 } as const;
+export const CARB_RATIO_BOUNDS = { min: 1, max: 100 } as const;
 /** ISF bounds in the profile's display unit. */
 export const ISF_BOUNDS = {
-  mgdl: { min: 5, max: 500 },
-  mmol: { min: 0.5, max: 30 },
+  mgdl: { min: 1, max: 500 },
+  mmol: { min: 0.1, max: 27.8 },
 } as const;
 
 /**
@@ -86,7 +87,9 @@ export function unenteredGroups(profile: RatioProfile | null | undefined): {
   carbs: boolean;
   isf: boolean;
 } {
-  if (!profile || profile.ratios_confirmed === 1) return { carbs: false, isf: false };
+  if (!profile || profile.ratios_confirmed === 1 || profile.ratios_confirmed === RATIOS_ENTERED) {
+    return { carbs: false, isf: false };
+  }
   const carbs = UNENTERED_CARB_TRIPLETS.some(
     ([b, l, d]) =>
       profile.carb_ratio_breakfast === b &&
@@ -157,87 +160,150 @@ export function shouldAutoOpenCalcSetup(input: {
   return input.needed && !input.isEdit && !input.prompted;
 }
 
-export interface CalcSetupPatch {
+/** What ratios_confirmed holds. 1 is the only value that opens the unit figure
+ *  (calcFiguresAllowed). 2 marks numbers the user typed and saved but has not
+ *  confirmed yet, so a set that happens to equal an older build's defaults
+ *  (10/10/10 and 40) is still recognised as theirs. 0 is "never entered". */
+export const RATIOS_ENTERED = 2 as const;
+
+export interface RatioDraftPatch {
   carb_ratio_breakfast: number;
   carb_ratio_lunch: number;
   carb_ratio_dinner: number;
   insulin_sensitivity_factor: number;
-  ratios_confirmed: 0 | 1;
+  ratios_confirmed: 0 | 2;
 }
 
-/**
- * What the sheet's "Save" writes: the four values exactly as the user saw them
- * (three meal ratios, then the correction factor). ratios_confirmed is 1 only
- * when the box was ticked; the numbers can be saved without it, but then no
- * figure appears. Null when any value cannot be used, so a bad entry never
- * reaches the profile.
- */
-export function calcSetupPatch(input: {
-  fields: RatioFields;
-  confirmed: boolean;
-}): CalcSetupPatch | null {
-  const f = input.fields;
-  if (!ratioFieldsComplete(f)) return null;
-  return {
-    carb_ratio_breakfast: f.breakfast,
-    carb_ratio_lunch: f.lunch,
-    carb_ratio_dinner: f.dinner,
-    insulin_sensitivity_factor: f.isfMgdl,
-    ratios_confirmed: input.confirmed ? 1 : 0,
-  };
+function storedNumber(v: number | null): number {
+  return usable(v) ? v : 0;
+}
+
+/** The flag an unconfirmed profile carries: "entered" when any of the four
+ *  numbers is the user's own, otherwise "never entered". */
+export function unconfirmedFlag(p: {
+  carb_ratio_breakfast: number;
+  carb_ratio_lunch: number;
+  carb_ratio_dinner: number;
+  insulin_sensitivity_factor: number;
+}): 0 | 2 {
+  return usable(p.carb_ratio_breakfast) ||
+    usable(p.carb_ratio_lunch) ||
+    usable(p.carb_ratio_dinner) ||
+    usable(p.insulin_sensitivity_factor)
+    ? RATIOS_ENTERED
+    : 0;
 }
 
 const EPS = 1e-6;
 
-function sameSet(profile: RatioProfile, f: RatioSet): boolean {
+/**
+ * Two correction factors are the same when the field would show the same
+ * number. A mmol/L screen shows one decimal, so 41 and 42 mg/dL both read 2.3
+ * and typing "2.3" back must not look like a change (it would withdraw the
+ * confirmation over rounding alone). mg/dL compares whole numbers.
+ */
+export function sameIsf(a: number, b: number, unit: GlucoseUnit): boolean {
+  return glucoseToDisplay(a, unit) === glucoseToDisplay(b, unit);
+}
+
+function sameSet(profile: RatioProfile, f: RatioSet, unit: GlucoseUnit): boolean {
   return (
     Math.abs(profile.carb_ratio_breakfast - f.breakfast) < EPS &&
     Math.abs(profile.carb_ratio_lunch - f.lunch) < EPS &&
     Math.abs(profile.carb_ratio_dinner - f.dinner) < EPS &&
-    Math.abs(profile.insulin_sensitivity_factor - f.isfMgdl) < EPS
+    sameIsf(profile.insulin_sensitivity_factor, f.isfMgdl, unit)
+  );
+}
+
+function sameNumbers(profile: RatioProfile, next: RatioDraftPatch, unit: GlucoseUnit): boolean {
+  return (
+    Math.abs(profile.carb_ratio_breakfast - next.carb_ratio_breakfast) < EPS &&
+    Math.abs(profile.carb_ratio_lunch - next.carb_ratio_lunch) < EPS &&
+    Math.abs(profile.carb_ratio_dinner - next.carb_ratio_dinner) < EPS &&
+    (next.insulin_sensitivity_factor === profile.insulin_sensitivity_factor ||
+      (usable(next.insulin_sensitivity_factor) &&
+        usable(profile.insulin_sensitivity_factor) &&
+        sameIsf(profile.insulin_sensitivity_factor, next.insulin_sensitivity_factor, unit)))
   );
 }
 
 /**
- * Profile and Targets saves the four numbers as one set, once all four are
- * filled. A set that differs from what is stored is a new set: the confirmation
- * is withdrawn (ratios_confirmed 0) and the user ticks the box again. Typing the
- * same numbers back changes nothing, so a confirmed profile stays confirmed.
- * Null when a value is missing or unusable, or when nothing differs.
+ * What a draft of the four numbers writes to the profile, shared by the
+ * calculator's sheet and Profile and Targets so both read and write the same
+ * record. Every value the user filled is kept, even when the others are still
+ * empty (an empty one is stored as 0, "not entered"), so three typed ratios are
+ * still there when the user moves on. A changed set always leaves the
+ * confirmation behind (ratios_confirmed is never 1 in a patch): the user ticks
+ * the box again for the numbers on screen. Null when nothing differs.
  */
-export function ratioSetPatch(
+export function ratioDraftPatch(
   profile: RatioProfile | null | undefined,
-  draft: RatioFields
-): (Omit<CalcSetupPatch, "ratios_confirmed"> & { ratios_confirmed: 0 }) | null {
-  if (!profile || !ratioFieldsComplete(draft)) return null;
-  if (sameSet(profile, draft)) return null;
-  return {
-    carb_ratio_breakfast: draft.breakfast,
-    carb_ratio_lunch: draft.lunch,
-    carb_ratio_dinner: draft.dinner,
-    insulin_sensitivity_factor: draft.isfMgdl,
+  draft: RatioFields,
+  unit: GlucoseUnit = "mgdl"
+): RatioDraftPatch | null {
+  if (!profile) return null;
+  const next: RatioDraftPatch = {
+    carb_ratio_breakfast: storedNumber(draft.breakfast),
+    carb_ratio_lunch: storedNumber(draft.lunch),
+    carb_ratio_dinner: storedNumber(draft.dinner),
+    insulin_sensitivity_factor: storedNumber(draft.isfMgdl),
     ratios_confirmed: 0,
   };
+  next.ratios_confirmed = unconfirmedFlag(next);
+  if (sameNumbers(profile, next, unit)) {
+    // The numbers are already stored. A set nobody had marked yet, typed back by
+    // the user, is theirs from now on; a confirmed set stays confirmed.
+    if (profile.ratios_confirmed === 0 && next.ratios_confirmed === RATIOS_ENTERED) {
+      return {
+        carb_ratio_breakfast: profile.carb_ratio_breakfast,
+        carb_ratio_lunch: profile.carb_ratio_lunch,
+        carb_ratio_dinner: profile.carb_ratio_dinner,
+        insulin_sensitivity_factor: profile.insulin_sensitivity_factor,
+        ratios_confirmed: RATIOS_ENTERED,
+      };
+    }
+    return null;
+  }
+  return next;
 }
 
 /** True when the stored set is the draft (so ticking the box confirms exactly
  *  what is on screen). */
 export function ratioSetMatchesStored(
   profile: RatioProfile | null | undefined,
-  draft: RatioFields
+  draft: RatioFields,
+  unit: GlucoseUnit = "mgdl"
 ): boolean {
   if (!profile || !ratioFieldsComplete(draft)) return false;
-  return sameSet(profile, draft);
+  return sameSet(profile, draft, unit);
 }
 
-/** The box in Profile and Targets. Ticking confirms the stored set (null when
- *  any stored number cannot be divided by); unticking withdraws it. */
+/** True when the draft differs from the stored set in any field. */
+export function ratioDraftDiffers(
+  profile: RatioProfile | null | undefined,
+  draft: RatioFields,
+  unit: GlucoseUnit = "mgdl"
+): boolean {
+  if (!profile) return false;
+  const next = {
+    carb_ratio_breakfast: storedNumber(draft.breakfast),
+    carb_ratio_lunch: storedNumber(draft.lunch),
+    carb_ratio_dinner: storedNumber(draft.dinner),
+    insulin_sensitivity_factor: storedNumber(draft.isfMgdl),
+    ratios_confirmed: 0 as const,
+  };
+  return !sameNumbers(profile, next, unit);
+}
+
+/** The box. Ticking confirms the stored set (null when any stored number cannot
+ *  be divided by); unticking withdraws the confirmation but keeps the numbers
+ *  marked as the user's own. */
 export function ratioConfirmPatch(
   profile: RatioProfile | null | undefined,
   checked: boolean
-): { ratios_confirmed: 0 | 1 } | null {
+): { ratios_confirmed: 0 | 1 | 2 } | null {
   if (!profile) return null;
-  if (!checked) return { ratios_confirmed: 0 };
+  if (!checked) return { ratios_confirmed: unconfirmedFlag(profile) };
   if (!allUsable(profile)) return null;
   return { ratios_confirmed: 1 };
 }

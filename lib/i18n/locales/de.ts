@@ -295,6 +295,15 @@ const de: TranslationSchema = {
     lunch: "Mittag",
     dinner: "Abend / Nacht",
   },
+  numeric: {
+    range: "Geben Sie einen Wert von {{min}} bis {{max}} {{unit}} ein",
+    required: "Geben Sie einen Wert ein",
+    carbRatioExample: "z. B. 10",
+    isfExampleMgdl: "z. B. 50",
+    isfExampleMmol: "z. B. 2,8",
+    glucoseExampleMgdl: "z. B. 120",
+    glucoseExampleMmol: "z. B. 6,7",
+  },
   ratio: {
     line: "Ihr KH-Faktor ({{slot}}): {{ratio}}",
     enter: "Geben Sie Ihre Faktoren ein",
@@ -375,6 +384,8 @@ const de: TranslationSchema = {
     calcNotAdvice: "Keine medizinische Beratung. Entscheiden Sie Ihre Dosis mit Ihrem Behandlungsteam.",
     manualDose: "Verabreichte Dosis (Einheiten)",
     currentGlucose: "Aktueller Blutzucker (optional)",
+    glucoseOffer: "Letzte Messung {{value}} {{unit}}, zum Verwenden antippen",
+    pending: "Bestätigung ausstehend",
     addPhoto: "Foto hinzufügen",
     takePhoto: "Foto aufnehmen",
     choosePhoto: "Aus Galerie wählen",
@@ -425,6 +436,7 @@ const de: TranslationSchema = {
       bodyFilled: "Ihre Werte sind gespeichert. Bitte bestätigen Sie sie nur noch.",
       teamNote: "Legen Sie Ihre Faktoren gemeinsam mit Ihrem Diabetesteam fest.",
       confirm: "Ich habe diese Werte mit meinem Diabetesteam festgelegt",
+      hint: "Die berechnete Summe erscheint, sobald Sie das Kästchen markieren",
     },
   },
   iob: {
