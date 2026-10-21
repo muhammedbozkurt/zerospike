@@ -1634,6 +1634,16 @@ const es: TranslationSchema = {
     itemSpike: "Estimación de carbohidratos de Spike: escriba su comida y vea los carbohidratos aproximados (una estimación a partir de datos nutricionales, no una dosis).",
     ok: "Aceptar",
   },
+  fatalReport: {
+    row: "Último informe de error",
+    none: "Sin registro",
+    empty: "No hay ningún error guardado en este dispositivo.",
+    intro: "Se guarda solo en este dispositivo. No se envía nada a menos que lo adjunte a un comentario.",
+    share: "Copiar o compartir",
+    clear: "Borrar",
+    attach: "Adjuntar el último informe de error",
+    attachHint: "Opcional. Si lo activa, el nombre del error, la causa breve y la traza técnica se añaden al final de su mensaje.",
+  },
   feedback: {
     aboutRow: "Enviar comentarios",
     title: "Comentarios",

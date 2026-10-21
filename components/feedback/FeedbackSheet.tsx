@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { I18nManager, Text, TextInput, View } from "react-native";
+import { I18nManager, Switch, Text, TextInput, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { SheetShell } from "../SheetShell";
 import { Button } from "../ui";
 import { ChipGroup, type ChipOption } from "./ChipGroup";
-import { RADIUS, THEME } from "../../lib/theme/tokens";
+import { RADIUS, THEME, switchColors } from "../../lib/theme/tokens";
+import { loadLastFatalReport } from "../../lib/fatalCapture";
+import { composeFeedbackMessage, type FatalReport } from "../../lib/fatalReport";
 import { hapticSuccess } from "../../lib/haptics";
 import { submitFeedback } from "../../lib/feedbackClient";
 import {
@@ -88,6 +90,21 @@ export function FeedbackSheet({
 
   const draft: FeedbackDraft = { kind, reasonCode: reason, message, email };
 
+  // Off every time the sheet opens: the report leaves the device only when ticked now.
+  const [fatalReport, setFatalReport] = useState<FatalReport | null>(null);
+  const [attachReport, setAttachReport] = useState(false);
+  useEffect(() => {
+    if (!visible || isSurvey) return;
+    setAttachReport(false);
+    let live = true;
+    loadLastFatalReport()
+      .then((r) => live && setFatalReport(r))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [visible, isSurvey]);
+
   const close = useCallback(
     (wasSent: boolean) => {
       if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -115,7 +132,11 @@ export function FeedbackSheet({
     setErrorKey(null);
     let result;
     try {
-      result = await submitFeedback(draft);
+      const outgoing: FeedbackDraft = {
+        ...draft,
+        message: composeFeedbackMessage(cleanMessage(message), fatalReport, attachReport, MAX_MESSAGE_CHARS),
+      };
+      result = await submitFeedback(outgoing);
     } finally {
       sendSlot.current.release();
     }
@@ -247,6 +268,24 @@ export function FeedbackSheet({
             />
             <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("feedback.emailHint")}</Text>
           </View>
+
+          {!isSurvey && fatalReport ? (
+            <View style={{ gap: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <Text style={{ flex: 1, color: THEME.text, fontSize: 15 }}>
+                  {t("fatalReport.attach")}
+                </Text>
+                <Switch
+                  value={attachReport}
+                  onValueChange={setAttachReport}
+                  disabled={busy}
+                  {...switchColors()}
+                  accessibilityLabel={t("fatalReport.attach")}
+                />
+              </View>
+              <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("fatalReport.attachHint")}</Text>
+            </View>
+          ) : null}
 
           {errorKey ? (
             <Text

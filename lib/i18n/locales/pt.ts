@@ -1633,6 +1633,16 @@ const pt: TranslationSchema = {
     itemSpike: "Estimativa de carboidratos do Spike: escreva sua refeição e veja os carboidratos aproximados (uma estimativa com base em dados nutricionais, não uma dose).",
     ok: "OK",
   },
+  fatalReport: {
+    row: "Último relatório de erro",
+    none: "Sem registro",
+    empty: "Nenhum erro está salvo neste dispositivo.",
+    intro: "Salvo apenas neste dispositivo. Nada é enviado, a menos que você o anexe a um feedback.",
+    share: "Copiar ou compartilhar",
+    clear: "Limpar",
+    attach: "Anexar o último relatório de erro",
+    attachHint: "Opcional. Se ativado, o nome do erro, o motivo resumido e o rastreamento técnico são adicionados ao final da sua mensagem.",
+  },
   feedback: {
     aboutRow: "Enviar feedback",
     title: "Feedback",
