@@ -243,7 +243,7 @@ async function main(): Promise<void> {
   ok("_layout clears on Pro and refreshes otherwise", /if \(isProUser\) clearPaywallTrial\(\);\s*else void refreshPaywallTrialOnce\(\);/.test(layout));
   const paywall = read("app/paywall.tsx");
   ok("paywall primes the trial from offerings", paywall.includes("primePaywallTrial(r)"));
-  ok("paywall clears the trial on purchase and restore", /if \(res\.ok\) \{\s*clearPaywallTrial\(\);/.test(paywall) && /if \(result === "restored"\) \{\s*clearPaywallTrial\(\);/.test(paywall));
+  ok("paywall clears the trial on purchase and restore", /onSuccess: async \(p, res\) => \{\s*clearPaywallTrial\(\);/.test(paywall) && /if \(result === "restored"\) \{\s*clearPaywallTrial\(\);/.test(paywall));
   console.log(`proCta: ${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }

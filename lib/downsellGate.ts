@@ -62,6 +62,19 @@ export function downsellCooldownElapsed(lastShownAt: number | null, now: number)
 }
 
 /**
+ * A stored date in the future (the clock was moved forward, then back) would
+ * keep the window shut for as long as the skew. Reading it as "now" caps the
+ * wait at one window from the moment it is noticed; the service persists the
+ * clamped value so the cap does not slide.
+ */
+export function clampLastShownAt(state: DownsellState, now: number): DownsellState {
+  if (state.lastShownAt !== null && state.lastShownAt > now) {
+    return { ...state, lastShownAt: now };
+  }
+  return state;
+}
+
+/**
  * The lifetime cap and re-arm cool-off, independent of the trigger: at most
  * DOWNSELL_MAX_SHOWS shows ever, and none within DOWNSELL_REARM_MS of the last
  * stamped screen (whether it was accepted, declined, or only opened). A counted
@@ -302,7 +315,27 @@ export function createPaywallExitController(
   isBlocked: () => boolean = () => false
 ) {
   let exiting = false;
+  // Set when a purchase starts while a decision is still in flight: the decision
+  // then navigates nowhere (the purchase owns the screen's exit).
+  let abandoned = false;
+
+  /** Shared tail of a decision that is dropped because a purchase took over. */
+  async function settleAbandoned(decision: PaywallExitDecision): Promise<void> {
+    // A reserved session slot with no screen opening is handed back.
+    if (decision === "downsell") deps.session.release();
+    exiting = false;
+    abandoned = false;
+  }
+
   const controller = {
+    /** True from the moment a close or cancel has taken the lock until the
+     *  screen has left (or, for a cancel with nothing to show, until it stays).
+     *  The paywall refuses a purchase press while this is true. */
+    isExiting: () => exiting,
+    /** A purchase has begun: a decision still pending must not navigate. */
+    abandonPendingExit(): void {
+      if (exiting) abandoned = true;
+    },
     /** `onAccepted` runs synchronously once this call has taken the lock, so
      *  per-exit side effects (analytics) fire once, not once per tap. */
     async requestExit(
@@ -311,10 +344,27 @@ export function createPaywallExitController(
     ): Promise<void> {
       if (exiting) return;
       exiting = true;
+      abandoned = false;
       onAccepted?.();
       const decision = await decidePaywallExit(deps, input);
+      if (abandoned) return settleAbandoned(decision);
       if (decision === "downsell") nav.openDownsell();
       else nav.closePaywall();
+    },
+    /**
+     * A store sheet the user cancelled. Only a "downsell" decision leaves the
+     * paywall; "exit" means the paywall STAYS, the lock is released and the
+     * button returns to normal (cancelling a purchase is not closing the
+     * paywall, and not a reason to throw the user off it).
+     */
+    async requestAfterCancel(input: { plan: string; isPro: boolean }): Promise<void> {
+      if (exiting) return;
+      exiting = true;
+      abandoned = false;
+      const decision = await decidePaywallExit(deps, input);
+      if (abandoned) return settleAbandoned(decision);
+      if (decision === "downsell") nav.openDownsell();
+      else exiting = false;
     },
     /** A close the user asked for (X, back, swipe): ignored while blocked.
      *  A cancelled purchase uses requestExit directly, as it IS the blocker. */

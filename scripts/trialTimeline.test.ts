@@ -328,7 +328,7 @@ section("I. wiring: the trial reminder and the paywall use these rules");
     "trial_started carries only the tier",
     /logEvent\("trial_started", \{ tier: plan \}\)/.test(paywall)
   );
-  const buyFrom = paywall.slice(paywall.indexOf("  async function buy()"));
+  const buyFrom = paywall.slice(paywall.indexOf("    onSuccess: async (p, res) => {"));
   const buyBody = buyFrom.slice(0, buyFrom.indexOf("\n  }\n"));
   ok(
     "a purchase is judged by the store, not by the offer that was on screen",

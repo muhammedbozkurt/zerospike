@@ -24,6 +24,7 @@ import { recordDownsellShown } from "../lib/services/downsell";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
+import { shouldOpenWelcomeAfterPurchase } from "../lib/paywallPurchase";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
 import { Button, Txt } from "../components/ui";
@@ -140,7 +141,13 @@ function DownsellScreen() {
         });
         hapticSuccess();
         if (feedback) toast(t(feedback.key), feedback.kind);
-        goHome();
+        // A new purchase lands on the Pro welcome, like the paywall's; only an
+        // already-owned recovery keeps the older plain exit.
+        if (shouldOpenWelcomeAfterPurchase({ recovered: res.recovered === true, stepsLeft: false })) {
+          router.replace("/pro-welcome");
+        } else {
+          goHome();
+        }
       } else if (feedback) {
         // Real store error: an honest message instead of a silent stay.
         toast(t(feedback.key), feedback.kind);

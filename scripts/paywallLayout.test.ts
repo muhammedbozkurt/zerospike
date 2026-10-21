@@ -62,6 +62,7 @@ function worst(over: Partial<PaywallLayoutInput>): PaywallLayoutInput {
     annualDescLines: 2,
     annualFootLines: 1,
     lifetimeFootLines: 2,
+    ctaLines: 2,
     disclosureLines: 3,
     chipCount: 5,
     chipLines: 2,
@@ -105,7 +106,20 @@ section("D. the layout is not trivially true: it fails when the content really o
   ok("a 1.6x text scale on the SE overflows (the scroll then carries the plans)", !big.plansAndCtaFit);
   const tall = computePaywallLayout(worst({ headlineLines: 6, promiseLines: 6, height: 667, insetTop: 20, insetBottom: 0 }));
   ok("an absurd headline overflows", !tall.plansAndCtaFit);
-  ok("constants are the ones the screen uses", PAYWALL_LAYOUT.planGap === 8 && PAYWALL_LAYOUT.ctaHeight === 44);
+  ok("constants are the ones the screen uses", PAYWALL_LAYOUT.planGap === 8 && PAYWALL_LAYOUT.ctaPadVertical === 26);
+}
+
+section("D2. a two-line CTA label (long priced text) still leaves three plans and the CTA on the first screen");
+{
+  const l2 = computePaywallLayout(worst({ ctaLines: 2 }));
+  const l1 = computePaywallLayout(worst({ ctaLines: 1 }));
+  ok("a second label line makes the band taller", l2.bandHeight > l1.bandHeight);
+  ok("375x812 with a two-line CTA and the trial line", l2.plansAndCtaFit);
+  const se = computePaywallLayout(worst({ height: 667, insetTop: 20, insetBottom: 0, ctaLines: 2 }));
+  ok("375x667 with a two-line CTA and the trial line", se.plansAndCtaFit, `slack ${se.viewportBottom - se.plansBottom}`);
+  const se115 = computePaywallLayout(worst({ height: 667, insetTop: 20, insetBottom: 0, ctaLines: 2, fontScale: 1.15 }));
+  console.log(`  info: SE slack at text scale 1.0 ${se.viewportBottom - se.plansBottom}, at 1.15 ${se115.viewportBottom - se115.plansBottom}`);
+  ok("375x667 at text scale 1.15 (plans may scroll, the CTA never leaves the band)", se115.bandHeight < 667 / 2);
 }
 
 section("E. CTA kind follows the selected plan");
@@ -180,6 +194,19 @@ const LOCALES: Record<string, { paywall: Pw }> = {
   it: it as never, pt: pt as never, ar: ar as never, ja: ja as never,
 };
 
+/** Real store strings (monthly, annual, lifetime) of the markets that matter, long ones included. */
+const REAL_PRICES: Record<string, [string, string, string]> = {
+  en: ["$4.99", "$59.99", "$149.99"],
+  tr: ["₺149,99", "₺1.499,99", "₺3.999,99"],
+  de: ["4,99 €", "59,99 €", "149,99 €"],
+  fr: ["4,99 €", "59,99 €", "149,99 €"],
+  es: ["4,99 US$", "59,99 US$", "149,99 US$"],
+  it: ["4,99 €", "59,99 €", "149,99 €"],
+  pt: ["R$ 29,90", "R$ 349,90", "R$ 899,90"],
+  ar: ["US$ 4.99", "US$ 59.99", "US$ 149.99"],
+  ja: ["¥980", "¥9,800", "¥24,800"],
+};
+
 function fill(text: string, vars: Record<string, string>): string {
   return text.replace(/\{\{(\w+)\}\}/g, (_, k: string) => vars[k] ?? "");
 }
@@ -204,7 +231,7 @@ function wrap(text: string, fontSize: number, width: number): { lines: number; w
   return { lines, widestWord: widest };
 }
 
-section("H. wording in all nine languages (no adjustsFontSizeToFit anywhere)");
+section("H. wording in all nine languages (the priced CTA wraps, it is never shrunk or clipped)");
 {
   const CHIP_TEXT_WIDTH = (375 - 40) * 0.485 - 20 - 2 - 14 - 8;
   const CTA_WIDTH = 375 - 40 - 28;
@@ -224,11 +251,18 @@ section("H. wording in all nine languages (no adjustsFontSizeToFit anywhere)");
       // Japanese breaks between characters, so there is no unbreakable word.
       ok(`${lang} chip "${chip}": no word wider than the column`, lang === "ja" || w.widestWord <= CHIP_TEXT_WIDTH, `${w.widestWord} > ${CHIP_TEXT_WIDTH}`);
     }
+    const prices = REAL_PRICES[lang];
     for (const key of ["ctaMonthly", "ctaAnnual", "ctaLifetime"] as const) {
       ok(`${lang} ${key} carries {{price}}`, pw[key].includes("{{price}}"));
-      const label = fill(pw[key], { price: "$199.99" });
-      const width = estimateTextWidth(label, 15);
-      ok(`${lang} ${key} "${label}" fits one line at 15pt`, width <= CTA_WIDTH, `${Math.round(width)} > ${CTA_WIDTH}`);
+      const price = key === "ctaMonthly" ? prices[0] : key === "ctaAnnual" ? prices[1] : prices[2];
+      const label = fill(pw[key], { price });
+      // Two lines at most, at the largest size the label can grow to (the CTA
+      // caps the text multiplier at 1.3); no word wider than the line.
+      for (const scale of [1, 1.15, 1.3]) {
+        const w = wrap(label, 15 * scale, CTA_WIDTH);
+        ok(`${lang} ${key} "${label}" wraps in at most 2 lines at x${scale}`, w.lines <= 2, `${w.lines} lines`);
+        ok(`${lang} ${key} x${scale}: no word wider than the line`, lang === "ja" || w.widestWord <= CTA_WIDTH, `${Math.round(w.widestWord)}`);
+      }
     }
     ok(`${lang} promise is a single short sentence`, pw.promise.length <= 90 && !/[—–]/.test(pw.promise), pw.promise);
     for (const v of Object.values(pw)) {

@@ -8,6 +8,7 @@ import {
 import {
   DOWNSELL_REARM_MS,
   canShowDownsell,
+  clampLastShownAt,
   downsellCooldownElapsed,
   entitlementBlocksDownsell,
   applyDownsellShown,
@@ -65,7 +66,18 @@ export async function getDownsellState(): Promise<DownsellState> {
   try {
     const raw = await AsyncStorage.getItem(DOWNSELL_KEY);
     if (!raw) return initialDownsellState;
-    return normalizeDownsellState(JSON.parse(raw));
+    const stored = normalizeDownsellState(JSON.parse(raw));
+    const state = clampLastShownAt(stored, Date.now());
+    if (state !== stored) {
+      // Persisted, so a clock that was moved forward cannot hold the window
+      // shut for longer than one window from the moment it is noticed.
+      try {
+        await AsyncStorage.setItem(DOWNSELL_KEY, JSON.stringify(state));
+      } catch {
+        // best-effort
+      }
+    }
+    return state;
   } catch {
     return initialDownsellState;
   }

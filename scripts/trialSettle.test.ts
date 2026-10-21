@@ -254,7 +254,9 @@ section("F. wiring: the paywall carries the action out and decides nothing itsel
   const restoreHandler = blockFrom(paywall, "  async function onRestore(");
   ok("onRestore hands the trial to that function", /await settleRestoredTrial\(\)/.test(restoreHandler));
   ok("and keeps no trial decision of its own", !/getTrialStatus\(\)/.test(restoreHandler) && !/cancelTrialReminder\(/.test(restoreHandler));
-  const buyHandler = blockFrom(paywall, "  async function buy(");
+  // The purchase handling moved into the tested flow (lib/paywallBuyFlow); the
+  // screen keeps the success side effects in onSuccess.
+  const buyHandler = blockFrom(paywall, "    onSuccess: async (p, res) => {");
   ok("buy settles the purchase's trial", /await settleTrial\(res\)/.test(buyHandler));
   ok("and never reads the offer on screen for it", !/annualTrial/.test(buyHandler));
 
