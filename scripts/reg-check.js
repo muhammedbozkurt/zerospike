@@ -12,7 +12,13 @@
  * aso-android/<locale>.md and the newest google-play-extras/whats-new-<version>.md.
  * That folder is gitignored, so CI does not have it and skips it silently. The
  * notes, research and check logs beside those files quote banned wording on
- * purpose and are not scanned. The scanned files mix languages (English notes
+ * purpose and are not scanned. fastlane/metadata/<store locale>/*.txt (App Store)
+ * and fastlane/metadata/android/<play locale>/{title,short_description,
+ * full_description}.txt plus changelogs/*.txt are scanned the same way, for every
+ * locale directory present (en-AU, en-CA included); a directory name maps to its
+ * language by the part before the first "-" (en-AU -> en, es-419 -> es). That
+ * folder is gitignored too, so CI skips it silently. A hit there is excused by a
+ * "fastlane/metadata/<dir>/<file>.txt#<sentence>" key. The scanned files mix languages (English notes
  * next to the translated copy), so every line is checked against every locale's
  * list, and a hit is excused only by a
  * "zerospike-store/<dir>/<file>.md#<sentence>" key in reg-allowlist.json: the
@@ -27,6 +33,8 @@ const LOCALES_DIR = path.join(ROOT, "lib/i18n/locales");
 const ALLOWLIST_FILE = path.join(__dirname, "reg-allowlist.json");
 const STORE_DIR = path.join(ROOT, "zerospike-store");
 const STORE_KEY_PREFIX = "zerospike-store/";
+const METADATA_DIR = path.join(ROOT, "fastlane/metadata");
+const METADATA_KEY_PREFIX = "fastlane/metadata/";
 
 const LOCALES = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
 
@@ -418,15 +426,58 @@ function listStoreFiles() {
   return files;
 }
 
-// "zerospike-store/<dir>/<file>.md#<sentence>" -> Map(file key -> sentences).
+// Directory name -> language code of PATTERNS ("en-AU" -> "en", "ar" -> "ar", "it" -> "it").
+function metadataLocale(dirName) {
+  const lang = dirName.split("-")[0];
+  return LOCALES.includes(lang) ? lang : null;
+}
+
+// App Store text files in fastlane/metadata/<locale>/ and Play text files in
+// fastlane/metadata/android/<locale>/ (+ changelogs/). Images and other
+// binaries are never opened.
+function listMetadataFiles() {
+  const files = [];
+  const dirStat = fs.statSync(METADATA_DIR, { throwIfNoEntry: false });
+  if (!dirStat || !dirStat.isDirectory()) return files;
+  const addDir = (relDir, own) => {
+    const abs = path.join(METADATA_DIR, relDir);
+    const st = fs.statSync(abs, { throwIfNoEntry: false });
+    if (!st || !st.isDirectory()) return;
+    for (const name of fs.readdirSync(abs).sort()) {
+      if (!name.endsWith(".txt")) continue;
+      const file = path.join(abs, name);
+      if (fs.statSync(file).isFile()) {
+        files.push({ abs: file, key: `${METADATA_KEY_PREFIX}${relDir}/${name}`, own });
+      }
+    }
+  };
+  for (const name of fs.readdirSync(METADATA_DIR).sort()) {
+    if (name === "android") continue;
+    const own = metadataLocale(name);
+    if (own) addDir(name, own);
+  }
+  const androidDir = path.join(METADATA_DIR, "android");
+  const androidStat = fs.statSync(androidDir, { throwIfNoEntry: false });
+  if (androidStat && androidStat.isDirectory()) {
+    for (const name of fs.readdirSync(androidDir).sort()) {
+      const own = metadataLocale(name);
+      if (!own) continue;
+      addDir(`android/${name}`, own);
+      addDir(`android/${name}/changelogs`, own);
+    }
+  }
+  return files;
+}
+
+// "<prefix><dir>/<file>#<sentence>" -> Map(file key -> sentences).
 function loadStoreAnchors(allowlist) {
   const byFile = new Map();
   for (const entry of Object.keys(allowlist)) {
-    if (!entry.startsWith(STORE_KEY_PREFIX)) continue;
+    if (!entry.startsWith(STORE_KEY_PREFIX) && !entry.startsWith(METADATA_KEY_PREFIX)) continue;
     const hash = entry.indexOf("#");
     if (hash === -1 || hash === entry.length - 1) {
       throw new Error(
-        `reg-allowlist.json: "${entry}" must look like "${STORE_KEY_PREFIX}<dir>/<file>.md#<sentence>"`
+        `reg-allowlist.json: "${entry}" must look like "${STORE_KEY_PREFIX}<dir>/<file>.md#<sentence>" or "${METADATA_KEY_PREFIX}<dir>/<file>.txt#<sentence>"`
       );
     }
     const file = entry.slice(0, hash);
@@ -447,7 +498,7 @@ function insideAnchor(anchors, line, index, length) {
 }
 
 function scanStore(allowlist, findings) {
-  const files = listStoreFiles();
+  const files = [...listStoreFiles(), ...listMetadataFiles()];
   if (files.length === 0) return { files: 0, excused: 0 };
   const anchorsByFile = loadStoreAnchors(allowlist);
   const matchers = LOCALES.map((locale) => ({
@@ -459,10 +510,11 @@ function scanStore(allowlist, findings) {
     })),
   }));
   let excused = 0;
-  for (const { abs, key } of files) {
+  for (const file of files) {
+    const { abs, key } = file;
     // The file's own language goes first so a word several languages share is
     // reported once, under that language.
-    const own = path.basename(abs, ".md");
+    const own = file.own || path.basename(abs, ".md");
     const ordered = [...matchers.filter((m) => m.locale === own), ...matchers.filter((m) => m.locale !== own)];
     const anchors = anchorsByFile.get(key) || [];
     const lines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
@@ -506,7 +558,7 @@ function main() {
 
   const store = scanStore(allowlist, findings);
   excusedCount += store.excused;
-  const storeNote = store.files > 0 ? `, ${store.files} magaza dosyasi` : "";
+  const storeNote = store.files > 0 ? `, ${store.files} magaza ve metadata dosyasi` : "";
 
   if (findings.length === 0) {
     console.log(
@@ -536,4 +588,12 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { PATTERNS, KEY_EXEMPTIONS, scanLocaleEntries, loadLocaleEntries, LOCALES };
+module.exports = {
+  PATTERNS,
+  KEY_EXEMPTIONS,
+  scanLocaleEntries,
+  loadLocaleEntries,
+  LOCALES,
+  metadataLocale,
+  listMetadataFiles,
+};

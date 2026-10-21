@@ -132,5 +132,32 @@ for (const locale of LOCALES) {
   eq(`${locale} real findings`, r.findings.length, 0);
 }
 
+section("G. fastlane/metadata directories map to a language and are all listed");
+{
+  const map: [string, string | null][] = [
+    ["en-AU", "en"], ["en-CA", "en"], ["en-GB", "en"], ["en-US", "en"], ["es-419", "es"], ["es-MX", "es"],
+    ["fr-CA", "fr"], ["ar", "ar"], ["ar-SA", "ar"], ["it", "it"], ["it-IT", "it"], ["ja", "ja"], ["ja-JP", "ja"],
+    ["pt-BR", "pt"], ["tr-TR", "tr"], ["android", null], ["screenshots", null],
+  ];
+  for (const [dir, lang] of map) eq(`metadataLocale ${dir}`, reg.metadataLocale(dir), lang);
+
+  const files = reg.listMetadataFiles() as { key: string; own: string }[];
+  if (files.length === 0) {
+    console.log("  (fastlane/metadata yok, liste testi atlandi)");
+  } else {
+    const keys = new Set(files.map((f) => f.key));
+    for (const loc of ["en-AU", "en-CA", "en-GB"]) {
+      for (const f of ["name", "subtitle", "keywords", "promotional_text", "description", "release_notes"]) {
+        ok(`listed fastlane/metadata/${loc}/${f}.txt`, keys.has(`fastlane/metadata/${loc}/${f}.txt`));
+      }
+      for (const f of ["title", "short_description", "full_description"]) {
+        ok(`listed android/${loc}/${f}.txt`, keys.has(`fastlane/metadata/android/${loc}/${f}.txt`));
+      }
+    }
+    ok("no image or binary listed", files.every((f) => f.key.endsWith(".txt") && !f.key.includes("/images/")));
+    ok("every file has a known language", files.every((f) => reg.LOCALES.includes(f.own)));
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
