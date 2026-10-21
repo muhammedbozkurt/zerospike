@@ -36,8 +36,8 @@ export async function getDefaultProfile(): Promise<UserProfile> {
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         basal_daily_units, basal_insulin_id, bolus_insulin_id,
         basal_insulin_other, bolus_insulin_other,
-        created_at)
-     VALUES (?, ?, 0, 0, 0, 0, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, NULL, NULL, ?);`,
+        created_at, ratios_confirmed)
+     VALUES (?, ?, 0, 0, 0, 0, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, NULL, NULL, ?, 0);`,
     [DEFAULT_PROFILE_ID, "", now]
   );
   return (await getProfile(DEFAULT_PROFILE_ID))!;
@@ -84,8 +84,8 @@ export async function createProfile(
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         diabetes_type, insulin_mode,
         basal_daily_units, basal_insulin_id, bolus_insulin_id,
-        basal_insulin_other, bolus_insulin_other, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        basal_insulin_other, bolus_insulin_other, created_at, ratios_confirmed)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0);`,
     [
       id,
       input.name.trim(),

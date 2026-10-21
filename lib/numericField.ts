@@ -18,42 +18,96 @@ export interface NumericBounds {
   decimals: number;
 }
 
-export type NumericReadKind = "ok" | "empty" | "below" | "above";
+export type NumericReadKind = "ok" | "empty" | "below" | "above" | "malformed";
 
 export interface NumericReading {
   /** The text as the field should show it: digits and one separator. */
   text: string;
   kind: NumericReadKind;
-  /** The committed number, or null while empty or outside the bounds. */
+  /** The committed number, or null while empty, outside the bounds or malformed. */
   value: number | null;
 }
 
 /** Keeps digits and one separator (comma, dot or the Arabic decimal mark) and
- *  at most `decimals` places. "7,5" and "7.5" both survive and read the same. */
+ *  at most `decimals` places. "7,5" and "7.5" both survive and read the same.
+ *  A whole-number field stops at the first separator ("45,5" is 45). */
 export function filterNumericText(raw: string, decimals: number): string {
   return sanitizeStepperText(raw, decimals);
 }
 
-export function readNumeric(raw: string, b: NumericBounds): NumericReading {
+const NUMERAL = "0-9\\u0660-\\u0669\\u06F0-\\u06F9";
+const CLEAN = new RegExp(`^[${NUMERAL}]*[.,\\u066B]?[${NUMERAL}]*$`);
+
+function read(raw: string, typed: boolean, b: NumericBounds): NumericReading {
   const text = filterNumericText(raw, b.decimals);
   const r = readStepperText(text, b);
+  // One character appended at the end is typing: a stray letter or a second
+  // separator is simply not entered. Anything else (a paste, a replaced
+  // selection) must be a plain number; "-3", "1e2" and "7.5.5" are refused and
+  // said so, rather than quietly turned into another number.
+  let clean = true;
+  if (!typed) {
+    const t = raw.trim();
+    clean = CLEAN.test(t);
+    if (clean && b.decimals > 0) {
+      const sep = t.search(/[.,\u066B]/);
+      if (sep >= 0 && t.length - sep - 1 > b.decimals) clean = false;
+    }
+  }
+  if (!clean) return { text, kind: "malformed", value: null };
   return { text, kind: r.kind, value: r.kind === "ok" ? r.value : null };
 }
 
+/** Reads a whole string as if it arrived at once (a paste, a stored value). */
+export function readNumeric(raw: string, b: NumericBounds): NumericReading {
+  return read(raw, false, b);
+}
+
+/** raw is prev with characters taken out (backspace, a cut selection). */
+function isDeletion(raw: string, prev: string): boolean {
+  if (raw.length >= prev.length) return false;
+  let i = 0;
+  for (const ch of prev) {
+    if (i < raw.length && raw[i] === ch) i++;
+  }
+  return i === raw.length;
+}
+
+/** Reads what the input now holds, given what it held a moment ago. */
+export function readNumericInput(raw: string, prev: string, b: NumericBounds): NumericReading {
+  const appended = raw.length === prev.length + 1 && raw.startsWith(prev);
+  return read(raw, appended || isDeletion(raw, prev), b);
+}
+
+/** True when the field already shows `value`: its own echo coming back through
+ *  the parent. Anything else came from outside (a chip, a slider, a tap on an
+ *  offer) and must replace the text. */
+export function fieldShowsValue(reading: NumericReading, value: number | null): boolean {
+  if (reading.kind === "ok") return value != null && Math.abs((reading.value as number) - value) <= 1e-9;
+  return value == null;
+}
+
 /**
- * Which error the field shows under itself, if any. Above the maximum is wrong
- * the moment it is typed (more digits cannot fix it); below the minimum is only
+ * Which error the field shows under itself, if any. Above the maximum (and a
+ * malformed paste) is wrong the moment it is shown; below the minimum is only
  * wrong once the user leaves the field, because "1" on the way to "110" is not
  * a mistake. An empty field is an error only when it is required.
  */
 export function numericError(
   kind: NumericReadKind,
   opts: { blurred: boolean; required: boolean }
-): "below" | "above" | "required" | null {
+): "below" | "above" | "required" | "malformed" | null {
   if (kind === "above") return "above";
+  if (kind === "malformed") return "malformed";
   if (kind === "below") return opts.blurred ? "below" : null;
   if (kind === "empty") return opts.required && opts.blurred ? "required" : null;
   return null;
+}
+
+/** - / + act only on a number or an empty field; on refused text they do nothing,
+ *  so a rejected "150" never jumps to a step from somewhere else. */
+export function stepAllowed(kind: NumericReadKind): boolean {
+  return kind === "ok" || kind === "empty";
 }
 
 /** Whether the screen may act on the field: false for any text the field

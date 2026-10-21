@@ -453,8 +453,8 @@ export async function ensureTrackingProfile(): Promise<string> {
         carb_ratio_lunch, carb_ratio_dinner, target_fasting_min,
         target_fasting_max, target_postmeal_min, target_postmeal_max,
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
-        created_at)
-     VALUES (?, ?, 0, 0, 0, 0, 80, 100, 80, 140, 70, 200, 160, ?);`,
+        created_at, ratios_confirmed)
+     VALUES (?, ?, 0, 0, 0, 0, 80, 100, 80, 140, 70, 200, 160, ?, 0);`,
     [SCREENSHOT_TRACKING_PROFILE_ID, "", now]
   );
   return SCREENSHOT_TRACKING_PROFILE_ID;

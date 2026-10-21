@@ -12,11 +12,14 @@ declare function require(id: string): any;
 import {
   DOSE_BOUNDS,
   GLUCOSE_ENTRY_BOUNDS,
+  fieldShowsValue,
   filterNumericText,
   glucoseEntryBounds,
   numericError,
   numericValid,
   readNumeric,
+  readNumericInput,
+  stepAllowed,
   stepIsBlocked,
   stepNumeric,
 } from "../lib/numericField";
@@ -24,6 +27,8 @@ import { CARB_RATIO_BOUNDS, ISF_BOUNDS } from "../lib/calcSetup";
 import { glucoseFromDisplay, glucoseToDisplay } from "../lib/glucose";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
+  fieldIsOffer,
+  offerExpiresInMs,
   recentGlucoseSuggestion,
 } from "../lib/glucoseSuggestion";
 
@@ -57,7 +62,12 @@ section("1. text: digits and one separator, comma and dot read the same");
   eq("a second separator is dropped, the digits stay", filterNumericText("7.5.5", 2), "7.55");
   eq("a comma after a dot is dropped too", filterNumericText("7.5,5", 1), "7.5");
   eq("decimals are cut to the field's places", filterNumericText("7.55", 1), "7.5");
-  eq("an integer field drops the separator", filterNumericText("7.5", 0), "75");
+  eq("an integer field stops at the separator, never 75", filterNumericText("7.5", 0), "7");
+  eq("ISF mg/dL 45,5 is 45, not 455", filterNumericText("45,5", 0), "45");
+  eq("glucose mg/dL 5,5 is 5, not 55", filterNumericText("5,5", 0), "5");
+  eq("12.0 is 12, not 120", filterNumericText("12.0", 0), "12");
+  eq("7.5.5 in a whole-number field is 7", filterNumericText("7.5.5", 0), "7");
+  eq("a leading separator leaves nothing", filterNumericText(",5", 0), "");
   eq("minus signs and spaces are dropped", filterNumericText("-1 2", 0), "12");
   eq("Arabic-Indic digits become Latin", filterNumericText("١٢٣", 0), "123");
   const b = { min: 1, max: 100, decimals: 1 };
@@ -84,13 +94,13 @@ section("2. bounds: outside is refused, never clamped into a value");
   eq("ISF mg/dL min is 1", ISF_BOUNDS.mgdl.min, 1);
   eq("ISF mg/dL max is 500", ISF_BOUNDS.mgdl.max, 500);
   eq("ISF mmol min is 0.1", ISF_BOUNDS.mmol.min, 0.1);
-  eq("ISF mmol max is 27.8", ISF_BOUNDS.mmol.max, 27.8);
-  eq("27.8 mmol/L is about 500 mg/dL", glucoseFromDisplay(27.8, "mmol"), 501);
+  eq("ISF mmol max is 27.7 (500 mg/dL is the ceiling, 27.8 would be 501)", ISF_BOUNDS.mmol.max, 27.7);
+  ok("the mmol ceiling converts to at most 500 mg/dL", glucoseFromDisplay(ISF_BOUNDS.mmol.max, "mmol") <= ISF_BOUNDS.mgdl.max);
   ok("a stored 500 mg/dL shows inside the mmol bounds", glucoseToDisplay(500, "mmol") <= 27.8 && glucoseToDisplay(500, "mmol") >= 27.7);
   eq("ISF 500 accepted", readNumeric("500", { ...ISF_BOUNDS.mgdl, decimals: 0 }).value, 500);
   eq("ISF 501 refused", readNumeric("501", { ...ISF_BOUNDS.mgdl, decimals: 0 }).value, null);
   eq("ISF 0 refused", readNumeric("0", { ...ISF_BOUNDS.mgdl, decimals: 0 }).value, null);
-  eq("ISF 27.9 mmol refused", readNumeric("27.9", { ...ISF_BOUNDS.mmol, decimals: 1 }).value, null);
+  eq("ISF 27.8 mmol refused", readNumeric("27.8", { ...ISF_BOUNDS.mmol, decimals: 1 }).value, null);
   eq("ISF 0.1 mmol accepted", readNumeric("0.1", { ...ISF_BOUNDS.mmol, decimals: 1 }).value, 0.1);
 
   eq("dose min is 0", DOSE_BOUNDS.min, 0);
@@ -157,7 +167,7 @@ section("4. - / + presses: step, clamp, and never fill by themselves");
   const isfMmol = { step: 0.1, decimals: 1, ...ISF_BOUNDS.mmol };
   eq("ISF mmol + steps by 0.1", stepNumeric(2.2, 1, isfMmol), 2.3);
   eq("ISF mmol empty + starts at the minimum", stepNumeric(null, 1, isfMmol), 0.1);
-  eq("ISF mmol top stops at 27.8", stepNumeric(27.8, 1, isfMmol), 27.8);
+  eq("ISF mmol top stops at 27.7", stepNumeric(27.7, 1, isfMmol), 27.7);
   eq("a blocked press is detected at the top", stepIsBlocked(100, 1, dose), true);
   eq("and at the bottom", stepIsBlocked(0, -1, dose), true);
   eq("an empty field blocks -", stepIsBlocked(null, -1, dose), true);
@@ -165,11 +175,11 @@ section("4. - / + presses: step, clamp, and never fill by themselves");
   eq("a middle value blocks nothing", stepIsBlocked(4, 1, dose), false);
   // Every tenth of a mmol/L ISF maps to its own mg/dL value and back.
   let stable = true;
-  for (let t = 1; t <= 278; t++) {
+  for (let t = 1; t <= 277; t++) {
     const shown = t / 10;
     if (glucoseToDisplay(glucoseFromDisplay(shown, "mmol"), "mmol") !== shown) stable = false;
   }
-  ok("0.1-27.8 mmol/L each survive the mg/dL round trip as shown", stable);
+  ok("0.1-27.7 mmol/L each survive the mg/dL round trip as shown", stable);
 }
 
 section("5. the glucose offer: 15 minutes, offered not applied");
@@ -333,6 +343,142 @@ section("9. geometry: the field's width budget in every language");
   ok("touch targets are 44pt", field.includes("width: HIT_TARGET") && field.includes("minHeight: HIT_TARGET"));
   const calc = src("app/calculator.tsx");
   ok("the sheet caps its fields at 360pt so a tablet sheet does not stretch them", calc.includes("maxWidth: 360"));
+}
+
+section("10. outside values reach a focused box; pastes are refused, not rewritten");
+{
+  const b = { min: 20, max: 600, decimals: 0 };
+  // O1: the box holds "50", a chip sets 200 from outside
+  const typed = readNumericInput("50", "5", { min: 0, max: 1500, decimals: 0 });
+  eq("typed 50 reads 50", typed.value, 50);
+  ok("the parent echoing 50 back is the box's own value", fieldShowsValue(typed, 50));
+  ok("a chip setting 200 is NOT the box's value, so the text must change", !fieldShowsValue(typed, 200));
+  const empty = readNumericInput("", "1", b);
+  ok("an empty box shows a null value", fieldShowsValue(empty, null));
+  ok("an offer setting 110 on an empty box must replace the text", !fieldShowsValue(empty, 110));
+  const below = readNumericInput("1", "", b);
+  eq("a '1' on the way to 110 is below, no value", below.kind, "below");
+  ok("and null echoes it", fieldShowsValue(below, null));
+  ok("an offer of 110 over that '1' replaces it", !fieldShowsValue(below, 110));
+
+  // paste / replace: refused, with the text kept visible
+  const gl = { min: 1, max: 100, decimals: 1 };
+  eq("pasted -3 is malformed, not 3", readNumeric("-3", gl).kind, "malformed");
+  eq("pasted -3 commits nothing", readNumeric("-3", gl).value, null);
+  eq("pasted 1e2 is malformed, not 12", readNumeric("1e2", gl).kind, "malformed");
+  eq("pasted 7.5.5 is malformed, not 7.55", readNumeric("7.5.5", { min: 1, max: 100, decimals: 2 }).kind, "malformed");
+  eq("pasted 7.55 into a one-decimal box is refused, not cut", readNumeric("7.55", gl).kind, "malformed");
+  eq("a plain pasted 7,5 is fine", readNumeric("7,5", gl).value, 7.5);
+  eq("a pasted 45,5 into a whole-number box becomes 45", readNumeric("45,5", { min: 1, max: 500, decimals: 0 }).value, 45);
+  eq("pasted with spaces around is fine", readNumeric(" 12 ", gl).value, 12);
+  // typing one character at a time is lenient
+  eq("a stray letter typed on the end is simply not entered", readNumericInput("12a", "12", gl).text, "12");
+  eq("and it stays a good value", readNumericInput("12a", "12", gl).kind, "ok");
+  eq("a second typed separator is not entered", readNumericInput("7..", "7.", gl).text, "7.");
+  eq("a typed minus on an empty box is not entered", readNumericInput("-", "", gl).kind, "empty");
+  eq("backspace is lenient", readNumericInput("1", "12", gl).value, 1);
+  eq("a cut from the middle is lenient", readNumericInput("12", "132", gl).value, 12);
+  eq("a replaced selection that is plain is fine", readNumericInput("7", "50", gl).value, 7);
+  eq("a replaced selection that is not plain is refused", readNumericInput("-3", "500", gl).kind, "malformed");
+  eq("malformed shows the error at once", numericError("malformed", { blurred: false, required: false }), "malformed");
+  eq("malformed is not valid", numericValid("malformed", false), false);
+  eq("- / + do nothing on refused text", stepAllowed("above") || stepAllowed("below") || stepAllowed("malformed"), false);
+  eq("- / + work on a number", stepAllowed("ok"), true);
+  eq("- / + work on an empty box", stepAllowed("empty"), true);
+}
+
+section("11. the offer attaches to its stored row; it expires; it hides on a back-dated meal");
+{
+  const now = new Date("2026-10-21T14:00:00.000Z");
+  const ago = (min: number) => new Date(now.getTime() - min * 60_000).toISOString();
+  const offer = recentGlucoseSuggestion([{ id: "row-1", glucose_level_mgdl: 111, logged_at: ago(14) }], now);
+  eq("the offer carries its row id", offer?.id, "row-1");
+  // O3: mmol round trip 111 -> 6.2 -> 112 must not look like a different reading
+  const shown = glucoseToDisplay(111, "mmol");
+  eq("111 mg/dL is shown as 6.2 mmol/L", shown, 6.2);
+  eq("which would come back as 112 mg/dL", glucoseFromDisplay(shown, "mmol"), 112);
+  ok("the field showing 6.2 IS the offer", fieldIsOffer(6.2, shown));
+  ok("6.3 is not", !fieldIsOffer(6.3, shown));
+  ok("an empty field is not", !fieldIsOffer(null, shown));
+  eq("expiry is 15 minutes after the reading", Math.round(offerExpiresInMs(ago(14), now) / 1000), 61);
+  eq("an expired reading has no time left", offerExpiresInMs(ago(20), now), 0);
+  eq("an unreadable stamp has no time left", offerExpiresInMs("nope", now), 0);
+  const calc = src("app/calculator.tsx");
+  ok("a save attaches to the tapped row instead of writing it again", calc.includes("boundOffer?.id") && /boundOffer\?\.id\s*\?\s*\{ id: boundOffer\.id \}\s*:\s*await findMatchingSugarLog/.test(calc));
+  ok("the tapped mg/dL value, not the rounded one, drives the estimate", /return boundOffer \? boundOffer\.mgdl : glucoseFromDisplay\(glucoseTyped, unit\)/.test(calc));
+  ok("the binding needs the field to still show the offer and a record logged now", /offerBinding &&\s*loggedAt == null &&\s*fieldIsOffer\(glucoseTyped, glucoseToDisplay\(offerBinding\.mgdl, unit\)\)/.test(calc));
+  ok("the offer hides on a back-dated meal", /!isEdit && glucose === "" && loggedAt == null/.test(calc));
+  ok("the offer clears itself when its reading expires", calc.includes("offerExpiresInMs(s.loggedAt, now)") && calc.includes("setOfferTick"));
+  ok("the offered rows come from a 15 minute window", calc.includes("listRecentSugarLogs(activeProfile.id, since)") && calc.includes("RECENT_GLUCOSE_WINDOW_MINUTES * 60_000"));
+}
+
+section("12. ratios: one atomic confirmation, locked boxes, no silent failures");
+{
+  const writer = src("lib/ratioWriter.ts");
+  const calc = src("app/calculator.tsx");
+  const prof = src("app/settings/profile.tsx");
+  ok("ticking builds ONE patch from the draft", writer.includes("ratioConfirmDraftPatch(draft)") && !/enqueue\(\{ ratios_confirmed: 1 \}\)/.test(writer));
+  ok("a failed write restores the draft", writer.includes("if (!pending) pending = draft"));
+  ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && /if \(next && ok\) \{\s*setConfirmed\(true\)/.test(calc) && !/setConfirmed\(next\)/.test(calc));
+  ok("Profile reports a failed write", prof.includes('useRatioWriter(() => toast(t("common.saveFailed"), "error"))'));
+  ok("Profile's box is enabled whenever the four numbers are filled (a tick flushes first)", prof.includes("disabled={!ratioFieldsComplete(ratioDraft)}") && !prof.includes("disabled={!ratioDraftIsStored}"));
+  ok("the pending card shows only when four values wait for the tick", calc.split("calcSetupPrefilled(activeProfile)").length >= 4 && calc.includes("activeProfile?.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile)"));
+  ok("an empty common.saveFailed text exists in all nine languages", ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"].every((l) => /\n    saveFailed: "[^"]+"/.test(src(`lib/i18n/locales/${l}.ts`))));
+}
+
+section("13. the basal daily dose settles before it is written");
+{
+  const prof = src("app/settings/profile.tsx");
+  ok("typing only records a pending value", /function onBasalChange\(v: number \| null\)\s*\{\s*setBasalUnits\(v \?\? 0\);\s*basalPendingRef\.current = v;/.test(prof));
+  ok("the write waits for a pause", prof.includes("setTimeout(flushBasal, 700)"));
+  ok("an invalid value is never written", /if \(v === undefined \|\| basalInvalidRef\.current\) return;/.test(prof));
+  ok("refused text returns to the stored value on blur", /function onBasalBlur\(\)\s*\{\s*if \(basalInvalidRef\.current\)[\s\S]{0,300}setBasalUnits\(activeProfile\?\.basal_daily_units \?\? 0\)/.test(prof));
+  ok("leaving the screen writes a settled value", /useEffect\(\s*\(\) => \(\) => \{\s*flushBasal\(\);/.test(prof));
+  ok("the field no longer persists on every keystroke", !/onChange=\{\(v\) => \{\s*setBasalUnits\(v \?\? 0\);\s*void persist/.test(prof));
+}
+
+section("14. every stepper in the app is the shared field");
+{
+  const sites: [string, string][] = [
+    ["app/add-food.tsx", "carbs 0-100 g (1 decimal), portion 1-2000 g"],
+    ["app/meal-template.tsx", "item portion 0-2000 g"],
+    ["app/onboarding.tsx", "daily basal 0-200 U"],
+    ["app/basal-confirm.tsx", "dose"],
+    ["app/(tabs)/injection.tsx", "dose"],
+    ["components/InjectionEditSheet.tsx", "dose"],
+    ["app/calculator.tsx", "portion 0-1500 g, glucose, dose"],
+    ["app/settings/profile.tsx", "daily basal 0-150 U, ratios"],
+  ];
+  for (const [rel, what] of sites) {
+    const text = src(rel);
+    ok(`${rel}: no <Stepper left (${what})`, !/<Stepper\b/.test(text));
+    ok(`${rel}: uses NumericField or its presets`, /<NumericField|<CarbRatioInput|<IsfInput/.test(text));
+  }
+  for (const rel of ["app/basal-confirm.tsx", "app/(tabs)/injection.tsx", "components/InjectionEditSheet.tsx"]) {
+    const text = src(rel);
+    ok(`${rel}: dose is 0-100 in steps of 0.5 with 2 decimals, the calculator's own bounds`, text.includes("DOSE_BOUNDS.max") && text.includes("DOSE_BOUNDS.min") && text.includes("DOSE_BOUNDS.step") && text.includes("DOSE_BOUNDS.decimals"));
+    ok(`${rel}: an empty or refused dose is never stored (null is ignored, the box is required)`, /if \(v == null\) return;/.test(text) && /\brequired\b/.test(text));
+  }
+  const addFood = src("app/add-food.tsx");
+  ok("add-food keeps its gram bounds", /min=\{0\}\s*max=\{100\}\s*decimals=\{1\}/.test(addFood) && /min=\{1\}\s*max=\{2000\}\s*decimals=\{0\}/.test(addFood));
+  ok("meal-template keeps 0-2000 g", /min=\{0\}\s*max=\{2000\}\s*decimals=\{0\}/.test(src("app/meal-template.tsx")));
+  ok("onboarding keeps 0-200", /min=\{0\}\s*max=\{200\}\s*decimals=\{0\}/.test(src("app/onboarding.tsx")));
+  ok("add-food and the portion fields keep the chip / slider sync (value flows in through the shared field)", src("components/NumericField.tsx").includes("fieldShowsValue(readingRef.current, value)"));
+  ok("only the validity hook is left in components/Stepper.tsx for callers", /export function useStepperValidity/.test(src("components/Stepper.tsx")));
+  const field = src("components/NumericField.tsx");
+  ok("the hold repeat stops on a tick that changes nothing", /if \(!press\(dir, c\.longStep \?\? c\.step\)\) \{\s*stopHold\(\);\s*return;/.test(field));
+  ok("- / + are disabled on refused text", field.includes("|| !stepAllowed(kind)"));
+  ok("iOS announces the error, Android reads the live region", field.includes("AccessibilityInfo.announceForAccessibility(errorText)") && field.includes('Platform.OS === "android" ? "polite" : "none"'));
+  ok("a prop value outside the bounds is shown as an error, not as fine", field.includes("function fromValue") && /min != null && v < min \? "below"/.test(field));
+}
+
+section("15. new profiles are born unconfirmed");
+{
+  for (const rel of ["lib/db/profiles.ts", "lib/db/index.ts", "lib/db/screenshotSeed.ts"]) {
+    const text = src(rel);
+    const inserts = text.match(/INSERT (?:OR IGNORE )?INTO user_profiles[\s\S]*?;`/g) ?? [];
+    ok(`${rel}: every profile INSERT names ratios_confirmed`, inserts.length > 0 && inserts.every((q) => q.includes("ratios_confirmed")));
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -72,7 +72,8 @@ import {
 } from "../lib/glucose";
 import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G } from "../lib/diabetesDefaults";
 import { RangeInput } from "../components/RangeInput";
-import { Stepper, useStepperValidity } from "../components/Stepper";
+import { useStepperValidity } from "../components/Stepper";
+import { NumericField } from "../components/NumericField";
 import { InsulinProductPicker } from "../components/InsulinProductPicker";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logCrash, logEvent } from "../lib/analytics";
@@ -1371,19 +1372,16 @@ export default function OnboardingScreen() {
             <Txt kind="body" style={{ marginBottom: SPACE.sm }}>
               {t("settings.basalDailyUnits")}
             </Txt>
-            <Stepper
-              value={basalDailyUnits}
-              onChange={setBasalDailyUnits}
+            <NumericField
+              value={basalDailyUnits > 0 ? basalDailyUnits : null}
+              onChange={(v) => setBasalDailyUnits(v ?? 0)}
               onValidityChange={stepperFields.reporter("basalUnits")}
-              revertOnUnmount
               step={1}
               longStep={5}
               min={0}
               max={200}
               decimals={0}
               suffix={t("common.units")}
-              // The one number entered on this step, so it gets the wider strip.
-              size="lg"
               accessibilityLabel={t("settings.basalDailyUnits")}
             />
             <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.sm }}>

@@ -57,10 +57,13 @@ export function sanitizeDecimalText(raw: string): string {
   return out;
 }
 
-/** Digits only, for fields that store whole numbers (mg/dL, grams). */
+/** Digits only, for fields that store whole numbers (mg/dL, grams). The text
+ *  stops at the first decimal separator: "45,5" is 45, never 455 (dropping the
+ *  separator and keeping the digit behind it was a silent tenfold). */
 export function sanitizeIntegerText(raw: string): string {
   let out = "";
   for (const ch of raw) {
+    if (ch === "." || ch === "," || ch === "٫") break;
     const digit = latinDigit(ch);
     if (digit !== null) out += digit;
   }

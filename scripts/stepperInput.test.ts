@@ -47,7 +47,12 @@ ok("read unbounded -> ok", j(readStepperText("99999", { decimals: 0 })) === j({ 
 
 ok("sanitize 1.25 dec1", sanitizeStepperText("1.25", 1) === "1.2");
 ok("sanitize 1,25 dec1", sanitizeStepperText("1,25", 1) === "1,2");
-ok("sanitize 12.5 dec0", sanitizeStepperText("12.5", 0) === "125");
+ok("sanitize 12.5 dec0 stops at the separator", sanitizeStepperText("12.5", 0) === "12");
+ok("sanitize 45,5 dec0 is 45, not 455", sanitizeStepperText("45,5", 0) === "45");
+ok("sanitize 5,5 dec0 is 5, not 55", sanitizeStepperText("5,5", 0) === "5");
+ok("sanitize 12.0 dec0 is 12, not 120", sanitizeStepperText("12.0", 0) === "12");
+ok("sanitize 7.5.5 dec0 is 7", sanitizeStepperText("7.5.5", 0) === "7");
+ok("sanitize ,5 dec0 is empty", sanitizeStepperText(",5", 0) === "");
 
 ok("step 0.1+0.2", stepStepperValue(0.1, 0.2, { decimals: 1 }) === 0.3);
 ok("step clamp max", stepStepperValue(50, 1, b1) === 50);
