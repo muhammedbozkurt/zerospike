@@ -4,12 +4,12 @@ import {
   BackHandler,
   Easing,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,6 +22,8 @@ import { Row, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
 import { sheetBoxStyle } from "../lib/tabletLayout";
+import { sheetFrame } from "../lib/sheetLayout";
+import { useSheetKeyboard } from "../lib/useSheetKeyboard";
 import { IconTile, GradientCTA } from "./rich";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { DirIcon } from "./DirIcon";
@@ -71,6 +73,21 @@ export function QuickAddSheet({
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const { isWide, width: layoutWidth } = useLayout();
+  const { height: windowH } = useWindowDimensions();
+  const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
+  // The grabber, the med header and the close path stay on screen: the sheet is
+  // capped at what the keyboard and the status-bar inset leave, and only the
+  // med form body scrolls.
+  const sheetAvail = sheetFrame({
+    hostHeight,
+    windowHeight: windowH,
+    lift,
+    keyboardOpen,
+    insetTop: insets.top,
+    insetBottom: insets.bottom,
+    contentHeight: 0,
+    maxHeightRatio: 1,
+  }).sheetMaxHeight;
   const { activeProfile, bumpData } = useApp();
   const { toast } = useFeedback();
   const anim = useRef(new Animated.Value(0)).current;
@@ -203,9 +220,15 @@ export function QuickAddSheet({
           accessibilityLabel={t("common.close")}
         />
       </Animated.View>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1, justifyContent: "flex-end" }}
+      <View
+        ref={hostRef}
+        collapsable={false}
+        onLayout={onHostLayout}
+        style={{ flex: 1 }}
+        pointerEvents="box-none"
+      >
+      <Animated.View
+        style={{ flex: 1, justifyContent: "flex-end", paddingBottom: liftAnim }}
         pointerEvents="box-none"
       >
         <Animated.View
@@ -223,6 +246,7 @@ export function QuickAddSheet({
           <View
             style={[
               {
+                maxHeight: sheetAvail,
                 backgroundColor: THEME.bg.g1,
                 borderTopLeftRadius: RADIUS["2xl"],
                 borderTopRightRadius: RADIUS["2xl"],
@@ -284,7 +308,7 @@ export function QuickAddSheet({
                 ))}
               </View>
             ) : (
-              <View style={{ marginTop: SPACE.xs }}>
+              <View style={{ marginTop: SPACE.xs, flexShrink: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", marginBottom: SPACE.md }}>
                   <Pressable
                     onPress={() => setStep("grid")}
@@ -308,6 +332,11 @@ export function QuickAddSheet({
                   </Txt>
                 </View>
 
+                <ScrollView
+                  style={{ flexShrink: 1 }}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
                 <MedNamePicker
                   profileId={activeProfile?.id ?? null}
                   value={medName}
@@ -357,11 +386,13 @@ export function QuickAddSheet({
                 />
 
                 <GradientCTA label={t("meds.logCta")} disabled={savingMed} onPress={saveMed} />
+                </ScrollView>
               </View>
             )}
           </View>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </Animated.View>
+      </View>
     </View>
   );
 }

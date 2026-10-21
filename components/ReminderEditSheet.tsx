@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  KeyboardAvoidingView,
+  Animated,
   Linking,
   Platform,
   Pressable,
@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { OverlayModal as Modal } from "./OverlayModal";
 import { useTranslation } from "react-i18next";
@@ -20,6 +21,10 @@ import { InlineTimePicker } from "./InlineTimePicker";
 import { MedNamePicker } from "./MedNamePicker";
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow, switchColors } from "../lib/theme/tokens";
 import { SCRIM } from "./SheetShell";
+import { useSheetKeyboard } from "../lib/useSheetKeyboard";
+import { sheetFrame } from "../lib/sheetLayout";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { useLayout } from "../lib/useLayout";
 import { sheetBoxStyle } from "../lib/tabletLayout";
 import { GradientCTA } from "./rich/GradientCTA";
@@ -122,6 +127,21 @@ export function ReminderEditSheet({
 }) {
   const { t } = useTranslation();
   const { isWide, width: layoutWidth } = useLayout();
+  const { height: windowH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
+  // Title and close stay on screen: the sheet is capped at what the keyboard
+  // and the status-bar inset leave (counted once, lib/sheetLayout.ts).
+  const sheetAvail = sheetFrame({
+    hostHeight,
+    windowHeight: windowH,
+    lift,
+    keyboardOpen,
+    insetTop: insets.top,
+    insetBottom: insets.bottom,
+    contentHeight: 0,
+    maxHeightRatio: 1,
+  }).sheetMaxHeight;
   const isEdit = editingReminder != null;
 
   const typeOptions = useMemo(() => {
@@ -263,10 +283,8 @@ export function ReminderEditSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-      >
+      <View ref={hostRef} collapsable={false} onLayout={onHostLayout} style={{ flex: 1 }}>
+        <Animated.View style={{ flex: 1, paddingBottom: liftAnim }}>
         <Pressable
           style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={onClose}
@@ -276,6 +294,7 @@ export function ReminderEditSheet({
           <Pressable
             style={[
               {
+                maxHeight: sheetAvail,
                 borderTopLeftRadius: 26,
                 borderTopRightRadius: 26,
                 borderTopWidth: 1,
@@ -451,7 +470,8 @@ export function ReminderEditSheet({
             </ScrollView>
           </Pressable>
         </Pressable>
-      </KeyboardAvoidingView>
+      </Animated.View>
+      </View>
     </Modal>
   );
 }

@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { OverlayModal as Modal } from "./OverlayModal";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
@@ -129,6 +130,7 @@ export function GlucoseInputSheet({
   const [loggedAt, setLoggedAt] = useState<Date | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const { isWide, width: layoutWidth } = useLayout();
+  const insets = useSafeAreaInsets();
   const heroRef = useRef<TextInput>(null);
   /** Height actually left for the sheet: the keyboard has already been taken out
    *  of it on both platforms (iOS via the avoiding view's padding, Android via
@@ -390,18 +392,18 @@ export function GlucoseInputSheet({
           style={androidLift > 0 ? { paddingBottom: androidLift } : undefined}
         >
           <Pressable
-            style={{ flex: 1, justifyContent: "flex-end" }}
+            style={{ flex: 1, justifyContent: "flex-end", paddingTop: insets.top }}
             onPress={animateClose}
             accessible={false}
             focusable={false}
-            onLayout={(e) => setAvailH(e.nativeEvent.layout.height)}
+            onLayout={(e) => setAvailH(Math.max(0, e.nativeEvent.layout.height - insets.top))}
           >
             {/* Capped at the lifted container's height: on a small phone the sheet
                 is taller than what the keyboard leaves, and Save would otherwise
                 be pushed off the top with no way to reach it. */}
             <Animated.View
               style={[
-                { transform: [{ translateY }], maxHeight: "100%" },
+                { transform: [{ translateY }], maxHeight: availH > 0 ? availH : "100%" },
                 sheetBoxStyle(layoutWidth, isWide),
               ]}
               onLayout={(e) => {
