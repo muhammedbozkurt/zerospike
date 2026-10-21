@@ -9,6 +9,13 @@
 export const SCHEMA_VERSION = 5;
 
 /**
+ * Constant tag of the paywall layout generation (build 93 redesign), carried by
+ * the funnel events so the old and the new layout can be compared. Never a user
+ * attribute: every user on this build sends the same number.
+ */
+export const PAYWALL_VERSION = 2;
+
+/**
  * What a log entry is, as far as analytics may know: a glucose reading, a meal,
  * or anything else (injections, basal doses, medication, Health imports). The
  * finer kinds would let a reader of the table tell who uses insulin or pills.
@@ -56,11 +63,12 @@ export const EVENT_SCHEMA = {
     context: "string",
     trial_eligible: "bool",
     variant: ["default"],
+    paywall_version: "int",
   },
-  paywall_tier_selected: { tier: ["monthly", "annual", "lifetime"] },
-  paywall_cta: { tier: ["monthly", "annual", "lifetime"] },
-  paywall_dismiss: { source: "string" },
-  purchase_completed: { tier: "string", source: "string" },
+  paywall_tier_selected: { tier: ["monthly", "annual", "lifetime"], paywall_version: "int" },
+  paywall_cta: { tier: ["monthly", "annual", "lifetime"], paywall_version: "int" },
+  paywall_dismiss: { source: "string", paywall_version: "int" },
+  purchase_completed: { tier: "string", source: "string", paywall_version: "int" },
   purchase_result: {
     result: ["success", "cancelled", "error"],
     product: ["monthly", "annual", "lifetime", "downsell_annual"],
@@ -68,6 +76,7 @@ export const EVENT_SCHEMA = {
     variant: ["default"],
     trial: "bool",
     detail: ["store_error", "already_owned", "none"],
+    paywall_version: "int",
   },
   trial_started: { tier: "string" },
   pro_welcome_view: {},

@@ -20,6 +20,7 @@ import {
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
+import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
 import { Button, Txt } from "../components/ui";
@@ -101,12 +102,17 @@ function WinbackScreen() {
         reason: "direct",
         variant: "default",
         trial: false,
+        paywall_version: PAYWALL_VERSION,
         detail:
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
       });
       if (res.ok) {
         logEvent("downsell_accept", { trigger: "winback" });
-        logEvent("purchase_completed", { tier: "annual", source: "winback" });
+        logEvent("purchase_completed", {
+          tier: "annual",
+          source: "winback",
+          paywall_version: PAYWALL_VERSION,
+        });
         hapticSuccess();
         if (feedback) toast(t(feedback.key), feedback.kind);
         close();

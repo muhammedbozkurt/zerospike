@@ -41,7 +41,15 @@ for (const file of screens) {
   ok(`${file}: imports LegalLink`, /import \{ LegalLink \} from "\.\.\/components\/LegalLink"/.test(src));
 }
 
-ok("paywall: buy CTA locked while busy", /<GradientCTA label=\{ctaLabel\} disabled=\{busy\} onPress=\{buy\}/.test(read("app/paywall.tsx")));
+ok("paywall: buy CTA shows a spinner while purchasing and is locked while busy", /<GradientCTA\s+label=\{ctaLabel\}\s+loading=\{purchasing\}\s+disabled=\{busy\}\s+onPress=\{buy\}/.test(read("app/paywall.tsx")));
+{
+  const pw = read("app/paywall.tsx");
+  const buyBody = pw.slice(pw.indexOf("async function buy()"));
+  ok("paywall: the first statement of buy() is the synchronous double-tap guard", /^async function buy\(\) \{\s*(\/\/[^\n]*\s*)*if \(!purchaseUiAcceptsPress\(uiRef\.current\)\) return;/.test(buyBody));
+  ok("paywall: a user close is still blocked while busy (busyRef feeds the exit controller)", /\(\) => busyRef\.current/.test(pw));
+  ok("paywall: the funnel events carry paywall_version", ["paywall_view", "paywall_cta", "paywall_dismiss", "paywall_tier_selected", "purchase_result", "purchase_completed"].every((e) => new RegExp('logEvent\\("' + e + '",[^;]*paywall_version: PAYWALL_VERSION', "s").test(pw)));
+  ok("paywall: a cancelled purchase shows no message (only the error branch toasts)", /else if \(res\.cancelled\) \{[^}]*await triggerDownsell\(\);[^}]*\}/s.test(pw) && !/res\.cancelled\)[^}]*toast\(/s.test(pw.slice(pw.indexOf("else if (res.cancelled)"), pw.indexOf("await triggerDownsell();"))));
+}
 ok("paywall: restore locked while busy", /onPress=\{onRestore\}\s+disabled=\{busy\}/.test(read("app/paywall.tsx")));
 ok("downsell: accept locked while busy", /disabled=\{busy\}\s+onPress=\{accept\}/.test(read("app/downsell.tsx")));
 ok("downsell: decline locked while busy", /onPress=\{decline\}\s+disabled=\{busy\}/.test(read("app/downsell.tsx")));

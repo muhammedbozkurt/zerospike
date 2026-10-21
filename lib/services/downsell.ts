@@ -8,7 +8,10 @@ import {
 import {
   DOWNSELL_REARM_MS,
   canShowDownsell,
+  downsellCooldownElapsed,
+  entitlementBlocksDownsell,
   applyDownsellShown,
+  applyDownsellStamp,
   createPaywallExitController,
   createSessionOfferFlag,
   initialDownsellState,
@@ -16,19 +19,21 @@ import {
   paywallExitLocalGate,
   shouldOfferDownsellOnPaywallExit,
   type DownsellState,
+  type EntitlementNow,
   type PaywallExitDeps,
   type PaywallExitNav,
   type DownsellTrigger,
 } from "../downsellGate";
-import { getDownsellOffer, isPro } from "./purchases";
+import { getDownsellOffer, getPlan, getTrialStatus, isPro } from "./purchases";
 import { isScreenshotMode } from "../screenshotMode";
 
 /**
  * Downsell / winback show-cap state. A user is offered the discounted first year
- * at most twice in their lifetime, the second only after a 7-day cool-off, and
- * never twice in one app session. The first offer is the paywall exit (annual
- * selected, store purchase cancelled or paywall closed) in the same session.
- * Winback (on losing the entitlement) is separate and shown once.
+ * at most twice in their lifetime, never within 7 days of the last discount
+ * screen (accepted or declined, any entry), and never twice in one app session.
+ * The first offer is the paywall exit (annual selected, store purchase cancelled
+ * or paywall closed) in the same session. Winback (on losing the entitlement) is
+ * separate and shown once, but honours the same 7-day window.
  *
  * The day-7 offer at the bottom is another entry point into the SAME two
  * lifetime shows, not an extra one.
@@ -54,6 +59,7 @@ export type { DownsellState, DownsellTrigger };
 
 const DOWNSELL_KEY = "zerospike.downsellState";
 const WINBACK_KEY = "zerospike.winbackShown";
+const ONBOARDED_KEY = "zerospike.onboarded";
 
 export async function getDownsellState(): Promise<DownsellState> {
   try {
@@ -68,37 +74,94 @@ export async function getDownsellState(): Promise<DownsellState> {
 // Process-lifetime flag: a new app launch is a new session, which is the
 // intended reading of "once per session". Shared by the paywall exit, the
 // day-7 offer and the winback so no two discount screens open in one session.
+// The PERSISTED half of the same rule is state.lastShownAt (the 7-day cool-off
+// in canShowDownsell), so a relaunch cannot bring a second screen back early.
 export const sessionOffer = createSessionOfferFlag();
 
-/** Records a downsell show and returns the updated (persisted) state. */
-export async function recordDownsellShown(
+// Every read-modify-write of the persisted state goes through one chain, so the
+// paywall's stamp, the downsell screen's record and the winback's stamp can
+// never overwrite each other.
+let writeChain: Promise<unknown> = Promise.resolve();
+function updateState(change: (s: DownsellState) => DownsellState): Promise<DownsellState> {
+  const run = writeChain.then(async () => {
+    const next = change(await getDownsellState());
+    try {
+      await AsyncStorage.setItem(DOWNSELL_KEY, JSON.stringify(next));
+    } catch {
+      // best-effort persistence
+    }
+    return next;
+  });
+  writeChain = run.catch(() => undefined);
+  return run;
+}
+
+/** Records a downsell show (lifetime count AND the 7-day date) and returns the
+ *  updated (persisted) state. */
+export function recordDownsellShown(
   trigger: DownsellTrigger,
   now: number
 ): Promise<DownsellState> {
   sessionOffer.reserve();
-  const next = applyDownsellShown(await getDownsellState(), trigger, now);
-  try {
-    await AsyncStorage.setItem(DOWNSELL_KEY, JSON.stringify(next));
-  } catch {
-    // best-effort persistence
-  }
-  return next;
+  return updateState((s) => applyDownsellShown(s, trigger, now));
 }
 
+/** Stamps only the 7-day date, no lifetime show spent (see applyDownsellStamp). */
+export function stampDownsellOffered(
+  trigger: DownsellTrigger,
+  now: number
+): Promise<DownsellState> {
+  return updateState((s) => applyDownsellStamp(s, trigger, now));
+}
+
+/** True until onboarding has been completed (the flag AppContext writes). */
+export async function isOnboardingIncomplete(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(ONBOARDED_KEY)) !== "true";
+  } catch {
+    // Unreadable storage: the safe answer for a discount screen is "not yet".
+    return true;
+  }
+}
+
+/** Fresh read of every entitlement that rules a discount out. */
+export async function entitlementNow(): Promise<EntitlementNow> {
+  const [pro, trial, plan] = await Promise.all([
+    isPro(),
+    getTrialStatus().catch(() => null),
+    getPlan().catch(() => null),
+  ]);
+  return { isPro: pro, trialActive: trial?.active === true, lifetime: plan === "lifetime" };
+}
+
+/**
+ * True when the winback must NOT open now: it was shown before, or the shared
+ * discount rule says no (onboarding unfinished, or another discount screen was
+ * stamped within the 7-day window, whatever its trigger). A "true" for the
+ * window reason does not spend the winback flag, so markWinbackShown is only
+ * reached for a screen that really opens. Kept under its old name so the
+ * layout's winback trigger needs no change.
+ */
 export async function winbackAlreadyShown(): Promise<boolean> {
   try {
-    return (await AsyncStorage.getItem(WINBACK_KEY)) === "true";
+    if ((await AsyncStorage.getItem(WINBACK_KEY)) === "true") return true;
   } catch {
     return false;
   }
+  if (await isOnboardingIncomplete()) return true;
+  const state = await getDownsellState();
+  return !downsellCooldownElapsed(state.lastShownAt, Date.now());
 }
 
+/** Spends the once-ever winback and stamps the shared 7-day date (without
+ *  taking one of the two lifetime downsell shows). */
 export async function markWinbackShown(): Promise<void> {
   try {
     await AsyncStorage.setItem(WINBACK_KEY, "true");
   } catch {
     // best-effort
   }
+  await stampDownsellOffered("winback", Date.now());
 }
 
 // ── Day-7 offer ────────────────────────────────────────────────────────────
@@ -145,6 +208,7 @@ export async function shouldShowDay7Downsell(): Promise<boolean> {
   // Never let a discount sheet land in the middle of a store capture.
   if (isScreenshotMode()) return false;
   if (sessionOffer.isReserved()) return false;
+  if (await isOnboardingIncomplete()) return false;
   const state = await getDownsellState();
   const local = {
     onboardedAtMs: await getDay7Anchor(),
@@ -156,10 +220,11 @@ export async function shouldShowDay7Downsell(): Promise<boolean> {
     rearmMs: DOWNSELL_REARM_MS,
   };
   if (!day7LocalGate(local)) return false;
-  const proNow = await isPro();
-  // No point pricing an offer for someone who already holds the entitlement.
-  const hasRealDiscount = proNow ? false : (await getDownsellOffer()).hasRealDiscount;
-  if (!shouldTriggerDay7({ ...local, isPro: proNow, hasRealDiscount })) return false;
+  // Pro, a running trial and the lifetime purchase all rule the offer out.
+  const holdsEntitlement = entitlementBlocksDownsell(await entitlementNow());
+  // No point pricing an offer for someone who already holds one.
+  const hasRealDiscount = holdsEntitlement ? false : (await getDownsellOffer()).hasRealDiscount;
+  if (!shouldTriggerDay7({ ...local, isPro: holdsEntitlement, hasRealDiscount })) return false;
   // Taken here, after the awaits, so a paywall exit that reserved the slot in
   // the meantime wins and this offer simply waits for another day.
   return sessionOffer.reserve();
@@ -185,7 +250,11 @@ export const paywallExitDeps: PaywallExitDeps = {
   session: sessionOffer,
   getState: getDownsellState,
   getOffer: getDownsellOffer,
-  isProNow: isPro,
+  entitlementNow,
+  onboardingIncomplete: isOnboardingIncomplete,
+  markOffered: async (now) => {
+    await stampDownsellOffered("inapp", now);
+  },
   now: () => Date.now(),
 };
 

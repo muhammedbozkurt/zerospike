@@ -856,6 +856,11 @@ const de: TranslationSchema = {
     savePercent: "{{percent}} sparen",
     securePayment: "Sichere Zahlung über App Store und Google Play.",
     ctaTrial: "{{days}} Tage kostenlos testen",
+    ctaMonthly: "Monatsplan starten · {{price}} / Monat",
+    ctaAnnual: "Jahresplan starten · {{price}} / Jahr",
+    ctaLifetime: "Einmalkauf · {{price}}",
+    promise: "Trends, Arztberichte und Abgleich in einem Tagebuch.",
+    chipSpike: "Mehr Spike-Nachrichten",
     trialNote: "Heute keine Zahlung. Wir erinnern Sie vor Ablauf. Jederzeit kündbar.",
     annualTrialDesc: "{{days}} Tage kostenlos, danach jährliche Abrechnung. Jederzeit kündbar.",
     timeline: {

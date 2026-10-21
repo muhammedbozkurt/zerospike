@@ -13,6 +13,15 @@
  * closes the paywall gets the discounted offer in the SAME session, once, when a
  * real store discount exists. Afterwards the 7-day cool-off and the lifetime cap
  * of DOWNSELL_MAX_SHOWS apply unchanged.
+ *
+ * Build 93 QA: "once a discount screen has been seen (accepted OR declined) it
+ * does not come back for 7 days, at most 2 in a lifetime" must hold across app
+ * launches and across every entry (paywall exit, day-7, winback), not only
+ * inside one process. The session flag is therefore backed by a PERSISTED date:
+ * `lastShownAt` is stamped the moment a discount screen is about to open
+ * (stampDownsellOffered for the paywall exit, the existing record for day-7,
+ * markWinbackShown for the winback), and the cool-off below reads it whatever
+ * the count is.
  */
 import { DOWNSELL_MAX_SHOWS } from "./day7Downsell";
 
@@ -44,14 +53,24 @@ export const initialDownsellState: DownsellState = {
 };
 
 /**
+ * Whether the persisted last-shown date is old enough. No date at all means no
+ * discount screen was ever stamped. A date in the future (clock moved back)
+ * reads as "not yet": the safe direction for a discount screen is to wait.
+ */
+export function downsellCooldownElapsed(lastShownAt: number | null, now: number): boolean {
+  return lastShownAt === null || now - lastShownAt >= DOWNSELL_REARM_MS;
+}
+
+/**
  * The lifetime cap and re-arm cool-off, independent of the trigger: at most
- * DOWNSELL_MAX_SHOWS shows ever, the second only DOWNSELL_REARM_MS after the
- * first.
+ * DOWNSELL_MAX_SHOWS shows ever, and none within DOWNSELL_REARM_MS of the last
+ * stamped screen (whether it was accepted, declined, or only opened). A counted
+ * show without a date cannot prove its cool-off, so it blocks.
  */
 export function canShowDownsell(state: DownsellState, now: number): boolean {
   if (state.count >= DOWNSELL_MAX_SHOWS) return false;
-  if (state.count === 0) return true;
-  return state.lastShownAt !== null && now - state.lastShownAt >= DOWNSELL_REARM_MS;
+  if (state.count > 0 && state.lastShownAt === null) return false;
+  return downsellCooldownElapsed(state.lastShownAt, now);
 }
 
 export interface PaywallExitInput {
@@ -93,6 +112,20 @@ export function applyDownsellShown(
   now: number
 ): DownsellState {
   return { ...state, count: state.count + 1, lastShownAt: now, lastTrigger: trigger };
+}
+
+/**
+ * Stamps the persisted last-shown date WITHOUT spending a lifetime show: used
+ * when a discount screen is about to open but its offer is not yet confirmed a
+ * second time (paywall exit), and by the winback, which keeps its own
+ * once-ever flag instead of the shared two-show cap.
+ */
+export function applyDownsellStamp(
+  state: DownsellState,
+  trigger: DownsellTrigger,
+  now: number
+): DownsellState {
+  return { ...state, lastShownAt: now, lastTrigger: trigger };
 }
 
 /**
@@ -144,6 +177,49 @@ export function createSessionOfferFlag(): SessionOfferFlag {
 
 // ── Paywall exit decision ──────────────────────────────────────────────────
 
+/** What the user holds right now, read fresh from the store. */
+export interface EntitlementNow {
+  isPro: boolean;
+  /** A running free trial. */
+  trialActive: boolean;
+  /** The one-off lifetime purchase. */
+  lifetime: boolean;
+}
+
+/**
+ * Any active trial, subscription or lifetime means a discount on the annual
+ * plan is never shown. Each flag blocks on its own: a store that reports the
+ * trial or the lifetime without the pro flag (or the reverse) must still block.
+ */
+export function entitlementBlocksDownsell(e: EntitlementNow): boolean {
+  return e.isPro || e.trialActive || e.lifetime;
+}
+
+export interface DownsellEligibilityInput {
+  state: DownsellState;
+  now: number;
+  /** Any discount screen (any trigger) already opened in this app process. */
+  sessionTaken: boolean;
+  entitlement: EntitlementNow;
+  /** Onboarding not finished yet (the first-run flow). */
+  onboardingIncomplete: boolean;
+  /** Confirmed against the store offerings, never assumed. */
+  hasRealDiscount: boolean;
+}
+
+/**
+ * The full shared rule in one place, for tests and as the specification the
+ * staged callers (paywall exit, day-7, winback) each apply in their own order
+ * so the cheap local checks run before the store round trips.
+ */
+export function downsellEligible(i: DownsellEligibilityInput): boolean {
+  if (entitlementBlocksDownsell(i.entitlement)) return false;
+  if (i.onboardingIncomplete) return false;
+  if (i.sessionTaken) return false;
+  if (!i.hasRealDiscount) return false;
+  return canShowDownsell(i.state, i.now);
+}
+
 export interface PaywallExitDeps {
   isScreenshotMode(): boolean;
   session: SessionOfferFlag;
@@ -151,7 +227,13 @@ export interface PaywallExitDeps {
   getOffer(): Promise<{ hasRealDiscount: boolean }>;
   /** Fresh entitlement read, so a purchase that completed after the screen
    *  last rendered is never offered a discount on itself. */
-  isProNow(): Promise<boolean>;
+  entitlementNow(): Promise<EntitlementNow>;
+  /** True until onboarding has been completed: never a discount before that. */
+  onboardingIncomplete(): Promise<boolean>;
+  /** Persists the last-shown date when the decision is "downsell", so the
+   *  7-day cool-off survives a relaunch even if the screen is closed before it
+   *  records its own show. Best effort: a failure must not block the offer. */
+  markOffered(now: number): Promise<void>;
   now(): number;
 }
 
@@ -178,7 +260,11 @@ export async function decidePaywallExit(
       if (reserved) deps.session.release();
       return "exit";
     }
-    if (await deps.isProNow()) {
+    if (await deps.onboardingIncomplete()) {
+      if (reserved) deps.session.release();
+      return "exit";
+    }
+    if (entitlementBlocksDownsell(await deps.entitlementNow())) {
       if (reserved) deps.session.release();
       return "exit";
     }
@@ -186,6 +272,11 @@ export async function decidePaywallExit(
     if (!shouldOfferDownsellOnPaywallExit({ ...base, state, now, hasRealDiscount: offer.hasRealDiscount })) {
       if (reserved) deps.session.release();
       return "exit";
+    }
+    try {
+      await deps.markOffered(now);
+    } catch {
+      // The session slot still holds; only the cross-launch date is lost.
     }
     return "downsell";
   } catch {
