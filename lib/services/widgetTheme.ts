@@ -1,4 +1,5 @@
 import { logCrash } from "../analytics";
+import { safeRequire, tryNative } from "../safeNative";
 import { isThemePref, resolveScheme, THEME_PREF_KEY, type ThemePref } from "../theme/themePref";
 import type { Scheme } from "../theme/tokens";
 import { WIDGET_DARK, WIDGET_LIGHT, type WidgetPalette } from "./widgetColors";
@@ -60,16 +61,26 @@ export interface WidgetThemeDeps {
 }
 
 async function nativeDeps(): Promise<WidgetThemeDeps> {
-  const { Platform } = await import("react-native");
-  return {
-    platform: Platform.OS,
-    ...nativeSinks,
-  };
+  // Platform by property access, never `await import("react-native")`: that
+  // enumerates every lazy getter of the RN index, and PushNotificationIOS's
+  // throws without its native module, which Metro reports as fatal (build 90).
+  // require() inside the function keeps this file loadable by the node tests.
+  const platform = tryNative(
+    () => (require("react-native") as typeof import("react-native")).Platform.OS as string,
+    "unknown",
+    "widgetTheme.platform",
+  );
+  return { platform, ...nativeSinks };
 }
 
 const nativeSinks: Omit<WidgetThemeDeps, "platform"> = {
   openAppGroup: async () => {
-    const { ExtensionStorage } = await import("@bacons/apple-targets");
+    const targets = safeRequire(
+      () => require("@bacons/apple-targets") as typeof import("@bacons/apple-targets"),
+      "widgetTheme.appleTargets",
+    );
+    if (!targets) return null;
+    const { ExtensionStorage } = targets;
     const storage = new ExtensionStorage(APP_GROUP);
     return {
       get: (key) => storage.get(key),
