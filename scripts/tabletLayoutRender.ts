@@ -2,10 +2,13 @@
  * Geometry render of the tablet layout: NOT a device capture. It lays the
  * dashboard, the food tab and a bottom sheet out with the app's own pure
  * layout functions (lib/tabletLayout: column threshold, column widths, home
- * split and fill weights, sheet width and height; lib/sheetLayout) and the
+ * split, fixed card gap and top stacking, sheet width and height;
+ * lib/sheetLayout) and the
  * theme palettes, into SVG, and rasterises it with rsvg-convert. Block heights
  * are representative natural heights (the real cards depend on data); the
- * columns, widths, gaps, fill and sheet box are the real arithmetic.
+ * columns, widths, gaps and sheet box are the real arithmetic. Cards are never
+ * stretched, the columns are not forced to equal height, and the whole page is
+ * one scroll: content past the viewport is clipped here the way it scrolls.
  *
  * Run: npx tsx scripts/tabletLayoutRender.ts <outDir>
  * Output per device and theme: tab-<device>-<light|dark>.svg / .png, three
@@ -20,16 +23,15 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { sheetLayout } from "../lib/sheetLayout";
 import {
   COLUMN_GUTTER,
-  HOME_RIGHT,
   SHEET_MAX_WIDTH,
+  TABLET_CARD_GAP,
   TWO_COL_MAX_WIDTH,
   columnWidth,
-  fillColumn,
   isTwoColumn,
   sheetBoxStyle,
   sheetWidth,
+  stackColumn,
   tabletSheetHeight,
-  type HomeBlockId,
 } from "../lib/tabletLayout";
 import { PALETTES, type Palette } from "../lib/theme/tokens";
 
@@ -100,33 +102,26 @@ function home(p: Palette, d: Device): { svg: string; note: string } {
     const lx = bodyX + COLUMN_GUTTER;
     const rx = bodyX + cw + COLUMN_GUTTER;
     const inner = cw - COLUMN_GUTTER * 2;
-    let y = colTop;
-    const hero: Box = { x: lx, y, w: inner, h: 250, label: "Ring (today average)", sub: "hero" };
-    o += rect(p, hero);
-    y += 250 + GAP;
-    o += rect(p, { x: lx, y, w: inner, h: 200, label: "This week boxes", sub: "week" });
-    y += 200 + GAP;
-    // The daily flow fills the rest of the left column (it scrolls past it).
-    const flowH = colTop + viewport - y;
-    o += rect(p, { x: lx, y, w: inner, h: flowH, label: "Daily flow (journal)", top: true });
-    const rows = Math.floor((flowH - 70) / 62);
-    for (let i = 0; i < rows; i++) {
-      o += rect(p, { x: lx + 12, y: y + 56 + i * 62, w: inner - 24, h: 52, label: `entry ${i + 1}`, kind: "row" });
+    // Left column: ring, week boxes, then the daily flow as plain rows (the
+    // preview slice is at most 15 rows over 2 days), all at natural height.
+    const leftH = [250, 200, 56 + 7 * 62 + 70];
+    const left = stackColumn(leftH, TABLET_CARD_GAP);
+    o += rect(p, { x: lx, y: colTop + left.tops[0], w: inner, h: leftH[0], label: "Ring (today average)", sub: "hero" });
+    o += rect(p, { x: lx, y: colTop + left.tops[1], w: inner, h: leftH[1], label: "This week boxes", sub: "week" });
+    const fy = colTop + left.tops[2];
+    o += rect(p, { x: lx, y: fy, w: inner, h: leftH[2], label: "Daily flow (journal)", top: true });
+    for (let i = 0; i < 7; i++) {
+      o += rect(p, { x: lx + 12, y: fy + 56 + i * 62, w: inner - 24, h: 52, label: `entry ${i + 1}`, kind: "row" });
     }
-    const blocks = HOME_RIGHT.filter((b) => RIGHT_NATURAL[b.id]).map((b) => ({
-      id: b.id as HomeBlockId,
-      height: RIGHT_NATURAL[b.id].h,
-      grow: b.grow,
-    }));
-    const fill = fillColumn(blocks, viewport, GAP);
-    let ry = colTop;
-    blocks.forEach((b, i) => {
-      const meta = RIGHT_NATURAL[b.id];
-      o += rect(p, { x: rx, y: ry, w: inner, h: fill.heights[i], label: meta.label, sub: `natural ${b.height} pt, grow ${b.grow}`, kind: meta.kind ?? "card" });
-      ry += fill.heights[i] + GAP;
+    const keys = ["postMeal", "context", "basal", "quick", "setup"];
+    const heights = keys.map((k) => RIGHT_NATURAL[k].h);
+    const right = stackColumn(heights, TABLET_CARD_GAP);
+    keys.forEach((k, i) => {
+      const meta = RIGHT_NATURAL[k];
+      o += rect(p, { x: rx, y: colTop + right.tops[i], w: inner, h: heights[i], label: meta.label, sub: `natural ${heights[i]} pt`, kind: meta.kind ?? "card" });
     });
     o += cta(p, d, bodyX + COLUMN_GUTTER, bodyW - COLUMN_GUTTER * 2);
-    return { svg: o, note: `two columns, column ${f2(cw)} pt, right column fills to ${f2(ry - GAP)} of ${f2(colTop + viewport)} (leftover ${f2(fill.leftover)})` };
+    return { svg: o, note: `2 cols, one scroll; left ${f2(left.total)}, right ${f2(right.total)} pt, gap ${TABLET_CARD_GAP}` };
   }
   // One column (phone order): hero, week, right-column cards, journal.
   const colW = Math.min(d.w, 680) - 32;
@@ -173,28 +168,19 @@ function food(p: Palette, d: Device): { svg: string; note: string } {
   const inner = cw - COLUMN_GUTTER * 2;
   const lx = bodyX + COLUMN_GUTTER;
   const rx = bodyX + cw + COLUMN_GUTTER;
-  let y = colTop;
-  o += rect(p, { x: lx, y, w: inner, h: 110, label: "Title + create meal" });
-  y += 110 + GAP;
-  o += rect(p, { x: lx, y, w: inner, h: 52, label: "Search" });
-  y += 52 + GAP;
-  o += rect(p, { x: lx, y, w: inner, h: 200, label: "Recent foods" });
-  y += 200 + GAP;
-  o += rect(p, { x: lx, y, w: inner, h: colBottom - y, label: "Categories grid (scrolls)", top: true });
-  const blocks = [
-    { id: "hero", height: 150, grow: 1 },
-    { id: "ratio", height: 44, grow: 0 },
-    { id: "today", height: 270, grow: 0 },
-    { id: "templates", height: 270, grow: 0 },
-  ];
-  const fill = fillColumn(blocks, viewport, GAP);
-  let ry = colTop;
-  const labels = ["Daily carbs hero (flexible)", "Carb ratio", "Today", "Templates"];
-  blocks.forEach((b, i) => {
-    o += rect(p, { x: rx, y: ry, w: inner, h: fill.heights[i], label: labels[i], sub: `natural ${b.height} pt, grow ${b.grow}` });
-    ry += fill.heights[i] + GAP;
+  const leftH = [110, 52, 200, 420];
+  const left = stackColumn(leftH, TABLET_CARD_GAP);
+  const leftLabels = ["Title + create meal", "Search", "Recent foods", "Categories grid"];
+  leftH.forEach((h, i) => {
+    o += rect(p, { x: lx, y: colTop + left.tops[i], w: inner, h, label: leftLabels[i], top: i === 3 });
   });
-  return { svg: o, note: `two columns, column ${f2(cw)} pt, right fills to ${f2(ry - GAP)} of ${f2(colBottom)} (leftover ${f2(fill.leftover)})` };
+  const rightH = [150, 44, 270, 270];
+  const right = stackColumn(rightH, TABLET_CARD_GAP);
+  const rightLabels = ["Daily carbs hero", "Carb ratio", "Today", "Templates"];
+  rightH.forEach((h, i) => {
+    o += rect(p, { x: rx, y: colTop + right.tops[i], w: inner, h, label: rightLabels[i], sub: `natural ${h} pt` });
+  });
+  return { svg: o, note: `2 cols, one scroll; left ${f2(left.total)}, right ${f2(right.total)} pt, gap ${TABLET_CARD_GAP}` };
 }
 
 function sheetOverHome(p: Palette, d: Device, which: "meal" | "estimate"): { svg: string; note: string } {
@@ -244,7 +230,7 @@ function render(p: Palette, d: Device): string {
   const H = ph + 118;
   let o = `<svg xmlns="http://www.w3.org/2000/svg" width="${f2(W)}" height="${f2(H)}" viewBox="0 0 ${f2(W)} ${f2(H)}">`;
   o += `<rect width="${f2(W)}" height="${f2(H)}" fill="${p.scheme === "dark" ? "#05090d" : "#cfd6da"}"/>`;
-  o += `<text x="${pad}" y="26" font-family="${FONT}" font-size="15" font-weight="700" fill="${p.scheme === "dark" ? "#e8eef2" : "#14212a"}">${d.label} | ${p.scheme}</text>`;
+  o += `<text x="${pad}" y="26" font-family="${FONT}" font-size="15" font-weight="700" fill="${p.scheme === "dark" ? "#e8eef2" : "#14212a"}">${d.label} | ${p.scheme} | geometry render, not a device capture</text>`;
   panels.forEach((pn, i) => {
     const x = pad + i * (pw + pad);
     o += `<g transform="translate(${f2(x)} 40) scale(${SCALE})"><svg width="${d.w}" height="${d.h}" viewBox="0 0 ${d.w} ${d.h}" overflow="hidden">${pn.svg}</svg></g>`;
