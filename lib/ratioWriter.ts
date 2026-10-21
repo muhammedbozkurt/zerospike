@@ -62,8 +62,9 @@ export const RATIO_WRITE_DELAY_MS = 700;
 export function createRatioWriter(opts: {
   stored: StoredRatios | null;
   persist: (patch: RatioPatch) => Promise<void>;
-  /** After a failed write: the freshest stored set to compare against. */
-  reload?: () => StoredRatios | null;
+  /** After a failed write: the set the DATABASE holds now (read it, do not
+   *  trust a cached copy that a refresh has not reached yet). */
+  reload?: () => StoredRatios | null | Promise<StoredRatios | null>;
   /** The profile's glucose unit, for comparing the correction factor as shown. */
   unit?: () => GlucoseUnit;
   onError?: (e: unknown) => void;
@@ -87,19 +88,31 @@ export function createRatioWriter(opts: {
   // old draft back: the newer write already carries the whole set, and putting
   // the stale draft back would overwrite what the user confirmed with it.
   let gen = 0;
+  // The newest write that carries the WHOLE set (all four numbers). Only such a
+  // write makes an older failed one irrelevant: a flag-only write after it (the
+  // box unticked) does not carry the numbers, so the older draft must survive.
+  let fullGen = 0;
 
   function enqueue(patch: RatioPatch, onFail?: () => void): Promise<boolean> {
     const mine = ++gen;
+    if (patch.carb_ratio_breakfast !== undefined) fullGen = mine;
     const task = tail.then(async () => {
       try {
         await opts.persist(patch);
         return true;
       } catch (e) {
-        if (mine === gen) {
-          opts.onError?.(e);
-          if (opts.reload) written = opts.reload();
-          onFail?.();
+        // A later write that carries the whole set already supersedes this one
+        // (and reports its own failure, if any).
+        if (fullGen > mine) return false;
+        opts.onError?.(e);
+        if (opts.reload) {
+          try {
+            written = (await opts.reload()) ?? written;
+          } catch {
+            // keep the optimistic picture; the next write compares against it
+          }
         }
+        onFail?.();
         return false;
       }
     });
@@ -191,6 +204,9 @@ export function createConfirmGate(opts: {
   /** Called once, after the first successful confirmation. */
   onConfirmed: () => void;
   onBusy?: (busy: boolean) => void;
+  /** False once the screen has been left: a late confirmation must not pop
+   *  another screen (the calculator underneath). */
+  canNavigate?: () => boolean;
 }): { press: (checked: boolean) => Promise<void>; isBusy: () => boolean } {
   let busy = false;
   let confirmedOnce = false;
@@ -202,7 +218,7 @@ export function createConfirmGate(opts: {
       opts.onBusy?.(true);
       try {
         const ok = await opts.confirm(checked);
-        if (ok && !confirmedOnce) {
+        if (ok && !confirmedOnce && (opts.canNavigate?.() ?? true)) {
           confirmedOnce = true;
           opts.onConfirmed();
         }

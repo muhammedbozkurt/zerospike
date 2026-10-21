@@ -273,7 +273,7 @@ section("7. coming back from the ratios: the record stays open");
   const calc = src("app/calculator.tsx");
   ok("the calculator's line sends a return marker to Profile", line.includes('params: { returnTo: "calculator" }') && line.includes("returnAfterConfirm"));
   ok("other screens' lines are unchanged (plain push)", line.includes(': "/settings/profile"'));
-  ok("Profile goes back only after a confirmation that was written, once, through the gate", /createConfirmGate\(\{[\s\S]{0,260}onConfirmed: \(\) => \{[\s\S]{0,200}to === "calculator" && r\.canGoBack\(\)\) r\.back\(\)/.test(prof) && prof.includes("onBusy: setConfirming"));
+  ok("Profile goes back only after a confirmation that was written, once, through the gate", /createConfirmGate\(\{[\s\S]{0,500}onConfirmed: \(\) => \{[\s\S]{0,200}to === "calculator" && r\.canGoBack\(\)\) r\.back\(\)/.test(prof) && prof.includes("onBusy: setConfirming"));
   ok("going back is a pop, so the open record keeps its state", !/router\.(replace|push)\([^)]*calculator/.test(prof));
   ok("the sheet closes onto the same screen after its own confirmation", /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\);/.test(calc));
   ok("the sheet never resets the form it sits on", !/setPortion\(|setGlucose\(|setSlot\(/.test(calc.slice(calc.indexOf("function CalcSetupSheet("), calc.indexOf("function PendingDoseCard("))));
@@ -431,7 +431,7 @@ section("12. ratios: one atomic confirmation, locked boxes, no silent failures")
   const prof = src("app/settings/profile.tsx");
   ok("ticking builds ONE patch from the draft", writer.includes("ratioConfirmDraftPatch(draft)") && !/enqueue\(\{ ratios_confirmed: 1 \}\)/.test(writer));
   ok("a failed write restores the draft", writer.includes("if (!pending) pending = draft"));
-  ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && /if \(next && ok\) \{\s*setConfirmed\(true\)/.test(calc) && !/setConfirmed\(next\)/.test(calc));
+  ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) \{\s*setConfirmed\(true\)/.test(calc) && !/setConfirmed\(next\)/.test(calc));
   ok("Profile reports a failed write", prof.includes('useRatioWriter(() => toast(t("common.saveFailed"), "error"))'));
   ok("Profile's box is enabled whenever the four numbers are filled (a tick flushes first)", prof.includes("disabled={!ratioFieldsComplete(ratioDraft) || confirming}") && !prof.includes("disabled={!ratioDraftIsStored}"));
   ok("the pending card shows only when four values wait for the tick", calc.split("calcSetupPrefilled(activeProfile)").length >= 4 && calc.includes("activeProfile?.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile)"));
@@ -539,7 +539,7 @@ section("16. whole-number fields: a separator stays visible and is refused, key 
   ok("hasDecimalSeparator sees the Arabic mark", hasDecimalSeparator("5٫5"));
   // the other whole-number fields
   const gis = src("components/GlucoseInputSheet.tsx");
-  ok("the glucose sheet keeps the separator visible and refuses it", gis.includes("const wholeBad = !mmol && hasDecimalSeparator(value);") && gis.includes("const typed = mmol ? parseDecimalText(value) : parseWholeText(value);") && gis.includes('t("numeric.integerOnly")'));
+  ok("the glucose sheet keeps the separator visible and refuses it", gis.includes("const wholeBad = !mmol && hasDecimalSeparator(value);") && gis.includes("pasteBad ? null : mmol ? parseDecimalText(value) : parseWholeText(value)") && gis.includes('t("numeric.integerOnly")'));
   const rng = src("components/RangeInput.tsx");
   ok("range ends hand the parent an EMPTY end while the text is malformed", rng.includes('onChangeMin(bad ? "" : s)') && rng.includes('onChangeMax(bad ? "" : s)') && rng.includes("hasDecimalSeparator(s)"));
   ok("range ends show the text as typed with the error", rng.includes("const shownMin = minBad ? (rawMin as string) : minText;") && rng.includes('t("numeric.integerOnly")'));
@@ -594,6 +594,31 @@ section("19. a tapped offer whose reading was deleted is not linked");
   ok("the save checks the row still exists before linking", /let boundId: string \| null = boundOffer\?\.id \?\? null;\s*if \(boundId && !\(await getSugarLog\(boundId\)\)\) boundId = null;/.test(calc));
   ok("a vanished row falls back to the normal flow (match or write a new reading)", /boundId\s*\?\s*\{ id: boundId \}\s*:\s*await findMatchingSugarLog\(activeProfile\.id, glucoseMgdl, at\)/.test(calc));
   ok("typing the same value by hand never binds (the binding is set only by the tap)", (calc.match(/setOfferBinding\(/g) ?? []).length === 1 && /function useOfferedGlucose\(\)[\s\S]{0,400}setOfferBinding\(\{ id: offer\.id, mgdl: offer\.mgdl \}\)/.test(calc));
+}
+
+section("20. the glucose sheet refuses a bad paste like every other box");
+{
+  const mg = { decimals: 0 };
+  const mm = { decimals: 1 };
+  eq("pasting -45 into mg/dL is refused, not 45", readNumericInput("-45", "", mg).kind, "malformed");
+  eq("... no value", readNumericInput("-45", "", mg).value, null);
+  eq("... the text stays visible", readNumericInput("-45", "", mg).text, "45");
+  eq("pasting 1e2 into mmol/L is refused, not 12", readNumericInput("1e2", "", mm).kind, "malformed");
+  eq("... no value", readNumericInput("1e2", "", mm).value, null);
+  eq("a plain pasted 110 is fine", readNumericInput("110", "", mg).value, 110);
+  eq("a plain pasted 6,5 is fine in mmol/L", readNumericInput("6,5", "", mm).value, 6.5);
+  eq("a stray key typed on the end stays lenient", readNumericInput("11a", "11", mg).kind, "ok");
+  const gis = src("components/GlucoseInputSheet.tsx");
+  ok("the sheet reads text through readNumericInput", gis.includes("readNumericInput(s, value, { decimals: mmol ? 1 : 0 })"));
+  ok("a malformed paste leaves no value (Save stays shut)", gis.includes("const typed = pasteBad ? null :"));
+  ok("and says so", gis.includes('t("numeric.range"') && gis.includes("wholeBad || pasteBad"));
+  ok("a reopened sheet starts clean", (gis.match(/setPasteBad\(false\)/g) ?? []).length === 2);
+  const prof = src("app/settings/profile.tsx");
+  ok("Profile only goes back while it is the screen on top", prof.includes("canNavigate: () => !leftRef.current && latestRef.current.navigation.isFocused()"));
+  const hook = src("lib/useRatioWriter.ts");
+  ok("a failed write re-reads the database, not the context copy", hook.includes("reload: async () => (await getProfile(p.id)) ?? profileRef.current"));
+  const calc = src("app/calculator.tsx");
+  ok("the sheet checks the screen's numbers after the write", calc.includes("confirmStillCurrent(ok, sent, fieldsRef.current)"));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

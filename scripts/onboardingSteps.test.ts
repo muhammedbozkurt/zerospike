@@ -58,6 +58,7 @@ import {
   calcFiguresAllowed,
   calcSetupNeeded,
   calcSetupPrefilled,
+  confirmStillCurrent,
   RATIOS_ENTERED,
   ratioConfirmPatch,
   ratioDraftDiffers,
@@ -722,7 +723,7 @@ section("J. the calculator screen wires the gate");
   ok("the sheet opens on a fresh writer", /getWriter\(\{ renew: true \}\)/.test(calc));
   ok("closing the sheet writes what is pending", /function closeSetup\(\)\s*\{[\s\S]{0,160}void ratioWriters\.get\(\)\?\.flush\(\)/.test(calc));
   ok("the sheet no longer writes the profile itself", !/updateProfile\(/.test(calc) && !calc.includes("calcSetupPatch"));
-  ok("a ticked box that reached the profile closes the sheet onto the open record", /if \(next && ok\) \{[\s\S]{0,120}onConfirmed\(\)/.test(calc) && /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\)/.test(calc));
+  ok("a ticked box that reached the profile closes the sheet onto the open record", /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) \{[\s\S]{0,160}onConfirmed\(\)/.test(calc) && /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\)/.test(calc));
   ok("the box states what ticking does", calc.includes('hint={t("calculator.setup.hint")}'));
   ok("the pending state is a status line with no number", /function PendingDoseCard\(\)[\s\S]{0,700}calculator\.pending/.test(calc) && !/function PendingDoseCard\(\)[\s\S]{0,700}(heroDose|totalDose|num\()/.test(calc));
   ok("the pending card is shown only while ratios_confirmed is not 1", calc.split("ratios_confirmed !== 1").length === 3);
@@ -1248,6 +1249,108 @@ async function writerTests(): Promise<void> {
       });
       await failing.press(true);
       ok("D1: a failed confirmation does not go back", !calls.includes("WRONG"));
+    }
+    // third-check scenarios (H, I, J) against a database that answers reload()
+    {
+      const A = { carb_ratio_breakfast: 8, carb_ratio_lunch: 9, carb_ratio_dinner: 11, insulin_sensitivity_factor: 45 };
+      const mk = (conf: number, failFn: (p: RatioPatch, n: number) => boolean, staleCtx = false) => {
+        const st = {
+          db: { ...A, ratios_confirmed: conf } as StoredRatios,
+          ctx: { ...A, ratios_confirmed: conf } as StoredRatios,
+          n: 0,
+          errs: 0,
+          w: null as unknown as ReturnType<typeof createRatioWriter>,
+        };
+        st.w = createRatioWriter({
+          stored: { ...st.db },
+          persist: async (patch) => {
+            st.n++;
+            await Promise.resolve();
+            if (failFn(patch, st.n)) throw new Error("BUSY");
+            st.db = { ...st.db, ...patch } as StoredRatios;
+            if (!staleCtx) st.ctx = { ...st.db };
+          },
+          // the database itself, as lib/useRatioWriter reads it
+          reload: async () => ({ ...st.db }),
+          onError: () => {
+            st.errs++;
+          },
+          setTimer: () => null,
+          clearTimer: () => {},
+        });
+        return st;
+      };
+      const B = { breakfast: 12, lunch: 9, dinner: 11, isfMgdl: 45 };
+
+      // H: the box is unticked while draft B's write fails; the unticking write is flag-only
+      {
+        let failing = true;
+        const st = mk(1, (p) => failing && p.carb_ratio_breakfast === 12 && p.ratios_confirmed !== 1);
+        st.w.update(B);
+        const r = await st.w.confirm(false);
+        eq("H: unticking reports nothing confirmed", r, false);
+        ok("H: the failed draft is reported", st.errs >= 1);
+        eq("H: the profile is not confirmed", calcFiguresAllowed({ insulin_mode: "both", ...st.db }), false);
+        failing = false;
+        await st.w.flush();
+        eq("H: the draft is not lost: the next flush writes B", st.db.carb_ratio_breakfast, 12);
+      }
+      // I: a field edited while the confirmation runs
+      {
+        const st = mk(2, () => false);
+        st.w.update(B);
+        const sent = B;
+        const p = st.w.confirm(true);
+        const edited = { ...B, lunch: 15 };
+        st.w.update(edited);
+        const ok1 = await p;
+        await st.w.flush();
+        eq("I: the profile ends unconfirmed with the edit", `${st.db.carb_ratio_lunch}/${st.db.ratios_confirmed}`, "15/2");
+        eq("I: so the sheet must neither tick nor close", confirmStillCurrent(ok1, sent, edited), false);
+        eq("I: with nothing edited it ticks and closes", confirmStillCurrent(true, sent, { ...sent }), true);
+        eq("I: a failed write never ticks", confirmStillCurrent(false, sent, { ...sent }), false);
+        eq("I: an unknown result never ticks", confirmStillCurrent(undefined, sent, { ...sent }), false);
+      }
+      // J: the context lags (stale), the database is what reload() must read
+      {
+        const st = mk(1, (_p, n) => n === 3, true);
+        st.w.update(B);
+        await st.w.flush();
+        st.w.update({ breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 45 });
+        await st.w.flush();
+        eq("J: the last write failed, the database still holds B", st.db.carb_ratio_breakfast, 12);
+        await st.w.flush();
+        eq("J: the screen's A is written by the next flush (not lost to a stale picture)", st.db.carb_ratio_breakfast, 8);
+        eq("J: the failure was reported", st.errs, 1);
+      }
+      // K: a failed confirmation followed by an edit still reports the failure
+      {
+        const st = mk(2, (p) => p.ratios_confirmed === 1);
+        st.w.update(B);
+        const p = st.w.confirm(true);
+        st.w.update({ ...B, lunch: 15 });
+        const ok1 = await p;
+        await st.w.flush();
+        eq("K: the failed confirmation reports false", ok1, false);
+        ok("K: and is reported", st.errs >= 1);
+        eq("K: nothing is confirmed", calcFiguresAllowed({ insulin_mode: "both", ...st.db }), false);
+      }
+    }
+    // D1b: the user went back while the write ran: no second pop
+    {
+      let focused = true;
+      const calls: string[] = [];
+      let resolveNow: (v: boolean) => void = () => {};
+      const gate = createConfirmGate({
+        confirm: () => new Promise<boolean>((r) => (resolveNow = r)),
+        onConfirmed: () => calls.push("back"),
+        canNavigate: () => focused,
+      });
+      const pr = gate.press(true);
+      focused = false;
+      resolveNow(true);
+      await pr;
+      eq("D1b: a screen that is no longer on top does not pop another one", calls.length, 0);
     }
     // a failed write hands the writer a fresh stored set
     {

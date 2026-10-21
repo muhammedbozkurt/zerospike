@@ -24,6 +24,7 @@ import {
   calcFiguresAllowed,
   calcSetupNeeded,
   calcSetupPrefilled,
+  confirmStillCurrent,
   ratioFieldsComplete,
   ratioFieldsInitial,
   shouldAutoOpenCalcSetup,
@@ -460,12 +461,14 @@ function CalcSetupSheet({
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const fieldsRef = useRef<RatioFields>(initial);
 
   // Every open starts from what the profile holds now, with a writer that
   // starts from it too. The box always starts unticked.
   useEffect(() => {
     if (!visible) return;
     setFields(initial);
+    fieldsRef.current = initial;
     setConfirmed(false);
     getWriter({ renew: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -473,6 +476,7 @@ function CalcSetupSheet({
 
   function change(patch: Partial<RatioFields>) {
     const next = { ...fields, ...patch };
+    fieldsRef.current = next;
     setFields(next);
     setConfirmed(false);
     getWriter()?.update(next);
@@ -485,13 +489,16 @@ function CalcSetupSheet({
   async function toggle(next: boolean) {
     if (!ratioFieldsComplete(fields) || confirming) return;
     setConfirming(true);
+    const sent = fieldsRef.current;
     let ok: boolean | undefined;
     try {
       ok = await getWriter()?.confirm(next);
     } finally {
       setConfirming(false);
     }
-    if (next && ok) {
+    // A field edited while the write ran: that edit withdrew the confirmation,
+    // so the box stays unticked and the sheet stays open.
+    if (next && confirmStillCurrent(ok, sent, fieldsRef.current)) {
       setConfirmed(true);
       hapticSuccess();
       onConfirmed();

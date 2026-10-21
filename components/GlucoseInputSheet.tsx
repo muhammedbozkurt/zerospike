@@ -40,6 +40,7 @@ import {
   parseWholeText,
   sanitizeNumberText,
 } from "../lib/numberInput";
+import { readNumericInput } from "../lib/numericField";
 import { withAlpha } from "./rich/GlassCard";
 import { ELEVATION, INPUT_TEXT, RADIUS, RICH_BY_STATUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
@@ -183,11 +184,13 @@ export function GlucoseInputSheet({
     if (visible) {
       if (edit) {
         setValue(num(glucoseToDisplay(edit.glucose_level_mgdl, unit)));
+        setPasteBad(false);
         setPeriod(edit.period_tag);
         setTags(edit.tags);
         setLoggedAt(new Date(edit.logged_at));
       } else {
         setValue("");
+        setPasteBad(false);
         setPeriod(initialPeriod);
         setTags([]);
         setLoggedAt(null);
@@ -263,14 +266,20 @@ export function GlucoseInputSheet({
   // ONE numeric normalizer for every field in the app (lib/numberInput): the
   // comma is a decimal separator, so "5,5" stays 5.5 mmol/L instead of being
   // stripped into 55 - an 18x fictional reading on a comma-decimal keyboard.
+  // A paste or a replaced selection goes through the same check as the other
+  // number boxes: "-45" and "1e2" are refused (the text stays visible, no
+  // value), never quietly turned into 45 or 12. Single typed keys stay lenient.
+  const [pasteBad, setPasteBad] = useState(false);
   function onType(s: string) {
-    setValue(sanitizeNumberText(s, mmol));
+    const r = readNumericInput(s, value, { decimals: mmol ? 1 : 0 });
+    setValue(r.text);
+    setPasteBad(r.kind === "malformed");
   }
 
   // mg/dL is a whole number: "5,5" stays on screen as typed and reads as an
   // error (never 55), and Save stays shut until it is a whole number.
   const wholeBad = !mmol && hasDecimalSeparator(value);
-  const typed = mmol ? parseDecimalText(value) : parseWholeText(value);
+  const typed = pasteBad ? null : mmol ? parseDecimalText(value) : parseWholeText(value);
 
   // Guards the async gap between a Save tap and the guard dialog resolving:
   // submittedRef alone (set only once the guard has already said "go") would
@@ -551,13 +560,19 @@ export function GlucoseInputSheet({
                   <Txt kind="caption" tone="muted" style={{ marginTop: compact ? 0 : -SPACE.xs }}>
                     {glucoseUnitLabel(unit)}
                   </Txt>
-                  {wholeBad ? (
+                  {wholeBad || pasteBad ? (
                     <Txt
                       kind="caption"
                       style={{ color: THEME.warning, marginTop: SPACE.xs }}
                       accessibilityRole="alert"
                     >
-                      {t("numeric.integerOnly")}
+                      {wholeBad
+                        ? t("numeric.integerOnly")
+                        : t("numeric.range", {
+                            min: num(minD),
+                            max: num(maxD),
+                            unit: glucoseUnitLabel(unit),
+                          })}
                     </Txt>
                   ) : null}
                   <View style={{ minHeight: 26, marginTop: compact ? SPACE.xs : SPACE.sm }}>

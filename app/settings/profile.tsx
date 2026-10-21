@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { getLocales } from "expo-localization";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
 import { updateProfile } from "../../lib/db/profiles";
@@ -292,12 +292,23 @@ export default function ProfileSettings() {
   // confirmation twice (the second UNticked the box) and pop two screens, taking
   // the calculator's open record with it.
   const [confirming, setConfirming] = useState(false);
-  const latestRef = useRef({ returnTo, router });
-  latestRef.current = { returnTo, router };
+  const navigation = useNavigation();
+  const latestRef = useRef({ returnTo, router, navigation });
+  latestRef.current = { returnTo, router, navigation };
+  const leftRef = useRef(false);
+  useEffect(
+    () => () => {
+      leftRef.current = true;
+    },
+    []
+  );
   const confirmGateRef = useRef<ReturnType<typeof createConfirmGate> | null>(null);
   if (!confirmGateRef.current) {
     confirmGateRef.current = createConfirmGate({
       confirm: async (checked) => (await ratioWriters.get()?.confirm(checked)) ?? false,
+      // Only while this screen is still the one on top: a user who already went
+      // back during the write must not pop the calculator under it as well.
+      canNavigate: () => !leftRef.current && latestRef.current.navigation.isFocused(),
       onConfirmed: () => {
         const { returnTo: to, router: r } = latestRef.current;
         if (to === "calculator" && r.canGoBack()) r.back();
