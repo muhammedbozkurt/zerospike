@@ -1049,6 +1049,17 @@ const es: TranslationSchema = {
     beverages: "Bebidas",
     other: "Otros",
   },
+  emptyStates: {
+    example: "Ejemplo",
+    foodTitle: "Aún no hay comidas registradas",
+    foodBody: "Elija alimentos, ajuste las porciones y guarde su primera comida.",
+    foodPreview: "Aquí verá sus carbohidratos del día, las comidas recientes y las plantillas.",
+    foodCta: "Crear su primera comida",
+    injectionTitle: "Aún no hay inyecciones registradas",
+    injectionBody: "A medida que registre inyecciones, las zonas se colorean en el mapa: cuanto más oscuro el color, más a menudo se usa la zona.",
+    insightsTitle: "Aún no hay nada que mostrar",
+    insightsBody: "Tras unas cuantas mediciones, aquí verá tendencias, tiempo en rango y el efecto de las comidas.",
+  },
   insights: {
     title: "Análisis",
     cardSub: "Sus tendencias de glucosa y carbohidratos",

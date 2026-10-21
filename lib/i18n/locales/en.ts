@@ -1049,6 +1049,17 @@ const en: TranslationSchema = {
     beverages: "Beverages",
     other: "Other",
   },
+  emptyStates: {
+    example: "Example",
+    foodTitle: "No meals logged yet",
+    foodBody: "Pick foods, set the portions and save your first meal.",
+    foodPreview: "Daily carbs, recent meals and templates will show up here.",
+    foodCta: "Create your first meal",
+    injectionTitle: "No injections logged yet",
+    injectionBody: "As you log injections, regions fill in on the map: the darker the color, the more often a region is used.",
+    insightsTitle: "Nothing to show yet",
+    insightsBody: "After a few readings, trends, time in range and meal effects will appear here.",
+  },
   insights: {
     title: "Insights",
     cardSub: "Your glucose & carb trends",

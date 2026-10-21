@@ -1049,6 +1049,17 @@ const fr: TranslationSchema = {
     beverages: "Boissons",
     other: "Autres",
   },
+  emptyStates: {
+    example: "Exemple",
+    foodTitle: "Aucun repas enregistré pour le moment",
+    foodBody: "Choisissez des aliments, réglez les portions et enregistrez votre premier repas.",
+    foodPreview: "Vos glucides du jour, vos repas récents et vos modèles apparaîtront ici.",
+    foodCta: "Créer votre premier repas",
+    injectionTitle: "Aucune injection enregistrée pour le moment",
+    injectionBody: "Au fil de vos enregistrements, les zones se colorent sur la carte : plus la couleur est foncée, plus la zone est utilisée souvent.",
+    insightsTitle: "Rien à afficher pour le moment",
+    insightsBody: "Après quelques mesures, les tendances, le temps dans la cible et l'effet des repas apparaîtront ici.",
+  },
   insights: {
     title: "Analyses",
     cardSub: "Vos tendances de glycémie et glucides",

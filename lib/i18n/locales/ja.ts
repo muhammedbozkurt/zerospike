@@ -1049,6 +1049,17 @@ const ja: TranslationSchema = {
     beverages: "飲み物",
     other: "その他",
   },
+  emptyStates: {
+    example: "サンプル",
+    foodTitle: "食事の記録はまだありません",
+    foodBody: "食品を選び、量を調整して、最初の食事を保存してください。",
+    foodPreview: "1日の炭水化物、最近の食事、テンプレートがここに表示されます。",
+    foodCta: "最初の食事を作成",
+    injectionTitle: "注射の記録はまだありません",
+    injectionBody: "注射を記録すると、マップ上の部位に色が付きます。色が濃いほど、よく使っている部位です。",
+    insightsTitle: "表示できるデータはまだありません",
+    insightsBody: "測定値をいくつか記録すると、傾向、目標範囲内の時間、食事の影響がここに表示されます。",
+  },
   insights: {
     title: "分析",
     cardSub: "血糖値と炭水化物の傾向",

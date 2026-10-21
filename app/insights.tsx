@@ -81,6 +81,8 @@ import { Sparkline } from "../components/Sparkline";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { DirIcon } from "../components/DirIcon";
 import { Skeleton } from "../components/Skeleton";
+import { EmptyExample, EmptyState } from "../components/EmptyState";
+import { insightsNeedsData } from "../lib/emptyStates";
 import { useFeedback } from "../components/Feedback";
 import { logEvent } from "../lib/analytics";
 import { formatLocale, num, pct, pctParts } from "../lib/format";
@@ -978,8 +980,7 @@ export default function InsightsScreen() {
     });
   }
 
-  const isEmpty =
-    data.readings === 0 && data.injectionCount === 0 && data.meals === 0;
+  const isEmpty = insightsNeedsData(data);
   const hasReadings = data.readings > 0;
   const maxSite = Math.max(1, ...data.siteDistribution.map((s) => s.count));
   const usedSites = data.siteDistribution
@@ -1056,12 +1057,18 @@ export default function InsightsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {isEmpty ? (
-            <View className="items-center py-12">
-              <IconTile icon="analytics-outline" size={64} radius={20} hero />
-              <Text style={{ color: THEME.textMuted, textAlign: "center", marginTop: 14 }}>
-                {t("insights.empty")}
-              </Text>
-            </View>
+            <EmptyState
+              icon="analytics-outline"
+              title={t("emptyStates.insightsTitle")}
+              subtitle={t("emptyStates.insightsBody")}
+              preview={
+                <EmptyExample
+                  tag={t("emptyStates.example")}
+                  rows={[{ label: t("insights.timeInRange"), fill: 0.72 }]}
+                  bars={[0.45, 0.6, 0.4, 0.75, 0.55, 0.65, 0.5]}
+                />
+              }
+            />
           ) : (
             // Locked, the preview is clipped to roughly one screen. The unlock
             // card is centred inside this box, and the box used to be the FULL
