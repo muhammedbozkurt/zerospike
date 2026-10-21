@@ -48,6 +48,7 @@ import {
   migrateToV24,
   migrateToV25,
   migrateToV26,
+  migrateToV27,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -108,6 +109,7 @@ import {
 } from "../lib/db/v23Sql";
 import { V24_CREATE } from "../lib/db/v24Sql";
 import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "../lib/db/v26Sql";
+import { V27_RESET_RATIO_CONFIRMATION } from "../lib/db/v27Sql";
 import { PORTION_LABEL_KEYS } from "../lib/db/types";
 import {
   adoptOrphanReminders,
@@ -4211,7 +4213,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 26", /const SCHEMA_VERSION = 26;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 27", /const SCHEMA_VERSION = 27;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4895,6 +4897,67 @@ async function main() {
     );
   }
 
+  section("U2. v27 clears ratios_confirmed once, touches nothing else");
+  {
+    const make = (): DatabaseSync => {
+      const d = new DatabaseSync(":memory:");
+      d.exec(`
+        PRAGMA foreign_keys = ON;
+        CREATE TABLE user_profiles (
+          id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL,
+          insulin_sensitivity_factor REAL NOT NULL, carb_ratio_breakfast REAL NOT NULL,
+          carb_ratio_lunch REAL NOT NULL, carb_ratio_dinner REAL NOT NULL,
+          ratios_confirmed INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+        );
+        CREATE TABLE injection_logs (
+          id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+          dose_units REAL, insulin_type TEXT, logged_at TEXT NOT NULL,
+          FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
+        );
+        INSERT INTO user_profiles VALUES ('p1', 'A', 35, 8, 9, 11, 1, '2026-01-01T00:00:00.000Z');
+        INSERT INTO user_profiles VALUES ('p2', 'B', 40, 10, 12, 12, 1, '2026-01-02T00:00:00.000Z');
+        INSERT INTO user_profiles VALUES ('p3', 'C', 40, 10, 12, 12, 0, '2026-01-03T00:00:00.000Z');
+        INSERT INTO injection_logs VALUES ('i1', 'p1', 6, 'bolus', '2026-01-02T08:05:00.000Z');
+        PRAGMA user_version = 26;
+      `);
+      return d;
+    };
+    const flags = (d: DatabaseSync) =>
+      (d.prepare("SELECT id, ratios_confirmed AS r FROM user_profiles ORDER BY id;").all() as { id: string; r: number }[])
+        .map((x) => `${x.id}=${x.r}`)
+        .join(",");
+    const db = make();
+    const ratiosBefore = JSON.stringify(
+      db.prepare("SELECT id, insulin_sensitivity_factor, carb_ratio_breakfast, carb_ratio_lunch, carb_ratio_dinner FROM user_profiles ORDER BY id;").all()
+    );
+    const injBefore = snapshotRows(db, "injection_logs");
+    await migrateToV27(adapt(db));
+    eq("every profile's confirmation is cleared", flags(db), "p1=0,p2=0,p3=0");
+    eq("v27 stamps 27", readUserVersion(db), 27);
+    eq(
+      "ratio columns are untouched",
+      JSON.stringify(
+        db.prepare("SELECT id, insulin_sensitivity_factor, carb_ratio_breakfast, carb_ratio_lunch, carb_ratio_dinner FROM user_profiles ORDER BY id;").all()
+      ),
+      ratiosBefore
+    );
+    sameRows("injection_logs (saved doses)", injBefore, snapshotRows(db, "injection_logs"));
+    eq("the statement only names the flag", V27_RESET_RATIO_CONFIRMATION, "UPDATE user_profiles SET ratios_confirmed = 0;");
+
+    // A confirmation made afterwards survives every later launch: the chain
+    // only runs v27 below version 27.
+    db.exec("UPDATE user_profiles SET ratios_confirmed = 1 WHERE id = 'p1';");
+    await runChain(db);
+    eq("at v27 a new confirmation is kept on the next open", flags(db), "p1=1,p2=0,p3=0");
+    db.close();
+
+    const indexSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "index.ts"), "utf8");
+    ok(
+      "the v26 -> v27 step runs the real migration",
+      /currentVersion < 27\)\s*\{\s*await migrateToV27\(db\);/.test(indexSrc)
+    );
+  }
+
   // ── K. The chain end to end, and the interruption it used to lose data to ──
   section("K1. the full chain from every start version keeps every row");
   for (const start of [1, 8, 9, 10, 11, 14] as ChainStart[]) {
@@ -4908,7 +4971,8 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 26`, readUserVersion(db), 26);
+    eq(`v${start}: ends at 27`, readUserVersion(db), 27);
+    eq(`v${start}: v8 default 1 is cleared by v27`, (db.prepare("SELECT ratios_confirmed AS r FROM user_profiles WHERE id='p1';").get() as { r: number }).r, 0);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
     const p1 = db
@@ -5098,7 +5162,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      26
+      27
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -5114,7 +5178,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 26", readUserVersion(db), 26);
+    eq("the next launch still ends at 27", readUserVersion(db), 27);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -5212,7 +5276,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 26 again", readUserVersion(db), 26);
+    eq("the chain lands on 27 again", readUserVersion(db), 27);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -5873,8 +5937,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 24) await migrateToV24(target);
   if (currentVersion >= 1 && currentVersion < 25) await migrateToV25(target);
   if (currentVersion >= 1 && currentVersion < 26) await migrateToV26(target);
+  if (currentVersion >= 1 && currentVersion < 27) await migrateToV27(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 26;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 27;");
 }
 
 function count(db: DatabaseSync, table: string): number {

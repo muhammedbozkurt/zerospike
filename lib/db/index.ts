@@ -22,6 +22,7 @@ import {
   migrateToV24,
   migrateToV25,
   migrateToV26,
+  migrateToV27,
   missingColumns,
   ensureFoodNameColumns,
   stampSchemaVersion,
@@ -56,7 +57,7 @@ import {
 import type { SeedFood } from "./seed";
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 27;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -367,6 +368,12 @@ export async function initDatabase(): Promise<void> {
   // mirror ids for carbohydrates / insulin, see ./v26Sql).
   if (currentVersion >= 1 && currentVersion < 26) {
     await migrateToV26(db);
+  }
+
+  // v26 → v27: the old ratios_confirmed flag is unreliable for everyone, so it is
+  // cleared once; the ratios sheet then asks each user to confirm (see ./v27Sql).
+  if (currentVersion >= 1 && currentVersion < 27) {
+    await migrateToV27(db);
   }
 
   // The fresh-install stamp, and a backstop for a database that entered the chain

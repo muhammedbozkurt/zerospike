@@ -298,6 +298,7 @@ const de: TranslationSchema = {
   ratio: {
     line: "Ihr KH-Faktor ({{slot}}): {{ratio}}",
     enter: "Geben Sie Ihre Faktoren ein",
+    confirm: "Bestätigen Sie Ihre Faktoren",
   },
   food: {
     category: "Kategorie",
@@ -418,10 +419,10 @@ const de: TranslationSchema = {
       body: "Dieser Bildschirm rechnet mit zwei Werten, die Sie von Ihrem Behandlungsteam erhalten haben. Tragen Sie sie einmal ein. Sie bleiben in Ihrem Profil, und Sie können sie jederzeit in den Einstellungen ändern.",
       carbLabel: "Ihr KE-Faktor",
       carbHint: "Gramm Kohlenhydrate, die 1 Einheit abdeckt (von Ihrem Behandlungsteam festgelegt).",
-      perMealNote: "Gilt für jede Mahlzeit. In den Einstellungen können Sie pro Mahlzeit einen eigenen Faktor festlegen.",
       isfLabel: "Ihr Korrekturfaktor (ISF)",
       isfHint: "Wie stark 1 Einheit Ihre Glukose senkt (von Ihrem Behandlungsteam festgelegt).",
       later: "Jetzt nicht",
+      bodyFilled: "Ihre Werte sind gespeichert. Bitte bestätigen Sie sie nur noch.",
       teamNote: "Legen Sie Ihre Faktoren gemeinsam mit Ihrem Diabetesteam fest.",
       confirm: "Ich habe diese Werte mit meinem Diabetesteam festgelegt",
     },
@@ -1634,6 +1635,7 @@ const de: TranslationSchema = {
     itemBodyMap: "Neue Körperkarte: Sehen Sie Ihre letzten Injektionsstellen in Farbe.",
     itemMeal: "Mahlzeiten erstellen und Haushaltsmaße: Fügen Sie Lebensmittel per Scheibe, Tasse und ähnlichen Maßen hinzu, die Gesamtkohlenhydrate erscheinen sofort.",
     itemSpike: "Spike-Kohlenhydratschätzung: Schreiben Sie Ihre Mahlzeit und sehen Sie die ungefähren Kohlenhydrate (eine Schätzung aus Nährwertdaten, keine Dosis).",
+    itemCalc: "Rechner: Legen Sie Ihre Faktoren mit Ihrem Diabetesteam fest und bestätigen Sie sie einmal; bis dahin wird keine Einheitenzahl angezeigt.",
     ok: "OK",
   },
   fatalReport: {

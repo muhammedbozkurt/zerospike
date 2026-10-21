@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { activeMealSlot, carbRatioForSlot } from "../lib/insulin";
-import { calcFiguresAllowed } from "../lib/calcSetup";
+import { calcFiguresAllowed, calcSetupPrefilled } from "../lib/calcSetup";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { isolateLtr, num } from "../lib/format";
 import { THEME } from "../lib/theme/tokens";
@@ -22,7 +22,9 @@ import { DirIcon } from "./DirIcon";
  *
  * A ratio is shown only once the user confirmed their own (ratios_confirmed 1).
  * Until then this is the single "Enter your ratios" line, and no number from a
- * stored value is quoted. Profiles without mealtime insulin see nothing.
+ * stored value is quoted ("Confirm your ratios" when the user's own values are
+ * already saved, "Enter your ratios" otherwise). Profiles without mealtime
+ * insulin see nothing.
  *
  * numberOfLines is 2, not 1: the line fits one row for every language this
  * app ships, but a longer translation (German routinely runs widest) wraps
@@ -55,7 +57,9 @@ export function CarbRatioLine({
   );
   const label = hasRatio
     ? t("ratio.line", { slot: t(`slot.${activeSlot}`), ratio: ratioFragment })
-    : t("ratio.enter");
+    : calcSetupPrefilled(activeProfile)
+      ? t("ratio.confirm")
+      : t("ratio.enter");
 
   return (
     <Pressable

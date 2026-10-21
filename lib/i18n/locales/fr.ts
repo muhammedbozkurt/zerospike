@@ -298,6 +298,7 @@ const fr: TranslationSchema = {
   ratio: {
     line: "Votre ratio ({{slot}}) : {{ratio}}",
     enter: "Saisissez vos ratios",
+    confirm: "Confirmez vos ratios",
   },
   food: {
     category: "Catégorie",
@@ -418,10 +419,10 @@ const fr: TranslationSchema = {
       body: "Cet écran calcule à partir de deux valeurs que votre équipe soignante vous a données. Saisissez-les une seule fois. Elles restent dans votre profil et vous pouvez les modifier à tout moment dans les Réglages.",
       carbLabel: "Votre ratio glucidique",
       carbHint: "Grammes de glucides couverts par 1 unité (défini par votre équipe soignante).",
-      perMealNote: "S'applique à tous les repas. Vous pouvez définir un ratio différent par repas dans les Réglages.",
       isfLabel: "Votre facteur de correction (ISF)",
       isfHint: "De combien 1 unité baisse votre glycémie (défini par votre équipe soignante).",
       later: "Pas maintenant",
+      bodyFilled: "Vos valeurs sont enregistrées. Il vous suffit de les confirmer.",
       teamNote: "Définissez vos ratios avec votre équipe diabète.",
       confirm: "J'ai défini ces ratios avec mon équipe diabète",
     },
@@ -1634,6 +1635,7 @@ const fr: TranslationSchema = {
     itemBodyMap: "Nouvelle carte du corps : visualisez en couleurs vos dernières zones d'injection.",
     itemMeal: "Création de repas et mesures ménagères : ajoutez les aliments par tranche, tasse ou mesure similaire, le total des glucides s'affiche aussitôt.",
     itemSpike: "Estimation des glucides par Spike : saisissez votre repas et voyez les glucides approximatifs (une estimation à partir de données nutritionnelles, pas une dose).",
+    itemCalc: "Calculateur : définissez vos ratios avec votre équipe diabète et confirmez-les une fois ; d'ici là, aucun chiffre en unités n'est affiché.",
     ok: "OK",
   },
   fatalReport: {

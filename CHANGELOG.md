@@ -22,9 +22,19 @@ Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode
   işaretlediğinde görünür; o zamana kadar tek satır "Oranlarınızı girin"
   (Profil ve Hedefler'e gider). Oran sheet'i ve Profil ve Hedefler alanları boş
   başlar. Bir değer değişirse onay sıfırlanır ve kutu yeniden işaretlenir.
-- Geriye dönük: onaylı oranı olanlar (`ratios_confirmed = 1`) için sonuç aynı.
-  Varsayılanla hesaplananlar artık rakam görmez; kayıtlı dozlar değişmez.
-  Hesaplayıcıyı ilk açışta oran sheet'i bir kez çıkar.
+- Sheet üç öğün oranını ve düzeltme faktörünü ayrı dört alan olarak gösterir;
+  Profil ve Hedefler'de yazma tuş başı değil, duraklamada veya alandan çıkınca
+  ve sırayla yapılır. Girilmemiş sayılan varsayılan değerler (10/12/12, 10/10/10,
+  40) alan grubu bazında boş açılır.
+- Geriye dönük: mevcut kullanıcılar oranlarını bir kez onaylar. v27 migrasyonu
+  tüm profillerde eski `ratios_confirmed` bayrağını bir kez 0'a çeker (oran
+  sütunlarına, `injection_logs`'a ve kayıtlı dozlara dokunmaz). Hesaplayıcıyı
+  ilk açışta oran sheet'i bir kez çıkar (kayıtlı değerler dolu, onay kutusu
+  boş); onaylanana kadar ünite rakamı görünmez, satır "Oranlarınızı onaylayın"
+  der. Kayıtlı dozlar değişmez.
+- Yenilikler sheet'ine hesaplayıcı onayını anlatan bir satır eklendi.
+- Dahili: `estimateInsulin` kullanılamayan (0, negatif, sonlu olmayan) oranla artık
+  doz üretmez (eski 0,1 tabanı 500 Ü verebiliyordu).
 
 ### İndirim ekranı (downsell)
 - Paywall'da yıllık plan seçiliyken satın alma vazgeçilirse ya da paywall

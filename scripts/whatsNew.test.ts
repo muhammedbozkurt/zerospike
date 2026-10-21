@@ -143,7 +143,8 @@ async function main(): Promise<void> {
   ok("storage failure holds the sheet back", await surveyInTheWay(brokenKv, false, keys));
 
   console.log("F. copy");
-  eq("four lines", WHATS_NEW_ITEMS.length, 4);
+  eq("five lines", WHATS_NEW_ITEMS.length, 5);
+  eq("the calculator line is last", WHATS_NEW_ITEMS[4], "whatsNew.itemCalc");
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

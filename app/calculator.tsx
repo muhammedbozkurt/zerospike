@@ -25,10 +25,14 @@ import {
   ISF_BOUNDS,
   RATIOS_CONFIRM_PROMPTED_KEY,
   calcFiguresAllowed,
-  calcSetupInitial,
   calcSetupNeeded,
   calcSetupPatch,
+  calcSetupPrefilled,
+  ratioFieldsComplete,
+  ratioFieldsInitial,
   shouldAutoOpenCalcSetup,
+  type RatioFields,
+  type RatioSet,
 } from "../lib/calcSetup";
 import { getFood } from "../lib/db/foods";
 import {
@@ -406,17 +410,18 @@ function NoticeGroup({
 }
 
 /**
- * The calculator's two numbers, asked in one sheet. It opens by itself once
- * (see lib/calcSetup.ts); afterwards the "Enter your ratios" line leads to
- * Profile and Targets.
+ * The calculator's numbers, asked in one sheet: a carb ratio for each meal and
+ * the correction factor, as four separate fields. It opens by itself once (see
+ * lib/calcSetup.ts); afterwards the "Enter your ratios" / "Confirm your ratios"
+ * line leads to Profile and Targets.
  *
- * Both fields start EMPTY (or with the user's own earlier entry); nothing is
- * suggested. Saving writes one carb ratio for all three meals plus the ISF, and
- * marks them confirmed only when the box is ticked. Without the tick the numbers
- * are kept but no unit figure appears.
+ * The fields open with the user's own stored values or EMPTY; nothing is
+ * suggested. Save writes the four values exactly as shown, and marks them
+ * confirmed only when the box is ticked. Without the tick the numbers are kept
+ * but no unit figure appears. Changing any value un-ticks the box, so the
+ * confirmation always refers to the numbers on screen.
  *
- * ISF is edited in the profile's display unit and handed back in it; the
- * screen converts to mg/dL at the storage boundary.
+ * ISF is held in mg/dL and edited in the profile's display unit.
  */
 function CalcSetupSheet({
   visible,
@@ -425,23 +430,21 @@ function CalcSetupSheet({
   saving,
   saveError,
   unit,
-  initialCarbRatio,
-  initialIsfMgdl,
+  initial,
+  prefilled,
 }: {
   visible: boolean;
   onClose: () => void;
-  onSave: (values: { carbRatio: number; isfDisplay: number; confirmed: boolean }) => void;
+  onSave: (values: { fields: RatioSet; confirmed: boolean }) => void;
   saving: boolean;
   saveError: boolean;
   unit: GlucoseUnit;
-  initialCarbRatio: number | null;
-  initialIsfMgdl: number | null;
+  initial: RatioFields;
+  /** All four values are the user's own and already filled in. */
+  prefilled: boolean;
 }) {
   const { t } = useTranslation();
-  const [carbRatio, setCarbRatio] = useState<number | null>(initialCarbRatio);
-  const [isf, setIsf] = useState<number | null>(
-    initialIsfMgdl == null ? null : glucoseToDisplay(initialIsfMgdl, unit)
-  );
+  const [fields, setFields] = useState<RatioFields>(initial);
   const [confirmed, setConfirmed] = useState(false);
   const isfBounds = ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"];
 
@@ -449,13 +452,17 @@ function CalcSetupSheet({
   // previous, abandoned open left in the fields. The box always starts unticked.
   useEffect(() => {
     if (!visible) return;
-    setCarbRatio(initialCarbRatio);
-    setIsf(initialIsfMgdl == null ? null : glucoseToDisplay(initialIsfMgdl, unit));
+    setFields(initial);
     setConfirmed(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const complete = carbRatio != null && isf != null;
+  function change(patch: Partial<RatioFields>) {
+    setFields((f) => ({ ...f, ...patch }));
+    setConfirmed(false);
+  }
+
+  const complete = ratioFieldsComplete(fields);
 
   return (
     <SheetShell
@@ -475,8 +482,8 @@ function CalcSetupSheet({
             loading={saving}
             disabled={saving || !complete}
             onPress={() => {
-              if (carbRatio == null || isf == null) return;
-              onSave({ carbRatio, isfDisplay: isf, confirmed });
+              if (!ratioFieldsComplete(fields)) return;
+              onSave({ fields, confirmed });
             }}
           />
           <Pressable
@@ -494,31 +501,35 @@ function CalcSetupSheet({
       }
     >
       <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 16 }}>
-        {t("calculator.setup.body")}
+        {prefilled ? t("calculator.setup.bodyFilled") : t("calculator.setup.body")}
       </Text>
 
       <DetailLabel>{t("calculator.setup.carbLabel")}</DetailLabel>
-      <RatioInput
-        value={carbRatio}
-        onChange={setCarbRatio}
-        min={CARB_RATIO_BOUNDS.min}
-        max={CARB_RATIO_BOUNDS.max}
-        decimals={1}
-        suffix={t("common.carbRatioUnit")}
-        accessibilityLabel={t("calculator.setup.carbLabel")}
-      />
-      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
+      {(["breakfast", "lunch", "dinner"] as const).map((slot) => (
+        <View key={slot} style={{ marginBottom: 8 }}>
+          <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 4 }}>
+            {t(`slot.${slot}`)}
+          </Text>
+          <RatioInput
+            value={fields[slot]}
+            onChange={(v) => change({ [slot]: v })}
+            min={CARB_RATIO_BOUNDS.min}
+            max={CARB_RATIO_BOUNDS.max}
+            decimals={1}
+            suffix={t("common.carbRatioUnit")}
+            accessibilityLabel={`${t("calculator.setup.carbLabel")}, ${t(`slot.${slot}`)}`}
+          />
+        </View>
+      ))}
+      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 }}>
         {t("calculator.setup.carbHint")}
-      </Text>
-      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 4 }}>
-        {t("calculator.setup.perMealNote")}
       </Text>
 
       <View style={{ marginTop: 18 }}>
         <DetailLabel>{t("calculator.setup.isfLabel")}</DetailLabel>
         <RatioInput
-          value={isf}
-          onChange={setIsf}
+          value={fields.isfMgdl == null ? null : glucoseToDisplay(fields.isfMgdl, unit)}
+          onChange={(v) => change({ isfMgdl: v == null ? null : glucoseFromDisplay(v, unit) })}
           min={isfBounds.min}
           max={isfBounds.max}
           decimals={unit === "mmol" ? 1 : 0}
@@ -820,13 +831,9 @@ function CalculatorScreen() {
     setSetupSaveError(false);
   }
 
-  async function saveSetup(values: { carbRatio: number; isfDisplay: number; confirmed: boolean }) {
+  async function saveSetup(values: { fields: RatioSet; confirmed: boolean }) {
     if (!activeProfile || savingSetup) return;
-    const patch = calcSetupPatch({
-      carbRatio: values.carbRatio,
-      isfMgdl: glucoseFromDisplay(values.isfDisplay, unit),
-      confirmed: values.confirmed,
-    });
+    const patch = calcSetupPatch({ fields: values.fields, confirmed: values.confirmed });
     if (!patch) return;
     setSavingSetup(true);
     setSetupSaveError(false);
@@ -1902,7 +1909,7 @@ function CalculatorScreen() {
   // Mounted on both branches below at the same position (after the host), so
   // React keeps one instance across the skeleton-to-loaded swap instead of
   // dismissing and re-presenting a sheet that is already on screen.
-  const setupInitial = calcSetupInitial(activeProfile);
+  const setupInitial = ratioFieldsInitial(activeProfile);
   const calcSetupSheet = showsDose ? (
     <CalcSetupSheet
       visible={setupOpen}
@@ -1911,8 +1918,8 @@ function CalculatorScreen() {
       saving={savingSetup}
       saveError={setupSaveError}
       unit={unit}
-      initialCarbRatio={setupInitial.carbRatio}
-      initialIsfMgdl={setupInitial.isfMgdl}
+      initial={setupInitial}
+      prefilled={calcSetupPrefilled(activeProfile)}
     />
   ) : null;
 

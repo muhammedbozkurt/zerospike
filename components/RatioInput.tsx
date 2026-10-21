@@ -18,6 +18,8 @@ interface RatioInputProps {
   decimals: number;
   suffix?: string;
   accessibilityLabel?: string;
+  /** Fires when the field loses focus, after its text has settled. */
+  onBlur?: () => void;
 }
 
 /**
@@ -33,6 +35,7 @@ export function RatioInput({
   decimals,
   suffix,
   accessibilityLabel,
+  onBlur,
 }: RatioInputProps) {
   const { t } = useTranslation();
   const [text, setText] = useState(value == null ? "" : num(value));
@@ -78,6 +81,7 @@ export function RatioInput({
           setFocused(false);
           setText(value == null ? "" : num(value));
           setOutOfRange(false);
+          onBlur?.();
         }}
         keyboardType={decimals > 0 ? "decimal-pad" : "number-pad"}
         returnKeyType="done"

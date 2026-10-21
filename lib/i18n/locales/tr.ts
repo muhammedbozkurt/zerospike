@@ -296,6 +296,7 @@ const tr = {
   ratio: {
     line: "Oranınız ({{slot}}): {{ratio}}",
     enter: "Oranlarınızı girin",
+    confirm: "Oranlarınızı onaylayın",
   },
   food: {
     category: "Kategori",
@@ -416,10 +417,10 @@ const tr = {
       body: "Bu ekran, sağlık ekibinizin verdiği iki değerden hesap yapar. Bir kez girmeniz yeterli; profilinizde saklanır ve Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.",
       carbLabel: "Karbonhidrat oranınız",
       carbHint: "1 ünitenin karşıladığı karbonhidrat gramı (sağlık ekibiniz belirler).",
-      perMealNote: "Her öğünde kullanılır. Ayarlar'dan öğün başına farklı bir oran belirleyebilirsiniz.",
       isfLabel: "Düzeltme faktörünüz (ISF)",
       isfHint: "1 ünitenin glukozu ne kadar düşürdüğü (sağlık ekibiniz belirler).",
       later: "Şimdi değil",
+      bodyFilled: "Değerleriniz kayıtlı, yalnızca onaylamanız yeterli.",
       teamNote: "Oranlarınızı diyabet ekibinizle belirleyin.",
       confirm: "Bu oranları diyabet ekibimle belirledim",
     },
@@ -1627,6 +1628,7 @@ const tr = {
     itemBodyMap: "Yeni vücut haritası: son enjeksiyon bölgelerinizi renklerle görün.",
     itemMeal: "Öğün oluşturma ve ev ölçüleri: yiyecekleri dilim, bardak gibi ölçülerle ekleyin, toplam karbonhidrat anında görünür.",
     itemSpike: "Spike karbonhidrat tahmini: öğününüzü yazın, yaklaşık karbonhidratı görün (besin bilgisi tahminidir, doz değildir).",
+    itemCalc: "Hesaplayıcı: oranlarınızı diyabet ekibinizle belirleyip bir kez onaylayın; onaylayana kadar ünite rakamı görünmez.",
     ok: "Tamam",
   },
   fatalReport: {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { getLocales } from "expo-localization";
@@ -35,12 +35,11 @@ import { ConfirmCheckbox } from "../../components/ConfirmCheckbox";
 import {
   CARB_RATIO_BOUNDS,
   ISF_BOUNDS,
-  ratioConfirmPatch,
   ratioFieldsInitial,
   ratioSetMatchesStored,
-  ratioSetPatch,
   type RatioFields,
 } from "../../lib/calcSetup";
+import { createRatioWriter, type RatioWriter } from "../../lib/ratioWriter";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { InsulinModeSection } from "../../components/InsulinModeSection";
 import { SettingsScaffold } from "../../components/settingsUi";
@@ -214,18 +213,54 @@ export default function ProfileSettings() {
     }
   }
 
-  // A changed set is a new set: ratioSetPatch withdraws the confirmation, and the
-  // user ticks the box again. Typing the same numbers back changes nothing.
+  // Typing only records a draft. The write waits for a pause or a blur and goes
+  // through one queue (lib/ratioWriter.ts), comparing against what it last sent
+  // rather than the profile in context, which lags behind a write. A changed set
+  // withdraws the confirmation; emptying a field does too.
+  const profileRef = useRef(activeProfile);
+  profileRef.current = activeProfile;
+  const writerRef = useRef<{ id: string; writer: RatioWriter } | null>(null);
+  function ratioWriter(): RatioWriter | null {
+    const p = profileRef.current;
+    if (!p) return null;
+    if (!writerRef.current || writerRef.current.id !== p.id) {
+      writerRef.current = {
+        id: p.id,
+        writer: createRatioWriter({
+          stored: p,
+          persist: async (patch) => {
+            await updateProfile(p.id, patch);
+            bumpData();
+          },
+          reload: () => profileRef.current,
+        }),
+      };
+    }
+    return writerRef.current.writer;
+  }
+
+  // Leaving the screen with a draft still waiting writes it.
+  useEffect(
+    () => () => {
+      void writerRef.current?.writer.flush();
+    },
+    []
+  );
+
   function onRatioDraft(next: RatioFields) {
     setRatioDraft(next);
-    const patch = ratioSetPatch(activeProfile, next);
-    if (patch) void persist(patch);
+    ratioWriter()?.update(next);
+  }
+
+  function onRatioBlur() {
+    void ratioWriter()?.flush();
   }
 
   function onRatioConfirm(checked: boolean) {
-    const patch = ratioConfirmPatch(activeProfile, checked);
-    if (patch) void persist(patch);
+    void ratioWriter()?.confirm(checked);
   }
+
+  const ratioDraftIsStored = ratioSetMatchesStored(activeProfile, ratioDraft);
 
   function rangeOk(minText: string, maxText: string): boolean {
     const lo = (parseDecimalText(minText) ?? NaN);
@@ -655,6 +690,7 @@ export default function ProfileSettings() {
               decimals={unit === "mmol" ? 1 : 0}
               suffix={glucoseUnitLabel(unit)}
               accessibilityLabel={t("settings.isf")}
+              onBlur={onRatioBlur}
             />
           </View>
         </FormCard>
@@ -677,6 +713,7 @@ export default function ProfileSettings() {
                 decimals={1}
                 suffix={t("common.carbRatioUnit")}
                 accessibilityLabel={t(`slot.${slot}`)}
+                onBlur={onRatioBlur}
               />
             </View>
           ))}
@@ -688,13 +725,10 @@ export default function ProfileSettings() {
           <View className="px-4 py-3">
             <Text className="text-mut text-xs mb-1">{t("calculator.setup.teamNote")}</Text>
             <ConfirmCheckbox
-              checked={activeProfile?.ratios_confirmed === 1}
+              checked={activeProfile?.ratios_confirmed === 1 && ratioDraftIsStored}
               onToggle={onRatioConfirm}
               label={t("calculator.setup.confirm")}
-              disabled={
-                activeProfile?.ratios_confirmed !== 1 &&
-                !ratioSetMatchesStored(activeProfile, ratioDraft)
-              }
+              disabled={!ratioDraftIsStored}
             />
             <Text className="text-mut text-xs mt-1">{t("settings.ratiosReconfirmHint")}</Text>
           </View>

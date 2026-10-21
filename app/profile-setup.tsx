@@ -668,7 +668,10 @@ function ProfileSetupScreen() {
                 <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
                 <RatioInput
                   value={ratios[slot]}
-                  onChange={(v) => setRatios((r) => ({ ...r, [slot]: v }))}
+                  onChange={(v) => {
+                    setRatios((r) => ({ ...r, [slot]: v }));
+                    setRatiosTick(false);
+                  }}
                   min={CARB_RATIO_BOUNDS.min}
                   max={CARB_RATIO_BOUNDS.max}
                   decimals={1}
@@ -687,12 +690,13 @@ function ProfileSetupScreen() {
                 <Text className="text-mut text-xs mb-2">{t("settings.isfHint")}</Text>
                 <RatioInput
                   value={ratios.isfMgdl == null ? null : glucoseToDisplay(ratios.isfMgdl, unit)}
-                  onChange={(v) =>
+                  onChange={(v) => {
                     setRatios((r) => ({
                       ...r,
                       isfMgdl: v == null ? null : glucoseFromDisplay(v, unit),
-                    }))
-                  }
+                    }));
+                    setRatiosTick(false);
+                  }}
                   min={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].min}
                   max={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].max}
                   decimals={unit === "mmol" ? 1 : 0}

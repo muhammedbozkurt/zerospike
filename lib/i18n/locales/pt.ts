@@ -297,7 +297,8 @@ const pt: TranslationSchema = {
   },
   ratio: {
     line: "Sua razão ({{slot}}): {{ratio}}",
-    enter: "Informe suas razões",
+    enter: "Informe seus fatores",
+    confirm: "Confirme seus fatores",
   },
   food: {
     category: "Categoria",
@@ -418,10 +419,10 @@ const pt: TranslationSchema = {
       body: "Esta tela calcula a partir de dois valores que a sua equipe de saúde informou. Informe-os uma só vez. Eles ficam no seu perfil e você pode mudá-los quando quiser em Configurações.",
       carbLabel: "Sua razão de carboidratos",
       carbHint: "Gramas de carboidrato cobertas por 1 unidade (definida pela sua equipe de saúde).",
-      perMealNote: "Vale para todas as refeições. Em Configurações você pode definir uma razão diferente para cada refeição.",
       isfLabel: "Seu fator de correção (FSI)",
       isfHint: "Quanto 1 unidade baixa sua glicemia (definido pela sua equipe de saúde).",
       later: "Agora não",
+      bodyFilled: "Seus valores estão salvos. Basta confirmá-los.",
       teamNote: "Defina suas razões com sua equipe de diabetes.",
       confirm: "Defini estes valores com minha equipe de diabetes",
     },
@@ -1632,6 +1633,7 @@ const pt: TranslationSchema = {
     itemBodyMap: "Novo mapa do corpo: veja em cores seus últimos locais de injeção.",
     itemMeal: "Criação de refeições e medidas caseiras: adicione alimentos por fatia, xícara e medidas parecidas, e o total de carboidratos aparece na hora.",
     itemSpike: "Estimativa de carboidratos do Spike: escreva sua refeição e veja os carboidratos aproximados (uma estimativa com base em dados nutricionais, não uma dose).",
+    itemCalc: "Calculadora: defina suas razões com sua equipe de diabetes e confirme-as uma vez; até lá, nenhum valor em unidades é exibido.",
     ok: "OK",
   },
   fatalReport: {

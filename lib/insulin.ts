@@ -151,10 +151,25 @@ export function estimateInsulin(
 ): InsulinEstimate {
   const slot = options.slot ?? activeMealSlot(options.now ?? new Date());
   const rawRatio = carbRatioForSlot(profile, slot);
-  // Defensive floor against a non-positive stored ratio (would divide by ~0);
-  // an out-of-range ratio is surfaced via warnings below, not silently trusted.
-  const carbRatio = Math.max(rawRatio, 0.1);
   const carbs = (food.carb_100g * portionGrams) / 100;
+  // A ratio that cannot be divided by produces NO dose. It used to be floored at
+  // 0.1, which turned a missing ratio into 500 U for 50 g; now the estimate is
+  // zero and only says the ratio is unusable. The UI never gets here (the gate in
+  // estimateInsulinConfirmed needs four usable numbers); this is the backstop.
+  if (!Number.isFinite(rawRatio) || rawRatio <= 0) {
+    return {
+      slot,
+      carbRatio: 0,
+      carbs: Math.round(carbs * 10) / 10,
+      mealDose: 0,
+      correctionDose: 0,
+      totalDose: 0,
+      iobReduction: 0,
+      correctionSkipped: null,
+      warnings: ["carb_ratio_out_of_range"],
+    };
+  }
+  const carbRatio = rawRatio;
   const mealDose = carbs / carbRatio;
 
   // A stored ISF of 0 (or a non-finite one) cannot produce a correction. It used

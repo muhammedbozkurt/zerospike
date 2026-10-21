@@ -298,6 +298,7 @@ const es: TranslationSchema = {
   ratio: {
     line: "Su proporción ({{slot}}): {{ratio}}",
     enter: "Introduzca sus proporciones",
+    confirm: "Confirme sus proporciones",
   },
   food: {
     category: "Categoría",
@@ -418,10 +419,10 @@ const es: TranslationSchema = {
       body: "Esta pantalla calcula a partir de dos valores que le dio su equipo sanitario. Introdúzcalos una sola vez. Se guardan en su perfil y puede cambiarlos cuando quiera en Ajustes.",
       carbLabel: "Su ratio de carbohidratos",
       carbHint: "Gramos de carbohidratos que cubre 1 unidad (lo define su equipo sanitario).",
-      perMealNote: "Se usa para todas las comidas. En Ajustes puede definir una proporción distinta para cada comida.",
       isfLabel: "Su factor de corrección (ISF)",
       isfHint: "Cuánto baja 1 unidad su glucosa (lo define su equipo sanitario).",
       later: "Ahora no",
+      bodyFilled: "Sus valores están guardados. Solo debe confirmarlos.",
       teamNote: "Establezca sus proporciones con su equipo de diabetes.",
       confirm: "He establecido estos valores con mi equipo de diabetes",
     },
@@ -1633,6 +1634,7 @@ const es: TranslationSchema = {
     itemBodyMap: "Nuevo mapa corporal: vea en colores sus últimas zonas de inyección.",
     itemMeal: "Creación de comidas y medidas caseras: añada alimentos por rebanada, taza u otras medidas, y el total de carbohidratos aparece al instante.",
     itemSpike: "Estimación de carbohidratos de Spike: escriba su comida y vea los carbohidratos aproximados (una estimación a partir de datos nutricionales, no una dosis).",
+    itemCalc: "Calculadora: establezca sus proporciones con su equipo de diabetes y confírmelas una vez; hasta entonces no se muestra ninguna cifra en unidades.",
     ok: "Aceptar",
   },
   fatalReport: {
