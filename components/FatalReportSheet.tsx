@@ -58,6 +58,7 @@ export function FatalReportSheet({
 
   return (
     <SheetShell
+      scrollHintId="fatal-report"
       visible={visible}
       onClose={onClose}
       title={t("fatalReport.row")}

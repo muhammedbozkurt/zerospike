@@ -57,6 +57,9 @@ import {
   usePortionUnitSystem,
 } from "./meal";
 import { SCRIM } from "./SheetShell";
+import { ScrollHint } from "./ScrollHint";
+import { useScrollHint } from "../lib/useScrollHint";
+import { hintBottomOffset } from "../lib/scrollHint";
 import { Button } from "./ui";
 
 const SEARCH_DEBOUNCE_MS = 180;
@@ -144,6 +147,7 @@ export function MealComposeSheet({
   const anim = useRef(new Animated.Value(0)).current;
   const rootRef = useRef<View>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const scrollHint = useScrollHint("sheet.meal-compose");
   const [rootHeight, setRootHeight] = useState(0);
   const [lift, setLift] = useState(0);
   const keyboardTopRef = useRef<number | null>(null);
@@ -411,6 +415,10 @@ export function MealComposeSheet({
               style={{ flex: 1, marginTop: 12 }}
               contentContainerStyle={{ paddingBottom: 28 }}
               showsVerticalScrollIndicator={false}
+              onScroll={scrollHint.onScroll}
+              onContentSizeChange={scrollHint.onContentSizeChange}
+              onLayout={scrollHint.onLayout}
+              scrollEventThrottle={scrollHint.scrollEventThrottle}
             >
               <FoodSearchBlock
                 query={query}
@@ -529,6 +537,7 @@ export function MealComposeSheet({
                 )
               ) : null}
             </ScrollView>
+            <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
 
             <View style={{ paddingTop: 10, paddingBottom: lift > 0 ? 12 : insets.bottom + 12 }}>
               <Button

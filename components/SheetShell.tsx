@@ -20,6 +20,9 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { THEME, glow } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 import { sheetBoxStyle } from "../lib/tabletLayout";
+import { useScrollHint } from "../lib/useScrollHint";
+import { hintBottomOffset } from "../lib/scrollHint";
+import { ScrollHint } from "./ScrollHint";
 
 export const SCRIM = "rgba(0,0,0,0.72)"; // theme-ok
 
@@ -60,6 +63,8 @@ export interface SheetShellProps {
   testID?: string;
   /** Fires once the Modal is really on screen (RN Modal onShow). */
   onShown?: () => void;
+  /** Key for the once-per-screen scroll hint (lib/scrollHint); defaults to testID. */
+  scrollHintId?: string;
 }
 
 export function SheetShell({
@@ -73,6 +78,7 @@ export function SheetShell({
   footer,
   testID,
   onShown,
+  scrollHintId,
 }: SheetShellProps): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -129,7 +135,15 @@ export function SheetShell({
         })
       : closedLayout.paddingBottom;
 
-  const onContentSizeChange = useCallback((_w: number, h: number) => setContentHeight(h), []);
+  const hint = useScrollHint(`sheet.${scrollHintId ?? testID ?? "generic"}`, visible);
+  const hintContentSize = hint.onContentSizeChange;
+  const onContentSizeChange = useCallback(
+    (w: number, h: number) => {
+      setContentHeight(h);
+      hintContentSize(w, h);
+    },
+    [hintContentSize],
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onShow={onShown}>
@@ -203,9 +217,13 @@ export function SheetShell({
             style={{ flexShrink: 1 }}
             showsVerticalScrollIndicator={false}
             onContentSizeChange={onContentSizeChange}
+            onLayout={hint.onLayout}
+            onScroll={hint.onScroll}
+            scrollEventThrottle={hint.scrollEventThrottle}
           >
             {children}
           </ScrollView>
+          <ScrollHint visible={hint.visible} bottomOffset={hintBottomOffset({})} />
 
           {footer ? <View style={{ paddingTop: 10 }}>{footer}</View> : null}
 

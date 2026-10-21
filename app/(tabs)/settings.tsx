@@ -15,6 +15,9 @@ import {
 import { Row, useSettingsGap } from "../../components/settingsUi";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { THEME } from "../../lib/theme/tokens";
+import { useScrollHint } from "../../lib/useScrollHint";
+import { hintBottomOffset } from "../../lib/scrollHint";
+import { ScrollHint } from "../../components/ScrollHint";
 
 /**
  * Settings HUB (R7.3). The former single 1050-line scroll is split into five
@@ -27,6 +30,7 @@ export default function SettingsHub() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { activeProfile, isProUser } = useApp();
+  const scrollHint = useScrollHint("settings.index");
   const proCta = useProCta(!isProUser);
   // Tablet (wider than 700dp): hub title and rows share one centred 640 column
   // instead of full-width rows with a lone chevron at the far edge. Gap is 0 on
@@ -61,6 +65,10 @@ export default function SettingsHub() {
           ...columnPad(16),
         }}
         showsVerticalScrollIndicator={false}
+        onScroll={scrollHint.onScroll}
+        onContentSizeChange={scrollHint.onContentSizeChange}
+        onLayout={scrollHint.onLayout}
+        scrollEventThrottle={scrollHint.scrollEventThrottle}
       >
         <Row icon="person-outline" label={t("settings.hubProfile")} onPress={go("/settings/profile")} />
         {activeProfile?.oral_meds_enabled === 1 ? (
@@ -110,6 +118,7 @@ export default function SettingsHub() {
           </Text>
         </View>
       </ScrollView>
+      <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
     </View>
   );
 }

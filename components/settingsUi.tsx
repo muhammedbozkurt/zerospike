@@ -11,6 +11,9 @@ import { GLUCOSE_RICH, HIT_TARGET, SPACE, THEME } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
+import { useScrollHint } from "../lib/useScrollHint";
+import { hintBottomOffset } from "../lib/scrollHint";
+import { ScrollHint } from "./ScrollHint";
 
 /** Settings reading column on tablets: one centred column, never two. */
 export const SETTINGS_MAX_WIDTH = 640;
@@ -104,7 +107,10 @@ export function SettingsScaffold({
   children,
   overlay,
   fillHeight = false,
+  scrollHintId,
 }: {
+  /** Opts this page into the once-per-screen scroll hint (lib/scrollHint). */
+  scrollHintId?: string;
   title: string;
   children: React.ReactNode;
   overlay?: React.ReactNode;
@@ -120,6 +126,7 @@ export function SettingsScaffold({
   const router = useRouter();
   const { isWide } = useLayout();
   const gap = useSettingsGap();
+  const scrollHint = useScrollHint(`settings.${scrollHintId ?? "none"}`, scrollHintId != null);
   const header = (
     <ScreenHeader
       title={title}
@@ -151,9 +158,14 @@ export function SettingsScaffold({
             ...(fillHeight && isWide ? { justifyContent: "center" } : null),
           }}
           showsVerticalScrollIndicator={false}
+          onScroll={scrollHint.onScroll}
+          onContentSizeChange={scrollHint.onContentSizeChange}
+          onLayout={scrollHint.onLayout}
+          scrollEventThrottle={scrollHint.scrollEventThrottle}
         >
           {children}
         </ScrollView>
+        <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({ insetBottom: insets.bottom })} />
         {overlay}
       </View>
     </AppBackground>

@@ -52,6 +52,9 @@ import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
 import type { EstimateLineInput } from "../lib/mealCompose";
 import { EstimateResultCard, LiveTotalHeader } from "./meal";
 import { SCRIM } from "./SheetShell";
+import { ScrollHint } from "./ScrollHint";
+import { useScrollHint } from "../lib/useScrollHint";
+import { hintBottomOffset } from "../lib/scrollHint";
 import { Button } from "./ui";
 
 
@@ -101,6 +104,7 @@ export function CarbEstimateSheet({
   const { isWide, width: layoutWidth } = useLayout();
   const router = useRouter();
   const anim = useRef(new Animated.Value(0)).current;
+  const scrollHint = useScrollHint("sheet.carb-estimate");
   const aborter = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
   const [consented, setConsented] = useState<boolean | null>(null);
@@ -590,9 +594,14 @@ export function CarbEstimateSheet({
               {...keyboardAwareScrollProps}
               style={{ flexShrink: 1 }}
               showsVerticalScrollIndicator={false}
+              onScroll={scrollHint.onScroll}
+              onContentSizeChange={scrollHint.onContentSizeChange}
+              onLayout={scrollHint.onLayout}
+              scrollEventThrottle={scrollHint.scrollEventThrottle}
             >
               {body}
             </ScrollView>
+            <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
             {footer}
           </Pressable>
         </Animated.View>
