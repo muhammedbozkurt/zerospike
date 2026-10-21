@@ -11,6 +11,7 @@ import { GradientAreaChart } from "../rich/GradientAreaChart";
 import { RADIUS, THEME } from "../../lib/theme/tokens";
 import { glucoseUnitLabel } from "../../lib/glucose";
 import { pct } from "../../lib/format";
+import { upper } from "../../lib/upper";
 import { useCountUp } from "./motion";
 import { ClipReveal } from "./ClipReveal";
 
@@ -25,6 +26,29 @@ const SAMPLE_CURVE = [
 const CARD_PAD = 14;
 const INNER_WIDTH = 240;
 const CARD_WIDTH = INNER_WIDTH + CARD_PAD * 2;
+
+/** Marks a preview as sample data: the values drawn above it are never the
+ *  user's own. */
+function ExampleBadge() {
+  const { t } = useTranslation();
+  return (
+    <View
+      style={{
+        alignSelf: "center",
+        marginTop: 8,
+        borderRadius: RADIUS.full,
+        borderWidth: 1,
+        borderColor: withAlpha(THEME.textMuted, 0.5),
+        paddingHorizontal: 10,
+        paddingVertical: 2,
+      }}
+    >
+      <Text style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15, fontWeight: "700", letterSpacing: 1 }}>
+        {upper(t("onboarding.exampleBadge"))}
+      </Text>
+    </View>
+  );
+}
 
 function RingPreview({ active }: { active: boolean }) {
   const reduced = useReducedMotion();
@@ -108,6 +132,7 @@ export function WelcomePreview({ slide, active }: { slide: 0 | 1 | 2; active: bo
     >
       {slide === 0 ? <RingPreview active={active} /> : null}
       {slide === 1 ? <CurvePreview active={active} /> : null}
+      {slide !== 2 ? <ExampleBadge /> : null}
       {slide === 2 ? <ReportPreview /> : null}
     </View>
   );

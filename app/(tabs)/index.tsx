@@ -238,6 +238,8 @@ import {
 } from "../../lib/glucose";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 import { upper } from "../../lib/upper";
+import { WelcomeCard } from "../../components/WelcomeCard";
+import { bosDurumKarari, todayRangeShare, usesTwoColumn } from "../../lib/homeEmpty";
 
 
 const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
@@ -977,6 +979,7 @@ export default function DashboardScreen() {
     let lastGlucose: GlucoseEntry | undefined;
     let todayReadings = 0;
     let todaySum = 0;
+    let todayInBand = 0;
     let todayBolusTotal = 0;
     let todayBasalTotal = 0;
     // Feed is newest-first, so the first today basal row found is the most
@@ -997,6 +1000,12 @@ export default function DashboardScreen() {
         if (isToday) {
           todayReadings++;
           todaySum += e.glucose_level_mgdl;
+          if (
+            e.glucose_level_mgdl >= weekBand.low &&
+            e.glucose_level_mgdl <= weekBand.high
+          ) {
+            todayInBand++;
+          }
         }
         if (inWeek) {
           weekReadings++;
@@ -1050,6 +1059,9 @@ export default function DashboardScreen() {
       // disagreeing about the same number.
       todayAvg,
       todayReadings,
+      // Ring fill: share of today's readings inside the profile's band (the
+      // centre number stays the average).
+      todayShare: todayRangeShare(todayReadings, todayInBand),
       todayStatus,
       todayColor: todayStatus ? RICH_BY_STATUS[todayStatus] : THEME.textMuted,
       todayBasalRecord,
@@ -1094,6 +1106,7 @@ export default function DashboardScreen() {
   const {
     todayAvg,
     todayReadings,
+    todayShare,
     todayStatus,
     todayColor,
     todayBasalRecord,
@@ -1792,7 +1805,8 @@ export default function DashboardScreen() {
   // existing user, sit there while the hero ring and week strip popped in on
   // top of it a moment later and shoved everything down. See HeroSkeleton /
   // WeekSkeleton below for what fills that gap instead.
-  const isFirstRun = loaded && entries.length === 0;
+  const homeState = bosDurumKarari({ loaded, entries: entries.length });
+  const isFirstRun = homeState === "welcome";
   const isExistingUser = loaded && entries.length > 0;
   const hasAnyLog = loaded && entries.length > 0;
 
@@ -1847,75 +1861,11 @@ export default function DashboardScreen() {
     setupShortcuts.length > 0 && setupShortcuts.every((s) => s.done === true);
 
   const FirstRunGuide = (
-    <>
-      {/* The hero ring, empty: same shape and size the first reading will take,
-          in a neutral track colour, with the invitation under it. */}
-      <Card style={{ marginBottom: SPACE.md }}>
-        <View className="items-center">
-          {/* Both colours stay HEX: the ring's glow runs them through the
-              token helper, which parses hex (an rgba token comes out NaN). */}
-          <GlucoseRing
-            display="-"
-            caption={glucoseUnitLabel(unit)}
-            color={THEME.textMuted}
-            gradientTo={THEME.textMuted}
-            fraction={0}
-            size={132}
-          />
-          <Txt
-            kind="caption"
-            tone="muted"
-            style={{ textAlign: "center", marginTop: SPACE.md, paddingHorizontal: SPACE.sm }}
-          >
-            {t("dashboard.empty")}
-          </Txt>
-        </View>
-      </Card>
-
-      <Card accent style={{ marginBottom: SPACE.md, gap: SPACE.sm }}>
-        <Txt kind="micro" tone="muted" style={{ letterSpacing: 1.3, fontWeight: "700" }}>
-          {upper(t("dashboard.startTitle", { n: startSteps.length }))}
-        </Txt>
-        {startSteps.map((step, i) => (
-          <Pressable
-            key={step.key}
-            onPress={step.onPress}
-            accessibilityRole="button"
-            accessibilityLabel={`${i + 1}. ${step.label}`}
-            android_ripple={cardRipple()}
-            className="flex-row items-center active:opacity-80"
-            style={{ gap: SPACE.md, paddingVertical: SPACE.xs, minHeight: HIT_TARGET }}
-          >
-            <View
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 11,
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: THEME.border,
-                backgroundColor: THEME.surface,
-              }}
-            >
-              <Txt kind="micro" tone="accent" tabular style={{ fontWeight: "800" }}>
-                {i + 1}
-              </Txt>
-            </View>
-            <IconTile icon={step.icon} size={38} radius={12} hero />
-            <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700", flex: 1, minWidth: 0 }}>
-              {step.label}
-            </Txt>
-            <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
-          </Pressable>
-        ))}
-        <GradientCTA
-          label={t("dashboard.firstCta")}
-          onPress={() => setQuickAddOpen(true)}
-          style={{ marginTop: SPACE.xs }}
-        />
-      </Card>
-    </>
+    <WelcomeCard
+      onAddFirst={() => setQuickAddOpen(true)}
+      onAddFood={() => router.navigate("/(tabs)/food")}
+      onSetReminder={() => router.push("/settings/reminders")}
+    />
   );
 
   // The header is built in three pieces so a tablet can split them over two
@@ -2015,15 +1965,26 @@ export default function DashboardScreen() {
                   }
                   color={todayAvg != null ? todayColor : THEME.textMuted}
                   gradientTo={todayAvg != null ? undefined : THEME.textMuted}
-                  fraction={todayAvg != null ? undefined : 0}
+                  fraction={todayShare != null ? todayShare / 100 : 0}
                   size={152}
                 />
               </View>
+              {todayShare != null ? (
+                // What the ring's fill means: the centre number is the average,
+                // the sweep is the share of today's readings in the target band.
+                <Txt
+                  kind="caption"
+                  tone="muted"
+                  style={{ textAlign: "center", marginTop: SPACE.md, paddingHorizontal: SPACE.sm }}
+                >
+                  {t("dashboard.ringShareLine", { share: isolateLtr(pct(todayShare)) })}
+                </Txt>
+              ) : null}
               <Txt
                 kind="caption"
                 tone="muted"
                 numberOfLines={2}
-                style={{ textAlign: "center", marginTop: SPACE.md }}
+                style={{ textAlign: "center", marginTop: todayShare != null ? SPACE.sm : SPACE.md }}
               >
                 {t("dashboard.lastReadingLine", {
                   // "value unit · when" is one purely-LTR run (digits + unit +
@@ -2097,7 +2058,7 @@ export default function DashboardScreen() {
   // which column is lib/tabletLayout.ts (HOME_LEFT / HOME_RIGHT). Cards keep
   // their natural height and the right column is stacked from the top with the
   // fixed card gap (each card's own marginBottom, SPACE.md = TABLET_CARD_GAP).
-  const twoColHome = isTwoCol && !isFirstRun;
+  const twoColHome = usesTwoColumn(homeState, isTwoCol);
 
   const headerCards = (
     <>
