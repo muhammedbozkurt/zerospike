@@ -88,6 +88,7 @@ import { CarbRatioLine } from "../../components/CarbRatioLine";
 import { useCarbChoiceText } from "../../lib/carbDisplayPref";
 import { EMOJI_RENDERS, FoodPlate } from "../../components/FoodPlate";
 import { EmptyState } from "../../components/EmptyState";
+import { foodIsEmpty } from "../../lib/emptyStates";
 import { Skeleton } from "../../components/Skeleton";
 import { useFeedback, type SheetAction } from "../../components/Feedback";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
@@ -1223,6 +1224,15 @@ export default function FoodScreen() {
     todayMeals.reduce((sum, m) => sum + (m.calculated_carbs_g || 0), 0)
   );
 
+  const firstMealEmpty = foodIsEmpty({
+    todayLoaded,
+    recentLoaded,
+    templatesLoaded,
+    todayMealCount: todayMeals.length,
+    recentMealCount: recent.length,
+    templateCount: templates.length,
+  });
+
   const visibleToday = showAllToday ? todayMeals : todayMeals.slice(0, TODAY_PREVIEW);
   const visibleTemplates = showAllTemplates
     ? rankedTemplates
@@ -1387,6 +1397,19 @@ export default function FoodScreen() {
             <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
               <Skeleton width="55%" height={12} />
             </View>
+          ) : firstMealEmpty ? (
+            <EmptyState
+              compact
+              icon="restaurant-outline"
+              title={t("emptyStates.foodTitle")}
+              subtitle={t("emptyStates.foodBody")}
+              hint={t("emptyStates.foodPreview")}
+              actionLabel={t("emptyStates.foodCta")}
+              onAction={() => {
+                hapticSelect();
+                setComposeOpen(true);
+              }}
+            />
           ) : todayMeals.length === 0 ? (
             <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5">
               <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>

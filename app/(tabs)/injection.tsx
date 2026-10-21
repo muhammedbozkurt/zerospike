@@ -43,6 +43,7 @@ import {
 } from "../../lib/rotationCycle";
 import { AppBackground, GradientCTA, IconTile } from "../../components/rich";
 import { EmptyState } from "../../components/EmptyState";
+import { injectionMapIsEmpty, injectionUsageTotal } from "../../lib/emptyStates";
 import { Button, Card, Chip, Row, Txt } from "../../components/ui";
 import type { BolusKind, Injection, InsulinType } from "../../lib/db/types";
 import { BOLUS_KINDS, SELECTABLE_SITES, SITE_POINTS } from "../../lib/db/types";
@@ -798,6 +799,12 @@ export default function InjectionScreen() {
     return <Redirect href="/(tabs)" />;
   }
 
+  const mapEmpty = injectionMapIsEmpty({
+    historyLoaded,
+    historyCount: history.length,
+    usageCount: injectionUsageTotal(usage),
+  });
+
   const mapBlock = (
       <>
         <View className="mb-2">
@@ -813,6 +820,18 @@ export default function InjectionScreen() {
             showRotationHint={isProUser}
           />
         </View>
+        {mapEmpty ? (
+          <EmptyState
+            compact
+            icon="body-outline"
+            title={t("emptyStates.injectionTitle")}
+            subtitle={t("emptyStates.injectionBody")}
+            // Two columns keep the form beside the map, so there is no segment
+            // to switch to.
+            actionLabel={twoCol ? undefined : t("injection.emptyCta")}
+            onAction={twoCol ? undefined : () => setSegment("save")}
+          />
+        ) : null}
         {rotationCard}
       </>
   );

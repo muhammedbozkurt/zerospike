@@ -1041,6 +1041,17 @@ const de: TranslationSchema = {
     beverages: "Getränke",
     other: "Sonstiges",
   },
+  emptyStates: {
+    example: "Beispiel",
+    foodTitle: "Noch keine Mahlzeiten erfasst",
+    foodBody: "Wählen Sie Lebensmittel, passen Sie die Portionen an und speichern Sie Ihre erste Mahlzeit.",
+    foodPreview: "Tageskohlenhydrate, letzte Mahlzeiten und Vorlagen erscheinen hier.",
+    foodCta: "Erste Mahlzeit erstellen",
+    injectionTitle: "Noch keine Injektionen erfasst",
+    injectionBody: "Mit jeder erfassten Injektion färben sich die Bereiche auf der Karte: Je dunkler die Farbe, desto häufiger wurde ein Bereich genutzt.",
+    insightsTitle: "Noch nichts anzuzeigen",
+    insightsBody: "Nach einigen Messwerten erscheinen hier Trends, Zeit im Zielbereich und Mahlzeiteneffekte.",
+  },
   insights: {
     title: "Einblicke",
     cardSub: "Ihre Glukose- und Kohlenhydrat-Trends",

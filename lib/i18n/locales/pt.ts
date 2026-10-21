@@ -1041,6 +1041,17 @@ const pt: TranslationSchema = {
     beverages: "Bebidas",
     other: "Outros",
   },
+  emptyStates: {
+    example: "Exemplo",
+    foodTitle: "Nenhuma refeição registrada ainda",
+    foodBody: "Escolha os alimentos, ajuste as porções e salve sua primeira refeição.",
+    foodPreview: "Aqui você verá os carboidratos do dia, as refeições recentes e os modelos.",
+    foodCta: "Criar sua primeira refeição",
+    injectionTitle: "Nenhuma aplicação registrada ainda",
+    injectionBody: "Conforme você registra aplicações, as regiões ganham cor no mapa: quanto mais escura a cor, mais usada é a região.",
+    insightsTitle: "Nada para mostrar ainda",
+    insightsBody: "Depois de algumas medições, você verá aqui tendências, tempo no alvo e o efeito das refeições.",
+  },
   insights: {
     title: "Análises",
     cardSub: "Suas tendências de glicemia e carboidratos",

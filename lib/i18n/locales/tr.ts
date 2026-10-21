@@ -1039,6 +1039,17 @@ const tr = {
     beverages: "İçecekler",
     other: "Diğer",
   },
+  emptyStates: {
+    example: "Örnek",
+    foodTitle: "Henüz öğün kaydı yok",
+    foodBody: "Yiyecekleri seçin, porsiyonları ayarlayın ve ilk öğününüzü kaydedin.",
+    foodPreview: "Günlük karbonhidrat, son öğünler ve şablonlar burada görünür.",
+    foodCta: "İlk öğününüzü oluşturun",
+    injectionTitle: "Henüz enjeksiyon kaydı yok",
+    injectionBody: "Enjeksiyon kaydettikçe bölgeler haritada renklenir: renk ne kadar koyuysa o bölge o kadar sık kullanılmıştır.",
+    insightsTitle: "Henüz gösterilecek bir şey yok",
+    insightsBody: "Birkaç ölçüm ekledikten sonra trendler, hedef aralığında geçen süre ve öğün etkisi burada görünür.",
+  },
   insights: {
     title: "İçgörüler",
     cardSub: "Glukoz ve karbonhidrat trendleriniz",
