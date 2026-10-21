@@ -815,7 +815,7 @@ section("L. the new strings exist in all nine languages");
   ok("tr confirm text is the agreed one", tr.includes('confirm: "Bu oranları diyabet ekibimle belirledim"'));
   ok("tr enter text is the agreed one", tr.includes('enter: "Oranlarınızı girin"'));
   ok("tr note text is the agreed one", tr.includes('teamNote: "Oranlarınızı diyabet ekibinizle belirleyin."'));
-  ok("pt uses 'fatores' on the ratio line", src("lib/i18n/locales/pt.ts").includes('enter: "Informe seus fatores"'));
+  ok("pt uses 'razoes' on the ratio line", src("lib/i18n/locales/pt.ts").includes('enter: "Informe suas razões"'));
 }
 
 section("N. the v27 reset and the sheet's reach");
