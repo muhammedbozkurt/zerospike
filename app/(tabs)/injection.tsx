@@ -1,4 +1,10 @@
 import { doseHintVisible, injectionDoseOk } from "../../lib/injectionDose";
+import {
+  afterSaveTarget,
+  cameFromToday,
+  findInjectionLocation,
+  SAVED_HIGHLIGHT_MS,
+} from "../../lib/injectionAfterSave";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Keyboard,
@@ -134,7 +140,7 @@ export default function InjectionScreen() {
   const insets = useSafeAreaInsets();
   const { width: winWidth } = useWindowDimensions();
   const router = useRouter();
-  const params = useLocalSearchParams<{ compose?: string; segment?: string; zoom?: string }>();
+  const params = useLocalSearchParams<{ compose?: string; from?: string; segment?: string; zoom?: string }>();
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
   const proCta = useProCta(!isProUser);
   const { confirm, actionSheet, toast } = useFeedback();
@@ -153,6 +159,13 @@ export default function InjectionScreen() {
   // rather than corrected by an effect, so a compose deep-link opens straight
   // on the form instead of flashing the map for a frame first.
   const [segment, setSegment] = useState<Segment>(params.compose ? "save" : "map");
+  // True while the form was opened from Today (dashboard quick-add): a save
+  // then returns there instead of switching to the history. Seeded from the
+  // params like `segment`, dropped as soon as the user wanders off the form.
+  const fromTodayRef = useRef(cameFromToday(params));
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const historyListRef = useRef<SectionList<Injection, InjectionDaySection>>(null);
+  const scrolledToRef = useRef<string | null>(null);
   // Two-column tablets show the map permanently on the left, so the right
   // column only toggles between the form and the history: a "map" segment
   // reads as the form there.
@@ -305,10 +318,28 @@ export default function InjectionScreen() {
   // Quick-add "compose" deep-link (from the dashboard): open the KAYDET segment
   // so the form is front and centre. Cleared so it fires once.
   useEffect(() => {
-    if (!params.compose) return;
+    if (!cameFromToday(params)) return;
+    fromTodayRef.current = true;
     setSegment("save");
-    router.setParams({ compose: "" });
-  }, [params.compose, router]);
+    router.setParams({ compose: "", from: "" });
+  }, [params.compose, params.from, router]);
+
+  // Leaving the tab without saving ends the "came from Today" intent, so a
+  // later direct visit and save stays in the log.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        fromTodayRef.current = false;
+      },
+      []
+    )
+  );
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), SAVED_HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
 
   // One-time notice for the injection map's self-view -> observer-view flip
   // (components/InjectionBodyMap.tsx SIDE CONVENTION note): a profile that
@@ -396,6 +427,21 @@ export default function InjectionScreen() {
     setNote("");
   }
 
+  /** "Undo" on the saved toast: removes the row through the same delete path as
+   *  the history (deleteInjection revokes its Apple Health sample; injections
+   *  carry no stock or pen accounting, so nothing else needs reversing). */
+  async function undoSaved(id: string) {
+    try {
+      await deleteInjection(id);
+    } catch (err) {
+      logCrash(err, { screen: "injection", op: "undoSaved" });
+      return;
+    }
+    hapticSuccess();
+    setHighlightId((cur) => (cur === id ? null : cur));
+    bumpData();
+  }
+
   async function save() {
     if (!activeProfile || !selected || saving || !stepperFields.allValid || !injectionDoseOk(dose)) return;
     if (!(await confirmReusedPoint())) return;
@@ -423,7 +469,7 @@ export default function InjectionScreen() {
               ? activeProfile.basal_insulin_other
               : activeProfile.bolus_insulin_other) ?? null)
           : null;
-      await logInjection({
+      const saved = await logInjection({
         profile_id: activeProfile.id,
         site: selected.site,
         site_point: selected.point,
@@ -441,9 +487,23 @@ export default function InjectionScreen() {
       void noteLogAndMaybeReview();
       void noteJournalActivity();
       hapticSuccess();
-      toast(t("injection.saved"), "success");
+      toast(t("injection.saved"), "success", {
+        label: t("common.undo"),
+        onPress: () => {
+          void undoSaved(saved.id);
+        },
+      });
       resetForm();
       bumpData();
+      const target = afterSaveTarget(fromTodayRef.current);
+      fromTodayRef.current = false;
+      if (target === "today") {
+        router.navigate("/(tabs)");
+      } else {
+        scrolledToRef.current = null;
+        setHighlightId(saved.id);
+        setSegment("history");
+      }
     } finally {
       setSaving(false);
     }
@@ -621,7 +681,12 @@ export default function InjectionScreen() {
         onLongPress={() => onRowLongPress(inj)}
         android_ripple={pressRipple()}
         className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
-        style={{ minHeight: HIT_TARGET }}
+        style={[
+          { minHeight: HIT_TARGET },
+          inj.id === highlightId
+            ? { backgroundColor: withAlpha(THEME.accent, 0.14), borderColor: THEME.accent }
+            : null,
+        ]}
       >
         <View
           className="rounded-lg px-2 py-1"
@@ -659,8 +724,26 @@ export default function InjectionScreen() {
         <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
       </Pressable>
     ),
-    [onRowLongPress, t]
+    [onRowLongPress, t, highlightId]
   );
+
+  // A freshly saved row can sit below the fold (back-dated entry): bring it
+  // into view once, the first time it shows up in the sections.
+  useEffect(() => {
+    if (!highlightId || shownSegment !== "history" || scrolledToRef.current === highlightId) return;
+    const loc = findInjectionLocation(sections, highlightId);
+    if (!loc) return;
+    scrolledToRef.current = highlightId;
+    if (loc.sectionIndex === 0 && loc.itemIndex === 0) return;
+    const timer = setTimeout(() => {
+      try {
+        historyListRef.current?.scrollToLocation({ ...loc, viewPosition: 0.3, animated: true });
+      } catch {
+        // best-effort: the highlight alone still marks the row
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [highlightId, sections, shownSegment]);
 
   const renderHistoryItem = useCallback(
     ({ item }: { item: Injection }) => <View className="px-4">{injectionRow(item)}</View>,
@@ -1053,7 +1136,10 @@ export default function InjectionScreen() {
           key={s.key}
           label={s.label}
           selected={shownSegment === s.key}
-          onPress={() => setSegment(s.key)}
+          onPress={() => {
+            if (s.key !== "save") fromTodayRef.current = false;
+            setSegment(s.key);
+          }}
           className="flex-1"
         />
       ))}
@@ -1062,6 +1148,8 @@ export default function InjectionScreen() {
 
   const historyList = (contentStyle: ViewStyle[]) => (
           <SectionList
+            ref={historyListRef}
+            extraData={highlightId}
             sections={sections}
             keyExtractor={(inj) => inj.id}
             renderItem={renderHistoryItem}

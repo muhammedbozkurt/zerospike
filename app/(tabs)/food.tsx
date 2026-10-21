@@ -91,6 +91,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { Skeleton } from "../../components/Skeleton";
 import { useFeedback, type SheetAction } from "../../components/Feedback";
 import { keyboardAwareScrollProps } from "../../lib/keyboard";
+import { SAVED_HIGHLIGHT_MS } from "../../lib/injectionAfterSave";
 import {
   AppBackground,
   GlassCard,
@@ -473,6 +474,13 @@ export default function FoodScreen() {
   const [todayMeals, setTodayMeals] = useState<MealEntry[]>([]);
   const [feedReadings, setFeedReadings] = useState<GlucoseEntry[]>([]);
   const [showAllToday, setShowAllToday] = useState(false);
+  // The meal just saved from the compose sheet, marked in Today's band briefly.
+  const [highlightMealId, setHighlightMealId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!highlightMealId) return;
+    const timer = setTimeout(() => setHighlightMealId(null), SAVED_HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightMealId]);
   const [showAllTemplates, setShowAllTemplates] = useState(false);
   // "Never fetched yet" vs. "fetched and genuinely empty" - the same distinction
   // categoryLoading/searchPending already make for the drilled list/search. Set
@@ -1032,6 +1040,10 @@ export default function FoodScreen() {
       void noteJournalActivity();
       setComposeItems([]);
       setComposeOpen(false);
+      setQuery("");
+      setSelected(null);
+      setShowAllToday(false);
+      setHighlightMealId(meal.id);
       bumpData();
       toast(t("calculator.savedRecord"), "success", {
         label: t("common.undo"),
@@ -1405,7 +1417,12 @@ export default function FoodScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`${t(`slot.${slot}`)}, ${meal.display_name}`}
                     className="flex-row items-center rounded-2xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
-                    style={{ minHeight: HIT_TARGET + 12 }}
+                    style={[
+                      { minHeight: HIT_TARGET + 12 },
+                      meal.id === highlightMealId
+                        ? { backgroundColor: withAlpha(THEME.accent, 0.14), borderColor: THEME.accent }
+                        : null,
+                    ]}
                   >
                     <IconTile
                       emoji={EMOJI_RENDERS ? SLOT_EMOJI[slot] : undefined}

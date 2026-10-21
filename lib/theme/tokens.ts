@@ -31,6 +31,8 @@ export interface Palette {
   surfaceInset: string;
   border: string;
   borderStrong: string;
+  /** Switch off-state track: >= 3:1 against bg, surface and the white thumb on light. */
+  switchTrackOff: string;
   track: string;
   /** Outline of a progress bar's track: >= 3:1 against bg, surface and the
    *  accent-tinted card, so an empty bar stays visible on light. */
@@ -87,6 +89,7 @@ export const DARK: Palette = {
   surfaceInset: "rgba(255,255,255,0.06)",
   border: "rgba(255,255,255,0.10)",
   borderStrong: "#5f7a88",
+  switchTrackOff: "#5f7a88",
   track: "rgba(255,255,255,0.08)",
   trackEdge: "#6A8794",
   text: "#eaf6fa",
@@ -148,6 +151,7 @@ export const LIGHT: Palette = {
   surfaceInset: "rgba(15,34,48,0.04)",
   border: "rgba(15,34,48,0.12)",
   borderStrong: "#78898F",
+  switchTrackOff: "#958770",
   track: "#E2D9CB",
   trackEdge: "#6A7D88",
   text: "#0F2230",
@@ -360,6 +364,7 @@ export const THEME = live((p) => ({
   surfaceInset: p.surfaceInset,
   border: p.border,
   borderStrong: p.borderStrong,
+  switchTrackOff: p.switchTrackOff,
   track: p.track,
   trackEdge: p.trackEdge,
   accent: p.accent,
@@ -450,17 +455,25 @@ export function glow(
   return androidMode === "fill" ? { ...ring, backgroundColor: hexAlpha(color, 0.1) } : ring;
 }
 
-/** Shared Switch colors. Light: white thumb on a borderStrong (off) or accentFill
- *  (on) track, so the thumb never reads as a black knob; dark keeps its own. */
+/** Shared Switch colors, the only source for every <Switch>. The off track is
+ *  switchTrackOff (sand on light). iOS paints the off body from
+ *  ios_backgroundColor, not trackColor.false (that is only the thin outline), so
+ *  without it the off switch stays system white on the light theme. */
 export function switchColors(): {
   trackColor: { true: string; false: string };
   thumbColor: string;
+  ios_backgroundColor: string;
 } {
   const p = activePalette();
   return p.scheme === "light"
     ? {
-        trackColor: { true: p.accentFill, false: p.borderStrong },
+        trackColor: { true: p.accentFill, false: p.switchTrackOff },
         thumbColor: "#FFFFFF", // theme-ok
+        ios_backgroundColor: p.switchTrackOff,
       }
-    : { trackColor: { true: p.accent, false: p.border }, thumbColor: p.text };
+    : {
+        trackColor: { true: p.accent, false: p.switchTrackOff },
+        thumbColor: p.text,
+        ios_backgroundColor: p.switchTrackOff,
+      };
 }

@@ -96,6 +96,7 @@ import {
   HEALTH_NAME,
   type SyncResult,
 } from "../../lib/services/health";
+import { undoNewGlucose } from "../../lib/services/glucoseUndo";
 import { healthWriteAskSeen, markHealthWriteAskSeen } from "../../lib/services/healthWritePrompt";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
@@ -1419,6 +1420,14 @@ export default function DashboardScreen() {
     void noteFirstLog("glucose");
     void noteLog();
     hapticSuccess();
+    const savedUndo = {
+      label: t("common.undo"),
+      onPress: () => {
+        void undoNewGlucose(addedSugar.id)
+          .catch((err) => logCrash(err, { screen: "dashboard", op: "undoGlucose" }))
+          .finally(() => bumpData());
+      },
+    };
     // NOTHING is armed here. A reading is a measurement, not a meal: logging a
     // fasting or manual value used to start the post-meal countdown by itself, so
     // a user who only checked their sugar got a lock-screen timer and a nudge two
@@ -1450,8 +1459,11 @@ export default function DashboardScreen() {
           value: formatGlucose(value, unit),
           unit: glucoseUnitLabel(unit),
         }),
-        status === "normal" ? "success" : "info"
+        status === "normal" ? "success" : "info",
+        savedUndo
       );
+    } else {
+      toast(t("calculator.savedRecord"), "success", savedUndo);
     }
     bumpData();
     const followupShown = isNow ? await maybeOfferLowFollowup(value) : false;
