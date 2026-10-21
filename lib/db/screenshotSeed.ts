@@ -6,7 +6,7 @@ import { isFavorite, toggleFavorite } from "./favorites";
 import { getProfile, updateProfile } from "./profiles";
 import { getDb, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
 import { SELECTABLE_SITES, SITE_POINTS } from "./types";
-import type { InsulinType, Lang, MealSlot, ReminderType, SitePoint } from "./types";
+import type { InjectionSite, InsulinType, Lang, MealSlot, ReminderType, SitePoint } from "./types";
 import type { FoodCategory } from "./categories";
 import { buildGlucoseSchedule, rng } from "./screenshotGlucose";
 import {
@@ -60,6 +60,26 @@ import i18n from "../i18n";
 // colours, etc.) so an already-seeded screenshot build re-materialises cleanly on
 // next cold launch instead of keeping stale data.
 const SEEDED_LANG_KEY = "zerospike.screenshotSeededLang.v16";
+
+// The front-view body map shows every heat tier (0, 1, 2, 3, 4+ entries in the 30
+// day window). The grid below gives each region four entries, so these entries
+// (by their index in the grid) move to another region/point. Only site and point
+// change: times, doses and types stay, so the journal, the counts and the insights
+// read as before. Entries from the last three days keep their sites (they open the
+// journal). Resulting counts: abdomen_left 5, thigh_left 6, abdomen_right 3,
+// thigh_right 2, arm_left 1, arm_right 0, both buttocks 8 (back view).
+const MAP_TIER_LAYOUT: Record<number, readonly [InjectionSite, SitePoint]> = {
+  7: ["buttock_left", 1],
+  14: ["thigh_left", 3],
+  15: ["thigh_left", 4],
+  16: ["buttock_left", 2],
+  17: ["buttock_left", 3],
+  19: ["buttock_left", 4],
+  20: ["buttock_right", 1],
+  21: ["buttock_right", 2],
+  22: ["buttock_right", 3],
+  23: ["buttock_right", 4],
+};
 
 /** Per-profile marker key: v8 assumed a single seeded profile, so one global key
  *  was enough. With the tracking profile added, each profile needs its own
@@ -568,9 +588,10 @@ async function seedScreenshotDataLocked(
             // journal kinds, so a stray injection would silently close the gap).
             let daysAgo = n === 0 ? 29 : (n * 3) % 26;
             if (daysAgo === 12) daysAgo = 13;
+            const placed = MAP_TIER_LAYOUT[n] ?? [site, point as SitePoint];
             injections.push({
-              site,
-              site_point: point as SitePoint,
+              site: placed[0],
+              site_point: placed[1],
               dose_units: type === "basal" ? 14 : Math.round((4 + rng(n) * 6) * 2) / 2,
               insulin_type: type,
               logged_at: at(daysAgo, 9 + (n % 10)),
