@@ -414,5 +414,42 @@ public class ZerospikeAlarmKitModule: Module {
       let liveUuids = Set(live.map { $0.id.uuidString })
       return map.compactMap { key, value in liveUuids.contains(value) ? key : nil }
     }
+
+    /// Cancels EVERY alarm AlarmKit holds for this app except the ones behind
+    /// `keepIds` (JS's "zerospike-alarm-<id>" strings), and drops the matching
+    /// identity-map entries. This is the sweep for alarms nothing in the app
+    /// owns any more: listScheduledAlarmIds only ever reports alarms this
+    /// module's map still knows, so an alarm whose map entry is gone (the map
+    /// lives in UserDefaults, which a reinstall resets while the system's alarm
+    /// list does not) could ring forever without JS ever seeing it.
+    ///
+    /// Returns how many alarms it cancelled. Any AlarmKit error degrades to
+    /// "nothing done" for that alarm (or, if the list itself cannot be read,
+    /// for the whole pass): the next launch simply tries again.
+    AsyncFunction("cancelUnownedAlarms") { (keepIds: [String]) -> Int in
+      guard #available(iOS 26.0, *) else { return 0 }
+      let map = loadIdMap()
+      var keepUuids = Set<String>()
+      for id in keepIds {
+        if let uuidString = map[id] { keepUuids.insert(uuidString) }
+      }
+      var cancelled = 0
+      do {
+        let live = try AlarmManager.shared.alarms
+        for alarm in live where !keepUuids.contains(alarm.id.uuidString) {
+          do {
+            try AlarmManager.shared.cancel(id: alarm.id)
+            cancelled += 1
+          } catch {
+            continue
+          }
+        }
+      } catch {
+        return 0
+      }
+      let kept = map.filter { keepIds.contains($0.key) }
+      if kept.count != map.count { saveIdMap(kept) }
+      return cancelled
+    }
   }
 }
