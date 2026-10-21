@@ -2,12 +2,9 @@ package expo.modules.zerospikeliveactivity
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 /**
  * Last fatal report (A3), Android side of the iOS NSSetUncaughtExceptionHandler
@@ -15,19 +12,35 @@ import java.util.TimeZone
  * reaches this too: ExceptionsManagerModule throws a JavascriptException on the
  * native modules thread. The report stays in SharedPreferences on the device;
  * JS reads it on the next launch. Same JSON shape on both platforms.
+ *
+ * Backup: the app runs with android:allowBackup="true" (Expo default), so this
+ * SharedPreferences file can ride along in an Auto Backup. Accepted for now: the
+ * report holds an error message and stack, no health record.
  */
 internal object FatalReportStore {
   private const val PREFS = "zerospike.fatal"
   private const val KEY = "lastFatalReport"
+  private const val JS_MESSAGE_LIMIT = 2000
 
   @Volatile
   private var installed = false
+
+  // Read once at install so the crash path does no PackageManager call.
+  @Volatile
+  private var appVersionName = ""
+
+  @Volatile
+  private var appBuild = ""
 
   @Synchronized
   fun install(context: Context) {
     if (installed) return
     installed = true
     val app = context.applicationContext
+    logPrevious(app)
+    val (version, build) = appVersion(app)
+    appVersionName = version
+    appBuild = build
     // Chained, not replaced: the platform handler still runs, so the process
     // dies and the system crash report is exactly what it was before.
     val previous = Thread.getDefaultUncaughtExceptionHandler()
@@ -64,11 +77,25 @@ internal object FatalReportStore {
     false
   }
 
+  /** The report the previous run left, as one logcat line: a build that dies
+   *  right after every launch never gets to run the JS reader, this runs first. */
+  private fun logPrevious(context: Context) {
+    try {
+      val raw = read(context) ?: return
+      val o = JSONObject(raw)
+      val js = clipped(o.optString("jsMessage", ""), 1500)
+      val line = "zerospike last fatal: ${o.optString("name", "")} | " +
+        "${o.optString("reason", "")} | $js | build ${o.optString("build", "")}"
+      Log.e("zerospike", line.replace('\n', ' ').replace('\r', ' '))
+    } catch (e: Throwable) {
+      // Logging is best-effort; start-up must go on.
+    }
+  }
+
   private fun clipped(text: String, limit: Int): String =
     if (text.length > limit) text.substring(0, limit) else text
 
   private fun record(context: Context, thread: Thread, error: Throwable) {
-    val (version, build) = appVersion(context)
     val stack = JSONArray()
     error.stackTrace.take(40).forEach { stack.put(clipped(it.toString(), 300)) }
     val report = JSONObject()
@@ -78,12 +105,13 @@ internal object FatalReportStore {
     report.put("reason", clipped(error.message ?: "", 4000))
     report.put("thread", clipped(thread.name, 200))
     report.put("stack", stack)
-    report.put("build", build)
-    report.put("version", version)
-    report.put("at", isoNow())
+    report.put("build", appBuild)
+    report.put("version", appVersionName)
+    // Epoch ms; lib/fatalReport.ts turns it into ISO.
+    report.put("at", System.currentTimeMillis())
     // A fatal JS error: the message already carries the JS message and stack.
     if (error.javaClass.name.endsWith("JavascriptException")) {
-      report.put("jsMessage", clipped(error.message ?: "", 8000))
+      report.put("jsMessage", clipped(error.message ?: "", JS_MESSAGE_LIMIT))
     }
     error.cause?.let { report.put("cause", clipped(it.toString(), 1000)) }
     // commit(), not apply(): the process is about to die, the write must land now.
@@ -104,11 +132,5 @@ internal object FatalReportStore {
     Pair(info.versionName ?: "", code)
   } catch (e: Throwable) {
     Pair("", "")
-  }
-
-  private fun isoNow(): String {
-    val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-    format.timeZone = TimeZone.getTimeZone("UTC")
-    return format.format(Date())
   }
 }

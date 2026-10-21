@@ -1,6 +1,6 @@
 // Calistir: npx tsx scripts/fatalReport.test.ts
 import assert from "node:assert/strict";
-import { isFatalJsError, parseFatalReport } from "../lib/fatalReport";
+import { FATAL_JS_MESSAGE_LIMIT, isFatalJsError, parseFatalReport } from "../lib/fatalReport";
 
 // Bos ve bozuk girdi
 for (const raw of [null, undefined, "", "not json", "[]", "null", "42", '{"platform":"web"}']) {
@@ -50,5 +50,21 @@ const native = parseFatalReport(
 );
 assert.ok(native);
 assert.equal(isFatalJsError(native), false);
+assert.equal(native.at, "");
+
+// at: native epoch ms -> ISO; eski ISO dizgesi korunur; gecersiz -> ""
+const atMs = parseFatalReport(JSON.stringify({ platform: "ios", at: 1792566795068 }));
+assert.equal(atMs?.at, new Date(1792566795068).toISOString());
+assert.equal(atMs?.at, "2026-10-21T07:13:15.068Z");
+const iso = parseFatalReport(JSON.stringify({ platform: "ios", at: "2026-10-21T01:30:00Z" }));
+assert.equal(iso?.at, "2026-10-21T01:30:00Z");
+for (const bad of [0, -5, null, true, 1e20]) {
+  assert.equal(parseFatalReport(JSON.stringify({ platform: "android", at: bad }))?.at, "", String(bad));
+}
+
+// jsMessage 2000 karakterle sinirli (native ile ayni sinir)
+const long = parseFatalReport(JSON.stringify({ platform: "ios", jsMessage: "a".repeat(2600) }));
+assert.equal(long?.jsMessage?.length, FATAL_JS_MESSAGE_LIMIT);
+assert.equal(FATAL_JS_MESSAGE_LIMIT, 2000);
 
 console.log("fatalReport.test OK");

@@ -17,14 +17,27 @@ export interface FatalReport {
   stack: string[];
   build: string;
   version: string;
-  /** ISO 8601, UTC on Android. */
+  /** ISO 8601 UTC. Native writes epoch ms (cheaper in the crash path); an ISO
+   *  string from an earlier build is kept as is. "" when unknown. */
   at: string;
   thread?: string;
   cause?: string;
 }
 
+/** Same cap the native writers use. */
+export const FATAL_JS_MESSAGE_LIMIT = 2000;
+
 function str(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function isoAt(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+  }
+  return "";
 }
 
 /** Native JSON string to a report; null for empty, malformed or foreign input. */
@@ -47,9 +60,11 @@ export function parseFatalReport(raw: string | null | undefined): FatalReport | 
     stack: Array.isArray(o.stack) ? o.stack.filter((s): s is string => typeof s === "string") : [],
     build: str(o.build),
     version: str(o.version),
-    at: str(o.at),
+    at: isoAt(o.at),
   };
-  if (typeof o.jsMessage === "string" && o.jsMessage.length > 0) report.jsMessage = o.jsMessage;
+  if (typeof o.jsMessage === "string" && o.jsMessage.length > 0) {
+    report.jsMessage = o.jsMessage.slice(0, FATAL_JS_MESSAGE_LIMIT);
+  }
   if (typeof o.thread === "string") report.thread = o.thread;
   if (typeof o.cause === "string") report.cause = o.cause;
   return report;
