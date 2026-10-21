@@ -24,30 +24,19 @@ import type { Reminder, UserProfile } from "../db/types";
 import { insulinModeOf, insulinModeShowsBasal } from "../insulinMode";
 import {
   endPostMealActivity,
-  endPostMealActivitiesExcept,
-  listPostMealActivityIds,
   startPostMealActivity,
 } from "../../modules/zerospike-live-activity";
 import {
   cancelAlarm,
-  cancelUnownedAlarms,
   getAlarmAuthorizationStatus,
   isAlarmKitAvailable,
   listScheduledAlarmIds,
   requestAlarmAuthorization,
+  scheduleDailyAlarm,
   scheduleOneShotAlarm,
   type AlarmRoute,
 } from "../../modules/zerospike-alarmkit";
 import { reminderDelivery, shouldUseAlarm } from "../alarmSelect";
-import { nextAlarmDate } from "../alarmNext";
-import {
-  finishPostMealCountdown,
-  openAlarmSession,
-  postMealAlarmStillOwned,
-  sweepOrphanActivities,
-  type AlarmPlan,
-  type AlarmPorts,
-} from "../alarmReschedule";
 import { reminderAlarmTitle } from "../reminderLabel";
 import {
   derivePostMealStart,
@@ -876,100 +865,11 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
  * `prefs.enabled` / permission: this function does its own gating, so the
  * caller does not have to duplicate it.
  */
-/** Where the armed-alarm plan lives (id -> moment + signature), see
- *  lib/alarmReschedule.ts. Not profile-scoped: the ids carry the reminder id. */
-const ALARM_PLAN_KEY = "zerospike.alarmPlan";
-
-/** The real AlarmKit behind the injected ports of lib/alarmReschedule.ts. */
-function alarmPorts(): AlarmPorts {
-  return {
-    present: () => isAlarmKitAvailable(),
-    authorized: () =>
-      isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized",
-    listIds: () => listScheduledAlarmIds(),
-    schedule: (a) =>
-      scheduleOneShotAlarm({
-        id: a.id,
-        atMs: a.atMs,
-        label: a.label,
-        stopLabel: a.stopLabel,
-        openLabel: a.openLabel,
-        route: a.route,
-      }),
-    cancel: (id) => cancelAlarm(id),
-    cancelUnowned: (keepIds) => cancelUnownedAlarms(keepIds),
-    loadPlan: async () => {
-      const raw = await AsyncStorage.getItem(ALARM_PLAN_KEY);
-      if (!raw) return {};
-      const parsed: unknown = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? (parsed as AlarmPlan) : {};
-    },
-    savePlan: (plan) => AsyncStorage.setItem(ALARM_PLAN_KEY, JSON.stringify(plan)),
-    now: () => Date.now(),
-  };
-}
-
-/** Whether a post-meal countdown is stored and still running. Unreadable
- *  storage reports null (unknown), never "not running". */
-async function readPostMealRunning(): Promise<boolean | null> {
-  try {
-    const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
-    const end = raw == null ? NaN : parseInt(raw, 10);
-    return Number.isFinite(end) && end > Date.now();
-  } catch (err) {
-    logCrash(err, { service: "notifications", op: "readPostMealRunning" });
-    return null;
-  }
-}
-
-/** Ends post-meal Live Activities no stored countdown owns (iOS 26+ only, same
- *  gate as the alarm sweep). An older binary without the listing call is
- *  skipped silently. */
-async function sweepOrphanLiveActivities(): Promise<void> {
-  try {
-    const running = await readPostMealRunning();
-    if (running === null) return;
-    await sweepOrphanActivities(running, {
-      listIds: () => listPostMealActivityIds(),
-      endAllExcept: (keep) => endPostMealActivitiesExcept(keep),
-    });
-  } catch (err) {
-    logCrash(err, { service: "notifications", op: "sweepOrphanActivities" });
-  }
-}
-
 /** The pre-registry fixed ids (see BASAL_ID/MED_ID/GLUCOSE_ID above), still
  *  swept here defensively - see the note on the sweep below. */
 const LEGACY_FIXED_IDS: readonly string[] = [BASAL_ID, MED_ID, GLUCOSE_ID];
 
-export interface ApplyRemindersOptions {
-  /** A pass nobody asked for (the background wake-up): a reminder alarm that
-   *  fired moments ago may still be ringing, and re-arming it would silence it,
-   *  so those are left alone this time. */
-  background?: boolean;
-}
-
-// One pass at a time: the launch apply, a foreground refresh and a settings
-// save can all land together, and two passes interleaving their awaits would
-// each cancel and re-arm the other's alarms.
-let applyChain: Promise<unknown> = Promise.resolve();
-
-export function applyReminders(
-  prefs: NotificationPrefs,
-  opts?: ApplyRemindersOptions
-): Promise<void> {
-  const run = applyChain.then(
-    () => applyRemindersNow(prefs, opts),
-    () => applyRemindersNow(prefs, opts)
-  );
-  applyChain = run.catch(() => undefined);
-  return run;
-}
-
-async function applyRemindersNow(
-  prefs: NotificationPrefs,
-  opts?: ApplyRemindersOptions
-): Promise<void> {
+export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   // Resolved ONCE and reused for the profile id, the basal gate and the meds
   // gate below, instead of three independent (and previously redundant)
   // profile lookups. An unreadable active profile leaves whatever is already
@@ -1028,11 +928,6 @@ async function applyRemindersNow(
   const alarmAuthorized =
     alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized";
 
-  // Alarms are armed ONE occurrence at a time (lib/alarmNext.ts), so every
-  // pass re-arms whichever ones are due or changed; an unchanged one costs no
-  // native call (lib/alarmReschedule.ts).
-  const alarms = await openAlarmSession(alarmPorts());
-
   const known = new Set<string>();
   const knownAlarms = new Set<string>();
   for (const row of rows) {
@@ -1067,21 +962,16 @@ async function applyRemindersNow(
       // double delivery either way, since ZerospikeAlarmKitModule.swift
       // always cancels whatever was previously armed under this SAME id
       // before attempting the new schedule, win or lose.
-      const next = nextAlarmDate(row, Date.now());
-      const armedAs = next
-        ? await alarms.ensure(
-            {
-              id: alarmId,
-              atMs: next.getTime(),
-              label: reminderAlarmLabel(row),
-              stopLabel: i18n.t("reminders.alarmStopButton"),
-              openLabel: i18n.t("reminders.alarmOpenButton"),
-              route: reminderAlarmRoute(row),
-            },
-            { protectRinging: opts?.background === true }
-          )
-        : "failed";
-      const armed = armedAs !== "failed";
+      const { hour, minute } = parseHHMM(row.time);
+      const armed = await scheduleDailyAlarm({
+        id: alarmId,
+        hour,
+        minute,
+        label: reminderAlarmLabel(row),
+        stopLabel: i18n.t("reminders.alarmStopButton"),
+        openLabel: i18n.t("reminders.alarmOpenButton"),
+        route: reminderAlarmRoute(row),
+      });
       if (armed) {
         knownAlarms.add(alarmId);
         await cancelReminderIdentifier(identifier);
@@ -1094,7 +984,7 @@ async function applyRemindersNow(
         // when AlarmKit's own read throws (see the module) - and the one thing
         // that must never happen is the same reminder both ringing and
         // dropping a notification.
-        await alarms.cancel(alarmId);
+        await cancelAlarm(alarmId);
       }
     } else if (rowActive) {
       await scheduleReminderRow(row);
@@ -1102,10 +992,10 @@ async function applyRemindersNow(
       // has an alarm armed under `alarmId`, and turning the switch back off
       // must take it down and fall back to the notification just scheduled
       // above - best-effort, a "nothing pending" cancel is the common case.
-      await alarms.cancel(alarmId);
+      await cancelAlarm(alarmId);
     } else {
       await cancelReminderIdentifier(identifier);
-      await alarms.cancel(alarmId);
+      await cancelAlarm(alarmId);
     }
   }
 
@@ -1147,57 +1037,15 @@ async function applyRemindersNow(
   // below) are no-ops when AlarmKit is unavailable, so this never needs its
   // own guard for that case.
   //
-  // The post-meal countdown is the ONE alarm kept for a reason other than a
-  // reminder row: it shares the "zerospike-alarm-" prefix but belongs to no row,
-  // so `knownAlarms` can never contain it and an unguarded sweep would silently
-  // kill a running timer on the next apply pass. Its own lifecycle is in
+  // The post-meal countdown is the ONE alarm this sweep must keep its hands
+  // off: it shares the "zerospike-alarm-" prefix but belongs to no reminder
+  // row, so `knownAlarms` can never contain it and an unguarded sweep would
+  // silently kill a running timer on the next apply pass (a profile switch, a
+  // settings save, app launch). Its own lifecycle is entirely in
   // schedulePostMealAt / cancelPostMealTimer / completePostMealTimer.
-  //
-  // Since the alarms became one-occurrence, the sweep also keeps the post-meal
-  // alarm only while a stored countdown (or one that ended within the ring
-  // guard) still owns it, and hands the whole keep list to AlarmKit so alarms
-  // the app has no record of at all (a reinstall resets the identity map but
-  // not the system's alarm list) are cancelled too.
-  try {
-    const keep = [...knownAlarms];
-    if (isAlarmKitAvailable()) {
-      let storedEnd: string | null = null;
-      let readFailed = false;
-      try {
-        storedEnd = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
-      } catch (err) {
-        readFailed = true;
-        logCrash(err, { service: "notifications", op: "readPostMealEndForSweep" });
-      }
-      if (postMealAlarmStillOwned(storedEnd, readFailed, Date.now())) {
-        keep.push(POSTMEAL_ALARM_ID);
-      }
-    }
-    await alarms.sweep(keep);
-  } catch (err) {
-    logCrash(err, { service: "notifications", op: "alarmSweep" });
-  }
-  await alarms.commit();
-  if (isAlarmKitAvailable()) await sweepOrphanLiveActivities();
-}
-
-/**
- * Re-arms the reminder alarms from outside the settings flow: the app coming
- * back to the foreground, and the iOS background wake-up that already exists
- * for Health sync. A no-op everywhere except an iOS device with AlarmKit (iOS
- * 26+), so Android and older iOS keep exactly the behavior they had. Never
- * throws; `background` marks a pass nobody asked for (see ApplyRemindersOptions).
- */
-export async function refreshReminderAlarms(
-  source: "foreground" | "background"
-): Promise<void> {
-  if (Platform.OS !== "ios" || !isAlarmKitAvailable()) return;
-  try {
-    await applyReminders(await getNotificationPrefs(), {
-      background: source === "background",
-    });
-  } catch (err) {
-    logCrash(err, { service: "notifications", op: "refreshReminderAlarms" });
+  for (const alarmId of listScheduledAlarmIds()) {
+    if (alarmId === POSTMEAL_ALARM_ID) continue;
+    if (!knownAlarms.has(alarmId)) await cancelAlarm(alarmId);
   }
 }
 
@@ -1952,26 +1800,17 @@ async function readPostMealTimerProfile(): Promise<string | null> {
  * it hours later, or another timer got armed. The notification itself has
  * already fired, so it is not cancelled here.
  *
- * The AlarmKit alarm (2.3.0's B) is taken down too, but only once it can no
- * longer be ringing (finishPostMealCountdown in lib/alarmReschedule.ts): "the
- * countdown reached its end" is the exact moment the alarm is supposed to be
- * sounding, and this runs from a plain read of the stored end
- * (getPostMealTimerEnd) and from the dashboard's own tick, both of which can
- * land while it is still on screen - cancelling then would silence the one
- * delivery the user chose. A read that finds the countdown long over (or loses
- * the race to clear the stored end) leaves the alarm to the next apply pass,
- * whose sweep no longer keeps it. Safe to call any number of times.
+ * The AlarmKit timer (2.3.0's B) is deliberately NOT cancelled here either,
+ * and for a stronger reason: "the countdown reached its end" is the exact
+ * moment the alarm is supposed to be ringing. This runs from a plain read of
+ * the stored end (getPostMealTimerEnd) and from the dashboard's own tick, both
+ * of which can land while the alarm is still on screen - cancelling would
+ * silence the one delivery the user chose. Nothing leaks: the identity is
+ * reused (cancel-then-schedule) by the next arm, and applyReminders' orphan
+ * sweep skips this id by design. cancelPostMealTimer is where an alarm really
+ * does have to be taken down, because there the user ended the window early.
  */
 export async function completePostMealTimer(): Promise<void> {
-  let endedAt: number | null = null;
-  try {
-    const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
-    const end = raw == null ? NaN : parseInt(raw, 10);
-    endedAt = Number.isFinite(end) ? end : null;
-  } catch (err) {
-    // unknown end: the alarm is then left to the launch sweep
-    logCrash(err, { service: "notifications", op: "readPostMealEndOnComplete" });
-  }
   try {
     await AsyncStorage.multiRemove([
       POSTMEAL_TIMER_END_KEY,
@@ -1982,12 +1821,7 @@ export async function completePostMealTimer(): Promise<void> {
     // best-effort
     logCrash(err, { service: "notifications", op: "completePostMealTimer" });
   }
-  await finishPostMealCountdown(endedAt, Date.now(), {
-    cancelAlarm: () => cancelAlarm(POSTMEAL_ALARM_ID),
-    endActivity: async () => {
-      void endPostMealActivity();
-    },
-  });
+  endPostMealActivity();
 }
 
 /**

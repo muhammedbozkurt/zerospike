@@ -273,28 +273,6 @@ public class ZerospikeLiveActivityModule: Module {
       }
     }
 
-    /// The ids of the post-meal activities the OS currently shows for this app,
-    /// in the order `start`/`update` act on them (the first is the one they use).
-    /// JS compares them with its own stored countdown to find an activity no
-    /// countdown owns any more.
-    Function("listActivityIds") { () -> [String] in
-      guard #available(iOS 16.2, *) else { return [] }
-      return Activity<PostMealAttributes>.activities.map { $0.id }
-    }
-
-    /// Ends every post-meal activity whose id is not in `keepIds` and returns
-    /// how many it ended. `end` above stays the "end all" call; this one lets a
-    /// clean-up pass keep the single activity a running countdown still owns.
-    AsyncFunction("endAllExcept") { (keepIds: [String]) async -> Int in
-      guard #available(iOS 16.2, *) else { return 0 }
-      var ended = 0
-      for activity in Activity<PostMealAttributes>.activities where !keepIds.contains(activity.id) {
-        await activity.end(dismissalPolicy: .immediate)
-        ended += 1
-      }
-      return ended
-    }
-
     /// Whether a zerospike WidgetKit widget (the glucose summary or Quick Add,
     /// home screen or Lock Screen) is currently placed anywhere on the device.
     /// `nil` - not `false` - on any WidgetKit error: the dashboard's setup row
