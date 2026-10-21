@@ -34,6 +34,7 @@ import {
   PLAUSIBLE_CARB_RATIO,
 } from "../lib/insulin";
 import {
+  parseWholeText,
   GLUCOSE_INPUT_CEILING,
   glucoseAboveCeiling,
   parseDecimalText,
@@ -394,10 +395,13 @@ eq('parse "5,5,5" -> 5.55', parseDecimalText("5,5,5"), 5.55);
 eq('second dot ignored "1.2.3"', sanitizeDecimalText("1.2.3"), "1.23");
 eq('parse "12,5,5" -> 12.55', parseDecimalText("12,5,5"), 12.55);
 eq("letters dropped", sanitizeDecimalText("a1b,2c"), "1,2");
-eq("integer field stops at the first separator (never a silent tenfold)", sanitizeIntegerText("1,2.3"), "1");
-eq("integer field: 45,5 is 45", sanitizeIntegerText("45,5"), "45");
+eq("integer field keeps every separator visible (nothing dropped, nothing cut)", sanitizeIntegerText("1,2.3"), "1,2.3");
+eq("integer field: 45,5 stays 45,5", sanitizeIntegerText("45,5"), "45,5");
+eq("a whole-number parse refuses 45,5", parseWholeText("45,5"), null);
+eq("a whole-number parse refuses 1.500", parseWholeText("1.500"), null);
+eq("a whole-number parse reads 45", parseWholeText("45"), 45);
 eq("sanitizeNumberText(decimals) keeps comma", sanitizeNumberText("5,5", true), "5,5");
-eq("sanitizeNumberText(integer) stops at the separator", sanitizeNumberText("5,5", false), "5");
+eq("sanitizeNumberText(integer) keeps the separator on screen", sanitizeNumberText("5,5", false), "5,5");
 eq("empty text is NOT a value", parseDecimalText(""), null);
 eq("separator only is NOT a value", parseDecimalText(","), null);
 eq("non-numeric is NOT a value", parseDecimalText("abc"), null);

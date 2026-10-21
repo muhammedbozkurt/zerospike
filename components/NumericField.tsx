@@ -167,7 +167,7 @@ export function NumericField({
   /** One - / + press. False when nothing changed (a bound, or refused text). */
   function press(dir: 1 | -1, by?: number): boolean {
     const c = cfgRef.current;
-    if (!stepAllowed(readingRef.current.kind)) return false;
+    if (!stepAllowed(readingRef.current.kind, cfgRef.current.required)) return false;
     const current = valueRef.current;
     const next = stepNumeric(current, dir, { ...stepCfg, step: by ?? c.step });
     if (next == null || next === current) return false;
@@ -205,8 +205,10 @@ export function NumericField({
 
   const err = numericError(kind, { blurred, required });
   const bothBounds = min != null && max != null;
-  const errorText =
-    err === "below" || err === "above" || err === "malformed"
+  const wholeOnly = err === "malformed" && decimals <= 0 && /[.,٫]/.test(text);
+  const errorText = wholeOnly
+    ? t("numeric.integerOnly")
+    : err === "below" || err === "above" || err === "malformed"
       ? bothBounds
         ? t("numeric.range", {
             min: fmt(min as number, decimals),
@@ -231,7 +233,7 @@ export function NumericField({
   }, [errorText]);
 
   const stepButton = (dir: 1 | -1, icon: keyof typeof Ionicons.glyphMap, label: string) => {
-    const blocked = stepIsBlocked(committed, dir, stepCfg) || !stepAllowed(kind);
+    const blocked = stepIsBlocked(committed, dir, stepCfg) || !stepAllowed(kind, required);
     return (
       <Pressable
         onPress={() => press(dir)}

@@ -31,7 +31,7 @@ import {
 } from "../lib/calcSetup";
 import { useRatioWriter } from "../lib/useRatioWriter";
 import type { RatioWriter } from "../lib/ratioWriter";
-import { DOSE_BOUNDS, glucoseEntryBounds } from "../lib/numericField";
+import { DOSE_BOUNDS, editableMax, glucoseEntryBounds } from "../lib/numericField";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
   fieldIsOffer,
@@ -676,6 +676,9 @@ function CalculatorScreen() {
   // so the stored dose is always something the user actually typed. Edit mode
   // is the one exception: the prefill effect below loads it from the record.
   const [doseText, setDoseText] = useState("");
+  // Edit mode: the dose the record was saved with, so an older entry above the
+  // 100 U limit can still be opened and corrected.
+  const [originalDose, setOriginalDose] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [tags, setTags] = useState<LogTag[]>([]);
@@ -852,6 +855,7 @@ function CalculatorScreen() {
       setFood(catalogueFood ?? foodFromMeal(log));
       setPortion(catalogueFood ? log.portion_g : mealPrefill(log).portion_g);
       setDoseText(num(log.insulin_dose_units));
+      setOriginalDose(log.insulin_dose_units);
       setNote(log.personal_note ?? "");
       setPhoto(log.photo_uri_local);
       setTags(log.tags);
@@ -1158,7 +1162,7 @@ function CalculatorScreen() {
         onValidityChange={stepperFields.reporter("dose")}
         decimals={DOSE_BOUNDS.decimals}
         min={DOSE_BOUNDS.min}
-        max={DOSE_BOUNDS.max}
+        max={editableMax(DOSE_BOUNDS.max, originalDose)}
         step={DOSE_BOUNDS.step}
         longStep={1}
         suffix={t("common.units")}
@@ -1551,9 +1555,13 @@ function CalculatorScreen() {
       let sugarLogId: string | null = null;
       let createdSugarLogId: string | null = null;
       if (glucoseMgdl != null) {
-        // A tapped offer that the field still shows IS that stored reading.
-        const existingReading = boundOffer?.id
-          ? { id: boundOffer.id }
+        // A tapped offer that the field still shows IS that stored reading, as
+        // long as the row still exists: one deleted since the tap (journal,
+        // Health) is not linked to, a new reading is written instead.
+        let boundId: string | null = boundOffer?.id ?? null;
+        if (boundId && !(await getSugarLog(boundId))) boundId = null;
+        const existingReading = boundId
+          ? { id: boundId }
           : await findMatchingSugarLog(activeProfile.id, glucoseMgdl, at);
         if (existingReading) {
           sugarLogId = existingReading.id;

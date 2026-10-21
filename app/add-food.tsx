@@ -31,7 +31,7 @@ import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { hapticSelect } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
-import { sanitizeIntegerText } from "../lib/numberInput";
+import { hasDecimalSeparator, parseWholeText, sanitizeWholeText } from "../lib/numberInput";
 
 /** Glycemic index clamp (UX#23): 0-110 covers the standard GI scale (pure
  *  glucose = 100) with headroom, and keeps a mistyped value from reaching the
@@ -208,9 +208,11 @@ function AddFoodScreen() {
   /** Clamps GI to [0, 110] as the user types, instead of only at save - a
    *  typed 999 used to sail straight through to parseInt with no ceiling. */
   function onGiChange(text: string) {
-    const cleaned = sanitizeIntegerText(text);
-    if (cleaned === "") {
-      setGi("");
+    const cleaned = sanitizeWholeText(text);
+    if (cleaned === "" || hasDecimalSeparator(cleaned)) {
+      // A separator stays on screen (and blocks Save) instead of being cut off:
+      // "4,5" must never become 45.
+      setGi(cleaned);
       return;
     }
     const clamped = Math.min(GI_MAX, Math.max(GI_MIN, parseInt(cleaned, 10)));
@@ -232,7 +234,7 @@ function AddFoodScreen() {
   }
 
   function setPresetGrams(id: string, text: string) {
-    const cleaned = sanitizeIntegerText(text);
+    const cleaned = sanitizeWholeText(text);
     setPresets((prev) => prev.map((r) => (r.id === id ? { ...r, grams: cleaned } : r)));
   }
 
@@ -245,12 +247,17 @@ function AddFoodScreen() {
    *  field is an unfinished preset, not a request to save a 0 g one. */
   function presetRowsForSave(): ReadonlyArray<readonly [PortionLabelKey, number]> {
     return presets
-      .map((r) => [r.labelKey, parseInt(r.grams, 10) || 0] as const)
+      .map((r) => [r.labelKey, parseWholeText(r.grams) ?? 0] as const)
       .filter((r) => r[1] > 0);
   }
 
+  // A GI or a preset's grams with a decimal separator is an error on screen,
+  // never a silently cut or multiplied number.
+  const wholeFieldsOk =
+    !hasDecimalSeparator(gi) && presets.every((r) => !hasDecimalSeparator(r.grams));
+
   async function save() {
-    if (!valid || saving || !stepperFields.allValid) return;
+    if (!valid || saving || !stepperFields.allValid || !wholeFieldsOk) return;
 
     if (!isEdit && !allowed) {
       // push, not replace: the banner above already offers this same route,
@@ -271,7 +278,7 @@ function AddFoodScreen() {
           name: name.trim(),
           brand_name: brand.trim() || null,
           carb_100g: carb || 0,
-          glycemic_index: parseInt(gi, 10) || 0,
+          glycemic_index: parseWholeText(gi) ?? 0,
           portion_size_g: portion,
           custom_notes: notes.trim() || null,
           category,
@@ -288,7 +295,7 @@ function AddFoodScreen() {
         name: name.trim(),
         brand_name: brand.trim() || null,
         carb_100g: carb || 0,
-        glycemic_index: parseInt(gi, 10) || 0,
+        glycemic_index: parseWholeText(gi) ?? 0,
         portion_size_g: portion,
         barcode: barcode ?? null,
         custom_notes: notes.trim() || null,
@@ -533,6 +540,11 @@ function AddFoodScreen() {
               blurOnSubmit={false}
               onSubmitEditing={() => notesRef.current?.focus()}
             />
+            {hasDecimalSeparator(gi) ? (
+              <Text style={{ color: THEME.warning, fontSize: 12, marginBottom: 8 }} accessibilityRole="alert">
+                {t("numeric.integerOnly")}
+              </Text>
+            ) : null}
             <View className="mb-3">
               <Text className="text-sm font-medium text-mut mb-1.5">{t("food.portionSize")}</Text>
               <NumericField
@@ -646,6 +658,11 @@ function AddFoodScreen() {
                       {t("common.grams")}
                     </Text>
                   </View>
+                  {hasDecimalSeparator(row.grams) ? (
+                    <Text style={{ color: THEME.warning, fontSize: 12, marginTop: 4 }} accessibilityRole="alert">
+                      {t("numeric.integerOnly")}
+                    </Text>
+                  ) : null}
                 </View>
               ))}
             </View>
@@ -665,7 +682,7 @@ function AddFoodScreen() {
               // At the free-tier limit, the banner above is the one route to
               // the paywall; Save goes inert instead of also silently routing
               // there itself (which used to blindside a filled-in form).
-              disabled={!valid || (!isEdit && allowed === false) || saving || !stepperFields.allValid}
+              disabled={!valid || (!isEdit && allowed === false) || saving || !stepperFields.allValid || !wholeFieldsOk}
               loading={saving}
               onPress={save}
             />

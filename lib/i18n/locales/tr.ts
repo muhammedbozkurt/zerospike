@@ -304,6 +304,7 @@ const tr = {
   numeric: {
     range: "{{min}} ile {{max}} {{unit}} arasında bir değer girin",
     required: "Bir değer girin",
+    integerOnly: "Tam sayı girin",
     carbRatioExample: "örn. 10",
     isfExampleMgdl: "örn. 50",
     isfExampleMmol: "örn. 2,8",

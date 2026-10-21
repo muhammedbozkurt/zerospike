@@ -69,7 +69,7 @@ import {
   type CalcSetupProfile,
   type RatioFields,
 } from "../lib/calcSetup";
-import { createRatioWriter, type RatioPatch, type StoredRatios } from "../lib/ratioWriter";
+import { createConfirmGate, createRatioWriter, type RatioPatch, type StoredRatios } from "../lib/ratioWriter";
 import { carbsForPortion, estimateInsulin, estimateInsulinConfirmed } from "../lib/insulin";
 import { sanitizeEvent } from "../lib/analytics/eventSchema";
 
@@ -1140,6 +1140,114 @@ async function writerTests(): Promise<void> {
         eq("an incomplete draft cannot be confirmed", okp, false);
         ok("and the flag is never 1", m.db.ratios_confirmed !== 1);
       }
+    }
+    // Ö2: an old value write that fails AFTER a newer confirmation was planned
+    // must not bring its stale draft back over what the user confirmed
+    {
+      const base: StoredRatios = {
+        carb_ratio_breakfast: 8,
+        carb_ratio_lunch: 9,
+        carb_ratio_dinner: 11,
+        insulin_sensitivity_factor: 45,
+        ratios_confirmed: 1,
+      };
+      const db: StoredRatios = { ...base };
+      let ctx: StoredRatios = { ...base };
+      const timers: { fn: () => void; live: boolean }[] = [];
+      const gates: (() => void)[] = [];
+      let failedOnce = false;
+      const w = createRatioWriter({
+        stored: { ...base },
+        setTimer: (fn) => {
+          const t = { fn, live: true };
+          timers.push(t);
+          return t;
+        },
+        clearTimer: (t) => {
+          (t as { live: boolean }).live = false;
+        },
+        persist: async (p) => {
+          await new Promise<void>((r) => gates.push(r));
+          if (!failedOnce && p.carb_ratio_breakfast === 10) {
+            failedOnce = true;
+            throw new Error("SQLITE_BUSY");
+          }
+          Object.assign(db, p);
+          ctx = { ...db };
+        },
+        reload: () => ({ ...ctx }),
+      });
+      const releaseAll = async () => {
+        for (let i = 0; i < 60; i++) {
+          await Promise.resolve();
+          while (gates.length) gates.shift()!();
+        }
+      };
+      w.update({ breakfast: 10, lunch: 9, dinner: 11, isfMgdl: 45 });
+      timers.filter((t) => t.live).forEach((t) => ((t.live = false), t.fn()));
+      w.update({ breakfast: 12, lunch: 9, dinner: 11, isfMgdl: 45 });
+      const confirmed = w.confirm(true);
+      await releaseAll();
+      eq("Ö2: the confirmation of 12 succeeds", await confirmed, true);
+      await w.flush();
+      await releaseAll();
+      eq("Ö2: the profile keeps the confirmed 12", db.carb_ratio_breakfast, 12);
+      eq("Ö2: and the confirmation", db.ratios_confirmed, 1);
+      eq("Ö2: the late failure of the old 10 wrote nothing more", failedOnce, true);
+    }
+    // Ö2b: a failure that is the LATEST write still restores its draft and reports
+    {
+      const errors: unknown[] = [];
+      let failing = true;
+      const dbp: RatioPatch[] = [];
+      const w = createRatioWriter({
+        stored,
+        persist: async (p) => {
+          if (failing) throw new Error("SQLITE_BUSY");
+          dbp.push(p);
+        },
+        reload: () => stored,
+        onError: (e) => errors.push(e),
+      });
+      w.update(draft(12));
+      await w.flush();
+      eq("Ö2b: the newest write failing is reported once", errors.length, 1);
+      failing = false;
+      await w.flush();
+      ok("Ö2b: and its draft is tried again", dbp.some((p) => p.carb_ratio_breakfast === 12));
+    }
+    // D1: one press at a time, and one trip back
+    {
+      const calls: string[] = [];
+      let resolveNow: (v: boolean) => void = () => {};
+      const gate = createConfirmGate({
+        confirm: (c) => {
+          calls.push(`confirm:${c}`);
+          return new Promise<boolean>((r) => {
+            resolveNow = r;
+          });
+        },
+        onConfirmed: () => calls.push("back"),
+        onBusy: (b) => calls.push(b ? "busy" : "idle"),
+      });
+      const first = gate.press(true);
+      const second = gate.press(true);
+      const third = gate.press(false);
+      eq("D1: while the first write runs, the gate is busy", gate.isBusy(), true);
+      resolveNow(true);
+      await Promise.all([first, second, third]);
+      eq("D1: a double tap runs ONE confirm and ONE back, the extra taps are swallowed", calls.join(","), "busy,confirm:true,back,idle");
+      eq("D1: then the gate is free again", gate.isBusy(), false);
+      const next = gate.press(true);
+      resolveNow(true);
+      await next;
+      eq("D1: a later confirmation never goes back twice", calls.filter((c) => c === "back").length, 1);
+      const failing = createConfirmGate({
+        confirm: async () => false,
+        onConfirmed: () => calls.push("WRONG"),
+      });
+      await failing.press(true);
+      ok("D1: a failed confirmation does not go back", !calls.includes("WRONG"));
     }
     // a failed write hands the writer a fresh stored set
     {

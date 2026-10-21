@@ -306,6 +306,7 @@ const ja: TranslationSchema = {
   numeric: {
     range: "{{min}}〜{{max}} {{unit}}の値を入力してください",
     required: "値を入力してください",
+    integerOnly: "整数を入力してください",
     carbRatioExample: "例: 10",
     isfExampleMgdl: "例: 50",
     isfExampleMmol: "例: 2.8",

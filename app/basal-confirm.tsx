@@ -11,7 +11,7 @@ import { displayProfileName } from "../lib/profileName";
 import { Skeleton } from "../components/Skeleton";
 import { useStepperValidity } from "../components/Stepper";
 import { NumericField } from "../components/NumericField";
-import { DOSE_BOUNDS } from "../lib/numericField";
+import { INJECTION_DOSE_BOUNDS } from "../lib/numericField";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { InjectionBodyMap } from "../components/InjectionBodyMap";
 import { DirIcon } from "../components/DirIcon";
@@ -585,11 +585,11 @@ function BasalConfirmScreen() {
               }}
               onValidityChange={stepperFields.reporter("dose")}
               required
-              step={DOSE_BOUNDS.step}
+              step={INJECTION_DOSE_BOUNDS.step}
               longStep={1}
-              min={DOSE_BOUNDS.min}
-              max={DOSE_BOUNDS.max}
-              decimals={DOSE_BOUNDS.decimals}
+              min={INJECTION_DOSE_BOUNDS.min}
+              max={INJECTION_DOSE_BOUNDS.max}
+              decimals={INJECTION_DOSE_BOUNDS.decimals}
               suffix={t("common.units")}
               accessibilityLabel={t("injection.dose")}
               style={{ marginBottom: 16 }}

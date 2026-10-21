@@ -74,6 +74,7 @@ import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G } from "../lib/diabetesDef
 import { RangeInput } from "../components/RangeInput";
 import { useStepperValidity } from "../components/Stepper";
 import { NumericField } from "../components/NumericField";
+import { BASAL_DAILY_BOUNDS } from "../lib/numericField";
 import { InsulinProductPicker } from "../components/InsulinProductPicker";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logCrash, logEvent } from "../lib/analytics";
@@ -542,6 +543,7 @@ export default function OnboardingScreen() {
     activeProfile?.basal_daily_units ?? 0
   );
   const stepperFields = useStepperValidity();
+  const basalInvalidRef = useRef(false);
   // Premix UI toggle (P9): the insulinProducts step's two layouts are derived
   // from isMixSelection(basalInsulinId, bolusInsulinId) - true once a premix
   // product has actually been picked. This extra flag only covers the instant
@@ -1374,13 +1376,21 @@ export default function OnboardingScreen() {
             </Txt>
             <NumericField
               value={basalDailyUnits > 0 ? basalDailyUnits : null}
-              onChange={(v) => setBasalDailyUnits(v ?? 0)}
-              onValidityChange={stepperFields.reporter("basalUnits")}
-              step={1}
-              longStep={5}
-              min={0}
-              max={200}
-              decimals={0}
+              onChange={(v) => {
+                // Refused text (too big, not a number) keeps the last good value;
+                // only an emptied box clears it.
+                if (v == null && basalInvalidRef.current) return;
+                setBasalDailyUnits(v ?? 0);
+              }}
+              onValidityChange={(valid) => {
+                basalInvalidRef.current = !valid;
+                stepperFields.reporter("basalUnits")(valid);
+              }}
+              step={BASAL_DAILY_BOUNDS.step}
+              longStep={1}
+              min={BASAL_DAILY_BOUNDS.min}
+              max={BASAL_DAILY_BOUNDS.max}
+              decimals={BASAL_DAILY_BOUNDS.decimals}
               suffix={t("common.units")}
               accessibilityLabel={t("settings.basalDailyUnits")}
             />

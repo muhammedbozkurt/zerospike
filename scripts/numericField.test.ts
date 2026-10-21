@@ -10,8 +10,11 @@ declare const __dirname: string;
 declare function require(id: string): any;
 
 import {
+  BASAL_DAILY_BOUNDS,
   DOSE_BOUNDS,
   GLUCOSE_ENTRY_BOUNDS,
+  INJECTION_DOSE_BOUNDS,
+  editableMax,
   fieldShowsValue,
   filterNumericText,
   glucoseEntryBounds,
@@ -24,6 +27,8 @@ import {
   stepNumeric,
 } from "../lib/numericField";
 import { CARB_RATIO_BOUNDS, ISF_BOUNDS } from "../lib/calcSetup";
+import { hasDecimalSeparator, parseWholeText, sanitizeWholeText } from "../lib/numberInput";
+import { createConfirmGate } from "../lib/ratioWriter";
 import { glucoseFromDisplay, glucoseToDisplay } from "../lib/glucose";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
@@ -62,12 +67,12 @@ section("1. text: digits and one separator, comma and dot read the same");
   eq("a second separator is dropped, the digits stay", filterNumericText("7.5.5", 2), "7.55");
   eq("a comma after a dot is dropped too", filterNumericText("7.5,5", 1), "7.5");
   eq("decimals are cut to the field's places", filterNumericText("7.55", 1), "7.5");
-  eq("an integer field stops at the separator, never 75", filterNumericText("7.5", 0), "7");
-  eq("ISF mg/dL 45,5 is 45, not 455", filterNumericText("45,5", 0), "45");
-  eq("glucose mg/dL 5,5 is 5, not 55", filterNumericText("5,5", 0), "5");
-  eq("12.0 is 12, not 120", filterNumericText("12.0", 0), "12");
-  eq("7.5.5 in a whole-number field is 7", filterNumericText("7.5.5", 0), "7");
-  eq("a leading separator leaves nothing", filterNumericText(",5", 0), "");
+  eq("an integer field keeps the separator on screen", filterNumericText("7.5", 0), "7.5");
+  eq("ISF mg/dL 45,5 stays 45,5", filterNumericText("45,5", 0), "45,5");
+  eq("glucose mg/dL 5,5 stays 5,5", filterNumericText("5,5", 0), "5,5");
+  eq("12.0 stays 12.0", filterNumericText("12.0", 0), "12.0");
+  eq("7.5.5 in a whole-number field keeps both", filterNumericText("7.5.5", 0), "7.5.5");
+  eq("a leading separator stays", filterNumericText(",5", 0), ",5");
   eq("minus signs and spaces are dropped", filterNumericText("-1 2", 0), "12");
   eq("Arabic-Indic digits become Latin", filterNumericText("١٢٣", 0), "123");
   const b = { min: 1, max: 100, decimals: 1 };
@@ -268,7 +273,7 @@ section("7. coming back from the ratios: the record stays open");
   const calc = src("app/calculator.tsx");
   ok("the calculator's line sends a return marker to Profile", line.includes('params: { returnTo: "calculator" }') && line.includes("returnAfterConfirm"));
   ok("other screens' lines are unchanged (plain push)", line.includes(': "/settings/profile"'));
-  ok("Profile goes back only after a confirmation that was written", /const ok = await ratioWriters\.get\(\)\?\.confirm\(checked\);\s*if \(ok && returnTo === "calculator" && router\.canGoBack\(\)\) router\.back\(\);/.test(prof));
+  ok("Profile goes back only after a confirmation that was written, once, through the gate", /createConfirmGate\(\{[\s\S]{0,260}onConfirmed: \(\) => \{[\s\S]{0,200}to === "calculator" && r\.canGoBack\(\)\) r\.back\(\)/.test(prof) && prof.includes("onBusy: setConfirming"));
   ok("going back is a pop, so the open record keeps its state", !/router\.(replace|push)\([^)]*calculator/.test(prof));
   ok("the sheet closes onto the same screen after its own confirmation", /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\);/.test(calc));
   ok("the sheet never resets the form it sits on", !/setPortion\(|setGlucose\(|setSlot\(/.test(calc.slice(calc.indexOf("function CalcSetupSheet("), calc.indexOf("function PendingDoseCard("))));
@@ -369,7 +374,12 @@ section("10. outside values reach a focused box; pastes are refused, not rewritt
   eq("pasted 7.5.5 is malformed, not 7.55", readNumeric("7.5.5", { min: 1, max: 100, decimals: 2 }).kind, "malformed");
   eq("pasted 7.55 into a one-decimal box is refused, not cut", readNumeric("7.55", gl).kind, "malformed");
   eq("a plain pasted 7,5 is fine", readNumeric("7,5", gl).value, 7.5);
-  eq("a pasted 45,5 into a whole-number box becomes 45", readNumeric("45,5", { min: 1, max: 500, decimals: 0 }).value, 45);
+  eq("a pasted 45,5 into a whole-number box is refused, shown as typed", readNumeric("45,5", { min: 1, max: 500, decimals: 0 }).text, "45,5");
+  eq("and commits nothing", readNumeric("45,5", { min: 1, max: 500, decimals: 0 }).value, null);
+  eq("and is malformed", readNumeric("45,5", { min: 1, max: 500, decimals: 0 }).kind, "malformed");
+  eq("1.500 portion is malformed (no thousands guess)", readNumeric("1.500", { min: 0, max: 1500, decimals: 0 }).kind, "malformed");
+  eq("1,500 portion is malformed too", readNumeric("1,500", { min: 0, max: 1500, decimals: 0 }).kind, "malformed");
+  eq("1,5 portion is malformed", readNumeric("1,5", { min: 0, max: 1500, decimals: 0 }).kind, "malformed");
   eq("pasted with spaces around is fine", readNumeric(" 12 ", gl).value, 12);
   // typing one character at a time is lenient
   eq("a stray letter typed on the end is simply not entered", readNumericInput("12a", "12", gl).text, "12");
@@ -383,6 +393,8 @@ section("10. outside values reach a focused box; pastes are refused, not rewritt
   eq("malformed shows the error at once", numericError("malformed", { blurred: false, required: false }), "malformed");
   eq("malformed is not valid", numericValid("malformed", false), false);
   eq("- / + do nothing on refused text", stepAllowed("above") || stepAllowed("below") || stepAllowed("malformed"), false);
+  eq("- / + do nothing on an empty REQUIRED box", stepAllowed("empty", true), false);
+  eq("- / + still work on an empty optional box", stepAllowed("empty", false), true);
   eq("- / + work on a number", stepAllowed("ok"), true);
   eq("- / + work on an empty box", stepAllowed("empty"), true);
 }
@@ -404,7 +416,7 @@ section("11. the offer attaches to its stored row; it expires; it hides on a bac
   eq("an expired reading has no time left", offerExpiresInMs(ago(20), now), 0);
   eq("an unreadable stamp has no time left", offerExpiresInMs("nope", now), 0);
   const calc = src("app/calculator.tsx");
-  ok("a save attaches to the tapped row instead of writing it again", calc.includes("boundOffer?.id") && /boundOffer\?\.id\s*\?\s*\{ id: boundOffer\.id \}\s*:\s*await findMatchingSugarLog/.test(calc));
+  ok("a save attaches to the tapped row instead of writing it again", calc.includes("boundOffer?.id") && /boundId\s*\?\s*\{ id: boundId \}\s*:\s*await findMatchingSugarLog/.test(calc) && /!\(await getSugarLog\(boundId\)\)\) boundId = null/.test(calc));
   ok("the tapped mg/dL value, not the rounded one, drives the estimate", /return boundOffer \? boundOffer\.mgdl : glucoseFromDisplay\(glucoseTyped, unit\)/.test(calc));
   ok("the binding needs the field to still show the offer and a record logged now", /offerBinding &&\s*loggedAt == null &&\s*fieldIsOffer\(glucoseTyped, glucoseToDisplay\(offerBinding\.mgdl, unit\)\)/.test(calc));
   ok("the offer hides on a back-dated meal", /!isEdit && glucose === "" && loggedAt == null/.test(calc));
@@ -421,7 +433,7 @@ section("12. ratios: one atomic confirmation, locked boxes, no silent failures")
   ok("a failed write restores the draft", writer.includes("if (!pending) pending = draft"));
   ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && /if \(next && ok\) \{\s*setConfirmed\(true\)/.test(calc) && !/setConfirmed\(next\)/.test(calc));
   ok("Profile reports a failed write", prof.includes('useRatioWriter(() => toast(t("common.saveFailed"), "error"))'));
-  ok("Profile's box is enabled whenever the four numbers are filled (a tick flushes first)", prof.includes("disabled={!ratioFieldsComplete(ratioDraft)}") && !prof.includes("disabled={!ratioDraftIsStored}"));
+  ok("Profile's box is enabled whenever the four numbers are filled (a tick flushes first)", prof.includes("disabled={!ratioFieldsComplete(ratioDraft) || confirming}") && !prof.includes("disabled={!ratioDraftIsStored}"));
   ok("the pending card shows only when four values wait for the tick", calc.split("calcSetupPrefilled(activeProfile)").length >= 4 && calc.includes("activeProfile?.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile)"));
   ok("an empty common.saveFailed text exists in all nine languages", ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"].every((l) => /\n    saveFailed: "[^"]+"/.test(src(`lib/i18n/locales/${l}.ts`))));
 }
@@ -430,7 +442,7 @@ section("13. the basal daily dose settles before it is written");
 {
   const prof = src("app/settings/profile.tsx");
   ok("typing only records a pending value", /function onBasalChange\(v: number \| null\)\s*\{\s*setBasalUnits\(v \?\? 0\);\s*basalPendingRef\.current = v;/.test(prof));
-  ok("the write waits for a pause", prof.includes("setTimeout(flushBasal, 700)"));
+  ok("there is no pause timer: the write waits for the field to be left", !prof.includes("setTimeout(flushBasal") && !prof.includes("basalTimerRef") && prof.includes("onBlur={onBasalBlur}"));
   ok("an invalid value is never written", /if \(v === undefined \|\| basalInvalidRef\.current\) return;/.test(prof));
   ok("refused text returns to the stored value on blur", /function onBasalBlur\(\)\s*\{\s*if \(basalInvalidRef\.current\)[\s\S]{0,300}setBasalUnits\(activeProfile\?\.basal_daily_units \?\? 0\)/.test(prof));
   ok("leaving the screen writes a settled value", /useEffect\(\s*\(\) => \(\) => \{\s*flushBasal\(\);/.test(prof));
@@ -456,18 +468,18 @@ section("14. every stepper in the app is the shared field");
   }
   for (const rel of ["app/basal-confirm.tsx", "app/(tabs)/injection.tsx", "components/InjectionEditSheet.tsx"]) {
     const text = src(rel);
-    ok(`${rel}: dose is 0-100 in steps of 0.5 with 2 decimals, the calculator's own bounds`, text.includes("DOSE_BOUNDS.max") && text.includes("DOSE_BOUNDS.min") && text.includes("DOSE_BOUNDS.step") && text.includes("DOSE_BOUNDS.decimals"));
+    ok(`${rel}: an injection dose uses INJECTION_DOSE_BOUNDS (0-150, step 0.5, 2 decimals)`, text.includes("INJECTION_DOSE_BOUNDS.max") && text.includes("INJECTION_DOSE_BOUNDS.min") && text.includes("INJECTION_DOSE_BOUNDS.step") && text.includes("INJECTION_DOSE_BOUNDS.decimals") && !/[^_]DOSE_BOUNDS\./.test(text.replace(/INJECTION_DOSE_BOUNDS\./g, "")));
     ok(`${rel}: an empty or refused dose is never stored (null is ignored, the box is required)`, /if \(v == null\) return;/.test(text) && /\brequired\b/.test(text));
   }
   const addFood = src("app/add-food.tsx");
   ok("add-food keeps its gram bounds", /min=\{0\}\s*max=\{100\}\s*decimals=\{1\}/.test(addFood) && /min=\{1\}\s*max=\{2000\}\s*decimals=\{0\}/.test(addFood));
   ok("meal-template keeps 0-2000 g", /min=\{0\}\s*max=\{2000\}\s*decimals=\{0\}/.test(src("app/meal-template.tsx")));
-  ok("onboarding keeps 0-200", /min=\{0\}\s*max=\{200\}\s*decimals=\{0\}/.test(src("app/onboarding.tsx")));
+  ok("onboarding and Profile share the one daily basal bound", src("app/onboarding.tsx").includes("max={BASAL_DAILY_BOUNDS.max}") && src("app/settings/profile.tsx").includes("max={BASAL_DAILY_BOUNDS.max}") && BASAL_DAILY_BOUNDS.max === 200 && BASAL_DAILY_BOUNDS.min === 0);
   ok("add-food and the portion fields keep the chip / slider sync (value flows in through the shared field)", src("components/NumericField.tsx").includes("fieldShowsValue(readingRef.current, value)"));
   ok("only the validity hook is left in components/Stepper.tsx for callers", /export function useStepperValidity/.test(src("components/Stepper.tsx")));
   const field = src("components/NumericField.tsx");
   ok("the hold repeat stops on a tick that changes nothing", /if \(!press\(dir, c\.longStep \?\? c\.step\)\) \{\s*stopHold\(\);\s*return;/.test(field));
-  ok("- / + are disabled on refused text", field.includes("|| !stepAllowed(kind)"));
+  ok("- / + are disabled on refused text and on an empty required box", field.includes("|| !stepAllowed(kind, required)") && field.includes("stepAllowed(readingRef.current.kind, cfgRef.current.required)"));
   ok("iOS announces the error, Android reads the live region", field.includes("AccessibilityInfo.announceForAccessibility(errorText)") && field.includes('Platform.OS === "android" ? "polite" : "none"'));
   ok("a prop value outside the bounds is shown as an error, not as fine", field.includes("function fromValue") && /min != null && v < min \? "below"/.test(field));
 }
@@ -479,6 +491,108 @@ section("15. new profiles are born unconfirmed");
     const inserts = text.match(/INSERT (?:OR IGNORE )?INTO user_profiles[\s\S]*?;`/g) ?? [];
     ok(`${rel}: every profile INSERT names ratios_confirmed`, inserts.length > 0 && inserts.every((q) => q.includes("ratios_confirmed")));
   }
+}
+
+section("16. whole-number fields: a separator stays visible and is refused, key by key");
+{
+  type R = { text: string; kind: string; value: number | null };
+  const keys = (seq: string, b: { min?: number; max?: number; decimals: number }): R => {
+    let text = "";
+    let r: R = { text: "", kind: "empty", value: null };
+    for (const k of seq) {
+      r = readNumericInput(text + k, text, b) as R;
+      text = r.text;
+    }
+    return r;
+  };
+  const isf = { min: 1, max: 500, decimals: 0 };
+  const gl = { min: 20, max: 600, decimals: 0 };
+  const portion = { min: 0, max: 1500, decimals: 0 };
+  eq("keys 4,5,comma,5 in the ISF box: refused", keys("45,5", isf).kind, "malformed");
+  eq("... no value reaches the parent", keys("45,5", isf).value, null);
+  eq("... the box still shows 45,5, not 455 and not 45", keys("45,5", isf).text, "45,5");
+  eq("keys 5,comma,5 in the glucose box: refused, shows 5,5", `${keys("5,5", gl).kind}/${keys("5,5", gl).text}/${keys("5,5", gl).value}`, "malformed/5,5/null");
+  eq("keys 1,2,comma,5 in the glucose box: refused (not 125)", `${keys("12,5", gl).kind}/${keys("12,5", gl).text}`, "malformed/12,5");
+  eq("a dot works the same way (98.6)", `${keys("98.6", gl).kind}/${keys("98.6", gl).value}`, "malformed/null");
+  eq("keys 1,.,5,0,0 in the portion box: refused", `${keys("1.500", portion).kind}/${keys("1.500", portion).text}`, "malformed/1.500");
+  eq("keys 1,comma,5 in the portion box: refused", keys("1,5", portion).kind, "malformed");
+  eq("the separator typed alone is refused too", keys("45,", isf).kind, "malformed");
+  // fixing it: backspace removes the separator
+  const fixed = readNumericInput("45", "45,5", isf);
+  eq("deleting back to 45 is a good value again", `${fixed.kind}/${fixed.value}`, "ok/45");
+  eq("45, then backspace on the comma is 45", readNumericInput("45", "45,", isf).value, 45);
+  // an ordinary run of keys is unaffected
+  eq("keys 4,5 are 45", keys("45", isf).value, 45);
+  eq("keys 5,0,0 are 500", keys("500", isf).value, 500);
+  eq("keys 5,0,1 are above", keys("501", isf).kind, "above");
+  // the same box with decimals still reads a separator normally
+  eq("a one-decimal box reads 7,5", keys("7,5", { min: 1, max: 100, decimals: 1 }).value, 7.5);
+  eq("the whole-number error is the integerOnly text", true, src("components/NumericField.tsx").includes('t("numeric.integerOnly")'));
+  // no other layer quietly cuts or drops the separator
+  eq("sanitizeWholeText keeps 45,5", sanitizeWholeText("45,5"), "45,5");
+  eq("sanitizeWholeText drops letters but not separators", sanitizeWholeText("4a5,5"), "45,5");
+  eq("parseWholeText refuses 45,5", parseWholeText("45,5"), null);
+  eq("parseWholeText refuses 1.500", parseWholeText("1.500"), null);
+  eq("parseWholeText refuses 1,500", parseWholeText("1,500"), null);
+  eq("parseWholeText reads 1500", parseWholeText("1500"), 1500);
+  eq("parseWholeText refuses an empty box", parseWholeText(""), null);
+  ok("hasDecimalSeparator sees the Arabic mark", hasDecimalSeparator("5٫5"));
+  // the other whole-number fields
+  const gis = src("components/GlucoseInputSheet.tsx");
+  ok("the glucose sheet keeps the separator visible and refuses it", gis.includes("const wholeBad = !mmol && hasDecimalSeparator(value);") && gis.includes("const typed = mmol ? parseDecimalText(value) : parseWholeText(value);") && gis.includes('t("numeric.integerOnly")'));
+  const rng = src("components/RangeInput.tsx");
+  ok("range ends hand the parent an EMPTY end while the text is malformed", rng.includes('onChangeMin(bad ? "" : s)') && rng.includes('onChangeMax(bad ? "" : s)') && rng.includes("hasDecimalSeparator(s)"));
+  ok("range ends show the text as typed with the error", rng.includes("const shownMin = minBad ? (rawMin as string) : minText;") && rng.includes('t("numeric.integerOnly")'));
+  const af = src("app/add-food.tsx");
+  ok("add-food GI and preset grams are parsed strictly", af.includes("parseWholeText(gi)") && af.includes("parseWholeText(r.grams)") && !/parseInt\(gi/.test(af) && !/parseInt\(r\.grams/.test(af));
+  ok("add-food shuts Save on a separator", af.includes("!wholeFieldsOk") && af.includes('t("numeric.integerOnly")'));
+  eq("integerOnly exists in all nine languages", ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"].every((l) => /\n    integerOnly: "[^"]+"/.test(src(`lib/i18n/locales/${l}.ts`))), true);
+  eq("tr text", src("lib/i18n/locales/tr.ts").includes('integerOnly: "Tam sayı girin"'), true);
+}
+
+section("17. dose limits: a meal dose 0-100, an injection 0-150, edits never below the record");
+{
+  const meal = { min: DOSE_BOUNDS.min, max: DOSE_BOUNDS.max, decimals: DOSE_BOUNDS.decimals };
+  const inj = { min: INJECTION_DOSE_BOUNDS.min, max: INJECTION_DOSE_BOUNDS.max, decimals: INJECTION_DOSE_BOUNDS.decimals };
+  eq("meal dose 100 accepted", readNumeric("100", meal).value, 100);
+  eq("meal dose 101 refused", readNumeric("101", meal).kind, "above");
+  eq("injection 150 accepted", readNumeric("150", inj).value, 150);
+  eq("injection 151 refused", readNumeric("151", inj).kind, "above");
+  eq("a user with 120 U daily basal can save the filled-in injection", readNumeric("120", inj).value, 120);
+  eq("the injection step and decimals match the calculator's", `${INJECTION_DOSE_BOUNDS.step}/${INJECTION_DOSE_BOUNDS.decimals}`, `${DOSE_BOUNDS.step}/${DOSE_BOUNDS.decimals}`);
+  eq("editing a 130 U injection: the limit is 150 (already above 130)", editableMax(INJECTION_DOSE_BOUNDS.max, 130), 150);
+  eq("editing a 170 U record: the limit rises to 170", editableMax(INJECTION_DOSE_BOUNDS.max, 170), 170);
+  eq("editing a 130 U meal dose: the limit rises to 130", editableMax(DOSE_BOUNDS.max, 130), 130);
+  eq("... and 130 reads as a good value", readNumeric("130", { ...meal, max: editableMax(DOSE_BOUNDS.max, 130) }).value, 130);
+  eq("... while a NEW meal dose of 130 is still refused", readNumeric("130", meal).value, null);
+  eq("a record without a dose keeps the plain limit", editableMax(100, null), 100);
+  eq("an unreadable original keeps the plain limit", editableMax(100, Number.NaN), 100);
+  eq("daily basal bound is 0-200 for Profile and onboarding", `${BASAL_DAILY_BOUNDS.min}-${BASAL_DAILY_BOUNDS.max}`, "0-200");
+  eq("a 200 U daily basal reads, 201 does not", `${readNumeric("200", { min: 0, max: 200, decimals: 1 }).value}/${readNumeric("201", { min: 0, max: 200, decimals: 1 }).value}`, "200/null");
+  const ies = src("components/InjectionEditSheet.tsx");
+  ok("the injection editor lifts its limit to the stored dose", ies.includes("max={editableMax(INJECTION_DOSE_BOUNDS.max, injection?.dose_units)}"));
+  const calc = src("app/calculator.tsx");
+  ok("the calculator's edit screen lifts its limit to the stored dose", calc.includes("max={editableMax(DOSE_BOUNDS.max, originalDose)}") && calc.includes("setOriginalDose(log.insulin_dose_units)"));
+  ok("a new meal dose keeps 0-100", !calc.includes("INJECTION_DOSE_BOUNDS"));
+  for (const rel of ["app/(tabs)/injection.tsx", "app/basal-confirm.tsx"]) {
+    ok(`${rel}: 0-150`, src(rel).includes("INJECTION_DOSE_BOUNDS.max"));
+  }
+}
+
+section("18. the confirm box can not be pressed twice");
+{
+  const calc = src("app/calculator.tsx");
+  ok("the sheet box ignores a second press while a write runs", calc.includes("if (!ratioFieldsComplete(fields) || confirming) return;"));
+  const prof = src("app/settings/profile.tsx");
+  ok("Profile's box goes through the one-press gate", prof.includes("confirmGateRef.current?.press(checked)"));
+}
+
+section("19. a tapped offer whose reading was deleted is not linked");
+{
+  const calc = src("app/calculator.tsx");
+  ok("the save checks the row still exists before linking", /let boundId: string \| null = boundOffer\?\.id \?\? null;\s*if \(boundId && !\(await getSugarLog\(boundId\)\)\) boundId = null;/.test(calc));
+  ok("a vanished row falls back to the normal flow (match or write a new reading)", /boundId\s*\?\s*\{ id: boundId \}\s*:\s*await findMatchingSugarLog\(activeProfile\.id, glucoseMgdl, at\)/.test(calc));
+  ok("typing the same value by hand never binds (the binding is set only by the tap)", (calc.match(/setOfferBinding\(/g) ?? []).length === 1 && /function useOfferedGlucose\(\)[\s\S]{0,400}setOfferBinding\(\{ id: offer\.id, mgdl: offer\.mgdl \}\)/.test(calc));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
