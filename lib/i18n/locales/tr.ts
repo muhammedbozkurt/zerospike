@@ -1628,6 +1628,16 @@ const tr = {
     itemSpike: "Spike karbonhidrat tahmini: öğününüzü yazın, yaklaşık karbonhidratı görün (besin bilgisi tahminidir, doz değildir).",
     ok: "Tamam",
   },
+  fatalReport: {
+    row: "Son hata raporu",
+    none: "Kayıt yok",
+    empty: "Bu cihazda kayıtlı bir hata yok.",
+    intro: "Yalnızca bu cihazda saklanır. Geri bildirime eklemediğiniz sürece hiçbir yere gönderilmez.",
+    share: "Kopyala veya paylaş",
+    clear: "Temizle",
+    attach: "Son hata raporunu ekle",
+    attachHint: "İsteğe bağlı. Açarsanız hata adı, kısa neden ve teknik iz mesajınızın sonuna eklenir.",
+  },
   feedback: {
     aboutRow: "Geri bildirim gönderin",
     title: "Geri bildirim",

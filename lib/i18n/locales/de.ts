@@ -1635,6 +1635,16 @@ const de: TranslationSchema = {
     itemSpike: "Spike-Kohlenhydratschätzung: Schreiben Sie Ihre Mahlzeit und sehen Sie die ungefähren Kohlenhydrate (eine Schätzung aus Nährwertdaten, keine Dosis).",
     ok: "OK",
   },
+  fatalReport: {
+    row: "Letzter Fehlerbericht",
+    none: "Kein Eintrag",
+    empty: "Auf diesem Gerät ist kein Fehler gespeichert.",
+    intro: "Wird nur auf diesem Gerät gespeichert. Es wird nichts gesendet, außer Sie fügen den Bericht einem Feedback bei.",
+    share: "Kopieren oder teilen",
+    clear: "Löschen",
+    attach: "Letzten Fehlerbericht anhängen",
+    attachHint: "Optional. Wenn aktiviert, werden Fehlername, Kurzgrund und technische Spur am Ende Ihrer Nachricht angefügt.",
+  },
   feedback: {
     aboutRow: "Feedback senden",
     title: "Feedback",

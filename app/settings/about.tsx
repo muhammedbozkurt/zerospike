@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Linking, Platform, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -11,6 +11,9 @@ import { SectionLabel } from "../../components/ui";
 import { Row, SettingsScaffold } from "../../components/settingsUi";
 import { DisclaimerBanner } from "../../components/Disclaimer";
 import { FeedbackSheet } from "../../components/feedback/FeedbackSheet";
+import { FatalReportSheet } from "../../components/FatalReportSheet";
+import { loadLastFatalReport } from "../../lib/fatalCapture";
+import { fatalReportDate, type FatalReport } from "../../lib/fatalReport";
 import { privacyUrl, termsUrl } from "../../lib/legal";
 import { THEME } from "../../lib/theme/tokens";
 import { writeReviewUrl } from "../../lib/services/review";
@@ -30,6 +33,18 @@ export default function AboutSettings() {
   const usesInsulin = insulinModeUsesInsulin(insulinModeOf(activeProfile));
   const version = Constants.expoConfig?.version ?? "1.0.0";
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [fatalOpen, setFatalOpen] = useState(false);
+  const [fatalReport, setFatalReport] = useState<FatalReport | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    loadLastFatalReport()
+      .then((r) => alive && setFatalReport(r))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <SettingsScaffold title={t("settings.aboutSection")}>
@@ -93,10 +108,23 @@ export default function AboutSettings() {
         right={<View />}
       />
 
+      <Row
+        icon="bug-outline"
+        label={t("fatalReport.row")}
+        value={fatalReport ? fatalReportDate(fatalReport.at) || fatalReport.platform : t("fatalReport.none")}
+        onPress={() => setFatalOpen(true)}
+      />
+
       <View className="my-3">
         <DisclaimerBanner full />
       </View>
       </View>
+      <FatalReportSheet
+        visible={fatalOpen}
+        report={fatalReport}
+        onClose={() => setFatalOpen(false)}
+        onCleared={() => setFatalReport(null)}
+      />
       <FeedbackSheet
         visible={feedbackOpen}
         mode="general"

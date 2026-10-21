@@ -1635,6 +1635,16 @@ const fr: TranslationSchema = {
     itemSpike: "Estimation des glucides par Spike : saisissez votre repas et voyez les glucides approximatifs (une estimation à partir de données nutritionnelles, pas une dose).",
     ok: "OK",
   },
+  fatalReport: {
+    row: "Dernier rapport d'erreur",
+    none: "Aucun enregistrement",
+    empty: "Aucune erreur n'est enregistrée sur cet appareil.",
+    intro: "Conservé uniquement sur cet appareil. Rien n'est envoyé, sauf si vous le joignez à un commentaire.",
+    share: "Copier ou partager",
+    clear: "Effacer",
+    attach: "Joindre le dernier rapport d'erreur",
+    attachHint: "Facultatif. Si activé, le nom de l'erreur, la cause brève et la trace technique sont ajoutés à la fin de votre message.",
+  },
   feedback: {
     aboutRow: "Envoyer un commentaire",
     title: "Commentaires",

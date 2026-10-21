@@ -1630,6 +1630,16 @@ const en: TranslationSchema = {
     itemSpike: "Spike carb estimate: type your meal and see approximate carbs (an estimate from food data, not a dose).",
     ok: "OK",
   },
+  fatalReport: {
+    row: "Last error report",
+    none: "No record",
+    empty: "No error is stored on this device.",
+    intro: "Stored only on this device. Nothing is sent unless you attach it to feedback.",
+    share: "Copy or share",
+    clear: "Clear",
+    attach: "Attach last error report",
+    attachHint: "Optional. If on, the error name, short reason and technical trace are added to the end of your message.",
+  },
   feedback: {
     aboutRow: "Send feedback",
     title: "Feedback",

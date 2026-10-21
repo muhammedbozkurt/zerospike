@@ -4,6 +4,14 @@ import { Platform } from "react-native";
 // boots and before nativewind registers Text/TextInput; see the module itself.
 require("./lib/theme/fontScale");
 
+// Earliest point JS can run: keep the last fatal JS error on the device before
+// React Native turns it into a native crash (Settings > About > Last error report).
+try {
+  require("./lib/fatalCapture").installFatalCapture();
+} catch {
+  // Reporting is optional; the app starts without it.
+}
+
 /**
  * App entry.
  *
