@@ -29,6 +29,15 @@ import {
   UNDO_TOAST_MS,
   UNDO_TOAST_SCREEN_READER_MS,
 } from "../lib/feedback";
+import {
+  initialToastState,
+  reduceToast,
+  toastVisibleMs,
+  TOAST_MAX_WIDTH,
+  type ToastEffect,
+  type ToastEvent,
+  type ToastState,
+} from "../lib/toastQueue";
 import { GLUCOSE_RICH, THEME, RADIUS, ELEVATION } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 import { sheetBoxStyle } from "../lib/tabletLayout";
@@ -130,12 +139,14 @@ const TOAST_ACTION_SCREEN_READER_MS = UNDO_TOAST_SCREEN_READER_MS;
 const DIALOG_MAX_WIDTH = 520;
 
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
-  // Toast state
-  const [toastMsg, setToastMsg] = useState("");
-  const [toastKind, setToastKind] = useState<ToastKind>("success");
-  const [toastAction, setToastAction] = useState<ToastAction | null>(null);
+  // Toast state: one slot (lib/toastQueue.ts), one Animated.Value, one timer.
+  const [toastState, setToastState] = useState<ToastState<ToastAction>>(initialToastState);
+  const toastRef = useRef<ToastState<ToastAction>>(toastState);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastMsg = toastState.current?.message ?? "";
+  const toastKind = (toastState.current?.kind ?? "success") as ToastKind;
+  const toastAction = toastState.current?.action ?? null;
 
   // Confirm state
   const [confirmOpts, setConfirmOpts] = useState<ConfirmOptions | null>(null);
@@ -205,19 +216,83 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const dispatchToast = useCallback(
+    (ev: ToastEvent<ToastAction>) => {
+      const { state, effects } = reduceToast(toastRef.current, ev);
+      toastRef.current = state;
+      setToastState(state);
+      effects.forEach((fx: ToastEffect) => {
+        switch (fx.type) {
+          case "disarm":
+            if (hideTimer.current) clearTimeout(hideTimer.current);
+            hideTimer.current = null;
+            break;
+          case "reset":
+            toastAnim.stopAnimation();
+            toastAnim.setValue(0);
+            break;
+          case "enter":
+            if (fx.ms === 0) {
+              toastAnim.stopAnimation();
+              toastAnim.setValue(1);
+              break;
+            }
+            Animated.timing(toastAnim, {
+              toValue: 1,
+              duration: fx.ms,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }).start();
+            break;
+          case "arm":
+            hideTimer.current = setTimeout(() => {
+              hideTimer.current = null;
+              dispatchToast({ type: "hideDue", id: fx.id });
+            }, fx.ms);
+            break;
+          case "exit":
+            if (fx.ms === 0) {
+              toastAnim.stopAnimation();
+              toastAnim.setValue(0);
+              dispatchToast({ type: "exitDone", id: fx.id, finished: true });
+              break;
+            }
+            Animated.timing(toastAnim, {
+              toValue: 0,
+              duration: fx.ms,
+              easing: Easing.in(Easing.cubic),
+              useNativeDriver: true,
+            }).start(({ finished }) => {
+              dispatchToast({ type: "exitDone", id: fx.id, finished });
+            });
+            break;
+        }
+      });
+    },
+    [toastAnim]
+  );
+
+  // OS "Reduce Motion": the toast then appears and disappears in one frame.
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((on) => {
+        if (alive) dispatchToast({ type: "motion", reduceMotion: on });
+      })
+      .catch(() => {
+        // probe unavailable: keep the animated default
+      });
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", (on) => {
+      dispatchToast({ type: "motion", reduceMotion: on });
+    });
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, [dispatchToast]);
+
   const toast = useCallback(
     (message: string, kind: ToastKind = "success", action?: ToastAction) => {
-      setToastMsg(message);
-      setToastKind(kind);
-      setToastAction(action ?? null);
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-      Animated.timing(toastAnim, {
-        toValue: 1,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
-
       // A toast is painted into an overlay and never takes focus, so a screen
       // reader user got NO feedback at all that their save/delete/undo landed.
       // Announce it, and name the action so they know one is on offer.
@@ -229,37 +304,26 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
         // announcing is best-effort; the visual toast is unaffected
       }
 
-      const visibleMs = action
-        ? screenReaderOn.current
-          ? TOAST_ACTION_SCREEN_READER_MS
-          : TOAST_ACTION_MS
-        : TOAST_MS;
-      hideTimer.current = setTimeout(() => {
-        Animated.timing(toastAnim, {
-          toValue: 0,
-          duration: 220,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }).start();
-        setToastAction(null);
-      }, visibleMs);
+      const visibleMs = toastVisibleMs({
+        hasAction: action != null,
+        screenReader: screenReaderOn.current,
+        plainMs: TOAST_MS,
+        actionMs: TOAST_ACTION_MS,
+        actionScreenReaderMs: TOAST_ACTION_SCREEN_READER_MS,
+      });
+      dispatchToast({ type: "show", message, kind, action: action ?? null, visibleMs });
     },
-    [toastAnim]
+    [dispatchToast]
   );
 
   /** Runs the toast's action once, then dismisses it. */
   const runToastAction = useCallback(() => {
-    const action = toastAction;
-    setToastAction(null);
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    Animated.timing(toastAnim, {
-      toValue: 0,
-      duration: 160,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-    action?.onPress();
-  }, [toastAction, toastAnim]);
+    const cur = toastRef.current.current;
+    if (!cur || !cur.action) return;
+    const action = cur.action;
+    dispatchToast({ type: "actionRun", id: cur.id });
+    action.onPress();
+  }, [dispatchToast]);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     // A dialog left dangling by a previous caller never blocks a new one.
@@ -425,6 +489,9 @@ function FeedbackOverlays() {
             paddingVertical: 12,
             paddingHorizontal: 14,
             overflow: "hidden",
+            width: "100%",
+            maxWidth: TOAST_MAX_WIDTH,
+            alignSelf: "center",
             ...ELEVATION.card,
             borderColor: `${ts.color}55`,
           }}
