@@ -301,6 +301,15 @@ const tr = {
     lunch: "Öğle",
     dinner: "Akşam / Gece",
   },
+  numeric: {
+    range: "{{min}} ile {{max}} {{unit}} arasında bir değer girin",
+    required: "Bir değer girin",
+    carbRatioExample: "örn. 10",
+    isfExampleMgdl: "örn. 50",
+    isfExampleMmol: "örn. 2,8",
+    glucoseExampleMgdl: "örn. 120",
+    glucoseExampleMmol: "örn. 6,7",
+  },
   ratio: {
     line: "Oranınız ({{slot}}): {{ratio}}",
     enter: "Oranlarınızı girin",
@@ -381,6 +390,8 @@ const tr = {
     calcNotAdvice: "Tıbbi tavsiye değildir. Dozunuza sağlık ekibinizle karar verin.",
     manualDose: "Uygulanan doz (ünite)",
     currentGlucose: "Mevcut kan şekeri (opsiyonel)",
+    glucoseOffer: "Son ölçüm {{value}} {{unit}}, kullanmak için dokunun",
+    pending: "Onay bekliyor",
     addPhoto: "Fotoğraf ekle",
     takePhoto: "Fotoğraf çek",
     choosePhoto: "Galeriden seç",
@@ -431,6 +442,7 @@ const tr = {
       bodyFilled: "Değerleriniz kayıtlı, yalnızca onaylamanız yeterli.",
       teamNote: "Oranlarınızı diyabet ekibinizle belirleyin.",
       confirm: "Bu oranları diyabet ekibimle belirledim",
+      hint: "İşaretleyince hesaplanan toplam görünür",
     },
   },
   iob: {

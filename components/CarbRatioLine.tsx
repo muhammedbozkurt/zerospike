@@ -33,10 +33,14 @@ import { DirIcon } from "./DirIcon";
 export function CarbRatioLine({
   slot,
   style,
+  returnAfterConfirm,
 }: {
   /** Defaults to the real-time active slot when the caller has none of its own. */
   slot?: MealSlot;
   style?: StyleProp<ViewStyle>;
+  /** The line is on the calculator: once the ratios are confirmed in Profile and
+   *  Targets, Profile goes back here, to the same open record. */
+  returnAfterConfirm?: boolean;
 }) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -63,7 +67,13 @@ export function CarbRatioLine({
 
   return (
     <Pressable
-      onPress={() => router.push("/settings/profile")}
+      onPress={() =>
+        router.push(
+          returnAfterConfirm
+            ? { pathname: "/settings/profile", params: { returnTo: "calculator" } }
+            : "/settings/profile"
+        )
+      }
       accessibilityRole="button"
       accessibilityLabel={label}
       hitSlop={6}

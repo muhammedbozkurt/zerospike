@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { getLocales } from "expo-localization";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
 import { updateProfile } from "../../lib/db/profiles";
@@ -29,17 +30,15 @@ import { parseDecimalText } from "../../lib/numberInput";
 import { Button, Segmented } from "../../components/ui";
 import { FormCard, InputRow } from "../../components/form";
 import { RangeInput } from "../../components/RangeInput";
-import { Stepper } from "../../components/Stepper";
-import { RatioInput } from "../../components/RatioInput";
+import { NumericField } from "../../components/NumericField";
+import { CarbRatioInput, IsfInput } from "../../components/RatioInput";
 import { ConfirmCheckbox } from "../../components/ConfirmCheckbox";
 import {
-  CARB_RATIO_BOUNDS,
-  ISF_BOUNDS,
   ratioFieldsInitial,
   ratioSetMatchesStored,
   type RatioFields,
 } from "../../lib/calcSetup";
-import { createRatioWriter, type RatioWriter } from "../../lib/ratioWriter";
+import { useRatioWriter } from "../../lib/useRatioWriter";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { InsulinModeSection } from "../../components/InsulinModeSection";
 import { SettingsScaffold } from "../../components/settingsUi";
@@ -59,6 +58,10 @@ import { getReportName, setReportName, REPORT_NAME_MAX } from "../../lib/reportN
 export default function ProfileSettings() {
   const { t, i18n } = useTranslation();
   const { activeProfile, bumpData } = useApp();
+  const router = useRouter();
+  // Set by the calculator's "Enter your ratios" line: ticking the box here
+  // takes the user back to that open record, with the total showing.
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const carbMode = useCarbDisplayMode();
   const regionNote = carbRegionNote(i18n.language, getLocales()[0]?.regionCode);
   const { columnPad } = useLayout();
@@ -214,53 +217,42 @@ export default function ProfileSettings() {
   }
 
   // Typing only records a draft. The write waits for a pause or a blur and goes
-  // through one queue (lib/ratioWriter.ts), comparing against what it last sent
-  // rather than the profile in context, which lags behind a write. A changed set
-  // withdraws the confirmation; emptying a field does too.
-  const profileRef = useRef(activeProfile);
-  profileRef.current = activeProfile;
-  const writerRef = useRef<{ id: string; writer: RatioWriter } | null>(null);
-  function ratioWriter(): RatioWriter | null {
-    const p = profileRef.current;
-    if (!p) return null;
-    if (!writerRef.current || writerRef.current.id !== p.id) {
-      writerRef.current = {
-        id: p.id,
-        writer: createRatioWriter({
-          stored: p,
-          persist: async (patch) => {
-            await updateProfile(p.id, patch);
-            bumpData();
-          },
-          reload: () => profileRef.current,
-        }),
-      };
-    }
-    return writerRef.current.writer;
-  }
+  // through one queue (lib/ratioWriter.ts), shared with the calculator's ratios
+  // sheet, comparing against what it last sent rather than the profile in
+  // context, which lags behind a write. Every value typed is kept, even with the
+  // others still empty; a changed set withdraws the confirmation.
+  const ratioWriters = useRatioWriter();
+  const ratioTouchedRef = useRef(false);
 
-  // Leaving the screen with a draft still waiting writes it.
-  useEffect(
-    () => () => {
-      void writerRef.current?.writer.flush();
-    },
-    []
-  );
+  // The sheet on the calculator may have written the numbers a moment before this
+  // screen mounted; until the user edits here, follow the stored set.
+  const storedRatiosKey = JSON.stringify(ratioFieldsInitial(activeProfile));
+  useEffect(() => {
+    if (!activeProfile || ratioTouchedRef.current) return;
+    setRatioDraft(ratioFieldsInitial(activeProfile));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedRatiosKey]);
 
   function onRatioDraft(next: RatioFields) {
+    ratioTouchedRef.current = true;
     setRatioDraft(next);
-    ratioWriter()?.update(next);
+    ratioWriters.get()?.update(next);
   }
 
   function onRatioBlur() {
-    void ratioWriter()?.flush();
+    void ratioWriters.get()?.flush();
   }
 
-  function onRatioConfirm(checked: boolean) {
-    void ratioWriter()?.confirm(checked);
+  async function onRatioConfirm(checked: boolean) {
+    const ok = await ratioWriters.get()?.confirm(checked);
+    if (ok && returnTo === "calculator" && router.canGoBack()) router.back();
   }
 
-  const ratioDraftIsStored = ratioSetMatchesStored(activeProfile, ratioDraft);
+  const ratioDraftIsStored = ratioSetMatchesStored(
+    activeProfile,
+    ratioDraft,
+    activeProfile?.glucose_unit ?? "mgdl"
+  );
 
   function rangeOk(minText: string, maxText: string): boolean {
     const lo = (parseDecimalText(minText) ?? NaN);
@@ -579,18 +571,17 @@ export default function ProfileSettings() {
         <FormCard icon="moon-outline" title={t("settings.basalDailyUnits")}>
           <View className="px-4 py-3">
             <Text className="text-mut text-xs mb-2">{t("settings.basalDailyUnitsHint")}</Text>
-            <Stepper
-              value={basalUnits}
+<NumericField
+              value={basalUnits > 0 ? basalUnits : null}
               onChange={(v) => {
-                setBasalUnits(v);
-                void persist({ basal_daily_units: v > 0 ? v : null });
+                setBasalUnits(v ?? 0);
+                void persist({ basal_daily_units: v != null && v > 0 ? v : null });
               }}
               step={0.5}
               longStep={1}
               min={0}
               max={150}
               decimals={1}
-              revertOnUnmount
               suffix={t("common.units")}
               accessibilityLabel={t("settings.basalDailyUnits")}
             />
@@ -675,20 +666,10 @@ export default function ProfileSettings() {
         <FormCard icon="pulse-outline" title={t("settings.isf")}>
           <View className="px-4 py-3">
             <Text className="text-mut text-xs mb-2">{t("settings.isfHint")}</Text>
-            <RatioInput
-              value={
-                ratioDraft.isfMgdl == null ? null : glucoseToDisplay(ratioDraft.isfMgdl, unit)
-              }
-              onChange={(v) =>
-                onRatioDraft({
-                  ...ratioDraft,
-                  isfMgdl: v == null ? null : glucoseFromDisplay(v, unit),
-                })
-              }
-              min={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].min}
-              max={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].max}
-              decimals={unit === "mmol" ? 1 : 0}
-              suffix={glucoseUnitLabel(unit)}
+<IsfInput
+              valueMgdl={ratioDraft.isfMgdl}
+              onChangeMgdl={(v) => onRatioDraft({ ...ratioDraft, isfMgdl: v })}
+              unit={unit}
               accessibilityLabel={t("settings.isf")}
               onBlur={onRatioBlur}
             />
@@ -705,13 +686,9 @@ export default function ProfileSettings() {
               style={i < arr.length - 1 ? { borderBottomWidth: 1, borderBottomColor: THEME.border } : undefined}
             >
               <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
-              <RatioInput
+<CarbRatioInput
                 value={ratioDraft[slot]}
                 onChange={(v) => onRatioDraft({ ...ratioDraft, [slot]: v })}
-                min={CARB_RATIO_BOUNDS.min}
-                max={CARB_RATIO_BOUNDS.max}
-                decimals={1}
-                suffix={t("common.carbRatioUnit")}
                 accessibilityLabel={t(`slot.${slot}`)}
                 onBlur={onRatioBlur}
               />
@@ -726,8 +703,9 @@ export default function ProfileSettings() {
             <Text className="text-mut text-xs mb-1">{t("calculator.setup.teamNote")}</Text>
             <ConfirmCheckbox
               checked={activeProfile?.ratios_confirmed === 1 && ratioDraftIsStored}
-              onToggle={onRatioConfirm}
+              onToggle={(next) => void onRatioConfirm(next)}
               label={t("calculator.setup.confirm")}
+              hint={t("calculator.setup.hint")}
               disabled={!ratioDraftIsStored}
             />
             <Text className="text-mut text-xs mt-1">{t("settings.ratiosReconfirmHint")}</Text>

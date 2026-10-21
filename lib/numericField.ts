@@ -1,0 +1,117 @@
+import type { GlucoseUnit } from "./db/types";
+import { readStepperText, sanitizeStepperText } from "./stepperInput";
+
+/**
+ * Pure rules behind components/NumericField: what a typed string means, when it
+ * is an error, and where a - / + press lands. Kept free of React so
+ * scripts/numericField.test.ts can run it under plain Node.
+ *
+ * The invariant is the same as the old Stepper's: the parent only ever receives
+ * a number that is exactly what the field shows and lies inside [min, max].
+ * Empty or out-of-range text is reported as null, never clamped into a value the
+ * user did not type.
+ */
+
+export interface NumericBounds {
+  min?: number;
+  max?: number;
+  decimals: number;
+}
+
+export type NumericReadKind = "ok" | "empty" | "below" | "above";
+
+export interface NumericReading {
+  /** The text as the field should show it: digits and one separator. */
+  text: string;
+  kind: NumericReadKind;
+  /** The committed number, or null while empty or outside the bounds. */
+  value: number | null;
+}
+
+/** Keeps digits and one separator (comma, dot or the Arabic decimal mark) and
+ *  at most `decimals` places. "7,5" and "7.5" both survive and read the same. */
+export function filterNumericText(raw: string, decimals: number): string {
+  return sanitizeStepperText(raw, decimals);
+}
+
+export function readNumeric(raw: string, b: NumericBounds): NumericReading {
+  const text = filterNumericText(raw, b.decimals);
+  const r = readStepperText(text, b);
+  return { text, kind: r.kind, value: r.kind === "ok" ? r.value : null };
+}
+
+/**
+ * Which error the field shows under itself, if any. Above the maximum is wrong
+ * the moment it is typed (more digits cannot fix it); below the minimum is only
+ * wrong once the user leaves the field, because "1" on the way to "110" is not
+ * a mistake. An empty field is an error only when it is required.
+ */
+export function numericError(
+  kind: NumericReadKind,
+  opts: { blurred: boolean; required: boolean }
+): "below" | "above" | "required" | null {
+  if (kind === "above") return "above";
+  if (kind === "below") return opts.blurred ? "below" : null;
+  if (kind === "empty") return opts.required && opts.blurred ? "required" : null;
+  return null;
+}
+
+/** Whether the screen may act on the field: false for any text the field
+ *  refuses to commit (outside the bounds, or empty on a required field). */
+export function numericValid(kind: NumericReadKind, required: boolean): boolean {
+  return kind === "ok" || (kind === "empty" && !required);
+}
+
+export interface NumericStepConfig extends NumericBounds {
+  step: number;
+}
+
+/**
+ * A - / + press. From an empty field "+" lands on the smallest value the field
+ * accepts (at least one step), and "-" leaves it empty: the field never fills
+ * itself, and the first number is always the user's own press.
+ */
+export function stepNumeric(
+  current: number | null,
+  dir: 1 | -1,
+  c: NumericStepConfig
+): number | null {
+  const q = c.decimals > 0 ? Math.pow(10, c.decimals) : 1;
+  if (current == null) {
+    if (dir < 0) return null;
+    let start = Math.max(c.min ?? 0, c.step);
+    if (c.max != null) start = Math.min(c.max, start);
+    return Math.round(start * q) / q;
+  }
+  let v = Math.round((current + dir * c.step) * q) / q;
+  if (c.max != null) v = Math.min(c.max, v);
+  if (c.min != null) v = Math.max(c.min, v);
+  return v;
+}
+
+/** True when a press in `dir` cannot change the value (the button greys out). */
+export function stepIsBlocked(
+  current: number | null,
+  dir: 1 | -1,
+  c: NumericStepConfig
+): boolean {
+  const next = stepNumeric(current, dir, c);
+  return next === current;
+}
+
+/* ── Entry bounds, one place ───────────────────────────────────────────────
+ * The carb ratio and correction-factor bounds live in lib/calcSetup.ts next to
+ * the rest of the ratio rules. Dose and glucose entry are here. */
+
+/** Applied dose, in units. */
+export const DOSE_BOUNDS = { min: 0, max: 100, decimals: 2, step: 0.5 } as const;
+
+/** A typed glucose reading, in the profile's display unit (20-600 mg/dL). */
+export const GLUCOSE_ENTRY_BOUNDS = {
+  mgdl: { min: 20, max: 600, decimals: 0 },
+  mmol: { min: 1.1, max: 33.3, decimals: 1 },
+} as const;
+
+export function glucoseEntryBounds(unit: GlucoseUnit): NumericBounds {
+  return GLUCOSE_ENTRY_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"];
+}

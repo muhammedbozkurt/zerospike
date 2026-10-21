@@ -303,6 +303,15 @@ const es: TranslationSchema = {
     lunch: "Comida",
     dinner: "Cena / Noche",
   },
+  numeric: {
+    range: "Introduzca un valor de {{min}} a {{max}} {{unit}}",
+    required: "Introduzca un valor",
+    carbRatioExample: "p. ej. 10",
+    isfExampleMgdl: "p. ej. 50",
+    isfExampleMmol: "p. ej. 2,8",
+    glucoseExampleMgdl: "p. ej. 120",
+    glucoseExampleMmol: "p. ej. 6,7",
+  },
   ratio: {
     line: "Su proporción ({{slot}}): {{ratio}}",
     enter: "Introduzca sus proporciones",
@@ -383,6 +392,8 @@ const es: TranslationSchema = {
     calcNotAdvice: "No es consejo médico. Decida su dosis con su equipo de salud.",
     manualDose: "Dosis aplicada (unidades)",
     currentGlucose: "Glucosa actual (opcional)",
+    glucoseOffer: "Última medición {{value}} {{unit}}, toque para usarla",
+    pending: "Pendiente de confirmación",
     addPhoto: "Añadir foto",
     takePhoto: "Tomar foto",
     choosePhoto: "Elegir de la galería",
@@ -433,6 +444,7 @@ const es: TranslationSchema = {
       bodyFilled: "Sus valores están guardados. Solo debe confirmarlos.",
       teamNote: "Establezca sus proporciones con su equipo de diabetes.",
       confirm: "He establecido estos valores con mi equipo de diabetes",
+      hint: "El total calculado aparece al marcar la casilla",
     },
   },
   iob: {

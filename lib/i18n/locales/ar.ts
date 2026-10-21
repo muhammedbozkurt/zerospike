@@ -303,6 +303,15 @@ const ar: TranslationSchema = {
     lunch: "الغداء",
     dinner: "العشاء / الليل",
   },
+  numeric: {
+    range: "أدخل قيمة من {{min}} إلى {{max}} {{unit}}",
+    required: "أدخل قيمة",
+    carbRatioExample: "مثال: 10",
+    isfExampleMgdl: "مثال: 50",
+    isfExampleMmol: "مثال: 2.8",
+    glucoseExampleMgdl: "مثال: 120",
+    glucoseExampleMmol: "مثال: 6.7",
+  },
   ratio: {
     line: "نسبتك ({{slot}}): {{ratio}}",
     enter: "أدخل نسبك",
@@ -383,6 +392,8 @@ const ar: TranslationSchema = {
     calcNotAdvice: "ليست استشارة طبية. حدّد جرعتك مع فريقك الطبي.",
     manualDose: "الجرعة المُعطاة (وحدة)",
     currentGlucose: "سكر الدم الحالي (اختياري)",
+    glucoseOffer: "آخر قياس {{value}} {{unit}}، اضغط لاستخدامه",
+    pending: "بانتظار التأكيد",
     addPhoto: "إضافة صورة",
     takePhoto: "التقاط صورة",
     choosePhoto: "اختيار من المعرض",
@@ -433,6 +444,7 @@ const ar: TranslationSchema = {
       bodyFilled: "قيمك محفوظة. يكفي أن تؤكدها.",
       teamNote: "حدد نسبك بالتشاور مع فريق السكري.",
       confirm: "حددت هذه النسب مع فريق السكري الخاص بي",
+      hint: "يظهر الإجمالي المحسوب عند وضع علامة في المربع",
     },
   },
   iob: {

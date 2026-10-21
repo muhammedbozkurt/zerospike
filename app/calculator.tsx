@@ -19,21 +19,20 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
-import { updateProfile } from "../lib/db/profiles";
 import {
-  CARB_RATIO_BOUNDS,
-  ISF_BOUNDS,
   RATIOS_CONFIRM_PROMPTED_KEY,
   calcFiguresAllowed,
   calcSetupNeeded,
-  calcSetupPatch,
   calcSetupPrefilled,
   ratioFieldsComplete,
   ratioFieldsInitial,
   shouldAutoOpenCalcSetup,
   type RatioFields,
-  type RatioSet,
 } from "../lib/calcSetup";
+import { useRatioWriter } from "../lib/useRatioWriter";
+import type { RatioWriter } from "../lib/ratioWriter";
+import { DOSE_BOUNDS, glucoseEntryBounds } from "../lib/numericField";
+import { recentGlucoseSuggestion } from "../lib/glucoseSuggestion";
 import { getFood } from "../lib/db/foods";
 import {
   addMealLog,
@@ -41,6 +40,7 @@ import {
   deleteMealLog,
   deleteMealRecord,
   findMatchingSugarLog,
+  getLatestSugarLog,
   getMealLog,
   getSugarLog,
   updateMealLog,
@@ -119,8 +119,9 @@ import type {
 import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
 import { SCRIM, SheetShell } from "../components/SheetShell";
-import { Stepper, useStepperValidity } from "../components/Stepper";
-import { RatioInput } from "../components/RatioInput";
+import { useStepperValidity } from "../components/Stepper";
+import { NumericField } from "../components/NumericField";
+import { CarbRatioInput, IsfInput } from "../components/RatioInput";
 import { ConfirmCheckbox } from "../components/ConfirmCheckbox";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
@@ -138,7 +139,6 @@ import {
   GLUCOSE_INPUT_CEILING,
   glucoseAboveCeiling,
   parseDecimalText,
-  sanitizeNumberText,
 } from "../lib/numberInput";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { mealEditMode, type MealEditMode } from "../lib/mealRoute";
@@ -417,27 +417,33 @@ function NoticeGroup({
  * line leads to Profile and Targets.
  *
  * The fields open with the user's own stored values or EMPTY; nothing is
- * suggested. Save writes the four values exactly as shown, and marks them
- * confirmed only when the box is ticked. Without the tick the numbers are kept
- * but no unit figure appears. Changing any value un-ticks the box, so the
- * confirmation always refers to the numbers on screen.
+ * suggested. Whatever is typed is written to the profile as it is typed, through
+ * the same writer Profile and Targets uses, so the two are one record: leaving
+ * the sheet half-filled, or going to Profile, loses nothing. Ticking the box
+ * confirms the numbers on screen; only then does the calculator show a figure,
+ * and the sheet closes so it is right there. Changing any value un-ticks the box.
  *
  * ISF is held in mg/dL and edited in the profile's display unit.
  */
 function CalcSetupSheet({
   visible,
   onClose,
-  onSave,
-  saving,
+  onFinish,
+  onConfirmed,
+  getWriter,
   saveError,
   unit,
   initial,
   prefilled,
 }: {
   visible: boolean;
+  /** Put the sheet away; whatever was typed is kept. */
   onClose: () => void;
-  onSave: (values: { fields: RatioSet; confirmed: boolean }) => void;
-  saving: boolean;
+  /** Save: writes what is pending and closes unless the write failed. */
+  onFinish: () => Promise<void>;
+  /** The box was ticked and the confirmation reached the profile. */
+  onConfirmed: () => void;
+  getWriter: (opts?: { renew?: boolean }) => RatioWriter | null;
   saveError: boolean;
   unit: GlucoseUnit;
   initial: RatioFields;
@@ -447,20 +453,35 @@ function CalcSetupSheet({
   const { t } = useTranslation();
   const [fields, setFields] = useState<RatioFields>(initial);
   const [confirmed, setConfirmed] = useState(false);
-  const isfBounds = ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"];
+  const [busy, setBusy] = useState(false);
 
-  // Every open starts from what the profile holds now, not from what a
-  // previous, abandoned open left in the fields. The box always starts unticked.
+  // Every open starts from what the profile holds now, with a writer that
+  // starts from it too. The box always starts unticked.
   useEffect(() => {
     if (!visible) return;
     setFields(initial);
     setConfirmed(false);
+    getWriter({ renew: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   function change(patch: Partial<RatioFields>) {
-    setFields((f) => ({ ...f, ...patch }));
+    const next = { ...fields, ...patch };
+    setFields(next);
     setConfirmed(false);
+    getWriter()?.update(next);
+  }
+
+  async function toggle(next: boolean) {
+    if (!ratioFieldsComplete(fields)) return;
+    setConfirmed(next);
+    const ok = await getWriter()?.confirm(next);
+    if (next && ok) {
+      hapticSuccess();
+      onConfirmed();
+    } else if (next) {
+      setConfirmed(false);
+    }
   }
 
   const complete = ratioFieldsComplete(fields);
@@ -480,11 +501,15 @@ function CalcSetupSheet({
           ) : null}
           <GradientCTA
             label={t("common.save")}
-            loading={saving}
-            disabled={saving || !complete}
-            onPress={() => {
-              if (!ratioFieldsComplete(fields)) return;
-              onSave({ fields, confirmed });
+            loading={busy}
+            disabled={busy}
+            onPress={async () => {
+              setBusy(true);
+              try {
+                await onFinish();
+              } finally {
+                setBusy(false);
+              }
             }}
           />
           <Pressable
@@ -507,17 +532,13 @@ function CalcSetupSheet({
 
       <DetailLabel>{t("calculator.setup.carbLabel")}</DetailLabel>
       {(["breakfast", "lunch", "dinner"] as const).map((slot) => (
-        <View key={slot} style={{ marginBottom: 8 }}>
+        <View key={slot} style={{ marginBottom: 10, maxWidth: 360 }}>
           <Text style={{ color: THEME.textMuted, fontSize: 12, marginBottom: 4 }}>
             {t(`slot.${slot}`)}
           </Text>
-          <RatioInput
+          <CarbRatioInput
             value={fields[slot]}
             onChange={(v) => change({ [slot]: v })}
-            min={CARB_RATIO_BOUNDS.min}
-            max={CARB_RATIO_BOUNDS.max}
-            decimals={1}
-            suffix={t("common.carbRatioUnit")}
             accessibilityLabel={`${t("calculator.setup.carbLabel")}, ${t(`slot.${slot}`)}`}
           />
         </View>
@@ -528,13 +549,10 @@ function CalcSetupSheet({
 
       <View style={{ marginTop: 18 }}>
         <DetailLabel>{t("calculator.setup.isfLabel")}</DetailLabel>
-        <RatioInput
-          value={fields.isfMgdl == null ? null : glucoseToDisplay(fields.isfMgdl, unit)}
-          onChange={(v) => change({ isfMgdl: v == null ? null : glucoseFromDisplay(v, unit) })}
-          min={isfBounds.min}
-          max={isfBounds.max}
-          decimals={unit === "mmol" ? 1 : 0}
-          suffix={glucoseUnitLabel(unit)}
+        <IsfInput
+          valueMgdl={fields.isfMgdl}
+          onChangeMgdl={(v) => change({ isfMgdl: v })}
+          unit={unit}
           accessibilityLabel={t("calculator.setup.isfLabel")}
         />
         <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
@@ -548,12 +566,33 @@ function CalcSetupSheet({
       <View style={{ marginTop: 6 }}>
         <ConfirmCheckbox
           checked={confirmed}
-          onToggle={setConfirmed}
+          onToggle={(next) => void toggle(next)}
           label={t("calculator.setup.confirm")}
+          hint={t("calculator.setup.hint")}
           disabled={!complete}
         />
       </View>
     </SheetShell>
+  );
+}
+
+/**
+ * The calculated total's place while the ratios are not confirmed: a status
+ * line and no number. The figure takes this spot the moment the box is ticked.
+ */
+function PendingDoseCard() {
+  const { t } = useTranslation();
+  return (
+    <GlassCard style={{ marginBottom: 12 }}>
+      <Text
+        style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
+      >
+        {upper(t("calculator.estimatedDose"))}
+      </Text>
+      <Text style={{ color: THEME.textMuted, fontSize: 16, fontWeight: "700", marginTop: 6 }}>
+        {t("calculator.pending")}
+      </Text>
+    </GlassCard>
   );
 }
 
@@ -690,8 +729,14 @@ function CalculatorScreen() {
   // "Enter your ratios" line (CarbRatioLine) leads to Profile and Targets.
   const setupNeeded = calcSetupNeeded(activeProfile);
   const [setupOpen, setSetupOpen] = useState(false);
-  const [savingSetup, setSavingSetup] = useState(false);
   const [setupSaveError, setSetupSaveError] = useState(false);
+  const setupErrorRef = useRef(false);
+  // The sheet and Profile and Targets write the four numbers through the same
+  // writer, so what is typed in one is the record the other reads.
+  const ratioWriters = useRatioWriter(() => {
+    setupErrorRef.current = true;
+    setSetupSaveError(true);
+  });
   const setupPromptedKey = activeProfile ? `${RATIOS_CONFIRM_PROMPTED_KEY}.${activeProfile.id}` : null;
 
   // Marked the moment the sheet is shown, not when it is put away: a force-quit
@@ -718,28 +763,21 @@ function CalculatorScreen() {
     };
   }, [setupPromptedKey, setupNeeded, isEdit]);
 
+  // Putting the sheet away keeps whatever was typed: the pending value is
+  // written on the way out.
   function closeSetup() {
+    void ratioWriters.get()?.flush();
     setSetupOpen(false);
     setSetupSaveError(false);
   }
 
-  async function saveSetup(values: { fields: RatioSet; confirmed: boolean }) {
-    if (!activeProfile || savingSetup) return;
-    const patch = calcSetupPatch({ fields: values.fields, confirmed: values.confirmed });
-    if (!patch) return;
-    setSavingSetup(true);
+  async function finishSetup() {
+    setupErrorRef.current = false;
+    await ratioWriters.get()?.flush();
+    if (setupErrorRef.current) return;
+    setSetupOpen(false);
     setSetupSaveError(false);
-    try {
-      await updateProfile(activeProfile.id, patch);
-      bumpData();
-      setSetupOpen(false);
-      hapticSuccess();
-    } catch (err) {
-      logCrash(err, { screen: "calculator", step: "calcSetup" });
-      setSetupSaveError(true);
-    } finally {
-      setSavingSetup(false);
-    }
+    hapticSuccess();
   }
 
   useEffect(() => {
@@ -926,16 +964,45 @@ function CalculatorScreen() {
 
   const unit = activeProfile?.glucose_unit ?? "mgdl";
 
-  /** Shared by both glucose TextInputs below (loading skeleton and loaded
-   *  view - same `glucose` state, so one handler keeps them from drifting).
-   *  Only a REAL change marks the record dirty: an empty field sanitizing to
-   *  another empty string (e.g. a stray punctuation keystroke) must not raise
-   *  the close-button warning for input that never actually landed. */
-  function onGlucoseChange(s: string) {
-    const next = sanitizeNumberText(s, unit === "mmol");
+  /** Shared by both glucose fields below (loading skeleton and loaded view -
+   *  same `glucose` state, so one handler keeps them from drifting). The field
+   *  hands over a number inside 20-600 mg/dL (1.1-33.3 mmol/L) or null, so an
+   *  out-of-range entry is never stored; only a REAL change marks the record
+   *  dirty. */
+  function onGlucoseChange(v: number | null) {
+    const next = v == null ? "" : String(v);
     if (next !== glucose) setDirty(true);
     setGlucose(next);
   }
+
+  /** The manual dose: a number from 0 to 100 or null (empty). It never fills
+   *  itself; the stored value is what the user typed or stepped to. */
+  function onDoseChange(v: number | null) {
+    setDirty(true);
+    setDoseText(v == null ? "" : String(v));
+  }
+
+  // The newest reading, fetched once for a new record. It is only OFFERED under
+  // the glucose field (recentGlucoseSuggestion: 15 minutes at most); the field
+  // stays empty and the calculation ignores it until the user taps it.
+  const [latestReading, setLatestReading] = useState<{
+    glucose_level_mgdl: number;
+    logged_at: string;
+  } | null>(null);
+  useEffect(() => {
+    if (isEdit || !activeProfile) return;
+    let alive = true;
+    getLatestSugarLog(activeProfile.id)
+      .then((l) => {
+        if (alive) setLatestReading(l);
+      })
+      .catch(() => {
+        // no offer is the safe direction
+      });
+    return () => {
+      alive = false;
+    };
+  }, [activeProfile?.id, isEdit]);
 
   // ONE numeric normalizer for the whole app (lib/numberInput): a comma is a
   // decimal separator, not a digit to be dropped - "5,5" must stay 5.5 mmol/L
@@ -960,6 +1027,99 @@ function CalculatorScreen() {
     glucoseMgdl != null && activeProfile
       ? classifyGlucose(glucoseMgdl, "pre_meal", activeProfile)
       : null;
+
+  const glucoseBounds = glucoseEntryBounds(unit);
+  const glucoseOffer =
+    !isEdit && glucose === "" ? recentGlucoseSuggestion(latestReading ? [latestReading] : null, new Date()) : null;
+
+  function useOfferedGlucose() {
+    const offer = recentGlucoseSuggestion(latestReading ? [latestReading] : null, new Date());
+    if (!offer) return;
+    hapticSelect();
+    setDirty(true);
+    setGlucose(String(glucoseToDisplay(offer.mgdl, unit)));
+  }
+
+  /** The glucose card, identical on the loading and loaded screens. */
+  function glucoseCard() {
+    return (
+      <GlassCard style={{ marginBottom: 10 }}>
+        <View className="flex-row items-center justify-between" style={{ marginBottom: 8, gap: 8 }}>
+          <Text
+            style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
+          >
+            {upper(t("calculator.currentGlucose"))}
+          </Text>
+          {glucoseStatus ? (
+            <GlucoseChip
+              status={glucoseStatus}
+              dot={false}
+              label={
+                glucoseStatus === "normal"
+                  ? t("insights.inRange")
+                  : glucoseStatus === "low"
+                    ? t("insights.low")
+                    : glucoseStatus === "veryHigh"
+                      ? t("insights.veryHigh")
+                      : t("insights.high")
+              }
+            />
+          ) : null}
+        </View>
+        <NumericField
+          value={glucoseTyped}
+          onChange={onGlucoseChange}
+          onValidityChange={stepperFields.reporter("glucose")}
+          decimals={glucoseBounds.decimals}
+          min={glucoseBounds.min}
+          max={glucoseBounds.max}
+          maxLength={unit === "mmol" ? 4 : 3}
+          placeholder={t(unit === "mmol" ? "numeric.glucoseExampleMmol" : "numeric.glucoseExampleMgdl")}
+          suffix={glucoseUnitLabel(unit)}
+          accessibilityLabel={t("calculator.currentGlucose")}
+          valueColor={glucoseStatus ? RICH_BY_STATUS[glucoseStatus] : undefined}
+        />
+        {glucoseOffer ? (
+          <Pressable
+            onPress={useOfferedGlucose}
+            accessibilityRole="button"
+            accessibilityLabel={t("calculator.glucoseOffer", {
+              value: formatGlucose(glucoseOffer.mgdl, unit),
+              unit: glucoseUnitLabel(unit),
+            })}
+            hitSlop={6}
+            style={{ minHeight: 36, justifyContent: "center", marginTop: 4 }}
+          >
+            <Text style={{ color: THEME.accent, fontSize: 13, fontWeight: "600" }}>
+              {t("calculator.glucoseOffer", {
+                value: formatGlucose(glucoseOffer.mgdl, unit),
+                unit: glucoseUnitLabel(unit),
+              })}
+            </Text>
+          </Pressable>
+        ) : null}
+      </GlassCard>
+    );
+  }
+
+  /** The dose field: 0-100 units in steps of 0.5, empty until the user fills it. */
+  function doseField(marginBottom: number) {
+    return (
+      <NumericField
+        value={typedDose}
+        onChange={onDoseChange}
+        onValidityChange={stepperFields.reporter("dose")}
+        decimals={DOSE_BOUNDS.decimals}
+        min={DOSE_BOUNDS.min}
+        max={DOSE_BOUNDS.max}
+        step={DOSE_BOUNDS.step}
+        longStep={1}
+        suffix={t("common.units")}
+        accessibilityLabel={t("calculator.manualDose")}
+        style={{ marginBottom }}
+      />
+    );
+  }
 
   // The correction aims at the MIDDLE of the post-meal range, and the screen
   // says so in words right under the number.
@@ -1806,8 +1966,12 @@ function CalculatorScreen() {
     <CalcSetupSheet
       visible={setupOpen}
       onClose={closeSetup}
-      onSave={saveSetup}
-      saving={savingSetup}
+      onFinish={finishSetup}
+      onConfirmed={() => {
+        setSetupOpen(false);
+        setSetupSaveError(false);
+      }}
+      getWriter={ratioWriters.get}
       saveError={setupSaveError}
       unit={unit}
       initial={setupInitial}
@@ -1888,17 +2052,20 @@ function CalculatorScreen() {
                 <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                   {t("calculator.portion")}
                 </Text>
-                <Stepper
+                <NumericField
                   value={portion}
-                  onChange={setPortion}
-                  step={5}
-                  longStep={25}
+                  onChange={(v) => {
+                    if (v != null) setPortion(v);
+                  }}
+                  required
+                  decimals={0}
                   min={0}
                   max={1500}
-                  decimals={0}
+                  step={5}
+                  longStep={25}
                   suffix={t("common.grams")}
                   accessibilityLabel={t("calculator.portion")}
-                  style={{ flex: 1, maxWidth: 220 }}
+                  style={{ flex: 1, maxWidth: 240 }}
                 />
               </View>
               <Slider
@@ -1918,47 +2085,14 @@ function CalculatorScreen() {
               />
             </GlassCard>
 
-            {/* Read-out 2: current glucose - reads no food/estimate data, so
-                it is the real, typeable field from the first frame. */}
-            <GlassCard style={{ marginBottom: 10 }}>
-              <View className="flex-row items-center justify-between">
-                <Text
-                  style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
-                >
-                  {upper(t("calculator.currentGlucose"))}
-                </Text>
-                <View className="flex-row items-center" style={{ gap: 8 }}>
-                  <TextInput
-                    value={glucose}
-                    onChangeText={onGlucoseChange}
-                    keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
-                    placeholder="-"
-                    placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
-                    maxLength={unit === "mmol" ? 4 : 3}
-                    style={[
-                      TABULAR,
-                      INPUT_TEXT,
-                      {
-                        color: THEME.text,
-                        fontSize: 26,
-                        fontWeight: "800",
-                        minWidth: 58,
-                        textAlign: "right",
-                        padding: 0,
-                      },
-                    ]}
-                  />
-                  <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
-                    {glucoseUnitLabel(unit)}
-                  </Text>
-                </View>
-              </View>
-            </GlassCard>
+            {glucoseCard()}
 
-            {showsDose ? <CarbRatioLine slot={slot} /> : null}
+            {showsDose ? <CarbRatioLine slot={slot} returnAfterConfirm /> : null}
 
             {showsDose ? (
-              !calcFiguresAllowed(activeProfile) ? null : (
+              activeProfile?.ratios_confirmed !== 1 ? (
+                <PendingDoseCard />
+              ) : !calcFiguresAllowed(activeProfile) ? null : (
               <View
                 className="rounded-2xl p-4 mb-3"
                 style={[
@@ -2015,15 +2149,7 @@ function CalculatorScreen() {
                 />
 
                 <DetailLabel>{t("calculator.manualDose")}</DetailLabel>
-                <TextInput
-                  value={doseText}
-                  onChangeText={(s) => {
-                    setDirty(true);
-                    setDoseText(sanitizeNumberText(s, true));
-                  }}
-                  keyboardType="decimal-pad"
-                  style={[inputStyle(), INPUT_TEXT, { marginBottom: 10 }]}
-                />
+                {doseField(typedDose == null || typedDose === 0 ? 10 : 16)}
               </>
             ) : null}
 
@@ -2160,19 +2286,22 @@ function CalculatorScreen() {
                   </Text>
                   {/* Typeable / steppable so any gram value is reachable (e.g. 237 g,
                       or above the slider's 500 g coarse range up to 1500 g). */}
-                  <Stepper
-                    value={portion}
-                    onChange={setPortion}
-                    onValidityChange={stepperFields.reporter("portion")}
-                    step={5}
-                    longStep={25}
-                    min={0}
-                    max={1500}
-                    decimals={0}
-                    suffix={t("common.grams")}
-                    accessibilityLabel={t("calculator.portion")}
-                    style={{ flex: 1, maxWidth: 220 }}
-                  />
+                  <NumericField
+                  value={portion}
+                  onChange={(v) => {
+                    if (v != null) setPortion(v);
+                  }}
+                  onValidityChange={stepperFields.reporter("portion")}
+                  required
+                  decimals={0}
+                  min={0}
+                  max={1500}
+                  step={5}
+                  longStep={25}
+                  suffix={t("common.grams")}
+                  accessibilityLabel={t("calculator.portion")}
+                  style={{ flex: 1, maxWidth: 240 }}
+                />
                 </View>
                 {/* No presets for a custom-name entry (foodFromMeal/foodFromTemplate
                     stand in with id ""), so the chips just stay hidden there. */}
@@ -2206,63 +2335,7 @@ function CalculatorScreen() {
             )}
           </ReadoutCard>
 
-          {/* Read-out 2: current glucose, typed inline, coloured live */}
-          <GlassCard style={{ marginBottom: 10 }}>
-            <View className="flex-row items-center justify-between">
-              <Text
-                style={{
-                  color: THEME.textMuted,
-                  fontSize: 11,
-                  letterSpacing: 1.3,
-                  fontWeight: "800",
-                  flex: 1,
-                }}
-              >
-                {upper(t("calculator.currentGlucose"))}
-              </Text>
-              <View className="flex-row items-center" style={{ gap: 8 }}>
-                <TextInput
-                  value={glucose}
-                  onChangeText={onGlucoseChange}
-                  keyboardType={unit === "mmol" ? "decimal-pad" : "number-pad"}
-                  placeholder="-"
-                  placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
-                  maxLength={unit === "mmol" ? 4 : 3}
-                  style={[
-                    TABULAR,
-                    INPUT_TEXT,
-                    {
-                      color: glucoseStatus ? RICH_BY_STATUS[glucoseStatus] : THEME.text,
-                      fontSize: 26,
-                      fontWeight: "800",
-                      minWidth: 58,
-                      textAlign: "right",
-                      padding: 0,
-                    },
-                  ]}
-                />
-                {glucoseStatus ? (
-                  <GlucoseChip
-                    status={glucoseStatus}
-                    dot={false}
-                    label={
-                      glucoseStatus === "normal"
-                        ? t("insights.inRange")
-                        : glucoseStatus === "low"
-                          ? t("insights.low")
-                          : glucoseStatus === "veryHigh"
-                            ? t("insights.veryHigh")
-                            : t("insights.high")
-                    }
-                  />
-                ) : (
-                  <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
-                    {glucoseUnitLabel(unit)}
-                  </Text>
-                )}
-              </View>
-            </View>
-          </GlassCard>
+          {glucoseCard()}
 
           {/* Descriptive notes about the READING itself. Neither is an alarm and
               neither instructs: they state what the number is, alongside the
@@ -2287,7 +2360,7 @@ function CalculatorScreen() {
 
           {showsDose ? (
             <>
-              <CarbRatioLine slot={slot} />
+              <CarbRatioLine slot={slot} returnAfterConfirm />
 
               {doseEst ? (
                 <>
@@ -2384,6 +2457,7 @@ function CalculatorScreen() {
                   </View>
                 </>
               ) : null}
+              {!doseEst && activeProfile.ratios_confirmed !== 1 ? <PendingDoseCard /> : null}
               {/* Without confirmed ratios there is no figure: the one line above
                   (CarbRatioLine, "Enter your ratios") leads to Profile and
                   Targets, and nothing is computed or shown in its place. */}
@@ -2438,19 +2512,7 @@ function CalculatorScreen() {
               ) : null}
 
               <DetailLabel>{t("calculator.manualDose")}</DetailLabel>
-              <TextInput
-                value={doseText}
-                onChangeText={(s) => {
-                  setDirty(true);
-                  setDoseText(sanitizeNumberText(s, true));
-                }}
-                keyboardType="decimal-pad"
-                style={[
-                  inputStyle(),
-                  INPUT_TEXT,
-                  { marginBottom: typedDose == null || typedDose === 0 ? 10 : 16 },
-                ]}
-              />
+              {doseField(10)}
               {/* What the save will store, spelled out while the field is still
                   in front of the user - an empty field is not a value, and a
                   typed 0 is a real record of "no insulin". Without a usable

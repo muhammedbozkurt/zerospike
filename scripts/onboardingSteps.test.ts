@@ -57,12 +57,13 @@ import {
   RATIOS_CONFIRM_PROMPTED_KEY,
   calcFiguresAllowed,
   calcSetupNeeded,
-  calcSetupPatch,
   calcSetupPrefilled,
+  RATIOS_ENTERED,
   ratioConfirmPatch,
+  ratioDraftDiffers,
+  ratioDraftPatch,
   ratioFieldsInitial,
   ratioSetMatchesStored,
-  ratioSetPatch,
   shouldAutoOpenCalcSetup,
   unenteredGroups,
   type CalcSetupProfile,
@@ -614,39 +615,58 @@ section("H. ratios: who is asked, what opens empty, what confirms");
   eq("not when nothing is missing", shouldAutoOpenCalcSetup({ needed: false, isEdit: false, prompted: false }), false);
   eq("the one-time flag base", RATIOS_CONFIRM_PROMPTED_KEY, "zerospike.ratiosConfirmPrompted");
 
-  // Sheet save: the four values as shown, confirmation only with the tick
+  // The shared draft write (sheet and Profile): every filled value is kept
   const shown = ratioFieldsInitial(own);
-  const ticked = calcSetupPatch({ fields: shown, confirmed: true });
-  ok("a good entry produces a patch", ticked != null);
-  eq("breakfast is written as shown (8)", ticked?.carb_ratio_breakfast, 8);
-  eq("lunch is written as shown (9, not 8)", ticked?.carb_ratio_lunch, 9);
-  eq("dinner is written as shown (11, not 8)", ticked?.carb_ratio_dinner, 11);
-  eq("ISF is written as shown (mg/dL)", ticked?.insulin_sensitivity_factor, 35);
-  eq("ticked: confirmed", ticked?.ratios_confirmed, 1);
-  const unticked = calcSetupPatch({ fields: shown, confirmed: false });
-  eq("not ticked: numbers saved but NOT confirmed", unticked?.ratios_confirmed, 0);
-  eq("not ticked: the numbers are still written", unticked?.carb_ratio_dinner, 11);
-  eq("an empty field is refused", calcSetupPatch({ fields: { ...shown, lunch: null }, confirmed: true }), null);
-  eq("a zero ratio is refused", calcSetupPatch({ fields: { ...shown, breakfast: 0 }, confirmed: true }), null);
-  eq("a NaN ISF is refused", calcSetupPatch({ fields: { ...shown, isfMgdl: Number.NaN }, confirmed: true }), null);
-  eq("a negative ISF is refused", calcSetupPatch({ fields: { ...shown, isfMgdl: -3 }, confirmed: true }), null);
-  eq("a ticked save is no longer asked", calcSetupNeeded({ ...legacy, ...(ticked as NonNullable<typeof ticked>) }), false);
-  eq("an unticked save is still asked", calcSetupNeeded({ ...legacy, ...(unticked as NonNullable<typeof unticked>) }), true);
-  eq("an unticked save shows no figure", calcFiguresAllowed({ ...legacy, ...(unticked as NonNullable<typeof unticked>) }), false);
+  const three = ratioDraftPatch(legacy, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: null });
+  ok("three ratios without an ISF are still written", three != null);
+  eq("the three ratios are kept (8)", three?.carb_ratio_breakfast, 8);
+  eq("the three ratios are kept (9)", three?.carb_ratio_lunch, 9);
+  eq("the three ratios are kept (11)", three?.carb_ratio_dinner, 11);
+  eq("the missing ISF is stored as 'not entered' (0)", three?.insulin_sensitivity_factor, 0);
+  eq("a partial set is marked as the user's own, not confirmed", three?.ratios_confirmed, RATIOS_ENTERED);
+  eq("a partial set shows no figure", calcFiguresAllowed({ ...legacy, ...(three as NonNullable<typeof three>) }), false);
+  const back = ratioFieldsInitial({ ...legacy, ...(three as NonNullable<typeof three>) });
+  ok("and the three ratios are what Profile opens with", back.breakfast === 8 && back.lunch === 9 && back.dinner === 11 && back.isfMgdl === null);
+  const tens = ratioDraftPatch(legacy, { breakfast: 10, lunch: 10, dinner: 10, isfMgdl: 40 });
+  eq("a deliberate 10/10/10 + 40 is marked as entered, not left looking like old defaults", tens?.ratios_confirmed, RATIOS_ENTERED);
+  const tensStored = { ...legacy, ...(tens as NonNullable<typeof tens>) };
+  const tensBack = ratioFieldsInitial(tensStored);
+  ok("and it opens filled, not blank", tensBack.breakfast === 10 && tensBack.lunch === 10 && tensBack.isfMgdl === 40);
+  ok("an entered set is never read as defaults", !unenteredGroups(tensStored).carbs && !unenteredGroups(tensStored).isf);
+  eq("an empty draft over a stored set clears it (0 = not entered)", ratioDraftPatch(own, { breakfast: null, lunch: null, dinner: null, isfMgdl: null })?.carb_ratio_lunch, 0);
+  eq("an empty draft over a stored set is flagged 0", ratioDraftPatch(own, { breakfast: null, lunch: null, dinner: null, isfMgdl: null })?.ratios_confirmed, 0);
+  eq("no profile: nothing", ratioDraftPatch(null, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 }), null);
+  const unticked = three as NonNullable<typeof three>;
+  eq("an unticked save is still asked", calcSetupNeeded({ ...legacy, ...unticked }), true);
+  const fullEntry = ratioDraftPatch(legacy, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 });
+  eq("a full entry is not yet a confirmation", fullEntry?.ratios_confirmed, RATIOS_ENTERED);
+  eq("ticking the stored full entry confirms it", ratioConfirmPatch({ ...legacy, ...(fullEntry as NonNullable<typeof fullEntry>) }, true)?.ratios_confirmed, 1);
+  eq("a confirmed full entry is no longer asked", calcSetupNeeded({ ...legacy, ...(fullEntry as NonNullable<typeof fullEntry>), ratios_confirmed: 1 }), false);
 
   // Profile and Targets: a changed set withdraws the confirmation
-  eq("typing the same numbers back changes nothing", ratioSetPatch(confirmed, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 }), null);
-  const changed = ratioSetPatch(confirmed, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 36 });
-  eq("a changed ISF resets the confirmation", changed?.ratios_confirmed, 0);
+  eq("typing the same numbers back changes nothing", ratioDraftPatch(confirmed, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 }), null);
+  const changed = ratioDraftPatch(confirmed, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 36 });
+  eq("a changed ISF withdraws the confirmation", changed?.ratios_confirmed, RATIOS_ENTERED);
   eq("and writes the new value", changed?.insulin_sensitivity_factor, 36);
-  eq("a changed carb ratio resets the confirmation", ratioSetPatch(confirmed, { breakfast: 7.5, lunch: 9, dinner: 11, isfMgdl: 35 })?.ratios_confirmed, 0);
-  eq("an incomplete set is not saved", ratioSetPatch(confirmed, { breakfast: 7, lunch: null, dinner: 11, isfMgdl: 35 }), null);
-  eq("an unusable value is not saved", ratioSetPatch(confirmed, { breakfast: 0, lunch: 9, dinner: 11, isfMgdl: 35 }), null);
-  eq("first entry over legacy values is saved unconfirmed", ratioSetPatch(legacy, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 })?.ratios_confirmed, 0);
-  eq("legacy values typed back verbatim write nothing", ratioSetPatch(legacy, { breakfast: 10, lunch: 12, dinner: 12, isfMgdl: 40 }), null);
+  eq("a changed carb ratio withdraws the confirmation", ratioDraftPatch(confirmed, { breakfast: 7.5, lunch: 9, dinner: 11, isfMgdl: 35 })?.ratios_confirmed, RATIOS_ENTERED);
+  eq("an unusable value is stored as 0", ratioDraftPatch(confirmed, { breakfast: 0, lunch: 9, dinner: 11, isfMgdl: 35 })?.carb_ratio_breakfast, 0);
+  eq("legacy values typed back verbatim are marked as entered", ratioDraftPatch(legacy, { breakfast: 10, lunch: 12, dinner: 12, isfMgdl: 40 })?.ratios_confirmed, RATIOS_ENTERED);
+  eq("an entered set typed back verbatim writes nothing", ratioDraftPatch({ ...own, ratios_confirmed: RATIOS_ENTERED }, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 }), null);
+  eq("the draft differs from a confirmed set", ratioDraftDiffers(confirmed, { breakfast: 7, lunch: 9, dinner: 11, isfMgdl: 35 }), true);
+  eq("an identical draft does not differ", ratioDraftDiffers(confirmed, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 }), false);
+
+  // mmol/L screens: a rounded display value is not a change
+  const confirmedMmol: CalcSetupProfile = { ...confirmed, insulin_sensitivity_factor: 42 };
+  eq("mmol: 42 mg/dL shows 2.3, and 41 (also 2.3) is the same value", ratioDraftPatch(confirmedMmol, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 41 }, "mmol"), null);
+  eq("mg/dL: 42 and 41 are different", ratioDraftPatch(confirmedMmol, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 41 }, "mgdl")?.insulin_sensitivity_factor, 41);
+  eq("mmol: one tenth up (2.4 = 43 mg/dL) is a change", ratioDraftPatch(confirmedMmol, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 43 }, "mmol")?.insulin_sensitivity_factor, 43);
+  eq("mmol: the stored set still matches the shown draft", ratioSetMatchesStored(confirmedMmol, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 41 }, "mmol"), true);
+  eq("mg/dL: it does not", ratioSetMatchesStored(confirmedMmol, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 41 }, "mgdl"), false);
+
   eq("the box confirms a stored set", ratioConfirmPatch(own, true)?.ratios_confirmed, 1);
   eq("the box cannot confirm an unusable set", ratioConfirmPatch({ ...own, carb_ratio_dinner: 0 }, true), null);
-  eq("unticking withdraws it", ratioConfirmPatch(confirmed, false)?.ratios_confirmed, 0);
+  eq("unticking withdraws it but keeps the numbers marked as the user's own", ratioConfirmPatch(confirmed, false)?.ratios_confirmed, RATIOS_ENTERED);
+  eq("unticking an empty profile leaves it at 0", ratioConfirmPatch({ ...legacy, carb_ratio_breakfast: 0, carb_ratio_lunch: 0, carb_ratio_dinner: 0, insulin_sensitivity_factor: 0 }, false)?.ratios_confirmed, 0);
   eq("the draft matches the stored set", ratioSetMatchesStored(own, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 }), true);
   eq("a different draft does not", ratioSetMatchesStored(own, { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 36 }), false);
   eq("an empty draft does not", ratioSetMatchesStored(own, { breakfast: null, lunch: null, dinner: null, isfMgdl: null }), false);
@@ -696,16 +716,22 @@ section("J. the calculator screen wires the gate");
 
   ok("asks through the shared predicate", calc.includes("calcSetupNeeded("));
   ok("opens by itself only through the shared rule", calc.includes("shouldAutoOpenCalcSetup("));
-  ok("saves through the shared patch", calc.includes("calcSetupPatch("));
-  ok("the patch carries the tick", /confirmed:\s*values\.confirmed/.test(calc));
-  ok("the patch carries all four fields", /calcSetupPatch\(\{\s*fields:\s*values\.fields/.test(calc));
-  ok("the patch goes to the profile", /updateProfile\(\s*activeProfile\.id,\s*patch/.test(calc));
-  ok("and the app is told the profile changed", /updateProfile\([\s\S]{0,200}bumpData\(\)/.test(calc));
+  ok("the sheet writes through the shared hook, the same one Profile uses", calc.includes("useRatioWriter(") && src("app/settings/profile.tsx").includes("useRatioWriter("));
+  ok("every sheet edit goes to the writer", /function change\([^)]*\)\s*\{[\s\S]{0,200}getWriter\(\)\?\.update\(next\)/.test(calc));
+  ok("the box confirms through the writer", /getWriter\(\)\?\.confirm\(next\)/.test(calc));
+  ok("the sheet opens on a fresh writer", /getWriter\(\{ renew: true \}\)/.test(calc));
+  ok("closing the sheet writes what is pending", /function closeSetup\(\)\s*\{[\s\S]{0,160}void ratioWriters\.get\(\)\?\.flush\(\)/.test(calc));
+  ok("the sheet no longer writes the profile itself", !/updateProfile\(/.test(calc) && !calc.includes("calcSetupPatch"));
+  ok("a ticked box that reached the profile closes the sheet onto the open record", /if \(next && ok\) \{[\s\S]{0,120}onConfirmed\(\)/.test(calc) && /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\)/.test(calc));
+  ok("the box states what ticking does", calc.includes('hint={t("calculator.setup.hint")}'));
+  ok("the pending state is a status line with no number", /function PendingDoseCard\(\)[\s\S]{0,700}calculator\.pending/.test(calc) && !/function PendingDoseCard\(\)[\s\S]{0,700}(heroDose|totalDose|num\()/.test(calc));
+  ok("the pending card is shown only while ratios_confirmed is not 1", calc.split("ratios_confirmed !== 1").length === 3);
+  ok("the ratio line returns here after a confirmation in Profile", calc.split("returnAfterConfirm").length === 3);
   ok("uses the shared bottom sheet", calc.includes("SheetShell"));
   ok("the one-time flag is per profile", calc.includes("RATIOS_CONFIRM_PROMPTED_KEY"));
   ok("the sheet has the confirm checkbox", calc.includes("ConfirmCheckbox") && calc.includes("calculator.setup.confirm"));
   ok("the sheet shows three meal fields", /\(\["breakfast", "lunch", "dinner"\] as const\)\.map\(\(slot\)/.test(calc));
-  ok("the sheet fields are RatioInput (empty start)", calc.includes("<RatioInput"));
+  ok("the sheet fields are the shared ratio inputs (empty start)", calc.includes("<CarbRatioInput") && calc.includes("<IsfInput"));
   ok("the sheet has no single 'every meal' ratio", !calc.includes("perMealNote") && !/initialCarbRatio/.test(calc));
   ok("any change in the sheet un-ticks the box", /function change\([^)]*\)\s*\{[\s\S]{0,120}setConfirmed\(false\)/.test(calc));
   ok("the intro differs when the values are already saved", calc.includes("calculator.setup.bodyFilled"));
@@ -720,10 +746,13 @@ section("J. the calculator screen wires the gate");
   const setCalls = calc.match(/setDoseText\([^;]*;/g) ?? [];
   ok(
     "the dose field is filled only from a saved record or the user's typing",
-    setCalls.length === 3 &&
-      setCalls.every((c) => /log\.insulin_dose_units|sanitizeNumberText\(s, true\)/.test(c)),
+    setCalls.length === 2 &&
+      setCalls.every((c) => /log\.insulin_dose_units|v == null \? "" : String\(v\)/.test(c)),
     setCalls.join(" | ")
   );
+  ok("the dose is typed or stepped in the shared field, never computed", /function onDoseChange\(v: number \| null\)/.test(calc) && calc.split("onChange={onDoseChange}").length === 2);
+  ok("the dose field is the shared NumericField, 0-100 in steps of 0.5", calc.includes("DOSE_BOUNDS.step") && calc.includes("DOSE_BOUNDS.max") && calc.includes("<NumericField"));
+  ok("the dose is never seeded from the estimate", !/setDoseText\([^;]*(totalDose|doseEst|estimate)/.test(calc));
   ok("the typed dose is what is saved", calc.includes("dose = typedDose"));
 
   const line = src("components/CarbRatioLine.tsx");
@@ -789,7 +818,7 @@ section("K. no default-ratio constants, and ratio maths only where allowed");
     (seed.match(/carb_ratio_breakfast: 10,[\s\S]{0,200}ratios_confirmed: 1,/g) ?? []).length === 2
   );
   const sp = src("app/settings/profile.tsx");
-  ok("Profile and Targets writes through the queued writer", sp.includes("createRatioWriter(") && sp.includes("ratioWriter()?.update("));
+  ok("Profile and Targets writes through the queued writer", sp.includes("useRatioWriter(") && sp.includes("ratioWriters.get()?.update("));
   ok("it no longer saves per keystroke or confirms on every change", !sp.includes("persistRatio") && !sp.includes("ratioSetPatch("));
   ok("the box is in Profile and Targets", sp.includes("ConfirmCheckbox"));
   ok("every ratio field flushes on blur (ISF and the three meal fields)", (sp.match(/onBlur=\{onRatioBlur\}/g) ?? []).length === 2);
@@ -874,29 +903,33 @@ async function writerTests(): Promise<void> {
     }
     const draft = (b: number | null, isf = 35): RatioFields => ({ breakfast: b, lunch: 9, dinner: 11, isfMgdl: isf });
   
-    // "1" then "2" (12): the 1 is never written
+    const noNumbers = (ps: RatioPatch[]) => ps.filter((p) => p.carb_ratio_breakfast !== undefined);
+    // "1" then "2" (12): the 1 is never written; the confirmation goes at once
     {
       const r = rig();
       r.writer.update(draft(1));
       r.writer.update(draft(12));
-      eq("typing writes nothing before the pause", r.patches.length, 0);
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+      eq("typing writes no number before the pause", noNumbers(r.patches).length, 0);
+      eq("but the first edit of a confirmed set withdraws the confirmation at once", JSON.stringify(r.patches[0]), JSON.stringify({ ratios_confirmed: RATIOS_ENTERED }));
+      eq("and only once", r.patches.length, 1);
       ok("the pause is at least 600 ms", r.timers.every((t) => t.ms >= 600));
       r.fire();
       await r.writer.flush();
-      eq("one write after the pause", r.patches.length, 1);
-      eq("it carries 12", r.patches[0].carb_ratio_breakfast, 12);
+      eq("one number write after the pause", noNumbers(r.patches).length, 1);
+      eq("it carries 12", noNumbers(r.patches)[0].carb_ratio_breakfast, 12);
       ok("the half-typed 1 never reached the database", !r.patches.some((p) => p.carb_ratio_breakfast === 1));
-      eq("and it withdrew the confirmation", r.patches[0].ratios_confirmed, 0);
+      eq("and it is not a confirmation", noNumbers(r.patches)[0].ratios_confirmed, RATIOS_ENTERED);
     }
     // blur flushes before the pause ends
     {
       const r = rig();
       r.writer.update(draft(12));
       await r.writer.flush();
-      eq("a blur writes at once", r.patches.length, 1);
+      eq("a blur writes the number at once", noNumbers(r.patches).length, 1);
       r.fire();
       await r.writer.flush();
-      eq("and the cancelled timer writes nothing more", r.patches.length, 1);
+      eq("and the cancelled timer writes nothing more", noNumbers(r.patches).length, 1);
     }
     // compares against what was SENT, not the stale stored profile
     {
@@ -905,8 +938,8 @@ async function writerTests(): Promise<void> {
       await r.writer.flush();
       r.writer.update(draft(8));
       await r.writer.flush();
-      eq("changing back to the original value is still written", r.patches.length, 2);
-      eq("the second write restores 8", r.patches[1].carb_ratio_breakfast, 8);
+      eq("changing back to the original value is still written", noNumbers(r.patches).length, 2);
+      eq("the second write restores 8", noNumbers(r.patches)[1].carb_ratio_breakfast, 8);
     }
     // the same numbers typed back change nothing
     {
@@ -921,8 +954,9 @@ async function writerTests(): Promise<void> {
       r.writer.update(draft(8, 3));
       r.writer.update(draft(8, 36));
       await r.writer.flush();
-      eq("an ISF edit is one write", r.patches.length, 1);
-      eq("with the final ISF", r.patches[0].insulin_sensitivity_factor, 36);
+      eq("an ISF edit is one number write", noNumbers(r.patches).length, 1);
+      eq("with the final ISF", noNumbers(r.patches)[0].insulin_sensitivity_factor, 36);
+      ok("the half-typed 3 never reached the database", !r.patches.some((p) => p.insulin_sensitivity_factor === 3));
     }
     // writes are strictly sequential and in order
     {
@@ -934,32 +968,89 @@ async function writerTests(): Promise<void> {
       await Promise.resolve();
       await Promise.resolve();
       eq("the second write waits for the first", r.patches.length, 1);
-      r.gates[0]();
-      await first;
-      await Promise.resolve();
-      await Promise.resolve();
-      eq("then it starts", r.patches.length, 2);
-      r.gates[1]();
-      await second;
+      let opened = 0;
+      let finished = false;
+      const done = Promise.all([first, second]).then(() => {
+        finished = true;
+      });
+      for (let i = 0; i < 40 && !finished; i++) {
+        await Promise.resolve();
+        while (opened < r.gates.length) r.gates[opened++]();
+      }
+      await done;
       eq("never two at once", r.maxRunning(), 1);
-      eq("in the order they were made (12 then 13)", `${r.patches[0].carb_ratio_breakfast},${r.patches[1].carb_ratio_breakfast}`, "12,13");
+      eq("in the order they were made (12 then 13)", noNumbers(r.patches).map((p) => p.carb_ratio_breakfast).join(","), "12,13");
     }
-    // emptying a field withdraws the confirmation
+    // emptying a field: the confirmation goes, the field is stored as 'not entered'
     {
       const r = rig();
       r.writer.update(draft(null));
       await r.writer.flush();
-      eq("an emptied field writes one patch", r.patches.length, 1);
-      eq("that only clears the confirmation", JSON.stringify(r.patches[0]), JSON.stringify({ ratios_confirmed: 0 }));
+      eq("an emptied field withdraws the confirmation first", JSON.stringify(r.patches[0]), JSON.stringify({ ratios_confirmed: RATIOS_ENTERED }));
+      eq("then stores the field as 0", r.patches[1].carb_ratio_breakfast, 0);
+      eq("the others are kept", `${r.patches[1].carb_ratio_lunch},${r.patches[1].carb_ratio_dinner},${r.patches[1].insulin_sensitivity_factor}`, "9,11,35");
+    }
+    // three ratios typed over an empty profile survive leaving
+    {
+      const empty: StoredRatios = {
+        carb_ratio_breakfast: 0,
+        carb_ratio_lunch: 0,
+        carb_ratio_dinner: 0,
+        insulin_sensitivity_factor: 0,
+        ratios_confirmed: 0,
+      };
+      const patches: RatioPatch[] = [];
+      const w = createRatioWriter({ stored: empty, persist: async (p) => void patches.push(p) });
+      w.update({ breakfast: 8, lunch: 9, dinner: 11, isfMgdl: null });
+      await w.flush();
+      eq("three ratios are written without waiting for the fourth", patches.length, 1);
+      eq("as typed", `${patches[0].carb_ratio_breakfast},${patches[0].carb_ratio_lunch},${patches[0].carb_ratio_dinner},${patches[0].insulin_sensitivity_factor}`, "8,9,11,0");
+      eq("marked as the user's own", patches[0].ratios_confirmed, RATIOS_ENTERED);
+      w.update({ breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 35 });
+      const ok1 = await w.confirm(true);
+      eq("the fourth completes the set", patches[1].insulin_sensitivity_factor, 35);
+      eq("ticking confirms it", JSON.stringify(patches[2]), JSON.stringify({ ratios_confirmed: 1 }));
+      eq("and reports that it did", ok1, true);
+    }
+    // ticking a set that cannot be divided by confirms nothing
+    {
+      const patches: RatioPatch[] = [];
+      const part: StoredRatios = {
+        carb_ratio_breakfast: 8,
+        carb_ratio_lunch: 9,
+        carb_ratio_dinner: 11,
+        insulin_sensitivity_factor: 0,
+        ratios_confirmed: 2,
+      };
+      const w = createRatioWriter({ stored: part, persist: async (p) => void patches.push(p) });
+      const res = await w.confirm(true);
+      eq("no confirmation is written for a partial set", patches.length, 0);
+      eq("and confirm reports false", res, false);
+    }
+    // the unit decides what counts as a change
+    {
+      const patches: RatioPatch[] = [];
+      const w = createRatioWriter({
+        stored: { ...stored, insulin_sensitivity_factor: 42 },
+        unit: () => "mmol",
+        persist: async (p) => void patches.push(p),
+      });
+      w.update({ breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 41 });
+      await w.flush();
+      eq("mmol: typing back the displayed 2.3 changes nothing", patches.length, 0);
     }
     // the box: pending numbers first, then the flag
     {
       const r = rig();
       r.writer.update(draft(12));
-      await r.writer.confirm(true);
-      eq("ticking flushes the numbers, then the flag", r.patches.length, 2);
-      eq("numbers first", r.patches[0].carb_ratio_breakfast, 12);
-      eq("flag second", JSON.stringify(r.patches[1]), JSON.stringify({ ratios_confirmed: 1 }));
+      const ok2 = await r.writer.confirm(true);
+      eq("ticking flushes the numbers, then the flag", noNumbers(r.patches).length, 1);
+      eq("numbers first", noNumbers(r.patches)[0].carb_ratio_breakfast, 12);
+      eq("flag last", JSON.stringify(r.patches[r.patches.length - 1]), JSON.stringify({ ratios_confirmed: 1 }));
+      eq("confirm reports success", ok2, true);
+      const res = await r.writer.confirm(false);
+      eq("unticking withdraws to 'entered', never back to defaults", JSON.stringify(r.patches[r.patches.length - 1]), JSON.stringify({ ratios_confirmed: RATIOS_ENTERED }));
+      eq("and reports false (nothing was confirmed)", res, false);
     }
     // a failed write hands the writer a fresh stored set
     {
@@ -979,11 +1070,20 @@ async function writerTests(): Promise<void> {
       });
       w.update(draft(12));
       await w.flush();
-      eq("a failed write reloads the stored set", reloaded, 1);
+      ok("a failed write reloads the stored set", reloaded >= 1);
       fail = false;
       w.update(draft(12));
       await w.flush();
-      eq("and the same draft is tried again", patches.length, 1);
+      ok("and the same draft is tried again", patches.some((p) => p.carb_ratio_breakfast === 12));
+      const bad = createRatioWriter({
+        stored,
+        persist: async () => {
+          throw new Error("disk");
+        },
+        reload: () => stored,
+      });
+      bad.update(draft(12));
+      eq("a failed confirm reports false", await bad.confirm(true), false);
     }
   }
 }

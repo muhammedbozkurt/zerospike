@@ -101,7 +101,7 @@ export interface UserProfile {
   /** 1 when the user entered/confirmed their own ICR+ISF, 0 while the app is
    *  still running on the "not sure" defaults. Surfaces a neutral notice on the
    *  calculator so a default is never mistaken for a personal ratio. */
-  ratios_confirmed: number; // 0 | 1
+  ratios_confirmed: number; // 0 never entered | 1 confirmed | 2 entered, not confirmed (lib/calcSetup.ts)
   /** Insulin product catalog (schema v15, lib/insulinCatalog.ts). Null while the
    *  profile has not picked a product / entered a daily basal dose; the app falls
    *  back to the generic profile (bolusProfileFor / basalProfileFor) either way. */

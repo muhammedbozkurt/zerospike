@@ -303,6 +303,15 @@ const ja: TranslationSchema = {
     lunch: "昼食",
     dinner: "夕食・夜",
   },
+  numeric: {
+    range: "{{min}}〜{{max}} {{unit}}の値を入力してください",
+    required: "値を入力してください",
+    carbRatioExample: "例: 10",
+    isfExampleMgdl: "例: 50",
+    isfExampleMmol: "例: 2.8",
+    glucoseExampleMgdl: "例: 120",
+    glucoseExampleMmol: "例: 6.7",
+  },
   ratio: {
     line: "比率（{{slot}}）：{{ratio}}",
     enter: "比率を入力してください",
@@ -383,6 +392,8 @@ const ja: TranslationSchema = {
     calcNotAdvice: "医学的な助言ではありません。実際の量は医療チームと決めてください。",
     manualDose: "実際に使った量(単位)",
     currentGlucose: "現在の血糖値(任意)",
+    glucoseOffer: "直近の測定値 {{value}} {{unit}}。タップして使用",
+    pending: "確認待ち",
     addPhoto: "写真を追加",
     takePhoto: "写真を撮る",
     choosePhoto: "ライブラリから選ぶ",
@@ -433,6 +444,7 @@ const ja: TranslationSchema = {
       bodyFilled: "値は保存されています。確認するだけです。",
       teamNote: "比率は糖尿病の医療チームと相談して決めてください。",
       confirm: "これらの比率は糖尿病の医療チームと決めました",
+      hint: "チェックすると計算された合計が表示されます",
     },
   },
   iob: {

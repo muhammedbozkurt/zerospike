@@ -601,9 +601,16 @@ section("O. source guards (data scope, profile hand-over, input filters)");
 
   for (const rel of ["app/calculator.tsx", "components/GlucoseInputSheet.tsx"]) {
     const s = src(rel);
+    // The calculator's fields are NumericField, which reads through
+    // lib/numericField -> lib/stepperInput -> the shared normalizer.
+    const viaNumericField =
+      /<NumericField/.test(s) &&
+      /parseDecimalText\(/.test(s) &&
+      /sanitizeStepperText/.test(src("lib/numericField.ts")) &&
+      /sanitizeNumberText\(/.test(stepperInput);
     ok(
       `${rel} routes input through the shared normalizer`,
-      /sanitizeNumberText\(/.test(s) && /parseDecimalText\(/.test(s)
+      (/sanitizeNumberText\(/.test(s) && /parseDecimalText\(/.test(s)) || viaNumericField
     );
     ok(
       `${rel} no longer strips the comma from a decimal field`,
