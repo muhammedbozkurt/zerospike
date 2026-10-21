@@ -71,6 +71,8 @@ import {
   TARGET_RANGE_BOUNDS,
 } from "../lib/glucose";
 import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G } from "../lib/diabetesDefaults";
+import { getLocales } from "expo-localization";
+import { initialOnboardingUnit } from "../lib/unitByRegion";
 import { RangeInput } from "../components/RangeInput";
 import { useStepperValidity } from "../components/Stepper";
 import { NumericField } from "../components/NumericField";
@@ -499,8 +501,8 @@ export default function OnboardingScreen() {
   const [name, setName] = useState(
     activeProfile?.name ?? ""
   );
-  const [unit, setUnit] = useState<GlucoseUnit>(
-    activeProfile?.glucose_unit ?? "mgdl"
+  const [unit, setUnit] = useState<GlucoseUnit>(() =>
+    initialOnboardingUnit(activeProfile?.glucose_unit, getLocales()[0]?.regionCode)
   );
   const [diabetes, setDiabetes] = useState<DiabetesOption | null>(scDiabetes);
   const [treatment, setTreatment] = useState<TreatmentOption | null>(null);

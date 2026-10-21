@@ -53,7 +53,10 @@
           "it",
           "pt",
           "ar",
-          "ja"
+          "ja",
+          "en-GB",
+          "en-AU",
+          "en-CA"
         ],
         "NSSupportsLiveActivities": true,
         "NSMotionUsageDescription": "zerospike does not collect motion data. A location component in the app references this permission; your movement is never tracked."
@@ -206,7 +209,27 @@
       "./plugins/withAndroidPermissionTrim",
       "./plugins/withAndroidProguardRules",
       "./plugins/withGradleHeap",
-      "expo-localization",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "android": [
+              "en",
+              "tr",
+              "de",
+              "fr",
+              "es",
+              "it",
+              "pt",
+              "ar",
+              "ja",
+              "en-GB",
+              "en-AU",
+              "en-CA"
+            ]
+          }
+        }
+      ],
       [
         "expo-camera",
         {
