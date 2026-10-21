@@ -25,6 +25,7 @@ import {
   glucoseFromDisplay,
   glucoseToDisplay,
   glucoseUnitLabel,
+  statusLabelKey,
   VERY_HIGH_MGDL,
 } from "../lib/glucose";
 import { keyboardOverlapPx } from "../lib/sheetLayout";
@@ -356,16 +357,7 @@ export function GlucoseInputSheet({
   const numColor = liveStatus ? RICH_BY_STATUS[liveStatus] : THEME.text;
 
   function statusLabel(status: GlucoseStatus): string {
-    switch (status) {
-      case "normal":
-        return t("insights.inRange");
-      case "low":
-        return t("insights.low");
-      case "veryHigh":
-        return t("insights.veryHigh");
-      default:
-        return t("insights.high");
-    }
+    return t(statusLabelKey(status));
   }
 
   return (
