@@ -459,7 +459,7 @@ section("14. every stepper in the app is the shared field");
     ["app/(tabs)/injection.tsx", "dose"],
     ["components/InjectionEditSheet.tsx", "dose"],
     ["app/calculator.tsx", "portion 0-1500 g, glucose, dose"],
-    ["app/settings/profile.tsx", "daily basal 0-150 U, ratios"],
+    ["app/settings/profile.tsx", "daily basal 0-200 U, ratios"],
   ];
   for (const [rel, what] of sites) {
     const text = src(rel);
@@ -468,7 +468,7 @@ section("14. every stepper in the app is the shared field");
   }
   for (const rel of ["app/basal-confirm.tsx", "app/(tabs)/injection.tsx", "components/InjectionEditSheet.tsx"]) {
     const text = src(rel);
-    ok(`${rel}: an injection dose uses INJECTION_DOSE_BOUNDS (0-150, step 0.5, 2 decimals)`, text.includes("INJECTION_DOSE_BOUNDS.max") && text.includes("INJECTION_DOSE_BOUNDS.min") && text.includes("INJECTION_DOSE_BOUNDS.step") && text.includes("INJECTION_DOSE_BOUNDS.decimals") && !/[^_]DOSE_BOUNDS\./.test(text.replace(/INJECTION_DOSE_BOUNDS\./g, "")));
+    ok(`${rel}: an injection dose uses INJECTION_DOSE_BOUNDS (0-200, step 0.5, 2 decimals)`, text.includes("INJECTION_DOSE_BOUNDS.max") && text.includes("INJECTION_DOSE_BOUNDS.min") && text.includes("INJECTION_DOSE_BOUNDS.step") && text.includes("INJECTION_DOSE_BOUNDS.decimals") && !/[^_]DOSE_BOUNDS\./.test(text.replace(/INJECTION_DOSE_BOUNDS\./g, "")));
     ok(`${rel}: an empty or refused dose is never stored (null is ignored, the box is required)`, /if \(v == null\) return;/.test(text) && /\brequired\b/.test(text));
   }
   const addFood = src("app/add-food.tsx");
@@ -550,18 +550,19 @@ section("16. whole-number fields: a separator stays visible and is refused, key 
   eq("tr text", src("lib/i18n/locales/tr.ts").includes('integerOnly: "Tam sayı girin"'), true);
 }
 
-section("17. dose limits: a meal dose 0-100, an injection 0-150, edits never below the record");
+section("17. dose limits: a meal dose 0-100, an injection 0-200, edits never below the record");
 {
   const meal = { min: DOSE_BOUNDS.min, max: DOSE_BOUNDS.max, decimals: DOSE_BOUNDS.decimals };
   const inj = { min: INJECTION_DOSE_BOUNDS.min, max: INJECTION_DOSE_BOUNDS.max, decimals: INJECTION_DOSE_BOUNDS.decimals };
   eq("meal dose 100 accepted", readNumeric("100", meal).value, 100);
   eq("meal dose 101 refused", readNumeric("101", meal).kind, "above");
-  eq("injection 150 accepted", readNumeric("150", inj).value, 150);
-  eq("injection 151 refused", readNumeric("151", inj).kind, "above");
+  eq("injection 200 accepted", readNumeric("200", inj).value, 200);
+  eq("injection 201 refused", readNumeric("201", inj).kind, "above");
   eq("a user with 120 U daily basal can save the filled-in injection", readNumeric("120", inj).value, 120);
+  eq("injection max covers the daily basal max (autofill)", INJECTION_DOSE_BOUNDS.max >= BASAL_DAILY_BOUNDS.max, true);
   eq("the injection step and decimals match the calculator's", `${INJECTION_DOSE_BOUNDS.step}/${INJECTION_DOSE_BOUNDS.decimals}`, `${DOSE_BOUNDS.step}/${DOSE_BOUNDS.decimals}`);
-  eq("editing a 130 U injection: the limit is 150 (already above 130)", editableMax(INJECTION_DOSE_BOUNDS.max, 130), 150);
-  eq("editing a 170 U record: the limit rises to 170", editableMax(INJECTION_DOSE_BOUNDS.max, 170), 170);
+  eq("editing a 130 U injection: the limit stays 200", editableMax(INJECTION_DOSE_BOUNDS.max, 130), 200);
+  eq("editing a 230 U record: the limit rises to 230", editableMax(INJECTION_DOSE_BOUNDS.max, 230), 230);
   eq("editing a 130 U meal dose: the limit rises to 130", editableMax(DOSE_BOUNDS.max, 130), 130);
   eq("... and 130 reads as a good value", readNumeric("130", { ...meal, max: editableMax(DOSE_BOUNDS.max, 130) }).value, 130);
   eq("... while a NEW meal dose of 130 is still refused", readNumeric("130", meal).value, null);
@@ -575,7 +576,7 @@ section("17. dose limits: a meal dose 0-100, an injection 0-150, edits never bel
   ok("the calculator's edit screen lifts its limit to the stored dose", calc.includes("max={editableMax(DOSE_BOUNDS.max, originalDose)}") && calc.includes("setOriginalDose(log.insulin_dose_units)"));
   ok("a new meal dose keeps 0-100", !calc.includes("INJECTION_DOSE_BOUNDS"));
   for (const rel of ["app/(tabs)/injection.tsx", "app/basal-confirm.tsx"]) {
-    ok(`${rel}: 0-150`, src(rel).includes("INJECTION_DOSE_BOUNDS.max"));
+    ok(`${rel}: 0-200`, src(rel).includes("INJECTION_DOSE_BOUNDS.max"));
   }
 }
 

@@ -168,8 +168,8 @@ export function stepIsBlocked(
 export const DOSE_BOUNDS = { min: 0, max: 100, decimals: 2, step: 0.5 } as const;
 
 /** One logged injection (injection tab, basal confirm, the injection editor).
- *  Wider than a meal dose: a profile's daily basal fills a basal injection. */
-export const INJECTION_DOSE_BOUNDS = { min: 0, max: 150, decimals: 2, step: 0.5 } as const;
+ *  Wider than a meal dose and never below BASAL_DAILY_BOUNDS.max: a profile's daily basal fills a basal injection. */
+export const INJECTION_DOSE_BOUNDS = { min: 0, max: 200, decimals: 2, step: 0.5 } as const;
 
 /** The daily long-acting total, Profile and onboarding alike. */
 export const BASAL_DAILY_BOUNDS = { min: 0, max: 200, decimals: 1, step: 0.5 } as const;
