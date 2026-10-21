@@ -1630,7 +1630,7 @@ const en: TranslationSchema = {
     itemBodyMap: "New body map: see your recent injection sites in color.",
     itemMeal: "Meal builder and household measures: add foods by slice, cup and similar measures, and the total carbs show instantly.",
     itemSpike: "Spike carb estimate: type your meal and see approximate carbs (an estimate from food data, not a dose).",
-    itemCalc: "Dose calculator: set your ratios with your diabetes team and confirm them once; until you do, no unit figure is shown.",
+    itemCalc: "Calculator: set your ratios with your diabetes team and confirm them once; until you do, no unit figure is shown.",
     ok: "OK",
   },
   fatalReport: {

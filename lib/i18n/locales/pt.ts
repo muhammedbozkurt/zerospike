@@ -297,8 +297,8 @@ const pt: TranslationSchema = {
   },
   ratio: {
     line: "Sua razão ({{slot}}): {{ratio}}",
-    enter: "Informe seus fatores",
-    confirm: "Confirme seus fatores",
+    enter: "Informe suas razões",
+    confirm: "Confirme suas razões",
   },
   food: {
     category: "Categoria",
