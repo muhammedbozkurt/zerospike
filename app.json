@@ -204,6 +204,8 @@
       "expo-router",
       "./plugins/withAndroidNavBarContrast",
       "./plugins/withAndroidPermissionTrim",
+      "./plugins/withAndroidProguardRules",
+      "./plugins/withGradleHeap",
       "expo-localization",
       [
         "expo-camera",
@@ -256,7 +258,9 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 26
+            "minSdkVersion": 26,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           },
           "ios": {
             "deploymentTarget": "16.4",
