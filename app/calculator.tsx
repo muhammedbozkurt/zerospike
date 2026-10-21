@@ -21,7 +21,10 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { updateProfile } from "../lib/db/profiles";
 import {
-  CALC_SETUP_DISMISSED_KEY,
+  CARB_RATIO_BOUNDS,
+  ISF_BOUNDS,
+  RATIOS_CONFIRM_PROMPTED_KEY,
+  calcFiguresAllowed,
   calcSetupInitial,
   calcSetupNeeded,
   calcSetupPatch,
@@ -61,7 +64,8 @@ import { noteLog, maybeRequestReview } from "../lib/services/review";
 import { noteFirstLog } from "../lib/services/firstLog";
 import {
   checkDose,
-  estimateInsulin,
+  carbsForPortion,
+  estimateInsulinConfirmed,
   activeMealSlot,
   mealSlotForHour,
   carbRatioForSlot,
@@ -111,6 +115,8 @@ import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
 import { SCRIM, SheetShell } from "../components/SheetShell";
 import { Stepper, useStepperValidity } from "../components/Stepper";
+import { RatioInput } from "../components/RatioInput";
+import { ConfirmCheckbox } from "../components/ConfirmCheckbox";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
 import { Tooltip } from "../components/Tooltip";
@@ -400,13 +406,14 @@ function NoticeGroup({
 }
 
 /**
- * The calculator's two numbers, asked in one sheet the first time it opens
- * (see lib/calcSetup.ts for who is asked and why here, not in onboarding).
+ * The calculator's two numbers, asked in one sheet. It opens by itself once
+ * (see lib/calcSetup.ts); afterwards the "Enter your ratios" line leads to
+ * Profile and Targets.
  *
- * Saving writes one carb ratio for all three meals plus the ISF and marks them
- * the user's own, the same rule Settings applies. Closing any other way leaves
- * the defaults in place; the screen remembers that and the "default ratios"
- * notice stays one tap from reopening this.
+ * Both fields start EMPTY (or with the user's own earlier entry); nothing is
+ * suggested. Saving writes one carb ratio for all three meals plus the ISF, and
+ * marks them confirmed only when the box is ticked. Without the tick the numbers
+ * are kept but no unit figure appears.
  *
  * ISF is edited in the profile's display unit and handed back in it; the
  * screen converts to mg/dL at the storage boundary.
@@ -423,26 +430,32 @@ function CalcSetupSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  onSave: (values: { carbRatio: number; isfDisplay: number }) => void;
+  onSave: (values: { carbRatio: number; isfDisplay: number; confirmed: boolean }) => void;
   saving: boolean;
   saveError: boolean;
   unit: GlucoseUnit;
-  initialCarbRatio: number;
-  initialIsfMgdl: number;
+  initialCarbRatio: number | null;
+  initialIsfMgdl: number | null;
 }) {
   const { t } = useTranslation();
-  const [carbRatio, setCarbRatio] = useState(initialCarbRatio);
-  const [isf, setIsf] = useState(glucoseToDisplay(initialIsfMgdl, unit));
-  const fields = useStepperValidity();
+  const [carbRatio, setCarbRatio] = useState<number | null>(initialCarbRatio);
+  const [isf, setIsf] = useState<number | null>(
+    initialIsfMgdl == null ? null : glucoseToDisplay(initialIsfMgdl, unit)
+  );
+  const [confirmed, setConfirmed] = useState(false);
+  const isfBounds = ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"];
 
   // Every open starts from what the profile holds now, not from what a
-  // previous, abandoned open left in the steppers.
+  // previous, abandoned open left in the fields. The box always starts unticked.
   useEffect(() => {
     if (!visible) return;
     setCarbRatio(initialCarbRatio);
-    setIsf(glucoseToDisplay(initialIsfMgdl, unit));
+    setIsf(initialIsfMgdl == null ? null : glucoseToDisplay(initialIsfMgdl, unit));
+    setConfirmed(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  const complete = carbRatio != null && isf != null;
 
   return (
     <SheetShell
@@ -460,8 +473,11 @@ function CalcSetupSheet({
           <GradientCTA
             label={t("common.save")}
             loading={saving}
-            disabled={saving || !fields.allValid}
-            onPress={() => onSave({ carbRatio, isfDisplay: isf })}
+            disabled={saving || !complete}
+            onPress={() => {
+              if (carbRatio == null || isf == null) return;
+              onSave({ carbRatio, isfDisplay: isf, confirmed });
+            }}
           />
           <Pressable
             onPress={onClose}
@@ -482,17 +498,13 @@ function CalcSetupSheet({
       </Text>
 
       <DetailLabel>{t("calculator.setup.carbLabel")}</DetailLabel>
-      <Stepper
+      <RatioInput
         value={carbRatio}
         onChange={setCarbRatio}
-        onValidityChange={fields.reporter("carbRatio")}
-        step={0.5}
-        longStep={1}
-        min={1}
-        max={50}
+        min={CARB_RATIO_BOUNDS.min}
+        max={CARB_RATIO_BOUNDS.max}
         decimals={1}
         suffix={t("common.carbRatioUnit")}
-        size="lg"
         accessibilityLabel={t("calculator.setup.carbLabel")}
       />
       <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
@@ -504,22 +516,30 @@ function CalcSetupSheet({
 
       <View style={{ marginTop: 18 }}>
         <DetailLabel>{t("calculator.setup.isfLabel")}</DetailLabel>
-        <Stepper
+        <RatioInput
           value={isf}
           onChange={setIsf}
-          onValidityChange={fields.reporter("isf")}
-          step={unit === "mmol" ? 0.1 : 1}
-          longStep={unit === "mmol" ? 0.5 : 5}
-          min={unit === "mmol" ? 0.5 : 5}
-          max={unit === "mmol" ? 30 : 500}
+          min={isfBounds.min}
+          max={isfBounds.max}
           decimals={unit === "mmol" ? 1 : 0}
           suffix={glucoseUnitLabel(unit)}
-          size="lg"
           accessibilityLabel={t("calculator.setup.isfLabel")}
         />
         <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 }}>
           {t("calculator.setup.isfHint")}
         </Text>
+      </View>
+
+      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 18 }}>
+        {t("calculator.setup.teamNote")}
+      </Text>
+      <View style={{ marginTop: 6 }}>
+        <ConfirmCheckbox
+          checked={confirmed}
+          onToggle={setConfirmed}
+          label={t("calculator.setup.confirm")}
+          disabled={!complete}
+        />
       </View>
     </SheetShell>
   );
@@ -762,49 +782,50 @@ function CalculatorScreen() {
   const insulinMode = insulinModeOf(activeProfile);
   const showsDose = insulinModeShowsBolus(insulinMode);
 
-  // First-use setup of the ratio and ISF (lib/calcSetup.ts). It opens by
-  // itself on a new record while the profile has no number of its own and the
-  // sheet has not been put away before; the notices below reopen it by hand.
+  // The ratios sheet (lib/calcSetup.ts). It opens by itself ONCE on a new
+  // record while the profile has no confirmed ratios of its own; after that the
+  // "Enter your ratios" line (CarbRatioLine) leads to Profile and Targets.
   const setupNeeded = calcSetupNeeded(activeProfile);
   const [setupOpen, setSetupOpen] = useState(false);
   const [savingSetup, setSavingSetup] = useState(false);
   const [setupSaveError, setSetupSaveError] = useState(false);
-  const setupDismissedKey = activeProfile ? `${CALC_SETUP_DISMISSED_KEY}.${activeProfile.id}` : null;
+  const setupPromptedKey = activeProfile ? `${RATIOS_CONFIRM_PROMPTED_KEY}.${activeProfile.id}` : null;
 
+  // Marked the moment the sheet is shown, not when it is put away: a force-quit
+  // with the sheet open still counts as offered, so it never comes back by itself.
   useEffect(() => {
-    if (!setupDismissedKey || !setupNeeded || isEdit) return;
+    if (!setupPromptedKey || !setupNeeded || isEdit) return;
     let alive = true;
     (async () => {
-      let dismissed = false;
+      let prompted = false;
       try {
-        dismissed = (await AsyncStorage.getItem(setupDismissedKey)) != null;
+        prompted = (await AsyncStorage.getItem(setupPromptedKey)) != null;
       } catch {
         // an unreadable flag means "ask", which is the safe direction
       }
-      if (alive && shouldAutoOpenCalcSetup({ needed: true, isEdit, dismissed })) {
+      if (alive && shouldAutoOpenCalcSetup({ needed: true, isEdit, prompted })) {
         setSetupOpen(true);
+        AsyncStorage.setItem(setupPromptedKey, "1").catch(() => {
+          // best-effort: worst case the sheet is offered once more next time
+        });
       }
     })();
     return () => {
       alive = false;
     };
-  }, [setupDismissedKey, setupNeeded, isEdit]);
+  }, [setupPromptedKey, setupNeeded, isEdit]);
 
   function closeSetup() {
     setSetupOpen(false);
     setSetupSaveError(false);
-    if (setupDismissedKey) {
-      AsyncStorage.setItem(setupDismissedKey, "1").catch(() => {
-        // best-effort: worst case the sheet is offered once more next time
-      });
-    }
   }
 
-  async function saveSetup(values: { carbRatio: number; isfDisplay: number }) {
+  async function saveSetup(values: { carbRatio: number; isfDisplay: number; confirmed: boolean }) {
     if (!activeProfile || savingSetup) return;
     const patch = calcSetupPatch({
       carbRatio: values.carbRatio,
       isfMgdl: glucoseFromDisplay(values.isfDisplay, unit),
+      confirmed: values.confirmed,
     });
     if (!patch) return;
     setSavingSetup(true);
@@ -1067,9 +1088,12 @@ function CalculatorScreen() {
     return parts.join("\n\n");
   }, [activeProfile?.bolus_insulin_id, basalIob, t]);
 
+  // Carbs need no ratio. The unit estimate exists only behind the confirmation
+  // gate (lib/calcSetup.ts calcFiguresAllowed): null means no figure is computed.
+  const carbsG = food ? carbsForPortion(food, portion) : null;
   const estimate = useMemo(() => {
     if (!food || !activeProfile) return null;
-    return estimateInsulin(food, portion, activeProfile, {
+    return estimateInsulinConfirmed(food, portion, activeProfile, {
       slot,
       currentGlucose: glucoseMgdl,
       currentIOB: iob,
@@ -1082,7 +1106,11 @@ function CalculatorScreen() {
   // breakdown are replaced below rather than showing a number built on it.
   const rawCarbRatio = activeProfile ? carbRatioForSlot(activeProfile, slot) : null;
   const carbRatioValid =
-    rawCarbRatio != null && Number.isFinite(rawCarbRatio) && rawCarbRatio > 0;
+    calcFiguresAllowed(activeProfile) &&
+    estimate != null &&
+    rawCarbRatio != null &&
+    Number.isFinite(rawCarbRatio) &&
+    rawCarbRatio > 0;
 
   async function pickPhoto(fromCamera: boolean) {
     const perm = fromCamera
@@ -1183,7 +1211,7 @@ function CalculatorScreen() {
   }
 
   async function logMeal() {
-    if (!food || !activeProfile || !estimate || saving || !stepperFields.allValid) return;
+    if (!food || !activeProfile || saving || !stepperFields.allValid) return;
 
     // Locked before the confirmation dialog, not after it: the CTA is disabled
     // while `saving`, and a second tap during the dialog would otherwise start a
@@ -1193,11 +1221,12 @@ function CalculatorScreen() {
       // Active insulin decays by the minute, so the figure the save is built on
       // is re-read here rather than trusted from whenever the screen opened.
       const freshIob = await readFreshIob();
-      const est = estimateInsulin(food, portion, activeProfile, {
+      const est = estimateInsulinConfirmed(food, portion, activeProfile, {
         slot,
         currentGlucose: glucoseMgdl,
         currentIOB: freshIob,
       });
+      const mealCarbs = carbsForPortion(food, portion);
 
       // The typed dose is the record of what the user actually injected, so it is
       // never overwritten by the estimate: a typed 0 means "no insulin" and is
@@ -1214,7 +1243,7 @@ function CalculatorScreen() {
         // number rather than cite it.
         const proceed = await confirm({
           title: t("calculator.emptyDoseTitle"),
-          message: carbRatioValid
+          message: carbRatioValid && est
             ? t("calculator.emptyDoseBody", { n: num(est.totalDose) })
             : t("calculator.doseZeroNote"),
           confirmLabel: t("calculator.emptyDoseConfirm"),
@@ -1286,7 +1315,7 @@ function CalculatorScreen() {
         // hours, which is exactly the coupling the auto-write exists to fix.
         await updateMealLog(mealLogId, {
           portion_g: portion,
-          calculated_carbs_g: est.carbs,
+          calculated_carbs_g: mealCarbs,
           insulin_dose_units: dose,
           photo_uri_local: photo,
           personal_note: note.trim() || null,
@@ -1453,7 +1482,7 @@ function CalculatorScreen() {
         food_id: templateCtx ? null : food.id,
         custom_food_name: templateCtx ? templateCtx.template.name : null,
         portion_g: templateCtx ? templateCtx.portion_g : portion,
-        calculated_carbs_g: est.carbs,
+        calculated_carbs_g: mealCarbs,
         insulin_dose_units: dose,
         sugar_log_id: sugarLogId,
         photo_uri_local: photo,
@@ -1887,7 +1916,7 @@ function CalculatorScreen() {
     />
   ) : null;
 
-  if (!food || !estimate) {
+  if (!food || carbsG == null || !activeProfile) {
     // The host lives on every branch, so anything this screen ever says lands
     // inside its own view controller rather than behind it.
     //
@@ -2030,6 +2059,7 @@ function CalculatorScreen() {
             {showsDose ? <CarbRatioLine slot={slot} /> : null}
 
             {showsDose ? (
+              !calcFiguresAllowed(activeProfile) ? null : (
               <View
                 className="rounded-2xl p-4 mb-3"
                 style={[
@@ -2063,6 +2093,7 @@ function CalculatorScreen() {
                   </View>
                 </View>
               </View>
+              )
             ) : (
               <NoticeCard
                 icon="information-circle-outline"
@@ -2118,11 +2149,13 @@ function CalculatorScreen() {
     );
   }
 
-  const heroDose =
-    estimate.totalDose === 0 &&
-    (estimate.mealDose > 0 || estimate.correctionDose > 0)
+  // Non-null only behind the confirmation gate and a usable slot ratio.
+  const doseEst = carbRatioValid ? estimate : null;
+  const heroDose = doseEst
+    ? doseEst.totalDose === 0 && (doseEst.mealDose > 0 || doseEst.correctionDose > 0)
       ? "< 0.5"
-      : num(estimate.totalDose);
+      : num(doseEst.totalDose)
+    : null;
 
   return (
     <AppBackground>
@@ -2191,9 +2224,9 @@ function CalculatorScreen() {
           {/* Read-out 1: carbohydrate, with the portion slider under it */}
           <ReadoutCard
             label={t("calculator.estCarbs")}
-            value={num(estimate.carbs)}
+            value={num(carbsG)}
             suffix={t("common.grams")}
-            note={choiceText(estimate.carbs)}
+            note={choiceText(carbsG)}
           >
             {/* A template has no single portion to drag: its carbs are the sum of its
                 items, and one slider over the lot would silently rescale every one
@@ -2357,7 +2390,7 @@ function CalculatorScreen() {
             <>
               <CarbRatioLine slot={slot} />
 
-              {carbRatioValid ? (
+              {doseEst ? (
                 <>
                   {/* Hero: the calculated number, glowing, with its provenance */}
                   <View
@@ -2407,12 +2440,12 @@ function CalculatorScreen() {
                     <View className="mt-3" style={{ gap: 5 }}>
                       <Breakdown
                         label={t("calculator.mealDose")}
-                        value={`${num(estimate.mealDose)} ${t("common.units")}`}
+                        value={`${num(doseEst.mealDose)} ${t("common.units")}`}
                       />
-                      {estimate.correctionDose > 0 ? (
+                      {doseEst.correctionDose > 0 ? (
                         <Breakdown
                           label={t("calculator.correctionDose")}
-                          value={`${num(estimate.correctionDose)} ${t("common.units")}`}
+                          value={`${num(doseEst.correctionDose)} ${t("common.units")}`}
                         />
                       ) : null}
                       {iob > 0 ? (
@@ -2422,10 +2455,10 @@ function CalculatorScreen() {
                           tooltip={iobTooltipText}
                         />
                       ) : null}
-                      {estimate.iobReduction > 0 ? (
+                      {doseEst.iobReduction > 0 ? (
                         <Breakdown
                           label={t("calculator.iobReduction")}
-                          value={`-${num(estimate.iobReduction)} ${t("common.units")}`}
+                          value={`-${num(doseEst.iobReduction)} ${t("common.units")}`}
                           tint={GLUCOSE_RICH.target}
                         />
                       ) : null}
@@ -2451,21 +2484,10 @@ function CalculatorScreen() {
                     </View>
                   </View>
                 </>
-              ) : (
-                // No usable ratio for this slot (0/unset): the meal-dose
-                // arithmetic has nothing real to divide by, so instead of a
-                // number built on a floor value, this is the same "not set,
-                // tap to fix" state CarbRatioLine itself shows above.
-                <NoticeCard
-                  icon="water-outline"
-                  tint={THEME.accent}
-                  body={t("ratio.notSet")}
-                  onPress={() => {
-                    hapticSelect();
-                    setSetupOpen(true);
-                  }}
-                />
-              )}
+              ) : null}
+              {/* Without confirmed ratios there is no figure: the one line above
+                  (CarbRatioLine, "Enter your ratios") leads to Profile and
+                  Targets, and nothing is computed or shown in its place. */}
 
               {/* Regulation: a non-advice note accompanies every dose display. */}
               <NoticeCard
@@ -2474,30 +2496,14 @@ function CalculatorScreen() {
                 body={t("calculator.calcNotAdvice")}
               />
 
-              {carbRatioValid ? (
+              {doseEst ? (
                 <>
-                  {/* Secondary, non-regulation notices (default ratio in use, ISF
-                      skipped) grouped into one card instead of stacking each as
-                      its own box - a default ratio must still never be mistaken
-                      for the user's own, and a dropped correction is still stated,
-                      not hidden, just no longer in a separate box each. */}
+                  {/* Secondary, non-regulation notices (a skipped ISF correction)
+                      grouped into one card; a dropped correction is stated, not
+                      hidden. */}
                   <NoticeGroup
                     items={[
-                      ...(activeProfile && !activeProfile.ratios_confirmed
-                        ? [
-                            {
-                              icon: "information-circle-outline" as const,
-                              tint: THEME.accent,
-                              title: t("calculator.defaultRatiosTitle"),
-                              body: t("calculator.defaultRatiosBody"),
-                              onPress: () => {
-                                hapticSelect();
-                                setSetupOpen(true);
-                              },
-                            },
-                          ]
-                        : []),
-                      ...(estimate.correctionSkipped === "isf_invalid"
+                      ...(doseEst.correctionSkipped === "isf_invalid"
                         ? [
                             {
                               icon: "information-circle-outline" as const,
@@ -2510,7 +2516,7 @@ function CalculatorScreen() {
                   />
 
                   {/* Plausibility warnings: non-blocking; the dose stays editable */}
-                  {estimate.warnings.map((w) => (
+                  {doseEst.warnings.map((w) => (
                     <NoticeCard
                       key={w}
                       icon="alert-circle-outline"
@@ -2557,8 +2563,8 @@ function CalculatorScreen() {
                   icon="information-circle-outline"
                   tint={THEME.accent}
                   body={
-                    carbRatioValid
-                      ? t("calculator.doseEmptyNote", { n: num(estimate.totalDose) })
+                    doseEst
+                      ? t("calculator.doseEmptyNote", { n: num(doseEst.totalDose) })
                       : t("calculator.doseZeroNote")
                   }
                 />

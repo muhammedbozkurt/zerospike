@@ -26,7 +26,9 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.rotationCycleStart",
   /** lib/db/screenshotSeed.ts - which language this profile was seeded in. */
   "zerospike.screenshotSeededLang.v16",
-  /** lib/calcSetup.ts - the calculator's first-use number sheet, put away once. */
+  /** lib/calcSetup.ts - the ratios sheet's one-time auto-open marker. */
+  "zerospike.ratiosConfirmPrompted",
+  /** lib/calcSetup.ts - the pre-2.4 sheet's flag; nothing reads it, deleting a profile still sweeps it. */
   "zerospike.calcSetupDismissed",
   /** lib/healthFirstImport.ts - the one-time first Apple Health import marker. */
   "zerospike.healthFirstImportDone",

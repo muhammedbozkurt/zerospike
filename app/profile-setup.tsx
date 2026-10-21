@@ -27,7 +27,14 @@ import { TARGET_DEFAULTS_MGDL, CARB_TARGET_DEFAULTS_G, isNoInsulinDiabetesType }
 import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { RangeInput } from "../components/RangeInput";
-import { Stepper, useStepperValidity } from "../components/Stepper";
+import { RatioInput } from "../components/RatioInput";
+import { ConfirmCheckbox } from "../components/ConfirmCheckbox";
+import {
+  CARB_RATIO_BOUNDS,
+  ISF_BOUNDS,
+  ratioFieldsInitial,
+  type RatioFields,
+} from "../lib/calcSetup";
 import { InlineTimePicker } from "../components/InlineTimePicker";
 import { InsulinModeSection } from "../components/InsulinModeSection";
 import { Button, Segmented, Txt } from "../components/ui";
@@ -119,25 +126,20 @@ function ProfileSetupScreen() {
   const [postmealMax, setPostmealMax] = useState(
     String(glucoseToDisplay(activeProfile?.target_postmeal_max ?? 140, unit))
   );
-  // Ratios / ISF are stepper-driven numbers (E.7); ISF is in the display unit.
-  const [crB, setCrB] = useState(activeProfile?.carb_ratio_breakfast ?? 10);
-  const [crL, setCrL] = useState(activeProfile?.carb_ratio_lunch ?? 12);
-  const [crD, setCrD] = useState(activeProfile?.carb_ratio_dinner ?? 12);
-  const [isf, setIsf] = useState(
-    glucoseToDisplay(activeProfile?.insulin_sensitivity_factor ?? 40, unit)
-  );
+  // Ratios / ISF start EMPTY (the user's own numbers or nothing); ISF is kept in
+  // mg/dL here and shown in the display unit. They are written only when all
+  // four are filled, and counted as confirmed only with the box ticked.
+  const [ratios, setRatios] = useState<RatioFields>(() => ratioFieldsInitial(activeProfile));
+  const [ratiosTick, setRatiosTick] = useState(activeProfile?.ratios_confirmed === 1);
   const [carbMin, setCarbMin] = useState(
     String(activeProfile?.daily_carb_target_min_g ?? 160)
   );
   const [carbMax, setCarbMax] = useState(
     String(activeProfile?.daily_carb_target_g ?? 200)
   );
-  // A prefilled ratio/target only becomes the user's own once they actually
-  // move the control on its row - same "touched" pattern onboarding uses, so
-  // picking a diabetes type never overwrites a value already hand-edited, and
-  // ratios_confirmed only turns on when the steppers were genuinely touched.
-  const [carbRatioTouched, setCarbRatioTouched] = useState(false);
-  const [isfTouched, setIsfTouched] = useState(false);
+  // A prefilled target only becomes the user's own once they actually move the
+  // control on its row - same "touched" pattern onboarding uses, so picking a
+  // diabetes type never overwrites a value already hand-edited.
   const [targetsTouched, setTargetsTouched] = useState(false);
   const [carbRangeTouched, setCarbRangeTouched] = useState(false);
   const [basalTime, setBasalTime] = useState("22:00");
@@ -147,7 +149,6 @@ function ProfileSetupScreen() {
   const [basalTimeTouched, setBasalTimeTouched] = useState(false);
   const [showTime, setShowTime] = useState(false);
   const [saving, setSaving] = useState(false);
-  const stepperFields = useStepperValidity();
 
   // ── The ready-made measurement layout (2.3.0's K2-E, shared with onboarding) ─
   //
@@ -293,7 +294,6 @@ function ProfileSetupScreen() {
     setFastingMax(convert(fastingMax, 100));
     setPostmealMin(convert(postmealMin, 80));
     setPostmealMax(convert(postmealMax, 140));
-    setIsf(glucoseToDisplay(glucoseFromDisplay(isf, unit), next));
     setUnit(next);
   }
 
@@ -351,7 +351,7 @@ function ProfileSetupScreen() {
   const carbOk =
     rangeOk(carbMin, carbMax) &&
     withinBounds(carbMin, carbMax, CARB_TARGET_BOUNDS);
-  const canSave = fastingOk && postmealOk && carbOk && stepperFields.allValid;
+  const canSave = fastingOk && postmealOk && carbOk;
 
   /**
    * "Set up this plan": writes the previewed rows to THIS profile and asks for
@@ -399,6 +399,13 @@ function ProfileSetupScreen() {
     });
   }
 
+  const ratioSetComplete =
+    showsBolus &&
+    ratios.breakfast != null &&
+    ratios.lunch != null &&
+    ratios.dinner != null &&
+    ratios.isfMgdl != null;
+
   async function save() {
     const profileId = editedProfileIdRef.current;
     if (profileId == null || !canSave) return;
@@ -423,16 +430,18 @@ function ProfileSetupScreen() {
           target_postmeal_max: clampTarget(
             glucoseFromDisplay(n(postmealMax, glucoseToDisplay(140, unit)), unit)
           ),
-          carb_ratio_breakfast: crB,
-          carb_ratio_lunch: crL,
-          carb_ratio_dinner: crD,
-          insulin_sensitivity_factor: glucoseFromDisplay(isf, unit),
+          ...(ratioSetComplete
+            ? {
+                carb_ratio_breakfast: ratios.breakfast as number,
+                carb_ratio_lunch: ratios.lunch as number,
+                carb_ratio_dinner: ratios.dinner as number,
+                insulin_sensitivity_factor: ratios.isfMgdl as number,
+              }
+            : {}),
           daily_carb_target_min_g: clampCarbTarget(n(carbMin, 160)),
           daily_carb_target_g: clampCarbTarget(n(carbMax, 200)),
-          // Only counts as the user's own ratios once the steppers were actually
-          // touched (onboarding pattern) - walking past the prefilled defaults is
-          // not a confirmation.
-          ratios_confirmed: showsBolus && carbRatioTouched && isfTouched ? 1 : 0,
+          // Confirmed only when the user typed all four numbers AND ticked the box.
+          ...(ratioSetComplete ? { ratios_confirmed: ratiosTick ? 1 : 0 } : {}),
         });
         // From here the profile is the user's own, so the cancel path above must
         // never take it back - set after the write, not before, so a failed one
@@ -654,26 +663,14 @@ function ProfileSetupScreen() {
 
         {showsBolus ? (
           <FormCard icon="restaurant-outline" title={t("settings.carbRatios")}>
-            {(
-              [
-                ["breakfast", crB, setCrB],
-                ["lunch", crL, setCrL],
-                ["dinner", crD, setCrD],
-              ] as const
-            ).map(([slot, value, setter]) => (
+            {(["breakfast", "lunch", "dinner"] as const).map((slot) => (
               <View key={slot} className="px-4 py-3">
                 <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
-                <Stepper
-                  value={value}
-                  onChange={(v) => {
-                    setter(v);
-                    setCarbRatioTouched(true);
-                  }}
-                  onValidityChange={stepperFields.reporter(`cr:${slot}`)}
-                  step={0.5}
-                  longStep={1}
-                  min={1}
-                  max={50}
+                <RatioInput
+                  value={ratios[slot]}
+                  onChange={(v) => setRatios((r) => ({ ...r, [slot]: v }))}
+                  min={CARB_RATIO_BOUNDS.min}
+                  max={CARB_RATIO_BOUNDS.max}
                   decimals={1}
                   suffix={t("common.carbRatioUnit")}
                   accessibilityLabel={t(`slot.${slot}`)}
@@ -688,20 +685,26 @@ function ProfileSetupScreen() {
             {showsBolus ? (
               <View className="px-4 py-3">
                 <Text className="text-mut text-xs mb-2">{t("settings.isfHint")}</Text>
-                <Stepper
-                  value={isf}
-                  onChange={(v) => {
-                    setIsf(v);
-                    setIsfTouched(true);
-                  }}
-                  onValidityChange={stepperFields.reporter("isf")}
-                  step={unit === "mmol" ? 0.1 : 1}
-                  longStep={unit === "mmol" ? 0.5 : 5}
-                  min={unit === "mmol" ? 0.5 : 5}
-                  max={unit === "mmol" ? 30 : 500}
+                <RatioInput
+                  value={ratios.isfMgdl == null ? null : glucoseToDisplay(ratios.isfMgdl, unit)}
+                  onChange={(v) =>
+                    setRatios((r) => ({
+                      ...r,
+                      isfMgdl: v == null ? null : glucoseFromDisplay(v, unit),
+                    }))
+                  }
+                  min={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].min}
+                  max={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].max}
                   decimals={unit === "mmol" ? 1 : 0}
                   suffix={glucoseUnitLabel(unit)}
                   accessibilityLabel={t("settings.isf")}
+                />
+                <Text className="text-mut text-xs mt-3">{t("calculator.setup.teamNote")}</Text>
+                <ConfirmCheckbox
+                  checked={ratiosTick}
+                  onToggle={setRatiosTick}
+                  label={t("calculator.setup.confirm")}
+                  disabled={!ratioSetComplete}
                 />
               </View>
             ) : null}

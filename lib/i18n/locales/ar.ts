@@ -297,7 +297,7 @@ const ar: TranslationSchema = {
   },
   ratio: {
     line: "نسبتك ({{slot}}): {{ratio}}",
-    notSet: "نسبتك غير محددة، المس لإدخالها.",
+    enter: "أدخل نسبك",
   },
   food: {
     category: "الفئة",
@@ -395,8 +395,6 @@ const ar: TranslationSchema = {
     autoInjectionShort: "تم إنشاء سجل حقنة سريعة المفعول",
     autoGlucose: "سُجّلت أيضًا قيمة سكر الدم التي أدخلتها.",
     correctionTargetNote: "يستهدف التصحيح منتصف نطاقك المستهدف ({{value}} {{unit}}).",
-    defaultRatiosTitle: "حُسب بالنسب الافتراضية",
-    defaultRatiosBody: "يستخدم هذا التقدير نسبًا افتراضية؛ ويمكنك إدخال النسب التي حددها فريقك الطبي في الإعدادات.",
     carbFocusTitle: "تسجيل الكربوهيدرات",
     carbFocusBody: "قسم الجرعة مخفي لأنك ذكرت أنك لا تستخدم الإنسولين؛ ويمكنك تغيير ذلك في الإعدادات.",
     saveMealAndDose: "حفظ الوجبة والجرعة",
@@ -424,6 +422,8 @@ const ar: TranslationSchema = {
       isfLabel: "معامل التصحيح لديك (ISF)",
       isfHint: "مقدار خفض وحدة واحدة لسكر الدم (يحدده فريقك الطبي).",
       later: "ليس الآن",
+      teamNote: "حدد نسبك بالتشاور مع فريق السكري.",
+      confirm: "حددت هذه النسب مع فريق السكري الخاص بي",
     },
   },
   iob: {
@@ -581,6 +581,7 @@ const ar: TranslationSchema = {
     name: "اسم الملف الشخصي",
     isf: "معامل حساسية الإنسولين",
     isfHint: "مقدار خفض وحدة واحدة لسكر الدم.",
+    ratiosReconfirmHint: "إذا غيّرت قيمة، فعلّم المربع مرة أخرى.",
     carbRatios: "نسب الكربوهيدرات (g/U)",
     dailyCarbTarget: "هدف الكربوهيدرات اليومي (g)",
     basalDailyUnits: "الجرعة القاعدية اليومية",

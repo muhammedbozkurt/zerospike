@@ -15,6 +15,17 @@ Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode
 - Widget ve Live Activity açık temaya uyumlu; Wear vurgu dozu.
 - Dahili: ekran görüntüsü modunda tema açığa sabit.
 
+### Hesaplayıcı
+- Hesaplayıcıda varsayılan oranlar kaldırıldı: oranlar girilmeden ünite
+  gösterilmez. Ünite rakamı yalnız kullanıcı kendi karbonhidrat oranını ve
+  düzeltme faktörünü girip "Bu oranları diyabet ekibimle belirledim" kutusunu
+  işaretlediğinde görünür; o zamana kadar tek satır "Oranlarınızı girin"
+  (Profil ve Hedefler'e gider). Oran sheet'i ve Profil ve Hedefler alanları boş
+  başlar. Bir değer değişirse onay sıfırlanır ve kutu yeniden işaretlenir.
+- Geriye dönük: onaylı oranı olanlar (`ratios_confirmed = 1`) için sonuç aynı.
+  Varsayılanla hesaplananlar artık rakam görmez; kayıtlı dozlar değişmez.
+  Hesaplayıcıyı ilk açışta oran sheet'i bir kez çıkar.
+
 ### İndirim ekranı (downsell)
 - Paywall'da yıllık plan seçiliyken satın alma vazgeçilirse ya da paywall
   kapatılırsa (X, geri, aşağı kaydırma), mağazada gerçek bir indirim varsa

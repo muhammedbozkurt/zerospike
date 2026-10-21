@@ -297,7 +297,7 @@ const es: TranslationSchema = {
   },
   ratio: {
     line: "Su proporción ({{slot}}): {{ratio}}",
-    notSet: "Su proporción no está definida. Toque para ingresarla.",
+    enter: "Introduzca sus proporciones",
   },
   food: {
     category: "Categoría",
@@ -395,8 +395,6 @@ const es: TranslationSchema = {
     autoInjectionShort: "Registro de bolo creado",
     autoGlucose: "El valor de glucosa que introdujo también se registró.",
     correctionTargetNote: "La corrección apunta al punto medio de su rango objetivo ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Calculado con proporciones predeterminadas",
-    defaultRatiosBody: "Esta estimación usa proporciones predeterminadas; puede introducir las de su equipo sanitario en Ajustes.",
     carbFocusTitle: "Registro de carbohidratos",
     carbFocusBody: "La sección de dosis está oculta porque no usa insulina; puede cambiarlo en Ajustes.",
     saveMealAndDose: "Guardar la comida y la dosis",
@@ -424,6 +422,8 @@ const es: TranslationSchema = {
       isfLabel: "Su factor de corrección (ISF)",
       isfHint: "Cuánto baja 1 unidad su glucosa (lo define su equipo sanitario).",
       later: "Ahora no",
+      teamNote: "Establezca sus proporciones con su equipo de diabetes.",
+      confirm: "He establecido estos valores con mi equipo de diabetes",
     },
   },
   iob: {
@@ -581,6 +581,7 @@ const es: TranslationSchema = {
     name: "Nombre del perfil",
     isf: "Factor de sensibilidad a la insulina",
     isfHint: "Cuánto baja la glucosa 1 unidad.",
+    ratiosReconfirmHint: "Si cambia un valor, marque de nuevo la casilla.",
     carbRatios: "Ratios de carbohidratos (g/unidad)",
     dailyCarbTarget: "Objetivo diario de carbohidratos (g)",
     basalDailyUnits: "Dosis basal diaria",

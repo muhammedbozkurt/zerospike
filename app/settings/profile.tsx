@@ -30,6 +30,17 @@ import { Button, Segmented } from "../../components/ui";
 import { FormCard, InputRow } from "../../components/form";
 import { RangeInput } from "../../components/RangeInput";
 import { Stepper } from "../../components/Stepper";
+import { RatioInput } from "../../components/RatioInput";
+import { ConfirmCheckbox } from "../../components/ConfirmCheckbox";
+import {
+  CARB_RATIO_BOUNDS,
+  ISF_BOUNDS,
+  ratioConfirmPatch,
+  ratioFieldsInitial,
+  ratioSetMatchesStored,
+  ratioSetPatch,
+  type RatioFields,
+} from "../../lib/calcSetup";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { InsulinModeSection } from "../../components/InsulinModeSection";
 import { SettingsScaffold } from "../../components/settingsUi";
@@ -62,12 +73,11 @@ export default function ProfileSettings() {
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
   const [name, setName] = useState(() => activeProfile?.name ?? "");
   const [reportName, setReportNameText] = useState("");
-  const [isf, setIsf] = useState(() =>
-    activeProfile ? glucoseToDisplay(activeProfile.insulin_sensitivity_factor, unit) : 0
+  // The four calculator numbers are a draft set: empty until the user types
+  // them, saved together once all four are filled (lib/calcSetup.ts ratioSetPatch).
+  const [ratioDraft, setRatioDraft] = useState<RatioFields>(() =>
+    ratioFieldsInitial(activeProfile)
   );
-  const [crB, setCrB] = useState(() => activeProfile?.carb_ratio_breakfast ?? 0);
-  const [crL, setCrL] = useState(() => activeProfile?.carb_ratio_lunch ?? 0);
-  const [crD, setCrD] = useState(() => activeProfile?.carb_ratio_dinner ?? 0);
   const [fastingMin, setFastingMin] = useState(() =>
     activeProfile ? num(glucoseToDisplay(activeProfile.target_fasting_min, unit)) : ""
   );
@@ -128,10 +138,7 @@ export default function ProfileSettings() {
     if (!activeProfile) return;
     const u = activeProfile.glucose_unit ?? "mgdl";
     setName(activeProfile.name);
-    setIsf(glucoseToDisplay(activeProfile.insulin_sensitivity_factor, u));
-    setCrB(activeProfile.carb_ratio_breakfast);
-    setCrL(activeProfile.carb_ratio_lunch);
-    setCrD(activeProfile.carb_ratio_dinner);
+    setRatioDraft(ratioFieldsInitial(activeProfile));
     setFastingMin(num(glucoseToDisplay(activeProfile.target_fasting_min, u)));
     setFastingMax(num(glucoseToDisplay(activeProfile.target_fasting_max, u)));
     setPostmealMin(num(glucoseToDisplay(activeProfile.target_postmeal_min, u)));
@@ -207,10 +214,17 @@ export default function ProfileSettings() {
     }
   }
 
-  // Saving a ratio is the user telling us this IS their number, so it clears the
-  // "running on defaults" state the calculator surfaces.
-  async function persistRatio(patch: Record<string, number>) {
-    await persist({ ...patch, ratios_confirmed: 1 });
+  // A changed set is a new set: ratioSetPatch withdraws the confirmation, and the
+  // user ticks the box again. Typing the same numbers back changes nothing.
+  function onRatioDraft(next: RatioFields) {
+    setRatioDraft(next);
+    const patch = ratioSetPatch(activeProfile, next);
+    if (patch) void persist(patch);
+  }
+
+  function onRatioConfirm(checked: boolean) {
+    const patch = ratioConfirmPatch(activeProfile, checked);
+    if (patch) void persist(patch);
   }
 
   function rangeOk(minText: string, maxText: string): boolean {
@@ -619,25 +633,26 @@ export default function ProfileSettings() {
         </FormCard>
       ) : null}
 
-      {/* ISF + carb ratios: steppers (E.7), mealtime-insulin users only. */}
+      {/* ISF + carb ratios, mealtime-insulin users only. Every field starts
+          empty: the calculator shows no unit figure until the user has typed
+          their own numbers and ticked the box below. */}
       {showsBolus ? (
         <FormCard icon="pulse-outline" title={t("settings.isf")}>
           <View className="px-4 py-3">
             <Text className="text-mut text-xs mb-2">{t("settings.isfHint")}</Text>
-            <Stepper
-              value={isf}
-              onChange={(v) => {
-                setIsf(v);
-                void persistRatio({
-                  insulin_sensitivity_factor: glucoseFromDisplay(v, unit),
-                });
-              }}
-              step={unit === "mmol" ? 0.1 : 1}
-              longStep={unit === "mmol" ? 0.5 : 5}
-              min={unit === "mmol" ? 0.5 : 5}
-              max={unit === "mmol" ? 30 : 500}
+            <RatioInput
+              value={
+                ratioDraft.isfMgdl == null ? null : glucoseToDisplay(ratioDraft.isfMgdl, unit)
+              }
+              onChange={(v) =>
+                onRatioDraft({
+                  ...ratioDraft,
+                  isfMgdl: v == null ? null : glucoseFromDisplay(v, unit),
+                })
+              }
+              min={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].min}
+              max={ISF_BOUNDS[unit === "mmol" ? "mmol" : "mgdl"].max}
               decimals={unit === "mmol" ? 1 : 0}
-              revertOnUnmount
               suffix={glucoseUnitLabel(unit)}
               accessibilityLabel={t("settings.isf")}
             />
@@ -647,36 +662,42 @@ export default function ProfileSettings() {
 
       {showsBolus ? (
         <FormCard icon="restaurant-outline" title={t("settings.carbRatios")}>
-          {(
-            [
-              ["breakfast", crB, setCrB, "carb_ratio_breakfast"],
-              ["lunch", crL, setCrL, "carb_ratio_lunch"],
-              ["dinner", crD, setCrD, "carb_ratio_dinner"],
-            ] as const
-          ).map(([slot, value, setter, col], i, arr) => (
+          {(["breakfast", "lunch", "dinner"] as const).map((slot, i, arr) => (
             <View
               key={slot}
               className="px-4 py-3"
               style={i < arr.length - 1 ? { borderBottomWidth: 1, borderBottomColor: THEME.border } : undefined}
             >
               <Text className="text-mut text-xs mb-2">{t(`slot.${slot}`)}</Text>
-              <Stepper
-                value={value}
-                onChange={(v) => {
-                  setter(v);
-                  void persistRatio({ [col]: v });
-                }}
-                step={0.5}
-                longStep={1}
-                min={1}
-                max={50}
+              <RatioInput
+                value={ratioDraft[slot]}
+                onChange={(v) => onRatioDraft({ ...ratioDraft, [slot]: v })}
+                min={CARB_RATIO_BOUNDS.min}
+                max={CARB_RATIO_BOUNDS.max}
                 decimals={1}
-                revertOnUnmount
                 suffix={t("common.carbRatioUnit")}
                 accessibilityLabel={t(`slot.${slot}`)}
               />
             </View>
           ))}
+        </FormCard>
+      ) : null}
+
+      {showsBolus ? (
+        <FormCard icon="checkmark-circle-outline" title={t("calculator.setup.title")}>
+          <View className="px-4 py-3">
+            <Text className="text-mut text-xs mb-1">{t("calculator.setup.teamNote")}</Text>
+            <ConfirmCheckbox
+              checked={activeProfile?.ratios_confirmed === 1}
+              onToggle={onRatioConfirm}
+              label={t("calculator.setup.confirm")}
+              disabled={
+                activeProfile?.ratios_confirmed !== 1 &&
+                !ratioSetMatchesStored(activeProfile, ratioDraft)
+              }
+            />
+            <Text className="text-mut text-xs mt-1">{t("settings.ratiosReconfirmHint")}</Text>
+          </View>
         </FormCard>
       ) : null}
 

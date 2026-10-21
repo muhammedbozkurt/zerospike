@@ -297,7 +297,7 @@ const it: TranslationSchema = {
   },
   ratio: {
     line: "Il Suo rapporto ({{slot}}): {{ratio}}",
-    notSet: "Il Suo rapporto non è impostato. Tocchi per inserirlo.",
+    enter: "Inserisca i Suoi rapporti",
   },
   food: {
     category: "Categoria",
@@ -395,8 +395,6 @@ const it: TranslationSchema = {
     autoInjectionShort: "Voce bolo creata",
     autoGlucose: "Anche il valore di glicemia inserito è stato registrato.",
     correctionTargetNote: "La correzione punta al centro del Suo intervallo target ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Calcolato con i rapporti predefiniti",
-    defaultRatiosBody: "Questa stima usa rapporti predefiniti; può inserire quelli del Suo team di cura nelle Impostazioni.",
     carbFocusTitle: "Registrazione dei carboidrati",
     carbFocusBody: "La sezione della dose è nascosta perché ha indicato di non usare insulina; può cambiarlo nelle Impostazioni.",
     saveMealAndDose: "Salva pasto e dose",
@@ -424,6 +422,8 @@ const it: TranslationSchema = {
       isfLabel: "Il Suo fattore di correzione (ISF)",
       isfHint: "Di quanto 1 unità abbassa la glicemia (lo stabilisce il Suo team di cura).",
       later: "Non ora",
+      teamNote: "Stabilisca i Suoi rapporti con il Suo team diabetologico.",
+      confirm: "Ho stabilito questi valori con il mio team diabetologico",
     },
   },
   iob: {
@@ -581,6 +581,7 @@ const it: TranslationSchema = {
     name: "Nome del profilo",
     isf: "Fattore di sensibilità insulinica",
     isfHint: "Di quanto 1 unità abbassa la glicemia.",
+    ratiosReconfirmHint: "Se modifica un valore, selezioni di nuovo la casella.",
     carbRatios: "Rapporti insulina/carboidrati (g/unità)",
     dailyCarbTarget: "Obiettivo giornaliero di carboidrati (g)",
     basalDailyUnits: "Dose basale giornaliera",

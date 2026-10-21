@@ -297,7 +297,7 @@ const de: TranslationSchema = {
   },
   ratio: {
     line: "Ihr KH-Faktor ({{slot}}): {{ratio}}",
-    notSet: "Ihr KH-Faktor ist nicht eingestellt. Tippen Sie, um ihn einzugeben.",
+    enter: "Geben Sie Ihre Faktoren ein",
   },
   food: {
     category: "Kategorie",
@@ -395,8 +395,6 @@ const de: TranslationSchema = {
     autoInjectionShort: "Bolus-Eintrag erstellt",
     autoGlucose: "Der eingegebene Glukosewert wurde ebenfalls erfasst.",
     correctionTargetNote: "Die Korrektur zielt auf die Mitte Ihres Zielbereichs ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Mit Standardwerten berechnet",
-    defaultRatiosBody: "Diese Schätzung nutzt Standardverhältnisse; die Werte Ihres Behandlungsteams können Sie in den Einstellungen eintragen.",
     carbFocusTitle: "Kohlenhydrat-Eintrag",
     carbFocusBody: "Der Dosisbereich ist ausgeblendet, weil Sie kein Insulin verwenden; in den Einstellungen änderbar.",
     saveMealAndDose: "Mahlzeit und Dosis speichern",
@@ -424,6 +422,8 @@ const de: TranslationSchema = {
       isfLabel: "Ihr Korrekturfaktor (ISF)",
       isfHint: "Wie stark 1 Einheit Ihre Glukose senkt (von Ihrem Behandlungsteam festgelegt).",
       later: "Jetzt nicht",
+      teamNote: "Legen Sie Ihre Faktoren gemeinsam mit Ihrem Diabetesteam fest.",
+      confirm: "Ich habe diese Werte mit meinem Diabetesteam festgelegt",
     },
   },
   iob: {
@@ -581,6 +581,7 @@ const de: TranslationSchema = {
     name: "Profilname",
     isf: "Insulinsensitivitätsfaktor",
     isfHint: "Wie stark 1 Einheit die Glukose senkt.",
+    ratiosReconfirmHint: "Wenn Sie einen Wert ändern, setzen Sie das Häkchen erneut.",
     carbRatios: "KH-Faktoren (g/Einheit)",
     dailyCarbTarget: "Tägliches KH-Ziel (g)",
     basalDailyUnits: "Tägliche Basaldosis",

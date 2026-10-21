@@ -295,7 +295,7 @@ const tr = {
   },
   ratio: {
     line: "Oranınız ({{slot}}): {{ratio}}",
-    notSet: "Oranınız ayarlı değil, girmek için dokunun.",
+    enter: "Oranlarınızı girin",
   },
   food: {
     category: "Kategori",
@@ -393,8 +393,6 @@ const tr = {
     autoInjectionShort: "Bolus kaydı oluşturuldu",
     autoGlucose: "Girdiğiniz şeker ölçümü de kaydedildi.",
     correctionTargetNote: "Düzeltme, hedef aralığının ortasını ({{value}} {{unit}}) esas alır.",
-    defaultRatiosTitle: "Varsayılan oranlarla hesaplandı",
-    defaultRatiosBody: "Hesap varsayılan oranlarla yapıldı; sağlık ekibinizin verdiği oranları Ayarlar'dan girebilirsiniz.",
     carbFocusTitle: "Karbonhidrat kaydı",
     carbFocusBody: "İnsülin kullanmadığınız için doz bölümü gizli; Ayarlar'dan değiştirebilirsiniz.",
     saveMealAndDose: "Öğünü ve dozu kaydet",
@@ -422,6 +420,8 @@ const tr = {
       isfLabel: "Düzeltme faktörünüz (ISF)",
       isfHint: "1 ünitenin glukozu ne kadar düşürdüğü (sağlık ekibiniz belirler).",
       later: "Şimdi değil",
+      teamNote: "Oranlarınızı diyabet ekibinizle belirleyin.",
+      confirm: "Bu oranları diyabet ekibimle belirledim",
     },
   },
   iob: {
@@ -579,6 +579,7 @@ const tr = {
     name: "Profil adı",
     isf: "İnsülin duyarlılık faktörü",
     isfHint: "1 ünitenin şekeri ne kadar düşürdüğü.",
+    ratiosReconfirmHint: "Bir değeri değiştirirseniz onay kutusunu yeniden işaretleyin.",
     carbRatios: "Karbonhidrat oranları (g/ünite)",
     dailyCarbTarget: "Günlük karbonhidrat hedefi (g)",
     basalDailyUnits: "Günlük bazal doz",

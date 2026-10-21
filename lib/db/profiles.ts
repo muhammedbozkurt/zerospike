@@ -37,7 +37,7 @@ export async function getDefaultProfile(): Promise<UserProfile> {
         basal_daily_units, basal_insulin_id, bolus_insulin_id,
         basal_insulin_other, bolus_insulin_other,
         created_at)
-     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, NULL, NULL, ?);`,
+     VALUES (?, ?, 0, 0, 0, 0, 80, 100, 80, 140, 70, 200, 160, NULL, NULL, NULL, NULL, NULL, ?);`,
     [DEFAULT_PROFILE_ID, "", now]
   );
   return (await getProfile(DEFAULT_PROFILE_ID))!;
@@ -74,6 +74,8 @@ export async function createProfile(
   const id = uuid();
   const now = new Date().toISOString();
   const carbMax = input.daily_carb_target_g ?? 200;
+  // 0 means "the user has not entered this": no calculation reads an unconfirmed
+  // ratio (ratios_confirmed stays 0), and nothing is suggested in its place.
   await db.runAsync(
     `INSERT INTO user_profiles
        (id, name, insulin_sensitivity_factor, carb_ratio_breakfast,
@@ -87,10 +89,10 @@ export async function createProfile(
     [
       id,
       input.name.trim(),
-      input.insulin_sensitivity_factor ?? 40,
-      input.carb_ratio_breakfast ?? 10,
-      input.carb_ratio_lunch ?? 12,
-      input.carb_ratio_dinner ?? 12,
+      input.insulin_sensitivity_factor ?? 0,
+      input.carb_ratio_breakfast ?? 0,
+      input.carb_ratio_lunch ?? 0,
+      input.carb_ratio_dinner ?? 0,
       input.target_fasting_min ?? 80,
       input.target_fasting_max ?? 100,
       input.target_postmeal_min ?? 80,

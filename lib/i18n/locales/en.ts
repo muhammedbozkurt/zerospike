@@ -297,7 +297,7 @@ const en: TranslationSchema = {
   },
   ratio: {
     line: "Your ratio ({{slot}}): {{ratio}}",
-    notSet: "Your ratio isn't set. Tap to enter it.",
+    enter: "Enter your ratios",
   },
   food: {
     category: "Category",
@@ -395,8 +395,6 @@ const en: TranslationSchema = {
     autoInjectionShort: "Bolus entry created",
     autoGlucose: "The glucose value you entered was logged too.",
     correctionTargetNote: "The correction aims at the middle of your target range ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Calculated with default ratios",
-    defaultRatiosBody: "This estimate uses default ratios; you can enter the ones from your care team in Settings.",
     carbFocusTitle: "Carb logging",
     carbFocusBody: "The dose section is hidden because you said you don't use insulin; you can change this in Settings.",
     saveMealAndDose: "Save meal and dose",
@@ -424,6 +422,8 @@ const en: TranslationSchema = {
       isfLabel: "Your correction factor (ISF)",
       isfHint: "How much 1 unit lowers your glucose (set by your care team).",
       later: "Not now",
+      teamNote: "Set your ratios with your diabetes team.",
+      confirm: "I set these ratios with my diabetes team",
     },
   },
   iob: {
@@ -581,6 +581,7 @@ const en: TranslationSchema = {
     name: "Profile name",
     isf: "Insulin sensitivity factor",
     isfHint: "How much 1 unit lowers glucose.",
+    ratiosReconfirmHint: "If you change a number, tick the box again to confirm it.",
     carbRatios: "Carb ratios (g/unit)",
     dailyCarbTarget: "Daily carb target (g)",
     basalDailyUnits: "Daily basal dose",

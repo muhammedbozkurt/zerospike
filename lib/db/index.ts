@@ -679,7 +679,7 @@ async function ensureDefaultProfile(db: SQLite.SQLiteDatabase): Promise<void> {
         target_fasting_max, target_postmeal_min, target_postmeal_max,
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         created_at)
-     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, ?);`,
+     VALUES (?, ?, 0, 0, 0, 0, 80, 100, 80, 140, 70, 200, 160, ?);`,
     [DEFAULT_PROFILE_ID, "", now]
   );
 }
