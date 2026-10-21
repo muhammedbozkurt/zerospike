@@ -3,7 +3,7 @@ import { initReactI18next } from "react-i18next";
 import { getLocales } from "expo-localization";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Lang } from "../db/types";
-import { setActiveLang } from "../lang";
+import { setActiveLang, setDeviceRegion } from "../lang";
 
 export const SUPPORTED_LANGS: Lang[] = [
   "tr",
@@ -102,6 +102,11 @@ if (!i18n.isInitialized) {
 // Mirror the language into the lightweight holder that the pure format helpers
 // read (they must not import this heavy module). Set once now and on every change.
 setActiveLang(i18n.language);
+try {
+  setDeviceRegion(getLocales()[0]?.regionCode);
+} catch {
+  // expo-localization not ready: format helpers keep the language-only tag
+}
 i18n.on("languageChanged", (lng) => setActiveLang(lng));
 
 /**

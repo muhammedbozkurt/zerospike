@@ -7,7 +7,7 @@
  * Every call is guarded so a runtime without full Intl falls back to the plain
  * form instead of throwing. */
 
-import { getActiveLang } from "./lang";
+import { getActiveLang, getDeviceRegion } from "./lang";
 
 // The Arabic bundle is written with Western digits throughout, but Intl's
 // default numbering system for "ar" is Eastern Arabic (١٢٣), so a screen would
@@ -21,7 +21,16 @@ function localeTagFor(lang: string): string {
  *  lib/glucose formats the one number that matters most and must not resolve
  *  the locale differently from every other surface. */
 export function formatLocale(): string {
-  return localeTagFor(getActiveLang());
+  return formatTagFor(getActiveLang(), getDeviceRegion());
+}
+
+const ENGLISH_REGIONS: ReadonlySet<string> = new Set(["GB", "AU", "CA", "IE", "NZ"]);
+
+/** English follows the device region where it differs from US English (en-GB
+ *  writes 21/10/2026); every other language keeps its own tag. */
+export function formatTagFor(lang: string, region: string): string {
+  if (lang === "en" && ENGLISH_REGIONS.has(region)) return `en-${region}`;
+  return localeTagFor(lang);
 }
 
 /** Languages that write the decimal mark as a comma. Used in the no-Intl

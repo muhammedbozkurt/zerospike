@@ -17,3 +17,15 @@ export function setActiveLang(lang: string): void {
 export function getActiveLang(): string {
   return current;
 }
+
+let deviceRegion = "";
+
+/** The device's region code ("GB"), kept beside the language so the pure format
+ *  helpers can follow the device's date and number conventions in English. */
+export function setDeviceRegion(region: string | null | undefined): void {
+  deviceRegion = String(region ?? "").trim().toUpperCase();
+}
+
+export function getDeviceRegion(): string {
+  return deviceRegion;
+}
