@@ -297,7 +297,8 @@ const pt: TranslationSchema = {
   },
   ratio: {
     line: "Sua razão ({{slot}}): {{ratio}}",
-    notSet: "Sua razão não está definida. Toque para informá-la.",
+    enter: "Informe suas razões",
+    confirm: "Confirme suas razões",
   },
   food: {
     category: "Categoria",
@@ -395,8 +396,6 @@ const pt: TranslationSchema = {
     autoInjectionShort: "Registro de bolus criado",
     autoGlucose: "O valor de glicemia que você digitou também foi registrado.",
     correctionTargetNote: "A correção mira o meio da sua faixa-alvo ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Calculado com razões padrão",
-    defaultRatiosBody: "Esta estimativa usa razões padrão; você pode informar as da sua equipe de saúde em Configurações.",
     carbFocusTitle: "Registro de carboidratos",
     carbFocusBody: "A seção de dose está oculta porque você informou que não usa insulina; dá para mudar isso em Configurações.",
     saveMealAndDose: "Salvar refeição e dose",
@@ -420,10 +419,12 @@ const pt: TranslationSchema = {
       body: "Esta tela calcula a partir de dois valores que a sua equipe de saúde informou. Informe-os uma só vez. Eles ficam no seu perfil e você pode mudá-los quando quiser em Configurações.",
       carbLabel: "Sua razão de carboidratos",
       carbHint: "Gramas de carboidrato cobertas por 1 unidade (definida pela sua equipe de saúde).",
-      perMealNote: "Vale para todas as refeições. Em Configurações você pode definir uma razão diferente para cada refeição.",
       isfLabel: "Seu fator de correção (FSI)",
       isfHint: "Quanto 1 unidade baixa sua glicemia (definido pela sua equipe de saúde).",
       later: "Agora não",
+      bodyFilled: "Seus valores estão salvos. Basta confirmá-los.",
+      teamNote: "Defina suas razões com sua equipe de diabetes.",
+      confirm: "Defini estes valores com minha equipe de diabetes",
     },
   },
   iob: {
@@ -581,6 +582,7 @@ const pt: TranslationSchema = {
     name: "Nome do perfil",
     isf: "Fator de sensibilidade à insulina",
     isfHint: "Quanto 1 unidade baixa a glicemia.",
+    ratiosReconfirmHint: "Se você alterar um valor, marque a caixa novamente.",
     carbRatios: "Razões de carboidratos (g/unidade)",
     dailyCarbTarget: "Meta diária de carboidratos (g)",
     basalDailyUnits: "Dose basal diária",
@@ -1631,6 +1633,7 @@ const pt: TranslationSchema = {
     itemBodyMap: "Novo mapa do corpo: veja em cores seus últimos locais de injeção.",
     itemMeal: "Criação de refeições e medidas caseiras: adicione alimentos por fatia, xícara e medidas parecidas, e o total de carboidratos aparece na hora.",
     itemSpike: "Estimativa de carboidratos do Spike: escreva sua refeição e veja os carboidratos aproximados (uma estimativa com base em dados nutricionais, não uma dose).",
+    itemCalc: "Calculadora: defina suas razões com sua equipe de diabetes e confirme-as uma vez; até lá, nenhum valor em unidades é exibido.",
     ok: "OK",
   },
   fatalReport: {

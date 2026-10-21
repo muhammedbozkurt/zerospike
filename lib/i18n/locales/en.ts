@@ -297,7 +297,8 @@ const en: TranslationSchema = {
   },
   ratio: {
     line: "Your ratio ({{slot}}): {{ratio}}",
-    notSet: "Your ratio isn't set. Tap to enter it.",
+    enter: "Enter your ratios",
+    confirm: "Confirm your ratios",
   },
   food: {
     category: "Category",
@@ -395,8 +396,6 @@ const en: TranslationSchema = {
     autoInjectionShort: "Bolus entry created",
     autoGlucose: "The glucose value you entered was logged too.",
     correctionTargetNote: "The correction aims at the middle of your target range ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Calculated with default ratios",
-    defaultRatiosBody: "This estimate uses default ratios; you can enter the ones from your care team in Settings.",
     carbFocusTitle: "Carb logging",
     carbFocusBody: "The dose section is hidden because you said you don't use insulin; you can change this in Settings.",
     saveMealAndDose: "Save meal and dose",
@@ -420,10 +419,12 @@ const en: TranslationSchema = {
       body: "This screen works from two numbers your care team gave you. Enter them once. They stay in your profile and you can change them anytime in Settings.",
       carbLabel: "Your carb ratio",
       carbHint: "Grams of carbs covered by 1 unit (set by your care team).",
-      perMealNote: "Used for every meal. You can set a different ratio per meal in Settings.",
       isfLabel: "Your correction factor (ISF)",
       isfHint: "How much 1 unit lowers your glucose (set by your care team).",
       later: "Not now",
+      bodyFilled: "Your values are saved. Just confirm them.",
+      teamNote: "Set your ratios with your diabetes team.",
+      confirm: "I set these ratios with my diabetes team",
     },
   },
   iob: {
@@ -581,6 +582,7 @@ const en: TranslationSchema = {
     name: "Profile name",
     isf: "Insulin sensitivity factor",
     isfHint: "How much 1 unit lowers glucose.",
+    ratiosReconfirmHint: "If you change a number, tick the box again to confirm it.",
     carbRatios: "Carb ratios (g/unit)",
     dailyCarbTarget: "Daily carb target (g)",
     basalDailyUnits: "Daily basal dose",
@@ -1628,6 +1630,7 @@ const en: TranslationSchema = {
     itemBodyMap: "New body map: see your recent injection sites in color.",
     itemMeal: "Meal builder and household measures: add foods by slice, cup and similar measures, and the total carbs show instantly.",
     itemSpike: "Spike carb estimate: type your meal and see approximate carbs (an estimate from food data, not a dose).",
+    itemCalc: "Calculator: set your ratios with your diabetes team and confirm them once; until you do, no unit figure is shown.",
     ok: "OK",
   },
   fatalReport: {

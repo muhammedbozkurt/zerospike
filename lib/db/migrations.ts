@@ -66,6 +66,7 @@ import {
 import { V24_CREATE } from "./v24Sql";
 import { V25_EMPTY_DEFAULT_NAMES } from "./v25Sql";
 import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "./v26Sql";
+import { V27_RESET_RATIO_CONFIRMATION } from "./v27Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -111,7 +112,8 @@ export type SchemaStamp =
   | 23
   | 24
   | 25
-  | 26;
+  | 26
+  | 27;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -803,5 +805,18 @@ export async function migrateToV26(db: SQLite.SQLiteDatabase): Promise<void> {
       );
     }
     await stampSchemaVersion(db, 26);
+  });
+}
+
+/**
+ * The v26 → v27 migration: every profile's ratios_confirmed becomes 0 (see
+ * ./v27Sql). Data-only UPDATE of one flag, idempotent, stamp in the same
+ * transaction. A launch already at v27 never runs it again, so a confirmation
+ * made afterwards survives every later open.
+ */
+export async function migrateToV27(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.execAsync(V27_RESET_RATIO_CONFIRMATION);
+    await stampSchemaVersion(db, 27);
   });
 }

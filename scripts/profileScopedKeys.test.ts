@@ -56,6 +56,7 @@ section("A. every base name is really written by the file that owns it");
     "zerospike.finishSetupDismissed": "app/(tabs)/index.tsx",
     "zerospike.rotationCycleStart": "lib/rotationCycle.ts",
     "zerospike.screenshotSeededLang.v16": "lib/db/screenshotSeed.ts",
+    "zerospike.ratiosConfirmPrompted": "lib/calcSetup.ts",
     "zerospike.calcSetupDismissed": "lib/calcSetup.ts",
     "zerospike.healthFirstImportDone": "lib/healthFirstImport.ts",
     "zerospike.reportName": "lib/reportName.ts",

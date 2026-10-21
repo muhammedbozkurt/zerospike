@@ -297,7 +297,8 @@ const it: TranslationSchema = {
   },
   ratio: {
     line: "Il Suo rapporto ({{slot}}): {{ratio}}",
-    notSet: "Il Suo rapporto non è impostato. Tocchi per inserirlo.",
+    enter: "Inserisca i Suoi rapporti",
+    confirm: "Confermi i Suoi rapporti",
   },
   food: {
     category: "Categoria",
@@ -395,8 +396,6 @@ const it: TranslationSchema = {
     autoInjectionShort: "Voce bolo creata",
     autoGlucose: "Anche il valore di glicemia inserito è stato registrato.",
     correctionTargetNote: "La correzione punta al centro del Suo intervallo target ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Calcolato con i rapporti predefiniti",
-    defaultRatiosBody: "Questa stima usa rapporti predefiniti; può inserire quelli del Suo team di cura nelle Impostazioni.",
     carbFocusTitle: "Registrazione dei carboidrati",
     carbFocusBody: "La sezione della dose è nascosta perché ha indicato di non usare insulina; può cambiarlo nelle Impostazioni.",
     saveMealAndDose: "Salva pasto e dose",
@@ -420,10 +419,12 @@ const it: TranslationSchema = {
       body: "Questa schermata calcola a partire da due valori che Le ha indicato il Suo team di cura. Li inserisca una sola volta: restano nel Suo profilo e può modificarli in qualsiasi momento nelle Impostazioni.",
       carbLabel: "Il Suo rapporto insulina/carboidrati",
       carbHint: "Grammi di carboidrati coperti da 1 unità (lo stabilisce il Suo team di cura).",
-      perMealNote: "Vale per ogni pasto. Nelle Impostazioni può impostare un rapporto diverso per ciascun pasto.",
       isfLabel: "Il Suo fattore di correzione (ISF)",
       isfHint: "Di quanto 1 unità abbassa la glicemia (lo stabilisce il Suo team di cura).",
       later: "Non ora",
+      bodyFilled: "I Suoi valori sono salvati. Basta confermarli.",
+      teamNote: "Stabilisca i Suoi rapporti con il Suo team diabetologico.",
+      confirm: "Ho stabilito questi valori con il mio team diabetologico",
     },
   },
   iob: {
@@ -581,6 +582,7 @@ const it: TranslationSchema = {
     name: "Nome del profilo",
     isf: "Fattore di sensibilità insulinica",
     isfHint: "Di quanto 1 unità abbassa la glicemia.",
+    ratiosReconfirmHint: "Se modifica un valore, selezioni di nuovo la casella.",
     carbRatios: "Rapporti insulina/carboidrati (g/unità)",
     dailyCarbTarget: "Obiettivo giornaliero di carboidrati (g)",
     basalDailyUnits: "Dose basale giornaliera",
@@ -1631,6 +1633,7 @@ const it: TranslationSchema = {
     itemBodyMap: "Nuova mappa del corpo: veda a colori le Sue ultime sedi di iniezione.",
     itemMeal: "Creazione dei pasti e misure casalinghe: aggiunga gli alimenti a fette, tazze e misure simili, e il totale dei carboidrati compare subito.",
     itemSpike: "Stima dei carboidrati di Spike: scriva il Suo pasto e veda i carboidrati approssimativi (una stima basata sui dati nutrizionali, non una dose).",
+    itemCalc: "Calcolatore: stabilisca i Suoi rapporti con il Suo team diabetologico e li confermi una volta; fino ad allora non viene mostrata alcuna cifra in unità.",
     ok: "OK",
   },
   fatalReport: {

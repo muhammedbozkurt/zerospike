@@ -454,7 +454,7 @@ export async function ensureTrackingProfile(): Promise<string> {
         target_fasting_max, target_postmeal_min, target_postmeal_max,
         hypo_threshold_mgdl, daily_carb_target_g, daily_carb_target_min_g,
         created_at)
-     VALUES (?, ?, 40, 10, 12, 12, 80, 100, 80, 140, 70, 200, 160, ?);`,
+     VALUES (?, ?, 0, 0, 0, 0, 80, 100, 80, 140, 70, 200, 160, ?);`,
     [SCREENSHOT_TRACKING_PROFILE_ID, "", now]
   );
   return SCREENSHOT_TRACKING_PROFILE_ID;
@@ -545,6 +545,12 @@ async function seedScreenshotDataLocked(
           target_postmeal_min: 70,
           target_postmeal_max: 140,
           hypo_threshold_mgdl: 70,
+          // Explicit usable values, deliberately chosen for the store images:
+          // the calculator panel only shows its figure for confirmed AND usable.
+          insulin_sensitivity_factor: 40,
+          carb_ratio_breakfast: 10,
+          carb_ratio_lunch: 12,
+          carb_ratio_dinner: 12,
           ratios_confirmed: 1,
         });
       } else {
@@ -557,6 +563,12 @@ async function seedScreenshotDataLocked(
           target_postmeal_min: 80,
           target_postmeal_max: 160,
           hypo_threshold_mgdl: 70,
+          // Explicit usable values, deliberately chosen for the store images:
+          // the calculator panel only shows its figure for confirmed AND usable.
+          insulin_sensitivity_factor: 40,
+          carb_ratio_breakfast: 10,
+          carb_ratio_lunch: 12,
+          carb_ratio_dinner: 12,
           ratios_confirmed: 1,
         });
       }

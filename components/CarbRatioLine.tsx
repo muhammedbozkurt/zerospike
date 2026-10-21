@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { activeMealSlot, carbRatioForSlot } from "../lib/insulin";
+import { calcFiguresAllowed, calcSetupPrefilled } from "../lib/calcSetup";
+import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { isolateLtr, num } from "../lib/format";
 import { THEME } from "../lib/theme/tokens";
 import type { MealSlot } from "../lib/db/types";
@@ -17,6 +19,12 @@ import { DirIcon } from "./DirIcon";
  * where it is set (Profile). Uses carbRatioForSlot - the SAME lookup
  * estimateInsulin runs - so this line can never show a different ratio than
  * the calculator's own arithmetic for the same slot.
+ *
+ * A ratio is shown only once the user confirmed their own (ratios_confirmed 1).
+ * Until then this is the single "Enter your ratios" line, and no number from a
+ * stored value is quoted ("Confirm your ratios" when the user's own values are
+ * already saved, "Enter your ratios" otherwise). Profiles without mealtime
+ * insulin see nothing.
  *
  * numberOfLines is 2, not 1: the line fits one row for every language this
  * app ships, but a longer translation (German routinely runs widest) wraps
@@ -35,10 +43,11 @@ export function CarbRatioLine({
   const { activeProfile } = useApp();
 
   if (!activeProfile) return null;
+  if (!insulinModeShowsBolus(insulinModeOf(activeProfile))) return null;
 
   const activeSlot = slot ?? activeMealSlot();
   const ratio = carbRatioForSlot(activeProfile, activeSlot);
-  const hasRatio = Number.isFinite(ratio) && ratio > 0;
+  const hasRatio = calcFiguresAllowed(activeProfile) && Number.isFinite(ratio) && ratio > 0;
   // "1 U = 12 g" is a purely-LTR run (digits + a Latin unit abbreviation);
   // composed here and isolated (lib/format's LRI/PDI wrap - same pattern as
   // paywall.tsx/winback.tsx) so it renders as one atomic block regardless of
@@ -48,7 +57,9 @@ export function CarbRatioLine({
   );
   const label = hasRatio
     ? t("ratio.line", { slot: t(`slot.${activeSlot}`), ratio: ratioFragment })
-    : t("ratio.notSet");
+    : calcSetupPrefilled(activeProfile)
+      ? t("ratio.confirm")
+      : t("ratio.enter");
 
   return (
     <Pressable

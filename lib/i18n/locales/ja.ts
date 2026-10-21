@@ -297,7 +297,8 @@ const ja: TranslationSchema = {
   },
   ratio: {
     line: "比率（{{slot}}）：{{ratio}}",
-    notSet: "比率が設定されていません。タップして入力してください。",
+    enter: "比率を入力してください",
+    confirm: "比率を確認してください",
   },
   food: {
     category: "カテゴリ",
@@ -395,8 +396,6 @@ const ja: TranslationSchema = {
     autoInjectionShort: "追加インスリンの記録を作成しました",
     autoGlucose: "入力した血糖値も記録しました。",
     correctionTargetNote: "補正は目標範囲の中央({{value}} {{unit}})を基準にしています。",
-    defaultRatiosTitle: "初期設定の数値で計算しました",
-    defaultRatiosBody: "この計算は初期設定の数値を使っています。医療チームから伝えられた数値は設定で入力できます。",
     carbFocusTitle: "炭水化物の記録",
     carbFocusBody: "インスリンを使わない設定のため、インスリン量の欄は非表示です。設定で変更できます。",
     saveMealAndDose: "食事とインスリン量を保存",
@@ -420,10 +419,12 @@ const ja: TranslationSchema = {
       body: "この画面は、医療チームから伝えられた2つの数値をもとに計算します。一度入力すると、プロフィールに保存され、設定でいつでも変更できます。",
       carbLabel: "炭水化物比",
       carbHint: "1単位でカバーする炭水化物のグラム数です(医療チームが設定します)。",
-      perMealNote: "すべての食事に使われます。設定で食事ごとに別の数値を指定できます。",
       isfLabel: "インスリン効果値(ISF)",
       isfHint: "1単位で血糖値がどれくらい下がるかです(医療チームが設定します)。",
       later: "後で",
+      bodyFilled: "値は保存されています。確認するだけです。",
+      teamNote: "比率は糖尿病の医療チームと相談して決めてください。",
+      confirm: "これらの比率は糖尿病の医療チームと決めました",
     },
   },
   iob: {
@@ -581,6 +582,7 @@ const ja: TranslationSchema = {
     name: "プロフィール名",
     isf: "インスリン効果値",
     isfHint: "1単位で血糖値がどれくらい下がるか。",
+    ratiosReconfirmHint: "数値を変更した場合は、もう一度チェックを入れてください。",
     carbRatios: "炭水化物比(g/単位)",
     dailyCarbTarget: "1日の炭水化物の目標(g)",
     basalDailyUnits: "1日の基礎インスリン量",
@@ -1628,6 +1630,7 @@ const ja: TranslationSchema = {
     itemBodyMap: "新しいボディマップで、最近の注射部位を色で確認できます。",
     itemMeal: "食事の作成と目安量に対応しました。食品をスライスやカップなどの単位で追加すると、炭水化物の合計がすぐに表示されます。",
     itemSpike: "Spikeの炭水化物推定：食事を入力すると、おおよその炭水化物を確認できます（食品データに基づく推定であり、投与量ではありません）。",
+    itemCalc: "計算機：比率を糖尿病の医療チームと決めて、一度確認してください。確認するまで単位の数値は表示されません。",
     ok: "OK",
   },
   fatalReport: {

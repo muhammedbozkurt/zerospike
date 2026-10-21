@@ -297,7 +297,8 @@ const fr: TranslationSchema = {
   },
   ratio: {
     line: "Votre ratio ({{slot}}) : {{ratio}}",
-    notSet: "Votre ratio n'est pas défini. Touchez pour le renseigner.",
+    enter: "Saisissez vos ratios",
+    confirm: "Confirmez vos ratios",
   },
   food: {
     category: "Catégorie",
@@ -395,8 +396,6 @@ const fr: TranslationSchema = {
     autoInjectionShort: "Entrée de bolus créée",
     autoGlucose: "La valeur de glycémie saisie a aussi été enregistrée.",
     correctionTargetNote: "La correction vise le milieu de votre plage cible ({{value}} {{unit}}).",
-    defaultRatiosTitle: "Calculé avec des ratios par défaut",
-    defaultRatiosBody: "Cette estimation utilise des ratios par défaut ; vous pouvez saisir ceux de votre équipe soignante dans les Réglages.",
     carbFocusTitle: "Enregistrement des glucides",
     carbFocusBody: "La section dose est masquée car vous n'utilisez pas d'insuline ; modifiable dans les Réglages.",
     saveMealAndDose: "Enregistrer le repas et la dose",
@@ -420,10 +419,12 @@ const fr: TranslationSchema = {
       body: "Cet écran calcule à partir de deux valeurs que votre équipe soignante vous a données. Saisissez-les une seule fois. Elles restent dans votre profil et vous pouvez les modifier à tout moment dans les Réglages.",
       carbLabel: "Votre ratio glucidique",
       carbHint: "Grammes de glucides couverts par 1 unité (défini par votre équipe soignante).",
-      perMealNote: "S'applique à tous les repas. Vous pouvez définir un ratio différent par repas dans les Réglages.",
       isfLabel: "Votre facteur de correction (ISF)",
       isfHint: "De combien 1 unité baisse votre glycémie (défini par votre équipe soignante).",
       later: "Pas maintenant",
+      bodyFilled: "Vos valeurs sont enregistrées. Il vous suffit de les confirmer.",
+      teamNote: "Définissez vos ratios avec votre équipe diabète.",
+      confirm: "J'ai défini ces ratios avec mon équipe diabète",
     },
   },
   iob: {
@@ -581,6 +582,7 @@ const fr: TranslationSchema = {
     name: "Nom du profil",
     isf: "Facteur de sensibilité à l'insuline",
     isfHint: "De combien 1 unité abaisse la glycémie.",
+    ratiosReconfirmHint: "Si vous modifiez une valeur, cochez de nouveau la case.",
     carbRatios: "Ratios glucidiques (g/unité)",
     dailyCarbTarget: "Objectif glucidique quotidien (g)",
     basalDailyUnits: "Dose basale quotidienne",
@@ -1633,6 +1635,7 @@ const fr: TranslationSchema = {
     itemBodyMap: "Nouvelle carte du corps : visualisez en couleurs vos dernières zones d'injection.",
     itemMeal: "Création de repas et mesures ménagères : ajoutez les aliments par tranche, tasse ou mesure similaire, le total des glucides s'affiche aussitôt.",
     itemSpike: "Estimation des glucides par Spike : saisissez votre repas et voyez les glucides approximatifs (une estimation à partir de données nutritionnelles, pas une dose).",
+    itemCalc: "Calculateur : définissez vos ratios avec votre équipe diabète et confirmez-les une fois ; d'ici là, aucun chiffre en unités n'est affiché.",
     ok: "OK",
   },
   fatalReport: {

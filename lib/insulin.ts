@@ -1,5 +1,6 @@
 import type { Food, MealSlot, UserProfile } from "./db/types";
 import { targetMidpoint, targetRangeFor } from "./glucose";
+import { calcFiguresAllowed } from "./calcSetup";
 
 /** Maps an hour (0-23) to the active meal slot per the product rules. */
 export function mealSlotForHour(hour: number): MealSlot {
@@ -150,10 +151,25 @@ export function estimateInsulin(
 ): InsulinEstimate {
   const slot = options.slot ?? activeMealSlot(options.now ?? new Date());
   const rawRatio = carbRatioForSlot(profile, slot);
-  // Defensive floor against a non-positive stored ratio (would divide by ~0);
-  // an out-of-range ratio is surfaced via warnings below, not silently trusted.
-  const carbRatio = Math.max(rawRatio, 0.1);
   const carbs = (food.carb_100g * portionGrams) / 100;
+  // A ratio that cannot be divided by produces NO dose. It used to be floored at
+  // 0.1, which turned a missing ratio into 500 U for 50 g; now the estimate is
+  // zero and only says the ratio is unusable. The UI never gets here (the gate in
+  // estimateInsulinConfirmed needs four usable numbers); this is the backstop.
+  if (!Number.isFinite(rawRatio) || rawRatio <= 0) {
+    return {
+      slot,
+      carbRatio: 0,
+      carbs: Math.round(carbs * 10) / 10,
+      mealDose: 0,
+      correctionDose: 0,
+      totalDose: 0,
+      iobReduction: 0,
+      correctionSkipped: null,
+      warnings: ["carb_ratio_out_of_range"],
+    };
+  }
+  const carbRatio = rawRatio;
   const mealDose = carbs / carbRatio;
 
   // A stored ISF of 0 (or a non-finite one) cannot produce a correction. It used
@@ -220,4 +236,28 @@ export function estimateInsulin(
     correctionSkipped,
     warnings,
   };
+}
+
+/** Carbs in the chosen portion (g, one decimal). Needs no ratio, so it is the
+ *  part of the calculator that works for everyone. */
+export function carbsForPortion(
+  food: Pick<Food, "carb_100g">,
+  portionGrams: number
+): number {
+  return Math.round(((food.carb_100g * portionGrams) / 100) * 10) / 10;
+}
+
+/**
+ * The only entry point that turns ratios into unit figures for the UI: null
+ * unless the profile's owner confirmed their own ratios (ratios_confirmed 1).
+ * With the gate closed no division by a ratio happens at all.
+ */
+export function estimateInsulinConfirmed(
+  food: Pick<Food, "carb_100g">,
+  portionGrams: number,
+  profile: Parameters<typeof estimateInsulin>[2] & Pick<UserProfile, "ratios_confirmed">,
+  options: EstimateOptions = {}
+): InsulinEstimate | null {
+  if (!calcFiguresAllowed(profile)) return null;
+  return estimateInsulin(food, portionGrams, profile, options);
 }

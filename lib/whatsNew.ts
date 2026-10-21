@@ -22,12 +22,13 @@ export const WHATS_NEW_SEEN_KEY = "zerospike.whatsNew.seen";
 /** Settle time after landing on a tab screen before the sheet opens. */
 export const WHATS_NEW_DELAY_MS = 3000;
 
-/** The four lines, in order; each is an i18n key under whatsNew. */
+/** The five lines, in order; each is an i18n key under whatsNew. */
 export const WHATS_NEW_ITEMS = [
   "whatsNew.itemTheme",
   "whatsNew.itemBodyMap",
   "whatsNew.itemMeal",
   "whatsNew.itemSpike",
+  "whatsNew.itemCalc",
 ] as const;
 
 /** "2.4.1" or "2.4" to [2, 4]; null for anything that is not a version. */

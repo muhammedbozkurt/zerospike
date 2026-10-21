@@ -295,7 +295,8 @@ const tr = {
   },
   ratio: {
     line: "Oranınız ({{slot}}): {{ratio}}",
-    notSet: "Oranınız ayarlı değil, girmek için dokunun.",
+    enter: "Oranlarınızı girin",
+    confirm: "Oranlarınızı onaylayın",
   },
   food: {
     category: "Kategori",
@@ -393,8 +394,6 @@ const tr = {
     autoInjectionShort: "Bolus kaydı oluşturuldu",
     autoGlucose: "Girdiğiniz şeker ölçümü de kaydedildi.",
     correctionTargetNote: "Düzeltme, hedef aralığının ortasını ({{value}} {{unit}}) esas alır.",
-    defaultRatiosTitle: "Varsayılan oranlarla hesaplandı",
-    defaultRatiosBody: "Hesap varsayılan oranlarla yapıldı; sağlık ekibinizin verdiği oranları Ayarlar'dan girebilirsiniz.",
     carbFocusTitle: "Karbonhidrat kaydı",
     carbFocusBody: "İnsülin kullanmadığınız için doz bölümü gizli; Ayarlar'dan değiştirebilirsiniz.",
     saveMealAndDose: "Öğünü ve dozu kaydet",
@@ -418,10 +417,12 @@ const tr = {
       body: "Bu ekran, sağlık ekibinizin verdiği iki değerden hesap yapar. Bir kez girmeniz yeterli; profilinizde saklanır ve Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.",
       carbLabel: "Karbonhidrat oranınız",
       carbHint: "1 ünitenin karşıladığı karbonhidrat gramı (sağlık ekibiniz belirler).",
-      perMealNote: "Her öğünde kullanılır. Ayarlar'dan öğün başına farklı bir oran belirleyebilirsiniz.",
       isfLabel: "Düzeltme faktörünüz (ISF)",
       isfHint: "1 ünitenin glukozu ne kadar düşürdüğü (sağlık ekibiniz belirler).",
       later: "Şimdi değil",
+      bodyFilled: "Değerleriniz kayıtlı, yalnızca onaylamanız yeterli.",
+      teamNote: "Oranlarınızı diyabet ekibinizle belirleyin.",
+      confirm: "Bu oranları diyabet ekibimle belirledim",
     },
   },
   iob: {
@@ -579,6 +580,7 @@ const tr = {
     name: "Profil adı",
     isf: "İnsülin duyarlılık faktörü",
     isfHint: "1 ünitenin şekeri ne kadar düşürdüğü.",
+    ratiosReconfirmHint: "Bir değeri değiştirirseniz onay kutusunu yeniden işaretleyin.",
     carbRatios: "Karbonhidrat oranları (g/ünite)",
     dailyCarbTarget: "Günlük karbonhidrat hedefi (g)",
     basalDailyUnits: "Günlük bazal doz",
@@ -1626,6 +1628,7 @@ const tr = {
     itemBodyMap: "Yeni vücut haritası: son enjeksiyon bölgelerinizi renklerle görün.",
     itemMeal: "Öğün oluşturma ve ev ölçüleri: yiyecekleri dilim, bardak gibi ölçülerle ekleyin, toplam karbonhidrat anında görünür.",
     itemSpike: "Spike karbonhidrat tahmini: öğününüzü yazın, yaklaşık karbonhidratı görün (besin bilgisi tahminidir, doz değildir).",
+    itemCalc: "Hesaplayıcı: oranlarınızı diyabet ekibinizle belirleyip bir kez onaylayın; onaylayana kadar ünite rakamı görünmez.",
     ok: "Tamam",
   },
   fatalReport: {
