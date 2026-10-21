@@ -92,6 +92,12 @@ export async function registerHealthBackground(): Promise<HealthBackgroundState>
     if (Platform.OS === "ios") {
       const ok = await healthAppleKit.startBackgroundObserver(() => {
         void syncHealthInBackground();
+        // The existing iOS background wake-up also re-arms the one-occurrence
+        // reminder alarms (iOS 26+ only, a no-op elsewhere). Lazy, because
+        // notifications.ts is a heavy module this file otherwise never loads.
+        void import("./notifications")
+          .then((m) => m.refreshReminderAlarms("background"))
+          .catch(() => undefined);
       });
       return ok ? { active: true, reason: null } : { active: false, reason: "register_failed" };
     }

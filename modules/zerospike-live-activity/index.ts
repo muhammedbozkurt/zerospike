@@ -24,6 +24,9 @@ interface LiveActivityNativeModule {
   update(lastReading: string | null, unitLabel: string): Promise<boolean>;
   end(): Promise<void>;
   isWidgetInstalled(): Promise<boolean | null>;
+  /** Added after the first Live Activity builds, so optional. */
+  listActivityIds?(): string[];
+  endAllExcept?(keepIds: string[]): Promise<number>;
   getLastFatalReport?(): string | null;
   clearLastFatalReport?(): boolean;
 }
@@ -116,6 +119,23 @@ export function endPostMealActivity(): Promise<void> {
   return enqueue(async () => {
     await native?.end();
   }, undefined);
+}
+
+/** Ids of the post-meal activities the OS currently shows for this app, or
+ *  null when they cannot be listed (older binary, no Live Activities). */
+export function listPostMealActivityIds(): string[] | null {
+  try {
+    return native?.listActivityIds?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ends every post-meal activity whose id is not in `keepIds`. Resolves with
+ *  how many were ended; 0 when the binary has no such call. Queued with every
+ *  other activity call so it cannot overtake a start issued before it. */
+export function endPostMealActivitiesExcept(keepIds: string[]): Promise<number> {
+  return enqueue(async () => (await native?.endAllExcept?.(keepIds)) ?? 0, 0);
 }
 
 /**

@@ -2,7 +2,7 @@ import "../global.css";
 import "../lib/services/healthBackground";
 import "../lib/healthRecords";
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, I18nManager, Linking, LogBox, View } from "react-native";
+import { AppState, I18nManager, Linking, LogBox, Platform, View } from "react-native";
 import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams, type Href } from "expo-router";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -264,6 +264,21 @@ function RootNavigator() {
     });
     return () => sub.remove();
   }, [ready, isProUser, activeProfile?.id]);
+
+  // iOS 26+ reminder alarms are armed one occurrence at a time, so each return
+  // to the foreground re-arms the one that just fired (the launch itself is
+  // covered by AppContext's applyNotificationPrefs). Idempotent and a no-op
+  // without AlarmKit: see refreshReminderAlarms.
+  useEffect(() => {
+    if (!ready || !onboarded || Platform.OS !== "ios") return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      void import("../lib/services/notifications")
+        .then((m) => m.refreshReminderAlarms("foreground"))
+        .catch(() => undefined);
+    });
+    return () => sub.remove();
+  }, [ready, onboarded]);
 
   useEffect(() => {
     if (!ready || !hasHealthProvider()) return;

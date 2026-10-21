@@ -46,6 +46,9 @@ interface AlarmKitNativeModule {
   ): Promise<boolean>;
   cancelAlarm(id: string): Promise<boolean>;
   listScheduledAlarmIds(): string[];
+  /** Added after the first AlarmKit builds, so optional: a JS bundle can run
+   *  against an older binary that has no such call. */
+  cancelUnownedAlarms?(keepIds: string[]): Promise<number>;
   /** `{ route, alarmId? }` now. The bare-string shape is what earlier builds
    *  returned, and a JS bundle can be newer than the native binary it runs
    *  against (a reloaded dev build), so both are still accepted below. */
@@ -202,6 +205,25 @@ export function listScheduledAlarmIds(): string[] {
     return native?.listScheduledAlarmIds() ?? [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Cancels every AlarmKit alarm this app holds whose identity is not in
+ * `keepIds` - including alarms the native identity map has lost track of
+ * (an app reinstall wipes the map, not the system's alarms), which
+ * listScheduledAlarmIds can never reveal. Returns how many were cancelled, or
+ * null when nothing could be done: no AlarmKit, an older binary without this
+ * call, or an AlarmKit error. Never throws.
+ */
+export async function cancelUnownedAlarms(
+  keepIds: readonly string[]
+): Promise<number | null> {
+  try {
+    if (!native?.cancelUnownedAlarms) return null;
+    return await native.cancelUnownedAlarms([...keepIds]);
+  } catch {
+    return null;
   }
 }
 
