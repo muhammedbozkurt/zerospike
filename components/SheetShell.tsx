@@ -1,15 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Animated,
-  Easing,
   InputAccessoryView,
-  Keyboard,
   Platform,
   Pressable,
   ScrollView,
   Text,
   View,
-  type KeyboardEvent as RNKeyboardEvent,
   type TextInputProps,
 } from "react-native";
 import { OverlayModal as Modal } from "./OverlayModal";
@@ -17,7 +14,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { sheetLayout, type SheetLayoutResult } from "../lib/sheetLayout";
+import { sheetFrame, type SheetLayoutResult } from "../lib/sheetLayout";
+import { useSheetKeyboard } from "../lib/useSheetKeyboard";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { THEME, glow } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
@@ -32,14 +30,12 @@ export const SCRIM = "rgba(0,0,0,0.72)"; // theme-ok
  * window, with no keyboard avoidance, so a focused field near the bottom (and
  * the CTA below it) end up hidden behind the keyboard.
  *
- * Deliberately NOT KeyboardAvoidingView: on Android the activity is already
- * `adjustResize`, so stacking a KeyboardAvoidingView on top double-shrinks;
- * on iOS its own timing/heuristics are not the same measured height this
- * shell needs to hand to lib/sheetLayout.ts. Both platforms instead measure
- * the keyboard themselves and animate two things: how much the whole sheet
- * lifts off the screen bottom (by the keyboard's own height, mirroring what
- * KeyboardAvoidingView's "padding" behavior would have done), and the
- * sheet's own maxHeight/content padding (from sheetLayout()).
+ * Deliberately NOT KeyboardAvoidingView: it would wrap the title row too, and
+ * stacking it on a window the platform already resized double-shrinks. The
+ * host (lib/useSheetKeyboard.ts) lifts the whole sheet by the MEASURED overlap
+ * with the keyboard, the sheet's maxHeight shrinks by that same amount (and by
+ * insets.top once, lib/sheetLayout.ts sheetFrame), and only the body below the
+ * title row scrolls. Title and close button therefore never move.
  */
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -66,9 +62,6 @@ export interface SheetShellProps {
   onShown?: () => void;
 }
 
-const ANDROID_KEYBOARD_ANIM_MS = 180;
-const IOS_KEYBOARD_ANIM_FALLBACK_MS = 250;
-
 export function SheetShell({
   visible,
   onClose,
@@ -86,88 +79,51 @@ export function SheetShell({
   const { isWide, width: layoutWidth } = useLayout();
   const [contentHeight, setContentHeight] = useState(0);
 
-  // Raw measured keyboard height, animated. Doubles as the outer backdrop's
-  // lift (paddingBottom) so the sheet itself never renders under the
-  // keyboard's strip, whatever platform draws it.
-  const keyboardAnim = useRef(new Animated.Value(0)).current;
-  // The domain used to interpolate keyboardAnim into sheetLayout()'s output:
-  // the last non-zero keyboard height seen, so a CLOSING animation (target
-  // 0) still interpolates against the height it is animating away from.
-  const [keyboardDomain, setKeyboardDomain] = useState(0);
-
-  useEffect(() => {
-    if (!visible) {
-      keyboardAnim.setValue(0);
-      setKeyboardDomain(0);
-      return;
-    }
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
-    const animateTo = (toValue: number, duration: number) => {
-      Animated.timing(keyboardAnim, {
-        toValue,
-        duration,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }).start();
-    };
-
-    const onShow = (e: RNKeyboardEvent) => {
-      const h = e?.endCoordinates?.height ?? 0;
-      if (h <= 0) return;
-      setKeyboardDomain(h);
-      animateTo(h, Platform.OS === "ios" ? e.duration || IOS_KEYBOARD_ANIM_FALLBACK_MS : ANDROID_KEYBOARD_ANIM_MS);
-    };
-    const onHide = (e: RNKeyboardEvent) => {
-      animateTo(0, Platform.OS === "ios" ? e?.duration || IOS_KEYBOARD_ANIM_FALLBACK_MS : ANDROID_KEYBOARD_ANIM_MS);
-    };
-
-    const subShow = Keyboard.addListener(showEvent, onShow);
-    const subHide = Keyboard.addListener(hideEvent, onHide);
-    return () => {
-      subShow.remove();
-      subHide.remove();
-    };
-  }, [visible, keyboardAnim]);
+  // lift animates the host's paddingBottom so the sheet never renders under
+  // the keyboard; it is the MEASURED overlap, not the keyboard's own height.
+  const { hostRef, onHostLayout, hostHeight, liftDomain, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
 
   const closedLayout = useMemo<SheetLayoutResult>(
     () =>
-      sheetLayout({
+      sheetFrame({
+        hostHeight,
         windowHeight,
-        keyboardHeight: 0,
+        lift: 0,
+        keyboardOpen: keyboardOpen && liftDomain === 0,
         insetBottom: insets.bottom,
         insetTop: insets.top,
         contentHeight,
         maxHeightRatio,
       }),
-    [windowHeight, insets.bottom, insets.top, contentHeight, maxHeightRatio],
+    [hostHeight, windowHeight, keyboardOpen, liftDomain, insets.bottom, insets.top, contentHeight, maxHeightRatio],
   );
   const openLayout = useMemo<SheetLayoutResult>(
     () =>
-      sheetLayout({
+      sheetFrame({
+        hostHeight,
         windowHeight,
-        keyboardHeight: keyboardDomain,
+        lift: liftDomain,
+        keyboardOpen: true,
         insetBottom: insets.bottom,
         insetTop: insets.top,
         contentHeight,
         maxHeightRatio,
       }),
-    [windowHeight, insets.bottom, insets.top, contentHeight, maxHeightRatio, keyboardDomain],
+    [hostHeight, windowHeight, liftDomain, insets.bottom, insets.top, contentHeight, maxHeightRatio],
   );
 
   const sheetMaxHeightAnim =
-    keyboardDomain > 0
-      ? keyboardAnim.interpolate({
-          inputRange: [0, keyboardDomain],
+    liftDomain > 0
+      ? liftAnim.interpolate({
+          inputRange: [0, liftDomain],
           outputRange: [closedLayout.sheetMaxHeight, openLayout.sheetMaxHeight],
           extrapolate: "clamp",
         })
       : closedLayout.sheetMaxHeight;
   const contentPaddingBottomAnim =
-    keyboardDomain > 0
-      ? keyboardAnim.interpolate({
-          inputRange: [0, keyboardDomain],
+    liftDomain > 0
+      ? liftAnim.interpolate({
+          inputRange: [0, liftDomain],
           outputRange: [closedLayout.paddingBottom, openLayout.paddingBottom],
           extrapolate: "clamp",
         })
@@ -177,12 +133,13 @@ export function SheetShell({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onShow={onShown}>
+      <View ref={hostRef} collapsable={false} onLayout={onHostLayout} style={{ flex: 1 }}>
       <AnimatedPressable
         style={{
           flex: 1,
           justifyContent: "flex-end",
           backgroundColor: SCRIM,
-          paddingBottom: keyboardAnim,
+          paddingBottom: liftAnim,
         }}
         onPress={onClose}
         accessible={false}
@@ -255,6 +212,7 @@ export function SheetShell({
           <Animated.View style={{ height: contentPaddingBottomAnim }} />
         </AnimatedPressable>
       </AnimatedPressable>
+      </View>
     </Modal>
   );
 }

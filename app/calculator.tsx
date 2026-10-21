@@ -62,7 +62,8 @@ import {
   type SiteUsage,
 } from "../lib/db/injections";
 import { getRotationCycleStart } from "../lib/rotationCycle";
-import { InjectionBodyMap, type PointSelection } from "../components/InjectionBodyMap";
+import { type PointSelection } from "../components/InjectionBodyMap";
+import { InjectionSiteSheet } from "../components/InjectionSiteSheet";
 import { logCrash, logEvent } from "../lib/analytics";
 import { noteLog, maybeRequestReview } from "../lib/services/review";
 import { noteFirstLog } from "../lib/services/firstLog";
@@ -582,115 +583,6 @@ const inputStyle = () =>
     paddingVertical: 12,
     color: THEME.text,
   }) as const;
-
-/**
- * Region picker, as a modal over the silhouette (InjectionBodyMap) instead of
- * the card-grid SitePointSelector - the same picking language as the
- * Injection tab's own map, so the app has one way to choose a site, not two.
- * Chrome follows InjectionEditSheet's bottom sheet (same overlay/close/height
- * pattern); no cycleStart/onStartNewCycle here, on purpose - this is a record
- * screen, not where a rotation cycle gets managed.
- */
-function SitePickerModal({
-  visible,
-  onClose,
-  usage,
-  noSiteCount,
-  selected,
-  onSelect,
-  showRotationHint,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  /** undefined while the lazy fetch (ensureSiteUsageLoaded) hasn't resolved yet
-   *  for this screen visit - renders a skeleton in its place until it does. */
-  usage: SiteUsage[] | undefined;
-  noSiteCount: number;
-  selected: PointSelection | null;
-  onSelect: (selection: PointSelection) => void;
-  /** Pro gate for the rotation-suggestion ring on the silhouette - passed
-   *  through as isProUser from the caller (see InjectionBodyMap). */
-  showRotationHint: boolean;
-}) {
-  const { t } = useTranslation();
-  const { height: winH } = useWindowDimensions();
-  const { isWide, width: layoutWidth } = useLayout();
-  // Matches InjectionBodyMap's own minHeight floor, so the skeleton reserves
-  // exactly the space the real silhouette will occupy - no jump once it loads.
-  const mapMinHeight = Math.round(winH * 0.5);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
-        onPress={onClose}
-        accessible={false}
-        focusable={false}
-      >
-        <Pressable
-          style={[
-            {
-              maxHeight: Math.round(winH * 0.86),
-              borderTopLeftRadius: 26,
-              borderTopRightRadius: 26,
-              borderTopWidth: 1,
-              borderLeftWidth: 1,
-              borderRightWidth: 1,
-              borderColor: THEME.border,
-              backgroundColor: THEME.bg.g1,
-              paddingHorizontal: 18,
-              paddingTop: 8,
-            },
-            glow(THEME.accent, 30, 0.3),
-            sheetBoxStyle(layoutWidth, isWide),
-          ]}
-          onPress={(e) => e.stopPropagation()}
-          accessible={false}
-          focusable={false}
-          importantForAccessibility="auto"
-        >
-          <View className="items-center mb-1.5">
-            <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
-          </View>
-          <View className="flex-row items-center justify-between mb-3">
-            <Text style={{ color: THEME.text, fontSize: 17, fontWeight: "800" }}>
-              {t("injection.selectSite")}
-            </Text>
-            <Pressable
-              onPress={onClose}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={t("common.close")}
-              className="p-1"
-            >
-              <Ionicons name="close" size={22} color={THEME.textMuted} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            style={{ flexShrink: 1 }}
-            bounces={false}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 24 }}
-          >
-            {usage === undefined ? (
-              <Skeleton width="100%" height={mapMinHeight} radius={20} />
-            ) : (
-              <InjectionBodyMap
-                usage={usage}
-                noSiteCount={noSiteCount}
-                selected={selected}
-                onSelect={onSelect}
-                windowDays={USAGE_WINDOW_DAYS}
-                showRotationHint={showRotationHint}
-              />
-            )}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
 
 function CalculatorScreen() {
   const { t } = useTranslation();
@@ -1826,7 +1718,7 @@ function CalculatorScreen() {
               </Pressable>
             ) : null}
 
-            <SitePickerModal
+            <InjectionSiteSheet
               visible={siteModalOpen}
               onClose={() => setSiteModalOpen(false)}
               usage={siteUsage}

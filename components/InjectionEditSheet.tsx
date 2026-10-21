@@ -2,7 +2,7 @@ import { doseHintVisible, injectionDoseOk } from "../lib/injectionDose";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
-  KeyboardAvoidingView,
+  Animated as RNAnimated,
   Platform,
   Pressable,
   ScrollView,
@@ -43,6 +43,10 @@ import { sheetBoxStyle } from "../lib/tabletLayout";
 import { listEntering, listExiting, listLayout } from "../lib/theme/motion";
 import { GradientCTA } from "./rich/GradientCTA";
 import { SCRIM } from "./SheetShell";
+import { useSheetKeyboard } from "../lib/useSheetKeyboard";
+import { sheetFrame } from "../lib/sheetLayout";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 
 /** The stored injection being corrected (structurally matches Injection). */
 export interface InjectionEditTarget {
@@ -119,6 +123,20 @@ export function InjectionEditSheet({
   const { confirm } = useFeedback();
   const { height: winH } = useWindowDimensions();
   const { isWide, width: layoutWidth } = useLayout();
+  const insets = useSafeAreaInsets();
+  const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
+  // Title and close stay on screen: the sheet is capped at what the keyboard
+  // and the status-bar inset leave (counted once, lib/sheetLayout.ts).
+  const sheetAvail = sheetFrame({
+    hostHeight,
+    windowHeight: winH,
+    lift,
+    keyboardOpen,
+    insetTop: insets.top,
+    insetBottom: insets.bottom,
+    contentHeight: 0,
+    maxHeightRatio: 1,
+  }).sheetMaxHeight;
   // Fixed, not just a cap: the sheet swaps its body between the form and the
   // site-picking step (see `step` below) without ever resizing the frame
   // around it, so a step change can never jump the sheet's height.
@@ -308,10 +326,8 @@ export function InjectionEditSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-      >
+      <View ref={hostRef} collapsable={false} onLayout={onHostLayout} style={{ flex: 1 }}>
+        <RNAnimated.View style={{ flex: 1, paddingBottom: liftAnim }}>
         <Pressable
           style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={onClose}
@@ -326,7 +342,7 @@ export function InjectionEditSheet({
                 // 86% keeps the same "under 100%" margin the sheet always had,
                 // so the dim overlay stays visible above it even with the
                 // keyboard open.
-                height: sheetHeight,
+                height: Math.min(sheetHeight, sheetAvail),
                 borderTopLeftRadius: 26,
                 borderTopRightRadius: 26,
                 borderTopWidth: 1,
@@ -579,7 +595,8 @@ export function InjectionEditSheet({
           dialog in the right controller and hands it back to the screen on
           close. Guarded on `visible` so a closed sheet never takes the stack. */}
       {visible ? <FeedbackHost /> : null}
-      </KeyboardAvoidingView>
+      </RNAnimated.View>
+      </View>
     </Modal>
   );
 }

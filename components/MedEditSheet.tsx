@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
   Keyboard,
-  KeyboardAvoidingView,
+  Animated,
   Platform,
   Pressable,
   ScrollView,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { OverlayModal as Modal } from "./OverlayModal";
 import { useTranslation } from "react-i18next";
@@ -23,6 +24,10 @@ import { formatTime, relativeDay } from "../lib/format";
 import { HIT_TARGET, RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
 import { Button, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
+import { useSheetKeyboard } from "../lib/useSheetKeyboard";
+import { sheetFrame } from "../lib/sheetLayout";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { useLayout } from "../lib/useLayout";
 import { sheetBoxStyle } from "../lib/tabletLayout";
 import { GradientCTA } from "./rich/GradientCTA";
@@ -88,6 +93,21 @@ export function MedEditSheet({
   const { activeProfile } = useApp();
   const { confirm } = useFeedback();
   const { isWide, width: layoutWidth } = useLayout();
+  const { height: windowH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
+  // Title and close stay on screen: the sheet is capped at what the keyboard
+  // and the status-bar inset leave (counted once, lib/sheetLayout.ts).
+  const sheetAvail = sheetFrame({
+    hostHeight,
+    windowHeight: windowH,
+    lift,
+    keyboardOpen,
+    insetTop: insets.top,
+    insetBottom: insets.bottom,
+    contentHeight: 0,
+    maxHeightRatio: 1,
+  }).sheetMaxHeight;
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [loggedAt, setLoggedAt] = useState(new Date());
@@ -145,10 +165,8 @@ export function MedEditSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-      >
+      <View ref={hostRef} collapsable={false} onLayout={onHostLayout} style={{ flex: 1 }}>
+        <Animated.View style={{ flex: 1, paddingBottom: liftAnim }}>
         <Pressable
           style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
           onPress={onClose}
@@ -158,6 +176,7 @@ export function MedEditSheet({
           <Pressable
             style={[
               {
+                maxHeight: sheetAvail,
                 borderTopLeftRadius: 26,
                 borderTopRightRadius: 26,
                 borderTopWidth: 1,
@@ -275,7 +294,8 @@ export function MedEditSheet({
           dialog in the right controller and hands it back to the screen on
           close. Guarded on `visible` so a closed sheet never takes the stack. */}
       {visible ? <FeedbackHost /> : null}
-      </KeyboardAvoidingView>
+      </Animated.View>
+      </View>
     </Modal>
   );
 }

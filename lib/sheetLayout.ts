@@ -27,6 +27,11 @@ export interface SheetLayoutInput {
   maxHeightRatio?: number;
   /** Floor the sheet may shrink to before we stop clamping. Default 220. */
   minVisible?: number;
+  /** Whether a keyboard is up at all. Defaults to keyboardHeight > 0. It is
+   *  separate because an Android window that adjustResize already shrank has a
+   *  keyboard up and a lift of 0: the keyboard still covers the strip the
+   *  bottom inset would have padded, so the inset must not be added again. */
+  keyboardOpen?: boolean;
 }
 
 export interface SheetLayoutResult {
@@ -62,7 +67,8 @@ export function sheetLayout(input: SheetLayoutInput): SheetLayoutResult {
 
   // The keyboard already occupies the strip the safe-area inset would have
   // covered, so the two are never added together.
-  const paddingBottom = input.keyboardHeight > 0 ? 16 : input.insetBottom + 16;
+  const keyboardOpen = input.keyboardOpen ?? input.keyboardHeight > 0;
+  const paddingBottom = keyboardOpen ? 16 : input.insetBottom + 16;
 
   const scrolls = input.contentHeight + paddingBottom > sheetMaxHeight;
 
@@ -111,4 +117,49 @@ export function sheetFitHeight(
   if (input.fit === false) return sheetMaxHeight;
   const chrome = input.chromeHeight ?? 0;
   return Math.min(sheetMaxHeight, Math.max(0, input.contentHeight + chrome + paddingBottom));
+}
+
+export interface SheetFrameInput {
+  /** Measured height of the full-size host the sheet is anchored to (onLayout).
+   *  0 until measured, then windowHeight is used. */
+  hostHeight: number;
+  windowHeight: number;
+  /** px the host lifts the sheet off its bottom edge (keyboardOverlapPx). */
+  lift: number;
+  keyboardOpen: boolean;
+  insetTop: number;
+  insetBottom: number;
+  contentHeight: number;
+  maxHeightRatio?: number;
+}
+
+export interface SheetFrame extends SheetLayoutResult {
+  /** Distance from the host's top edge to the sheet's top edge when the sheet
+   *  takes its full allowance. The title row sits just under it, so this must
+   *  stay >= insetTop or the title and the close button slide under the status
+   *  bar. */
+  sheetTop: number;
+}
+
+/**
+ * The one place the status-bar inset and the keyboard are counted. The host is
+ * the full-screen box inside the Modal, the sheet sits at its bottom edge, and:
+ *  - the keyboard is subtracted ONCE, as `lift` (the measured overlap, so a
+ *    window the platform already resized contributes 0 instead of a second
+ *    full keyboard height);
+ *  - insetTop is subtracted ONCE, from the host height, never again inside the
+ *    sheet's own padding.
+ */
+export function sheetFrame(input: SheetFrameInput): SheetFrame {
+  const host = input.hostHeight > 0 ? input.hostHeight : input.windowHeight;
+  const layout = sheetLayout({
+    windowHeight: host,
+    keyboardHeight: input.lift,
+    keyboardOpen: input.keyboardOpen,
+    insetBottom: input.insetBottom,
+    insetTop: input.insetTop,
+    contentHeight: input.contentHeight,
+    maxHeightRatio: input.maxHeightRatio,
+  });
+  return { ...layout, sheetTop: host - input.lift - layout.sheetMaxHeight };
 }
