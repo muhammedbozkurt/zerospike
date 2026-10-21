@@ -330,3 +330,27 @@ export function ratioConfirmPatch(
   if (!allUsable(profile)) return null;
   return { ratios_confirmed: 1 };
 }
+
+/** True when two drafts hold the same four values. */
+export function sameRatioDraft(a: RatioFields, b: RatioFields): boolean {
+  return (
+    a.breakfast === b.breakfast &&
+    a.lunch === b.lunch &&
+    a.dinner === b.dinner &&
+    a.isfMgdl === b.isfMgdl
+  );
+}
+
+/**
+ * After the box was ticked: may the sheet show the tick and close? Only when the
+ * write reached the profile AND the numbers on screen are still the ones that
+ * were sent. A field edited while the write ran leaves the profile unconfirmed
+ * (the edit withdraws the confirmation), so the sheet stays open, unticked.
+ */
+export function confirmStillCurrent(
+  ok: boolean | undefined,
+  sent: RatioFields,
+  now: RatioFields
+): boolean {
+  return !!ok && sameRatioDraft(sent, now);
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import { logCrash } from "./analytics";
-import { updateProfile } from "./db/profiles";
+import { getProfile, updateProfile } from "./db/profiles";
 import { createRatioWriter, type RatioWriter } from "./ratioWriter";
 import { useApp } from "./store/AppContext";
 
@@ -41,7 +41,10 @@ export function useRatioWriter(onError?: (e: unknown) => void): {
             await updateProfile(p.id, patch);
             bumpRef.current();
           },
-          reload: () => profileRef.current,
+          // The database, not the context copy: the refresh after a write may
+          // not have reached the context yet, and a stale set here would make
+          // the next draft look unchanged.
+          reload: async () => (await getProfile(p.id)) ?? profileRef.current,
           unit: () => profileRef.current?.glucose_unit ?? "mgdl",
           onError: (e) => {
             logCrash(e, { screen: "ratios", step: "write" });
