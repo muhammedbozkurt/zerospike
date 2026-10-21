@@ -4,20 +4,21 @@ import {
   HOME_LEFT,
   HOME_RIGHT,
   SHEET_MAX_WIDTH,
+  TABLET_CARD_GAP,
   TABLET_SHEET_MAX_HEIGHT,
   TWO_COL_MAX_WIDTH,
-  balancedSplit,
   columnContentWidth,
   columnWidth,
-  fillColumn,
-  homeGrow,
   isTwoColumn,
   isWideScreen,
   sheetBoxStyle,
   sheetVisibleHeight,
   sheetWidth,
+  stackColumn,
   tabletSheetHeight,
 } from "../lib/tabletLayout";
+import * as layout from "../lib/tabletLayout";
+import { SPACE } from "../lib/theme/tokens";
 import { sheetLayout } from "../lib/sheetLayout";
 
 let bad = 0;
@@ -51,13 +52,13 @@ eq("col content 1376 capped", columnContentWidth(1376), 560);
 eq("body cap", TWO_COL_MAX_WIDTH, 1184);
 
 // Home split: ring + week + journal left; counter, strip, basal, tiles right.
-eq("left ids", HOME_LEFT.map((b) => b.id), ["hero", "week", "journal"]);
+eq("left ids", [...HOME_LEFT], ["hero", "week", "journal"]);
 eq(
   "right has no left block",
-  HOME_RIGHT.some((b) => HOME_LEFT.some((l) => l.id === b.id)),
+  HOME_RIGHT.some((id) => HOME_LEFT.includes(id)),
   false
 );
-eq("right ids", HOME_RIGHT.map((b) => b.id), [
+eq("right ids", [...HOME_RIGHT], [
   "postMeal",
   "widgetTip",
   "spike",
@@ -66,33 +67,31 @@ eq("right ids", HOME_RIGHT.map((b) => b.id), [
   "quick",
   "setup",
 ]);
-eq("grow lookup", homeGrow("quick"), 2);
-eq("left blocks do not grow", homeGrow("journal"), 0);
 
-// Fill: spare height is shared by weight; a column taller than the viewport scrolls.
-{
-  const r = fillColumn(
-    [
-      { id: "a", height: 100, grow: 1 },
-      { id: "b", height: 100, grow: 0 },
-      { id: "c", height: 100, grow: 3 },
-    ],
-    700,
-    10
-  );
-  // natural 300 + 20 gaps = 320, spare 380: a +95, c +285
-  eq("fill heights", r.heights, [195, 100, 385]);
-  eq("fill no leftover", r.leftover, 0);
-  eq("fill total", r.heights.reduce((s, h) => s + h, 0) + 20, 700);
+// No stretching: the grow weights and the fill / balance helpers are gone.
+for (const name of ["fillColumn", "balancedSplit", "homeGrow"]) {
+  eq(`no ${name}`, name in layout, false);
 }
-eq("fill overflow", fillColumn([{ id: "a", height: 900, grow: 1 }], 700, 0).heights, [900]);
-eq("fill no grow keeps leftover", fillColumn([{ id: "a", height: 100, grow: 0 }], 700, 0).leftover, 600);
 
-// Balanced split: order kept, difference minimal.
-eq("split even", balancedSplit([100, 100, 100, 100]), 2);
-eq("split big first", balancedSplit([300, 100, 100, 100]), 1);
-eq("split empty", balancedSplit([]), 0);
-eq("split single tie keeps all right", balancedSplit([50]), 0);
+// Fixed gap equals the card bottom margin the dashboard cards carry.
+eq("gap constant", TABLET_CARD_GAP, 12);
+eq("gap equals SPACE.md", TABLET_CARD_GAP, SPACE.md);
+
+// Stack: top-aligned, natural heights untouched, fixed gap between blocks.
+{
+  const heights = [170, 84, 64, 140, 120];
+  const r = stackColumn(heights);
+  eq("stack tops", r.tops, [0, 182, 278, 354, 506]);
+  eq("stack total", r.total, 626);
+  eq("stack total = sum + gaps", r.total, heights.reduce((s, h) => s + h, 0) + TABLET_CARD_GAP * 4);
+  eq("stack gaps constant", r.tops.slice(1).map((t, i) => t - (r.tops[i] + heights[i])), [12, 12, 12, 12]);
+  eq("stack first at top", r.tops[0], 0);
+}
+eq("stack empty", stackColumn([]), { tops: [], total: 0 });
+eq("stack single", stackColumn([90]), { tops: [0], total: 90 });
+// Short column vs tall viewport: nothing grows, the stack just ends early.
+eq("stack ignores viewport", stackColumn([100, 100], 12).total, 212);
+eq("stack custom gap", stackColumn([10, 10], 5).tops, [0, 15]);
 
 // Sheet width: min(560, window - 2*16).
 eq("sheet 1032", sheetWidth(1032), 560);

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View, type ViewStyle } from "react-native";
+import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -168,8 +168,9 @@ const CTA_CLEARANCE = CTA_BOTTOM + 100;
 // Content width per column: 800dp tablet 368; iPad 13in portrait (1032) 484;
 // 7in landscape (~960) 448; iPad 13in landscape 560 (centred); 7in portrait
 // (600) and anything under 700 wide stay one column. Thresholds, the column
-// split and the fill weights live in lib/tabletLayout.ts (tested, and drawn by
-// scripts/tabletLayoutRender.ts).
+// split and the fixed card gap live in lib/tabletLayout.ts (tested, and drawn
+// by scripts/tabletLayoutRender.ts). Cards keep their natural height; nothing
+// is stretched, and the whole page scrolls as one.
 // The CTA's own footprint: the wrapper's pt-2 (8) plus GradientCTA's rendered
 // height (13 vertical padding x2 plus its ~24 line of 15pt bold text) plus the
 // wrapper's own bottom inset.
@@ -212,7 +213,7 @@ import { useFeedback } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
 import { Sparkline } from "../../components/Sparkline";
 import { Button, Card, Chip, SegmentedStat, Txt } from "../../components/ui";
-import { TWO_COL_MAX_WIDTH, homeGrow, type HomeBlockId } from "../../lib/tabletLayout";
+import { TWO_COL_MAX_WIDTH } from "../../lib/tabletLayout";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { RIPPLE_ALPHA, ROW_MIN_HEIGHT } from "../../lib/theme/uiPrimitives";
 import { EmptyState } from "../../components/EmptyState";
@@ -2093,15 +2094,10 @@ export default function DashboardScreen() {
   );
 
   // Tablet two-column home (width >= 700, existing user): which blocks live in
-  // which column is lib/tabletLayout.ts (HOME_LEFT / HOME_RIGHT). The right
-  // column's boxed cards grow by their weight so a short column fills the
-  // viewport instead of ending in a dead band; a phone gets undefined (no
-  // style change at all).
+  // which column is lib/tabletLayout.ts (HOME_LEFT / HOME_RIGHT). Cards keep
+  // their natural height and the right column is stacked from the top with the
+  // fixed card gap (each card's own marginBottom, SPACE.md = TABLET_CARD_GAP).
   const twoColHome = isTwoCol && !isFirstRun;
-  const stretch = (id: HomeBlockId): ViewStyle | undefined =>
-    twoColHome ? { flexGrow: homeGrow(id) } : undefined;
-  const stretchCenter = (id: HomeBlockId): ViewStyle | undefined =>
-    twoColHome ? { flexGrow: homeGrow(id), justifyContent: "center" } : undefined;
 
   const headerCards = (
     <>
@@ -2121,7 +2117,7 @@ export default function DashboardScreen() {
           proves the pill and the CTA's own label both still fit the
           narrowest supported screen at max Dynamic Type. */}
       {isExistingUser ? (
-      <Card accent style={[{ marginBottom: SPACE.md }, stretchCenter("postMeal")]}>
+      <Card accent style={{ marginBottom: SPACE.md }}>
         {postMealTimerForProfile != null ? (
           <PostMealCountdown
             timer={postMealTimerForProfile}
@@ -2303,7 +2299,7 @@ export default function DashboardScreen() {
       {(iob > 0 && showsInsulin) || nextReminder ? (
         <View
           className="flex-row rounded-2xl bg-glass border border-hair overflow-hidden"
-          style={[{ marginBottom: SPACE.md }, stretch("context")]}
+          style={{ marginBottom: SPACE.md }}
         >
           {iob > 0 && showsInsulin ? (
             <Pressable
@@ -2430,7 +2426,7 @@ export default function DashboardScreen() {
       {isExistingUser ? (
       <View
         className="flex-row"
-        style={[{ gap: SPACE.sm, marginBottom: SPACE.md }, stretch("quick")]}
+        style={{ gap: SPACE.sm, marginBottom: SPACE.md }}
       >
         <Pressable
           onPress={() => router.push("/insights")}
@@ -2446,7 +2442,7 @@ export default function DashboardScreen() {
             showsHealthCard ? { flex: 1 } : { width: 220, maxWidth: "100%" },
           ]}
         >
-          <Card style={[{ flex: 1 }, twoColHome ? { justifyContent: "center" } : null]}>
+          <Card style={{ flex: 1 }}>
             <View className="flex-row items-center justify-between">
               <IconTile icon="stats-chart" size={28} radius={9} />
               <DirIcon name="chevron-forward" size={16} color={THEME.textMuted} />
@@ -2470,7 +2466,7 @@ export default function DashboardScreen() {
             className="active:opacity-80"
             style={{ flex: 1, borderRadius: RADIUS.lg }}
           >
-            <Card style={[{ flex: 1 }, twoColHome ? { justifyContent: "center" } : null]}>
+            <Card style={{ flex: 1 }}>
             <View className="flex-row items-center justify-between">
               <IconTile icon="pulse" size={28} radius={9} />
               {!isProUser ? (
@@ -2528,10 +2524,7 @@ export default function DashboardScreen() {
           same persisted flag as before. */}
       {isExistingUser && showFinishSetup && !setupAllDone ? (
         <Card
-          style={[
-            { flexDirection: "row", alignItems: "flex-start", marginBottom: SPACE.md },
-            stretchCenter("setup"),
-          ]}
+          style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: SPACE.md }}
         >
           <View style={{ flex: 1, minWidth: 0 }}>
             <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700" }}>
@@ -2641,11 +2634,37 @@ export default function DashboardScreen() {
 
   // Tablet two-column home (width >= 700, existing user): the ring, week boxes
   // and the daily flow (journal) on the left; the post-meal counter, context
-  // strip, basal and the Insights / Health tiles on the right. Each column
-  // scrolls on its own; the right one stretches its cards to the viewport.
+  // strip, basal and the Insights / Health tiles on the right. ONE outer
+  // ScrollView carries both columns, so the page scrolls as a whole; cards keep
+  // their natural height and the right column is stacked from the top with a
+  // fixed gap. The journal there is a plain list (no nested scrolling): it is
+  // already capped to the preview slice (JOURNAL_PREVIEW_LIMITS: 15 rows, 2
+  // days), so virtualisation buys nothing.
   // First run keeps the single centred column (one guide, nothing to split).
   const twoCol = twoColHome;
   const wideListInset = isWide && !isFirstRun ? { paddingBottom: CTA_FOOTPRINT + insets.bottom } : undefined;
+
+  const journalFooter =
+    journalEntries.length > 0 ? (
+      <View>
+        {/* Closes the panel opened by the header, with the one action
+            that belongs to the journal: the whole of it, on its own
+            screen. The medical notice sits below on the page - it speaks
+            for the app, not for this list. */}
+        <JournalPanelBottom>
+          <Button
+            label={t("journal.seeAll")}
+            variant="outlined"
+            onPress={openFullJournal}
+            icon={<Ionicons name="arrow-forward" size={16} color={THEME.text} />}
+          />
+        </JournalPanelBottom>
+        <JournalDisclaimerNote />
+      </View>
+    ) : null;
+
+  const journalEmpty =
+    filter !== "all" ? <JournalEmptyFilter onClearFilter={() => setFilter("all")} /> : null;
 
   const journalList = (
       <SectionList
@@ -2653,7 +2672,7 @@ export default function DashboardScreen() {
         // visible viewport by the CTA's footprint so nothing is ever laid out
         // behind the floating overlay, regardless of scroll position. Phones
         // are unaffected (undefined style = today's behavior).
-        style={twoCol ? [{ flex: 1 }, wideListInset] : wideListInset}
+        style={wideListInset}
         sections={journalSections}
         keyExtractor={journalKey}
         stickySectionHeadersEnabled={true}
@@ -2661,47 +2680,14 @@ export default function DashboardScreen() {
         initialNumToRender={12}
         maxToRenderPerBatch={10}
         windowSize={7}
-        ListHeaderComponent={
-          twoCol ? (
-            <View className={headerWrapClass}>
-              {headerTop}
-              {headerJournal}
-            </View>
-          ) : (
-            Header
-          )
-        }
-        ListFooterComponent={
-          journalEntries.length > 0 ? (
-            <View>
-              {/* Closes the panel opened by the header, with the one action
-                  that belongs to the journal: the whole of it, on its own
-                  screen. The medical notice sits below on the page - it speaks
-                  for the app, not for this list. */}
-              <JournalPanelBottom>
-                <Button
-                  label={t("journal.seeAll")}
-                  variant="outlined"
-                  onPress={openFullJournal}
-                  icon={<Ionicons name="arrow-forward" size={16} color={THEME.text} />}
-                />
-              </JournalPanelBottom>
-              <JournalDisclaimerNote />
-            </View>
-          ) : null
-        }
+        ListHeaderComponent={Header}
+        ListFooterComponent={journalFooter}
         renderItem={renderItem}
         // A kind filter with no matches is NOT the first-run case: the user has
         // records, just none of this kind, and telling them to add their first
         // reading was wrong. The first-run copy now lives in the guide above, so
         // this slot only speaks for an empty filter.
-        ListEmptyComponent={
-          filter !== "all" ? (
-            <JournalEmptyFilter
-              onClearFilter={() => setFilter("all")}
-            />
-          ) : null
-        }
+        ListEmptyComponent={journalEmpty}
         contentContainerStyle={{
           // No floating CTA during first run, so the list does not have to
           // scroll clear of one. Wide screens already shrink the list's own
@@ -2718,10 +2704,10 @@ export default function DashboardScreen() {
             : isWide
               ? CTA_CLEARANCE
               : Math.max(CTA_CLEARANCE, CTA_FOOTPRINT + insets.bottom + 40),
-          // Tablet: one centred reading column instead of a stretched phone
-          // layout. Reduces to the plain 16 inset on phones, so the narrow
-          // render is unchanged.
-          ...(twoCol ? { paddingHorizontal: SPACE.lg } : columnPad(16)),
+          // Tablet one column: a centred reading column instead of a stretched
+          // phone layout. Reduces to the plain 16 inset on phones, so the
+          // narrow render is unchanged.
+          ...columnPad(16),
         }}
         showsVerticalScrollIndicator={false}
       />
@@ -2738,21 +2724,34 @@ export default function DashboardScreen() {
             alignSelf: "center",
           }}
         >
-          <View style={{ paddingHorizontal: SPACE.lg }}>{titleRow}</View>
-          <View style={{ flex: 1, flexDirection: "row" }}>
-            {journalList}
-            <ScrollView
-              style={[{ flex: 1 }, wideListInset]}
-              contentContainerStyle={{
-                flexGrow: 1,
-                paddingHorizontal: SPACE.lg,
-                paddingBottom: CTA_CLEARANCE,
-              }}
-              showsVerticalScrollIndicator={false}
-            >
-              {headerCards}
-            </ScrollView>
-          </View>
+          <ScrollView
+            style={[{ flex: 1 }, wideListInset]}
+            contentContainerStyle={{ paddingBottom: CTA_CLEARANCE }}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={{ paddingHorizontal: SPACE.lg }}>{titleRow}</View>
+            <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+              <View style={{ flex: 1, minWidth: 0, paddingHorizontal: SPACE.lg }}>
+                <View className={headerWrapClass}>
+                  {headerTop}
+                  {headerJournal}
+                </View>
+                {journalSections.map((section, si) => (
+                  <View key={`${si}-${section.dateLabel}`}>
+                    <JournalDayHeader section={section} />
+                    {section.data.map((item, i) => (
+                      <React.Fragment key={journalKey(item)}>
+                        {renderItem({ item, index: i })}
+                      </React.Fragment>
+                    ))}
+                  </View>
+                ))}
+                {journalSections.length === 0 ? journalEmpty : null}
+                {journalFooter}
+              </View>
+              <View style={{ flex: 1, minWidth: 0, paddingHorizontal: SPACE.lg }}>{headerCards}</View>
+            </View>
+          </ScrollView>
         </View>
       ) : (
         journalList

@@ -1,6 +1,7 @@
 /**
  * Pure tablet geometry: when a screen goes two-column, which blocks live in
- * which column, how the shorter column is filled, and how wide a sheet is.
+ * which column (natural heights, fixed gap, one outer scroll), and how wide a
+ * sheet is.
  * No react-native import on purpose: the layout is tested from plain Node
  * (scripts/tabletLayout.test.ts) and drawn by scripts/tabletLayoutRender.ts
  * from these same functions, so the picture cannot drift from the app.
@@ -52,88 +53,47 @@ export type HomeBlockId =
   | "quick"
   | "setup";
 
-export type ColumnBlock = {
-  id: HomeBlockId;
-  /** Share of the column's spare height this block takes (flex-grow). 0 keeps
-   *  the block at its natural height. */
-  grow: number;
-};
+/** Fixed vertical gap between the cards of a tablet column. Equals SPACE.md,
+ *  the bottom margin every dashboard card already carries. */
+export const TABLET_CARD_GAP = 12;
 
-/** Dashboard on a tablet. Left: the ring and week boxes, then the daily flow
- *  (the journal list scrolls the whole column). Right: the post-meal counter,
- *  tips, context strip (IOB, reminder), basal, and the Insights / Health
- *  tiles. The blocks that carry a grow weight are boxed cards; they stretch
- *  so a short right column fills the viewport instead of leaving a dead band
- *  under it. Weights favour the tiles, whose content reads fine when tall. */
-export const HOME_LEFT: readonly ColumnBlock[] = [
-  { id: "hero", grow: 0 },
-  { id: "week", grow: 0 },
-  { id: "journal", grow: 0 },
+/** Dashboard on a tablet. Left: the ring and week boxes, then the daily flow.
+ *  Right: the post-meal counter, tips, context strip (IOB, reminder), basal,
+ *  and the Insights / Health tiles. Both columns sit in ONE outer scroll view
+ *  and every card keeps its natural height: no card is stretched past its
+ *  content and the columns are not forced to end at the same height. */
+export const HOME_LEFT: readonly HomeBlockId[] = ["hero", "week", "journal"];
+
+export const HOME_RIGHT: readonly HomeBlockId[] = [
+  "postMeal",
+  "widgetTip",
+  "spike",
+  "context",
+  "basal",
+  "quick",
+  "setup",
 ];
 
-export const HOME_RIGHT: readonly ColumnBlock[] = [
-  { id: "postMeal", grow: 1.2 },
-  { id: "widgetTip", grow: 0 },
-  { id: "spike", grow: 0 },
-  { id: "context", grow: 0.8 },
-  { id: "basal", grow: 0 },
-  { id: "quick", grow: 2 },
-  { id: "setup", grow: 0.6 },
-];
-
-export function homeGrow(id: HomeBlockId): number {
-  const hit = HOME_RIGHT.find((b) => b.id === id);
-  return hit ? hit.grow : 0;
-}
-
-export type StackedBlock = { id: string; height: number; grow: number };
-
-export type FillResult = {
-  /** Final height per block, same order as the input. */
-  heights: number[];
-  /** Spare height nobody could take (only when no block grows). */
-  leftover: number;
+export type StackResult = {
+  /** Top offset of each block, same order as the input. */
+  tops: number[];
+  /** Total height of the stack (last bottom edge, no trailing gap). */
+  total: number;
 };
 
 /**
- * Flexbox's spare-space rule for one column: after the natural heights and
- * the gaps between blocks, the remaining viewport height is shared among the
- * blocks in proportion to their grow weight. A column already taller than the
- * viewport gets no extra (it scrolls). This is the same arithmetic the native
- * flexGrow does, so the render tool and the app agree.
+ * Top-aligned stack with a fixed gap: block i starts where block i-1 ended
+ * plus `gap`. Heights are the blocks' natural heights and are never changed.
  */
-export function fillColumn(blocks: readonly StackedBlock[], available: number, gap: number): FillResult {
-  const natural = blocks.reduce((sum, b) => sum + b.height, 0) + gap * Math.max(0, blocks.length - 1);
-  const spare = Math.max(0, available - natural);
-  const totalGrow = blocks.reduce((sum, b) => sum + b.grow, 0);
-  if (spare === 0 || totalGrow === 0) {
-    return { heights: blocks.map((b) => b.height), leftover: spare };
-  }
-  return {
-    heights: blocks.map((b) => b.height + (spare * b.grow) / totalGrow),
-    leftover: 0,
-  };
-}
-
-/**
- * Order-preserving two-column split that minimises the height difference.
- * Returns how many leading blocks go left. Used where the blocks have no
- * fixed home (the food tab); the dashboard's split is the fixed HOME_* above.
- */
-export function balancedSplit(heights: readonly number[]): number {
-  const total = heights.reduce((s, h) => s + h, 0);
-  let acc = 0;
-  let best = 0;
-  let bestDiff = total;
-  for (let i = 0; i <= heights.length; i++) {
-    const diff = Math.abs(total - acc * 2);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = i;
-    }
-    if (i < heights.length) acc += heights[i];
-  }
-  return best;
+export function stackColumn(heights: readonly number[], gap: number = TABLET_CARD_GAP): StackResult {
+  const tops: number[] = [];
+  let y = 0;
+  heights.forEach((h, i) => {
+    if (i > 0) y += gap;
+    tops.push(y);
+    y += h;
+  });
+  return { tops, total: y };
 }
 
 /** Widest a bottom sheet gets on a tablet. */
