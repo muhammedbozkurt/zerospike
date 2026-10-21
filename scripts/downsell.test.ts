@@ -22,6 +22,7 @@ import {
   decidePaywallExit,
   createPaywallExitController,
   applyDownsellStamp,
+  clampLastShownAt,
   downsellCooldownElapsed,
   downsellEligible,
   entitlementBlocksDownsell,
@@ -523,6 +524,49 @@ async function main(): Promise<void> {
     const stampOnly = normalizeDownsellState(JSON.parse('{"count":0,"lastShownAt":1700000000000,"lastTrigger":"winback"}'));
     ok("stamp-only blob round-trips and blocks inside the window", !canShowDownsell(stampOnly, 1700000000000 + DAY));
     eq("JSON round trip of a stamped state", normalizeDownsellState(JSON.parse(JSON.stringify(applyDownsellStamp(initialDownsellState, "winback", NOW)))), applyDownsellStamp(initialDownsellState, "winback", NOW));
+  }
+
+  section("W. a stamp in the future (clock moved forward, then back) holds the window at most one window");
+  {
+    const skewed = applyDownsellStamp(initialDownsellState, "inapp", NOW + 365 * DAY);
+    ok("raw future stamp blocks", !canShowDownsell(skewed, NOW));
+    const healed = clampLastShownAt(skewed, NOW);
+    eq("clamped to now", healed.lastShownAt, NOW);
+    ok("still blocked right after (the window starts when noticed)", !canShowDownsell(healed, NOW + DAY));
+    ok("open one window later, not a year later", canShowDownsell(healed, NOW + 7 * DAY));
+    eq("a past stamp is untouched (same object)", clampLastShownAt(applyDownsellStamp(initialDownsellState, "inapp", NOW - DAY), NOW).lastShownAt, NOW - DAY);
+    eq("no stamp is untouched", clampLastShownAt(initialDownsellState, NOW), initialDownsellState);
+  }
+
+  section("X. cancelled store sheet: only a downsell decision leaves, anything else stays");
+  {
+    const stay = makeDeps({ discount: false });
+    const n1 = makeNav();
+    const c1 = createPaywallExitController(stay.deps, n1.nav);
+    await c1.requestAfterCancel({ plan: "annual", isPro: false });
+    eq("no discount: no navigation", n1.log, []);
+    ok("lock released, slot handed back", !c1.isExiting() && !stay.deps.session.isReserved());
+
+    const monthly = makeDeps();
+    const n2 = makeNav();
+    const c2 = createPaywallExitController(monthly.deps, n2.nav);
+    await c2.requestAfterCancel({ plan: "monthly", isPro: false });
+    eq("monthly: no navigation, store never queried", [n2.log, monthly.calls.getOffer], [[], 0]);
+    ok("monthly: lock released", !c2.isExiting());
+
+    const go = makeDeps();
+    const n3 = makeNav();
+    const c3 = createPaywallExitController(go.deps, n3.nav);
+    await c3.requestAfterCancel({ plan: "annual", isPro: false });
+    eq("annual with a verified discount: the downsell opens", n3.log, ["downsell"]);
+    ok("lock kept through the transition", c3.isExiting());
+
+    const again = makeDeps();
+    const n4 = makeNav();
+    const c4 = createPaywallExitController(again.deps, n4.nav);
+    await c4.requestAfterCancel({ plan: "monthly", isPro: false });
+    await c4.requestAfterCancel({ plan: "annual", isPro: false });
+    eq("after a stay the controller can decide again", n4.log, ["downsell"]);
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -20,6 +20,8 @@ interface GradientCTAProps {
   size?: "md" | "lg";
   /** Swaps the label for a spinner and blocks the press, like ui.tsx Button. */
   loading?: boolean;
+  /** Lets the label wrap onto two lines (centred, no font shrinking). */
+  allowTwoLines?: boolean;
   icon?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }
@@ -42,6 +44,7 @@ export function GradientCTA({
   disabled = false,
   size = "md",
   loading = false,
+  allowTwoLines = false,
   icon,
   style,
 }: GradientCTAProps) {
@@ -112,11 +115,21 @@ export function GradientCTA({
         ) : (
           <>
             {icon}
+            {/* allowTwoLines (the paywall's price-carrying labels): wrap onto a
+                second line instead of shrinking, because adjustsFontSizeToFit
+                clips silently on Android. Every other CTA keeps one line. */}
             <Text
-              style={{ color: textColor, fontWeight: "800", fontSize: metrics.font, flexShrink: 1 }}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
+              style={{
+                color: textColor,
+                fontWeight: "800",
+                fontSize: metrics.font,
+                flexShrink: 1,
+                textAlign: "center",
+              }}
+              numberOfLines={allowTwoLines ? 2 : 1}
+              adjustsFontSizeToFit={!allowTwoLines}
+              minimumFontScale={allowTwoLines ? undefined : 0.7}
+              maxFontSizeMultiplier={allowTwoLines ? 1.3 : undefined}
             >
               {label}
             </Text>

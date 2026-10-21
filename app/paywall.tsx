@@ -64,15 +64,12 @@ import { lifetimeYearsOfAnnual } from "../lib/paywallPricing";
 import { PAYWALL_LAYOUT, paywallPreviewVisible } from "../lib/paywallLayout";
 import {
   paywallCtaKind,
-  purchaseOutcomeEvent,
-  purchaseUiAcceptsPress,
   purchaseUiBusy,
-  purchaseUiReduce,
   shouldOpenWelcomeAfterPurchase,
   showTrialTimeline,
-  type PurchaseUiEvent,
   type PurchaseUiState,
 } from "../lib/paywallPurchase";
+import { createPurchaseFlow, type PurchaseFlowDeps } from "../lib/paywallBuyFlow";
 import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
 import {
   DEFAULT_TRIAL_DAYS,
@@ -88,6 +85,11 @@ import { trialSettleAction, type TrialSettleAction } from "../lib/trialSettle";
 import { shouldAutoOpenWelcome, withHealthMirror } from "../lib/proWelcome";
 import { getProWelcomeState } from "../lib/services/proWelcome";
 import { getHealthSyncEnabled } from "../lib/services/health";
+
+type PurchaseFlowLive = Omit<
+  PurchaseFlowDeps<PurchaseOutcome>,
+  "isExiting" | "abandonPendingExit" | "purchase" | "onState"
+>;
 
 // RevenueCat's offering id is not exposed by loadOfferings, so there is one fixed variant.
 const PAYWALL_VARIANT = "default";
@@ -276,20 +278,16 @@ function PaywallScreen() {
   useThemeRemountLock();
   const { refreshPro, activeProfile, isProUser } = useApp();
   const { toast } = useFeedback();
-  // The purchase button's state machine (lib/paywallPurchase). uiRef mirrors it
-  // synchronously, and busyRef mirrors "something is in flight", so a press or a
-  // close request landing in the same tick as a purchase or restore starting
-  // (or finishing) sees the true value, not last render's.
+  // The purchase button's state machine lives in the flow (lib/paywallBuyFlow,
+  // tested with mock deps); the screen mirrors its state for rendering. The flow
+  // reads its own state synchronously, so a second tap in the same tick (before
+  // React re-renders the disabled button) never reaches the store.
   const [ui, setUi] = useState<PurchaseUiState>("idle");
-  const uiRef = useRef<PurchaseUiState>("idle");
-  const busyRef = useRef(false);
-  function dispatchUi(event: PurchaseUiEvent) {
-    const next = purchaseUiReduce(uiRef.current, event);
-    uiRef.current = next;
-    busyRef.current = purchaseUiBusy(next);
-    setUi(next);
-  }
-  const busy = purchaseUiBusy(ui);
+  // An exit decision (X, or a cancelled sheet that is leaving) holds the lock:
+  // the button is disabled for the whole lookup, not only the store call.
+  const [exitingUi, setExitingUi] = useState(false);
+  const busy = purchaseUiBusy(ui) || exitingUi;
+  const purchasing = ui === "purchasing" || ui === "done";
   const failed = ui === "failed";
   const [plan, setPlan] = useState<PlanId>("annual");
   const [offer, setOffer] = useState<OfferingsResult | null>(null);
@@ -415,7 +413,7 @@ function PaywallScreen() {
     logEvent("paywall_tier_selected", { tier: p, paywall_version: PAYWALL_VERSION });
     // A failed purchase leaves "try again" on the button; choosing another plan
     // gives that plan's own label back.
-    dispatchUi("planChanged");
+    flowRef.current!.planChanged();
     setPlan(p);
   }
 
@@ -461,8 +459,25 @@ function PaywallScreen() {
             router.replace({ pathname: "/downsell", params: { trigger: context } })
           ),
       },
-      () => busyRef.current
+      () => flowRef.current!.isBusy()
     );
+  }
+
+  const flowRef = useRef<ReturnType<typeof createPurchaseFlow<PurchaseOutcome>> | null>(null);
+  if (flowRef.current === null) {
+    flowRef.current = createPurchaseFlow<PurchaseOutcome>({
+      isExiting: () => exitCtlRef.current!.isExiting(),
+      abandonPendingExit: () => exitCtlRef.current!.abandonPendingExit(),
+      purchase: (p) => purchasePro(p),
+      refreshPro: () => liveRef.current!.refreshPro(),
+      onPress: (p) => liveRef.current!.onPress(p),
+      onResult: (p, r) => liveRef.current!.onResult(p, r),
+      onSuccess: (p, r) => liveRef.current!.onSuccess(p, r),
+      onCancelled: (p) => liveRef.current!.onCancelled(p),
+      onFailed: (p, r, e) => liveRef.current!.onFailed(p, r, e),
+      onPostPurchaseError: (e) => liveRef.current!.onPostPurchaseError(e),
+      onState: setUi,
+    });
   }
 
   // Leaves the paywall.
@@ -477,22 +492,28 @@ function PaywallScreen() {
     });
   }
 
-  // A cancelled purchase: it is the thing that holds busy, so it bypasses it.
-  async function triggerDownsell() {
-    await exitCtlRef.current!.requestExit({ plan: planRef.current, isPro: isProRef.current });
+  // A cancelled store sheet. The paywall is NOT closed by it: only a "downsell"
+  // decision (annual selected, a verified discount, an open gate) leaves; any
+  // other decision releases the lock and the button simply returns to normal.
+  async function afterCancel() {
+    const ctl = exitCtlRef.current!;
+    await ctl.requestAfterCancel({ plan: planRef.current, isPro: isProRef.current });
+    if (ctl.isExiting()) setExitingUi(true);
   }
 
   // User-initiated close (X, back, swipe): ignored while a purchase or restore
-  // is being processed.
+  // is being processed. While the decision is pending the button is locked.
   async function dismiss() {
-    await exitCtlRef.current!.requestUserClose(
-      { plan: planRef.current, isPro: isProRef.current },
-      () =>
-        logEvent("paywall_dismiss", {
-          source: reason ?? "direct",
-          paywall_version: PAYWALL_VERSION,
-        })
-    );
+    const ctl = exitCtlRef.current!;
+    await ctl.requestUserClose({ plan: planRef.current, isPro: isProRef.current }, () => {
+      logEvent("paywall_dismiss", {
+        source: reason ?? "direct",
+        paywall_version: PAYWALL_VERSION,
+      });
+      setExitingUi(true);
+    });
+    // A decision that ended without leaving (a purchase took over) unlocks.
+    if (!ctl.isExiting()) setExitingUi(false);
   }
 
   const planRef = useRef(plan);
@@ -633,69 +654,61 @@ function PaywallScreen() {
     await exit();
   }
 
-  async function buy() {
-    // First line, read from the synchronous mirror: a second tap in the same
-    // tick (before React re-renders the disabled button) never reaches the store.
-    if (!purchaseUiAcceptsPress(uiRef.current)) return;
-    dispatchUi("press");
-    let last: PurchaseUiEvent = "settled";
-    try {
-      logEvent("paywall_cta", { tier: plan, paywall_version: PAYWALL_VERSION });
-      const res = await purchasePro(plan);
-      await refreshPro();
-      const feedback = purchaseToastFor(res);
+  // The flow's side effects. Re-assigned every render so they read the current
+  // plan, translations and toast; the flow itself is created once.
+  const liveRef = useRef<PurchaseFlowLive | null>(null);
+  liveRef.current = {
+    refreshPro,
+    onPress: (p) => logEvent("paywall_cta", { tier: p, paywall_version: PAYWALL_VERSION }),
+    onResult: (p, res) =>
       logEvent("purchase_result", {
         result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
-        product: plan,
+        product: p,
         reason: reason ?? "direct",
         variant: PAYWALL_VARIANT,
-        trial: plan === "annual" && eventTrial,
+        trial: p === "annual" && eventTrial,
         detail:
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
         paywall_version: PAYWALL_VERSION,
+      }),
+    onSuccess: async (p, res) => {
+      clearPaywallTrial();
+      isProRef.current = true;
+      logEvent("purchase_completed", {
+        tier: p,
+        source: reason ?? "direct",
+        paywall_version: PAYWALL_VERSION,
       });
-      if (res.ok) {
-        clearPaywallTrial();
-        dispatchUi("success");
-        isProRef.current = true;
-        logEvent("purchase_completed", {
-          tier: plan,
-          source: reason ?? "direct",
-          paywall_version: PAYWALL_VERSION,
-        });
-        await settleTrial(res);
-        hapticSuccess();
-        // Success, or an already-owned recovery ("this is already yours").
-        if (feedback) toast(t(feedback.key), feedback.kind);
-        await leaveAfterPurchase(res.recovered === true);
-      } else if (res.cancelled) {
-        // Silent: no message. The button stays disabled through the downsell
-        // lookup (the cancel IS the exit), then returns to normal.
-        last = purchaseOutcomeEvent(res);
-        await triggerDownsell();
-      } else {
-        // Real store error: a short message, and the button offers "try again"
-        // on the same selected plan.
-        last = purchaseOutcomeEvent(res);
-        if (feedback) toast(t(feedback.key), feedback.kind);
-      }
-    } catch (err) {
-      logCrash(err, { screen: "paywall", op: "purchase" });
-      // Past the store success nothing here is a purchase failure.
-      if (uiRef.current !== "done") {
-        last = "failed";
-        toast(t("paywall.purchaseError"), "error");
-      }
-    } finally {
-      dispatchUi(last);
-      if (last !== "settled") dispatchUi("settled");
-    }
+      await settleTrial(res);
+      hapticSuccess();
+      // Success, or an already-owned recovery ("this is already yours").
+      const feedback = purchaseToastFor(res);
+      if (feedback) toast(t(feedback.key), feedback.kind);
+      await leaveAfterPurchase(res.ok && res.recovered === true);
+    },
+    onCancelled: afterCancel,
+    onFailed: (_p, res, err) => {
+      if (err) logCrash(err, { screen: "paywall", op: "purchase" });
+      // Real store error (or a thrown one): one short message; the button then
+      // offers "try again" on the same selected plan.
+      const feedback = res ? purchaseToastFor(res) : null;
+      if (feedback) toast(t(feedback.key), feedback.kind);
+      else toast(t("paywall.purchaseError"), "error");
+    },
+    onPostPurchaseError: (err) => {
+      logCrash(err, { screen: "paywall", op: "afterPurchase" });
+      // The store answered; if the follow-up could not navigate, fall back to
+      // simply leaving (a no-op when a navigation is already under way).
+      void exit();
+    },
+  };
+
+  async function buy() {
+    await flowRef.current!.buy(planRef.current);
   }
 
   async function onRestore() {
-    if (!purchaseUiAcceptsPress(uiRef.current)) return;
-    dispatchUi("restoreStart");
-    try {
+    await flowRef.current!.restore(async () => {
       const result = await restore();
       await refreshPro();
       if (result === "restored") {
@@ -710,9 +723,7 @@ function PaywallScreen() {
       } else {
         toast(t("paywall.restoreFailed"), "error");
       }
-    } finally {
-      dispatchUi("settled");
-    }
+    });
   }
 
   const ctaTrial = showTrialTimeline(plan, annualTrial);
@@ -769,7 +780,6 @@ function PaywallScreen() {
             : ctaKind === "lifetime"
               ? t("paywall.ctaLifetime", { price: isolateLtr(selectedPrice ?? "") })
               : t("paywall.cta");
-  const purchasing = ui === "purchasing" || ui === "done";
   const chargeRow = timelineRows.find((row) => row.kind === "charge") ?? null;
   const previewVisible = paywallPreviewVisible(windowHeight);
 
@@ -795,9 +805,12 @@ function PaywallScreen() {
 
   // A limit context (health/foods/...) takes over the headline with its own
   // title: the generic offer is not the point when the visitor hit a wall.
+  // The trial headline only while the selected plan is the annual one with a
+  // trial: a "try free" line over a selected monthly or lifetime plan is a mixed
+  // message about what the button charges (App Store 3.1.2).
   const heroHeadline = limit
     ? limit.title
-    : annualTrial
+    : showTrialTimeline(plan, annualTrial)
       ? t("paywall.headlineTrial", { days: trialDays })
       : t("paywall.headline");
   const heroSubline = limit ? limit.body : t("paywall.promise");
@@ -1092,6 +1105,7 @@ function PaywallScreen() {
             <GradientCTA
               label={ctaLabel}
               loading={purchasing}
+              allowTwoLines
               disabled={busy}
               onPress={buy}
             />

@@ -25,7 +25,9 @@ export const PAYWALL_LAYOUT = {
   planGap: 8,
   bandPadTop: 12,
   bandPadBottom: 12,
-  ctaHeight: 44,
+  /** GradientCTA: 13pt padding top and bottom around the label lines. */
+  ctaPadVertical: 26,
+  ctaLineHeight: 18,
   /** The one pinned disclosure line under a trial CTA. */
   bandDisclosureMargin: 8,
   bandDisclosureLine: 16,
@@ -50,6 +52,8 @@ export interface PaywallLayoutInput {
   annualDescLines: number;
   annualFootLines: number;
   lifetimeFootLines: number;
+  /** Label lines of the pinned CTA: 1, or 2 when a priced label wraps. */
+  ctaLines?: number;
   /** Lines of the pinned disclosure under the CTA (0 = none, i.e. not a trial). */
   disclosureLines: number;
   chipCount: number;
@@ -94,12 +98,13 @@ export function planCardHeights(i: Pick<PaywallLayoutInput, "annualDescLines" | 
 export function computePaywallLayout(i: PaywallLayoutInput): PaywallLayout {
   const k = i.fontScale ?? 1;
   const header = L.headerHeight;
+  const ctaHeight = L.ctaPadVertical + Math.ceil((i.ctaLines ?? 1) * L.ctaLineHeight * k);
   const disclosure =
     i.disclosureLines > 0
       ? L.bandDisclosureMargin + Math.ceil(i.disclosureLines * L.bandDisclosureLine * k)
       : 0;
   const bandHeight =
-    L.bandPadTop + Math.ceil(L.ctaHeight * k) + disclosure + L.bandPadBottom + i.insetBottom;
+    L.bandPadTop + ctaHeight + disclosure + L.bandPadBottom + i.insetBottom;
   const viewportBottom = i.height - bandHeight;
 
   const hero =
