@@ -188,3 +188,65 @@ export function classifyGlucose(
   if (value <= max * 1.25) return "elevated";
   return "high";
 }
+
+/**
+ * The one vocabulary for a status chip: low / in range / high / very high.
+ * "elevated" reads as "high" on purpose (no separate word for it). Every
+ * surface that labels a classification (journal row, entry sheet, Today card)
+ * takes its i18n key from here so the words can never drift apart.
+ */
+export function statusLabelKey(
+  status: GlucoseStatus
+): "insights.inRange" | "insights.low" | "insights.veryHigh" | "insights.high" {
+  switch (status) {
+    case "normal":
+      return "insights.inRange";
+    case "low":
+      return "insights.low";
+    case "veryHigh":
+      return "insights.veryHigh";
+    default:
+      return "insights.high";
+  }
+}
+
+export interface DayReading {
+  mgdl: number;
+  tag: PeriodTag;
+}
+
+export interface DaySummary {
+  total: number;
+  /** Readings that classifyGlucose calls "normal" against their OWN period. */
+  inRange: number;
+  /** Rounded mean in mg/dL, null with no readings. */
+  avgMgdl: number | null;
+  /** The average judged like a reading: against the shared period when every
+   *  reading has the same one, else against the lenient untagged range. */
+  avgStatus: GlucoseStatus | null;
+}
+
+/**
+ * Today-card summary. Each reading is judged by classifyGlucose with the SAME
+ * period the journal row and the entry sheet use, so a 7.4 mmol/L fasting
+ * reading is "high" on the card exactly as it is on its row. The average has
+ * no period of its own: with one reading (or one shared period) it takes that
+ * period, otherwise the untagged "manual" range.
+ */
+export function summarizeReadings(
+  readings: DayReading[],
+  profile: Partial<TargetProfile>
+): DaySummary {
+  const total = readings.length;
+  if (total === 0) return { total: 0, inRange: 0, avgMgdl: null, avgStatus: null };
+  let sum = 0;
+  let inRange = 0;
+  for (const r of readings) {
+    sum += r.mgdl;
+    if (classifyGlucose(r.mgdl, r.tag, profile) === "normal") inRange++;
+  }
+  const avgMgdl = Math.round(sum / total);
+  const first = readings[0].tag;
+  const shared = readings.every((r) => r.tag === first) ? first : "manual";
+  return { total, inRange, avgMgdl, avgStatus: classifyGlucose(avgMgdl, shared, profile) };
+}

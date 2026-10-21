@@ -235,6 +235,9 @@ import {
   glucoseUnitLabel,
   glucoseToDisplay,
   classifyGlucose,
+  statusLabelKey,
+  summarizeReadings,
+  type DayReading,
   STATUS_COLOR,
 } from "../../lib/glucose";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
@@ -980,7 +983,7 @@ export default function DashboardScreen() {
     let lastGlucose: GlucoseEntry | undefined;
     let todayReadings = 0;
     let todaySum = 0;
-    let todayInBand = 0;
+    const todayList: DayReading[] = [];
     let todayBolusTotal = 0;
     let todayBasalTotal = 0;
     // Feed is newest-first, so the first today basal row found is the most
@@ -1001,12 +1004,7 @@ export default function DashboardScreen() {
         if (isToday) {
           todayReadings++;
           todaySum += e.glucose_level_mgdl;
-          if (
-            e.glucose_level_mgdl >= weekBand.low &&
-            e.glucose_level_mgdl <= weekBand.high
-          ) {
-            todayInBand++;
-          }
+          todayList.push({ mgdl: e.glucose_level_mgdl, tag: e.period_tag });
         }
         if (inWeek) {
           weekReadings++;
@@ -1042,13 +1040,11 @@ export default function DashboardScreen() {
       ? Math.round((weekInBand / weekReadings) * 100)
       : null;
     const todayAvg = todayReadings ? Math.round(todaySum / todayReadings) : null;
-    // Same "manual" tag weekAvg's own color uses below: an aggregate figure
-    // is not tied to one meal period, so it reads against the more lenient
-    // post-meal band rather than assuming a period it does not have.
-    const todayStatus =
-      todayAvg != null && activeProfile
-        ? classifyGlucose(todayAvg, "manual", activeProfile)
-        : null;
+    // Today's chip and ring share go through summarizeReadings, which calls
+    // the same classifyGlucose + period each journal row and the entry sheet
+    // use, so a reading never reads "high" on its row and "in range" here.
+    const todaySummary = summarizeReadings(todayList, activeProfile ?? {});
+    const todayStatus = activeProfile ? todaySummary.avgStatus : null;
 
     return {
       // Encouraging consistency count ("X days in a row"), never a streak to
@@ -1060,9 +1056,9 @@ export default function DashboardScreen() {
       // disagreeing about the same number.
       todayAvg,
       todayReadings,
-      // Ring fill: share of today's readings inside the profile's band (the
-      // centre number stays the average).
-      todayShare: todayRangeShare(todayReadings, todayInBand),
+      // Ring fill: share of today's readings that are "in range" against their
+      // own period target (the centre number stays the average).
+      todayShare: todayRangeShare(todaySummary.total, todaySummary.inRange),
       todayStatus,
       todayColor: todayStatus ? RICH_BY_STATUS[todayStatus] : THEME.textMuted,
       todayBasalRecord,
@@ -1954,15 +1950,7 @@ export default function DashboardScreen() {
                 {todayStatus ? (
                   <GlucoseChip
                     status={todayStatus}
-                    label={
-                      todayStatus === "normal"
-                        ? t("insights.inRange")
-                        : todayStatus === "low"
-                          ? t("insights.low")
-                          : todayStatus === "veryHigh"
-                            ? t("insights.veryHigh")
-                            : t("insights.high")
-                    }
+                    label={t(statusLabelKey(todayStatus))}
                   />
                 ) : null}
               </View>
