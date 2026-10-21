@@ -35,54 +35,108 @@ struct PostMealAttributes: ActivityAttributes {
 // on the device before the process dies. Nothing is sent anywhere; JS reads it
 // on the next launch with getLastFatalReport(). A file, not UserDefaults: a
 // synchronous atomic write is the only store that reliably lands while the
-// process is being torn down.
-private let fatalReportFileName = "zerospike-last-fatal.json"
+// process is being torn down. Everything that can be done ahead of time (path,
+// directory, backup exclusion, build strings) is done at install, so the
+// handler itself only concatenates strings and writes once.
+private let fatalReportDirName = "zerospike-fatal"
+private let fatalReportFileName = "last-fatal.json"
+private let fatalJsMessageLimit = 2000
 nonisolated(unsafe) private var previousUncaughtHandler: (@convention(c) (NSException) -> Void)?
 nonisolated(unsafe) private var fatalHandlerInstalled = false
+nonisolated(unsafe) private var fatalReportFileURL: URL?
+nonisolated(unsafe) private var fatalBuild = ""
+nonisolated(unsafe) private var fatalVersion = ""
 
 private func fatalReportURL() -> URL? {
   guard
     let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
       .first
   else { return nil }
-  return base.appendingPathComponent(fatalReportFileName, isDirectory: false)
+  return base
+    .appendingPathComponent(fatalReportDirName, isDirectory: true)
+    .appendingPathComponent(fatalReportFileName, isDirectory: false)
 }
 
 private func clipped(_ text: String, _ limit: Int) -> String {
   text.count > limit ? String(text.prefix(limit)) : text
 }
 
+/// JSON string literal, quotes included. Hand-rolled so the crash path needs
+/// no JSONSerialization.
+private func jsonQuoted(_ text: String) -> String {
+  var out = "\""
+  for scalar in text.unicodeScalars {
+    switch scalar {
+    case "\"": out += "\\\""
+    case "\\": out += "\\\\"
+    case "\n": out += "\\n"
+    case "\r": out += "\\r"
+    case "\t": out += "\\t"
+    default:
+      if scalar.value < 0x20 {
+        out += String(format: "\\u%04x", scalar.value)
+      } else {
+        out.unicodeScalars.append(scalar)
+      }
+    }
+  }
+  return out + "\""
+}
+
 private func recordFatalException(_ exception: NSException) {
-  let info = Bundle.main.infoDictionary
-  var report: [String: Any] = [
-    "platform": "ios",
-    "kind": "NSException",
-    "name": clipped(exception.name.rawValue, 500),
-    "reason": clipped(exception.reason ?? "", 4000),
-    "stack": exception.callStackSymbols.prefix(40).map { clipped($0, 300) },
-    "build": (info?["CFBundleVersion"] as? String) ?? "",
-    "version": (info?["CFBundleShortVersionString"] as? String) ?? "",
-    "at": ISO8601DateFormatter().string(from: Date()),
-  ]
+  guard let url = fatalReportFileURL else { return }
+  let stack = exception.callStackSymbols.prefix(40).map { jsonQuoted(clipped($0, 300)) }
+  let atMs = Int64(Date().timeIntervalSince1970 * 1000)
+  var json = "{\"platform\":\"ios\",\"kind\":\"NSException\""
+  json += ",\"name\":" + jsonQuoted(clipped(exception.name.rawValue, 500))
+  json += ",\"reason\":" + jsonQuoted(clipped(exception.reason ?? "", 4000))
   // RCTFatal truncates `reason` to 175 characters; the full JS message and
   // stack ride in userInfo under RCTUntruncatedMessageKey.
   if let full = exception.userInfo?["RCTUntruncatedMessageKey"] as? String {
-    report["jsMessage"] = clipped(full, 8000)
+    json += ",\"jsMessage\":" + jsonQuoted(clipped(full, fatalJsMessageLimit))
   }
-  guard JSONSerialization.isValidJSONObject(report),
-    let data = try? JSONSerialization.data(withJSONObject: report, options: []),
-    let url = fatalReportURL()
+  json += ",\"stack\":[" + stack.joined(separator: ",") + "]"
+  json += ",\"build\":" + jsonQuoted(fatalBuild)
+  json += ",\"version\":" + jsonQuoted(fatalVersion)
+  json += ",\"at\":" + String(atMs) + "}"
+  try? Data(json.utf8).write(to: url, options: .atomic)
+}
+
+/// The report the previous run left, as one line in the unified log (Console,
+/// sysdiagnose): a build that crashes ~200 ms after every launch never gets to
+/// run the JS reader, but this runs before the bundle does.
+private func logPreviousFatalReport() {
+  guard let url = fatalReportURL(),
+    let data = try? Data(contentsOf: url),
+    let object = try? JSONSerialization.jsonObject(with: data, options: []),
+    let report = object as? [String: Any]
   else { return }
-  try? FileManager.default.createDirectory(
-    at: url.deletingLastPathComponent(),
-    withIntermediateDirectories: true
-  )
-  try? data.write(to: url, options: .atomic)
+  let name = (report["name"] as? String) ?? ""
+  let reason = (report["reason"] as? String) ?? ""
+  let js = clipped((report["jsMessage"] as? String) ?? "", 1500)
+  let build = (report["build"] as? String) ?? ""
+  let line = "zerospike last fatal: \(name) | \(reason) | \(js) | build \(build)"
+    .replacingOccurrences(of: "\n", with: " ")
+    .replacingOccurrences(of: "\r", with: " ")
+  NSLog("%@", line)
 }
 
 private func installFatalExceptionHandler() {
   if fatalHandlerInstalled { return }
   fatalHandlerInstalled = true
+  let info = Bundle.main.infoDictionary
+  fatalBuild = (info?["CFBundleVersion"] as? String) ?? ""
+  fatalVersion = (info?["CFBundleShortVersionString"] as? String) ?? ""
+  if let url = fatalReportURL() {
+    var dir = url.deletingLastPathComponent()
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    // Excluded on the directory, not the file: the atomic write replaces the
+    // file each time and would drop a per-file flag.
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    try? dir.setResourceValues(values)
+    fatalReportFileURL = url
+  }
   // Chained, not replaced: whatever was installed before still runs, so the
   // system crash report is unchanged.
   previousUncaughtHandler = NSGetUncaughtExceptionHandler()
@@ -115,6 +169,7 @@ public class ZerospikeLiveActivityModule: Module {
     // Module creation runs while the app context is built, before the JS
     // bundle is evaluated, so a fatal error during JS start-up is covered.
     OnCreate {
+      logPreviousFatalReport()
       installFatalExceptionHandler()
     }
 
