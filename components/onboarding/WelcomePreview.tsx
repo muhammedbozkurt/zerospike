@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
@@ -9,14 +9,15 @@ import { GlucoseChip } from "../rich/GlucoseChip";
 import { GlucoseRing } from "../rich/GlucoseRing";
 import { GradientAreaChart } from "../rich/GradientAreaChart";
 import { RADIUS, THEME } from "../../lib/theme/tokens";
-import { glucoseUnitLabel } from "../../lib/glucose";
+import { formatGlucose, glucoseUnitLabel } from "../../lib/glucose";
+import { onboardingExample } from "../../lib/onboardingExample";
+import { getLocales } from "expo-localization";
 import { pct } from "../../lib/format";
 import { upper } from "../../lib/upper";
 import { useCountUp } from "./motion";
 import { ClipReveal } from "./ClipReveal";
 
 // Fixed sample values: these previews never show the user's data.
-const SAMPLE_GLUCOSE = 112;
 const SAMPLE_TIR = 72;
 const SAMPLE_CURVE = [
   118, 112, 106, 102, 100, 104, 126, 152, 138, 118, 110, 108, 124, 148, 134, 116, 110, 112, 128,
@@ -52,12 +53,13 @@ function ExampleBadge() {
 
 function RingPreview({ active }: { active: boolean }) {
   const reduced = useReducedMotion();
-  const value = useCountUp(active || reduced ? SAMPLE_GLUCOSE : 0);
+  const example = useMemo(() => onboardingExample(getLocales()[0]?.regionCode), []);
+  const value = useCountUp(active || reduced ? example.mgdl : 0);
   return (
     <GlucoseRing
       value={value}
-      display={String(value)}
-      caption={glucoseUnitLabel("mgdl")}
+      display={formatGlucose(value, example.unit)}
+      caption={glucoseUnitLabel(example.unit)}
       size={112}
       strokeWidth={9}
     />
