@@ -306,6 +306,7 @@ const it: TranslationSchema = {
   numeric: {
     range: "Inserisca un valore da {{min}} a {{max}} {{unit}}",
     required: "Inserisca un valore",
+    integerOnly: "Inserisca un numero intero",
     carbRatioExample: "es. 10",
     isfExampleMgdl: "es. 50",
     isfExampleMmol: "es. 2,8",

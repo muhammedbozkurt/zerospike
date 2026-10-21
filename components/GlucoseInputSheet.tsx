@@ -35,7 +35,9 @@ import { formatTime, num, relativeDay } from "../lib/format";
 import {
   GLUCOSE_INPUT_CEILING,
   glucoseAboveCeiling,
+  hasDecimalSeparator,
   parseDecimalText,
+  parseWholeText,
   sanitizeNumberText,
 } from "../lib/numberInput";
 import { withAlpha } from "./rich/GlassCard";
@@ -265,7 +267,10 @@ export function GlucoseInputSheet({
     setValue(sanitizeNumberText(s, mmol));
   }
 
-  const typed = parseDecimalText(value);
+  // mg/dL is a whole number: "5,5" stays on screen as typed and reads as an
+  // error (never 55), and Save stays shut until it is a whole number.
+  const wholeBad = !mmol && hasDecimalSeparator(value);
+  const typed = mmol ? parseDecimalText(value) : parseWholeText(value);
 
   // Guards the async gap between a Save tap and the guard dialog resolving:
   // submittedRef alone (set only once the guard has already said "go") would
@@ -546,6 +551,15 @@ export function GlucoseInputSheet({
                   <Txt kind="caption" tone="muted" style={{ marginTop: compact ? 0 : -SPACE.xs }}>
                     {glucoseUnitLabel(unit)}
                   </Txt>
+                  {wholeBad ? (
+                    <Txt
+                      kind="caption"
+                      style={{ color: THEME.warning, marginTop: SPACE.xs }}
+                      accessibilityRole="alert"
+                    >
+                      {t("numeric.integerOnly")}
+                    </Txt>
+                  ) : null}
                   <View style={{ minHeight: 26, marginTop: compact ? SPACE.xs : SPACE.sm }}>
                     {liveStatus ? (
                       <GlucoseChip status={liveStatus} label={statusLabel(liveStatus)} />

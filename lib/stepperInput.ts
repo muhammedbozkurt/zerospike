@@ -1,4 +1,4 @@
-import { parseDecimalText, sanitizeNumberText } from "./numberInput";
+import { hasDecimalSeparator, parseDecimalText, sanitizeNumberText } from "./numberInput";
 
 export interface StepperBounds {
   min?: number;
@@ -21,13 +21,9 @@ export type StepperRead =
 
 /** Digits plus one separator, with at most `decimals` digits after it. */
 export function sanitizeStepperText(raw: string, decimals: number): string {
-  if (decimals <= 0) {
-    // A whole-number field stops at the first separator: "45,5" is 45, never
-    // 455 (the old filter dropped the separator and kept the digit behind it,
-    // a silent tenfold on pasted text and tablet keyboards).
-    const cut = raw.search(/[.,\u066B]/);
-    return sanitizeNumberText(cut < 0 ? raw : raw.slice(0, cut), false);
-  }
+  // A whole-number field keeps a typed separator visible (lib/numberInput
+  // sanitizeWholeText); readStepperText then refuses it.
+  if (decimals <= 0) return sanitizeNumberText(raw, false);
   const cleaned = sanitizeNumberText(raw, true);
   const m = cleaned.search(/[.,٫]/);
   if (m < 0) return cleaned;
@@ -36,6 +32,8 @@ export function sanitizeStepperText(raw: string, decimals: number): string {
 
 /** No snapping and no rounding: what was typed is what is read. */
 export function readStepperText(text: string, b: StepperBounds): StepperRead {
+  // A whole-number field never reads a separator-bearing text as a number.
+  if (b.decimals <= 0 && hasDecimalSeparator(text)) return { kind: "empty" };
   const parsed = parseDecimalText(text);
   if (parsed == null) return { kind: "empty" };
   if (b.min != null && parsed < b.min) return { kind: "below", value: parsed };

@@ -57,21 +57,47 @@ export function sanitizeDecimalText(raw: string): string {
   return out;
 }
 
-/** Digits only, for fields that store whole numbers (mg/dL, grams). The text
- *  stops at the first decimal separator: "45,5" is 45, never 455 (dropping the
- *  separator and keeping the digit behind it was a silent tenfold). */
-export function sanitizeIntegerText(raw: string): string {
+/**
+ * Text for a field that stores a WHOLE number (mg/dL, grams): digits stay, and
+ * so does every decimal separator, visibly. Dropping the separator ("45,5" ->
+ * 455) or cutting it off ("45,5" -> 45, then the next key lands after the 45)
+ * both turned a typo into a different number without a word. Here the text a
+ * user typed is the text they see; hasDecimalSeparator / parseWholeText then
+ * refuse it, so the field reads as an error until they type a whole number.
+ * Other characters (letters, signs) are dropped as before.
+ */
+export function sanitizeWholeText(raw: string): string {
   let out = "";
   for (const ch of raw) {
-    if (ch === "." || ch === "," || ch === "٫") break;
     const digit = latinDigit(ch);
     if (digit !== null) out += digit;
+    else if (ch === "." || ch === "," || ch === "٫") out += ch;
   }
   return out;
 }
 
+/** Same as sanitizeWholeText (kept under its old name for the callers that
+ *  only ever meant "a whole-number field"). */
+export function sanitizeIntegerText(raw: string): string {
+  return sanitizeWholeText(raw);
+}
+
+/** True when the text carries a decimal separator, which a whole-number field
+ *  cannot accept ("1.500" and "1,500" are refused too: no thousands guess). */
+export function hasDecimalSeparator(text: string): boolean {
+  return /[.,٫]/.test(text);
+}
+
+/** A whole number, or null for empty text and for anything with a separator. */
+export function parseWholeText(raw: string): number | null {
+  const text = sanitizeWholeText(raw);
+  if (text === "" || hasDecimalSeparator(text)) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function sanitizeNumberText(raw: string, decimals: boolean): string {
-  return decimals ? sanitizeDecimalText(raw) : sanitizeIntegerText(raw);
+  return decimals ? sanitizeDecimalText(raw) : sanitizeWholeText(raw);
 }
 
 /**

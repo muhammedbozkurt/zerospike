@@ -35,7 +35,7 @@ import { useApp } from "../lib/store/AppContext";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { useStepperValidity } from "./Stepper";
 import { NumericField } from "./NumericField";
-import { DOSE_BOUNDS } from "../lib/numericField";
+import { INJECTION_DOSE_BOUNDS, editableMax } from "../lib/numericField";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { HIT_TARGET, RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
@@ -481,11 +481,11 @@ export function InjectionEditSheet({
                   }}
                   onValidityChange={stepperFields.reporter("dose")}
                   required
-                  step={DOSE_BOUNDS.step}
+                  step={INJECTION_DOSE_BOUNDS.step}
                   longStep={1}
-                  min={DOSE_BOUNDS.min}
-                  max={DOSE_BOUNDS.max}
-                  decimals={DOSE_BOUNDS.decimals}
+                  min={INJECTION_DOSE_BOUNDS.min}
+                  max={editableMax(INJECTION_DOSE_BOUNDS.max, injection?.dose_units)}
+                  decimals={INJECTION_DOSE_BOUNDS.decimals}
                   suffix={t("common.units")}
                   accessibilityLabel={t("injection.dose")}
                   style={{ marginBottom: doseHintVisible(injectionDoseOk(dose, injection?.dose_units ?? null), doseInteracted) ? SPACE.sm : SPACE.lg }}

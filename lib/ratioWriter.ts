@@ -82,15 +82,24 @@ export function createRatioWriter(opts: {
   let timer: unknown = null;
   let tail: Promise<void> = Promise.resolve();
 
+  // Every write gets the next generation. A write that fails AFTER a newer one
+  // was planned must not touch the writer's picture of the profile or bring its
+  // old draft back: the newer write already carries the whole set, and putting
+  // the stale draft back would overwrite what the user confirmed with it.
+  let gen = 0;
+
   function enqueue(patch: RatioPatch, onFail?: () => void): Promise<boolean> {
+    const mine = ++gen;
     const task = tail.then(async () => {
       try {
         await opts.persist(patch);
         return true;
       } catch (e) {
-        opts.onError?.(e);
-        if (opts.reload) written = opts.reload();
-        onFail?.();
+        if (mine === gen) {
+          opts.onError?.(e);
+          if (opts.reload) written = opts.reload();
+          onFail?.();
+        }
         return false;
       }
     });
@@ -168,5 +177,39 @@ export function createRatioWriter(opts: {
       });
     },
     cancelTimer,
+  };
+}
+
+/**
+ * The box's press handler: one press at a time, and "confirmed" is reported at
+ * most once. A second tap while the first write is still running is swallowed
+ * (it used to run a second confirm that UNticked the box, and a second
+ * router.back() that also closed the calculator's open record).
+ */
+export function createConfirmGate(opts: {
+  confirm: (checked: boolean) => Promise<boolean>;
+  /** Called once, after the first successful confirmation. */
+  onConfirmed: () => void;
+  onBusy?: (busy: boolean) => void;
+}): { press: (checked: boolean) => Promise<void>; isBusy: () => boolean } {
+  let busy = false;
+  let confirmedOnce = false;
+  return {
+    isBusy: () => busy,
+    async press(checked) {
+      if (busy) return;
+      busy = true;
+      opts.onBusy?.(true);
+      try {
+        const ok = await opts.confirm(checked);
+        if (ok && !confirmedOnce) {
+          confirmedOnce = true;
+          opts.onConfirmed();
+        }
+      } finally {
+        busy = false;
+        opts.onBusy?.(false);
+      }
+    },
   };
 }

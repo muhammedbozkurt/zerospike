@@ -1,4 +1,5 @@
 import type { GlucoseUnit } from "./db/types";
+import { hasDecimalSeparator } from "./numberInput";
 import { readStepperText, sanitizeStepperText } from "./stepperInput";
 
 /**
@@ -30,7 +31,9 @@ export interface NumericReading {
 
 /** Keeps digits and one separator (comma, dot or the Arabic decimal mark) and
  *  at most `decimals` places. "7,5" and "7.5" both survive and read the same.
- *  A whole-number field stops at the first separator ("45,5" is 45). */
+ *  A whole-number field keeps every separator VISIBLE ("45,5" stays "45,5") and
+ *  read() refuses it: nothing is dropped or cut, so no later key can land on a
+ *  different number than the one on screen. */
 export function filterNumericText(raw: string, decimals: number): string {
   return sanitizeStepperText(raw, decimals);
 }
@@ -46,6 +49,10 @@ function read(raw: string, typed: boolean, b: NumericBounds): NumericReading {
   // selection) must be a plain number; "-3", "1e2" and "7.5.5" are refused and
   // said so, rather than quietly turned into another number.
   let clean = true;
+  // A separator in a whole-number field, typed or pasted, is an error on screen.
+  if (b.decimals <= 0 && hasDecimalSeparator(text)) {
+    return { text, kind: "malformed", value: null };
+  }
   if (!typed) {
     const t = raw.trim();
     clean = CLEAN.test(t);
@@ -106,8 +113,8 @@ export function numericError(
 
 /** - / + act only on a number or an empty field; on refused text they do nothing,
  *  so a rejected "150" never jumps to a step from somewhere else. */
-export function stepAllowed(kind: NumericReadKind): boolean {
-  return kind === "ok" || kind === "empty";
+export function stepAllowed(kind: NumericReadKind, required = false): boolean {
+  return kind === "ok" || (kind === "empty" && !required);
 }
 
 /** Whether the screen may act on the field: false for any text the field
@@ -157,8 +164,24 @@ export function stepIsBlocked(
  * The carb ratio and correction-factor bounds live in lib/calcSetup.ts next to
  * the rest of the ratio rules. Dose and glucose entry are here. */
 
-/** Applied dose, in units. */
+/** A meal dose typed in the calculator, in units. */
 export const DOSE_BOUNDS = { min: 0, max: 100, decimals: 2, step: 0.5 } as const;
+
+/** One logged injection (injection tab, basal confirm, the injection editor).
+ *  Wider than a meal dose: a profile's daily basal fills a basal injection. */
+export const INJECTION_DOSE_BOUNDS = { min: 0, max: 150, decimals: 2, step: 0.5 } as const;
+
+/** The daily long-acting total, Profile and onboarding alike. */
+export const BASAL_DAILY_BOUNDS = { min: 0, max: 200, decimals: 1, step: 0.5 } as const;
+
+/**
+ * The upper bound while EDITING a stored record: never below the value the
+ * record already holds, so an older entry above the current limit can still be
+ * opened and corrected (its site, time or note) without first lowering the dose.
+ */
+export function editableMax(max: number, original: number | null | undefined): number {
+  return original != null && Number.isFinite(original) ? Math.max(max, original) : max;
+}
 
 /** A typed glucose reading, in the profile's display unit (20-600 mg/dL). */
 export const GLUCOSE_ENTRY_BOUNDS = {

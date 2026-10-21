@@ -10,7 +10,7 @@ import { Card, Txt } from "./ui";
 import { hapticSelect } from "../lib/haptics";
 import { upper } from "../lib/upper";
 import { useLayout } from "../lib/useLayout";
-import { parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
+import { hasDecimalSeparator, parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
 
 /**
  * The target-range editor: a dual-thumb band picker with two typeable ends.
@@ -76,6 +76,7 @@ export function RangeInput({
   maxLabel: string;
   decimals?: boolean;
 }) {
+  const { t } = useTranslation();
   const { columnPad } = useLayout();
   const navigation = useNavigation();
 
@@ -90,6 +91,23 @@ export function RangeInput({
     }
   }
 
+  // A whole-number end (mg/dL, grams) keeps a typed separator on screen as an
+  // error. The parent is handed an EMPTY end meanwhile (nothing to store, the
+  // range reads as unfinished), so "45,5" can never be stored as 455 or 45.
+  const whole = decimals !== true;
+  const [rawMin, setRawMin] = useState<string | null>(null);
+  const [rawMax, setRawMax] = useState<string | null>(null);
+  useEffect(() => {
+    if (minText !== "") setRawMin(null);
+  }, [minText]);
+  useEffect(() => {
+    if (maxText !== "") setRawMax(null);
+  }, [maxText]);
+  const minBad = rawMin != null && minText === "";
+  const maxBad = rawMax != null && maxText === "";
+  const shownMin = minBad ? (rawMin as string) : minText;
+  const shownMax = maxBad ? (rawMax as string) : maxText;
+
   const lo = parseDecimalText(minText) ?? NaN;
   const hi = parseDecimalText(maxText) ?? NaN;
   const span = Math.max(1, axisMax - axisMin);
@@ -103,11 +121,13 @@ export function RangeInput({
   // Per-end colouring: only the end that is actually out of bounds turns red. An
   // order error (lo >= hi) is a relationship, so it colours both.
   const orderInvalid = invalid === true;
-  const loInvalid = !!loOut || (orderInvalid && !hiOut);
-  const hiInvalid = !!hiOut || (orderInvalid && !loOut);
-  const showsError = orderInvalid || !!loOut || !!hiOut;
+  const loInvalid = !!loOut || minBad || (orderInvalid && !hiOut);
+  const hiInvalid = !!hiOut || maxBad || (orderInvalid && !loOut);
+  const showsError = orderInvalid || !!loOut || !!hiOut || minBad || maxBad;
   const errorText = showsError
-    ? (loOut || hiOut) && outOfBoundsMessage
+    ? minBad || maxBad
+      ? t("numeric.integerOnly")
+      : (loOut || hiOut) && outOfBoundsMessage
       ? outOfBoundsMessage
       : invalidMessage
     : undefined;
@@ -115,6 +135,18 @@ export function RangeInput({
 
   function sanitize(s: string): string {
     return sanitizeNumberText(s, decimals === true);
+  }
+
+  function changeEnd(side: "min" | "max", v: string) {
+    const s = sanitize(v);
+    const bad = whole && hasDecimalSeparator(s);
+    if (side === "min") {
+      setRawMin(bad ? s : null);
+      onChangeMin(bad ? "" : s);
+    } else {
+      setRawMax(bad ? s : null);
+      onChangeMax(bad ? "" : s);
+    }
   }
 
   // ── Drag support ────────────────────────────────────────────────────────
@@ -446,8 +478,8 @@ export function RangeInput({
       <View className="flex-row" style={{ gap: SPACE.md }}>
         <End
           label={minLabel}
-          value={minText}
-          onChange={(v) => onChangeMin(sanitize(v))}
+          value={shownMin}
+          onChange={(v) => changeEnd("min", v)}
           onBlur={onBlur}
           unit={unit}
           decimals={decimals}
@@ -456,8 +488,8 @@ export function RangeInput({
         />
         <End
           label={maxLabel}
-          value={maxText}
-          onChange={(v) => onChangeMax(sanitize(v))}
+          value={shownMax}
+          onChange={(v) => changeEnd("max", v)}
           onBlur={onBlur}
           unit={unit}
           decimals={decimals}

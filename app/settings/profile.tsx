@@ -40,6 +40,8 @@ import {
   type RatioFields,
 } from "../../lib/calcSetup";
 import { useRatioWriter } from "../../lib/useRatioWriter";
+import { createConfirmGate } from "../../lib/ratioWriter";
+import { BASAL_DAILY_BOUNDS } from "../../lib/numericField";
 import { InsulinProductPicker } from "../../components/InsulinProductPicker";
 import { InsulinModeSection } from "../../components/InsulinModeSection";
 import { SettingsScaffold } from "../../components/settingsUi";
@@ -151,25 +153,15 @@ export default function ProfileSettings() {
     setBasalUnits(activeProfile.basal_daily_units ?? 0);
   }, [activeProfile?.id, activeProfile?.glucose_unit]);
 
-  // The long-acting daily dose is written once the value has settled (a pause,
-  // or leaving the field), and only while it is a valid number: typing "160"
-  // over a 150 limit must not store 16 on the way and then lose the old value.
-  // Refused text returns to what is stored when the field is left.
-  const basalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The long-acting daily dose is written ONLY when the field is left (or the
+  // screen is), and only if it is a valid number: a pause in the middle of
+  // typing "160" must not store 16, and refused text returns to what is stored.
   const basalInvalidRef = useRef(false);
   const basalPendingRef = useRef<number | null | undefined>(undefined);
   const [basalKey, setBasalKey] = useState(0);
   const persistRef = useRef<typeof persist | null>(null);
 
-  function clearBasalTimer() {
-    if (basalTimerRef.current) {
-      clearTimeout(basalTimerRef.current);
-      basalTimerRef.current = null;
-    }
-  }
-
   function flushBasal() {
-    clearBasalTimer();
     const v = basalPendingRef.current;
     basalPendingRef.current = undefined;
     if (v === undefined || basalInvalidRef.current) return;
@@ -179,13 +171,10 @@ export default function ProfileSettings() {
   function onBasalChange(v: number | null) {
     setBasalUnits(v ?? 0);
     basalPendingRef.current = v;
-    clearBasalTimer();
-    basalTimerRef.current = setTimeout(flushBasal, 700);
   }
 
   function onBasalBlur() {
     if (basalInvalidRef.current) {
-      clearBasalTimer();
       basalPendingRef.current = undefined;
       basalInvalidRef.current = false;
       setBasalUnits(activeProfile?.basal_daily_units ?? 0);
@@ -299,9 +288,25 @@ export default function ProfileSettings() {
     void ratioWriters.get()?.flush();
   }
 
-  async function onRatioConfirm(checked: boolean) {
-    const ok = await ratioWriters.get()?.confirm(checked);
-    if (ok && returnTo === "calculator" && router.canGoBack()) router.back();
+  // One press at a time, and one trip back: a double tap used to run the
+  // confirmation twice (the second UNticked the box) and pop two screens, taking
+  // the calculator's open record with it.
+  const [confirming, setConfirming] = useState(false);
+  const latestRef = useRef({ returnTo, router });
+  latestRef.current = { returnTo, router };
+  const confirmGateRef = useRef<ReturnType<typeof createConfirmGate> | null>(null);
+  if (!confirmGateRef.current) {
+    confirmGateRef.current = createConfirmGate({
+      confirm: async (checked) => (await ratioWriters.get()?.confirm(checked)) ?? false,
+      onConfirmed: () => {
+        const { returnTo: to, router: r } = latestRef.current;
+        if (to === "calculator" && r.canGoBack()) r.back();
+      },
+      onBusy: setConfirming,
+    });
+  }
+  function onRatioConfirm(checked: boolean) {
+    void confirmGateRef.current?.press(checked);
   }
 
   const ratioDraftIsStored = ratioSetMatchesStored(
@@ -635,11 +640,11 @@ export default function ProfileSettings() {
                 basalInvalidRef.current = !valid;
               }}
               onBlur={onBasalBlur}
-              step={0.5}
+              step={BASAL_DAILY_BOUNDS.step}
               longStep={1}
-              min={0}
-              max={150}
-              decimals={1}
+              min={BASAL_DAILY_BOUNDS.min}
+              max={BASAL_DAILY_BOUNDS.max}
+              decimals={BASAL_DAILY_BOUNDS.decimals}
               suffix={t("common.units")}
               accessibilityLabel={t("settings.basalDailyUnits")}
             />
@@ -761,10 +766,10 @@ export default function ProfileSettings() {
             <Text className="text-mut text-xs mb-1">{t("calculator.setup.teamNote")}</Text>
             <ConfirmCheckbox
               checked={activeProfile?.ratios_confirmed === 1 && ratioDraftIsStored}
-              onToggle={(next) => void onRatioConfirm(next)}
+              onToggle={onRatioConfirm}
               label={t("calculator.setup.confirm")}
               hint={t("calculator.setup.hint")}
-              disabled={!ratioFieldsComplete(ratioDraft)}
+              disabled={!ratioFieldsComplete(ratioDraft) || confirming}
             />
             <Text className="text-mut text-xs mt-1">{t("settings.ratiosReconfirmHint")}</Text>
           </View>
