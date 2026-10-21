@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { logCrash } from "../analytics";
+import { safeRequire } from "../safeNative";
 import { getHealthBackgroundBlocker, syncHealthInBackground } from "./health";
 import type { HealthBackgroundSkip } from "./health";
 import { healthAppleKit } from "./healthAppleKit";
@@ -31,11 +32,9 @@ type BackgroundTaskModule = typeof import("expo-background-task");
 
 function loadAndroidModules(): { TM: TaskManagerModule; BT: BackgroundTaskModule } | null {
   if (Platform.OS !== "android") return null;
-  try {
-    return { TM: require("expo-task-manager"), BT: require("expo-background-task") };
-  } catch {
-    return null;
-  }
+  const TM = safeRequire(() => require("expo-task-manager") as TaskManagerModule, "health.taskManager");
+  const BT = safeRequire(() => require("expo-background-task") as BackgroundTaskModule, "health.backgroundTask");
+  return TM && BT ? { TM, BT } : null;
 }
 
 function defineAndroidTask(): void {

@@ -8,6 +8,7 @@ import { getPostMealTimerState, hasNotificationPermission } from "./notification
 import { getProfile } from "../db/profiles";
 import { listReminders } from "../db/reminders";
 import { targetBandFor } from "../agpChart";
+import { safeRequire } from "../safeNative";
 import { nextUpcoming, type UpcomingItem } from "../upcomingReminders";
 import {
   getAlarmAuthorizationStatus,
@@ -387,7 +388,12 @@ async function pushToPairedWatch(json: string): Promise<void> {
 async function publishToNativeSurfaces(json: string): Promise<void> {
   if (Platform.OS === "ios") {
     try {
-      const { ExtensionStorage } = await import("@bacons/apple-targets");
+      const targets = safeRequire(
+        () => require("@bacons/apple-targets") as typeof import("@bacons/apple-targets"),
+        "liveData.appleTargets",
+      );
+      if (!targets) throw new Error("apple-targets unavailable");
+      const { ExtensionStorage } = targets;
       const storage = new ExtensionStorage(LIVE_DATA_APP_GROUP);
       storage.set(LIVE_DATA_KEY, json);
       // Ask WidgetKit to rebuild its timeline with the value we just wrote.
