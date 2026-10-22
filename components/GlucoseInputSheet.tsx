@@ -470,8 +470,9 @@ export function GlucoseInputSheet({
                   // RN children default to flexShrink 0: without this the card
                   // kept its natural height inside the maxHeight-capped wrapper,
                   // so the body never scrolled and the pinned Save hung below
-                  // the keyboard at large text.
-                  flexShrink: 1,
+                  // the keyboard at large text. Only with pinSave: at 1.0 the
+                  // card keeps its natural height.
+                  flexShrink: pinSave ? 1 : undefined,
                 },
                 isDialog
                   ? {

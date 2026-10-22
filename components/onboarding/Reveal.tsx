@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useReducedMotion } from "react-native-reanimated";
+import { useReducedMotion } from "../../lib/useReducedMotion";
 import { useTranslation } from "react-i18next";
 
 import { GLUCOSE_RICH, RADIUS, TABULAR, THEME } from "../../lib/theme/tokens";

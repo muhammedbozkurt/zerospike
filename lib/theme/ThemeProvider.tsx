@@ -25,12 +25,13 @@ import {
 } from "./themePref";
 import {
   acquireRemountLock,
+  heldFlag,
   heldScheme,
   isRemountLocked,
   subscribeRemountLock,
 } from "./remountLock";
 import { nativeSchemeOverride } from "./themePref";
-import { useHighContrast } from "./useHighContrast";
+import { useHighContrast, useHighContrastReady } from "./useHighContrast";
 import {
   PALETTES,
   THEME,
@@ -119,11 +120,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Set during render, before any child reads a token: the first paint of the
   // routed tree must already see the right palette.
   setActiveScheme(scheme);
-  const highContrast = useHighContrast();
+  // Increase Contrast also remounts the tree (ThemeRemount key), so it waits
+  // for the same lock as the scheme and applies once the screen lets go.
+  const wantedHc = useHighContrast();
+  const hcReady = useHighContrastReady();
+  const appliedHcRef = useRef<boolean | null>(null);
+  const highContrast = heldFlag(wantedHc, appliedHcRef.current, isRemountLocked());
+  appliedHcRef.current = highContrast;
   setHighContrast(highContrast);
 
   const schemeRef = useRef(scheme);
   schemeRef.current = scheme;
+  const prefRef = useRef(pref);
+  prefRef.current = pref;
   const systemRef = useRef(system);
   systemRef.current = system;
 
@@ -148,7 +157,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         next,
         next === "system" ? Appearance.getColorScheme() : systemRef.current,
       );
-      if (target === schemeRef.current) {
+      // Leaving a fixed theme for "system": setColorScheme is async on iOS and
+      // getColorScheme can still report the old pinned value, so target may be
+      // wrong. Always cover, or the later OS event remounts without it.
+      const leavingPin = next === "system" && prefRef.current !== "system";
+      if (target === schemeRef.current && !leavingPin) {
         setPrefState(next);
         return;
       }
@@ -180,7 +193,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     [scheme, highContrast, pref, setPref],
   );
 
-  if (pref === null) return null;
+  if (pref === null || !hcReady) return null;
 
   return (
     <ThemeContext.Provider value={value}>

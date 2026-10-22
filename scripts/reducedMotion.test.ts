@@ -108,6 +108,14 @@ ok("spike: yazma efekti reduced'da kapali (tam metin)", /isReducedMotionNow\(\) 
 ok("spike: scrollToEnd reduced'da animasyonsuz", spike.includes("animated: !isReducedMotionNow()"));
 ok("injection: scrollToLocation reduced'da animasyonsuz", read("app/(tabs)/injection.tsx").includes("animated: !isReducedMotionNow()"));
 
+for (const f of files) {
+  ok(`${f}: useReducedMotion reanimated'den degil, lib/useReducedMotion'dan`, !/import\s*\{[^}]*\buseReducedMotion\b[^}]*\}\s*from\s*"react-native-reanimated"/.test(read(f)));
+}
+for (const f of ["components/onboarding/Reveal.tsx", "components/onboarding/WelcomePreview.tsx"]) {
+  ok(`${f}: modul onbellekli hook`, read(f).includes('from "../../lib/useReducedMotion"'));
+}
+ok("emergency-contacts: 'zaten ekli' satir checked degil", read("app/emergency-contacts.tsx").includes("checked: checked && !already"));
+
 console.log(`reducedMotion: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
 console.log("reducedMotion: all passed");
