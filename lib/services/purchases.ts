@@ -985,12 +985,16 @@ const MOCK_DOWNSELL: DownsellOffer = {
   savingsPercent: 33,
 };
 
-function findAnnual(pkgs: any[]): PlanMeta | undefined {
+function findAnnualMapped(pkgs: any[]): { meta: PlanMeta; productId: string } | undefined {
   for (const p of pkgs ?? []) {
     const m = mapRcPackage(p);
-    if (m && m.plan === "annual") return m.meta;
+    if (m && m.plan === "annual") return { meta: m.meta, productId: String(p.product?.identifier ?? "") };
   }
   return undefined;
+}
+
+function findAnnual(pkgs: any[]): PlanMeta | undefined {
+  return findAnnualMapped(pkgs)?.meta;
 }
 
 // Same-currency, genuinely-lower check. Keeps every discount surface from ever
@@ -1020,10 +1024,20 @@ export async function getDownsellOffer(): Promise<DownsellOffer> {
     await ensureConfigured();
     const offerings = await rc().getOfferings();
     const standard = findAnnual(offerings?.current?.availablePackages ?? []);
-    const discounted = findAnnual(
+    const discountedMapped = findAnnualMapped(
       offerings?.all?.[DOWNSELL_OFFERING_ID]?.availablePackages ?? []
     );
+    const discounted = discountedMapped?.meta;
     if (!realDiscount(standard, discounted)) return NO_DOWNSELL;
+    // iOS: the discount is an introductory offer in the same subscription group
+    // as the standard annual, which Apple grants once per Apple Account. The
+    // price on the product is there whether or not this account can still take
+    // it, so without a definite ELIGIBLE the App Store would charge the full
+    // price behind a card that promised the discount.
+    if (Platform.OS === "ios" && discounted!.introPrice != null) {
+      const eligible = await trialEligibleProductIds([discountedMapped!.productId]);
+      if (!eligible.has(discountedMapped!.productId)) return NO_DOWNSELL;
+    }
     return {
       hasRealDiscount: true,
       discountedPriceString: discounted!.introPriceString ?? discounted!.priceString,
