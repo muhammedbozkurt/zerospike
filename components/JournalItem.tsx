@@ -22,8 +22,8 @@ import {
   classifyGlucose,
   GlucoseStatus,
   formatGlucose,
-  glucoseUnitLabel,
 } from "../lib/glucose";
+import { glucoseRowLabel } from "../lib/journalA11y";
 import { formatTime } from "../lib/format";
 import { num } from "../lib/format";
 import { RICH_BY_STATUS, THEME, TYPE, SPACE, glow, HIT_TARGET, RADIUS } from "../lib/theme/tokens";
@@ -475,19 +475,18 @@ function JournalItemBase({
         ? `${t("journal.sourceHealth")} · ${periodLabel}`
         : t("journal.sourceHealth")
       : (periodLabel ?? t("period.unset"));
-    const label = [
-      `${formatGlucose(entry.glucose_level_mgdl, profile.glucose_unit)} ${glucoseUnitLabel(profile.glucose_unit)}`,
+    // Visual text is untouched; canAddPeriod only tells VoiceOver/TalkBack that
+    // tapping the row can assign a period tag, since journal.addPeriodTag has no
+    // other reachable spot in the UI otherwise.
+    const label = glucoseRowLabel({
+      t,
+      mgdl: entry.glucose_level_mgdl,
+      unit: profile.glucose_unit,
+      status,
       sourceLabel,
-      status === "low" ? t("journal.lowBadge") : null,
-      formatTime(entry.logged_at),
-      // Visual text is untouched (sourceLabel already reads "unset" above);
-      // this only tells VoiceOver/TalkBack that tapping the row can assign a
-      // period tag, since journal.addPeriodTag has no other reachable spot in
-      // the UI otherwise.
-      entry.period_tag === "unset" ? t("journal.addPeriodTag") : null,
-    ]
-      .filter(Boolean)
-      .join(", ");
+      timeText: formatTime(entry.logged_at),
+      canAddPeriod: entry.period_tag === "unset",
+    });
     return (
       <Row
         {...chrome}

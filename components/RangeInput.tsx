@@ -597,7 +597,7 @@ function End({
           returnKeyType="done"
           // Wide enough to never refuse a plausible entry; anything past the
           // caller's bounds is described under the card, not blocked here.
-          maxLength={decimals ? 5 : 4}
+          maxLength={8}
           // The caption above and the unit beside it are siblings, so on their
           // own the field announced as a bare number with no idea what it edits.
           accessibilityLabel={`${label}, ${unit}`}
