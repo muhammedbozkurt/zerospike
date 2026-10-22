@@ -14,12 +14,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { sheetFrame, type SheetLayoutResult } from "../lib/sheetLayout";
+import { sheetFrame, type SheetFrame } from "../lib/sheetLayout";
 import { useSheetKeyboard } from "../lib/useSheetKeyboard";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { THEME, glow } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
-import { sheetBoxStyle } from "../lib/tabletLayout";
+import { isDialogSheet, sheetBoxStyle } from "../lib/tabletLayout";
 import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
 import { ScrollHint } from "./ScrollHint";
@@ -83,13 +83,14 @@ export function SheetShell({
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { isWide, width: layoutWidth } = useLayout();
+  const dialog = isWide && isDialogSheet(layoutWidth, windowHeight);
   const [contentHeight, setContentHeight] = useState(0);
 
   // lift animates the host's paddingBottom so the sheet never renders under
   // the keyboard; it is the MEASURED overlap, not the keyboard's own height.
   const { hostRef, onHostLayout, hostHeight, liftDomain, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
 
-  const closedLayout = useMemo<SheetLayoutResult>(
+  const closedLayout = useMemo<SheetFrame>(
     () =>
       sheetFrame({
         hostHeight,
@@ -100,10 +101,11 @@ export function SheetShell({
         insetTop: insets.top,
         contentHeight,
         maxHeightRatio,
+        dialog,
       }),
-    [hostHeight, windowHeight, keyboardOpen, liftDomain, insets.bottom, insets.top, contentHeight, maxHeightRatio],
+    [hostHeight, windowHeight, keyboardOpen, liftDomain, insets.bottom, insets.top, contentHeight, maxHeightRatio, dialog],
   );
-  const openLayout = useMemo<SheetLayoutResult>(
+  const openLayout = useMemo<SheetFrame>(
     () =>
       sheetFrame({
         hostHeight,
@@ -114,8 +116,9 @@ export function SheetShell({
         insetTop: insets.top,
         contentHeight,
         maxHeightRatio,
+        dialog,
       }),
-    [hostHeight, windowHeight, liftDomain, insets.bottom, insets.top, contentHeight, maxHeightRatio],
+    [hostHeight, windowHeight, liftDomain, insets.bottom, insets.top, contentHeight, maxHeightRatio, dialog],
   );
 
   const sheetMaxHeightAnim =
@@ -126,6 +129,14 @@ export function SheetShell({
           extrapolate: "clamp",
         })
       : closedLayout.sheetMaxHeight;
+  const sheetMinHeightAnim =
+    liftDomain > 0
+      ? liftAnim.interpolate({
+          inputRange: [0, liftDomain],
+          outputRange: [closedLayout.sheetMinHeight, openLayout.sheetMinHeight],
+          extrapolate: "clamp",
+        })
+      : closedLayout.sheetMinHeight;
   const contentPaddingBottomAnim =
     liftDomain > 0
       ? liftAnim.interpolate({
@@ -151,7 +162,7 @@ export function SheetShell({
       <AnimatedPressable
         style={{
           flex: 1,
-          justifyContent: "flex-end",
+          justifyContent: dialog ? "center" : "flex-end",
           backgroundColor: SCRIM,
           paddingBottom: liftAnim,
         }}
@@ -181,7 +192,10 @@ export function SheetShell({
             },
             glow(THEME.accent, 30, 0.3),
             fit ? { maxHeight: sheetMaxHeightAnim } : { height: sheetMaxHeightAnim },
-            sheetBoxStyle(layoutWidth, isWide),
+            sheetBoxStyle(layoutWidth, isWide, windowHeight),
+            // Dialog: the frame's keyboard-aware 50%..85% bounds replace the
+            // static ones sheetBoxStyle returns.
+            dialog ? { minHeight: sheetMinHeightAnim, maxHeight: sheetMaxHeightAnim } : null,
           ]}
         >
           <View className="items-center mb-1.5">
@@ -214,7 +228,7 @@ export function SheetShell({
             // iOS also auto-inset/scroll the responder would compensate
             // twice.
             automaticallyAdjustKeyboardInsets={false}
-            style={{ flexShrink: 1 }}
+            style={dialog ? { flexShrink: 1, flexGrow: 1 } : { flexShrink: 1 }}
             showsVerticalScrollIndicator={false}
             onContentSizeChange={onContentSizeChange}
             onLayout={hint.onLayout}

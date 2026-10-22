@@ -119,6 +119,37 @@ export function sheetFitHeight(
   return Math.min(sheetMaxHeight, Math.max(0, input.contentHeight + chrome + paddingBottom));
 }
 
+/** Tablet dialog sheet: share of the screen height it may take at most / at
+ *  least (a short content still opens at the minimum). */
+export const DIALOG_MAX_RATIO = 0.85;
+export const DIALOG_MIN_RATIO = 0.5;
+/** Air kept above and below a centred dialog when the keyboard or a small
+ *  window leaves less than the ratio allows. */
+export const DIALOG_CLEARANCE = 48;
+
+export interface DialogHeights {
+  minHeight: number;
+  maxHeight: number;
+}
+
+/**
+ * Height bounds of a centred tablet dialog sheet. `availableHeight` is the room
+ * the caller already knows is free (window less keyboard and top inset); the
+ * dialog never takes more than that less `clearance`, so with the keyboard up
+ * the max shrinks and the min follows it down (min never exceeds max).
+ */
+export function dialogHeights(
+  windowHeight: number,
+  availableHeight: number = windowHeight,
+  clearance: number = DIALOG_CLEARANCE
+): DialogHeights {
+  const maxHeight = Math.floor(
+    Math.max(0, Math.min(windowHeight * DIALOG_MAX_RATIO, availableHeight - clearance))
+  );
+  const minHeight = Math.floor(Math.min(windowHeight * DIALOG_MIN_RATIO, maxHeight));
+  return { minHeight, maxHeight };
+}
+
 export interface SheetFrameInput {
   /** Measured height of the full-size host the sheet is anchored to (onLayout).
    *  0 until measured, then windowHeight is used. */
@@ -131,9 +162,14 @@ export interface SheetFrameInput {
   insetBottom: number;
   contentHeight: number;
   maxHeightRatio?: number;
+  /** Centred tablet dialog (lib/tabletLayout.ts isDialogSheet): height bounds
+   *  are 50% to 85% of the host instead of the bottom-sheet ratio. */
+  dialog?: boolean;
 }
 
 export interface SheetFrame extends SheetLayoutResult {
+  /** Dialog only (0 otherwise): the sheet never renders shorter than this. */
+  sheetMinHeight: number;
   /** Distance from the host's top edge to the sheet's top edge when the sheet
    *  takes its full allowance. The title row sits just under it, so this must
    *  stay >= insetTop or the title and the close button slide under the status
@@ -161,5 +197,19 @@ export function sheetFrame(input: SheetFrameInput): SheetFrame {
     contentHeight: input.contentHeight,
     maxHeightRatio: input.maxHeightRatio,
   });
-  return { ...layout, sheetTop: host - input.lift - layout.sheetMaxHeight };
+  if (input.dialog) {
+    // The dialog is centred in the room above the keyboard, so its top is half
+    // of the leftover; the clearance covers insetTop on both sides.
+    const clearance = Math.max(DIALOG_CLEARANCE, 2 * input.insetTop);
+    const { minHeight, maxHeight } = dialogHeights(host, host - input.lift, clearance);
+    return {
+      ...layout,
+      sheetMaxHeight: maxHeight,
+      sheetMinHeight: minHeight,
+      scrolls: input.contentHeight + layout.paddingBottom > maxHeight,
+      actionVisible: maxHeight > 0,
+      sheetTop: (host - input.lift - maxHeight) / 2,
+    };
+  }
+  return { ...layout, sheetMinHeight: 0, sheetTop: host - input.lift - layout.sheetMaxHeight };
 }

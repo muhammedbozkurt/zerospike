@@ -756,7 +756,7 @@ function SheetOverlay({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const anim = useEnterAnim();
   useBackHandler(onClose);
 
@@ -771,6 +771,7 @@ function SheetOverlay({
     >
       <Pressable
         className="flex-1 bg-black/70 justify-end"
+        style={isDialog ? { justifyContent: "center" } : undefined}
         onPress={onClose}
         accessible={false}
         focusable={false}
@@ -794,7 +795,7 @@ function SheetOverlay({
                 backgroundColor: THEME.bg.g1,
                 paddingBottom: insets.bottom + 20,
               },
-              sheetBoxStyle(layoutWidth, isWide),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

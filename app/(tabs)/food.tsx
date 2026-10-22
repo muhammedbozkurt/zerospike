@@ -107,7 +107,7 @@ import { hapticSelect, hapticSuccess } from "../../lib/haptics";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../../lib/theme/tokens";
 import { mealSlotForHour } from "../../lib/insulin";
 import { useLayout } from "../../lib/useLayout";
-import { isTwoColumn } from "../../lib/tabletLayout";
+import { isTwoColumn, sheetBoxStyle } from "../../lib/tabletLayout";
 import { upper } from "../../lib/upper";
 
 type Selection = Category | "favorites" | "custom";
@@ -263,6 +263,7 @@ function TemplateConfirmSheet({
 }) {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
   // null = "now"; a Date is an explicit pick (same convention as the glucose
   // and medication quick-add sheets).
@@ -305,7 +306,7 @@ function TemplateConfirmSheet({
           accessibilityLabel={t("common.cancel")}
         />
       </Animated.View>
-      <View style={{ flex: 1, justifyContent: "flex-end" }} pointerEvents="box-none">
+      <View style={{ flex: 1, justifyContent: isDialog ? "center" : "flex-end" }} pointerEvents="box-none">
         <Animated.View
           style={{
             transform: [
@@ -320,7 +321,10 @@ function TemplateConfirmSheet({
         >
           <Pressable
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
-            style={{ backgroundColor: THEME.bg.g1, paddingBottom: insets.bottom + 20 }}
+            style={[
+              { backgroundColor: THEME.bg.g1, paddingBottom: insets.bottom + 20 },
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight, layoutHeight - insets.top),
+            ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}
             focusable={false}

@@ -73,7 +73,7 @@ export function SavedMedEditSheet({
   onDelete?: () => void;
 }) {
   const { t } = useTranslation();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const { height: windowH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
@@ -130,7 +130,7 @@ export function SavedMedEditSheet({
                 paddingBottom: 8,
               },
               glow(THEME.accent, 30, 0.3),
-              sheetBoxStyle(layoutWidth, isWide),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight, sheetAvail),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

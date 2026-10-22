@@ -47,7 +47,7 @@ export function LanguageChip() {
   const { t } = useTranslation();
   const { lang, setLanguage } = useApp();
   const { height } = useWindowDimensions();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const [open, setOpen] = useState(false);
 
   async function select(next: Lang) {
@@ -98,7 +98,7 @@ export function LanguageChip() {
                 shadowOffset: { width: 0, height: -8 },
                 ...ELEVATION.popover,
               },
-              sheetBoxStyle(layoutWidth, isWide),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

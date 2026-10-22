@@ -45,7 +45,7 @@ import { num } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
-import { sheetBoxStyle } from "../lib/tabletLayout";
+import { dialogCardStyle, sheetBoxStyle } from "../lib/tabletLayout";
 import { useProCta } from "../lib/proCta";
 import { grantSpikeConsent, hasSpikeConsent } from "../lib/services/spikeConsent";
 import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
@@ -101,7 +101,7 @@ export function CarbEstimateSheet({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const router = useRouter();
   const anim = useRef(new Animated.Value(0)).current;
   const scrollHint = useScrollHint("sheet.carb-estimate");
@@ -557,12 +557,15 @@ export function CarbEstimateSheet({
                 { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
               ],
             },
-            sheetBoxStyle(layoutWidth, isWide),
+            sheetBoxStyle(layoutWidth, isWide, layoutHeight, maxHeight, false),
           ]}
         >
           <Pressable
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
-            style={{ backgroundColor: THEME.bg.g1, paddingBottom: bottomPad, flexShrink: 1 }}
+            style={[
+              { backgroundColor: THEME.bg.g1, paddingBottom: bottomPad, flexShrink: 1 },
+              isDialog ? dialogCardStyle : null,
+            ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}
             focusable={false}
@@ -592,7 +595,7 @@ export function CarbEstimateSheet({
             {top}
             <ScrollView
               {...keyboardAwareScrollProps}
-              style={{ flexShrink: 1 }}
+              style={isDialog ? { flexShrink: 1, flexGrow: 1 } : { flexShrink: 1 }}
               showsVerticalScrollIndicator={false}
               onScroll={scrollHint.onScroll}
               onContentSizeChange={scrollHint.onContentSizeChange}

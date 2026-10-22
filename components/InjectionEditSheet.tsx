@@ -124,7 +124,7 @@ export function InjectionEditSheet({
   const { activeProfile, isProUser } = useApp();
   const { confirm } = useFeedback();
   const { height: winH } = useWindowDimensions();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const insets = useSafeAreaInsets();
   const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
   // Title and close stay on screen: the sheet is capped at what the keyboard
@@ -356,7 +356,7 @@ export function InjectionEditSheet({
                 paddingTop: 8,
               },
               glow(THEME.accent, 30, 0.3),
-              sheetBoxStyle(layoutWidth, isWide),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight, sheetAvail),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

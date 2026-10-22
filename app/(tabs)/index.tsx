@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -214,7 +214,12 @@ import { useFeedback } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
 import { Sparkline } from "../../components/Sparkline";
 import { Button, Card, Chip, SegmentedStat, Txt } from "../../components/ui";
-import { TWO_COL_MAX_WIDTH } from "../../lib/tabletLayout";
+import {
+  HOME_BLOCK_ESTIMATE,
+  TWO_COL_MAX_WIDTH,
+  estimateJournalHeight,
+  splitHomeColumns,
+} from "../../lib/tabletLayout";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { RIPPLE_ALPHA, ROW_MIN_HEIGHT } from "../../lib/theme/uiPrimitives";
 import { EmptyState } from "../../components/EmptyState";
@@ -2054,11 +2059,18 @@ export default function DashboardScreen() {
     </>
   );
 
-  // Tablet two-column home (width >= 700, existing user): which blocks live in
-  // which column is lib/tabletLayout.ts (HOME_LEFT / HOME_RIGHT). Cards keep
-  // their natural height and the right column is stacked from the top with the
-  // fixed card gap (each card's own marginBottom, SPACE.md = TABLET_CARD_GAP).
+  // Tablet two-column home (width >= 700, existing user): the cards keep their
+  // phone order and natural height; the cut between the columns is the one
+  // that makes both as tall as possible alike (lib/tabletLayout.ts
+  // splitHomeColumns, from the measured block heights). The journal panel is
+  // one connected container and always closes the right column.
   const twoColHome = usesTwoColumn(homeState, isTwoCol);
+  const [blockHeights, setBlockHeights] = useState<Record<string, number>>({});
+  const [journalHeight, setJournalHeight] = useState(0);
+  const splitCutRef = useRef<number | undefined>(undefined);
+  const onBlockLayout = useCallback((key: string, h: number) => {
+    setBlockHeights((prev) => (Math.abs((prev[key] ?? -1) - h) < 1 ? prev : { ...prev, [key]: h }));
+  }, []);
 
   const headerCards = (
     <>
@@ -2594,15 +2606,40 @@ export default function DashboardScreen() {
   );
 
   // Tablet two-column home (width >= 700, existing user): the ring, week boxes
-  // and the daily flow (journal) on the left; the post-meal counter, context
-  // strip, basal and the Insights / Health tiles on the right. ONE outer
-  // ScrollView carries both columns, so the page scrolls as a whole; cards keep
-  // their natural height and the right column is stacked from the top with a
-  // fixed gap. The journal there is a plain list (no nested scrolling): it is
+  // and cards in phone order, cut between the columns by splitHomeColumns; the
+  // journal panel closes the right column. ONE outer ScrollView carries both
+  // columns, so the page scrolls as a whole; cards keep their natural height.
+  // The journal there is a plain list (no nested scrolling): it is
   // already capped to the preview slice (JOURNAL_PREVIEW_LIMITS: 15 rows, 2
   // days), so virtualisation buys nothing.
   // First run keeps the single centred column (one guide, nothing to split).
   const twoCol = twoColHome;
+  const movableBlocks = twoCol
+    ? [
+        ...Children.toArray((headerTop.props as { children?: React.ReactNode }).children).map((el) => ({
+          key: `top${(el as React.ReactElement).key}`,
+          el,
+        })),
+        ...Children.toArray((headerCards.props as { children?: React.ReactNode }).children).map((el) => ({
+          key: `card${(el as React.ReactElement).key}`,
+          el,
+        })),
+      ]
+    : [];
+  const journalRowCount = journalSections.reduce((n, sec) => n + sec.data.length, 0);
+  const columnSplit = twoCol
+    ? splitHomeColumns(
+        movableBlocks.map((b) => blockHeights[b.key] ?? HOME_BLOCK_ESTIMATE),
+        journalHeight > 0 ? journalHeight : estimateJournalHeight(journalRowCount),
+        { current: splitCutRef.current }
+      )
+    : null;
+  if (columnSplit) splitCutRef.current = columnSplit.leftCount;
+  const renderBlock = (b: { key: string; el: React.ReactNode }) => (
+    <View key={b.key} onLayout={(e) => onBlockLayout(b.key, e.nativeEvent.layout.height)}>
+      {b.el}
+    </View>
+  );
   const wideListInset = isWide && !isFirstRun ? { paddingBottom: CTA_FOOTPRINT + insets.bottom } : undefined;
 
   const journalFooter =
@@ -2693,24 +2730,26 @@ export default function DashboardScreen() {
             <View style={{ paddingHorizontal: SPACE.lg }}>{titleRow}</View>
             <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
               <View style={{ flex: 1, minWidth: 0, paddingHorizontal: SPACE.lg }}>
-                <View className={headerWrapClass}>
-                  {headerTop}
-                  {headerJournal}
-                </View>
-                {journalSections.map((section, si) => (
-                  <View key={`${si}-${section.dateLabel}`}>
-                    <JournalDayHeader section={section} />
-                    {section.data.map((item, i) => (
-                      <React.Fragment key={journalKey(item)}>
-                        {renderItem({ item, index: i })}
-                      </React.Fragment>
-                    ))}
-                  </View>
-                ))}
-                {journalSections.length === 0 ? journalEmpty : null}
-                {journalFooter}
+                {movableBlocks.slice(0, columnSplit?.leftCount ?? 0).map(renderBlock)}
               </View>
-              <View style={{ flex: 1, minWidth: 0, paddingHorizontal: SPACE.lg }}>{headerCards}</View>
+              <View style={{ flex: 1, minWidth: 0, paddingHorizontal: SPACE.lg }}>
+                {movableBlocks.slice(columnSplit?.leftCount ?? 0).map(renderBlock)}
+                <View onLayout={(e) => setJournalHeight(Math.round(e.nativeEvent.layout.height))}>
+                  <View className={headerWrapClass}>{headerJournal}</View>
+                  {journalSections.map((section, si) => (
+                    <View key={`${si}-${section.dateLabel}`}>
+                      <JournalDayHeader section={section} />
+                      {section.data.map((item, i) => (
+                        <React.Fragment key={journalKey(item)}>
+                          {renderItem({ item, index: i })}
+                        </React.Fragment>
+                      ))}
+                    </View>
+                  ))}
+                  {journalSections.length === 0 ? journalEmpty : null}
+                  {journalFooter}
+                </View>
+              </View>
             </View>
           </ScrollView>
         </View>

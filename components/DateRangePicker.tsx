@@ -59,7 +59,7 @@ export function DateRangePicker({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const [start, setStart] = useState<Date>(initialStart);
   const [end, setEnd] = useState<Date>(initialEnd);
   const [open, setOpen] = useState<"start" | "end" | null>(null);
@@ -145,7 +145,7 @@ export function DateRangePicker({
               paddingTop: SPACE.sm,
               paddingBottom: insets.bottom + SPACE.xl,
             },
-            sheetBoxStyle(layoutWidth, isWide),
+            sheetBoxStyle(layoutWidth, isWide, layoutHeight),
           ]}
         >
           <View className="items-center" style={{ marginBottom: SPACE.sm }}>

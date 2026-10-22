@@ -72,7 +72,7 @@ export function QuickAddSheet({
 }: QuickAddSheetProps) {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const { height: windowH } = useWindowDimensions();
   const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
   // The grabber, the med header and the close path stay on screen: the sheet is
@@ -228,7 +228,7 @@ export function QuickAddSheet({
         pointerEvents="box-none"
       >
       <Animated.View
-        style={{ flex: 1, justifyContent: "flex-end", paddingBottom: liftAnim }}
+        style={{ flex: 1, justifyContent: isDialog ? "center" : "flex-end", paddingBottom: liftAnim }}
         pointerEvents="box-none"
       >
         <Animated.View
@@ -256,7 +256,7 @@ export function QuickAddSheet({
                 paddingTop: SPACE.sm,
                 paddingBottom: insets.bottom + SPACE.xl,
               },
-              sheetBoxStyle(layoutWidth, isWide),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight, sheetAvail),
             ]}
           >
             <View style={{ alignItems: "center", marginBottom: SPACE.sm }}>
