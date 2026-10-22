@@ -331,9 +331,10 @@ export function MealComposeSheet({
   // Tablet dialog (>= 700 wide): 85% of the window, less what the keyboard and
   // the status bar take (lib/sheetLayout.ts dialogHeights); the list scrolls.
   const dialogRoom = rootHeight > 0 ? rootHeight - lift : undefined;
+  const dialogClearance = Math.max(DIALOG_CLEARANCE, 2 * insets.top);
   const sheetHeightCapped =
     isDialog && rootHeight > 0
-      ? dialogHeights(rootHeight, dialogRoom, Math.max(DIALOG_CLEARANCE, 2 * insets.top)).maxHeight
+      ? dialogHeights(rootHeight, dialogRoom, dialogClearance).maxHeight
       : sheetHeight != null && isWide
         ? Math.min(sheetHeight, TABLET_SHEET_MAX_HEIGHT)
         : sheetHeight;
@@ -370,7 +371,7 @@ export function MealComposeSheet({
                 { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
               ],
             },
-            sheetBoxStyle(layoutWidth, isWide, layoutHeight, dialogRoom, false),
+            sheetBoxStyle(layoutWidth, isWide, layoutHeight, dialogRoom, false, { clearance: dialogClearance }),
           ]}
         >
           {/* flex 1 (grow AND shrink) keeps the pinned save button on screen

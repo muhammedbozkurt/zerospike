@@ -175,6 +175,28 @@ for (const f of ["SavedMedEditSheet", "ReminderEditSheet", "MedEditSheet", "Inje
   ok("calculator: bolge sheet'i ayri dosyadan", calc.includes("<InjectionSiteSheet") && !calc.includes("SitePickerModal"));
 }
 
+// 241-FC source contract.
+{
+  const shell = read("components/SheetShell.tsx");
+  ok("241-FC SheetShell: dialogda surukleme tutamaci yok", shell.includes("{dialog ? null : (") && shell.indexOf("{dialog ? null : (") < shell.indexOf("width: 38, height: 4"));
+  const g = read("components/GlucoseInputSheet.tsx");
+  ok("241-FC Glucose: dis kutu yalniz cerceve (surface false)", g.includes("availH > 0 ? availH : undefined, false)"));
+  ok("241-FC Glucose: dialogda kart dialogCardStyle ile dolar", g.includes("isDialog") && g.includes("...dialogCardStyle"));
+  ok("241-FC Glucose: dialogda alt bosluk 24 yok", /isDialog\s*\?\s*\{[\s\S]*?\}\s*:\s*isWide[\s\S]*?marginBottom: SPACE\.xl/.test(g));
+  ok("241-FC Glucose: alt sinir ustunde aralik satiri", g.includes('valueState === "below"') && g.includes("wholeBad || pasteBad || aboveBad || belowBad"));
+  const m = read("components/MealComposeSheet.tsx");
+  ok("241-FC MealCompose: ayni clearance kutuya da gecer", m.includes("{ clearance: dialogClearance }") && m.includes("dialogHeights(rootHeight, dialogRoom, dialogClearance)"));
+  for (const f of ["components/Feedback.tsx", "components/QuickAddSheet.tsx", "components/onboarding/LanguageChip.tsx"]) {
+    ok(`241-FC ${f}: minRatio 0`, read(f).includes("{ minRatio: 0 }"));
+  }
+  for (const f of ["components/CarbEstimateSheet.tsx", "components/MealComposeSheet.tsx"]) {
+    ok(`241-FC ${f}: min %50 kalir`, !read(f).includes("minRatio"));
+  }
+  ok("241-FC calculator: olu sheetBoxStyle importu yok", !read("app/calculator.tsx").includes("sheetBoxStyle"));
+  const home = read("app/(tabs)/index.tsx");
+  ok("241-FC index: kesim anahtarla tutulur", home.includes("splitHomeByKeys(") && home.includes("splitCutRef.current = columnSplit.cutKey"));
+}
+
 console.log("\n| cihaz | sheet | insets.top | sheet ust y | ust bosluk (y - inset) | baslik ustu | yukseklik | kayar mi |");
 console.log("|---|---|---|---|---|---|---|---|");
 for (const r of rows) console.log(r);

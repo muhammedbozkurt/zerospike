@@ -18,6 +18,7 @@ import {
   sheetBoxStyle,
   sheetVisibleHeight,
   sheetWidth,
+  splitHomeByKeys,
   splitHomeColumns,
   stackColumn,
   stackHeight,
@@ -217,6 +218,72 @@ eq(
     .sheetMaxHeight,
   810
 );
+
+// 241-FC: minRatio 0 lets short action and grid sheets hug their content.
+{
+  const hug = sheetBoxStyle(834, true, 1194, undefined, true, { minRatio: 0 });
+  eq("minRatio 0 min height", hug?.minHeight, 0);
+  eq("minRatio 0 keeps max 85%", hug?.maxHeight, Math.floor(1194 * 0.85));
+  eq("minRatio default keeps 50%", sheetBoxStyle(834, true, 1194)?.minHeight, 597);
+  eq("minRatio 0 keeps centring", [hug?.alignSelf, hug?.marginTop, hug?.marginBottom], ["center", "auto", "auto"]);
+  eq("minRatio 0 keeps the surface", [hug?.borderRadius, hug?.borderWidth], [26, 1]);
+  eq("minRatio phone untouched", sheetBoxStyle(390, false, 844, undefined, true, { minRatio: 0 }), undefined);
+  eq("minRatio old box untouched", sheetBoxStyle(600, true, 960, undefined, true, { minRatio: 0 }), {
+    width: 560,
+    alignSelf: "center",
+  });
+  eq("dialogHeights minRatio", dialogHeights(1194, 1194, 48, 0).minHeight, 0);
+  eq("dialogHeights minRatio capped by max", dialogHeights(600, 300, 48, 0.9).minHeight, 252);
+}
+
+// 241-FC: the clearance the caller's height maths uses reaches the box too
+// (7in landscape, keyboard lift 300, status bar 40: 220 tall, not 252).
+{
+  const insetTop = 40;
+  const clearance = Math.max(48, 2 * insetTop);
+  const want = dialogHeights(600, 600 - 300, clearance).maxHeight;
+  eq("clearance value", want, 220);
+  const box = sheetBoxStyle(960, true, 600, 600 - 300, false, { clearance });
+  eq("box max follows clearance", box?.maxHeight, want);
+  eq("box min never above the height", (box?.minHeight ?? 0) <= want, true);
+  eq("box without clearance keeps 48", sheetBoxStyle(960, true, 600, 300, false)?.maxHeight, 252);
+}
+
+// 241-FC: key-based home split.
+{
+  const keys = ["a", "b", "c", "d"];
+  const h = { a: 100, b: 100, c: 100, d: 100 };
+  const first = splitHomeByKeys(keys, h, 200, { settled: true });
+  eq("keyed split balances", [first.leftCount, first.cutKey], [3, "d"]);
+  // A left card disappears: the right column's first card stays on the right.
+  const dropped = splitHomeByKeys(["b", "c", "d"], { b: 100, c: 100, d: 100 }, 200, {
+    cutKey: first.cutKey,
+    settled: true,
+  });
+  eq("left card gone keeps d on the right", dropped.cutKey, "d");
+  eq("left card gone leftCount follows the key", dropped.leftCount, 2);
+  // Everything left: null cut survives a new block at the end.
+  const allLeft = splitHomeByKeys(["a", "b"], { a: 100, b: 100 }, 200, { settled: true });
+  eq("all-left cut is null", allLeft.cutKey, null);
+  const grown = splitHomeByKeys(["a", "b", "c"], { a: 100, b: 100, c: 100 }, 200, { cutKey: null, settled: true });
+  eq("null cut kept while near equal", grown.cutKey, null);
+  // Cut key vanished: falls back to the best cut, never throws.
+  const gone = splitHomeByKeys(["a", "b"], { a: 100, b: 100 }, 100, { cutKey: "zzz", settled: true });
+  eq("unknown cut key falls back", gone.leftCount, 1);
+  // Unsettled (not everything measured): a cut in use is not moved.
+  const frozen = splitHomeByKeys(["a", "b", "c", "d"], { a: 300, b: 40, c: 40, d: 40 }, 100, {
+    cutKey: "c",
+    settled: false,
+  });
+  eq("unsettled keeps the cut", frozen.cutKey, "c");
+  const settledMove = splitHomeByKeys(["a", "b", "c", "d"], { a: 300, b: 40, c: 40, d: 40 }, 100, {
+    cutKey: "c",
+    settled: true,
+  });
+  eq("settled moves a clearly worse cut", settledMove.cutKey !== "c", true);
+  eq("unmeasured block uses the estimate", splitHomeByKeys(["a"], {}, 0, { settled: false }).left >= 0, true);
+  eq("empty keys", splitHomeByKeys([], {}, 300).cutKey, null);
+}
 
 if (bad) process.exit(1);
 console.log(`ok ${n} cases`);

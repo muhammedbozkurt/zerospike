@@ -214,12 +214,7 @@ import { useFeedback } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
 import { Sparkline } from "../../components/Sparkline";
 import { Button, Card, Chip, SegmentedStat, Txt } from "../../components/ui";
-import {
-  HOME_BLOCK_ESTIMATE,
-  TWO_COL_MAX_WIDTH,
-  estimateJournalHeight,
-  splitHomeColumns,
-} from "../../lib/tabletLayout";
+import { TWO_COL_MAX_WIDTH, estimateJournalHeight, splitHomeByKeys } from "../../lib/tabletLayout";
 import { withAlpha } from "../../components/rich/GlassCard";
 import { RIPPLE_ALPHA, ROW_MIN_HEIGHT } from "../../lib/theme/uiPrimitives";
 import { EmptyState } from "../../components/EmptyState";
@@ -2067,7 +2062,7 @@ export default function DashboardScreen() {
   const twoColHome = usesTwoColumn(homeState, isTwoCol);
   const [blockHeights, setBlockHeights] = useState<Record<string, number>>({});
   const [journalHeight, setJournalHeight] = useState(0);
-  const splitCutRef = useRef<number | undefined>(undefined);
+  const splitCutRef = useRef<string | null | undefined>(undefined);
   const onBlockLayout = useCallback((key: string, h: number) => {
     setBlockHeights((prev) => (Math.abs((prev[key] ?? -1) - h) < 1 ? prev : { ...prev, [key]: h }));
   }, []);
@@ -2628,13 +2623,17 @@ export default function DashboardScreen() {
     : [];
   const journalRowCount = journalSections.reduce((n, sec) => n + sec.data.length, 0);
   const columnSplit = twoCol
-    ? splitHomeColumns(
-        movableBlocks.map((b) => blockHeights[b.key] ?? HOME_BLOCK_ESTIMATE),
+    ? splitHomeByKeys(
+        movableBlocks.map((b) => b.key),
+        blockHeights,
         journalHeight > 0 ? journalHeight : estimateJournalHeight(journalRowCount),
-        { current: splitCutRef.current }
+        {
+          cutKey: splitCutRef.current,
+          settled: journalHeight > 0 && movableBlocks.every((b) => blockHeights[b.key] != null),
+        }
       )
     : null;
-  if (columnSplit) splitCutRef.current = columnSplit.leftCount;
+  if (columnSplit) splitCutRef.current = columnSplit.cutKey;
   const renderBlock = (b: { key: string; el: React.ReactNode }) => (
     <View key={b.key} onLayout={(e) => onBlockLayout(b.key, e.nativeEvent.layout.height)}>
       {b.el}
