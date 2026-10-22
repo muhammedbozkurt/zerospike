@@ -6,6 +6,43 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`).
 
+## 2.4.1
+
+Sürüm damgası: `app.json` `version` 2.4.1 (build numarası autoIncrement).
+
+### Ölçüm
+- Analitik `build` alanı `expo-application` (`Application.nativeBuildVersion`
+  ve `nativeApplicationVersion`) üzerinden okunuyor; `expo-constants` 57'de
+  alan olmadığı için her satırda "unknown" geliyordu (`lib/analytics/transport.ts`,
+  `lib/fatalCapture.ts`). Sürüm ve kampanya segmentasyonu buna bağlı.
+- Eksik olaylar eklendi: `restore_result` (geri yükleme sonucu) ve
+  `winback_dismiss`. Şema v6; `track` sunucu fonksiyonu önce deploy edilir.
+
+### Tablet
+- Bugün ekranı iki sütunda dengelendi (sağ sütunun boş kalan alt yarısı
+  dolduruldu).
+- Sheet'ler (Öğün oluştur, karbonhidrat tahmini ve diğerleri) tablette alta
+  yapışık yerine ortalanmış diyalog olarak açılır; tüm sheet'lerde aynı kural.
+
+### Erişilebilirlik
+- Günlük satırının VoiceOver etiketi ölçümün durumunu da içeriyor (aralıkta,
+  yüksek vb.).
+- Glukoz alanına yapıştırılan değerin kesilmesi düzeltildi (mg/dL'de 4
+  karakterli yapıştırma 3 karaktere kırpılıyordu); aralık denetimi korunuyor.
+
+### İzinler
+- FINE konum ve `c2dm.RECEIVE` izin değerlendirmesi ve kırpma: izin envanteri
+  ve kırpma (ayrıntı rapor).
+
+### Operasyon
+- Sunucu: `track` şema v6 deploy'u; olay şeması json + ts + test senkron.
+- Mağaza metni: 14 yerelde (App Store) ve 14 yerelde (Play, 95) 2.4.1
+  yenilikler; ASC metadata yükleme betiği `scratchpad/k241-asc-metadata-up.sh`.
+
+### Görseller
+- Mağaza: 14 yerel; yeni iPhone 03-widgets karesi ve yeni iPad ile Android
+  tablet kareleri.
+
 ## 2.4.0 (build 78 / versionCode 79)
 
 ### Tema

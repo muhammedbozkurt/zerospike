@@ -42,6 +42,22 @@ the open risks live in
 - Play short description: 80
 - Play What's New: 500 per language
 
+## Store locale rules (K-ASO-EN and later)
+
+- 14 store locales: en-US, en-GB, en-AU, en-CA, tr, de-DE, fr-FR, fr-CA, es-ES, es-MX,
+  it, pt-BR, ar-SA, ja (Play: the same set, es-MX as es-419). en-AU and en-CA are new.
+  The nine app languages above are unchanged; extra locales reuse their language.
+- Keywords: at most 100 characters, comma-separated, no space after commas. No word that
+  is already in the title or subtitle of the same locale.
+- No repeated keyword across locales that the same storefront indexes: US = en-US + es-MX;
+  GB = en-GB + en-US; AU = en-AU + en-US; CA = en-CA + fr-CA + en-US. A term placed in one
+  of them is not repeated in the others of its group.
+- Locales whose users read mmol/L (en-GB, en-AU, en-CA) say "mg/dL and mmol/L" in the
+  description and in the promotional text.
+- support_url and marketing_url are required in every locale (never empty).
+- The pipeline for these files is `fastlane/metadata/<locale>/` (gitignored); counts are
+  verified by script, never by hand.
+
 ## Regulation rules (mandatory - Apple 1.4.1 / 2.3, Play health policy, medical-app scrutiny)
 
 1. No health-claim or outcome language anywhere. Forbidden ideas: control, lower,
@@ -60,6 +76,11 @@ the open risks live in
    words (the "No diagnosis" setup option, the Android "play as alarm" switch) are
    described, not quoted. The disclaimer keeps "not medical advice, not a medical device"
    and says decisions about the user's care stay with their healthcare team.
+   Since K-ASO-EN the scan is `npm run reg:check`: it covers lib/i18n/locales, the local
+   zerospike-store copy and fastlane/metadata for all 14 store locales (App Store and
+   android/); it must be clean before any copy is uploaded. A hit is excused only by a
+   sentence-level key in scripts/reg-allowlist.json. The store rules in the section
+   above apply to every one of those locales.
 3. Neutral, factual, non-promissory tone. No "your health companion" hype.
 4. Each long description carries a neutral disclaimer: the app is for personal
    tracking, is not medical advice and is not a medical device.
