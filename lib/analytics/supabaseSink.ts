@@ -1,7 +1,6 @@
 import { AppState, type AppStateStatus } from "react-native";
 
 import { getDb } from "../db/index";
-import { isScreenshotMode } from "../screenshotMode";
 import { uuid } from "../uuid";
 import { setAnalyticsSink, type AnalyticsParams } from "./index";
 import { sanitizeEvent } from "./eventSchema";
@@ -9,6 +8,7 @@ import { FLUSH_INTERVAL_MS, createFlusher } from "./flush";
 import { getAnalyticsConsent, isAnalyticsEnabledNow, onAnalyticsEnabledChange } from "./optOut";
 import { createQueue, orderByClientTs, type NewQueueEvent, type QueueDb } from "./queue";
 import { createSessionTracker } from "./session";
+import { isTestEnvironmentNow } from "./testEnvironment";
 import { isTrackConfigured, postBatch } from "./transport";
 
 /**
@@ -20,8 +20,10 @@ import { isTrackConfigured, postBatch } from "./transport";
  * (enabled: true) when the user switches usage analytics on.
  *
  * Off in dev builds (set EXPO_PUBLIC_ANALYTICS_DEV=1 to
- * try it against the real function) and in screenshot mode, and off when
- * extra.trackFnUrl is unset.
+ * try it against the real function), in screenshot mode, on emulators and
+ * simulators and on Firebase Test Lab / Play pre-launch devices (see
+ * ./testEnvironment), and off when extra.trackFnUrl is unset. Consent is not
+ * touched: only the collection stays silent there.
  *
  * Opt-in (./optOut): the sink collects and sends only while the stored consent
  * is "granted". Never asked, declined and an unreadable store all mean off:
@@ -232,8 +234,7 @@ function startSink(): SinkController {
 
 /** Called once from app/_layout.tsx at module load. */
 export function initSupabaseSink(): void {
-  if (controller || !isTrackConfigured || isScreenshotMode()) return;
-  if (__DEV__ && process.env.EXPO_PUBLIC_ANALYTICS_DEV !== "1") return;
+  if (controller || !isTrackConfigured || isTestEnvironmentNow()) return;
   controller = startSink();
 }
 

@@ -13,6 +13,7 @@ import {
 } from "./deleteDevice";
 import type { PropValue } from "./eventSchema";
 import { classifyResponse, type QueuedEvent, type SendResult } from "./flush";
+import { isTestEnvironmentNow } from "./testEnvironment";
 
 /**
  * Wire format of POST {trackFnUrl} (the `track` edge function). The function URL
@@ -94,6 +95,8 @@ export async function postBatch(
   timeoutMs: number = POST_TIMEOUT_MS
 ): Promise<SendResult> {
   if (!TRACK_FN_URL) return { status: "retry" };
+  // The sink never starts in a test environment; this stops a stray caller too.
+  if (isTestEnvironmentNow()) return { status: "retry" };
   const id = await deviceId();
   if (!id) return { status: "retry" };
   const controller = new AbortController();

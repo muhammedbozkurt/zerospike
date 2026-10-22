@@ -21,6 +21,9 @@
 // nothing is written. 429 (hourly per-IP or per-device cap, or the global daily
 // ceiling; see Retry-After) and 503 (database) mean "retry later with the same
 // batch_id"; events over the device's daily budget are dropped and counted.
+// A device listed in public.test_devices gets 202 {accepted: 0, dropped: n,
+// test_device: true}: nothing is written and no rate-limit counter moves
+// (./testDevices.ts; fail-open, 60 s cache).
 
 import {
   resolveCallerIp,
@@ -42,6 +45,7 @@ import {
   type TrackMeta,
   UUID,
 } from "../_shared/event-schema.ts";
+import { createTestDeviceChecker, restLookup, type TestDeviceChecker } from "./testDevices.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -114,6 +118,12 @@ async function ingest(creds: ServiceCreds, deviceId: string, ipHash: string, bat
   }
 }
 
+// One checker per isolate, so its cache outlives a single request.
+let checker: TestDeviceChecker | null = null;
+function testDevices(creds: ServiceCreds): TestDeviceChecker {
+  return (checker ??= createTestDeviceChecker(restLookup(creds)));
+}
+
 async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return noContent();
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -136,6 +146,11 @@ async function handle(req: Request): Promise<Response> {
   const batch = parseTrackBody(EVENT_SCHEMA, body, Date.now());
   if (!batch) return json({ error: "bad_request" }, 400);
   if (batch.events.length === 0) return json({ accepted: 0, dropped: batch.dropped }, 202);
+
+  // Before any counter is touched: a listed test device costs the limits nothing.
+  if (await testDevices(creds).isTestDevice(deviceId)) {
+    return json({ accepted: 0, dropped: batch.dropped + batch.events.length, test_device: true }, 202);
+  }
 
   const ipHash = await hashIp(await resolveCallerIp(req), creds.key, Date.now());
   const stored = await ingest(creds, deviceId, ipHash, batch);
