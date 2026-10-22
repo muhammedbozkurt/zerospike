@@ -42,6 +42,11 @@ import {
   sanitizeNumberText,
 } from "../lib/numberInput";
 import { readNumericInput } from "../lib/numericField";
+import {
+  GLUCOSE_SHEET_MAX_CHARS,
+  glucoseSheetBounds,
+  glucoseSheetValueState,
+} from "../lib/glucoseSheetInput";
 import { withAlpha } from "./rich/GlassCard";
 import { ELEVATION, INPUT_TEXT, RADIUS, RICH_BY_STATUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
@@ -178,8 +183,7 @@ export function GlucoseInputSheet({
   closeRef.current = onClose;
 
   const mmol = unit === "mmol";
-  const minD = mmol ? 0.5 : 1;
-  const maxD = mmol ? 50 : 900;
+  const { min: minD, max: maxD } = glucoseSheetBounds(unit);
 
   useEffect(() => {
     if (visible) {
@@ -281,6 +285,7 @@ export function GlucoseInputSheet({
   // error (never 55), and Save stays shut until it is a whole number.
   const wholeBad = !mmol && hasDecimalSeparator(value);
   const typed = pasteBad ? null : mmol ? parseDecimalText(value) : parseWholeText(value);
+  const aboveBad = glucoseSheetValueState(typed, unit) === "above";
 
   // Guards the async gap between a Save tap and the guard dialog resolving:
   // submittedRef alone (set only once the guard has already said "go") would
@@ -547,12 +552,12 @@ export function GlucoseInputSheet({
                         textShadowRadius: 26,
                       },
                     ]}
-                    maxLength={mmol ? 4 : 3}
+                    maxLength={GLUCOSE_SHEET_MAX_CHARS}
                   />
                   <Txt kind="caption" tone="muted" style={{ marginTop: compact ? 0 : -SPACE.xs }}>
                     {glucoseUnitLabel(unit)}
                   </Txt>
-                  {wholeBad || pasteBad ? (
+                  {wholeBad || pasteBad || aboveBad ? (
                     <Txt
                       kind="caption"
                       style={{ color: THEME.warning, marginTop: SPACE.xs }}
