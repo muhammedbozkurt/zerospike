@@ -5,6 +5,8 @@ import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reani
 import { THEME } from "../../lib/theme/tokens";
 import { withAlpha } from "../rich/GlassCard";
 import type { Surface } from "./silhouette";
+import { FONT_CAP, scaledMinHeight } from "../../lib/layoutForFontScale";
+import { useFontScale } from "../../lib/useFontScale";
 
 const TAB_H = 44;
 
@@ -38,13 +40,14 @@ export function SurfaceTabs({
   dotOn: Surface | null;
   breath: SharedValue<number>;
 }) {
+  const fontScale = useFontScale(FONT_CAP.chip);
   return (
     <View
       accessibilityRole="tablist"
       style={{
         flexDirection: "row",
         alignSelf: "stretch",
-        height: TAB_H,
+        minHeight: scaledMinHeight(TAB_H, fontScale, FONT_CAP.chip),
         padding: 3,
         gap: 3,
         borderRadius: TAB_H / 2,
@@ -76,6 +79,7 @@ export function SurfaceTabs({
           >
             <Text
               numberOfLines={1}
+              maxFontSizeMultiplier={FONT_CAP.chip}
               style={{
                 flexShrink: 1,
                 color: on ? THEME.accent : THEME.textMuted,

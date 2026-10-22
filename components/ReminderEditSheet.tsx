@@ -22,6 +22,8 @@ import { MedNamePicker } from "./MedNamePicker";
 import { GLUCOSE_RICH, HIT_TARGET, RADIUS, THEME, glow, switchColors } from "../lib/theme/tokens";
 import { SCRIM } from "./SheetShell";
 import { useSheetKeyboard } from "../lib/useSheetKeyboard";
+import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { sheetFrame } from "../lib/sheetLayout";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -131,6 +133,9 @@ export function ReminderEditSheet({
   const { height: windowH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
+  // Large text: Save is pinned under the scrolling body so it never scrolls off
+  // behind the keyboard.
+  const pinSave = useFontScale() > STACK_AT_SCALE;
   // Title and close stay on screen: the sheet is capped at what the keyboard
   // and the status-bar inset leave (counted once, lib/sheetLayout.ts).
   const sheetAvail = sheetFrame({
@@ -453,12 +458,14 @@ export function ReminderEditSheet({
                 </View>
               ) : null}
 
-              <GradientCTA
+              {pinSave ? null : (
+<GradientCTA
                 label={t("common.save")}
                 disabled={!canSave}
                 onPress={submit}
                 style={{ marginBottom: 10 }}
               />
+)}
               <Button variant="tertiary" onPress={onClose} label={t("common.cancel")} />
 
               {isEdit ? (
@@ -474,6 +481,16 @@ export function ReminderEditSheet({
                 />
               ) : null}
             </ScrollView>
+{pinSave ? (
+<View style={{ paddingTop: 8 }}>
+<GradientCTA
+                label={t("common.save")}
+                disabled={!canSave}
+                onPress={submit}
+                style={{ marginBottom: 10 }}
+              />
+</View>
+) : null}
           </Pressable>
         </Pressable>
       </Animated.View>

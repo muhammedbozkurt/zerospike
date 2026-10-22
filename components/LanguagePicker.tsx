@@ -16,6 +16,7 @@ import { ELEVATION, HIT_TARGET, THEME } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA, ROW_MIN_HEIGHT } from "../lib/theme/uiPrimitives";
 import { withAlpha } from "./rich/GlassCard";
 import { useLayout } from "../lib/useLayout";
+import { FONT_CAP } from "../lib/layoutForFontScale";
 
 /** Cap for a centered, content-sized dialog card on a tablet (does not
  *  stretch edge to edge like a bottom sheet). */
@@ -31,6 +32,7 @@ function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
       }`}
     >
       <Text
+        maxFontSizeMultiplier={FONT_CAP.badge}
         className={`text-[11px] font-bold ${
           active ? "text-brand" : "text-mut"
         }`}

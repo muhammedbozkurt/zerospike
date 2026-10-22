@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
+import { FONT_CAP } from "../lib/layoutForFontScale";
 import { createProfile } from "../lib/db/profiles";
 import { Button } from "./ui";
 import { ELEVATION, INPUT_TEXT, THEME } from "../lib/theme/tokens";
@@ -135,6 +136,7 @@ export function ProfileSwitcher({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.85}
+            maxFontSizeMultiplier={FONT_CAP.badge}
             style={{ maxWidth: nameMaxWidth }}
           >
             {activeProfile ? displayProfileName(activeProfile, t) : "-"}

@@ -46,6 +46,8 @@ import { listEntering, listExiting, listLayout } from "../lib/theme/motion";
 import { GradientCTA } from "./rich/GradientCTA";
 import { SCRIM } from "./SheetShell";
 import { useSheetKeyboard } from "../lib/useSheetKeyboard";
+import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { sheetFrame } from "../lib/sheetLayout";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -127,6 +129,9 @@ export function InjectionEditSheet({
   const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const insets = useSafeAreaInsets();
   const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
+  // Large text: Save is pinned under the scrolling body so it never scrolls off
+  // behind the keyboard.
+  const pinSave = useFontScale() > STACK_AT_SCALE;
   // Title and close stay on screen: the sheet is capped at what the keyboard
   // and the status-bar inset leave (counted once, lib/sheetLayout.ts).
   const sheetAvail = sheetFrame({
@@ -574,7 +579,9 @@ export function InjectionEditSheet({
                     ) : null}
                   </View>
 
-                  <GradientCTA label={t("common.save")} disabled={saving || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)} onPress={save} />
+                  {pinSave ? null : (
+<GradientCTA label={t("common.save")} disabled={saving || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)} onPress={save} />
+)}
 
                   {onDelete ? (
                     <Button
@@ -588,6 +595,11 @@ export function InjectionEditSheet({
                 </Animated.View>
               </ScrollView>
             )}
+{pinSave && step !== "site" ? (
+<View style={{ paddingTop: SPACE.sm }}>
+<GradientCTA label={t("common.save")} disabled={saving || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)} onPress={save} />
+</View>
+) : null}
           </Pressable>
         </Pressable>
       {/* This sheet is an RN <Modal>, i.e. its own view controller. The

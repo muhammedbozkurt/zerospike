@@ -15,6 +15,8 @@ import {
 import { Row, useSettingsGap } from "../../components/settingsUi";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { THEME } from "../../lib/theme/tokens";
+import { STACK_AT_SCALE } from "../../lib/layoutForFontScale";
+import { useFontScale } from "../../lib/useFontScale";
 import { useScrollHint } from "../../lib/useScrollHint";
 import { hintBottomOffset } from "../../lib/scrollHint";
 import { ScrollHint } from "../../components/ScrollHint";
@@ -36,6 +38,7 @@ export default function SettingsHub() {
   // instead of full-width rows with a lone chevron at the far edge. Gap is 0 on
   // phones and narrow tablets.
   const gap = useSettingsGap();
+  const headerLarge = useFontScale() > STACK_AT_SCALE;
   const columnPad = (base: number) => ({
     paddingLeft: base + gap,
     paddingRight: base + gap,
@@ -52,7 +55,10 @@ export default function SettingsHub() {
   return (
     <View className="flex-1" style={{ paddingTop: insets.top }}>
       <AppBackgroundFill />
-      <View className="flex-row items-center justify-between pt-2 pb-3" style={columnPad(16)}>
+      <View
+        className="flex-row items-center justify-between pt-2 pb-3"
+        style={[columnPad(16), headerLarge ? { flexWrap: "wrap", rowGap: 8 } : null]}
+      >
         <Text className="text-ink text-2xl font-bold">{t("settings.title")}</Text>
         <ProfileSwitcher />
       </View>

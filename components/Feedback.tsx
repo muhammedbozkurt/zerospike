@@ -13,6 +13,7 @@ import {
   BackHandler,
   Easing,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -41,6 +42,8 @@ import {
 import { GLUCOSE_RICH, THEME, RADIUS, ELEVATION } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
 import { animateFade, isReducedMotionNow } from "../lib/useReducedMotion";
+import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { sheetBoxStyle } from "../lib/tabletLayout";
 
 type ToastKind = "success" | "info" | "error";
@@ -568,6 +571,21 @@ function useBackHandler(onBack: () => void) {
   }, [onBack]);
 }
 
+/** Large text: the content scrolls inside a bounded area so the buttons that
+ *  follow stay on screen. At the default size it is a plain fragment. */
+function BoundedScroll({
+  large,
+  maxHeight,
+  children,
+}: {
+  large: boolean;
+  maxHeight: number;
+  children: React.ReactNode;
+}) {
+  if (!large) return <>{children}</>;
+  return <ScrollView style={{ maxHeight, flexGrow: 0 }}>{children}</ScrollView>;
+}
+
 function ConfirmOverlay({
   opts,
   onClose,
@@ -576,7 +594,8 @@ function ConfirmOverlay({
   onClose: (result: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { isWide } = useLayout();
+  const { isWide, height: layoutHeight } = useLayout();
+  const large = useFontScale() > STACK_AT_SCALE;
   const anim = useEnterAnim();
   const dismiss = useCallback(() => onClose(false), [onClose]);
   useBackHandler(dismiss);
@@ -595,7 +614,8 @@ function ConfirmOverlay({
 
   const confirmLabel = opts.confirmLabel ?? t("common.confirm");
   const cancelLabel = opts.cancelLabel ?? t("common.cancel");
-  const stacked = shouldStackButtons(confirmLabel, cancelLabel);
+  // Large text: side-by-side buttons would each get half a narrow dialog.
+  const stacked = large || shouldStackButtons(confirmLabel, cancelLabel);
 
   // Stacked, the primary action leads and each button owns the full width.
   // Side by side, cancel sits left of the primary and they share the row.
@@ -693,17 +713,19 @@ function ConfirmOverlay({
               </View>
             </View>
 
-            {opts.title ? (
-              <Text
-                accessibilityRole="header"
-                className="text-ink text-lg font-bold text-center mb-1.5"
-              >
-                {opts.title}
+            <BoundedScroll large={large} maxHeight={Math.round(layoutHeight * 0.5)}>
+              {opts.title ? (
+                <Text
+                  accessibilityRole="header"
+                  className="text-ink text-lg font-bold text-center mb-1.5"
+                >
+                  {opts.title}
+                </Text>
+              ) : null}
+              <Text className="text-mut text-center text-[15px] leading-5 mb-5">
+                {opts.message}
               </Text>
-            ) : null}
-            <Text className="text-mut text-center text-[15px] leading-5 mb-5">
-              {opts.message}
-            </Text>
+            </BoundedScroll>
 
             {stacked ? (
               <View className="gap-2.5">
@@ -758,6 +780,7 @@ function SheetOverlay({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
+  const sheetLarge = useFontScale() > STACK_AT_SCALE;
   const anim = useEnterAnim();
   useBackHandler(onClose);
 
@@ -811,6 +834,7 @@ function SheetOverlay({
                 {sheet.title}
               </Text>
             ) : null}
+            <BoundedScroll large={sheetLarge} maxHeight={Math.round(layoutHeight * 0.55)}>
             {sheet.actions.map((a, i) => (
               <Pressable
                 key={i}
@@ -841,6 +865,7 @@ function SheetOverlay({
                 </Text>
               </Pressable>
             ))}
+            </BoundedScroll>
             <Pressable
               onPress={onClose}
               accessibilityRole="button"

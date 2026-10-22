@@ -10,6 +10,8 @@ import { Txt } from "./ui";
 import { withAlpha } from "./rich/GlassCard";
 import { hapticSelect } from "../lib/haptics";
 import { num } from "../lib/format";
+import { FONT_CAP, effectiveFontScale, scaledMinHeight } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import {
   fieldShowsValue,
   nextInvalidKeys,
@@ -117,6 +119,10 @@ export function Stepper({
   const editingRef = useRef(false);
   const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
+  // The typed value is a numeral in a fixed-width cell: it follows the text
+  // size only up to a cap, and the cell grows with that capped scale.
+  const fontScale = useFontScale();
+  const numScale = effectiveFontScale(fontScale, FONT_CAP.ringNumber);
   const [invalidKind, setInvalidKind] = useState<null | "empty" | "range">(null);
   // The value the field had when it was focused: blur returns to it when the
   // typed text is not a usable number.
@@ -331,6 +337,7 @@ export function Stepper({
                 accessibilityLabel={accessibilityLabel}
                 accessibilityValue={{ text: valueText }}
                 accessibilityHint={fieldHint}
+                maxFontSizeMultiplier={1.3}
                 style={[
                   TABULAR,
                   {
@@ -341,7 +348,7 @@ export function Stepper({
                     // Sized off the current text (a controlled TextInput does
                     // not grow while typing) and allowed to shrink, so a long
                     // value can never push the two buttons off a phone.
-                    width: Math.max(90, text.length * 30 + 14),
+                    width: Math.round(Math.max(90, text.length * 30 + 14) * Math.min(numScale, 1.3)),
                     flexShrink: 1,
                     paddingVertical: 0,
                     paddingHorizontal: 0,
@@ -353,6 +360,7 @@ export function Stepper({
               />
             ) : (
               <Txt
+                maxFontSizeMultiplier={1.3}
                 style={[
                   TABULAR,
                   { fontSize: HERO_VALUE, lineHeight: HERO_VALUE + 8, fontWeight: "800" },
@@ -451,6 +459,7 @@ export function Stepper({
             accessibilityLabel={accessibilityLabel}
             accessibilityValue={{ text: valueText }}
             accessibilityHint={fieldHint}
+            maxFontSizeMultiplier={FONT_CAP.ringNumber}
             style={[
               TABULAR,
               {
@@ -460,9 +469,9 @@ export function Stepper({
                 textAlign: "center",
                 // Sized off the current text: a controlled TextInput does not
                 // grow while typing, so a fixed 58pt clipped "10,5" to "10,".
-                width: Math.max(58, text.length * 14 + 20),
+                width: Math.round(Math.max(58, text.length * 14 + 20) * numScale),
                 flexShrink: 1,
-                height: cellSize - 12,
+                minHeight: scaledMinHeight(cellSize - 12, fontScale, FONT_CAP.ringNumber),
                 paddingVertical: 0,
                 paddingHorizontal: 8,
                 // Android adds font padding inside a fixed height and top-aligns
@@ -481,6 +490,7 @@ export function Stepper({
           />
         ) : (
           <Txt
+            maxFontSizeMultiplier={FONT_CAP.ringNumber}
             style={[TABULAR, { fontSize: 20, lineHeight: 26, fontWeight: "800" }]}
             accessibilityLabel={
               accessibilityLabel ? `${accessibilityLabel}, ${valueText}` : valueText

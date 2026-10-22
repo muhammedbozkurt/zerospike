@@ -11,7 +11,6 @@ import {
   Pressable,
   ScrollView,
   SectionList,
-  PixelRatio,
   Text,
   TextInput,
   useWindowDimensions,
@@ -98,6 +97,8 @@ import { withAlpha } from "../../components/rich/GlassCard";
 import { upper } from "../../lib/upper";
 import { isScreenshotMode } from "../../lib/screenshotMode";
 import { useLayout } from "../../lib/useLayout";
+import { STACK_AT_SCALE } from "../../lib/layoutForFontScale";
+import { useFontScale } from "../../lib/useFontScale";
 import { injectionColumns } from "../../lib/injectionLayout";
 
 // Heat-map / rotation usage window (days). The prompt's "last 30 days" heat map.
@@ -151,6 +152,9 @@ export default function InjectionScreen() {
   const deleteWithUndo = useUndoBatch(bumpData);
   const guardEntry = useEntryGuardConfirm();
   const { columnPad, isWide } = useLayout();
+  const headerFontScale = useFontScale();
+  // Large text: the title takes its own line, the actions sit under it.
+  const headerStacked = headerFontScale > STACK_AT_SCALE;
   const { twoCol, gap: colGap } = injectionColumns(winWidth, isWide);
 
   // Which of the three faces is showing. State (form values, selected site) lives
@@ -1156,7 +1160,13 @@ export default function InjectionScreen() {
   );
 
   const segmentRow = (keys: Segment[], inset: number) => (
-    <View className="flex-row mb-2" style={{ gap: SPACE.sm, marginHorizontal: inset }}>
+    <View
+      className="flex-row mb-2"
+      style={[
+        { gap: SPACE.sm, marginHorizontal: inset },
+        headerStacked ? { flexDirection: "column" } : null,
+      ]}
+    >
       {SEGMENTS.filter((s) => keys.includes(s.key)).map((s) => (
         <Chip
           key={s.key}
@@ -1166,7 +1176,7 @@ export default function InjectionScreen() {
             if (s.key !== "save") fromTodayRef.current = false;
             setSegment(s.key);
           }}
-          className="flex-1"
+          className={headerStacked ? "w-full" : "flex-1"}
         />
       ))}
     </View>
@@ -1207,10 +1217,15 @@ export default function InjectionScreen() {
 
   return (
     <AppBackground style={{ paddingTop: insets.top }}>
-      <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
-        <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+      <View
+        className="flex-row items-center justify-between px-4 pt-2 pb-3"
+        style={headerStacked ? { flexDirection: "column", alignItems: "flex-start", gap: 8 } : undefined}
+      >
+        <View
+          style={headerStacked ? { width: "100%" } : { flex: 1, minWidth: 0, marginRight: 8 }}
+        >
           <Text
-            numberOfLines={1}
+            numberOfLines={headerStacked ? undefined : 1}
             style={{
               color: THEME.text,
               fontWeight: "800",
@@ -1219,7 +1234,7 @@ export default function InjectionScreen() {
                 availableWidth: winWidth - HEADER_FIXED_WIDTH,
                 maxSize: 24,
                 minSize: 18,
-                fontScale: PixelRatio.getFontScale(),
+                fontScale: headerFontScale,
               }),
             }}
           >

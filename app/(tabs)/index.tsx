@@ -28,6 +28,8 @@ import {
   getSugarLog,
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
+import { STACK_AT_SCALE } from "../../lib/layoutForFontScale";
+import { useFontScale } from "../../lib/useFontScale";
 import type { LogTag, PeriodTag, Reminder, SugarLog } from "../../lib/db/types";
 import { listReminders } from "../../lib/db/reminders";
 import { nextUpcoming, type UpcomingItem } from "../../lib/upcomingReminders";
@@ -316,6 +318,8 @@ export default function DashboardScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string; health?: string }>();
   const { isWide, isTwoCol, columnPad } = useLayout();
+  // Large text: the title row wraps (title first, actions under it).
+  const headerLarge = useFontScale() > STACK_AT_SCALE;
   const { activeProfile, profiles, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
   const healthBackfill = useHealthBackfill();
@@ -1881,7 +1885,10 @@ export default function DashboardScreen() {
   // columns (titleRow above both, headerTop left, headerRest + journal right);
   // the phone Header below stacks the same three in the same order.
   const titleRow = (
-      <View className="flex-row items-center justify-between mb-4">
+      <View
+        className="flex-row items-center justify-between mb-4"
+        style={headerLarge ? { flexWrap: "wrap", rowGap: SPACE.sm } : undefined}
+      >
         <Txt kind="title" accessibilityRole="header">{t("common.today")}</Txt>
         <View className="flex-row items-center" style={{ gap: SPACE.md }}>
           {/* Spike's entry point only exists when the function URL is actually

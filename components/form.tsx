@@ -16,6 +16,8 @@ import { upper } from "../lib/upper";
 import { animate, isReducedMotionNow } from "../lib/useReducedMotion";
 import { DirIcon } from "./DirIcon";
 import { withAlpha } from "./rich/GlassCard";
+import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -72,52 +74,69 @@ export function InputRow({
   large,
   ...input
 }: InputRowProps) {
+  // Large text: label above, field below, instead of squeezing both side by side.
+  const stacked = useFontScale() > STACK_AT_SCALE;
+  const labelBlock = (
+    <>
+      {icon ? (
+        <Ionicons
+          name={icon}
+          size={large ? 20 : 18}
+          color={THEME.textMuted}
+          style={{ marginRight: 12 }}
+        />
+      ) : null}
+      <View className="flex-1 pr-3">
+        <Text className={`${large ? "text-base" : "text-[15px]"} text-ink`}>
+          {label}
+        </Text>
+        {hint ? (
+          <Text className="text-xs text-mut mt-0.5">{hint}</Text>
+        ) : null}
+      </View>
+    </>
+  );
+  const inputBlock = (
+    <View className={stacked ? "flex-row items-center justify-end mt-1" : "flex-row items-center"}>
+      {/* The row's caption and its unit are SIBLINGS of the field, so the
+          field itself announced as an unlabelled text box holding a number.
+          A caller can still override either. */}
+      {/* RTL: textAlign never auto-swaps (only Yoga's own left/right/margin
+          props do), so without this the field would stay right-aligned even
+          after the row itself mirrors, leaving the number stranded away
+          from its unit. Flipped by hand to stay flush against `suffix`;
+          writingDirection is pinned LTR too since this field only ever
+          holds digits and a decimal separator. */}
+      <TextInput
+        placeholderTextColor={THEME.placeholder}
+        accessibilityLabel={suffix ? `${label}, ${suffix}` : label}
+        accessibilityHint={hint}
+        className="font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
+        style={[
+          INPUT_TEXT,
+          { textAlign: I18nManager.isRTL ? "left" : "right", writingDirection: "ltr" },
+          large ? { fontSize: 19 } : null,
+        ]}
+        {...input}
+      />
+      {suffix ? (
+        <Text className="text-mut text-sm ml-1.5">{suffix}</Text>
+      ) : null}
+    </View>
+  );
   return (
     <View>
-      <View className={`flex-row items-center px-4 ${large ? "py-4" : "py-3"}`}>
-        {icon ? (
-          <Ionicons
-            name={icon}
-            size={large ? 20 : 18}
-            color={THEME.textMuted}
-            style={{ marginRight: 12 }}
-          />
-        ) : null}
-        <View className="flex-1 pr-3">
-          <Text className={`${large ? "text-base" : "text-[15px]"} text-ink`}>
-            {label}
-          </Text>
-          {hint ? (
-            <Text className="text-xs text-mut mt-0.5">{hint}</Text>
-          ) : null}
+      {stacked ? (
+        <View className={`px-4 ${large ? "py-4" : "py-3"}`}>
+          <View className="flex-row items-center">{labelBlock}</View>
+          {inputBlock}
         </View>
-        <View className="flex-row items-center">
-          {/* The row's caption and its unit are SIBLINGS of the field, so the
-              field itself announced as an unlabelled text box holding a number.
-              A caller can still override either. */}
-          {/* RTL: textAlign never auto-swaps (only Yoga's own left/right/margin
-              props do), so without this the field would stay right-aligned even
-              after the row itself mirrors, leaving the number stranded away
-              from its unit. Flipped by hand to stay flush against `suffix`;
-              writingDirection is pinned LTR too since this field only ever
-              holds digits and a decimal separator. */}
-          <TextInput
-            placeholderTextColor={THEME.placeholder}
-            accessibilityLabel={suffix ? `${label}, ${suffix}` : label}
-            accessibilityHint={hint}
-            className="font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
-            style={[
-              INPUT_TEXT,
-              { textAlign: I18nManager.isRTL ? "left" : "right", writingDirection: "ltr" },
-              large ? { fontSize: 19 } : null,
-            ]}
-            {...input}
-          />
-          {suffix ? (
-            <Text className="text-mut text-sm ml-1.5">{suffix}</Text>
-          ) : null}
+      ) : (
+        <View className={`flex-row items-center px-4 ${large ? "py-4" : "py-3"}`}>
+          {labelBlock}
+          {inputBlock}
         </View>
-      </View>
+      )}
       {!last ? <View className="h-px bg-glass ml-4" /> : null}
     </View>
   );

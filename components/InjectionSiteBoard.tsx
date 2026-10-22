@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
 
+import { FONT_CAP } from "../lib/layoutForFontScale";
 import type { Injection, InjectionSite, SitePoint } from "../lib/db/types";
 import { SELECTABLE_SITES, SITE_POINTS, canonicalSite } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
@@ -369,7 +370,7 @@ function PointRows({
                 borderColor: withAlpha(INK_DARK, 0.35),
               }}
             >
-              <Txt kind="caption" tabular style={{ fontWeight: "800" }}>
+              <Txt kind="caption" tabular maxFontSizeMultiplier={FONT_CAP.badge} style={{ fontWeight: "800" }}>
                 {point}
               </Txt>
             </View>

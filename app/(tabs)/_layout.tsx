@@ -32,6 +32,10 @@ export default function TabsLayout() {
           borderTopColor: THEME.border,
           borderTopWidth: 1,
         },
+        // Tab labels keep their size at any text setting (iOS: Apple's Large
+        // Content Viewer pattern for tab bars; Android: scaled labels do not
+        // fit four tabs). Everything above the bar scales to the app cap.
+        tabBarAllowFontScaling: false,
         tabBarLabelStyle: { fontSize: TYPE.micro.fontSize, fontWeight: TYPE.micro.fontWeight },
       }}
     >

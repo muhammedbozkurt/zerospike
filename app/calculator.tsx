@@ -127,6 +127,7 @@ import { Segmented } from "../components/ui";
 import { SCRIM, SheetShell } from "../components/SheetShell";
 import { useStepperValidity } from "../components/Stepper";
 import { NumericField } from "../components/NumericField";
+import { ResponsiveRow } from "../components/ResponsiveRow";
 import { CarbRatioInput, IsfInput } from "../components/RatioInput";
 import { ConfirmCheckbox } from "../components/ConfirmCheckbox";
 import { PortionPresetChips } from "../components/PortionPresetChips";
@@ -281,7 +282,7 @@ function ReadoutCard({
 }) {
   return (
     <GlassCard style={{ marginBottom: 10 }}>
-      <View className="flex-row items-center justify-between">
+      <ResponsiveRow className="flex-row items-center justify-between">
         <Text
           style={{
             color: THEME.textMuted,
@@ -307,7 +308,7 @@ function ReadoutCard({
           ) : null}
           {accessory}
         </View>
-      </View>
+      </ResponsiveRow>
       {note ? (
         <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 12, textAlign: "right", marginTop: 2 }]}>
           {note}
@@ -1102,7 +1103,7 @@ function CalculatorScreen() {
   function glucoseCard() {
     return (
       <GlassCard style={{ marginBottom: 10 }}>
-        <View className="flex-row items-center justify-between" style={{ marginBottom: 8, gap: 8 }}>
+        <ResponsiveRow className="flex-row items-center justify-between" style={{ marginBottom: 8, gap: 8 }}>
           <Text
             style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800", flex: 1 }}
           >
@@ -1123,7 +1124,7 @@ function CalculatorScreen() {
               }
             />
           ) : null}
-        </View>
+        </ResponsiveRow>
         <NumericField
           value={glucoseTyped}
           onChange={onGlucoseChange}
@@ -2110,7 +2111,7 @@ function CalculatorScreen() {
                   <Text style={{ color: THEME.textMuted, fontSize: 12 }}>{t("common.grams")}</Text>
                 </View>
               </View>
-              <View className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
+              <ResponsiveRow className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
                 <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                   {t("calculator.portion")}
                 </Text>
@@ -2129,7 +2130,7 @@ function CalculatorScreen() {
                   accessibilityLabel={t("calculator.portion")}
                   style={{ flex: 1, maxWidth: 240 }}
                 />
-              </View>
+              </ResponsiveRow>
               <Slider
                 minimumValue={0}
                 maximumValue={500}
@@ -2348,7 +2349,7 @@ function CalculatorScreen() {
               </View>
             ) : (
               <>
-                <View className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
+                <ResponsiveRow className="flex-row items-center justify-between mt-2" style={{ gap: 10 }}>
                   <Text style={{ color: THEME.textMuted, fontSize: 11 }}>
                     {t("calculator.portion")}
                   </Text>
@@ -2370,7 +2371,7 @@ function CalculatorScreen() {
                   accessibilityLabel={t("calculator.portion")}
                   style={{ flex: 1, maxWidth: 240 }}
                 />
-                </View>
+                </ResponsiveRow>
                 {/* No presets for a custom-name entry (foodFromMeal/foodFromTemplate
                     stand in with id ""), so the chips just stay hidden there. */}
                 {food.id ? (
@@ -2696,7 +2697,7 @@ function Breakdown({
   tooltip?: string;
 }) {
   return (
-    <View className="flex-row justify-between">
+    <ResponsiveRow className="flex-row justify-between">
       <View className="flex-row items-center" style={{ flex: 1, paddingRight: 8, gap: 4 }}>
         <Text style={{ color: tint ?? THEME.textMuted, fontSize: 12 }}>{label}</Text>
         {tooltip ? <Tooltip text={tooltip} size={12} tint={tint} /> : null}
@@ -2704,7 +2705,7 @@ function Breakdown({
       <Text style={[TABULAR, { color: tint ?? THEME.text, fontSize: 12, fontWeight: "700" }]}>
         {value}
       </Text>
-    </View>
+    </ResponsiveRow>
   );
 }
 

@@ -6,6 +6,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { TABULAR, THEME, glow as glowShadow } from "../lib/theme/tokens";
 import { upper } from "../lib/upper";
+import { FONT_CAP, STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 
 interface StatCardProps {
   /** Small caption above/below the value. */
@@ -67,6 +69,10 @@ export function StatCard({
   className = "",
 }: StatCardProps) {
   const valueColor = accent ?? THEME.text;
+  // Large text: the label and footnote wrap at full size; the big number keeps a
+  // lower cap (it is a numeral in a half-width tile, not reading text).
+  const large = useFontScale() > STACK_AT_SCALE;
+  const numberCap = FONT_CAP.ringNumber;
   const glowColor = glow === true ? THEME.accent : typeof glow === "string" ? glow : undefined;
   // RTL EXEMPTION: suffixFirst already places the sign on the correct side of
   // the value (pctParts' own signFirst rule, e.g. Turkish "%92"); RN's
@@ -100,9 +106,9 @@ export function StatCard({
         ) : null}
         <Text
           className="text-[11px] font-semibold tracking-wider text-mut"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.75}
+          numberOfLines={large ? undefined : 1}
+          adjustsFontSizeToFit={!large}
+          minimumFontScale={large ? undefined : 0.75}
         >
           {upper(label)}
         </Text>
@@ -121,6 +127,7 @@ export function StatCard({
             style={[{ color: valueColor, fontSize: 20 }, TABULAR]}
             className="font-extrabold"
             numberOfLines={1}
+            maxFontSizeMultiplier={numberCap}
           >
             {display}
           </Text>
@@ -131,6 +138,7 @@ export function StatCard({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.6}
+            maxFontSizeMultiplier={numberCap}
           >
             {display}
           </Text>
@@ -141,6 +149,7 @@ export function StatCard({
             format={format}
             className="text-3xl font-extrabold"
             style={{ color: valueColor }}
+            maxFontSizeMultiplier={numberCap}
           />
         ) : (
           <Text
@@ -149,6 +158,7 @@ export function StatCard({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.6}
+            maxFontSizeMultiplier={numberCap}
           >
             {value !== undefined ? (format ? format(value) : value.toFixed(decimals)) : "-"}
           </Text>
@@ -164,9 +174,9 @@ export function StatCard({
       ) : footnote ? (
         <Text
           className="text-mut text-[11px] mt-1"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
+          numberOfLines={large ? undefined : 1}
+          adjustsFontSizeToFit={!large}
+          minimumFontScale={large ? undefined : 0.8}
         >
           {footnote}
         </Text>
