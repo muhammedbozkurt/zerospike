@@ -44,6 +44,11 @@ struct ContentView: View {
   @State private var data: LiveData? = LiveDataStore.read()
   // Applies a freshly-pushed context without waiting for the view to re-appear.
   private let refresh = Timer.publish(every: 20, on: .main, in: .common).autoconnect()
+  // Default-size equivalents of the former fixed sizes (40 / 9 / 15), scaled
+  // with the user's text size so Larger Text applies to the reading too.
+  @ScaledMetric(relativeTo: .title) private var readingSize: CGFloat = 40
+  @ScaledMetric(relativeTo: .caption2) private var reminderLabelSize: CGFloat = 9
+  @ScaledMetric(relativeTo: .footnote) private var timerSize: CGFloat = 15
 
   private var readingMgdl: Double? { data?.lastGlucoseMgdl }
   private var reading: String { data?.displayGlucose ?? "--" }
@@ -87,40 +92,56 @@ struct ContentView: View {
   }
 
   private var content: some View {
-    VStack(spacing: 4) {
-      Text(reading)
-        .font(.system(size: 40, weight: .bold, design: .rounded))
-        .foregroundColor(readingColor)
-        .minimumScaleFactor(0.5)
+    // ScrollView so nothing is clipped at the largest text sizes; minHeight of
+    // the screen keeps the content vertically centred at the default size.
+    GeometryReader { proxy in
+      ScrollView {
+        VStack(spacing: 4) {
+          Text(reading)
+            .font(.system(size: readingSize, weight: .bold, design: .rounded))
+            .foregroundColor(readingColor)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
 
-      Text(data?.unitLabel ?? "")
-        .font(.caption2)
-        .foregroundColor(GlucoseColor.muted)
-
-      if data?.lastReadingDate != nil {
-        Text(elapsedText)
-          .font(.footnote)
-          .foregroundColor(GlucoseColor.muted)
-      } else {
-        Text(data?.labels?.noData ?? "")
-          .font(.footnote)
-          .foregroundColor(GlucoseColor.muted)
-      }
-
-      if let due = data?.nextReminderDate, due > Date() {
-        VStack(spacing: 1) {
-          Text(data?.labels?.nextReminder ?? "")
-            .font(.system(size: 9, weight: .bold))
+          Text(data?.unitLabel ?? "")
+            .font(.caption2)
             .foregroundColor(GlucoseColor.muted)
-          Text(due, style: .timer)
-            .font(.system(size: 15, weight: .semibold, design: .rounded))
-            .foregroundColor(GlucoseColor.accent)
+            .fixedSize(horizontal: false, vertical: true)
+
+          if data?.lastReadingDate != nil {
+            Text(elapsedText)
+              .font(.footnote)
+              .foregroundColor(GlucoseColor.muted)
+              .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
+          } else {
+            Text(data?.labels?.noData ?? "")
+              .font(.footnote)
+              .foregroundColor(GlucoseColor.muted)
+              .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+
+          if let due = data?.nextReminderDate, due > Date() {
+            VStack(spacing: 1) {
+              Text(data?.labels?.nextReminder ?? "")
+                .font(.system(size: reminderLabelSize, weight: .bold))
+                .foregroundColor(GlucoseColor.muted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+              Text(due, style: .timer)
+                .font(.system(size: timerSize, weight: .semibold, design: .rounded))
+                .foregroundColor(GlucoseColor.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            }
+            .padding(.top, 4)
+          }
         }
-        .padding(.top, 4)
+        .padding()
+        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
       }
     }
-    .padding()
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(GlucoseColor.background.ignoresSafeArea())
     .onReceive(refresh) { _ in
       data = LiveDataStore.read()
