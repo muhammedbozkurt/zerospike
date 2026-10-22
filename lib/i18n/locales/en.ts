@@ -1710,6 +1710,24 @@ const en: TranslationSchema = {
     errorEmail: "That email address does not look valid.",
     errorGeneric: "Sending is not available right now. Please try again later.",
   },
+  healthRationale: {
+    title: "Health Connect access",
+    intro: "zerospike asks for Health Connect permissions only for the features below. You decide what to allow, and you can change it anytime.",
+    readTitle: "Reading blood glucose",
+    readBody: "Blood glucose readings from the last 30 days are read so they appear in your journal and summaries.",
+    writeTitle: "Writing blood glucose and carbs",
+    writeBody: "Readings you enter by hand are written to Health Connect. Meal carbs (grams) are written only if you turn that on in settings.",
+    backgroundTitle: "Background reading",
+    backgroundBody: "Reading in the background is used only when you have Pro and have switched on Background sync. Otherwise zerospike reads only while the app is open.",
+    deviceTitle: "Stays on your device",
+    deviceBody: "What zerospike reads from Health Connect stays on your device and is not sent to a server.",
+    insulinTitle: "No insulin, no activity",
+    insulinBody: "zerospike never writes insulin to Health Connect, and it does not read activity or exercise data.",
+    removeTitle: "Change anytime",
+    removeBody: "You can remove zerospike's permissions anytime in the Health Connect settings.",
+    privacyLink: "Read the privacy policy",
+    openSettings: "Open Health Connect settings",
+  },
 };
 
 export default en;

@@ -1709,6 +1709,24 @@ const ar: TranslationSchema = {
     errorEmail: "عنوان البريد الإلكتروني لا يبدو صالحًا.",
     errorGeneric: "الإرسال غير متاح حاليًا. يرجى المحاولة لاحقًا.",
   },
+  healthRationale: {
+    title: "الوصول إلى Health Connect",
+    intro: "يطلب zerospike أذونات Health Connect للميزات الموضحة أدناه فقط. أنت من يقرر ما تسمح به، ويمكنك تغيير ذلك في أي وقت.",
+    readTitle: "قراءة سكر الدم",
+    readBody: "تُقرأ قراءات سكر الدم لآخر 30 يومًا لتظهر في سجلك وملخصاتك.",
+    writeTitle: "كتابة سكر الدم والكربوهيدرات",
+    writeBody: "تُكتب القراءات التي تدخلها يدويًا في Health Connect. أما كربوهيدرات الوجبات (بالغرام) فلا تُكتب إلا إذا فعّلت ذلك من الإعدادات.",
+    backgroundTitle: "القراءة في الخلفية",
+    backgroundBody: "لا تُستخدم القراءة في الخلفية إلا إذا كنت مشتركًا في Pro وفعّلت المزامنة في الخلفية. وفي غير ذلك يقرأ zerospike فقط أثناء فتح التطبيق.",
+    deviceTitle: "تبقى على جهازك",
+    deviceBody: "ما يقرؤه zerospike من Health Connect يبقى على جهازك ولا يُرسَل إلى أي خادم.",
+    insulinTitle: "لا إنسولين ولا نشاط",
+    insulinBody: "لا يكتب zerospike الإنسولين في Health Connect، ولا يقرأ بيانات النشاط أو التمارين.",
+    removeTitle: "يمكنك التغيير في أي وقت",
+    removeBody: "يمكنك إزالة أذونات zerospike في أي وقت من إعدادات Health Connect.",
+    privacyLink: "قراءة سياسة الخصوصية",
+    openSettings: "فتح إعدادات Health Connect",
+  },
 };
 
 export default ar;

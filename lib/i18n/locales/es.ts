@@ -1714,6 +1714,24 @@ const es: TranslationSchema = {
     errorEmail: "Esa dirección de correo no parece válida.",
     errorGeneric: "Ahora no es posible enviar. Inténtelo de nuevo más tarde.",
   },
+  healthRationale: {
+    title: "Acceso a Health Connect",
+    intro: "zerospike solo solicita los permisos de Health Connect para las funciones que se indican abajo. Usted decide qué permite y puede cambiarlo en cualquier momento.",
+    readTitle: "Lectura de la glucosa",
+    readBody: "Se leen los valores de glucosa de los últimos 30 días para que aparezcan en su diario y en sus resúmenes.",
+    writeTitle: "Escritura de glucosa y carbohidratos",
+    writeBody: "Los valores que usted registra manualmente se escriben en Health Connect. Los carbohidratos de las comidas (gramos) solo se escriben si usted lo activa en los ajustes.",
+    backgroundTitle: "Lectura en segundo plano",
+    backgroundBody: "La lectura en segundo plano solo se usa si usted tiene Pro y ha activado la sincronización en segundo plano. De lo contrario, zerospike solo lee con la app abierta.",
+    deviceTitle: "Permanece en su dispositivo",
+    deviceBody: "Lo que zerospike lee de Health Connect permanece en su dispositivo y no se envía a ningún servidor.",
+    insulinTitle: "Sin insulina ni actividad",
+    insulinBody: "zerospike no escribe insulina en Health Connect y no lee datos de actividad ni de ejercicio.",
+    removeTitle: "Modifíquelo cuando quiera",
+    removeBody: "Usted puede retirar los permisos de zerospike en cualquier momento desde los ajustes de Health Connect.",
+    privacyLink: "Leer la política de privacidad",
+    openSettings: "Abrir los ajustes de Health Connect",
+  },
 };
 
 export default es;

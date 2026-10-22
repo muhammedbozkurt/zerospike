@@ -1710,6 +1710,24 @@ const ja: TranslationSchema = {
     errorEmail: "メールアドレスの形式が正しくないようです。",
     errorGeneric: "現在送信できません。しばらくしてからもう一度お試しください。",
   },
+  healthRationale: {
+    title: "Health Connectへのアクセス",
+    intro: "zerospikeは、以下の機能のためにだけHealth Connectの権限を求めます。許可する内容はご自身で決められ、いつでも変更できます。",
+    readTitle: "血糖値の読み取り",
+    readBody: "過去30日間の血糖値を読み取り、記録と要約に表示します。",
+    writeTitle: "血糖値と炭水化物の書き込み",
+    writeBody: "手入力した血糖値をHealth Connectに書き込みます。食事の炭水化物量(グラム)は、設定でオンにした場合のみ書き込みます。",
+    backgroundTitle: "バックグラウンドでの読み取り",
+    backgroundBody: "バックグラウンドでの読み取りは、Proをご利用中でバックグラウンド同期をオンにしている場合のみ使います。それ以外では、アプリを開いている間だけ読み取ります。",
+    deviceTitle: "端末内にとどまります",
+    deviceBody: "zerospikeがHealth Connectから読み取った内容は端末内にとどまり、サーバーには送信されません。",
+    insulinTitle: "インスリンも活動量もありません",
+    insulinBody: "zerospikeはHealth Connectにインスリンを書き込まず、活動量や運動のデータも読み取りません。",
+    removeTitle: "いつでも変更できます",
+    removeBody: "zerospikeの権限は、Health Connectの設定からいつでも削除できます。",
+    privacyLink: "プライバシーポリシーを読む",
+    openSettings: "Health Connectの設定を開く",
+  },
 };
 
 export default ja;
