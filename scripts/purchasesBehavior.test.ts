@@ -995,6 +995,50 @@ const eligibilityOf = (status: number) => ({
     );
   }
 
+  // ── H ────────────────────────────────────────────────────────────────────
+  section("H. the downsell card needs a discount this account can really take");
+  {
+    const OFFER_ID = "zerospike_pro_annual_offer";
+    const OFFER_INTRO = { price: 19.99, priceString: "$19.99", periodUnit: "YEAR", periodNumberOfUnits: 1 };
+    const downsellWith = async (os: string, eligibility: () => any, offerExtra: any = { introPrice: OFFER_INTRO }) => {
+      reset();
+      rnStub.Platform.OS = os;
+      const P = loadPurchases();
+      rc.offerings = () => ({
+        current: iosOffering().current,
+        all: { downsell: { availablePackages: [pkg("ANNUAL", OFFER_ID, 29.99, offerExtra)] } },
+      });
+      rc.eligibility = eligibility;
+      const offer = await P.getDownsellOffer();
+      return { offer, calls: rc.eligibilityCalls.map((c) => c.join(",")) };
+    };
+
+    let r = await downsellWith("ios", () => ({ [OFFER_ID]: { status: 2 } }));
+    eq("iOS eligible: the card is offered", [r.offer.hasRealDiscount, r.offer.discountedPriceString, r.offer.standardPriceString, r.offer.savingsPercent], [true, "$19.99", "$29.99", 33]);
+    eq("and the offer product itself was asked about", r.calls, [OFFER_ID]);
+
+    r = await downsellWith("ios", () => ({ [OFFER_ID]: { status: 1 } }));
+    eq("iOS ineligible (trial already used): no card", r.offer.hasRealDiscount, false);
+    eq("and no price leaks out", [r.offer.discountedPriceString, r.offer.savingsPercent], [null, 0]);
+
+    r = await downsellWith("ios", () => ({ [OFFER_ID]: { status: 0 } }));
+    eq("iOS unknown: fail closed, no card", r.offer.hasRealDiscount, false);
+
+    r = await downsellWith("ios", () => ({}));
+    eq("iOS missing entry: no card", r.offer.hasRealDiscount, false);
+
+    r = await downsellWith("ios", () => {
+      throw new Error("eligibility offline");
+    });
+    eq("iOS check fails: no card", r.offer.hasRealDiscount, false);
+
+    r = await downsellWith("ios", () => ({}), {});
+    eq("iOS plain lower price (no intro offer to be ineligible for): unchanged", [r.offer.hasRealDiscount, r.calls.length], [false, 0]);
+
+    r = await downsellWith("android", () => ({ [OFFER_ID]: { status: 1 } }));
+    eq("Android: eligibility is never asked, behaviour unchanged", [r.offer.hasRealDiscount, r.offer.discountedPriceString, r.calls.length], [true, "$19.99", 0]);
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
 })().catch((e) => {

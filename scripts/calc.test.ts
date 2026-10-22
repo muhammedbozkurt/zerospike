@@ -1,12 +1,8 @@
 /**
  * Standalone, dependency-free correctness harness for zerospike's
- * SAFETY-CRITICAL pure math. No jest, compile + run with node:
+ * SAFETY-CRITICAL pure math. No jest, same standalone style as the other harnesses.
  *
- *   npx tsc scripts/calc.test.ts lib/glucose.ts lib/insulin.ts lib/iob.ts \
- *     lib/services/healthMath.ts lib/db/types.ts \
- *     --outDir .tmp --module commonjs --target es2019 \
- *     --moduleResolution node --skipLibCheck --esModuleInterop \
- *   && node .tmp/scripts/calc.test.js
+ * Run: npx tsx scripts/calc.test.ts
  *
  * Covers the Phase 0 audit matrix: iOS/Android glucose import (no mmol
  * heuristic), mmol<->mg/dL round-trip, classifyGlucose boundaries incl. the
@@ -325,6 +321,7 @@ const sl = (mgdl: number, tags: LogTag[] = []): SugarLog => {
     glucose_level_mgdl: mgdl,
     period_tag: "manual",
     source: "manual",
+    healthkit_uuid: null,
     logged_at: new Date(NOW.getTime() - slN * 60_000).toISOString(),
     tags,
   };
@@ -369,6 +366,7 @@ eq("empty -> 0", percentile([], 50), 0);
     glucose_level_mgdl: mgdl,
     period_tag: "manual",
     source: "manual",
+    healthkit_uuid: null,
     logged_at: new Date().toISOString(),
     tags: [],
   });
