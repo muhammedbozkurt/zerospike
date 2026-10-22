@@ -1,5 +1,6 @@
 package expo.modules.zerospikeliveactivity
 
+import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.Exceptions
@@ -37,6 +38,17 @@ class ZerospikeLiveActivityModule : Module() {
     /** Deletes the stored report. True when nothing is left. */
     Function("clearLastFatalReport") {
       appContext.reactContext?.let { FatalReportStore.clear(it) } ?: false
+    }
+
+    /** True on Firebase Test Lab and Google Play pre-launch report devices,
+     *  which set the "firebase.test.lab" system setting. Used only to keep
+     *  their traffic out of usage analytics. */
+    Function("isTestLab") {
+      try {
+        Settings.System.getString(context.contentResolver, "firebase.test.lab") == "true"
+      } catch (_: Throwable) {
+        false
+      }
     }
 
     /** Whether the OS will actually let a notification through right now -

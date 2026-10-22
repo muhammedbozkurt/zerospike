@@ -1365,7 +1365,9 @@ function installStubs(): void {
           },
         };
       case "expo-device":
-        return { __esModule: true, osVersion: "17.0" };
+        return { __esModule: true, osVersion: "17.0", isDevice: true };
+      case "expo-modules-core":
+        return { requireOptionalNativeModule: () => null };
       case "expo-crypto":
         return {
           getRandomBytes: (n: number) => Uint8Array.from({ length: n }, (_, i) => (rig.bytes++ * 31 + i * 7 + 3) & 255),
