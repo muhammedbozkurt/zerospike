@@ -49,6 +49,9 @@ const RC_INTRO_ELIGIBLE = 2;
  */
 export const ELIGIBILITY_TIMEOUT_MS = 8000;
 
+/** The downsell card gates a close gesture, so its eligibility answer gets less time than the paywall's. */
+export const DOWNSELL_ELIGIBILITY_TIMEOUT_MS = 3000;
+
 export type PlanId = "monthly" | "annual" | "lifetime";
 
 export interface ProProduct {
@@ -895,13 +898,13 @@ function devFallbackPlans(): OfferingPlans {
  * missing entry, a failed or slow check) is "not eligible": the paywall then
  * shows the plain price instead of promising a trial it may not give.
  */
-async function trialEligibleProductIds(productIds: string[]): Promise<Set<string>> {
+async function trialEligibleProductIds(productIds: string[], timeoutMs: number = ELIGIBILITY_TIMEOUT_MS): Promise<Set<string>> {
   const eligible = new Set<string>();
   if (productIds.length === 0) return eligible;
   try {
     const result: any = await withTimeout(
       rc().checkTrialOrIntroductoryPriceEligibility(productIds),
-      ELIGIBILITY_TIMEOUT_MS
+      timeoutMs
     );
     for (const id of productIds) {
       if (Number(result?.[id]?.status) === RC_INTRO_ELIGIBLE) eligible.add(id);
@@ -1035,7 +1038,7 @@ export async function getDownsellOffer(): Promise<DownsellOffer> {
     // it, so without a definite ELIGIBLE the App Store would charge the full
     // price behind a card that promised the discount.
     if (Platform.OS === "ios" && discounted!.introPrice != null) {
-      const eligible = await trialEligibleProductIds([discountedMapped!.productId]);
+      const eligible = await trialEligibleProductIds([discountedMapped!.productId], DOWNSELL_ELIGIBILITY_TIMEOUT_MS);
       if (!eligible.has(discountedMapped!.productId)) return NO_DOWNSELL;
     }
     return {

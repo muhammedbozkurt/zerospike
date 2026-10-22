@@ -9,7 +9,7 @@ App Store Connect / RevenueCat / Play Console uzerinden elle degistirilir.
 |---|---|---|
 | Aylik | $4.99 | 149,99 TL |
 | Yillik (7 gun deneme) | $29.99 | 499,99 TL |
-| Yillik downsell (denemesiz) | $19.99 | (oranli) |
+| Yillik downsell (ilk yil teklifi, taban $29.99) | $19.99 ilk yil | (oranli) |
 | Lifetime | $109.99 | 2.499,99 TL |
 
 ## Degerlendirme
@@ -53,7 +53,7 @@ Notlar:
    tabloya gore guncelle; mevcut abonelere "preserve current price" sec.
 2. ASC > In-App Purchases > lifetime fiyatini guncelle.
 3. RevenueCat > downsell offering'in bagli oldugu yillik urunun fiyat noktasini
-   guncelle (denemesiz yillik); downsell < standart yillik kuralini dogrula.
+   guncelle (taban fiyat standart yillikla ayni 29,99; ilk yil 19,99 introductory offer); downsell teklifi standart yillikten ucuz kuralini dogrula.
 4. Play Console (Android yayindaysa) ayni tabloyla guncelle.
 5. Uygulamada dogrulama: paywall fiyatlari RevenueCat offering'den canli geldigi
    icin kod degisikligi gerekmez; sandbox hesapla paywall/downsell/winback
