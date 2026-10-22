@@ -371,7 +371,7 @@ export function QuickAddSheet({
                   value={medNote}
                   onChangeText={setMedNote}
                   placeholder={t("injection.notePlaceholder")}
-                  placeholderTextColor={THEME.textMuted}
+                  placeholderTextColor={THEME.placeholder}
                   accessibilityLabel={t("injection.notePlaceholder")}
                   returnKeyType="done"
                   style={{

@@ -223,7 +223,7 @@ export function InsulinOtherField({
         value={value ?? ""}
         onChangeText={(text) => onChange(text.length > 0 ? text : null)}
         placeholder={t("insulinPicker.otherPlaceholder")}
-        placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+        placeholderTextColor={THEME.placeholder}
         maxLength={40}
         returnKeyType="done"
         accessibilityLabel={label ?? t("insulinPicker.otherPlaceholder")}

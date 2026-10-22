@@ -1993,7 +1993,7 @@ function CalculatorScreen() {
             setDirty(true);
           }}
           placeholder={t("calculator.notePlaceholder")}
-          placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+          placeholderTextColor={THEME.placeholder}
           multiline
           style={[inputStyle(), INPUT_TEXT, { marginBottom: 16, minHeight: 72 }]}
           textAlignVertical="top"

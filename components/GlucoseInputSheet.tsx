@@ -47,7 +47,6 @@ import {
   glucoseSheetBounds,
   glucoseSheetValueState,
 } from "../lib/glucoseSheetInput";
-import { withAlpha } from "./rich/GlassCard";
 import { ELEVATION, INPUT_TEXT, RADIUS, RICH_BY_STATUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
 import { HEALTH_NAME } from "../lib/services/health";
@@ -548,7 +547,7 @@ export function GlucoseInputSheet({
                     onChangeText={onType}
                     keyboardType={mmol ? "decimal-pad" : "number-pad"}
                     placeholder={mmol ? num(6.1) : "110"}
-                    placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+                    placeholderTextColor={THEME.placeholder}
                     accessibilityLabel={`${edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}, ${glucoseUnitLabel(unit)}`}
                     style={[
                       TABULAR,

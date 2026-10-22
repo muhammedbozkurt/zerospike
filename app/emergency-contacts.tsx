@@ -348,7 +348,7 @@ function EmergencyContactsScreen() {
                 value={query}
                 onChangeText={setQuery}
                 placeholder={t("emergency.searchPlaceholder")}
-                placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+                placeholderTextColor={THEME.placeholder}
                 autoCorrect={false}
                 className="flex-1 px-2 py-3"
                 style={[INPUT_TEXT, { color: THEME.text }]}
@@ -554,7 +554,7 @@ function EmergencyContactsScreen() {
                   if (nameError) setNameError(null);
                 }}
                 placeholder={t("emergency.namePlaceholder")}
-                placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+                placeholderTextColor={THEME.placeholder}
                 style={[inputStyle(), INPUT_TEXT]}
               />
               {nameError ? (
@@ -570,7 +570,7 @@ function EmergencyContactsScreen() {
                   if (phoneError) setPhoneError(null);
                 }}
                 placeholder={t("emergency.phonePlaceholder")}
-                placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+                placeholderTextColor={THEME.placeholder}
                 keyboardType="phone-pad"
                 style={[inputStyle(), INPUT_TEXT, { marginTop: 10 }]}
               />

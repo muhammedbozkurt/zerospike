@@ -1118,7 +1118,7 @@ export default function InjectionScreen() {
               value={note}
               onChangeText={setNote}
               placeholder={t("injection.notePlaceholder")}
-              placeholderTextColor={THEME.textMuted}
+              placeholderTextColor={THEME.placeholder}
               returnKeyType="done"
               style={[inputStyle(), INPUT_TEXT, { marginBottom: SPACE.lg }]}
             />

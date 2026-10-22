@@ -264,7 +264,7 @@ export function MedEditSheet({
                 value={note}
                 onChangeText={setNote}
                 placeholder={t("injection.notePlaceholder")}
-                placeholderTextColor={THEME.textMuted}
+                placeholderTextColor={THEME.placeholder}
                 accessibilityLabel={t("injection.notePlaceholder")}
                 returnKeyType="done"
                 style={[inputStyle(), { marginBottom: SPACE.lg }]}

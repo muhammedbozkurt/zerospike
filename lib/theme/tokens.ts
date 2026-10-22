@@ -1,5 +1,6 @@
 import type { GlucoseStatus } from "../glucose";
 import { elevationFor } from "./elevation";
+import { highContrastPalette } from "./highContrastPalette";
 
 /**
  * zerospike design tokens: the single source of truth for color, spacing,
@@ -33,6 +34,12 @@ export interface Palette {
   borderStrong: string;
   /** Switch off-state track: >= 3:1 against bg, surface and the white thumb on light. */
   switchTrackOff: string;
+  /** Switch on-state track: >= 3:1 against bg and surface, and the thumb stays
+   *  >= 3:1 against it (WCAG 1.4.11 non-text contrast). */
+  switchTrackOn: string;
+  switchThumb: string;
+  /** TextInput placeholder: >= 4.5:1 on bg, surface, raised sheets and inset fields. */
+  placeholder: string;
   track: string;
   /** Outline of a progress bar's track: >= 3:1 against bg, surface and the
    *  accent-tinted card, so an empty bar stays visible on light. */
@@ -90,6 +97,9 @@ export const DARK: Palette = {
   border: "rgba(255,255,255,0.10)",
   borderStrong: "#5f7a88",
   switchTrackOff: "#5f7a88",
+  switchTrackOn: "#1798AE",
+  switchThumb: "#eaf6fa",
+  placeholder: "#89a3b0",
   track: "rgba(255,255,255,0.08)",
   trackEdge: "#6A8794",
   text: "#eaf6fa",
@@ -114,12 +124,12 @@ export const DARK: Palette = {
     veryLow: GLUCOSE_VERY_LOW,
   },
   glucoseText: {
-    low: "#ff5468",
+    low: "#ff6e82",
     normal: "#22e39a",
     elevated: "#ffd23f",
     high: "#ffa02a",
     veryHigh: VERY_HIGH,
-    veryLow: "#ff5468",
+    veryLow: "#ff6e82",
   },
   glucoseTint: {
     low: "rgba(255,84,104,0.16)",
@@ -152,15 +162,18 @@ export const LIGHT: Palette = {
   border: "rgba(15,34,48,0.12)",
   borderStrong: "#78898F",
   switchTrackOff: "#958770",
+  switchTrackOn: "#0C94AF",
+  switchThumb: "#FFFFFF",
+  placeholder: "#4A5D68",
   track: "#E2D9CB",
   trackEdge: "#6A7D88",
   text: "#0F2230",
   textMuted: "#4A5D68",
-  accent: "#087089",
+  accent: "#076C84",
   accentFill: "#0E9BB8",
   accentOnFill: "#0F2230",
-  accentStrong: "#087089",
-  accentPressed: "#087089",
+  accentStrong: "#076C84",
+  accentPressed: "#076C84",
   success: "#157A52",
   warning: "#8F5F00",
   danger: "#BE2F43",
@@ -190,7 +203,7 @@ export const LIGHT: Palette = {
     high: "rgba(194,94,0,0.12)",
     veryHigh: "rgba(194,65,12,0.12)",
   },
-  chart: { line: "#087089", band: "rgba(14,155,184,0.12)", target: "#157A52", violet: "#5B3FE0" },
+  chart: { line: "#076C84", band: "rgba(14,155,184,0.12)", target: "#157A52", violet: "#5B3FE0" },
   glowK: 0.3,
   heatRamp: ["#FFFFFF", "#8FCADA", "#3F9DB8", "#0B6A82"],
   heatEdge: "#5E7480",
@@ -199,7 +212,14 @@ export const LIGHT: Palette = {
 
 export const PALETTES: Record<Scheme, Palette> = { light: LIGHT, dark: DARK };
 
+/** Increase Contrast variants, derived once from the base palettes. */
+export const HIGH_CONTRAST_PALETTES: Record<Scheme, Palette> = {
+  light: highContrastPalette(LIGHT),
+  dark: highContrastPalette(DARK),
+};
+
 let activeScheme: Scheme = "dark";
+let highContrast = false;
 
 export function setActiveScheme(next: Scheme): void {
   activeScheme = next;
@@ -209,8 +229,18 @@ export function getActiveScheme(): Scheme {
   return activeScheme;
 }
 
+/** Set by ThemeProvider from the system accessibility setting (iOS Increase
+ *  Contrast, Android high contrast text). */
+export function setHighContrast(next: boolean): void {
+  highContrast = next;
+}
+
+export function getHighContrast(): boolean {
+  return highContrast;
+}
+
 export function activePalette(): Palette {
-  return PALETTES[activeScheme];
+  return (highContrast ? HIGH_CONTRAST_PALETTES : PALETTES)[activeScheme];
 }
 
 /** An object whose every property re-reads the active palette on access. */
@@ -365,6 +395,7 @@ export const THEME = live((p) => ({
   border: p.border,
   borderStrong: p.borderStrong,
   switchTrackOff: p.switchTrackOff,
+  placeholder: p.placeholder,
   track: p.track,
   trackEdge: p.trackEdge,
   accent: p.accent,
@@ -465,15 +496,9 @@ export function switchColors(): {
   ios_backgroundColor: string;
 } {
   const p = activePalette();
-  return p.scheme === "light"
-    ? {
-        trackColor: { true: p.accentFill, false: p.switchTrackOff },
-        thumbColor: "#FFFFFF", // theme-ok
-        ios_backgroundColor: p.switchTrackOff,
-      }
-    : {
-        trackColor: { true: p.accent, false: p.switchTrackOff },
-        thumbColor: p.text,
-        ios_backgroundColor: p.switchTrackOff,
-      };
+  return {
+    trackColor: { true: p.switchTrackOn, false: p.switchTrackOff },
+    thumbColor: p.switchThumb,
+    ios_backgroundColor: p.switchTrackOff,
+  };
 }

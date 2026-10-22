@@ -37,6 +37,13 @@ export async function saveThemePref(store: PrefStore, pref: ThemePref): Promise<
   await store.setItem(THEME_PREF_KEY, pref).catch(() => {});
 }
 
+/** Argument for Appearance.setColorScheme: a pinned light/dark preference makes
+ *  the keyboard, native pickers and Alert follow the app instead of the system;
+ *  `system` hands control back to the OS ("unspecified" is RN's reset value). */
+export function nativeSchemeOverride(pref: ThemePref): "light" | "dark" | "unspecified" {
+  return pref === "system" ? "unspecified" : pref;
+}
+
 /** `system` follows the OS; an unknown OS scheme resolves to dark, the app's
  *  historical look. */
 export function resolveScheme(

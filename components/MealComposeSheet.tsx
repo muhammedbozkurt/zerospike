@@ -503,7 +503,7 @@ export function MealComposeSheet({
                       onChangeText={setTemplateName}
                       onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd(), 120)}
                       placeholder={t("mealCompose.templateName")}
-                      placeholderTextColor={THEME.textMuted}
+                      placeholderTextColor={THEME.placeholder}
                       maxLength={60}
                       returnKeyType="done"
                       accessibilityLabel={t("mealCompose.templateName")}

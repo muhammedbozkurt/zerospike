@@ -131,7 +131,7 @@ export function FoodSearchBlock({
           value={query}
           onChangeText={onQueryChange}
           placeholder={t("food.searchPlaceholder")}
-          placeholderTextColor={THEME.textMuted}
+          placeholderTextColor={THEME.placeholder}
           autoFocus={autoFocus}
           autoCorrect={false}
           returnKeyType="search"

@@ -1254,7 +1254,7 @@ function SpikeScreen() {
             value={input}
             onChangeText={setInput}
             placeholder={t("spike.inputPlaceholder")}
-            placeholderTextColor={THEME.textMuted}
+            placeholderTextColor={THEME.placeholder}
             editable={effectiveConfigured && !sending && !exhausted && !screenshotChat}
             onSubmitEditing={send}
             returnKeyType="send"

@@ -294,7 +294,7 @@ export const Field = React.forwardRef<TextInput, FieldProps>(function Field(
           would also set a lineHeight, which iOS clips the glyphs against. */}
       <TextInput
         ref={ref}
-        placeholderTextColor={THEME.textMuted}
+        placeholderTextColor={THEME.placeholder}
         className={`rounded-xl bg-glass border border-hair px-4 py-3 text-ink ${className}`}
         {...rest}
         style={[INPUT_TEXT, style]}

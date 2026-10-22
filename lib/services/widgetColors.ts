@@ -55,7 +55,7 @@ export const WIDGET_DARK: WidgetPalette = {
     med: { fill: "#302518", border: "#5c401b" },
     countdown: { fill: "#0c2831", border: "#0f424d" },
   },
-  tileInk: { glucose: "#22c7e0", meal: "#22e39a", injection: "#7c5cff", med: "#ffa02a" },
+  tileInk: { glucose: "#22c7e0", meal: "#22e39a", injection: "#8a6eff", med: "#ffa02a" },
 };
 
 export const WIDGET_LIGHT: WidgetPalette = {
@@ -63,7 +63,7 @@ export const WIDGET_LIGHT: WidgetPalette = {
   bgTo: "#F5EFE6",
   surface: "#FFFFFF",
   ink: "#0F2230",
-  muted: "#4A5D68",
+  muted: "#485B65",
   accent: "#087089",
   accentFill: "#0E9BB8",
   onAccentFill: "#0F2230",
@@ -84,5 +84,5 @@ export const WIDGET_LIGHT: WidgetPalette = {
     med: { fill: "#e5d8c1", border: "#d2be98" },
     countdown: { fill: "#e7e7e0", border: "#c6d6d3" },
   },
-  tileInk: { glucose: "#087089", meal: "#0F6F4C", injection: "#5B3FE0", med: "#8F5F00" },
+  tileInk: { glucose: "#076076", meal: "#0E6B49", injection: "#5A3EDE", med: "#815600" },
 };

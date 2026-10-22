@@ -102,7 +102,7 @@ export function InputRow({
               writingDirection is pinned LTR too since this field only ever
               holds digits and a decimal separator. */}
           <TextInput
-            placeholderTextColor={THEME.textMuted}
+            placeholderTextColor={THEME.placeholder}
             accessibilityLabel={suffix ? `${label}, ${suffix}` : label}
             accessibilityHint={hint}
             className="font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
