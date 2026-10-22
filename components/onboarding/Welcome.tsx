@@ -21,6 +21,8 @@ import { WelcomePreview } from "./WelcomePreview";
 import { RADIUS, THEME, glow } from "../../lib/theme/tokens";
 import { withAlpha } from "../rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
+import { useFontScale } from "../../lib/useFontScale";
+import { STACK_AT_SCALE, wordFitMultiplier } from "../../lib/layoutForFontScale";
 
 const AUTO_ADVANCE_MS = 3500;
 
@@ -65,6 +67,11 @@ export function Welcome({ onStart }: { onStart: () => void }) {
   const { t } = useTranslation();
   const { height, isWide } = useLayout();
   const dense = height < 700;
+  // Large text: the carousel pages scroll on their own, the decorative sample
+  // card goes away and each heading stops growing before its longest word
+  // would break mid-glyph. None of this applies at the default size.
+  const fontScale = useFontScale();
+  const large = fontScale > STACK_AT_SCALE;
   const [width, setWidth] = useState(0);
   const [index, setIndex] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
@@ -159,53 +166,79 @@ export function Welcome({ onStart }: { onStart: () => void }) {
             onScrollBeginDrag={stop}
             onMomentumScrollEnd={onMomentumEnd}
           >
-            {SLIDES.map((slide, i) => (
-              <View
-                key={slide.key}
-                style={{ width, paddingHorizontal: 16, paddingBottom: 24 }}
-                className="items-center justify-start"
-              >
-                <FadeSlideIn style={{ alignItems: "center" }}>
-                  <View
-                    style={{
-                      height: dense ? 156 : 164,
-                      width: "100%",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <WelcomePreview slide={i as 0 | 1 | 2} active={i === index} />
-                  </View>
-                  <Text
-                    style={{
-                      color: THEME.text,
-                      fontSize: dense ? 28 : 34,
-                      lineHeight: dense ? 34 : 40,
-                      fontWeight: "800",
-                      textAlign: "center",
-                      marginTop: dense ? 14 : 24,
-                    }}
-                  >
-                    {t(`onboarding.${slide.key}Title`)}
-                  </Text>
-                </FadeSlideIn>
-                <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
-                  <Text
-                    style={{
-                      color: THEME.textMuted,
-                      fontSize: 16,
-                      lineHeight: 23,
-                      textAlign: "center",
-                      marginTop: 14,
-                      maxWidth: BODY_MAX_WIDTH,
-                      flexShrink: 1,
-                    }}
-                  >
-                    {t(`onboarding.${slide.key}Body`)}
-                  </Text>
-                </FadeSlideIn>
-              </View>
-            ))}
+            {SLIDES.map((slide, i) => {
+              const titleSize = dense ? 28 : 34;
+              const title = t(`onboarding.${slide.key}Title`);
+              const body = t(`onboarding.${slide.key}Body`);
+              const pageWidth = width - 32;
+              const content = (
+                <>
+                  <FadeSlideIn style={{ alignItems: "center" }}>
+                    {large ? null : (
+                      <View
+                        style={{
+                          height: dense ? 156 : 164,
+                          width: "100%",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <WelcomePreview slide={i as 0 | 1 | 2} active={i === index} />
+                      </View>
+                    )}
+                    <Text
+                      maxFontSizeMultiplier={wordFitMultiplier(title, titleSize, pageWidth, fontScale)}
+                      style={{
+                        color: THEME.text,
+                        fontSize: titleSize,
+                        lineHeight: dense ? 34 : 40,
+                        fontWeight: "800",
+                        textAlign: "center",
+                        marginTop: large ? 12 : dense ? 14 : 24,
+                      }}
+                    >
+                      {title}
+                    </Text>
+                  </FadeSlideIn>
+                  <FadeSlideIn delay={ENTRANCE_STAGGER_MS}>
+                    <Text
+                      maxFontSizeMultiplier={wordFitMultiplier(body, 16, pageWidth, fontScale)}
+                      style={{
+                        color: THEME.textMuted,
+                        fontSize: 16,
+                        lineHeight: 23,
+                        textAlign: "center",
+                        marginTop: 14,
+                        maxWidth: large ? undefined : BODY_MAX_WIDTH,
+                        flexShrink: 1,
+                      }}
+                    >
+                      {body}
+                    </Text>
+                  </FadeSlideIn>
+                </>
+              );
+              return (
+                <View
+                  key={slide.key}
+                  style={{ width, paddingHorizontal: 16, paddingBottom: large ? 0 : 24 }}
+                  className="items-center justify-start"
+                >
+                  {large ? (
+                    <ScrollView
+                      style={{ flex: 1, width: "100%" }}
+                      contentContainerStyle={{ alignItems: "center", paddingBottom: 16 }}
+                      showsVerticalScrollIndicator={false}
+                      nestedScrollEnabled
+                    >
+                      {content}
+                    </ScrollView>
+                  ) : (
+                    content
+                  )}
+                </View>
+              );
+            })}
           </ScrollView>
         ) : null}
       </View>
