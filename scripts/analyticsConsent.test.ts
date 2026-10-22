@@ -1014,7 +1014,7 @@ function wiring(): void {
   const data = src("app/settings/data.tsx");
   ok("the switch records granted or declined", /const next: ConsentChoice = value \? "granted" : "declined";/.test(data));
   ok("and reads on only for granted", /analyticsConsent === "granted"/.test(data));
-  ok("the installation ID comes from getDeviceId", data.includes("getDeviceId()") && data.includes('id === "unknown" ? null : id'));
+  ok("the installation ID comes from getDeviceId", data.includes("getDeviceId()") && data.includes("isInstallId(id) ? id : null"));
   ok("and can be copied by press and hold, or shared", data.includes("selectable") && data.includes("Share.share({ message: installId })"));
   ok("it is pinned left to right", data.includes('writingDirection: "ltr"'));
   const del = between(data, "async function onDeleteServerRecords", "// Opt-in");

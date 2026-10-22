@@ -1131,7 +1131,6 @@ function CalculatorScreen() {
           decimals={glucoseBounds.decimals}
           min={glucoseBounds.min}
           max={glucoseBounds.max}
-          maxLength={unit === "mmol" ? 4 : 3}
           placeholder={t(unit === "mmol" ? "numeric.glucoseExampleMmol" : "numeric.glucoseExampleMgdl")}
           suffix={glucoseUnitLabel(unit)}
           accessibilityLabel={t("calculator.currentGlucose")}

@@ -73,7 +73,7 @@ import {
   type ConsentState,
 } from "../../lib/analytics/optOut";
 import { deleteMyServerRecords } from "../../lib/analytics/serverRecords";
-import { getDeviceId } from "../../lib/identity/deviceId";
+import { getDeviceId, isInstallId } from "../../lib/identity/deviceId";
 
 const PDF_MODE_KEY = "zerospike.pdfMode";
 
@@ -375,12 +375,12 @@ export default function DataSettings() {
 
   // The random installation ID the usage events, the Spike counter and the
   // subscription events are filed under, so the user can see it and quote it.
-  // "unknown" is getDeviceId's storage-failure fallback, not an ID.
+  // getDeviceId falls back to a non-UUID value when storage fails: that is not an ID.
   const [installId, setInstallId] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     void getDeviceId().then((id) => {
-      if (alive) setInstallId(id === "unknown" ? null : id);
+      if (alive) setInstallId(isInstallId(id) ? id : null);
     });
     return () => {
       alive = false;
