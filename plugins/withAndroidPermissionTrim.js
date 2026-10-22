@@ -47,6 +47,12 @@ const REMOVED_PERMISSIONS = [
   // no overlay windows; reminders use a full-screen-intent notification and the
   // alarm ring activity, which need no overlay permission.
   "android.permission.SYSTEM_ALERT_WINDOW",
+  // firebase-messaging (pulled in by expo-notifications) declares it for FCM
+  // registration. The app uses local notifications and alarms only: no
+  // getExpoPushTokenAsync/getDevicePushTokenAsync/token listener anywhere, no
+  // google-services config, so FCM never registers. Local scheduling needs
+  // none of c2dm. Re-add (delete this line) if remote push is ever introduced.
+  "com.google.android.c2dm.permission.RECEIVE",
   ...BADGE_PERMISSIONS,
 ];
 

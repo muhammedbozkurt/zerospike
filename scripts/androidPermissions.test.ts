@@ -11,6 +11,9 @@ declare function require(id: string): any;
 
 const { trimManifestPermissions, REMOVED_PERMISSIONS } = require("../plugins/withAndroidPermissionTrim");
 const appJson = require("../app.json");
+const fs = require("fs");
+const path = require("path");
+const { ANDROID_SYNC_WINDOW_DAYS, SYNC_WINDOW_DAYS } = require("../lib/services/healthTypes");
 
 let passed = 0;
 let failed = 0;
@@ -28,6 +31,7 @@ const MUST_REMOVE = [
   "android.permission.RECORD_AUDIO",
   "com.google.android.gms.permission.AD_ID",
   "android.permission.ACCESS_ADSERVICES_AD_ID",
+  "com.google.android.c2dm.permission.RECEIVE",
   "com.sec.android.provider.badge.permission.READ",
   "com.sec.android.provider.badge.permission.WRITE",
   "com.htc.launcher.permission.UPDATE_SHORTCUT",
@@ -132,6 +136,30 @@ ok(
   "plugin registered in app.json",
   appJson.expo.plugins.includes("./plugins/withAndroidPermissionTrim"),
 );
+
+// FINE location stays: the SOS link must carry a precise position (coarse is a
+// ~3 km block), so the trim must not remove it.
+ok("FINE location not trimmed", !REMOVED_PERMISSIONS.includes("android.permission.ACCESS_FINE_LOCATION"));
+ok("c2dm.RECEIVE trimmed (local notifications only)", REMOVED_PERMISSIONS.includes("com.google.android.c2dm.permission.RECEIVE"));
+ok("app.json does not list c2dm.RECEIVE", !android.permissions.includes("com.google.android.c2dm.permission.RECEIVE"));
+
+// Health Connect rules: no insulin type, no activity reads, no history permission.
+const hcPerms: string[] = android.permissions.filter((n: string) => n.startsWith("android.permission.health."));
+const HC_ALLOWED = [
+  "android.permission.health.READ_BLOOD_GLUCOSE",
+  "android.permission.health.WRITE_BLOOD_GLUCOSE",
+  "android.permission.health.WRITE_NUTRITION",
+  "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
+];
+ok("health permissions are exactly the four allowed", hcPerms.length === HC_ALLOWED.length && HC_ALLOWED.every((n) => hcPerms.includes(n)));
+const hcSource: string = fs.readFileSync(path.join(__dirname, "../lib/services/healthConnect.ts"), "utf8");
+const hcTypes = new Set<string>();
+for (const m of hcSource.matchAll(/(?:recordType:\s*|readRecords\(\s*)"([A-Za-z]+)"/g)) hcTypes.add(m[1]);
+for (const bad of ["Insulin", "InsulinDelivery", "ActiveCaloriesBurned", "ExerciseSession", "Steps", "TotalCaloriesBurned"]) {
+  ok(`healthConnect.ts never touches ${bad}`, !hcSource.includes(`"${bad}"`));
+}
+ok("healthConnect.ts only uses BloodGlucose and BackgroundAccessPermission literals", [...hcTypes].every((t) => ["BloodGlucose", "BackgroundAccessPermission"].includes(t)));
+ok("Android sync window is 30 days, iOS 90", ANDROID_SYNC_WINDOW_DAYS === 30 && SYNC_WINDOW_DAYS === 90);
 
 console.log(`androidPermissions: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
