@@ -34,6 +34,7 @@ import {
   requestAlarmAuthorization,
 } from "../modules/zerospike-alarmkit";
 import { reminderLabelFields, resolveReminderLabel } from "../lib/reminderLabel";
+import { switchProps } from "../lib/a11y";
 
 const inputStyle = () => ({
   borderRadius: RADIUS.md,
@@ -414,11 +415,16 @@ export function ReminderEditSheet({
                       value={alarmEnabled}
                       onValueChange={(v) => void onToggleAlarm(v)}
                       disabled={alarmBusy}
+                      {...switchProps(t("reminders.playAsAlarm"))}
                       {...switchColors()}
                     />
                   </View>
                   {alarmDenied ? (
-                    <Pressable onPress={() => Linking.openSettings()} className="mt-2 px-1">
+                    <Pressable
+                      onPress={() => Linking.openSettings()}
+                      accessibilityRole="button"
+                      className="mt-2 px-1"
+                    >
                       <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
                         {t("reminders.alarmPermissionDenied")}{" "}
                         <Text style={{ color: THEME.accent, fontWeight: "700" }}>

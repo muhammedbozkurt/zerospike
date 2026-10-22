@@ -380,7 +380,7 @@ export function InjectionEditSheet({
                     <DirIcon name="chevron-back" size={22} color={THEME.textMuted} />
                   </Pressable>
                 ) : null}
-                <Txt kind="subtitle" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
+                <Txt kind="subtitle" accessibilityRole="header" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
                   {step === "site" ? t("injection.selectSite") : t("calculator.editTitle")}
                 </Txt>
               </View>
@@ -436,6 +436,7 @@ export function InjectionEditSheet({
                     Keyboard.dismiss();
                     setTimePickerOpen((v) => !v);
                   }}
+                  accessibilityRole="button"
                   className="flex-row items-center"
                   style={[inputStyle(), { minHeight: HIT_TARGET, marginBottom: SPACE.lg }]}
                 >

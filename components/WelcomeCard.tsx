@@ -170,7 +170,7 @@ export function WelcomeCard({ onAddFirst, onAddFood, onSetReminder }: WelcomeCar
         <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.md }}>
           <Illustration />
           <View style={{ flex: 1, minWidth: 0, gap: SPACE.xs }}>
-            <Txt kind="subtitle" style={{ fontWeight: "800" }}>
+            <Txt kind="subtitle" accessibilityRole="header" style={{ fontWeight: "800" }}>
               {t("dashboard.welcomeTitle")}
             </Txt>
             <Txt kind="caption" tone="muted">

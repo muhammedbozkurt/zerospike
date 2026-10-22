@@ -237,7 +237,7 @@ function DownsellScreen() {
                   The tile is the same visual anchor its sibling states carry, so
                   this branch is not two lines of text floating in empty space. */}
               <IconTile icon="pricetag-outline" size={44} radius={14} tint={THEME.textMuted} />
-              <Txt kind="title" style={{ textAlign: "center" }}>
+              <Txt kind="title" accessibilityRole="header" style={{ textAlign: "center" }}>
                 {t("downsell.noOfferTitle")}
               </Txt>
               <Txt tone="muted" style={{ textAlign: "center", maxWidth: 280 }}>

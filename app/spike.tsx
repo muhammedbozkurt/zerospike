@@ -65,6 +65,7 @@ import { useLayout } from "../lib/useLayout";
 import { isReducedMotionNow } from "../lib/useReducedMotion";
 import { logEvent } from "../lib/analytics";
 import { isScreenshotMode } from "../lib/screenshotMode";
+import { pressableProps } from "../lib/a11y";
 
 // ── Typewriter ──────────────────────────────────────────────────────────────
 // Purely visual, and only for a reply that arrived whole (the single-reply
@@ -368,7 +369,7 @@ function ContextConsentView({
         showsVerticalScrollIndicator={false}
       >
         <ConicAvatar label="✦" size={56} />
-        <Txt kind="title" style={{ textAlign: "center" }}>
+        <Txt kind="title" accessibilityRole="header" style={{ textAlign: "center" }}>
           {t("spike.ctxTitle")}
         </Txt>
         <Txt kind="caption" tone="muted" style={{ textAlign: "center" }}>
@@ -862,7 +863,7 @@ function SpikeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <ConicAvatar label="✦" size={64} />
-          <Txt kind="title" style={{ textAlign: "center" }}>
+          <Txt kind="title" accessibilityRole="header" style={{ textAlign: "center" }}>
             {t("spike.consentTitle")}
           </Txt>
           <Card style={{ width: "100%" }}>
@@ -1023,12 +1024,13 @@ function SpikeScreen() {
           <Pressable
             onPress={() => router.back()}
             hitSlop={10}
+            {...pressableProps(t("common.back"))}
             style={{ minWidth: HIT_TARGET, minHeight: HIT_TARGET, alignItems: "center", justifyContent: "center" }}
           >
             <DirIcon name="chevron-back" size={26} color={THEME.textMuted} />
           </Pressable>
           <ConicAvatar label="✦" size={24} />
-          <Txt kind="subtitle">{t("spike.title")}</Txt>
+          <Txt kind="subtitle" accessibilityRole="header">{t("spike.title")}</Txt>
           <View className="flex-1" />
           {messages.length > 0 && !screenshotChat ? (
             <Pressable

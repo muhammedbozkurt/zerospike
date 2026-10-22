@@ -151,7 +151,7 @@ export function DateRangePicker({
           <View className="items-center" style={{ marginBottom: SPACE.sm }}>
             <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: THEME.border }} />
           </View>
-          <Txt kind="subtitle" style={{ textAlign: "center", marginBottom: SPACE.md }}>
+          <Txt kind="subtitle" accessibilityRole="header" style={{ textAlign: "center", marginBottom: SPACE.md }}>
             {t("report.rangeTitle")}
           </Txt>
 

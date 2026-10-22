@@ -428,6 +428,8 @@ function EmergencyContactsScreen() {
                           key={key}
                           onPress={() => toggleNumber(item, number)}
                           disabled={already}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: checked || already, disabled: already }}
                           className="flex-row items-center rounded-2xl px-4 py-3 mb-1.5 active:opacity-80"
                           style={{
                             borderWidth: 1,

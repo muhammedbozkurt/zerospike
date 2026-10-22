@@ -68,6 +68,8 @@ export function ConicAvatar({
 
   return (
     <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={[
         { width: size, height: size, borderRadius: r, overflow: "hidden", alignItems: "center", justifyContent: "center" },
         glow(stops[0], size * 0.4, 0.6, "fill"),

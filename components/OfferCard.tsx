@@ -64,7 +64,7 @@ export function OfferCard({
         </Txt>
       </View>
 
-      <Txt kind="subtitle" style={{ textAlign: "center" }}>
+      <Txt kind="subtitle" accessibilityRole="header" style={{ textAlign: "center" }}>
         {title}
       </Txt>
 

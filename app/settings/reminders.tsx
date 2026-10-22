@@ -40,6 +40,7 @@ import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME, switchColors } from "../../li
 import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 import { useLayout } from "../../lib/useLayout";
+import { switchProps } from "../../lib/a11y";
 
 /** Type icon, matching the icon each type already carries elsewhere in the app
  *  (moon for basal, medical for oral meds, water for a glucose check). Custom
@@ -202,6 +203,7 @@ function ReminderRow({
         <Switch
           value={row.enabled === 1}
           onValueChange={onToggleEnabled}
+          {...switchProps(label)}
           {...switchColors()}
         />
       </View>

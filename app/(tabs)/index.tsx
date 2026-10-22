@@ -242,6 +242,7 @@ import {
 } from "../../lib/glucose";
 import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 import { upper } from "../../lib/upper";
+import { switchProps } from "../../lib/a11y";
 import { WelcomeCard } from "../../components/WelcomeCard";
 import { bosDurumKarari, todayRangeShare, usesTwoColumn } from "../../lib/homeEmpty";
 
@@ -1881,7 +1882,7 @@ export default function DashboardScreen() {
   // the phone Header below stacks the same three in the same order.
   const titleRow = (
       <View className="flex-row items-center justify-between mb-4">
-        <Txt kind="title">{t("common.today")}</Txt>
+        <Txt kind="title" accessibilityRole="header">{t("common.today")}</Txt>
         <View className="flex-row items-center" style={{ gap: SPACE.md }}>
           {/* Spike's entry point only exists when the function URL is actually
               configured. A visible button that opens a dead end is worse than
@@ -1892,6 +1893,7 @@ export default function DashboardScreen() {
             <Pressable
               onPress={() => router.push("/spike")}
               hitSlop={8}
+              accessibilityRole="button"
               accessibilityLabel={t("spike.title")}
             >
               <IconTile icon="sparkles" size={32} radius={10} />
@@ -1900,6 +1902,7 @@ export default function DashboardScreen() {
           <Pressable
             onPress={() => router.push("/sos")}
             hitSlop={8}
+            accessibilityRole="button"
             accessibilityLabel={t("sos.title")}
           >
             <IconTile icon="medical" size={32} radius={10} tint={THEME.danger} />
@@ -2453,6 +2456,7 @@ export default function DashboardScreen() {
                 <Switch
                   value={cgmOn}
                   onValueChange={toggleCgm}
+                  {...switchProps(HEALTH_NAME)}
                   {...switchColors()}
                   style={{ transform: [{ scale: 0.75 }], marginVertical: -6 }}
                 />
@@ -2567,6 +2571,7 @@ export default function DashboardScreen() {
               <Pressable
                 onPress={dismissEditHint}
                 hitSlop={14}
+                accessibilityRole="button"
                 accessibilityLabel={t("common.close")}
               >
                 <Ionicons name="close" size={16} color={THEME.textMuted} />

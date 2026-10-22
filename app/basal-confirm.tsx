@@ -404,7 +404,7 @@ function BasalConfirmScreen() {
               </View>
             ) : load.kind === "chooseProfile" ? (
               <View>
-                <Txt kind="title" style={{ marginBottom: SPACE.lg }}>
+                <Txt kind="title" accessibilityRole="header" style={{ marginBottom: SPACE.lg }}>
                   {t("basalConfirm.chooseProfile")}
                 </Txt>
                 <View>
@@ -420,7 +420,7 @@ function BasalConfirmScreen() {
               </View>
             ) : load.kind === "duplicate" ? (
               <View>
-                <Txt kind="subtitle" style={{ marginBottom: SPACE.sm }}>
+                <Txt kind="subtitle" accessibilityRole="header" style={{ marginBottom: SPACE.sm }}>
                   {t("basalConfirm.duplicateTitle")}
                 </Txt>
                 <Txt tone="muted" style={{ marginBottom: SPACE.lg }}>
@@ -442,7 +442,7 @@ function BasalConfirmScreen() {
               </View>
             ) : (
               <View>
-                <Txt kind="title" style={{ marginBottom: SPACE.md }}>
+                <Txt kind="title" accessibilityRole="header" style={{ marginBottom: SPACE.md }}>
                   {t("basalConfirm.askTitle")}
                 </Txt>
                 <Txt tone="muted" style={{ marginBottom: SPACE.lg }}>
@@ -552,6 +552,7 @@ function BasalConfirmScreen() {
             <FieldLabel>{t("injection.time")}</FieldLabel>
             <Pressable
               onPress={() => setTimePickerOpen((v) => !v)}
+              accessibilityRole="button"
               android_ripple={fieldRipple()}
               className="flex-row items-center"
               style={[inputStyle(), { marginBottom: SPACE.lg }]}
@@ -598,6 +599,7 @@ function BasalConfirmScreen() {
             <FieldLabel>{t("injection.selectSite")}</FieldLabel>
             <Pressable
               onPress={() => setPicking(true)}
+              accessibilityRole="button"
               android_ripple={fieldRipple()}
               className="flex-row items-center justify-between"
               style={[inputStyle(), { marginBottom: SPACE.xl }]}

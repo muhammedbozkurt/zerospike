@@ -256,7 +256,7 @@ export function SectionLabel({ children }: { children: React.ReactNode }) {
   // 'i'). Non-string children are passed through untouched.
   const content = typeof children === "string" ? upper(children) : children;
   return (
-    <Text className="text-xs font-semibold tracking-wider text-mut mb-2 mt-1">
+    <Text accessibilityRole="header" className="text-xs font-semibold tracking-wider text-mut mb-2 mt-1">
       {content}
     </Text>
   );
@@ -421,7 +421,7 @@ export function IconRow({
     "rounded-2xl bg-glass border border-hair p-3.5 flex-row items-center mb-2";
   if (!onPress) return <View className={className}>{body}</View>;
   return (
-    <Pressable onPress={onPress} className={`${className} active:opacity-80`}>
+    <Pressable onPress={onPress} accessibilityRole="button" className={`${className} active:opacity-80`}>
       {body}
     </Pressable>
   );

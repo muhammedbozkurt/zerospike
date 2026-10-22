@@ -68,7 +68,7 @@ export function GradientCTA({
       // disabled one as fully available (the 0.5 opacity says nothing to it).
       disabled={isOff}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={label.replace(/^[＋+]\s*/, "")}
       accessibilityState={{ disabled: isOff, busy: loading }}
       style={[
         {
