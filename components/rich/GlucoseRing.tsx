@@ -112,7 +112,7 @@ export function GlucoseRing({
         </Text>
         {caption ? (
           <Text
-            maxFontSizeMultiplier={FONT_CAP.ringNumber}
+            maxFontSizeMultiplier={FONT_CAP.ringCaption}
             style={{ color: THEME.textMuted, fontSize: size * 0.075, marginTop: 1 }}
           >
             {caption}

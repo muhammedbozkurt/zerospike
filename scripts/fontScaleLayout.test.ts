@@ -23,6 +23,10 @@ import {
   rowDirectionFor,
   scaledMinHeight,
   scaledSize,
+  overlaySheetMaxHeight,
+  calcHeaderTitleStyle,
+  ctaLineExtra,
+  scrollHintAllowed,
 } from "../lib/layoutForFontScale";
 
 let failed = 0;
@@ -144,6 +148,88 @@ check("no component pins the old 1.3 cap by hand any more", () => {
 
 check("tab bar labels opt out of font scaling (Large Content Viewer pattern)", () => {
   assert.match(read("app/(tabs)/_layout.tsx"), /tabBarAllowFontScaling:\s*false/);
+});
+
+// ---- 241-ALFIX: large-text fixes (B1-B6). Scale 1.0 outputs must not move. ----
+
+check("B2 overlaySheetMaxHeight: scale-1.0 phone (host as tall as the window) equals the legacy cap", () => {
+  for (const [w, kb, top] of [[956, 0, 59], [844, 0, 47], [932, 336, 59], [667, 0, 20]] as const) {
+    const legacy = Math.min(w * 0.92, w - kb - top - 8);
+    assert.equal(overlaySheetMaxHeight({ windowHeight: w, hostHeight: w, keyboardH: kb, insetTop: top }), legacy);
+    assert.equal(overlaySheetMaxHeight({ windowHeight: w, hostHeight: 0, keyboardH: kb, insetTop: top }), legacy);
+  }
+});
+
+check("B2 overlaySheetMaxHeight: AX5 host (873 of 956, inset 59) keeps the top under the status bar", () => {
+  const max = overlaySheetMaxHeight({ windowHeight: 956, hostHeight: 873, keyboardH: 0, insetTop: 59 });
+  assert.ok(max <= 873 - 59, `max=${max}`);
+  assert.ok(873 - max >= 59, "top edge must be at or below the status bar");
+  assert.ok(max > 0);
+});
+
+check("B2 overlaySheetMaxHeight: never negative, keyboard counted once", () => {
+  assert.equal(overlaySheetMaxHeight({ windowHeight: 300, hostHeight: 300, keyboardH: 400, insetTop: 59 }), 0);
+  const a = overlaySheetMaxHeight({ windowHeight: 956, hostHeight: 873, keyboardH: 300, insetTop: 59 });
+  assert.equal(a, 873 - 300 - 59 - 8);
+});
+
+check("B3 calcHeaderTitleStyle: empty at default and moderate scale, shrinks+centres when large", () => {
+  assert.deepEqual(calcHeaderTitleStyle(1), {});
+  assert.deepEqual(calcHeaderTitleStyle(1.5), {});
+  const big = calcHeaderTitleStyle(2);
+  assert.equal(big.flexShrink, 1);
+  assert.equal(big.textAlign, "center");
+});
+
+check("B5 ctaLineExtra: 0 at 1.0 (scroll padding unchanged), grows with the label", () => {
+  assert.equal(ctaLineExtra(1), 0);
+  assert.equal(ctaLineExtra(0.8), 0);
+  assert.equal(ctaLineExtra(2), 24);
+  assert.equal(ctaLineExtra(3.1), 24, "capped at MAX_FONT_SCALE");
+});
+
+check("B5 scrollHintAllowed: shown at default sizes, dropped when large text would put it on text", () => {
+  assert.equal(scrollHintAllowed(1), true);
+  assert.equal(scrollHintAllowed(1.5), true);
+  assert.equal(scrollHintAllowed(2), false);
+});
+
+check("B5 ring caption cap stays below the number cap and keeps the >=1.2 floor", () => {
+  assert.ok(FONT_CAP.ringCaption >= 1.2 && FONT_CAP.ringCaption < FONT_CAP.ringNumber);
+  assert.match(read("components/rich/GlucoseRing.tsx"), /maxFontSizeMultiplier=\{FONT_CAP\.ringCaption\}/);
+  assert.match(read("components/rich/TIRDonut.tsx"), /maxFontSizeMultiplier=\{FONT_CAP\.ringCaption\}/);
+});
+
+check("B1 GlucoseInputSheet: the card shrinks inside the maxHeight wrapper so the body scrolls and pinned Save stays above the keyboard", () => {
+  const src = read("components/GlucoseInputSheet.tsx");
+  assert.match(src, /overflow: "hidden",\s*\/\/[^\n]*\n(\s*\/\/[^\n]*\n)*\s*flexShrink: 1,/);
+  assert.match(src, /const pinSave = fontScale > STACK_AT_SCALE;/);
+  assert.match(src, /\{pinSave \? null : \(\s*<GradientCTA/);
+  assert.match(src, /<ScrollView\s+style=\{\{ flexShrink: 1 \}\}/);
+});
+
+check("B2 CarbEstimateSheet: host-measured cap, title wraps at large text and is capped", () => {
+  const src = read("components/CarbEstimateSheet.tsx");
+  assert.match(src, /overlaySheetMaxHeight\(\{ windowHeight, hostHeight, keyboardH, insetTop: insets\.top \}\)/);
+  assert.match(src, /setHostHeight\(e\.nativeEvent\.layout\.height\)/);
+  assert.match(src, /numberOfLines=\{linesFor\(fontScale, 2\)\}/);
+});
+
+check("B3 calculator: both header titles take the large-text style", () => {
+  const src = read("app/calculator.tsx");
+  assert.equal((src.match(/headerStyle\]\} numberOfLines=\{1\}/g) ?? []).length, 2);
+});
+
+check("B6 Today remounts on a live text-size change (drops measured heights and the column cut)", () => {
+  const src = read("app/(tabs)/index.tsx");
+  assert.match(src, /<DashboardScreenInner key=\{effectiveFontScale\(fontScale\)\} \/>/);
+  assert.match(src, /export default function DashboardScreen\(\)/);
+});
+
+check("B5 Today list clears the taller floating CTA", () => {
+  const src = read("app/(tabs)/index.tsx");
+  assert.match(src, /CTA_CLEARANCE \+ ctaExtra/);
+  assert.match(src, /CTA_FOOTPRINT \+ ctaExtra \+ insets\.bottom/);
 });
 
 if (failed) {

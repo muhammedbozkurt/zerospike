@@ -20,6 +20,8 @@ export const FONT_CAP = {
   ringNumber: 1.5,
   /** Chips and segmented pills: wrap-capable but their row must stay compact. */
   chip: 1.6,
+  /** Caption under a ring number (e.g. "5 Messungen"): must stay inside the ring. */
+  ringCaption: 1.2,
 } as const;
 
 /** Above this scale side-by-side label + control pairs stack vertically. */
@@ -101,4 +103,45 @@ export function relaxTextProps<T extends TextClampProps>(props: T, osScale: numb
     return props;
   }
   return { ...props, numberOfLines: undefined, adjustsFontSizeToFit: undefined, minimumFontScale: undefined };
+}
+
+/**
+ * Max height of an in-tree overlay sheet (not an RN Modal). `legacy` is the
+ * window-based cap the sheet always had, so whenever the measured host is at
+ * least as tall as that cap allows (every phone at the default text size) the
+ * result is unchanged. A host shorter than the window (tab bar grown by large
+ * text) lowers the cap so the sheet's top edge stays under the status bar:
+ * the inset is counted once, together with the keyboard.
+ */
+export function overlaySheetMaxHeight(input: {
+  windowHeight: number;
+  hostHeight: number;
+  keyboardH: number;
+  insetTop: number;
+}): number {
+  const { windowHeight, hostHeight, keyboardH, insetTop } = input;
+  const legacy = Math.min(windowHeight * 0.92, windowHeight - keyboardH - insetTop - 8);
+  if (!(hostHeight > 0)) return legacy;
+  return Math.max(0, Math.min(legacy, hostHeight - keyboardH - insetTop - 8));
+}
+
+/** Style merged into a centred header title that sits between a leading plate
+ *  and a trailing spacer. flexShrink lets the wrapped title give way instead
+ *  of running off the right edge. Empty at the default size (no pixel moves). */
+export function calcHeaderTitleStyle(osScale: number): { flexShrink?: number; textAlign?: "center"; marginHorizontal?: number } {
+  if (effectiveFontScale(osScale) <= STACK_AT_SCALE) return {};
+  return { flexShrink: 1, textAlign: "center", marginHorizontal: 8 };
+}
+
+/** Extra px a one-line control of `linePx` gains at this scale (0 at 1.0): the
+ *  floating "add record" button grows with its label, and the scroll content
+ *  must clear the taller bar. */
+export function ctaLineExtra(osScale: number, linePx: number = 24): number {
+  return scaledSize(linePx, osScale) - linePx;
+}
+
+/** The scroll-hint chevron overlays content, so it is dropped once large text
+ *  makes every screen overflow and the overlay would cover text. */
+export function scrollHintAllowed(osScale: number): boolean {
+  return effectiveFontScale(osScale) <= STACK_AT_SCALE;
 }

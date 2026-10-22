@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { scrollHintMotion } from "../lib/scrollHint";
 import { useReduceMotion } from "../lib/useScrollHint";
+import { useFontScale } from "../lib/useFontScale";
+import { scrollHintAllowed } from "../lib/layoutForFontScale";
 import { THEME } from "../lib/theme/tokens";
 
 const SIZE = 32;
@@ -19,6 +21,7 @@ const BOB_PT = 5;
  */
 export function ScrollHint({ visible, bottomOffset }: { visible: boolean; bottomOffset: number }): React.ReactElement | null {
   const reduce = useReduceMotion();
+  const fontScale = useFontScale();
   const opacity = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(visible);
@@ -61,7 +64,9 @@ export function ScrollHint({ visible, bottomOffset }: { visible: boolean; bottom
     return () => fadeOut.stop();
   }, [visible, reduce, opacity, bob]);
 
-  if (!mounted) return null;
+  // Large text: the chevron is an overlay and would sit on the (now tall) text
+  // lines; content running off the screen edge already says "scroll".
+  if (!mounted || !scrollHintAllowed(fontScale)) return null;
 
   return (
     <View

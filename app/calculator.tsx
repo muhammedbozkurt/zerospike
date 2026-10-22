@@ -159,6 +159,8 @@ import {
   IconTile,
   withAlpha,
 } from "../components/rich";
+import { calcHeaderTitleStyle } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { mealPrefill } from "../lib/mealPrefill";
 import { useLayout } from "../lib/useLayout";
@@ -650,6 +652,7 @@ function CalculatorScreen() {
   const { t } = useTranslation();
   const choiceText = useCarbChoiceText();
   const insets = useSafeAreaInsets();
+  const headerStyle = calcHeaderTitleStyle(useFontScale());
   const router = useRouter();
   const {
     foodId,
@@ -2064,7 +2067,7 @@ function CalculatorScreen() {
             >
               <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
             </Pressable>
-            <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
+            <Text style={[{ color: THEME.text, fontSize: 16, fontWeight: "800" }, headerStyle]} numberOfLines={1}>
               {isEdit
                 ? t("calculator.editTitle")
                 : showsDose
@@ -2264,7 +2267,7 @@ function CalculatorScreen() {
           >
             <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
           </Pressable>
-          <Text style={{ color: THEME.text, fontSize: 16, fontWeight: "800" }} numberOfLines={1}>
+          <Text style={[{ color: THEME.text, fontSize: 16, fontWeight: "800" }, headerStyle]} numberOfLines={1}>
             {isEdit
               ? t("calculator.editTitle")
               : showsDose
