@@ -157,6 +157,7 @@ function WinbackScreen() {
           <Pressable
             onPress={decline}
             hitSlop={10}
+            accessibilityRole="button"
             accessibilityLabel={t("common.close")}
           >
             <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
@@ -174,7 +175,7 @@ function WinbackScreen() {
           ) : (
             <>
               <Txt kind="title" style={{ fontSize: 34, lineHeight: 40 }}>👋</Txt>
-              <Txt kind="title" style={{ textAlign: "center" }}>
+              <Txt kind="title" accessibilityRole="header" style={{ textAlign: "center" }}>
                 {t("winback.title")}
               </Txt>
 

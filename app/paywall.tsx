@@ -851,6 +851,7 @@ function PaywallScreen() {
             <Pressable
               onPress={dismiss}
               hitSlop={10}
+              accessibilityRole="button"
               accessibilityLabel={t("common.close")}
             >
               <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
@@ -881,7 +882,7 @@ function PaywallScreen() {
               A limit context (health/foods/...) puts its own title/body in the
               headline slots. Neither line is a health claim. */}
           <View style={{ alignItems: "center", marginBottom: PAYWALL_LAYOUT.gapAfterHero }}>
-            <Txt kind="title" style={{ textAlign: "center" }}>
+            <Txt kind="title" accessibilityRole="header" style={{ textAlign: "center" }}>
               {heroHeadline}
             </Txt>
             {heroSubline ? (

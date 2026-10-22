@@ -682,6 +682,7 @@ export default function InjectionScreen() {
       <Pressable
         onPress={() => setEditing(inj)}
         onLongPress={() => onRowLongPress(inj)}
+        accessibilityRole="button"
         android_ripple={pressRipple()}
         className="flex-row items-center rounded-xl bg-glass border border-hair px-3 py-2.5 mb-2 active:opacity-80"
         style={[
@@ -855,6 +856,7 @@ export default function InjectionScreen() {
         hapticWarning();
         router.push({ pathname: "/paywall", params: { reason: "rotation" } });
       }}
+      accessibilityRole="button"
       android_ripple={pressRipple()}
       className="rounded-2xl bg-glass border border-hair p-4 mb-4 flex-row items-center active:opacity-80"
     >

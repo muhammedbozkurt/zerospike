@@ -508,7 +508,7 @@ export function GlucoseInputSheet({
                 </View>
                 <View className="flex-row items-center justify-between">
                   <View style={{ width: 28 }} />
-                  <Txt kind="subtitle" numberOfLines={2} style={{ flex: 1, textAlign: "center" }}>
+                  <Txt kind="subtitle" accessibilityRole="header" numberOfLines={2} style={{ flex: 1, textAlign: "center" }}>
                     {edit ? t("calculator.editTitle") : t("dashboard.logGlucose")}
                   </Txt>
                   <Pressable

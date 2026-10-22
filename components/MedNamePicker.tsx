@@ -220,7 +220,7 @@ export function MedNamePicker({
             focusable={false}
             importantForAccessibility="auto"
           >
-            <Txt kind="subtitle" style={{ marginBottom: SPACE.md, paddingHorizontal: SPACE.xs }}>
+            <Txt kind="subtitle" accessibilityRole="header" style={{ marginBottom: SPACE.md, paddingHorizontal: SPACE.xs }}>
               {t("meds.entryLabel")}
             </Txt>
 

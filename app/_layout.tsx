@@ -1,6 +1,7 @@
 import "../global.css";
 import "../lib/services/healthBackground";
 import "../lib/healthRecords";
+import "../lib/iconA11y";
 import React, { useEffect, useRef, useState } from "react";
 import { AppState, I18nManager, Linking, LogBox, View } from "react-native";
 import { Redirect, Stack, useRouter, useSegments, useGlobalSearchParams, type Href } from "expo-router";

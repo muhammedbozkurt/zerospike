@@ -130,6 +130,7 @@ export default function ScanScreen() {
           resolve, always visible rather than hidden behind a failed lookup. */}
       <Pressable
         onPress={() => router.replace({ pathname: "/add-food" })}
+        accessibilityRole="button"
         className="flex-row items-center rounded-full px-4 py-2 mt-4 active:opacity-80"
         style={{ borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.surface }}
       >
@@ -150,6 +151,7 @@ export default function ScanScreen() {
       className="absolute"
       style={{ top: insets.top + 8, [I18nManager.isRTL ? "left" : "right"]: 20 }}
       hitSlop={10}
+      accessibilityRole="button"
       accessibilityLabel={t("common.close")}
     >
       <IconTile icon="close" size={38} radius={19} tint={THEME.text} />

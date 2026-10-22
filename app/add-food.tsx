@@ -341,6 +341,7 @@ function AddFoodScreen() {
             {allowed === false && !isEdit ? (
               <Pressable
                 onPress={() => router.push({ pathname: "/paywall", params: { reason: "foods" } })}
+                accessibilityRole="button"
                 className="rounded-2xl p-4 mb-4 flex-row items-center active:opacity-80"
                 style={{
                   borderWidth: 1,

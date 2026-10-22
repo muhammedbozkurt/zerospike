@@ -141,7 +141,7 @@ export function SavedMedEditSheet({
               <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
             </View>
             <View className="flex-row items-center justify-between mb-4">
-              <Txt kind="subtitle" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
+              <Txt kind="subtitle" accessibilityRole="header" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
                 {isEdit ? t("meds.editSavedTitle") : t("meds.addSavedTitle")}
               </Txt>
               <Pressable

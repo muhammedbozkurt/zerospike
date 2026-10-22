@@ -33,6 +33,7 @@ import {
   type AlarmAuthorizationStatus,
 } from "../../modules/zerospike-alarmkit";
 import { POST_MEAL_WINDOW_MIN } from "../../lib/postMealTimer";
+import { switchProps } from "../../lib/a11y";
 import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { InlineConfigCard, NoticeBanner, Row, SettingsScaffold } from "../../components/settingsUi";
 import { GLUCOSE_RICH, THEME, switchColors } from "../../lib/theme/tokens";
@@ -325,6 +326,7 @@ export default function NotificationSettings() {
               <Switch
                 value={prefs.enabled}
                 onValueChange={(v) => updatePrefs({ enabled: v })}
+                {...switchProps(t("settings.notificationsAll"))}
                 {...switchColors()}
               />
             }
@@ -378,6 +380,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.postMeal}
                     onValueChange={(v) => updatePrefs({ postMeal: v })}
+                    {...switchProps(t("settings.reminderPostMeal"))}
                     {...switchColors()}
                   />
                 }
@@ -410,6 +413,7 @@ export default function NotificationSettings() {
                           value={prefs.postMealAlarm}
                           onValueChange={(v) => void togglePostMealAlarm(v)}
                           disabled={alarmBusy}
+                          {...switchProps(t("settings.postMealAlarm"))}
                           {...switchColors()}
                         />
                       </View>
@@ -448,6 +452,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.idleReminder}
                     onValueChange={(v) => updatePrefs({ idleReminder: v })}
+                    {...switchProps(t("settings.reminderIdle"))}
                     {...switchColors()}
                   />
                 }
@@ -465,6 +470,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.weekly}
                     onValueChange={(v) => updatePrefs({ weekly: v })}
+                    {...switchProps(t("settings.reminderWeekly"))}
                     {...switchColors()}
                   />
                 }
@@ -518,6 +524,7 @@ export default function NotificationSettings() {
                   <Switch
                     value={prefs.lowFollowup}
                     onValueChange={(v) => updatePrefs({ lowFollowup: v })}
+                    {...switchProps(t("settings.reminderLowFollow"))}
                     {...switchColors()}
                   />
                 }

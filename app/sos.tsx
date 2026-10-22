@@ -291,6 +291,7 @@ function SosScreen() {
                   contacts screen has to stay reachable from here. */}
               <Pressable
                 onPress={() => router.push("/emergency-contacts")}
+                accessibilityRole="button"
                 className="flex-row items-center justify-center rounded-2xl py-3.5 mt-2 active:opacity-80"
                 style={{ borderWidth: 1, borderColor: THEME.border }}
               >
@@ -339,6 +340,7 @@ function ContactAction({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
       accessibilityLabel={label}
       className="flex-1 items-center rounded-xl py-3 active:opacity-80"
       style={{

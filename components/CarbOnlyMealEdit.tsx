@@ -229,6 +229,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
           <Label>{t("calculator.loggedTime")}</Label>
           <Pressable
             onPress={() => setTimeOpen((v) => !v)}
+            accessibilityRole="button"
             className="flex-row items-center mb-4"
             style={fieldStyleOf()}
           >

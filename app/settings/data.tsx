@@ -74,6 +74,7 @@ import {
 } from "../../lib/analytics/optOut";
 import { deleteMyServerRecords } from "../../lib/analytics/serverRecords";
 import { getDeviceId, isInstallId } from "../../lib/identity/deviceId";
+import { switchProps } from "../../lib/a11y";
 
 const PDF_MODE_KEY = "zerospike.pdfMode";
 
@@ -831,6 +832,7 @@ export default function DataSettings() {
                 <Switch
                   value={healthWrite}
                   onValueChange={onToggleHealthWrite}
+                  {...switchProps(t("settings.healthWrite", { health: healthName }))}
                   {...switchColors()}
                 />
               ) : (
@@ -878,6 +880,7 @@ export default function DataSettings() {
                 <Switch
                   value={kindOn.carbs}
                   onValueChange={(v) => void onToggleHealthKind("carbs", v)}
+                  {...switchProps(t("settings.healthCarbs", { health: healthName }))}
                   {...switchColors()}
                 />
               </View>
@@ -902,6 +905,7 @@ export default function DataSettings() {
                     <Switch
                       value={kindOn.insulin}
                       onValueChange={(v) => void onToggleHealthKind("insulin", v)}
+                      {...switchProps(t("settings.healthInsulin", { health: healthName }))}
                       {...switchColors()}
                     />
                   </View>
@@ -952,6 +956,7 @@ export default function DataSettings() {
                     <Switch
                       value={bgOn}
                       onValueChange={(v) => void onToggleBgSync(v)}
+                      {...switchProps(t("settings.healthBgSync"))}
                       {...switchColors()}
                     />
                   </View>
@@ -1106,6 +1111,7 @@ export default function DataSettings() {
               <Switch
                 value={isProUser}
                 onValueChange={onToggleSimPro}
+                {...switchProps(t("settings.simulatePro"))}
                 {...switchColors()}
               />
             </View>

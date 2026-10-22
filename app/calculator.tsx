@@ -162,6 +162,7 @@ import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, RICH_BY_STATUS, TABULA
 import { mealPrefill } from "../lib/mealPrefill";
 import { useLayout } from "../lib/useLayout";
 import { upper } from "../lib/upper";
+import { sliderProps } from "../lib/a11y";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
@@ -1829,6 +1830,7 @@ function CalculatorScreen() {
         <DetailLabel>{t("calculator.loggedTime")}</DetailLabel>
         <Pressable
           onPress={() => setTimePickerOpen((v) => !v)}
+          accessibilityRole="button"
           className="flex-row items-center mb-4"
           style={inputStyle()}
         >
@@ -1975,6 +1977,7 @@ function CalculatorScreen() {
         ) : (
           <Pressable
             onPress={choosePhoto}
+            accessibilityRole="button"
             className="flex-row items-center justify-center rounded-2xl py-4 mb-4"
             style={{ borderWidth: 1, borderStyle: "dashed", borderColor: THEME.border }}
           >
@@ -2133,6 +2136,12 @@ function CalculatorScreen() {
                 step={5}
                 value={Math.min(portion, 500)}
                 onValueChange={setPortion}
+                {...sliderProps(t("calculator.portion"), {
+                  min: 0,
+                  max: 500,
+                  now: portion,
+                  text: `${portion} ${t("common.grams")}`,
+                })}
                 minimumTrackTintColor={THEME.accent}
                 maximumTrackTintColor={THEME.track}
                 thumbTintColor={THEME.accent}
@@ -2381,6 +2390,12 @@ function CalculatorScreen() {
                   step={5}
                   value={Math.min(portion, 500)}
                   onValueChange={setPortion}
+                  {...sliderProps(t("calculator.portion"), {
+                    min: 0,
+                    max: 500,
+                    now: portion,
+                    text: `${portion} ${t("common.grams")}`,
+                  })}
                   minimumTrackTintColor={THEME.accent}
                   maximumTrackTintColor={THEME.track}
                   thumbTintColor={THEME.accent}
@@ -2562,6 +2577,7 @@ function CalculatorScreen() {
                   <Pressable
                     onPress={() => router.push("/sources")}
                     hitSlop={8}
+                    accessibilityRole="link"
                     className="flex-row items-center mb-4"
                   >
                     <Ionicons name="information-circle-outline" size={14} color={THEME.accent} />

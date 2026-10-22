@@ -207,6 +207,7 @@ export function SheetShell({
           {title ? (
             <View className="flex-row items-center justify-between mb-1">
               <Text
+                accessibilityRole="header"
                 numberOfLines={2}
                 style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flexShrink: 1 }}
               >

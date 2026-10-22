@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import type { DiabetesType, InsulinMode } from "../lib/db/types";
 import { isNoInsulinDiabetesType } from "../lib/diabetesDefaults";
+import { switchProps } from "../lib/a11y";
 import { SPACE, switchColors } from "../lib/theme/tokens";
 import { FormCard } from "./form";
 import { Segmented, Txt } from "./ui";
@@ -49,6 +50,7 @@ export function InsulinModeSection({
         <Switch
           value={oralMeds}
           onValueChange={onChangeOralMeds}
+          {...switchProps(t("meds.toggleLabel"))}
           {...switchColors()}
         />
       </View>

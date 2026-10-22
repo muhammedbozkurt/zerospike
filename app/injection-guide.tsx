@@ -129,7 +129,7 @@ function InjectionGuideScreen() {
                     size={16}
                     color={THEME.accent}
                   />
-                  <Txt kind="subtitle" style={{ flexShrink: 1, minWidth: 0 }}>
+                  <Txt kind="subtitle" accessibilityRole="header" style={{ flexShrink: 1, minWidth: 0 }}>
                     {t(step.titleKey)}
                   </Txt>
                 </View>
