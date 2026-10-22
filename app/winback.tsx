@@ -86,6 +86,7 @@ function WinbackScreen() {
   }
 
   function decline() {
+    logEvent("winback_dismiss");
     logEvent("downsell_dismiss", { trigger: "winback" });
     close();
   }

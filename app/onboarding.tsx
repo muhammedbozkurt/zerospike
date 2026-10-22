@@ -80,6 +80,7 @@ import { BASAL_DAILY_BOUNDS } from "../lib/numericField";
 import { InsulinProductPicker } from "../components/InsulinProductPicker";
 import { OTHER_PRODUCT_ID, isMixSelection } from "../lib/insulinCatalog";
 import { logCrash, logEvent } from "../lib/analytics";
+import { createOnceGate } from "../lib/analytics/once";
 import {
   getAnalyticsConsent,
   markAnalyticsConsentPrompted,
@@ -638,7 +639,11 @@ export default function OnboardingScreen() {
   const presetLabel = usePresetLabel();
 
   const stepEvent = onboardingStepEvent(phase, step, steps);
+  const stepOnceRef = useRef<((key: string) => boolean) | null>(null);
+  if (!stepOnceRef.current) stepOnceRef.current = createOnceGate();
   useEffect(() => {
+    // Back to a step already seen (hardware back to the welcome page) is not a new funnel step.
+    if (!stepOnceRef.current!(stepEvent.step)) return;
     logEvent("onboarding_step", stepEvent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepEvent.step, stepEvent.index]);

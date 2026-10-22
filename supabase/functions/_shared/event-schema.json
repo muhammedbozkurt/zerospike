@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "events": {
     "app_open": { "cold": "bool" },
     "onboarding_step": { "step": "string", "index": "int" },
@@ -32,6 +32,8 @@
     "trial_day1_nudge_sent": {},
     "entitlement_lost": { "period_type": ["enum", "trial", "normal", "intro", "unknown"] },
     "winback_view": {},
+    "winback_dismiss": {},
+    "restore_result": { "result": ["enum", "success", "empty", "error", "cancelled"] },
     "downsell_view": { "trigger": "string" },
     "downsell_accept": { "trigger": "string" },
     "downsell_dismiss": { "trigger": "string" },

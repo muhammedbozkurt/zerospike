@@ -140,7 +140,7 @@ function canonicalSchema(): Canonical {
 // The card's own text, parsed independently of eventSchema.ts. A field written
 // without a type is a string.
 function matchesContract(): void {
-  section("A. schema v5 matches the written contract");
+  section("A. schema v6 matches the written contract");
   const CONTRACT = [
     "app_open{cold:bool}",
     "onboarding_step{step:string,index:int}",
@@ -165,6 +165,8 @@ function matchesContract(): void {
     "trial_day1_nudge_sent{}",
     "entitlement_lost{period_type:trial|normal|intro|unknown}",
     "winback_view{}",
+    "winback_dismiss{}",
+    "restore_result{result:success|empty|error|cancelled}",
     "downsell_view{trigger}",
     "downsell_accept{trigger}",
     "downsell_dismiss{trigger}",
@@ -202,8 +204,8 @@ function matchesContract(): void {
   }
 
   const actual = canonicalSchema();
-  eq("42 events in the contract", expected.size, 42);
-  eq("schema version is 5", SCHEMA_VERSION, 5);
+  eq("44 events in the contract", expected.size, 44);
+  eq("schema version is 6", SCHEMA_VERSION, 6);
   eq("event count", actual.size, expected.size);
   for (const [name, fields] of expected) {
     const got = actual.get(name);
@@ -304,6 +306,15 @@ function sanitizer(): void {
   const health = sanitizeEvent("log_added", { kind: "glucose", value: 142, glucose: 142 });
   ok("health values never pass", health.ok);
   if (health.ok) eq("only the kind survives", health.props, { kind: "glucose" });
+
+  for (const result of ["success", "empty", "error", "cancelled"]) {
+    const restored = sanitizeEvent("restore_result", { result });
+    ok(`restore_result ${result} passes`, restored.ok && restored.props.result === result);
+  }
+  const badRestore = sanitizeEvent("restore_result", { result: "none" });
+  ok("restore_result outside the enum keeps no result", badRestore.ok && !("result" in badRestore.props));
+  const dismissed = sanitizeEvent("winback_dismiss", { reason: "x" });
+  ok("winback_dismiss carries no fields", dismissed.ok && Object.keys(dismissed.props).length === 0);
 
   const badEnum = sanitizeEvent("paywall_tier_selected", { tier: "weekly", paywall_version: 2 });
   ok("enum violation is stripped", badEnum.ok && Object.keys(badEnum.props).length === 1 && badEnum.props.paywall_version === 2);

@@ -180,6 +180,7 @@
       "package": "com.greeneyeapp.zerospike",
       "playStoreUrl": "https://play.google.com/store/apps/details?id=com.greeneyeapp.zerospike",
       "versionCode": 94,
+      "allowBackup": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/adaptive-foreground-1024.png",
         "backgroundImage": "./assets/brand/adaptive-background-1024.png",

@@ -7,7 +7,7 @@ import { setAnalyticsSink, type AnalyticsParams } from "./index";
 import { sanitizeEvent } from "./eventSchema";
 import { FLUSH_INTERVAL_MS, createFlusher } from "./flush";
 import { getAnalyticsConsent, isAnalyticsEnabledNow, onAnalyticsEnabledChange } from "./optOut";
-import { createQueue, type NewQueueEvent, type QueueDb } from "./queue";
+import { createQueue, orderByClientTs, type NewQueueEvent, type QueueDb } from "./queue";
 import { createSessionTracker } from "./session";
 import { isTrackConfigured, postBatch } from "./transport";
 
@@ -186,7 +186,7 @@ function startSink(): SinkController {
       await clearQueue();
       return;
     }
-    persist(preReady.splice(0).map((event) => ({ ...event, isPro })));
+    persist(orderByClientTs(preReady.splice(0)).map((event) => ({ ...event, isPro })));
     startTicker();
     flushAfterWrites();
   }
@@ -204,8 +204,10 @@ function startSink(): SinkController {
       return;
     }
     flusher.reset();
-    if (!ready) return;
+    // Before the sink is ready this waits with the other early events and is
+    // written, in clock order, when activate() runs.
     record("analytics_opt_out", { enabled: true });
+    if (!ready) return;
     startTicker();
     flushAfterWrites();
   }

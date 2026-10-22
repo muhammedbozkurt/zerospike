@@ -1,12 +1,12 @@
 /**
- * Analytics event schema v5: the one list of event names and fields the
+ * Analytics event schema v6: the one list of event names and fields the
  * Supabase sink may send. The server (supabase/functions/_shared/event-schema.json)
  * drops anything outside it as well, and scripts/analyticsSchema.test.ts fails
  * when the two lists drift. Dependency-free on purpose so that test can run
  * under plain node.
  */
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * Constant tag of the paywall layout generation (build 93 redesign), carried by
@@ -89,6 +89,8 @@ export const EVENT_SCHEMA = {
   trial_day1_nudge_sent: {},
   entitlement_lost: { period_type: ["trial", "normal", "intro", "unknown"] },
   winback_view: {},
+  winback_dismiss: {},
+  restore_result: { result: ["success", "empty", "error", "cancelled"] },
   downsell_view: { trigger: "string" },
   downsell_accept: { trigger: "string" },
   downsell_dismiss: { trigger: "string" },
