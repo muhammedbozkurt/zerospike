@@ -85,7 +85,7 @@ export interface IosSpec {
   leftW: number;
   rightW: number;
   /** iPad has no Dynamic Island, so it declares none. */
-  island: { compactGap: number; gapAfter: number } | null;
+  island: { captionGap: number; gapAfter: number } | null;
   headingSize: number;
   headingH: number;
   /** W4 feedback 4: a heading and its own content are 12 pt apart, two
@@ -110,6 +110,8 @@ export interface IosSpec {
    *  its own. */
   gapAccessoryToLive: number;
   liveH: number;
+  /** Upper bound of LiveActivityScene's height / LIVE_CARD.naturalH scale. */
+  liveScaleCap: number;
   /** The home-screen grid unit S: a systemSmall square. A systemMedium is
    *  2S + gridGap wide and S tall, exactly like the real WidgetKit canvas. */
   unit: number;
@@ -160,52 +162,44 @@ const IPHONE: IosSpec = {
   colGap: 0,
   leftW: 400,
   rightW: 400,
-  island: { compactGap: 6, gapAfter: 12 },
+  island: { captionGap: 8, gapAfter: 32 },
   headingSize: 11,
   headingH: 14,
   headingGap: 12,
   sectionGap: 24,
   inlineH: 22,
   gapInlineToClock: 6,
-  // 40, not the 76 a real lock screen sets: the whole stack is budgeted
-  // against a 682 pt band (66..748) and the clock is the one dial this scene
-  // is allowed to turn. See the budget below.
-  clockSize: 40,
-  clockLine: 44,
+  // 52, not the 76 a real lock screen sets: the whole stack is budgeted
+  // against a 682 pt band (66..748). See the budget below.
+  clockSize: 52,
+  clockLine: 56,
   dateSize: 14,
   dateLine: 19,
-  gapClockToAccessory: 6,
+  gapClockToAccessory: 10,
   accessoryH: 52,
-  gapAccessoryToLive: 6,
-  liveH: 62,
+  gapAccessoryToLive: 10,
+  liveH: 101,
+  liveScaleCap: 1.4,
   unit: 84,
   gridGap: 12,
   notif: { height: 130, pad: 14, icon: 26, titleSize: 14, bodySize: 12, metaSize: 11 },
   // THE BUDGET, in points from the top of the screen. Section captions and the
   // 12/24 gaps are fixed by the brief and never absorb an overflow:
   //   66  content top (safe area)
-  //   66..216   Dynamic Island: compact 126x37 with the minimal circle beside
-  //             it (66..103), +6, expanded 95 (109..204: 10 pad + 30 row + 6 +
-  //             29 pill + 8 + 4 bar + 8 pad; it was 83 before the progress
-  //             bar), +12
-  //   216..230  "Kilit ekrani" caption, +12
-  //   242..264  inline accessory, +6
-  //   270..314  clock (44) - 314..333 date (19), +6
-  //   339..391  circular + rectangular accessories, +6
-  //   397..459  Live Activity card (62 = its natural Swift height, no
-  //             progress bar: only the island's expanded view has one;
-  //             inside the lock screen, no caption of its own: that is where
-  //             iOS itself draws it), +24
-  //   483..497  "Ana ekran ve mini widget'lar" caption, +12
+  //   66..125   Dynamic Island, compact only: pill 126x37 with the minimal
+  //             circle beside it (66..103), +8, caption 14. The expanded card
+  //             was dropped (it only opens on a long press), +32
+  //   157..171  "Lock Screen" caption, +12
+  //   183..205  inline accessory, +6
+  //   211..267  clock (56) - 267..286 date (19), +10
+  //   296..348  circular + rectangular accessories, +10
+  //   358..459  Live Activity card (101 pt box, its contents LIVE_CARD at scale
+  //             1.4 = liveScaleCap, the star of the panel; no caption of its own:
+  //             that is where iOS itself draws it), +24
+  //   483..497  "Home Screen and Mini Widgets" caption, +12
   //   509..593  the one mini row: systemMedium (180) + systemSmall + one mini
-  //             tile (the second row of three mini tiles was dropped for the
-  //             island's 98 pt, see sc-widgets.tsx), +24
-  //   617..747  the notification card, 130 pt, whole inside the 748 cut
-  //             (unchanged from before the bar).
-  // The bar's 12 pt were paid for by 12 pt of lock-screen slack: the
-  // inline/clock/accessory/live gaps 8 -> 6 (-6), the island compact gap 8 -> 6
-  // (-2) and the clock 48 -> 44 line (-4). Section captions and the 12/24 gaps
-  // are untouched.
+  //             tile, +24
+  //   617..747  the notification card, 130 pt, whole inside the 748 cut.
   // The 674 probe therefore lands 57 pt inside that card, which is the one
   // element on this screen with a light fill (ink 0.14) rather than a widget
   // gradient - the failure mode 6c caught on android-phone was a bleed element
@@ -245,6 +239,7 @@ const IPAD: IosSpec = {
   // keeps this box and the contents centre in it; a bigger scale truncated
   // the Arabic title in a 424 pt column.
   liveH: 112,
+  liveScaleCap: 1.4,
   unit: 156,
   gridGap: 18,
   notif: { height: 160, pad: 20, icon: 40, titleSize: 19, bodySize: 16, metaSize: 14 },

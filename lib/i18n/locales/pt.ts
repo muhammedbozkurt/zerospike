@@ -1540,6 +1540,7 @@ const pt: TranslationSchema = {
     liveActivity: "Atividade ao Vivo",
     miniWidgets: "Mini Widgets",
     homeAndMini: "Tela de Início e Mini Widgets",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "Resposta à refeição",

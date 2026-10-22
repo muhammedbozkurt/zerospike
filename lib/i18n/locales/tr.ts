@@ -1535,6 +1535,7 @@ const tr = {
     liveActivity: "Canlı Etkinlik",
     miniWidgets: "Mini Widget'lar",
     homeAndMini: "Ana Ekran ve Mini Widget'lar",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "Öğün yanıtı",

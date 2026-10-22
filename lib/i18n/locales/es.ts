@@ -1541,6 +1541,7 @@ const es: TranslationSchema = {
     liveActivity: "Actividad en vivo",
     miniWidgets: "Mini widgets",
     homeAndMini: "Pantalla de inicio y mini widgets",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "Respuesta de la comida",

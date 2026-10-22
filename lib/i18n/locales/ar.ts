@@ -1536,6 +1536,7 @@ const ar: TranslationSchema = {
     liveActivity: "النشاط المباشر",
     miniWidgets: "الأدوات المصغّرة",
     homeAndMini: "الشاشة الرئيسية والأدوات المصغّرة",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "استجابة الوجبة",

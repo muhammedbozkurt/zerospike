@@ -1542,6 +1542,7 @@ const fr: TranslationSchema = {
     liveActivity: "Activité en direct",
     miniWidgets: "Mini-widgets",
     homeAndMini: "Écran d'accueil et mini-widgets",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "Réponse au repas",

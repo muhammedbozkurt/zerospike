@@ -1537,6 +1537,7 @@ const en: TranslationSchema = {
     liveActivity: "Live Activity",
     miniWidgets: "Mini Widgets",
     homeAndMini: "Home Screen and Mini Widgets",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "Meal response",

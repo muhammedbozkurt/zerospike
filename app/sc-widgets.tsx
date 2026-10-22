@@ -151,7 +151,7 @@ function IosScene({
         accessoryH={spec.accessoryH}
       />
       <View style={{ height: spec.gapAccessoryToLive }} />
-      <LiveActivityScene data={data} now={now} height={spec.liveH} />
+      <LiveActivityScene data={data} now={now} height={spec.liveH} maxScale={spec.liveScaleCap} />
     </>
   );
 
@@ -209,7 +209,14 @@ function IosScene({
     <>
       {spec.island ? (
         <>
-          <DynamicIslandBar data={data} now={now} compactGap={spec.island.compactGap} />
+          <DynamicIslandBar
+            data={data}
+            now={now}
+            captionGap={spec.island.captionGap}
+            caption={t("scWidgets.dynamicIsland")}
+            captionSize={spec.headingSize}
+            captionH={spec.headingH}
+          />
           <View style={{ height: spec.island.gapAfter }} />
         </>
       ) : null}
@@ -220,10 +227,9 @@ function IosScene({
       </SectionHeading>
       <View style={{ height: spec.headingGap }} />
       {/* One row, 372 pt wide: systemMedium + systemSmall + the glucose tile.
-          The Dynamic Island's compact and expanded states take 140 pt of the
-          748 pt band (budget in layout.ts), which cost the row of three mini
-          tiles (meal / third / timer) the iPhone used to carry. The iPad
-          keeps all of its widget rows. */}
+          The 748 pt band is budgeted in layout.ts; the Live Activity card is
+          the largest element on this scene. The iPad keeps all of its widget
+          rows. */}
       <HomeWidgetsScene
         data={data}
         now={now}

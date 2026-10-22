@@ -12,10 +12,12 @@ export function SectionHeading({
   children,
   size,
   height,
+  center = false,
 }: {
   children: string;
   size: number;
   height: number;
+  center?: boolean;
 }) {
   return (
     <View style={{ height, justifyContent: "flex-end" }}>
@@ -30,7 +32,7 @@ export function SectionHeading({
           // so this still reads on the right in Arabic - a conditional
           // isRTL ? "right" : "left" would fight that auto-mirroring rather
           // than follow it.
-          textAlign: "left",
+          textAlign: center ? "center" : "left",
         }}
         numberOfLines={1}
       >

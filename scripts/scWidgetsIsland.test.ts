@@ -12,6 +12,7 @@ import {
   LIVE_CARD,
 } from "../components/scWidgets/islandSpec";
 
+import { specFor } from "../components/scWidgets/layout";
 import { SCENE_TIMER_REMAINING_MIN, SCENE_TIMER_WINDOW_MIN } from "../components/scWidgets/sceneData";
 
 const root = join(__dirname, "..");
@@ -142,5 +143,34 @@ assert.equal(
 
 // Sahne: 72/120 dk kaldi -> gecen oran %40
 assert.equal((SCENE_TIMER_WINDOW_MIN - SCENE_TIMER_REMAINING_MIN) / SCENE_TIMER_WINDOW_MIN, 0.4);
+
+// Sahne: genisletilmis ada CIZILMEZ (yalniz uzun basinca acilir), kompakt hap + minimal kalir
+const barSrc = readFileSync(join(root, "components/scWidgets/DynamicIslandBar.tsx"), "utf8");
+assert.ok(!/import[^;]*ISLAND_EXPANDED/.test(barSrc) && !/ISLAND_EXPANDED\./.test(barSrc), "DynamicIslandBar genisletilmis adayi cizmemeli");
+assert.match(barSrc, /ISLAND_COMPACT/);
+assert.match(barSrc, /ISLAND_MINIMAL/);
+const routeSrc = readFileSync(join(root, "app/sc-widgets.tsx"), "utf8");
+assert.match(routeSrc, /scWidgets\.dynamicIsland/, "ada etiketi i18n anahtarindan");
+assert.match(routeSrc, /scWidgets\.lockScreen/, "kilit ekrani etiketi i18n anahtarindan");
+
+// iPhone butcesi: yigin tam 617'de biter bildirim kartini baslatir, kart 748 kesimini asar, 674 probu kartin icinde
+const ip = specFor("iphone");
+assert.equal(ip.kind, "ios");
+if (ip.kind === "ios" && ip.island) {
+  const h = ISLAND_COMPACT.h;
+  let y = ip.contentTop + h + ip.island.captionGap + ip.headingH + ip.island.gapAfter;
+  y += ip.headingH + ip.headingGap;
+  y += ip.inlineH + ip.gapInlineToClock + ip.clockLine + ip.dateLine + ip.gapClockToAccessory + ip.accessoryH;
+  y += ip.gapAccessoryToLive + ip.liveH + ip.sectionGap;
+  y += ip.headingH + ip.headingGap + ip.unit + ip.sectionGap;
+  assert.equal(y, 617, "bildirim karti ust kenari");
+  assert.ok(y + ip.notif.height <= ip.visibleH, "kart 748 kesiminin icinde (degismedi)");
+  assert.ok(ip.probeY > y && ip.probeY < y + ip.notif.height, "probe kartin icinde");
+  // Canli etkinlik kilit ekraninin yildizi: dogal olcegin en az 1.4x'i
+  const liveScale = Math.min(ip.liveH / LIVE_CARD.naturalH, ip.liveScaleCap);
+  assert.ok(liveScale >= 1.4, "canli etkinlik icerigi dogal olcegin en az 1.4 kati");
+  assert.ok(ip.liveH > LIVE_CARD.naturalH * liveScale, "kart kutusu icerikten yuksek (nefes payi)");
+}
+assert.equal(specFor("ipad").kind === "ios" && specFor("ipad").island, null, "iPad'de ada yok");
 
 console.log("scWidgetsIsland: OK");

@@ -1540,6 +1540,7 @@ const it: TranslationSchema = {
     liveActivity: "Attività in tempo reale",
     miniWidgets: "Mini widget",
     homeAndMini: "Schermata Home e mini widget",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "Risposta al pasto",

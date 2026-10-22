@@ -30,10 +30,12 @@ export function LiveActivityScene({
   data,
   now,
   height,
+  maxScale = 1.4,
 }: {
   data: LiveData | null;
   now: number;
   height: number;
+  maxScale?: number;
 }) {
   const remainingMs = data?.postMealEndsAt != null ? data.postMealEndsAt - now : null;
   const countdown = remainingMs != null && remainingMs > 0 ? formatCountdown(remainingMs) : null;
@@ -42,7 +44,7 @@ export function LiveActivityScene({
   const accent = activityAccent();
   const pal = THEME.scheme === "dark" ? WIDGET_DARK : WIDGET_LIGHT;
   const k = LIVE_CARD;
-  const s = Math.min(height / k.naturalH, 1.4);
+  const s = Math.min(height / k.naturalH, maxScale);
   const px = (n: number) => Math.round(n * s);
 
   return (
@@ -78,6 +80,10 @@ export function LiveActivityScene({
         <Text
           style={{ fontSize: px(k.titleSize), fontWeight: k.titleWeight, color: pal.muted }}
           numberOfLines={1}
+          // iOS-only scene (Android renders AndroidScene): the longest titles (de, it) need to
+          // shrink a little at this scale instead of ending in an ellipsis.
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
         >
           {countdown ? title : "zerospike"}
         </Text>

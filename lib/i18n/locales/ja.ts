@@ -1537,6 +1537,7 @@ const ja: TranslationSchema = {
     liveActivity: "ライブアクティビティ",
     miniWidgets: "ミニウィジェット",
     homeAndMini: "ホーム画面とミニウィジェット",
+    dynamicIsland: "Dynamic Island",
   },
   mealResponse: {
     title: "食後の推移",
