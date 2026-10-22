@@ -1190,7 +1190,7 @@ export default function FoodScreen() {
         value={query}
         onChangeText={setQuery}
         placeholder={t("food.searchPlaceholder")}
-        placeholderTextColor={THEME.textMuted}
+        placeholderTextColor={THEME.placeholder}
         className="flex-1 py-3 px-2.5"
         style={[INPUT_TEXT, { color: THEME.text, fontSize: 15 }]}
         returnKeyType="search"

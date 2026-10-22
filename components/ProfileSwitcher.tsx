@@ -228,7 +228,7 @@ export function ProfileSwitcher({
                     onChangeText={setName}
                     autoFocus
                     placeholder={t("profiles.newNamePlaceholder")}
-                    placeholderTextColor={THEME.textMuted}
+                    placeholderTextColor={THEME.placeholder}
                     className="rounded-xl bg-glass border border-hair px-4 py-3 text-ink mb-3"
                     style={INPUT_TEXT}
                   />

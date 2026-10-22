@@ -649,7 +649,7 @@ function AddFoodScreen() {
                       onChangeText={(text) => setPresetGrams(row.id, text)}
                       keyboardType="number-pad"
                       placeholder="0"
-                      placeholderTextColor={THEME.textMuted}
+                      placeholderTextColor={THEME.placeholder}
                       accessibilityLabel={`${t(`portion.${row.labelKey}`)}, ${t("common.grams")}`}
                       className="rounded-xl bg-glass border border-hair px-4 py-2.5 text-ink"
                       style={[INPUT_TEXT, { flex: 1 }]}

@@ -11,6 +11,7 @@ import React, {
   useState,
 } from "react";
 import { Animated, StyleSheet, useColorScheme, View } from "react-native";
+import { Appearance } from "react-native";
 import * as SystemUI from "expo-system-ui";
 
 import { isScreenshotMode } from "../screenshotMode";
@@ -27,10 +28,14 @@ import {
   isRemountLocked,
   subscribeRemountLock,
 } from "./remountLock";
+import { nativeSchemeOverride } from "./themePref";
+import { useHighContrast } from "./useHighContrast";
 import {
   PALETTES,
   THEME,
+  activePalette,
   setActiveScheme,
+  setHighContrast,
   type Palette,
   type Scheme,
   type Theme,
@@ -38,6 +43,8 @@ import {
 
 interface ThemeContextValue {
   scheme: Scheme;
+  /** System Increase Contrast / high contrast text is on: tokens are the stronger variant. */
+  highContrast: boolean;
   pref: ThemePref;
   setPref: (next: ThemePref) => Promise<void>;
   /** The live token object: same reference as the static THEME export. */
@@ -111,6 +118,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Set during render, before any child reads a token: the first paint of the
   // routed tree must already see the right palette.
   setActiveScheme(scheme);
+  const highContrast = useHighContrast();
+  setHighContrast(highContrast);
 
   const schemeRef = useRef(scheme);
   schemeRef.current = scheme;
@@ -121,11 +130,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     void SystemUI.setBackgroundColorAsync(PALETTES[scheme].bg).catch(() => {});
   }, [scheme]);
 
+  // The keyboard, native pickers and Alert follow the OS appearance, not the
+  // app's: pin it to the saved choice, hand it back to the OS for "system".
+  useEffect(() => {
+    if (pref !== null) Appearance.setColorScheme(nativeSchemeOverride(pref));
+  }, [pref]);
+
   const setPref = useCallback(
     async (next: ThemePref) => {
       await saveThemePref(AsyncStorage, next);
       void publishWidgetThemePref(next);
-      const target = resolveScheme(next, systemRef.current);
+      // Release the pin first: while a scheme is forced, useColorScheme reports
+      // the forced value, not the OS one.
+      Appearance.setColorScheme(nativeSchemeOverride(next));
+      const target = resolveScheme(
+        next,
+        next === "system" ? Appearance.getColorScheme() : systemRef.current,
+      );
       if (target === schemeRef.current) {
         setPrefState(next);
         return;
@@ -154,15 +175,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ scheme, pref: pref ?? "dark", setPref, theme: THEME }),
-    [scheme, pref, setPref],
+    () => ({ scheme, highContrast, pref: pref ?? "dark", setPref, theme: THEME }),
+    [scheme, highContrast, pref, setPref],
   );
 
   if (pref === null) return null;
 
   return (
     <ThemeContext.Provider value={value}>
-      <View style={[styles.root, cssVars(PALETTES[scheme])]}>
+      <View style={[styles.root, cssVars(activePalette())]}>
         {children}
         {coverColor ? (
           <Animated.View
@@ -196,6 +217,6 @@ export function useThemeRemountLock(): void {
  *  read a token at render re-reads it. Place it BELOW AppProvider so app state
  *  survives. */
 export function ThemeRemount({ children }: { children: React.ReactNode }) {
-  const { scheme } = useTheme();
-  return <Fragment key={scheme}>{children}</Fragment>;
+  const { scheme, highContrast } = useTheme();
+  return <Fragment key={highContrast ? `${scheme}-hc` : scheme}>{children}</Fragment>;
 }

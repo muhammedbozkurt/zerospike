@@ -67,7 +67,7 @@ export function BigInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={THEME.textMuted}
+        placeholderTextColor={THEME.placeholder}
         keyboardType={keyboardType}
         autoFocus={autoFocus}
         maxLength={maxLength}

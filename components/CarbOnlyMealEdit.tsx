@@ -14,7 +14,7 @@ import { carbOnlyPatch, parseCarbGrams } from "../lib/mealRoute";
 import { formatTime, relativeDay } from "../lib/format";
 import { hapticSuccess } from "../lib/haptics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
-import { AppBackground, GlassCard, GradientCTA, IconTile, withAlpha } from "./rich";
+import { AppBackground, GlassCard, GradientCTA, IconTile } from "./rich";
 import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, TABULAR, THEME } from "../lib/theme/tokens";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
@@ -262,7 +262,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
               setDirty(true);
             }}
             placeholder={t("calculator.notePlaceholder")}
-            placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+            placeholderTextColor={THEME.placeholder}
             multiline
             style={[fieldStyleOf(), INPUT_TEXT, { marginBottom: 12, minHeight: 72 }]}
             textAlignVertical="top"

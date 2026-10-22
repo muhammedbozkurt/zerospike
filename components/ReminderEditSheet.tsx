@@ -371,7 +371,7 @@ export function ReminderEditSheet({
                   value={customLabel}
                   onChangeText={setCustomLabel}
                   placeholder={t("reminders.labelPlaceholder")}
-                  placeholderTextColor={THEME.textMuted}
+                  placeholderTextColor={THEME.placeholder}
                   accessibilityLabel={t("reminders.labelPlaceholder")}
                   returnKeyType="done"
                   style={[inputStyle(), { marginBottom: 18 }]}
@@ -389,7 +389,7 @@ export function ReminderEditSheet({
                   value={glucoseName}
                   onChangeText={setGlucoseName}
                   placeholder={t("reminders.namePlaceholderOptional")}
-                  placeholderTextColor={THEME.textMuted}
+                  placeholderTextColor={THEME.placeholder}
                   accessibilityLabel={t("reminders.namePlaceholderOptional")}
                   returnKeyType="done"
                   style={[inputStyle(), { marginBottom: 18 }]}

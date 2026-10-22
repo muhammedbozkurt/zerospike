@@ -458,7 +458,7 @@ export function CarbEstimateSheet({
           maxLength={CARB_TEXT_MAX}
           editable={!busy}
           placeholder={t("carbEstimate.placeholder")}
-          placeholderTextColor={THEME.textMuted}
+          placeholderTextColor={THEME.placeholder}
           accessibilityLabel={t("carbEstimate.title")}
           style={[
             INPUT_TEXT,

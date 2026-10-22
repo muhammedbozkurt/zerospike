@@ -288,7 +288,7 @@ export function NumericField({
           returnKeyType="done"
           maxLength={maxLength}
           placeholder={placeholder}
-          placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+          placeholderTextColor={THEME.placeholder}
           selectTextOnFocus
           accessibilityLabel={accessibilityLabel}
           accessibilityValue={{ text: valueText }}

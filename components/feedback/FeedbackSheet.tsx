@@ -240,7 +240,7 @@ export function FeedbackSheet({
             multiline
             maxLength={MAX_MESSAGE_CHARS}
             placeholder={isSurvey ? t("feedback.messageSurveyPlaceholder") : t("feedback.messagePlaceholder")}
-            placeholderTextColor={THEME.textMuted}
+            placeholderTextColor={THEME.placeholder}
             accessibilityLabel={isSurvey ? t("feedback.messageSurveyPlaceholder") : t("feedback.messagePlaceholder")}
             textAlignVertical="top"
             style={{
@@ -263,7 +263,7 @@ export function FeedbackSheet({
               autoCapitalize="none"
               autoCorrect={false}
               placeholder={t("feedback.emailPlaceholder")}
-              placeholderTextColor={THEME.textMuted}
+              placeholderTextColor={THEME.placeholder}
               accessibilityLabel={t("feedback.emailPlaceholder")}
               style={{ ...inputStyle, textAlign: "left", writingDirection: "ltr" }}
             />

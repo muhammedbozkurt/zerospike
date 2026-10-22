@@ -166,7 +166,7 @@ export function SavedMedEditSheet({
                 value={name}
                 onChangeText={setName}
                 placeholder={t("meds.savedNamePlaceholder")}
-                placeholderTextColor={THEME.textMuted}
+                placeholderTextColor={THEME.placeholder}
                 accessibilityLabel={t("meds.savedNamePlaceholder")}
                 autoFocus
                 returnKeyType="done"

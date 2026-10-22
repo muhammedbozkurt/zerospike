@@ -911,7 +911,7 @@ function MealTemplateScreen() {
                 value={query}
                 onChangeText={setQuery}
                 placeholder={t("food.searchPlaceholder")}
-                placeholderTextColor={withAlpha(THEME.textMuted, 0.7)}
+                placeholderTextColor={THEME.placeholder}
                 className="flex-1 py-3 px-2.5"
                 style={[INPUT_TEXT, { color: THEME.text, fontSize: 15 }]}
                 accessibilityLabel={t("food.searchPlaceholder")}
