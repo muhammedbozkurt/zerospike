@@ -534,10 +534,10 @@ export function CarbEstimateSheet({
     );
   }
 
-  // The sheet is mounted inside a screen, so the room it has is the measured
-  // host, not the window: with large text the tab bar grows and the window-based
-  // cap let the sheet reach under the status bar.
-  const maxHeight = overlaySheetMaxHeight({ windowHeight, hostHeight, keyboardH, insetTop: insets.top });
+  // With large text the tab bar grows and the window-based cap let the sheet
+  // reach under the status bar, so the measured host bounds it too. At 1.0 the
+  // window-based cap stays as is (store screenshots).
+  const maxHeight = overlaySheetMaxHeight({ windowHeight, hostHeight, keyboardH, insetTop: insets.top, fontScale });
   const bottomPad = keyboardH > 0 ? 12 : insets.bottom + 16;
 
   return (

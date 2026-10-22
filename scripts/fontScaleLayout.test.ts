@@ -155,25 +155,40 @@ check("tab bar labels opt out of font scaling (Large Content Viewer pattern)", (
 
 // ---- 241-ALFIX: large-text fixes (B1-B6). Scale 1.0 outputs must not move. ----
 
-check("B2 overlaySheetMaxHeight: scale-1.0 phone (host as tall as the window) equals the legacy cap", () => {
-  for (const [w, kb, top] of [[956, 0, 59], [844, 0, 47], [932, 336, 59], [667, 0, 20]] as const) {
-    const legacy = Math.min(w * 0.92, w - kb - top - 8);
-    assert.equal(overlaySheetMaxHeight({ windowHeight: w, hostHeight: w, keyboardH: kb, insetTop: top }), legacy);
-    assert.equal(overlaySheetMaxHeight({ windowHeight: w, hostHeight: 0, keyboardH: kb, insetTop: top }), legacy);
+check("B2 overlaySheetMaxHeight: scale 1.0 equals the legacy cap for the REAL host (window minus tab bar), every device", () => {
+  // [window height, tab bar incl. inset, top inset]: iPhone 15, 6.9", SE, tablet
+  for (const [w, tab, top] of [[852, 83, 59], [956, 83, 62], [667, 49, 20], [1194, 65, 24]] as const) {
+    for (const kb of [0, 336]) {
+      const legacy = Math.min(w * 0.92, w - kb - top - 8);
+      for (const fs of [1, 0.85, 1.0]) {
+        assert.equal(overlaySheetMaxHeight({ windowHeight: w, hostHeight: w - tab, keyboardH: kb, insetTop: top, fontScale: fs }), legacy);
+        assert.equal(overlaySheetMaxHeight({ windowHeight: w, hostHeight: 0, keyboardH: kb, insetTop: top, fontScale: fs }), legacy);
+      }
+    }
   }
+  assert.equal(overlaySheetMaxHeight({ windowHeight: 852, hostHeight: 769, keyboardH: 0, insetTop: 59, fontScale: 1 }), Math.min(852 * 0.92, 852 - 59 - 8));
 });
 
-check("B2 overlaySheetMaxHeight: AX5 host (873 of 956, inset 59) keeps the top under the status bar", () => {
-  const max = overlaySheetMaxHeight({ windowHeight: 956, hostHeight: 873, keyboardH: 0, insetTop: 59 });
+check("B2 overlaySheetMaxHeight: above 1.0 the measured host bounds the cap (AX5 host 873 of 956, inset 59)", () => {
+  const max = overlaySheetMaxHeight({ windowHeight: 956, hostHeight: 873, keyboardH: 0, insetTop: 59, fontScale: 2 });
   assert.ok(max <= 873 - 59, `max=${max}`);
   assert.ok(873 - max >= 59, "top edge must be at or below the status bar");
   assert.ok(max > 0);
+  const slight = overlaySheetMaxHeight({ windowHeight: 852, hostHeight: 769, keyboardH: 0, insetTop: 59, fontScale: 1.2 });
+  assert.equal(slight, 769 - 59 - 8);
 });
 
 check("B2 overlaySheetMaxHeight: never negative, keyboard counted once", () => {
-  assert.equal(overlaySheetMaxHeight({ windowHeight: 300, hostHeight: 300, keyboardH: 400, insetTop: 59 }), 0);
-  const a = overlaySheetMaxHeight({ windowHeight: 956, hostHeight: 873, keyboardH: 300, insetTop: 59 });
+  assert.equal(overlaySheetMaxHeight({ windowHeight: 300, hostHeight: 300, keyboardH: 400, insetTop: 59, fontScale: 2 }), 0);
+  const a = overlaySheetMaxHeight({ windowHeight: 956, hostHeight: 873, keyboardH: 300, insetTop: 59, fontScale: 2 });
   assert.equal(a, 873 - 300 - 59 - 8);
+});
+
+check("relaxTextProps: allowFontScaling={false} keeps its line limit at any scale (tab label)", () => {
+  const p = { numberOfLines: 1, adjustsFontSizeToFit: true, allowFontScaling: false };
+  assert.equal(relaxTextProps(p, 2.0), p);
+  const q = { numberOfLines: 1, allowFontScaling: true };
+  assert.equal(relaxTextProps(q, 2.0).numberOfLines, undefined);
 });
 
 check("B3 calcHeaderTitleStyle: empty at default and moderate scale, shrinks+centres when large", () => {
@@ -205,7 +220,7 @@ check("B5 ring caption cap stays below the number cap and keeps the >=1.2 floor"
 
 check("B1 GlucoseInputSheet: the card shrinks inside the maxHeight wrapper so the body scrolls and pinned Save stays above the keyboard", () => {
   const src = read("components/GlucoseInputSheet.tsx");
-  assert.match(src, /overflow: "hidden",\s*\/\/[^\n]*\n(\s*\/\/[^\n]*\n)*\s*flexShrink: 1,/);
+  assert.match(src, /overflow: "hidden",\s*\/\/[^\n]*\n(\s*\/\/[^\n]*\n)*\s*flexShrink: pinSave \? 1 : undefined,/);
   assert.match(src, /const pinSave = fontScale > STACK_AT_SCALE;/);
   assert.match(src, /\{pinSave \? null : \(\s*<GradientCTA/);
   assert.match(src, /<ScrollView\s+style=\{\{ flexShrink: 1 \}\}/);
@@ -213,7 +228,7 @@ check("B1 GlucoseInputSheet: the card shrinks inside the maxHeight wrapper so th
 
 check("B2 CarbEstimateSheet: host-measured cap, title wraps at large text and is capped", () => {
   const src = read("components/CarbEstimateSheet.tsx");
-  assert.match(src, /overlaySheetMaxHeight\(\{ windowHeight, hostHeight, keyboardH, insetTop: insets\.top \}\)/);
+  assert.match(src, /overlaySheetMaxHeight\(\{ windowHeight, hostHeight, keyboardH, insetTop: insets\.top, fontScale \}\)/);
   assert.match(src, /setHostHeight\(e\.nativeEvent\.layout\.height\)/);
   assert.match(src, /numberOfLines=\{linesFor\(fontScale, 2\)\}/);
 });

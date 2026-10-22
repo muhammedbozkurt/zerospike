@@ -33,3 +33,9 @@ export function subscribeRemountLock(l: () => void): () => void {
 export function heldScheme(wanted: Scheme, applied: Scheme | null, locked: boolean): Scheme {
   return locked && applied ? applied : wanted;
 }
+
+/** Same hold for the Increase Contrast flag: it also remounts the tree (the
+ *  ThemeRemount key), so it must wait for the lock like the scheme does. */
+export function heldFlag(wanted: boolean, applied: boolean | null, locked: boolean): boolean {
+  return locked && applied !== null ? applied : wanted;
+}

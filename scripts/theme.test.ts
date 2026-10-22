@@ -4,10 +4,15 @@
  * Run: npx tsx scripts/theme.test.ts   (add --report to print the full table)
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { createFlagStore } from "../lib/theme/flagStore";
 
 import { contrast, contrastTable } from "../lib/theme/contrast";
 import {
   acquireRemountLock,
+  heldFlag,
   heldScheme,
   isRemountLocked,
   subscribeRemountLock,
@@ -209,6 +214,59 @@ async function main() {
     assert.equal(isRemountLocked(), false);
     assert.equal(fired, 1);
     off();
+  });
+
+  await check("remount lock: Increase Contrast change is deferred while locked, applied on release", () => {
+    assert.equal(heldFlag(true, false, true), false);
+    assert.equal(heldFlag(false, true, true), true);
+    assert.equal(heldFlag(true, false, false), true);
+    assert.equal(heldFlag(true, null, true), true, "nothing applied yet: take the wanted value");
+    const off = acquireRemountLock();
+    assert.equal(heldFlag(true, false, isRemountLocked()), false);
+    off();
+    assert.equal(heldFlag(true, false, isRemountLocked()), true);
+  });
+
+  await check("high contrast store: first value is synchronous, ready only after the first reading", () => {
+    const s = createFlagStore(false);
+    assert.equal(s.getValue(), false);
+    assert.equal(s.isReady(), false);
+    let n = 0;
+    const off = s.subscribe(() => (n += 1));
+    s.set(true);
+    assert.equal(s.getValue(), true);
+    assert.equal(s.isReady(), true);
+    assert.equal(n, 1);
+    s.set(true);
+    assert.equal(n, 1, "same value, already ready: no event");
+    s.set(false);
+    assert.equal(n, 2);
+    off();
+    s.set(true);
+    assert.equal(n, 2, "unsubscribed");
+  });
+
+  await check("high contrast store: a failed first read still releases the render gate; a false first reading too", () => {
+    const failed = createFlagStore(false);
+    failed.markReady();
+    assert.equal(failed.isReady(), true);
+    assert.equal(failed.getValue(), false);
+    const plain = createFlagStore(false);
+    let n = 0;
+    plain.subscribe(() => (n += 1));
+    plain.set(false);
+    assert.equal(plain.isReady(), true);
+    assert.equal(n, 1, "ready flipped: subscribers hear it");
+  });
+
+  await check("ThemeProvider holds the tree until the first Increase Contrast reading and defers it under the lock", () => {
+    const src = readFileSync(join(__dirname, "..", "lib/theme/ThemeProvider.tsx"), "utf8");
+    assert.match(src, /heldFlag\(wantedHc, appliedHcRef\.current, isRemountLocked\(\)\)/);
+    assert.match(src, /if \(pref === null \|\| !hcReady\) return null;/);
+    assert.match(src, /leavingPin = next === "system" && prefRef\.current !== "system"/);
+    const hook = readFileSync(join(__dirname, "..", "lib/theme/useHighContrast.ts"), "utf8");
+    assert.match(hook, /useSyncExternalStore/);
+    assert.doesNotMatch(hook, /useState\(false\)/);
   });
 
   const rows = contrastTable();

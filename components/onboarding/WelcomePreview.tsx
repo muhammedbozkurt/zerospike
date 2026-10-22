@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
-import { useReducedMotion } from "react-native-reanimated";
+import { useReducedMotion } from "../../lib/useReducedMotion";
 
 import { GlassCard, withAlpha } from "../rich/GlassCard";
 import { GlucoseChip } from "../rich/GlucoseChip";

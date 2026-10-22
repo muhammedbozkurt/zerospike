@@ -83,6 +83,7 @@ export interface TextClampProps {
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
   maxFontSizeMultiplier?: number | null;
+  allowFontScaling?: boolean;
 }
 
 /**
@@ -91,11 +92,13 @@ export interface TextClampProps {
  * back, Android sometimes clipping silently). So above STACK_AT_SCALE the
  * limit is dropped and the text wraps. A call site that passes its own
  * maxFontSizeMultiplier has declared fixed geometry (badge, ring number,
- * pill) and keeps its limits. Returns `props` itself when nothing changes, so
+ * pill) and keeps its limits; so does a Text with allowFontScaling={false} (it
+ * does not grow, e.g. the react-navigation tab label). Returns `props` itself when nothing changes, so
  * at the default size the wrapper allocates nothing.
  */
 export function relaxTextProps<T extends TextClampProps>(props: T, osScale: number): T {
   if (effectiveFontScale(osScale) <= STACK_AT_SCALE) return props;
+  if (props.allowFontScaling === false) return props;
   if (props.maxFontSizeMultiplier != null) return props;
   if (
     props.numberOfLines === undefined &&
@@ -109,20 +112,23 @@ export function relaxTextProps<T extends TextClampProps>(props: T, osScale: numb
 
 /**
  * Max height of an in-tree overlay sheet (not an RN Modal). `legacy` is the
- * window-based cap the sheet always had, so whenever the measured host is at
- * least as tall as that cap allows (every phone at the default text size) the
- * result is unchanged. A host shorter than the window (tab bar grown by large
- * text) lowers the cap so the sheet's top edge stays under the status bar:
- * the inset is counted once, together with the keyboard.
+ * window-based cap the sheet always had and is returned verbatim at the default
+ * text size: the measured host is already one tab bar shorter than the window
+ * there, so a host-based cap would move the store-screenshot sheet. Only with
+ * enlarged text (the tab bar grew) the cap is also bounded by the measured host,
+ * so the sheet's top edge stays under the status bar: the inset is counted once,
+ * together with the keyboard.
  */
 export function overlaySheetMaxHeight(input: {
   windowHeight: number;
   hostHeight: number;
   keyboardH: number;
   insetTop: number;
+  fontScale: number;
 }): number {
-  const { windowHeight, hostHeight, keyboardH, insetTop } = input;
+  const { windowHeight, hostHeight, keyboardH, insetTop, fontScale } = input;
   const legacy = Math.min(windowHeight * 0.92, windowHeight - keyboardH - insetTop - 8);
+  if (effectiveFontScale(fontScale) <= 1) return legacy;
   if (!(hostHeight > 0)) return legacy;
   return Math.max(0, Math.min(legacy, hostHeight - keyboardH - insetTop - 8));
 }
