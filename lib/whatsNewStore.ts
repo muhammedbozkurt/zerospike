@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Constants from "expo-constants";
+import { getAppVersionOrEmpty } from "./appVersion";
 
 import { markWhatsNewSeen } from "./whatsNew";
 import type { KeyValueStore } from "./feedbackSurvey";
@@ -10,7 +10,7 @@ export const whatsNewKv: KeyValueStore = {
 };
 
 export function currentAppVersion(): string {
-  return Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? "";
+  return getAppVersionOrEmpty();
 }
 
 /** Called when onboarding ends: a fresh install is never owed the update sheet. */

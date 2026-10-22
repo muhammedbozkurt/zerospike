@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+import { getAppVersionOrEmpty } from "./appVersion";
 import { logEvent } from "./analytics";
 import { currentLang } from "./i18n";
 import { getDeviceId } from "./identity/deviceId";
@@ -42,7 +43,7 @@ export async function submitFeedback(
   const id = (await getDeviceId()).trim().toLowerCase();
   if (!FEEDBACK_UUID.test(id)) return { ok: false, reason: "no_device_id" };
   const body = buildFeedbackBody(draft, {
-    appVersion: Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? "",
+    appVersion: getAppVersionOrEmpty(),
     platform: Platform.OS,
     locale: currentLang(),
   });

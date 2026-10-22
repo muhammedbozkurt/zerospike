@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { playSource } from './playCsv.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -98,37 +99,6 @@ async function ascSource(start, end, tmpDir) {
     res.push({ key: `asc.first.${k}`, label: `Ilk indirme ${label} (yeniden indirme haric)`, val: v.ft ?? null, scope: 'store' });
   }
   return { rows: res, unavailable, downloads: rows.TOPLAM?.dl ?? null, firstDownloads: rows.TOPLAM?.ft ?? null };
-}
-
-// Play Console > Istatistikler > Yuklemeler disa aktarimi (CSV, genelde UTF-16). Play icin API yolu yok: dosya elle indirilir.
-// Tarih sutunu ve "Daily User Installs" / "Install events" / "Gunluk kullanici yuklemeleri" sutunu aranir; haftalik toplam alinir.
-function playSource(file, start, end) {
-  const missing = 'kaynak yok: Play Console CSV (Istatistikler > Yuklemeler > disa aktar), sonra --play-csv <dosya>';
-  if (!file) return { rows: [], unavailable: [missing], installs: null };
-  let text;
-  try {
-    const buf = fs.readFileSync(file);
-    text = buf[0] === 0xff && buf[1] === 0xfe ? buf.toString('utf16le') : buf.toString('utf8');
-  } catch {
-    return { rows: [], unavailable: [`Play CSV okunamadi (${path.basename(file)}); ${missing}`], installs: null };
-  }
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
-  const split = (l) => l.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-  const head = split(lines[0] || '').map((c) => c.toLowerCase());
-  const di = head.findIndex((c) => c === 'date' || c === 'tarih');
-  const ii = head.findIndex((c) => /daily user installs|install events|gunluk kullanici|g\u00fcnl\u00fck kullan/.test(c));
-  if (di < 0 || ii < 0) return { rows: [], unavailable: ['Play CSV sutunlari taninmadi (Date + Daily User Installs bekleniyor)'], installs: null };
-  let total = 0;
-  let any = false;
-  for (const l of lines.slice(1)) {
-    const c = split(l);
-    const d = (c[di] || '').slice(0, 10);
-    if (d < start || d > end) continue;
-    const n = Number((c[ii] || '').replace(/[\s.,]/g, ''));
-    if (Number.isFinite(n)) { total += n; any = true; }
-  }
-  if (!any) return { rows: [], unavailable: [`Play CSV'de ${start}..${end} araligi yok`], installs: null };
-  return { rows: [{ key: 'play.installs', label: 'Play yeni kurulum (CSV)', val: total, scope: 'store' }], unavailable: [], installs: total };
 }
 
 async function rcSource() {

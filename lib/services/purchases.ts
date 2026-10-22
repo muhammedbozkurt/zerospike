@@ -3,7 +3,7 @@ import { AppState, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash, logEvent } from "../analytics";
 import { getAnalyticsEnabled, onAnalyticsEnabledChange } from "../analytics/optOut";
-import { getDeviceId } from "../identity/deviceId";
+import { getDeviceId, isInstallId } from "../identity/deviceId";
 
 /**
  * RevenueCat purchases layer.
@@ -302,7 +302,7 @@ async function attachDeviceId(): Promise<void> {
   try {
     if (!(await getAnalyticsEnabled())) return;
     const id = await getDeviceId();
-    if (id && id !== "unknown") await rc().setAttributes({ device_id: id });
+    if (isInstallId(id)) await rc().setAttributes({ device_id: id });
   } catch (err) {
     logCrash(err, { service: "purchases", op: "setAttributes" });
   }

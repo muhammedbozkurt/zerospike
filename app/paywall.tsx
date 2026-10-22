@@ -71,6 +71,7 @@ import {
 } from "../lib/paywallPurchase";
 import { createPurchaseFlow, type PurchaseFlowDeps } from "../lib/paywallBuyFlow";
 import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
+import { logRestoreResult } from "../lib/analytics/restoreResult";
 import {
   DEFAULT_TRIAL_DAYS,
   PERSONAL_WINDOW_DAYS,
@@ -714,9 +715,7 @@ function PaywallScreen() {
   async function onRestore() {
     await flowRef.current!.restore(async () => {
       const result = await restore();
-      logEvent("restore_result", {
-        result: result === "restored" ? "success" : result === "none" ? "empty" : "error",
-      });
+      logRestoreResult(result);
       await refreshPro();
       if (result === "restored") {
         clearPaywallTrial();

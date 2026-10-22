@@ -898,6 +898,23 @@ const eligibilityOf = (status: number) => ({
     const sent = rc.attributeCalls.length;
     await optOutState.listeners[0](true);
     eq("an 'on' that is already stale attaches nothing", rc.attributeCalls.length, sent);
+
+    // A storage failure makes getDeviceId return its fallback, which is no install id.
+    reset();
+    P = loadPurchases();
+    const realGet = AsyncStorageStub.getItem;
+    AsyncStorageStub.getItem = async (k: string) => {
+      if (k === "zerospike.deviceId") throw new Error("storage unavailable");
+      return realGet(k);
+    };
+    try {
+      rc.customerInfo = () => inactiveInfo();
+      await P.verifyProWithStore();
+      await flush();
+      eq("a failing id read attaches no device_id", rc.attributeCalls.length, 0);
+    } finally {
+      AsyncStorageStub.getItem = realGet;
+    }
   }
 
   // ── G ────────────────────────────────────────────────────────────────────
