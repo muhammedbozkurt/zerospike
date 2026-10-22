@@ -54,6 +54,7 @@ import { HEALTH_NAME } from "../lib/services/health";
 import { GradientCTA } from "./rich/GradientCTA";
 import { Button, Chip, Row, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
+import { animate, animateFade, animateSpring, isReducedMotionNow } from "../lib/useReducedMotion";
 import { dialogCardStyle, sheetBoxStyle } from "../lib/tabletLayout";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { useEntryGuardConfirm } from "./useEntryGuardConfirm";
@@ -226,13 +227,14 @@ export function GlucoseInputSheet({
    *  Every exit goes through here, so the sheet never simply blinks away. */
   function animateOut(done: () => void) {
     Keyboard.dismiss();
+    const reduced = isReducedMotionNow();
     Animated.parallel([
-      Animated.timing(translateY, {
+      animate(reduced, translateY, {
         toValue: sheetHRef.current || 700,
         duration: 190,
         useNativeDriver: true,
       }),
-      Animated.timing(backdrop, {
+      animateFade(reduced, backdrop, {
         toValue: 0,
         duration: 190,
         useNativeDriver: true,
@@ -258,7 +260,7 @@ export function GlucoseInputSheet({
         if (g.dy > 120 || g.vy > 0.6) {
           closeSheetRef.current();
         } else {
-          Animated.spring(translateY, {
+          animateSpring(isReducedMotionNow(), translateY, {
             toValue: 0,
             bounciness: 0,
             useNativeDriver: true,
@@ -425,15 +427,16 @@ export function GlucoseInputSheet({
                 if (appearedRef.current || h <= 0) return;
                 appearedRef.current = true;
                 translateY.setValue(h);
+                const reduced = isReducedMotionNow();
                 Animated.parallel([
-                  Animated.spring(translateY, {
+                  animateSpring(reduced, translateY, {
                     toValue: 0,
                     useNativeDriver: true,
                     damping: 26,
                     stiffness: 260,
                     mass: 0.9,
                   }),
-                  Animated.timing(backdrop, {
+                  animateFade(reduced, backdrop, {
                     toValue: 1,
                     duration: 200,
                     useNativeDriver: true,

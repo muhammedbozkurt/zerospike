@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
+import { animateFade, isReducedMotionNow, slideDistance, useReducedMotion } from "../lib/useReducedMotion";
 import { THEME, RADIUS, SPACE } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { withAlpha } from "./rich/GlassCard";
@@ -91,6 +92,7 @@ export function QuickAddSheet({
   const { activeProfile, bumpData } = useApp();
   const { toast } = useFeedback();
   const anim = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useReducedMotion();
   // Which body the sheet shows: the option grid, or the medication mini-form
   // (name + time + save) reached from the "Medication" card or opened directly
   // by the deep-link/widget shortcut.
@@ -112,7 +114,7 @@ export function QuickAddSheet({
     setMedTimePickerOpen(false);
     setSavingMed(false);
     anim.setValue(0);
-    Animated.timing(anim, {
+    animateFade(isReducedMotionNow(), anim, {
       toValue: 1,
       duration: 200,
       easing: Easing.out(Easing.cubic),
@@ -237,7 +239,7 @@ export function QuickAddSheet({
               {
                 translateY: anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [40, 0],
+                  outputRange: [slideDistance(reducedMotion, 40), 0],
                 }),
               },
             ],

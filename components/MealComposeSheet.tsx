@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import type { EditableItem } from "../lib/ai/carbEstimateClient";
 import { searchFoods } from "../lib/db/foods";
 import { foodName, type Food, type Lang } from "../lib/db/types";
+import { animateFade, isReducedMotionNow, slideDistance, useReducedMotion } from "../lib/useReducedMotion";
 import { decimalInputText, num } from "../lib/format";
 import { logEvent } from "../lib/analytics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
@@ -145,6 +146,7 @@ export function MealComposeSheet({
   const insets = useSafeAreaInsets();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useReducedMotion();
   const rootRef = useRef<View>(null);
   const scrollRef = useRef<ScrollView>(null);
   const scrollHint = useScrollHint("sheet.meal-compose");
@@ -176,7 +178,7 @@ export function MealComposeSheet({
   }, []);
 
   useEffect(() => {
-    Animated.timing(anim, {
+    animateFade(isReducedMotionNow(), anim, {
       toValue: 1,
       duration: 200,
       easing: Easing.out(Easing.cubic),
@@ -368,7 +370,7 @@ export function MealComposeSheet({
             {
               height: sheetHeightCapped ?? "92%",
               transform: [
-                { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
+                { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [slideDistance(reducedMotion, 40), 0] }) },
               ],
             },
             sheetBoxStyle(layoutWidth, isWide, layoutHeight, dialogRoom, false, { clearance: dialogClearance }),

@@ -10,6 +10,7 @@ import { Card, Txt } from "./ui";
 import { hapticSelect } from "../lib/haptics";
 import { upper } from "../lib/upper";
 import { useLayout } from "../lib/useLayout";
+import { animateSpring, isReducedMotionNow } from "../lib/useReducedMotion";
 import { hasDecimalSeparator, parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
 
 /**
@@ -272,14 +273,15 @@ export function RangeInput({
   const loLift = useRef(new Animated.Value(1)).current;
   const hiLift = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    Animated.spring(loLift, {
+    const reduced = isReducedMotionNow();
+    animateSpring(reduced, loLift, {
       toValue: dragging === "lo" ? 1.18 : 1,
       useNativeDriver: true,
       damping: 18,
       stiffness: 260,
       mass: 0.6,
     }).start();
-    Animated.spring(hiLift, {
+    animateSpring(reduced, hiLift, {
       toValue: dragging === "hi" ? 1.18 : 1,
       useNativeDriver: true,
       damping: 18,

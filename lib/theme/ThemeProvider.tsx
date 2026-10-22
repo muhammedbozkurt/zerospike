@@ -14,6 +14,7 @@ import { Animated, StyleSheet, useColorScheme, View } from "react-native";
 import * as SystemUI from "expo-system-ui";
 
 import { isScreenshotMode } from "../screenshotMode";
+import { animate, isReducedMotionNow } from "../useReducedMotion";
 import { publishWidgetThemePref } from "../services/widgetTheme";
 import {
   loadThemePref,
@@ -135,7 +136,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setCoverColor(PALETTES[target].bg);
       coverOpacity.setValue(0);
       await new Promise<void>((resolve) =>
-        Animated.timing(coverOpacity, {
+        animate(isReducedMotionNow(), coverOpacity, {
           toValue: 1,
           duration: FADE_IN_MS,
           useNativeDriver: true,
@@ -143,7 +144,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       );
       setPrefState(next);
       requestAnimationFrame(() => {
-        Animated.timing(coverOpacity, {
+        animate(isReducedMotionNow(), coverOpacity, {
           toValue: 0,
           duration: FADE_OUT_MS,
           useNativeDriver: true,

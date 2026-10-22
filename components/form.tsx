@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { HIT_TARGET, INPUT_TEXT, RADIUS, THEME } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { upper } from "../lib/upper";
+import { animate, isReducedMotionNow } from "../lib/useReducedMotion";
 import { DirIcon } from "./DirIcon";
 import { withAlpha } from "./rich/GlassCard";
 
@@ -174,7 +175,7 @@ export function AcceptCheck({
   const anim = useRef(new Animated.Value(checked ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.timing(anim, {
+    animate(isReducedMotionNow(), anim, {
       toValue: checked ? 1 : 0,
       duration: 180,
       easing: Easing.out(Easing.cubic),

@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
+import { animateFade, isReducedMotionNow, slideDistance, useReducedMotion } from "../../lib/useReducedMotion";
 import { useApp } from "../../lib/store/AppContext";
 import { mealEditMode, mealEditRoute } from "../../lib/mealRoute";
 import {
@@ -265,13 +266,14 @@ function TemplateConfirmSheet({
   const insets = useSafeAreaInsets();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useReducedMotion();
   // null = "now"; a Date is an explicit pick (same convention as the glucose
   // and medication quick-add sheets).
   const [at, setAt] = useState<Date | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
 
   useEffect(() => {
-    Animated.timing(anim, {
+    animateFade(isReducedMotionNow(), anim, {
       toValue: 1,
       duration: 200,
       easing: Easing.out(Easing.cubic),
@@ -313,7 +315,7 @@ function TemplateConfirmSheet({
               {
                 translateY: anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [40, 0],
+                  outputRange: [slideDistance(reducedMotion, 40), 0],
                 }),
               },
             ],
