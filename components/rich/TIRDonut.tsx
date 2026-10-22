@@ -104,11 +104,11 @@ export function TIRDonut({
             maxFontSizeMultiplier={FONT_CAP.ringNumber}
           >
             {centerSuffix && centerSuffixFirst ? (
-              <Text maxFontSizeMultiplier={FONT_CAP.ringNumber} style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
+              <Text maxFontSizeMultiplier={FONT_CAP.ringCaption} style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
             ) : null}
             {centerValue}
             {centerSuffix && !centerSuffixFirst ? (
-              <Text maxFontSizeMultiplier={FONT_CAP.ringNumber} style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
+              <Text maxFontSizeMultiplier={FONT_CAP.ringCaption} style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
             ) : null}
           </Text>
         </View>

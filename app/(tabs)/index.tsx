@@ -1,5 +1,5 @@
 import React, { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View } from "react-native";
+import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View, useWindowDimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,7 +28,7 @@ import {
   getSugarLog,
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
-import { STACK_AT_SCALE } from "../../lib/layoutForFontScale";
+import { STACK_AT_SCALE, effectiveFontScale, ctaLineExtra } from "../../lib/layoutForFontScale";
 import { useFontScale } from "../../lib/useFontScale";
 import type { LogTag, PeriodTag, Reminder, SugarLog } from "../../lib/db/types";
 import { listReminders } from "../../lib/db/reminders";
@@ -312,14 +312,17 @@ function WeekSkeleton() {
   );
 }
 
-export default function DashboardScreen() {
+function DashboardScreenInner() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string; health?: string }>();
   const { isWide, isTwoCol, columnPad } = useLayout();
   // Large text: the title row wraps (title first, actions under it).
-  const headerLarge = useFontScale() > STACK_AT_SCALE;
+  const fontScale = useFontScale();
+  const headerLarge = fontScale > STACK_AT_SCALE;
+  // The floating CTA grows with the text; the list scrolls clear of the taller bar.
+  const ctaExtra = ctaLineExtra(fontScale);
   const { activeProfile, profiles, isProUser, dataVersion, bumpData, lang } = useApp();
   const { toast, confirm, actionSheet } = useFeedback();
   const healthBackfill = useHealthBackfill();
@@ -2651,7 +2654,7 @@ export default function DashboardScreen() {
       {b.el}
     </View>
   );
-  const wideListInset = isWide && !isFirstRun ? { paddingBottom: CTA_FOOTPRINT + insets.bottom } : undefined;
+  const wideListInset = isWide && !isFirstRun ? { paddingBottom: CTA_FOOTPRINT + ctaExtra + insets.bottom } : undefined;
 
   const journalFooter =
     journalEntries.length > 0 ? (
@@ -2711,8 +2714,8 @@ export default function DashboardScreen() {
           paddingBottom: isFirstRun
             ? 24
             : isWide
-              ? CTA_CLEARANCE
-              : Math.max(CTA_CLEARANCE, CTA_FOOTPRINT + insets.bottom + 40),
+              ? CTA_CLEARANCE + ctaExtra
+              : Math.max(CTA_CLEARANCE + ctaExtra, CTA_FOOTPRINT + ctaExtra + insets.bottom + 40),
           // Tablet one column: a centred reading column instead of a stretched
           // phone layout. Reduces to the plain 16 inset on phones, so the
           // narrow render is unchanged.
@@ -2735,7 +2738,7 @@ export default function DashboardScreen() {
         >
           <ScrollView
             style={[{ flex: 1 }, wideListInset]}
-            contentContainerStyle={{ paddingBottom: CTA_CLEARANCE }}
+            contentContainerStyle={{ paddingBottom: CTA_CLEARANCE + ctaExtra }}
             showsVerticalScrollIndicator={false}
           >
             <View style={{ paddingHorizontal: SPACE.lg }}>{titleRow}</View>
@@ -3047,4 +3050,15 @@ function PostMealCountdown({
       </View>
     </View>
   );
+}
+
+/** Remounts the dashboard when the effective text scale changes while the app
+ *  runs (system Settings, Control Center). Native text measurements, the
+ *  measured block heights and the tablet column cut were all taken at the old
+ *  scale and are not redone by a plain re-render, which left the screen torn
+ *  until a restart. A fresh mount drops those caches (blockHeights,
+ *  journalHeight, splitCutRef). At an unchanged scale nothing remounts. */
+export default function DashboardScreen() {
+  const { fontScale } = useWindowDimensions();
+  return <DashboardScreenInner key={effectiveFontScale(fontScale)} />;
 }

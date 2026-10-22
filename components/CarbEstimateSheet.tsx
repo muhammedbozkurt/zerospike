@@ -53,6 +53,8 @@ import { HIT_TARGET, INPUT_TEXT, TABULAR, THEME } from "../lib/theme/tokens";
 import type { EstimateLineInput } from "../lib/mealCompose";
 import { EstimateResultCard, LiveTotalHeader } from "./meal";
 import { SCRIM } from "./SheetShell";
+import { FONT_CAP, linesFor, overlaySheetMaxHeight } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { ScrollHint } from "./ScrollHint";
 import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
@@ -117,6 +119,8 @@ export function CarbEstimateSheet({
   const [error, setError] = useState<ErrorKind | null>(null);
   const [items, setItems] = useState<EditableItem[] | null>(null);
   const [keyboardH, setKeyboardH] = useState(0);
+  const [hostHeight, setHostHeight] = useState(0);
+  const fontScale = useFontScale();
   const proCta = useProCta(!isPro);
   const tier = isPro ? "pro" : "free";
 
@@ -265,7 +269,8 @@ export function CarbEstimateSheet({
   const title = (
     <Text
       accessibilityRole="header"
-      numberOfLines={2}
+      numberOfLines={linesFor(fontScale, 2)}
+      maxFontSizeMultiplier={FONT_CAP.ringNumber}
       style={{
         color: THEME.text,
         fontSize: 18,
@@ -529,7 +534,10 @@ export function CarbEstimateSheet({
     );
   }
 
-  const maxHeight = Math.min(windowHeight * 0.92, windowHeight - keyboardH - insets.top - 8);
+  // The sheet is mounted inside a screen, so the room it has is the measured
+  // host, not the window: with large text the tab bar grows and the window-based
+  // cap let the sheet reach under the status bar.
+  const maxHeight = overlaySheetMaxHeight({ windowHeight, hostHeight, keyboardH, insetTop: insets.top });
   const bottomPad = keyboardH > 0 ? 12 : insets.bottom + 16;
 
   return (
@@ -538,6 +546,7 @@ export function CarbEstimateSheet({
       accessibilityViewIsModal
       importantForAccessibility="yes"
       onAccessibilityEscape={onClose}
+      onLayout={(e) => setHostHeight(e.nativeEvent.layout.height)}
     >
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
         <Pressable
