@@ -11,6 +11,7 @@ import { GradientCTA, IconTile, arcPath, withAlpha } from "./rich";
 import { HIT_TARGET, RADIUS, SPACE, THEME } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { upper } from "../lib/upper";
+import { FONT_CAP } from "../lib/layoutForFontScale";
 import { welcomePreviewMode } from "../lib/homeEmpty";
 
 interface WelcomeCardProps {
@@ -204,7 +205,7 @@ export function WelcomeCard({ onAddFirst, onAddFood, onSetReminder }: WelcomeCar
                 backgroundColor: THEME.surface,
               }}
             >
-              <Txt kind="micro" tone="accent" tabular style={{ fontWeight: "800" }}>
+              <Txt kind="micro" tone="accent" tabular maxFontSizeMultiplier={FONT_CAP.badge} style={{ fontWeight: "800" }}>
                 {i + 1}
               </Txt>
             </View>

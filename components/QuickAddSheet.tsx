@@ -21,6 +21,8 @@ import { withAlpha } from "./rich/GlassCard";
 import { Row, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
 import { useLayout } from "../lib/useLayout";
+import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { sheetBoxStyle } from "../lib/tabletLayout";
 import { sheetFrame } from "../lib/sheetLayout";
 import { useSheetKeyboard } from "../lib/useSheetKeyboard";
@@ -74,6 +76,7 @@ export function QuickAddSheet({
   const insets = useSafeAreaInsets();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const { height: windowH } = useWindowDimensions();
+  const stackGrid = useFontScale() > STACK_AT_SCALE;
   const { hostRef, onHostLayout, hostHeight, lift, liftAnim, keyboardOpen } = useSheetKeyboard(visible);
   // The grabber, the med header and the close path stay on screen: the sheet is
   // capped at what the keyboard and the status-bar inset leave, and only the
@@ -272,7 +275,13 @@ export function QuickAddSheet({
             {step === "grid" ? (
               // The cards carry their own labels, so a question above them
               // would only repeat what they already say.
-              <View style={{ flexDirection: "row", gap: SPACE.sm, marginTop: SPACE.md }}>
+              <View
+                style={{
+                  flexDirection: stackGrid ? "column" : "row",
+                  gap: SPACE.sm,
+                  marginTop: SPACE.md,
+                }}
+              >
                 {options.map((opt) => (
                   <Pressable
                     key={opt.key}
@@ -281,17 +290,20 @@ export function QuickAddSheet({
                     onPress={() => (opt.key === "med" ? opt.onPress() : select(opt.onPress))}
                     android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
                     style={{
-                      flex: 1,
+                      flex: stackGrid ? undefined : 1,
                       minWidth: 0,
+                      // Large text: one card per line, icon beside its label,
+                      // so a long word ("Enjeksiyon") is never split mid-word.
+                      flexDirection: stackGrid ? "row" : "column",
                       alignItems: "center",
-                      justifyContent: "center",
+                      justifyContent: stackGrid ? "flex-start" : "center",
                       backgroundColor: THEME.surface,
                       borderWidth: 1,
                       borderColor: THEME.border,
                       borderRadius: RADIUS.lg,
-                      paddingVertical: SPACE.lg,
-                      paddingHorizontal: SPACE.xs,
-                      gap: SPACE.sm,
+                      paddingVertical: stackGrid ? SPACE.md : SPACE.lg,
+                      paddingHorizontal: stackGrid ? SPACE.md : SPACE.xs,
+                      gap: stackGrid ? SPACE.md : SPACE.sm,
                     }}
                     accessibilityRole="button"
                     accessibilityLabel={opt.label}
@@ -300,7 +312,11 @@ export function QuickAddSheet({
                     <Txt
                       kind="caption"
                       numberOfLines={2}
-                      style={{ fontWeight: "700", textAlign: "center" }}
+                      style={{
+                        fontWeight: "700",
+                        textAlign: stackGrid ? "left" : "center",
+                        flexShrink: 1,
+                      }}
                     >
                       {opt.label}
                     </Txt>
@@ -385,8 +401,15 @@ export function QuickAddSheet({
                   }}
                 />
 
-                <GradientCTA label={t("meds.logCta")} disabled={savingMed} onPress={saveMed} />
+                {stackGrid ? null : (
+                  <GradientCTA label={t("meds.logCta")} disabled={savingMed} onPress={saveMed} />
+                )}
                 </ScrollView>
+                {stackGrid ? (
+                  <View style={{ paddingTop: SPACE.sm }}>
+                    <GradientCTA label={t("meds.logCta")} disabled={savingMed} onPress={saveMed} />
+                  </View>
+                ) : null}
               </View>
             )}
           </View>

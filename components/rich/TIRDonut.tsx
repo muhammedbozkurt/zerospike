@@ -4,6 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import Svg, { Circle, G } from "react-native-svg";
 
 import { GLUCOSE_RICH, THEME, TABULAR } from "../../lib/theme/tokens";
+import { FONT_CAP } from "../../lib/layoutForFontScale";
 
 export interface DonutSegment {
   /** Share of the ring, 0..1 (the parts should sum to <= 1). */
@@ -100,13 +101,14 @@ export function TIRDonut({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.7}
+            maxFontSizeMultiplier={FONT_CAP.ringNumber}
           >
             {centerSuffix && centerSuffixFirst ? (
-              <Text style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
+              <Text maxFontSizeMultiplier={FONT_CAP.ringNumber} style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
             ) : null}
             {centerValue}
             {centerSuffix && !centerSuffixFirst ? (
-              <Text style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
+              <Text maxFontSizeMultiplier={FONT_CAP.ringNumber} style={{ fontSize: size * 0.12, color: THEME.textMuted }}>{centerSuffix}</Text>
             ) : null}
           </Text>
         </View>

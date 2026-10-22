@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 
 import { HIT_TARGET, THEME } from "../lib/theme/tokens";
 import { DirIcon } from "./DirIcon";
+import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 
 /**
  * The mockup's sub-screen header: a leading icon-plate back action, then the
@@ -39,11 +41,17 @@ export function ScreenHeader({
   accessibilityLabel?: string;
 }) {
   const { t } = useTranslation();
+  // Large text: the title wraps at full size instead of shrinking to one line,
+  // and a trailing accessory drops under it rather than squeezing it.
+  const large = useFontScale() > STACK_AT_SCALE;
   const backLabel =
     accessibilityLabel ??
     (backIcon === "close" ? t("common.close") : t("common.back"));
   return (
-    <View className="flex-row items-center px-4 py-3">
+    <View
+      className="flex-row items-center px-4 py-3"
+      style={large && right ? { flexWrap: "wrap" } : undefined}
+    >
       {onBack ? (
         <Pressable
           onPress={backDisabled ? undefined : onBack}
@@ -85,14 +93,16 @@ export function ScreenHeader({
       ) : null}
       <Text
         style={{ color: THEME.text, fontSize: 17, fontWeight: "800", flex: 1, textAlign: "left" }}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.8}
+        numberOfLines={large ? undefined : 1}
+        adjustsFontSizeToFit={!large}
+        minimumFontScale={large ? undefined : 0.8}
         accessibilityRole="header"
       >
         {title}
       </Text>
-      {right ? <View style={{ marginLeft: 10 }}>{right}</View> : null}
+      {right ? (
+        <View style={large ? { marginTop: 6, width: "100%" } : { marginLeft: 10 }}>{right}</View>
+      ) : null}
     </View>
   );
 }

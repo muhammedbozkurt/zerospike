@@ -54,6 +54,8 @@ import { HEALTH_NAME } from "../lib/services/health";
 import { GradientCTA } from "./rich/GradientCTA";
 import { Button, Chip, Row, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
+import { FONT_CAP, STACK_AT_SCALE } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { dialogCardStyle, sheetBoxStyle } from "../lib/tabletLayout";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { useEntryGuardConfirm } from "./useEntryGuardConfirm";
@@ -147,6 +149,10 @@ export function GlucoseInputSheet({
    *  without guessing at keyboard metrics. */
   const [availH, setAvailH] = useState(0);
   const compact = availH > 0 && availH < COMPACT_BELOW;
+  // Large text: Save is pinned under the scrolling body, so it is never the
+  // thing that scrolls off behind the keyboard.
+  const fontScale = useFontScale();
+  const pinSave = fontScale > STACK_AT_SCALE;
 
   // Android's edge-to-edge window is not resized by the keyboard, so Save used
   // to sit underneath it. The lift is the measured overlap, so a device that
@@ -562,6 +568,7 @@ export function GlucoseInputSheet({
                       },
                     ]}
                     maxLength={GLUCOSE_SHEET_MAX_CHARS}
+                    maxFontSizeMultiplier={FONT_CAP.ringNumber}
                   />
                   <Txt kind="caption" tone="muted" style={{ marginTop: compact ? 0 : -SPACE.xs }}>
                     {glucoseUnitLabel(unit)}
@@ -683,7 +690,9 @@ export function GlucoseInputSheet({
                   className={compact ? "mt-3 mb-3" : "mt-4 mb-4"}
                 />
 
-                <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
+                {pinSave ? null : (
+                  <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
+                )}
 
                 {edit && onDelete ? (
                   <View style={{ marginTop: compact ? SPACE.sm : SPACE.md }}>
@@ -696,6 +705,11 @@ export function GlucoseInputSheet({
                   </View>
                 ) : null}
               </ScrollView>
+              {pinSave ? (
+                <View style={{ paddingTop: SPACE.sm, paddingBottom: compact ? SPACE.lg : SPACE.xl + SPACE.xs }}>
+                  <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
+                </View>
+              ) : null}
             </Pressable>
             </Animated.View>
           </Pressable>

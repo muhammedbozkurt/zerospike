@@ -117,7 +117,9 @@ export function GradientCTA({
             {icon}
             {/* allowTwoLines (the paywall's price-carrying labels): wrap onto a
                 second line instead of shrinking, because adjustsFontSizeToFit
-                clips silently on Android. Every other CTA keeps one line. */}
+                clips silently on Android. Every other CTA keeps one line. At
+                large text the global Text wrapper (lib/theme/fontScale.ts)
+                drops the line limit and the shrink, so the pill grows. */}
             <Text
               style={{
                 color: textColor,
@@ -129,7 +131,6 @@ export function GradientCTA({
               numberOfLines={allowTwoLines ? 2 : 1}
               adjustsFontSizeToFit={!allowTwoLines}
               minimumFontScale={allowTwoLines ? undefined : 0.7}
-              maxFontSizeMultiplier={allowTwoLines ? 1.3 : undefined}
             >
               {label}
             </Text>

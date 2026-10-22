@@ -9,6 +9,8 @@ import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { withAlpha } from "./rich/GlassCard";
 import { Txt } from "./ui";
 import { hapticSelect } from "../lib/haptics";
+import { scaledMinHeight } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { num } from "../lib/format";
 import {
   fieldShowsValue,
@@ -95,6 +97,7 @@ export function NumericField({
   }
   const [text, setText] = useState(() => fromValue(value).text);
   const [focused, setFocused] = useState(false);
+  const fontScale = useFontScale();
   const [blurred, setBlurred] = useState(() => fromValue(value).kind === "below");
   const [kind, setKind] = useState<NumericReadKind>(() => fromValue(value).kind);
   const typingRef = useRef(false);
@@ -306,7 +309,7 @@ export function NumericField({
               textAlignVertical: "center",
               paddingVertical: 0,
               paddingHorizontal: SPACE.sm,
-              height: HIT_TARGET - 2,
+              minHeight: scaledMinHeight(HIT_TARGET - 2, fontScale),
             },
           ]}
         />

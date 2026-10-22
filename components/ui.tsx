@@ -43,6 +43,8 @@ import { GlassCard, withAlpha } from "./rich/GlassCard";
 import type { GlassCardProps } from "./rich/GlassCard";
 import { upper } from "../lib/upper";
 import { DirIcon } from "./DirIcon";
+import { STACK_AT_SCALE, linesFor } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 
 interface ButtonProps {
   label: string;
@@ -72,6 +74,7 @@ export function Button({
   minHit,
 }: ButtonProps) {
   const isOff = disabled || loading;
+  const fontScale = useFontScale();
   const modern = isCanonicalVariant(variant);
   const wantHit = minHit ?? modern;
   return (
@@ -102,11 +105,11 @@ export function Button({
           {icon ? <View className="mr-2">{icon}</View> : null}
           {/* No adjustsFontSizeToFit: inside a scale-in dialog iOS measures the
               first (tiny) width and the shrunken font sticks. Long labels
-              ellipsize instead. */}
+              ellipsize instead; at large text they wrap onto more lines. */}
           <Text
             className={buttonTextClassName(variant, size)}
             style={{ flexShrink: 1 }}
-            numberOfLines={1}
+            numberOfLines={linesFor(fontScale, 1)}
           >
             {label}
           </Text>
@@ -204,6 +207,9 @@ interface RowProps {
  * the settings batch switches to this one.
  */
 export function Row({ icon, label, sub, value, right, onPress, onLongPress, danger }: RowProps) {
+  const fontScale = useFontScale();
+  // Large text: the value drops under the label instead of squeezing it.
+  const stackValue = fontScale > STACK_AT_SCALE;
   const tone = danger ? THEME.danger : THEME.accent;
   const interactive = !!(onPress || onLongPress);
   return (
@@ -231,17 +237,20 @@ export function Row({ icon, label, sub, value, right, onPress, onLongPress, dang
         <Text
           className="text-[15px] font-semibold"
           style={{ color: danger ? THEME.danger : THEME.text }}
-          numberOfLines={2}
+          numberOfLines={linesFor(fontScale, 2)}
         >
           {label}
         </Text>
         {sub ? (
-          <Text className="text-mut text-[12px] mt-0.5" numberOfLines={1}>
+          <Text className="text-mut text-[12px] mt-0.5" numberOfLines={linesFor(fontScale, 1)}>
             {sub}
           </Text>
         ) : null}
+        {value && stackValue ? (
+          <Text className="text-mut text-[13px] mt-0.5 font-medium">{value}</Text>
+        ) : null}
       </View>
-      {value ? (
+      {value && !stackValue ? (
         <Text className="text-mut text-[13px] mr-1 font-medium" numberOfLines={2}>
           {value}
         </Text>
@@ -387,6 +396,8 @@ export function IconRow({
   tint = THEME.accent,
   destructive = false,
 }: IconRowProps) {
+  const fontScale = useFontScale();
+  const stackValue = fontScale > STACK_AT_SCALE && !right && !!value;
   const body = (
     <>
       <View
@@ -403,10 +414,15 @@ export function IconRow({
           {label}
         </Text>
         {sublabel ? <Text className="text-mut text-xs mt-0.5">{sublabel}</Text> : null}
+        {stackValue ? (
+          <Text style={TABULAR} className="text-mut font-semibold mt-0.5">
+            {value}
+          </Text>
+        ) : null}
       </View>
       {right ? (
         right
-      ) : value ? (
+      ) : value && !stackValue ? (
         <Text style={TABULAR} className="text-mut font-semibold mr-1">
           {value}
         </Text>
@@ -445,38 +461,59 @@ export function SegmentedStat({
   items: SegmentedStatItem[];
   className?: string;
 }) {
+  const fontScale = useFontScale();
+  // Large text: a 3-4 column strip cannot hold the labels, so each stat becomes
+  // its own full-width line (label left, value right) with a top hairline.
+  const stacked = fontScale > STACK_AT_SCALE;
   return (
     <View
-      className={`flex-row rounded-2xl bg-glass border border-hair py-3 ${className}`}
+      className={`${stacked ? "" : "flex-row "}rounded-2xl bg-glass border border-hair py-3 ${className}`}
     >
       {items.map((item, i) => (
         <View
           key={item.label}
-          className="flex-1 items-center px-1"
+          className={stacked ? "flex-row items-center justify-between px-3 py-1.5" : "flex-1 items-center px-1"}
           style={
-            i > 0 ? { borderLeftWidth: 1, borderLeftColor: THEME.border } : undefined
+            i === 0
+              ? undefined
+              : stacked
+                ? { borderTopWidth: 1, borderTopColor: THEME.border }
+                : { borderLeftWidth: 1, borderLeftColor: THEME.border }
           }
         >
-          {/* German and French labels are 1.5-2x the English ones in the same
-              fixed-width column, so both lines must be allowed to shrink instead
-              of being clipped mid-word. */}
-          <Text
-            style={[{ color: item.accent ?? THEME.text }, TABULAR]}
-            className="text-lg font-extrabold"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-          >
-            {item.value}
-          </Text>
-          <Text
-            className="text-[10px] font-semibold tracking-wide text-mut mt-0.5 text-center"
-            numberOfLines={2}
-            adjustsFontSizeToFit
-            minimumFontScale={0.75}
-          >
-            {upper(item.label)}
-          </Text>
+          {stacked ? (
+            <>
+              <Text className="text-[10px] font-semibold tracking-wide text-mut flex-1 mr-3">
+                {upper(item.label)}
+              </Text>
+              <Text style={[{ color: item.accent ?? THEME.text }, TABULAR]} className="text-lg font-extrabold">
+                {item.value}
+              </Text>
+            </>
+          ) : (
+            <>
+              {/* German and French labels are 1.5-2x the English ones in the same
+                  fixed-width column, so both lines must be allowed to shrink instead
+                  of being clipped mid-word. */}
+              <Text
+                style={[{ color: item.accent ?? THEME.text }, TABULAR]}
+                className="text-lg font-extrabold"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+              >
+                {item.value}
+              </Text>
+              <Text
+                className="text-[10px] font-semibold tracking-wide text-mut mt-0.5 text-center"
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
+                {upper(item.label)}
+              </Text>
+            </>
+          )}
         </View>
       ))}
     </View>

@@ -17,6 +17,8 @@ import Svg, { Circle, Defs, G, LinearGradient, Path, Rect, Stop, Text as SvgText
 import type { InjectionSite, SitePoint } from "../lib/db/types";
 import type { PointUsage, SiteUsage } from "../lib/db/injections";
 import { HEAT_TIER_LABELS, heatTierForCount } from "../lib/injectionHeat";
+import { FONT_CAP, scaledMinHeight } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { PALETTES, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { formatDate } from "../lib/format";
@@ -190,6 +192,8 @@ export function InjectionBodyMap({
   const rtl = I18nManager.isRTL;
   const { width: winW, height: winH } = useWindowDimensions();
   const svgW = mapWidth(winW, winH);
+  const fontScale = useFontScale();
+  const badgeScale = useFontScale(FONT_CAP.badge);
   const svgH = mapHeight(svgW);
 
   const badges = useMemo(() => {
@@ -197,7 +201,9 @@ export function InjectionBodyMap({
     const base = {
       position: "absolute" as const,
       top: BADGE_TOP_Y * scale,
-      height: BADGE_H,
+      // minHeight, not height: the pill grows with its (capped) label instead of
+      // clipping it; at the default size it is exactly BADGE_H.
+      minHeight: scaledMinHeight(BADGE_H, badgeScale, FONT_CAP.badge),
       maxWidth: BADGE_MAX_W,
       minWidth: 28,
       paddingHorizontal: 4,
@@ -221,7 +227,7 @@ export function InjectionBodyMap({
         style: { ...base, [rtl ? "left" : "right"]: svgW - BADGE_INNER_X * scale },
       },
     ];
-  }, [svgW, rtl]);
+  }, [svgW, rtl, badgeScale]);
 
   const [openSite, setOpenSite] = useState<InjectionSite | null>(null);
   const fade = useSharedValue(1);
@@ -393,7 +399,13 @@ export function InjectionBodyMap({
           RTL EXEMPTION: flexDirection is pre-reversed and the chevron stays a
           plain (non-DirIcon) glyph so this row renders byte-identical to LTR,
           matching the frozen silhouette below it instead of mirroring. */}
-      <View style={{ height: 36, flexDirection: rtl ? "row-reverse" : "row", alignItems: "center" }}>
+      <View
+        style={{
+          minHeight: scaledMinHeight(36, fontScale),
+          flexDirection: rtl ? "row-reverse" : "row",
+          alignItems: "center",
+        }}
+      >
         {open ? (
           <>
             <Pressable
@@ -639,6 +651,7 @@ export function InjectionBodyMap({
                 >
                   <Text
                     numberOfLines={1}
+                    maxFontSizeMultiplier={FONT_CAP.badge}
                     style={{ color: THEME.textMuted, fontSize: 12, fontWeight: "800" }}
                   >
                     {t(`injectionMap.${b.key}`)}
@@ -712,7 +725,7 @@ export function InjectionBodyMap({
       </Text>
 
       {/* Fixed slot: the absorption chip appears on zoom without moving anything below. */}
-      <View style={{ height: 30, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ minHeight: scaledMinHeight(30, fontScale), alignItems: "center", justifyContent: "center" }}>
         {open ? (
           <View
             style={{

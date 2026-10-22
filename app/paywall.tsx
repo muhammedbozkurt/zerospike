@@ -21,6 +21,8 @@ import {
 import { withAlpha } from "../components/rich/GlassCard";
 import { GLUCOSE_RICH, MODAL_TOP_PAD, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { useThemeRemountLock } from "../lib/theme/ThemeProvider";
+import { STACK_AT_SCALE, linesFor } from "../lib/layoutForFontScale";
+import { useFontScale } from "../lib/useFontScale";
 import { isolateLtr, money, num, pct } from "../lib/format";
 import { useTranslation } from "react-i18next";
 
@@ -125,6 +127,29 @@ function PlanCard({
   badge?: string;
   save?: string;
 }) {
+  // Large text: the billed amount drops under the plan terms instead of
+  // taking a column the name and terms would have to wrap around.
+  const fontScale = useFontScale();
+  const stackPrice = fontScale > STACK_AT_SCALE;
+  const priceBlock = (
+    <View className={stackPrice ? "items-start mt-1" : "items-end ml-2"}>
+      {price ? (
+        <Text style={[TABULAR, { color: THEME.text, fontSize: 20, fontWeight: "800" }]}>
+          {price}
+        </Text>
+      ) : (
+        <View
+          style={{
+            width: 56,
+            height: 20,
+            borderRadius: 6,
+            backgroundColor: THEME.track,
+          }}
+        />
+      )}
+      <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{period}</Text>
+    </View>
+  );
   return (
     <Pressable
       onPress={onSelect}
@@ -183,34 +208,19 @@ function PlanCard({
           ) : null}
         </View>
         {desc ? (
-          <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }} numberOfLines={2}>
+          <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 2 }} numberOfLines={linesFor(fontScale, 2)}>
             {desc}
           </Text>
         ) : null}
         {foot ? (
           <Text style={{ color: THEME.textMuted, fontSize: 11, marginTop: 1 }}>{foot}</Text>
         ) : null}
+        {stackPrice ? priceBlock : null}
       </View>
 
       {/* The billed amount, dominant. A plan whose store price is missing shows a
           placeholder bar instead of an empty slot in the loudest spot on the row. */}
-      <View className="items-end ml-2">
-        {price ? (
-          <Text style={[TABULAR, { color: THEME.text, fontSize: 20, fontWeight: "800" }]}>
-            {price}
-          </Text>
-        ) : (
-          <View
-            style={{
-              width: 56,
-              height: 20,
-              borderRadius: 6,
-              backgroundColor: THEME.track,
-            }}
-          />
-        )}
-        <Text style={{ color: THEME.textMuted, fontSize: 11 }}>{period}</Text>
-      </View>
+      {stackPrice ? null : priceBlock}
     </Pressable>
   );
 }
@@ -242,7 +252,6 @@ function TimelineRow({
         }}
       />
       <Text
-        maxFontSizeMultiplier={1.3}
         style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 16, flex: 1 }}
       >
         <Text style={{ color: THEME.text, fontWeight: "800" }}>{row.label}</Text>
@@ -255,6 +264,7 @@ function TimelineRow({
 
 function PaywallScreen() {
   const { t } = useTranslation();
+  const paywallFontScale = useFontScale();
   // Same brand-name pick as app/settings/data.tsx: iOS's is localized under
   // settings.healthSection, Android's ("Health Connect") is not per-language
   // and lives right next to it as settings.healthSectionAndroid.
@@ -843,7 +853,7 @@ function PaywallScreen() {
               minWidth: 0,
               marginHorizontal: 8,
             }}
-            numberOfLines={1}
+            numberOfLines={linesFor(paywallFontScale, 1)}
           >
             {t("paywall.title")}
           </Text>
@@ -987,8 +997,7 @@ function PaywallScreen() {
                   <TimelineRow key={row.kind} row={row} first={i === 0} />
                 ))}
               <Text
-                maxFontSizeMultiplier={1.3}
-                style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15, marginTop: 8 }}
+                        style={{ color: THEME.textMuted, fontSize: 11, lineHeight: 15, marginTop: 8 }}
               >
                 {cancelLine}
               </Text>
@@ -1045,8 +1054,7 @@ function PaywallScreen() {
               >
                 <Ionicons name={chip.icon} size={14} color={THEME.accent} />
                 <Text
-                  maxFontSizeMultiplier={1.3}
-                  style={{
+                            style={{
                     flex: 1,
                     marginStart: 8,
                     color: THEME.text,

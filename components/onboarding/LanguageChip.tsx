@@ -18,6 +18,7 @@ import { ELEVATION, THEME } from "../../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
 import { withAlpha } from "../rich/GlassCard";
 import { useLayout } from "../../lib/useLayout";
+import { FONT_CAP } from "../../lib/layoutForFontScale";
 import { sheetBoxStyle } from "../../lib/tabletLayout";
 
 
@@ -30,6 +31,7 @@ function CodeBadge({ code, active }: { code: Lang; active?: boolean }) {
       }`}
     >
       <Text
+        maxFontSizeMultiplier={FONT_CAP.badge}
         className={`text-[11px] font-bold ${active ? "text-brand" : "text-mut"}`}
       >
         {code.toUpperCase()}

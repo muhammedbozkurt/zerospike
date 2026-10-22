@@ -5,6 +5,7 @@ import Svg, { Defs, LinearGradient, Path, Stop } from "react-native-svg";
 
 import { GLUCOSE_RICH, THEME, TABULAR, glow } from "../../lib/theme/tokens";
 import { arcPath, clamp, glucoseFraction } from "./svgGeom";
+import { FONT_CAP } from "../../lib/layoutForFontScale";
 
 interface GlucoseRingProps {
   /** Raw mg/dL value - drives the default sweep fraction. */
@@ -103,11 +104,19 @@ export function GlucoseRing({
           paddingTop: size * 0.08,
         }}
       >
-        <Text style={[TABULAR, { color, fontSize: size * 0.24, fontWeight: "800", lineHeight: size * 0.26 }]}>
+        <Text
+          maxFontSizeMultiplier={FONT_CAP.ringNumber}
+          style={[TABULAR, { color, fontSize: size * 0.24, fontWeight: "800", lineHeight: size * 0.26 }]}
+        >
           {centre}
         </Text>
         {caption ? (
-          <Text style={{ color: THEME.textMuted, fontSize: size * 0.075, marginTop: 1 }}>{caption}</Text>
+          <Text
+            maxFontSizeMultiplier={FONT_CAP.ringNumber}
+            style={{ color: THEME.textMuted, fontSize: size * 0.075, marginTop: 1 }}
+          >
+            {caption}
+          </Text>
         ) : null}
       </View>
     </View>

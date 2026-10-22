@@ -5,11 +5,15 @@ import type * as React from "react";
  * app entry before react-native itself loads. */
 const ReactRuntime = require("react") as typeof React;
 
-/** App-wide cap on the OS accessibility text-size multiplier, so a very large
- *  system font setting scales the UI up moderately instead of blowing fixed
- *  rows and headers apart. A call site passing its own maxFontSizeMultiplier
- *  still wins over the cap. */
-export const MAX_FONT_SCALE = 1.3;
+import { MAX_FONT_SCALE, relaxTextProps } from "../layoutForFontScale";
+
+/** App-wide cap on the OS accessibility text-size multiplier. 2.0 meets Apple's
+ *  Larger Text minimum (200%) and equals Android's largest system font scale.
+ *  Fragile fixed-geometry elements take a lower per-call cap (FONT_CAP in
+ *  lib/layoutForFontScale.ts); a call site passing its own
+ *  maxFontSizeMultiplier always wins over this cap. The value lives in
+ *  layoutForFontScale.ts so tests can import it without react-native. */
+export { MAX_FONT_SCALE };
 
 /* RN 0.86 + React 19: Text/TextInput are plain function components, so the old
  * `Text.defaultProps.maxFontSizeMultiplier` global is silently ignored. And
@@ -31,11 +35,20 @@ function capFontScale(name: "Text" | "TextInput"): void {
     __fontScaleCapped?: boolean;
   };
   if (Base.__fontScaleCapped) return;
-  const render = (props: Record<string, unknown>) =>
-    ReactRuntime.createElement(Base, {
+  const useWindowDimensions = RN.useWindowDimensions as () => { fontScale: number };
+  const render = (rawProps: Record<string, unknown>) => {
+    // Text only: a TextInput keeps its own line/shrink props (single-line
+    // fields must stay single-line at any size).
+    const { fontScale } = useWindowDimensions();
+    const props =
+      name === "Text"
+        ? (relaxTextProps(rawProps, fontScale) as Record<string, unknown>)
+        : rawProps;
+    return ReactRuntime.createElement(Base, {
       ...props,
       maxFontSizeMultiplier: props.maxFontSizeMultiplier ?? MAX_FONT_SCALE,
     });
+  };
   const Wrapped = Object.assign(render, Base, {
     displayName: Base.displayName ?? name,
     __fontScaleCapped: true,
