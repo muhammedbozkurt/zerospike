@@ -62,6 +62,7 @@ import {
 } from "../lib/services/spikeConsent";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
+import { isReducedMotionNow } from "../lib/useReducedMotion";
 import { logEvent } from "../lib/analytics";
 import { isScreenshotMode } from "../lib/screenshotMode";
 
@@ -499,7 +500,7 @@ function SpikeScreen() {
   function startTyping(index: number, text: string) {
     stopTyping();
     const total = wordCount(text);
-    if (total <= TYPE_STEP_WORDS) {
+    if (isReducedMotionNow() || total <= TYPE_STEP_WORDS) {
       setTyping(null);
       return;
     }
@@ -727,7 +728,7 @@ function SpikeScreen() {
     } finally {
       if (mounted.current) {
         setSending(false);
-        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: !isReducedMotionNow() }));
       }
     }
   }

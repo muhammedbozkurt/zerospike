@@ -40,6 +40,7 @@ import {
 } from "../lib/toastQueue";
 import { GLUCOSE_RICH, THEME, RADIUS, ELEVATION } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
+import { animateFade, isReducedMotionNow } from "../lib/useReducedMotion";
 import { sheetBoxStyle } from "../lib/tabletLayout";
 
 type ToastKind = "success" | "info" | "error";
@@ -546,7 +547,7 @@ function FeedbackOverlays() {
 function useEnterAnim(): Animated.Value {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(anim, {
+    animateFade(isReducedMotionNow(), anim, {
       toValue: 1,
       duration: 180,
       easing: Easing.out(Easing.cubic),

@@ -41,6 +41,7 @@ import {
   noteCarbEstimate,
 } from "../lib/ai/carbEstimateLimit";
 import { logEvent } from "../lib/analytics";
+import { animateFade, isReducedMotionNow, slideDistance, useReducedMotion } from "../lib/useReducedMotion";
 import { num } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
@@ -104,6 +105,7 @@ export function CarbEstimateSheet({
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const router = useRouter();
   const anim = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useReducedMotion();
   const scrollHint = useScrollHint("sheet.carb-estimate");
   const aborter = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
@@ -119,7 +121,7 @@ export function CarbEstimateSheet({
   const tier = isPro ? "pro" : "free";
 
   useEffect(() => {
-    Animated.timing(anim, {
+    animateFade(isReducedMotionNow(), anim, {
       toValue: 1,
       duration: 200,
       easing: Easing.out(Easing.cubic),
@@ -554,7 +556,7 @@ export function CarbEstimateSheet({
             {
               maxHeight,
               transform: [
-                { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
+                { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [slideDistance(reducedMotion, 40), 0] }) },
               ],
             },
             sheetBoxStyle(layoutWidth, isWide, layoutHeight, maxHeight, false),

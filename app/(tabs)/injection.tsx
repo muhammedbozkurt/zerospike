@@ -26,6 +26,7 @@ import Animated from "react-native-reanimated";
 
 import { useApp } from "../../lib/store/AppContext";
 import { useProCta } from "../../lib/proCta";
+import { isReducedMotionNow } from "../../lib/useReducedMotion";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
@@ -740,7 +741,7 @@ export default function InjectionScreen() {
     if (loc.sectionIndex === 0 && loc.itemIndex === 0) return;
     const timer = setTimeout(() => {
       try {
-        historyListRef.current?.scrollToLocation({ ...loc, viewPosition: 0.3, animated: true });
+        historyListRef.current?.scrollToLocation({ ...loc, viewPosition: 0.3, animated: !isReducedMotionNow() });
       } catch {
         // best-effort: the highlight alone still marks the row
       }
