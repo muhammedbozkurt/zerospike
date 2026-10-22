@@ -65,6 +65,9 @@ function startSink(): SinkController {
   const session = createSessionTracker(uuid);
   const queue = createQueue(db);
   const preReady: PendingEvent[] = [];
+  // Events logged while the gate was shut; an opt-in made before the sink is
+  // ready must not carry them to the server.
+  const beforeConsent = new WeakSet<PendingEvent>();
   let ready = false;
   let activating = false;
   let isPro = false;
@@ -82,6 +85,10 @@ function startSink(): SinkController {
   let consentSettled = false;
   const consentLoaded = getAnalyticsConsent().then(() => {
     consentSettled = true;
+    // Whatever was logged while the answer was still being read is only kept
+    // when the stored answer is "granted": a later opt-in covers what happens
+    // after it, never what came before.
+    if (!isEnabled()) preReady.length = 0;
   });
   const isEnabled = (): boolean => isAnalyticsEnabledNow();
 
@@ -129,6 +136,7 @@ function startSink(): SinkController {
       // Once the answer is known to be no there is nothing worth keeping, not
       // even in memory until the app is ready.
       if (consentSettled && !isEnabled()) return;
+      if (!isEnabled()) beforeConsent.add(event);
       preReady.push(event);
       if (preReady.length > PRE_READY_LIMIT) preReady.shift();
       return;
@@ -206,6 +214,11 @@ function startSink(): SinkController {
       return;
     }
     flusher.reset();
+    if (!ready) {
+      for (let i = preReady.length - 1; i >= 0; i--) {
+        if (beforeConsent.has(preReady[i])) preReady.splice(i, 1);
+      }
+    }
     // Before the sink is ready this waits with the other early events and is
     // written, in clock order, when activate() runs.
     record("analytics_opt_out", { enabled: true });

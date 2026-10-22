@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useNavigation, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -21,6 +21,7 @@ import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
 import { logEvent } from "../lib/analytics";
 import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
+import { createWinbackExit } from "../lib/analytics/winbackExit";
 import { shouldOpenWelcomeAfterPurchase } from "../lib/paywallPurchase";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
@@ -42,6 +43,8 @@ function WinbackScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const navigation = useNavigation();
+  const exit = useMemo(() => createWinbackExit(logEvent), []);
   useThemeRemountLock();
   const { refreshPro } = useApp();
   const { toast } = useFeedback();
@@ -74,11 +77,17 @@ function WinbackScreen() {
 
   useEffect(() => {
     if (!offer) return;
-    if (offer.hasRealDiscount) logEvent("winback_view");
+    if (offer.hasRealDiscount) {
+      exit.viewed();
+      logEvent("winback_view");
+    }
     // No real discount: the winback is skipped (redirects away). Log it so a
     // missing sandbox intro price is not mistaken for a broken winback.
     else logEvent("downsell_skipped_no_discount");
   }, [offer]);
+
+  // Back, swipe down and the X all end here; nothing is blocked, only counted.
+  useEffect(() => navigation.addListener("beforeRemove", () => exit.closed()), [navigation, exit]);
 
   function close() {
     if (router.canGoBack()) router.back();
@@ -86,8 +95,7 @@ function WinbackScreen() {
   }
 
   function decline() {
-    logEvent("winback_dismiss");
-    logEvent("downsell_dismiss", { trigger: "winback" });
+    exit.closed();
     close();
   }
 
@@ -109,6 +117,7 @@ function WinbackScreen() {
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
       });
       if (res.ok) {
+        exit.purchased();
         logEvent("downsell_accept", { trigger: "winback" });
         logEvent("purchase_completed", {
           tier: "annual",

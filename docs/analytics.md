@@ -17,6 +17,10 @@ Kullanim analitigi opt-in'dir: izin verilmeden hicbir olay yazilmaz ve gonderilm
 
 - Build alani `lib/appVersion.ts` (expo-application, yoksa app config). Eski satirlarda `build = unknown`.
 - `restore_result {result}` ve `winback_dismiss` v6 ile eklendi; sunucu semasi deploy edilene kadar track bu olaylari dusurur.
+- Izin oncesi olay sunucuya gitmez: sink hazir olmadan kaydedilen olaylar bellekte bekler; kayitli izin "granted" degilse izin okumasi biter bitmez, sink hazir olmadan verilen onayda ise onaydan once kaydedilenler silinir. Yalniz onaydan sonraki olaylar ve opt-in olayi (`analytics_opt_out`) siraya yazilir.
+- `winback_dismiss`: sunulan teklif satin alma olmadan her kapanista (X, "simdi degil", Android geri, iOS asagi kaydirma) tam bir kez loglanir (`lib/analytics/winbackExit.ts`, `beforeRemove`); satin alma ve gosterilmeyen teklif (indirim yok) log birakmaz.
+- `restore_result` hem paywall'da hem Ayarlar > Satin alimlari geri yukle'de loglanir (`lib/analytics/restoreResult.ts`: success, empty, error).
+- Surum alani: `getAppVersion()`/`getBuildNumber()` platforma bakar (iOS buildNumber, Android versionCode, capraz alan yok); Nelerin yeni ve geri bildirim `Constants.nativeAppVersion` (SDK 57'de yok) yerine bunu kullanir.
 
 ## Test ve gelistirme trafigi
 

@@ -1272,6 +1272,7 @@ const rig = {
   bytes: 0,
   /** What expo-application answers; null is a binary that does not report it. */
   native: { build: "94" as string | null, version: "2.4.0" as string | null },
+  os: "ios" as "ios" | "android",
   config: {
     ios: { buildNumber: "93" } as { buildNumber?: string } | undefined,
     android: { versionCode: 94 } as { versionCode?: number } | undefined,
@@ -1290,6 +1291,7 @@ function resetRig(stored: Record<string, string>, beforeBoot?: () => void): void
   rig.rc = { configured: true, userId: RC_USER_ID, fails: false, hangs: false };
   rig.appState = { current: "active", listeners: [] };
   rig.native = { build: "94", version: "2.4.0" };
+  rig.os = "ios";
   rig.config = { ios: { buildNumber: "93" }, android: { versionCode: 94 } };
   if (beforeBoot) beforeBoot();
 }
@@ -1308,7 +1310,12 @@ function installStubs(): void {
   (globalThis as any).__DEV__ = false;
 
   const rnStub = {
-    Platform: { OS: "ios", Version: "17.0" },
+    Platform: {
+      get OS() {
+        return rig.os;
+      },
+      Version: "17.0",
+    },
     AppState: {
       get currentState() {
         return rig.appState.current;
@@ -1781,7 +1788,28 @@ async function measurement(): Promise<void> {
     logIt(m, "paywall_view", PAYWALL);
     emitAppState("background");
     await settle();
-    eq("without an iOS build number the Android versionCode is used", tracks()[0]?.body?.build, "94");
+    eq("on iOS without an iOS build number the Android versionCode is NOT borrowed", tracks()[0]?.body?.build, "unknown");
+    await end();
+  }
+  {
+    const m = await bootGranted();
+    rig.native = { build: null, version: null };
+    rig.os = "android";
+    logIt(m, "paywall_view", PAYWALL);
+    emitAppState("background");
+    await settle();
+    eq("on Android the config's versionCode is used, not the iOS build number", tracks()[0]?.body?.build, "94");
+    await end();
+  }
+  {
+    const m = await bootGranted();
+    rig.native = { build: null, version: null };
+    rig.os = "android";
+    rig.config = { ios: { buildNumber: "93" }, android: undefined };
+    logIt(m, "paywall_view", PAYWALL);
+    emitAppState("background");
+    await settle();
+    eq("on Android without a versionCode the iOS build number is NOT borrowed", tracks()[0]?.body?.build, "unknown");
     await end();
   }
 
@@ -1852,7 +1880,8 @@ async function measurement(): Promise<void> {
       const events = tracks().flatMap((c) => c.body.events as { name: string; ts: string }[]);
       const names = events.map((e) => e.name);
       ok("the opt-in made before the sink was ready is not lost", names.includes("analytics_opt_out"), names.join(","));
-      ok("the other early events arrive too", names.includes("app_open") && names.includes("paywall_view"));
+      ok("an event logged after the opt-in arrives", names.includes("paywall_view"));
+      ok("app_open logged before the opt-in is NOT sent", !names.includes("app_open"), names.join(","));
       eq("early events are written in client_ts order", events.map((e) => e.ts), [...events.map((e) => e.ts)].sort());
     } finally {
       (globalThis as any).Date = RealDate;

@@ -18,6 +18,7 @@ import {
 } from "../../lib/services/purchases";
 import { hasSpikeConsent, withdrawSpikeConsent } from "../../lib/services/spikeConsent";
 import { getProWelcomeState } from "../../lib/services/proWelcome";
+import { logRestoreResult } from "../../lib/analytics/restoreResult";
 import { getHealthSyncEnabled } from "../../lib/services/health";
 import { useHealthAvailable } from "../../lib/services/healthAvailability";
 import { incompleteCount, withHealthMirror } from "../../lib/proWelcome";
@@ -155,6 +156,7 @@ export default function AppSettings() {
     setRestoring(true);
     try {
       const result = await restore();
+      logRestoreResult(result);
       await refreshPro();
       if (result === "restored") toast(t("paywall.restored"), "success");
       else if (result === "none") toast(t("paywall.nothingToRestore"), "info");

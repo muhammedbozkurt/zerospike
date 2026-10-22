@@ -1,7 +1,9 @@
--- Device-counting views ignore rows without an envelope (app_version null):
--- a hand-sent probe (curl smoke test) has no app_version and must not count as
--- a device. Real installs always send it. Same definitions as
--- 20261017120000_funnel_views.sql plus that one condition.
+-- v_retention_cohort and v_event_daily ignore rows without an envelope
+-- (app_version null): a hand-sent probe (curl smoke test) has no app_version and
+-- must not count as a device. Real installs always send it. Same definitions as
+-- 20261017120000_funnel_views.sql plus that one condition. The other views are
+-- not touched here; test devices are handled for them in
+-- 20261022130100_views_exclude_test_devices.sql.
 
 create or replace view public.v_retention_cohort
 with (security_invoker = true) as
