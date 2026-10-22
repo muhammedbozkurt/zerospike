@@ -118,6 +118,45 @@ export function splitHomeColumns(
   return best;
 }
 
+export type KeyedHomeSplit = HomeSplit & {
+  /** Key of the first block of the right column, null when every movable
+   *  block is on the left. Feed it back as `cutKey` on the next call. */
+  cutKey: string | null;
+};
+
+/**
+ * splitHomeColumns over named blocks. The kept cut is remembered as a block
+ * KEY, not a count: when a card on the left disappears the right column's
+ * first card stays where it is instead of sliding left. `heights` holds the
+ * measured block heights; an unmeasured block counts as `estimate`. Until
+ * `settled` (every block and the journal measured) a cut already in use is
+ * kept as is, so the first frames do not hop on partial measurements.
+ */
+export function splitHomeByKeys(
+  keys: readonly string[],
+  heights: Readonly<Record<string, number>>,
+  journal: number,
+  opts: { gap?: number; cutKey?: string | null; settled?: boolean; estimate?: number; hysteresis?: number } = {}
+): KeyedHomeSplit {
+  const estimate = opts.estimate ?? HOME_BLOCK_ESTIMATE;
+  let current: number | undefined;
+  if (opts.cutKey === null) current = keys.length;
+  else if (opts.cutKey !== undefined) {
+    const at = keys.indexOf(opts.cutKey);
+    current = at >= 0 ? at : undefined;
+  }
+  const split = splitHomeColumns(
+    keys.map((k) => heights[k] ?? estimate),
+    journal,
+    {
+      gap: opts.gap,
+      current,
+      hysteresis: opts.settled === false ? Number.POSITIVE_INFINITY : opts.hysteresis,
+    }
+  );
+  return { ...split, cutKey: split.leftCount < keys.length ? keys[split.leftCount] : null };
+}
+
 export type StackResult = {
   /** Top offset of each block, same order as the input. */
   tops: number[];
@@ -201,20 +240,28 @@ export type SheetBoxStyle = {
  *    `availableHeight` is the sheet's own keyboard and top-inset aware room;
  *    the dialog max never exceeds it less DIALOG_CLEARANCE. `surface: false`
  *    skips the radius and border for a box that is only a frame (the card
- *    inside it draws its own).
+ *    inside it draws its own). `opts.minRatio` (default 0.5) is the share of
+ *    the window the dialog may not fall below; 0 hugs short content.
+ *    `opts.clearance` must be the same air the caller's own height maths uses.
  */
 export function sheetBoxStyle(
   windowWidth: number,
   isWide: boolean,
   windowHeight?: number,
   availableHeight?: number,
-  surface: boolean = true
+  surface: boolean = true,
+  opts: { minRatio?: number; clearance?: number } = {}
 ): SheetBoxStyle | undefined {
   if (!isWide) return undefined;
   if (windowHeight == null || !isDialogSheet(windowWidth, windowHeight)) {
     return { width: sheetWidth(windowWidth), alignSelf: "center" };
   }
-  const { minHeight, maxHeight } = dialogHeights(windowHeight, availableHeight);
+  const { minHeight, maxHeight } = dialogHeights(
+    windowHeight,
+    availableHeight,
+    opts.clearance,
+    opts.minRatio
+  );
   return {
     width: dialogWidth(windowWidth),
     alignSelf: "center",

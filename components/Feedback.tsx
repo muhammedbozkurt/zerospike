@@ -795,7 +795,7 @@ function SheetOverlay({
                 backgroundColor: THEME.bg.g1,
                 paddingBottom: insets.bottom + 20,
               },
-              sheetBoxStyle(layoutWidth, isWide, layoutHeight),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight, undefined, true, { minRatio: 0 }),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

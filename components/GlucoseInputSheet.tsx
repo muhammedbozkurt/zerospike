@@ -54,7 +54,7 @@ import { HEALTH_NAME } from "../lib/services/health";
 import { GradientCTA } from "./rich/GradientCTA";
 import { Button, Chip, Row, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
-import { sheetBoxStyle } from "../lib/tabletLayout";
+import { dialogCardStyle, sheetBoxStyle } from "../lib/tabletLayout";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { useEntryGuardConfirm } from "./useEntryGuardConfirm";
 
@@ -138,7 +138,7 @@ export function GlucoseInputSheet({
   // null keeps the "log it as of now" default; a Date is an explicit pick.
   const [loggedAt, setLoggedAt] = useState<Date | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
-  const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
+  const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const insets = useSafeAreaInsets();
   const heroRef = useRef<TextInput>(null);
   /** Height actually left for the sheet: the keyboard has already been taken out
@@ -285,7 +285,9 @@ export function GlucoseInputSheet({
   // error (never 55), and Save stays shut until it is a whole number.
   const wholeBad = !mmol && hasDecimalSeparator(value);
   const typed = pasteBad ? null : mmol ? parseDecimalText(value) : parseWholeText(value);
-  const aboveBad = glucoseSheetValueState(typed, unit) === "above";
+  const valueState = glucoseSheetValueState(typed, unit);
+  const aboveBad = valueState === "above";
+  const belowBad = valueState === "below";
 
   // Guards the async gap between a Save tap and the guard dialog resolving:
   // submittedRef alone (set only once the guard has already said "go") would
@@ -415,7 +417,7 @@ export function GlucoseInputSheet({
             <Animated.View
               style={[
                 { transform: [{ translateY }], maxHeight: availH > 0 ? availH : "100%" },
-                sheetBoxStyle(layoutWidth, isWide, layoutHeight, availH > 0 ? availH : undefined),
+                sheetBoxStyle(layoutWidth, isWide, layoutHeight, availH > 0 ? availH : undefined, false),
               ]}
               onLayout={(e) => {
                 const h = e.nativeEvent.layout.height;
@@ -458,14 +460,21 @@ export function GlucoseInputSheet({
                   paddingTop: SPACE.sm,
                   overflow: "hidden",
                 },
-                isWide
+                isDialog
                   ? {
-                      borderBottomLeftRadius: RADIUS["2xl"],
-                      borderBottomRightRadius: RADIUS["2xl"],
-                      borderBottomWidth: 1,
-                      marginBottom: SPACE.xl,
+                      ...dialogCardStyle,
+                      borderTopLeftRadius: dialogCardStyle.borderRadius,
+                      borderTopRightRadius: dialogCardStyle.borderRadius,
+                      flexShrink: 1,
                     }
-                  : undefined,
+                  : isWide
+                    ? {
+                        borderBottomLeftRadius: RADIUS["2xl"],
+                        borderBottomRightRadius: RADIUS["2xl"],
+                        borderBottomWidth: 1,
+                        marginBottom: SPACE.xl,
+                      }
+                    : undefined,
                 THEME.scheme === "light"
                   ? ELEVATION.sheet
                   : glow(liveStatus ? numColor : THEME.accent, 34, 0.35),
@@ -557,7 +566,7 @@ export function GlucoseInputSheet({
                   <Txt kind="caption" tone="muted" style={{ marginTop: compact ? 0 : -SPACE.xs }}>
                     {glucoseUnitLabel(unit)}
                   </Txt>
-                  {wholeBad || pasteBad || aboveBad ? (
+                  {wholeBad || pasteBad || aboveBad || belowBad ? (
                     <Txt
                       kind="caption"
                       style={{ color: THEME.warning, marginTop: SPACE.xs }}

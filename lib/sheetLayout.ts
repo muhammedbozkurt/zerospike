@@ -137,16 +137,18 @@ export interface DialogHeights {
  * the caller already knows is free (window less keyboard and top inset); the
  * dialog never takes more than that less `clearance`, so with the keyboard up
  * the max shrinks and the min follows it down (min never exceeds max).
+ * `minRatio` 0 lets a short action or grid sheet hug its content.
  */
 export function dialogHeights(
   windowHeight: number,
   availableHeight: number = windowHeight,
-  clearance: number = DIALOG_CLEARANCE
+  clearance: number = DIALOG_CLEARANCE,
+  minRatio: number = DIALOG_MIN_RATIO
 ): DialogHeights {
   const maxHeight = Math.floor(
     Math.max(0, Math.min(windowHeight * DIALOG_MAX_RATIO, availableHeight - clearance))
   );
-  const minHeight = Math.floor(Math.min(windowHeight * DIALOG_MIN_RATIO, maxHeight));
+  const minHeight = Math.floor(Math.min(windowHeight * Math.max(0, minRatio), maxHeight));
   return { minHeight, maxHeight };
 }
 

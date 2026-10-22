@@ -98,7 +98,7 @@ export function LanguageChip() {
                 shadowOffset: { width: 0, height: -8 },
                 ...ELEVATION.popover,
               },
-              sheetBoxStyle(layoutWidth, isWide, layoutHeight),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight, undefined, true, { minRatio: 0 }),
             ]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}

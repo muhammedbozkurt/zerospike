@@ -161,7 +161,6 @@ import {
 import { GLUCOSE_RICH, INPUT_TEXT, MODAL_TOP_PAD, RADIUS, RICH_BY_STATUS, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { mealPrefill } from "../lib/mealPrefill";
 import { useLayout } from "../lib/useLayout";
-import { sheetBoxStyle } from "../lib/tabletLayout";
 import { upper } from "../lib/upper";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];

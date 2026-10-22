@@ -256,7 +256,7 @@ export function QuickAddSheet({
                 paddingTop: SPACE.sm,
                 paddingBottom: insets.bottom + SPACE.xl,
               },
-              sheetBoxStyle(layoutWidth, isWide, layoutHeight, sheetAvail),
+              sheetBoxStyle(layoutWidth, isWide, layoutHeight, sheetAvail, true, { minRatio: 0 }),
             ]}
           >
             <View style={{ alignItems: "center", marginBottom: SPACE.sm }}>

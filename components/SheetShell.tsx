@@ -198,9 +198,11 @@ export function SheetShell({
             dialog ? { minHeight: sheetMinHeightAnim, maxHeight: sheetMaxHeightAnim } : null,
           ]}
         >
-          <View className="items-center mb-1.5">
-            <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
-          </View>
+          {dialog ? null : (
+            <View className="items-center mb-1.5">
+              <View style={{ width: 38, height: 4, borderRadius: 9, backgroundColor: THEME.border }} />
+            </View>
+          )}
 
           {title ? (
             <View className="flex-row items-center justify-between mb-1">
