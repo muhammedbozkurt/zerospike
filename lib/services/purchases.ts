@@ -71,7 +71,7 @@ export const PRO_PRODUCTS: Record<PlanId, ProProduct> = {
   lifetime: {
     id: "lifetime",
     productId: "zerospike_lifetime", // $rc_lifetime (non-consumable)
-    priceUSD: "$79.99",
+    priceUSD: "$99.99",
   },
 };
 
@@ -882,7 +882,7 @@ function devFallbackPlans(): OfferingPlans {
   return {
     monthly: { priceString: PRO_PRODUCTS.monthly.priceUSD, price: 4.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
     annual: { priceString: PRO_PRODUCTS.annual.priceUSD, price: 29.99, currencyCode: "USD", hasFreeTrial: true, introPriceString: null, introPrice: null, freeTrialDays: FALLBACK_TRIAL_DAYS },
-    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 79.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
+    lifetime: { priceString: PRO_PRODUCTS.lifetime.priceUSD, price: 99.99, currencyCode: "USD", hasFreeTrial: false, introPriceString: null, introPrice: null, freeTrialDays: 0 },
   };
 }
 
