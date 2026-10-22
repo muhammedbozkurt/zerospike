@@ -1270,6 +1270,12 @@ const rig = {
   rc: { configured: true, userId: RC_USER_ID as unknown, fails: false, hangs: false },
   appState: { current: "active", listeners: [] as ((state: string) => void)[] },
   bytes: 0,
+  /** What expo-application answers; null is a binary that does not report it. */
+  native: { build: "94" as string | null, version: "2.4.0" as string | null },
+  config: {
+    ios: { buildNumber: "93" } as { buildNumber?: string } | undefined,
+    android: { versionCode: 94 } as { versionCode?: number } | undefined,
+  },
 };
 
 function resetRig(stored: Record<string, string>, beforeBoot?: () => void): void {
@@ -1283,6 +1289,8 @@ function resetRig(stored: Record<string, string>, beforeBoot?: () => void): void
   rig.status = { track: 202, delete: 200 };
   rig.rc = { configured: true, userId: RC_USER_ID, fails: false, hangs: false };
   rig.appState = { current: "active", listeners: [] };
+  rig.native = { build: "94", version: "2.4.0" };
+  rig.config = { ios: { buildNumber: "93" }, android: { versionCode: 94 } };
   if (beforeBoot) beforeBoot();
 }
 
@@ -1324,7 +1332,7 @@ function installStubs(): void {
   const realLoad = Module._load;
   Module._load = function (request: string, parent: any) {
     const from = parent && typeof parent.filename === "string" ? parent.filename : "";
-    if (!/[\\/]lib[\\/](analytics|identity|uuid)/.test(from)) return realLoad.apply(this, arguments);
+    if (!/[\\/]lib[\\/](analytics|identity|uuid|appVersion)/.test(from)) return realLoad.apply(this, arguments);
     switch (request) {
       case "react-native":
         return rnStub;
@@ -1336,9 +1344,24 @@ function installStubs(): void {
         return {
           __esModule: true,
           default: {
-            expoConfig: { extra: { trackFnUrl: TRACK_URL, deleteDeviceFnUrl: DELETE_URL }, version: "9.9.9" },
-            nativeAppVersion: "9.9.9",
-            nativeBuildVersion: "99",
+            get expoConfig() {
+              return {
+                extra: { trackFnUrl: TRACK_URL, deleteDeviceFnUrl: DELETE_URL },
+                version: "8.8.8",
+                ios: rig.config.ios,
+                android: rig.config.android,
+              };
+            },
+          },
+        };
+      case "expo-application":
+        return {
+          __esModule: true,
+          get nativeBuildVersion() {
+            return rig.native.build;
+          },
+          get nativeApplicationVersion() {
+            return rig.native.version;
           },
         };
       case "expo-device":
@@ -1392,7 +1415,7 @@ interface Booted {
 /** A new app run: fresh copies of every analytics module, as a cold start gives them. */
 function loadSinks(): Booted {
   for (const key of Object.keys(require.cache)) {
-    if (/[\\/]lib[\\/](analytics|identity)[\\/]/.test(key) || /[\\/]lib[\\/]uuid\.js$/.test(key)) {
+    if (/[\\/]lib[\\/](analytics|identity)[\\/]/.test(key) || /[\\/]lib[\\/](uuid|appVersion)\.js$/.test(key)) {
       delete require.cache[key];
     }
   }
@@ -1725,6 +1748,117 @@ async function sinks(): Promise<void> {
   }
 }
 
+async function measurement(): Promise<void> {
+  section("L. measurement: build field, restore/winback events, early-event order, install id");
+
+  {
+    const m = await bootGranted();
+    logIt(m, "paywall_view", PAYWALL);
+    emitAppState("background");
+    await settle();
+    const body = tracks()[0]?.body;
+    eq("build is the native build number, not unknown", body?.build, "94");
+    eq("app_version is the native version", body?.app_version, "2.4.0");
+    await end();
+  }
+  {
+    const m = await bootGranted();
+    rig.native = { build: null, version: null };
+    logIt(m, "paywall_view", PAYWALL);
+    emitAppState("background");
+    await settle();
+    const body = tracks()[0]?.body;
+    eq("without a native build the config's iOS build number is used", body?.build, "93");
+    eq("and the config version", body?.app_version, "8.8.8");
+    await end();
+  }
+  {
+    const m = await bootGranted();
+    rig.native = { build: null, version: null };
+    rig.config = { ios: undefined, android: { versionCode: 94 } };
+    logIt(m, "paywall_view", PAYWALL);
+    emitAppState("background");
+    await settle();
+    eq("without an iOS build number the Android versionCode is used", tracks()[0]?.body?.build, "94");
+    await end();
+  }
+
+  {
+    const { isInstallId, DEVICE_ID_FALLBACK } = require("../lib/identity/deviceId");
+    eq("a uuid is an install id", isInstallId(DEVICE_ID), true);
+    eq("the storage-failure fallback is not", isInstallId(DEVICE_ID_FALLBACK), false);
+    eq("nor is the old literal", isInstallId("unknown"), false);
+    eq("nor null", isInstallId(null), false);
+  }
+  {
+    const m = await boot({ [CONSENT_KEY]: "granted" }, () => {
+      const store = rig.storage.storage;
+      const read = store.getItem.bind(store);
+      store.getItem = async (key: string) => {
+        if (key === "zerospike.deviceId") throw new Error("storage unavailable");
+        return read(key);
+      };
+    });
+    logIt(m, "paywall_view", PAYWALL);
+    emitAppState("background");
+    await settle();
+    eq("a failing id read sends nothing this session", tracks().length, 0);
+    ok("and the events stay queued", queueCount() > 0);
+    await end();
+  }
+
+  {
+    const { createOnceGate } = require("../lib/analytics/once");
+    const gate = createOnceGate();
+    const logged: string[] = [];
+    // welcome, first quiz step, hardware back to welcome, first quiz step again
+    for (const step of ["welcome", "name", "welcome", "name", "unit"]) {
+      if (gate(step)) logged.push(step);
+    }
+    eq("going back to a seen step logs it only once", logged, ["welcome", "name", "unit"]);
+  }
+
+  {
+    installStubs();
+    resetRig({});
+    const RealDate = Date;
+    let fakeNow: number | null = null;
+    (globalThis as any).Date = class extends RealDate {
+      constructor(...args: any[]) {
+        if (args.length === 0 && fakeNow !== null) super(fakeNow);
+        else super(...(args as [any]));
+      }
+      static now(): number {
+        return fakeNow ?? RealDate.now();
+      }
+    };
+    try {
+      const m = loadSinks();
+      fakeNow = Date.parse("2026-10-22T10:00:10.000Z");
+      m.supabase.initSupabaseSink();
+      await settle();
+      fakeNow = Date.parse("2026-10-22T10:00:20.000Z");
+      await m.optOut.setAnalyticsConsent("granted");
+      await m.optOut.analyticsConsentSettled();
+      fakeNow = Date.parse("2026-10-22T10:00:05.000Z");
+      logIt(m, "paywall_view", PAYWALL);
+      fakeNow = null;
+      m.supabase.setAnalyticsIsPro(false);
+      await settle();
+      emitAppState("background");
+      await settle();
+      const events = tracks().flatMap((c) => c.body.events as { name: string; ts: string }[]);
+      const names = events.map((e) => e.name);
+      ok("the opt-in made before the sink was ready is not lost", names.includes("analytics_opt_out"), names.join(","));
+      ok("the other early events arrive too", names.includes("app_open") && names.includes("paywall_view"));
+      eq("early events are written in client_ts order", events.map((e) => e.ts), [...events.map((e) => e.ts)].sort());
+    } finally {
+      (globalThis as any).Date = RealDate;
+    }
+    await end();
+  }
+}
+
 async function main(): Promise<void> {
   console.log("zerospike analytics consent test");
   rules();
@@ -1736,6 +1870,7 @@ async function main(): Promise<void> {
   wiring();
   copy();
   await sinks();
+  await measurement();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
 }

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Haftalik huni raporu: ASC + RevenueCat (tam kapsam) ve Supabase v_* (rizali ornek).
-// Kullanim: metrics-weekly.mjs [--dry] [--end YYYY-MM-DD] [--out <klasor>]
+// Kullanim: metrics-weekly.mjs [--dry] [--end YYYY-MM-DD] [--out <klasor>] [--play-csv <dosya>]
+// Izin oncesi olay yok: uygulama ici oranlar izin verenlerin alt kumesidir. Opt-in orani paydalari magaza ve RC sayilaridir
+// (ASC ilk indirme, Play yeni kurulum CSV, RC yeni musteri). Betik yalniz okur, hicbir yere yazmaz (cikti .md haric).
 // Kimlik degerleri hicbir zaman ciktiya yazilmaz; erisilemeyen kaynak satir olarak isaretlenir.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,7 +16,7 @@ const SUPABASE_URL = 'https://jcpepqectdubbmchhdsn.supabase.co';
 const SERVICE_KEY_PATH = path.join(os.homedir(), '.supabase', 'zerospike.service.key');
 
 function parseArgs(argv) {
-  const a = { dry: false, end: null, out: path.join(ROOT, 'scratchpad', 'metrics') };
+  const a = { dry: false, end: null, out: path.join(ROOT, 'scratchpad', 'metrics'), playCsv: null };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === '--dry') a.dry = true;
@@ -27,8 +29,9 @@ function parseArgs(argv) {
       }
     }
     else if (x === '--out') a.out = path.resolve(argv[++i]);
+    else if (x === '--play-csv') a.playCsv = path.resolve(argv[++i] || '');
     else if (x === '--help' || x === '-h') {
-      console.log('Kullanim: metrics-weekly.mjs [--dry] [--end YYYY-MM-DD] [--out <klasor>]');
+      console.log('Kullanim: metrics-weekly.mjs [--dry] [--end YYYY-MM-DD] [--out <klasor>] [--play-csv <dosya>]');
       process.exit(0);
     } else {
       console.error(`Bilinmeyen arguman: ${x}`);
@@ -80,10 +83,11 @@ async function ascSource(start, end, tmpDir) {
       if (!m) continue;
       const k = m[1];
       rows[k] ??= {};
-      const [imp, pv, dl] = [num(m[2]), num(m[3]), num(m[4])];
+      const [imp, pv, dl, ft] = [num(m[2]), num(m[3]), num(m[4]), num(m[5])];
       if (imp !== null) rows[k].imp = imp;
       if (pv !== null) rows[k].pv = pv;
       if (dl !== null) rows[k].dl = dl;
+      if (ft !== null) rows[k].ft = ft;
     }
   }
   for (const [k, label] of [['US', 'US'], ['DE', 'DE'], ['TOPLAM', 'Toplam']]) {
@@ -91,8 +95,40 @@ async function ascSource(start, end, tmpDir) {
     res.push({ key: `asc.imp.${k}`, label: `Gosterim ${label}`, val: v.imp ?? null, scope: 'store' });
     res.push({ key: `asc.pv.${k}`, label: `Sayfa goruntuleme ${label}`, val: v.pv ?? null, scope: 'store' });
     res.push({ key: `asc.dl.${k}`, label: `Indirme ${label}`, val: v.dl ?? null, scope: 'store' });
+    res.push({ key: `asc.first.${k}`, label: `Ilk indirme ${label} (yeniden indirme haric)`, val: v.ft ?? null, scope: 'store' });
   }
-  return { rows: res, unavailable, downloads: rows.TOPLAM?.dl ?? null };
+  return { rows: res, unavailable, downloads: rows.TOPLAM?.dl ?? null, firstDownloads: rows.TOPLAM?.ft ?? null };
+}
+
+// Play Console > Istatistikler > Yuklemeler disa aktarimi (CSV, genelde UTF-16). Play icin API yolu yok: dosya elle indirilir.
+// Tarih sutunu ve "Daily User Installs" / "Install events" / "Gunluk kullanici yuklemeleri" sutunu aranir; haftalik toplam alinir.
+function playSource(file, start, end) {
+  const missing = 'kaynak yok: Play Console CSV (Istatistikler > Yuklemeler > disa aktar), sonra --play-csv <dosya>';
+  if (!file) return { rows: [], unavailable: [missing], installs: null };
+  let text;
+  try {
+    const buf = fs.readFileSync(file);
+    text = buf[0] === 0xff && buf[1] === 0xfe ? buf.toString('utf16le') : buf.toString('utf8');
+  } catch {
+    return { rows: [], unavailable: [`Play CSV okunamadi (${path.basename(file)}); ${missing}`], installs: null };
+  }
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
+  const split = (l) => l.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+  const head = split(lines[0] || '').map((c) => c.toLowerCase());
+  const di = head.findIndex((c) => c === 'date' || c === 'tarih');
+  const ii = head.findIndex((c) => /daily user installs|install events|gunluk kullanici|g\u00fcnl\u00fck kullan/.test(c));
+  if (di < 0 || ii < 0) return { rows: [], unavailable: ['Play CSV sutunlari taninmadi (Date + Daily User Installs bekleniyor)'], installs: null };
+  let total = 0;
+  let any = false;
+  for (const l of lines.slice(1)) {
+    const c = split(l);
+    const d = (c[di] || '').slice(0, 10);
+    if (d < start || d > end) continue;
+    const n = Number((c[ii] || '').replace(/[\s.,]/g, ''));
+    if (Number.isFinite(n)) { total += n; any = true; }
+  }
+  if (!any) return { rows: [], unavailable: [`Play CSV'de ${start}..${end} araligi yok`], installs: null };
+  return { rows: [{ key: 'play.installs', label: 'Play yeni kurulum (CSV)', val: total, scope: 'store' }], unavailable: [], installs: total };
 }
 
 async function rcSource() {
@@ -183,6 +219,8 @@ async function sbSource(start, end, downloads) {
     for (const [k, o] of [...byRes.entries()].sort()) add(`app.pr.${k}`, `Satin alma sonucu: ${k}`, o.v, o.d);
     const ev = await sbGet(key, 'v_event_daily', `${range}&limit=10000`);
     const names = [['paywall_cta', 'Paywall CTA'], ['trial_started', 'Deneme baslatma (istemci)'], ['downsell_view', 'Downsell goruntuleme'], ['downsell_accept', 'Downsell kabul'], ['store_review_prompt', 'Degerlendirme istemi'], ['spike_message_sent', 'Spike cagrisi'], ['carb_estimate_used', 'Besin tahmini kullanildi (istemci)'], ['carb_estimate_blocked', 'Besin tahmini engellendi (istemci)']];
+    const optin = sum(ev.filter((r) => r.name === 'analytics_opt_out'), 'devices');
+    add('app.optin', 'Opt-in yapan cihaz (analytics_opt_out olayi, enabled:true)', optin, optin);
     for (const [nm, label] of names) {
       const f = ev.filter((r) => r.name === nm);
       add(`app.ev.${nm}`, label, sum(f, 'events'), sum(f, 'devices'));
@@ -258,7 +296,7 @@ async function sbSource(start, end, downloads) {
     const why = m ? `HTTP ${m[1]}` : 'ag hatasi';
     return { rows, unavailable: [`Supabase v_* sorgusu (${why}; supabase login/link ve ~/.supabase/zerospike.service.key)`] };
   }
-  return { rows, unavailable, downloads };
+  return { rows, unavailable, downloads, optin: rows.find((r) => r.key === 'app.optin')?.val ?? null };
 }
 
 function loadPrev(file) {
@@ -285,12 +323,23 @@ async function main() {
     fs.mkdirSync(tmp, { recursive: true });
     const [a, r] = await Promise.all([ascSource(start, end, tmp), rcSource()]);
     downloads = a.downloads;
-    store = [...a.rows, ...r.rows];
-    unavailable.push(...a.unavailable, ...r.unavailable);
+    const p = playSource(args.playCsv, start, end);
+    store = [...a.rows, ...r.rows, ...p.rows];
+    unavailable.push(...a.unavailable, ...r.unavailable, ...p.unavailable);
     const s = await sbSource(start, end, downloads);
     store.push(...s.rows);
     unavailable.push(...s.unavailable);
+    const rcNew = r.rows.find((x) => x.key === 'rc.new')?.val ?? null;
+    for (const [key, label, base] of [
+      ['app.optin_asc_rate', 'Opt-in orani (opt-in cihaz / ASC ilk indirme, yalniz iOS)', a.firstDownloads],
+      ['app.optin_play_rate', 'Opt-in orani (opt-in cihaz / Play yeni kurulum, yalniz Android)', p.installs],
+      ['app.optin_rc_rate', 'Opt-in orani (opt-in cihaz / RevenueCat yeni musteri, iOS+Android)', rcNew],
+    ]) {
+      store.push({ key, label, val: base && s.optin !== null && s.optin !== undefined ? s.optin / base : null, n: s.optin ?? null, scope: 'app' });
+    }
   } else {
+    for (const [k, l] of [['asc.first.TOPLAM', 'Ilk indirme Toplam (yeniden indirme haric)'], ['play.installs', 'Play yeni kurulum (CSV)'], ['rc.new', 'Yeni musteri']]) store.push({ key: k, label: l, val: null, scope: 'store' });
+    for (const [k, l] of [['app.optin', 'Opt-in yapan cihaz (analytics_opt_out olayi, enabled:true)'], ['app.optin_asc_rate', 'Opt-in orani (opt-in cihaz / ASC ilk indirme, yalniz iOS)'], ['app.optin_play_rate', 'Opt-in orani (opt-in cihaz / Play yeni kurulum, yalniz Android)'], ['app.optin_rc_rate', 'Opt-in orani (opt-in cihaz / RevenueCat yeni musteri, iOS+Android)']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
     for (const [k, l] of [['asc.imp.TOPLAM', 'Gosterim Toplam'], ['asc.dl.TOPLAM', 'Indirme Toplam'], ['rc.trials', 'Deneme baslangici'], ['rc.conv', 'Denemeden donusum (adet)'], ['rc.actives', 'Aktif abonelik'], ['rc.mrr', 'MRR']]) store.push({ key: k, label: l, val: null, scope: 'store' });
     for (const [k, l] of [['app.consented', 'Rizali yeni cihaz'], ['app.onb_done', 'Onboarding tamamlama'], ['app.first_log', 'Ilk kayit'], ['app.third_log', '3. kayit'], ['app.pw.after_logs', 'Paywall goruntuleme, reason=after_logs'], ['app.ev.paywall_cta', 'Paywall CTA'], ['app.pr.success', 'Satin alma sonucu: success'], ['app.ev.downsell_view', 'Downsell goruntuleme'], ['app.ev.store_review_prompt', 'Degerlendirme istemi'], ['app.spike.calls', 'Spike model cagrisi (sunucu, spike_calls, tum modlar)'], ['app.carb.calls', 'Besin tahmini model cagrisi (sunucu)'], ['app.carb.filtered', 'Besin tahmini suzulen cagri (sunucu)'], ['app.ev.carb_estimate_used', 'Besin tahmini kullanildi (istemci)'], ['app.ev.carb_estimate_blocked', 'Besin tahmini engellendi (istemci)'], ['app.carb.meal_builder_opened', 'Ogun olusturucu acildi (haftalik)'], ['app.carb.meal_builder_opened.daily', 'Ogun olusturucu acildi (gunluk ortalama)'], ['app.carb.carb_estimate_requested', 'Besin tahmini istegi (istemci) (haftalik)'], ['app.carb.carb_estimate_requested.daily', 'Besin tahmini istegi (istemci) (gunluk ortalama)'], ['app.carb.carb_estimate_accepted', 'Besin tahmini ogune eklendi (haftalik)'], ['app.carb.carb_estimate_accepted.daily', 'Besin tahmini ogune eklendi (gunluk ortalama)'], ['app.carb.portion_chip_used', 'Porsiyon cipi kullanildi (haftalik)'], ['app.carb.portion_chip_used.daily', 'Porsiyon cipi kullanildi (gunluk ortalama)'], ['app.carb.accept_rate', 'Besin tahmini kabul orani (eklendi / istek)'], ['app.fb.kind.suggestion', 'Geri bildirim turu: suggestion'], ['app.fb.reason.expensive', 'Geri bildirim neden kodu: expensive'], ['app.ev.spike_message_sent', 'Spike cagrisi'], ['app.spike.rej.device.3', 'Spike ret: cihaz limiti (3)'], ['app.spike.rej.device.50', 'Spike ret: cihaz limiti (50)'], ['app.spike.rej.ip', 'Spike ret: IP limiti'], ['app.spike.rej.global', 'Spike ret: genel limit'], ['app.spike.rej_rate', 'Spike ret orani (ret / ret+ok)'], ['app.ret.d1', 'Retention D1']]) store.push({ key: k, label: l, val: null, n: null, scope: 'app' });
   }
@@ -312,12 +361,13 @@ async function main() {
   const md = [
     `# Haftalik metrikler ${week} (${start} .. ${end}, UTC)`,
     args.dry ? '\nDRY: ag cagrisi yapilmadi, degerler bos iskelet.' : '',
+    '\nIZIN ONCESI OLAY YOK: uygulama ici olaylar ve oranlar yalniz analitik izni verenlerin alt kumesidir. Opt-in orani = analytics_opt_out olayi yapan cihaz / (ASC ilk indirme | Play yeni kurulum | RevenueCat yeni musteri); izin vermeyenler hicbir kayit birakmaz.',
     '\nUygulama ici olaylar rizali ornekleme: yalniz analitik rizasi veren cihazlar sayilir, daha ilgili kullanicilara yanli olabilir. Riza orani paydasi ASC haftalik indirme sayisidir (yalniz iOS); pay iOS ve Android cihazlarini birlikte sayar, bu yuzden oran yaklasiktir ve ustten sapabilir.',
     '\n## Magaza ve RevenueCat (tam kapsam)\n', head, ...storeRows,
     '\n## Uygulama ici huni (rizali ornek)\n', head, ...appRows,
     '\nSpike ret orani paydasi: ok = iade sonrasi net model cagrisi (bedava tekrar dahil). Veri tam kapsam, riza ornegi degil; n bos, riza sutunu "-".',
     ...(unavailable.length ? ['\n## Erisilemeyen kaynaklar\n', ...unavailable.map((u) => `KULLANICI YENILEYECEK: ${u}`)] : []),
-    args.dry ? '' : '\nKULLANICI YENILEYECEK: Play Console (script yok, elle bak)',
+    args.dry || args.playCsv ? '' : '\nKULLANICI YENILEYECEK: Play yeni kurulum icin Play Console CSV (--play-csv)',
     `\n<!-- DATA ${JSON.stringify(Object.fromEntries(store.filter((r) => r.val !== null && r.val !== undefined).map((r) => [r.key, r.val])))} -->`,
     '',
   ].join('\n');

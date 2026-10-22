@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+import { getAppVersion, getBuildNumber } from "./appVersion";
 import {
   FATAL_JS_STORAGE_KEY,
   createFatalHandler,
@@ -35,8 +35,8 @@ export function installFatalCapture(): void {
       save: (report) => AsyncStorage.setItem(FATAL_JS_STORAGE_KEY, JSON.stringify(report)),
       context: () => ({
         platform,
-        build: String(Constants.nativeBuildVersion ?? ""),
-        version: String(Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? ""),
+        build: getBuildNumber(),
+        version: getAppVersion(),
         now: () => new Date(),
       }),
     })

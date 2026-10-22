@@ -2,8 +2,9 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
 
+import { getAppVersion, getBuildNumber } from "../appVersion";
 import { currentLang } from "../i18n";
-import { getDeviceId } from "../identity/deviceId";
+import { getDeviceId, isInstallId } from "../identity/deviceId";
 import {
   buildDeleteRequest,
   classifyDeleteStatus,
@@ -54,8 +55,8 @@ export function buildEnvelope(batch: readonly QueuedEvent[], batchId: string): T
   const first = batch[0];
   return {
     batch_id: batchId,
-    app_version: Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? "unknown",
-    build: Constants.nativeBuildVersion ?? "unknown",
+    app_version: getAppVersion(),
+    build: getBuildNumber(),
     platform: Platform.OS,
     os_version: Device.osVersion ?? String(Platform.Version),
     locale: currentLang(),
@@ -71,9 +72,10 @@ let cachedDeviceId: string | null = null;
 async function deviceId(): Promise<string | null> {
   if (cachedDeviceId) return cachedDeviceId;
   const id = await getDeviceId();
-  // "unknown" is getDeviceId's storage-failure fallback; pooling every such
-  // device under one id would only poison the data, so wait for a real one.
-  if (id === "unknown") return null;
+  // A non-uuid is getDeviceId's storage-failure fallback; the server answers it
+  // 400 and pooling such devices under one id would poison the data, so send
+  // nothing this session (the batch stays queued) and wait for a real id.
+  if (!isInstallId(id)) return null;
   cachedDeviceId = id;
   return id;
 }

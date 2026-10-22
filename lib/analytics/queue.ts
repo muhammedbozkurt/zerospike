@@ -68,6 +68,18 @@ function inList(ids: readonly number[]): string {
   return ids.map(() => "?").join(",");
 }
 
+/**
+ * Events held in memory before the sink was ready, in the order the clock says
+ * they happened (ISO strings sort as time; ties keep their arrival order). The
+ * outbox is read by row id, so this is the order they reach the server in.
+ */
+export function orderByClientTs<T extends { ts: string }>(events: readonly T[]): T[] {
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => (a.event.ts < b.event.ts ? -1 : a.event.ts > b.event.ts ? 1 : a.index - b.index))
+    .map(({ event }) => event);
+}
+
 export function createQueue(db: QueueDb): EventQueue {
   return {
     async insert(events) {

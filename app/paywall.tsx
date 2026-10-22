@@ -714,6 +714,9 @@ function PaywallScreen() {
   async function onRestore() {
     await flowRef.current!.restore(async () => {
       const result = await restore();
+      logEvent("restore_result", {
+        result: result === "restored" ? "success" : result === "none" ? "empty" : "error",
+      });
       await refreshPro();
       if (result === "restored") {
         clearPaywallTrial();
