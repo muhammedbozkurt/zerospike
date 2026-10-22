@@ -194,7 +194,7 @@ const fr: TranslationSchema = {
     welcomeStep2: "Enregistrer un repas ou une dose",
     welcomeStep3: "Régler un rappel",
     previewTitle: "Voici ce que vous verrez ici après votre première mesure",
-    ringShareLine: "Part de vos mesures du jour dans la cible de leur contexte : {{share}}",
+    ringShareLine: "Part de vos mesures du jour dans vos cibles : {{share}}",
     quickAddGlucose: "Glycémie",
     quickAddFood: "Repas",
     quickAddInjection: "Injection",

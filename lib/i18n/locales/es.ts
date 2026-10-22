@@ -194,7 +194,7 @@ const es: TranslationSchema = {
     welcomeStep2: "Registre una comida o una dosis",
     welcomeStep3: "Configure un recordatorio",
     previewTitle: "Esto es lo que verá aquí tras su primera medición",
-    ringShareLine: "Porcentaje de sus mediciones de hoy dentro del objetivo de su contexto: {{share}}",
+    ringShareLine: "Porcentaje de sus mediciones de hoy en sus objetivos: {{share}}",
     quickAddGlucose: "Glucosa",
     quickAddFood: "Comida",
     quickAddInjection: "Inyección",

@@ -194,7 +194,7 @@ const ja: TranslationSchema = {
     welcomeStep2: "食事または投与量を記録",
     welcomeStep3: "リマインダーを設定",
     previewTitle: "最初の測定後、ここに表示される内容",
-    ringShareLine: "本日の測定のうち、各測定状況の目標範囲内にある割合: {{share}}",
+    ringShareLine: "本日の測定のうち目標内の割合: {{share}}",
     quickAddGlucose: "血糖値",
     quickAddFood: "食事",
     quickAddInjection: "注射",

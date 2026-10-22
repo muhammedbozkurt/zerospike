@@ -192,7 +192,7 @@ const tr = {
     welcomeStep2: "Öğün veya dozu kaydedin",
     welcomeStep3: "Hatırlatıcıyı ayarlayın",
     previewTitle: "İlk ölçümden sonra burada neler göreceksiniz",
-    ringShareLine: "Bugünkü ölçümlerinizin bağlam hedeflerinize göre aralıktaki payı: {{share}}",
+    ringShareLine: "Bugünkü ölçümlerinizin hedeflerinizdeki payı: {{share}}",
     quickAddGlucose: "Glukoz",
     quickAddFood: "Yemek",
     quickAddInjection: "Enjeksiyon",

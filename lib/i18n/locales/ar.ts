@@ -194,7 +194,7 @@ const ar: TranslationSchema = {
     welcomeStep2: "سجّل وجبة أو جرعة",
     welcomeStep3: "اضبط تذكيرًا",
     previewTitle: "هذا ما ستراه هنا بعد قراءتك الأولى",
-    ringShareLine: "نسبة قراءات اليوم ضمن النطاق المستهدف لسياق كل قراءة: {{share}}",
+    ringShareLine: "نسبة قراءات اليوم ضمن أهدافك: {{share}}",
     quickAddGlucose: "سكر الدم",
     quickAddFood: "وجبة",
     quickAddInjection: "حقنة",

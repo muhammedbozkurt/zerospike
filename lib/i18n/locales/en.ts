@@ -194,7 +194,7 @@ const en: TranslationSchema = {
     welcomeStep2: "Log a meal or a dose",
     welcomeStep3: "Set a reminder",
     previewTitle: "What you will see here after your first reading",
-    ringShareLine: "Share of today's readings within your context targets: {{share}}",
+    ringShareLine: "Share of today's readings in your targets: {{share}}",
     quickAddGlucose: "Glucose",
     quickAddFood: "Meal",
     quickAddInjection: "Injection",

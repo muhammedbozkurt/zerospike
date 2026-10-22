@@ -194,7 +194,7 @@ const de: TranslationSchema = {
     welcomeStep2: "Mahlzeit oder Dosis erfassen",
     welcomeStep3: "Erinnerung einrichten",
     previewTitle: "Das sehen Sie hier nach Ihrer ersten Messung",
-    ringShareLine: "Anteil Ihrer heutigen Messungen im Ziel des jeweiligen Kontexts: {{share}}",
+    ringShareLine: "Anteil Ihrer heutigen Messungen in Ihren Zielen: {{share}}",
     quickAddGlucose: "Glukose",
     quickAddFood: "Mahlzeit",
     quickAddInjection: "Injektion",
