@@ -1,7 +1,7 @@
 import type { ViewStyle } from "react-native";
 import { useWindowDimensions } from "react-native";
 
-import { TWO_COL_MIN_DP, WIDE_MIN_DP, isTwoColumn, isWideScreen } from "./tabletLayout";
+import { TWO_COL_MIN_DP, WIDE_MIN_DP, isDialogSheet, isTwoColumn, isWideScreen } from "./tabletLayout";
 
 export { WIDE_MIN_DP, TWO_COL_MIN_DP };
 
@@ -14,6 +14,8 @@ export type AppLayout = {
   isWide: boolean;
   /** isWide AND window width >= TWO_COL_MIN_DP. */
   isTwoCol: boolean;
+  /** Tablet sheets are centred dialogs here (lib/tabletLayout.ts isDialogSheet). */
+  isDialog: boolean;
   /**
    * Horizontal padding that centers a max-width content column on wide
    * screens and collapses to the caller's own `base` inset on phones, so a
@@ -46,5 +48,6 @@ export function useLayout(): AppLayout {
     paddingRight: base + gap,
   });
   const isTwoCol = isTwoColumn(width, height);
-  return { width, height, isWide, isTwoCol, columnPad };
+  const isDialog = isWide && isDialogSheet(width, height);
+  return { width, height, isWide, isTwoCol, isDialog, columnPad };
 }

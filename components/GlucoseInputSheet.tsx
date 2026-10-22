@@ -133,7 +133,7 @@ export function GlucoseInputSheet({
   // null keeps the "log it as of now" default; a Date is an explicit pick.
   const [loggedAt, setLoggedAt] = useState<Date | null>(null);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const insets = useSafeAreaInsets();
   const heroRef = useRef<TextInput>(null);
   /** Height actually left for the sheet: the keyboard has already been taken out
@@ -410,7 +410,7 @@ export function GlucoseInputSheet({
             <Animated.View
               style={[
                 { transform: [{ translateY }], maxHeight: availH > 0 ? availH : "100%" },
-                sheetBoxStyle(layoutWidth, isWide),
+                sheetBoxStyle(layoutWidth, isWide, layoutHeight, availH > 0 ? availH : undefined),
               ]}
               onLayout={(e) => {
                 const h = e.nativeEvent.layout.height;

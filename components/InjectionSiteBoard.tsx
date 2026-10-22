@@ -13,6 +13,8 @@ import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
 import { withAlpha } from "./rich";
 import { Button, Card, Txt } from "./ui";
 import { SCRIM } from "./SheetShell";
+import { sheetBoxStyle } from "../lib/tabletLayout";
+import { useLayout } from "../lib/useLayout";
 import {
   bodyStops,
   INK_DARK,
@@ -454,6 +456,7 @@ export function InjectionSiteBoard({
 }) {
   const { t } = useTranslation();
   const { height: winH } = useWindowDimensions();
+  const { isWide, width: layoutWidth } = useLayout();
   const [openRegion, setOpenRegion] = useState<InjectionSite | null>(null);
   const now = Date.now();
 
@@ -651,6 +654,7 @@ export function InjectionSiteBoard({
                 paddingTop: 8,
               },
               glow(THEME.accent, 30, 0.3),
+              sheetBoxStyle(layoutWidth, isWide, winH),
             ]}
           >
             <View className="items-center mb-1.5">

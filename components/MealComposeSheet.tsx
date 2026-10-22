@@ -40,10 +40,10 @@ import {
   type ComposeItem,
   type PortionChip,
 } from "../lib/mealCompose";
-import { sheetLayout } from "../lib/sheetLayout";
+import { DIALOG_CLEARANCE, dialogHeights, sheetLayout } from "../lib/sheetLayout";
 import { HIT_TARGET, INPUT_TEXT, THEME } from "../lib/theme/tokens";
 import { useLayout } from "../lib/useLayout";
-import { TABLET_SHEET_MAX_HEIGHT, sheetBoxStyle } from "../lib/tabletLayout";
+import { TABLET_SHEET_MAX_HEIGHT, dialogCardStyle, sheetBoxStyle } from "../lib/tabletLayout";
 import {
   EstimateResultCard,
   FoodCard,
@@ -143,7 +143,7 @@ export function MealComposeSheet({
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
   const rootRef = useRef<View>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -328,8 +328,15 @@ export function MealComposeSheet({
       : undefined;
   // Tablet: the rest of the screen is no use to a 560-wide strip, so the sheet
   // stops at TABLET_SHEET_MAX_HEIGHT and scrolls inside (phone: unchanged).
+  // Tablet dialog (>= 700 wide): 85% of the window, less what the keyboard and
+  // the status bar take (lib/sheetLayout.ts dialogHeights); the list scrolls.
+  const dialogRoom = rootHeight > 0 ? rootHeight - lift : undefined;
   const sheetHeightCapped =
-    sheetHeight != null && isWide ? Math.min(sheetHeight, TABLET_SHEET_MAX_HEIGHT) : sheetHeight;
+    isDialog && rootHeight > 0
+      ? dialogHeights(rootHeight, dialogRoom, Math.max(DIALOG_CLEARANCE, 2 * insets.top)).maxHeight
+      : sheetHeight != null && isWide
+        ? Math.min(sheetHeight, TABLET_SHEET_MAX_HEIGHT)
+        : sheetHeight;
 
   return (
     <View
@@ -363,14 +370,14 @@ export function MealComposeSheet({
                 { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
               ],
             },
-            sheetBoxStyle(layoutWidth, isWide),
+            sheetBoxStyle(layoutWidth, isWide, layoutHeight, dialogRoom, false),
           ]}
         >
           {/* flex 1 (grow AND shrink) keeps the pinned save button on screen
               when the content is taller than the sheet (095bb59). */}
           <Pressable
             className="rounded-t-3xl border-t border-x border-hair px-4 pt-3"
-            style={{ backgroundColor: THEME.bg.g1, flex: 1 }}
+            style={[{ backgroundColor: THEME.bg.g1, flex: 1 }, isDialog ? dialogCardStyle : null]}
             onPress={(e) => e.stopPropagation()}
             accessible={false}
             focusable={false}

@@ -150,7 +150,8 @@ const read = (rel: string): string => fs.readFileSync(path.join(root, rel), "utf
   const scrollAt = shell.indexOf("<ScrollView");
   ok("SheetShell: baslik satiri ScrollView'dan once ve disinda", titleAt > 0 && scrollAt > titleAt);
   ok("SheetShell: yalniz govde ScrollView icinde", /<ScrollView[\s\S]*\{children\}[\s\S]*<\/ScrollView>/.test(shell));
-  ok("SheetShell: tablet kutusu korunur", shell.includes("sheetBoxStyle(layoutWidth, isWide)"));
+  ok("SheetShell: tablet kutusu korunur", shell.includes("sheetBoxStyle(layoutWidth, isWide, windowHeight)"));
+  ok("SheetShell: tablet dialog ortalanir", shell.includes('dialog ? "center" : "flex-end"'));
   ok("SheetShell: kapatma dugmesi baslik satirinda", /closeLabel[\s\S]*name="close"/.test(shell));
   ok("SheetShell: ust bosluk sabitleri", shell.includes("paddingTop: 8") && shell.includes("height: 4") && shell.includes("mb-1.5"));
 }

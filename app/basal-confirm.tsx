@@ -100,7 +100,7 @@ function BasalConfirmScreen() {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { isWide, width: layoutWidth } = useLayout();
+  const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const router = useRouter();
   const { activeProfile, isProUser, bumpData } = useApp();
   const params = useLocalSearchParams<{
@@ -358,7 +358,7 @@ function BasalConfirmScreen() {
               paddingTop: 8,
               paddingBottom: insets.bottom + 16,
             },
-            sheetBoxStyle(layoutWidth, isWide),
+            sheetBoxStyle(layoutWidth, isWide, layoutHeight, cardMaxHeight),
           ]}
         >
           <View className="items-center mb-1.5">

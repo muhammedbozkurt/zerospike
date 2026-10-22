@@ -20,13 +20,14 @@ declare const console: { log: (...a: unknown[]) => void };
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 
-import { sheetLayout } from "../lib/sheetLayout";
+import { dialogHeights, sheetLayout } from "../lib/sheetLayout";
 import {
   COLUMN_GUTTER,
   SHEET_MAX_WIDTH,
   TABLET_CARD_GAP,
   TWO_COL_MAX_WIDTH,
   columnWidth,
+  isDialogSheet,
   isTwoColumn,
   sheetBoxStyle,
   sheetWidth,
@@ -187,16 +188,18 @@ function sheetOverHome(p: Palette, d: Device, which: "meal" | "estimate"): { svg
   const wide = Math.min(d.w, d.h) >= 600;
   let o = home(p, d).svg;
   o += `<rect x="0" y="0" width="${d.w}" height="${d.h}" fill="#000" fill-opacity="0.5"/>`;
-  const box = sheetBoxStyle(d.w, wide);
+  const dialog = isDialogSheet(d.w, d.h);
+  const box = sheetBoxStyle(d.w, wide, d.h);
   const sw = box ? box.width : d.w;
   const sx = (d.w - sw) / 2;
   // Meal compose: full allowance, tablet cap. Estimate: hugs its content.
-  const mealH = Math.floor(tabletSheetHeight(d.h, d.top, d.bottom, 0.92, wide));
+  const dh = dialogHeights(d.h, d.h - d.top - d.bottom);
+  const mealH = dialog ? dh.maxHeight : Math.floor(tabletSheetHeight(d.h, d.top, d.bottom, 0.92, wide));
   const estContent = 560;
   const est = sheetLayout({ windowHeight: d.h, keyboardHeight: 0, insetBottom: d.bottom, insetTop: d.top, contentHeight: estContent }).sheetMaxHeight;
-  const estH = Math.floor(Math.min(est, estContent + 40));
+  const estH = dialog ? Math.max(dh.minHeight, Math.min(dh.maxHeight, 240)) : Math.floor(Math.min(est, estContent + 40));
   const drawSheet = (x: number, w: number, h: number, title: string, sub: string): string => {
-    const y = d.h - h;
+    const y = dialog ? (d.h - h) / 2 : d.h - h;
     let s = `<rect x="${f2(x)}" y="${f2(y)}" width="${f2(w)}" height="${f2(h)}" rx="26" fill="${p.surfaceRaised}" stroke="${p.borderStrong}" stroke-width="1"/>`;
     s += `<rect x="${f2(x + w / 2 - 19)}" y="${f2(y + 10)}" width="38" height="4" rx="2" fill="${p.borderStrong}"/>`;
     s += `<text x="${f2(x + 18)}" y="${f2(y + 44)}" font-family="${FONT}" font-size="17" font-weight="800" fill="${p.text}">${title}</text>`;
@@ -204,8 +207,9 @@ function sheetOverHome(p: Palette, d: Device, which: "meal" | "estimate"): { svg
     for (let i = 0; i < rows; i++) {
       s += `<rect x="${f2(x + 16)}" y="${f2(y + 62 + i * 66)}" width="${f2(w - 32)}" height="54" rx="12" fill="${p.surface}" stroke="${p.border}"/>`;
     }
-    s += `<rect x="${f2(x + 16)}" y="${f2(d.h - d.bottom - 16 - 50)}" width="${f2(w - 32)}" height="50" rx="25" fill="${p.accentFill}"/>`;
-    s += `<text x="${f2(x + w / 2)}" y="${f2(y + h - d.bottom - 16 - 19)}" text-anchor="middle" font-family="${FONT}" font-size="13" font-weight="700" fill="${p.accentOnFill}">${sub}</text>`;
+    const bottomPad = dialog ? 0 : d.bottom;
+    s += `<rect x="${f2(x + 16)}" y="${f2(y + h - bottomPad - 16 - 50)}" width="${f2(w - 32)}" height="50" rx="25" fill="${p.accentFill}"/>`;
+    s += `<text x="${f2(x + w / 2)}" y="${f2(y + h - bottomPad - 16 - 19)}" text-anchor="middle" font-family="${FONT}" font-size="13" font-weight="700" fill="${p.accentOnFill}">${sub}</text>`;
     return s;
   };
   if (which === "meal") {
@@ -216,7 +220,9 @@ function sheetOverHome(p: Palette, d: Device, which: "meal" | "estimate"): { svg
   const h = which === "meal" ? mealH : estH;
   return {
     svg: o,
-    note: `w min(${SHEET_MAX_WIDTH},${d.w}-32)=${f2(sheetWidth(d.w))}, h ${h}, top ${f2(d.h - h)} >= ${d.top}`,
+    note: dialog
+      ? `dialog w ${f2(sw)}, h ${h} (min ${dh.minHeight}, max ${dh.maxHeight}), top ${f2((d.h - h) / 2)} >= ${d.top}`
+      : `w min(${SHEET_MAX_WIDTH},${d.w}-32)=${f2(sheetWidth(d.w))}, h ${h}, top ${f2(d.h - h)} >= ${d.top}`,
   };
 }
 
