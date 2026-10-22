@@ -1713,6 +1713,24 @@ const it: TranslationSchema = {
     errorEmail: "Questo indirizzo e-mail non sembra valido.",
     errorGeneric: "L'invio non è al momento possibile. Riprovi più tardi.",
   },
+  healthRationale: {
+    title: "Accesso a Health Connect",
+    intro: "zerospike chiede le autorizzazioni di Health Connect solo per le funzioni indicate di seguito. Lei decide cosa consentire e può cambiarlo in qualsiasi momento.",
+    readTitle: "Lettura della glicemia",
+    readBody: "Le glicemie degli ultimi 30 giorni vengono lette per comparire nel Suo diario e nei riepiloghi.",
+    writeTitle: "Scrittura di glicemia e carboidrati",
+    writeBody: "Le glicemie che inserisce a mano vengono scritte in Health Connect. I carboidrati dei pasti (grammi) vengono scritti solo se Lei lo attiva nelle impostazioni.",
+    backgroundTitle: "Lettura in background",
+    backgroundBody: "La lettura in background viene usata solo se ha Pro e ha attivato la sincronizzazione in background. Altrimenti zerospike legge solo con l'app aperta.",
+    deviceTitle: "Resta sul Suo dispositivo",
+    deviceBody: "Ciò che zerospike legge da Health Connect resta sul Suo dispositivo e non viene inviato a un server.",
+    insulinTitle: "Niente insulina, niente attività",
+    insulinBody: "zerospike non scrive insulina in Health Connect e non legge dati di attività o di esercizio.",
+    removeTitle: "Modificabile in qualsiasi momento",
+    removeBody: "Può rimuovere le autorizzazioni di zerospike in qualsiasi momento dalle impostazioni di Health Connect.",
+    privacyLink: "Informativa sulla privacy",
+    openSettings: "Impostazioni di Health Connect",
+  },
 };
 
 export default it;

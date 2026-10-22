@@ -1708,6 +1708,24 @@ const tr = {
     errorEmail: "E-posta adresi geçerli görünmüyor.",
     errorGeneric: "Şu anda gönderilemiyor. Lütfen daha sonra tekrar deneyin.",
   },
+  healthRationale: {
+    title: "Health Connect erişimi",
+    intro: "zerospike, Health Connect izinlerini yalnızca aşağıdaki özellikler için ister. Neye izin vereceğinize siz karar verirsiniz ve bunu istediğiniz zaman değiştirebilirsiniz.",
+    readTitle: "Kan şekeri okuma",
+    readBody: "Son 30 günün kan şekeri ölçümleri, günlüğünüzde ve özetlerinizde görünsün diye okunur.",
+    writeTitle: "Kan şekeri ve karbonhidrat yazma",
+    writeBody: "Elle girdiğiniz ölçümler Health Connect'e yazılır. Öğünlerin karbonhidratı (gram) yalnızca ayarlarda açarsanız yazılır.",
+    backgroundTitle: "Arka planda okuma",
+    backgroundBody: "Arka planda okuma yalnızca Pro üyeliğiniz varsa ve Arka planda eşitleme açıksa kullanılır. Aksi halde zerospike yalnızca uygulama açıkken okur.",
+    deviceTitle: "Cihazınızda kalır",
+    deviceBody: "zerospike'ın Health Connect'ten okuduğu veriler cihazınızda kalır, bir sunucuya gönderilmez.",
+    insulinTitle: "İnsülin ve aktivite yok",
+    insulinBody: "zerospike Health Connect'e insülin yazmaz, aktivite veya egzersiz verisi de okumaz.",
+    removeTitle: "İstediğiniz zaman değiştirin",
+    removeBody: "zerospike'ın izinlerini istediğiniz zaman Health Connect ayarlarından kaldırabilirsiniz.",
+    privacyLink: "Gizlilik politikasını okuyun",
+    openSettings: "Health Connect ayarlarını açın",
+  },
 };
 
 export default tr;
