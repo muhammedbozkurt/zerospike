@@ -44,8 +44,15 @@ function capFontScale(name: "Text" | "TextInput"): void {
       name === "Text"
         ? (relaxTextProps(rawProps, fontScale) as Record<string, unknown>)
         : rawProps;
+    // The key is the live-change fix (B6): when the OS text size changes while
+    // the app runs, a Text whose props stay identical is not re-cloned, so
+    // Fabric keeps its measured frame from the old size while the glyphs are
+    // drawn at the new one (clipped titles, "In ra", ring "10"). A new key
+    // makes the host node new, which is always measured at the current scale.
+    // Constant at a steady size, so nothing remounts otherwise.
     return ReactRuntime.createElement(Base, {
       ...props,
+      key: name === "Text" ? fontScale : undefined,
       maxFontSizeMultiplier: props.maxFontSizeMultiplier ?? MAX_FONT_SCALE,
     });
   };

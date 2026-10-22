@@ -15,6 +15,8 @@ import { EASE_OUT } from "../../lib/theme/motion";
 import { StepGlyph } from "./StepGlyph";
 import { ELEVATION, RADIUS, SPACE, THEME, glow } from "../../lib/theme/tokens";
 import { useLayout } from "../../lib/useLayout";
+import { useFontScale } from "../../lib/useFontScale";
+import { wordFitMultiplier } from "../../lib/layoutForFontScale";
 
 /** Cap for the interactive column (option cards, inputs, footer) on wide
  *  screens; narrower than CONTENT_MAX_WIDTH so a tablet's option list and
@@ -112,7 +114,8 @@ export function QuizStep({
   insetsBottom?: number;
   children: React.ReactNode;
 }) {
-  const { height, isWide } = useLayout();
+  const { width, height, isWide } = useLayout();
+  const fontScale = useFontScale();
   const tight = compact && !isWide;
   const dense = height < DENSE_HEIGHT || tight;
   const interactiveColumnStyle = isWide
@@ -136,13 +139,21 @@ export function QuizStep({
     </View>
   );
 
+  // The question's longest word must stay on one line at large text: RN would
+  // otherwise break it mid-word ("kullanıyorsunu/z"). Phone: the screen minus
+  // the 16 + 24 padding on both sides; tablet: the card's inner width.
+  const titleSize = dense ? 22 : 28;
+  const titleWidth = isWide ? INTERACTIVE_MAX_WIDTH - 2 * SPACE.xl : width - 2 * (SPACE.lg + 24);
+  const titleCap = wordFitMultiplier(title, titleSize, titleWidth, fontScale);
+
   const header = (
     <View style={{ marginTop: dense ? 18 : 26 }}>
       <FadeSlideIn>
         <Text
+          maxFontSizeMultiplier={titleCap}
           style={{
             color: THEME.text,
-            fontSize: dense ? 22 : 28,
+            fontSize: titleSize,
             lineHeight: dense ? 28 : 34,
             fontWeight: "700",
           }}

@@ -27,7 +27,10 @@ import {
   calcHeaderTitleStyle,
   ctaLineExtra,
   scrollHintAllowed,
+  longestWord,
+  wordFitMultiplier,
 } from "../lib/layoutForFontScale";
+import { estimateTextWidth } from "../lib/fitText";
 
 let failed = 0;
 function check(name: string, fn: () => void): void {
@@ -220,10 +223,36 @@ check("B3 calculator: both header titles take the large-text style", () => {
   assert.equal((src.match(/headerStyle\]\} numberOfLines=\{1\}/g) ?? []).length, 2);
 });
 
-check("B6 Today remounts on a live text-size change (drops measured heights and the column cut)", () => {
-  const src = read("app/(tabs)/index.tsx");
-  assert.match(src, /<DashboardScreenInner key=\{effectiveFontScale\(fontScale\)\} \/>/);
-  assert.match(src, /export default function DashboardScreen\(\)/);
+check("B6 live text-size change: every Text is keyed by the live scale (fresh host node, measured at the new size)", () => {
+  const src = read("lib/theme/fontScale.ts");
+  assert.match(src, /key: name === "Text" \? fontScale : undefined/);
+  const today = read("app/(tabs)/index.tsx");
+  assert.doesNotMatch(today, /DashboardScreenInner/);
+});
+
+check("B9 longestWord picks the widest-by-length token", () => {
+  assert.equal(longestWord("Doktorunuzun okuyabileceği rapor"), "okuyabileceği");
+  assert.equal(longestWord("   "), "");
+  assert.equal(longestWord(""), "");
+});
+
+check("B9 wordFitMultiplier: undefined at 1.0 (pixel identical), capped only when a word would break", () => {
+  assert.equal(wordFitMultiplier("Doktorunuzun okuyabileceği rapor", 34, 384, 1), undefined);
+  assert.equal(wordFitMultiplier("Doktorunuzun okuyabileceği rapor", 34, 384, 0.9), undefined);
+  const m = wordFitMultiplier("Doktorunuzun okuyabileceği rapor", 34, 384, 3.1);
+  assert.ok(m !== undefined && m >= 1 && m < MAX_FONT_SCALE, `got ${m}`);
+  assert.ok(estimateTextWidth("okuyabileceği", 34 * (m as number)) <= 384);
+  assert.equal(wordFitMultiplier("Log", 34, 384, 2), undefined);
+  assert.equal(wordFitMultiplier("Hello", 34, 0, 2), undefined);
+  assert.equal(wordFitMultiplier("Wortlängenüberschreitungsbeispiel", 34, 100, 2), 1);
+});
+
+check("B9 Welcome and QuizStep headings take the word-fit cap; the sample card is hidden at large text", () => {
+  const w = read("components/onboarding/Welcome.tsx");
+  assert.match(w, /maxFontSizeMultiplier=\{wordFitMultiplier\(title/);
+  assert.match(w, /large \? null/);
+  const q = read("components/onboarding/QuizStep.tsx");
+  assert.match(q, /maxFontSizeMultiplier=\{titleCap\}/);
 });
 
 check("B5 Today list clears the taller floating CTA", () => {

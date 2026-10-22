@@ -6,6 +6,8 @@
  * before large-text support existed (store screenshots are taken at 1.0).
  */
 
+import { estimateTextWidth } from "./fitText";
+
 /** App-wide cap on the OS text-size multiplier (Apple Larger Text asks for at
  *  least 200%). iOS AX5 would reach ~3.1 and Android system settings stop at
  *  2.0; the cap is a single number so it can be raised after simulator QA. */
@@ -138,6 +140,38 @@ export function calcHeaderTitleStyle(osScale: number): { flexShrink?: number; te
  *  must clear the taller bar. */
 export function ctaLineExtra(osScale: number, linePx: number = 24): number {
   return scaledSize(linePx, osScale) - linePx;
+}
+
+/** The longest whitespace-separated word of a string (what a heading must fit
+ *  on a single line, because a line break never happens inside a word). */
+export function longestWord(text: string): string {
+  let best = "";
+  for (const w of text.split(/\s+/)) if (w.length > best.length) best = w;
+  return best;
+}
+
+/**
+ * maxFontSizeMultiplier for a wrapping heading whose longest word must stay on
+ * one line. RN breaks a word that is wider than its box mid-glyph ("Doktorunu/
+ * zun"), which reads worse than a heading that stops growing a little earlier.
+ * Returns the largest multiplier in [1, cap] that still fits `availableWidth`,
+ * or undefined (no cap needed) when the full scale fits and at the default
+ * size, so nothing moves there.
+ */
+export function wordFitMultiplier(
+  text: string,
+  fontSize: number,
+  availableWidth: number,
+  osScale: number,
+  cap: number = MAX_FONT_SCALE,
+): number | undefined {
+  const scale = effectiveFontScale(osScale, cap);
+  if (scale <= 1 || !(availableWidth > 0)) return undefined;
+  const word = longestWord(text);
+  if (word.length === 0) return undefined;
+  const fit = availableWidth / estimateTextWidth(word, fontSize);
+  if (fit >= scale) return undefined;
+  return Math.max(1, Math.floor(fit * 100) / 100);
 }
 
 /** The scroll-hint chevron overlays content, so it is dropped once large text

@@ -19,6 +19,8 @@ import { ClipReveal } from "./ClipReveal";
 import { GlucoseChip } from "../rich/GlucoseChip";
 import { GradientAreaChart } from "../rich/GradientAreaChart";
 import { GradientCTA } from "../rich/GradientCTA";
+import { useFontScale } from "../../lib/useFontScale";
+import { STACK_AT_SCALE } from "../../lib/layoutForFontScale";
 import type { RevealPlanItem, RevealPlanKind } from "../../lib/revealPlan";
 
 // Cascade timing (ms): a gentle staggered reveal.
@@ -265,6 +267,7 @@ export function Reveal({
   aboveDisclaimer?: React.ReactNode;
 }) {
   const { t } = useTranslation();
+  const stackBadge = useFontScale() > STACK_AT_SCALE;
   const reduced = useReducedMotion();
   const [ctaReady, setCtaReady] = useState(reduced);
   useEffect(() => {
@@ -372,7 +375,13 @@ export function Reveal({
         {/* Hero: the mockup's glowing preview card */}
         <FadeSlideIn delay={D_HERO}>
           <GlassCard glow style={{ marginBottom: 12 }}>
-            <View className="flex-row items-center justify-between mb-2">
+            <View
+              style={
+                stackBadge
+                  ? { flexDirection: "column", alignItems: "flex-start", rowGap: 6, marginBottom: 8 }
+                  : { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }
+              }
+            >
               <Text
                 style={{
                   color: THEME.textMuted,

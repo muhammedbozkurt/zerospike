@@ -1,5 +1,5 @@
 import React, { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View, useWindowDimensions } from "react-native";
+import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,7 +28,7 @@ import {
   getSugarLog,
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
-import { STACK_AT_SCALE, effectiveFontScale, ctaLineExtra } from "../../lib/layoutForFontScale";
+import { STACK_AT_SCALE, ctaLineExtra } from "../../lib/layoutForFontScale";
 import { useFontScale } from "../../lib/useFontScale";
 import type { LogTag, PeriodTag, Reminder, SugarLog } from "../../lib/db/types";
 import { listReminders } from "../../lib/db/reminders";
@@ -312,7 +312,7 @@ function WeekSkeleton() {
   );
 }
 
-function DashboardScreenInner() {
+export default function DashboardScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -3050,15 +3050,4 @@ function PostMealCountdown({
       </View>
     </View>
   );
-}
-
-/** Remounts the dashboard when the effective text scale changes while the app
- *  runs (system Settings, Control Center). Native text measurements, the
- *  measured block heights and the tablet column cut were all taken at the old
- *  scale and are not redone by a plain re-render, which left the screen torn
- *  until a restart. A fresh mount drops those caches (blockHeights,
- *  journalHeight, splitCutRef). At an unchanged scale nothing remounts. */
-export default function DashboardScreen() {
-  const { fontScale } = useWindowDimensions();
-  return <DashboardScreenInner key={effectiveFontScale(fontScale)} />;
 }
