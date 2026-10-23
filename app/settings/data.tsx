@@ -63,7 +63,6 @@ import { DateRangePicker, type PickedRange } from "../../components/DateRangePic
 import { useFeedback } from "../../components/Feedback";
 import { formatDate, formatLocale, formatTime } from "../../lib/format";
 import { GLUCOSE_RICH, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
-import { useLayout } from "../../lib/useLayout";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
 import {
@@ -165,7 +164,6 @@ export default function DataSettings() {
     refreshProfiles,
     setActiveProfileId,
   } = useApp();
-  const { columnPad } = useLayout();
 
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -677,7 +675,6 @@ export default function DataSettings() {
         />
       }
     >
-      <View style={columnPad()}>
       <TwoLineRow
         icon="document-text-outline"
         label={t("settings.exportCsv")}
@@ -1119,7 +1116,6 @@ export default function DataSettings() {
           </View>
         </>
       ) : null}
-      </View>
     </SettingsScaffold>
   );
 }

@@ -47,7 +47,6 @@ import { InsulinModeSection } from "../../components/InsulinModeSection";
 import { SettingsScaffold } from "../../components/settingsUi";
 import { SectionLabel } from "../../components/ui";
 import { useFeedback } from "../../components/Feedback";
-import { useLayout } from "../../lib/useLayout";
 import { THEME } from "../../lib/theme/tokens";
 import { carbRegionNote, type CarbDisplayMode } from "../../lib/carbDisplay";
 import { setCarbDisplayMode, useCarbDisplayMode } from "../../lib/carbDisplayPref";
@@ -67,7 +66,6 @@ export default function ProfileSettings() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const carbMode = useCarbDisplayMode();
   const regionNote = carbRegionNote(i18n.language, getLocales()[0]?.regionCode);
-  const { columnPad } = useLayout();
   const { confirm, actionSheet, toast } = useFeedback();
 
   // activeProfile is already in context by the time this screen mounts (see
@@ -484,7 +482,6 @@ export default function ProfileSettings() {
 
   return (
     <SettingsScaffold scrollHintId="profile" title={t("onboarding.secProfile")}>
-      <View style={columnPad()}>
       <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
         <InputRow
           icon="text-outline"
@@ -808,7 +805,6 @@ export default function ProfileSettings() {
           </View>
         </FormCard>
       ) : null}
-      </View>
     </SettingsScaffold>
   );
 }

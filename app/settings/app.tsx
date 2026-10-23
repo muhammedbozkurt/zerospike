@@ -32,7 +32,6 @@ import { useFeedback } from "../../components/Feedback";
 import { SPACE, THEME, switchColors } from "../../lib/theme/tokens";
 import { getHapticsEnabled, hapticSelect, setHapticsEnabled } from "../../lib/haptics";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
-import { useLayout } from "../../lib/useLayout";
 
 /** Settings > App: language, Spike, Pro / subscription, widget guide. */
 export default function AppSettings() {
@@ -41,7 +40,6 @@ export default function AppSettings() {
   const { toast, confirm, actionSheet } = useFeedback();
   const { lang, setLanguage, isProUser, refreshPro, activeProfile } = useApp();
   const proCta = useProCta(!isProUser);
-  const { columnPad } = useLayout();
   const { pref, setPref } = useTheme();
   const healthAvailable = useHealthAvailable();
   const profileId = activeProfile?.id;
@@ -178,7 +176,6 @@ export default function AppSettings() {
 
   return (
     <SettingsScaffold scrollHintId="app" title={t("settings.appSection")}>
-      <View style={columnPad()}>
       <SectionLabel>{t("settings.language")}</SectionLabel>
       <LanguagePicker value={lang} onChange={onChangeLang} />
 
@@ -267,7 +264,6 @@ export default function AppSettings() {
         label={t("widgetGuide.title")}
         onPress={() => router.push("/widget-guide")}
       />
-      </View>
     </SettingsScaffold>
   );
 }

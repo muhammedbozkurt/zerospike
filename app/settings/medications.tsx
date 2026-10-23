@@ -18,7 +18,6 @@ import { SavedMedEditSheet } from "../../components/SavedMedEditSheet";
 import { useFeedback } from "../../components/Feedback";
 import { withAlpha } from "../../components/rich";
 import { HIT_TARGET, THEME } from "../../lib/theme/tokens";
-import { useLayout } from "../../lib/useLayout";
 
 /**
  * Settings > My medications (schema v18): the per-profile saved-name registry
@@ -30,7 +29,6 @@ import { useLayout } from "../../lib/useLayout";
 export default function MedicationsScreen() {
   const { t } = useTranslation();
   const { activeProfile } = useApp();
-  const { columnPad } = useLayout();
   const { confirm, toast } = useFeedback();
 
   const [meds, setMeds] = useState<SavedMed[]>([]);
@@ -132,56 +130,54 @@ export default function MedicationsScreen() {
         />
       }
     >
-      <View style={columnPad()}>
-        <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
-          {t("meds.manageHint")}
-        </Text>
+      <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
+        {t("meds.manageHint")}
+      </Text>
 
-        {!loaded ? (
-          <>
-            {[0, 1, 2].map((i) => (
+      {!loaded ? (
+        <>
+          {[0, 1, 2].map((i) => (
+            <View
+              key={i}
+              className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2"
+              style={{ opacity: 0.5 }}
+            >
               <View
-                key={i}
-                className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2"
-                style={{ opacity: 0.5 }}
-              >
-                <View
-                  className="w-9 h-9 rounded-xl"
-                  style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
-                />
-                <View
-                  className="flex-1 ml-3"
-                  style={{ height: 14, borderRadius: 7, backgroundColor: THEME.track }}
-                />
-              </View>
-            ))}
-          </>
-        ) : meds.length === 0 ? (
-          <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
-            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
-              {t("meds.empty")}
-            </Text>
-          </View>
-        ) : (
-          meds.map((row) => (
-            <Row
-              key={row.id}
-              icon="medical-outline"
-              label={row.name}
-              onPress={() => openEditor(row)}
-              onLongPress={() => void confirmDelete(row)}
-            />
-          ))
-        )}
+                className="w-9 h-9 rounded-xl"
+                style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
+              />
+              <View
+                className="flex-1 ml-3"
+                style={{ height: 14, borderRadius: 7, backgroundColor: THEME.track }}
+              />
+            </View>
+          ))}
+        </>
+      ) : meds.length === 0 ? (
+        <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
+          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
+            {t("meds.empty")}
+          </Text>
+        </View>
+      ) : (
+        meds.map((row) => (
+          <Row
+            key={row.id}
+            icon="medical-outline"
+            label={row.name}
+            onPress={() => openEditor(row)}
+            onLongPress={() => void confirmDelete(row)}
+          />
+        ))
+      )}
 
-        <Button
-          variant="outlined"
-          onPress={openAdd}
-          label={t("meds.addSavedTitle")}
-          icon={<Ionicons name="add" size={18} color={THEME.accent} />}
-          className="mb-2"
-        />
-      </View>
+      <Button
+        variant="outlined"
+        onPress={openAdd}
+        label={t("meds.addSavedTitle")}
+        icon={<Ionicons name="add" size={18} color={THEME.accent} />}
+        className="mb-2"
+      />
     </SettingsScaffold>
   );
 }

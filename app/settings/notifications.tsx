@@ -38,7 +38,6 @@ import { InlineTimePicker } from "../../components/InlineTimePicker";
 import { InlineConfigCard, NoticeBanner, Row, SettingsScaffold } from "../../components/settingsUi";
 import { GLUCOSE_RICH, THEME, switchColors } from "../../lib/theme/tokens";
 import { withAlpha } from "../../components/rich/GlassCard";
-import { useLayout } from "../../lib/useLayout";
 
 /** Week-start day for the weekly-reminder day picker, by language: the app's
  *  own weekday ids are 1=Sunday..7=Saturday (see lib/i18n weekdayShort_*), so
@@ -60,7 +59,6 @@ function weekOrder(l: Lang): number[] {
 export default function NotificationSettings() {
   const { t } = useTranslation();
   const { activeProfile, lang } = useApp();
-  const { columnPad } = useLayout();
   const router = useRouter();
 
   // Starts unknown (not DEFAULT_PREFS): a user who turned any of these off
@@ -243,7 +241,6 @@ export default function NotificationSettings() {
 
   return (
     <SettingsScaffold title={t("settings.notificationsSection")}>
-      <View style={columnPad()}>
       {permission ? (
         <Row
           icon={permission === "granted" ? "notifications" : "notifications-off-outline"}
@@ -562,7 +559,6 @@ export default function NotificationSettings() {
           ))}
         </>
       )}
-      </View>
     </SettingsScaffold>
   );
 }

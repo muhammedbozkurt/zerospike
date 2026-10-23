@@ -17,7 +17,6 @@ import { fatalReportDate, type FatalReport } from "../../lib/fatalReport";
 import { privacyUrl, termsUrl } from "../../lib/legal";
 import { THEME } from "../../lib/theme/tokens";
 import { writeReviewUrl } from "../../lib/services/review";
-import { useLayout } from "../../lib/useLayout";
 
 /** Row's default right-side chevron implies in-app navigation; rows that hand
  *  off to the system browser get this instead, so the two don't look the same. */
@@ -29,7 +28,6 @@ export default function AboutSettings() {
   const { t } = useTranslation();
   const router = useRouter();
   const { activeProfile } = useApp();
-  const { columnPad } = useLayout();
   const usesInsulin = insulinModeUsesInsulin(insulinModeOf(activeProfile));
   const version = Constants.expoConfig?.version ?? "1.0.0";
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -48,7 +46,6 @@ export default function AboutSettings() {
 
   return (
     <SettingsScaffold title={t("settings.aboutSection")}>
-      <View style={columnPad()}>
       {usesInsulin ? (
         <>
           <SectionLabel>{t("injection.title")}</SectionLabel>
@@ -117,7 +114,6 @@ export default function AboutSettings() {
 
       <View className="my-3">
         <DisclaimerBanner full />
-      </View>
       </View>
       <FatalReportSheet
         visible={fatalOpen}

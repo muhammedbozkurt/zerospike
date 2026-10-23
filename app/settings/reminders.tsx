@@ -39,7 +39,6 @@ import { withAlpha } from "../../components/rich";
 import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
-import { useLayout } from "../../lib/useLayout";
 import { switchProps } from "../../lib/a11y";
 
 /** Type icon, matching the icon each type already carries elsewhere in the app
@@ -230,7 +229,6 @@ export default function RemindersScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { activeProfile } = useApp();
-  const { columnPad } = useLayout();
   const { confirm, toast } = useFeedback();
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
@@ -562,118 +560,116 @@ export default function RemindersScreen() {
         />
       }
     >
-      <View style={columnPad()}>
-        <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
-          {t("settings.remindersHint")}
-          {alarmKitAvailable ? ` ${t("reminders.modeHint")}` : ""}
-          {/* The one place that says why a row set to "Alarm" still arrives as
-              a notification - the same sentence the edit sheet uses for the
-              same state, rather than a second wording for one fact. */}
-          {anyAlarmPending ? ` ${t("reminders.alarmPermissionHint")}` : ""}
-          {/* K3-2: a row that will not be delivered at all. Different fix from
-              the alarm hint above (the NOTIFICATION permission, not the alarm
-              one), so it is its own sentence rather than a reworded share. */}
-          {anyBlocked ? ` ${t("reminders.notifPermissionHint")}` : ""}
-          {/* Only with a second profile: reminders are per profile and the
-              inactive one's are silent, which is deliberate but was written
-              down nowhere the user could see. Saying it on a single-profile
-              device would only raise a question nobody has. */}
-          {profileCount > 1 ? ` ${t("reminders.profileScopeNote")}` : ""}
-        </Text>
+      <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 14 }}>
+        {t("settings.remindersHint")}
+        {alarmKitAvailable ? ` ${t("reminders.modeHint")}` : ""}
+        {/* The one place that says why a row set to "Alarm" still arrives as
+            a notification - the same sentence the edit sheet uses for the
+            same state, rather than a second wording for one fact. */}
+        {anyAlarmPending ? ` ${t("reminders.alarmPermissionHint")}` : ""}
+        {/* K3-2: a row that will not be delivered at all. Different fix from
+            the alarm hint above (the NOTIFICATION permission, not the alarm
+            one), so it is its own sentence rather than a reworded share. */}
+        {anyBlocked ? ` ${t("reminders.notifPermissionHint")}` : ""}
+        {/* Only with a second profile: reminders are per profile and the
+            inactive one's are silent, which is deliberate but was written
+            down nowhere the user could see. Saying it on a single-profile
+            device would only raise a question nobody has. */}
+        {profileCount > 1 ? ` ${t("reminders.profileScopeNote")}` : ""}
+      </Text>
 
-        {/* K3-2/X4: nothing is being armed because the app's OWN master switch
-            is off, not because the OS refused anything. A separate row from the
-            permission banner below on purpose: the fix is one tap away in
-            Settings > Notifications, and sending this user to system settings
-            would be sending them to the wrong place. */}
-        {anyMasterOff ? (
-          <NoticeBanner
-            onPress={() => router.push("/settings/notifications")}
-            accessibilityLabel={t("reminders.masterOffHint")}
-            className="mb-3"
-          >
-            <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
-              {t("reminders.masterOffHint")}
-            </Text>
-            <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
-              {t("reminders.masterOffCta")}
-            </Text>
-          </NoticeBanner>
-        ) : null}
-
-        {/* Store screenshots must never show a "permission not granted" banner
-            (App Store 2.3.3 - a store frame has to look like a real, working
-            account), regardless of the simulator's actual OS permission state -
-            hence the isScreenshotMode() gate ahead of the real condition rather
-            than instead of it. Real users never hit this branch. */}
-        {!isScreenshotMode() && permission && permission !== "granted" ? (
-          <NoticeBanner onPress={() => void retryPermission()} className="mb-3">
-            <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
-              {permission === "deniedPermanently"
-                ? t("notifications.permissionDeniedPermanently")
-                : t("notifications.permissionDenied")}
-            </Text>
-            <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
-              {t("settings.openSystemSettings")}
-            </Text>
-          </NoticeBanner>
-        ) : null}
-
-        {!loaded ? (
-          <>
-            {[0, 1, 2].map((i) => (
-              <View
-                key={i}
-                className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2"
-                style={{ opacity: 0.5 }}
-              >
-                <View
-                  className="w-9 h-9 rounded-xl"
-                  style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
-                />
-                <View
-                  className="flex-1 ml-3"
-                  style={{ height: 14, borderRadius: 7, backgroundColor: THEME.track }}
-                />
-              </View>
-            ))}
-          </>
-        ) : reminders.length === 0 ? (
-          <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
-            <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
-              {t("reminders.empty")}
-            </Text>
-          </View>
-        ) : (
-          reminders.map((row) => (
-            <ReminderRow
-              key={row.id}
-              row={row}
-              label={reminderRowLabel(row)}
-              day={dayFor(row)}
-              badge={alarmKitAvailable ? badgeModeOf(row) : null}
-              onPress={() => openEditSheet(row)}
-              onLongPress={() => void confirmDelete(row)}
-              onToggleMode={() => void toggleAlarmMode(row)}
-              onToggleEnabled={(v) => void toggleEnabled(row, v)}
-            />
-          ))
-        )}
-
-        {atLimit ? (
-          <Text style={{ color: THEME.textMuted, fontSize: 12, textAlign: "center", marginTop: 4 }}>
-            {t("reminders.limitReached")}
+      {/* K3-2/X4: nothing is being armed because the app's OWN master switch
+          is off, not because the OS refused anything. A separate row from the
+          permission banner below on purpose: the fix is one tap away in
+          Settings > Notifications, and sending this user to system settings
+          would be sending them to the wrong place. */}
+      {anyMasterOff ? (
+        <NoticeBanner
+          onPress={() => router.push("/settings/notifications")}
+          accessibilityLabel={t("reminders.masterOffHint")}
+          className="mb-3"
+        >
+          <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+            {t("reminders.masterOffHint")}
           </Text>
-        ) : (
-          <Button
-            variant="outlined"
-            onPress={openAddSheet}
-            label={t("reminders.addTitle")}
-            icon={<Ionicons name="add" size={18} color={THEME.accent} />}
-            className="mb-2"
+          <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+            {t("reminders.masterOffCta")}
+          </Text>
+        </NoticeBanner>
+      ) : null}
+
+      {/* Store screenshots must never show a "permission not granted" banner
+          (App Store 2.3.3 - a store frame has to look like a real, working
+          account), regardless of the simulator's actual OS permission state -
+          hence the isScreenshotMode() gate ahead of the real condition rather
+          than instead of it. Real users never hit this branch. */}
+      {!isScreenshotMode() && permission && permission !== "granted" ? (
+        <NoticeBanner onPress={() => void retryPermission()} className="mb-3">
+          <Text style={{ color: THEME.text, fontSize: 13, lineHeight: 19, opacity: 0.9 }}>
+            {permission === "deniedPermanently"
+              ? t("notifications.permissionDeniedPermanently")
+              : t("notifications.permissionDenied")}
+          </Text>
+          <Text style={{ color: THEME.accent, fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+            {t("settings.openSystemSettings")}
+          </Text>
+        </NoticeBanner>
+      ) : null}
+
+      {!loaded ? (
+        <>
+          {[0, 1, 2].map((i) => (
+            <View
+              key={i}
+              className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-3 mb-2"
+              style={{ opacity: 0.5 }}
+            >
+              <View
+                className="w-9 h-9 rounded-xl"
+                style={{ backgroundColor: withAlpha(THEME.accent, 0.14) }}
+              />
+              <View
+                className="flex-1 ml-3"
+                style={{ height: 14, borderRadius: 7, backgroundColor: THEME.track }}
+              />
+            </View>
+          ))}
+        </>
+      ) : reminders.length === 0 ? (
+        <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3.5 mb-3">
+          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
+            {t("reminders.empty")}
+          </Text>
+        </View>
+      ) : (
+        reminders.map((row) => (
+          <ReminderRow
+            key={row.id}
+            row={row}
+            label={reminderRowLabel(row)}
+            day={dayFor(row)}
+            badge={alarmKitAvailable ? badgeModeOf(row) : null}
+            onPress={() => openEditSheet(row)}
+            onLongPress={() => void confirmDelete(row)}
+            onToggleMode={() => void toggleAlarmMode(row)}
+            onToggleEnabled={(v) => void toggleEnabled(row, v)}
           />
-        )}
-      </View>
+        ))
+      )}
+
+      {atLimit ? (
+        <Text style={{ color: THEME.textMuted, fontSize: 12, textAlign: "center", marginTop: 4 }}>
+          {t("reminders.limitReached")}
+        </Text>
+      ) : (
+        <Button
+          variant="outlined"
+          onPress={openAddSheet}
+          label={t("reminders.addTitle")}
+          icon={<Ionicons name="add" size={18} color={THEME.accent} />}
+          className="mb-2"
+        />
+      )}
     </SettingsScaffold>
   );
 }
