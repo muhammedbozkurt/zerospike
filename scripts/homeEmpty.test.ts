@@ -8,6 +8,8 @@ import path from "node:path";
 
 import {
   bosDurumKarari,
+  cgmHomeState,
+  cgmHomeVisible,
   todayRangeShare,
   usesTwoColumn,
   welcomePreviewMode,
@@ -138,7 +140,7 @@ check("ring line value comes from pct(): tr %92, en 92%, de 92 %", () => {
 check("source contract: index.tsx builds the share with pct() and uses the pure helpers", () => {
   const src = read("app/(tabs)/index.tsx");
   assert.match(src, /ringShareLine", \{ share: isolateLtr\(pct\(todayShare\)\) \}/);
-  assert.match(src, /bosDurumKarari\(\{ loaded, entries: entries\.length \}\)/);
+  assert.match(src, /bosDurumKarari\(\{ loaded: homeLoaded, entries: entries\.length, cgm: cgmActive \}\)/);
   assert.match(src, /usesTwoColumn\(homeState, isTwoCol\)/);
   assert.match(src, /fraction=\{todayShare != null \? todayShare \/ 100 : 0\}/);
   assert.match(src, /<WelcomeCard/);
@@ -155,6 +157,38 @@ check("source contract: WelcomeCard has no hard-coded colours or adjustsFontSize
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(src));
   assert.ok(!/rgba\(/.test(src));
   assert.ok(!/adjustsFontSizeToFit/.test(src));
+});
+
+check("CGM bekleniyor: a sensor profile with no record is never the welcome card", () => {
+  assert.equal(bosDurumKarari({ loaded: true, entries: 0, cgm: true }), "normal");
+  assert.equal(bosDurumKarari({ loaded: false, entries: 0, cgm: true }), "loading");
+  assert.equal(bosDurumKarari({ loaded: true, entries: 0, cgm: false }), "welcome");
+  assert.equal(bosDurumKarari({ loaded: true, entries: 0 }), "welcome");
+});
+
+check("CGM bekleniyor: the home state tells waiting, gap and data apart", () => {
+  assert.equal(cgmHomeState({ loaded: false, latestAtMs: null, windowPoints: 0 }), "loading");
+  assert.equal(cgmHomeState({ loaded: true, latestAtMs: null, windowPoints: 0 }), "waiting");
+  assert.equal(cgmHomeState({ loaded: true, latestAtMs: 1, windowPoints: 0 }), "gap");
+  assert.equal(cgmHomeState({ loaded: true, latestAtMs: 1, windowPoints: 12 }), "data");
+});
+
+check("CGM items exist for any mode but manual", () => {
+  assert.equal(cgmHomeVisible("manual"), false);
+  assert.equal(cgmHomeVisible("cgm"), true);
+  assert.equal(cgmHomeVisible("nightscout"), true);
+});
+
+check("CGM bekleniyor: the waiting copy exists in all nine languages", () => {
+  const all = { tr, en, de, fr, es, it, pt, ar, ja } as const;
+  for (const [lang, bundle] of Object.entries(all)) {
+    const home = (bundle as unknown as { cgmHome: Record<string, string> }).cgmHome;
+    for (const key of ["waiting", "waitingBody", "watching"]) {
+      assert.ok(home[key] && home[key].length > 0, `${lang}.cgmHome.${key}`);
+    }
+  }
+  assert.equal(tr.cgmHome.waiting, "CGM bekleniyor");
+  assert.equal(tr.cgmHome.watching, "CGM izliyor");
 });
 
 if (failed > 0) {

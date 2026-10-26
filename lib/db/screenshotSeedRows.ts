@@ -1,4 +1,5 @@
 import type { InsulinType, MealSlot, PeriodTag, SitePoint } from "./types";
+import { CGM_SHOT_SOURCE_APP } from "./screenshotGlucose";
 
 /**
  * Store-screenshot seed (see ./screenshotSeed): the rows it wipes and
@@ -124,6 +125,50 @@ export async function replaceSeedTemplates(
           carbs_g_fixed, sort_order)
        VALUES (?, ?, NULL, ?, 0, ?, ?, 0);`,
       [seedRowId("template-item", profileId, i), id, r.itemName, r.portionG, r.carbs]
+    );
+  }
+}
+
+export interface SeedCgmRows {
+  sensor: readonly { mgdl: number; atMs: number }[];
+  manual: readonly { mgdl: number; atMs: number; period_tag: PeriodTag }[];
+}
+
+/** Removes the demo sensor readings (and the hand-entered ones seeded beside
+ *  them) of the profile; nothing else in sugar_logs is touched. */
+export async function clearSeedCgm(sql: SeedSql, profileId: string): Promise<void> {
+  await sql.runAsync(
+    "DELETE FROM sugar_logs WHERE profile_id = ? AND (source_app = ? OR id LIKE ?);",
+    [profileId, CGM_SHOT_SOURCE_APP, `screenshot-cgmmanual-${profileId}-%`]
+  );
+}
+
+/** The demo sensor day: every demo row is replaced by `rows`, sensor readings as
+ *  generic health-store rows (source 'health', is_cgm 1, no brand anywhere). */
+export async function replaceSeedCgm(
+  sql: SeedSql,
+  profileId: string,
+  rows: SeedCgmRows
+): Promise<void> {
+  await clearSeedCgm(sql, profileId);
+  for (let i = 0; i < rows.sensor.length; i++) {
+    const r = rows.sensor[i];
+    const id = seedRowId("cgm", profileId, i);
+    await sql.runAsync(
+      `INSERT INTO sugar_logs
+         (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags,
+          source_app, external_id, is_cgm)
+       VALUES (?, ?, ?, 'unset', 'health', ?, '[]', ?, ?, 1);`,
+      [id, profileId, r.mgdl, new Date(r.atMs).toISOString(), CGM_SHOT_SOURCE_APP, id]
+    );
+  }
+  for (let i = 0; i < rows.manual.length; i++) {
+    const r = rows.manual[i];
+    await sql.runAsync(
+      `INSERT INTO sugar_logs
+         (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, is_cgm)
+       VALUES (?, ?, ?, ?, 'manual', ?, '[]', 0);`,
+      [seedRowId("cgmmanual", profileId, i), profileId, r.mgdl, r.period_tag, new Date(r.atMs).toISOString()]
     );
   }
 }

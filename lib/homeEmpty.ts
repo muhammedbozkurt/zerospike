@@ -8,6 +8,9 @@ export interface HomeCounts {
   loaded: boolean;
   /** Every kind of record the profile has: glucose, meals, injections, meds. */
   entries: number;
+  /** The profile reads from a sensor (any mode but manual). The home then has
+   *  its own "waiting for CGM" state instead of the welcome card. */
+  cgm?: boolean;
 }
 
 export type BosDurum = "loading" | "welcome" | "normal";
@@ -16,11 +19,35 @@ export type BosDurum = "loading" | "welcome" | "normal";
  * "welcome": nothing logged at all, so the compact welcome card replaces the
  * big empty ring. "loading": the feed has not been read yet, show skeletons.
  * "normal": at least one record exists and the usual layout (ring, week, flow)
- * takes over.
+ * takes over. A sensor profile is always "normal": with no reading yet it shows
+ * "waiting for CGM" in place of the welcome card.
  */
 export function bosDurumKarari(counts: HomeCounts): BosDurum {
   if (!counts.loaded) return "loading";
+  if (counts.cgm) return "normal";
   return counts.entries > 0 ? "normal" : "welcome";
+}
+
+/** The sensor items on the home screen exist for any mode but manual. */
+export function cgmHomeVisible(mode: string): boolean {
+  return mode !== "manual";
+}
+
+export type CgmHomeState = "loading" | "waiting" | "gap" | "data";
+
+/**
+ * "waiting": the sensor profile has never received a reading ("CGM bekleniyor").
+ * "gap": readings exist but none in the chosen window. "data": the curve has
+ * points to draw.
+ */
+export function cgmHomeState(input: {
+  loaded: boolean;
+  latestAtMs: number | null;
+  windowPoints: number;
+}): CgmHomeState {
+  if (!input.loaded) return "loading";
+  if (input.latestAtMs == null) return "waiting";
+  return input.windowPoints > 0 ? "data" : "gap";
 }
 
 /**

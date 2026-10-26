@@ -8,14 +8,19 @@ import { getDb, SCREENSHOT_TRACKING_PROFILE_ID } from "./index";
 import { SELECTABLE_SITES, SITE_POINTS } from "./types";
 import type { InjectionSite, InsulinType, Lang, MealSlot, ReminderType, SitePoint } from "./types";
 import type { FoodCategory } from "./categories";
-import { buildGlucoseSchedule, rng } from "./screenshotGlucose";
+import { buildCgmManualPoints, buildCgmSchedule, buildGlucoseSchedule, rng } from "./screenshotGlucose";
 import {
+  clearSeedCgm,
+  replaceSeedCgm,
   replaceSeedMeals,
   replaceSeedStory,
   replaceSeedTemplates,
   runSeedTransaction,
   type SeedStory,
 } from "./screenshotSeedRows";
+import { emitCgmChanged } from "../cgm/importEvents";
+import { getCgmMode, setCgmMode } from "../cgm/state";
+import { isScreenshotMode } from "../screenshotMode";
 import { setProOverride } from "../services/purchases";
 import i18n from "../i18n";
 
@@ -489,6 +494,61 @@ export async function seedScreenshotData(
     await run;
   } finally {
     if (inFlightByProfile.get(profileId) === run) inFlightByProfile.delete(profileId);
+  }
+}
+
+/** The first seed pass wipes sugar_logs, so the sensor frame waits for its
+ *  marker (set only after that wipe) before it writes. Gives up quietly. */
+async function waitForFirstSeed(profileId: string): Promise<void> {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const prior = inFlightByProfile.get(profileId);
+    if (prior) await prior.catch(() => {});
+    if ((await AsyncStorage.getItem(seedMarkerKey(profileId))) != null) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+  }
+}
+
+/**
+ * Store frame 02 (sensor home): `on` writes the 12 hour demo curve relative to
+ * NOW (so the simulator clock does not matter) and switches the profile to CGM
+ * mode; `off` removes those rows and returns the profile to manual, which is
+ * what every other frame (01-ring and the rest) is captured in. Only the demo
+ * rows are touched. Double-locked: a no-op unless isScreenshotMode().
+ */
+let cgmShotChain: Promise<void> = Promise.resolve();
+
+export function applyScreenshotCgm(
+  profileId: string,
+  on: boolean,
+  nowMs: number = Date.now()
+): Promise<void> {
+  if (!isScreenshotMode()) return Promise.resolve();
+  // One at a time, in link order: "off" then "on" must not interleave.
+  cgmShotChain = cgmShotChain.then(() => applyScreenshotCgmNow(profileId, on, nowMs));
+  return cgmShotChain;
+}
+
+async function applyScreenshotCgmNow(
+  profileId: string,
+  on: boolean,
+  nowMs: number
+): Promise<void> {
+  try {
+    await waitForFirstSeed(profileId);
+    const host = await getDb();
+    if (on) {
+      const sensor = buildCgmSchedule(nowMs);
+      await runSeedTransaction(host, (txn) =>
+        replaceSeedCgm(txn, profileId, { sensor, manual: buildCgmManualPoints(sensor) })
+      );
+      if ((await getCgmMode(profileId)) !== "cgm") await setCgmMode(profileId, "cgm");
+    } else {
+      await runSeedTransaction(host, (txn) => clearSeedCgm(txn, profileId));
+      if ((await getCgmMode(profileId)) !== "manual") await setCgmMode(profileId, "manual");
+    }
+    emitCgmChanged({ kind: "import", profileId });
+  } catch (err) {
+    console.warn("[screenshotSeed] sensor frame failed", err);
   }
 }
 

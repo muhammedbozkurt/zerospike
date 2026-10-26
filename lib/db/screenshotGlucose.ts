@@ -23,6 +23,66 @@ export interface SeedGlucose {
   logged_at: string;
 }
 
+export const CGM_SHOT_POINTS = 144;
+export const CGM_SHOT_STEP_MS = 5 * 60 * 1000;
+/** The source_app marking the demo sensor rows, so they can be found and removed. */
+export const CGM_SHOT_SOURCE_APP = "demo.cgm";
+
+export interface SeedCgmPoint {
+  mgdl: number;
+  atMs: number;
+}
+
+export interface SeedCgmManual extends SeedCgmPoint {
+  period_tag: PeriodTag;
+}
+
+/** One meal's glucose excursion: a quick rise to `peak` at `center`, a slower
+ *  fall. Indexes are 5 minute steps. */
+function mealBump(i: number, center: number, peak: number): number {
+  const width = i < center ? 8 : 16;
+  return peak * Math.exp(-(((i - center) / width) ** 2));
+}
+
+/**
+ * The store frame's sensor story: the last 12 hours at 5 minutes, 144 points,
+ * ending at the newest 5 minute mark at or before `nowMs`. The shape is a
+ * function of the point's position in the window, never of the clock, so the
+ * curve is full and the same whatever time the simulator shows: a quiet
+ * baseline around 108 with one breakfast-style and one dinner-style rise
+ * (peaks ~166 and ~172) that settle back, so most points sit in the target
+ * band and the excursions look like an ordinary day.
+ */
+export function buildCgmSchedule(nowMs: number): SeedCgmPoint[] {
+  const newest = Math.floor(nowMs / CGM_SHOT_STEP_MS) * CGM_SHOT_STEP_MS;
+  const out: SeedCgmPoint[] = [];
+  for (let i = 0; i < CGM_SHOT_POINTS; i++) {
+    const baseline = 108 + 3 * Math.sin(i / 9);
+    const noise = (rng(i * 3 + 11) - 0.5) * 4;
+    const value = baseline + mealBump(i, 42, 58) + mealBump(i, 112, 64) + noise;
+    out.push({
+      mgdl: Math.round(Math.min(190, Math.max(70, value))),
+      atMs: newest - (CGM_SHOT_POINTS - 1 - i) * CGM_SHOT_STEP_MS,
+    });
+  }
+  return out;
+}
+
+/** Three hand-entered readings that sit on the curve (a finger-stick next to
+ *  the sensor), two minutes after a sensor point so they do not hide behind it. */
+export function buildCgmManualPoints(schedule: readonly SeedCgmPoint[]): SeedCgmManual[] {
+  const picks: { index: number; delta: number; period_tag: PeriodTag }[] = [
+    { index: 36, delta: 4, period_tag: "pre_meal" },
+    { index: 88, delta: -3, period_tag: "manual" },
+    { index: 118, delta: 5, period_tag: "post_meal_2h" },
+  ];
+  return picks.map((p) => ({
+    mgdl: schedule[p.index].mgdl + p.delta,
+    atMs: schedule[p.index].atMs + 2 * 60 * 1000,
+    period_tag: p.period_tag,
+  }));
+}
+
 function atFrom(base: Date, daysAgo: number, hour: number, minute = 0): string {
   const d = new Date(base.getTime());
   d.setDate(d.getDate() - daysAgo);

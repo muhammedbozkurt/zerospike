@@ -52,6 +52,8 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.cgmGlucoseOptIn",
   /** lib/cgm/postMealLink.ts - 2-hour values waiting for sensor readings. */
   "zerospike.cgmPostMealPending",
+  /** lib/useCgmWindow.ts - the sensor curve window (3, 6 or 12 hours) last chosen. */
+  "zerospike.cgmCurveHours",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

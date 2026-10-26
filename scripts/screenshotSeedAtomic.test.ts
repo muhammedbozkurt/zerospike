@@ -20,8 +20,13 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildGlucoseSchedule } from "../lib/db/screenshotGlucose";
+import { buildCgmManualPoints, buildCgmSchedule, buildGlucoseSchedule } from "../lib/db/screenshotGlucose";
+import { sourceBadgeKind } from "../lib/cgm/sourceLabel";
+import { cgmTrend } from "../lib/cgm/trend";
+import { V29_COLUMNS, V29_INDEXES } from "../lib/db/v29Sql";
 import {
+  clearSeedCgm,
+  replaceSeedCgm,
   replaceSeedMeals,
   replaceSeedStory,
   replaceSeedTemplates,
@@ -302,6 +307,63 @@ async function main(): Promise<void> {
       threw = true;
     }
     eq("F1 constraint error is not retried", [threw, counter.attempts], [true, 1]);
+  }
+
+  // H. screenshot seed: 12 saatlik 5 dakikalık CGM eğrisi + kaynak rozeti
+  {
+    const { file, shared } = freshDb();
+    for (const c of V29_COLUMNS) shared.exec(`ALTER TABLE sugar_logs ADD COLUMN ${c.name} ${c.type};`);
+    for (const s of V29_INDEXES) shared.exec(s);
+    shared
+      .prepare("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at) VALUES ('story-1', ?, 100, 'manual', 'manual', '2026-10-21T01:00:00.000Z')")
+      .run(P);
+    const host = exclusiveHost(file, { attempts: 0 });
+    const now = Date.UTC(2026, 9, 21, 3, 17, 41);
+
+    const sensor = buildCgmSchedule(now);
+    const manual = buildCgmManualPoints(sensor);
+    await runSeedTransaction(host, (t) => replaceSeedCgm(t, P, { sensor, manual }), 20, 5);
+
+    const cgmRows = shared
+      .prepare("SELECT id, glucose_level_mgdl AS g, source, source_app, external_id, is_cgm, period_tag, logged_at FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 ORDER BY logged_at")
+      .all(P) as { id: string; g: number; source: string; source_app: string; external_id: string; is_cgm: number; period_tag: string; logged_at: string }[];
+    eq("H1 144 sensor rows", cgmRows.length, 144);
+    eq("H2 5 minutes apart", new Set(cgmRows.slice(1).map((r, i) => Date.parse(r.logged_at) - Date.parse(cgmRows[i].logged_at))).size === 1 && Date.parse(cgmRows[1].logged_at) - Date.parse(cgmRows[0].logged_at) === 5 * 60_000, true);
+    eq("H3 spans 12 hours", Date.parse(cgmRows[143].logged_at) - Date.parse(cgmRows[0].logged_at), 143 * 5 * 60_000);
+    const newest = Date.parse(cgmRows[143].logged_at);
+    eq("H4 the newest reading is within 5 minutes of now", newest <= now && now - newest < 5 * 60_000, true);
+    eq("H5 generic health rows", cgmRows.every((r) => r.source === "health" && r.is_cgm === 1 && r.period_tag === "unset"), true);
+    eq("H6 external ids are unique", new Set(cgmRows.map((r) => r.external_id)).size, 144);
+    eq("H7 the badge for these rows is the generic CGM one", sourceBadgeKind(cgmRows[0].source, cgmRows[0].is_cgm), "cgm");
+
+    const values = cgmRows.map((r) => r.g);
+    const inBand = values.filter((v) => v >= 80 && v <= 160).length;
+    eq("H8 values are mostly inside the target band", inBand / values.length >= 0.85, true);
+    eq("H9 realistic bounds", Math.min(...values) >= 70 && Math.max(...values) <= 190, true);
+    eq("H10 there is a meal rise", Math.max(...values) - Math.min(...values) >= 50 && Math.max(...values) > 160, true);
+    eq("H11 the curve reads a direction at the end", cgmTrend(cgmRows.slice(-6).map((r) => ({ at: r.logged_at, mgdl: r.g })), now) != null, true);
+
+    const again = buildCgmSchedule(now);
+    eq("H12 deterministic for the same clock", JSON.stringify(again), JSON.stringify(sensor));
+    const otherClock = buildCgmSchedule(Date.UTC(2026, 9, 21, 15, 2, 9));
+    eq("H13 the shape does not depend on the clock", otherClock.map((p) => p.mgdl), sensor.map((p) => p.mgdl));
+    eq("H14 but the times follow it", otherClock[143].atMs - sensor[143].atMs, Date.UTC(2026, 9, 21, 15, 0, 0) - Date.UTC(2026, 9, 21, 3, 15, 0));
+
+    const handEntered = shared
+      .prepare("SELECT glucose_level_mgdl AS g, source, is_cgm, source_app FROM sugar_logs WHERE profile_id = ? AND id LIKE 'screenshot-cgmmanual-%'")
+      .all(P) as { g: number; source: string; is_cgm: number; source_app: string | null }[];
+    eq("H15 three hand-entered readings sit beside the curve", [handEntered.length, handEntered.every((r) => r.source === "manual" && r.is_cgm === 0 && r.source_app == null)], [3, true]);
+
+    await runSeedTransaction(host, (t) => replaceSeedCgm(t, P, { sensor: buildCgmSchedule(now + 5 * 60_000), manual }), 20, 5);
+    const total = (shared.prepare("SELECT COUNT(*) AS c FROM sugar_logs WHERE profile_id = ?").get(P) as { c: number }).c;
+    eq("H16 a second pass converges instead of duplicating (144 + 3 + the story row)", total, 148);
+
+    await runSeedTransaction(host, (t) => clearSeedCgm(t, P), 20, 5);
+    const left = shared.prepare("SELECT id FROM sugar_logs WHERE profile_id = ?").all(P) as { id: string }[];
+    eq("H17 clearing removes only the demo rows", left.map((r) => r.id), ["story-1"]);
+
+    const sources = JSON.stringify([...cgmRows.map((r) => [r.source, r.source_app, r.external_id]), handEntered]);
+    eq("H18 no device or app brand anywhere in the rows", /dexcom|libre|abbott|medtronic|xdrip|eversense|juggluco|freestyle|omnipod/i.test(sources), false);
   }
 
   // G. The seed itself goes through these steps, not the one-row helpers.

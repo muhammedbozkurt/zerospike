@@ -201,6 +201,7 @@ import {
   JournalPanelTop,
   journalPanelSide,
   type JournalFilter,
+  type JournalListRow,
   type JournalSection,
 } from "../../components/JournalPanel";
 import { useJournalRows } from "../../components/useJournalRows";
@@ -248,10 +249,22 @@ import { upper } from "../../lib/upper";
 import { switchProps } from "../../lib/a11y";
 import { WelcomeCard } from "../../components/WelcomeCard";
 import { isUserEntered } from "../../lib/glucoseSource";
-import { bosDurumKarari, todayRangeShare, usesTwoColumn } from "../../lib/homeEmpty";
+import { bosDurumKarari, cgmHomeVisible, todayRangeShare, usesTwoColumn } from "../../lib/homeEmpty";
+import { applyScreenshotCgm } from "../../lib/db/screenshotSeed";
+import { CgmHomeCard } from "../../components/CgmHomeCard";
+import { CgmSwitchOffer } from "../../components/CgmSwitchOffer";
+import { CgmDayRow } from "../../components/CgmDayRow";
+import {
+  CGM_PREVIEW_DAYS,
+  cgmDayEntry,
+  cgmDaysForFilter,
+  isCgmDayEntry,
+  mergeCgmDays,
+} from "../../lib/cgm/daySummary";
+import { useCgmDaySummaries, useCgmMode } from "../../lib/useCgmWindow";
 
 
-const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
+const journalKey = (e: JournalListRow) => `${e.kind}-${e.id}`;
 
 /** Android press feedback for card-like tap targets; read at render so it
  *  follows the live theme. iOS keeps the Pressable's opacity feedback. */
@@ -318,7 +331,7 @@ export default function DashboardScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ sheet?: string; health?: string }>();
+  const params = useLocalSearchParams<{ sheet?: string; health?: string; shot?: string }>();
   const { isWide, isTwoCol, columnPad } = useLayout();
   // Large text: the title row wraps (title first, actions under it).
   const fontScale = useFontScale();
@@ -326,6 +339,32 @@ export default function DashboardScreen() {
   // The floating CTA grows with the text; the list scrolls clear of the taller bar.
   const ctaExtra = ctaLineExtra(fontScale);
   const { activeProfile, profiles, isProUser, dataVersion, bumpData, lang } = useApp();
+  // How this profile gets its readings. Everything sensor-related on this screen
+  // hangs off `cgmActive`; a manual profile (the default) renders exactly as it
+  // always has.
+  const { mode: dataMode, ready: dataModeReady } = useCgmMode(activeProfile?.id);
+  const cgmActive = cgmHomeVisible(dataMode);
+  const cgmBand = useMemo(
+    () => targetBandFor(activeProfile ?? {}),
+    [activeProfile?.target_fasting_min, activeProfile?.target_postmeal_max, activeProfile?.hypo_threshold_mgdl]
+  );
+  const cgmDays = useCgmDaySummaries({
+    profileId: activeProfile?.id,
+    enabled: cgmActive,
+    band: cgmBand,
+    dayCount: CGM_PREVIEW_DAYS,
+    dataVersion,
+  });
+  // Store-screenshot only: zerospike://?shot=cgm opens this screen in sensor mode
+  // over a demo curve; any dashboard link without it puts the profile back to
+  // manual. The route param (not a global one) is what a warm deep link
+  // delivers on Android too. Inert unless isScreenshotMode() (dev + env lock).
+  const shotCgm = params.shot === "cgm";
+  const screenshotProfileId = activeProfile?.id;
+  useEffect(() => {
+    if (!isScreenshotMode() || !screenshotProfileId) return;
+    void applyScreenshotCgm(screenshotProfileId, shotCgm).then(bumpData);
+  }, [screenshotProfileId, shotCgm, bumpData]);
   const { toast, confirm, actionSheet } = useFeedback();
   const healthBackfill = useHealthBackfill();
   const onHealthWriteDenied = useHealthWriteDenied();
@@ -523,7 +562,17 @@ export default function DashboardScreen() {
       // Issued together rather than in sequence: this is the screen the app
       // opens on, and awaiting them one after the other doubled its first paint.
       const [feed, visible, ofKind] = await Promise.all([
-        getJournal(activeProfile.id, lang, loadLimit),
+        // A sensor profile's stats feed leaves the sensor rows out: 300 of them
+        // would be a day and a half of readings and push every meal, dose and
+        // hand-entered reading out of the window. Its ring and curve read the
+        // sensor data through their own queries (components/CgmHomeCard.tsx).
+        getJournal(
+          activeProfile.id,
+          lang,
+          loadLimit,
+          undefined,
+          cgmActive ? { cgm: "exclude" } : undefined
+        ),
         getJournal(activeProfile.id, lang, loadLimit, undefined, {
           excludeCalculatorInjections: true,
           cgm: "exclude",
@@ -547,7 +596,7 @@ export default function DashboardScreen() {
       // screen falls back to its empty state instead.
       setLoaded(true);
     }
-  }, [activeProfile, lang, loadLimit, filter]);
+  }, [activeProfile, lang, loadLimit, filter, cgmActive]);
 
   useEffect(() => {
     load();
@@ -1768,17 +1817,22 @@ export default function DashboardScreen() {
   const { journalSections } = useMemo(() => {
     // Until the SQL read for a freshly chosen chip lands, the JS narrowing of
     // what is already loaded stands in, so the list never flashes empty.
-    const filtered =
+    const ofKind: JournalListRow[] =
       filter === "all"
         ? journalEntries
         : kindEntries.kind === filter
           ? kindEntries.rows
           : journalEntries.filter((e) => e.kind === filter);
+    // A sensor profile's readings fold into one summary row per day.
+    const filtered: JournalListRow[] =
+      cgmActive && cgmDaysForFilter(filter)
+        ? mergeCgmDays(ofKind, cgmDays.map(cgmDayEntry))
+        : ofKind;
     // ONE slice, always: the preview does not page. Reaching further into the
     // journal is a screen, not a button that grows this list.
     const display = filtered.slice(0, nextJournalCut(filtered, 0, JOURNAL_PREVIEW_LIMITS));
     const sections: JournalSection[] = [];
-    const byKey = new Map<string, JournalEntry[]>();
+    const byKey = new Map<string, JournalListRow[]>();
     for (const e of display) {
       const key = formatDateKey(e.logged_at);
       let arr = byKey.get(key);
@@ -1801,7 +1855,11 @@ export default function DashboardScreen() {
       arr.push(e);
     }
     return { journalSections: sections };
-  }, [journalEntries, kindEntries, filter, t]);
+  }, [journalEntries, kindEntries, filter, t, cgmActive, cgmDays]);
+
+  // The panel opens only when it has something to close: records, or (sensor
+  // profile) at least one day of readings folded into its summary row.
+  const hasJournalRows = journalEntries.length > 0 || (cgmActive && cgmDays.length > 0);
 
   /** The preview always hands off to the full screen, carrying whatever filter
    *  the user is looking at so tapping through never silently widens it back to
@@ -1818,8 +1876,19 @@ export default function DashboardScreen() {
 
 
   const renderItem = useCallback(
-    ({ item, index }: { item: JournalEntry; index: number }) =>
-      activeProfile ? (
+    ({ item, index }: { item: JournalListRow; index: number }) =>
+      isCgmDayEntry(item) ? (
+        activeProfile ? (
+          <View style={journalPanelSide()}>
+            <CgmDayRow
+              entry={item}
+              unit={activeProfile.glucose_unit ?? "mgdl"}
+              onPress={journalRows.onCgmDayPress}
+              firstInPanel={index === 0}
+            />
+          </View>
+        ) : null
+      ) : activeProfile ? (
         <View style={journalPanelSide()}>
           <Animated.View entering={listEntering.delay(Math.min(index, 8) * 40)}>
             <JournalItem
@@ -1846,6 +1915,7 @@ export default function DashboardScreen() {
       journalRows.onRowLongPress,
       journalRows.onRowDelete,
       journalRows.onRowOpenResponse,
+      journalRows.onCgmDayPress,
     ]
   );
 
@@ -1888,10 +1958,11 @@ export default function DashboardScreen() {
   // existing user, sit there while the hero ring and week strip popped in on
   // top of it a moment later and shoved everything down. See HeroSkeleton /
   // WeekSkeleton below for what fills that gap instead.
-  const homeState = bosDurumKarari({ loaded, entries: entries.length });
+  const homeLoaded = loaded && dataModeReady;
+  const homeState = bosDurumKarari({ loaded: homeLoaded, entries: entries.length, cgm: cgmActive });
   const isFirstRun = homeState === "welcome";
-  const isExistingUser = loaded && entries.length > 0;
-  const hasAnyLog = loaded && entries.length > 0;
+  const isExistingUser = homeLoaded && (entries.length > 0 || cgmActive);
+  const hasAnyLog = homeLoaded && (entries.length > 0 || cgmActive);
 
   const startSteps: {
     key: string;
@@ -1995,7 +2066,7 @@ export default function DashboardScreen() {
           unless the store reports a running trial. */}
       <TrialCard />
 
-      {!loaded ? (
+      {!homeLoaded ? (
         // Unknown yet whether this is a first run or an existing user: neither
         // shell is correct to show, so a same-sized placeholder holds the hero
         // + week strip's height instead of guessing.
@@ -2013,7 +2084,18 @@ export default function DashboardScreen() {
               it fell on) as a small line underneath. Still gated on
               `lastGlucose` existing at all: with no reading EVER logged this
               stays out of the way for the FirstRunGuide branch above. */}
-          {lastGlucose ? (
+          {activeProfile ? (
+            <CgmSwitchOffer
+              profileId={activeProfile.id}
+              mode={dataMode}
+              dataVersion={dataVersion}
+            />
+          ) : null}
+          {cgmActive && activeProfile ? (
+            // A sensor profile's hero: the same ring, the curve under it, the
+            // last reading with its age. Never drawn for a manual profile.
+            <CgmHomeCard profile={activeProfile} mode={dataMode} dataVersion={dataVersion} />
+          ) : lastGlucose ? (
             <Card
               glow={todayAvg != null ? todayColor : THEME.textMuted}
               style={{ marginBottom: SPACE.md }}
@@ -2085,7 +2167,7 @@ export default function DashboardScreen() {
 
           {/* This-week strip: numbers that were computed but never shown (avg, TIR,
               streak) with a small sparkline of the week's readings. One compact row. */}
-          {weekView === "firstHint" ? (
+          {!cgmActive && weekView === "firstHint" ? (
             <Txt
               kind="caption"
               tone="muted"
@@ -2094,7 +2176,7 @@ export default function DashboardScreen() {
               {t("dashboard.weekEmptyHint")}
             </Txt>
           ) : null}
-          {weekView === "boxes" ? (
+          {!cgmActive && weekView === "boxes" ? (
             <View style={{ marginBottom: SPACE.md }}>
               <View className="flex-row items-center justify-between mb-2 px-1">
                 <Txt kind="micro" tone="muted" style={{ fontWeight: "700" }}>
@@ -2225,6 +2307,11 @@ export default function DashboardScreen() {
                 </Txt>
               </Pressable>
             </View>
+            {cgmActive ? (
+              <Txt kind="micro" tone="muted" style={{ marginBottom: SPACE.sm }}>
+                {t("cgmHome.watching")}
+              </Txt>
+            ) : null}
 
             <PressableScale
               onPress={() => void startedEating()}
@@ -2623,7 +2710,7 @@ export default function DashboardScreen() {
           on the VISIBLE list (journalEntries), not the stats feed - the two can
           differ now that the calculator's own bolus row is filtered out of the
           former - so the container is never opened without rows to close it. */}
-      {journalEntries.length > 0 ? (
+      {hasJournalRows ? (
         <JournalPanelTop title={t("dashboard.history")}>
           <JournalFilterChips
             chips={FILTER_CHIPS}
@@ -2674,7 +2761,7 @@ export default function DashboardScreen() {
   // of one container, so any spacing BETWEEN those pieces shows up as a gap
   // in the border. The separator's own paddingTop provides that air from
   // inside the container instead.
-  const headerWrapClass = journalEntries.length > 0 ? "" : "pb-2";
+  const headerWrapClass = hasJournalRows ? "" : "pb-2";
   const Header = (
     <View className={headerWrapClass}>
       {titleRow}
@@ -2728,7 +2815,7 @@ export default function DashboardScreen() {
   const wideListInset = isWide && !isFirstRun ? { paddingBottom: ctaFootprint + insets.bottom } : undefined;
 
   const journalFooter =
-    journalEntries.length > 0 ? (
+    hasJournalRows ? (
       <View>
         {/* Closes the panel opened by the header, with the one action
             that belongs to the journal: the whole of it, on its own
@@ -2856,10 +2943,32 @@ export default function DashboardScreen() {
           onLayout={(e) => setCtaHeight(Math.ceil(e.nativeEvent.layout.height))}
         >
           <View style={columnPad(16)}>
-            <GradientCTA
-              label={`＋ ${t("dashboard.addRecord")}`}
-              onPress={() => setQuickAddOpen(true)}
-            />
+            {cgmActive ? (
+              // A sensor profile logs by hand only now and then: the button
+              // stays, small and to the side, instead of the full-width bar.
+              <View
+                style={[
+                  {
+                    alignSelf: "flex-end",
+                    borderRadius: RADIUS.lg,
+                    backgroundColor: THEME.surfaceRaised,
+                  },
+                  ELEVATION.card,
+                ]}
+              >
+                <Button
+                  label={`＋ ${t("dashboard.addRecord")}`}
+                  variant="outlined"
+                  size="sm"
+                  onPress={() => setQuickAddOpen(true)}
+                />
+              </View>
+            ) : (
+              <GradientCTA
+                label={`＋ ${t("dashboard.addRecord")}`}
+                onPress={() => setQuickAddOpen(true)}
+              />
+            )}
           </View>
         </View>
       ) : null}
