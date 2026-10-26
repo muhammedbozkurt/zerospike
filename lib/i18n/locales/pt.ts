@@ -421,6 +421,8 @@ const pt: TranslationSchema = {
     saveMealAndDose: "Salvar refeição e dose",
     saveFailed: "Não foi possível salvar. Tente novamente.",
     savedRecord: "Registro salvo.",
+    bolusSaveFailed: "Refeição salva, mas não foi possível adicionar o registro da aplicação de bolus. A dose não aparecerá no histórico de aplicações nem na insulina ativa.",
+    bolusRetry: "Tentar de novo",
     undone: "Registro desfeito.",
     carbFocusBodyBasal: "A seção de dose da refeição está oculta porque você usa apenas insulina basal; dá para mudar isso em Configurações.",
     emptyDoseTitle: "O campo de dose está vazio",

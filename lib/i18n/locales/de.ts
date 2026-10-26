@@ -421,6 +421,8 @@ const de: TranslationSchema = {
     saveMealAndDose: "Mahlzeit und Dosis speichern",
     saveFailed: "Speichern nicht möglich. Bitte versuchen Sie es erneut.",
     savedRecord: "Eintrag gespeichert.",
+    bolusSaveFailed: "Mahlzeit gespeichert, aber der Bolus-Injektionseintrag konnte nicht angelegt werden. Die Dosis erscheint weder im Injektionsverlauf noch beim aktiven Insulin.",
+    bolusRetry: "Erneut versuchen",
     undone: "Eintrag rückgängig gemacht.",
     carbFocusBodyBasal: "Der Mahlzeiten-Dosisbereich ist ausgeblendet, weil Sie nur Basalinsulin verwenden; in den Einstellungen änderbar.",
     emptyDoseTitle: "Dosisfeld ist leer",

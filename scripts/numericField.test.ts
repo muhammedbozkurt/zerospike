@@ -234,7 +234,7 @@ section("6. screens: the shared field, and the offer is never applied by itself"
   ok("the logic is free of React", !/from "react/.test(logic));
 
   ok("glucose uses the shared field", /function glucoseCard\(\)[\s\S]{0,2200}<NumericField/.test(calc));
-  ok("glucose bounds come from the shared table", calc.includes("glucoseEntryBounds(unit)"));
+  ok("glucose bounds come from the shared table", calc.includes("glucoseSheetBounds(unit)"));
   ok("glucose placeholders exist for both units", calc.includes("numeric.glucoseExampleMmol") && calc.includes("numeric.glucoseExampleMgdl"));
   ok("the field is the only thing the calculation reads: glucose starts empty", calc.includes('const [glucose, setGlucose] = useState("");'));
   ok("the offer is read from the pure function", calc.includes("recentGlucoseSuggestion("));
@@ -573,7 +573,7 @@ section("17. dose limits: a meal dose 0-100, an injection 0-200, edits never bel
   const ies = src("components/InjectionEditSheet.tsx");
   ok("the injection editor lifts its limit to the stored dose", ies.includes("max={editableMax(INJECTION_DOSE_BOUNDS.max, injection?.dose_units)}"));
   const calc = src("app/calculator.tsx");
-  ok("the calculator's edit screen lifts its limit to the stored dose", calc.includes("max={editableMax(DOSE_BOUNDS.max, originalDose)}") && calc.includes("setOriginalDose(log.insulin_dose_units)"));
+  ok("the calculator's edit screen lifts its limit to the stored dose", calc.includes("max={editableMax(DOSE_BOUNDS.max, originalDose)}") && calc.includes("setOriginalDose(openedDose)"));
   ok("a new meal dose keeps 0-100", !calc.includes("INJECTION_DOSE_BOUNDS"));
   for (const rel of ["app/(tabs)/injection.tsx", "app/basal-confirm.tsx"]) {
     ok(`${rel}: 0-200`, src(rel).includes("INJECTION_DOSE_BOUNDS.max"));

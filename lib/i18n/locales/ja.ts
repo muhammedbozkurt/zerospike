@@ -421,6 +421,8 @@ const ja: TranslationSchema = {
     saveMealAndDose: "食事とインスリン量を保存",
     saveFailed: "保存できませんでした。もう一度お試しください。",
     savedRecord: "記録を保存しました。",
+    bolusSaveFailed: "食事は保存しましたが、追加インスリンの注射記録を追加できませんでした。この量は注射履歴にも残存インスリンにも表示されません。",
+    bolusRetry: "再試行",
     undone: "記録を元に戻しました。",
     carbFocusBodyBasal: "基礎インスリンのみの設定のため、食事分の欄は非表示です。設定で変更できます。",
     emptyDoseTitle: "インスリン量が未入力です",

@@ -32,7 +32,14 @@ import {
 } from "../lib/calcSetup";
 import { useRatioWriter } from "../lib/useRatioWriter";
 import type { RatioWriter } from "../lib/ratioWriter";
-import { DOSE_BOUNDS, editableMax, glucoseEntryBounds } from "../lib/numericField";
+import { DOSE_BOUNDS, editableMax } from "../lib/numericField";
+import { glucoseSheetBounds } from "../lib/glucoseSheetInput";
+import {
+  mealEditPlan,
+  prefillDose,
+  savedToastKey,
+  writeBolusRow,
+} from "../lib/mealEditPatch";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
   fieldIsOffer,
@@ -715,6 +722,7 @@ function CalculatorScreen() {
   // can legitimately differ from the meal's, and must not be dragged along
   // just because the meal itself got saved.
   const prefillLoggedAtRef = useRef<Date | null>(null);
+  const mealStoredRef = useRef<{ insulin_dose_units: number; logged_at: string } | null>(null);
 
   // Optional region for the bolus row this screen writes (see renderDetails'
   // site picker below). `site`/`point` are only meaningful once `siteTouched`
@@ -865,8 +873,16 @@ function CalculatorScreen() {
       // from the meal's own values instead of leaving the screen loading forever.
       setFood(catalogueFood ?? foodFromMeal(log));
       setPortion(catalogueFood ? log.portion_g : mealPrefill(log).portion_g);
-      setDoseText(num(log.insulin_dose_units));
-      setOriginalDose(log.insulin_dose_units);
+      mealStoredRef.current = {
+        insulin_dose_units: log.insulin_dose_units,
+        logged_at: log.logged_at,
+      };
+      // The bolus row is read before the dose lands in the field: the Injection
+      // tab corrects dose and time on that row only, so the meal row can be stale.
+      const existingInjection = await getCalculatorInjectionForMeal(mealLogId);
+      const openedDose = prefillDose(log.insulin_dose_units, existingInjection);
+      setDoseText(num(openedDose));
+      setOriginalDose(openedDose);
       setNote(log.personal_note ?? "");
       setPhoto(log.photo_uri_local);
       setTags(log.tags);
@@ -881,7 +897,6 @@ function CalculatorScreen() {
       // possibly set later from the Injection tab, and never to be overwritten by
       // a picker that opens on a placeholder. No injection row (dose was 0 when
       // first saved) or no region on it both mean "nothing to prefill".
-      const existingInjection = await getCalculatorInjectionForMeal(mealLogId);
       if (existingInjection?.site) {
         setSite(existingInjection.site);
         setPoint(existingInjection.site_point);
@@ -1085,7 +1100,7 @@ function CalculatorScreen() {
       ? classifyGlucose(glucoseMgdl, "pre_meal", activeProfile)
       : null;
 
-  const glucoseBounds = glucoseEntryBounds(unit);
+  const glucoseBounds = glucoseSheetBounds(unit);
   // Offered only on a new record logged "now", while the field is empty and the
   // reading is under 15 minutes old.
   const glucoseOffer =
@@ -1430,46 +1445,57 @@ function CalculatorScreen() {
 
       if (isEdit && mealLogId) {
         // Correcting an existing record: no post-meal reminder and no review
-        // nudge, but every row this meal owns has to move with it. Leaving the
-        // linked bolus at its old value would keep active insulin wrong for
-        // hours, which is exactly the coupling the auto-write exists to fix.
+        // nudge. The linked bolus moves with the meal, but only in the fields
+        // this save changes (lib/mealEditPatch.ts): the Injection tab may have
+        // corrected its dose or time since, and a mode without a mealtime dose
+        // must not zero the meal or delete the row.
+        const loggedAtChanged =
+          loggedAt != null &&
+          prefillLoggedAtRef.current != null &&
+          loggedAt.getTime() !== prefillLoggedAtRef.current.getTime();
+        const plan = mealEditPlan({
+          showsDose,
+          dose,
+          prefilledDose: originalDose ?? 0,
+          mealStored: mealStoredRef.current ?? {
+            insulin_dose_units: originalDose ?? 0,
+            logged_at: loggedIso ?? at.toISOString(),
+          },
+          bolus: existingInjectionForEdit,
+          loggedAtIso: loggedIso ?? at.toISOString(),
+          loggedAtChanged,
+        });
         await updateMealLog(mealLogId, {
           portion_g: portion,
           calculated_carbs_g: mealCarbs,
-          insulin_dose_units: dose,
           photo_uri_local: photo,
           personal_note: note.trim() || null,
           tags,
-          ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
+          ...plan.mealPatch,
         });
 
-        const existingInjection = existingInjectionForEdit;
-        if (dose > 0) {
-          if (existingInjection) {
-            await updateInjection(existingInjection.id, {
-              dose_units: dose,
-              insulin_type: "bolus",
-              site: chosenSite,
-              site_point: chosenPoint,
-              tags,
-              ...(loggedAt ? { logged_at: loggedAt.toISOString() } : {}),
-            });
-          } else {
-            await logInjection({
-              profile_id: activeProfile.id,
-              site: chosenSite,
-              site_point: chosenPoint,
-              dose_units: dose,
-              insulin_type: "bolus",
-              meal_log_id: mealLogId,
-              source: "calculator",
-              tags,
-              logged_at: loggedIso,
-            });
-          }
-        } else if (existingInjection) {
-          // The dose was cleared, so the injection it stood for is gone too.
-          await deleteInjection(existingInjection.id);
+        const step = plan.bolus;
+        if (step.kind === "update") {
+          await updateInjection(step.id, {
+            ...step.patch,
+            site: chosenSite,
+            site_point: chosenPoint,
+            tags,
+          });
+        } else if (step.kind === "create") {
+          await logInjection({
+            profile_id: activeProfile.id,
+            site: chosenSite,
+            site_point: chosenPoint,
+            dose_units: step.dose,
+            insulin_type: "bolus",
+            meal_log_id: mealLogId,
+            source: "calculator",
+            tags,
+            logged_at: loggedIso,
+          });
+        } else if (step.kind === "delete") {
+          await deleteInjection(step.id);
         }
 
         // A corrected glucose value belongs on the reading this meal is already
@@ -1482,10 +1508,6 @@ function CalculatorScreen() {
         // few minutes apart), and every save - even one that only touched the
         // dose or a tag - passed through here with the untouched prefill value
         // and overwrote it to match the meal every time.
-        const loggedAtChanged =
-          loggedAt != null &&
-          prefillLoggedAtRef.current != null &&
-          loggedAt.getTime() !== prefillLoggedAtRef.current.getTime();
         if (linkedSugarLogId && glucoseMgdl != null) {
           await updateSugarLog(linkedSugarLogId, {
             glucose_level_mgdl: glucoseMgdl,
@@ -1634,26 +1656,28 @@ function CalculatorScreen() {
       // anti-stacking protection. The row is marked source='calculator' so the
       // injection tab can show it as already logged rather than inviting a
       // duplicate, and it stays fully editable there.
+      const doseWanted = showsDose && dose > 0;
+      const writeBolus = () =>
+        logInjection({
+          profile_id: activeProfile.id,
+          site: chosenSite,
+          site_point: chosenPoint,
+          dose_units: dose,
+          insulin_type: "bolus",
+          meal_log_id: meal.id,
+          source: "calculator",
+          tags,
+          logged_at: loggedIso,
+        });
       let wroteInjection = false;
-      if (showsDose && dose > 0) {
-        try {
-          await logInjection({
-            profile_id: activeProfile.id,
-            site: chosenSite,
-            site_point: chosenPoint,
-            dose_units: dose,
-            insulin_type: "bolus",
-            meal_log_id: meal.id,
-            source: "calculator",
-            tags,
-            logged_at: loggedIso,
-          });
-          wroteInjection = true;
-        } catch (err) {
-          // The dose still lives on the meal row, so nothing the user typed is
-          // lost. wroteInjection stays false, which downgrades the toast to the
-          // plain "entry saved" wording instead of claiming a bolus row exists.
-          logCrash(err, { screen: "calculator", step: "logInjection" });
+      if (doseWanted) {
+        const result = await writeBolusRow(writeBolus);
+        wroteInjection = result.ok;
+        if (!result.ok) {
+          // The dose still lives on the meal row, but active insulin and the
+          // injection history read the bolus row. The toast below says so and
+          // offers a retry instead of reporting a plain save.
+          logCrash(result.error, { screen: "calculator", step: "logInjection" });
         }
       }
 
@@ -1694,13 +1718,43 @@ function CalculatorScreen() {
       // A region was picked or not - the toast says which, since "edit it on the
       // Injection tab" reads as a correction prompt when there is nothing wrong,
       // and silence about a missing region reads as if one was recorded.
-      const message = wroteInjection
-        ? chosenSite
+      const toastKey = savedToastKey({
+        doseWanted,
+        wroteInjection,
+        hasSite: chosenSite != null,
+        createdReading: createdReading != null,
+      });
+      if (toastKey === "bolusSaveFailed") {
+        toast(t("calculator.bolusSaveFailed"), "error", {
+          label: t("calculator.bolusRetry"),
+          onPress: () => {
+            void (async () => {
+              const retry = await writeBolusRow(writeBolus);
+              if (retry.ok) {
+                void noteFirstLog("injection");
+                bumpData();
+                toast(
+                  t(chosenSite ? "calculator.autoInjection" : "calculator.autoInjectionNoSite"),
+                  "success"
+                );
+              } else {
+                logCrash(retry.error, { screen: "calculator", step: "logInjectionRetry" });
+                toast(t("calculator.bolusSaveFailed"), "error");
+              }
+            })();
+          },
+        });
+        dismiss();
+        return;
+      }
+      const message =
+        toastKey === "autoInjection"
           ? t("calculator.autoInjection")
-          : t("calculator.autoInjectionNoSite")
-        : createdReading
-          ? t("calculator.autoGlucose")
-          : t("calculator.savedRecord");
+          : toastKey === "autoInjectionNoSite"
+            ? t("calculator.autoInjectionNoSite")
+            : toastKey === "autoGlucose"
+              ? t("calculator.autoGlucose")
+              : t("calculator.savedRecord");
       toast(message, "success", {
         label: t("common.undo"),
         onPress: () => {

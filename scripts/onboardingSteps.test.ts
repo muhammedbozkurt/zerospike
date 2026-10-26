@@ -748,7 +748,7 @@ section("J. the calculator screen wires the gate");
   ok(
     "the dose field is filled only from a saved record or the user's typing",
     setCalls.length === 2 &&
-      setCalls.every((c) => /log\.insulin_dose_units|v == null \? "" : String\(v\)/.test(c)),
+      setCalls.every((c) => /openedDose|v == null \? "" : String\(v\)/.test(c)),
     setCalls.join(" | ")
   );
   ok("the dose is typed or stepped in the shared field, never computed", /function onDoseChange\(v: number \| null\)/.test(calc) && calc.split("onChange={onDoseChange}").length === 2);
