@@ -1,3 +1,4 @@
+import type { CgmMode } from "./cgm/state";
 import type { DiabetesType } from "./db/types";
 
 /**
@@ -30,6 +31,39 @@ export type DiabetesOption = (typeof DIABETES_OPTIONS)[number];
 export const TREATMENT_OPTIONS = ["insulin", "pills", "both", "none"] as const;
 export type TreatmentOption = (typeof TREATMENT_OPTIONS)[number];
 
+/** How the person gets their readings: by hand (the default), from a sensor
+ *  through the platform health store, or from Nightscout. */
+export const MEASURE_OPTIONS = ["finger", "cgm", "nightscout"] as const;
+export type MeasureOption = (typeof MEASURE_OPTIONS)[number];
+export const DEFAULT_MEASURE: MeasureOption = "finger";
+
+/** The mode to store for an answer; null for the finger prick, which is the
+ *  profile's default and writes nothing. */
+export function measureModeToWrite(m: MeasureOption): CgmMode | null {
+  return m === "finger" ? null : m;
+}
+
+/** Sensor modes bring their own readings, so the measurement reminder plan is
+ *  not offered. Meal and medication reminders are unaffected. */
+export function skipsMeasurementReminders(m: MeasureOption): boolean {
+  return m !== "finger";
+}
+
+/** Nightscout is connected after onboarding, in Settings > Data sources. */
+export function nightscoutHandoff(m: MeasureOption): boolean {
+  return m === "nightscout";
+}
+
+/** A refused Health permission puts the person back on the finger prick;
+ *  `fellBack` tells the screen to say so. */
+export function measureAfterPermission(
+  picked: MeasureOption,
+  granted: boolean
+): { measure: MeasureOption; fellBack: boolean } {
+  if (picked === "cgm" && !granted) return { measure: "finger", fellBack: true };
+  return { measure: picked, fellBack: false };
+}
+
 export type OnboardingStepId =
   | "analytics"
   | "name"
@@ -37,6 +71,7 @@ export type OnboardingStepId =
   | "diabetes"
   | "insulin"
   | "pillsOnly"
+  | "measure"
   | "targets"
   | "insulinProducts"
   | "medReminder"
@@ -97,16 +132,23 @@ export function onboardingFlags(a: OnboardingAnswers): OnboardingFlags {
  * onboarding_step moves down by one with it (the step names are free strings).
  */
 export function buildOnboardingSteps(
-  flags: Pick<OnboardingFlags, "isTwoWayTreatment" | "hasInsulin" | "hasOralMeds">
+  flags: Pick<OnboardingFlags, "isTwoWayTreatment" | "hasInsulin" | "hasOralMeds"> & {
+    measure?: MeasureOption;
+  }
 ): OnboardingStepId[] {
   const steps: OnboardingStepId[] = [
     ...BASE_STEPS,
     flags.isTwoWayTreatment ? "pillsOnly" : "insulin",
+    "measure",
     "targets",
   ];
   if (flags.hasInsulin) steps.push("insulinProducts");
   if (flags.hasOralMeds) steps.push("medReminder");
-  steps.push("reminderPlan");
+  // The step also carries the night insulin reminder, so a sensor mode drops it
+  // only for someone with no insulin.
+  if (!skipsMeasurementReminders(flags.measure ?? DEFAULT_MEASURE) || flags.hasInsulin) {
+    steps.push("reminderPlan");
+  }
   return steps;
 }
 
@@ -147,7 +189,12 @@ export function onboardingStepEvent(
   steps: readonly OnboardingStepId[]
 ): OnboardingStepEvent {
   if (phase === "welcome") return { step: "welcome", index: 0 };
-  if (phase === "reveal") return { step: "reveal", index: requiredScreenCount(steps) + 1 };
+  // A skipped plan step still takes its place in the numbering, so the reveal
+  // is the same number whether or not a sensor mode dropped that screen.
+  if (phase === "reveal") {
+    const skippedPlan = steps.includes("reminderPlan") ? 0 : 1;
+    return { step: "reveal", index: requiredScreenCount(steps) + skippedPlan + 1 };
+  }
   let at = steps.indexOf(step);
   if (at === -1) return { step, index: 0 };
   while (at > 0 && OPTIONAL_STEPS.includes(steps[at])) at--;

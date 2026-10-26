@@ -1,7 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash, logEvent } from "../analytics";
 import { LOG_KINDS, type LogKind } from "../analytics/eventSchema";
+import { getCgmMode } from "../cgm/state";
 import { getDb } from "../db";
+import { countCgmReadingsSince } from "../db/cgmSql";
+import {
+  firstStepKindOf,
+  firstSyncKey,
+  isFirstSyncDone,
+  noteFirstSync,
+  type FirstSyncDeps,
+} from "../firstSync";
 import { USER_ENTERED_SQL } from "../glucoseSource";
 
 /**
@@ -76,6 +85,28 @@ export async function noteFirstLog(logged: LoggedKind): Promise<void> {
     logCrash(err, { service: "firstLog", op: "note", kind });
   }
 }
+
+const EVERY_READING_SINCE = "1970-01-01T00:00:00.000Z";
+
+const firstSyncDeps: FirstSyncDeps = {
+  readFlag: async (profileId) =>
+    (await AsyncStorage.getItem(firstSyncKey(profileId))) != null,
+  writeFlag: (profileId) => AsyncStorage.setItem(firstSyncKey(profileId), "1"),
+  getMode: getCgmMode,
+  countReadings: (profileId) => countCgmReadingsSince(profileId, EVERY_READING_SINCE),
+};
+
+/** Whether the home guide's "first sync" step is already ticked. */
+export async function readFirstSyncDone(profileId: string): Promise<boolean> {
+  return isFirstSyncDone(profileId, firstSyncDeps);
+}
+
+/** Call after a sync or an import lands readings; ticks the step when it can. */
+export async function refreshFirstSync(profileId: string): Promise<boolean> {
+  return noteFirstSync(profileId, firstSyncDeps);
+}
+
+export { firstStepKindOf };
 
 /**
  * Fills the flag of every kind the install already has entries of, without
