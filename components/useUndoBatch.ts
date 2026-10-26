@@ -3,7 +3,8 @@ import { AccessibilityInfo } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { useFeedback } from "./Feedback";
-import { restoreDeletion, type DeletionSnapshot } from "../lib/db/undo";
+import { restoreBatch, type DeletionSnapshot } from "../lib/db/undo";
+import { logCrash } from "../lib/analytics";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
 import {
   shouldRestoreBatch,
@@ -78,36 +79,54 @@ export function useUndoBatch(
       batchRef.current = [];
     }, undoBatchWindowMs(toastMs));
 
-    toast(
-      count > 1 ? t("journal.deletedN", { n: count }) : t("journal.deleted"),
-      "info",
-      {
-        label: t("common.undo"),
-        onPress: async () => {
-          const snaps = batchRef.current.slice();
+    const offerUndo = (message: string, kind: "info" | "error") =>
+      toast(message, kind, { label: t("common.undo"), onPress: undoAll });
+
+    const undoAll = async (): Promise<void> => {
+      const snaps = batchRef.current.slice();
+      batchRef.current = [];
+      if (timerRef.current) clearTimeout(timerRef.current);
+      // The batch window already elapsed (or a stray extra tap): nothing
+      // left to restore, so this must not fire the success haptic or
+      // onChanged - that would report success for an undo that did nothing.
+      if (!shouldRestoreBatch(snaps.length)) return;
+      const { restored, failed, error } = await restoreBatch(snaps);
+      if (failed.length > 0) {
+        // The un-restored snapshots go back into the batch so the next press
+        // retries them instead of the rows being gone for good.
+        batchRef.current = [...failed, ...batchRef.current];
+        timerRef.current = setTimeout(() => {
           batchRef.current = [];
-          if (timerRef.current) clearTimeout(timerRef.current);
-          // The batch window already elapsed (or a stray extra tap): nothing
-          // left to restore, so this must not fire the success haptic or
-          // onChanged - that would report success for an undo that did nothing.
-          if (!shouldRestoreBatch(snaps.length)) return;
-          for (const s of snaps) await restoreDeletion(s);
-          hapticSuccess();
+        }, undoBatchWindowMs(screenReaderOn.current ? UNDO_TOAST_SCREEN_READER_MS : UNDO_TOAST_MS));
+        logCrash(error, { screen: "undo", op: "restore" });
+        hapticWarning();
+        if (restored.length > 0) {
           onChanged();
-          // AWAITED, and caught: these side effects can be asynchronous (P17
-          // re-arms the countdown a meal delete ended, on top of the existing
-          // Apple Health re-mirror), and firing them off unawaited left an
-          // unhandled rejection on any failure and no ordering at all between
-          // them and whatever the caller did next. A failure here must not
-          // undo the undo: the rows are already back, so it is swallowed the
-          // same way every other best-effort side effect on this path is.
           try {
-            await onRestored?.(snaps);
+            await onRestored?.(restored);
           } catch {
-            // best-effort restore side effects; the entries themselves are back
+            // best-effort restore side effects; those entries are back
           }
-        },
+        }
+        offerUndo(t("common.saveFailed"), "error");
+        return;
       }
-    );
+      hapticSuccess();
+      onChanged();
+      // AWAITED, and caught: these side effects can be asynchronous (P17
+      // re-arms the countdown a meal delete ended, on top of the existing
+      // Apple Health re-mirror), and firing them off unawaited left an
+      // unhandled rejection on any failure and no ordering at all between
+      // them and whatever the caller did next. A failure here must not
+      // undo the undo: the rows are already back, so it is swallowed the
+      // same way every other best-effort side effect on this path is.
+      try {
+        await onRestored?.(snaps);
+      } catch {
+        // best-effort restore side effects; the entries themselves are back
+      }
+    };
+
+    offerUndo(count > 1 ? t("journal.deletedN", { n: count }) : t("journal.deleted"), "info");
   };
 }

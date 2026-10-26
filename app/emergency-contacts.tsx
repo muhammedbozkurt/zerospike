@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
@@ -33,7 +33,7 @@ import {
 import { getLocales } from "expo-localization";
 
 import {
-  getEmergencyContacts,
+  readEmergencyContacts,
   setEmergencyContacts,
   contactPhoneKey,
   defaultCallingCode,
@@ -45,6 +45,7 @@ import {
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { Skeleton } from "../components/Skeleton";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
+import { logCrash } from "../lib/analytics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 
 /** Two-letter mark for a contact avatar (mockup 07's contact rows). */
@@ -118,6 +119,10 @@ function EmergencyContactsScreen() {
   // once loaded, the form and the "pick from contacts" CTA would shove down
   // right as someone is about to use them. Both wait on this instead.
   const [contactsLoaded, setContactsLoaded] = useState(false);
+  // A failed read must never look like an empty list: the next save would
+  // overwrite the real one. While set, every write is refused.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const writing = useRef(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState(phonePrefill);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -131,12 +136,23 @@ function EmergencyContactsScreen() {
   // Ticked numbers, keyed by row. Survives searching and re-filtering.
   const [selected, setSelected] = useState<Map<string, ContactCandidate>>(new Map());
 
-  useEffect(() => {
-    getEmergencyContacts().then((list) => {
-      setContacts(list);
-      setContactsLoaded(true);
-    });
+  const loadContacts = useCallback(() => {
+    setLoadFailed(false);
+    setContactsLoaded(false);
+    readEmergencyContacts()
+      .then((list) => {
+        setContacts(list);
+      })
+      .catch((err) => {
+        setLoadFailed(true);
+        logCrash(err, { screen: "emergencyContacts", op: "load" });
+      })
+      .finally(() => setContactsLoaded(true));
   }, []);
+
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
 
   // Android hardware back, while the picker is open, must match the header's
   // own back arrow: close the picker, not the whole screen (same pattern as
@@ -150,13 +166,30 @@ function EmergencyContactsScreen() {
     return () => sub.remove();
   }, [pickerOpen]);
 
-  async function persist(next: EmergencyContact[]) {
-    setContacts(next);
-    await setEmergencyContacts(next);
+  // Writes first, shows second: the list on screen is only ever what is stored.
+  async function persist(next: EmergencyContact[]): Promise<boolean> {
+    if (loadFailed) {
+      toast(t("emergency.loadFailed"), "error");
+      return false;
+    }
+    if (writing.current) return false;
+    writing.current = true;
+    try {
+      await setEmergencyContacts(next);
+      setContacts(next);
+      return true;
+    } catch (err) {
+      logCrash(err, { screen: "emergencyContacts", op: "save" });
+      hapticWarning();
+      toast(t("common.saveFailed"), "error");
+      return false;
+    } finally {
+      writing.current = false;
+    }
   }
 
   async function saveContact(contactName: string, e164: string) {
-    await persist([...contacts, { name: contactName, phone: e164 }]);
+    if (!(await persist([...contacts, { name: contactName, phone: e164 }]))) return;
     hapticSuccess();
     setName("");
     setPhone(phonePrefill);
@@ -175,8 +208,7 @@ function EmergencyContactsScreen() {
   }
 
   async function remove(index: number) {
-    hapticWarning();
-    await persist(contacts.filter((_, i) => i !== index));
+    if (await persist(contacts.filter((_, i) => i !== index))) hapticWarning();
   }
 
   // In-app picker: read the address book into a searchable list. On iOS 18
@@ -255,7 +287,7 @@ function EmergencyContactsScreen() {
     }
 
     if (plan.add.length > 0) {
-      await persist([...contacts, ...plan.add]);
+      if (!(await persist([...contacts, ...plan.add]))) return;
       hapticSuccess();
     } else {
       hapticWarning();
@@ -510,6 +542,16 @@ function EmergencyContactsScreen() {
                   <Skeleton width="30%" height={10} />
                 </View>
               </View>
+            ) : loadFailed ? (
+              <Pressable
+                onPress={loadContacts}
+                accessibilityRole="button"
+                className="rounded-xl bg-glass border border-hair px-3 py-3 mb-2"
+              >
+                <Text style={{ color: GLUCOSE_RICH.low, fontSize: 13, lineHeight: 19 }}>
+                  {t("emergency.loadFailed")}
+                </Text>
+              </Pressable>
             ) : (
               contacts.map((c, i) => (
                 <View

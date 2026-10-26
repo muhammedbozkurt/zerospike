@@ -134,3 +134,31 @@ export async function remirrorRestoredRecords(snap: DeletionSnapshot): Promise<v
     if (injection) emitInjectionSaved(injection, null);
   }
 }
+
+export interface RestoreBatchResult {
+  restored: DeletionSnapshot[];
+  /** The failing snapshot and everything after it, in original order. */
+  failed: DeletionSnapshot[];
+  error?: unknown;
+}
+
+/**
+ * Restores snapshots in order and stops at the first failure, handing back what
+ * is still un-restored so the caller can keep it for another attempt. Every
+ * insert is INSERT OR REPLACE, so re-running a half-applied snapshot is safe.
+ */
+export async function restoreBatch(
+  snaps: DeletionSnapshot[],
+  restore: (snap: DeletionSnapshot) => Promise<void> = restoreDeletion
+): Promise<RestoreBatchResult> {
+  const restored: DeletionSnapshot[] = [];
+  for (let i = 0; i < snaps.length; i++) {
+    try {
+      await restore(snaps[i]);
+    } catch (error) {
+      return { restored, failed: snaps.slice(i), error };
+    }
+    restored.push(snaps[i]);
+  }
+  return { restored, failed: [] };
+}

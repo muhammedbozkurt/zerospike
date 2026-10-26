@@ -45,13 +45,14 @@ import { animateFade, isReducedMotionNow } from "../lib/useReducedMotion";
 import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
 import { useFontScale } from "../lib/useFontScale";
 import { sheetBoxStyle } from "../lib/tabletLayout";
+import { logCrash } from "../lib/analytics";
 
 type ToastKind = "success" | "info" | "error";
 
 /** An optional single action on a toast, e.g. "Undo" on an auto-created entry. */
 export interface ToastAction {
   label: string;
-  onPress: () => void;
+  onPress: () => void | Promise<void>;
 }
 
 interface ConfirmOptions {
@@ -326,7 +327,13 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     if (!cur || !cur.action) return;
     const action = cur.action;
     dispatchToast({ type: "actionRun", id: cur.id });
-    action.onPress();
+    try {
+      Promise.resolve(action.onPress()).catch((err) => {
+        logCrash(err, { screen: "feedback", op: "toastAction" });
+      });
+    } catch (err) {
+      logCrash(err, { screen: "feedback", op: "toastAction" });
+    }
   }, [dispatchToast]);
 
   const confirm = useCallback((opts: ConfirmOptions) => {

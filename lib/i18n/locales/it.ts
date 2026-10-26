@@ -843,6 +843,7 @@ const it: TranslationSchema = {
     invalidPhone: "Inserisca un numero di telefono valido. Esempio: +39 320 123 4567",
     pickDenied: "Autorizzazione alla rubrica non concessa.",
     pickFailed: "Impossibile aprire la rubrica.",
+    loadFailed: "Non è stato possibile caricare i Suoi contatti di emergenza. Tocchi per riprovare.",
     selectedCount: "{{n}} selezionati",
     alreadyAdded: "Aggiunto",
     addedSummary: "{{n}} contatti aggiunti",

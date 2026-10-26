@@ -841,6 +841,7 @@ const tr = {
     invalidPhone: "Geçerli bir telefon numarası girin. Örnek: +90 532 123 45 67",
     pickDenied: "Rehber izni verilmedi.",
     pickFailed: "Rehber açılamadı.",
+    loadFailed: "Acil durum kişileriniz yüklenemedi. Tekrar denemek için dokunun.",
     selectedCount: "{{n}} seçildi",
     alreadyAdded: "Ekli",
     addedSummary: "{{n}} kişi eklendi",

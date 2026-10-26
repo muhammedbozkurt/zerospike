@@ -843,6 +843,7 @@ const de: TranslationSchema = {
     invalidPhone: "Geben Sie eine gültige Telefonnummer ein. Beispiel: +49 151 23456789",
     pickDenied: "Kontaktberechtigung wurde nicht erteilt.",
     pickFailed: "Kontakte konnten nicht geöffnet werden.",
+    loadFailed: "Ihre Notfallkontakte konnten nicht geladen werden. Tippen Sie, um es erneut zu versuchen.",
     selectedCount: "{{n}} ausgewählt",
     alreadyAdded: "Hinzugefügt",
     addedSummary: "{{n}} Kontakte hinzugefügt",
