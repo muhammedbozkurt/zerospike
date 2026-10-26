@@ -87,7 +87,7 @@ ok("analysis limit is above the list and CSV limits", ANALYSIS_MAX_ROWS > EXPORT
     for (const key of ["truncated", "truncatedList"]) {
       const m = block.match(new RegExp(`\\n    ${key}:\\s*"([^"]+)"`));
       ok(`${f}: export.${key} has {{count}}`, !!m && m[1].includes("{{count}}"), m ? m[1] : "missing");
-      ok(`${f}: export.${key} has no em-dash`, !m || !m[1].includes("—"));
+      ok(`${f}: export.${key} has no em-dash`, !m || !m[1].includes(String.fromCharCode(0x2014)));
     }
   }
 }
