@@ -2,7 +2,8 @@
 
 Sürüm 2.4 sonrası ve beklemedeki işler. Karara bağlanmış konular için scratchpad/hub-kararlar.md.
 
-## Veri: karma yemek karbonhidrat kaynak taraması
+## Veri: karma yemek karbonhidrat kaynak taraması (yapıldı, 2.5.0)
+Çözüm: Jambalaya 24 -> 12, Tteokbokki 35 -> 21, Chilaquiles 24 -> 15, Shepherd's pie 16 -> 11, Gumbo 14 -> 7 (her biri 2+ bağımsız kaynakla, ayrıntı docs/food-sources.md "Karma yemek taraması"); Haşhaş 28, Hindistan cevizi 24, Badem 22 korundu (lif 25 g/100 g eşiğinin altında, toplam karb kuralı); scripts/foodSourcesCheck.test.ts. Açık: mevcut kurulumlara ulaşması için SEED_CATALOG_VERSION 8 -> 9 (lib/db/seedVersion.ts) ve carbPortions.test.ts sürüm assert'i hub kararı.
 Jambalaya 24, Tteokbokki 35, Chilaquiles 24, Shepherd's pie 16 ve Gumbo 14 (100 g) için kaynaklı karşılaştırma; ayrıca lifli tohum tutarsızlığı: Haşhaş 28, Hindistan cevizi 24 ve Badem 22 lif hariç değil, Chia ve Keten ise kullanılabilir karbonhidrata çekildi. Ayrıntı docs/food-sources.md "Doğrulanması gereken".
 
 ## Arapça PDF: AGP son saat etiketi (yapıldı, 2.5.0)
