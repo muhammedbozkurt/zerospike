@@ -247,6 +247,7 @@ import { hapticSuccess, hapticWarning, hapticSelect } from "../../lib/haptics";
 import { upper } from "../../lib/upper";
 import { switchProps } from "../../lib/a11y";
 import { WelcomeCard } from "../../components/WelcomeCard";
+import { isUserEntered } from "../../lib/glucoseSource";
 import { bosDurumKarari, todayRangeShare, usesTwoColumn } from "../../lib/homeEmpty";
 
 
@@ -351,6 +352,14 @@ export default function DashboardScreen() {
   // unfiltered feed, because IOB is computed from every bolus row including
   // this one; only the rendered list itself hides it.
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  // The same list narrowed to the selected kind. The narrowing happens in SQL
+  // before the row limit: filtering `journalEntries` in JS showed "no entries"
+  // for a kind the database held whenever a newer burst of another kind (a CGM
+  // import, a run of readings) filled the window (G15).
+  const [kindEntries, setKindEntries] = useState<{ kind: JournalFilter; rows: JournalEntry[] }>({
+    kind: "all",
+    rows: [],
+  });
   // The first feed read has landed. Without it an empty `entries` means both
   // "still loading" and "nothing logged yet", and the first-run guide flashed
   // over an existing user's dashboard for one frame on every cold start.
@@ -513,14 +522,23 @@ export default function DashboardScreen() {
       // the LIMIT, so the row budget is spent on rows that actually display.
       // Issued together rather than in sequence: this is the screen the app
       // opens on, and awaiting them one after the other doubled its first paint.
-      const [feed, visible] = await Promise.all([
+      const [feed, visible, ofKind] = await Promise.all([
         getJournal(activeProfile.id, lang, loadLimit),
         getJournal(activeProfile.id, lang, loadLimit, undefined, {
           excludeCalculatorInjections: true,
+          cgm: "exclude",
         }),
+        filter === "all"
+          ? Promise.resolve<JournalEntry[]>([])
+          : getJournal(activeProfile.id, lang, loadLimit, undefined, {
+              excludeCalculatorInjections: true,
+              cgm: "exclude",
+              kind: filter,
+            }),
       ]);
       setEntries(feed);
       setJournalEntries(visible);
+      setKindEntries({ kind: filter, rows: ofKind });
     } catch (err) {
       logCrash(err, { screen: "dashboard", load: "journal" });
     } finally {
@@ -529,11 +547,18 @@ export default function DashboardScreen() {
       // screen falls back to its empty state instead.
       setLoaded(true);
     }
-  }, [activeProfile, lang, loadLimit]);
+  }, [activeProfile, lang, loadLimit, filter]);
 
   useEffect(() => {
     load();
   }, [load, dataVersion]);
+
+  // The kind filter lasts for one visit: coming back to this tab shows
+  // everything again, so an entry added elsewhere is never hidden by a filter
+  // chosen earlier.
+  useFocusEffect(
+    useCallback(() => () => setFilter("all"), [])
+  );
 
   // Refresh the shared live-surface snapshot (next reminder + last glucose) so
   // the notification/Live Activity/widget/watch layer reads current data.
@@ -1543,7 +1568,7 @@ export default function DashboardScreen() {
 
   async function maybeAskHealthWrite(log: SugarLog): Promise<boolean> {
     try {
-      if (log.source === "health" || !hasHealthProvider() || !healthAvailable) return false;
+      if (!isUserEntered(log.source) || !hasHealthProvider() || !healthAvailable) return false;
       if (await getHealthWriteEnabled(log.profile_id)) return false;
       if (await healthWriteAskSeen()) return false;
       // Marked only once Health is known to be usable here: an unavailable
@@ -1741,10 +1766,14 @@ export default function DashboardScreen() {
   // by day. Memoized so re-renders that do not touch the feed (countdowns, sheet
   // state) reuse the same section objects and the SectionList can bail out.
   const { journalSections } = useMemo(() => {
+    // Until the SQL read for a freshly chosen chip lands, the JS narrowing of
+    // what is already loaded stands in, so the list never flashes empty.
     const filtered =
       filter === "all"
         ? journalEntries
-        : journalEntries.filter((e) => e.kind === filter);
+        : kindEntries.kind === filter
+          ? kindEntries.rows
+          : journalEntries.filter((e) => e.kind === filter);
     // ONE slice, always: the preview does not page. Reaching further into the
     // journal is a screen, not a button that grows this list.
     const display = filtered.slice(0, nextJournalCut(filtered, 0, JOURNAL_PREVIEW_LIMITS));
@@ -1772,7 +1801,7 @@ export default function DashboardScreen() {
       arr.push(e);
     }
     return { journalSections: sections };
-  }, [journalEntries, filter, t]);
+  }, [journalEntries, kindEntries, filter, t]);
 
   /** The preview always hands off to the full screen, carrying whatever filter
    *  the user is looking at so tapping through never silently widens it back to

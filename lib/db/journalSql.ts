@@ -65,10 +65,26 @@ export function journalFeedArgs(
  * outer ORDER BY / LIMIT rather than after - filtering post-LIMIT would spend
  * the row budget on rows that then get hidden, showing fewer than intended.
  */
+export type JournalKind = "glucose" | "meal" | "injection" | "med";
+
+export interface JournalFeedOptions {
+  /** 'exclude' leaves sensor readings out (the list never shows them one by
+   *  one); default 'include', which is what reports and exports read. */
+  cgm?: "include" | "exclude";
+  /** Keep one kind only. Applied in each branch's WHERE, so it is decided
+   *  before the outer LIMIT: a screen that filtered the newest N rows in JS
+   *  showed "no entries" for a kind the database held (G15). */
+  kind?: JournalKind;
+}
+
 export function journalFeedSql(
   withRange: boolean,
-  excludeCalculatorInjections = false
+  excludeCalculatorInjections = false,
+  options: JournalFeedOptions = {}
 ): string {
+  const kind = options.kind;
+  const only = (k: JournalKind) => (kind != null && kind !== k ? " AND 0" : "");
+  const notCgm = options.cgm === "exclude" ? " AND s.is_cgm = 0" : "";
   const bounds = (col: string) =>
     withRange ? ` AND ${col} BETWEEN ? AND ?` : "";
   const notCalculator = excludeCalculatorInjections
@@ -90,7 +106,7 @@ export function journalFeedSql(
               s.healthkit_uuid AS healthkit_uuid, NULL AS med_name,
               NULL AS insulin_product_id, NULL AS insulin_product_other
          FROM sugar_logs s
-        WHERE s.profile_id = ?${bounds("s.logged_at")}
+        WHERE s.profile_id = ?${bounds("s.logged_at")}${notCgm}${only("glucose")}
        UNION ALL
        SELECT 'meal', m.id, m.logged_at, m.tags,
               1,
@@ -104,7 +120,7 @@ export function journalFeedSql(
               NULL, NULL,
               NULL, NULL
          FROM meal_logs m LEFT JOIN foods f ON f.id = m.food_id
-        WHERE m.profile_id = ?${bounds("m.logged_at")}
+        WHERE m.profile_id = ?${bounds("m.logged_at")}${only("meal")}
        UNION ALL
        SELECT 'injection', i.id, i.logged_at, i.tags,
               2,
@@ -115,7 +131,7 @@ export function journalFeedSql(
               NULL, NULL,
               i.insulin_product_id, i.insulin_product_other
          FROM injection_logs i
-        WHERE i.profile_id = ?${bounds("i.logged_at")}${notCalculator}
+        WHERE i.profile_id = ?${bounds("i.logged_at")}${notCalculator}${only("injection")}
        UNION ALL
        SELECT 'med', d.id,
               strftime('%Y-%m-%dT%H:%M:%fZ', d.taken_at / 1000.0, 'unixepoch'),
@@ -128,7 +144,7 @@ export function journalFeedSql(
               NULL, d.name,
               NULL, NULL
          FROM med_logs d
-        WHERE d.profile_id = ?${withRange ? " AND d.taken_at BETWEEN ? AND ?" : ""}
+        WHERE d.profile_id = ?${withRange ? " AND d.taken_at BETWEEN ? AND ?" : ""}${only("med")}
      )
      ORDER BY logged_at DESC, ord
      LIMIT ?;`;

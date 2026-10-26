@@ -68,6 +68,10 @@ function JournalScreen() {
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Whether the profile has anything to show / any medication entry at all,
+  // independent of the selected kind: the filter chips live in the list header
+  // and must stay up while a kind has no rows.
+  const [presence, setPresence] = useState({ any: false, med: false });
   const [loadLimit, setLoadLimit] = useState(300);
   const [pages, setPages] = useState(1);
   const [filter, setFilter] = useState<JournalFilter>(() =>
@@ -88,18 +92,30 @@ function JournalScreen() {
     if (!activeProfile) return;
     try {
       // Same feed the dashboard's list reads: the calculator's own bolus row is
-      // filtered out, so a meal and its dose are one entry rather than two.
-      setEntries(
-        await getJournal(activeProfile.id, lang, loadLimit, undefined, {
-          excludeCalculatorInjections: true,
-        })
-      );
+      // filtered out, so a meal and its dose are one entry rather than two, and
+      // sensor readings are summarised elsewhere instead of listed one by one.
+      // The kind filter runs in SQL before the limit (G15).
+      const base = { excludeCalculatorInjections: true, cgm: "exclude" } as const;
+      const rows = await getJournal(activeProfile.id, lang, loadLimit, undefined, {
+        ...base,
+        kind: filter === "all" ? undefined : filter,
+      });
+      setEntries(rows);
+      if (filter === "all") {
+        setPresence({ any: rows.length > 0, med: rows.some((e) => e.kind === "med") });
+      } else {
+        const [anyRows, medRows] = await Promise.all([
+          getJournal(activeProfile.id, lang, 1, undefined, base),
+          getJournal(activeProfile.id, lang, 1, undefined, { ...base, kind: "med" }),
+        ]);
+        setPresence({ any: anyRows.length > 0, med: medRows.length > 0 });
+      }
     } catch (err) {
       logCrash(err, { screen: "journal", load: "feed" });
     } finally {
       setLoaded(true);
     }
-  }, [activeProfile, lang, loadLimit]);
+  }, [activeProfile, lang, loadLimit, filter]);
 
   useEffect(() => {
     void load();
@@ -119,11 +135,11 @@ function JournalScreen() {
       ...(insulinModeUsesInsulin(activeProfile?.insulin_mode)
         ? [{ key: "injection" as const, label: t("dashboard.quickAddInjection") }]
         : []),
-      ...(activeProfile?.oral_meds_enabled === 1 || entries.some((e) => e.kind === "med")
+      ...(activeProfile?.oral_meds_enabled === 1 || presence.med
         ? [{ key: "med" as const, label: t("meds.entryLabel") }]
         : []),
     ],
-    [t, activeProfile?.insulin_mode, activeProfile?.oral_meds_enabled, entries]
+    [t, activeProfile?.insulin_mode, activeProfile?.oral_meds_enabled, presence.med]
   );
 
   const { filteredEntries, displayEntries, sections } = useMemo(() => {
@@ -240,7 +256,7 @@ function JournalScreen() {
         maxToRenderPerBatch={12}
         windowSize={9}
         ListHeaderComponent={
-          entries.length > 0 ? (
+          presence.any ? (
             <JournalPanelTop title={t("dashboard.history")}>
               <JournalFilterChips
                 chips={chips}
@@ -259,7 +275,7 @@ function JournalScreen() {
         // rather than inventing a first-run message that belongs on the
         // dashboard.
         ListEmptyComponent={
-          loaded && entries.length > 0 ? (
+          loaded && presence.any ? (
             <JournalEmptyFilter
               onClearFilter={() => {
                 setFilter("all");
@@ -269,7 +285,7 @@ function JournalScreen() {
           ) : null
         }
         ListFooterComponent={
-          entries.length > 0 ? (
+          presence.any ? (
             <View>
               <JournalPanelBottom>
                 {canShowMore ? (
