@@ -8,6 +8,7 @@ import type {
 import { INJECTION_SITES, LOG_TAGS } from "./db/types";
 import { percentile } from "./agp";
 import { VERY_HIGH_MGDL } from "./glucose";
+import { isUserEntered } from "./glucoseSource";
 
 /**
  * Pro "Insights": a read-only, descriptive summary of the user's own logged
@@ -188,7 +189,7 @@ export function computeInsights(
   // imports carry a guessed period (there is no period on a HealthKit sample),
   // so folding them in would quietly poison the fasting/post-meal figures with
   // an assumption rather than an observation.
-  const userTagged = s.filter((x) => x.source !== "health");
+  const userTagged = s.filter((x) => isUserEntered(x.source));
   const avgFasting = mean(
     userTagged
       .filter(

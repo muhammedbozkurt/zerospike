@@ -24,6 +24,7 @@ import {
   migrateToV26,
   migrateToV27,
   migrateToV28,
+  migrateToV29,
   missingColumns,
   ensureFoodNameColumns,
   stampSchemaVersion,
@@ -48,6 +49,7 @@ import {
 } from "./v23Sql";
 import { V24_CREATE } from "./v24Sql";
 import { V28_CREATE } from "./v28Sql";
+import { V29_INDEXES } from "./v29Sql";
 import { BUSY_TIMEOUT_SQL, clearProfileLogs } from "./healthImportSql";
 import {
   SEED_CATALOG_VERSION,
@@ -60,7 +62,7 @@ import {
 import type { SeedFood } from "./seed";
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 29;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -388,6 +390,12 @@ export async function initDatabase(): Promise<void> {
     await migrateToV28(db);
   }
 
+  // v28 → v29: source_app / external_id / is_cgm on sugar_logs for sensor
+  // readings, with their indexes (see ./v29Sql).
+  if (currentVersion >= 1 && currentVersion < 29) {
+    await migrateToV29(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -484,6 +492,10 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       -- period_tag above (schema v22, see ./v22Sql) is what an import writes
       -- here instead of a guessed period.
       healthkit_uuid TEXT,
+      -- Sensor readings (schema v29, see ./v29Sql).
+      source_app TEXT,
+      external_id TEXT,
+      is_cgm INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
     );
 
@@ -627,6 +639,12 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   // The Health import's tombstones and floor (schema v28), the same statements
   // the v27 → v28 migration runs. After sugar_logs, which its triggers watch.
   for (const statement of V28_CREATE) {
+    await db.execAsync(statement);
+  }
+
+  // The sensor-reading indexes (schema v29), the same statements the v28 → v29
+  // migration runs. After sugar_logs, whose new columns they index.
+  for (const statement of V29_INDEXES) {
     await db.execAsync(statement);
   }
 

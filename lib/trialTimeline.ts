@@ -1,5 +1,6 @@
 import { computeInsights, rangeFromWindow, type TirBand } from "./insights";
 import type { SugarLog } from "./db/types";
+import { isUserEntered } from "./glucoseSource";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -143,7 +144,7 @@ export function personalSummary(
   band: TirBand,
   now: number
 ): PersonalSummary | null {
-  const own = logs.filter((l) => l.source !== "health");
+  const own = logs.filter((l) => isUserEntered(l.source));
   const ins = computeInsights(
     own,
     [],

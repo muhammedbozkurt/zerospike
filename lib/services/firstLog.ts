@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash, logEvent } from "../analytics";
 import { LOG_KINDS, type LogKind } from "../analytics/eventSchema";
 import { getDb } from "../db";
+import { USER_ENTERED_SQL } from "../glucoseSource";
 
 /**
  * first_log: the first time this install logs each kind of entry, reported once.
@@ -40,7 +41,7 @@ const SEEDED_KEY = "zerospike.firstLogSeeded";
 // the user made, so it does not make a manual reading any less the first.
 const COUNT_SQL: Record<FirstLogKind, string> = {
   glucose:
-    "SELECT COUNT(*) AS c FROM (SELECT 1 FROM sugar_logs WHERE source != 'health' LIMIT 2);",
+    `SELECT COUNT(*) AS c FROM (SELECT 1 FROM sugar_logs WHERE ${USER_ENTERED_SQL} LIMIT 2);`,
   meal: "SELECT COUNT(*) AS c FROM (SELECT 1 FROM meal_logs LIMIT 2);",
   other:
     "SELECT COUNT(*) AS c FROM (SELECT 1 FROM injection_logs UNION ALL SELECT 1 FROM med_logs LIMIT 2);",

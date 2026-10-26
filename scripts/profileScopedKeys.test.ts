@@ -68,6 +68,8 @@ section("A. every base name is really written by the file that owns it");
     "zerospike.healthWritePending": "lib/services/health.ts",
     "zerospike.healthWritePending.carbs": "lib/services/health.ts",
     "zerospike.healthWritePending.insulin": "lib/services/health.ts",
+    "zerospike.cgmMode": "lib/cgm/state.ts",
+    "zerospike.cgmOffer": "lib/cgm/state.ts",
   };
   for (const base of PROFILE_SCOPED_KEY_BASES) {
     const file = owners[base];

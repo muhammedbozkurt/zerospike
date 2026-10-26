@@ -11,7 +11,7 @@ import type {
 import { asSitePoint, foodName, parseBolusKind, parseTags } from "./types";
 import type { Food } from "./types";
 import type { DateRange } from "../insights";
-import { journalFeedArgs, journalFeedSql } from "./journalSql";
+import { journalFeedArgs, journalFeedSql, type JournalKind } from "./journalSql";
 
 export interface GlucoseEntry {
   kind: "glucose";
@@ -153,14 +153,23 @@ export async function getJournal(
   lang: Lang,
   limit = 300,
   range?: DateRange,
-  options?: { excludeCalculatorInjections?: boolean }
+  options?: {
+    excludeCalculatorInjections?: boolean;
+    /** 'exclude' leaves sensor readings out of the feed (see ./journalSql). */
+    cgm?: "include" | "exclude";
+    /** One kind only, filtered in SQL before the limit (G15). */
+    kind?: JournalKind;
+  }
 ): Promise<JournalEntry[]> {
   const db = await getDb();
 
   // The statement and its bound values live in ./journalSql (dependency-free), so
   // scripts/journal.test.ts runs the real query rather than a copy of it.
   const rows = await db.getAllAsync<FeedRow>(
-    journalFeedSql(range != null, options?.excludeCalculatorInjections ?? false),
+    journalFeedSql(range != null, options?.excludeCalculatorInjections ?? false, {
+      cgm: options?.cgm,
+      kind: options?.kind,
+    }),
     journalFeedArgs(profileId, limit, range)
   );
 

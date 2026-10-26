@@ -10,6 +10,8 @@
  * sample.
  */
 
+import { isUserEntered } from "./glucoseSource";
+
 export interface PendingDeleteEntry {
   uuid: string;
   queuedAtIso: string;
@@ -27,7 +29,7 @@ export function ownHealthUuids(
 ): string[] {
   const seen = new Set<string>();
   for (const r of rows) {
-    if (r.source === "health") continue;
+    if (!isUserEntered(r.source)) continue;
     if (typeof r.healthkit_uuid !== "string" || r.healthkit_uuid.length === 0) continue;
     seen.add(r.healthkit_uuid);
   }

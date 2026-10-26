@@ -813,8 +813,10 @@ function firstLogSql(): void {
   const source = src("lib/services/firstLog.ts");
   const block = between(source, "const COUNT_SQL", "};");
   const sql = new Map<string, string>();
-  const re = /(\w+):\s*"(SELECT[^"]+)"/g;
-  for (let m = re.exec(block); m; m = re.exec(block)) sql.set(m[1], m[2]);
+  const re = /(\w+):\s*[`"](SELECT[^`"]+)[`"]/g;
+  for (let m = re.exec(block); m; m = re.exec(block)) {
+    sql.set(m[1], m[2].replace("${USER_ENTERED_SQL}", "source = 'manual'"));
+  }
   eq("one count per log kind", [...sql.keys()].sort(), [...LOG_KINDS].sort());
 
   const db = new DatabaseSync(":memory:");

@@ -5,6 +5,8 @@
  * (scripts/healthBackfill.test.ts).
  */
 
+import { isUserEntered } from "./glucoseSource";
+
 export const HEALTH_BACKFILL_WINDOWS = [7, 30, 90] as const;
 export type HealthBackfillWindow = (typeof HEALTH_BACKFILL_WINDOWS)[number];
 
@@ -39,7 +41,7 @@ export function selectBackfillCandidates<T extends BackfillRow>(
   const cutoffMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
   return rows
     .filter((r) => r.profile_id === profileId)
-    .filter((r) => r.source !== "health" && r.healthkit_uuid == null)
+    .filter((r) => isUserEntered(r.source) && r.healthkit_uuid == null)
     .filter((r) => !inFlightIds.has(r.id))
     .filter((r) => {
       const t = new Date(r.logged_at).getTime();

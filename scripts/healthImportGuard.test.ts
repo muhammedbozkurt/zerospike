@@ -385,7 +385,7 @@ async function main(): Promise<void> {
     const profSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "profiles.ts"), "utf8");
     ok("insertHealthSugarLogs delegates to importHealthSamples", /importHealthSamples\(db, profileId, samples, uuid\)/.test(logsSrc));
     ok("clearAllLogs delegates to clearProfileLogs", /clearProfileLogs\(db, profileId, new Date\(\)\.toISOString\(\)\)/.test(indexSrc));
-    ok("SCHEMA_VERSION is 28", /const SCHEMA_VERSION = 28;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 29", /const SCHEMA_VERSION = 29;/.test(indexSrc));
     ok("the v27 -> v28 step runs the real migration", /currentVersion < 28\)\s*\{\s*await migrateToV28\(db\);/.test(indexSrc));
     ok("a fresh install creates the guard tables", /for \(const statement of V28_CREATE\)/.test(indexSrc));
     ok("deleteProfile drops the guard rows", /DELETE FROM health_import_tombstones WHERE profile_id = \?/.test(profSrc) && /DELETE FROM health_import_floor WHERE profile_id = \?/.test(profSrc));

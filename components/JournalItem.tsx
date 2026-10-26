@@ -25,6 +25,7 @@ import {
 } from "../lib/glucose";
 import { glucoseRowLabel } from "../lib/journalA11y";
 import { formatTime } from "../lib/format";
+import { isUserEntered } from "../lib/glucoseSource";
 import { num } from "../lib/format";
 import { RICH_BY_STATUS, THEME, TYPE, SPACE, glow, HIT_TARGET, RADIUS } from "../lib/theme/tokens";
 import { RIPPLE_ALPHA } from "../lib/theme/uiPrimitives";
@@ -463,17 +464,19 @@ function JournalItemBase({
       profile
     );
     const color = RICH_BY_STATUS[status];
-    const isHealthSource = entry.source === "health";
+    const isImportedSource = !isUserEntered(entry.source);
     // An imported reading carries no period at all (period_tag "unset" - see
     // lib/periodTag.ts), so the row's own source is what identifies it, not a
     // guessed time-of-day label. For any other row that somehow has no period
     // set, the plain "unset" label still applies.
     const periodLabel =
       entry.period_tag !== "unset" ? t(`period.${entry.period_tag}`) : null;
-    const sourceLabel = isHealthSource
+    const importedName =
+      entry.source === "nightscout" ? t("cgmSource.nightscout") : t("journal.sourceHealth");
+    const sourceLabel = isImportedSource
       ? periodLabel
-        ? `${t("journal.sourceHealth")} · ${periodLabel}`
-        : t("journal.sourceHealth")
+        ? `${importedName} · ${periodLabel}`
+        : importedName
       : (periodLabel ?? t("period.unset"));
     // Visual text is untouched; canAddPeriod only tells VoiceOver/TalkBack that
     // tapping the row can assign a period tag, since journal.addPeriodTag has no
@@ -508,7 +511,7 @@ function JournalItemBase({
               a bold clinical classification like a period tag. */}
           <Txt
             kind="caption"
-            tone={isHealthSource ? "muted" : "text"}
+            tone={isImportedSource ? "muted" : "text"}
             style={{ fontWeight: "700" }}
           >
             <Ionicons name="water" size={11} color={color} />{" "}

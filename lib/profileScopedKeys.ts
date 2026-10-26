@@ -44,6 +44,10 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.healthWritePending",
   "zerospike.healthWritePending.carbs",
   "zerospike.healthWritePending.insulin",
+  /** lib/cgm/state.ts - how this profile gets its readings (manual, cgm, nightscout). */
+  "zerospike.cgmMode",
+  /** lib/cgm/state.ts - the one-time "switch to CGM" answer. */
+  "zerospike.cgmOffer",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

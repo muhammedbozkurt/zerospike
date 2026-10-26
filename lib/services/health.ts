@@ -11,6 +11,7 @@ import {
   setSugarLogHealthUuid,
 } from "../db/logs";
 import { getProfile, listProfiles } from "../db/profiles";
+import { isUserEntered } from "../glucoseSource";
 import type { SugarLog } from "../db/types";
 import {
   chunkBatches,
@@ -1044,12 +1045,12 @@ async function relinkAfterDelete(deleted: readonly string[]): Promise<void> {
  * snapshot; either can be older than the row by then.
  */
 export async function writeGlucoseToHealthIfEnabled(log: SugarLog): Promise<boolean> {
-  if (log.source === "health") return true;
+  if (!isUserEntered(log.source)) return true;
   if (!hasHealthProvider()) return true;
   return withRowLock(log.id, async () => {
     // Gone already (deleted before this write got its turn): nothing to mirror.
     const row = await getSugarLog(log.id);
-    if (!row || row.source === "health") return true;
+    if (!row || !isUserEntered(row.source)) return true;
     const scope = await readHealthWriteScope();
     const allowed = shouldWriteToHealth({
       writeEnabledForProfile: scope.enabled,
@@ -1133,7 +1134,7 @@ export async function updateGlucoseInHealth(
     });
     if (!allowed) return none;
     const row = await getSugarLog(logId);
-    if (!row || row.source === "health") return none;
+    if (!row || !isUserEntered(row.source)) return none;
     // Only a reading that is (or was) mirrored is rewritten; one logged while
     // the mirror was off stays out of Health (consent scope).
     const held = [row.healthkit_uuid, oldUuid].filter((u): u is string => !!u);
@@ -1259,7 +1260,7 @@ async function runPendingHealthWrites(
       // queued, and only a LOCAL link counts as succeeded (2.3.5).
       const done = await withRowLock(row.id, async () => {
         const current = await getSugarLog(row.id);
-        if (!current || current.source === "health") return false;
+        if (!current || !isUserEntered(current.source)) return false;
         const res = await mirrorStoredRow(current, []);
         return res.outcome === "written";
       });
@@ -1371,7 +1372,7 @@ export async function backfillGlucoseToHealth(
         if (rowChains.has(stale.id)) continue;
         const outcome = await withRowLock(stale.id, async () => {
           const row = await getSugarLog(stale.id);
-          if (!row || row.healthkit_uuid != null || row.source === "health") return null;
+          if (!row || row.healthkit_uuid != null || !isUserEntered(row.source)) return null;
           return (await mirrorStoredRow(row, [])).outcome;
         });
         if (outcome === "written") {

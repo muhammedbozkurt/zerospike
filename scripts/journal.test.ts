@@ -16,6 +16,7 @@
 import { DatabaseSync } from "node:sqlite";
 
 import { journalFeedArgs, journalFeedSql } from "../lib/db/journalSql";
+import { V29_COLUMNS, V29_INDEXES } from "../lib/db/v29Sql";
 
 let passed = 0;
 let failed = 0;
@@ -255,6 +256,52 @@ function main() {
       }).length,
       0
     );
+    db.close();
+  }
+
+  section("E. G15: the kind filter runs in SQL before the LIMIT, CGM rows stay out of the list");
+  {
+    const db = makeFeedDb(2);
+    for (const col of V29_COLUMNS) db.exec(`ALTER TABLE sugar_logs ADD COLUMN ${col.name} ${col.type};`);
+    for (const stmt of V29_INDEXES) db.exec(stmt);
+    // 400 sensor readings, all NEWER than the two injections and the meals.
+    const cgm = db.prepare(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, is_cgm)
+       VALUES (?, 'p1', 110, 'unset', 'health', ?, '[]', 1);`
+    );
+    const base = Date.parse("2026-07-20T00:00:00.000Z");
+    for (let i = 0; i < 400; i++) cgm.run(`c${i}`, new Date(base + i * 300000).toISOString());
+
+    const run = (limit: number, opts?: { cgm?: "include" | "exclude"; kind?: string }) =>
+      db
+        .prepare(journalFeedSql(false, false, opts as never))
+        .all(...(journalFeedArgs("p1", limit) as never[])) as unknown as FeedRow[];
+
+    // The reproducer: filter "injection" with the newest 300 rows all sensor
+    // readings. Filtering after the LIMIT (what the screen did) finds nothing.
+    const afterLimit = run(300).filter((r) => r.kind === "injection");
+    eq("filtering AFTER the limit loses every injection (the old behaviour)", afterLimit.length, 0);
+    const inSql = run(300, { kind: "injection" });
+    eq("kind = injection in SQL returns both injections", inSql.length, 2);
+    eq("and only injections", inSql.every((r) => r.kind === "injection"), true);
+    eq("kind = meal returns the meals", run(300, { kind: "meal" }).length, 2);
+    eq("kind = med returns none when there are none", run(300, { kind: "med" }).length, 0);
+    eq("kind = glucose still honours the limit", run(5, { kind: "glucose" }).length, 5);
+
+    eq("default include keeps the sensor rows", run(1000).length, 6 + 400);
+    const excl = run(1000, { cgm: "exclude" });
+    eq("exclude drops every sensor row", excl.some((r) => r.id.startsWith("c")), false);
+    eq("exclude keeps the manual readings, meals and injections", excl.length, 6);
+    eq("exclude + glucose returns the two manual readings", run(1000, { cgm: "exclude", kind: "glucose" }).length, 2);
+
+    const plan = (
+      db
+        .prepare("EXPLAIN QUERY PLAN " + journalFeedSql(false, false, { cgm: "exclude" } as never))
+        .all(...(journalFeedArgs("p1", 300) as never[])) as { detail: string }[]
+    )
+      .map((r) => r.detail)
+      .join("\n");
+    eq("the manual list reads idx_sugar_manual", plan.includes("idx_sugar_manual"), true);
     db.close();
   }
 
