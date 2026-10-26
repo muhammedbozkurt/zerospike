@@ -63,5 +63,15 @@ for (const rel of ["components/CgmHomeCard.tsx", "components/CgmSwitchOffer.tsx"
 ok("the home card draws no threshold line or alert colour", !/(alert|alarm|warning|danger)/i.test(read("components/CgmHomeCard.tsx")));
 ok("the curve has no hard-coded colour", !/#[0-9a-fA-F]{3,8}\b|rgba\(/.test(read("components/charts/CgmCurve.tsx")));
 
+console.log("E. Pro: the home curve is free (inside 24 hours), older days are not");
+{
+  const sheet = read("components/CgmDaySheet.tsx");
+  ok("a day is locked when it ended more than 24 hours ago and the account is not Pro", /!isProUser && cgmWindowNeedsPro\(range\.hiMs, Date\.now\(\)\)/.test(sheet));
+  ok("a locked day runs no query", /if \(!range \|\| !profileId \|\| locked\) \{\s*setRows\(\[\]\);\s*return;/.test(sheet));
+  ok("the lock offers the existing upgrade path", /proCta\.upgrade/.test(sheet) && /pathname: "\/paywall"/.test(sheet));
+  const card = read("components/CgmHomeCard.tsx");
+  ok("the home card has no Pro gate: 3, 6 and 12 hours are all inside the free 24", !/isProUser|paywall/.test(card));
+}
+
 console.log(`\ncgmHomeManual: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

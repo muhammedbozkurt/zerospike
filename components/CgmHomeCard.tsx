@@ -142,7 +142,9 @@ export function CgmHomeCard({
         })
       : t("cgmCurve.noWindowData");
 
-  if (state === "loading") return null;
+  // Holds the card's height while the first read lands, so the list below does
+  // not jump.
+  if (state === "loading") return <Card style={{ marginBottom: SPACE.md, minHeight: 320 }} />;
 
   return (
     <Card glow={color} style={{ marginBottom: SPACE.md }}>
