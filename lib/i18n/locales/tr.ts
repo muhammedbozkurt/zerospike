@@ -1362,6 +1362,7 @@ const tr = {
     doseRequired: "Doz girmelisiniz.",
     duplicateBodyNoDose: "{{time}} saatinde kaydedilmiş.",
     chooseProfile: "Hangi profil için?",
+    saved: "Bazal insülin kaydı {{name}} profiline eklendi.",
   },
   insulinPicker: {
     groupMix: "Karışım",

@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AppBackground, GradientCTA } from "../components/rich";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { useFeedback } from "../components/Feedback";
 import { displayProfileName } from "../lib/profileName";
 import { Skeleton } from "../components/Skeleton";
 import { useStepperValidity } from "../components/Stepper";
@@ -103,11 +104,15 @@ function BasalConfirmScreen() {
   const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const router = useRouter();
   const { activeProfile, isProUser, bumpData } = useApp();
+  const { toast } = useFeedback();
   const params = useLocalSearchParams<{
     reminderId?: string;
     profileId?: string;
     step?: string;
   }>();
+  // The dashboard card (profileId, no reminderId) is about today only: its
+  // duplicate check must not reach into yesterday's evening dose.
+  const dashboardEntry = !params.reminderId && !!params.profileId;
 
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
   const [step, setStep] = useState<"ask" | "site">(params.step === "site" ? "site" : "ask");
@@ -158,7 +163,9 @@ function BasalConfirmScreen() {
         setLoad({ kind: "error" });
         return;
       }
-      const existing = await findDuplicateBasalInjection(ctx.profile.id, ctx.targetTime);
+      const existing = await findDuplicateBasalInjection(ctx.profile.id, ctx.targetTime, {
+        sameDayOnly: dashboardEntry,
+      });
       if (!isAlive()) return;
       if (existing) {
         setLoad({ kind: "duplicate", ctx, existing });
@@ -275,6 +282,7 @@ function BasalConfirmScreen() {
         loggedAt,
         glucoseUnit: ctx.profile.glucose_unit,
         currentBasalDailyUnits: ctx.profile.basal_daily_units,
+        duplicateSameDayOnly: dashboardEntry,
       });
       // The service-side backstop for the same dose>0 rule the Save button's
       // own disabled state already enforces (see the button below) - never
@@ -295,6 +303,9 @@ function BasalConfirmScreen() {
       void noteFirstLog("basal");
       hapticSuccess();
       bumpData();
+      // Names the profile the row went to: a reminder owns its own profile
+      // (resolveBasalConfirmContext), which can differ from the active one.
+      toast(t("basalConfirm.saved", { name: displayProfileName(ctx.profile, t) }), "success");
       dismiss();
     } catch (err) {
       logCrash(err, { screen: "basalConfirm", step: "save" });

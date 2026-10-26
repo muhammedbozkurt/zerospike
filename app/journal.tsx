@@ -22,7 +22,8 @@ import { useLayout } from "../lib/useLayout";
 import { AppBackground } from "../components/rich";
 import { Button } from "../components/ui";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { FeedbackHost } from "../components/Feedback";
+import { FeedbackHost, useFeedback } from "../components/Feedback";
+import { attemptGlucoseWrite } from "../lib/glucoseSheetFlow";
 import { JournalItem } from "../components/JournalItem";
 import { GlucoseInputSheet } from "../components/GlucoseInputSheet";
 import { useJournalRows } from "../components/useJournalRows";
@@ -60,6 +61,7 @@ function JournalScreen() {
   const insets = useSafeAreaInsets();
   const { columnPad } = useLayout();
   const { activeProfile, lang, dataVersion, bumpData } = useApp();
+  const { toast } = useFeedback();
   // The dashboard carries its active filter over, so tapping through from a
   // filtered preview does not silently widen back to everything.
   const params = useLocalSearchParams<{ filter?: string }>();
@@ -204,14 +206,24 @@ function JournalScreen() {
     period: Parameters<typeof applyGlucoseCorrection>[2],
     tags: Parameters<typeof applyGlucoseCorrection>[3],
     loggedAt: Date | null
-  ) {
+  ): Promise<boolean> {
     const target = editGlucose;
-    setEditGlucose(null);
-    if (!target) return;
-    await applyGlucoseCorrection(target, value, period, tags, loggedAt);
+    if (!target) return true;
+    // The sheet is open exactly while editGlucose is set, so the target stays
+    // until the write landed (the sheet's own close clears it); a failed write
+    // keeps the sheet and the typed value for a retry.
+    const res = await attemptGlucoseWrite(
+      () => applyGlucoseCorrection(target, value, period, tags, loggedAt),
+      (err) => {
+        logCrash(err, { screen: "journal", op: "saveGlucoseEdit" });
+        toast(t("common.saveFailed"), "error");
+      }
+    );
+    if (!res.ok) return false;
     logEvent("log_edited", { kind: "glucose" });
     hapticSuccess();
     bumpData();
+    return true;
   }
 
   return (

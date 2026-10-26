@@ -15,6 +15,12 @@ import {
 } from "../db/injections";
 import { syncLiveData } from "./liveData";
 import { logCrash } from "../analytics";
+import {
+  DUPLICATE_WINDOW_HOURS,
+  duplicateBounds,
+  pickScopedReminder,
+  reminderTriggerTime,
+} from "../basalWindow";
 
 /**
  * Resolution + save logic behind app/basal-confirm.tsx (basal insulin
@@ -24,29 +30,7 @@ import { logCrash } from "../analytics";
  * already follows.
  */
 
-/** Half-width of the "already logged" duplicate window: an existing basal
- *  row within this many hours of the target time, either direction, counts
- *  as the same dose. */
-export const DUPLICATE_WINDOW_HOURS = 3;
-
-/**
- * Today's (or, once past, the most recent PAST) occurrence of a reminder's
- * daily "HH:MM" time - what a basal reminder tap/action is ABOUT, distinct
- * from `now` (a reminder that fired at 22:00 and is opened at 00:30 the next
- * day still means "the 22:00 dose", not "right now"). A malformed time
- * string falls back to `now` itself, since there is nothing else honest to
- * show.
- */
-export function reminderTriggerTime(time: string, now: Date = new Date()): Date {
-  const [h, m] = time.split(":").map((n) => parseInt(n, 10));
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return new Date(now);
-  const candidate = new Date(now);
-  candidate.setHours(h, m, 0, 0);
-  if (candidate.getTime() > now.getTime()) {
-    candidate.setDate(candidate.getDate() - 1);
-  }
-  return candidate;
-}
+export { DUPLICATE_WINDOW_HOURS, reminderTriggerTime };
 
 /** How far back a basal reminder's own trigger time can sit and still be
  *  treated as "probably what a reminderId-less basal-confirm open is about"
@@ -154,7 +138,13 @@ export async function resolveBasalConfirmEntry(params: {
     // profile keeps at most one basal reminder row - see
     // dedupeBasalReminderRows in lib/db/reminders.ts), but the first one
     // still resolves deterministically rather than erroring.
-    const candidate = scoped.kind === "single" ? scoped.candidate : scoped.candidates[0];
+    const candidate = pickScopedReminder(
+      scoped.kind === "single" ? scoped.candidate : scoped.candidates[0],
+      now
+    );
+    // The dashboard card is about TODAY: a reminder whose last trigger is
+    // from an earlier day must not pull the dose onto yesterday's time.
+    if (!candidate) return { kind: "resolved", reminderId: null };
     return { kind: "resolved", reminderId: candidate.reminder.id };
   }
 
@@ -215,14 +205,17 @@ export async function resolveBasalConfirmContext(params: {
 }
 
 /** The existing basal row (if any) within DUPLICATE_WINDOW_HOURS of
- *  `targetTime`, nearest first. */
+ *  `targetTime`, nearest first. `sameDayOnly` (dashboard entry) clips the
+ *  window to the target's own day, so yesterday's late dose does not block
+ *  today's. */
 export async function findDuplicateBasalInjection(
   profileId: string,
-  targetTime: Date
+  targetTime: Date,
+  opts: { sameDayOnly?: boolean } = {}
 ): Promise<RecentInjection | null> {
-  const half = DUPLICATE_WINDOW_HOURS * 3_600_000;
-  const since = new Date(targetTime.getTime() - half).toISOString();
-  const until = new Date(targetTime.getTime() + half).toISOString();
+  const bounds = duplicateBounds(targetTime, opts);
+  const since = new Date(bounds.sinceMs).toISOString();
+  const until = new Date(bounds.untilMs).toISOString();
   const rows = (await listRecentInjections(profileId, since, until)).filter(
     (r) => r.insulin_type === "basal"
   );
@@ -246,6 +239,8 @@ export interface SaveBasalConfirmationInput {
   /** The profile's CURRENT basal_daily_units, so a first-time dose can seed
    *  it without a second profile read inside this function. */
   currentBasalDailyUnits: number | null;
+  /** Dashboard entry: the duplicate check only looks at the saved time's own day. */
+  duplicateSameDayOnly?: boolean;
 }
 
 export type SaveBasalConfirmationResult =
@@ -275,7 +270,9 @@ export async function saveBasalConfirmation(
 ): Promise<SaveBasalConfirmationResult> {
   if (!(input.doseUnits > 0)) return { kind: "invalidDose" };
 
-  const existing = await findDuplicateBasalInjection(input.profileId, input.loggedAt);
+  const existing = await findDuplicateBasalInjection(input.profileId, input.loggedAt, {
+    sameDayOnly: input.duplicateSameDayOnly,
+  });
   if (existing) return { kind: "duplicate", existing };
 
   const injection = await logInjection({
