@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
   Animated,
@@ -16,6 +16,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { updateMed, upsertMedUse } from "../lib/db/meds";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { MedNamePicker } from "./MedNamePicker";
+import { runExclusive, type SaveLock } from "../lib/saveGuard";
+import { saveMedGuarded } from "../lib/medSave";
 import { useApp } from "../lib/store/AppContext";
 import { FeedbackHost, useFeedback } from "./Feedback";
 import { hapticSuccess } from "../lib/haptics";
@@ -93,7 +95,7 @@ export function MedEditSheet({
 }) {
   const { t, i18n } = useTranslation();
   const { activeProfile } = useApp();
-  const { confirm } = useFeedback();
+  const { confirm, toast } = useFeedback();
   const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const { height: windowH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -118,6 +120,7 @@ export function MedEditSheet({
   const [loggedAt, setLoggedAt] = useState(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const saveLockRef = useRef<SaveLock>({ current: false });
 
   useEffect(() => {
     if (visible && med) {
@@ -130,25 +133,37 @@ export function MedEditSheet({
   }, [visible, med?.id]);
 
   async function save() {
-    if (!med || saving) return;
-    setSaving(true);
-    try {
-      const trimmedName = name.trim();
-      const takenAt = loggedAt.getTime();
-      await updateMed(med.id, {
-        name: trimmedName || null,
-        note: note.trim() || null,
-        taken_at: takenAt,
-      });
-      if (activeProfile && trimmedName) {
-        await upsertMedUse(activeProfile.id, trimmedName, takenAt);
+    if (!med) return;
+    await runExclusive(saveLockRef.current, async () => {
+      setSaving(true);
+      try {
+        const trimmedName = name.trim();
+        const takenAt = loggedAt.getTime();
+        const outcome = await saveMedGuarded({
+          write: async () => {
+            await updateMed(med.id, {
+              name: trimmedName || null,
+              note: note.trim() || null,
+              taken_at: takenAt,
+            });
+          },
+          rememberName: async () => {
+            if (activeProfile && trimmedName) {
+              await upsertMedUse(activeProfile.id, trimmedName, takenAt);
+            }
+          },
+        });
+        if (outcome === "failed") {
+          toast(t("common.saveFailed"), "error");
+          return;
+        }
+        logEvent("log_edited", { kind: "med" });
+        hapticSuccess();
+        onSaved();
+      } finally {
+        setSaving(false);
       }
-      logEvent("log_edited", { kind: "med" });
-      hapticSuccess();
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
   /** Same confirm dialog as the row's own swipe delete (useJournalRows.tsx's

@@ -48,8 +48,11 @@ export default function MedicationsScreen() {
       setLoaded(true);
       return;
     }
-    const rows = await listSavedMeds(activeProfile.id);
-    setMeds(rows);
+    try {
+      setMeds(await listSavedMeds(activeProfile.id));
+    } catch {
+      setMeds([]);
+    }
     setLoaded(true);
   }, [activeProfile]);
 
@@ -83,8 +86,12 @@ export default function MedicationsScreen() {
       destructive: true,
     });
     if (!ok) return;
-    await deleteSavedMed(row.id);
-    await refresh();
+    try {
+      await deleteSavedMed(row.id);
+      await refresh();
+    } catch {
+      toast(t("common.saveFailed"), "error");
+    }
   }
 
   // Shared by both sheet modes: sheetTarget set = rename, null = add a new
@@ -111,6 +118,8 @@ export default function MedicationsScreen() {
       }
       await refresh();
       setSheetOpen(false);
+    } catch {
+      toast(t("common.saveFailed"), "error");
     } finally {
       setSheetSaving(false);
     }

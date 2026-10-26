@@ -95,6 +95,18 @@ export default function AboutSettings() {
         onPress={() => Linking.openURL(termsUrl())}
         right={externalLinkIcon()}
       />
+      <Row
+        icon="nutrition-outline"
+        label={t("settings.offAttribution")}
+        onPress={() => Linking.openURL("https://world.openfoodfacts.org")}
+        right={externalLinkIcon()}
+      />
+      <Row
+        icon="document-text-outline"
+        label={t("settings.odblLicense")}
+        onPress={() => Linking.openURL("https://opendatacommons.org/licenses/odbl/1-0/")}
+        right={externalLinkIcon()}
+      />
       <Row icon="medkit-outline" label={t("sources.link")} onPress={() => router.push("/sources")} />
 
       <SectionLabel>{t("settings.aboutSection")}</SectionLabel>

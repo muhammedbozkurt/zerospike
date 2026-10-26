@@ -2,6 +2,7 @@ import {
   countReminders,
   createReminder,
   deleteReminder,
+  inReminderTransaction,
   listReminders,
   MAX_REMINDERS,
 } from "../db/reminders";
@@ -11,12 +12,11 @@ import {
   isAlarmKitAvailable,
   requestAlarmAuthorization,
 } from "../../modules/zerospike-alarmkit";
+import type { DayBucket, ReminderPreset } from "../reminderPresets";
 import {
-  planRowsToReplace,
-  planRowsToWrite,
-  type DayBucket,
-  type ReminderPreset,
-} from "../reminderPresets";
+  runReminderPlan,
+  type ReminderPlanResult,
+} from "../reminderPlanCore";
 
 /**
  * The ready-made measurement layout, as an ACTION rather than a screen: one
@@ -71,20 +71,7 @@ export async function ensureAlarmAuthorizationOnce(): Promise<void> {
  *  same `false`, which meant a full reminder list and a database error showed
  *  the user the same message - one of which they can act on and one of which
  *  they cannot. */
-export type ReminderPlanOutcome =
-  /** Every previewed row was written. */
-  | "written"
-  /** This profile's list is at (or reached) MAX_REMINDERS, so some or all of
-   *  the layout had nowhere to go. `written` says which. */
-  | "limit"
-  /** Something else went wrong; nothing can be promised about what landed. */
-  | "failed";
-
-export interface ReminderPlanResult {
-  outcome: ReminderPlanOutcome;
-  /** How many rows actually reached the table. */
-  written: number;
-}
+export type { ReminderPlanOutcome, ReminderPlanResult } from "../reminderPlanCore";
 
 /**
  * Writes the previewed layout to `profileId` (falling back to the active
@@ -100,7 +87,8 @@ export interface ReminderPlanResult {
  * profiles, or delete rows belonging to neither.
  *
  * REPLACES rather than merges: that profile's existing measurement rows are
- * deleted first, so a user who removed 12:30 from the preview does not end up
+ * deleted in the same transaction as the inserts (a failure halfway keeps the
+ * old ones), so a user who removed 12:30 from the preview does not end up
  * with it anyway from an earlier, abandoned attempt. Only `glucose` rows are
  * touched - the basal row (syncBasalReminderRow), the medication row and
  * anything custom belong to other intents and are left exactly as they are.
@@ -114,26 +102,21 @@ export async function setUpReminderPlan(
   labelFor: (bucket: DayBucket) => string,
   profileId?: string
 ): Promise<ReminderPlanResult> {
-  let written = 0;
-  try {
-    const existing = await listReminders(profileId);
-    for (const id of planRowsToReplace(existing, profileId)) {
-      await deleteReminder(id);
-    }
-    const wanted = planRowsToWrite(rows, labelFor, profileId);
-    const room = Math.max(0, MAX_REMINDERS - (await countReminders(profileId)));
-    for (const row of wanted.slice(0, room)) {
-      await createReminder(row);
-      written++;
-    }
-    if (written > 0) {
-      await requestNotificationPermission();
-      await ensureAlarmAuthorizationOnce();
-    }
-    return { outcome: written < wanted.length ? "limit" : "written", written };
-  } catch {
-    // Settings > Reminders is always there to try again, but the caller has to
-    // be able to SAY that rather than show the "list is full" message.
-    return { outcome: "failed", written };
-  }
+  return runReminderPlan(
+    {
+      list: listReminders,
+      count: countReminders,
+      remove: deleteReminder,
+      create: createReminder,
+      transaction: inReminderTransaction,
+      maxReminders: MAX_REMINDERS,
+      afterWrite: async () => {
+        await requestNotificationPermission();
+        await ensureAlarmAuthorizationOnce();
+      },
+    },
+    rows,
+    labelFor,
+    profileId
+  );
 }
