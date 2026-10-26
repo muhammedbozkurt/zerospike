@@ -307,6 +307,7 @@ const fr: TranslationSchema = {
     range: "Saisissez une valeur de {{min}} à {{max}} {{unit}}",
     required: "Saisissez une valeur",
     integerOnly: "Saisissez un nombre entier",
+    malformed: "Saisissez uniquement des chiffres et un séparateur décimal",
     carbRatioExample: "ex. 10",
     isfExampleMgdl: "ex. 50",
     isfExampleMmol: "ex. 2,8",

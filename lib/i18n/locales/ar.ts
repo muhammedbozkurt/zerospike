@@ -307,6 +307,7 @@ const ar: TranslationSchema = {
     range: "أدخل قيمة من {{min}} إلى {{max}} {{unit}}",
     required: "أدخل قيمة",
     integerOnly: "أدخل عددًا صحيحًا",
+    malformed: "أدخل أرقامًا وفاصلة عشرية واحدة فقط",
     carbRatioExample: "مثال: 10",
     isfExampleMgdl: "مثال: 50",
     isfExampleMmol: "مثال: 2.8",

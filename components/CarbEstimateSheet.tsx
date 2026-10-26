@@ -58,6 +58,7 @@ import { useFontScale } from "../lib/useFontScale";
 import { ScrollHint } from "./ScrollHint";
 import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
+import { useA11yModalPresence } from "../lib/a11yModal";
 import { Button } from "./ui";
 
 
@@ -102,6 +103,7 @@ export function CarbEstimateSheet({
   onAdd: (lines: EstimateLineInput[]) => void;
 }) {
   const { t } = useTranslation();
+  useA11yModalPresence(true);
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();

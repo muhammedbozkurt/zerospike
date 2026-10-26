@@ -27,6 +27,7 @@ import { useFontScale } from "../lib/useFontScale";
 import { sheetBoxStyle } from "../lib/tabletLayout";
 import { sheetFrame } from "../lib/sheetLayout";
 import { useSheetKeyboard } from "../lib/useSheetKeyboard";
+import { useA11yModalPresence } from "../lib/a11yModal";
 import { IconTile, GradientCTA } from "./rich";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
 import { DirIcon } from "./DirIcon";
@@ -76,6 +77,7 @@ export function QuickAddSheet({
   openMedDirect = false,
 }: QuickAddSheetProps) {
   const { t, i18n } = useTranslation();
+  useA11yModalPresence(visible);
   const insets = useSafeAreaInsets();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const { height: windowH } = useWindowDimensions();

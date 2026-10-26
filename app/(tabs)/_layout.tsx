@@ -1,11 +1,32 @@
 import React from "react";
+import { View } from "react-native";
 import { Tabs } from "expo-router";
+import {
+  BottomTabBar,
+  type BottomTabBarProps,
+} from "expo-router/build/react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
+import { useA11yModalOpen } from "../../lib/a11yModal";
 import { useApp } from "../../lib/store/AppContext";
 import { insulinModeUsesInsulin } from "../../lib/insulinMode";
 import { THEME, TYPE } from "../../lib/theme/tokens";
+
+// A sheet inside a tab screen cannot silence the bar above the screen with
+// accessibilityViewIsModal alone, so the bar leaves the VoiceOver / TalkBack
+// tree while one is up (lib/a11yModal).
+function TabBarForSheets(props: BottomTabBarProps) {
+  const sheetUp = useA11yModalOpen();
+  return (
+    <View
+      accessibilityElementsHidden={sheetUp}
+      importantForAccessibility={sheetUp ? "no-hide-descendants" : "auto"}
+    >
+      <BottomTabBar {...props} />
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -19,6 +40,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <TabBarForSheets {...props} />}
       screenOptions={{
         headerShown: false,
         // A backgrounded tab stops paying for re-render/layout work it cannot

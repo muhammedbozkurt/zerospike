@@ -307,6 +307,7 @@ const de: TranslationSchema = {
     range: "Geben Sie einen Wert von {{min}} bis {{max}} {{unit}} ein",
     required: "Geben Sie einen Wert ein",
     integerOnly: "Geben Sie eine ganze Zahl ein",
+    malformed: "Geben Sie nur Ziffern und ein Dezimalzeichen ein",
     carbRatioExample: "z. B. 10",
     isfExampleMgdl: "z. B. 50",
     isfExampleMmol: "z. B. 2,8",

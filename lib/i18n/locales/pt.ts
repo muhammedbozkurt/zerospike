@@ -307,6 +307,7 @@ const pt: TranslationSchema = {
     range: "Informe um valor de {{min}} a {{max}} {{unit}}",
     required: "Informe um valor",
     integerOnly: "Informe um número inteiro",
+    malformed: "Informe apenas dígitos e um separador decimal",
     carbRatioExample: "ex.: 10",
     isfExampleMgdl: "ex.: 50",
     isfExampleMmol: "ex.: 2,8",

@@ -9,7 +9,6 @@ import { withAlpha } from "./rich/GlassCard";
 import { Card, Txt } from "./ui";
 import { hapticSelect } from "../lib/haptics";
 import { upper } from "../lib/upper";
-import { useLayout } from "../lib/useLayout";
 import { animateSpring, isReducedMotionNow } from "../lib/useReducedMotion";
 import { hasDecimalSeparator, parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
 
@@ -78,7 +77,6 @@ export function RangeInput({
   decimals?: boolean;
 }) {
   const { t } = useTranslation();
-  const { columnPad } = useLayout();
   const navigation = useNavigation();
 
   /** The low thumb can sit inside the native back-swipe zone, so a horizontal
@@ -359,7 +357,7 @@ export function RangeInput({
   return (
     <Card
       glow={THEME.scheme === "dark" && hasBand && !showsError ? GLUCOSE_RICH.target : undefined}
-      style={[{ marginBottom: SPACE.md }, columnPad(SPACE.lg)]}
+      style={{ marginBottom: SPACE.md }}
     >
       <Txt kind="micro" tone="muted" style={{ letterSpacing: 1.3, fontWeight: "800" }}>
         {upper(label)}

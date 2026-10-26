@@ -59,6 +59,7 @@ import {
 } from "./meal";
 import { SCRIM } from "./SheetShell";
 import { ScrollHint } from "./ScrollHint";
+import { useA11yModalPresence } from "../lib/a11yModal";
 import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
 import { Button } from "./ui";
@@ -143,6 +144,7 @@ export function MealComposeSheet({
   onSearch?: (query: string) => Promise<Food[]>;
 }) {
   const { t } = useTranslation();
+  useA11yModalPresence(true);
   const insets = useSafeAreaInsets();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
