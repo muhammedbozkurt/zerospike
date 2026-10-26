@@ -31,7 +31,7 @@
       "bundleIdentifier": "com.greeneyeapp.zerospike",
       "appStoreUrl": "https://apps.apple.com/app/id6778782351",
       "appleTeamId": "YWRPV58T86",
-      "buildNumber": "94",
+      "buildNumber": "96",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -179,7 +179,7 @@
     "android": {
       "package": "com.greeneyeapp.zerospike",
       "playStoreUrl": "https://play.google.com/store/apps/details?id=com.greeneyeapp.zerospike",
-      "versionCode": 94,
+      "versionCode": 96,
       "allowBackup": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/adaptive-foreground-1024.png",
