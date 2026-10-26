@@ -419,6 +419,8 @@ const tr = {
     saveMealAndDose: "Öğünü ve dozu kaydet",
     saveFailed: "Kaydedilemedi. Lütfen tekrar deneyin.",
     savedRecord: "Kayıt eklendi.",
+    bolusSaveFailed: "Öğün kaydedildi, ancak bolus enjeksiyon kaydı eklenemedi. Doz, enjeksiyon geçmişinde ve aktif insülinde görünmez.",
+    bolusRetry: "Tekrar dene",
     undone: "Kayıt geri alındı.",
     carbFocusBodyBasal: "Yalnızca bazal insülin kullandığınız için öğün dozu bölümü gizli; Ayarlar'dan değiştirebilirsiniz.",
     emptyDoseTitle: "Doz alanı boş",

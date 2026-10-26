@@ -421,6 +421,8 @@ const es: TranslationSchema = {
     saveMealAndDose: "Guardar la comida y la dosis",
     saveFailed: "No se ha podido guardar. Vuelva a intentarlo.",
     savedRecord: "Registro guardado.",
+    bolusSaveFailed: "Comida guardada, pero no se ha podido añadir el registro de la inyección de bolo. La dosis no aparecerá en el historial de inyecciones ni en la insulina activa.",
+    bolusRetry: "Reintentar",
     undone: "Registro deshecho.",
     carbFocusBodyBasal: "La sección de dosis de comida está oculta porque solo usa insulina basal; puede cambiarlo en Ajustes.",
     emptyDoseTitle: "El campo de dosis está vacío",
