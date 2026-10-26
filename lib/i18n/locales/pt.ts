@@ -541,6 +541,10 @@ const pt: TranslationSchema = {
     alarmTitleBasal: "Basal",
     alarmTitlePostMeal: "Pós-refeição",
   },
+  cgmReminders: {
+    pausedRow: "Desligado no modo CGM",
+    banner: "Enquanto seus valores vêm do sensor, os lembretes de medição ficam desligados. Você pode reativar os que quiser, um por um.",
+  },
   alarmTour: {
     step1Title: "Seus lembretes agora podem tocar",
     step1Body: "Um lembrete que você criar toca como um alarme de verdade, em tela cheia e com o controle de parada do próprio sistema.",

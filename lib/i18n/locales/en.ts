@@ -541,6 +541,10 @@ const en: TranslationSchema = {
     alarmTitleBasal: "Basal",
     alarmTitlePostMeal: "Post-meal",
   },
+  cgmReminders: {
+    pausedRow: "Off in CGM mode",
+    banner: "While your readings come from a sensor, glucose check reminders are off. You can turn single ones back on.",
+  },
   alarmTour: {
     step1Title: "Your reminders can ring now",
     step1Body: "A reminder you set up rings as a real alarm, full screen, with the system's own stop control.",

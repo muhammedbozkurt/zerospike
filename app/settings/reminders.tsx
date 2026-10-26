@@ -16,10 +16,17 @@ import {
 import type { GlucoseUnit, Reminder, ReminderType } from "../../lib/db/types";
 import { insulinModeOf, insulinModeShowsBasal } from "../../lib/insulinMode";
 import { listProfiles } from "../../lib/db/profiles";
+import { getCgmMode, isCgmModeActive, type CgmMode } from "../../lib/cgm/state";
+import { subscribeCgmChanges } from "../../lib/cgm/importEvents";
+import {
+  getGlucoseOptIn,
+  glucoseReminderPaused,
+  setGlucoseOptIn,
+  withCgmPause,
+} from "../../lib/cgm/reminderMode";
 import {
   applyNotificationPrefs,
   getNotificationPermission,
-  lastReminderScheduleFailures,
   requestNotificationPermission,
   type NotificationPermission,
 } from "../../lib/services/notifications";
@@ -152,6 +159,8 @@ function ReminderRow({
   label,
   day,
   badge,
+  on,
+  paused,
   onPress,
   onLongPress,
   onToggleMode,
@@ -159,6 +168,10 @@ function ReminderRow({
 }: {
   row: Reminder;
   label: string;
+  /** What the switch shows: the row is switched on AND not held back by CGM mode. */
+  on: boolean;
+  /** Switched on, but held back because readings come from a sensor. */
+  paused: boolean;
   /** "today" / "tomorrow", already localized; absent for a row this pass would
    *  not schedule at all (disabled, or behind a closed profile gate). */
   day?: string;
@@ -169,6 +182,7 @@ function ReminderRow({
   onToggleMode: () => void;
   onToggleEnabled: (value: boolean) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Pressable
       onPress={onPress}
@@ -197,13 +211,19 @@ function ReminderRow({
           <Text style={[TABULAR, { color: THEME.textMuted, fontSize: 12 }]}>
             {day ? `${row.time} · ${day}` : row.time}
           </Text>
-          {badge ? <ModeMark mode={badge} onPress={onToggleMode} /> : null}
+          {paused ? (
+            <Text style={{ color: THEME.textMuted, fontSize: 12, flexShrink: 1 }}>
+              {`· ${t("cgmReminders.pausedRow")}`}
+            </Text>
+          ) : badge ? (
+            <ModeMark mode={badge} onPress={onToggleMode} />
+          ) : null}
         </View>
       </View>
 
       <View className="ml-2">
         <Switch
-          value={row.enabled === 1}
+          value={on}
           onValueChange={onToggleEnabled}
           {...switchProps(label)}
           {...switchColors()}
@@ -239,6 +259,8 @@ export default function RemindersScreen() {
   const showsMeds = activeProfile?.oral_meds_enabled === 1;
 
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [cgmMode, setCgmModeState] = useState<CgmMode>("manual");
+  const [cgmOptIn, setCgmOptIn] = useState<ReadonlySet<string>>(() => new Set());
   const [loaded, setLoaded] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
 
@@ -286,24 +308,37 @@ export default function RemindersScreen() {
   /** Everything the screen draws from, re-read in one pass. Also re-samples the
    *  AlarmKit authorization, which the user can change from system settings
    *  without this screen ever unmounting. */
+  const activeProfileId = activeProfile?.id;
   const reload = useCallback(async () => {
-    const [list, perm, prefs, profiles] = await Promise.all([
+    const [list, perm, prefs, profiles, mode, optIn] = await Promise.all([
       listReminders(),
       getNotificationPermission(),
       getNotificationPrefs(),
       listProfiles(),
+      activeProfileId ? getCgmMode(activeProfileId) : Promise.resolve<CgmMode>("manual"),
+      activeProfileId ? getGlucoseOptIn(activeProfileId) : Promise.resolve(new Set<string>()),
     ]);
     setProfileCount(profiles.length);
     setReminders(list);
+    setCgmModeState(mode);
+    setCgmOptIn(optIn);
     setPermission(perm);
     setMasterEnabled(prefs.enabled);
     setNowTs(Date.now());
     setAlarmAuthorized(isAlarmKitAvailable() && getAlarmAuthorizationStatus() === "authorized");
-  }, []);
+  }, [activeProfileId]);
 
   useEffect(() => {
     void reload().then(() => setLoaded(true));
   }, [reload]);
+
+  useEffect(
+    () =>
+      subscribeCgmChanges((change) => {
+        if (change.profileId === activeProfileId) void reload();
+      }),
+    [activeProfileId, reload]
+  );
 
   // Coming back from another SCREEN (the dashboard, having started a countdown)
   // has to redraw both the badges and the "Coming up" card. A return from
@@ -318,11 +353,20 @@ export default function RemindersScreen() {
   /** Re-reads the table, re-applies the schedule, and re-syncs the widget - the
    *  same three steps the notifications screen runs after every change, now
    *  shared by every mutation below (save, toggle, delete). */
-  async function afterChange() {
+  async function afterChange(): Promise<number> {
     await reload();
-    await applyNotificationPrefs();
+    const failed = await applyNotificationPrefs();
     if (activeProfile) void syncLiveData(activeProfile.id, unit);
+    return failed;
   }
+
+  /** The row as the scheduler sees it: a measurement reminder held back by CGM
+   *  mode reads as switched off, so the badge, the "coming up" card and the
+   *  switch can never claim something applyReminders will not arm. */
+  const rowIsOn = (row: Reminder) =>
+    row.enabled === 1 && !glucoseReminderPaused(row, cgmMode, cgmOptIn);
+  const rowIsPaused = (row: Reminder) =>
+    row.enabled === 1 && glucoseReminderPaused(row, cgmMode, cgmOptIn);
 
   /** The AlarmKit authorization every badge is read against. A store frame has
    *  to look like a real, working account (App Store 2.3.3), and the simulator
@@ -355,14 +399,14 @@ export default function RemindersScreen() {
       row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
     const delivery = reminderDelivery({
       masterEnabled,
-      rowEnabled: row.enabled === 1,
+      rowEnabled: rowIsOn(row),
       visibilityGateOpen: gateOpen,
       alarmEnabled: row.alarm_enabled === 1,
       alarmKitAvailable,
       alarmAuthorized: alarmGranted,
       notificationPermission: notifGranted,
     });
-    if (delivery === "none" && row.enabled === 1 && gateOpen) {
+    if (delivery === "none" && rowIsOn(row) && gateOpen) {
       // WHY nothing is armed decides what to tell the user, and the two causes
       // need opposite fixes: the app's own master switch is one tap away in
       // Settings > Notifications, while a refused OS permission can only be
@@ -396,7 +440,7 @@ export default function RemindersScreen() {
   const upcoming = useMemo(
     () =>
       buildUpcoming({
-        rows: reminders,
+        rows: withCgmPause(reminders, cgmMode, cgmOptIn),
         now: nowTs,
         windowMs: UPCOMING_WINDOW_MS,
         masterEnabled,
@@ -408,6 +452,8 @@ export default function RemindersScreen() {
       }),
     [
       reminders,
+      cgmMode,
+      cgmOptIn,
       nowTs,
       masterEnabled,
       notifGranted,
@@ -493,7 +539,14 @@ export default function RemindersScreen() {
   }
 
   async function toggleEnabled(row: Reminder, value: boolean) {
-    await updateReminder(row.id, { enabled: value });
+    if (row.type === "glucose" && isCgmModeActive(cgmMode) && activeProfile) {
+      // In CGM mode this switch is the per-reminder opt-in; the row's own
+      // enabled flag stays, so manual mode restores what was there before.
+      await setGlucoseOptIn(activeProfile.id, row.id, value);
+      if (value && row.enabled !== 1) await updateReminder(row.id, { enabled: true });
+    } else {
+      await updateReminder(row.id, { enabled: value });
+    }
     // Turning a reminder ON is the explicit user action that earns the OS
     // permission prompt (applyNotificationPrefs itself never prompts).
     if (value) await requestNotificationPermission();
@@ -522,13 +575,16 @@ export default function RemindersScreen() {
             if (editingReminder) {
               await updateReminder(editingReminder.id, input);
             } else {
-              await createReminder(input);
+              const created = await createReminder(input);
+              // Making a measurement reminder in CGM mode is the user asking for it.
+              if (created.type === "glucose" && isCgmModeActive(cgmMode) && activeProfile) {
+                await setGlucoseOptIn(activeProfile.id, created.id, true).catch(() => {});
+              }
             }
           },
           afterWrite: async () => {
             if (!editingReminder) await requestNotificationPermission();
-            await afterChange();
-            if (lastReminderScheduleFailures() > 0) {
+            if ((await afterChange()) > 0) {
               throw new Error("reminder schedule failed");
             }
           },
@@ -593,6 +649,17 @@ export default function RemindersScreen() {
             device would only raise a question nobody has. */}
         {profileCount > 1 ? ` ${t("reminders.profileScopeNote")}` : ""}
       </Text>
+
+      {/* CGM mode: measurement reminders are held back by default. Plain text
+          in the same card style as the empty state; nothing to tap, the
+          per-row switches are the way back. */}
+      {reminders.some(rowIsPaused) ? (
+        <View className="rounded-2xl bg-glass border border-hair px-3.5 py-3 mb-3">
+          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17 }}>
+            {t("cgmReminders.banner")}
+          </Text>
+        </View>
+      ) : null}
 
       {/* K3-2/X4: nothing is being armed because the app's OWN master switch
           is off, not because the OS refused anything. A separate row from the
@@ -665,6 +732,8 @@ export default function RemindersScreen() {
             label={reminderRowLabel(row)}
             day={dayFor(row)}
             badge={alarmKitAvailable ? badgeModeOf(row) : null}
+            on={rowIsOn(row)}
+            paused={rowIsPaused(row)}
             onPress={() => openEditSheet(row)}
             onLongPress={() => void confirmDelete(row)}
             onToggleMode={() => void toggleAlarmMode(row)}

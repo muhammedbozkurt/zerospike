@@ -541,6 +541,10 @@ const fr: TranslationSchema = {
     alarmTitleBasal: "Basale",
     alarmTitlePostMeal: "Post-repas",
   },
+  cgmReminders: {
+    pausedRow: "Désactivé en mode CGM",
+    banner: "Tant que vos valeurs proviennent du capteur, les rappels de mesure sont désactivés. Vous pouvez en réactiver un à la fois.",
+  },
   alarmTour: {
     step1Title: "Vos rappels peuvent maintenant sonner",
     step1Body: "Un rappel que vous créez sonne comme une vraie alarme, en plein écran, avec la commande d'arrêt du système.",

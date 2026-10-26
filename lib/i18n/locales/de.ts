@@ -541,6 +541,10 @@ const de: TranslationSchema = {
     alarmTitleBasal: "Basal",
     alarmTitlePostMeal: "Nach dem Essen",
   },
+  cgmReminders: {
+    pausedRow: "Im CGM-Modus aus",
+    banner: "Solange Ihre Werte vom Sensor kommen, sind die Messerinnerungen ausgeschaltet. Einzelne können Sie wieder einschalten.",
+  },
   alarmTour: {
     step1Title: "Ihre Erinnerungen können jetzt klingeln",
     step1Body: "Eine von Ihnen eingerichtete Erinnerung klingelt als echter Alarm, bildschirmfüllend und mit der Stopptaste des Systems.",

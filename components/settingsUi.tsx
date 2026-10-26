@@ -115,16 +115,14 @@ export function SettingsScaffold({
   children: React.ReactNode;
   overlay?: React.ReactNode;
   /** OPT-IN (ZS-L2): when true, the scroll body's content container grows to
-   *  fill the available height and, on a wide screen (tablet), centers its
-   *  children vertically - a short list (e.g. reminders) then fills a tall
-   *  iPad frame instead of sticking to the top. Off by default, so every
-   *  other settings sub-page keeps its exact top-aligned, natural-height
+   *  fill the available height. Children stay top-aligned: centering them
+   *  vertically left ~320 pt between the header and the first row on iPad.
+   *  Off by default, so every other settings sub-page keeps its natural-height
    *  layout. */
   fillHeight?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isWide } = useLayout();
   const gap = useSettingsGap();
   const scrollHint = useScrollHint(`settings.${scrollHintId ?? "none"}`, scrollHintId != null);
   const header = (
@@ -155,7 +153,6 @@ export function SettingsScaffold({
               : null),
             paddingBottom: insets.bottom + SPACE["2xl"],
             ...(fillHeight ? { flexGrow: 1 } : null),
-            ...(fillHeight && isWide ? { justifyContent: "center" } : null),
           }}
           showsVerticalScrollIndicator={false}
           onScroll={scrollHint.onScroll}

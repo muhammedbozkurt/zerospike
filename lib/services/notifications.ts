@@ -49,6 +49,14 @@ import {
   POST_MEAL_WINDOW_MIN,
   type PostMealTimerWindow,
 } from "../postMealTimer";
+import { getCgmMode, isCgmModeActive } from "../cgm/state";
+import { subscribeCgmChanges, type CgmChange } from "../cgm/importEvents";
+import { getGlucoseOptIn, glucoseReminderPaused } from "../cgm/reminderMode";
+import {
+  addPendingLink,
+  removePendingLink,
+  resolvePendingPostMealLinks,
+} from "../cgm/postMealLink";
 
 const BASAL_ID = "zerospike-basal-reminder";
 const MED_ID = "zerospike-med-reminder";
@@ -869,14 +877,13 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
  *  swept here defensively - see the note on the sweep below. */
 const LEGACY_FIXED_IDS: readonly string[] = [BASAL_ID, MED_ID, GLUCOSE_ID];
 
-let reminderScheduleFailures = 0;
-
-/** How many rows the latest applyReminders pass could not arm. */
-export function lastReminderScheduleFailures(): number {
-  return reminderScheduleFailures;
-}
-
-export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
+/**
+ * Returns how many rows this pass could not arm (0 when the profile could not
+ * be read and the pass left everything as it was). The count is the return
+ * value, not shared state, so a pass that never ran cannot hand back the
+ * previous pass's number.
+ */
+export async function applyReminders(prefs: NotificationPrefs): Promise<number> {
   // Resolved ONCE and reused for the profile id, the basal gate and the meds
   // gate below, instead of three independent (and previously redundant)
   // profile lookups. An unreadable active profile leaves whatever is already
@@ -887,7 +894,7 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
     profile = await readActiveProfile();
   } catch (err) {
     logCrash(err, { service: "notifications", op: "applyRemindersProfile" });
-    return;
+    return 0;
   }
   const profileId = profile?.id;
 
@@ -935,7 +942,13 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   const alarmAuthorized =
     alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized";
 
-  reminderScheduleFailures = 0;
+  // Sensor mode holds measurement reminders back (lib/cgm/reminderMode.ts);
+  // the rows themselves are never touched, so manual mode restores them.
+  const cgmMode = profileId ? await getCgmMode(profileId) : "manual";
+  const cgmOptIn =
+    profileId && isCgmModeActive(cgmMode) ? await getGlucoseOptIn(profileId) : new Set<string>();
+
+  let failures = 0;
   const known = new Set<string>();
   const knownAlarms = new Set<string>();
   for (const row of rows) {
@@ -951,7 +964,7 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
       // scheduled.
       const delivery = reminderDelivery({
         masterEnabled,
-        rowEnabled: row.enabled === 1,
+        rowEnabled: row.enabled === 1 && !glucoseReminderPaused(row, cgmMode, cgmOptIn),
         visibilityGateOpen: gateOpen,
         alarmEnabled: row.alarm_enabled === 1,
         alarmKitAvailable,
@@ -1009,7 +1022,7 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
     } catch (err) {
       // One row that cannot be armed must not stop the others or the orphan
       // sweeps below; the caller reads the count to tell the user.
-      reminderScheduleFailures++;
+      failures++;
       logCrash(err, { service: "notifications", op: "reminderRowScheduleFailed" });
     }
   }
@@ -1062,6 +1075,7 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
     if (alarmId === POSTMEAL_ALARM_ID) continue;
     if (!knownAlarms.has(alarmId)) await cancelAlarm(alarmId);
   }
+  return failures;
 }
 
 /** Weekly summary nudge at the user's chosen day + time (weekday: 1 = Sunday). */
@@ -1290,7 +1304,7 @@ async function readActiveProfile(): Promise<UserProfile | null> {
  */
 export async function applyNotificationPrefs(
   prefs?: NotificationPrefs
-): Promise<void> {
+): Promise<number> {
   const p = prefs ?? (await getNotificationPrefs());
 
   // One-time move of the pre-registry basal/med/glucose settings into the
@@ -1302,7 +1316,11 @@ export async function applyNotificationPrefs(
   // permission, each row's own enabled flag, the profile gates) - the single
   // replacement for what used to be three separate schedule/cancel pairs here,
   // now covering basal/med/glucose AND any custom reminder in one pass.
-  await applyReminders(p);
+  const failures = await applyReminders(p);
+
+  // Picks up a sensor-mode 2-hour value whose readings arrived while the app
+  // was closed. Reads and tags only; it never schedules anything.
+  void resolveActiveProfilePostMealLinks();
 
   // The master switch (and a revoked permission) also takes down the pending
   // post-meal check and its Live Activity. It is event-driven, so it is not
@@ -1318,7 +1336,7 @@ export async function applyNotificationPrefs(
     // OFF still let a re-measure nudge and a trial reminder arrive days later.
     await cancelLowFollowup();
     await cancelTrialReminder();
-    return;
+    return failures;
   }
 
   const granted = await hasNotificationPermission();
@@ -1337,8 +1355,12 @@ export async function applyNotificationPrefs(
       alarmKitAvailable: alarmKit,
       alarmAuthorized: alarmKit && getAlarmAuthorizationStatus() === "authorized",
     });
-    if (!postMealRingsAsAlarm) await cancelPostMealTimer();
-    return;
+    // A sensor-mode countdown arms no notification, so the missing permission
+    // takes nothing away from it.
+    if (!postMealRingsAsAlarm && !(await runningPostMealIsSensorOwned())) {
+      await cancelPostMealTimer();
+    }
+    return failures;
   }
 
   // A running countdown that belongs to ANOTHER profile has no business on
@@ -1364,6 +1386,7 @@ export async function applyNotificationPrefs(
   // keeps its fire moment and only has its copy refreshed.
   if (p.idleReminder) await scheduleIdleReminder((await readIdleEnd()) ?? undefined);
   else await cancelIdleReminder();
+  return failures;
 }
 
 // ── Trial-ending reminder ──────────────────────────────────────────────────
@@ -1626,6 +1649,22 @@ async function schedulePostMealAt(opts: {
     }
   }
 
+  // Sensor mode: the countdown is shown but nothing is armed to ring at its
+  // end, because the 2-hour value is taken from the sensor readings instead
+  // (lib/cgm/postMealLink.ts). A delivery left over from manual mode goes.
+  const sensorProfileId =
+    opts.profileId ?? (await readActiveProfile().catch(() => null))?.id;
+  if (sensorProfileId && (await sensorModeActive(sensorProfileId))) {
+    await cancelAlarm(POSTMEAL_ALARM_ID);
+    try {
+      await addPendingLink(sensorProfileId, { startedAt, targetAt: endsAt });
+    } catch (err) {
+      logCrash(err, { service: "notifications", op: "addPostMealLink" });
+    }
+    await mirrorPostMealActivity(endsAt, startedAt);
+    return true;
+  }
+
   try {
     const prefs = await getNotificationPrefs();
     const alarmKitAvailable = isAlarmKitAvailable();
@@ -1826,6 +1865,7 @@ async function readPostMealTimerProfile(): Promise<string | null> {
  * does have to be taken down, because there the user ended the window early.
  */
 export async function completePostMealTimer(): Promise<void> {
+  const ownerProfileId = await readPostMealTimerProfile();
   try {
     await AsyncStorage.multiRemove([
       POSTMEAL_TIMER_END_KEY,
@@ -1837,6 +1877,7 @@ export async function completePostMealTimer(): Promise<void> {
     logCrash(err, { service: "notifications", op: "completePostMealTimer" });
   }
   endPostMealActivity();
+  if (ownerProfileId) void resolvePendingPostMealLinks(ownerProfileId);
 }
 
 /**
@@ -1856,6 +1897,18 @@ export async function cancelPostMealTimer(): Promise<void> {
     logCrash(err, { service: "notifications", op: "cancelPostMeal" });
   }
   await cancelAlarm(POSTMEAL_ALARM_ID);
+  // The user ended this window themselves (or logged the reading by hand), so
+  // no sensor value is to be taken for it.
+  const cancelledStart = await readPostMealStart();
+  const cancelledOwner = await readPostMealTimerProfile();
+  const cancelledEnd = Number(await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY).catch(() => null));
+  if (cancelledStart != null && cancelledOwner && cancelledEnd > Date.now()) {
+    try {
+      await removePendingLink(cancelledOwner, cancelledStart);
+    } catch (err) {
+      logCrash(err, { service: "notifications", op: "removePostMealLink" });
+    }
+  }
   try {
     await AsyncStorage.multiRemove([
       POSTMEAL_TIMER_END_KEY,
@@ -1912,6 +1965,10 @@ export async function schedulePostMealReminder(
 ): Promise<PostMealAutoStartResult> {
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled || !prefs.postMeal) return "off";
+  const profile = await readActiveProfile();
+  // Sensor mode: a logged meal never arms a measurement reminder; only the
+  // countdown the user starts themselves runs (startPostMealTimer).
+  if (profile && (await sensorModeActive(profile.id))) return "off";
   const loggedAtMs =
     loggedAt == null ? Date.now() : loggedAt instanceof Date ? loggedAt.getTime() : loggedAt;
   const decision = decidePostMealAutoStart({
@@ -1921,7 +1978,6 @@ export async function schedulePostMealReminder(
   });
   if (decision !== "start") return decision;
   if (!(await ensureNotificationPermission())) return "off";
-  const profile = await readActiveProfile();
   // The automatic path always arms the full window from now; only the "a
   // while ago" sheet ever starts one part-way through.
   await schedulePostMealAt({
@@ -1967,8 +2023,10 @@ export async function startPostMealTimer(
 ): Promise<PostMealStartOutcome> {
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled) return { kind: "off" };
-  if (!(await ensureNotificationPermission())) return { kind: "off" };
   const profile = await readActiveProfile();
+  // Sensor mode arms no notification, so it has nothing to ask the OS for.
+  const sensorOwned = profile != null && (await sensorModeActive(profile.id));
+  if (!sensorOwned && !(await ensureNotificationPermission())) return { kind: "off" };
   const next = startPostMealLate({ minutesAgo, now: Date.now() });
   if (next.kind === "elapsed") return { kind: "elapsed" };
   const result = { deliveryMissed: false };
@@ -1986,12 +2044,14 @@ export async function startPostMealTimer(
   return {
     kind: "started",
     minutesLeft: Math.round(next.remainingMs / 60_000),
-    timingNotice: postMealTimingNotice({
-      platform: Platform.OS,
-      authStatus: getAlarmAuthorizationStatus(),
-      deliveryMissed: result.deliveryMissed,
-      alarmPref: prefs.postMealAlarm,
-    }),
+    timingNotice: sensorOwned
+      ? "none"
+      : postMealTimingNotice({
+          platform: Platform.OS,
+          authStatus: getAlarmAuthorizationStatus(),
+          deliveryMissed: result.deliveryMissed,
+          alarmPref: prefs.postMealAlarm,
+        }),
   };
 }
 
@@ -2487,4 +2547,86 @@ async function rearmOneOff(
     return false;
   }
 }
+
+// ── Sensor (CGM) mode ───────────────────────────────────────────────────────
+// Which reminders a sensor-fed profile gets is decided where they are armed
+// (applyReminders, schedulePostMealAt, schedulePostMealReminder,
+// startPostMealTimer). What is below only reacts to the app's own
+// "sensor data changed" bus, and never schedules anything for an import.
+
+async function sensorModeActive(profileId: string): Promise<boolean> {
+  return isCgmModeActive(await getCgmMode(profileId));
+}
+
+/** True when the running countdown belongs to a profile in a sensor mode. */
+async function runningPostMealIsSensorOwned(): Promise<boolean> {
+  try {
+    const running = await getPostMealTimerState();
+    if (running == null) return false;
+    const owner = running.profileId ?? (await readActiveProfile())?.id;
+    return owner != null && (await sensorModeActive(owner));
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "runningPostMealIsSensorOwned" });
+    return false;
+  }
+}
+
+async function resolveActiveProfilePostMealLinks(): Promise<void> {
+  try {
+    const profile = await readActiveProfile();
+    if (profile) await resolvePendingPostMealLinks(profile.id);
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "resolvePostMealLinks" });
+  }
+}
+
+/** Moves a countdown that is already running to the delivery its profile's mode
+ *  calls for: no notification in a sensor mode, the usual one back in manual. */
+async function rearmRunningPostMealForMode(profileId: string): Promise<void> {
+  const running = await getPostMealTimerState();
+  if (running == null) return;
+  if (running.profileId && running.profileId !== profileId) return;
+  const remainingMs = running.endsAt - Date.now();
+  if (remainingMs <= 0) return;
+  if (!(await sensorModeActive(profileId))) {
+    const prefs = await getNotificationPrefs();
+    const alarmKit = isAlarmKitAvailable();
+    const canDeliver =
+      (await hasNotificationPermission()) ||
+      shouldUseAlarm({
+        alarmEnabled: prefs.postMealAlarm,
+        alarmKitAvailable: alarmKit,
+        alarmAuthorized: alarmKit && getAlarmAuthorizationStatus() === "authorized",
+      });
+    if (!prefs.enabled || !canDeliver) return;
+  }
+  await schedulePostMealAt({
+    minutes: remainingMs / 60_000,
+    windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
+    endsAt: running.endsAt,
+    startedAt: running.startedAt,
+    profileId: running.profileId,
+    minSeconds: 1,
+  });
+}
+
+async function onCgmChange(change: CgmChange): Promise<void> {
+  try {
+    if (change.kind === "import") {
+      await resolvePendingPostMealLinks(change.profileId);
+      return;
+    }
+    if (change.kind !== "mode") return;
+    const active = await readActiveProfile();
+    if (active?.id !== change.profileId) return;
+    await applyNotificationPrefs();
+    await rearmRunningPostMealForMode(change.profileId);
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "cgmChange", kind: change.kind });
+  }
+}
+
+subscribeCgmChanges((change) => {
+  void onCgmChange(change);
+});
 

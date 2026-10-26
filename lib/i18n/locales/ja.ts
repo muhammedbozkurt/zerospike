@@ -541,6 +541,10 @@ const ja: TranslationSchema = {
     alarmTitleBasal: "基礎",
     alarmTitlePostMeal: "食後",
   },
+  cgmReminders: {
+    pausedRow: "CGMモードではオフ",
+    banner: "測定値がセンサーから届いている間、測定のリマインダーはオフです。必要なものだけ個別にオンに戻せます。",
+  },
   alarmTour: {
     step1Title: "リマインダーが鳴らせるようになりました",
     step1Body: "設定したリマインダーは本物のアラームとして鳴ります。全画面で、システム自体の停止操作が表示されます。",
