@@ -418,6 +418,8 @@ const pt: TranslationSchema = {
     autoGlucose: "O valor de glicemia que você digitou também foi registrado.",
     correctionTargetNote: "A correção mira o meio da sua faixa-alvo ({{value}} {{unit}}).",
     carbFocusTitle: "Registro de carboidratos",
+    regionInfoTitle: "Indisponível na sua região",
+    regionInfoBody: "A calculadora de refeições não faz parte do app na sua região. Você ainda pode registrar refeições, medições e notas normalmente.",
     carbFocusBody: "A seção de dose está oculta porque você informou que não usa insulina; dá para mudar isso em Configurações.",
     saveMealAndDose: "Salvar refeição e dose",
     saveFailed: "Não foi possível salvar. Tente novamente.",

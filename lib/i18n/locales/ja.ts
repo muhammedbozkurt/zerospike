@@ -418,6 +418,8 @@ const ja: TranslationSchema = {
     autoGlucose: "入力した血糖値も記録しました。",
     correctionTargetNote: "補正は目標範囲の中央({{value}} {{unit}})を基準にしています。",
     carbFocusTitle: "炭水化物の記録",
+    regionInfoTitle: "お住まいの地域ではご利用いただけません",
+    regionInfoBody: "お住まいの地域では、食事の計算機能はアプリに含まれません。食事、測定値、メモの記録は引き続きご利用いただけます。",
     carbFocusBody: "インスリンを使わない設定のため、インスリン量の欄は非表示です。設定で変更できます。",
     saveMealAndDose: "食事とインスリン量を保存",
     saveFailed: "保存できませんでした。もう一度お試しください。",

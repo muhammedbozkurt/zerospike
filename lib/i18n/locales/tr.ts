@@ -416,6 +416,8 @@ const tr = {
     autoGlucose: "Girdiğiniz şeker ölçümü de kaydedildi.",
     correctionTargetNote: "Düzeltme, hedef aralığının ortasını ({{value}} {{unit}}) esas alır.",
     carbFocusTitle: "Karbonhidrat kaydı",
+    regionInfoTitle: "Bölgenizde kullanılamıyor",
+    regionInfoBody: "Öğün hesaplayıcı bölgenizde uygulamada yer almaz. Öğünleri, ölçümleri ve notları her zamanki gibi kaydedebilirsiniz.",
     carbFocusBody: "İnsülin kullanmadığınız için doz bölümü gizli; Ayarlar'dan değiştirebilirsiniz.",
     saveMealAndDose: "Öğünü ve dozu kaydet",
     saveFailed: "Kaydedilemedi. Lütfen tekrar deneyin.",

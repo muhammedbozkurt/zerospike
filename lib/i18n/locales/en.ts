@@ -418,6 +418,8 @@ const en: TranslationSchema = {
     autoGlucose: "The glucose value you entered was logged too.",
     correctionTargetNote: "The correction aims at the middle of your target range ({{value}} {{unit}}).",
     carbFocusTitle: "Carb logging",
+    regionInfoTitle: "Not available in your region",
+    regionInfoBody: "The meal calculator is not part of the app in your region. You can still log meals, readings and notes as usual.",
     carbFocusBody: "The dose section is hidden because you said you don't use insulin; you can change this in Settings.",
     saveMealAndDose: "Save meal and dose",
     saveFailed: "Could not save. Please try again.",

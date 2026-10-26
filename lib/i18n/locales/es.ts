@@ -418,6 +418,8 @@ const es: TranslationSchema = {
     autoGlucose: "El valor de glucosa que introdujo también se registró.",
     correctionTargetNote: "La corrección apunta al punto medio de su rango objetivo ({{value}} {{unit}}).",
     carbFocusTitle: "Registro de carbohidratos",
+    regionInfoTitle: "No disponible en su región",
+    regionInfoBody: "La calculadora de comidas no forma parte de la aplicación en su región. Puede seguir registrando comidas, mediciones y notas como siempre.",
     carbFocusBody: "La sección de dosis está oculta porque no usa insulina; puede cambiarlo en Ajustes.",
     saveMealAndDose: "Guardar la comida y la dosis",
     saveFailed: "No se ha podido guardar. Vuelva a intentarlo.",

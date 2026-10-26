@@ -418,6 +418,8 @@ const fr: TranslationSchema = {
     autoGlucose: "La valeur de glycémie saisie a aussi été enregistrée.",
     correctionTargetNote: "La correction vise le milieu de votre plage cible ({{value}} {{unit}}).",
     carbFocusTitle: "Enregistrement des glucides",
+    regionInfoTitle: "Non disponible dans votre région",
+    regionInfoBody: "Le calculateur de repas ne fait pas partie de l'application dans votre région. Vous pouvez toujours enregistrer vos repas, mesures et notes comme d'habitude.",
     carbFocusBody: "La section dose est masquée car vous n'utilisez pas d'insuline ; modifiable dans les Réglages.",
     saveMealAndDose: "Enregistrer le repas et la dose",
     saveFailed: "Enregistrement impossible. Veuillez réessayer.",

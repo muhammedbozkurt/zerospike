@@ -418,6 +418,8 @@ const it: TranslationSchema = {
     autoGlucose: "Anche il valore di glicemia inserito è stato registrato.",
     correctionTargetNote: "La correzione punta al centro del Suo intervallo target ({{value}} {{unit}}).",
     carbFocusTitle: "Registrazione dei carboidrati",
+    regionInfoTitle: "Non disponibile nella Sua regione",
+    regionInfoBody: "Il calcolatore dei pasti non fa parte dell'app nella Sua regione. Può continuare a registrare pasti, misurazioni e note come al solito.",
     carbFocusBody: "La sezione della dose è nascosta perché ha indicato di non usare insulina; può cambiarlo nelle Impostazioni.",
     saveMealAndDose: "Salva pasto e dose",
     saveFailed: "Salvataggio non riuscito. Riprovi.",

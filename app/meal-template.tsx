@@ -44,6 +44,7 @@ import type { Food, MealSlot, MealTemplate } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
 import { CATEGORIES, type Category } from "../lib/db/categories";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
+import { calculatorHiddenForRegion } from "../lib/regionFlags";
 import { Field, Segmented } from "../components/ui";
 import { DirIcon } from "../components/DirIcon";
 import { useStepperValidity } from "../components/Stepper";
@@ -141,7 +142,7 @@ function MealTemplateScreen() {
   const isEdit = typeof templateId === "string" && templateId.length > 0;
   const isLog = isEdit && mode === "log";
   const isRename = isEdit && mode === "rename";
-  const showsDose = insulinModeShowsBolus(insulinModeOf(activeProfile));
+  const showsDose = insulinModeShowsBolus(insulinModeOf(activeProfile)) && !calculatorHiddenForRegion();
 
   const [template, setTemplate] = useState<MealTemplate | null>(null);
   const [siblings, setSiblings] = useState<MealTemplate[]>([]);

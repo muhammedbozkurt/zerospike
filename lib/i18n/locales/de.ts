@@ -418,6 +418,8 @@ const de: TranslationSchema = {
     autoGlucose: "Der eingegebene Glukosewert wurde ebenfalls erfasst.",
     correctionTargetNote: "Die Korrektur zielt auf die Mitte Ihres Zielbereichs ({{value}} {{unit}}).",
     carbFocusTitle: "Kohlenhydrat-Eintrag",
+    regionInfoTitle: "In Ihrer Region nicht verfügbar",
+    regionInfoBody: "Der Mahlzeitenrechner ist in Ihrer Region nicht Teil der App. Mahlzeiten, Messwerte und Notizen können Sie weiterhin wie gewohnt eintragen.",
     carbFocusBody: "Der Dosisbereich ist ausgeblendet, weil Sie kein Insulin verwenden; in den Einstellungen änderbar.",
     saveMealAndDose: "Mahlzeit und Dosis speichern",
     saveFailed: "Speichern nicht möglich. Bitte versuchen Sie es erneut.",
