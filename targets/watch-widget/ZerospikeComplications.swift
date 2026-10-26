@@ -73,6 +73,17 @@ struct ComplicationProvider: TimelineProvider {
     let now = Date()
     let data = LiveDataStore.read()
     let entry = ComplicationEntry(date: now, data: data)
+    // A sensor reading's age moves on the clock alone, so a sensor mode gets one
+    // entry per minute for a quarter hour instead of a single frozen one.
+    var entries = [entry]
+    if data?.activeCgm != nil {
+      entries = (0..<15).map { minute in
+        ComplicationEntry(
+          date: Calendar.current.date(byAdding: .minute, value: minute, to: now) ?? now,
+          data: data
+        )
+      }
+    }
     // The watch app calls WidgetCenter.reloadAllTimelines() on every incoming
     // applicationContext, so this policy is only a safety net between pushes.
     // When a reminder is due sooner than that, refresh right at `due` instead:
@@ -85,7 +96,7 @@ struct ComplicationProvider: TimelineProvider {
     if let due = data?.nextReminderDate, due > now, due < fallback {
       nextRefresh = due
     }
-    completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+    completion(Timeline(entries: entries, policy: .after(nextRefresh)))
   }
 }
 
@@ -93,17 +104,30 @@ struct ZerospikeComplicationsEntryView: View {
   @Environment(\.widgetFamily) private var family
   var entry: ComplicationEntry
 
-  private var readingMgdl: Double? { entry.data?.lastGlucoseMgdl }
-  private var reading: String { entry.data?.displayGlucose ?? "--" }
+  // In a sensor mode the newest sensor value and its arrow replace the last
+  // logged reading; nil keeps every line below as it was.
+  private var cgm: LiveData.Cgm? { entry.data?.activeCgm }
+  private var readingMgdl: Double? { cgm?.mgdl ?? entry.data?.lastGlucoseMgdl }
+  private var reading: String {
+    if let cgm { return cgm.readingText(now: entry.date) }
+    return entry.data?.displayGlucose ?? "--"
+  }
   private var readingColor: Color {
+    // A sensor value is drawn plain, with no band colour; only faded once old.
+    if let cgm { return cgm.isStale(now: entry.date) ? GlucoseColor.muted : .white }
     guard let mgdl = readingMgdl else { return GlucoseColor.muted }
     return GlucoseColor.forReading(mgdl, band: entry.data?.band)
   }
 
   // With no reading yet, the short localized noData label (from the snapshot)
   // accompanies the "--" instead of a bare unit, so the state reads as "no
-  // entries" rather than a broken face.
+  // entries" rather than a broken face. In a sensor mode the rectangular face
+  // adds the reading's age after the unit.
   private var caption: String {
+    if let cgm, family != .accessoryCircular {
+      let age = cgm.ageLabel(entry.data?.labels, now: entry.date, short: true)
+      return "\(entry.data?.unitLabel ?? "") \(age)"
+    }
     if readingMgdl == nil, let noData = entry.data?.labels?.noData {
       return noData
     }

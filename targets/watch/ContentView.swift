@@ -50,9 +50,17 @@ struct ContentView: View {
   @ScaledMetric(relativeTo: .caption2) private var reminderLabelSize: CGFloat = 9
   @ScaledMetric(relativeTo: .footnote) private var timerSize: CGFloat = 15
 
-  private var readingMgdl: Double? { data?.lastGlucoseMgdl }
-  private var reading: String { data?.displayGlucose ?? "--" }
+  // In a sensor mode the newest sensor value, its arrow and its age replace
+  // the last logged reading; nil keeps every line below as it was.
+  private var cgm: LiveData.Cgm? { data?.activeCgm }
+  private var readingMgdl: Double? { cgm?.mgdl ?? data?.lastGlucoseMgdl }
+  private var reading: String {
+    if let cgm { return cgm.readingText(now: Date()) }
+    return data?.displayGlucose ?? "--"
+  }
   private var readingColor: Color {
+    // A sensor value is drawn plain, with no band colour; only faded once old.
+    if let cgm { return cgm.isStale(now: Date()) ? GlucoseColor.muted : .white }
     guard let mgdl = readingMgdl else { return GlucoseColor.muted }
     return GlucoseColor.forReading(mgdl, band: data?.band)
   }
@@ -60,6 +68,7 @@ struct ContentView: View {
   // Hand-composed instead of `Text(date, style: .relative)` - see the header
   // comment for why. Re-evaluated on every `refresh` tick.
   private var elapsedText: String {
+    if let cgm { return cgm.ageLabel(data?.labels, now: Date()) }
     guard let date = data?.lastReadingDate else { return "" }
     let totalMinutes = max(0, Int(Date().timeIntervalSince(date) / 60))
     let hours = totalMinutes / 60
@@ -97,6 +106,12 @@ struct ContentView: View {
     GeometryReader { proxy in
       ScrollView {
         VStack(spacing: 4) {
+          if cgm != nil {
+            Text(data?.labels?.cgm ?? "CGM")
+              .font(.caption2)
+              .foregroundColor(GlucoseColor.muted)
+          }
+
           Text(reading)
             .font(.system(size: readingSize, weight: .bold, design: .rounded))
             .foregroundColor(readingColor)
@@ -108,7 +123,7 @@ struct ContentView: View {
             .foregroundColor(GlucoseColor.muted)
             .fixedSize(horizontal: false, vertical: true)
 
-          if data?.lastReadingDate != nil {
+          if cgm != nil || data?.lastReadingDate != nil {
             Text(elapsedText)
               .font(.footnote)
               .foregroundColor(GlucoseColor.muted)

@@ -60,6 +60,9 @@ struct QuickAddEntry: TimelineEntry {
   /// snapshot written before it existed - or none at all - must keep the widget
   /// exactly as the build that wrote it drew it.
   var usesOralMeds: Bool = false
+  /// True while a sensor feeds the profile (LiveData.activeCgm). The glucose log
+  /// then steps back: the meal flow takes the primary tile.
+  var cgmActive: Bool = false
 
   /// The logging flows, in the order they are used. The first one is the primary:
   /// it gets the large tile on medium and the whole widget on small. The
@@ -110,6 +113,7 @@ struct QuickAddEntry: TimelineEntry {
         )
       )
     }
+    if cgmActive { items.swapAt(0, 1) }
     return items
   }
 }
@@ -127,7 +131,8 @@ struct QuickAddProvider: TimelineProvider {
       labels: data?.labels,
       lang: data?.lang,
       usesInsulin: data?.usesInsulin ?? true,
-      usesOralMeds: data?.usesOralMeds ?? false
+      usesOralMeds: data?.usesOralMeds ?? false,
+      cgmActive: data?.activeCgm != nil
     )
   }
 
