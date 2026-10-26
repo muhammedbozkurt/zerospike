@@ -42,7 +42,9 @@ import {
   getRecentMeals,
   type RecentMeal,
 } from "../../lib/db/logs";
-import { getJournal, type GlucoseEntry, type MealEntry } from "../../lib/db/journal";
+import type { GlucoseEntry, MealEntry } from "../../lib/db/journal";
+import { getTodayFoodFeed } from "../../lib/db/meals";
+import { runExclusive, runSideStep } from "../../lib/saveSteps";
 import {
   createTemplate,
   deleteTemplate,
@@ -442,6 +444,8 @@ function TemplateConfirmSheet({
   );
 }
 
+const reportStep = (err: unknown, step: string) => logCrash(err, { screen: "food", step });
+
 export default function FoodScreen() {
   const { t, i18n } = useTranslation();
   const choiceText = useCarbChoiceText();
@@ -557,13 +561,7 @@ export default function FoodScreen() {
   const loadToday = useCallback(async () => {
     if (!activeProfile) return;
     try {
-      const feed = await getJournal(activeProfile.id, lang, 120);
-      const todayKey = formatDateKey(new Date().toISOString());
-      const meals = feed.filter(
-        (e): e is MealEntry =>
-          e.kind === "meal" && formatDateKey(e.logged_at) === todayKey
-      );
-      const readings = feed.filter((e): e is GlucoseEntry => e.kind === "glucose");
+      const { meals, readings } = await getTodayFoodFeed(activeProfile.id, lang);
       setTodayMeals((prev) => (sameList(prev, meals) ? prev : meals));
       setFeedReadings((prev) => (sameList(prev, readings) ? prev : readings));
     } catch (err) {
@@ -695,6 +693,7 @@ export default function FoodScreen() {
    * adjustable there); a typed-name meal has no catalogue row to reopen, so it
    * is written straight back with the same name and carbs it had last time.
    */
+  const reLogLock = useRef(false);
   async function reLog(r: RecentMeal) {
     if (r.food) {
       router.push({
@@ -704,46 +703,57 @@ export default function FoodScreen() {
       return;
     }
     if (!activeProfile) return;
-    const meal = await addMealLog({
-      profile_id: activeProfile.id,
-      food_id: null,
-      custom_food_name: r.name,
-      portion_g: r.portion_g,
-      calculated_carbs_g: r.carbs_g,
-      insulin_dose_units: 0,
-    });
-    // Same side effects as every other one-tap meal write (template relog,
-    // calculator save): the post-meal reminder and the journal-activity signal
-    // used to fire for every path except this one.
-    logEvent("log_added", { kind: "meal" });
-    void noteFirstLog("meal");
-    hapticSuccess();
-    await schedulePostMealReminder();
-    void noteJournalActivity();
-    bumpData();
-    // One tap wrote a real journal entry with no confirmation and no way back; it
-    // now carries the same undo as every other write (the calculator's save toast).
-    toast(t("calculator.savedRecord"), "success", {
-      label: t("common.undo"),
-      onPress: () => {
-        void (async () => {
-          await deleteMealRecord(meal.id);
-          // The countdown this very save armed (schedulePostMealReminder
-          // above) has to go with the record: the same shared post-delete
-          // cleanup every other delete path runs (lib/afterDelete.ts).
-          await applyAfterDelete([
-            {
-              id: meal.id,
-              profileId: meal.profile_id,
-              loggedAtMs: new Date(meal.logged_at).getTime(),
-              templateId: meal.meal_template_id,
-            },
-          ]);
-          bumpData();
-          toast(t("calculator.undone"), "info");
-        })();
+    const profile = activeProfile;
+    await runExclusive(
+      reLogLock,
+      async () => {
+        const meal = await addMealLog({
+          profile_id: profile.id,
+          food_id: null,
+          custom_food_name: r.name,
+          portion_g: r.portion_g,
+          calculated_carbs_g: r.carbs_g,
+          insulin_dose_units: 0,
+        });
+        // The row exists from here on: nothing below may undo that or hide it.
+        // Same side effects as every other one-tap meal write (template relog,
+        // calculator save): the post-meal reminder and the journal-activity signal
+        // used to fire for every path except this one.
+        logEvent("log_added", { kind: "meal" });
+        void noteFirstLog("meal");
+        hapticSuccess();
+        await runSideStep("postMealReminder", () => schedulePostMealReminder(), reportStep);
+        void noteJournalActivity();
+        bumpData();
+        // One tap wrote a real journal entry with no confirmation and no way back; it
+        // now carries the same undo as every other write (the calculator's save toast).
+        toast(t("calculator.savedRecord"), "success", {
+          label: t("common.undo"),
+          onPress: () => {
+            void (async () => {
+              await deleteMealRecord(meal.id);
+              // The countdown this very save armed (schedulePostMealReminder
+              // above) has to go with the record: the same shared post-delete
+              // cleanup every other delete path runs (lib/afterDelete.ts).
+              await applyAfterDelete([
+                {
+                  id: meal.id,
+                  profileId: meal.profile_id,
+                  loggedAtMs: new Date(meal.logged_at).getTime(),
+                  templateId: meal.meal_template_id,
+                },
+              ]);
+              bumpData();
+              toast(t("calculator.undone"), "info");
+            })();
+          },
+        });
       },
-    });
+      (err) => {
+        logCrash(err, { screen: "food", save: "reLog" });
+        toast(t("common.saveFailed"), "error");
+      }
+    );
   }
 
   // Display order: the current slot first, then the slotless ones, then the rest -
@@ -788,17 +798,25 @@ export default function FoodScreen() {
     setConfirmSaving(true);
     try {
       const { id, name, use_count: priorUse, last_used_at: priorAt } = entry.template;
-      const meal = await logTemplate(activeProfile.id, id, {
-        insulin_dose_units: 0,
-        logged_at: when.toISOString(),
-      });
+      let meal: Awaited<ReturnType<typeof logTemplate>>;
+      try {
+        meal = await logTemplate(activeProfile.id, id, {
+          insulin_dose_units: 0,
+          logged_at: when.toISOString(),
+          onSideEffectError: (err) => reportStep(err, "touchTemplate"),
+        });
+      } catch (err) {
+        logCrash(err, { screen: "food", save: "templateLog" });
+        toast(t("common.saveFailed"), "error");
+        return;
+      }
       logEvent("log_added", { kind: "meal" });
       void noteFirstLog("meal");
       hapticSuccess();
       // `when` carries the sheet's own time pick straight through: a running
       // timer is left untouched and a backdated pick does not start a fresh one
       // (see decidePostMealAutoStart, lib/postMealTimer.ts).
-      await schedulePostMealReminder(when);
+      await runSideStep("postMealReminder", () => schedulePostMealReminder(when), reportStep);
       void noteJournalActivity();
       bumpData();
       setConfirmEntry(null);
@@ -1043,7 +1061,7 @@ export default function FoodScreen() {
       logEvent("log_added", { kind: "meal" });
       void noteFirstLog("meal");
       hapticSuccess();
-      await schedulePostMealReminder();
+      await runSideStep("postMealReminder", () => schedulePostMealReminder(), reportStep);
       void noteJournalActivity();
       setComposeItems([]);
       setComposeOpen(false);
@@ -1072,6 +1090,7 @@ export default function FoodScreen() {
       });
     } catch (err) {
       logCrash(err, { screen: "food", save: "compose" });
+      toast(t("common.saveFailed"), "error");
     } finally {
       setComposeSaving(false);
     }
@@ -1091,6 +1110,7 @@ export default function FoodScreen() {
       toast(t("mealCompose.templateSaved"), "success");
     } catch (err) {
       logCrash(err, { screen: "food", save: "composeTemplate" });
+      toast(t("common.saveFailed"), "error");
     } finally {
       setComposeSaving(false);
     }
