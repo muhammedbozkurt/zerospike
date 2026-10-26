@@ -17,6 +17,8 @@
     "node_modules",
     "scripts",
     ".tmp",
-    "supabase"
+    "supabase",
+    "scratchpad",
+    "zerospike-store"
   ]
 }
