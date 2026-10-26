@@ -66,6 +66,7 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logCrash, logEvent } from "../lib/analytics";
+import { trackSaveFailed } from "../lib/analytics/saveFailed";
 import { runSideStep } from "../lib/saveSteps";
 import { noteFirstLog } from "../lib/services/firstLog";
 import {
@@ -121,8 +122,10 @@ function localDayRange(key: string | undefined): DateRange | null {
  * against the daily target would rate the meal, and rating a meal is exactly the
  * comment this app does not make.
  */
-const reportStep = (err: unknown, step: string) =>
+const reportStep = (err: unknown, step: string) => {
   logCrash(err, { screen: "meal-template", step });
+  trackSaveFailed("meal", "side");
+};
 
 function MealTemplateScreen() {
   const { t } = useTranslation();
@@ -425,6 +428,7 @@ function MealTemplateScreen() {
       router.back();
     } catch (err) {
       logCrash(err, { screen: "meal-template", save: "template" });
+      trackSaveFailed("meal", "write");
       toast(t("common.saveFailed"), "error");
     } finally {
       setSaving(false);
@@ -504,6 +508,7 @@ function MealTemplateScreen() {
       router.back();
     } catch (err) {
       logCrash(err, { screen: "meal-template", save: "logNow" });
+      trackSaveFailed("meal", "write");
       toast(t("common.saveFailed"), "error");
     } finally {
       setSaving(false);

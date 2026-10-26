@@ -28,6 +28,7 @@ import { Row, Txt } from "../components/ui";
 import { formatTime, isolateLtr, num, relativeDay } from "../lib/format";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logCrash, logEvent } from "../lib/analytics";
+import { trackSaveFailed } from "../lib/analytics/saveFailed";
 import { noteFirstLog } from "../lib/services/firstLog";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { doseHintVisible } from "../lib/injectionDose";
@@ -293,7 +294,7 @@ function BasalConfirmScreen() {
         setLoad({ kind: "duplicate", ctx, existing: result.existing });
         return;
       }
-      logEvent("log_added", { kind: "basal" });
+      logEvent("log_added", { kind: "basal", insulin_kind: "basal" });
       void noteFirstLog("basal");
       hapticSuccess();
       bumpData();
@@ -303,6 +304,7 @@ function BasalConfirmScreen() {
       dismiss();
     } catch (err) {
       logCrash(err, { screen: "basalConfirm", step: "save" });
+      trackSaveFailed("injection", "write");
       setSaveError(true);
     } finally {
       savingRef.current = false;

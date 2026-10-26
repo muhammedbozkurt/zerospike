@@ -80,6 +80,7 @@ import {
 } from "../../lib/services/notifications";
 import { applyAfterDelete } from "../../lib/afterDelete";
 import { logCrash, logEvent } from "../../lib/analytics";
+import { trackSaveFailed } from "../../lib/analytics/saveFailed";
 import { noteFirstLog } from "../../lib/services/firstLog";
 import type { Food, Lang, MealSlot } from "../../lib/db/types";
 import { foodName } from "../../lib/db/types";
@@ -445,7 +446,10 @@ function TemplateConfirmSheet({
   );
 }
 
-const reportStep = (err: unknown, step: string) => logCrash(err, { screen: "food", step });
+const reportStep = (err: unknown, step: string) => {
+  logCrash(err, { screen: "food", step });
+  trackSaveFailed("meal", "side");
+};
 
 export default function FoodScreen() {
   const { t, i18n } = useTranslation();
@@ -759,6 +763,7 @@ export default function FoodScreen() {
       },
       (err) => {
         logCrash(err, { screen: "food", save: "reLog" });
+        trackSaveFailed("meal", "write");
         toast(t("common.saveFailed"), "error");
       }
     );
@@ -815,6 +820,7 @@ export default function FoodScreen() {
         });
       } catch (err) {
         logCrash(err, { screen: "food", save: "templateLog" });
+        trackSaveFailed("meal", "write");
         toast(t("common.saveFailed"), "error");
         return;
       }
@@ -1098,6 +1104,7 @@ export default function FoodScreen() {
       });
     } catch (err) {
       logCrash(err, { screen: "food", save: "compose" });
+      trackSaveFailed("meal", "write");
       toast(t("common.saveFailed"), "error");
     } finally {
       setComposeSaving(false);
@@ -1118,6 +1125,7 @@ export default function FoodScreen() {
       toast(t("mealCompose.templateSaved"), "success");
     } catch (err) {
       logCrash(err, { screen: "food", save: "composeTemplate" });
+      trackSaveFailed("meal", "write");
       toast(t("common.saveFailed"), "error");
     } finally {
       setComposeSaving(false);

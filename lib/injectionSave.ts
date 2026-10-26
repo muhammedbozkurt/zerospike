@@ -1,3 +1,5 @@
+import { trackSaveFailed } from "./analytics/saveFailed";
+
 export type SavePhase = "confirm" | "write" | "after";
 export type SaveOutcome = "saved" | "cancelled" | "failed" | "busy";
 
@@ -25,7 +27,12 @@ export async function runGuardedSave<T>(opts: {
   onAfterFailure?: (saved: T) => void | Promise<void>;
   onError: (err: unknown, phase: SavePhase) => void;
 }): Promise<SaveOutcome> {
-  const { lock, setBusy, confirm, write, onSaved, onAfterFailure, onError } = opts;
+  const { lock, setBusy, confirm, write, onSaved, onAfterFailure } = opts;
+  const onError = (err: unknown, phase: SavePhase): void => {
+    if (phase === "write") trackSaveFailed("injection", "write");
+    else trackSaveFailed("injection", "side");
+    opts.onError(err, phase);
+  };
   if (lock.current) return "busy";
   lock.current = true;
   setBusy(true);

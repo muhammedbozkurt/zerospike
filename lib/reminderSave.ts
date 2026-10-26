@@ -1,3 +1,5 @@
+import { trackSaveFailed } from "./analytics/saveFailed";
+
 export type ReminderSaveOutcome = "ok" | "limit" | "writeFailed" | "scheduleFailed";
 
 /**
@@ -15,11 +17,14 @@ export async function saveReminderGuarded(deps: {
   } catch (e) {
     const isLimit =
       deps.isCreate && e instanceof Error && e.message.includes("reminders reached");
-    return isLimit ? "limit" : "writeFailed";
+    if (isLimit) return "limit";
+    trackSaveFailed("reminder", "write");
+    return "writeFailed";
   }
   try {
     await deps.afterWrite();
   } catch {
+    trackSaveFailed("reminder", "schedule");
     return "scheduleFailed";
   }
   return "ok";

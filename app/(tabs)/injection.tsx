@@ -560,7 +560,7 @@ export default function InjectionScreen() {
       },
       onSaved: async (saved) => {
         const kind = insulinType === "basal" ? "basal" : "injection";
-        logEvent("log_added", { kind });
+        logEvent("log_added", { kind, insulin_kind: insulinType === "basal" ? "basal" : "bolus" });
         void noteFirstLog(kind);
         void noteLogAndMaybeReview();
         void noteJournalActivity();

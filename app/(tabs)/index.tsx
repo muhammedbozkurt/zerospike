@@ -107,6 +107,7 @@ import { consecutiveLogDays } from "../../lib/insights";
 import { noteLog, maybeRequestReview, noteStreakAndMaybeReview, crossedStreak7 } from "../../lib/services/review";
 import { noteFirstLog, seedFirstLogFlags } from "../../lib/services/firstLog";
 import { logCrash, logEvent } from "../../lib/analytics";
+import { trackSaveFailed } from "../../lib/analytics/saveFailed";
 import { TrialCard } from "../../components/TrialCard";
 import { markProWelcomeStep } from "../../lib/services/proWelcome";
 import { isWidgetInstalled } from "../../modules/zerospike-live-activity";
@@ -1521,9 +1522,10 @@ export default function DashboardScreen() {
     );
     if (!written.ok) return false;
     // Everything after the write must not hold the sheet open.
-    void afterGlucoseAdded(written.value, value, period, isNow, streakBefore).catch((err) =>
-      logCrash(err, { screen: "dashboard", op: "afterGlucoseAdded" })
-    );
+    void afterGlucoseAdded(written.value, value, period, isNow, streakBefore).catch((err) => {
+      logCrash(err, { screen: "dashboard", op: "afterGlucoseAdded" });
+      trackSaveFailed("glucose", "side");
+    });
     return true;
   }
 

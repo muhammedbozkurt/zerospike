@@ -93,7 +93,7 @@ const SINK_PRODUCED = ["app_open", "analytics_opt_out"];
 // insulin_kind is only meaningful on an insulin log (a glucose or meal log has
 // none), and the three events below are defined ahead of their emitters.
 const OPTIONAL_PARAMS: Record<string, readonly string[]> = { log_added: ["insulin_kind"] };
-const CALL_SITE_PENDING = ["cgm_offer", "nightscout_connect", "save_failed"];
+const CALL_SITE_PENDING = ["cgm_offer", "nightscout_connect"];
 
 const SCAN_DIRS = ["app", "components", "lib"];
 

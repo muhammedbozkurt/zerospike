@@ -1,3 +1,5 @@
+import { trackSaveFailed } from "./analytics/saveFailed";
+
 export type MedSaveOutcome = "ok" | "failed";
 
 /** The entry write is the save; remembering the name for the picker is a side
@@ -10,12 +12,13 @@ export async function saveMedGuarded(deps: {
   try {
     await deps.write();
   } catch {
+    trackSaveFailed("med", "write");
     return "failed";
   }
   try {
     await deps.rememberName();
   } catch {
-    // best-effort
+    trackSaveFailed("med", "side");
   }
   return "ok";
 }

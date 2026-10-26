@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useFeedback } from "./Feedback";
 import { restoreBatch, type DeletionSnapshot } from "../lib/db/undo";
 import { logCrash } from "../lib/analytics";
+import { trackSaveFailed } from "../lib/analytics/saveFailed";
 import { hapticSuccess, hapticWarning } from "../lib/haptics";
 import {
   shouldRestoreBatch,
@@ -99,6 +100,7 @@ export function useUndoBatch(
           batchRef.current = [];
         }, undoBatchWindowMs(screenReaderOn.current ? UNDO_TOAST_SCREEN_READER_MS : UNDO_TOAST_MS));
         logCrash(error, { screen: "undo", op: "restore" });
+        trackSaveFailed("other", "write");
         hapticWarning();
         if (restored.length > 0) {
           onChanged();
@@ -106,6 +108,7 @@ export function useUndoBatch(
             await onRestored?.(restored);
           } catch {
             // best-effort restore side effects; those entries are back
+            trackSaveFailed("other", "side");
           }
         }
         offerUndo(t("common.saveFailed"), "error");
@@ -124,6 +127,7 @@ export function useUndoBatch(
         await onRestored?.(snaps);
       } catch {
         // best-effort restore side effects; the entries themselves are back
+        trackSaveFailed("other", "side");
       }
     };
 
