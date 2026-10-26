@@ -523,9 +523,13 @@ section("O. source guards (data scope, profile hand-over, input filters)");
   for (const table of ["injection_logs", "meal_logs", "sugar_logs"]) {
     ok(
       `clearAllLogs scopes ${table} to one profile`,
-      new RegExp(`DELETE FROM ${table} WHERE profile_id = \\?`).test(dbIndex)
+      new RegExp(`DELETE FROM ${table} WHERE profile_id = \\?`).test(src("lib/db/healthImportSql.ts"))
     );
   }
+  ok(
+    "clearAllLogs runs the profile-scoped clear",
+    /clearProfileLogs\(db, profileId,/.test(dbIndex)
+  );
   ok(
     "no unfiltered log DELETE survives",
     !/DELETE FROM (injection_logs|meal_logs|sugar_logs);/.test(dbIndex)

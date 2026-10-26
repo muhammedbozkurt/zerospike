@@ -49,6 +49,7 @@ import {
   migrateToV25,
   migrateToV26,
   migrateToV27,
+  migrateToV28,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -4213,7 +4214,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 27", /const SCHEMA_VERSION = 27;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 28", /const SCHEMA_VERSION = 28;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4914,6 +4915,11 @@ async function main() {
           dose_units REAL, insulin_type TEXT, logged_at TEXT NOT NULL,
           FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
         );
+        CREATE TABLE sugar_logs (
+          id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+          glucose_level_mgdl INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'manual',
+          logged_at TEXT NOT NULL
+        );
         INSERT INTO user_profiles VALUES ('p1', 'A', 35, 8, 9, 11, 1, '2026-01-01T00:00:00.000Z');
         INSERT INTO user_profiles VALUES ('p2', 'B', 40, 10, 12, 12, 1, '2026-01-02T00:00:00.000Z');
         INSERT INTO user_profiles VALUES ('p3', 'C', 40, 10, 12, 12, 0, '2026-01-03T00:00:00.000Z');
@@ -4958,6 +4964,33 @@ async function main() {
     );
   }
 
+  section("U3. v28 adds the Health import guard without touching a row");
+  {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE sugar_logs (
+        id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+        glucose_level_mgdl INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'manual',
+        logged_at TEXT NOT NULL
+      );
+      INSERT INTO sugar_logs VALUES ('s1', 'p1', 110, 'health', '2026-01-02T08:00:00.000Z');
+      INSERT INTO sugar_logs VALUES ('s2', 'p1', 95, 'manual', '2026-01-02T09:00:00.000Z');
+      PRAGMA user_version = 27;
+    `);
+    const before = snapshotRows(db, "sugar_logs");
+    await migrateToV28(adapt(db));
+    eq("v28 stamps 28", readUserVersion(db), 28);
+    sameRows("sugar_logs", before, snapshotRows(db, "sugar_logs"));
+    eq("both guard tables are empty", count(db, "health_import_tombstones") + count(db, "health_import_floor"), 0);
+    await migrateToV28(adapt(db));
+    eq("a replay is a no-op", readUserVersion(db), 28);
+    db.exec("DELETE FROM sugar_logs WHERE id = 's2';");
+    eq("deleting a manual reading leaves no tombstone", count(db, "health_import_tombstones"), 0);
+    db.exec("DELETE FROM sugar_logs WHERE id = 's1';");
+    eq("deleting an imported reading leaves one", count(db, "health_import_tombstones"), 1);
+    db.close();
+  }
+
   section("U3. a profile created on an upgraded database is born unconfirmed");
   {
     // The v8 column default is 1, so an INSERT that does not name the flag makes a
@@ -4998,7 +5031,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 27`, readUserVersion(db), 27);
+    eq(`v${start}: ends at 28`, readUserVersion(db), 28);
     eq(`v${start}: v8 default 1 is cleared by v27`, (db.prepare("SELECT ratios_confirmed AS r FROM user_profiles WHERE id='p1';").get() as { r: number }).r, 0);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
@@ -5189,7 +5222,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      27
+      28
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -5205,7 +5238,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 27", readUserVersion(db), 27);
+    eq("the next launch still ends at 28", readUserVersion(db), 28);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -5303,7 +5336,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 27 again", readUserVersion(db), 27);
+    eq("the chain lands on 28 again", readUserVersion(db), 28);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -5965,8 +5998,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 25) await migrateToV25(target);
   if (currentVersion >= 1 && currentVersion < 26) await migrateToV26(target);
   if (currentVersion >= 1 && currentVersion < 27) await migrateToV27(target);
+  if (currentVersion >= 1 && currentVersion < 28) await migrateToV28(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 27;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 28;");
 }
 
 function count(db: DatabaseSync, table: string): number {
