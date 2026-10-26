@@ -192,3 +192,21 @@ export function scrollHintAllowed(osScale: number): boolean {
 export function ctaFootprintPx(measured: number, formula: number): number {
   return Number.isFinite(measured) && measured > formula ? measured : formula;
 }
+
+/** maxFontSizeMultiplier for the number inside a ring: the default ring cap,
+ *  lowered when the ring is small enough that the number plus its sign would
+ *  touch the stroke at that scale (the paywall's 64 pt sample ring). The inner
+ *  chord is used at 70% so the text keeps air from the stroke. */
+export function ringNumberCap(opts: {
+  size: number;
+  strokeWidth: number;
+  number: string;
+  suffix?: string;
+}): number {
+  const inner = (opts.size - 2 * (opts.strokeWidth + 2)) * 0.7;
+  const suffixW = opts.suffix ? estimateTextWidth(opts.suffix, opts.size * 0.12) * FONT_CAP.ringCaption : 0;
+  const numberW = estimateTextWidth(opts.number, opts.size * 0.22);
+  if (numberW <= 0) return FONT_CAP.ringNumber;
+  const cap = (inner - suffixW) / numberW;
+  return Math.min(FONT_CAP.ringNumber, Math.max(1, Math.floor(cap * 100) / 100));
+}
