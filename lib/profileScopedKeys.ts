@@ -48,6 +48,10 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.cgmMode",
   /** lib/cgm/state.ts - the one-time "switch to CGM" answer. */
   "zerospike.cgmOffer",
+  /** lib/cgm/reminderMode.ts - measurement reminders the user switched back on in sensor mode. */
+  "zerospike.cgmGlucoseOptIn",
+  /** lib/cgm/postMealLink.ts - 2-hour values waiting for sensor readings. */
+  "zerospike.cgmPostMealPending",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

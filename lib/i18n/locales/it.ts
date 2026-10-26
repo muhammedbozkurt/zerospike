@@ -528,6 +528,10 @@ const it: TranslationSchema = {
     alarmTitleBasal: "Basale",
     alarmTitlePostMeal: "Post-prandiale",
   },
+  cgmReminders: {
+    pausedRow: "Disattivato in modalità CGM",
+    banner: "Finché i Suoi valori arrivano dal sensore, i promemoria di misurazione sono disattivati. Può riattivarli uno per uno.",
+  },
   alarmTour: {
     step1Title: "I Suoi promemoria ora possono suonare",
     step1Body: "Un promemoria che imposta suona come una vera sveglia, a schermo intero e con il comando di arresto del sistema.",

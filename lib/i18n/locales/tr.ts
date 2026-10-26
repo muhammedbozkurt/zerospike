@@ -526,6 +526,10 @@ const tr = {
     alarmTitleBasal: "Bazal",
     alarmTitlePostMeal: "Tokluk",
   },
+  cgmReminders: {
+    pausedRow: "CGM modunda kapalı",
+    banner: "Değerleriniz sensörden geldiği sürece ölçüm hatırlatıcıları kapalıdır. Dilediğinizi tek tek yeniden açabilirsiniz.",
+  },
   alarmTour: {
     step1Title: "Hatırlatıcılarınız artık çalabilir",
     step1Body: "Kurduğunuz hatırlatıcı gerçek alarm olarak çalar, tam ekran ve sistemin kendi durdurma denetimiyle.",

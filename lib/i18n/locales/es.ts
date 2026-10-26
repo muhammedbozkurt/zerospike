@@ -528,6 +528,10 @@ const es: TranslationSchema = {
     alarmTitleBasal: "Basal",
     alarmTitlePostMeal: "Posprandial",
   },
+  cgmReminders: {
+    pausedRow: "Desactivado en modo CGM",
+    banner: "Mientras sus valores provengan del sensor, los recordatorios de medición están desactivados. Puede volver a activar los que desee, uno por uno.",
+  },
   alarmTour: {
     step1Title: "Sus recordatorios ya pueden sonar",
     step1Body: "Un recordatorio que usted cree suena como una alarma real, a pantalla completa y con el control de parada del propio sistema.",

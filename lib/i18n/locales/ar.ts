@@ -528,6 +528,10 @@ const ar: TranslationSchema = {
     alarmTitleBasal: "قاعدي",
     alarmTitlePostMeal: "بعد الوجبة",
   },
+  cgmReminders: {
+    pausedRow: "متوقف في وضع CGM",
+    banner: "طالما تأتي قراءاتك من المستشعر، تكون تذكيرات القياس متوقفة. يمكنك إعادة تشغيل أي منها على حدة.",
+  },
   alarmTour: {
     step1Title: "يمكن لتذكيراتك أن تُشغَّل الآن",
     step1Body: "يُشغَّل التذكير الذي تُعدّه كمنبّه حقيقي بملء الشاشة، مع زر الإيقاف الخاص بالنظام.",
