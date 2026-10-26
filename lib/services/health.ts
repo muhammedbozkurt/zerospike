@@ -2,8 +2,10 @@ import { AppState, Linking, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash } from "../analytics";
 import {
+  deleteImportedGlucoseByExternalIds,
+  getImportedSourceHistory,
   getSugarLog,
-  insertHealthSugarLogs,
+  insertImportedGlucose,
   listHealthBackfillRows,
   listHealthMirrorRows,
   listHealthUuidLinks,
@@ -11,8 +13,10 @@ import {
   setSugarLogHealthUuid,
 } from "../db/logs";
 import { getProfile, listProfiles } from "../db/profiles";
+import { detectCgmSource, type DetectSample } from "../cgm/detect";
 import { isUserEntered } from "../glucoseSource";
 import type { SugarLog } from "../db/types";
+import { snapIso } from "./healthMath";
 import {
   chunkBatches,
   selectBackfillCandidates,
@@ -47,11 +51,16 @@ import {
 } from "./healthConnect";
 import { healthMock } from "./healthMock";
 import {
+  ANDROID_GLUCOSE_PAGE_SIZE,
+  ANDROID_SYNC_ROUND_MAX_SAMPLES,
   ANDROID_SYNC_WINDOW_DAYS,
+  IOS_GLUCOSE_PAGE_SIZE,
+  IOS_SYNC_ROUND_MAX_SAMPLES,
   SYNC_MAX_SAMPLES,
   SYNC_WINDOW_DAYS,
 } from "./healthTypes";
 import type {
+  GlucosePage,
   GlucoseSample,
   HealthConnectStatus,
   HealthLastSync,
@@ -138,6 +147,8 @@ const HEALTH_WRITE_KIND_KEYS: Record<HealthWriteKind, string> = {
   insulin: "zerospike.healthWriteInsulin",
 };
 const HEALTH_LAST_SYNC_KEY = "zerospike.healthLastSync";
+/** Per profile (`<key>.<profileId>`): where the HealthKit anchored read resumes. */
+const HEALTH_ANCHOR_KEY = "zerospike.healthHkAnchor";
 /** Device-wide: set by the foreground (which knows the Pro state) so a
  *  background run, which has no React context, can honour the Pro gate. */
 const HEALTH_BG_ENTITLED_KEY = "zerospike.healthBgEntitled";
@@ -1637,6 +1648,16 @@ export async function syncHealthInBackground(): Promise<HealthBackgroundOutcome>
       const peek = await provider.peekGlucoseChanges();
       if (!peek.changed) return skip("unchanged");
       commit = peek.commit;
+      // Records the user removed in Health Connect leave with their import.
+      if (peek.deletedIds && peek.deletedIds.length > 0) {
+        try {
+          await deleteImportedGlucoseByExternalIds(profileId, "health", peek.deletedIds);
+        } catch (err) {
+          logCrash(err, { screen: "health", op: "deleteRemovedGlucose" });
+          // Keep the token where it is so the next pass sees these deletions again.
+          commit = null;
+        }
+      }
     }
     const result = await importHealthGlucose(profileId, "background");
     if (result.status === "ok" && commit) await commit();
@@ -1930,7 +1951,22 @@ async function runImportHealthGlucose(
   return result;
 }
 
+/** Never rejects: a locked database, a failed permission lookup or a bad page
+ *  becomes status "error" (recorded as the last sync, shown by the caller), not
+ *  an unhandled promise rejection out of a fire-and-forget background run. */
 async function importGlucoseOnce(
+  profileId: string,
+  source: HealthSyncSource
+): Promise<SyncResult> {
+  try {
+    return await importGlucoseSteps(profileId, source);
+  } catch (err) {
+    logCrash(err, { screen: "health", op: "importGlucoseOnce" });
+    return { status: "error", inserted: 0, read: 0 };
+  }
+}
+
+async function importGlucoseSteps(
   profileId: string,
   source: HealthSyncSource
 ): Promise<SyncResult> {
@@ -1951,26 +1987,141 @@ async function importGlucoseOnce(
     return { status: "denied", inserted: 0, read: 0 };
   }
 
-  // 3) Read + import, never letting a native error reach the UI.
-  let samples: GlucoseSample[];
+  if (!provider) return { status: "unavailable", inserted: 0, read: 0 };
+
+  // 3) Read page by page and import each page before asking for the next, so a
+  //    sensor's 90 days never sit in memory at once and an interruption keeps
+  //    what was already stored. HealthKit resumes from its anchor (saved only
+  //    after the page landed); Health Connect re-reads its 30 day window and the
+  //    import dedupes by record id.
+  const android = Platform.OS === "android";
+  const windowDays = android ? ANDROID_SYNC_WINDOW_DAYS : SYNC_WINDOW_DAYS;
+  const pageSize = android ? ANDROID_GLUCOSE_PAGE_SIZE : IOS_GLUCOSE_PAGE_SIZE;
+  const roundMax = android ? ANDROID_SYNC_ROUND_MAX_SAMPLES : IOS_SYNC_ROUND_MAX_SAMPLES;
+  let cursor = android ? null : await readHealthAnchor(profileId);
+  let read = 0;
+  let inserted = 0;
+  for (;;) {
+    let page: GlucosePage;
+    try {
+      page = await provider.readGlucosePage({ windowDays, cursor, pageSize });
+    } catch {
+      return { status: "error", inserted, read };
+    }
+    read += page.samples.length;
+    inserted += await importGlucosePage(profileId, page);
+    if (!android && page.cursor) await writeHealthAnchor(profileId, page.cursor);
+    if (!page.hasMore || read >= roundMax) break;
+    cursor = page.cursor;
+  }
+  return { status: "ok", inserted, read };
+}
+
+async function readHealthAnchor(profileId: string): Promise<string | null> {
   try {
-    samples = await readRecentGlucose();
+    return (await AsyncStorage.getItem(`${HEALTH_ANCHOR_KEY}.${profileId}`)) || null;
   } catch {
-    return { status: "error", inserted: 0, read: 0 };
+    return null;
+  }
+}
+
+async function writeHealthAnchor(profileId: string, anchor: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${HEALTH_ANCHOR_KEY}.${profileId}`, anchor);
+  } catch {
+    // The next sync reads from the older anchor; the import dedupes by id.
+  }
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Whether the readings one source app wrote are a sensor stream (see
+ * lib/cgm/detect.ts). The page alone usually decides; a thin page (a small
+ * incremental sync) is judged together with what the app already delivered. This
+ * only MARKS rows: it never changes the profile's measurement mode.
+ */
+async function sourceIsSensor(
+  profileId: string,
+  sourceApp: string | null,
+  group: GlucoseSample[]
+): Promise<boolean> {
+  const own: DetectSample[] = group.map((s) => ({
+    atMs: Date.parse(s.date),
+    userEntered: s.userEntered === true,
+    specimenSource: s.specimenSource ?? null,
+    recordingMethod: s.recordingMethod ?? null,
+  }));
+  const context = {
+    sourceApp,
+    deviceText: group.find((s) => s.deviceText)?.deviceText ?? null,
+  };
+  if (detectCgmSource(own, context).isCgm) return true;
+  try {
+    const times = own.map((s) => s.atMs).filter((t) => Number.isFinite(t));
+    if (times.length === 0) return false;
+    const history = await getImportedSourceHistory(
+      profileId,
+      "health",
+      sourceApp,
+      new Date(Math.min(...times) - DAY_MS).toISOString(),
+      new Date(Math.max(...times) + DAY_MS).toISOString()
+    );
+    const seen = new Set(times);
+    const stored: DetectSample[] = history.timesMs
+      .filter((t) => !seen.has(t))
+      .map((atMs) => ({ atMs }));
+    return detectCgmSource([...own, ...stored], { ...context, knownCgm: history.knownCgm }).isCgm;
+  } catch {
+    return false;
+  }
+}
+
+/** True for a reading that can be a sensor reading even in a sensor's source:
+ *  not typed by hand, not a finger-stick specimen. */
+function sampleCanBeSensor(s: GlucoseSample): boolean {
+  return (
+    s.userEntered !== true &&
+    s.recordingMethod !== 3 &&
+    s.specimenSource !== 2 &&
+    s.specimenSource !== 6
+  );
+}
+
+async function importGlucosePage(profileId: string, page: GlucosePage): Promise<number> {
+  if (page.deletedIds.length > 0) {
+    await deleteImportedGlucoseByExternalIds(profileId, "health", page.deletedIds);
+  }
+  const usable = page.samples.filter((s) => Number.isFinite(s.value) && s.value > 0);
+  if (usable.length === 0) return 0;
+
+  const groups = new Map<string, GlucoseSample[]>();
+  for (const s of usable) {
+    const key = s.sourceApp ?? "";
+    const list = groups.get(key);
+    if (list) list.push(s);
+    else groups.set(key, [s]);
+  }
+  const sensorApps = new Set<string>();
+  for (const [key, group] of groups) {
+    if (await sourceIsSensor(profileId, key === "" ? null : key, group)) sensorApps.add(key);
   }
 
-  // One transaction for the whole batch, with the dedup resolved from a single
-  // range query (see insertHealthSugarLogs) instead of a COUNT per sample.
-  const usable = samples.filter((s) => Number.isFinite(s.value) && s.value > 0);
-  const inserted = await insertHealthSugarLogs(
+  return insertImportedGlucose(
     profileId,
-    usable.map((s) => ({
-      glucose_level_mgdl: s.value,
-      period_tag: s.period_tag,
-      logged_at: s.date,
-    }))
+    usable.map((s) => {
+      const isCgm = sensorApps.has(s.sourceApp ?? "") && sampleCanBeSensor(s);
+      return {
+        at: isCgm ? s.date : snapIso(s.date),
+        mgdl: s.value,
+        source: "health" as const,
+        sourceApp: s.sourceApp ?? null,
+        externalId: s.externalId ?? null,
+        isCgm,
+        periodTag: s.period_tag,
+      };
+    })
   );
-  return { status: "ok", inserted, read: samples.length };
 }
 
 // ── Pro: activity + insulin delivery summary (read-only, descriptive) ────────

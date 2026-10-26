@@ -75,6 +75,7 @@ import {
   V29_SELECT_HEALTH_ROWS,
   findCgmRunIds,
 } from "./v29Sql";
+import { V30_CREATE } from "./v30Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -123,7 +124,8 @@ export type SchemaStamp =
   | 26
   | 27
   | 28
-  | 29;
+  | 29
+  | 30;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -876,5 +878,20 @@ export async function migrateToV29(db: SQLite.SQLiteDatabase): Promise<void> {
       );
     }
     await stampSchemaVersion(db, 29);
+  });
+}
+
+/**
+ * The v29 → v30 migration: sugar_hourly and cgm_retention_state, the sensor
+ * readings' retention tables (see ./v30Sql). Create-only DDL, identical to what a
+ * fresh install runs: no row is read or rewritten and a re-run is a no-op. The
+ * folding itself happens later, after an import (lib/cgm/retention.ts).
+ */
+export async function migrateToV30(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const statement of V30_CREATE) {
+      await db.execAsync(statement);
+    }
+    await stampSchemaVersion(db, 30);
   });
 }

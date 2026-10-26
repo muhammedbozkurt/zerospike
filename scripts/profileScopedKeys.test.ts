@@ -64,6 +64,7 @@ section("A. every base name is really written by the file that owns it");
     "zerospike.healthWriteInsulin": "lib/services/health.ts",
     "zerospike.healthBgSync": "lib/services/health.ts",
     "zerospike.healthLastSync": "lib/services/health.ts",
+    "zerospike.healthHkAnchor": "lib/services/health.ts",
     "zerospike.healthWriteStatus": "lib/services/health.ts",
     "zerospike.healthWritePending": "lib/services/health.ts",
     "zerospike.healthWritePending.carbs": "lib/services/health.ts",

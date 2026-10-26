@@ -25,6 +25,7 @@ import {
   migrateToV27,
   migrateToV28,
   migrateToV29,
+  migrateToV30,
   missingColumns,
   ensureFoodNameColumns,
   stampSchemaVersion,
@@ -50,6 +51,7 @@ import {
 import { V24_CREATE } from "./v24Sql";
 import { V28_CREATE } from "./v28Sql";
 import { V29_INDEXES } from "./v29Sql";
+import { V30_CREATE } from "./v30Sql";
 import { BUSY_TIMEOUT_SQL, clearProfileLogs } from "./healthImportSql";
 import {
   SEED_CATALOG_VERSION,
@@ -62,7 +64,7 @@ import {
 import type { SeedFood } from "./seed";
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -396,6 +398,12 @@ export async function initDatabase(): Promise<void> {
     await migrateToV29(db);
   }
 
+  // v29 → v30: the hourly summary the sensor readings fold into after a year
+  // (see ./v30Sql and lib/cgm/retention.ts).
+  if (currentVersion >= 1 && currentVersion < 30) {
+    await migrateToV30(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -645,6 +653,12 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   // The sensor-reading indexes (schema v29), the same statements the v28 → v29
   // migration runs. After sugar_logs, whose new columns they index.
   for (const statement of V29_INDEXES) {
+    await db.execAsync(statement);
+  }
+
+  // The sensor retention tables (schema v30), the same statements the v29 → v30
+  // migration runs. After user_profiles, which they cascade from.
+  for (const statement of V30_CREATE) {
     await db.execAsync(statement);
   }
 

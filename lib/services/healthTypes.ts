@@ -19,13 +19,51 @@ export const SYNC_WINDOW_DAYS = 90;
  *  granted; anything older needs READ_HEALTH_DATA_HISTORY, which widens the
  *  Play Store health-data declaration we are not making yet. */
 export const ANDROID_SYNC_WINDOW_DAYS = 30;
-/** Hard cap on samples pulled per sync (newest first). */
+/** Samples the one-shot read (readRecentGlucose) returns. The sync itself no
+ *  longer stops here: it pages (readGlucosePage), so a sensor's 90 days fit. */
 export const SYNC_MAX_SAMPLES = 300;
+/** Samples per page of a paged read. */
+export const IOS_GLUCOSE_PAGE_SIZE = 2000;
+export const ANDROID_GLUCOSE_PAGE_SIZE = 1000;
+/** Most samples one sync round reads. HealthKit continues from its anchor next
+ *  round; Health Connect re-reads its (30 day) window, so its cap covers a
+ *  1-minute sensor for the whole window. */
+export const IOS_SYNC_ROUND_MAX_SAMPLES = 30_000;
+export const ANDROID_SYNC_ROUND_MAX_SAMPLES = 60_000;
 
 export interface GlucoseSample {
   value: number; // mg/dL
   date: string; // ISO timestamp
   period_tag: PeriodTag;
+  /** The store's id for the sample (HealthKit uuid, Health Connect record id). */
+  externalId?: string | null;
+  /** The app that wrote it (bundle id / package name). */
+  sourceApp?: string | null;
+  /** Device / source name text, only used for sensor detection. */
+  deviceText?: string | null;
+  /** Typed by the user (HKWasUserEntered, MANUAL_ENTRY): never a sensor reading. */
+  userEntered?: boolean;
+  /** Health Connect specimenSource, when the store reports one. */
+  specimenSource?: number | null;
+  /** Health Connect recordingMethod, when the store reports one. */
+  recordingMethod?: number | null;
+}
+
+/** One page of a paged glucose read. */
+export interface GlucosePage {
+  samples: GlucoseSample[];
+  /** Ids the store reports as deleted since the cursor (HealthKit). */
+  deletedIds: string[];
+  /** Where the next read continues: a HealthKit anchor or a Health Connect
+   *  page token. Persist it only after the page was imported. */
+  cursor: string | null;
+  hasMore: boolean;
+}
+
+export interface GlucosePageRequest {
+  windowDays: number;
+  cursor: string | null;
+  pageSize: number;
 }
 
 /** Outcome of a sync so the UI can tell the user exactly what happened. */
@@ -86,6 +124,9 @@ export interface HealthProvider {
   /** Current write grant, without prompting. */
   isWriteAuthorized(): Promise<boolean>;
   readRecentGlucose(windowDays: number, max: number): Promise<GlucoseSample[]>;
+  /** Paged read for the sync. Rejects on a native failure: an empty page means
+   *  "nothing new", never "the read failed". */
+  readGlucosePage(request: GlucosePageRequest): Promise<GlucosePage>;
   /** `meta` makes the write idempotent per record id (see lib/healthMeta.ts);
    *  the returned id can equal an earlier one when the store upserted. */
   writeGlucose(mgdl: number, dateIso: string, meta?: HealthWriteMeta): Promise<string | null>;
@@ -121,5 +162,10 @@ export interface HealthProvider {
   requestBackgroundReadPermission(): Promise<boolean>;
   /** Android getChanges: did BloodGlucose change since the committed token?
    *  commit() advances the token and must only run after a successful import. */
-  peekGlucoseChanges(): Promise<{ changed: boolean; commit(): Promise<void> }>;
+  peekGlucoseChanges(): Promise<{
+    changed: boolean;
+    /** Health Connect ids deleted since the committed token. */
+    deletedIds?: string[];
+    commit(): Promise<void>;
+  }>;
 }

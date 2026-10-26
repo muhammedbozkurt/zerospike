@@ -10,6 +10,8 @@ import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
 import type {
+  GlucosePage,
+  GlucosePageRequest,
   GlucoseSample,
   HealthConnectStatus,
   HealthProvider,
@@ -200,23 +202,79 @@ async function readRecentGlucose(windowDays: number, max: number): Promise<Gluco
     pageSize: max,
   });
   const records = Array.isArray(result) ? result : (result?.records ?? []);
-  return records
-    // Loop guard: skip our own writes on import, or a mirror-then-import cycle
-    // would double every manual reading. NEVER use dataOriginFilter for this -
-    // it is an allowlist, not a blocklist, and putting our own package there
-    // doubles every sample instead of skipping it.
-    .filter((r: any) => r?.metadata?.dataOrigin !== OWN_BUNDLE_ID)
-    .map((r: any) => {
-      // Health Connect exposes both mg/dL and mmol/L; only the mg/dL field is
-      // ever read here (CEVRIM YAPMA - no conversion), matching iOS's
-      // already-mg/dL query.
-      const mgdl = pickMgdl({ mgdl: r?.level?.inMilligramsPerDeciliter });
-      return {
-        value: mgdl == null ? 0 : Math.round(mgdl),
-        date: snapIso(r.time),
-        period_tag: autoPeriodTagFor("health_import", {}),
-      };
-    });
+  return records.filter(isForeignRecord).map((r: any) => toGlucoseSample(r, 60));
+}
+
+/** Loop guard: skip our own writes on import, or a mirror-then-import cycle
+ *  would double every manual reading. NEVER use dataOriginFilter for this - it
+ *  is an allowlist, not a blocklist, and putting our own package there doubles
+ *  every sample instead of skipping it. */
+function isForeignRecord(r: any): boolean {
+  return r?.metadata?.dataOrigin !== OWN_BUNDLE_ID;
+}
+
+/** Health Connect record -> GlucoseSample. Health Connect exposes both mg/dL and
+ *  mmol/L; only the mg/dL field is ever read here (CEVRIM YAPMA - no
+ *  conversion), matching iOS's already-mg/dL query. */
+function toGlucoseSample(r: any, snapSeconds: number): GlucoseSample {
+  const mgdl = pickMgdl({ mgdl: r?.level?.inMilligramsPerDeciliter });
+  const recordingMethod = Number.isFinite(r?.metadata?.recordingMethod)
+    ? Number(r.metadata.recordingMethod)
+    : null;
+  const specimen = Number.isFinite(r?.specimenSource) ? Number(r.specimenSource) : null;
+  const device = r?.metadata?.device;
+  return {
+    value: mgdl == null ? 0 : Math.round(mgdl),
+    date: snapIso(r.time, snapSeconds),
+    period_tag: autoPeriodTagFor("health_import", {}),
+    externalId: typeof r?.metadata?.id === "string" && r.metadata.id ? r.metadata.id : null,
+    sourceApp: typeof r?.metadata?.dataOrigin === "string" && r.metadata.dataOrigin ? r.metadata.dataOrigin : null,
+    deviceText: [device?.manufacturer, device?.model].filter(Boolean).join(" ") || null,
+    userEntered: recordingMethod === 3,
+    specimenSource: specimen,
+    recordingMethod,
+  };
+}
+
+/**
+ * One page of the Health Connect window. Records come newest first; the page
+ * token continues the same read. Health Connect has no per-record anchor for
+ * reading, so every sync re-reads its (30 day) window and the import dedupes
+ * by record id.
+ */
+async function readGlucosePage(request: GlucosePageRequest): Promise<GlucosePage> {
+  if (!(await ensureReady())) return { samples: [], deletedIds: [], cursor: null, hasMore: false };
+  const HC = require("react-native-health-connect");
+  // The page token continues ONE read, so the time range travels with it.
+  let range: { token: string; startTime: string; endTime: string } | null = null;
+  if (request.cursor) {
+    try {
+      const parsed = JSON.parse(request.cursor);
+      if (parsed && typeof parsed.token === "string") range = parsed;
+    } catch {
+      range = null;
+    }
+  }
+  const endTime = range?.endTime ?? new Date().toISOString();
+  const startTime =
+    range?.startTime ?? new Date(Date.now() - request.windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const result = await HC.readRecords("BloodGlucose", {
+    timeRangeFilter: { operator: "between", startTime, endTime },
+    ascendingOrder: false,
+    pageSize: request.pageSize,
+    ...(range ? { pageToken: range.token } : {}),
+  });
+  const records: any[] = Array.isArray(result) ? result : (result?.records ?? []);
+  const token: string | null =
+    !Array.isArray(result) && typeof result?.pageToken === "string" && result.pageToken
+      ? result.pageToken
+      : null;
+  return {
+    samples: records.filter(isForeignRecord).map((r) => toGlucoseSample(r, 1)),
+    deletedIds: [],
+    cursor: token ? JSON.stringify({ token, startTime, endTime }) : null,
+    hasMore: token != null && token !== range?.token && records.length > 0,
+  };
 }
 
 async function writeGlucose(
@@ -418,7 +476,11 @@ async function requestBackgroundReadPermission(): Promise<boolean> {
 
 /** Without a stored token, or when it expired, the answer is "changed" so the
  *  caller does a full window read; a fresh token is stored on commit(). */
-async function peekGlucoseChanges(): Promise<{ changed: boolean; commit(): Promise<void> }> {
+async function peekGlucoseChanges(): Promise<{
+  changed: boolean;
+  deletedIds?: string[];
+  commit(): Promise<void>;
+}> {
   const full = { changed: true, commit: async () => {} };
   try {
     if (!(await ensureReady())) return full;
@@ -436,7 +498,10 @@ async function peekGlucoseChanges(): Promise<{ changed: boolean; commit(): Promi
     if (!token || res?.changesTokenExpired || res?.hasMore) return { changed: true, commit };
     const changed =
       (res?.upsertionChanges?.length ?? 0) > 0 || (res?.deletionChanges?.length ?? 0) > 0;
-    return { changed, commit };
+    const deletedIds: string[] = (res?.deletionChanges ?? [])
+      .map((d: any) => d?.recordId)
+      .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
+    return { changed, deletedIds, commit };
   } catch {
     return full;
   }
@@ -449,6 +514,7 @@ export const healthConnect: HealthProvider = {
   requestReadWritePermissions,
   isWriteAuthorized,
   readRecentGlucose,
+  readGlucosePage,
   writeGlucose,
   deleteGlucose,
   deleteGlucoseBatch,

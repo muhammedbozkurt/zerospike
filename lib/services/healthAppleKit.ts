@@ -4,6 +4,8 @@ import { autoPeriodTagFor } from "../periodTag";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
 import type {
+  GlucosePage,
+  GlucosePageRequest,
   GlucoseSample,
   HealthProvider,
   HealthSummary,
@@ -128,23 +130,84 @@ async function readRecentGlucose(windowDays: number, max: number): Promise<Gluco
     unit: "mg/dL",
     filter: { date: { startDate: from } },
   });
-  return (samples ?? [])
-    // Loop guard: NEVER re-import a sample we wrote ourselves, or a
-    // mirror-then-import cycle would double every manual reading. HealthKit tags
-    // each sample with the writing app's bundle in sourceRevision.
-    .filter((s) => s.sourceRevision?.source?.bundleIdentifier !== OWN_BUNDLE_ID)
-    .map((s) => {
-      const when = new Date(s.endDate ?? s.startDate);
-      // The query above requests unit "mg/dL", so s.quantity is ALREADY mg/dL,
-      // it must NOT pass through any mmol heuristic (that inverted true sub-30
-      // hypos into fake highs). snapIso collapses ms-drift re-reads on dedup.
-      const mgdl = pickMgdl({ mgdl: Number(s.quantity) });
-      return {
-        value: mgdl == null ? 0 : Math.round(mgdl),
-        date: snapIso(when.toISOString()),
-        period_tag: autoPeriodTagFor("health_import", {}),
-      };
+  return (samples ?? []).filter(isForeignSample).map((s) => toGlucoseSample(s, 60));
+}
+
+/** HealthKit sample -> GlucoseSample. Every glucose query asks for unit
+ *  "mg/dL", so s.quantity is ALREADY mg/dL and must NOT pass through any mmol
+ *  heuristic (that inverted true sub-30 hypos into fake highs). snapIso
+ *  collapses ms-drift re-reads on dedup. */
+function toGlucoseSample(
+  s: {
+    uuid?: string;
+    quantity: unknown;
+    startDate: Date;
+    endDate?: Date;
+    metadata?: unknown;
+    device?: { name?: string; manufacturer?: string; model?: string };
+    sourceRevision?: { source?: { name?: string; bundleIdentifier?: string } };
+  },
+  snapSeconds: number
+): GlucoseSample {
+  const when = new Date(s.endDate ?? s.startDate);
+  const mgdl = pickMgdl({ mgdl: Number(s.quantity) });
+  const meta = (s.metadata ?? {}) as Record<string, unknown>;
+  const typed = meta.HKWasUserEntered;
+  const source = s.sourceRevision?.source;
+  return {
+    value: mgdl == null ? 0 : Math.round(mgdl),
+    date: snapIso(when.toISOString(), snapSeconds),
+    period_tag: autoPeriodTagFor("health_import", {}),
+    externalId: s.uuid ? String(s.uuid) : null,
+    sourceApp: source?.bundleIdentifier || source?.name || null,
+    deviceText:
+      [s.device?.name, s.device?.manufacturer, s.device?.model, source?.name]
+        .filter(Boolean)
+        .join(" ") || null,
+    userEntered: typed === true || typed === 1,
+  };
+}
+
+/** Loop guard: NEVER re-import a sample we wrote ourselves, or a
+ *  mirror-then-import cycle would double every manual reading. HealthKit tags
+ *  each sample with the writing app's bundle in sourceRevision. */
+function isForeignSample(s: { sourceRevision?: { source?: { bundleIdentifier?: string } } }): boolean {
+  return s.sourceRevision?.source?.bundleIdentifier !== OWN_BUNDLE_ID;
+}
+
+/**
+ * One page of the anchored read. HealthKit hands back what changed since the
+ * anchor - new samples AND the ids of deleted ones - so a sync after the first
+ * reads only the new part. The anchor is the caller's to store, after the page
+ * was imported. A full page means there may be more.
+ */
+async function readGlucosePage(request: GlucosePageRequest): Promise<GlucosePage> {
+  const HK = loadHK();
+  const from = new Date(Date.now() - request.windowDays * 24 * 60 * 60 * 1000);
+  const ask = (anchor: string | null) =>
+    HK.queryQuantitySamplesWithAnchor("HKQuantityTypeIdentifierBloodGlucose", {
+      limit: request.pageSize,
+      anchor: anchor ?? undefined,
+      unit: "mg/dL",
+      filter: { date: { startDate: from } },
     });
+  let res;
+  try {
+    res = await ask(request.cursor);
+  } catch (err) {
+    // A stale or unreadable anchor must not wedge the sync for good: start over,
+    // the import dedupes by sample id.
+    if (request.cursor == null) throw err;
+    res = await ask(null);
+  }
+  const raw = res?.samples ?? [];
+  const next = res?.newAnchor ? String(res.newAnchor) : null;
+  return {
+    samples: raw.filter(isForeignSample).map((s) => toGlucoseSample(s, 1)),
+    deletedIds: (res?.deletedSamples ?? []).map((d) => String(d.uuid)).filter(Boolean),
+    cursor: next,
+    hasMore: raw.length >= request.pageSize && next != null && next !== request.cursor,
+  };
 }
 
 /**
@@ -424,6 +487,7 @@ export const healthAppleKit: HealthProvider = {
   requestReadWritePermissions,
   isWriteAuthorized,
   readRecentGlucose,
+  readGlucosePage,
   writeGlucose,
   deleteGlucose,
   deleteGlucoseBatch,

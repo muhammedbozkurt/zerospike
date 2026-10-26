@@ -51,6 +51,7 @@ import {
   migrateToV27,
   migrateToV28,
   migrateToV29,
+  migrateToV30,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -4215,7 +4216,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 29", /const SCHEMA_VERSION = 29;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 30", /const SCHEMA_VERSION = 30;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -5067,6 +5068,76 @@ async function main() {
     ok("and creates the same indexes", /for \(const statement of V29_INDEXES\)/.test(indexSrc));
   }
 
+  section("U5. v30 adds the sensor retention tables and touches no row");
+  {
+    const mk = () => {
+      const db = new DatabaseSync(":memory:");
+      db.exec(`
+        CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL);
+        CREATE TABLE sugar_logs (
+          id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+          glucose_level_mgdl INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'manual',
+          logged_at TEXT NOT NULL, source_app TEXT, external_id TEXT,
+          is_cgm INTEGER NOT NULL DEFAULT 0
+        );
+        PRAGMA user_version = 29;
+      `);
+      return db;
+    };
+    const cols = (db: DatabaseSync, table: string) =>
+      (db.prepare(`PRAGMA table_info(${table});`).all() as { name: string }[]).map((c) => c.name);
+
+    const empty = mk();
+    await migrateToV30(adapt(empty));
+    eq("empty: v30 stamps 30", readUserVersion(empty), 30);
+    eq(
+      "empty: sugar_hourly has the summary columns",
+      cols(empty, "sugar_hourly").join(","),
+      "profile_id,hour_utc,source,n,mean,min,max"
+    );
+    eq("empty: the retention clock table exists", cols(empty, "cgm_retention_state").join(","), "profile_id,last_run_at");
+    eq("empty: both start empty", count(empty, "sugar_hourly") + count(empty, "cgm_retention_state"), 0);
+    await migrateToV30(adapt(empty));
+    eq("empty: a replay is a no-op", readUserVersion(empty), 30);
+    eq("empty: and still has one of each table", (empty.prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE name IN ('sugar_hourly','cgm_retention_state');").get() as { c: number }).c, 2);
+    empty.close();
+
+    const db = mk();
+    db.exec(`
+      INSERT INTO user_profiles VALUES ('p1');
+      INSERT INTO sugar_logs VALUES ('typed', 'p1', 120, 'manual', '2025-01-02T08:00:00.000Z', NULL, NULL, 0);
+      INSERT INTO sugar_logs VALUES ('old', 'p1', 110, 'health', '2024-01-02T08:00:00.000Z', 'com.x', 'e1', 1);
+      INSERT INTO sugar_logs VALUES ('new', 'p1', 115, 'health', '2027-01-02T08:00:00.000Z', 'com.x', 'e2', 1);
+    `);
+    const before = snapshotRows(db, "sugar_logs");
+    await migrateToV30(adapt(db));
+    eq("from v29: stamps 30", readUserVersion(db), 30);
+    sameRows("sugar_logs", before, snapshotRows(db, "sugar_logs"));
+    eq("from v29: nothing is folded by the migration itself", count(db, "sugar_hourly"), 0);
+    db.exec("INSERT INTO sugar_hourly VALUES ('p1', '2024-01-02T08:00:00.000Z', 'health', 12, 110.5, 100, 120);");
+    let dup = false;
+    try {
+      db.exec("INSERT INTO sugar_hourly VALUES ('p1', '2024-01-02T08:00:00.000Z', 'health', 1, 100, 100, 100);");
+    } catch {
+      dup = true;
+    }
+    ok("one summary row per (profile, hour, source)", dup);
+    db.exec("INSERT INTO sugar_hourly VALUES ('p1', '2024-01-02T08:00:00.000Z', 'nightscout', 3, 100, 90, 110);");
+    eq("another source in the same hour is its own row", count(db, "sugar_hourly"), 2);
+    db.exec("DELETE FROM user_profiles WHERE id = 'p1';");
+    eq("a profile delete cascades its summaries", count(db, "sugar_hourly"), 0);
+    await migrateToV30(adapt(db));
+    eq("from v29: a replay keeps the stamp", readUserVersion(db), 30);
+    db.close();
+
+    const indexSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "index.ts"), "utf8");
+    ok(
+      "the v29 -> v30 step runs the real migration",
+      /currentVersion < 30\)\s*\{\s*await migrateToV30\(db\);/.test(indexSrc)
+    );
+    ok("a fresh install creates the same tables", /for \(const statement of V30_CREATE\)/.test(indexSrc));
+  }
+
   section("U3. a profile created on an upgraded database is born unconfirmed");
   {
     // The v8 column default is 1, so an INSERT that does not name the flag makes a
@@ -5107,7 +5178,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 29`, readUserVersion(db), 29);
+    eq(`v${start}: ends at 30`, readUserVersion(db), 30);
     eq(`v${start}: v8 default 1 is cleared by v27`, (db.prepare("SELECT ratios_confirmed AS r FROM user_profiles WHERE id='p1';").get() as { r: number }).r, 0);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
@@ -5298,7 +5369,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      29
+      30
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -5314,7 +5385,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 29", readUserVersion(db), 29);
+    eq("the next launch still ends at 30", readUserVersion(db), 30);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -5412,7 +5483,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 29 again", readUserVersion(db), 29);
+    eq("the chain lands on 30 again", readUserVersion(db), 30);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -6076,8 +6147,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 27) await migrateToV27(target);
   if (currentVersion >= 1 && currentVersion < 28) await migrateToV28(target);
   if (currentVersion >= 1 && currentVersion < 29) await migrateToV29(target);
+  if (currentVersion >= 1 && currentVersion < 30) await migrateToV30(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 29;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 30;");
 }
 
 function count(db: DatabaseSync, table: string): number {
