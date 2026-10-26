@@ -194,6 +194,17 @@ export async function getInjections(
   return rows.map(mapInjection);
 }
 
+/** Rows of this profile logged after `loggedAtIso`: where a freshly saved,
+ *  possibly back-dated row falls in the newest-first History list. */
+export async function countInjectionsAfter(profileId: string, loggedAtIso: string): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM injection_logs WHERE profile_id = ? AND logged_at > ?;",
+    [profileId, loggedAtIso]
+  );
+  return row?.n ?? 0;
+}
+
 export type InjectionUpdate = Partial<
   Pick<
     Injection,

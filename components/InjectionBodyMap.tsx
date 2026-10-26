@@ -23,6 +23,7 @@ import { PALETTES, RADIUS, THEME, glow } from "../lib/theme/tokens";
 import { withAlpha } from "./rich/GlassCard";
 import { formatDate } from "../lib/format";
 import { hapticSelect } from "../lib/haptics";
+import { pickInitialSurface } from "../lib/injectionVisibility";
 import { isScreenshotMode } from "../lib/screenshotMode";
 import {
   ARM_PATHS,
@@ -161,6 +162,7 @@ export function InjectionBodyMap({
   cycleStart,
   onStartNewCycle,
   showRotationHint = false,
+  lastSite = null,
 }: {
   usage: SiteUsage[];
   /** Injections with NO region recorded at all (e.g. a calculator mealtime
@@ -182,6 +184,9 @@ export function InjectionBodyMap({
    *  own isProUser here. Defaults to false so a caller that forgets this prop
    *  fails closed (no outline, no legend chip, no accessibility suffix). */
   showRotationHint?: boolean;
+  /** Region of the newest stored record: the map opens on its face when
+   *  nothing else decides, so a record saved on the back is not "missing". */
+  lastSite?: InjectionSite | null;
 }) {
   const { t } = useTranslation();
   // RTL EXEMPTION: this card is an anatomical body diagram. Left/right badges
@@ -272,12 +277,16 @@ export function InjectionBodyMap({
 
   // The tab starts on the face that holds the next-up region and never moves
   // on its own after that: the person stays in control of what they look at.
-  const [tab, setTab] = useState<Surface>(
-    () =>
-      GEOMETRY.get(initialZoom as InjectionSite)?.region.surface ??
-      nextSurface ??
-      (selected ? GEOMETRY.get(selected.site)?.region.surface : undefined) ??
+  const [tab, setTab] = useState<Surface>(() =>
+    pickInitialSurface<Surface>(
+      [
+        GEOMETRY.get(initialZoom as InjectionSite)?.region.surface,
+        nextSurface,
+        selected ? GEOMETRY.get(selected.site)?.region.surface : undefined,
+        lastSite ? GEOMETRY.get(lastSite)?.region.surface : undefined,
+      ],
       "front"
+    )
   );
   const tabLocked = useRef(Boolean(initialZoom));
   useEffect(() => {

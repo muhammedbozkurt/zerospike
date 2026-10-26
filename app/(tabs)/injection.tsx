@@ -1,4 +1,8 @@
-import { doseHintVisible, injectionDoseOk } from "../../lib/injectionDose";
+import { injectionDoseOk } from "../../lib/injectionDose";
+import { runGuardedSave } from "../../lib/injectionSave";
+import { foregroundTimeAction, saveTimestamp } from "../../lib/injectionFormClock";
+import { historyPlanForSaved, outsideMapWindow } from "../../lib/injectionVisibility";
+import { ctaBlockers } from "../../lib/injectionCta";
 import {
   afterSaveTarget,
   cameFromToday,
@@ -7,6 +11,7 @@ import {
 } from "../../lib/injectionAfterSave";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
   Keyboard,
   Pressable,
   ScrollView,
@@ -58,6 +63,7 @@ import { BOLUS_KINDS, SELECTABLE_SITES, SITE_POINTS } from "../../lib/db/types";
 import {
   getSiteUsageHistory,
   leastRecentlyUsedPoint,
+  countInjectionsAfter,
   getInjections,
   logInjection,
   deleteInjection,
@@ -213,6 +219,7 @@ export default function InjectionScreen() {
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const stepperFields = useStepperValidity();
   const [editing, setEditing] = useState<Injection | null>(null);
 
@@ -220,13 +227,14 @@ export default function InjectionScreen() {
   // True once the dose has been hand-edited this session; while false, an
   // insulin-type switch is still allowed to prefill/clear it.
   const doseTouched = useRef(false);
-  const [doseInteracted, setDoseInteracted] = useState(false);
   // True once the user has hand-picked a time this session. While false,
   // loggedAt tracks "now" on every focus (see the useFocusEffect below): the
   // tab never unmounts (freezeOnBlur), so without this a form left open from
   // the morning would silently log an evening entry under the mount-time
   // timestamp.
   const timeTouched = useRef(false);
+  const focusedRef = useRef(true);
+  const hiddenAtRef = useRef<number | null>(null);
   const dateLabels = useMemo(
     () => ({ today: t("common.today"), yesterday: t("common.yesterday") }),
     [t]
@@ -335,13 +343,36 @@ export default function InjectionScreen() {
   // Leaving the tab without saving ends the "came from Today" intent, so a
   // later direct visit and save stays in the log.
   useFocusEffect(
-    useCallback(
-      () => () => {
+    useCallback(() => {
+      focusedRef.current = true;
+      return () => {
+        focusedRef.current = false;
         fromTodayRef.current = false;
-      },
-      []
-    )
+      };
+    }, [])
   );
+
+  // The tab stays mounted while the app sits in the background, so neither the
+  // focus effect nor the segment effect runs on return: a form opened in the
+  // morning would log the evening dose under the morning clock.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") {
+        if (hiddenAtRef.current == null) hiddenAtRef.current = Date.now();
+        return;
+      }
+      const hiddenMs = hiddenAtRef.current == null ? 0 : Date.now() - hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      const action = foregroundTimeAction({ timeTouched: timeTouched.current, hiddenMs });
+      if (action === "keep") return;
+      if (action === "reset") {
+        timeTouched.current = false;
+        if (focusedRef.current) toast(t("injection.timeReset"), "info");
+      }
+      setLoggedAt(new Date());
+    });
+    return () => sub.remove();
+  }, [toast, t]);
 
   useEffect(() => {
     if (!highlightId) return;
@@ -423,7 +454,6 @@ export default function InjectionScreen() {
   function resetForm() {
     setSelected(null);
     doseTouched.current = false;
-    setDoseInteracted(false);
     // Re-applies the current insulinType's dose prefill rule (profile's
     // daily basal for basal, 0 for bolus) now that the "touched" flag is
     // clear again - a plain setDose(0) here made the NEXT entry start from
@@ -451,75 +481,115 @@ export default function InjectionScreen() {
   }
 
   async function save() {
-    if (!activeProfile || !selected || saving || !stepperFields.allValid || !injectionDoseOk(dose)) return;
-    if (!(await confirmReusedPoint())) return;
-    if (!(await confirmDose(dose))) return;
-    // Duplicate-entry check (lib/entryGuard.ts), run last so it never fights
-    // the site/dose confirms above for the same dialog: a basal or bolus
-    // record close to this one asks a plain factual "save anyway?".
-    if (!(await guardEntry({ entryKind: "injection", insulinType, entryAtIso: loggedAt.toISOString() }))) {
-      return;
-    }
-    setSaving(true);
-    try {
-      // Product picking moved to settings/profile.tsx (2.4): this row just
-      // reads the active profile's current basal/bolus product at save time
-      // rather than carrying its own pre-filled copy. A profile with no
-      // product set for this type still logs the dose - same as today's
-      // "Not set" behaviour, just without the picker.
-      const productId =
-        (insulinType === "basal"
-          ? activeProfile.basal_insulin_id
-          : activeProfile.bolus_insulin_id) ?? null;
-      const productOther =
-        productId === OTHER_PRODUCT_ID
-          ? ((insulinType === "basal"
-              ? activeProfile.basal_insulin_other
-              : activeProfile.bolus_insulin_other) ?? null)
-          : null;
-      const saved = await logInjection({
-        profile_id: activeProfile.id,
-        site: selected.site,
-        site_point: selected.point,
-        dose_units: dose,
-        insulin_type: insulinType,
-        bolus_kind: insulinType === "bolus" ? bolusKind : null,
-        insulin_product_id: productId,
-        insulin_product_other: productOther,
-        note: note.trim() || null,
-        logged_at: loggedAt.toISOString(),
-      });
-      const kind = insulinType === "basal" ? "basal" : "injection";
-      logEvent("log_added", { kind });
-      void noteFirstLog(kind);
-      void noteLogAndMaybeReview();
-      void noteJournalActivity();
-      hapticSuccess();
-      toast(t("injection.saved"), "success", {
-        label: t("common.undo"),
-        onPress: () => {
-          void undoSaved(saved.id);
-        },
-      });
-      resetForm();
-      bumpData();
-      const target = afterSaveTarget(fromTodayRef.current);
-      fromTodayRef.current = false;
-      if (target === "today") {
-        router.navigate("/(tabs)");
-      } else {
-        scrolledToRef.current = null;
-        setHighlightId(saved.id);
-        setSegment("history");
-      }
-    } finally {
-      setSaving(false);
-    }
+    if (!activeProfile || !selected || !stepperFields.allValid || !injectionDoseOk(dose)) return;
+    const profile = activeProfile;
+    const site = selected;
+    const stampNow = () =>
+      saveTimestamp({ timeTouched: timeTouched.current, loggedAt, now: new Date() });
+    await runGuardedSave({
+      lock: savingRef,
+      setBusy: setSaving,
+      confirm: async () => {
+        if (!(await confirmReusedPoint())) return false;
+        if (!(await confirmDose(dose))) return false;
+        // Duplicate-entry check (lib/entryGuard.ts), run last so it never fights
+        // the site/dose confirms above for the same dialog: a basal or bolus
+        // record close to this one asks a plain factual "save anyway?".
+        return guardEntry({
+          entryKind: "injection",
+          insulinType,
+          entryAtIso: stampNow().toISOString(),
+        });
+      },
+      write: () => {
+        // Product picking moved to settings/profile.tsx (2.4): this row just
+        // reads the active profile's current basal/bolus product at save time
+        // rather than carrying its own pre-filled copy. A profile with no
+        // product set for this type still logs the dose - same as today's
+        // "Not set" behaviour, just without the picker.
+        const productId =
+          (insulinType === "basal" ? profile.basal_insulin_id : profile.bolus_insulin_id) ?? null;
+        const productOther =
+          productId === OTHER_PRODUCT_ID
+            ? ((insulinType === "basal"
+                ? profile.basal_insulin_other
+                : profile.bolus_insulin_other) ?? null)
+            : null;
+        return logInjection({
+          profile_id: profile.id,
+          site: site.site,
+          site_point: site.point,
+          dose_units: dose,
+          insulin_type: insulinType,
+          bolus_kind: insulinType === "bolus" ? bolusKind : null,
+          insulin_product_id: productId,
+          insulin_product_other: productOther,
+          note: note.trim() || null,
+          logged_at: stampNow().toISOString(),
+        });
+      },
+      onSaved: async (saved) => {
+        const kind = insulinType === "basal" ? "basal" : "injection";
+        logEvent("log_added", { kind });
+        void noteFirstLog(kind);
+        void noteLogAndMaybeReview();
+        void noteJournalActivity();
+        const target = afterSaveTarget(fromTodayRef.current);
+        // A back-dated row can fall outside the History window (14 days / first
+        // page); grow it so the saved row is really there, not just "saved".
+        let plan: { expand: boolean; limit: number } | null = null;
+        if (target === "history") {
+          try {
+            plan = historyPlanForSaved({
+              loggedAtIso: saved.logged_at,
+              now: Date.now(),
+              newerCount: await countInjectionsAfter(profile.id, saved.logged_at),
+              currentLimit: historyLimit,
+              days: HISTORY_INITIAL_DAYS,
+              max: HISTORY_PAGE,
+              page: HISTORY_PAGE,
+            });
+          } catch (err) {
+            logCrash(err, { screen: "injection", op: "savePlan" });
+          }
+        }
+        const offMap = outsideMapWindow(saved.logged_at, Date.now(), USAGE_WINDOW_DAYS, cycleStart);
+        hapticSuccess();
+        toast(t(offMap ? "injection.savedOutsideMap" : "injection.saved"), "success", {
+          label: t("common.undo"),
+          onPress: () => {
+            void undoSaved(saved.id);
+          },
+        });
+        resetForm();
+        if (plan) {
+          if (plan.expand) setHistoryExpanded(true);
+          const next = plan.limit;
+          setHistoryLimit((l) => Math.max(l, next));
+        }
+        bumpData();
+        fromTodayRef.current = false;
+        if (target === "today") {
+          router.navigate("/(tabs)");
+        } else {
+          scrolledToRef.current = null;
+          setHighlightId(saved.id);
+          setSegment("history");
+        }
+      },
+      onError: (err, phase) => {
+        logCrash(err, { screen: "injection", op: "save", phase });
+        if (phase !== "after") toast(t("common.saveFailed"), "error");
+      },
+    });
   }
 
-  // Picking a site on the map returns to the form to finish and save.
+  // Picking a site on the map returns to the form to finish and save. A time
+  // nobody picked follows "now" here too: on a two-column tablet the form never
+  // changes segment, so the segment effect that normally refreshes it never runs.
   function onMapSelect(sel: PointSelection) {
     setSelected(sel);
+    if (!timeTouched.current) setLoggedAt(new Date());
     setSegment("save");
   }
 
@@ -891,6 +961,8 @@ export default function InjectionScreen() {
     return <Redirect href="/(tabs)" />;
   }
 
+  const blockers = ctaBlockers({ hasSite: selected != null, doseOk: injectionDoseOk(dose) });
+
   const mapEmpty = injectionMapIsEmpty({
     historyLoaded,
     historyCount: history.length,
@@ -910,6 +982,7 @@ export default function InjectionScreen() {
             cycleStart={cycleStart}
             onStartNewCycle={startNewCycle}
             showRotationHint={isProUser}
+            lastSite={lastRecord?.site ?? null}
           />
         </View>
         {mapEmpty ? (
@@ -1004,7 +1077,6 @@ export default function InjectionScreen() {
             onChange={(v) => {
               if (v == null) return;
               doseTouched.current = true;
-              setDoseInteracted(true);
               setDose(v);
             }}
             onValidityChange={stepperFields.reporter("dose")}
@@ -1016,9 +1088,9 @@ export default function InjectionScreen() {
             decimals={INJECTION_DOSE_BOUNDS.decimals}
             suffix={t("common.units")}
             accessibilityLabel={t("injection.dose")}
-            style={{ marginBottom: doseHintVisible(injectionDoseOk(dose), doseInteracted) ? SPACE.sm : SPACE.lg }}
+            style={{ marginBottom: blockers.dose ? SPACE.sm : SPACE.lg }}
           />
-          {doseHintVisible(injectionDoseOk(dose), doseInteracted) ? (
+          {blockers.dose ? (
             <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.md }}>
               {t("basalConfirm.doseRequired")}
             </Txt>
@@ -1123,15 +1195,21 @@ export default function InjectionScreen() {
             <TextInput
               value={note}
               onChangeText={setNote}
+              accessibilityLabel={t("common.note")}
               placeholder={t("injection.notePlaceholder")}
               placeholderTextColor={THEME.placeholder}
               returnKeyType="done"
               style={[inputStyle(), INPUT_TEXT, { marginBottom: SPACE.lg }]}
             />
   
+            {blockers.site ? (
+              <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.sm }}>
+                {t("injection.ctaNeedSite")}
+              </Txt>
+            ) : null}
             <GradientCTA
               label={t("injection.logInjection")}
-              disabled={!selected || saving || !stepperFields.allValid || !injectionDoseOk(dose)}
+              disabled={blockers.site || blockers.dose || saving || !stepperFields.allValid}
               onPress={save}
             />
           </Animated.View>

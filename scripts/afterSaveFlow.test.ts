@@ -31,7 +31,7 @@ const cases: Array<[string, () => void]> = [
   }],
   ["injection.tsx: save -> toast with Undo, history segment + highlight, Today return", () => {
     const src = read("app/(tabs)/injection.tsx");
-    assert.ok(/const saved = await logInjection\(/.test(src));
+    assert.ok(/return logInjection\(/.test(src) && src.includes("onSaved: async (saved)"));
     assert.ok(src.includes('label: t("common.undo")'));
     assert.ok(src.includes("undoSaved(saved.id)"));
     assert.ok(src.includes("afterSaveTarget(fromTodayRef.current)"));
