@@ -14,7 +14,7 @@
 import type { KeyValueStore } from "./feedbackSurvey";
 
 /** The release (major.minor) whose changes the sheet describes. */
-export const WHATS_NEW_RELEASE = "2.4";
+export const WHATS_NEW_RELEASE = "2.5";
 
 /** Value: the app version at the time the sheet was shown or was ruled out. */
 export const WHATS_NEW_SEEN_KEY = "zerospike.whatsNew.seen";
@@ -24,11 +24,11 @@ export const WHATS_NEW_DELAY_MS = 3000;
 
 /** The five lines, in order; each is an i18n key under whatsNew. */
 export const WHATS_NEW_ITEMS = [
-  "whatsNew.itemTheme",
-  "whatsNew.itemBodyMap",
-  "whatsNew.itemMeal",
-  "whatsNew.itemSpike",
-  "whatsNew.itemCalc",
+  "whatsNew.itemCgm",
+  "whatsNew.itemNightscout",
+  "whatsNew.itemInsights",
+  "whatsNew.itemSafeSave",
+  "whatsNew.itemCards",
 ] as const;
 
 /** "2.4.1" or "2.4" to [2, 4]; null for anything that is not a version. */
