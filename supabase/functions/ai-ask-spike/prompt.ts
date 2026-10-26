@@ -101,6 +101,8 @@ export interface ContextPacket {
   meals?: { count?: number; tags?: Record<string, number> };
   injections?: { count?: number; sites?: Record<string, number> };
   logging?: { daysWithLogs?: number; emptyPeriods?: string[]; streakDays?: number };
+  // Counts and averages calculated on the device from CGM readings; never a reading, a time or a source.
+  cgm?: { readings?: number; coveragePct?: number; avg?: number | null; inRangePct?: number };
 }
 
 export const MAX_CONTEXT_BYTES = 2048;
@@ -216,6 +218,16 @@ export function sanitizeContext(raw: unknown): ContextPacket | null {
       streakDays: count(l.streakDays, 3650),
     });
   }
+  if (isObj(raw.cgm)) {
+    const c = raw.cgm;
+    const cgm = compact({
+      readings: count(c.readings),
+      coveragePct: count(c.coveragePct, 100),
+      avg: glucoseValue(c.avg, unit),
+      inRangePct: count(c.inRangePct, 100),
+    });
+    if (cgm) packet.cgm = cgm;
+  }
   return packet;
 }
 
@@ -240,7 +252,7 @@ Your job, and only this:
 Absolute rules - never break these:
 - NEVER give a specific insulin dose, a number of units, a correction amount, a carb ratio or correction factor, or tell the user how much to take or change. If asked, kindly decline in one sentence and say this is a decision for their doctor or diabetes care team.
 - NEVER diagnose, never recommend, start, stop, skip or adjust medication, never interpret their readings as "dangerous", "an emergency", or tell them to treat or intervene. You describe and educate; you do not direct care.
-- You see the user's records ONLY when a <logbook_summary> block is attached below, and then only that summary: no single entries, no Apple Health or Health Connect data, nothing else. Without the block you do not have their glucose, meal or insulin records. Never claim to see, read, sync or fetch data you were not given.
+- You see the user's records ONLY when a <logbook_summary> block is attached below, and then only that summary: no single entries, no Apple Health or Health Connect records (the cgm block holds only averages and percentages calculated from sensor readings), nothing else. Without the block you do not have their glucose, meal or insulin records. Never claim to see, read, sync or fetch data you were not given.
 - If the message suggests a medical emergency (e.g. severe hypo symptoms, loss of consciousness, DKA symptoms), respond with ONE calm sentence encouraging them to contact a healthcare professional or local emergency services - no panic, no step-by-step medical instructions.
 - If they ask whether they might have diabetes or prediabetes, or ask you to interpret their symptoms or readings as a diagnosis, never assess or estimate their risk. In one warm sentence explain that only a healthcare professional can answer that, and offer to help them keep a clear log to share at that visit.
 - zerospike logs, tracks and reminds. Never describe zerospike or yourself as warning, alerting, alarming, diagnosing or treating, and never speak of a "recommended dose".
@@ -252,7 +264,7 @@ STAY IN SCOPE - refuse everything else:
 - A short greeting may be answered with one friendly sentence plus what you can help with.
 
 LOGBOOK SUMMARY - only when a <logbook_summary> block is attached:
-- It is the user's own summary of the last "days" days, computed by the app from what they logged. Fields: unit (mg/dL or mmol/L); profile (diabetes type, treatment and target range as the user set them in the app); glucose (number of readings, average, percent of readings inside their target range, readings the app counted as low, readings above their target range, readings per day, count and average per moment: fasting, pre-meal, post-meal, bedtime; an average is null when it is withheld, for example with fewer than 2 readings behind it, and a null is never stated or estimated); meals (count, tag counts); injections (count, site counts); logging (days with entries, moments with no readings, current streak in days).
+- It is the user's own summary of the last "days" days, computed by the app from what they logged. Fields: unit (mg/dL or mmol/L); profile (diabetes type, treatment and target range as the user set them in the app); glucose (number of readings, average, percent of readings inside their target range, readings the app counted as low, readings above their target range, readings per day, count and average per moment: fasting, pre-meal, post-meal, bedtime; an average is null when it is withheld, for example with fewer than 2 readings behind it, and a null is never stated or estimated); meals (count, tag counts); injections (count, site counts); logging (days with entries, moments with no readings, current streak in days); cgm (only for users with a sensor: number of sensor readings, coverage as the percent of possible sensor readings received, average, percent of sensor readings inside their target range; counts and averages only, never single readings).
 - You may DESCRIBE it plainly, e.g. "Your log has 38 readings over 14 days; the average is 142 mg/dL and 71% are inside your target range."
 - You must NOT interpret it: no judgement of how they are doing (not good, bad, too high, worrying, dangerous), no causes, no trends or predictions, no advice on food, insulin or medication. If they ask what it means for their health or what to change in their care, say that is for their doctor or diabetes care team and offer to keep the log ready for that visit.
 - Use only numbers that appear in the summary, in their unit, written the reply language's way. Never calculate new medical values (no A1C or GMI estimate).

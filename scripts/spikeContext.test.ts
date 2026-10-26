@@ -1184,6 +1184,9 @@ function consentWording(): void {
   for (const lang of langs) {
     const spike = localeSpike(lang);
     ok(`${lang}: ctxShared5 exists`, typeof spike.ctxShared5 === "string" && spike.ctxShared5.length > 0);
+    ok(`${lang}.ctxShared1 says the average and percentages are calculated from CGM readings`, /CGM/.test(spike.ctxShared1) && spike.ctxShared1.length > 20, spike.ctxShared1);
+    ok(`${lang}.ctxNotShared2 says individual records from the Health apps and Nightscout stay out`, /Nightscout/.test(spike.ctxNotShared2) && /Health Connect/.test(spike.ctxNotShared2), spike.ctxNotShared2);
+    ok(`${lang}.ctxNotShared1 still says individual measurements are not shared`, spike.ctxNotShared1.length > 0);
     for (const key of ["consentDeviceId", "ctxRecipient"]) {
       ok(`${lang}.${key} does not claim anonymity`, !anonymity.test(spike[key]));
     }
@@ -1213,9 +1216,142 @@ function consentWording(): void {
   ok("the Spike screen short view carries no provider name outside the locale keys", !/AWS|Amazon Web|Anthropic|Bedrock/.test(screen));
 }
 
+// ── M. CGM statistics: counts and averages only ────────────────────────────
+async function cgmTests(): Promise<void> {
+  section("M. CGM statistics in the packet (counts and averages, never readings)");
+  const agg = { count: 3000, avgMgdl: 140.4, inRangeCount: 2100 };
+  const withCgm = build({ cgm: agg });
+  const { cgm: _cgm, ...rest } = withCgm as ContextPacket & { cgm?: unknown };
+  same("the CGM block is the only difference", rest, packet);
+  same("coverage, average and in-range share", withCgm.cgm, { readings: 3000, coveragePct: 74, avg: 140, inRangePct: 70 });
+  eq("it validates", ctx.validateContextPacket(withCgm).length, 0);
+  ok("a packet without CGM data has no cgm key", !("cgm" in build()) && !("cgm" in build({ cgm: null })));
+  ok("a CGM-free packet is the packet it always was", stable(build({ cgm: null })) === stable(packet));
+  ok("fewer readings than the detection floor: no cgm key", !("cgm" in build({ cgm: { count: 11, avgMgdl: 120, inRangeCount: 5 } })));
+  ok("the floor itself is enough", "cgm" in build({ cgm: { count: 12, avgMgdl: 120, inRangeCount: 6 } }));
+  ok("zero readings: no cgm key", !("cgm" in build({ cgm: { count: 0, avgMgdl: null, inRangeCount: 0 } })));
+  ok("no average: no cgm key", !("cgm" in build({ cgm: { count: 500, avgMgdl: null, inRangeCount: 0 } })));
+  ok("a NaN average: no cgm key", !("cgm" in build({ cgm: { count: 500, avgMgdl: Number.NaN, inRangeCount: 0 } })));
+  eq("coverage is capped at 100", build({ cgm: { count: 9000, avgMgdl: 120, inRangeCount: 9000 } }).cgm?.coveragePct, 100);
+  eq("in-range cannot pass 100", build({ cgm: { count: 100, avgMgdl: 120, inRangeCount: 400 } }).cgm?.inRangePct, 100);
+  eq("coverage follows the window, 7 days of 288 a day", build({ days: 7, cgm: { count: 1008, avgMgdl: 120, inRangeCount: 500 } }).cgm?.coveragePct, 50);
+  const mmol = build({ profile: profile({ glucose_unit: "mmol" }), cgm: agg });
+  eq("mmol profile: the CGM average is in mmol/L", mmol.cgm?.avg, 7.8);
+  eq("and it validates", ctx.validateContextPacket(mmol).length, 0);
+
+  // Privacy: only four numbers, nothing that names a source or a moment.
+  same("the cgm keys", Object.keys(withCgm.cgm as object).sort(), ["avg", "coveragePct", "inRangePct", "readings"]);
+  const dirty = build({
+    cgm: { ...agg, rows: [{ glucose_level_mgdl: 99, logged_at: at(1), source_app: "com.dexcom.G7", external_id: "ext-77" }], source_app: "com.dexcom.G7", external_id: "ext-77", deviceName: "Ada's G7" } as never,
+  });
+  const dirtyJson = JSON.stringify(dirty);
+  for (const leak of ["source_app", "external_id", "dexcom", "ext-77", "G7", "Ada", "rows", "logged_at", "deviceName", "nightscout"]) {
+    ok(`no "${leak}" in a packet built from a dirty aggregate`, !dirtyJson.includes(leak));
+  }
+  same("a dirty aggregate gives the same packet as a clean one", dirty, withCgm);
+  const cgmKeys: string[] = [];
+  (function walk(v: unknown): void {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v as Record<string, unknown>)) { cgmKeys.push(k); walk(x); }
+  })(withCgm);
+  for (const banned of ["source_app", "external_id", "sourceApp", "externalId", "readingsList", "values", "series", "samples", "logged_at", "device"]) {
+    ok(`no "${banned}" key anywhere in the packet`, !cgmKeys.includes(banned));
+  }
+  ok("no ISO date, no clock time in a packet with CGM", !/\d{4}-\d{2}-\d{2}/.test(JSON.stringify(withCgm)) && !/\d{1,2}:\d{2}/.test(JSON.stringify(withCgm)));
+
+  // The validator closes the cgm block as tightly as the rest.
+  const base = (): Record<string, any> => JSON.parse(JSON.stringify(withCgm));
+  const bad = (name: string, mutate: (p: Record<string, any>) => void, needle: string): void => {
+    const p = base();
+    mutate(p);
+    const problems = ctx.validateContextPacket(p);
+    ok(name, problems.length > 0 && problems.some((m) => m.includes(needle)), problems.join(" | "));
+  };
+  bad("an extra key in cgm (a raw list)", (p) => (p.cgm.values = [100, 110]), "unexpected key");
+  bad("a source name in cgm", (p) => (p.cgm.source_app = "com.dexcom.G7"), "unexpected key");
+  bad("a missing cgm field", (p) => delete p.cgm.avg, "missing");
+  bad("a null average", (p) => (p.cgm.avg = null), "out of range");
+  bad("readings below the floor", (p) => (p.cgm.readings = 5), "cgm.readings");
+  bad("coverage that disagrees with the readings", (p) => (p.cgm.coveragePct = 12), "coverage");
+  bad("a fractional in-range share", (p) => (p.cgm.inRangePct = 70.5), "inRangePct");
+  bad("an in-range share above 100", (p) => (p.cgm.inRangePct = 120), "inRangePct");
+  bad("a cgm block that is a list", (p) => (p.cgm = [1, 2, 3]), "cgm");
+  bad("a cgm block that is a number", (p) => (p.cgm = 99), "cgm");
+  bad("a string average", (p) => (p.cgm.avg = "140"), "out of range");
+  const noCgmBlock = base();
+  delete noCgmBlock.cgm;
+  eq("a packet without the block still validates (old shape)", ctx.validateContextPacket(noCgmBlock).length, 0);
+
+  // Size: the block fits the 2 KB ceiling even on the widest packet.
+  const widestCgm = { readings: 99999, coveragePct: 100, avg: 999.9, inRangePct: 100 };
+  const widestBlock = `,"cgm":${JSON.stringify(widestCgm)}`;
+  const busyWithCgm = build({ profile: profile({ glucose_unit: "mmol" }), sugar: busyRows, meals: busyMeals, injections: busyShots, cgm: agg });
+  eq("the busiest realistic packet with CGM validates", ctx.validateContextPacket(busyWithCgm).length, 0);
+  ok(`and stays under 2 KB (${bytes(busyWithCgm)} bytes)`, bytes(busyWithCgm) < ctx.SPIKE_CONTEXT_MAX_BYTES);
+  ok(`the widest conceivable packet plus the cgm block stays under 2 KB (${bytes(widest) + widestBlock.length} bytes)`, bytes(widest) + widestBlock.length < ctx.SPIKE_CONTEXT_MAX_BYTES);
+
+  // Wiring through summarizeForSpike.
+  const calls: { id: string; start: number; end: number; low: number; high: number }[] = [];
+  const src = (over: Partial<SpikeContextSource> = {}): SpikeContextSource => ({
+    listSugarLogs: async () => ALL_SUGAR,
+    listMealLogs: async () => MEALS,
+    getInjections: async () => INJECTIONS,
+    resolveProfile: async () => P,
+    getCgmAggregate: async (id, range, band) => {
+      calls.push({ id, start: range.start, end: range.end, low: band.low, high: band.high });
+      return agg;
+    },
+    ...over,
+  });
+  const viaSource = await ctx.summarizeForSpike(14, { profile: P, source: src(), now: NOW });
+  same("summarizeForSpike carries the CGM block", viaSource, withCgm);
+  eq("one aggregate read", calls.length, 1);
+  same("for the profile on screen, the window and the target band", calls[0], { id: "p1", start: localMidnight(13), end: NOW, low: 70, high: 180 });
+  const noMethod = await ctx.summarizeForSpike(14, { profile: P, source: src({ getCgmAggregate: undefined }), now: NOW });
+  same("a source without CGM support gives the old packet", noMethod, packet);
+  const throwing = await ctx.summarizeForSpike(14, { profile: P, source: src({ getCgmAggregate: async () => { throw new Error("db"); } }), now: NOW });
+  same("a failing CGM read drops only the CGM block", throwing, packet);
+  const none = await ctx.summarizeForSpike(14, { profile: P, source: src({ getCgmAggregate: async () => null }), now: NOW });
+  same("no CGM data gives no CGM block", none, packet);
+  const week = await ctx.summarizeForSpike(7, { profile: P, source: src(), now: NOW });
+  eq("a 7-day request scales the coverage (and caps it)", week?.cgm?.coveragePct, 100);
+
+  // The real SQL, against a scratch database.
+  const { DatabaseSync } = require("node:sqlite") as { DatabaseSync: new (p: string) => { exec(s: string): void; prepare(s: string): { run(...a: unknown[]): unknown; get(...a: unknown[]): any }; close(): void } };
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE sugar_logs (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL, glucose_level_mgdl INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'manual', logged_at TEXT NOT NULL, source_app TEXT, external_id TEXT, is_cgm INTEGER NOT NULL DEFAULT 0);");
+  const ins = db.prepare("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, is_cgm, source_app, external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?);");
+  const range = { start: localMidnight(13), end: NOW };
+  let n = 0;
+  const put = (profileId: string, mgdl: number, iso: string, isCgm: number, source = "health"): void => {
+    n += 1;
+    ins.run(`r${n}`, profileId, mgdl, source, iso, isCgm, "com.dexcom.G7", `ext-${n}`);
+  };
+  put("p1", 60, at(0, 8), 1);
+  put("p1", 70, at(1, 8), 1);
+  put("p1", 100, at(2, 8), 1);
+  put("p1", 180, at(3, 8), 1);
+  put("p1", 200, at(4, 8), 1, "nightscout");
+  put("p1", 999, at(14, 23), 1); // before the window
+  put("p1", 999, new Date(NOW + 60_000).toISOString(), 1); // after the window
+  put("p1", 400, at(1, 9), 0, "manual"); // not a sensor row
+  put("p2", 400, at(1, 9), 1); // another profile
+  const row = db.prepare(ctx.CGM_AGGREGATE_SQL).get(...ctx.cgmAggregateParams("p1", range, { low: 70, high: 180 }));
+  same("count, mean and in-range count of the sensor rows in the window", { n: row.n, avg: row.avg, inr: row.inr }, { n: 5, avg: 122, inr: 3 });
+  const sqlText: string = ctx.CGM_AGGREGATE_SQL;
+  ok("the query selects aggregates only", /^SELECT\s+COUNT\(\*\)/i.test(sqlText.trim()) && !/source_app|external_id/i.test(sqlText), sqlText);
+  ok("and filters on is_cgm = 1", /is_cgm\s*=\s*1/.test(sqlText));
+  const empty = db.prepare(ctx.CGM_AGGREGATE_SQL).get(...ctx.cgmAggregateParams("nobody", range, { low: 70, high: 180 }));
+  same("a profile with no sensor rows", { n: empty.n, avg: empty.avg }, { n: 0, avg: null });
+  db.close();
+  const ctxSrc = read("lib/ai/spikeContext.ts");
+  ok("the default source reads the aggregate, not the rows", /getCgmAggregate:/.test(ctxSrc) && ctxSrc.includes("CGM_AGGREGATE_SQL"));
+}
+
 (async () => {
   protocolHelpers();
   await summarizeTests();
+  await cgmTests();
   await consentTests();
   await clientTests();
   sourcePins();
