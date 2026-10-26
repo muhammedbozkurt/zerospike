@@ -19,9 +19,13 @@ export async function runGuardedSave<T>(opts: {
   confirm: () => Promise<boolean>;
   write: () => Promise<T>;
   onSaved: (saved: T) => void | Promise<void>;
+  /** Runs when onSaved threw: the row is stored, so the caller finishes what
+   *  the user must see (reset, saved notice) instead of leaving a form that
+   *  invites a second, duplicate save. */
+  onAfterFailure?: (saved: T) => void | Promise<void>;
   onError: (err: unknown, phase: SavePhase) => void;
 }): Promise<SaveOutcome> {
-  const { lock, setBusy, confirm, write, onSaved, onError } = opts;
+  const { lock, setBusy, confirm, write, onSaved, onAfterFailure, onError } = opts;
   if (lock.current) return "busy";
   lock.current = true;
   setBusy(true);
@@ -45,6 +49,11 @@ export async function runGuardedSave<T>(opts: {
       await onSaved(saved);
     } catch (err) {
       onError(err, "after");
+      try {
+        await onAfterFailure?.(saved);
+      } catch (recoveryErr) {
+        onError(recoveryErr, "after");
+      }
     }
     return "saved";
   } finally {

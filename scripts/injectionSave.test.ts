@@ -115,6 +115,45 @@ async function main(): Promise<void> {
 
     {
       const lock = { current: false };
+      const recovered: unknown[] = [];
+      const out = await runGuardedSave({
+        lock,
+        setBusy: () => {},
+        confirm: async () => true,
+        write: async () => "row",
+        onSaved: () => {
+          throw new Error("ui");
+        },
+        onAfterFailure: (saved: unknown) => {
+          recovered.push(saved);
+        },
+        onError: () => {},
+      });
+      ok("after-phase failure hands the saved row to the recovery hook", out === "saved" && recovered.length === 1 && recovered[0] === "row");
+    }
+
+    {
+      const out = await runGuardedSave({
+        lock: { current: false },
+        setBusy: () => {},
+        confirm: async () => true,
+        write: async () => "row",
+        onSaved: () => {
+          throw new Error("ui");
+        },
+        onAfterFailure: () => {
+          throw new Error("recovery too");
+        },
+        onError: () => {},
+      });
+      ok("a throwing recovery hook never escapes", out === "saved");
+    }
+
+    ok("form recovers from an after-phase failure (reset + saved toast)", form.includes("onAfterFailure"));
+    ok("form asks about a stale picked time inside the guarded confirm", form.includes("timeStale.current") && form.includes("timeChoice"));
+
+    {
+      const lock = { current: false };
       let writes = 0;
       const out = await runGuardedSave({
         lock,
