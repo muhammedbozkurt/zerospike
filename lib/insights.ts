@@ -9,6 +9,15 @@ import { INJECTION_SITES, LOG_TAGS } from "./db/types";
 import { percentile } from "./agp";
 import { VERY_HIGH_MGDL } from "./glucose";
 import { isUserEntered } from "./glucoseSource";
+import {
+  cgmGmiEligible,
+  gmiFromMean,
+  isCgmPoint,
+  selectGlucoseBasis,
+  timeOf,
+  type CgmSourceKind,
+  type MetricsWindow,
+} from "./cgm/metrics";
 
 /**
  * Pro "Insights": a read-only, descriptive summary of the user's own logged
@@ -35,6 +44,16 @@ export interface Insights {
   highPct: number | null; // above the band, under the fixed 250 ceiling
   veryHighPct: number | null; // at/above 250 mg/dL
   gmi: number | null; // estimated A1C (%)
+  /** What the glucose figures above are computed from: the sensor readings when
+   *  they cover half the window or more, otherwise every reading. */
+  basis: "cgm" | "manual";
+  /** Share (0..100) of the window's five-minute slots holding a sensor reading,
+   *  null when the window holds no sensor reading at all. */
+  cgmCoverage: number | null;
+  cgmReadings: number;
+  /** Readings in the window that are not sensor readings. */
+  manualReadings: number;
+  cgmSources: CgmSourceKind[];
   avgFasting: number | null;
   avgPostMeal: number | null;
   avgDailyCarbs: number | null;
@@ -117,14 +136,19 @@ export function rangeWindowDays(range: DateRange): number {
  * over enough calendar time. Both conditions matter - many readings crammed into
  * two days describe two days, not a quarter.
  */
-export function hasGmiBasis(readings: { logged_at: string }[]): boolean {
+export function hasGmiBasis(readings: { logged_at: string; t?: number }[]): boolean {
   if (readings.length < GMI_MIN_READINGS) return false;
-  const times = readings
-    .map((x) => new Date(x.logged_at).getTime())
-    .filter((t) => !Number.isNaN(t));
-  if (times.length < GMI_MIN_READINGS) return false;
-  const span = Math.max(...times) - Math.min(...times);
-  return span >= GMI_MIN_SPAN_DAYS * 86_400_000;
+  let n = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const x of readings) {
+    const t = timeOf(x);
+    if (Number.isNaN(t)) continue;
+    n++;
+    if (t < min) min = t;
+    if (t > max) max = t;
+  }
+  return n >= GMI_MIN_READINGS && max - min >= GMI_MIN_SPAN_DAYS * 86_400_000;
 }
 
 function mean(ns: number[]): number | null {
@@ -160,6 +184,10 @@ export function computeInsights(
    *  `windowDays` up to now - byte-identical to the pre-R7.2 behaviour. */
   range?: DateRange
 ): Insights {
+  const now = Date.now();
+  const win: MetricsWindow = range
+    ? { start: range.start, end: range.end }
+    : { start: now - windowDays * 86_400_000, end: now, until: Infinity };
   const within = range
     ? (iso: string) => {
         const t = new Date(iso).getTime();
@@ -167,14 +195,16 @@ export function computeInsights(
       }
     : (iso: string) => {
         const t = new Date(iso).getTime();
-        return !Number.isNaN(t) && t >= Date.now() - windowDays * 86_400_000;
+        return !Number.isNaN(t) && t >= now - windowDays * 86_400_000;
       };
 
-  const s = sugar.filter((x) => within(x.logged_at));
+  const basis = selectGlucoseBasis(sugar, win);
+  const s = basis.all;
   const m = meals.filter((x) => within(x.logged_at));
   const inj = injections.filter((x) => within(x.logged_at));
 
-  const levels = s.map((x) => x.glucose_level_mgdl);
+  const basisRows = basis.readings;
+  const levels = basisRows.map((x) => x.glucose_level_mgdl);
   const readings = levels.length;
 
   const inRange = levels.filter((v) => v >= band.low && v <= band.high).length;
@@ -213,8 +243,8 @@ export function computeInsights(
     afternoon: [],
     evening: [],
   };
-  for (const x of s) {
-    const h = new Date(x.logged_at).getHours();
+  for (const x of basisRows) {
+    const h = new Date(timeOf(x)).getHours();
     if (!Number.isNaN(h)) slices[hourSlice(h)].push(x.glucose_level_mgdl);
   }
   const hourly: Record<DayKind, number | null> = {
@@ -229,9 +259,23 @@ export function computeInsights(
   // east of Greenwich (and every early-morning one west of it), which then also
   // skewed avgDailyCarbs and avgDailyDose. Every other day-bucketing surface in
   // the app (dailyAverages, the journal sections, the report timeline) is local.
+  // A sensor stream puts a reading on every day, so the carbs-per-day average
+  // counts the days that hold a hand-entered reading or a meal, as before.
   const dayKeys = new Set<string>();
-  [...s, ...m].forEach((x) => dayKeys.add(localDayKey(x.logged_at)));
+  const handDayKeys = new Set<string>();
+  const dayOfMs = (ms: number) => (Number.isNaN(ms) ? "" : dayKey(new Date(ms)));
+  for (const x of s) {
+    const key = dayOfMs(timeOf(x));
+    dayKeys.add(key);
+    if (!isCgmPoint(x)) handDayKeys.add(key);
+  }
+  for (const x of m) {
+    const key = localDayKey(x.logged_at);
+    dayKeys.add(key);
+    handDayKeys.add(key);
+  }
   const days = dayKeys.size;
+  const carbDays = handDayKeys.size;
 
   const totalCarbs = m.reduce((a, x) => a + (x.calculated_carbs_g || 0), 0);
 
@@ -279,12 +323,23 @@ export function computeInsights(
     highPct: readings ? (high / readings) * 100 : null,
     veryHighPct: readings ? (veryHigh / readings) * 100 : null,
     gmi:
-      avgGlucose != null && hasGmiBasis(s)
-        ? 3.31 + 0.02392 * avgGlucose
-        : null,
+      avgGlucose == null
+        ? null
+        : basis.kind === "cgm"
+          ? cgmGmiEligible(basis, win)
+            ? gmiFromMean(avgGlucose)
+            : null
+          : hasGmiBasis(basisRows)
+            ? gmiFromMean(avgGlucose)
+            : null,
+    basis: basis.kind === "cgm" ? "cgm" : "manual",
+    cgmCoverage: basis.cgmCount > 0 ? basis.coverage * 100 : null,
+    cgmReadings: basis.cgmCount,
+    manualReadings: basis.otherCount,
+    cgmSources: basis.sources,
     avgFasting,
     avgPostMeal,
-    avgDailyCarbs: days > 0 && m.length ? totalCarbs / days : null,
+    avgDailyCarbs: carbDays > 0 && m.length ? totalCarbs / carbDays : null,
 
     glucoseSD: sd,
     glucoseCV: sd != null && avgGlucose ? (sd / avgGlucose) * 100 : null,
@@ -313,13 +368,12 @@ export function trendVsPrevious(
   band: TirBand = DEFAULT_TIR_BAND,
   range?: DateRange
 ): { avgDelta: number | null; tirDelta: number | null } {
+  // Each window picks its own basis: a window the sensor barely covers is
+  // measured on all its readings, one it covers well on the sensor alone.
   const bucket = (lo: number, hi: number) =>
-    sugar
-      .filter((x) => {
-        const t = new Date(x.logged_at).getTime();
-        return !Number.isNaN(t) && t >= lo && t < hi;
-      })
-      .map((x) => x.glucose_level_mgdl);
+    selectGlucoseBasis(sugar, { start: lo, end: hi - 1 }).readings.map(
+      (x) => x.glucose_level_mgdl
+    );
   let cur: number[];
   let prev: number[];
   if (range) {
@@ -399,9 +453,14 @@ export function dailyAverages(
   if (!range) firstDate.setDate(firstDate.getDate() - (windowDays - 1));
   const first = firstDate.getTime();
 
+  const readings = selectGlucoseBasis(sugar, {
+    start: first,
+    end: first + daysCount * 86_400_000,
+    until: Infinity,
+  }).readings;
   const buckets = new Map<number, number[]>();
-  for (const x of sugar) {
-    const d = new Date(x.logged_at);
+  for (const x of readings) {
+    const d = new Date(timeOf(x));
     if (Number.isNaN(d.getTime())) continue;
     // Round, because a day spanning a clock change is 23 or 25 hours long.
     const offset = Math.round((startOfDay(d).getTime() - first) / 86_400_000);
@@ -440,14 +499,12 @@ export function windowPercentiles(
   windowDays: number,
   range?: DateRange
 ): WindowPercentiles | null {
-  const since = Date.now() - windowDays * 86_400_000;
-  const vals = sugar
-    .filter((x) => {
-      const t = new Date(x.logged_at).getTime();
-      if (Number.isNaN(t)) return false;
-      return range ? t >= range.start && t <= range.end : t >= since;
-    })
-    .map((x) => x.glucose_level_mgdl)
+  const now = Date.now();
+  const win: MetricsWindow = range
+    ? { start: range.start, end: range.end }
+    : { start: now - windowDays * 86_400_000, end: now, until: Infinity };
+  const vals = selectGlucoseBasis(sugar, win)
+    .readings.map((x) => x.glucose_level_mgdl)
     .sort((a, b) => a - b);
   if (vals.length < 5) return null;
   return {
@@ -505,15 +562,17 @@ export function weeklyDigest(
 
 /**
  * Consecutive local days ending today or yesterday that have at least one log.
- * Framed as encouragement ("X days in a row"), not a streak to protect: it
+ * `cgmDates` are timestamps of sensor readings: a day the sensor fed the journal
+ * counts like a day with a hand-entered log (nobody is asked to log on top of a
+ * sensor). Framed as encouragement ("X days in a row"), not a streak to protect: it
  * survives a single missed day boundary and never blames a gap.
  */
-export function consecutiveLogDays(logDates: string[]): number {
+export function consecutiveLogDays(logDates: string[], cgmDates: string[] = []): number {
   const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   const key = (d: Date) =>
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const days = new Set(
-    logDates
+    (cgmDates.length > 0 ? [...logDates, ...cgmDates] : logDates)
       .map((iso) => {
         const d = new Date(iso);
         return Number.isNaN(d.getTime()) ? "" : key(d);
@@ -521,7 +580,7 @@ export function consecutiveLogDays(logDates: string[]): number {
       .filter(Boolean)
   );
   if (days.size === 0) return 0;
-  const cursor = new Date();
+  const cursor = new Date(Date.now());
   cursor.setHours(0, 0, 0, 0);
   if (!days.has(key(cursor))) {
     cursor.setDate(cursor.getDate() - 1);
@@ -565,13 +624,11 @@ export function derivePatterns(
   windowDays = INSIGHTS_WINDOW_DAYS,
   range?: DateRange
 ): InsightPattern[] {
-  const since = Date.now() - windowDays * 86_400_000;
-  const within = (iso: string) => {
-    const t = new Date(iso).getTime();
-    if (Number.isNaN(t)) return false;
-    return range ? t >= range.start && t <= range.end : t >= since;
-  };
-  const readings = sugar.filter((x) => within(x.logged_at));
+  const now = Date.now();
+  const win: MetricsWindow = range
+    ? { start: range.start, end: range.end }
+    : { start: now - windowDays * 86_400_000, end: now, until: Infinity };
+  const readings = selectGlucoseBasis(sugar, win).readings;
   const levels = readings.map((x) => x.glucose_level_mgdl);
   const baseline = mean(levels);
   if (baseline == null || levels.length < PATTERN_MIN_READINGS) return [];
@@ -600,7 +657,7 @@ export function derivePatterns(
   // Dawn phenomenon: morning slice (06:00-12:00) clearly above the mean.
   const morning = readings
     .filter((x) => {
-      const h = new Date(x.logged_at).getHours();
+      const h = new Date(timeOf(x)).getHours();
       return h >= 6 && h < 12;
     })
     .map((x) => x.glucose_level_mgdl);

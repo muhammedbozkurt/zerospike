@@ -1,4 +1,5 @@
 import type { SugarLog } from "./db/types";
+import { selectGlucoseBasis, timeOf, type MetricsWindow } from "./cgm/metrics";
 
 /**
  * Ambulatory Glucose Profile (AGP): the standard chart clinicians read: glucose
@@ -7,6 +8,8 @@ import type { SugarLog } from "./db/types";
  *
  * Works best with dense (CGM) data; with sparse fingersticks the bands are still
  * computed but flagged via `totalReadings` so the report can require a minimum.
+ * When a sensor covers half the window or more, only its readings are pooled
+ * (lib/cgm/metrics.ts), so a few hand-entered values do not skew an hour.
  */
 
 /** Below this many readings an AGP is too sparse to be meaningful. */
@@ -48,14 +51,14 @@ export function computeAgp(
   /** Optional explicit range (epoch ms); two-sided, overrides windowDays. */
   range?: { start: number; end: number }
 ): Agp {
-  const since = Date.now() - windowDays * 86_400_000;
+  const now = Date.now();
+  const win: MetricsWindow = range
+    ? { start: range.start, end: range.end }
+    : { start: now - windowDays * 86_400_000, end: now, until: Infinity };
   const byHour: number[][] = Array.from({ length: 24 }, () => []);
   let total = 0;
-  for (const r of sugar) {
-    const t = new Date(r.logged_at).getTime();
-    if (Number.isNaN(t)) continue;
-    if (range ? t < range.start || t > range.end : t < since) continue;
-    const h = new Date(r.logged_at).getHours();
+  for (const r of selectGlucoseBasis(sugar, win).readings) {
+    const h = new Date(timeOf(r)).getHours();
     if (Number.isNaN(h)) continue;
     byHour[h].push(r.glucose_level_mgdl);
     total++;

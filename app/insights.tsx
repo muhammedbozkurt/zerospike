@@ -17,7 +17,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
-import { listSugarLogs, listMealLogs } from "../lib/db/logs";
+import { listMealLogs } from "../lib/db/logs";
+import { listInsightsSugar } from "../lib/db/sugarRange";
+import { GMI_MIN_COVERAGE, GMI_MIN_WINDOW_DAYS, timeOf } from "../lib/cgm/metrics";
+import { basisLine } from "../lib/cgm/basisText";
 import { getInjections } from "../lib/db/injections";
 import { getFood } from "../lib/db/foods";
 import {
@@ -499,7 +502,8 @@ export default function InsightsScreen() {
         return;
       }
       const [s, m, inj] = await Promise.all([
-        listSugarLogs(activeProfile.id, 2000, fetchRange),
+        // Hand-entered rows (newest 2000) plus every sensor reading as lean rows.
+        listInsightsSugar(activeProfile.id, fetchRange),
         listMealLogs(activeProfile.id, 2000, fetchRange),
         getInjections(activeProfile.id, 2000, fetchRange),
       ]);
@@ -523,6 +527,9 @@ export default function InsightsScreen() {
     () => computeInsights(sugar, meals, injections, windowDays, tirBand, range),
     [sugar, meals, injections, windowDays, tirBand, customRange]
   );
+
+  const fromCgm = data.basis === "cgm";
+  const cgmBasisText = useMemo(() => basisLine(t, Platform.OS, data), [data, t]);
 
   // The bare number, for widgets that style the percent sign separately; and the
   // whole percentage, sign placed by the language (lib/format).
@@ -824,14 +831,14 @@ export default function InsightsScreen() {
   const readingsInActiveWindow = useMemo(
     () =>
       sugar.filter((r) => {
-        const ms = new Date(r.logged_at).getTime();
+        const ms = timeOf(r);
         return Number.isFinite(ms) && ms >= activeRange.start && ms <= activeRange.end;
       }),
     [sugar, activeRange]
   );
   const hourBands = useMemo(
-    () => hourBandAverages(readingsInActiveWindow, trendWindowDays),
-    [readingsInActiveWindow, trendWindowDays]
+    () => hourBandAverages(readingsInActiveWindow, trendWindowDays, activeRange),
+    [readingsInActiveWindow, trendWindowDays, activeRange]
   );
 
   // c) AGP percentile ribbons: `agp` above already carries p05/p25/p75/p95 per
@@ -1332,7 +1339,7 @@ export default function InsightsScreen() {
                       <StatCard
                         glass
                         glow={data.gmi != null}
-                        label={t("insights.gmi")}
+                        label={t(fromCgm ? "cgmInsights.gmiLabel" : "insights.gmi")}
                         display={data.gmi == null ? "-" : pctParts(data.gmi, 1).number}
                         suffix={data.gmi == null ? undefined : PCT_SIGN.sign}
                         suffixFirst={PCT_SIGN.signFirst}
@@ -1359,14 +1366,41 @@ export default function InsightsScreen() {
                         footnote={premium ? tirTrend : undefined}
                         style={{ flex: 1 }}
                       />
-                      <StatCard
-                        glass
-                        label={t("insights.readings")}
-                        display={String(data.readings)}
-                        footnote={t("insights.windowDays", { n: data.days })}
-                        style={{ flex: 1 }}
-                      />
+                      {fromCgm && data.cgmCoverage != null ? (
+                        <StatCard
+                          glass
+                          label={t("cgmInsights.coverage")}
+                          display={pctNum(data.cgmCoverage)}
+                          suffix={PCT_SIGN.sign}
+                          suffixFirst={PCT_SIGN.signFirst}
+                          footnote={t("insights.windowDays", { n: data.days })}
+                          style={{ flex: 1 }}
+                        />
+                      ) : (
+                        <StatCard
+                          glass
+                          label={t("insights.readings")}
+                          display={String(data.readings)}
+                          footnote={t("insights.windowDays", { n: data.days })}
+                          style={{ flex: 1 }}
+                        />
+                      )}
                     </View>
+
+                    {/* Where the figures come from: the sensor with its coverage, or the hand-entered readings */}
+                    {cgmBasisText ? (
+                      <Text
+                        style={{
+                          color: THEME.textMuted,
+                          fontSize: 11,
+                          lineHeight: 16,
+                          marginTop: 8,
+                          paddingHorizontal: 6,
+                        }}
+                      >
+                        {cgmBasisText}
+                      </Text>
+                    ) : null}
 
                     {/* GMI is withheld until the sample can carry it */}
                     <Text
@@ -1378,12 +1412,17 @@ export default function InsightsScreen() {
                         paddingHorizontal: 6,
                       }}
                     >
-                      {data.gmi == null
-                        ? t("insights.gmiNeedMore", {
-                            n: GMI_MIN_READINGS,
-                            days: GMI_MIN_SPAN_DAYS,
-                          })
-                        : t("insights.gmiNote")}
+                      {data.gmi != null
+                        ? t(fromCgm ? "cgmInsights.gmiNote" : "insights.gmiNote")
+                        : fromCgm
+                          ? t("cgmInsights.gmiNeedCoverage", {
+                              days: GMI_MIN_WINDOW_DAYS,
+                              pct: pct(GMI_MIN_COVERAGE * 100),
+                            })
+                          : t("insights.gmiNeedMore", {
+                              n: GMI_MIN_READINGS,
+                              days: GMI_MIN_SPAN_DAYS,
+                            })}
                     </Text>
                     </React.Fragment>
                   ) : null}
@@ -1598,7 +1637,12 @@ export default function InsightsScreen() {
                         <Text style={{ color: THEME.textMuted, fontSize: 11, marginBottom: 12 }}>
                           {t("insights.percentileSub")}
                         </Text>
-                        <View className="flex-row justify-between">
+                        {/* Physically LTR always (5th to 95th left to right), like the hour
+                            axis: a value scale, not a reading-direction list. */}
+                        <View
+                          className="justify-between"
+                          style={{ flexDirection: I18nManager.isRTL ? "row-reverse" : "row" }}
+                        >
                           {(
                             [
                               ["p05", pctile.p05],

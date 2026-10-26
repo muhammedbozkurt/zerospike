@@ -61,8 +61,13 @@ import { displayProfileName } from "../../lib/profileName";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
-import { formatDate, formatLocale, formatTime, num } from "../../lib/format";
-import { truncationMessage, type ExportTruncation } from "../../lib/exportLimits";
+import { formatDate, formatLocale, formatTime, num, pct } from "../../lib/format";
+import {
+  progressPercent,
+  truncationMessage,
+  type ExportProgress,
+  type ExportTruncation,
+} from "../../lib/exportLimits";
 import { GLUCOSE_RICH, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
@@ -168,6 +173,7 @@ export default function DataSettings() {
 
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [rangePicker, setRangePicker] = useState<null | "pdf" | "csv">(null);
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const [pdfMode, setPdfModeState] = useState<ReportMode>("full");
@@ -187,17 +193,33 @@ export default function DataSettings() {
 
   const unit: GlucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
 
+  function progressText(p: ExportProgress | null): string | null {
+    if (!p) return null;
+    if (p.stage === "writing") {
+      return t("export.progressWriting", { pct: pct(progressPercent(p.done, p.total)) });
+    }
+    if (p.stage === "reading") return t("export.progressReading");
+    return t(p.stage === "analyzing" ? "export.progressAnalyzing" : "export.progressRendering");
+  }
+
   async function runCsv(range?: PickedRange) {
     if (!activeProfile) return;
     setExporting(true);
-    const res = await exportLogsCsv(
-      activeProfile.id,
-      displayProfileName(activeProfile, t),
-      unit,
-      range,
-      insulinModeUsesInsulin(insulinModeOf(activeProfile))
-    );
-    setExporting(false);
+    setExportProgress({ stage: "reading", done: 0, total: 0 });
+    let res: Awaited<ReturnType<typeof exportLogsCsv>>;
+    try {
+      res = await exportLogsCsv(
+        activeProfile.id,
+        displayProfileName(activeProfile, t),
+        unit,
+        range,
+        insulinModeUsesInsulin(insulinModeOf(activeProfile)),
+        setExportProgress
+      );
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
     if (!res.ok) {
       toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
     } else if (res.truncated) {
@@ -206,7 +228,12 @@ export default function DataSettings() {
   }
 
   function cutNote(cut: ExportTruncation): string {
-    return truncationMessage((k, o) => t(k, o), cut, num(cut.limit));
+    return truncationMessage(
+      (k, o) => t(k, o),
+      cut,
+      num(cut.limit),
+      cut.listLimit != null ? num(cut.listLimit) : undefined
+    );
   }
 
   function onExport() {
@@ -227,8 +254,17 @@ export default function DataSettings() {
   async function runPdf(days: number, range?: PickedRange) {
     if (!activeProfile) return;
     setExportingPdf(true);
-    const res = await exportLogsPdf(activeProfile, days, range, { mode: pdfMode });
-    setExportingPdf(false);
+    setExportProgress({ stage: "reading", done: 0, total: 0 });
+    let res: Awaited<ReturnType<typeof exportLogsPdf>>;
+    try {
+      res = await exportLogsPdf(activeProfile, days, range, {
+        mode: pdfMode,
+        onProgress: setExportProgress,
+      });
+    } finally {
+      setExportingPdf(false);
+      setExportProgress(null);
+    }
     if (res.ok) {
       toast(res.truncated ? `${t("report.created")} ${cutNote(res.truncated)}` : t("report.created"), "success");
       void maybeRequestReview("pdf_export_success");
@@ -685,7 +721,7 @@ export default function DataSettings() {
       <TwoLineRow
         icon="document-text-outline"
         label={t("settings.exportCsv")}
-        sub={t("settings.exportCsvSub")}
+        sub={(exporting && progressText(exportProgress)) || t("settings.exportCsvSub")}
         onPress={onExport}
         right={
           exporting ? (
@@ -698,7 +734,7 @@ export default function DataSettings() {
       <TwoLineRow
         icon="newspaper-outline"
         label={t("settings.exportPdf")}
-        sub={t("settings.exportPdfSub")}
+        sub={(exportingPdf && progressText(exportProgress)) || t("settings.exportPdfSub")}
         onPress={onExportPdf}
         right={
           exportingPdf ? (

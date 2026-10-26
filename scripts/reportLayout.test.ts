@@ -281,6 +281,87 @@ async function main(): Promise<void> {
     ok("exactly at the limit: not truncated", exact.truncated === undefined && !exact.html.includes(i18n.t("export.truncatedList", { count: String(all.length) }) as string));
   }
 
+  section("CGM-C: a report with sensor readings");
+  {
+    const MIN = 60_000;
+    const range = rangeFromWindow(30);
+    /** `days` of 5-minute readings ending now; `lowEvery` days get a 40-minute dip. */
+    const stream = (days: number, lowEvery = 0, stepMin = 5): any[] => {
+      const out: any[] = [];
+      const perDay = (24 * 60) / stepMin;
+      const count = days * perDay;
+      for (let i = 0; i < count; i++) {
+        const at = FIXED_NOW - (count - i) * stepMin * MIN;
+        const dayIdx = Math.floor((count - i) / perDay);
+        const minuteOfDay = (i % perDay) * stepMin;
+        const dip = lowEvery > 0 && dayIdx % lowEvery === 0 && minuteOfDay >= 180 && minuteOfDay < 220;
+        out.push({
+          logged_at: new Date(at).toISOString(),
+          glucose_level_mgdl: dip ? 58 : 110 + ((i * 7) % 40),
+          source: "health",
+          is_cgm: 1,
+        });
+      }
+      return out;
+    };
+    const feed = sampleEntries(true);
+    const doc = (cgmPoints: any[], opts: Record<string, unknown> = {}, entries: any[] = feed) =>
+      report.buildReportDocument(profile, range, entries, { mode: "full", cgmPoints, ...opts });
+    const BRANDS = /dexcom|libre|abbott|medtronic|eversense|juggluco|xdrip|glucodata|minimed/i;
+    const handTable = (html: string, title: string) => {
+      const at = html.indexOf(`<h2>${title}</h2>`);
+      if (at < 0) return "";
+      return html.slice(at, html.indexOf("</table>", at));
+    };
+    const trCount = (h: string) => (h.match(/<tr>/g) ?? []).length;
+
+    for (const lang of ["tr", "de", "en"]) {
+      await i18nMod.setLanguage(lang);
+      const T = (k: string, o?: Record<string, unknown>) => i18n.t(k, o) as string;
+      const base = doc([]);
+      const quiet = doc(stream(30));
+      const lows = doc(stream(30, 1));
+      if (dumpDir) {
+        fs.writeFileSync(path.join(dumpDir, `cgm-${lang}-ham.html`), base.html);
+        fs.writeFileSync(path.join(dumpDir, `cgm-${lang}-duz.html`), quiet.html);
+        fs.writeFileSync(path.join(dumpDir, `cgm-${lang}-dusuk.html`), lows.html);
+      }
+      ok(`${lang}: the glucose table is the hand-entered rows only, however many sensor readings`, trCount(handTable(quiet.html, T("report.glucoseReadings"))) === trCount(handTable(base.html, T("report.glucoseReadings"))) && trCount(handTable(lows.html, T("report.glucoseReadings"))) === trCount(handTable(base.html, T("report.glucoseReadings"))));
+      // The only rows a quiet sensor stream may add are the meal-response lines,
+      // which exist because dense readings now sit inside each meal's window.
+      ok(`${lang}: a sensor stream with no dips adds no sensor rows`, trCount(quiet.html) - trCount(base.html) <= 2, `${trCount(quiet.html)} vs ${trCount(base.html)}`);
+      const dense = doc(stream(30, 0, 1));
+      ok(`${lang}: five times the readings, same table rows`, trCount(dense.html) === trCount(quiet.html), `${trCount(dense.html)} vs ${trCount(quiet.html)}`);
+      ok(`${lang}: five times the readings, same document size (no row per reading)`, Math.abs(dense.html.length - quiet.html.length) < quiet.html.length * 0.02, `${dense.html.length} vs ${quiet.html.length}`);
+      const periodRows = trCount(lows.html) - trCount(quiet.html);
+      ok(`${lang}: 30 daily dips are capped at 20 period rows (+ header)`, periodRows >= 2 && periodRows <= 21, String(periodRows));
+      ok(`${lang}: the periods table is titled and neutral`, lows.html.includes(T("cgmInsights.reportBelowPeriods")));
+      ok(`${lang}: the source line is generic and names the coverage`, quiet.html.includes(T("cgmInsights.coverage")) && !BRANDS.test(quiet.html) && />\s*[^<]*CGM \(/.test(quiet.html), "");
+      ok(`${lang}: coverage line uses pct()`, quiet.html.includes(T("cgmInsights.coverageLine", { days: 30, pct: i18nMod.default && require("../lib/format").pct(100) })));
+      ok(`${lang}: GMI is named by its abbreviation and described`, quiet.html.includes(T("cgmInsights.gmiNote")) && !quiet.html.includes(T("insights.gmi")));
+      ok(`${lang}: no estimate or diagnosis wording was added`, !/diagnos|alarm|real-time/i.test(quiet.html.replace(/<style[\s\S]*?<\/style>/, "")));
+      ok(`${lang}: hand-entered only: no CGM block, the old GMI label`, !base.html.includes(T("cgmInsights.coverage")) && base.html.includes(T("insights.gmi")));
+      const sum = doc(stream(30, 1), { mode: "summary" });
+      ok(`${lang}: the summary keeps the periods table capped at 6 rows`, sum.html.includes(T("cgmInsights.reportBelowPeriods")) && sum.html.includes(i18n.t("report.lowTableTail", { shown: 6, n: 30 }) as string));
+      ok(`${lang}: the timeline carries the sensor legend`, lows.html.includes(T("cgmInsights.legendHourly")));
+    }
+
+    await i18nMod.setLanguage("tr");
+    const onlySensor = doc(stream(30), {}, []);
+    ok("a profile with only sensor readings still gets a report", onlySensor != null && onlySensor.html.includes("<svg viewBox=\"0 0 540 210\""));
+    ok("no entries and no sensor readings: no report", doc([], {}, []) === null);
+
+    await i18nMod.setLanguage("ar");
+    const ar = doc(stream(30, 1));
+    ok("ar: the AGP keeps its green target band", /<rect [^>]*fill="#10b981" fill-opacity="0\.1"/.test(ar.html));
+    ok("ar: the AGP svg is pinned to direction:ltr", /<svg viewBox="0 0 540 210"[^>]*style="direction:ltr"/.test(ar.html));
+    ok("ar: the document is rtl", ar.html.includes('dir="rtl"'));
+    await i18nMod.setLanguage("tr");
+
+    const both = doc([], { listLimit: 20, analysisLimit: 777 });
+    ok("both limits: the note names the analysis limit and the table limit", both.truncated?.limit === 777 && both.truncated?.listLimit === 20 && both.html.includes(i18n.t("export.truncatedBoth", { count: "777", list: "20" }) as string), JSON.stringify(both.truncated));
+  }
+
   section("report name storage");
   await setReportName("p1", "  Rapor Adı  ");
   ok("stored trimmed per profile", (await getReportName("p1")) === "Rapor Adı");

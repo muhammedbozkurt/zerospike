@@ -508,5 +508,43 @@ section("G. cvTrend");
   eq("2 populated weeks: slopePerWeek stays null", sparseTrend.slopePerWeek, null);
 }
 
+// ── H. sensor basis (CGM-C) ──────────────────────────────────────────────
+section("H. a covering sensor stream is the basis of every Pro figure");
+{
+  const cgm = (fromMs: number, count: number, value: (i: number) => number): SugarLog[] =>
+    Array.from({ length: count }, (_, i) => ({
+      ...mkReading("", new Date(fromMs + i * 5 * 60_000).toISOString(), value(i)),
+      period_tag: "unset" as const,
+      source: "health",
+      is_cgm: 1,
+    })) as SugarLog[];
+  // 14 days of sensor data at 100, 4 hand-entered 300s thrown in.
+  const stream = cgm(NOW - 14 * 86_400_000, 14 * 288, () => 100);
+  const hand = [1, 2, 3, 4].map((d) => mkReading(`hand${d}`, new Date(NOW - d * 86_400_000).toISOString(), 300));
+  const all = [...hand, ...stream];
+
+  const wc = weeklyComparison(all, NOW, "monday");
+  ok("weekly comparison: this week's average is the sensor's", wc.avg.current === 100, String(wc.avg.current));
+  ok("weekly comparison: CV from the sensor alone is 0", wc.cv.current === 0, String(wc.cv.current));
+
+  const hb = hourBandAverages(all, 14, { start: NOW - 14 * 86_400_000, end: NOW });
+  ok("hour bands ignore the 300s when the sensor covers the window", hb.every((b) => b.avg === 100), JSON.stringify(hb.map((b) => b.avg)));
+  const hbNoWindow = hourBandAverages(all, 14);
+  ok("hour bands without a window use the readings' own span", hbNoWindow.every((b) => b.avg === 100));
+  const thin = hourBandAverages([...hand, ...cgm(NOW - 86_400_000, 12, () => 100)], 14, { start: NOW - 14 * 86_400_000, end: NOW });
+  ok("a thin stream: the hand-entered values count again", thin.some((b) => b.avg != null && b.avg > 100));
+
+  const agp = agpPercentiles(all, NOW, 14);
+  ok("AGP percentiles from the sensor alone", agp.totalReadings === 14 * 288 && agp.bands.every((b) => b.p95 === 100));
+
+  const best = bestDayAndStreaks(all, DEFAULT_TIR_BAND, NOW, 14);
+  ok("best day scored on the sensor", best.bestDay != null && best.bestDay.avg === 100 && best.bestDay.tir === 100);
+  ok("target-day streak runs through the sensor days", best.targetDayStreak.current >= 13, String(best.targetDayStreak.current));
+  ok("logging streak sees the sensor's days", best.loggingStreak.current >= 14, String(best.loggingStreak.current));
+
+  const cv = cvTrend(all, NOW, "monday", 2);
+  ok("CV trend weeks with a covering sensor read 0 CV", cv.weeks[0].cv === 0, JSON.stringify(cv.weeks[0]));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

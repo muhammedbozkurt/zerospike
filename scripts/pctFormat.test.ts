@@ -4,6 +4,9 @@
  */
 import { decimalInputText, pct, pctParts } from "../lib/format";
 import { setActiveLang } from "../lib/lang";
+import { basisLine, coverageLine } from "../lib/cgm/basisText";
+import * as nodeFs from "node:fs";
+import * as nodePath from "node:path";
 
 let failed = 0;
 function eq<T>(name: string, actual: T, expected: T): void {
@@ -34,6 +37,54 @@ for (const l of ["fr", "de", "es", "it", "pt", "tr"]) {
 for (const l of ["en", "ja", "ar"]) {
   setActiveLang(l);
   eq(`${l} decimal input`, decimalInputText(35.2), "35.2");
+}
+
+// CGM coverage is a percentage like any other: written by pct(), never by hand.
+const fakeT = (key: string, o?: Record<string, unknown>) =>
+  key.startsWith("cgmInsights.")
+    ? `${key}|${o?.days ?? ""}|${o?.pct ?? ""}|${o?.sources ?? ""}|${o?.n ?? ""}`
+    : key;
+const expectCoverage: Record<string, string> = {
+  tr: "%92",
+  en: "92%",
+  it: "92%",
+  pt: "92%",
+  ja: "92%",
+  ar: `92${String.fromCharCode(0x200e)}%`,
+  de: `92${NB}%`,
+  fr: `92${NB}%`,
+  es: `92${NB}%`,
+};
+for (const [l, want] of Object.entries(expectCoverage)) {
+  setActiveLang(l);
+  eq(`${l} coverage line carries ${want}`, coverageLine(fakeT, 14, 92), `cgmInsights.coverageLine|14|${want}||`);
+  eq(
+    `${l} basis line (sensor) carries ${want}`,
+    basisLine(fakeT, "ios", { basis: "cgm", cgmCoverage: 92, cgmSources: ["health"], manualReadings: 0 }),
+    `cgmInsights.basisCgm||${want}|settings.healthSection|`
+  );
+}
+setActiveLang("en");
+eq("no sensor reading: no basis line", basisLine(fakeT, "ios", { basis: "manual", cgmCoverage: null, cgmSources: [], manualReadings: 4 }), null);
+eq(
+  "low coverage: manual basis, coverage still named",
+  basisLine(fakeT, "ios", { basis: "manual", cgmCoverage: 12, cgmSources: ["health"], manualReadings: 4 }),
+  "cgmInsights.basisManual||12%||"
+);
+eq(
+  "sensor basis with hand-entered rows names their count",
+  basisLine(fakeT, "android", { basis: "cgm", cgmCoverage: 86, cgmSources: ["health", "nightscout"], manualReadings: 42 }),
+  "cgmInsights.basisCgmManual||86%|settings.healthSectionAndroid, cgmSource.nightscout|42"
+);
+
+// No hand-written percent sign next to a value in the files that format coverage.
+const root = nodePath.join(__dirname, "..");
+for (const f of ["lib/cgm/basisText.ts", "lib/cgm/metrics.ts"]) {
+  const code = nodeFs.readFileSync(nodePath.join(root, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  if (/\$\{[^}]*\}\s*%|%\s*\$\{|\+\s*"%"|"%"\s*\+/.test(code)) {
+    failed++;
+    console.log(`  x ${f} writes a percent sign by hand`);
+  }
 }
 
 if (failed) {

@@ -9,10 +9,13 @@ import { COMMA_DECIMAL, num } from "../format";
 import type { DateRange } from "../insights";
 import {
   CSV_MAX_ROWS,
+  CSV_PAGE_ROWS,
   EXPORT_MAX_ROWS,
-  applyRowLimit,
   csvFooterRows,
+  planFeedPages,
   truncationMessage,
+  writeFeedPaged,
+  type ExportProgress,
   type ExportTruncation,
 } from "../exportLimits";
 
@@ -75,9 +78,19 @@ function medNoteCell(name: string | null, note: string | null): string {
   return n ? `${n} · ${nt}` : nt;
 }
 
+/** "All time" for a CSV without a chosen range (the feed needs two bounds). */
+const FAR_FUTURE_MS = Date.UTC(2100, 0, 1);
+
+type FeedEntry = Awaited<ReturnType<typeof getJournal>>[number];
+
 /**
  * Generates a real, fully-offline CSV of a profile's complete journal
  * (glucose + meal logs) and opens the native share sheet (WhatsApp, Email…).
+ *
+ * The file is written in pages of CSV_PAGE_ROWS rows, appended one after the
+ * other: a year of five-minute sensor readings is 100 000+ rows, and holding the
+ * feed, a reversed copy and every line at once is what runs a phone out of
+ * memory. `onProgress` reports the stage and, while writing, how far along it is.
  */
 export async function exportLogsCsv(
   profileId: string,
@@ -92,27 +105,33 @@ export async function exportLogsCsv(
    *  itself still holds injection rows, so a profile that logged doses before
    *  switching modes off does not lose that history from its export. Defaults
    *  to today's shape for any caller that has no profile in hand. */
-  usesInsulin = true
+  usesInsulin = true,
+  onProgress?: (p: ExportProgress) => void
 ): Promise<ExportResult> {
   const lang = currentLang();
-  // The range goes into SQL, not a filter over the newest 5000 rows: an export of
-  // an early month used to come back short (or empty) once the profile had more
+  const span = range ?? { start: 0, end: FAR_FUTURE_MS };
+  const readPage = (r: { start: number; end: number }, limit: number) =>
+    getJournal(profileId, lang, limit, r);
+
+  // The range goes into SQL, not a filter over the newest rows: an export of an
+  // early month used to come back short (or empty) once the profile had more
   // history than the limit, with nothing in the file saying so.
-  // One row past the cap: it is how a cut is told from an exact fit.
-  const { rows: entries, truncated } = applyRowLimit(
-    await getJournal(profileId, lang, CSV_MAX_ROWS + 1, range),
-    CSV_MAX_ROWS
-  );
-  const truncation: ExportTruncation | undefined = truncated
+  // The planning pass counts rows page by page and keeps none of them; one row
+  // past the cap is how a cut is told from an exact fit.
+  onProgress?.({ stage: "reading", done: 0, total: 0 });
+  let sawInjection = false;
+  const plan = await planFeedPages(readPage, span, CSV_MAX_ROWS, CSV_PAGE_ROWS, (kept) => {
+    if (!sawInjection) sawInjection = kept.some((e) => e.kind === "injection");
+  });
+  const truncation: ExportTruncation | undefined = plan.cut
     ? { limit: CSV_MAX_ROWS, listOnly: false }
     : undefined;
-  if (entries.length === 0) return { ok: false, reason: "noData" };
+  if (plan.total === 0) return { ok: false, reason: "noData" };
 
   // Mode changes must never hide already-logged data (lib/insulinMode): a
   // profile that switched insulin_mode to "none" still gets the insulin/site
   // columns when this exact range holds injection rows from before the switch.
-  const effectiveUsesInsulin =
-    usesInsulin || entries.some((e) => e.kind === "injection");
+  const effectiveUsesInsulin = usesInsulin || sawInjection;
 
   // Locales whose decimal mark is a comma (tr/de/es/fr/it/pt) get a ";"
   // delimiter, a comma decimal, and a leading `sep=;` hint so Excel splits
@@ -151,102 +170,78 @@ export async function exportLogsCsv(
       .map(esc)
       .join(delim);
 
-  const rows: string[] = [line(headers)];
-
-  // entries are newest-first; export oldest-first for a natural reading order
-  for (const e of [...entries].reverse()) {
+  const entryLine = (e: FeedEntry): string | null => {
     const { date, time } = fmtDate(e.logged_at);
     if (e.kind === "glucose") {
-      rows.push(
-        line([
-          date,
-          time,
-          `${i18n.t("export.typeGlucose")} · ${periodLabel(e.period_tag)}`,
-          // The user's own unit, not the raw storage value: a mmol/L household
-          // reading "112" in their doctor's copy would be a real misreading.
-          formatGlucose(e.glucose_level_mgdl, unit),
-          glucoseUnitLabel(unit),
-          "",
-          "",
-          "",
-          "",
-          "",
-          tagsLabel(e.tags),
-        ])
-      );
-    } else if (e.kind === "meal") {
-      rows.push(
-        line([
-          date,
-          time,
-          i18n.t("export.typeMeal"),
-          "",
-          "",
-          cnum(Math.round(e.calculated_carbs_g * 10) / 10),
-          cnum(e.insulin_dose_units),
-          e.display_name,
-          "",
-          e.personal_note ?? "",
-          tagsLabel(e.tags),
-        ])
-      );
-    } else if (e.kind === "injection") {
+      return line([
+        date,
+        time,
+        `${i18n.t("export.typeGlucose")} · ${periodLabel(e.period_tag)}`,
+        // The user's own unit, not the raw storage value: a mmol/L household
+        // reading "112" in their doctor's copy would be a real misreading.
+        formatGlucose(e.glucose_level_mgdl, unit),
+        glucoseUnitLabel(unit),
+        "",
+        "",
+        "",
+        "",
+        "",
+        tagsLabel(e.tags),
+      ]);
+    }
+    if (e.kind === "meal") {
+      return line([
+        date,
+        time,
+        i18n.t("export.typeMeal"),
+        "",
+        "",
+        cnum(Math.round(e.calculated_carbs_g * 10) / 10),
+        cnum(e.insulin_dose_units),
+        e.display_name,
+        "",
+        e.personal_note ?? "",
+        tagsLabel(e.tags),
+      ]);
+    }
+    if (e.kind === "injection") {
       const typeLabel = insulinTypeLabel(e.insulin_type);
-      rows.push(
-        line([
-          date,
-          time,
-          typeLabel
-            ? `${i18n.t("export.typeInjection")} · ${typeLabel}`
-            : i18n.t("export.typeInjection"),
-          "",
-          "",
-          "",
-          e.dose_units != null ? cnum(e.dose_units) : "",
-          "",
-          e.site
-            ? i18n.t(`injectionSite.${e.site}`)
-            : i18n.t("injectionSite.unassigned"),
-          e.note ?? "",
-          tagsLabel(e.tags),
-        ])
-      );
-    } else if (e.kind === "med") {
+      return line([
+        date,
+        time,
+        typeLabel
+          ? `${i18n.t("export.typeInjection")} · ${typeLabel}`
+          : i18n.t("export.typeInjection"),
+        "",
+        "",
+        "",
+        e.dose_units != null ? cnum(e.dose_units) : "",
+        "",
+        e.site ? i18n.t(`injectionSite.${e.site}`) : i18n.t("injectionSite.unassigned"),
+        e.note ?? "",
+        tagsLabel(e.tags),
+      ]);
+    }
+    if (e.kind === "med") {
       // No dedicated column for a medication name: it rides in Note, the same
       // slot a hand-typed remark would use in every other row kind. A logged
       // note joins it there too, as "name · note".
-      rows.push(
-        line([
-          date,
-          time,
-          i18n.t("export.typeMed"),
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          medNoteCell(e.name, e.note),
-          "",
-        ])
-      );
+      return line([
+        date,
+        time,
+        i18n.t("export.typeMed"),
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        medNoteCell(e.name, e.note),
+        "",
+      ]);
     }
-  }
-
-  // Trailing medical disclaimer so the doctor-facing export is never read as
-  // prescriptive (blank separator row keeps it clear of the data table).
-  rows.push(
-    ...csvFooterRows(
-      esc,
-      i18n.t("export.disclaimer"),
-      truncation ? truncationMessage((k, o) => i18n.t(k, o), truncation, num(truncation.limit)) : null
-    )
-  );
-
-  // UTF-8 BOM so Excel renders Turkish characters correctly, plus a `sep=` hint
-  // for the comma-decimal locales so Excel picks the right delimiter.
-  const sepLine = decimalComma ? `sep=${delim}\r\n` : "";
-  const content = "﻿" + sepLine + rows.join("\r\n");
+    return null;
+  };
 
   const safeName = profileName.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 40);
   const ymd = (d: Date) =>
@@ -256,9 +251,41 @@ export async function exportLogsCsv(
     ? `${ymd(new Date(range.start))}-${ymd(new Date(range.end))}`
     : `${ymd(new Date())}_${two(new Date().getHours())}${two(new Date().getMinutes())}`;
   const fileUri = `${FileSystem.cacheDirectory}zerospike_${safeName}_${stamp}.csv`;
+  await FileSystem.deleteAsync(fileUri, { idempotent: true });
 
-  await FileSystem.writeAsStringAsync(fileUri, content, {
-    encoding: FileSystem.EncodingType.UTF8,
+  // UTF-8 BOM so Excel renders Turkish characters correctly, plus a `sep=` hint
+  // for the comma-decimal locales so Excel picks the right delimiter.
+  const sepLine = decimalComma ? `sep=${delim}\r\n` : "";
+  const header = "﻿" + sepLine + line(headers);
+
+  // Trailing medical disclaimer so the doctor-facing export is never read as
+  // prescriptive (blank separator row keeps it clear of the data table).
+  const footerRows = csvFooterRows(
+    esc,
+    i18n.t("export.disclaimer"),
+    truncation ? truncationMessage((k, o) => i18n.t(k, o), truncation, num(truncation.limit)) : null
+  );
+
+  await writeFeedPaged({
+    plan,
+    readPage,
+    // pages arrive newest-first; the file reads oldest-first
+    toLines: (oldestFirst) => {
+      const out: string[] = [];
+      for (const e of oldestFirst) {
+        const l = entryLine(e);
+        if (l != null) out.push(l);
+      }
+      return out;
+    },
+    write: (chunk) =>
+      FileSystem.writeAsStringAsync(fileUri, chunk, {
+        encoding: FileSystem.EncodingType.UTF8,
+        append: true,
+      }),
+    header,
+    footerRows,
+    onProgress,
   });
 
   if (!(await Sharing.isAvailableAsync())) {
@@ -271,5 +298,5 @@ export async function exportLogsCsv(
     UTI: "public.comma-separated-values-text",
   });
 
-  return { ok: true, uri: fileUri, count: entries.length, truncated: truncation };
+  return { ok: true, uri: fileUri, count: plan.total, truncated: truncation };
 }
