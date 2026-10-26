@@ -29,6 +29,13 @@ const pickAt = form.indexOf("function onMapSelect");
 const pick = pickAt >= 0 ? form.slice(pickAt, pickAt + 500) : "";
 ok("map pick refreshes an untouched time (two-column tablet)", pick.includes("timeTouched.current"));
 
+// Opus-4 madde 3: dismissing the stale-time dialog cancels the save.
+const feedback: string = readFileSync(join(__dirname, "..", "components/Feedback.tsx"), "utf8");
+ok("Feedback exposes a three-outcome choose()", /choose: \(opts: ConfirmOptions\) => Promise<boolean \| null>/.test(feedback));
+ok("confirm() keeps its boolean contract", feedback.includes("confirm: (opts: ConfirmOptions) => Promise<boolean>;"));
+ok("stale-time dialog uses choose()", form.includes("await choose({") && !/await confirm\(\{\s*message: t\("injection\.staleTimeAsk"/.test(form));
+ok("stale-time dismissal aborts the save", form.includes('staleTimeChoiceFrom(') && form.includes('=== "cancel"'));
+
 let helper: any = null;
 try {
   helper = require("../lib/injectionFormClock");
@@ -37,7 +44,10 @@ try {
 }
 
 if (helper) {
-  const { foregroundTimeAction, saveTimestamp, ABANDONED_TIME_MS } = helper;
+  const { foregroundTimeAction, saveTimestamp, ABANDONED_TIME_MS, staleTimeChoiceFrom } = helper;
+  ok("stale dialog: time button -> picked", staleTimeChoiceFrom?.(true) === "picked");
+  ok("stale dialog: now button -> now", staleTimeChoiceFrom?.(false) === "now");
+  ok("stale dialog: dismissed (backdrop, back, escape) -> cancel, not now", staleTimeChoiceFrom?.(null) === "cancel");
   ok("untouched time refreshes on any return", foregroundTimeAction({ timeTouched: false, hiddenMs: 1000 }) === "refresh");
   ok("fresh hand-picked time is kept after a short trip", foregroundTimeAction({ timeTouched: true, hiddenMs: 60_000 }) === "keep");
   ok(

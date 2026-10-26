@@ -21,6 +21,7 @@ import {
 } from "./types";
 import { pickLeastRecentlyUsedPoint, pointKey } from "../rotationPick";
 import { emitInjectionSaved, emitRemoved } from "./healthRecordHooks";
+import { afterCommit } from "./txEvents";
 
 export { pointKey };
 
@@ -158,7 +159,7 @@ export async function logInjection(
       [id]
     ))!
   );
-  emitInjectionSaved(injection, null);
+  afterCommit(() => emitInjectionSaved(injection, null));
   return injection;
 }
 
@@ -306,7 +307,10 @@ export async function updateInjection(
     [id]
   );
   const after = row ? mapInjection(row) : null;
-  if (after && beforeRow) emitInjectionSaved(after, mapInjection(beforeRow));
+  if (after && beforeRow) {
+    const previous = mapInjection(beforeRow);
+    afterCommit(() => emitInjectionSaved(after, previous));
+  }
   return after;
 }
 
@@ -320,7 +324,7 @@ export async function getCalculatorInjectionForMeal(
 ): Promise<Injection | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<InjectionRow>(
-    "SELECT * FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator' ORDER BY logged_at DESC LIMIT 1;",
+    "SELECT * FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator' AND insulin_type = 'bolus' ORDER BY logged_at DESC, id DESC LIMIT 1;",
     [mealLogId]
   );
   return row ? mapInjection(row) : null;
@@ -347,7 +351,7 @@ export async function deleteInjection(id: string): Promise<void> {
       link.meal_log_id,
     ]);
   }
-  emitRemoved("insulin", [{ id, uuid: link.health_uuid ?? null }]);
+  afterCommit(() => emitRemoved("insulin", [{ id, uuid: link.health_uuid ?? null }]));
 }
 
 /** Links (or clears) the health-store sample id of an injection's insulin

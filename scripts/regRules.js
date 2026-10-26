@@ -55,7 +55,7 @@ const PATTERNS = {
     { pattern: "sizi uyar*" },
     { pattern: "uyar*", except: ["l"], requiresContext: true },
     { pattern: "tanı koy*" },
-    { pattern: "tanı*", except: ["m", "t", "d", "ş"] },
+    { pattern: "tanı*", except: ["m", "t", "dık", "dığ", "ş", "yın", "yan", "yor", "nmış", "nan", "nma", "r"] },
     { pattern: "teşhis*" },
     { pattern: "tedavi*", requiresContext: true },
     { pattern: "tedavi eder*" },
@@ -162,8 +162,6 @@ const CONTEXT_TERMS_LATIN = [
   "glikoz*",
   "hipo*",
   "hiper*",
-  "düşük*",
-  "yüksek*",
   "Blutzucker",
   "Unterzucker",
   "Überzucker",
@@ -179,6 +177,11 @@ const CONTEXT_TERMS_LATIN = [
   "hipoglicemia",
   "hiperglicemia",
 ];
+// "low"/"high" in Turkish also describe a battery or a volume ("düşük pil",
+// "yüksek sesle"), so on their own they are not glucose context; they count
+// only next to a word for a measured value.
+const TR_WEAK_CONTEXT = ["düşük*", "yüksek*"];
+const TR_WEAK_PARTNERS = ["değer*", "seviye*", "düzey*", "ölçüm*", "okuma*", "kan"];
 const CONTEXT_TERMS_SUBSTR = ["سكر", "血糖", "低血糖", "高血糖"];
 
 // Narrow, reasoned exemptions for locale strings. An entry excuses a hit only
@@ -313,9 +316,16 @@ const contextMatchers = [
   ...CONTEXT_TERMS_SUBSTR.map((t) => buildSubstringMatcher(t)),
 ];
 const trContextMatchers = CONTEXT_TERMS_LATIN.map((t) => buildLatinMatcher(t, { locale: "tr" }));
+const trWeakMatchers = TR_WEAK_CONTEXT.map((t) => buildLatinMatcher(t, { locale: "tr" }));
+const trPartnerMatchers = TR_WEAK_PARTNERS.map((t) => buildLatinMatcher(t, { locale: "tr" }));
 function hasGlucoseContext(text, locale) {
   if (contextMatchers.some((match) => match(text) !== null)) return true;
-  return locale === "tr" && trContextMatchers.some((match) => match(text) !== null);
+  if (locale !== "tr") return false;
+  if (trContextMatchers.some((match) => match(text) !== null)) return true;
+  return (
+    trWeakMatchers.some((match) => match(text) !== null) &&
+    trPartnerMatchers.some((match) => match(text) !== null)
+  );
 }
 
 module.exports = {

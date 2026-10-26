@@ -126,9 +126,9 @@ export function parseDecimalText(raw: string): number | null {
 export function parseGramText(raw: string): number | null {
   if (/[-+\u2010-\u2015\u2212]/.test(raw)) return null;
   if (raw.includes("\u066C")) return null;
-  let latin = "";
-  for (const ch of raw.trim()) latin += latinDigit(ch) ?? ch;
-  if (/[.,\u066B]\d{3}$/.test(latin)) return null;
+  // Judged on what the field keeps, so a unit typed after the number ("1.500g")
+  // cannot hide the three-digit group from the end-of-text anchor.
+  if (/[.,\u066B]\d{3}$/.test(sanitizeDecimalText(raw))) return null;
   return parseDecimalText(raw);
 }
 
