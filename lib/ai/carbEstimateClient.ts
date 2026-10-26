@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 import { fetch } from "expo/fetch";
 import { getDeviceId } from "../identity/deviceId";
 import { decimalInputText } from "../format";
-import { parseDecimalText } from "../numberInput";
+import { parseGramText } from "../numberInput";
 import { isScreenshotMode } from "../screenshotMode";
 import { hasSpikeConsent } from "../services/spikeConsent";
 import {
@@ -275,7 +275,7 @@ export function editableFromEstimate(items: readonly CarbItem[]): EditableItem[]
 
 /** Text typed into an amount field that holds no number at all ("," or "abc"): an empty field is a deliberate 0, this is not. */
 export function hasUnreadableAmount(item: EditableItem): boolean {
-  const unreadable = (text: string) => text.trim() !== "" && parseDecimalText(text) === null;
+  const unreadable = (text: string) => text.trim() !== "" && parseGramText(text) === null;
   return unreadable(item.gramsText) || unreadable(item.quantityText);
 }
 

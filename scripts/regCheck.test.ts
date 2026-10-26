@@ -159,5 +159,48 @@ section("G. fastlane/metadata directories map to a language and are all listed")
   }
 }
 
+section("H. Turkish inflection and dotted/dotless I are caught (tr only)");
+{
+  const scan = (text: string) =>
+    (reg.scanLocaleEntries("tr", [["x", text]]) as { findings: Finding[] }).findings.length;
+  const flagged = [
+    "Hipoglisemi alarmı kurulur",
+    "Kan şekeri alarmları",
+    "KAN ŞEKERİ ALARMI",
+    "Sizi uyarır",
+    "SİZİ UYARIR",
+    "UYARIR",
+    "uyarır",
+    "Uygulama düşük şekeri uyarıyla bildirir",
+    "Tedavi önerisi sunar",
+    "Tedavinizi belirler",
+    "Tanıyı koyar",
+    "TANI KOYAR",
+    "ÖNERİLEN DOZ 4 ünite",
+    "Önerilen dozu gösterir",
+  ];
+  for (const t of flagged) ok(`tr flagged: ${t}`, scan(t) >= 1);
+  const clean = [
+    "Hatırlatıcı alarmı kurulur",
+    "Alarm sesi",
+    "Tanım ekle",
+    "Uygulamayı tanıtın",
+    "Tanıdık yüz",
+    "Öğünleri takip edin",
+  ];
+  for (const t of clean) ok(`tr clean: ${t}`, scan(t) === 0);
+  const en = (reg.scanLocaleEntries("en", [["x", "UYARIR"]]) as { findings: Finding[] }).findings.length;
+  eq("en text unaffected by tr folding", en, 0);
+}
+
+section("I. store scan matcher also folds tr text");
+{
+  const rules = require("./regRules.js");
+  const hits = (text: string) =>
+    rules.buildAllMatcher("uyarır*", false, { locale: "tr" })(text).length;
+  eq("store UYARIR", hits("SİZİ UYARIR"), 1);
+  eq("store uyarır", hits("sizi uyarır"), 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -14,6 +14,12 @@ const LOCALES = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
 // substrings instead of trying to apply \p{L} boundary lookarounds.
 const SUBSTRING_LOCALES = new Set(["ar", "ja"]);
 
+// Turkish inflects by suffix and its dotted/dotless I does not fold under JS
+// /i ("I" -> "ı" only in the tr locale), so tr patterns are stems ("alarm*" also
+// catches "alarmı", "alarmlar") and tr text is lower-cased with the tr locale
+// before matching. `except` lists letters that, right after the stem, mark an
+// innocent word ("tanı*" must not flag "tanım", "tanıtım", "tanıdık").
+//
 // requiresContext: true means the pattern is only a finding when the SAME
 // string also contains a glucose-context term (CONTEXT_TERMS below). This
 // keeps the "alarm/alert" family from flagging the reminder-ringing feature
@@ -43,19 +49,22 @@ const PATTERNS = {
     { pattern: "take X units" },
   ],
   tr: [
-    { pattern: "alarm", requiresContext: true },
-    { pattern: "uyarır" },
-    { pattern: "uyaracak" },
-    { pattern: "sizi uyar" },
-    { pattern: "tanı koyar" },
-    { pattern: "teşhis eder" },
-    { pattern: "tanı koyabilir" },
-    { pattern: "tedavi eder" },
+    { pattern: "alarm*", requiresContext: true },
+    { pattern: "uyarır*" },
+    { pattern: "uyaracak*" },
+    { pattern: "sizi uyar*" },
+    { pattern: "uyar*", except: ["l"], requiresContext: true },
+    { pattern: "tanı koy*" },
+    { pattern: "tanı*", except: ["m", "t", "d", "ş"] },
+    { pattern: "teşhis*" },
+    { pattern: "tedavi*", requiresContext: true },
+    { pattern: "tedavi eder*" },
+    { pattern: "tedavi öner*" },
+    { pattern: "tedavi planı*" },
     { pattern: "tedavinizi belirler" },
-    { pattern: "tedavi önerisi" },
-    { pattern: "önerilen doz" },
+    { pattern: "önerilen doz*" },
     { pattern: "doz öner*" },
-    { pattern: "tavsiye edilen doz" },
+    { pattern: "tavsiye edilen doz*" },
     { pattern: "yapmalısınız" },
     { pattern: "uygulamanız gereken" },
   ],
@@ -148,11 +157,13 @@ const CONTEXT_TERMS_LATIN = [
   "high",
   "mg/dL",
   "mmol",
-  "şeker",
-  "hipo",
-  "hiper",
-  "düşük",
-  "yüksek",
+  "şeker*",
+  "glisemi*",
+  "glikoz*",
+  "hipo*",
+  "hiper*",
+  "düşük*",
+  "yüksek*",
   "Blutzucker",
   "Unterzucker",
   "Überzucker",
@@ -250,17 +261,27 @@ function escapeRegExp(s) {
 // misfires around every accented/Turkish/German letter. Lookaround against
 // \p{L}/\p{N} instead. A trailing "*" in a pattern is a stem (e.g.
 // "diagnos*"), so it drops the right-hand boundary check.
-function latinRegExp(pattern, flags) {
-  const wildcard = pattern.endsWith("*");
-  const base = wildcard ? pattern.slice(0, -1) : pattern;
-  const left = "(?<![\\p{L}\\p{N}_])";
-  const right = wildcard ? "" : "(?![\\p{L}\\p{N}_])";
-  return new RegExp(left + escapeRegExp(base) + right, flags);
+function foldTr(locale, text) {
+  return locale === "tr" ? text.toLocaleLowerCase("tr") : text;
 }
 
-function buildLatinMatcher(pattern) {
-  const re = latinRegExp(pattern, "iu");
-  return (text) => re.exec(text);
+function latinRegExp(pattern, flags, opts = {}) {
+  const wildcard = pattern.endsWith("*");
+  const base = foldTr(opts.locale, wildcard ? pattern.slice(0, -1) : pattern);
+  const left = "(?<![\\p{L}\\p{N}_])";
+  const right = wildcard ? "" : "(?![\\p{L}\\p{N}_])";
+  const except =
+    opts.except && opts.except.length
+      ? `(?!${opts.except.map((x) => escapeRegExp(foldTr(opts.locale, x))).join("|")})`
+      : "";
+  return new RegExp(left + escapeRegExp(base) + except + right, flags);
+}
+
+// opts: { locale, except }. For tr the text is folded first; folding keeps the
+// string length, so match indexes still point into the original text.
+function buildLatinMatcher(pattern, opts = {}) {
+  const re = latinRegExp(pattern, "iu", opts);
+  return (text) => re.exec(foldTr(opts.locale, text));
 }
 
 function buildSubstringMatcher(pattern) {
@@ -272,7 +293,7 @@ function buildSubstringMatcher(pattern) {
 
 // Every occurrence in a line, not just the first: the store scan excuses a hit
 // by position, so a second occurrence must not hide behind an excused first one.
-function buildAllMatcher(pattern, substringMode) {
+function buildAllMatcher(pattern, substringMode, opts = {}) {
   if (substringMode) {
     return (text) => {
       const hits = [];
@@ -282,16 +303,19 @@ function buildAllMatcher(pattern, substringMode) {
       return hits;
     };
   }
-  const re = latinRegExp(pattern, "giu");
-  return (text) => Array.from(text.matchAll(re), (m) => ({ index: m.index, length: m[0].length }));
+  const re = latinRegExp(pattern, "giu", opts);
+  return (text) =>
+    Array.from(foldTr(opts.locale, text).matchAll(re), (m) => ({ index: m.index, length: m[0].length }));
 }
 
 const contextMatchers = [
   ...CONTEXT_TERMS_LATIN.map((t) => buildLatinMatcher(t)),
   ...CONTEXT_TERMS_SUBSTR.map((t) => buildSubstringMatcher(t)),
 ];
-function hasGlucoseContext(text) {
-  return contextMatchers.some((match) => match(text) !== null);
+const trContextMatchers = CONTEXT_TERMS_LATIN.map((t) => buildLatinMatcher(t, { locale: "tr" }));
+function hasGlucoseContext(text, locale) {
+  if (contextMatchers.some((match) => match(text) !== null)) return true;
+  return locale === "tr" && trContextMatchers.some((match) => match(text) !== null);
 }
 
 module.exports = {

@@ -53,10 +53,10 @@ function scanLocaleEntries(locale, entries, opts = {}) {
   const allowlist = opts.allowlist || {};
   const exemptions = opts.exemptions || KEY_EXEMPTIONS;
   const substringMode = SUBSTRING_LOCALES.has(locale);
-  const matchers = patterns.map(({ pattern, requiresContext }) => ({
+  const matchers = patterns.map(({ pattern, requiresContext, except }) => ({
     pattern,
     requiresContext: !!requiresContext,
-    match: substringMode ? buildSubstringMatcher(pattern) : buildLatinMatcher(pattern),
+    match: substringMode ? buildSubstringMatcher(pattern) : buildLatinMatcher(pattern, { locale, except }),
   }));
   const findings = [];
   let excused = 0;
@@ -64,7 +64,7 @@ function scanLocaleEntries(locale, entries, opts = {}) {
     for (const { pattern, requiresContext, match } of matchers) {
       const m = match(value);
       if (!m) continue;
-      if (requiresContext && !hasGlucoseContext(value)) continue;
+      if (requiresContext && !hasGlucoseContext(value, locale)) continue;
       const allowKey = `${locale}.${key}`;
       if (
         Object.prototype.hasOwnProperty.call(allowlist, allowKey) ||
@@ -229,10 +229,10 @@ function scanStore(allowlist, findings) {
   const anchorsByFile = loadStoreAnchors(allowlist);
   const matchers = LOCALES.map((locale) => ({
     locale,
-    list: (PATTERNS[locale] || []).map(({ pattern, requiresContext }) => ({
+    list: (PATTERNS[locale] || []).map(({ pattern, requiresContext, except }) => ({
       pattern,
       requiresContext: !!requiresContext,
-      all: buildAllMatcher(pattern, SUBSTRING_LOCALES.has(locale)),
+      all: buildAllMatcher(pattern, SUBSTRING_LOCALES.has(locale), { locale, except }),
     })),
   }));
   let excused = 0;
@@ -251,7 +251,7 @@ function scanStore(allowlist, findings) {
           for (const { index, length } of all(line)) {
             const span = `${index}:${length}`;
             if (seen.has(span)) continue;
-            if (requiresContext && !hasGlucoseContext(line)) continue;
+            if (requiresContext && !hasGlucoseContext(line, locale)) continue;
             seen.add(span);
             if (insideAnchor(anchors, line, index, length)) {
               excused++;

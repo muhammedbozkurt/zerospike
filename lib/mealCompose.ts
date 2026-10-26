@@ -10,7 +10,7 @@
 import { PORTION_LABEL_KEYS, type Food, type PortionLabelKey } from "./db/types";
 import type { NewTemplateItemInput } from "./db/mealTemplates";
 import { resolveItemCarbs } from "./mealTemplates";
-import { parseDecimalText } from "./numberInput";
+import { parseGramText } from "./numberInput";
 import { pickRememberedPortion } from "./lastPortionMap";
 import { statedFor, type PortionState } from "./db/seedPortionState";
 
@@ -42,11 +42,10 @@ function finite(n: unknown): number {
   return typeof n === "number" && Number.isFinite(n) ? n : 0;
 }
 
-/** Typed text -> grams. Comma or dot decimal; empty, NaN, negative -> 0;
+/** Typed text -> grams. Comma or dot decimal; empty, NaN, signed, "1.500" -> 0;
  *  capped so one stray keystroke cannot write an absurd total. */
 export function parseGramsInput(text: string): number {
-  if (text.trim().startsWith("-")) return 0;
-  const value = parseDecimalText(text);
+  const value = parseGramText(text);
   if (value === null || value <= 0) return 0;
   return round1(Math.min(value, COMPOSE_MAX_GRAMS));
 }

@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { getDb } from "./index";
 import { uuid } from "../uuid";
+import { createWriteLock } from "../writeLock";
 import type { Reminder, ReminderType } from "./types";
 import { getProfile, listProfiles } from "./profiles";
 import {
@@ -308,14 +309,19 @@ export async function deleteReminder(id: string): Promise<void> {
   await db.runAsync("DELETE FROM reminders WHERE id = ?;", [id]);
 }
 
+// withTransactionAsync is not exclusive: overlapping units can collide on BEGIN.
+const reminderWriteLock = createWriteLock();
+
 /** Runs several reminder writes as one unit: any throw rolls all of them back. */
 export async function inReminderTransaction<T>(run: () => Promise<T>): Promise<T> {
-  const db = await getDb();
-  let result!: T;
-  await db.withTransactionAsync(async () => {
-    result = await run();
+  return reminderWriteLock(async () => {
+    const db = await getDb();
+    let result!: T;
+    await db.withTransactionAsync(async () => {
+      result = await run();
+    });
+    return result;
   });
-  return result;
 }
 
 /**
@@ -326,14 +332,16 @@ export async function inReminderTransaction<T>(run: () => Promise<T>): Promise<T
 export async function reorderReminders(
   orderedIds: readonly string[]
 ): Promise<void> {
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
-    for (let i = 0; i < orderedIds.length; i++) {
-      await db.runAsync("UPDATE reminders SET sort = ? WHERE id = ?;", [
-        i,
-        orderedIds[i],
-      ]);
-    }
+  return reminderWriteLock(async () => {
+    const db = await getDb();
+    await db.withTransactionAsync(async () => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        await db.runAsync("UPDATE reminders SET sort = ? WHERE id = ?;", [
+          i,
+          orderedIds[i],
+        ]);
+      }
+    });
   });
 }
 
@@ -367,17 +375,19 @@ export async function applyLegacyRemindersBridge(
  * SAME profile. A no-op, and cheap, once at most one exists.
  */
 export async function dedupeBasalReminderRows(profileId?: string): Promise<void> {
-  const rows = await listReminders(profileId);
-  const basalRows = rows.filter((r) => r.type === "basal");
-  if (basalRows.length <= 1) return;
-  const [, ...extra] = [...basalRows].sort(
-    (a, b) => a.created_at - b.created_at || a.sort - b.sort
-  );
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
-    for (const row of extra) {
-      await db.runAsync("DELETE FROM reminders WHERE id = ?;", [row.id]);
-    }
+  return reminderWriteLock(async () => {
+    const rows = await listReminders(profileId);
+    const basalRows = rows.filter((r) => r.type === "basal");
+    if (basalRows.length <= 1) return;
+    const [, ...extra] = [...basalRows].sort(
+      (a, b) => a.created_at - b.created_at || a.sort - b.sort
+    );
+    const db = await getDb();
+    await db.withTransactionAsync(async () => {
+      for (const row of extra) {
+        await db.runAsync("DELETE FROM reminders WHERE id = ?;", [row.id]);
+      }
+    });
   });
 }
 

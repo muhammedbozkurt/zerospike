@@ -87,5 +87,23 @@ ok(
   canAddEstimate({ resultShown: true, items: [line({ gramsText: "٤٥" })], saving: false }) === true
 );
 
+// Opus3 fix-b: one rule for grouped thousands and signs in gram fields.
+ok("grams 1.500 is unreadable", parseGramsInput("1.500") === 0);
+ok("grams 1,500 is unreadable", parseGramsInput("1,500") === 0);
+ok("grams arabic grouped is unreadable", parseGramsInput("١٬٥٠٠") === 0);
+ok("grams arabic decimal 3 digits is unreadable", parseGramsInput("١٫٥٠٠") === 0);
+ok("grams 1.5 and 1,50 still read", parseGramsInput("1.5") === 1.5 && parseGramsInput("1,50") === 1.5);
+ok("grams 1500 plain still reads", parseGramsInput("1500") === 1500);
+ok("grams 12,34 reads", parseGramsInput("12,34") === 12.3);
+ok("unreadable 1.500", hasUnreadableAmount(line({ gramsText: "1.500" })) === true);
+ok("unreadable 1,500", hasUnreadableAmount(line({ gramsText: "1,500" })) === true);
+ok("unreadable arabic grouped", hasUnreadableAmount(line({ gramsText: "١٬٥٠٠" })) === true);
+ok("1,5 stays readable", hasUnreadableAmount(line({ gramsText: "1,5" })) === false);
+for (const signed of ["-5", "\u200F-5", "\u22125", "+5", "\u20135"]) {
+  ok(`signed grams ${JSON.stringify(signed)} is 0`, parseGramsInput(signed) === 0);
+  ok(`signed grams ${JSON.stringify(signed)} is unreadable`, hasUnreadableAmount(line({ gramsText: signed })) === true);
+  ok(`signed quantity ${JSON.stringify(signed)} is unreadable`, hasUnreadableAmount(line({ quantityText: signed })) === true);
+}
+
 console.log(`foodDigits: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
