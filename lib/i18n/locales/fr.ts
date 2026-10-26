@@ -1352,6 +1352,7 @@ const fr: TranslationSchema = {
     doseRequired: "Veuillez indiquer une dose.",
     duplicateBodyNoDose: "Enregistrée à {{time}}.",
     chooseProfile: "Pour quel profil ?",
+    saved: "Insuline basale enregistrée pour {{name}}.",
   },
   insulinPicker: {
     groupMix: "Prémélangée",

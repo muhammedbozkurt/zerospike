@@ -42,6 +42,7 @@ import {
   sanitizeNumberText,
 } from "../lib/numberInput";
 import { readNumericInput } from "../lib/numericField";
+import { runSheetSubmit, type SubmitResult } from "../lib/glucoseSheetFlow";
 import {
   GLUCOSE_SHEET_MAX_CHARS,
   glucoseSheetBounds,
@@ -97,14 +98,17 @@ interface Props {
   /** When set, the sheet opens prefilled to correct this existing reading. */
   edit?: GlucoseEditTarget | null;
   /** value is in mg/dL (already converted from the display unit).
-   *  loggedAt is null when the user left the time untouched ("now"). */
+   *  loggedAt is null when the user left the time untouched ("now").
+   *  The sheet stays open until the returned promise settles: `false` or a
+   *  rejection means the write did not land, and the sheet keeps the typed
+   *  value for a retry instead of closing (lib/glucoseSheetFlow.ts). */
   onClose: () => void;
   onSubmit: (
     value: number,
     period: PeriodTag,
     tags: LogTag[],
     loggedAt: Date | null
-  ) => void;
+  ) => Promise<SubmitResult> | SubmitResult;
   /** Destructive "Delete" action (2.3.1 P4), EDIT mode only: confirms first
    *  (with a second line when `edit.healthkit_uuid` is set), then fires with
    *  the entry being edited so the caller can run the same undo-toast delete
@@ -224,6 +228,7 @@ export function GlucoseInputSheet({
   useEffect(() => {
     if (!visible) return;
     submittedRef.current = false;
+    setSaving(false);
     const id = setTimeout(() => heroRef.current?.focus(), 60);
     return () => clearTimeout(id);
   }, [visible]);
@@ -248,6 +253,9 @@ export function GlucoseInputSheet({
   }
 
   function animateClose() {
+    // A dismiss while the write is in flight would drop the typed value if the
+    // write then fails; the sheet leaves on its own once the write landed.
+    if (submittedRef.current) return;
     animateOut(() => closeRef.current());
   }
   const closeSheetRef = useRef(animateClose);
@@ -301,6 +309,8 @@ export function GlucoseInputSheet({
   // let a second tap fire a second checkEntryGuards call, and a second dialog,
   // while the first is still on screen.
   const guardingRef = useRef(false);
+  // The sheet stays up while the write is in flight; Save is shut meanwhile.
+  const [saving, setSaving] = useState(false);
 
   async function submit() {
     if (typed == null || typed < minD || typed > maxD) return;
@@ -330,7 +340,16 @@ export function GlucoseInputSheet({
     }
     if (!proceed || submittedRef.current) return;
     submittedRef.current = true;
-    animateOut(() => onSubmit(mgdl, p, tg, at));
+    setSaving(true);
+    await runSheetSubmit({
+      submit: () => onSubmit(mgdl, p, tg, at),
+      animateOut,
+      onClose: () => closeRef.current(),
+      onFailed: () => {
+        submittedRef.current = false;
+        setSaving(false);
+      },
+    });
   }
 
   /** Same confirm dialog as the row's own swipe delete (useJournalRows.tsx's
@@ -699,7 +718,7 @@ export function GlucoseInputSheet({
                 />
 
                 {pinSave ? null : (
-                  <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
+                  <GradientCTA label={t("common.save")} disabled={!valid || saving} onPress={submit} />
                 )}
 
                 {edit && onDelete ? (
@@ -715,7 +734,7 @@ export function GlucoseInputSheet({
               </ScrollView>
               {pinSave ? (
                 <View style={{ paddingTop: SPACE.sm, paddingBottom: compact ? SPACE.lg : SPACE.xl + SPACE.xs }}>
-                  <GradientCTA label={t("common.save")} disabled={!valid} onPress={submit} />
+                  <GradientCTA label={t("common.save")} disabled={!valid || saving} onPress={submit} />
                 </View>
               ) : null}
             </Pressable>

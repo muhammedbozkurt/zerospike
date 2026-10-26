@@ -209,6 +209,7 @@ import {
   nextJournalCut,
 } from "../../lib/journalSlice";
 import { applyGlucoseCorrection } from "../../lib/services/glucoseEdit";
+import { attemptGlucoseWrite, openNewReadingState } from "../../lib/glucoseSheetFlow";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { useEntryGuardConfirm } from "../../components/useEntryGuardConfirm";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
@@ -1279,8 +1280,15 @@ export default function DashboardScreen() {
   // Manual logging is unlimited on both tiers now, so there is no gate here.
   function openLogger(period: PeriodTag) {
     if (!activeProfile) return;
-    setInitialPeriod(period);
-    setSheetOpen(true);
+    // Always a NEW reading: an edit target left behind by an earlier
+    // correction must not turn this into an edit of that old row.
+    const next = openNewReadingState(
+      { open: sheetOpen, edit: editGlucose, initialPeriod },
+      period
+    );
+    setEditGlucose(next.edit);
+    setInitialPeriod(next.initialPeriod);
+    setSheetOpen(next.open);
   }
 
   // "I started eating": arms the post-meal check timer (dedupes with the
@@ -1396,33 +1404,63 @@ export default function DashboardScreen() {
     period: PeriodTag,
     tags: LogTag[],
     loggedAt: Date | null
-  ) {
-    if (!activeProfile) return;
-    setSheetOpen(false);
+  ): Promise<boolean> {
+    if (!activeProfile) return true;
+    // The sheet closes only after the write landed (it awaits this promise and
+    // leaves on `true`); a failed write keeps it open with the typed value, and
+    // the edit target is cleared by the sheet's own close, not before.
+    const failed = (err: unknown) => {
+      logCrash(err, { screen: "dashboard", op: "saveGlucose" });
+      toast(t("common.saveFailed"), "error");
+    };
+    const target = editGlucose;
 
-    if (editGlucose) {
+    if (target) {
       // Correcting an existing reading: no reminders, no review nudge. Shared
       // with the full journal screen, which offers the same edit on the same
       // row (lib/services/glucoseEdit.ts).
-      await applyGlucoseCorrection(editGlucose, value, period, tags, loggedAt);
-      setEditGlucose(null);
+      const res = await attemptGlucoseWrite(
+        () => applyGlucoseCorrection(target, value, period, tags, loggedAt),
+        failed
+      );
+      if (!res.ok) return false;
       logEvent("log_edited", { kind: "glucose" });
       hapticSuccess();
       bumpData();
-      return;
+      return true;
     }
 
     // loggedAt is null when the user left the time untouched ("now"); a
     // backdated reading must not arm/cancel today's timers or nudges.
     const isNow = loggedAt == null;
     const streakBefore = consecutiveLogDays(logDates);
-    const addedSugar = await addSugarLog({
-      profile_id: activeProfile.id,
-      glucose_level_mgdl: value,
-      period_tag: period,
-      tags,
-      logged_at: loggedAt ? loggedAt.toISOString() : undefined,
-    });
+    const written = await attemptGlucoseWrite(
+      () =>
+        addSugarLog({
+          profile_id: activeProfile.id,
+          glucose_level_mgdl: value,
+          period_tag: period,
+          tags,
+          logged_at: loggedAt ? loggedAt.toISOString() : undefined,
+        }),
+      failed
+    );
+    if (!written.ok) return false;
+    // Everything after the write must not hold the sheet open.
+    void afterGlucoseAdded(written.value, value, period, isNow, streakBefore).catch((err) =>
+      logCrash(err, { screen: "dashboard", op: "afterGlucoseAdded" })
+    );
+    return true;
+  }
+
+  async function afterGlucoseAdded(
+    addedSugar: Awaited<ReturnType<typeof addSugarLog>>,
+    value: number,
+    period: PeriodTag,
+    isNow: boolean,
+    streakBefore: number
+  ) {
+    if (!activeProfile) return;
     // Opt-in Apple Health mirror (H1); no-op unless the user enabled it. A
     // genuine failure (toggle on, write attempted, came back empty) shows an
     // immediate toast here rather than waiting for the next manual sync -

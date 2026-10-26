@@ -1352,6 +1352,7 @@ const en: TranslationSchema = {
     doseRequired: "Enter a dose.",
     duplicateBodyNoDose: "Logged at {{time}}.",
     chooseProfile: "For which profile?",
+    saved: "Basal insulin saved for {{name}}.",
   },
   insulinPicker: {
     groupMix: "Premixed",
