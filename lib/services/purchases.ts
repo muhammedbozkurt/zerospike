@@ -4,6 +4,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash, logEvent } from "../analytics";
 import { getAnalyticsEnabled, onAnalyticsEnabledChange } from "../analytics/optOut";
 import { getDeviceId, isInstallId } from "../identity/deviceId";
+import {
+  decideWinbackSource,
+  iosSupportsWinBack,
+  resolveAppleWinBack,
+  type AppleWinBackPick,
+} from "../winbackOffer";
 
 /**
  * RevenueCat purchases layer.
@@ -988,6 +994,14 @@ const MOCK_DOWNSELL: DownsellOffer = {
   savingsPercent: 33,
 };
 
+function findAnnualPackage(offerings: any): { pkg: any; meta: PlanMeta } | undefined {
+  for (const p of offerings?.current?.availablePackages ?? []) {
+    const m = mapRcPackage(p);
+    if (m && m.plan === "annual") return { pkg: p, meta: m.meta };
+  }
+  return undefined;
+}
+
 function findAnnualMapped(pkgs: any[]): { meta: PlanMeta; productId: string } | undefined {
   for (const p of pkgs ?? []) {
     const m = mapRcPackage(p);
@@ -1053,9 +1067,65 @@ export async function getDownsellOffer(): Promise<DownsellOffer> {
   }
 }
 
-/** One-shot check for the winback trigger: only open if a real discount exists. */
+/** One-shot check for the winback trigger: only open if a real offer exists. */
 export async function winbackHasRealDiscount(): Promise<boolean> {
-  return (await getDownsellOffer()).hasRealDiscount;
+  return (await getWinbackOffer()).hasRealDiscount;
+}
+
+export interface WinbackOffer extends DownsellOffer {
+  source: "apple" | "downsell";
+  /** The Apple win-back offer to apply; null for the downsell card. */
+  appleOfferId: string | null;
+}
+
+function winbackFromDownsell(d: DownsellOffer): WinbackOffer {
+  return { ...d, source: "downsell", appleOfferId: null };
+}
+
+/**
+ * What the winback surface offers. iOS 18+: Apple's win-back offer when this
+ * lapsed subscriber is eligible for one on the standard annual; otherwise (older
+ * iOS, no offer, an error, a slow answer) and always on Android: the existing
+ * 'downsell' offering, which itself reports nothing when it is not a real saving.
+ */
+export async function getWinbackOffer(): Promise<WinbackOffer> {
+  if (DEBUG_MOCK_PURCHASES) return winbackFromDownsell(MOCK_DOWNSELL);
+  let apple: AppleWinBackPick | null = null;
+  let standardPriceString = "";
+  if (iosSupportsWinBack(Platform.OS, Platform.Version)) {
+    let standardPrice = 0;
+    apple = await resolveAppleWinBack(
+      async () => {
+        await ensureConfigured();
+        const Purchases = rc();
+        if (typeof Purchases.getEligibleWinBackOffersForPackage !== "function") return null;
+        const annual = findAnnualPackage(await Purchases.getOfferings());
+        if (!annual) return null;
+        standardPrice = annual.meta.price;
+        standardPriceString = annual.meta.priceString;
+        return Purchases.getEligibleWinBackOffersForPackage(annual.pkg);
+      },
+      () => standardPrice
+    );
+  }
+  const downsell = apple ? NO_DOWNSELL : await getDownsellOffer();
+  const source = decideWinbackSource({
+    os: Platform.OS,
+    osVersion: Platform.Version,
+    apple,
+    downsell,
+  });
+  if (source === "apple" && apple) {
+    return {
+      hasRealDiscount: true,
+      discountedPriceString: apple.discountedPriceString,
+      standardPriceString,
+      savingsPercent: apple.savingsPercent,
+      source: "apple",
+      appleOfferId: apple.identifier,
+    };
+  }
+  return winbackFromDownsell(source === "downsell" ? downsell : NO_DOWNSELL);
 }
 
 /** Purchases the discounted annual from the 'downsell' offering. */
@@ -1093,4 +1163,35 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
   } catch (e: any) {
     return classifyAndRecover(e, "annual", startedAt);
   }
+}
+
+async function purchaseAppleWinBack(offerId: string): Promise<PurchaseOutcome> {
+  const startedAt = Date.now();
+  try {
+    await ensureConfigured();
+    const Purchases = rc();
+    const annual = findAnnualPackage(await Purchases.getOfferings());
+    const offers = annual ? await Purchases.getEligibleWinBackOffersForPackage(annual.pkg) : undefined;
+    const target = (offers ?? []).find((o: any) => o?.identifier === offerId);
+    if (!annual || !target) {
+      return { ok: false, cancelled: false, recovered: false, error: "storeError" };
+    }
+    const { customerInfo } = await Purchases.purchasePackageWithWinBackOffer(annual.pkg, target);
+    const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
+    if (ok) {
+      await applyCustomerInfo(customerInfo);
+      await AsyncStorage.setItem(PLAN_KEY, "annual");
+    }
+    return { ok, cancelled: false, recovered: false, error: ok ? null : "storeError" };
+  } catch (e: any) {
+    return classifyAndRecover(e, "annual", startedAt);
+  }
+}
+
+/** Buys what getWinbackOffer showed: the Apple win-back offer or the downsell annual. */
+export async function purchaseWinback(offer: WinbackOffer): Promise<PurchaseOutcome> {
+  if (!DEBUG_MOCK_PURCHASES && offer.source === "apple" && offer.appleOfferId) {
+    return purchaseAppleWinBack(offer.appleOfferId);
+  }
+  return purchaseDownsell();
 }
