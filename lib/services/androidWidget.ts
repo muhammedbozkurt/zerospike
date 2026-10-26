@@ -21,6 +21,7 @@ import { readWidgetThemePref, widgetPalettes } from "./widgetTheme";
 import type { ThemePref } from "../theme/themePref";
 import { VERY_HIGH_MGDL } from "../glucose";
 import { formatTimeForLang } from "../format";
+import { cgmWidgetModel } from "./liveDataCgm";
 
 /** Registered names of the three D1 widgets (app.json's react-native-android-
  *  widget config; also the iOS twins' own `kind` strings in targets/widget/
@@ -53,6 +54,9 @@ export const ANDROID_TIMER_WIDGET_NAME = "ZerospikeTimer";
  *  Timer widget below is a HOME-SCREEN tile, so it links to them too now. The
  *  six below must stay byte-identical to their Swift twins. */
 const URI_ADD_GLUCOSE = "zerospike:///?sheet=glucose";
+/** The app's own root. With a sensor feeding the profile, a reading tile opens
+ *  the app instead of the glucose log sheet. */
+const URI_DASHBOARD = "zerospike:///";
 const URI_ADD_MEAL = "zerospike:///food";
 const URI_ADD_INJECTION = "zerospike:///injection?segment=map";
 const URI_ADD_MED = "zerospike:///?sheet=med";
@@ -162,8 +166,10 @@ export function buildZerospikeWidget(
 ): React.JSX.Element {
   const remaining = nextReminderTimeLabel(data);
   const s = sizesFor(size);
-  const metaText =
-    data?.avgGlucoseMgdl == null
+  const cgm = cgmWidgetModel(data, Date.now());
+  const metaText = cgm
+    ? cgm.ageText
+    : data?.avgGlucoseMgdl == null
       ? (data?.labels?.noData ?? "")
       : (data?.labels?.avgWindow ?? "");
   return React.createElement(
@@ -190,13 +196,15 @@ export function buildZerospikeWidget(
       // The main widget is a logging shortcut, so its root tap opens the
       // glucose quick-add sheet rather than just the app (2.3.0's K2-B) - the
       // same target the iOS twin's tapURL now uses (targets/widget/index.swift).
-      clickActionData: { uri: URI_ADD_GLUCOSE },
+      // With a sensor feeding the profile, logging steps back and the tap just
+      // opens the app.
+      clickActionData: { uri: cgm ? URI_DASHBOARD : URI_ADD_GLUCOSE },
     },
     React.createElement(
       FlexWidget,
       { style: { flexDirection: "column" } },
       React.createElement(TextWidget, {
-        text: data?.labels?.avgGlucose ?? data?.labels?.lastReading ?? "",
+        text: cgm?.label ?? data?.labels?.avgGlucose ?? data?.labels?.lastReading ?? "",
         truncate: "END",
         maxLines: 1,
         style: { fontSize: s.label, fontWeight: "bold", color: pal.muted as ColorProp },
@@ -205,14 +213,24 @@ export function buildZerospikeWidget(
         FlexWidget,
         { style: { flexDirection: "row", alignItems: "flex-end", marginTop: 1 } },
         React.createElement(TextWidget, {
-          text: formatReading(data),
+          text: cgm ? cgm.value : formatReading(data),
           maxLines: 1,
           style: {
             fontSize: s.value,
             fontWeight: "bold",
-            color: readingColor(data?.avgGlucoseMgdl ?? data?.lastGlucoseMgdl ?? null, data?.band, pal),
+            // A sensor value is drawn plain, with no band colour; only faded once old.
+            color: cgm
+              ? ((cgm.stale ? pal.muted : pal.ink) as ColorProp)
+              : readingColor(data?.avgGlucoseMgdl ?? data?.lastGlucoseMgdl ?? null, data?.band, pal),
           },
         }),
+        cgm?.glyph
+          ? React.createElement(TextWidget, {
+              text: ` ${cgm.glyph}`,
+              maxLines: 1,
+              style: { fontSize: s.unit + 7, fontWeight: "bold", color: pal.ink as ColorProp, marginBottom: 3 },
+            })
+          : null,
         React.createElement(TextWidget, {
           text: ` ${unitLabel(data)}`,
           maxLines: 1,
@@ -310,8 +328,13 @@ export function buildReadingWidget(
         ? (mgdl / MGDL_PER_MMOL).toFixed(1)
         : String(Math.round(mgdl)));
   const at = data?.lastGlucoseAt;
-  const timeText = at != null ? formatTimeForLang(at, data?.lang ?? "en") : "";
-  const hasReading = mgdl != null || data?.lastGlucoseDisplay != null;
+  const cgm = cgmWidgetModel(data, Date.now());
+  const timeText = cgm
+    ? cgm.ageText
+    : at != null
+      ? formatTimeForLang(at, data?.lang ?? "en")
+      : "";
+  const hasReading = cgm != null || mgdl != null || data?.lastGlucoseDisplay != null;
   return React.createElement(
     FlexWidget,
     {
@@ -330,8 +353,9 @@ export function buildReadingWidget(
       },
       clickAction: "OPEN_URI",
       // A logging shortcut like every other tile: the tap opens the glucose
-      // quick-add sheet rather than only bringing the app forward.
-      clickActionData: { uri: URI_ADD_GLUCOSE },
+      // quick-add sheet rather than only bringing the app forward. In CGM mode
+      // the sensor feeds the value, so the tap only opens the app.
+      clickActionData: { uri: cgm ? URI_DASHBOARD : URI_ADD_GLUCOSE },
     },
     // Label and clock time stack instead of sharing one row: a row here relies on
     // justifyContent's spacer to push the time to the far edge, but that spacer
@@ -343,7 +367,7 @@ export function buildReadingWidget(
       FlexWidget,
       { style: { flexDirection: "column", width: "match_parent" } },
       React.createElement(TextWidget, {
-        text: data?.labels?.lastReading ?? "",
+        text: cgm?.label ?? data?.labels?.lastReading ?? "",
         truncate: "END",
         maxLines: 1,
         style: {
@@ -368,14 +392,28 @@ export function buildReadingWidget(
       FlexWidget,
       { style: { flexDirection: "row", alignItems: "flex-end", marginTop: 1 } },
       React.createElement(TextWidget, {
-        text: value,
+        text: cgm ? cgm.value : value,
         maxLines: 1,
         style: {
           fontSize: compact ? 24 : 30,
           fontWeight: "bold",
-          color: readingColor(mgdl, data?.band, pal),
+          color: cgm
+            ? ((cgm.stale ? pal.muted : pal.ink) as ColorProp)
+            : readingColor(mgdl, data?.band, pal),
         },
       }),
+      cgm?.glyph
+        ? React.createElement(TextWidget, {
+            text: ` ${cgm.glyph}`,
+            maxLines: 1,
+            style: {
+              fontSize: compact ? 16 : 20,
+              fontWeight: "bold",
+              color: pal.ink as ColorProp,
+              marginBottom: 3,
+            },
+          })
+        : null,
       React.createElement(TextWidget, {
         text: hasReading ? ` ${unitLabel(data)}` : ` ${data?.labels?.noData ?? ""}`,
         truncate: "END",
@@ -406,7 +444,7 @@ export function buildReadingWidget(
 function quickAddShortcuts(data: LiveData | null, pal: WidgetPalette) {
   const usesInsulin = data?.usesInsulin !== false;
   const usesOralMeds = data?.usesOralMeds === true;
-  return [
+  const shortcuts = [
     {
       key: "glucose",
       label: data?.labels?.addGlucose ?? "Glucose",
@@ -449,6 +487,13 @@ function quickAddShortcuts(data: LiveData | null, pal: WidgetPalette) {
     if (shortcut.key === "med") return usesOralMeds;
     return true;
   });
+  // With a sensor feeding the profile, the glucose log steps back: the meal
+  // tile takes the lead and the wider slot (same swap as QuickAdd.swift).
+  if (cgmWidgetModel(data, Date.now())) {
+    const [glucose, meal, ...rest] = shortcuts;
+    return [{ ...meal, weight: glucose.weight }, { ...glucose, weight: meal.weight }, ...rest];
+  }
+  return shortcuts;
 }
 
 /** Builds the Quick Add widget: a titled row of two to four deep-link tiles into

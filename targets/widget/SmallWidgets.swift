@@ -358,26 +358,35 @@ struct SmallReadingView: View {
   @Environment(\.widgetFamily) private var family
   let entry: SmallEntry
 
+  /// In a sensor mode the tile shows the newest sensor value with its arrow and
+  /// age. nil keeps every line below exactly as it was.
+  private var cgm: LiveData.Cgm? { entry.data?.activeCgm }
+
   private var reading: String {
-    entry.data?.displayGlucose ?? "-"
+    if let cgm { return cgm.readingText(now: entry.date) }
+    return entry.data?.displayGlucose ?? "-"
   }
 
   private var hasReading: Bool {
-    entry.data?.lastGlucoseMgdl != nil || entry.data?.lastGlucoseDisplay != nil
+    cgm != nil || entry.data?.lastGlucoseMgdl != nil || entry.data?.lastGlucoseDisplay != nil
   }
 
   private var readingColor: Color {
+    // A sensor value is drawn plain, with no band colour; only faded once old.
+    if let cgm { return cgm.isStale(now: entry.date) ? SmallPalette.muted : SmallPalette.ink }
     guard let mgdl = entry.data?.lastGlucoseMgdl else { return SmallPalette.muted }
     return GlucoseColor.forReading(mgdl, band: entry.data?.band)
   }
 
   private var title: String {
-    entry.data?.labels?.lastReading ?? "zerospike"
+    if cgm != nil { return entry.data?.labels?.cgm ?? "CGM" }
+    return entry.data?.labels?.lastReading ?? "zerospike"
   }
 
   /// The line under the value: how long ago it was logged, or the app's own
   /// empty state. Never a guess - a snapshot with no reading says so.
   private var metaLine: String {
+    if let cgm { return cgm.ageLabel(entry.data?.labels, now: entry.date) }
     if !hasReading { return entry.data?.labels?.noData ?? "" }
     return smallElapsedLabel(entry.data, now: entry.date) ?? ""
   }
@@ -395,7 +404,7 @@ struct SmallReadingView: View {
         smallView
       }
     }
-    .widgetURL(DeepLinks.addGlucose)
+    .widgetURL(cgm != nil ? DeepLinks.dashboard : DeepLinks.addGlucose)
     .applyingLayoutDirection(layoutDirection(forLang: entry.data?.lang))
   }
 

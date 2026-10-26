@@ -134,27 +134,42 @@ struct ZerospikeWidgetView: View {
 
   // The widget pins the rolling AVERAGE (a persistent number), falling back to the
   // last reading only for a pre-R10 snapshot that carries no average yet.
+  /// In a sensor mode the newest sensor value replaces the average. nil keeps
+  /// every line below exactly as it was.
+  private var cgm: LiveData.Cgm? { entry.data?.activeCgm }
+
   private var reading: String {
-    entry.data?.displayAverage ?? entry.data?.displayGlucose ?? "-"
+    if let cgm { return cgm.readingText(now: entry.date) }
+    return entry.data?.displayAverage ?? entry.data?.displayGlucose ?? "-"
   }
 
   private var readingMgdl: Double? {
-    entry.data?.avgGlucoseMgdl ?? entry.data?.lastGlucoseMgdl
+    cgm?.mgdl ?? entry.data?.avgGlucoseMgdl ?? entry.data?.lastGlucoseMgdl
   }
 
   private var readingLabel: String {
-    entry.data?.labels?.avgGlucose ?? entry.data?.labels?.lastReading ?? ""
+    if cgm != nil { return entry.data?.labels?.cgm ?? "CGM" }
+    return entry.data?.labels?.avgGlucose ?? entry.data?.labels?.lastReading ?? ""
   }
 
   private var readingColor: Color {
+    // A sensor value is drawn plain, with no band colour; only faded once old.
+    if let cgm { return cgm.isStale(now: entry.date) ? GlucoseColor.muted : GlucoseColor.ink }
     guard let mgdl = readingMgdl else { return GlucoseColor.muted }
     return GlucoseColor.forReading(mgdl, band: entry.data?.band)
   }
 
   /// The line under the value: the averaging window, or the honest empty state.
   private var metaLine: String {
+    if let cgm { return cgm.ageLabel(entry.data?.labels, now: entry.date) }
     if readingMgdl == nil { return entry.data?.labels?.noData ?? "" }
     return entry.data?.labels?.avgWindow ?? ""
+  }
+
+  /// With a sensor feeding the profile, logging steps back: the tap opens the
+  /// app instead of the glucose log sheet.
+  private var logURL: URL {
+    cgm != nil ? DeepLinks.dashboard : DeepLinks.addGlucose
   }
 
   var body: some View {
@@ -212,10 +227,10 @@ struct ZerospikeWidgetView: View {
       case .reminder:
         return DeepLinks.reminders
       case .reading:
-        return DeepLinks.addGlucose
+        return logURL
       }
     default:
-      return DeepLinks.addGlucose
+      return logURL
     }
   }
 
@@ -352,7 +367,8 @@ struct ZerospikeWidgetView: View {
         .frame(maxHeight: .infinity)
 
       VStack(alignment: .leading, spacing: 10) {
-        if let lastMgdl = entry.data?.lastGlucoseMgdl,
+        if cgm == nil,
+           let lastMgdl = entry.data?.lastGlucoseMgdl,
            let last = entry.data?.displayGlucose {
           VStack(alignment: .leading, spacing: 1) {
             Text(entry.data?.labels?.lastReading ?? "")

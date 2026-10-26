@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Platform, View, useWindowDimensions } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -19,7 +19,7 @@ import { MiniTile, MiniWidgetsScene } from "../components/scWidgets/MiniWidgetsS
 import { NotificationCard } from "../components/scWidgets/NotificationCard";
 import { AndroidScene } from "../components/scWidgets/AndroidScene";
 import { profileFor, specFor, type AndroidSpec, type IosSpec } from "../components/scWidgets/layout";
-import { sceneAnchor, sceneSnapshot } from "../components/scWidgets/sceneData";
+import { sceneAnchor, sceneCgmSnapshot, sceneSnapshot } from "../components/scWidgets/sceneData";
 
 /**
  * Store-screenshot ONLY (panel 03-widget): a widget scene, because the real
@@ -50,6 +50,8 @@ import { sceneAnchor, sceneSnapshot } from "../components/scWidgets/sceneData";
  */
 export default function ScWidgets() {
   const router = useRouter();
+  const { cgm } = useLocalSearchParams<{ cgm?: string }>();
+  const cgmVariant = cgm === "1";
   const { t, i18n } = useTranslation();
   const { activeProfile } = useApp();
   // Real widget bitmaps (react-native-android-widget's WidgetPreview) only
@@ -73,13 +75,17 @@ export default function ScWidgets() {
       const unit = activeProfile?.glucose_unit ?? "mgdl";
       const snapshot = await computeLiveData(profileId, unit);
       if (cancelled) return;
-      setData(sceneSnapshot(snapshot, now));
+      setData(
+        cgmVariant
+          ? sceneCgmSnapshot(snapshot, now, Platform.OS === "android" ? Date.now() : now)
+          : sceneSnapshot(snapshot, now)
+      );
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [activeProfile?.id, activeProfile?.glucose_unit, i18n.language, now]);
+  }, [activeProfile?.id, activeProfile?.glucose_unit, i18n.language, now, cgmVariant]);
 
   if (!isScreenshotMode()) {
     router.replace("/");

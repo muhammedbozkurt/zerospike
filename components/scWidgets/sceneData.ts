@@ -59,12 +59,39 @@ export function sceneAnchor(mustBeFuture: boolean): number {
   return t;
 }
 
+/** The optional sensor variant of the scene (?cgm=1, Android widgets only; the
+ *  store's 04-widgets frame stays manual). */
+export const SCENE_CGM_AGE_MIN = 4;
+
+/**
+ * The same scene in a sensor mode: 112 mg/dL, flat, 4 minutes old. The Android
+ * builders measure the age against the real clock (they run on a home screen),
+ * so `base` is the real now there and the anchor everywhere else.
+ */
+export function sceneCgmSnapshot(snapshot: LiveData, anchor: number, base: number): LiveData {
+  const scene = sceneSnapshot(snapshot, anchor);
+  return {
+    ...scene,
+    mode: "cgm",
+    cgm: {
+      mgdl: SCENE_LAST_MGDL,
+      at: base - SCENE_CGM_AGE_MIN * MIN,
+      trend: "flat",
+      ageMin: SCENE_CGM_AGE_MIN,
+      display: formatGlucose(SCENE_LAST_MGDL, scene.unit),
+    },
+  };
+}
+
 /** Pins the snapshot's numbers to the anchor. Labels, unit, band, and the
  *  insulin/oral flags are passed through untouched. */
 export function sceneSnapshot(snapshot: LiveData, anchor: number): LiveData {
   const unit = snapshot.unit;
+  // The store frame is always the manual look, whatever mode the device is in.
+  const { cgm: _sensor, ...manual } = snapshot;
   return {
-    ...snapshot,
+    ...manual,
+    mode: "manual",
     updatedAt: anchor,
     lastGlucoseMgdl: SCENE_LAST_MGDL,
     lastGlucoseDisplay: formatGlucose(SCENE_LAST_MGDL, unit),

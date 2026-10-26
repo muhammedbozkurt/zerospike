@@ -26,6 +26,15 @@ import {
   insulinModeUsesInsulin,
 } from "../insulinMode";
 import type { GlucoseUnit } from "../db/types";
+import { getCgmMode } from "../cgm/state";
+import { subscribeCgmChanges } from "../cgm/importEvents";
+import {
+  cgmLiveFields,
+  cgmReadingText,
+  loadCgmReadings,
+  type LiveCgm,
+  type LiveCgmMode,
+} from "./liveDataCgm";
 
 /**
  * The single source of "what the live surfaces show".
@@ -70,6 +79,13 @@ export type ReminderKind = "postMeal" | "basal" | "med" | "glucose" | "custom";
 export interface LiveData {
   /** epoch ms this snapshot was computed. */
   updatedAt: number;
+  /** How the profile gets its readings. Absent on a snapshot written before
+   *  sensor data existed, which every surface reads as "manual". */
+  mode?: LiveCgmMode;
+  /** The newest SENSOR reading with its trend and age. Present only when `mode`
+   *  is not "manual" and a sensor reading exists; surfaces draw their CGM look
+   *  only when this is there and otherwise keep the manual look unchanged. */
+  cgm?: LiveCgm;
   /** Display unit, so native surfaces format without re-deriving it. */
   unit: GlucoseUnit;
   /** The active in-app language (e.g. "ar"), so a native surface can mirror the
@@ -175,6 +191,8 @@ export interface LiveData {
     /** Short one-word label for the meal time shown next to `postMealStartedAt`
      *  on the watch app/complication. */
     mealTime: string;
+    /** The generic sensor heading ("CGM", never a brand). */
+    cgm: string;
   };
 }
 
@@ -223,7 +241,7 @@ export async function computeLiveData(
   // The five reads are independent of one another, so they go out together rather
   // than as a chain of awaits.
   const windowStart = new Date(now - AVG_WINDOW_DAYS * 86_400_000).toISOString();
-  const [latest, avgWindow, prefs, profile, postMealState, reminders] = await Promise.all([
+  const [latest, avgWindow, prefs, profile, postMealState, reminders, cgmMode] = await Promise.all([
     getLatestSugarLog(profileId),
     getSugarAverageSince(profileId, windowStart),
     getNotificationPrefs(),
@@ -237,7 +255,14 @@ export async function computeLiveData(
     // for one specific profile, so it is passed straight through rather than
     // relying on listReminders' own active-profile fallback to agree with it.
     listReminders(profileId),
+    getCgmMode(profileId),
   ]);
+  const cgmFields = cgmLiveFields(
+    cgmMode,
+    cgmMode === "manual" ? [] : await loadCgmReadings(profileId).catch(() => []),
+    now,
+    unit
+  );
   const avgGlucoseMgdl =
     avgWindow.avgMgdl != null ? Math.round(avgWindow.avgMgdl) : null;
   const targetBand = targetBandFor(profile ?? {});
@@ -316,6 +341,7 @@ export async function computeLiveData(
 
   return {
     updatedAt: now,
+    ...cgmFields,
     unit,
     lang: currentLang(),
     lastGlucoseMgdl: latest?.glucose_level_mgdl ?? null,
@@ -356,6 +382,7 @@ export async function computeLiveData(
       timerTitle: i18n.t("widget.timerTitle"),
       startCountdown: localized("dashboard.startCountdown"),
       mealTime: i18n.t("widget.mealTime"),
+      cgm: i18n.t("cgmSource.cgm"),
     },
   };
 }
@@ -464,6 +491,21 @@ function publishCoalesced(json: string): void {
   }, NATIVE_PUBLISH_COALESCE_MS - elapsed);
 }
 
+let lastSynced: { profileId: string; unit: GlucoseUnit } | null = null;
+let cgmSubscribed = false;
+
+/** New sensor rows, a mode switch or a cleared import re-publish the snapshot
+ *  for the profile the app last synced, so the widgets and the watch follow the
+ *  sensor without waiting for a log write. */
+function ensureCgmSubscription(): void {
+  if (cgmSubscribed) return;
+  cgmSubscribed = true;
+  subscribeCgmChanges((change) => {
+    if (lastSynced == null || change.profileId !== lastSynced.profileId) return;
+    void syncLiveData(lastSynced.profileId, lastSynced.unit);
+  });
+}
+
 /**
  * Computes and persists the LiveData snapshot. Safe to call on app open and
  * after any log/timer/preference change; failures are swallowed (a stale live
@@ -477,6 +519,8 @@ export async function syncLiveData(
   profileId: string,
   unit: GlucoseUnit
 ): Promise<LiveData | null> {
+  lastSynced = { profileId, unit };
+  ensureCgmSubscription();
   try {
     const data = await computeLiveData(profileId, unit);
     const json = JSON.stringify(data);
@@ -503,7 +547,9 @@ export async function syncLiveData(
     ) {
       void import("../../modules/zerospike-live-activity").then((m) =>
         m.updatePostMealActivityReading({
-          lastReading: data.lastGlucoseDisplay,
+          lastReading: data.cgm
+            ? cgmReadingText(data.cgm, Date.now())
+            : data.lastGlucoseDisplay,
           unitLabel: glucoseUnitLabel(unit),
         })
       );
