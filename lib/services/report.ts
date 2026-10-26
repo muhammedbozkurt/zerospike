@@ -35,7 +35,14 @@ import {
 import type { Injection, MealLog, SugarLog } from "../db/types";
 import { logEvent } from "../analytics";
 import type { GlucoseUnit, PeriodTag, UserProfile } from "../db/types";
-import { EXPORT_MAX_ROWS, type ExportResult } from "./export";
+import type { ExportResult } from "./export";
+import {
+  ANALYSIS_MAX_ROWS,
+  EXPORT_MAX_ROWS,
+  applyRowLimit,
+  truncationMessage,
+  type ExportTruncation,
+} from "../exportLimits";
 import { isDuringTrial } from "./purchases";
 import { getReportName } from "../reportName";
 import {
@@ -141,7 +148,7 @@ const AGP_BOX: ChartBox = {
  * The coordinates come from lib/agpChart.ts, the same module the Insights
  * screen draws from, so the printed chart and the on-screen chart agree.
  */
-function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
+function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand, rtl: boolean): string {
   const g = buildAgpGeometry(agp, AGP_BOX, band);
   if (!g) return "";
   const { width: W, height: H } = AGP_BOX;
@@ -171,7 +178,7 @@ function buildAgpSvg(agp: Agp, unit: GlucoseUnit, band: TargetBand): string {
   const hasCurve = g.iqrPolygon.length > 0;
 
   return (
-    `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet"${rtl ? ' style="direction:ltr"' : ""} xmlns="http://www.w3.org/2000/svg">` +
     `<rect x="${g.targetBand.x}" y="${f1(g.targetBand.y)}" width="${f1(g.targetBand.width)}" height="${f1(g.targetBand.height)}" fill="#10b981" fill-opacity="0.1"/>` +
     yTicks +
     // Wider 5-95% band drawn first (lighter), then the 25-75% band on top of
@@ -613,6 +620,8 @@ export interface ReportHtmlOpts {
   /** Printed as the "Profile:" line; blank or missing prints no such line. */
   reportName?: string;
   mode?: ReportMode;
+  /** Footnote for a range whose raw row tables were cut to the newest rows. */
+  listNote?: string;
 }
 
 export function buildHtml(
@@ -910,7 +919,7 @@ export function buildHtml(
   <div class="foot">
     ${t("disclaimer.body")}<br/>
     ${insights.gmi != null ? `${t("insights.gmiNote")}<br/>` : ""}
-    ${t("insights.disclaimer")}
+    ${t("insights.disclaimer")}${opts.listNote ? `<br/>${esc(opts.listNote)}` : ""}
   </div>
 </body>
 </html>`;
@@ -997,8 +1006,14 @@ export function buildReportDocument(
   profile: UserProfile,
   r: DateRange,
   entries: Awaited<ReturnType<typeof getJournal>>,
-  opts: ReportHtmlOpts
-): { html: string; count: number } | null {
+  opts: ReportHtmlOpts & {
+    /** Raw row tables list at most this many newest rows; every figure and the
+     *  AGP still use all of `entries`. */
+    listLimit?: number;
+    /** Set when `entries` itself was cut at this many newest rows (the guard). */
+    analysisLimit?: number;
+  }
+): { html: string; count: number; truncated?: ExportTruncation } | null {
   const effectiveDays = rangeWindowDays(r);
   const unit: GlucoseUnit = profile.glucose_unit ?? "mgdl";
   const { sugar, meals: mealsRaw, injections: inj } = splitJournalFeed(profile.id, entries);
@@ -1012,7 +1027,12 @@ export function buildReportDocument(
   // AGP over exactly the range's readings (the query already scoped them; the
   // huge window keeps computeAgp from re-windowing them).
   const sugarInRange = sugar;
-  const agpSvg = buildAgpSvg(computeAgp(sugarInRange, 1_000_000), unit, reportBand);
+  const agpSvg = buildAgpSvg(
+    computeAgp(sugarInRange, 1_000_000),
+    unit,
+    reportBand,
+    currentLang().slice(0, 2) === "ar"
+  );
 
   // Five-band TIR breakdown over the window, against the profile's own range.
   const tir: TirBreakdown = { veryLow: 0, low: 0, target: 0, high: 0, veryHigh: 0, total: 0 };
@@ -1028,8 +1048,16 @@ export function buildReportDocument(
 
   // Tables are built from the journal feed (resolved names) within the window,
   // oldest-first for natural reading order.
-  const inWindow = [...entries].reverse();
-  if (inWindow.length === 0) return null;
+  if (entries.length === 0) return null;
+  const listLimit = opts.listLimit ?? EXPORT_MAX_ROWS;
+  const listed = entries.slice(0, listLimit);
+  const truncated: ExportTruncation | undefined =
+    opts.analysisLimit != null
+      ? { limit: opts.analysisLimit, listOnly: false }
+      : entries.length > listLimit
+        ? { limit: listLimit, listOnly: true }
+        : undefined;
+  const inWindow = [...listed].reverse();
 
   const glucose = inWindow
     .filter((e) => e.kind === "glucose")
@@ -1111,7 +1139,7 @@ export function buildReportDocument(
   // buildMealResponseHtml can print the lowest/highest-change meal BY NAME
   // without a second query.
   const mealNameById = new Map<string, string>();
-  for (const e of inWindow) if (e.kind === "meal") mealNameById.set(e.id, e.display_name);
+  for (const e of entries) if (e.kind === "meal") mealNameById.set(e.id, e.display_name);
 
   const sec = (html: string) => (html ? `<div class="sec">${html}</div>` : "");
   const proInsightsHtml =
@@ -1134,9 +1162,15 @@ export function buildReportDocument(
     meds,
     meals,
     proInsightsHtml,
-    { reportName: opts.reportName, mode: opts.mode }
+    {
+      reportName: opts.reportName,
+      mode: opts.mode,
+      listNote: truncated
+        ? truncationMessage((k, o) => i18n.t(k, o), truncated, num(truncated.limit))
+        : undefined,
+    }
   );
-  return { html, count: inWindow.length };
+  return { html, count: inWindow.length, truncated };
 }
 
 // Never awaited by the export: the trial lookup can reach the store, and the
@@ -1178,9 +1212,16 @@ export async function exportLogsPdf(
   // that point the document was already truncated - and now its charts, its
   // metrics and its tables all describe the SAME rows, where before the metrics
   // could cover readings the tables had no room to list.
-  const entries = await getJournal(profile.id, lang, EXPORT_MAX_ROWS, r);
+  const { rows: entries, truncated: analysisCut } = applyRowLimit(
+    await getJournal(profile.id, lang, ANALYSIS_MAX_ROWS + 1, r),
+    ANALYSIS_MAX_ROWS
+  );
   const reportName = await getReportName(profile.id);
-  const doc = buildReportDocument(profile, r, entries, { reportName, mode });
+  const doc = buildReportDocument(profile, r, entries, {
+    reportName,
+    mode,
+    analysisLimit: analysisCut ? ANALYSIS_MAX_ROWS : undefined,
+  });
   if (!doc) return { ok: false, reason: "noData" };
   const { html } = doc;
 
@@ -1200,7 +1241,7 @@ export async function exportLogsPdf(
       }
     }
     reportExported();
-    return { ok: true, uri: finalUri, count: doc.count };
+    return { ok: true, uri: finalUri, count: doc.count, truncated: doc.truncated };
   }
 
   if (!(await Sharing.isAvailableAsync())) {
@@ -1214,5 +1255,5 @@ export async function exportLogsPdf(
   });
 
   reportExported();
-  return { ok: true, uri, count: doc.count };
+  return { ok: true, uri, count: doc.count, truncated: doc.truncated };
 }

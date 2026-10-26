@@ -996,6 +996,8 @@ const pt: TranslationSchema = {
     title: "Relatório de glicemia do zerospike",
     noData: "Nenhum registro para exportar",
     sharingUnavailable: "O compartilhamento não está disponível neste aparelho",
+    truncated: "Os {{count}} registros mais recentes estão incluídos. Registros mais antigos não estão neste arquivo.",
+    truncatedList: "As tabelas listam os {{count}} registros mais recentes. O resumo e os gráficos usam todos os registros do período.",
     colDate: "Data",
     colTime: "Hora",
     colType: "Tipo",

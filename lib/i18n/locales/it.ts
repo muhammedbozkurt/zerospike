@@ -996,6 +996,8 @@ const it: TranslationSchema = {
     title: "Report glicemico zerospike",
     noData: "Nessuna voce da esportare",
     sharingUnavailable: "La condivisione non è disponibile su questo dispositivo",
+    truncated: "Sono incluse le {{count}} voci più recenti. Le voci precedenti non sono in questo file.",
+    truncatedList: "Le tabelle elencano le {{count}} voci più recenti. Il riepilogo e i grafici usano tutte le voci dell'intervallo.",
     colDate: "Data",
     colTime: "Ora",
     colType: "Tipo",

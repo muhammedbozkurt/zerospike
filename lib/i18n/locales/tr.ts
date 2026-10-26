@@ -994,6 +994,8 @@ const tr = {
     title: "zerospike Kan Şekeri Raporu",
     noData: "Dışa aktarılacak kayıt bulunamadı",
     sharingUnavailable: "Bu cihazda paylaşım kullanılamıyor",
+    truncated: "En yeni {{count}} kayıt dahil edildi. Daha eski kayıtlar bu dosyada yer almıyor.",
+    truncatedList: "Tablolarda en yeni {{count}} kayıt listelenir. Özet ve grafikler aralıktaki tüm kayıtları kullanır.",
     colDate: "Tarih",
     colTime: "Saat",
     colType: "Tür",

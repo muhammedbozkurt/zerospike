@@ -996,6 +996,8 @@ const fr: TranslationSchema = {
     title: "Rapport de glycémie zerospike",
     noData: "Aucune entrée à exporter",
     sharingUnavailable: "Le partage n'est pas disponible sur cet appareil",
+    truncated: "Les {{count}} entrées les plus récentes sont incluses. Les entrées plus anciennes ne figurent pas dans ce fichier.",
+    truncatedList: "Les tableaux listent les {{count}} entrées les plus récentes. Le résumé et les graphiques utilisent toutes les entrées de la période.",
     colDate: "Date",
     colTime: "Heure",
     colType: "Type",

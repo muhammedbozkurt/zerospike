@@ -996,6 +996,8 @@ const es: TranslationSchema = {
     title: "Informe de glucosa de zerospike",
     noData: "No hay registros para exportar",
     sharingUnavailable: "Compartir no está disponible en este dispositivo",
+    truncated: "Se incluyen los {{count}} registros más recientes. Los registros anteriores no están en este archivo.",
+    truncatedList: "Las tablas muestran los {{count}} registros más recientes. El resumen y los gráficos usan todos los registros del período.",
     colDate: "Fecha",
     colTime: "Hora",
     colType: "Tipo",
