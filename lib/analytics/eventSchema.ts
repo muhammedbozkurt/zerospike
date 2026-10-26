@@ -1,12 +1,12 @@
 /**
- * Analytics event schema v6: the one list of event names and fields the
+ * Analytics event schema v7: the one list of event names and fields the
  * Supabase sink may send. The server (supabase/functions/_shared/event-schema.json)
  * drops anything outside it as well, and scripts/analyticsSchema.test.ts fails
  * when the two lists drift. Dependency-free on purpose so that test can run
  * under plain node.
  */
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /**
  * Constant tag of the paywall layout generation (build 93 redesign), carried by
@@ -56,7 +56,7 @@ export const EVENT_SCHEMA = {
   onboarding_step: { step: "string", index: "int" },
   onboarding_done: {},
   first_log: { kind: LOG_KINDS },
-  log_added: { kind: "logKind" },
+  log_added: { kind: "logKind", insulin_kind: ["bolus", "basal"] },
   log_edited: { kind: "logKind" },
   paywall_view: {
     source: "string",
@@ -120,6 +120,13 @@ export const EVENT_SCHEMA = {
   store_review_prompt: {
     trigger: ["log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"],
   },
+  cgm_mode_set: { mode: ["manual", "cgm", "nightscout"] },
+  cgm_offer: { action: ["accepted", "declined"] },
+  nightscout_connect: { result: ["ok", "auth", "network", "invalid"] },
+  save_failed: {
+    kind: ["glucose", "meal", "injection", "med", "reminder", "profile", "other"],
+    step: ["write", "side", "schedule"],
+  },
   feedback_sent: {
     kind: ["suggestion", "bug", "other", "cancel_survey"],
     reason_code: [
@@ -147,6 +154,15 @@ export type SanitizeResult =
 // as one. A longer or looser string is dropped here, never cut or cleaned up.
 const IDENTIFIER = /^[A-Za-z0-9_.:\/-]{1,64}$/;
 const HAS_LETTER = /[A-Za-z]/;
+
+/**
+ * Fields a call site legitimately leaves out: a glucose or meal log has no
+ * insulin kind, so its absence is not worth a warning. insulin_kind is the
+ * kind only (bolus or basal), never a dose or a unit count.
+ */
+const OPTIONAL_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  log_added: ["insulin_kind"],
+};
 
 const hasOwn = (obj: object, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(obj, key);
@@ -277,7 +293,11 @@ export function sanitizeEvent(
   }
 
   for (const key of Object.keys(spec)) {
-    if (!hasOwn(props, key) && !reported.has(key)) {
+    if (
+      !hasOwn(props, key) &&
+      !reported.has(key) &&
+      !(hasOwn(OPTIONAL_FIELDS, name) && OPTIONAL_FIELDS[name].includes(key))
+    ) {
       issues.push(`missing field "${key}"`);
     }
   }

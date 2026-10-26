@@ -29,6 +29,8 @@
  *     under the write toggle should show for a stored status record.
  */
 
+import { isUserEntered } from "./glucoseSource";
+
 /** The fields the retry candidate scan actually needs from a sugar_logs row. */
 export interface RetryCandidateRow {
   id: string;
@@ -87,7 +89,7 @@ export function selectHealthRetryCandidates<T extends RetryCandidateRow>(
   const cutoffMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
   return rows
     .filter((r) => pending.has(r.id) && !inFlight.has(r.id))
-    .filter((r) => r.source !== "health" && r.healthkit_uuid == null)
+    .filter((r) => isUserEntered(r.source) && r.healthkit_uuid == null)
     .filter((r) => {
       const t = new Date(r.logged_at).getTime();
       return Number.isFinite(t) && t >= cutoffMs && t <= nowMs;

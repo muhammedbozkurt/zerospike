@@ -140,13 +140,13 @@ function canonicalSchema(): Canonical {
 // The card's own text, parsed independently of eventSchema.ts. A field written
 // without a type is a string.
 function matchesContract(): void {
-  section("A. schema v6 matches the written contract");
+  section("A. schema v7 matches the written contract");
   const CONTRACT = [
     "app_open{cold:bool}",
     "onboarding_step{step:string,index:int}",
     "onboarding_done{}",
     "first_log{kind:glucose|meal|other}",
-    "log_added{kind:glucose|meal|other}",
+    "log_added{kind:glucose|meal|other,insulin_kind:bolus|basal}",
     "log_edited{kind:glucose|meal|other}",
     "paywall_view{source,context,trial_eligible:bool,variant:enum:default,paywall_version:int}",
     "paywall_tier_selected{tier:monthly|annual|lifetime,paywall_version:int}",
@@ -185,6 +185,10 @@ function matchesContract(): void {
     "portion_chip_used{kind:measure|grams}",
     "analytics_opt_out{enabled:bool}",
     "store_review_prompt{trigger:log_saved|streak_7|weekly_insights_view|pdf_export_success}",
+    "cgm_mode_set{mode:manual|cgm|nightscout}",
+    "cgm_offer{action:accepted|declined}",
+    "nightscout_connect{result:ok|auth|network|invalid}",
+    "save_failed{kind:glucose|meal|injection|med|reminder|profile|other,step:write|side|schedule}",
     "feedback_sent{kind:suggestion|bug|other|cancel_survey,reason_code:expensive|not_used|missing_feature|bug|other_app|other|none}",
   ];
   const expected: Canonical = new Map();
@@ -204,8 +208,8 @@ function matchesContract(): void {
   }
 
   const actual = canonicalSchema();
-  eq("44 events in the contract", expected.size, 44);
-  eq("schema version is 6", SCHEMA_VERSION, 6);
+  eq("48 events in the contract", expected.size, 48);
+  eq("schema version is 7", SCHEMA_VERSION, 7);
   eq("event count", actual.size, expected.size);
   for (const [name, fields] of expected) {
     const got = actual.get(name);
@@ -239,10 +243,13 @@ function schemaHygiene(): void {
   );
   // The data boundary: no schema field may carry a health value.
   const HEALTH_FIELD = /glucose|mgdl|mmol|carb|insulin|dose|unit|weight|bmi|a1c|reading/;
+  // log_added.insulin_kind (K4) is the one deliberate exception: the kind
+  // (bolus or basal) only, never a dose or a unit count.
+  const KIND_ONLY = new Set(["log_added.insulin_kind"]);
   const offenders: string[] = [];
   for (const name of names) {
     for (const field of Object.keys(specOf(name))) {
-      if (HEALTH_FIELD.test(field)) offenders.push(`${name}.${field}`);
+      if (HEALTH_FIELD.test(field) && !KIND_ONLY.has(`${name}.${field}`)) offenders.push(`${name}.${field}`);
     }
   }
   eq("no field named after a health value", offenders, []);
@@ -255,13 +262,32 @@ function schemaHygiene(): void {
     eq(`${name}.kind is the three log kinds on the wire`, canon(specOf(name).kind), "enum:glucose|meal|other");
   }
   const FINE_KIND = /injection|basal|bolus|insulin|\bmed\b|pill|health_import/;
+  // Two decided exceptions: log_added.insulin_kind (K4, bolus or basal, no
+  // value) and save_failed.kind (G29, which entry failed to save, no value).
+  const FINE_OK = new Set(["log_added.insulin_kind", "save_failed.kind"]);
   const fine: string[] = [];
   for (const name of names) {
     for (const [field, spec] of Object.entries(specOf(name))) {
-      if (typeof spec !== "string" && spec.some((v) => FINE_KIND.test(v))) fine.push(`${name}.${field}`);
+      if (typeof spec !== "string" && spec.some((v) => FINE_KIND.test(v)) && !FINE_OK.has(`${name}.${field}`)) fine.push(`${name}.${field}`);
     }
   }
   eq("no enum value names an insulin, injection or medication kind", fine, []);
+  const cgm = sanitizeEvent("cgm_mode_set", { mode: "nightscout" });
+  ok("cgm_mode_set carries the mode", cgm.ok && cgm.props.mode === "nightscout" && cgm.issues.length === 0);
+  const offer = sanitizeEvent("cgm_offer", { action: "declined" });
+  ok("cgm_offer carries the answer", offer.ok && offer.props.action === "declined");
+  const leak = sanitizeEvent("nightscout_connect", { result: "https://my.example.com", url: "https://x.example.com", token: "abc-0123456789abcdef" });
+  ok(
+    "nightscout_connect never carries a url or a token",
+    leak.ok && Object.keys(leak.props).length === 0 && leak.issues.some((i) => i.includes('"url"')) && leak.issues.some((i) => i.includes('"token"'))
+  );
+  ok("nightscout_connect result is the four outcomes", canon(specOf("nightscout_connect").result) === "enum:auth|invalid|network|ok");
+  const failed = sanitizeEvent("save_failed", { kind: "injection", step: "side" });
+  ok("save_failed carries kind and step", failed.ok && failed.props.kind === "injection" && failed.props.step === "side");
+  const added = sanitizeEvent("log_added", { kind: "basal", insulin_kind: "basal" });
+  ok("log_added carries the insulin kind", added.ok && added.props.kind === "other" && added.props.insulin_kind === "basal");
+  const units = sanitizeEvent("log_added", { kind: "basal", insulin_kind: 12 });
+  ok("log_added drops a unit count in the insulin kind", units.ok && !("insulin_kind" in units.props));
   ok(
     "the retired names are gone",
     !["report_generated", "review_prompted"].some((n) => n in EVENT_SCHEMA)
@@ -1231,7 +1257,7 @@ function wiringAndCopy(): void {
   ok("a rejected batch warns in dev", /__DEV__ && result\.status === "drop"/.test(transport));
 
   const dbIndex = src("lib/db/index.ts");
-  ok("SCHEMA_VERSION is 28", /const SCHEMA_VERSION = 28;/.test(dbIndex));
+  ok("SCHEMA_VERSION is 29", /const SCHEMA_VERSION = 29;/.test(dbIndex));
   ok(
     "the v23 -> v24 step runs the real migration",
     /currentVersion < 24\)\s*\{\s*await migrateToV24\(db\);/.test(dbIndex)

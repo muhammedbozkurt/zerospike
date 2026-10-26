@@ -361,7 +361,7 @@ section("I. wiring: the trial reminder and the paywall use these rules");
   const logs = src("lib/db/logs.ts");
   const manualFrom = logs.slice(logs.indexOf("export async function listManualSugarLogs"));
   const manual = manualFrom.slice(0, manualFrom.indexOf("\n}\n"));
-  ok("the manual read filters Health out in SQL", /source != 'health'/.test(manual));
+  ok("the manual read keeps only user-entered rows in SQL", /\$\{USER_ENTERED_SQL\}/.test(manual));
   ok("it bounds the span in SQL", /rangeClause\("logged_at", range\)/.test(manual));
   ok("and has no row cap", !/LIMIT/i.test(manual));
 }

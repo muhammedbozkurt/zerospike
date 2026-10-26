@@ -212,7 +212,7 @@ export interface SugarLog {
   profile_id: string;
   glucose_level_mgdl: number;
   period_tag: PeriodTag;
-  source: string; // 'manual' | 'health'
+  source: string; // see lib/glucoseSource.ts
   logged_at: string;
   tags: LogTag[];
   /** HealthKit sample UUID when this manual reading was mirrored to Apple Health

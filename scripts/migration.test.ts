@@ -50,6 +50,7 @@ import {
   migrateToV26,
   migrateToV27,
   migrateToV28,
+  migrateToV29,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -4214,7 +4215,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 28", /const SCHEMA_VERSION = 28;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 29", /const SCHEMA_VERSION = 29;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4991,6 +4992,81 @@ async function main() {
     db.close();
   }
 
+  section("U4. v29 adds the sensor columns and marks only long even Health runs");
+  {
+    const mk = () => {
+      const db = new DatabaseSync(":memory:");
+      db.exec(`
+        CREATE TABLE sugar_logs (
+          id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
+          glucose_level_mgdl INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'manual',
+          logged_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 28;
+      `);
+      return db;
+    };
+    const cols = (db: DatabaseSync) =>
+      (db.prepare("PRAGMA table_info(sugar_logs);").all() as { name: string }[]).map((c) => c.name);
+
+    const empty = mk();
+    await migrateToV29(adapt(empty));
+    eq("empty: v29 stamps 29", readUserVersion(empty), 29);
+    ok("empty: the three columns exist", ["source_app", "external_id", "is_cgm"].every((c) => cols(empty).includes(c)));
+    const idx = (empty.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'sugar_logs';").all() as { name: string }[]).map((r) => r.name);
+    ok("empty: the three indexes exist", ["idx_sugar_ext", "idx_sugar_cgm", "idx_sugar_manual"].every((n) => idx.includes(n)));
+    await migrateToV29(adapt(empty));
+    eq("empty: a replay is a no-op", readUserVersion(empty), 29);
+    empty.close();
+
+    const db = mk();
+    const ins = db.prepare("INSERT INTO sugar_logs VALUES (?, ?, 110, ?, ?);");
+    const t0 = Date.parse("2026-01-02T00:00:00.000Z");
+    // 40 readings 5 minutes apart: a sensor stream.
+    for (let i = 0; i < 40; i++) ins.run(`run${i}`, "p1", "health", new Date(t0 + i * 300000).toISOString());
+    // 10 readings 5 minutes apart: too short to be a stream.
+    for (let i = 0; i < 10; i++) ins.run(`short${i}`, "p1", "health", new Date(t0 + 86400000 + i * 300000).toISOString());
+    // 40 readings 30 minutes apart: too sparse.
+    for (let i = 0; i < 40; i++) ins.run(`sparse${i}`, "p1", "health", new Date(t0 + 3 * 86400000 + i * 1800000).toISOString());
+    // A long manual stream is never touched (only Health rows qualify).
+    for (let i = 0; i < 40; i++) ins.run(`man${i}`, "p1", "manual", new Date(t0 + 5 * 86400000 + i * 300000).toISOString());
+    // The same instants under two profiles do not join into one run.
+    for (let i = 0; i < 20; i++) ins.run(`o${i}`, "p2", "health", new Date(t0 + 7 * 86400000 + i * 300000).toISOString());
+    for (let i = 20; i < 40; i++) ins.run(`o${i}`, "p3", "health", new Date(t0 + 7 * 86400000 + i * 300000).toISOString());
+    const before = snapshotRows(db, "sugar_logs");
+    await migrateToV29(adapt(db));
+    eq("from v28: stamps 29", readUserVersion(db), 29);
+    const marked = (db.prepare("SELECT id FROM sugar_logs WHERE is_cgm = 1;").all() as { id: string }[]).map((r) => r.id);
+    eq("from v28: exactly the 40-reading even run is marked", marked.length, 40);
+    ok("from v28: it is the run rows", marked.every((id) => id.startsWith("run")));
+    eq("from v28: no row lost", count(db, "sugar_logs"), before.length);
+    eq("from v28: every other row keeps NULL / 0", (db.prepare("SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 0 AND source_app IS NULL AND external_id IS NULL;").get() as { c: number }).c, before.length - 40);
+    db.exec("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, external_id) VALUES ('e1','p1',100,'nightscout','2026-02-01T00:00:00.000Z','x1');");
+    let dup = false;
+    try {
+      db.exec("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, external_id) VALUES ('e2','p1',100,'nightscout','2026-02-01T00:05:00.000Z','x1');");
+    } catch {
+      dup = true;
+    }
+    ok("the same (profile, source, external_id) is rejected", dup);
+    db.exec("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, external_id) VALUES ('e3','p1',100,'health','2026-02-01T00:05:00.000Z','x1');");
+    eq("another source may reuse the external id", count(db, "sugar_logs"), before.length + 2);
+    await migrateToV29(adapt(db));
+    eq("from v28: a replay marks nothing new", (db.prepare("SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 1;").get() as { c: number }).c, 40);
+    db.close();
+
+    const indexSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "index.ts"), "utf8");
+    ok(
+      "the v28 -> v29 step runs the real migration",
+      /currentVersion < 29\)\s*\{\s*await migrateToV29\(db\);/.test(indexSrc)
+    );
+    ok(
+      "a fresh install's sugar_logs carries the three columns",
+      /source_app TEXT,\s*\n\s*external_id TEXT,\s*\n\s*is_cgm INTEGER NOT NULL DEFAULT 0,/.test(indexSrc)
+    );
+    ok("and creates the same indexes", /for \(const statement of V29_INDEXES\)/.test(indexSrc));
+  }
+
   section("U3. a profile created on an upgraded database is born unconfirmed");
   {
     // The v8 column default is 1, so an INSERT that does not name the flag makes a
@@ -5031,7 +5107,7 @@ async function main() {
 
     await runChain(db);
 
-    eq(`v${start}: ends at 28`, readUserVersion(db), 28);
+    eq(`v${start}: ends at 29`, readUserVersion(db), 29);
     eq(`v${start}: v8 default 1 is cleared by v27`, (db.prepare("SELECT ratios_confirmed AS r FROM user_profiles WHERE id='p1';").get() as { r: number }).r, 0);
 
     eq(`v${start}: both profiles survive`, count(db, "user_profiles"), 2);
@@ -5222,7 +5298,7 @@ async function main() {
     eq(
       "each step stamped as it landed, so the version matches the schema",
       readUserVersion(db),
-      28
+      29
     );
 
     // The user keeps using the app for weeks on that (fully migrated) schema.
@@ -5238,7 +5314,7 @@ async function main() {
     // Next cold start. It must pick up where it stopped, not replay v9 and v11.
     await runChain(db);
 
-    eq("the next launch still ends at 28", readUserVersion(db), 28);
+    eq("the next launch still ends at 29", readUserVersion(db), 29);
     eq(
       "no injection row is lost",
       count(db, "injection_logs"),
@@ -5336,7 +5412,7 @@ async function main() {
     db.exec("PRAGMA user_version = 14;");
     await runChain(db);
 
-    eq("the chain lands on 28 again", readUserVersion(db), 28);
+    eq("the chain lands on 29 again", readUserVersion(db), 29);
     eq(
       "the recorded bolus kind survives the round trip",
       injectionField(db, "inj1", "bolus_kind"),
@@ -5999,8 +6075,9 @@ async function runChain(
   if (currentVersion >= 1 && currentVersion < 26) await migrateToV26(target);
   if (currentVersion >= 1 && currentVersion < 27) await migrateToV27(target);
   if (currentVersion >= 1 && currentVersion < 28) await migrateToV28(target);
+  if (currentVersion >= 1 && currentVersion < 29) await migrateToV29(target);
 
-  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 28;");
+  if (opts.stampFinal !== false) db.exec("PRAGMA user_version = 29;");
 }
 
 function count(db: DatabaseSync, table: string): number {

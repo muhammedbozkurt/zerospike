@@ -1,5 +1,6 @@
 import { getDb } from "./index";
 import { uuid } from "../uuid";
+import { USER_ENTERED_SQL } from "../glucoseSource";
 import type { Food, MealLog, PeriodTag, SugarLog } from "./types";
 import { parseTags, serializeTags } from "./types";
 import type { DateRange } from "../insights";
@@ -50,7 +51,7 @@ export interface NewSugarLogInput {
   profile_id: string;
   glucose_level_mgdl: number;
   period_tag: PeriodTag;
-  source?: string; // 'manual' | 'health'
+  source?: string; // see lib/glucoseSource.ts
   logged_at?: string;
   tags?: string[];
 }
@@ -109,7 +110,7 @@ export async function listManualSugarLogs(
   const db = await getDb();
   const { sql, values } = rangeClause("logged_at", range);
   const rows = await db.getAllAsync<SugarRow>(
-    `SELECT * FROM sugar_logs WHERE profile_id = ? AND source != 'health'${sql} ORDER BY logged_at DESC;`,
+    `SELECT * FROM sugar_logs WHERE profile_id = ? AND ${USER_ENTERED_SQL}${sql} ORDER BY logged_at DESC;`,
     [profileId, ...values]
   );
   return rows.map(mapSugar);
@@ -260,7 +261,7 @@ export async function listHealthBackfillRows(
   const db = await getDb();
   const rows = await db.getAllAsync<SugarRow>(
     `SELECT * FROM sugar_logs
-      WHERE profile_id = ? AND source != 'health' AND healthkit_uuid IS NULL AND logged_at >= ?
+      WHERE profile_id = ? AND ${USER_ENTERED_SQL} AND healthkit_uuid IS NULL AND logged_at >= ?
       ORDER BY logged_at ASC;`,
     [profileId, sinceIso]
   );

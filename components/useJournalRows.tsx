@@ -24,6 +24,7 @@ import { syncLiveData } from "../lib/services/liveData";
 import { mealIdsWithResponse } from "../lib/mealResponse";
 import { mealSlotForHour } from "../lib/insulin";
 import { formatDateKey } from "../lib/format";
+import { isUserEntered } from "../lib/glucoseSource";
 import type {
   GlucoseEntry,
   InjectionEntry,
@@ -110,7 +111,7 @@ export function useJournalRows(input: {
   const remirrorRestoredGlucose = useCallback(async (snapshots: DeletionSnapshot[]) => {
     for (const snap of snapshots) {
       for (const row of snap.sugar ?? []) {
-        if (row.source === "health") continue;
+        if (!isUserEntered(String(row.source ?? "manual"))) continue;
         const mgdl = Number(row.glucose_level_mgdl);
         const loggedAt = row.logged_at;
         if (!Number.isFinite(mgdl) || typeof loggedAt !== "string") continue;

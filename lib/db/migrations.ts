@@ -68,6 +68,13 @@ import { V25_EMPTY_DEFAULT_NAMES } from "./v25Sql";
 import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "./v26Sql";
 import { V27_RESET_RATIO_CONFIRMATION } from "./v27Sql";
 import { V28_CREATE } from "./v28Sql";
+import {
+  V29_BACKFILL_CHUNK_SIZE,
+  V29_COLUMNS,
+  V29_INDEXES,
+  V29_SELECT_HEALTH_ROWS,
+  findCgmRunIds,
+} from "./v29Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -115,7 +122,8 @@ export type SchemaStamp =
   | 25
   | 26
   | 27
-  | 28;
+  | 28
+  | 29;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -835,5 +843,38 @@ export async function migrateToV28(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(statement);
     }
     await stampSchemaVersion(db, 28);
+  });
+}
+
+/**
+ * The v28 → v29 migration: source_app, external_id and is_cgm on sugar_logs
+ * plus their indexes (see ./v29Sql), and a one-time marking of the long evenly
+ * spaced Health runs an earlier release imported as sensor readings. Guarded
+ * ADD COLUMNs, so a replay is a no-op; the Health rows are read up front like
+ * v22 does, and the stamp lands in the same transaction.
+ */
+export async function migrateToV29(db: SQLite.SQLiteDatabase): Promise<void> {
+  const missing = await missingColumns(db, "sugar_logs", V29_COLUMNS);
+  const healthRows = await db.getAllAsync<{
+    id: string;
+    profile_id: string;
+    logged_at: string;
+  }>(V29_SELECT_HEALTH_ROWS);
+  const ids = findCgmRunIds(healthRows);
+  await db.withTransactionAsync(async () => {
+    for (const col of missing) {
+      await db.execAsync(`ALTER TABLE sugar_logs ADD COLUMN ${col.name} ${col.type};`);
+    }
+    for (const statement of V29_INDEXES) {
+      await db.execAsync(statement);
+    }
+    for (let i = 0; i < ids.length; i += V29_BACKFILL_CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + V29_BACKFILL_CHUNK_SIZE);
+      await db.runAsync(
+        `UPDATE sugar_logs SET is_cgm = 1 WHERE id IN (${chunk.map(() => "?").join(",")});`,
+        chunk
+      );
+    }
+    await stampSchemaVersion(db, 29);
   });
 }

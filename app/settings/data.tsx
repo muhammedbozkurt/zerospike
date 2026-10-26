@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Linking, Platform, Pressable, Share, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, type Href } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../../lib/store/AppContext";
@@ -729,6 +729,13 @@ export default function DataSettings() {
         hideTrigger
         open={profileSwitcherOpen}
         onOpenChange={setProfileSwitcherOpen}
+      />
+
+      <Row
+        icon="swap-horizontal-outline"
+        label={t("dataSources.title")}
+        sub={t("dataSources.rowHint")}
+        onPress={() => router.push("/settings/data-sources" as Href)}
       />
 
       <SectionLabel>{t("settings.dataSection")}</SectionLabel>
