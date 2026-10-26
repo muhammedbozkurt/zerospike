@@ -205,15 +205,12 @@ export async function resolveBasalConfirmContext(params: {
 }
 
 /** The existing basal row (if any) within DUPLICATE_WINDOW_HOURS of
- *  `targetTime`, nearest first. `sameDayOnly` (dashboard entry) clips the
- *  window to the target's own day, so yesterday's late dose does not block
- *  today's. */
+ *  `targetTime`, nearest first. */
 export async function findDuplicateBasalInjection(
   profileId: string,
-  targetTime: Date,
-  opts: { sameDayOnly?: boolean } = {}
+  targetTime: Date
 ): Promise<RecentInjection | null> {
-  const bounds = duplicateBounds(targetTime, opts);
+  const bounds = duplicateBounds(targetTime);
   const since = new Date(bounds.sinceMs).toISOString();
   const until = new Date(bounds.untilMs).toISOString();
   const rows = (await listRecentInjections(profileId, since, until)).filter(
@@ -239,8 +236,6 @@ export interface SaveBasalConfirmationInput {
   /** The profile's CURRENT basal_daily_units, so a first-time dose can seed
    *  it without a second profile read inside this function. */
   currentBasalDailyUnits: number | null;
-  /** Dashboard entry: the duplicate check only looks at the saved time's own day. */
-  duplicateSameDayOnly?: boolean;
 }
 
 export type SaveBasalConfirmationResult =
@@ -270,9 +265,7 @@ export async function saveBasalConfirmation(
 ): Promise<SaveBasalConfirmationResult> {
   if (!(input.doseUnits > 0)) return { kind: "invalidDose" };
 
-  const existing = await findDuplicateBasalInjection(input.profileId, input.loggedAt, {
-    sameDayOnly: input.duplicateSameDayOnly,
-  });
+  const existing = await findDuplicateBasalInjection(input.profileId, input.loggedAt);
   if (existing) return { kind: "duplicate", existing };
 
   const injection = await logInjection({

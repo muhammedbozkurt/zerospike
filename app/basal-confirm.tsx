@@ -110,9 +110,6 @@ function BasalConfirmScreen() {
     profileId?: string;
     step?: string;
   }>();
-  // The dashboard card (profileId, no reminderId) is about today only: its
-  // duplicate check must not reach into yesterday's evening dose.
-  const dashboardEntry = !params.reminderId && !!params.profileId;
 
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
   const [step, setStep] = useState<"ask" | "site">(params.step === "site" ? "site" : "ask");
@@ -163,9 +160,7 @@ function BasalConfirmScreen() {
         setLoad({ kind: "error" });
         return;
       }
-      const existing = await findDuplicateBasalInjection(ctx.profile.id, ctx.targetTime, {
-        sameDayOnly: dashboardEntry,
-      });
+      const existing = await findDuplicateBasalInjection(ctx.profile.id, ctx.targetTime);
       if (!isAlive()) return;
       if (existing) {
         setLoad({ kind: "duplicate", ctx, existing });
@@ -282,7 +277,6 @@ function BasalConfirmScreen() {
         loggedAt,
         glucoseUnit: ctx.profile.glucose_unit,
         currentBasalDailyUnits: ctx.profile.basal_daily_units,
-        duplicateSameDayOnly: dashboardEntry,
       });
       // The service-side backstop for the same dose>0 rule the Save button's
       // own disabled state already enforces (see the button below) - never

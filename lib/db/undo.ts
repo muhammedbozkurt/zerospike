@@ -118,7 +118,11 @@ export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
       }
     }
   }
-  await remirrorRestoredRecords(snap);
+  // The rows are already back: a Health mirror failure must not report the
+  // restore as failed, since a retry would announce the records a second time.
+  try {
+    await remirrorRestoredRecords(snap);
+  } catch {}
 }
 
 /** The restored meal and insulin rows come back with health_uuid NULL (the

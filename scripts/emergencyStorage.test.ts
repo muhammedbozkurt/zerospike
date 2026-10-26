@@ -95,6 +95,8 @@ async function main(): Promise<void> {
   const persistBody = src.slice(persistAt, src.indexOf("async function saveContact"));
   ok("persist blocks writes while the list is unreadable", /loadFailed/.test(persistBody));
   const writeAt = persistBody.indexOf("await setEmergencyContacts");
+  ok("persist refuses until the list is loaded", /!contactsLoaded\s*\|\|\s*loadFailed/.test(persistBody));
+  ok("add form is inert until the list is loaded", /pointerEvents=\{contactsLoaded \? "auto" : "none"\}/.test(src));
   ok("persist writes before it updates state", writeAt !== -1 && writeAt < persistBody.indexOf("setContacts(next)"));
   ok("persist toasts a write failure", persistBody.includes("common.saveFailed"));
   ok("persist rejects a second write mid-flight", /writing\.current/.test(persistBody));

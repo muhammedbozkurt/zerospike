@@ -1364,7 +1364,7 @@ const ar: TranslationSchema = {
     doseRequired: "أدخل الجرعة.",
     duplicateBodyNoDose: "سُجّلت الساعة {{time}}.",
     chooseProfile: "لأي ملف شخصي؟",
-    saved: "تم حفظ الإنسولين القاعدي لملف {{name}}.",
+    saved: "تم حفظ الإنسولين القاعدي لـ {{name}}.",
   },
   insulinPicker: {
     groupMix: "مسبقة الخلط",
