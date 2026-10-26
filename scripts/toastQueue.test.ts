@@ -99,14 +99,90 @@ const cases: Array<[string, () => void]> = [
     assert.equal(toastVisibleMs({ ...base, hasAction: true, screenReader: true }), 20000);
     assert.equal(toastVisibleMs({ ...base, hasAction: false, screenReader: true }), 2200);
   }],
+  ["plain info toast over a live undo toast waits: the Undo stays, nothing restarts", () => {
+    const a = run(initialToastState<A>(), show("saved", { label: "Undo" }, 5000)).state;
+    const b = run(a, { ...show("tip"), kind: "info" });
+    assert.equal(b.state.current?.message, "saved");
+    assert.equal(b.state.current?.action?.label, "Undo");
+    assert.equal(b.state.current?.id, 1);
+    assert.equal(b.effects.length, 0);
+    assert.equal(b.state.queue.length, 1);
+  }],
+  ["queued toast appears after the undo toast's exit, with its own duration", () => {
+    let s = run(initialToastState<A>(), show("saved", { label: "Undo" }, 5000)).state;
+    s = run(s, show("tip", null, 2200)).state;
+    s = run(s, { type: "hideDue", id: 1 }).state;
+    const r = run(s, { type: "exitDone", id: 1, finished: true });
+    assert.equal(r.state.current?.message, "tip");
+    assert.equal(r.state.current?.id, 2);
+    assert.equal(r.state.phase, "in");
+    assert.equal(r.state.queue.length, 0);
+    assert.deepEqual(r.effects.map((e) => e.type), ["disarm", "reset", "enter", "arm"]);
+    assert.deepEqual(r.effects.find((e) => e.type === "arm"), { type: "arm", id: 2, ms: 2200 });
+  }],
+  ["interrupted exit never releases the queue", () => {
+    let s = run(initialToastState<A>(), show("saved", { label: "Undo" }, 5000)).state;
+    s = run(s, show("tip")).state;
+    s = run(s, { type: "hideDue", id: 1 }).state;
+    const r = run(s, { type: "exitDone", id: 1, finished: false });
+    assert.equal(r.state.current?.message, "saved");
+    assert.equal(r.state.queue.length, 1);
+  }],
+  ["an error toast is never held back: it replaces the undo toast at once", () => {
+    const a = run(initialToastState<A>(), show("saved", { label: "Undo" }, 5000)).state;
+    const b = run(a, { ...show("failed"), kind: "error" });
+    assert.equal(b.state.current?.message, "failed");
+    assert.equal(b.state.queue.length, 0);
+  }],
+  ["a toast with its own action is never held back either", () => {
+    const a = run(initialToastState<A>(), show("one", { label: "Undo" }, 5000)).state;
+    const b = run(a, show("two", { label: "Retry" }, 5000));
+    assert.equal(b.state.current?.message, "two");
+    assert.equal(b.state.queue.length, 0);
+  }],
+  ["queue keeps arrival order, holds 3 at most (oldest dropped), skips an immediate duplicate", () => {
+    let s = run(initialToastState<A>(), show("saved", { label: "Undo" }, 5000)).state;
+    for (const m of ["t1", "t1", "t2", "t3", "t4"]) s = run(s, show(m)).state;
+    assert.deepEqual(s.queue.map((q) => q.message), ["t2", "t3", "t4"]);
+    s = run(s, { type: "hideDue", id: 1 }).state;
+    s = run(s, { type: "exitDone", id: 1, finished: true }).state;
+    assert.equal(s.current?.message, "t2");
+    s = run(s, { type: "hideDue", id: 2 }).state;
+    s = run(s, { type: "exitDone", id: 2, finished: true }).state;
+    assert.equal(s.current?.message, "t3");
+    assert.deepEqual(s.queue.map((q) => q.message), ["t4"]);
+  }],
+  ["undo pressed, then the 'undone' toast replaces the dying one; the queue still drains after", () => {
+    let s = run(initialToastState<A>(), show("saved", { label: "Undo" }, 5000)).state;
+    s = run(s, show("tip")).state;
+    s = run(s, { type: "actionRun", id: 1 }).state;
+    s = run(s, show("undone")).state;
+    assert.equal(s.current?.message, "undone");
+    assert.equal(s.phase, "in");
+    assert.equal(s.queue.length, 1);
+    s = run(s, { type: "hideDue", id: 2 }).state;
+    s = run(s, { type: "exitDone", id: 2, finished: true }).state;
+    assert.equal(s.current?.message, "tip");
+  }],
+  ["plain toast over a plain toast still replaces in place (no queue)", () => {
+    const a = run(initialToastState<A>(), show("a")).state;
+    const b = run(a, show("b"));
+    assert.equal(b.state.queue.length, 0);
+    assert.equal(b.state.current?.message, "b");
+  }],
   ["Feedback.tsx contract: one Animated.Value, reduce-motion probe, announce, labelled action, capped width", () => {
-    const src = readFileSync(new URL("../components/Feedback.tsx", import.meta.url), "utf8");
+    const src =
+      readFileSync(new URL("../components/Feedback.tsx", import.meta.url), "utf8") +
+      readFileSync(new URL("../components/ToastCard.tsx", import.meta.url), "utf8");
     const provider = src.slice(src.indexOf("export function FeedbackProvider"), src.indexOf("export function FeedbackHost"));
     assert.equal((provider.match(/new Animated\.Value\(/g) ?? []).length, 1);
     assert.ok(src.includes("isReduceMotionEnabled"));
     assert.ok(src.includes("reduceMotionChanged"));
     assert.ok(src.includes("announceForAccessibility"));
-    assert.ok(src.includes("accessibilityLabel={toastAction.label}"));
+    assert.ok(src.includes("accessibilityLabel={action.label}"));
+    assert.ok(src.includes("minHeight: HIT_TARGET"));
+    assert.ok(!src.includes("insets.top + 8"), "toast must not sit under the top bar");
+    assert.ok(src.includes("useToastBottom()"));
     assert.ok(src.includes("TOAST_MAX_WIDTH"));
   }],
 ];

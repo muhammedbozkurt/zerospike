@@ -46,8 +46,8 @@ import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
 import { useFontScale } from "../lib/useFontScale";
 import { sheetBoxStyle } from "../lib/tabletLayout";
 import { logCrash } from "../lib/analytics";
-
-type ToastKind = "success" | "info" | "error";
+import { ToastCard, type ToastKind } from "./ToastCard";
+import { useToastBottom } from "./useToastBottom";
 
 /** An optional single action on a toast, e.g. "Undo" on an auto-created entry. */
 export interface ToastAction {
@@ -112,17 +112,8 @@ const FeedbackInternalContext = createContext<FeedbackInternal | null>(null);
 
 let nextHostId = 0;
 
-/** Mockup 10: a glass card with a glowing status dot, tinted per kind. */
-function toastStyle(kind: ToastKind): { icon: keyof typeof Ionicons.glyphMap; color: string } {
-  switch (kind) {
-    case "success":
-      return { icon: "checkmark-circle", color: GLUCOSE_RICH.target };
-    case "info":
-      return { icon: "information-circle", color: THEME.accent };
-    default:
-      return { icon: "alert-circle", color: GLUCOSE_RICH.low };
-  }
-}
+/** Pause before the generic "undone" confirmation, see runToastAction. */
+const UNDONE_CONFIRM_DELAY_MS = 400;
 
 /** How long a toast stays up. */
 const TOAST_MS = 2200;
@@ -144,6 +135,7 @@ const TOAST_ACTION_SCREEN_READER_MS = UNDO_TOAST_SCREEN_READER_MS;
 const DIALOG_MAX_WIDTH = 520;
 
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   // Toast state: one slot (lib/toastQueue.ts), one Animated.Value, one timer.
   const [toastState, setToastState] = useState<ToastState<ToastAction>>(initialToastState);
   const toastRef = useRef<ToastState<ToastAction>>(toastState);
@@ -326,15 +318,29 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     const cur = toastRef.current.current;
     if (!cur || !cur.action) return;
     const action = cur.action;
+    const isUndo = action.label === t("common.undo");
     dispatchToast({ type: "actionRun", id: cur.id });
+    const confirmUndone = () => {
+      if (!isUndo) return;
+      // Most undo handlers are fire-and-forget async, so the promise settles
+      // before the restore has. Waiting lets a caller that confirms (or reports a
+      // failure) on its own go first; then nothing live may be overwritten.
+      setTimeout(() => {
+        const { phase } = toastRef.current;
+        if (phase === "in" || phase === "shown") return;
+        toast(t("calculator.undone"), "info");
+      }, UNDONE_CONFIRM_DELAY_MS);
+    };
     try {
-      Promise.resolve(action.onPress()).catch((err) => {
-        logCrash(err, { screen: "feedback", op: "toastAction" });
-      });
+      Promise.resolve(action.onPress())
+        .then(confirmUndone)
+        .catch((err) => {
+          logCrash(err, { screen: "feedback", op: "toastAction" });
+        });
     } catch (err) {
       logCrash(err, { screen: "feedback", op: "toastAction" });
     }
-  }, [dispatchToast]);
+  }, [dispatchToast, toast, t]);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     // A dialog left dangling by a previous caller never blocks a new one.
@@ -440,6 +446,7 @@ export function FeedbackHost() {
 function FeedbackOverlays() {
   const internal = useContext(FeedbackInternalContext);
   const insets = useSafeAreaInsets();
+  const toastBottom = useToastBottom();
   if (!internal) return null;
   const {
     toastMsg,
@@ -453,7 +460,6 @@ function FeedbackOverlays() {
     closeSheet,
     runSheetAction,
   } = internal;
-  const ts = toastStyle(toastKind);
 
   return (
     <View
@@ -468,86 +474,32 @@ function FeedbackOverlays() {
         <SheetOverlay sheet={sheet} onClose={closeSheet} onRun={runSheetAction} />
       ) : null}
 
-      {/* Toast enters from the TOP, clear of the tab bar and any bottom CTA bar,
-          and survives the screen that fired it. Solid dark surface (not a 5%
-          glass) so it reads over any background; the kind color is only the left
-          strip + icon. It accepts touches only while it carries an action. */}
+      {/* Toast rests at the BOTTOM, just above the tab bar (or the keyboard, or
+          the safe area), so it never sits over the top-bar buttons. It survives
+          the screen that fired it and takes touches only while it has an action. */}
       <Animated.View
         pointerEvents={toastAction ? "box-none" : "none"}
         style={{
           position: "absolute",
-          left: 16,
-          right: 16,
-          top: insets.top + 8,
+          start: Math.max(16, insets.left),
+          end: Math.max(16, insets.right),
+          bottom: toastBottom,
           opacity: toastAnim,
           transform: [
             {
               translateY: toastAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [-24, 0],
+                outputRange: [24, 0],
               }),
             },
           ],
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            backgroundColor: THEME.surfaceRaised,
-            borderRadius: RADIUS.lg,
-            borderWidth: 1,
-            paddingVertical: 12,
-            paddingHorizontal: 14,
-            overflow: "hidden",
-            width: "100%",
-            maxWidth: TOAST_MAX_WIDTH,
-            alignSelf: "center",
-            ...ELEVATION.card,
-            borderColor: `${ts.color}55`,
-          }}
-        >
-          {/* Kind color as a left strip only (never the fill) */}
-          <View
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 4,
-              backgroundColor: ts.color,
-            }}
-          />
-          <Ionicons name={ts.icon} size={18} color={ts.color} style={{ marginLeft: 4 }} />
-          <Text
-            accessible
-            accessibilityRole="text"
-            style={{ color: THEME.text, fontWeight: "600", marginLeft: 10, flex: 1 }}
-          >
-            {toastMsg}
-          </Text>
-          {toastAction ? (
-            <Pressable
-              onPress={runToastAction}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={toastAction.label}
-              style={{
-                marginLeft: 10,
-                minHeight: 44,
-                justifyContent: "center",
-                backgroundColor: THEME.accentFill,
-                borderRadius: RADIUS.full,
-                paddingHorizontal: 14,
-                paddingVertical: 7,
-              }}
-            >
-              <Text style={{ color: THEME.accentOnFill, fontWeight: "800", fontSize: 13 }}>
-                {toastAction.label}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
+        <ToastCard
+          message={toastMsg}
+          kind={toastKind}
+          action={toastAction ? { label: toastAction.label, onPress: runToastAction } : null}
+        />
       </Animated.View>
     </View>
   );
