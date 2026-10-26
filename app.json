@@ -2,7 +2,7 @@
   "expo": {
     "name": "zerospike",
     "slug": "zerospike",
-    "version": "2.4.1",
+    "version": "2.5.0",
     "orientation": "portrait",
     "icon": "./assets/brand/icon-1024.png",
     "scheme": "zerospike",
