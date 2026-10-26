@@ -97,7 +97,7 @@ export function InputRow({
     </>
   );
   const inputBlock = (
-    <View className={stacked ? "flex-row items-center justify-end mt-1" : "flex-row items-center"}>
+    <View className={stacked ? "flex-row items-center mt-1" : "flex-row items-center"}>
       {/* The row's caption and its unit are SIBLINGS of the field, so the
           field itself announced as an unlabelled text box holding a number.
           A caller can still override either. */}
@@ -111,10 +111,17 @@ export function InputRow({
         placeholderTextColor={THEME.placeholder}
         accessibilityLabel={suffix ? `${label}, ${suffix}` : label}
         accessibilityHint={hint}
-        className="font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
+        className={
+          stacked
+            ? "flex-1 font-semibold text-ink min-w-[56px] py-1"
+            : "font-semibold text-ink min-w-[56px] max-w-[150px] py-1"
+        }
         style={[
           INPUT_TEXT,
-          { textAlign: I18nManager.isRTL ? "left" : "right", writingDirection: "ltr" },
+          {
+            textAlign: stacked === I18nManager.isRTL ? "right" : "left",
+            writingDirection: "ltr",
+          },
           large ? { fontSize: 19 } : null,
         ]}
         {...input}
@@ -128,7 +135,7 @@ export function InputRow({
     <View>
       {stacked ? (
         <View className={`px-4 ${large ? "py-4" : "py-3"}`}>
-          <View className="flex-row items-center">{labelBlock}</View>
+          <View className={stacked ? "flex-row items-start" : "flex-row items-center"}>{labelBlock}</View>
           {inputBlock}
         </View>
       ) : (

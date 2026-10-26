@@ -28,7 +28,7 @@ import {
   getSugarLog,
 } from "../../lib/db/logs";
 import { useLayout } from "../../lib/useLayout";
-import { STACK_AT_SCALE, ctaLineExtra } from "../../lib/layoutForFontScale";
+import { STACK_AT_SCALE, ctaFootprintPx, ctaLineExtra } from "../../lib/layoutForFontScale";
 import { useFontScale } from "../../lib/useFontScale";
 import type { LogTag, PeriodTag, Reminder, SugarLog } from "../../lib/db/types";
 import { listReminders } from "../../lib/db/reminders";
@@ -2112,6 +2112,7 @@ export default function DashboardScreen() {
   // one connected container and always closes the right column.
   const twoColHome = usesTwoColumn(homeState, isTwoCol);
   const [blockHeights, setBlockHeights] = useState<Record<string, number>>({});
+  const [ctaHeight, setCtaHeight] = useState(0);
   const [journalHeight, setJournalHeight] = useState(0);
   const splitCutRef = useRef<string | null | undefined>(undefined);
   const onBlockLayout = useCallback((key: string, h: number) => {
@@ -2692,7 +2693,10 @@ export default function DashboardScreen() {
       {b.el}
     </View>
   );
-  const wideListInset = isWide && !isFirstRun ? { paddingBottom: CTA_FOOTPRINT + ctaExtra + insets.bottom } : undefined;
+  // The bar's measured height wins over the one-line formula: at the largest
+  // text sizes the label wraps and the bar grows past it (iPad AX5, J6).
+  const ctaFootprint = ctaFootprintPx(ctaHeight, CTA_FOOTPRINT + ctaExtra);
+  const wideListInset = isWide && !isFirstRun ? { paddingBottom: ctaFootprint + insets.bottom } : undefined;
 
   const journalFooter =
     journalEntries.length > 0 ? (
@@ -2753,7 +2757,7 @@ export default function DashboardScreen() {
             ? 24
             : isWide
               ? CTA_CLEARANCE + ctaExtra
-              : Math.max(CTA_CLEARANCE + ctaExtra, CTA_FOOTPRINT + ctaExtra + insets.bottom + 40),
+              : Math.max(CTA_CLEARANCE + ctaExtra, ctaFootprint + insets.bottom + 40),
           // Tablet one column: a centred reading column instead of a stretched
           // phone layout. Reduces to the plain 16 inset on phones, so the
           // narrow render is unchanged.
@@ -2781,6 +2785,10 @@ export default function DashboardScreen() {
           >
             <View style={{ paddingHorizontal: SPACE.lg }}>{titleRow}</View>
             <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+              {/* Reading order (J2): the left column is rendered first and,
+                  on iOS, every Fabric view already groups its children
+                  (RCTViewComponentView shouldGroupAccessibilityChildren), so
+                  VoiceOver finishes this column before the right one. */}
               <View style={{ flex: 1, minWidth: 0, paddingHorizontal: SPACE.lg }}>
                 {movableBlocks.slice(0, columnSplit?.leftCount ?? 0).map(renderBlock)}
               </View>
@@ -2816,6 +2824,7 @@ export default function DashboardScreen() {
         <View
           className="absolute left-0 right-0 bottom-0 pt-2"
           style={{ paddingBottom: CTA_BOTTOM }}
+          onLayout={(e) => setCtaHeight(Math.ceil(e.nativeEvent.layout.height))}
         >
           <View style={columnPad(16)}>
             <GradientCTA

@@ -185,3 +185,10 @@ export function wordFitMultiplier(
 export function scrollHintAllowed(osScale: number): boolean {
   return effectiveFontScale(osScale) <= STACK_AT_SCALE;
 }
+
+/** Height the scroll content must clear for the floating bar: the measured
+ *  height once known (a label that wrapped at AX sizes is taller than the
+ *  one-line formula), never less than the formula. */
+export function ctaFootprintPx(measured: number, formula: number): number {
+  return Number.isFinite(measured) && measured > formula ? measured : formula;
+}
