@@ -4,6 +4,13 @@ import { foodName, parseTags } from "./types";
 import type { Food, Lang, PeriodTag } from "./types";
 import { BASELINE_LOOKBACK_MINUTES, MEAL_RESPONSE_HOURS } from "../mealResponse";
 
+/** Runs the writes of `fn` as one unit: a throw rolls all of them back, so a
+ *  meal edit and its bolus row never land half-applied. */
+export async function inDbTransaction(fn: () => Promise<void>): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(fn);
+}
+
 interface MealRow {
   id: string;
   logged_at: string;

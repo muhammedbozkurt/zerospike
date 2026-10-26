@@ -1,6 +1,6 @@
 import { injectionDoseOk } from "../../lib/injectionDose";
 import { runGuardedSave } from "../../lib/injectionSave";
-import { foregroundTimeAction, saveTimestamp } from "../../lib/injectionFormClock";
+import { foregroundTimeAction, saveTimestamp, type StaleTimeChoice } from "../../lib/injectionFormClock";
 import { historyPlanForSaved, outsideMapWindow } from "../../lib/injectionVisibility";
 import { ctaBlockers } from "../../lib/injectionCta";
 import {
@@ -233,6 +233,8 @@ export default function InjectionScreen() {
   // the morning would silently log an evening entry under the mount-time
   // timestamp.
   const timeTouched = useRef(false);
+  // The hand-picked time sat through a long background trip: Save confirms it.
+  const timeStale = useRef(false);
   const focusedRef = useRef(true);
   const hiddenAtRef = useRef<number | null>(null);
   const dateLabels = useMemo(
@@ -364,15 +366,12 @@ export default function InjectionScreen() {
       const hiddenMs = hiddenAtRef.current == null ? 0 : Date.now() - hiddenAtRef.current;
       hiddenAtRef.current = null;
       const action = foregroundTimeAction({ timeTouched: timeTouched.current, hiddenMs });
-      if (action === "keep") return;
-      if (action === "reset") {
-        timeTouched.current = false;
-        if (focusedRef.current) toast(t("injection.timeReset"), "info");
-      }
+      if (action === "stale") timeStale.current = true;
+      if (action !== "refresh") return;
       setLoggedAt(new Date());
     });
     return () => sub.remove();
-  }, [toast, t]);
+  }, []);
 
   useEffect(() => {
     if (!highlightId) return;
@@ -461,6 +460,7 @@ export default function InjectionScreen() {
     applyInsulinType(insulinType);
     setBolusKind(null);
     timeTouched.current = false;
+    timeStale.current = false;
     setLoggedAt(new Date());
     setNote("");
   }
@@ -484,12 +484,39 @@ export default function InjectionScreen() {
     if (!activeProfile || !selected || !stepperFields.allValid || !injectionDoseOk(dose)) return;
     const profile = activeProfile;
     const site = selected;
+    let timeChoice: StaleTimeChoice | undefined;
     const stampNow = () =>
-      saveTimestamp({ timeTouched: timeTouched.current, loggedAt, now: new Date() });
+      saveTimestamp({ timeTouched: timeTouched.current, loggedAt, now: new Date(), choice: timeChoice });
+    let reset = false;
+    let announced = false;
+    const announceSaved = (saved: { id: string }, offMap: boolean) => {
+      hapticSuccess();
+      toast(t(offMap ? "injection.savedOutsideMap" : "injection.saved"), "success", {
+        label: t("common.undo"),
+        onPress: () => {
+          void undoSaved(saved.id);
+        },
+      });
+      announced = true;
+    };
     await runGuardedSave({
       lock: savingRef,
       setBusy: setSaving,
       confirm: async () => {
+        if (timeTouched.current && timeStale.current) {
+          const clock = formatTime(loggedAt.toISOString());
+          const when = `${relativeDay(loggedAt.toISOString(), {
+            today: t("common.today"),
+            yesterday: t("common.yesterday"),
+          })} · ${clock}`;
+          const keep = await confirm({
+            message: t("injection.staleTimeAsk", { time: when }),
+            confirmLabel: t("injection.staleTimeKeep", { time: when }),
+            cancelLabel: t("injection.staleTimeNow"),
+            icon: "time-outline",
+          });
+          timeChoice = keep ? "picked" : "now";
+        }
         if (!(await confirmReusedPoint())) return false;
         if (!(await confirmDose(dose))) return false;
         // Duplicate-entry check (lib/entryGuard.ts), run last so it never fights
@@ -554,14 +581,9 @@ export default function InjectionScreen() {
           }
         }
         const offMap = outsideMapWindow(saved.logged_at, Date.now(), USAGE_WINDOW_DAYS, cycleStart);
-        hapticSuccess();
-        toast(t(offMap ? "injection.savedOutsideMap" : "injection.saved"), "success", {
-          label: t("common.undo"),
-          onPress: () => {
-            void undoSaved(saved.id);
-          },
-        });
+        announceSaved(saved, offMap);
         resetForm();
+        reset = true;
         if (plan) {
           if (plan.expand) setHistoryExpanded(true);
           const next = plan.limit;
@@ -575,6 +597,14 @@ export default function InjectionScreen() {
           scrolledToRef.current = null;
           setHighlightId(saved.id);
           setSegment("history");
+        }
+      },
+      onAfterFailure: (saved) => {
+        if (!announced) announceSaved(saved, false);
+        if (!reset) {
+          resetForm();
+          reset = true;
+          bumpData();
         }
       },
       onError: (err, phase) => {
@@ -1050,6 +1080,7 @@ export default function InjectionScreen() {
             // pre-cycle row.
             onChange={(d) => {
               timeTouched.current = true;
+              timeStale.current = false;
               setLoggedAt(d);
             }}
             onClose={() => setTimePickerOpen(false)}

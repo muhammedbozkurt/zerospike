@@ -106,3 +106,65 @@ export function decideWinbackSource(input: {
   if (input.apple && iosSupportsWinBack(input.os, input.osVersion)) return "apple";
   return input.downsell.hasRealDiscount ? "downsell" : "none";
 }
+
+/** What the win-back screen needs of an offer; purchases.ts' WinbackOffer fits it. */
+export interface WinbackHandoffOffer {
+  hasRealDiscount: boolean;
+  discountedPriceString: string | null;
+  standardPriceString: string | null;
+  savingsPercent: number;
+  source: "apple" | "downsell";
+  appleOfferId: string | null;
+}
+
+export type WinbackRouteParams = Record<string, string>;
+
+// The trigger's own handoff, kept in memory: a link that opens /winback by
+// hand carries params nobody here produced, and those must never decide the
+// price the screen shows.
+let lastHandoff: string | null = null;
+
+/** Route params for the offer the trigger found, or null when there is nothing to show. */
+export function winbackOfferToParams(offer: WinbackHandoffOffer): WinbackRouteParams | null {
+  if (!offer.hasRealDiscount || !offer.discountedPriceString) return null;
+  const params: WinbackRouteParams = {
+    wbSource: offer.source,
+    wbPrice: offer.discountedPriceString,
+    wbWas: offer.standardPriceString ?? "",
+    wbPct: String(offer.savingsPercent),
+    wbOfferId: offer.appleOfferId ?? "",
+  };
+  lastHandoff = JSON.stringify(params);
+  return params;
+}
+
+/** The offer the trigger handed over, or null (no params, or not the trigger's) so the screen fetches its own. */
+export function winbackOfferFromParams(
+  raw: Record<string, string | string[] | undefined>
+): WinbackHandoffOffer | null {
+  const pick = (k: string): string | null => {
+    const v = raw[k];
+    const s = Array.isArray(v) ? v[0] : v;
+    return typeof s === "string" ? s : null;
+  };
+  const source = pick("wbSource");
+  const price = pick("wbPrice");
+  const was = pick("wbWas");
+  const pct = pick("wbPct");
+  const offerId = pick("wbOfferId");
+  if ((source !== "apple" && source !== "downsell") || !price || was == null || pct == null || offerId == null) {
+    return null;
+  }
+  const params: WinbackRouteParams = { wbSource: source, wbPrice: price, wbWas: was, wbPct: pct, wbOfferId: offerId };
+  if (lastHandoff !== JSON.stringify(params)) return null;
+  const savingsPercent = Number(pct);
+  if (!Number.isFinite(savingsPercent)) return null;
+  return {
+    hasRealDiscount: true,
+    discountedPriceString: price,
+    standardPriceString: was === "" ? null : was,
+    savingsPercent,
+    source,
+    appleOfferId: offerId === "" ? null : offerId,
+  };
+}

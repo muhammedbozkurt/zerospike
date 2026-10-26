@@ -326,14 +326,28 @@ export async function getCalculatorInjectionForMeal(
   return row ? mapInjection(row) : null;
 }
 
-/** Deletes an injection (its history row only; no stock accounting). */
+/** Deletes an injection (its history row only; no stock accounting). A
+ *  calculator bolus also takes its meal's dose with it, so the meal row and
+ *  the history never disagree and a later meal edit cannot bring the dose back
+ *  (lib/db/undoSql.ts restores it on undo). */
 export async function deleteInjection(id: string): Promise<void> {
   const db = await getDb();
-  const link = await db.getFirstAsync<{ health_uuid: string | null }>(
-    "DELETE FROM injection_logs WHERE id = ? RETURNING health_uuid;",
+  const link = await db.getFirstAsync<{
+    health_uuid: string | null;
+    meal_log_id: string | null;
+    source: string | null;
+    insulin_type: string | null;
+  }>(
+    "DELETE FROM injection_logs WHERE id = ? RETURNING health_uuid, meal_log_id, source, insulin_type;",
     [id]
   );
-  if (link) emitRemoved("insulin", [{ id, uuid: link.health_uuid ?? null }]);
+  if (!link) return;
+  if (link.source === "calculator" && link.insulin_type === "bolus" && link.meal_log_id) {
+    await db.runAsync("UPDATE meal_logs SET insulin_dose_units = 0 WHERE id = ?;", [
+      link.meal_log_id,
+    ]);
+  }
+  emitRemoved("insulin", [{ id, uuid: link.health_uuid ?? null }]);
 }
 
 /** Links (or clears) the health-store sample id of an injection's insulin

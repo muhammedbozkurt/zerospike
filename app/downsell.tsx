@@ -129,6 +129,7 @@ function DownsellScreen() {
         variant: "default",
         trial: false,
         paywall_version: PAYWALL_VERSION,
+        source: "downsell",
         detail:
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
       });

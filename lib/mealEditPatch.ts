@@ -13,7 +13,7 @@ export interface BolusRowSnapshot {
 export type BolusStep =
   | { kind: "none" }
   | { kind: "create"; dose: number }
-  | { kind: "update"; id: string; patch: { dose_units?: number; logged_at?: string; insulin_type?: "bolus" } }
+  | { kind: "update"; id: string; patch: { dose_units?: number; logged_at?: string } }
   | { kind: "delete"; id: string };
 
 export interface MealEditPlanInput {
@@ -34,13 +34,20 @@ export interface MealEditPlan {
   bolus: BolusStep;
 }
 
+/** A linked row the user turned into basal on the Injection tab no longer belongs to the meal. */
+export function ownBolusRow<T extends { insulin_type: string | null }>(row: T | null): T | null {
+  return row && row.insulin_type === "bolus" ? row : null;
+}
+
 /** The bolus row is the truth for the dose: the Injection tab edits it without touching the meal row. */
-export function prefillDose(mealDose: number, bolus: BolusRowSnapshot | null): number {
+export function prefillDose(mealDose: number, row: BolusRowSnapshot | null): number {
+  const bolus = ownBolusRow(row);
   return bolus && bolus.dose_units != null ? bolus.dose_units : mealDose;
 }
 
 export function mealEditPlan(input: MealEditPlanInput): MealEditPlan {
-  const { showsDose, dose, prefilledDose, mealStored, bolus, loggedAtIso, loggedAtChanged } = input;
+  const { showsDose, dose, prefilledDose, mealStored, loggedAtIso, loggedAtChanged } = input;
+  const bolus = ownBolusRow(input.bolus);
   const mealPatch: MealEditPlan["mealPatch"] = {};
   if (loggedAtChanged) mealPatch.logged_at = loggedAtIso;
   if (!showsDose) return { mealPatch, bolus: { kind: "none" } };
@@ -48,11 +55,14 @@ export function mealEditPlan(input: MealEditPlanInput): MealEditPlan {
   if (dose !== mealStored.insulin_dose_units) mealPatch.insulin_dose_units = dose;
 
   if (dose > 0) {
-    if (!bolus) return { mealPatch, bolus: { kind: "create", dose } };
-    const patch: { dose_units?: number; logged_at?: string; insulin_type?: "bolus" } = {};
+    if (!bolus) {
+      // Only a dose the user changed here is written: a bolus deleted on the
+      // Injection tab stays deleted when the edit was about something else.
+      return { mealPatch, bolus: dose !== prefilledDose ? { kind: "create", dose } : { kind: "none" } };
+    }
+    const patch: { dose_units?: number; logged_at?: string } = {};
     if (dose !== prefilledDose) patch.dose_units = dose;
     if (loggedAtChanged) patch.logged_at = loggedAtIso;
-    if (bolus.insulin_type !== "bolus") patch.insulin_type = "bolus";
     return { mealPatch, bolus: { kind: "update", id: bolus.id, patch } };
   }
   if (bolus && dose !== prefilledDose) return { mealPatch, bolus: { kind: "delete", id: bolus.id } };

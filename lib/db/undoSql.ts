@@ -26,7 +26,8 @@ export interface DeletionSnapshot {
  */
 export type RestoreStep =
   | { op: "insert"; table: "foods" | "meal_logs" | "sugar_logs" | "injection_logs" | "med_logs"; rows: Row[] }
-  | { op: "relinkMealsToSugar"; sugarLogId: string; mealIds: string[] };
+  | { op: "relinkMealsToSugar"; sugarLogId: string; mealIds: string[] }
+  | { op: "restoreMealDoses"; items: { mealId: string; dose: number }[] };
 
 /**
  * ONE column is deliberately stripped before a sugar_logs row goes back:
@@ -73,6 +74,25 @@ export function planRestoreSteps(snap: DeletionSnapshot): RestoreStep[] {
   }
   if (snap.injections && snap.injections.length > 0) {
     steps.push({ op: "insert", table: "injection_logs", rows: snap.injections.map(stripRecordUuid) });
+  }
+  // Deleting a calculator bolus zeroes its meal's dose (deleteInjection), so
+  // taking the delete back returns the dose too. A meal snapshot restores the
+  // meal row verbatim and needs none of this.
+  if (!snap.meals || snap.meals.length === 0) {
+    const items: { mealId: string; dose: number }[] = [];
+    for (const row of snap.injections ?? []) {
+      const dose = Number(row.dose_units);
+      if (
+        row.source === "calculator" &&
+        row.insulin_type === "bolus" &&
+        row.meal_log_id != null &&
+        Number.isFinite(dose) &&
+        dose > 0
+      ) {
+        items.push({ mealId: String(row.meal_log_id), dose });
+      }
+    }
+    if (items.length > 0) steps.push({ op: "restoreMealDoses", items });
   }
   // Medication rows reference nothing but their profile, so their order in here
   // does not matter; they go last to keep the linked tables above together.

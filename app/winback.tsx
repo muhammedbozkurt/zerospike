@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Redirect, useNavigation, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -23,6 +23,7 @@ import { logEvent } from "../lib/analytics";
 import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
 import { createWinbackExit } from "../lib/analytics/winbackExit";
 import { shouldOpenWelcomeAfterPurchase } from "../lib/paywallPurchase";
+import { winbackOfferFromParams } from "../lib/winbackOffer";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { OfferCard } from "../components/OfferCard";
 import { Button, Txt } from "../components/ui";
@@ -53,10 +54,15 @@ function WinbackScreen() {
   // legal) lines up edge-to-edge with the card above it on wide/tablet screens
   // instead of stretching to the full px-6 width.
   const bottomColWidth = Math.min(width - 48, 420);
-  const [offer, setOffer] = useState<WinbackOffer | null>(null);
+  const routeParams = useLocalSearchParams();
+  // The offer the trigger found is the one shown and bought; a screen opened
+  // without that handoff looks one up itself.
+  const [offer, setOffer] = useState<WinbackOffer | null>(() => winbackOfferFromParams(routeParams));
   const [busy, setBusy] = useState(false);
+  const acceptingRef = useRef(false);
 
   useEffect(() => {
+    if (offer) return;
     let alive = true;
     getWinbackOffer()
       .then((o) => alive && setOffer(o))
@@ -75,6 +81,8 @@ function WinbackScreen() {
     return () => {
       alive = false;
     };
+    // only the first render's handoff decides; a later offer must not refetch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -102,7 +110,8 @@ function WinbackScreen() {
   }
 
   async function accept() {
-    if (busy || !offer?.hasRealDiscount) return;
+    if (acceptingRef.current || busy || !offer?.hasRealDiscount) return;
+    acceptingRef.current = true;
     setBusy(true);
     try {
       const res = await purchaseWinback(offer);
@@ -115,6 +124,7 @@ function WinbackScreen() {
         variant: "default",
         trial: false,
         paywall_version: PAYWALL_VERSION,
+        source: offer.source === "apple" ? "apple_winback" : "downsell",
         detail:
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
       });
@@ -140,6 +150,7 @@ function WinbackScreen() {
         toast(t(feedback.key), feedback.kind);
       }
     } finally {
+      acceptingRef.current = false;
       setBusy(false);
     }
   }

@@ -6,6 +6,7 @@
 import {
   mealEditPlan,
   prefillDose,
+  ownBolusRow,
   writeBolusRow,
   savedToastKey,
   type BolusRowSnapshot,
@@ -89,7 +90,36 @@ async function main() {
     showsDose: true, dose: 4, prefilledDose: 4,
     mealStored: { insulin_dose_units: 4, logged_at: MEAL_AT }, bolus: null, loggedAtIso: MEAL_AT, loggedAtChanged: false,
   });
-  eq("dose without a bolus row creates one", created.bolus, { kind: "create", dose: 4 });
+  eq("dose without a bolus row, untouched, creates nothing", created.bolus, { kind: "none" });
+  const createdTouched = mealEditPlan({
+    showsDose: true, dose: 6, prefilledDose: 4,
+    mealStored: { insulin_dose_units: 4, logged_at: MEAL_AT }, bolus: null, loggedAtIso: MEAL_AT, loggedAtChanged: false,
+  });
+  eq("changed dose without a bolus row creates one", createdTouched.bolus, { kind: "create", dose: 6 });
+
+  // FIX-A 1: a row converted to basal is not the meal's bolus.
+  const basalRow: BolusRowSnapshot = { id: "inj2", dose_units: 20, logged_at: BOLUS_AT, insulin_type: "basal" };
+  eq("own bolus filter drops a basal row", ownBolusRow(basalRow), null);
+  eq("own bolus filter keeps a bolus row", ownBolusRow(bolus), bolus);
+  eq("prefill ignores a basal row", prefillDose(4, basalRow), 4);
+  const onBasal = mealEditPlan({
+    showsDose: true, dose: 4, prefilledDose: 4,
+    mealStored: { insulin_dose_units: 4, logged_at: MEAL_AT }, bolus: basalRow, loggedAtIso: MEAL_AT, loggedAtChanged: true,
+  });
+  eq("basal row: no bolus step", onBasal.bolus, { kind: "none" });
+  eq("basal row: meal dose untouched", "insulin_dose_units" in onBasal.mealPatch, false);
+
+  // FIX-A 2: a bolus deleted on the Injection tab is not resurrected by a note edit.
+  const notePlan = mealEditPlan({
+    showsDose: true, dose: 0, prefilledDose: 0,
+    mealStored: { insulin_dose_units: 0, logged_at: MEAL_AT }, bolus: null, loggedAtIso: MEAL_AT, loggedAtChanged: false,
+  });
+  eq("note-only edit after bolus delete: no bolus step", notePlan.bolus, { kind: "none" });
+  const staleMeal = mealEditPlan({
+    showsDose: true, dose: 4, prefilledDose: 4,
+    mealStored: { insulin_dose_units: 4, logged_at: MEAL_AT }, bolus: null, loggedAtIso: MEAL_AT, loggedAtChanged: false,
+  });
+  eq("stale meal dose, untouched: no bolus step", staleMeal.bolus, { kind: "none" });
 
   // G6: a failed bolus write is its own result, never swallowed.
   const bad = await writeBolusRow(async () => {
@@ -116,6 +146,17 @@ async function main() {
   eq("screen builds the edit plan", calc.includes("mealEditPlan("), true);
   eq("screen no longer deletes the bolus itself", calc.includes("await deleteInjection(existingInjection.id)"), false);
   eq("screen routes the new bolus through writeBolusRow", calc.includes("writeBolusRow("), true);
+
+  // FIX-A wiring.
+  const sheet: string = fs.readFileSync("components/InjectionEditSheet.tsx", "utf8");
+  const inj: string = fs.readFileSync("lib/db/injections.ts", "utf8");
+  eq("edit writes meal and bolus in one transaction", calc.includes("await inDbTransaction(async () => {\n          await updateMealLog(mealLogId"), true);
+  eq("bolus row is stamped with the meal's own time", calc.includes("logged_at: meal.logged_at,\n        });\n      let wroteInjection"), true);
+  eq("retry checks for an existing bolus first", calc.includes("if (await getCalculatorInjectionForMeal(meal.id)) return;"), true);
+  eq("untouched tags are not written to the bolus", calc.includes("...(tagsChanged ? { tags } : {})"), true);
+  eq("loaded bolus row is filtered to the meal's own", calc.includes("ownBolusRow(await getCalculatorInjectionForMeal(mealLogId))"), true);
+  eq("sheet edit of a calculator bolus updates the meal dose", sheet.includes("updateMealLog(mealId, { insulin_dose_units: mealDose })"), true);
+  eq("deleting a calculator bolus zeroes the meal dose", inj.includes("UPDATE meal_logs SET insulin_dose_units = 0 WHERE id = ?"), true);
 
   console.log(failed === 0 ? "calcMealEdit: all passed" : `calcMealEdit: ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);

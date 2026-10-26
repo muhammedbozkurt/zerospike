@@ -153,7 +153,7 @@ function matchesContract(): void {
     "paywall_cta{tier:monthly|annual|lifetime,paywall_version:int}",
     "paywall_dismiss{source,paywall_version:int}",
     "purchase_completed{tier,source,paywall_version:int}",
-    "purchase_result{result:success|cancelled|error,product:monthly|annual|lifetime|downsell_annual,reason:after_logs|direct|health|foods|profiles|feature|mealResponse|spike|insights|export|settings,variant:enum:default,trial:bool,detail:store_error|already_owned|none,paywall_version:int}",
+    "purchase_result{result:success|cancelled|error,product:monthly|annual|lifetime|downsell_annual,reason:after_logs|direct|health|foods|profiles|feature|mealResponse|spike|insights|export|settings,variant:enum:default,trial:bool,detail:store_error|already_owned|none,paywall_version:int,source:paywall|apple_winback|downsell}",
     "trial_started{tier}",
     "pro_welcome_view{}",
     "pro_welcome_step{step:health|insights|reminders,done:bool}",
@@ -359,13 +359,27 @@ function sanitizer(): void {
     trial: true,
     detail: "store_error",
     paywall_version: 2,
+    source: "paywall",
   });
   const saleOut = sanitizeEvent("purchase_result", sale);
-  ok("purchase_result carries only its seven closed fields", saleOut.ok && saleOut.issues.length === 0);
+  ok("purchase_result carries only its eight closed fields", saleOut.ok && saleOut.issues.length === 0);
   if (saleOut.ok) {
     eq("the insulin-only paywall entry leaves as feature", saleOut.props.reason, "feature");
-    eq("seven fields, no free text, no identity or price", Object.keys(saleOut.props).sort(), ["detail", "paywall_version", "product", "reason", "result", "trial", "variant"]);
+    eq("eight fields, no free text, no identity or price", Object.keys(saleOut.props).sort(), ["detail", "paywall_version", "product", "reason", "result", "source", "trial", "variant"]);
   }
+  const winbackSale = sanitizeEvent("purchase_result", {
+    result: "success",
+    product: "downsell_annual",
+    reason: "direct",
+    variant: "default",
+    trial: false,
+    detail: "none",
+    paywall_version: 2,
+    source: "apple_winback",
+  });
+  ok("purchase_result carries the winback source", winbackSale.ok && winbackSale.issues.length === 0 && winbackSale.props.source === "apple_winback");
+  const badSource = sanitizeEvent("purchase_result", { result: "success", source: "my own words" });
+  ok("an unknown purchase source is dropped", badSource.ok && !("source" in badSource.props));
   const badSale = sanitizeEvent("purchase_result", {
     result: "error",
     product: "annual",

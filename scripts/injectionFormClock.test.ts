@@ -22,6 +22,9 @@ const form: string = readFileSync(join(__dirname, "..", "app/(tabs)/injection.ts
 ok("form listens to AppState", form.includes("AppState.addEventListener"));
 ok("form uses the foreground clock rule", form.includes("foregroundTimeAction("));
 ok("save stamps an untouched time at save time", form.includes("saveTimestamp("));
+ok("form no longer resets a picked time on return", !form.includes("injection.timeReset"));
+ok("form asks before saving a stale pick", form.includes("injection.staleTimeAsk") && form.includes("injection.staleTimeKeep") && form.includes("injection.staleTimeNow"));
+ok("picking a time clears the stale flag", form.includes("timeStale.current = false"));
 const pickAt = form.indexOf("function onMapSelect");
 const pick = pickAt >= 0 ? form.slice(pickAt, pickAt + 500) : "";
 ok("map pick refreshes an untouched time (two-column tablet)", pick.includes("timeTouched.current"));
@@ -38,8 +41,18 @@ if (helper) {
   ok("untouched time refreshes on any return", foregroundTimeAction({ timeTouched: false, hiddenMs: 1000 }) === "refresh");
   ok("fresh hand-picked time is kept after a short trip", foregroundTimeAction({ timeTouched: true, hiddenMs: 60_000 }) === "keep");
   ok(
-    "hand-picked time is dropped after a long absence",
-    foregroundTimeAction({ timeTouched: true, hiddenMs: ABANDONED_TIME_MS }) === "reset"
+    "hand-picked time is flagged stale (not dropped) after a long absence",
+    foregroundTimeAction({ timeTouched: true, hiddenMs: ABANDONED_TIME_MS }) === "stale"
+  );
+  ok(
+    "a stale pick saved with the 'now' choice writes now",
+    saveTimestamp({ timeTouched: true, loggedAt: new Date("2026-10-27T08:00:00Z"), now: new Date("2026-10-27T20:00:00Z"), choice: "now" }).getTime() ===
+      new Date("2026-10-27T20:00:00Z").getTime()
+  );
+  ok(
+    "a stale pick saved with the 'picked' choice keeps the pick",
+    saveTimestamp({ timeTouched: true, loggedAt: new Date("2026-10-27T08:00:00Z"), now: new Date("2026-10-27T20:00:00Z"), choice: "picked" }).getTime() ===
+      new Date("2026-10-27T08:00:00Z").getTime()
   );
   ok("abandon window is positive", ABANDONED_TIME_MS > 0);
 

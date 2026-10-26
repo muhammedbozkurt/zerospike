@@ -19,7 +19,8 @@
       "variant": ["enum", "default"],
       "trial": "bool",
       "detail": ["enum", "store_error", "already_owned", "none"],
-      "paywall_version": "int"
+      "paywall_version": "int",
+      "source": ["enum", "paywall", "apple_winback", "downsell"]
     },
     "trial_started": { "tier": "string" },
     "pro_welcome_view": {},
