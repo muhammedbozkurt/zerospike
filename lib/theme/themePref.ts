@@ -21,6 +21,7 @@ export function isThemePref(v: unknown): v is ThemePref {
 export async function loadThemePref(
   store: PrefStore,
   forced?: ThemePref | null,
+  onDefaultResolved?: (pref: ThemePref) => void,
 ): Promise<ThemePref> {
   if (forced) return forced;
   const [stored, onboarded] = await Promise.all([
@@ -30,6 +31,7 @@ export async function loadThemePref(
   if (isThemePref(stored)) return stored;
   const fallback: ThemePref = onboarded === "true" ? "dark" : "light";
   await store.setItem(THEME_PREF_KEY, fallback).catch(() => {});
+  onDefaultResolved?.(fallback);
   return fallback;
 }
 

@@ -189,6 +189,7 @@ function matchesContract(): void {
     "cgm_offer{action:accepted|declined}",
     "nightscout_connect{result:ok|auth|network|invalid}",
     "save_failed{kind:glucose|meal|injection|med|reminder|profile|other,step:write|side|schedule}",
+    "theme_pref_set{pref:light|dark|system,initial:bool}",
     "feedback_sent{kind:suggestion|bug|other|cancel_survey,reason_code:expensive|not_used|missing_feature|bug|other_app|other|none}",
   ];
   const expected: Canonical = new Map();
@@ -208,7 +209,7 @@ function matchesContract(): void {
   }
 
   const actual = canonicalSchema();
-  eq("48 events in the contract", expected.size, 48);
+  eq("49 events in the contract", expected.size, 49);
   eq("schema version is 7", SCHEMA_VERSION, 7);
   eq("event count", actual.size, expected.size);
   for (const [name, fields] of expected) {
@@ -284,6 +285,10 @@ function schemaHygiene(): void {
   ok("nightscout_connect result is the four outcomes", canon(specOf("nightscout_connect").result) === "enum:auth|invalid|network|ok");
   const failed = sanitizeEvent("save_failed", { kind: "injection", step: "side" });
   ok("save_failed carries kind and step", failed.ok && failed.props.kind === "injection" && failed.props.step === "side");
+  const theme = sanitizeEvent("theme_pref_set", { pref: "system", initial: false });
+  ok("theme_pref_set carries the choice and whether it is the first default", theme.ok && theme.props.pref === "system" && theme.props.initial === false && theme.issues.length === 0);
+  const themeBad = sanitizeEvent("theme_pref_set", { pref: "sepia", initial: "yes" });
+  ok("theme_pref_set drops a value outside the three choices", themeBad.ok && Object.keys(themeBad.props).length === 0);
   const added = sanitizeEvent("log_added", { kind: "basal", insulin_kind: "basal" });
   ok("log_added carries the insulin kind", added.ok && added.props.kind === "other" && added.props.insulin_kind === "basal");
   const units = sanitizeEvent("log_added", { kind: "basal", insulin_kind: 12 });

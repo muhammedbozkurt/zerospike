@@ -128,6 +128,7 @@ export const EVENT_SCHEMA = {
     kind: ["glucose", "meal", "injection", "med", "reminder", "profile", "other"],
     step: ["write", "side", "schedule"],
   },
+  theme_pref_set: { pref: ["light", "dark", "system"], initial: "bool" },
   feedback_sent: {
     kind: ["suggestion", "bug", "other", "cancel_survey"],
     reason_code: [

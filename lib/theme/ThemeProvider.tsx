@@ -14,6 +14,7 @@ import { Animated, StyleSheet, useColorScheme, View } from "react-native";
 import { Appearance } from "react-native";
 import * as SystemUI from "expo-system-ui";
 
+import { logEvent } from "../analytics";
 import { isScreenshotMode } from "../screenshotMode";
 import { animate, isReducedMotionNow } from "../useReducedMotion";
 import { publishWidgetThemePref } from "../services/widgetTheme";
@@ -99,7 +100,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         ? "dark"
         : "light"
       : null;
-    void loadThemePref(AsyncStorage, forced).then((p) => {
+    void loadThemePref(AsyncStorage, forced, (p) => {
+      logEvent("theme_pref_set", { pref: p, initial: true });
+    }).then((p) => {
       if (alive) setPrefState(p);
       if (!forced) void publishWidgetThemePref(p, { onlyIfChanged: true });
     });
@@ -148,6 +151,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setPref = useCallback(
     async (next: ThemePref) => {
+      if (next !== prefRef.current) logEvent("theme_pref_set", { pref: next, initial: false });
       await saveThemePref(AsyncStorage, next);
       void publishWidgetThemePref(next);
       // Release the pin first: while a scheme is forced, useColorScheme reports
