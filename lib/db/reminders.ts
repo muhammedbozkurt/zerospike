@@ -308,6 +308,16 @@ export async function deleteReminder(id: string): Promise<void> {
   await db.runAsync("DELETE FROM reminders WHERE id = ?;", [id]);
 }
 
+/** Runs several reminder writes as one unit: any throw rolls all of them back. */
+export async function inReminderTransaction<T>(run: () => Promise<T>): Promise<T> {
+  const db = await getDb();
+  let result!: T;
+  await db.withTransactionAsync(async () => {
+    result = await run();
+  });
+  return result;
+}
+
 /**
  * Writes the user's own arrangement: sort becomes the position in
  * `orderedIds`. One transaction, mirroring reorderTemplates in

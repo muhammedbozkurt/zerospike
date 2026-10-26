@@ -35,6 +35,8 @@ import { useApp } from "../lib/store/AppContext";
 import { useFeedback } from "./Feedback";
 import { logMed, upsertMedUse } from "../lib/db/meds";
 import { MedNamePicker } from "./MedNamePicker";
+import { runExclusive, type SaveLock } from "../lib/saveGuard";
+import { saveMedGuarded } from "../lib/medSave";
 import { logEvent } from "../lib/analytics";
 import { noteFirstLog } from "../lib/services/firstLog";
 import { noteJournalActivity } from "../lib/services/notifications";
@@ -107,6 +109,7 @@ export function QuickAddSheet({
   const [medAt, setMedAt] = useState<Date | null>(null);
   const [medTimePickerOpen, setMedTimePickerOpen] = useState(false);
   const [savingMed, setSavingMed] = useState(false);
+  const saveLockRef = useRef<SaveLock>({ current: false });
 
   useEffect(() => {
     if (!visible) return;
@@ -126,28 +129,40 @@ export function QuickAddSheet({
   }, [visible, openMedDirect, anim]);
 
   async function saveMed() {
-    if (!activeProfile || savingMed) return;
-    setSavingMed(true);
-    try {
-      const trimmedName = medName.trim();
-      const takenAt = (medAt ?? new Date()).getTime();
-      await logMed({
-        profileId: activeProfile.id,
-        takenAt,
-        name: trimmedName || null,
-        note: medNote.trim() || null,
-      });
-      if (trimmedName) await upsertMedUse(activeProfile.id, trimmedName, takenAt);
-      logEvent("log_added", { kind: "med" });
-      void noteFirstLog("med");
-      void noteJournalActivity();
-      bumpData();
-      hapticSuccess();
-      toast(t("meds.took"), "success");
-      onClose();
-    } finally {
-      setSavingMed(false);
-    }
+    if (!activeProfile) return;
+    await runExclusive(saveLockRef.current, async () => {
+      setSavingMed(true);
+      try {
+        const trimmedName = medName.trim();
+        const takenAt = (medAt ?? new Date()).getTime();
+        const outcome = await saveMedGuarded({
+          write: async () => {
+            await logMed({
+              profileId: activeProfile.id,
+              takenAt,
+              name: trimmedName || null,
+              note: medNote.trim() || null,
+            });
+          },
+          rememberName: async () => {
+            if (trimmedName) await upsertMedUse(activeProfile.id, trimmedName, takenAt);
+          },
+        });
+        if (outcome === "failed") {
+          toast(t("common.saveFailed"), "error");
+          return;
+        }
+        logEvent("log_added", { kind: "med" });
+        void noteFirstLog("med");
+        void noteJournalActivity();
+        bumpData();
+        hapticSuccess();
+        toast(t("meds.took"), "success");
+        onClose();
+      } finally {
+        setSavingMed(false);
+      }
+    });
   }
 
   /**

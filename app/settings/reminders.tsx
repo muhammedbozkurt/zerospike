@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, Switch, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -19,6 +19,7 @@ import { listProfiles } from "../../lib/db/profiles";
 import {
   applyNotificationPrefs,
   getNotificationPermission,
+  lastReminderScheduleFailures,
   requestNotificationPermission,
   type NotificationPermission,
 } from "../../lib/services/notifications";
@@ -40,6 +41,8 @@ import { GLUCOSE_RICH, HIT_TARGET, TABULAR, THEME, switchColors } from "../../li
 import { RIPPLE_ALPHA } from "../../lib/theme/uiPrimitives";
 import { hapticSuccess, hapticWarning } from "../../lib/haptics";
 import { switchProps } from "../../lib/a11y";
+import { runExclusive, type SaveLock } from "../../lib/saveGuard";
+import { saveReminderGuarded } from "../../lib/reminderSave";
 
 /** Type icon, matching the icon each type already carries elsewhere in the app
  *  (moon for basal, medical for oral meds, water for a glucose check). Custom
@@ -262,6 +265,7 @@ export default function RemindersScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [sheetSaving, setSheetSaving] = useState(false);
+  const saveLockRef = useRef<SaveLock>({ current: false });
 
   /** The row's own label: the user's text for custom/med (falling back to the
    *  type name when a med reminder was never given one), and the type name for
@@ -509,35 +513,47 @@ export default function RemindersScreen() {
   }
 
   async function saveSheet(input: ReminderSavePayload) {
-    setSheetSaving(true);
-    try {
-      if (editingReminder) {
-        await updateReminder(editingReminder.id, input);
-      } else {
-        await createReminder(input);
-        await requestNotificationPermission();
+    await runExclusive(saveLockRef.current, async () => {
+      setSheetSaving(true);
+      try {
+        const outcome = await saveReminderGuarded({
+          isCreate: !editingReminder,
+          write: async () => {
+            if (editingReminder) {
+              await updateReminder(editingReminder.id, input);
+            } else {
+              await createReminder(input);
+            }
+          },
+          afterWrite: async () => {
+            if (!editingReminder) await requestNotificationPermission();
+            await afterChange();
+            if (lastReminderScheduleFailures() > 0) {
+              throw new Error("reminder schedule failed");
+            }
+          },
+        });
+        if (outcome === "limit") {
+          hapticWarning();
+          toast(t("reminders.limitReached"), "error");
+          return;
+        }
+        if (outcome === "writeFailed") {
+          hapticWarning();
+          toast(t("common.saveFailed"), "error");
+          return;
+        }
+        setSheetOpen(false);
+        if (outcome === "scheduleFailed") {
+          hapticWarning();
+          toast(t("reminders.scheduleFailed"), "error");
+        } else {
+          hapticSuccess();
+        }
+      } finally {
+        setSheetSaving(false);
       }
-      await afterChange();
-      hapticSuccess();
-      setSheetOpen(false);
-    } catch (e) {
-      hapticWarning();
-      // createReminder is the only call above that can actually throw (a full
-      // table - see MAX_REMINDERS in lib/db/reminders.ts); anything else (a
-      // write failure, afterChange's own re-read) is not the limit and must
-      // not be misreported as one. No other locale key fits a generic save
-      // failure here, so that case stays a silent log with the sheet left
-      // open, rather than a wrong toast telling the user their list is full.
-      const isLimitError =
-        !editingReminder && e instanceof Error && e.message.includes("reminders reached");
-      if (isLimitError) {
-        toast(t("reminders.limitReached"), "error");
-      } else {
-        console.error("reminder save failed", e);
-      }
-    } finally {
-      setSheetSaving(false);
-    }
+    });
   }
 
   const atLimit = reminders.length >= MAX_REMINDERS;

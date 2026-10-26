@@ -6,6 +6,7 @@ import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 
 import { useApp } from "../../lib/store/AppContext";
 import { updateProfile } from "../../lib/db/profiles";
+import { tryWrite } from "../../lib/saveGuard";
 import type { GlucoseUnit, DiabetesType, InsulinMode } from "../../lib/db/types";
 import {
   clampHypoThreshold,
@@ -137,11 +138,10 @@ export default function ProfileSettings() {
     };
   }, [activeProfile?.id]);
 
-  useEffect(() => {
+  function resyncFromProfile() {
     if (!activeProfile) return;
     const u = activeProfile.glucose_unit ?? "mgdl";
     setName(activeProfile.name);
-    setRatioDraft(ratioFieldsInitial(activeProfile));
     setFastingMin(num(glucoseToDisplay(activeProfile.target_fasting_min, u)));
     setFastingMax(num(glucoseToDisplay(activeProfile.target_fasting_max, u)));
     setPostmealMin(num(glucoseToDisplay(activeProfile.target_postmeal_min, u)));
@@ -149,6 +149,13 @@ export default function ProfileSettings() {
     setCarbMin(String(activeProfile.daily_carb_target_min_g));
     setCarbMax(String(activeProfile.daily_carb_target_g));
     setBasalUnits(activeProfile.basal_daily_units ?? 0);
+  }
+
+  useEffect(() => {
+    if (!activeProfile) return;
+    resyncFromProfile();
+    setRatioDraft(ratioFieldsInitial(activeProfile));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile?.id, activeProfile?.glucose_unit]);
 
   // The long-acting daily dose is written ONLY when the field is left (or the
@@ -195,10 +202,26 @@ export default function ProfileSettings() {
     return Number.isFinite(x) && x > 0 ? x : fallback;
   }
 
-  async function persist(patch: Record<string, string | number | null>) {
-    if (!activeProfile) return;
-    await updateProfile(activeProfile.id, patch);
+  async function persist(patch: Record<string, string | number | null>): Promise<boolean> {
+    if (!activeProfile) return false;
+    const written = await tryWrite(() => updateProfile(activeProfile.id, patch));
+    if (!written) {
+      resyncFromProfile();
+      toast(t("common.saveFailed"), "error");
+      return false;
+    }
     bumpData();
+    return true;
+  }
+
+  /** The profile row is already saved; a failing reminder re-arm is reported on
+   *  its own instead of as an unsaved profile. */
+  async function rearmReminders(cancel?: () => Promise<void>) {
+    const done = await tryWrite(async () => {
+      if (cancel) await cancel();
+      await applyNotificationPrefs();
+    });
+    if (!done) toast(t("reminders.scheduleFailed"), "error");
   }
   persistRef.current = persist;
 
@@ -213,20 +236,19 @@ export default function ProfileSettings() {
    */
   async function persistInsulinMode(m: InsulinMode) {
     if (m === insulinMode) return;
-    await persist({ insulin_mode: m });
+    if (!(await persist({ insulin_mode: m }))) return;
     if (!insulinModeShowsBasal(m)) {
-      await cancelBasalReminder();
-      // Belt-and-suspenders with the cancel call above: applyNotificationPrefs
+      // Belt-and-suspenders with the cancel call: applyNotificationPrefs
       // re-derives the schedule from the now-persisted mode and sweeps any
       // basal alarm too (see applyReminders), so this can never leave one
       // ringing on an insulin mode that no longer shows basal at all.
-      await applyNotificationPrefs();
+      await rearmReminders(cancelBasalReminder);
     } else {
       // K3-2: unconditional. The delivery decision belongs to applyReminders
       // (per row, per mechanism), so gating this on the NOTIFICATION permission
       // meant a user who granted only the alarm permission never got their
       // basal/med reminders re-armed when they turned the mode back on.
-      await applyNotificationPrefs();
+      await rearmReminders();
     }
   }
 
@@ -241,19 +263,18 @@ export default function ProfileSettings() {
    * Non-prompting, same as above.
    */
   async function persistOralMeds(on: boolean) {
-    await persist({ oral_meds_enabled: on ? 1 : 0 });
+    if (!(await persist({ oral_meds_enabled: on ? 1 : 0 }))) return;
     if (!on) {
-      await cancelMedReminder();
       // Same belt-and-suspenders as persistInsulinMode above: re-apply so the
       // now-persisted oral_meds_enabled=0 also sweeps a med alarm, not only
       // the notification half.
-      await applyNotificationPrefs();
+      await rearmReminders(cancelMedReminder);
     } else {
       // K3-2: unconditional. The delivery decision belongs to applyReminders
       // (per row, per mechanism), so gating this on the NOTIFICATION permission
       // meant a user who granted only the alarm permission never got their
       // basal/med reminders re-armed when they turned the mode back on.
-      await applyNotificationPrefs();
+      await rearmReminders();
     }
   }
 
@@ -390,7 +411,7 @@ export default function ProfileSettings() {
     });
     if (!confirmed) return;
 
-    await persist({ diabetes_type: next });
+    if (!(await persist({ diabetes_type: next }))) return;
     if (willCancelInsulin) await persistInsulinMode("none");
 
     const wantsDefaults = await confirm({

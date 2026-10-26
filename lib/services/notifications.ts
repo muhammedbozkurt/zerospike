@@ -869,6 +869,13 @@ function ensureRemindersBridged(prefs: NotificationPrefs): Promise<void> {
  *  swept here defensively - see the note on the sweep below. */
 const LEGACY_FIXED_IDS: readonly string[] = [BASAL_ID, MED_ID, GLUCOSE_ID];
 
+let reminderScheduleFailures = 0;
+
+/** How many rows the latest applyReminders pass could not arm. */
+export function lastReminderScheduleFailures(): number {
+  return reminderScheduleFailures;
+}
+
 export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   // Resolved ONCE and reused for the profile id, the basal gate and the meds
   // gate below, instead of three independent (and previously redundant)
@@ -928,74 +935,82 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<void> {
   const alarmAuthorized =
     alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized";
 
+  reminderScheduleFailures = 0;
   const known = new Set<string>();
   const knownAlarms = new Set<string>();
   for (const row of rows) {
-    const identifier = reminderIdentifier(row.id);
-    const alarmId = alarmIdentifier(row.id);
-    known.add(identifier);
-    const gateOpen =
-      row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
-    // ONE decision, shared with every surface that draws this row
-    // (lib/alarmSelect.ts): "none" means nothing is armed for it this pass,
-    // which the reminders screen says out loud rather than leaving it looking
-    // scheduled.
-    const delivery = reminderDelivery({
-      masterEnabled,
-      rowEnabled: row.enabled === 1,
-      visibilityGateOpen: gateOpen,
-      alarmEnabled: row.alarm_enabled === 1,
-      alarmKitAvailable,
-      alarmAuthorized,
-      notificationPermission,
-    });
-    const rowActive = delivery !== "none";
-    const useAlarm = delivery === "alarm";
-
-    if (useAlarm) {
-      // Real alarm INSTEAD of the notification - never both (see
-      // docs/alarmkit-2.2.0.md's "cift teslim olmaz"). A failed schedule
-      // (an OS-side AlarmKit error; authorization being revoked mid-flight
-      // instead routes through the `rowActive`-but-not-`useAlarm` branch
-      // below, which explicitly cancels the alarm) falls back to the plain
-      // notification rather than lose the reminder outright - safe from a
-      // double delivery either way, since ZerospikeAlarmKitModule.swift
-      // always cancels whatever was previously armed under this SAME id
-      // before attempting the new schedule, win or lose.
-      const { hour, minute } = parseHHMM(row.time);
-      const armed = await scheduleDailyAlarm({
-        id: alarmId,
-        hour,
-        minute,
-        label: reminderAlarmLabel(row),
-        stopLabel: i18n.t("reminders.alarmStopButton"),
-        openLabel: i18n.t("reminders.alarmOpenButton"),
-        route: reminderAlarmRoute(row),
+    try {
+      const identifier = reminderIdentifier(row.id);
+      const alarmId = alarmIdentifier(row.id);
+      known.add(identifier);
+      const gateOpen =
+        row.type === "basal" ? showsBasal : row.type === "med" ? showsMeds : true;
+      // ONE decision, shared with every surface that draws this row
+      // (lib/alarmSelect.ts): "none" means nothing is armed for it this pass,
+      // which the reminders screen says out loud rather than leaving it looking
+      // scheduled.
+      const delivery = reminderDelivery({
+        masterEnabled,
+        rowEnabled: row.enabled === 1,
+        visibilityGateOpen: gateOpen,
+        alarmEnabled: row.alarm_enabled === 1,
+        alarmKitAvailable,
+        alarmAuthorized,
+        notificationPermission,
       });
-      if (armed) {
-        knownAlarms.add(alarmId);
-        await cancelReminderIdentifier(identifier);
-      } else {
+      const rowActive = delivery !== "none";
+      const useAlarm = delivery === "alarm";
+
+      if (useAlarm) {
+        // Real alarm INSTEAD of the notification - never both (see
+        // docs/alarmkit-2.2.0.md's "cift teslim olmaz"). A failed schedule
+        // (an OS-side AlarmKit error; authorization being revoked mid-flight
+        // instead routes through the `rowActive`-but-not-`useAlarm` branch
+        // below, which explicitly cancels the alarm) falls back to the plain
+        // notification rather than lose the reminder outright - safe from a
+        // double delivery either way, since ZerospikeAlarmKitModule.swift
+        // always cancels whatever was previously armed under this SAME id
+        // before attempting the new schedule, win or lose.
+        const { hour, minute } = parseHHMM(row.time);
+        const armed = await scheduleDailyAlarm({
+          id: alarmId,
+          hour,
+          minute,
+          label: reminderAlarmLabel(row),
+          stopLabel: i18n.t("reminders.alarmStopButton"),
+          openLabel: i18n.t("reminders.alarmOpenButton"),
+          route: reminderAlarmRoute(row),
+        });
+        if (armed) {
+          knownAlarms.add(alarmId);
+          await cancelReminderIdentifier(identifier);
+        } else {
+          await scheduleReminderRow(row);
+          // Symmetry with the two branches below: this row is now delivered by a
+          // notification, so anything still armed under its alarm id has to go.
+          // The orphan sweep at the end would normally catch it, but that sweep
+          // depends on listScheduledAlarmIds(), which degrades to an empty list
+          // when AlarmKit's own read throws (see the module) - and the one thing
+          // that must never happen is the same reminder both ringing and
+          // dropping a notification.
+          await cancelAlarm(alarmId);
+        }
+      } else if (rowActive) {
         await scheduleReminderRow(row);
-        // Symmetry with the two branches below: this row is now delivered by a
-        // notification, so anything still armed under its alarm id has to go.
-        // The orphan sweep at the end would normally catch it, but that sweep
-        // depends on listScheduledAlarmIds(), which degrades to an empty list
-        // when AlarmKit's own read throws (see the module) - and the one thing
-        // that must never happen is the same reminder both ringing and
-        // dropping a notification.
+        // Covers the alarm-toggled-off case: a row that used to opt in already
+        // has an alarm armed under `alarmId`, and turning the switch back off
+        // must take it down and fall back to the notification just scheduled
+        // above - best-effort, a "nothing pending" cancel is the common case.
+        await cancelAlarm(alarmId);
+      } else {
+        await cancelReminderIdentifier(identifier);
         await cancelAlarm(alarmId);
       }
-    } else if (rowActive) {
-      await scheduleReminderRow(row);
-      // Covers the alarm-toggled-off case: a row that used to opt in already
-      // has an alarm armed under `alarmId`, and turning the switch back off
-      // must take it down and fall back to the notification just scheduled
-      // above - best-effort, a "nothing pending" cancel is the common case.
-      await cancelAlarm(alarmId);
-    } else {
-      await cancelReminderIdentifier(identifier);
-      await cancelAlarm(alarmId);
+    } catch (err) {
+      // One row that cannot be armed must not stop the others or the orphan
+      // sweeps below; the caller reads the count to tell the user.
+      reminderScheduleFailures++;
+      logCrash(err, { service: "notifications", op: "reminderRowScheduleFailed" });
     }
   }
 

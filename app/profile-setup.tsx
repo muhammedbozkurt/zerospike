@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { isolateLtr } from "../lib/format";
 import { deleteProfile, updateProfile } from "../lib/db/profiles";
+import { tryWrite } from "../lib/saveGuard";
 import { syncBasalReminderRow } from "../lib/db/reminders";
 import { applyNotificationPrefs } from "../lib/services/notifications";
 import { setUpReminderPlan } from "../lib/services/reminderPlan";
@@ -411,7 +412,7 @@ function ProfileSetupScreen() {
     setSaving(true);
     await withWriteInFlight(async () => {
       try {
-        await updateProfile(profileId, {
+        const written = await tryWrite(() => updateProfile(profileId, {
           name: name.trim(),
           glucose_unit: unit,
           diabetes_type: diabetesType,
@@ -441,7 +442,11 @@ function ProfileSetupScreen() {
           daily_carb_target_g: clampCarbTarget(n(carbMax, 200)),
           // Confirmed only when the user typed all four numbers AND ticked the box.
           ...(ratioSetComplete ? { ratios_confirmed: ratiosTick ? 1 : RATIOS_ENTERED } : {}),
-        });
+        }));
+        if (!written) {
+          toast(t("common.saveFailed"), "error");
+          return;
+        }
         // From here the profile is the user's own, so the cancel path above must
         // never take it back - set after the write, not before, so a failed one
         // still counts as an abandoned draft.
@@ -461,16 +466,20 @@ function ProfileSetupScreen() {
         // land on the profile the form is editing whatever became active in the
         // meantime. A full reminders table (MAX_REMINDERS, per profile) blocks
         // only a brand NEW row - an existing basal row is always updated in place.
-        const basalSynced = await syncBasalReminderRow(
-          showsBasal,
-          basalTime,
-          basalTimeTouched,
-          profileId
-        );
-        if (!basalSynced) {
-          toast(t("reminders.limitReached"), "error");
+        try {
+          const basalSynced = await syncBasalReminderRow(
+            showsBasal,
+            basalTime,
+            basalTimeTouched,
+            profileId
+          );
+          if (!basalSynced) {
+            toast(t("reminders.limitReached"), "error");
+          }
+          await applyNotificationPrefs();
+        } catch {
+          toast(t("common.saveFailed"), "error");
         }
-        await applyNotificationPrefs();
         bumpData();
         router.back();
       } finally {

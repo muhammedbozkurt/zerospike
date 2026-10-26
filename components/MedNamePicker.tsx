@@ -13,6 +13,7 @@ import { withAlpha } from "./rich/GlassCard";
 import { Button, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
 import { SavedMedEditSheet } from "./SavedMedEditSheet";
+import { useFeedback } from "./Feedback";
 
 /** Cap for a centered, content-sized dialog card on a tablet (does not
  *  stretch edge to edge like a bottom sheet). */
@@ -58,6 +59,7 @@ export function MedNamePicker({
   emptyLabel?: string;
 }) {
   const { t } = useTranslation();
+  const { toast } = useFeedback();
   const { isWide } = useLayout();
   const [meds, setMeds] = useState<SavedMed[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -71,8 +73,11 @@ export function MedNamePicker({
       setLoaded(true);
       return;
     }
-    const rows = await listSavedMeds(profileId);
-    setMeds(rows);
+    try {
+      setMeds(await listSavedMeds(profileId));
+    } catch {
+      setMeds([]);
+    }
     setLoaded(true);
   }, [profileId]);
 
@@ -116,6 +121,8 @@ export function MedNamePicker({
       await refresh();
       onChange(name.trim());
       setAddOpen(false);
+    } catch {
+      toast(t("common.saveFailed"), "error");
     } finally {
       setAddSaving(false);
     }
