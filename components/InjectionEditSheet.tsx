@@ -1,4 +1,5 @@
 import { doseHintVisible, injectionDoseOk } from "../lib/injectionDose";
+import { runGuardedSave } from "../lib/injectionSave";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -124,7 +125,7 @@ export function InjectionEditSheet({
 }) {
   const { t, i18n } = useTranslation();
   const { activeProfile, isProUser } = useApp();
-  const { confirm } = useFeedback();
+  const { confirm, toast } = useFeedback();
   const { height: winH } = useWindowDimensions();
   const { isWide, width: layoutWidth, height: layoutHeight } = useLayout();
   const insets = useSafeAreaInsets();
@@ -165,6 +166,7 @@ export function InjectionEditSheet({
   const [loggedAt, setLoggedAt] = useState<Date>(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const stepperFields = useStepperValidity();
   // Which body the sheet shows: the form, or the site-picking silhouette
   // (entered from the compact site row, returns to the form on a pick).
@@ -256,50 +258,60 @@ export function InjectionEditSheet({
   }
 
   async function save() {
-    if (!injection || saving || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)) return;
+    if (!injection || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)) return;
+    const target = injection;
     const hasDose = dose > 0;
-    if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return;
-    if (hasDose && !(await confirmDose(dose))) return;
-
-    setSaving(true);
-    try {
-      // Product picking moved to settings/profile.tsx (2.4): this sheet no
-      // longer offers a picker. The row keeps whatever product it already
-      // had UNLESS the type toggle above was switched to the other type
-      // this session - a basal product carried over onto a row now typed
-      // "bolus" (or vice versa) would be a straight mismatch, so that case
-      // re-derives from the active profile's product for the NEW type
-      // instead, the same source a fresh entry of that type would use.
-      const typeChanged = insulinType !== (injection.insulin_type ?? "bolus");
-      const productId = typeChanged
-        ? ((insulinType === "basal"
-            ? activeProfile?.basal_insulin_id
-            : activeProfile?.bolus_insulin_id) ?? null)
-        : injection.insulin_product_id;
-      const productOther = typeChanged
-        ? (productId === OTHER_PRODUCT_ID
-            ? ((insulinType === "basal"
-                ? activeProfile?.basal_insulin_other
-                : activeProfile?.bolus_insulin_other) ?? null)
-            : null)
-        : injection.insulin_product_other;
-      const patch: InjectionUpdate = {
-        dose_units: hasDose ? dose : null,
-        insulin_type: insulinType,
-        bolus_kind: insulinType === "bolus" ? bolusKind : null,
-        insulin_product_id: productId,
-        insulin_product_other: productOther,
-        site: hasSite ? site : null,
-        site_point: hasSite ? point : null,
-        logged_at: loggedAt.toISOString(),
-      };
-      await updateInjection(injection.id, patch);
-      logEvent("log_edited", { kind: insulinType === "basal" ? "basal" : "injection" });
-      hapticSuccess();
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
+    await runGuardedSave({
+      lock: savingRef,
+      setBusy: setSaving,
+      confirm: async () => {
+        if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return false;
+        if (hasDose && !(await confirmDose(dose))) return false;
+        return true;
+      },
+      write: async () => {
+        // Product picking moved to settings/profile.tsx (2.4): this sheet no
+        // longer offers a picker. The row keeps whatever product it already
+        // had UNLESS the type toggle above was switched to the other type
+        // this session - a basal product carried over onto a row now typed
+        // "bolus" (or vice versa) would be a straight mismatch, so that case
+        // re-derives from the active profile's product for the NEW type
+        // instead, the same source a fresh entry of that type would use.
+        const typeChanged = insulinType !== (target.insulin_type ?? "bolus");
+        const productId = typeChanged
+          ? ((insulinType === "basal"
+              ? activeProfile?.basal_insulin_id
+              : activeProfile?.bolus_insulin_id) ?? null)
+          : target.insulin_product_id;
+        const productOther = typeChanged
+          ? (productId === OTHER_PRODUCT_ID
+              ? ((insulinType === "basal"
+                  ? activeProfile?.basal_insulin_other
+                  : activeProfile?.bolus_insulin_other) ?? null)
+              : null)
+          : target.insulin_product_other;
+        const patch: InjectionUpdate = {
+          dose_units: hasDose ? dose : null,
+          insulin_type: insulinType,
+          bolus_kind: insulinType === "bolus" ? bolusKind : null,
+          insulin_product_id: productId,
+          insulin_product_other: productOther,
+          site: hasSite ? site : null,
+          site_point: hasSite ? point : null,
+          logged_at: loggedAt.toISOString(),
+        };
+        await updateInjection(target.id, patch);
+      },
+      onSaved: () => {
+        logEvent("log_edited", { kind: insulinType === "basal" ? "basal" : "injection" });
+        hapticSuccess();
+        onSaved();
+      },
+      onError: (err, phase) => {
+        logCrash(err, { screen: "injectionEditSheet", op: "save", phase });
+        if (phase !== "after") toast(t("common.saveFailed"), "error");
+      },
+    });
   }
 
   /** Same confirm dialog as the row's own swipe delete (useJournalRows.tsx's
@@ -571,7 +583,7 @@ export function InjectionEditSheet({
                         }}
                         hitSlop={10}
                         accessibilityRole="button"
-                        accessibilityLabel={t("common.delete")}
+                        accessibilityLabel={t("injection.clearSite")}
                         style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
                       >
                         <Ionicons name="close-circle-outline" size={18} color={THEME.textMuted} />
