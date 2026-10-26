@@ -402,3 +402,9 @@ export function initialPortionGrams(
   const grams = hit ? finite(hit.grams) : finite(typicalG) > 0 ? finite(typicalG) : 100;
   return round1(Math.min(grams, COMPOSE_MAX_GRAMS));
 }
+
+/** The rows, not the totals, are why Save is shut: a 0 g food or an unnamed
+ *  estimate line. Drives the reason line under the button. */
+export function composeRowsBlockSave(items: readonly ComposeItem[]): boolean {
+  return items.length > 0 && !composeCanSave(items);
+}

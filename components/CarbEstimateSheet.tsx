@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 import {
   CARB_TEXT_MAX,
   canAddEstimate,
+  estimateAddHint,
   carbErrorCode,
   editableFromEstimate,
   editableTotal,
@@ -266,6 +267,7 @@ export function CarbEstimateSheet({
 
   const resultShown = items !== null;
   const canAdd = canAddEstimate({ resultShown, items: items ?? [], saving });
+  const addHint = items ? estimateAddHint(items) : null;
   const total = items ? editableTotal(items) : 0;
 
   const title = (
@@ -431,6 +433,11 @@ export function CarbEstimateSheet({
     );
     footer = (
       <View style={{ paddingTop: 10 }}>
+        {addHint ? (
+          <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 8 }}>
+            {t(addHint === "unreadable" ? "carbEstimate.amountUnreadable" : "carbEstimate.unnamedLeftOut")}
+          </Text>
+        ) : null}
         <Button
           label={t("carbEstimate.addToMeal")}
           disabled={!canAdd}

@@ -29,6 +29,7 @@ import {
   chipGrams,
   composeCanSave,
   composeCanSaveTemplate,
+  composeRowsBlockSave,
   composeHasEstimate,
   composeItemFromFood,
   composeTotals,
@@ -552,6 +553,14 @@ export function MealComposeSheet({
             <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
 
             <View style={{ paddingTop: 10, paddingBottom: lift > 0 ? 12 : insets.bottom + 12 }}>
+              {composeRowsBlockSave(items) ? (
+                <Text
+                  accessibilityRole="alert"
+                  style={{ color: THEME.warning, fontSize: 12, lineHeight: 17, marginBottom: 8 }}
+                >
+                  {t("mealCompose.fixRows")}
+                </Text>
+              ) : null}
               <Button
                 label={t("mealCompose.saveWithTotal", { value: num(totals.carbs_g) })}
                 disabled={!canSave}

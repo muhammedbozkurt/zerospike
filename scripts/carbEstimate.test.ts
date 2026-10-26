@@ -305,6 +305,9 @@ function editing(): void {
   eq("a dash-only item cannot be added", client.canAddEstimate({ resultShown: true, items: dash, saving: false }), false);
   eq("a blank-name item cannot be added", client.canAddEstimate({ resultShown: true, items: [{ ...dash[0], name: "   " }], saving: false }), false);
   eq("one named item among blanks can be added", client.canAddEstimate({ resultShown: true, items: [...dash, ...items], saving: false }), true);
+  eq("hint: all named, none", client.estimateAddHint(items), null);
+  eq("hint: an unnamed row is said to be left out", client.estimateAddHint([...dash, ...items]), "unnamed");
+  eq("hint: an unreadable amount is named", client.estimateAddHint([{ ...items[0], gramsText: "abc" }]), "unreadable");
   const cmMixed = require("../lib/mealCompose");
   const mixed = cmMixed.composeMealInput(cmMixed.addEstimateLines([], client.editableToEstimateLines([...dash, ...items])));
   ok("the saved name has no dash and no blank piece", !mixed.custom_food_name.includes("-") && mixed.custom_food_name.startsWith("Bread"), mixed.custom_food_name);

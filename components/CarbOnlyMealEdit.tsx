@@ -10,8 +10,8 @@ import { captureDeletion, restoreDeletion } from "../lib/db/undo";
 import { applyAfterDeleteFromSnapshot, undoAfterDelete } from "../lib/afterDelete";
 import { logCrash, logEvent } from "../lib/analytics";
 import { parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
-import { carbOnlyPatch, parseCarbGrams } from "../lib/mealRoute";
-import { formatTime, relativeDay } from "../lib/format";
+import { carbOnlyAmountError, carbOnlyPatch, parseCarbGrams } from "../lib/mealRoute";
+import { formatTime, num, relativeDay } from "../lib/format";
 import { hapticSuccess } from "../lib/haptics";
 import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { AppBackground, GlassCard, GradientCTA, IconTile } from "./rich";
@@ -224,6 +224,14 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
               style={[fieldStyleOf(), INPUT_TEXT, TABULAR]}
               accessibilityLabel={t("calculator.carbOnlyCarbs")}
             />
+            {carbOnlyAmountError(carbsText, carbs) ? (
+              <Text
+                accessibilityRole="alert"
+                style={{ color: THEME.warning, fontSize: 12, lineHeight: 17, marginTop: 6 }}
+              >
+                {t("numeric.range", { min: num(0), max: num(1500), unit: t("common.grams") })}
+              </Text>
+            ) : null}
           </GlassCard>
 
           <Label>{t("calculator.loggedTime")}</Label>
