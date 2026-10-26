@@ -1740,6 +1740,19 @@ const ar: TranslationSchema = {
     privacyLink: "قراءة سياسة الخصوصية",
     openSettings: "فتح إعدادات Health Connect",
   },
+  dexcom: {
+    row: "Dexcom (تجريبي)",
+    connect: "ربط Dexcom",
+    notConfigured: "ربط Dexcom معطّل في هذا الإصدار.",
+    delay: "تصل بيانات Dexcom متأخرة من ساعة إلى 3 ساعات بحسب منطقتكم.",
+    title: "Dexcom",
+    connecting: "جارٍ إكمال الربط",
+    connected: "تم ربط Dexcom.",
+    stateInvalid: "طلب الربط هذا غير صالح أو انتهت صلاحيته. يرجى بدء الربط من جديد.",
+    denied: "لم تتم الموافقة على الوصول إلى Dexcom.",
+    failed: "تعذّر إكمال الربط. يرجى المحاولة لاحقًا.",
+    back: "العودة إلى الإعدادات",
+  },
 };
 
 export default ar;

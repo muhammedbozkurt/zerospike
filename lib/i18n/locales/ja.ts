@@ -1741,6 +1741,19 @@ const ja: TranslationSchema = {
     privacyLink: "プライバシーポリシーを読む",
     openSettings: "Health Connectの設定を開く",
   },
+  dexcom: {
+    row: "Dexcom（テスト）",
+    connect: "Dexcomに接続",
+    notConfigured: "このバージョンではDexcomとの接続は無効です。",
+    delay: "Dexcomのデータは、地域によって1〜3時間遅れて届きます。",
+    title: "Dexcom",
+    connecting: "接続を完了しています",
+    connected: "Dexcomに接続しました。",
+    stateInvalid: "この接続リクエストは無効か、有効期限が切れています。もう一度接続を開始してください。",
+    denied: "Dexcomへのアクセスは承認されませんでした。",
+    failed: "接続を完了できませんでした。しばらくしてからもう一度お試しください。",
+    back: "設定に戻る",
+  },
 };
 
 export default ja;
