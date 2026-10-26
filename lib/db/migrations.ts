@@ -67,6 +67,7 @@ import { V24_CREATE } from "./v24Sql";
 import { V25_EMPTY_DEFAULT_NAMES } from "./v25Sql";
 import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "./v26Sql";
 import { V27_RESET_RATIO_CONFIRMATION } from "./v27Sql";
+import { V28_CREATE } from "./v28Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -113,7 +114,8 @@ export type SchemaStamp =
   | 24
   | 25
   | 26
-  | 27;
+  | 27
+  | 28;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -818,5 +820,20 @@ export async function migrateToV27(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.withTransactionAsync(async () => {
     await db.execAsync(V27_RESET_RATIO_CONFIRMATION);
     await stampSchemaVersion(db, 27);
+  });
+}
+
+/**
+ * The v27 → v28 migration: the Health import's tombstone and floor tables plus
+ * the triggers that fill them (see ./v28Sql). Create-only DDL, identical to
+ * what a fresh install runs, so no row is read or rewritten and a re-run is a
+ * no-op; the stamp lands in the same transaction.
+ */
+export async function migrateToV28(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const statement of V28_CREATE) {
+      await db.execAsync(statement);
+    }
+    await stampSchemaVersion(db, 28);
   });
 }

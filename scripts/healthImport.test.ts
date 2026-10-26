@@ -167,13 +167,18 @@ section("J. the old source-scoped dedupe query is gone (regression)");
     join(import.meta.dirname, "..", "lib", "db", "logs.ts"),
     "utf8"
   );
+  const sqlSrc = readFileSync(
+    join(import.meta.dirname, "..", "lib", "db", "healthImportSql.ts"),
+    "utf8"
+  );
   ok(
     "insertHealthSugarLogs' existing-rows query no longer filters source = 'health'",
-    !/source = 'health'/.test(logsSrc)
+    !/source = 'health'/.test(logsSrc) && !/source = 'health'/.test(sqlSrc)
   );
   ok(
     "insertHealthSugarLogs routes its insert decision through planHealthImport",
-    /planHealthImport\(samples, existing\)/.test(logsSrc)
+    /importHealthSamples\(db, profileId, samples, uuid\)/.test(logsSrc) &&
+      /planHealthImport\(samples, existing\.concat\(removed\)\)/.test(sqlSrc)
   );
 }
 

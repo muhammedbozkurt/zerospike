@@ -152,6 +152,8 @@ export async function deleteProfile(id: string): Promise<boolean> {
   if ((count?.c ?? 0) <= 1) return false;
   await db.runAsync("DELETE FROM reminders WHERE profile_id = ?;", [id]);
   await db.runAsync("DELETE FROM user_profiles WHERE id = ?;", [id]);
+  await db.runAsync("DELETE FROM health_import_tombstones WHERE profile_id = ?;", [id]);
+  await db.runAsync("DELETE FROM health_import_floor WHERE profile_id = ?;", [id]);
   // The profile's AsyncStorage flags go with it (X9). Nothing reads them once
   // the row is gone, but one of them is a health preference the user asked to
   // remove along with the profile, and a recycled id would inherit the rest.

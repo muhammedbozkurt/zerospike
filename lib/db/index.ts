@@ -23,6 +23,7 @@ import {
   migrateToV25,
   migrateToV26,
   migrateToV27,
+  migrateToV28,
   missingColumns,
   ensureFoodNameColumns,
   stampSchemaVersion,
@@ -46,6 +47,8 @@ import {
   V23_CREATE_TRIGGERS,
 } from "./v23Sql";
 import { V24_CREATE } from "./v24Sql";
+import { V28_CREATE } from "./v28Sql";
+import { BUSY_TIMEOUT_SQL, clearProfileLogs } from "./healthImportSql";
 import {
   SEED_CATALOG_VERSION,
   SEED_CATALOG_VERSION_KEY,
@@ -57,7 +60,7 @@ import {
 import type { SeedFood } from "./seed";
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 27;
+const SCHEMA_VERSION = 28;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -71,7 +74,9 @@ let dbInstance: SQLite.SQLiteDatabase | null = null;
 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (dbInstance) return dbInstance;
-  dbInstance = await SQLite.openDatabaseAsync(DB_NAME);
+  const opened = await SQLite.openDatabaseAsync(DB_NAME);
+  await opened.execAsync(BUSY_TIMEOUT_SQL);
+  dbInstance = opened;
   return dbInstance;
 }
 
@@ -376,6 +381,13 @@ export async function initDatabase(): Promise<void> {
     await migrateToV27(db);
   }
 
+  // v27 → v28: tombstones and an import floor, so a Health reading the user
+  // deleted or corrected, or cleared with "Verileri sil", is not imported again
+  // (see ./v28Sql).
+  if (currentVersion >= 1 && currentVersion < 28) {
+    await migrateToV28(db);
+  }
+
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape
   // directly and no migrateToV* runs on that path, so nothing else would record a
@@ -609,6 +621,12 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
   // The analytics outbox (schema v24), from the SAME statements the v23 → v24
   // migration runs, so a fresh install and a migrated one are the same shape.
   for (const statement of V24_CREATE) {
+    await db.execAsync(statement);
+  }
+
+  // The Health import's tombstones and floor (schema v28), the same statements
+  // the v27 → v28 migration runs. After sugar_logs, which its triggers watch.
+  for (const statement of V28_CREATE) {
     await db.execAsync(statement);
   }
 
@@ -1050,8 +1068,5 @@ async function applySeedFoodUpdates(
  */
 export async function clearAllLogs(profileId: string): Promise<void> {
   const db = await getDb();
-  await db.runAsync("DELETE FROM med_logs WHERE profile_id = ?;", [profileId]);
-  await db.runAsync("DELETE FROM injection_logs WHERE profile_id = ?;", [profileId]);
-  await db.runAsync("DELETE FROM meal_logs WHERE profile_id = ?;", [profileId]);
-  await db.runAsync("DELETE FROM sugar_logs WHERE profile_id = ?;", [profileId]);
+  await clearProfileLogs(db, profileId, new Date().toISOString());
 }

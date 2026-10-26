@@ -4,6 +4,7 @@ import type { Food, MealLog, PeriodTag, SugarLog } from "./types";
 import { parseTags, serializeTags } from "./types";
 import type { DateRange } from "../insights";
 import {
+  importHealthSamples,
   planHealthImport,
   SUGAR_DEDUP_WINDOW_MINUTES,
   type ExistingSugarReading,
@@ -371,17 +372,15 @@ export async function getSugarLog(id: string): Promise<SugarLog | null> {
 }
 
 /**
- * Imports a whole batch of health-store samples in ONE transaction, and returns
- * how many rows were actually new.
+ * Imports a batch of health-store samples and returns how many rows were
+ * actually new.
  *
- * The candidate set is resolved from a SINGLE range query (widened by the
- * dedupe window on both ends, so a match just outside the sample span is still
- * seen) instead of a COUNT per sample, and inserts skip the row read-back
- * addSugarLog does for its return value. A 300-sample sync used to be ~900
- * round trips outside any transaction, so an interrupted sync could leave a
- * partially imported window. Which samples actually get inserted is decided
- * by planHealthImport (3d): every existing reading counts, not only rows this
- * app previously imported.
+ * The work is cut into small exclusive transactions with a busy timeout, so a
+ * 90 day CGM backfill never holds the write lock for seconds and a reading
+ * saved meanwhile waits instead of failing with "database is locked" (G3).
+ * Which samples get inserted is decided by planHealthImport (3d: every existing
+ * reading counts) plus the deleted/corrected tombstones and the clear floor
+ * (G17); see importHealthSamples.
  */
 export async function insertHealthSugarLogs(
   profileId: string,
@@ -389,36 +388,7 @@ export async function insertHealthSugarLogs(
 ): Promise<number> {
   if (samples.length === 0) return 0;
   const db = await getDb();
-
-  let from = samples[0].logged_at;
-  let to = samples[0].logged_at;
-  for (const s of samples) {
-    if (s.logged_at < from) from = s.logged_at;
-    if (s.logged_at > to) to = s.logged_at;
-  }
-  const windowMs = SUGAR_DEDUP_WINDOW_MINUTES * 60_000;
-  const rangeFrom = new Date(Date.parse(from) - windowMs).toISOString();
-  const rangeTo = new Date(Date.parse(to) + windowMs).toISOString();
-
-  let inserted = 0;
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    const existing = await txn.getAllAsync<ExistingSugarReading>(
-      `SELECT logged_at, glucose_level_mgdl FROM sugar_logs
-        WHERE profile_id = ? AND logged_at BETWEEN ? AND ?;`,
-      [profileId, rangeFrom, rangeTo]
-    );
-    const toInsert = planHealthImport(samples, existing);
-    for (const s of toInsert) {
-      await txn.runAsync(
-        `INSERT INTO sugar_logs
-           (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags)
-         VALUES (?, ?, ?, ?, 'health', ?, '[]');`,
-        [uuid(), profileId, Math.round(s.glucose_level_mgdl), s.period_tag, s.logged_at]
-      );
-      inserted++;
-    }
-  });
-  return inserted;
+  return importHealthSamples(db, profileId, samples, uuid);
 }
 
 /**

@@ -52,7 +52,8 @@ const logs = readFileSync(join(root, "lib/db/logs.ts"), "utf8");
 const inj = readFileSync(join(root, "lib/db/injections.ts"), "utf8");
 ok("deleteMealLog reads uuid atomically", /DELETE FROM meal_logs WHERE id = \? RETURNING health_uuid/.test(logs));
 ok("deleteInjection reads uuid atomically", /DELETE FROM injection_logs WHERE id = \? RETURNING health_uuid/.test(inj));
-ok("health import dedup runs inside the exclusive transaction", /withExclusiveTransactionAsync\(async \(txn\)[\s\S]*?FROM sugar_logs[\s\S]*?planHealthImport/.test(logs));
+const importSql = readFileSync(join(root, "lib/db/healthImportSql.ts"), "utf8");
+ok("health import dedup runs inside the exclusive transaction", /withExclusiveTransactionAsync\(async \(txn\)[\s\S]*?importChunk\(txn/.test(importSql) && /async function importChunk[\s\S]*?FROM sugar_logs[\s\S]*?planHealthImport/.test(importSql) && /importHealthSamples\(db, profileId, samples, uuid\)/.test(logs));
 
 console.log(failed === 0 ? "health entry order: all passed" : `health entry order: ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
