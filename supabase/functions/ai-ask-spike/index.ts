@@ -54,6 +54,7 @@ import { MAX_CONTEXT_BYTES, SYSTEM_PROMPT, dynamicSystem, normalizeLocale, sanit
 import { StreamGuard, blockedOutcome, finalizeReply, type ReplyOutcome } from "./filter.ts";
 import type { SourceRef } from "./sources.ts";
 import { CARB_MODE, DEVICE_ID_RE } from "../_shared/carb-estimate.ts";
+import { DB_TIMEOUT_MS, countUpstream, releaseSlot, rpc, upstreamFailure, type Creds } from "./gate.ts";
 import { handleCarbEstimate, type CarbCallRow, type CarbDeps } from "./carbEstimate.ts";
 
 const MAX_MESSAGES = 16; // trailing chat window the client may send
@@ -72,7 +73,6 @@ const FREE_DAILY_CAP = 3;
 const PRO_DAILY_CAP = 50;
 const DEFAULT_GLOBAL_DAILY_CAP = 3000; // model calls per UTC day, all callers (env SPIKE_GLOBAL_DAILY_CAP)
 const DEFAULT_IP_HOURLY_CAP = 60; // requests per caller address per hour (env SPIKE_IP_HOURLY_CAP)
-const DB_TIMEOUT_MS = 5000;
 
 function positiveIntEnv(name: string, fallback: number): number {
   const raw = Deno.env.get(name)?.trim();
@@ -98,29 +98,10 @@ function utcDayKey(now: number): string {
   return new Date(now).toISOString().slice(0, 10);
 }
 
-interface Creds {
-  url: string;
-  key: string;
-}
-
 function supabaseServiceCreds(): Creds | null {
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   return url && key ? { url, key } : null;
-}
-
-/** Calls a Postgres function through PostgREST as the service role. Throws on any
- *  failure (network, timeout, non-2xx): every caller decides what that means. */
-async function rpc(creds: Creds, fn: string, args: Record<string, unknown>): Promise<unknown> {
-  const res = await fetch(`${creds.url}/rest/v1/rpc/${fn}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: creds.key, Authorization: `Bearer ${creds.key}` },
-    body: JSON.stringify(args),
-    signal: AbortSignal.timeout(DB_TIMEOUT_MS),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`rpc ${fn} ${res.status}`);
-  return text ? JSON.parse(text) : null;
 }
 
 // ── Caller address ──────────────────────────────────────────────────────────
@@ -182,15 +163,6 @@ async function reserveSlot(creds: Creds, a: { deviceId: string; ipHash: string; 
     return out === "ok" || out === "ip" || out === "device" || out === "global" ? out : "error";
   } catch {
     return "error";
-  }
-}
-
-/** Gives the device and global slots back (the address count stays: it meters requests). */
-async function releaseSlot(creds: Creds, deviceId: string, day: string, countDevice: boolean): Promise<void> {
-  try {
-    await rpc(creds, "spike_release", { p_device_id: deviceId, p_day: day, p_count_device: countDevice });
-  } catch {
-    // a missed release only under-counts: it never blocks anyone
   }
 }
 
@@ -364,10 +336,10 @@ function usageBody(model: string, usage: TokenUsage): UsageBody {
   return { model, input_tokens: usage.input, output_tokens: usage.output };
 }
 
-/** The user got nothing for this slot (the model failed), so it goes back. */
-async function giveBack(call: Call): Promise<void> {
+/** The user got nothing for this slot (the model failed): it goes back, the failure is counted, and the 502 comes back. */
+function failUpstream(call: Call): Promise<Response> {
   if (call.countsDevice) forgetCounted(call.replayKey);
-  await releaseSlot(call.creds, call.deviceId, call.day, call.countsDevice);
+  return upstreamFailure(call.creds, call.deviceId, call.day, call.countsDevice);
 }
 
 /** Logs a model call that produced something, whether or not the user saw all of it. */
@@ -395,8 +367,7 @@ async function replyOnce(call: Call): Promise<Response> {
     message = await call.client.messages.create(call.params);
   } catch (err) {
     logUpstream(err);
-    await giveBack(call);
-    return json({ error: "upstream" }, 502);
+    return await failUpstream(call);
   }
   const latencyMs = Date.now() - started;
   const text = message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
@@ -436,8 +407,7 @@ async function streamReply(call: Call): Promise<Response> {
     await upstream.withResponse();
   } catch (err) {
     logUpstream(err);
-    await giveBack(call);
-    return json({ error: "upstream" }, 502);
+    return await failUpstream(call);
   }
 
   const encoder = new TextEncoder();
@@ -505,7 +475,7 @@ async function streamReply(call: Call): Promise<Response> {
         } else if (gone) {
           await logCall(call, { filtered: false, rule: null }, usage, latencyMs, true);
         } else {
-          await giveBack(call);
+          await failUpstream(call);
           if (usage.output > 0) await logCall(call, { filtered: false, rule: null }, usage, latencyMs, true);
         }
         if (open) {
@@ -538,7 +508,9 @@ async function carbEstimate(req: Request, body: Obj, deviceId: string): Promise<
     model,
     nowMs: now,
     reserve: (key, deviceCap) => reserveSlot(creds, { deviceId: key, ipHash: hash, day, deviceCap, countDevice: true }),
-    release: (key) => releaseSlot(creds, key, day, true),
+    release: async (key) => {
+      await Promise.all([releaseSlot(creds, key, day, true), countUpstream(creds)]);
+    },
     call: async (system, dynamic, userText) => {
       const started = Date.now();
       try {
@@ -635,7 +607,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return body.stream === true ? await streamReply(call) : await replyOnce(call);
   } catch (err) {
     logUpstream(err);
-    await giveBack(call);
-    return json({ error: "upstream" }, 502);
+    return await failUpstream(call);
   }
 });
