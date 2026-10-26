@@ -6,7 +6,12 @@ import {
   type DateRange,
   type TirBand,
 } from "./insights";
-import { computeMealResponse } from "./mealResponse";
+import {
+  BASELINE_LOOKBACK_MINUTES,
+  MEAL_RESPONSE_HOURS,
+  computeMealResponse,
+} from "./mealResponse";
+import { selectGlucoseBasis, timeOf, type MetricsWindow } from "./cgm/metrics";
 
 /**
  * Pro "Insights", wave 2: pure calculation layer (docs/plan-2.2.0.md D10).
@@ -159,13 +164,12 @@ export function weeklyComparison(
   const currentWeekStart = weekStartMs(now, weekAnchor);
   const previousWeekStart = addDaysLocal(currentWeekStart, -7);
 
+  // Each week picks its own basis (lib/cgm/metrics.ts): a week the sensor
+  // covered well is measured on the sensor alone, a thin one on every reading.
   const valuesInRange = (start: number, endInclusive: number) =>
-    readings
-      .filter((r) => {
-        const t = new Date(r.logged_at).getTime();
-        return Number.isFinite(t) && t >= start && t <= endInclusive;
-      })
-      .map((r) => r.glucose_level_mgdl);
+    selectGlucoseBasis(readings, { start, end: endInclusive }).readings.map(
+      (r) => r.glucose_level_mgdl
+    );
 
   const current = valuesInRange(currentWeekStart, now);
   // Previous week is a full week: up to (not including) the current week's start.
@@ -229,12 +233,34 @@ export interface HourBand {
  * continuous line tolerates thin cells better than discrete heat-strip color
  * do.
  */
-export function hourBandAverages(readings: SugarLog[], days: number): HourBand[] {
+export function hourBandAverages(
+  readings: SugarLog[],
+  days: number,
+  /** The span the readings were taken from, to tell whether a sensor covered it.
+   *  Without one, the span the readings themselves cover is used (this module
+   *  never reads the clock). */
+  window?: MetricsWindow
+): HourBand[] {
+  let win = window;
+  if (!win) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const r of readings) {
+      const t = timeOf(r);
+      if (t < lo) lo = t;
+      if (t > hi) hi = t;
+    }
+    win = { start: lo, end: hi };
+  }
+  // Only the choice of readings looks at the window; a reading outside it that
+  // the caller handed in still counts when the sensor is not the basis.
+  const basis = selectGlucoseBasis(readings, win);
+  const used = basis.kind === "cgm" ? basis.readings : readings;
   const buckets: number[][] = Array.from({ length: HOUR_BAND_COUNT }, () => []);
-  for (const r of readings) {
-    const t = new Date(r.logged_at).getTime();
+  for (const r of used) {
+    const t = timeOf(r);
     if (!Number.isFinite(t)) continue;
-    const hour = new Date(r.logged_at).getHours();
+    const hour = new Date(t).getHours();
     if (Number.isNaN(hour)) continue;
     const band = Math.min(HOUR_BAND_COUNT - 1, Math.floor(hour / HOUR_BAND_SIZE));
     buckets[band].push(r.glucose_level_mgdl);
@@ -345,15 +371,18 @@ export function bestDayAndStreaks(
   const winDays = Math.max(0, Math.floor(days));
   const windowStart = now - winDays * 86_400_000;
 
+  const basis = selectGlucoseBasis(readings, { start: windowStart, end: now });
   const byDay = new Map<string, number[]>();
-  for (const r of readings) {
-    const t = new Date(r.logged_at).getTime();
-    if (!Number.isFinite(t) || t < windowStart || t > now) continue;
-    const key = dayKey(t);
+  for (const r of basis.readings) {
+    const key = dayKey(timeOf(r));
     const arr = byDay.get(key);
     if (arr) arr.push(r.glucose_level_mgdl);
     else byDay.set(key, [r.glucose_level_mgdl]);
   }
+  // The logging streak is "kept a record", so it reads every reading, not only
+  // the ones the figures are computed from.
+  const recordedDays = new Set<string>();
+  for (const r of basis.all) recordedDays.add(dayKey(timeOf(r)));
 
   let bestDay: BestDay | null = null;
   for (const [key, vals] of byDay) {
@@ -378,7 +407,7 @@ export function bestDayAndStreaks(
   let qualifyingDays = 0;
   for (let cursor = firstDay; cursor <= todayStart; cursor = addDaysLocal(cursor, 1)) {
     const vals = byDay.get(dayKey(cursor)) ?? [];
-    loggingFlags.push(vals.length > 0);
+    loggingFlags.push(recordedDays.has(dayKey(cursor)));
     const scored = vals.length >= MIN_READINGS_PER_DAY;
     if (scored) qualifyingDays++;
     targetFlags.push(scored && (tirOf(vals, band) ?? 0) >= DAY_IN_TARGET_TIR_PCT);
@@ -435,8 +464,37 @@ export function mealResponseSummary(
 ): MealResponseSummary {
   const entries: MealResponseSummaryEntry[] = [];
   let evaluable = 0;
+  // A sensor stream makes `readings` tens of thousands of rows; handing every
+  // meal all of them is meals x readings. Sorted once, each meal gets only the
+  // readings its response is computed from (its window, the baseline lookback
+  // and its own linked reading), which is exactly what computeMealResponse reads.
+  const timed: { t: number; r: SugarLog }[] = [];
+  const byId = new Map<string, SugarLog>();
+  for (const r of readings) {
+    const t = timeOf(r);
+    if (Number.isFinite(t)) timed.push({ t, r });
+    if (r.id) byId.set(r.id, r);
+  }
+  timed.sort((a, b) => a.t - b.t);
+  const firstAtOrAfter = (t: number): number => {
+    let lo = 0;
+    let hi = timed.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (timed[mid].t < t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
   for (const meal of meals) {
-    const res = computeMealResponse(meal, readings, {});
+    const start = Date.parse(meal.logged_at);
+    if (!Number.isFinite(start)) continue;
+    const from = firstAtOrAfter(start - BASELINE_LOOKBACK_MINUTES * 60_000);
+    const to = firstAtOrAfter(start + MEAL_RESPONSE_HOURS * 3_600_000 + 1);
+    const subset = timed.slice(from, to).map((x) => x.r);
+    const linked = meal.sugar_log_id ? byId.get(meal.sugar_log_id) : undefined;
+    if (linked && !subset.includes(linked)) subset.push(linked);
+    const res = computeMealResponse(meal, subset, {});
     if (res == null) continue;
     evaluable++;
     entries.push({
@@ -523,12 +581,11 @@ export function cvTrend(
   for (let i = weekCount - 1; i >= 0; i--) {
     const start = addDaysLocal(currentWeekStart, -7 * i);
     const end = addDaysLocal(start, 7); // exclusive
-    const vals = readings
-      .filter((r) => {
-        const t = new Date(r.logged_at).getTime();
-        return Number.isFinite(t) && t >= start && t < end;
-      })
-      .map((r) => r.glucose_level_mgdl);
+    const vals = selectGlucoseBasis(readings, {
+      start,
+      end: Math.min(end - 1, now),
+      until: end - 1,
+    }).readings.map((r) => r.glucose_level_mgdl);
     points.push({ weekStart: start, cv: cvOf(vals), n: vals.length });
   }
 
