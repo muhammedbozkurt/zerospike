@@ -843,6 +843,7 @@ const fr: TranslationSchema = {
     invalidPhone: "Saisissez un numéro de téléphone valide. Exemple : +33 6 12 34 56 78",
     pickDenied: "L'autorisation des contacts n'a pas été accordée.",
     pickFailed: "Impossible d'ouvrir les contacts.",
+    loadFailed: "Vos contacts d'urgence n'ont pas pu être chargés. Touchez pour réessayer.",
     selectedCount: "{{n}} sélectionnés",
     alreadyAdded: "Ajouté",
     addedSummary: "{{n}} contacts ajoutés",

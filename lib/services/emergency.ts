@@ -13,28 +13,40 @@ export interface EmergencyContact {
 
 const KEY = "zerospike.emergencyContacts";
 
+/**
+ * Reads the stored list and lets a storage failure reach the caller. An empty
+ * list here always means "nothing saved", never "could not read": a writer that
+ * got [] from a failed read would overwrite the real list on its next save.
+ */
+export async function readEmergencyContacts(): Promise<EmergencyContact[]> {
+  const raw = await AsyncStorage.getItem(KEY);
+  if (!raw) return [];
+  let arr: unknown;
+  try {
+    arr = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((c) => c && typeof c.name === "string" && typeof c.phone === "string")
+    .map((c) => ({ name: String(c.name), phone: String(c.phone) }));
+}
+
+/** Read-only consumers (the SOS screen) degrade to an empty list on failure. */
 export async function getEmergencyContacts(): Promise<EmergencyContact[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .filter((c) => c && typeof c.name === "string" && typeof c.phone === "string")
-      .map((c) => ({ name: String(c.name), phone: String(c.phone) }));
+    return await readEmergencyContacts();
   } catch {
     return [];
   }
 }
 
+/** Throws when the list could not be persisted, so the screen can say so. */
 export async function setEmergencyContacts(
   contacts: EmergencyContact[]
 ): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(contacts));
-  } catch {
-    // best-effort persistence
-  }
+  await AsyncStorage.setItem(KEY, JSON.stringify(contacts));
 }
 
 /** Keeps only digits and a leading +, so tel:/sms:/wa.me links are well-formed. */

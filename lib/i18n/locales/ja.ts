@@ -843,6 +843,7 @@ const ja: TranslationSchema = {
     invalidPhone: "有効な電話番号を入力してください。例: 090-1234-5678",
     pickDenied: "連絡先へのアクセスが許可されていません。",
     pickFailed: "連絡先を開けませんでした。",
+    loadFailed: "緊急連絡先を読み込めませんでした。タップして再試行してください。",
     selectedCount: "{{n}}件選択中",
     alreadyAdded: "追加済み",
     addedSummary: "{{n}}件の連絡先を追加しました",

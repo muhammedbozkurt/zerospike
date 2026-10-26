@@ -843,6 +843,7 @@ const ar: TranslationSchema = {
     invalidPhone: "أدخل رقم هاتف صحيحًا. مثال: +44 7700 900123",
     pickDenied: "لم يُمنح إذن جهات الاتصال.",
     pickFailed: "تعذّر فتح جهات الاتصال.",
+    loadFailed: "تعذّر تحميل جهات اتصال الطوارئ الخاصة بكم. المسوا للمحاولة مرة أخرى.",
     selectedCount: "{{n}} محدد",
     alreadyAdded: "مضاف",
     addedSummary: "تمت إضافة {{n}} جهة اتصال",
