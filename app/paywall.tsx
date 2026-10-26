@@ -685,6 +685,7 @@ function PaywallScreen() {
         detail:
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
         paywall_version: PAYWALL_VERSION,
+        source: "paywall",
       }),
     onSuccess: async (p, res) => {
       clearPaywallTrial();

@@ -489,12 +489,12 @@ export default function InjectionScreen() {
       saveTimestamp({ timeTouched: timeTouched.current, loggedAt, now: new Date(), choice: timeChoice });
     let reset = false;
     let announced = false;
-    const announceSaved = (savedId: string, offMap: boolean) => {
+    const announceSaved = (saved: { id: string }, offMap: boolean) => {
       hapticSuccess();
       toast(t(offMap ? "injection.savedOutsideMap" : "injection.saved"), "success", {
         label: t("common.undo"),
         onPress: () => {
-          void undoSaved(savedId);
+          void undoSaved(saved.id);
         },
       });
       announced = true;
@@ -581,7 +581,7 @@ export default function InjectionScreen() {
           }
         }
         const offMap = outsideMapWindow(saved.logged_at, Date.now(), USAGE_WINDOW_DAYS, cycleStart);
-        announceSaved(saved.id, offMap);
+        announceSaved(saved, offMap);
         resetForm();
         reset = true;
         if (plan) {
@@ -600,7 +600,7 @@ export default function InjectionScreen() {
         }
       },
       onAfterFailure: (saved) => {
-        if (!announced) announceSaved(saved.id, false);
+        if (!announced) announceSaved(saved, false);
         if (!reset) {
           resetForm();
           reset = true;

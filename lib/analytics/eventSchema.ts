@@ -77,6 +77,7 @@ export const EVENT_SCHEMA = {
     trial: "bool",
     detail: ["store_error", "already_owned", "none"],
     paywall_version: "int",
+    source: ["paywall", "apple_winback", "downsell"],
   },
   trial_started: { tier: "string" },
   pro_welcome_view: {},

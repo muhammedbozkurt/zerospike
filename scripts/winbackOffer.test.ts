@@ -15,6 +15,8 @@ import {
   pickAppleWinBackOffer,
   resolveAppleWinBack,
   decideWinbackSource,
+  winbackOfferToParams,
+  winbackOfferFromParams,
   type AppleWinBackCandidate,
 } from "../lib/winbackOffer";
 
@@ -127,6 +129,35 @@ console.log("zerospike winbackOffer test");
   eq("android never uses apple", decideWinbackSource({ os: "android", osVersion: 34, apple, downsell: down }), "downsell");
   eq("android, no downsell: nothing", decideWinbackSource({ os: "android", osVersion: 34, apple, downsell: noDown }), "none");
   eq("unknown version fails closed to existing", decideWinbackSource({ os: "ios", osVersion: undefined, apple, downsell: down }), "downsell");
+
+  section("E. the trigger's offer travels to the screen as route params");
+  const found = {
+    hasRealDiscount: true,
+    discountedPriceString: "$29.99",
+    standardPriceString: "$49.99",
+    savingsPercent: 40,
+    source: "apple" as const,
+    appleOfferId: "winback_1",
+  };
+  eq("no discount, no params", winbackOfferToParams({ ...found, hasRealDiscount: false }), null);
+  const params = winbackOfferToParams(found);
+  ok("a real offer yields params", params != null);
+  eq("the screen rebuilds exactly the offer the trigger found", winbackOfferFromParams(params ?? {}), found);
+  eq("an array-valued param (repeated key) is read by its first value", winbackOfferFromParams(Object.fromEntries(Object.entries(params ?? {}).map(([k, v]) => [k, [v, "x"]]))), found);
+  eq("a link with no params falls back to a fetch", winbackOfferFromParams({}), null);
+  eq("params that were never handed off by the trigger are ignored", winbackOfferFromParams({ ...(params ?? {}), wbPrice: "$0.01" }), null);
+  const downFound = { ...found, source: "downsell" as const, appleOfferId: null };
+  const dParams = winbackOfferToParams(downFound);
+  eq("the downsell offer round-trips with a null Apple id", winbackOfferFromParams(dParams ?? {}), downFound);
+  eq("an older handoff is replaced by the newest", winbackOfferFromParams(params ?? {}), null);
+
+  const fs = (globalThis as any).process.getBuiltinModule("node:fs");
+  const screen: string = fs.readFileSync("app/winback.tsx", "utf8");
+  const layout: string = fs.readFileSync("app/_layout.tsx", "utf8");
+  ok("purchase_result carries the winback source", screen.includes('source: offer.source === "apple" ? "apple_winback" : "downsell"'));
+  ok("accept is locked by a ref, not only by state", screen.includes("acceptingRef.current"));
+  ok("the screen starts from the trigger's offer", screen.includes("winbackOfferFromParams(routeParams)"));
+  ok("the trigger pushes the offer it found", layout.includes('router.push({ pathname: "/winback", params })'));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
