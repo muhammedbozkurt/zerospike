@@ -380,6 +380,7 @@ function ProfileSetupScreen() {
           presetLabel,
           profileId
         );
+        let armed = true;
         if (written > 0) {
           planInstalledRef.current = true;
           setPlanDecided(true);
@@ -388,10 +389,13 @@ function ProfileSetupScreen() {
           // working reminders. The carve-out in decideDraftDiscard is what
           // keeps that true, and a discard back to another profile re-applies
           // through AppContext's own switch pass.
-          await applyNotificationPrefs();
+          armed = await tryWrite(async () => {
+            await applyNotificationPrefs();
+          });
         }
         if (outcome === "limit") toast(t("reminders.limitReached"), "error");
         else if (outcome === "failed") toast(t("common.saveFailed"), "error");
+        else if (!armed) toast(t("reminders.scheduleFailed"), "error");
         else toast(t("settings.saved"), "success");
       } finally {
         setSavingPlan(false);
@@ -466,20 +470,20 @@ function ProfileSetupScreen() {
         // land on the profile the form is editing whatever became active in the
         // meantime. A full reminders table (MAX_REMINDERS, per profile) blocks
         // only a brand NEW row - an existing basal row is always updated in place.
-        try {
-          const basalSynced = await syncBasalReminderRow(
+        // The profile row is already saved: a failing basal row or re-arm is
+        // reported as a reminder problem, not as an unsaved profile.
+        let basalSynced = true;
+        const rearmed = await tryWrite(async () => {
+          basalSynced = await syncBasalReminderRow(
             showsBasal,
             basalTime,
             basalTimeTouched,
             profileId
           );
-          if (!basalSynced) {
-            toast(t("reminders.limitReached"), "error");
-          }
           await applyNotificationPrefs();
-        } catch {
-          toast(t("common.saveFailed"), "error");
-        }
+        });
+        if (!basalSynced) toast(t("reminders.limitReached"), "error");
+        if (!rearmed) toast(t("reminders.scheduleFailed"), "error");
         bumpData();
         router.back();
       } finally {

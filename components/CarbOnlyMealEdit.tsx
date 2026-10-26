@@ -9,7 +9,7 @@ import { deleteMealLog, getMealLog, updateMealLog } from "../lib/db/logs";
 import { captureDeletion, restoreDeletion } from "../lib/db/undo";
 import { applyAfterDeleteFromSnapshot, undoAfterDelete } from "../lib/afterDelete";
 import { logCrash, logEvent } from "../lib/analytics";
-import { parseDecimalText, sanitizeNumberText } from "../lib/numberInput";
+import { parseGramText, sanitizeNumberText } from "../lib/numberInput";
 import { carbOnlyAmountError, carbOnlyPatch, parseCarbGrams } from "../lib/mealRoute";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { hapticSuccess } from "../lib/haptics";
@@ -93,7 +93,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
     };
   }, [mealLogId]);
 
-  const carbs = parseCarbGrams(parseDecimalText(carbsText));
+  const carbs = parseCarbGrams(parseGramText(carbsText));
   const canSave = ready && !saving && carbs != null && name.trim() !== "";
 
   function dismiss() {

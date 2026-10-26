@@ -115,6 +115,24 @@ export function parseDecimalText(raw: string): number | null {
 }
 
 /**
+ * Text to number for a gram (or other amount) field. Same as parseDecimalText
+ * except for the two readings it used to guess at:
+ * - a sign ("-5", "‏-5" with an RTL mark, "−5", "+5") is not a 0 or a 5, it is
+ *   unreadable (null);
+ * - a separator followed by exactly three digits ("1.500", "1,500", "١٬٥٠٠") is
+ *   either 1.5 or 1500 and the field cannot know which, so it is unreadable too
+ *   instead of being read one way for Latin digits and the other for Arabic.
+ */
+export function parseGramText(raw: string): number | null {
+  if (/[-+\u2010-\u2015\u2212]/.test(raw)) return null;
+  if (raw.includes("\u066C")) return null;
+  let latin = "";
+  for (const ch of raw.trim()) latin += latinDigit(ch) ?? ch;
+  if (/[.,\u066B]\d{3}$/.test(latin)) return null;
+  return parseDecimalText(raw);
+}
+
+/**
  * The point above which a typed reading is described as beyond the range a
  * meter reports: 33.3 mmol/L and 600 mg/dL are the ceilings consumer meters
  * top out at. Purely descriptive - the value is still accepted and stored,

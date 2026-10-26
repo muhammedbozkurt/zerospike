@@ -126,6 +126,14 @@ async function main() {
   ok("reLog takes a ref lock", food.includes("reLogLock = useRef(false)") && reLog.includes("runExclusive("));
   ok("reLog reports failure with the saveFailed toast", reLog.includes('t("common.saveFailed")'));
   ok("reLog reminder step is isolated", reLog.includes("runSideStep("));
+  {
+    const after = reLog.slice(reLog.indexOf("await addMealLog("));
+    for (const step of ["logEvent", "noteFirstLog", "hapticSuccess", "noteJournalActivity", "bumpData", "savedToast"]) {
+      ok(`reLog step ${step} is isolated`, new RegExp(`runSideStep\\(\\s*"${step}"`).test(after));
+    }
+    const beforeToast = after.slice(0, after.search(/runSideStep\(\s*"savedToast"/));
+    ok("reLog has no bare post-write call", !/^\s*(void )?(logEvent|noteFirstLog|hapticSuccess|noteJournalActivity|bumpData)\(/m.test(beforeToast));
+  }
   const confirm = food.slice(food.indexOf("async function confirmLogTemplate"), food.indexOf("async function moveTemplate"));
   ok("confirmLogTemplate has a catch with the saveFailed toast", confirm.includes("catch") && confirm.includes('t("common.saveFailed")'));
   ok("confirmLogTemplate isolates the reminder", confirm.includes("runSideStep("));

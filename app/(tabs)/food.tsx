@@ -720,35 +720,42 @@ export default function FoodScreen() {
         // Same side effects as every other one-tap meal write (template relog,
         // calculator save): the post-meal reminder and the journal-activity signal
         // used to fire for every path except this one.
-        logEvent("log_added", { kind: "meal" });
-        void noteFirstLog("meal");
-        hapticSuccess();
+        // Every step is isolated: a throw here must not show saveFailed for a row
+        // that exists, or a second tap would write a duplicate.
+        await runSideStep("logEvent", () => logEvent("log_added", { kind: "meal" }), reportStep);
+        void runSideStep("noteFirstLog", () => noteFirstLog("meal"), reportStep);
+        await runSideStep("hapticSuccess", () => hapticSuccess(), reportStep);
         await runSideStep("postMealReminder", () => schedulePostMealReminder(), reportStep);
-        void noteJournalActivity();
-        bumpData();
+        void runSideStep("noteJournalActivity", () => noteJournalActivity(), reportStep);
+        await runSideStep("bumpData", () => bumpData(), reportStep);
         // One tap wrote a real journal entry with no confirmation and no way back; it
         // now carries the same undo as every other write (the calculator's save toast).
-        toast(t("calculator.savedRecord"), "success", {
-          label: t("common.undo"),
-          onPress: () => {
-            void (async () => {
-              await deleteMealRecord(meal.id);
-              // The countdown this very save armed (schedulePostMealReminder
-              // above) has to go with the record: the same shared post-delete
-              // cleanup every other delete path runs (lib/afterDelete.ts).
-              await applyAfterDelete([
-                {
-                  id: meal.id,
-                  profileId: meal.profile_id,
-                  loggedAtMs: new Date(meal.logged_at).getTime(),
-                  templateId: meal.meal_template_id,
-                },
-              ]);
-              bumpData();
-              toast(t("calculator.undone"), "info");
-            })();
-          },
-        });
+        await runSideStep(
+          "savedToast",
+          () =>
+            toast(t("calculator.savedRecord"), "success", {
+              label: t("common.undo"),
+              onPress: () => {
+                void (async () => {
+                  await deleteMealRecord(meal.id);
+                  // The countdown this very save armed (schedulePostMealReminder
+                  // above) has to go with the record: the same shared post-delete
+                  // cleanup every other delete path runs (lib/afterDelete.ts).
+                  await applyAfterDelete([
+                    {
+                      id: meal.id,
+                      profileId: meal.profile_id,
+                      loggedAtMs: new Date(meal.logged_at).getTime(),
+                      templateId: meal.meal_template_id,
+                    },
+                  ]);
+                  bumpData();
+                  toast(t("calculator.undone"), "info");
+                })();
+              },
+            }),
+          reportStep
+        );
       },
       (err) => {
         logCrash(err, { screen: "food", save: "reLog" });

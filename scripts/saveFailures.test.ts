@@ -254,6 +254,15 @@ async function main(): Promise<void> {
   {
     const ps = read("app/profile-setup.tsx");
     ok("wire profile-setup save is caught", ps.includes("tryWrite") && ps.includes("common.saveFailed"));
+    ok(
+      "wire profile-setup: no bare applyNotificationPrefs after a saved write",
+      !/^\s*await applyNotificationPrefs\(\);/m.test(ps.replace(/tryWrite\(async \(\) => \{[\s\S]*?\}\);/g, ""))
+    );
+    ok("wire profile-setup: re-arm failure says scheduleFailed", ps.includes("reminders.scheduleFailed"));
+    ok(
+      "wire profile-setup: profile saved then re-arm failure is not saveFailed",
+      !/catch \{\s*toast\(t\("common\.saveFailed"\), "error"\);\s*\}\s*bumpData/.test(ps)
+    );
     const pr = read("app/settings/profile.tsx");
     ok("wire settings/profile persist is caught", pr.includes("tryWrite") && pr.includes("common.saveFailed"));
   }
