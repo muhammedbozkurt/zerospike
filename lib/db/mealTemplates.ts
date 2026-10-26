@@ -409,6 +409,8 @@ export interface LogTemplateOptions {
   photo_uri_local?: string | null;
   tags?: string[];
   logged_at?: string;
+  /** Called when the usage counter write fails; the meal is still returned. */
+  onSideEffectError?: (err: unknown) => void;
 }
 
 /**
@@ -468,6 +470,10 @@ export async function logTemplate(
 
   // After the meal, and not in the same transaction: the record is the thing that
   // matters, and a failed counter must not take the logged meal down with it.
-  await touchTemplate(templateId, loggedAt);
+  try {
+    await touchTemplate(templateId, loggedAt);
+  } catch (err) {
+    opts.onSideEffectError?.(err);
+  }
   return meal;
 }

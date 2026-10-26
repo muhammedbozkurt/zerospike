@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import { fetch } from "expo/fetch";
 import { getDeviceId } from "../identity/deviceId";
 import { decimalInputText } from "../format";
+import { parseDecimalText } from "../numberInput";
 import { isScreenshotMode } from "../screenshotMode";
 import { hasSpikeConsent } from "../services/spikeConsent";
 import {
@@ -272,6 +273,12 @@ export function editableFromEstimate(items: readonly CarbItem[]): EditableItem[]
   }));
 }
 
+/** Text typed into an amount field that holds no number at all ("," or "abc"): an empty field is a deliberate 0, this is not. */
+export function hasUnreadableAmount(item: EditableItem): boolean {
+  const unreadable = (text: string) => text.trim() !== "" && parseDecimalText(text) === null;
+  return unreadable(item.gramsText) || unreadable(item.quantityText);
+}
+
 /** An unreadable or negative amount is 0 grams; the cap matches the function's. */
 export function editableGrams(item: EditableItem): number {
   return Math.min(parseGramsInput(item.gramsText), CARB_GRAMS_MAX);
@@ -309,7 +316,11 @@ export function canAddEstimate(state: {
   saving: boolean;
 }): boolean {
   return (
-    state.resultShown && state.items.length > 0 && state.items.some(hasItemName) && !state.saving
+    state.resultShown &&
+    state.items.length > 0 &&
+    state.items.some(hasItemName) &&
+    !state.items.filter(hasItemName).some(hasUnreadableAmount) &&
+    !state.saving
   );
 }
 

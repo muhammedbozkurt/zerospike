@@ -16,6 +16,7 @@
 
 import type { PortionLabelKey } from "./db/types";
 import { statedFor, type PortionState } from "./db/seedPortionState";
+import { parseDecimalText } from "./numberInput";
 
 /** Grams in one avoirdupois ounce. */
 export const OZ_G = 28.3495;
@@ -63,8 +64,9 @@ export function gramsFromOz(oz: number, maxGrams = 9999): number {
 
 /** Typed ounce text -> grams. */
 export function parseOzInput(text: string, maxGrams = 9999): number {
-  const value = Number(String(text).replace(",", ".").trim());
-  return gramsFromOz(value, maxGrams);
+  const raw = String(text);
+  if (raw.trim().startsWith("-")) return 0;
+  return gramsFromOz(parseDecimalText(raw) ?? 0, maxGrams);
 }
 
 /** Grams -> ounces, one decimal, for pre-filling the "oz..." field. */

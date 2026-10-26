@@ -65,6 +65,7 @@ import { keyboardAwareScrollProps } from "../lib/keyboard";
 import { useLayout } from "../lib/useLayout";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { logCrash, logEvent } from "../lib/analytics";
+import { runSideStep } from "../lib/saveSteps";
 import { noteFirstLog } from "../lib/services/firstLog";
 import {
   schedulePostMealReminder,
@@ -119,6 +120,9 @@ function localDayRange(key: string | undefined): DateRange | null {
  * against the daily target would rate the meal, and rating a meal is exactly the
  * comment this app does not make.
  */
+const reportStep = (err: unknown, step: string) =>
+  logCrash(err, { screen: "meal-template", step });
+
 function MealTemplateScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -418,6 +422,9 @@ function MealTemplateScreen() {
       bumpData();
       toast(t("templates.saved"), "success");
       router.back();
+    } catch (err) {
+      logCrash(err, { screen: "meal-template", save: "template" });
+      toast(t("common.saveFailed"), "error");
     } finally {
       setSaving(false);
     }
@@ -444,15 +451,21 @@ function MealTemplateScreen() {
         insulin_dose_units: 0,
         meal_template_id: templateId,
       });
-      await touchTemplate(templateId);
       // Only after the record is safely written, and only when it was asked for:
-      // the meal is the thing that matters, and a failed recipe rewrite must not
-      // take today's entry down with it.
-      if (savePortions) await replaceTemplateItems(templateId, toInputs(items));
+      // the meal is the thing that matters, and a failed counter or recipe
+      // rewrite must not take today's entry down with it or leave this screen open.
+      await runSideStep("touchTemplate", () => touchTemplate(templateId), reportStep);
+      if (savePortions) {
+        await runSideStep(
+          "replaceTemplateItems",
+          () => replaceTemplateItems(templateId, toInputs(items)),
+          reportStep
+        );
+      }
       logEvent("log_added", { kind: "meal" });
       void noteFirstLog("meal");
       hapticSuccess();
-      await schedulePostMealReminder();
+      await runSideStep("postMealReminder", () => schedulePostMealReminder(), reportStep);
       void noteJournalActivity();
       bumpData();
 
@@ -488,6 +501,9 @@ function MealTemplateScreen() {
         },
       });
       router.back();
+    } catch (err) {
+      logCrash(err, { screen: "meal-template", save: "logNow" });
+      toast(t("common.saveFailed"), "error");
     } finally {
       setSaving(false);
     }
