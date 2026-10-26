@@ -95,3 +95,4 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/test_output
 fastlane/.env*
+*.env

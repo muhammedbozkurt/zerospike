@@ -97,3 +97,4 @@ work/
 
 # fastlane metadata ve kare klasorleri build icin gerekmez
 fastlane/
+*.env
