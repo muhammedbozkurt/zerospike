@@ -4,12 +4,18 @@ import { USER_ENTERED_SQL } from "../glucoseSource";
 import type { Food, MealLog, PeriodTag, SugarLog } from "./types";
 import { parseTags, serializeTags } from "./types";
 import type { DateRange } from "../insights";
+import { emitCgmChanged } from "../cgm/importEvents";
+import { runCgmRetentionIfDue } from "../cgm/retention";
+import type { GlucoseSource } from "../glucoseSource";
 import {
+  deleteImportedGlucose,
+  importGlucoseRows,
   importHealthSamples,
   planHealthImport,
   SUGAR_DEDUP_WINDOW_MINUTES,
   type ExistingSugarReading,
   type HealthSugarSample,
+  type ImportedGlucoseRow,
 } from "./healthImportSql";
 import { emitMealSaved, emitRemoved, type RemovedHealthRecord } from "./healthRecordHooks";
 
@@ -18,6 +24,7 @@ export {
   SUGAR_DEDUP_WINDOW_MINUTES,
   type ExistingSugarReading,
   type HealthSugarSample,
+  type ImportedGlucoseRow,
 };
 
 /**
@@ -390,6 +397,88 @@ export async function insertHealthSugarLogs(
   if (samples.length === 0) return 0;
   const db = await getDb();
   return importHealthSamples(db, profileId, samples, uuid);
+}
+
+/**
+ * The one door every importer (Apple Health, Health Connect, Nightscout) writes
+ * readings through. Returns how many rows were new.
+ *
+ * Idempotent per (source, externalId); sensor rows (isCgm) are thinned, matched
+ * across sources and kept clear of the 15 minute "typed twice" rule; a typed
+ * ('manual') row is never inserted, changed or deleted here. The write is cut
+ * into short transactions (see importGlucoseRows). A change is announced to the
+ * sensor-data subscribers, and the once-a-day fold of year-old readings runs
+ * behind it (lib/cgm/retention.ts).
+ */
+export async function insertImportedGlucose(
+  profileId: string,
+  rows: ImportedGlucoseRow[]
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const db = await getDb();
+  const inserted = await importGlucoseRows(db, profileId, rows, uuid);
+  if (inserted > 0) emitCgmChanged({ kind: "import", profileId });
+  if (rows.some((r) => r.isCgm)) {
+    try {
+      const folded = await runCgmRetentionIfDue(db, profileId);
+      if (folded && folded.folded > 0) emitCgmChanged({ kind: "import", profileId });
+    } catch {
+      // The fold is housekeeping: a failure leaves the raw rows, and the next
+      // import tries again.
+    }
+  }
+  return inserted;
+}
+
+/**
+ * What a source app already delivered, for sensor detection (lib/cgm/detect.ts):
+ * the times of its stored readings in a span, and whether it has any sensor row
+ * in the last 30 days. Imported rows only; a typed reading is never a source's.
+ */
+export async function getImportedSourceHistory(
+  profileId: string,
+  source: GlucoseSource,
+  sourceApp: string | null,
+  sinceIso: string,
+  untilIso: string,
+  nowMs: number = Date.now()
+): Promise<{ timesMs: number[]; knownCgm: boolean }> {
+  const db = await getDb();
+  const appClause = sourceApp == null ? "source_app IS NULL" : "source_app = ?";
+  const appParams = sourceApp == null ? [] : [sourceApp];
+  const rows = await db.getAllAsync<{ logged_at: string }>(
+    `SELECT logged_at FROM sugar_logs
+      WHERE profile_id = ? AND source = ? AND ${appClause}
+        AND logged_at BETWEEN ? AND ?
+      ORDER BY logged_at;`,
+    [profileId, source, ...appParams, sinceIso, untilIso]
+  );
+  const known = await db.getFirstAsync<{ one: number }>(
+    `SELECT 1 AS one FROM sugar_logs
+      WHERE profile_id = ? AND source = ? AND ${appClause}
+        AND is_cgm = 1 AND logged_at >= ? LIMIT 1;`,
+    [profileId, source, ...appParams, new Date(nowMs - 30 * 86_400_000).toISOString()]
+  );
+  return {
+    timesMs: rows.map((r) => Date.parse(r.logged_at)).filter((t) => Number.isFinite(t)),
+    knownCgm: known != null,
+  };
+}
+
+/**
+ * Removes readings their source reported as deleted. Only the rows that source
+ * imported (matched by external id) can go; a typed reading never does.
+ */
+export async function deleteImportedGlucoseByExternalIds(
+  profileId: string,
+  source: GlucoseSource,
+  externalIds: string[]
+): Promise<number> {
+  if (externalIds.length === 0) return 0;
+  const db = await getDb();
+  const removed = await deleteImportedGlucose(db, profileId, source, externalIds);
+  if (removed > 0) emitCgmChanged({ kind: "import", profileId });
+  return removed;
 }
 
 /**

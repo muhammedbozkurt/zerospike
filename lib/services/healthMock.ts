@@ -73,6 +73,9 @@ export const healthMock: HealthProvider = {
   async readRecentGlucose() {
     return readMockGlucose();
   },
+  async readGlucosePage() {
+    return { samples: readMockGlucose(), deletedIds: [], cursor: null, hasMore: false };
+  },
   async writeGlucose(mgdl: number, dateIso: string, _meta?: HealthWriteMeta) {
     return `mock-hk-${Date.parse(dateIso) || 0}-${Math.round(mgdl)}`;
   },

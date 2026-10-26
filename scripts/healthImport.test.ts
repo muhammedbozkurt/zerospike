@@ -27,10 +27,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  planGlucoseImport,
   planHealthImport,
   SUGAR_DEDUP_WINDOW_MINUTES,
   type ExistingSugarReading,
   type HealthSugarSample,
+  type PlanCandidate,
+  type PlanExisting,
 } from "../lib/db/healthImportSql";
 
 let passed = 0;
@@ -176,9 +179,9 @@ section("J. the old source-scoped dedupe query is gone (regression)");
     !/source = 'health'/.test(logsSrc) && !/source = 'health'/.test(sqlSrc)
   );
   ok(
-    "insertHealthSugarLogs routes its insert decision through planHealthImport",
+    "insertHealthSugarLogs routes its insert decision through the shared planner",
     /importHealthSamples\(db, profileId, samples, uuid\)/.test(logsSrc) &&
-      /planHealthImport\(samples, existing\.concat\(removed\)\)/.test(sqlSrc)
+      /planGlucoseImport\(rows, existing, tombstones\)/.test(sqlSrc)
   );
 }
 
@@ -231,6 +234,136 @@ section("L. deleteGlucoseFromHealth is never called with a health-import row's u
       healthSrc
     )
   );
+}
+
+// ── CGM-A2: the sensor-aware planner ─────────────────────────────────────
+
+const T = Date.parse("2026-03-01T10:00:00.000Z");
+const cand = (
+  minutes: number,
+  mgdl: number,
+  over: Partial<PlanCandidate> = {}
+): PlanCandidate => ({
+  atMs: T + minutes * 60_000,
+  mgdl,
+  source: "health",
+  sourceApp: "com.sensor.a",
+  externalId: `x-${minutes}-${mgdl}-${over.sourceApp ?? "a"}`,
+  isCgm: true,
+  ...over,
+});
+const row = (minutes: number, mgdl: number, over: Partial<PlanExisting> = {}): PlanExisting => ({
+  id: `r-${minutes}-${mgdl}`,
+  atMs: T + minutes * 60_000,
+  mgdl,
+  source: "health",
+  sourceApp: "com.sensor.a",
+  externalId: `e-${minutes}`,
+  isCgm: true,
+  ...over,
+});
+
+section("M. a flat stretch of a sensor keeps every real reading");
+{
+  const flat = [cand(0, 110), cand(5, 110), cand(10, 110), cand(15, 110)];
+  eq("four equal readings 5 min apart all land", planGlucoseImport(flat, []).insert.length, 4);
+  const legacy = planHealthImport(
+    flat.map((c) => sample(c.mgdl, new Date(c.atMs).toISOString())),
+    []
+  );
+  eq("the same values as plain Health samples keep the old 15 minute rule", legacy.length, 1);
+  eq("equal readings next to a stored sensor row still land", planGlucoseImport([cand(5, 110)], [row(0, 110)]).insert.length, 1);
+}
+
+section("N. another source's copy of the same reading: 150 s and 1 mg/dL");
+{
+  const stored = [row(0, 110, { source: "nightscout", sourceApp: "ns", externalId: "n1" })];
+  eq("100 s apart, same value: skipped", planGlucoseImport([cand(100 / 60, 110)], stored).insert.length, 0);
+  eq("100 s apart, 1 mg/dL off (mmol rounding): skipped", planGlucoseImport([cand(100 / 60, 111)], stored).insert.length, 0);
+  eq("exactly 150 s apart: skipped", planGlucoseImport([cand(150 / 60, 110)], stored).insert.length, 0);
+  eq("151 s apart: a different reading", planGlucoseImport([cand(151 / 60, 110)], stored).insert.length, 1);
+  eq("2 mg/dL off: a different reading", planGlucoseImport([cand(1, 112)], stored).insert.length, 1);
+  const twoApps = planGlucoseImport(
+    [cand(0, 100, { sourceApp: "com.sensor.a" }), cand(0.5, 101, { sourceApp: "com.sensor.b" })],
+    []
+  );
+  eq("two apps of the same batch: first in stays", twoApps.insert.length, 1);
+  eq("and it is the earlier one", twoApps.insert[0], 0);
+}
+
+section("O. a typed row is never touched and blocks its sensor twin");
+{
+  const typed = row(0, 150, { source: "manual", sourceApp: null, externalId: null, isCgm: false });
+  const plan = planGlucoseImport([cand(1, 150, { externalId: "u9" })], [typed]);
+  eq("the sensor copy of a typed reading is not added", plan.insert.length, 0);
+  eq("the typed row is not taken over", plan.own.length, 0);
+  eq("a different value minutes later is added", planGlucoseImport([cand(3, 170)], [typed]).insert.length, 1);
+  const manualOnly = planGlucoseImport([cand(0.2, 150, { source: "manual", externalId: "u1" })], [typed]);
+  eq("a manual candidate never takes over a manual row", manualOnly.own.length, 0);
+}
+
+section("P. an old Health row without an id is taken over, not doubled");
+{
+  const old = row(0, 120, { externalId: null, sourceApp: null, isCgm: false });
+  const plan = planGlucoseImport([cand(0.5, 120, { externalId: "u1" })], [old]);
+  eq("nothing inserted", plan.insert.length, 0);
+  eq("the old row is the one updated", plan.own.map((o) => o.existingId).join(","), old.id);
+  const far = planGlucoseImport([cand(10, 120, { externalId: "u1" })], [old]);
+  eq("10 minutes away it is a different reading", far.insert.length, 1);
+  eq("and takes nothing over", far.own.length, 0);
+  const two = planGlucoseImport([cand(0.2, 120, { externalId: "u1" }), cand(0.4, 120, { externalId: "u2" })], [old]);
+  eq("one old row is taken over once", two.own.length, 1);
+  const otherSource = row(0, 120, { source: "nightscout", externalId: null, sourceApp: null });
+  eq("a Health candidate does not take a Nightscout row over", planGlucoseImport([cand(0.2, 120, { externalId: "u3" })], [otherSource]).own.length, 0);
+}
+
+section("Q. a 1 minute stream is thinned to about 5 minutes");
+{
+  const minute = Array.from({ length: 61 }, (_, i) => cand(i, 100 + (i % 7)));
+  const plan = planGlucoseImport(minute, []);
+  const kept = plan.insert.map((i) => minute[i].atMs);
+  eq("61 minute readings keep 13", kept.length, 13);
+  ok("kept readings are at least 270 s apart", kept.every((t, i) => i === 0 || t - kept[i - 1] >= 270_000));
+  eq("the first reading is kept", kept[0], minute[0].atMs);
+  const again = planGlucoseImport(minute, []);
+  eq("deterministic: the same input gives the same plan", JSON.stringify(again.insert), JSON.stringify(plan.insert));
+  const shuffled = [...minute].reverse();
+  const rev = planGlucoseImport(shuffled, []);
+  eq("input order does not matter", rev.insert.map((i) => shuffled[i].atMs).join(","), kept.join(","));
+  const next = planGlucoseImport([cand(61, 100), cand(65, 100)], [row(60, 100)]);
+  eq("against the last stored row: 1 min later skipped, 5 min later kept", next.insert.length, 1);
+}
+
+section("R. the same id is the same reading, per source");
+{
+  const stored = [row(0, 100, { externalId: "same" })];
+  eq("the same source and id: skipped", planGlucoseImport([cand(30, 140, { externalId: "same" })], stored).insert.length, 0);
+  eq("another source may reuse the id", planGlucoseImport([cand(30, 140, { externalId: "same", source: "nightscout", sourceApp: "ns" })], stored).insert.length, 1);
+  eq("the same id twice in one batch: one row", planGlucoseImport([cand(30, 140, { externalId: "dup" }), cand(60, 150, { externalId: "dup" })], []).insert.length, 1);
+}
+
+section("S. non-sensor readings keep the 15 minute rule, but not against sensor rows");
+{
+  const meter = (m: number, v: number) => cand(m, v, { isCgm: false, sourceApp: "com.meter", externalId: `m-${m}` });
+  eq("same value 10 min after a stored finger-stick: skipped", planGlucoseImport([meter(10, 130)], [row(0, 130, { isCgm: false, sourceApp: "com.meter", externalId: "q" })]).insert.length, 0);
+  eq("same value 10 min after a SENSOR row: kept", planGlucoseImport([meter(10, 130)], [row(0, 130)]).insert.length, 1);
+  eq("same value within 150 s of a sensor row of another app: skipped", planGlucoseImport([meter(1, 130)], [row(0, 130)]).insert.length, 0);
+}
+
+section("T. tombstones: a sensor reading is matched tightly, others by the old rule");
+{
+  const gone = [{ atMs: T, mgdl: 110 }];
+  eq("a sensor reading 60 s from a removed one: skipped", planGlucoseImport([cand(1, 110)], [], gone).insert.length, 0);
+  eq("a sensor reading 10 min later with the same value: kept", planGlucoseImport([cand(10, 110)], [], gone).insert.length, 1);
+  eq("a plain sample 10 min later with the same value: skipped (old rule)", planGlucoseImport([cand(10, 110, { isCgm: false, externalId: null })], [], gone).insert.length, 0);
+}
+
+section("U. the import writes the new columns and never a typed row");
+{
+  const sqlSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "healthImportSql.ts"), "utf8");
+  ok("the insert carries source_app, external_id and is_cgm", /source_app, external_id, is_cgm/.test(sqlSrc.replace(/\s+/g, " ").replace(/, \s*/g, ", ")) || /source_app,\s*\n?\s*external_id, is_cgm/.test(sqlSrc));
+  ok("a take-over never updates a typed row", /WHERE id = \? AND source <> 'manual' AND external_id IS NULL/.test(sqlSrc));
+  ok("a source delete excludes typed rows in the statement", /source = \? AND source <> 'manual'/.test(sqlSrc));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

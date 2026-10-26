@@ -21,6 +21,7 @@
 declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void; execPath: string };
 
+import { fake, resetAll } from "./healthTestHarness";
 import { DatabaseSync } from "node:sqlite";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -31,11 +32,15 @@ import {
   BUSY_TIMEOUT_SQL,
   HEALTH_IMPORT_CHUNK_SIZE,
   clearProfileLogs,
+  deleteImportedGlucose,
+  importGlucoseRows,
   importHealthSamples as importAt,
   type HealthImportHost,
   type HealthImportSql,
 } from "../lib/db/healthImportSql";
 import { V28_CREATE } from "../lib/db/v28Sql";
+import { V29_INDEXES } from "../lib/db/v29Sql";
+import { V30_CREATE } from "../lib/db/v30Sql";
 
 let passed = 0;
 let failed = 0;
@@ -72,6 +77,9 @@ const SCHEMA = `
     logged_at TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]',
     healthkit_uuid TEXT,
+    source_app TEXT,
+    external_id TEXT,
+    is_cgm INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
   );
   CREATE TABLE meal_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL);
@@ -86,22 +94,53 @@ function makeDb(): { path: string; db: DatabaseSync } {
   const db = new DatabaseSync(path);
   db.exec(SCHEMA);
   for (const statement of V28_CREATE) db.exec(statement);
+  for (const statement of V29_INDEXES) db.exec(statement);
+  for (const statement of V30_CREATE) db.exec(statement);
   return { path, db };
 }
 
-function adaptTxn(conn: DatabaseSync, log: string[]): HealthImportSql {
+/** Called after every non-PRAGMA statement of a transaction, with how many ran. */
+type AfterStatement = (count: number) => void;
+
+function adaptTxn(
+  conn: DatabaseSync,
+  log: string[],
+  prepared: { sql: string }[],
+  after?: AfterStatement
+): HealthImportSql {
+  let count = 0;
+  const done = () => {
+    count++;
+    after?.(count);
+  };
   return {
     execAsync: async (sql) => {
       log.push(sql);
       conn.exec(sql);
+      if (!/^\s*PRAGMA/i.test(sql)) done();
     },
     getAllAsync: async <T>(sql: string, params: (string | number | null)[] = []) => {
       log.push(sql);
-      return conn.prepare(sql).all(...(params as never[])) as T[];
+      const rows = conn.prepare(sql).all(...(params as never[])) as T[];
+      done();
+      return rows;
     },
     runAsync: async (sql, params = []) => {
       log.push(sql);
       conn.prepare(sql).run(...(params as never[]));
+      done();
+    },
+    prepareAsync: async (sql) => {
+      prepared.push({ sql });
+      const stmt = conn.prepare(sql);
+      return {
+        executeAsync: async (params) => {
+          log.push(`exec:${sql}`);
+          stmt.run(...(params as never[]));
+          done();
+        },
+        finalizeAsync: async () => {},
+      };
     },
   };
 }
@@ -109,17 +148,22 @@ function adaptTxn(conn: DatabaseSync, log: string[]): HealthImportSql {
 interface TxnRecord {
   statements: string[];
   inserts: number;
+  prepares: number;
 }
 
-function makeHost(path: string): { host: HealthImportHost; txns: TxnRecord[] } {
+function makeHost(
+  path: string,
+  after?: AfterStatement
+): { host: HealthImportHost; txns: TxnRecord[] } {
   const txns: TxnRecord[] = [];
   const host: HealthImportHost = {
     withExclusiveTransactionAsync: async (task) => {
       const conn = new DatabaseSync(path);
       const statements: string[] = [];
+      const prepared: { sql: string }[] = [];
       conn.exec("BEGIN");
       try {
-        await task(adaptTxn(conn, statements));
+        await task(adaptTxn(conn, statements, prepared, after));
         conn.exec("COMMIT");
       } catch (e) {
         conn.exec("ROLLBACK");
@@ -129,7 +173,8 @@ function makeHost(path: string): { host: HealthImportHost; txns: TxnRecord[] } {
       }
       txns.push({
         statements,
-        inserts: statements.filter((s) => /INSERT INTO sugar_logs/.test(s)).length,
+        inserts: statements.filter((s) => /^exec:\s*INSERT INTO sugar_logs/.test(s)).length,
+        prepares: prepared.length,
       });
     },
   };
@@ -142,7 +187,7 @@ const importHealthSamples = (
   profileId: string,
   samples: ReturnType<typeof sample>[],
   newId: () => string
-) => importAt(host, profileId, samples, newId, T0 + 86_400_000);
+) => importAt(host, profileId, samples, newId, T0 + 10 * 86_400_000);
 const iso = (minutes: number) => new Date(T0 + minutes * 60_000).toISOString();
 const sample = (mgdl: number, minutes: number) => ({
   glucose_level_mgdl: mgdl,
@@ -385,10 +430,155 @@ async function main(): Promise<void> {
     const profSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "profiles.ts"), "utf8");
     ok("insertHealthSugarLogs delegates to importHealthSamples", /importHealthSamples\(db, profileId, samples, uuid\)/.test(logsSrc));
     ok("clearAllLogs delegates to clearProfileLogs", /clearProfileLogs\(db, profileId, new Date\(\)\.toISOString\(\)\)/.test(indexSrc));
-    ok("SCHEMA_VERSION is 29", /const SCHEMA_VERSION = 29;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 30", /const SCHEMA_VERSION = 30;/.test(indexSrc));
     ok("the v27 -> v28 step runs the real migration", /currentVersion < 28\)\s*\{\s*await migrateToV28\(db\);/.test(indexSrc));
     ok("a fresh install creates the guard tables", /for \(const statement of V28_CREATE\)/.test(indexSrc));
     ok("deleteProfile drops the guard rows", /DELETE FROM health_import_tombstones WHERE profile_id = \?/.test(profSrc) && /DELETE FROM health_import_floor WHERE profile_id = \?/.test(profSrc));
+  }
+
+  section("G3e. every chunk starts with a write, so another writer cannot strand it");
+  {
+    // expo-sqlite opens an exclusive transaction with a plain (deferred) BEGIN. A
+    // chunk whose first statement is a read pins a read snapshot; when another
+    // connection commits meanwhile, the chunk's first write fails at once with
+    // "database is locked" and busy_timeout cannot help. A write first takes the
+    // lock under the timeout, and the other writer waits instead.
+    const { path, db } = makeDb();
+    const total = HEALTH_IMPORT_CHUNK_SIZE * 2 + 37;
+    const samples = Array.from({ length: total }, (_, i) => sample(80 + (i % 90), i * 5));
+    let competing = 0;
+    let competitorWon = 0;
+    const host = makeHost(path, (count) => {
+      if (count !== 1) return;
+      competing++;
+      const other = new DatabaseSync(path);
+      try {
+        other.prepare("INSERT INTO user_profiles VALUES (?);").run(`rival-${competing}`);
+        competitorWon++;
+      } catch {
+        // blocked by the import's lock: exactly what a first-statement write buys
+      } finally {
+        other.close();
+      }
+    });
+    let failure = "";
+    let n = 0;
+    try {
+      n = await importHealthSamples(host.host, "p1", samples, newId);
+    } catch (e) {
+      failure = String(e);
+    }
+    eq("no chunk fails with 'locked'", failure, "");
+    eq("every sample lands", n, total);
+    eq("three chunks ran", competing, 3);
+    eq("a rival write never slipped between a chunk's BEGIN and its first write", competitorWon, 0);
+    ok(
+      "the first statement after the pragma is a write in every chunk",
+      host.txns.every((x) => /^(UPDATE|DELETE|INSERT)/i.test(x.statements[1] ?? "")),
+      JSON.stringify(host.txns.map((x) => (x.statements[1] ?? "").slice(0, 20)))
+    );
+    db.close();
+  }
+
+  section("G3f. one prepared INSERT per chunk, chunks of 200");
+  {
+    eq("the chunk size is 200", HEALTH_IMPORT_CHUNK_SIZE, 200);
+    const { path, db } = makeDb();
+    const total = HEALTH_IMPORT_CHUNK_SIZE * 2 + 5;
+    const samples = Array.from({ length: total }, (_, i) => sample(80 + (i % 90), i * 5));
+    const { host, txns } = makeHost(path);
+    await importHealthSamples(host, "p1", samples, newId);
+    eq("three transactions", txns.length, 3);
+    ok("one prepareAsync per chunk", txns.every((x) => x.prepares === 1), JSON.stringify(txns.map((x) => x.prepares)));
+    eq("205 executes of the prepared statement in total", txns.reduce((a, x) => a + x.inserts, 0), total);
+    ok("the insert is never run through runAsync", txns.every((x) => !x.statements.some((s) => /^INSERT INTO sugar_logs/.test(s))));
+    db.close();
+  }
+
+  section("G17g. a floor set while the device clock was ahead heals itself");
+  {
+    const { path, db } = makeDb();
+    const realNow = T0 + 24 * 60 * 60_000;
+    // "Verileri sil" while the clock ran three days fast.
+    await clearProfileLogs(makeHost(path).host, "p1", new Date(realNow + 3 * 86_400_000).toISOString());
+    const first = await importAt(makeHost(path).host, "p1", [{ glucose_level_mgdl: 100, period_tag: "unset", logged_at: new Date(realNow - 30 * 60_000).toISOString() }], newId, realNow);
+    eq("a reading from before the (corrected) clear moment stays closed", first, 0);
+    const floor = (db.prepare("SELECT floor_at FROM health_import_floor WHERE profile_id = 'p1';").get() as { floor_at: string }).floor_at;
+    eq("the floor was pulled back to the real now", floor, new Date(realNow).toISOString());
+    const later = realNow + 2 * 60 * 60_000;
+    const next = await importAt(makeHost(path).host, "p1", [{ glucose_level_mgdl: 105, period_tag: "unset", logged_at: new Date(realNow + 60 * 60_000).toISOString() }], newId, later);
+    eq("readings after it import again instead of waiting three days", next, 1);
+    db.close();
+  }
+
+  section("G3g. importGlucoseOnce never rejects");
+  {
+    resetAll("ios");
+    const S = await import("../lib/services/health");
+    fake.glucose = [{ value: 120, date: new Date().toISOString(), period_tag: "unset" }];
+    fake.importThrows = true;
+    let rejected = "";
+    let status = "";
+    try {
+      status = (await S.importHealthGlucose("P", "background")).status;
+    } catch (e) {
+      rejected = String(e);
+    }
+    eq("a locked database does not reject the import", rejected, "");
+    eq("it reports status error", status, "error");
+    eq("and the last sync says read_failed", (await S.getHealthLastSync())?.error, "read_failed");
+    fake.importThrows = false;
+    eq("the next pass is fine again", (await S.importHealthGlucose("P", "background")).status, "ok");
+  }
+
+  section("CGM-A2a. the real SQL: ids, take-over, deletes and the hourly summaries");
+  {
+    const { path, db } = makeDb();
+    const cgm = (minutes: number, mgdl: number, id: string, app = "com.sensor.a") => ({
+      at: iso(minutes),
+      mgdl,
+      source: "health" as const,
+      sourceApp: app,
+      externalId: id,
+      isCgm: true,
+    });
+    const run = (rows: ReturnType<typeof cgm>[]) => importGlucoseRows(makeHost(path).host, "p1", rows, newId, T0 + 10 * 86_400_000);
+
+    eq("a flat sensor stretch lands whole", await run([cgm(0, 110, "a"), cgm(5, 110, "b"), cgm(10, 110, "c")]), 3);
+    eq("a second run of the same ids adds nothing", await run([cgm(0, 110, "a"), cgm(5, 110, "b")]), 0);
+    eq("the columns are written", (db.prepare("SELECT COUNT(*) AS c FROM sugar_logs WHERE source_app = 'com.sensor.a' AND is_cgm = 1 AND external_id IS NOT NULL;").get() as { c: number }).c, 3);
+
+    // A typed row: never taken over, never deleted, blocks its twin.
+    db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES ('typed','p1',150,'manual','${iso(100)}');`);
+    eq("the sensor twin of a typed row is not added", await run([cgm(101, 150, "t1")]), 0);
+    eq("the typed row is unchanged", JSON.stringify(db.prepare("SELECT source, external_id, is_cgm, glucose_level_mgdl FROM sugar_logs WHERE id = 'typed';").get()), JSON.stringify({ source: "manual", external_id: null, is_cgm: 0, glucose_level_mgdl: 150 }));
+
+    // An old Health row (no ids) is taken over once.
+    db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES ('old','p1',130,'health','${iso(200)}');`);
+    eq("a reading an old release imported is not doubled", await run([cgm(200.5, 130, "u-old")]), 0);
+    const owned = db.prepare("SELECT external_id, source_app, is_cgm FROM sugar_logs WHERE id = 'old';").get() as { external_id: string; source_app: string; is_cgm: number };
+    eq("it got the id, the app and the sensor flag", `${owned.external_id}|${owned.source_app}|${owned.is_cgm}`, "u-old|com.sensor.a|1");
+    eq("the take-over left no tombstone", (db.prepare("SELECT COUNT(*) AS c FROM health_import_tombstones;").get() as { c: number }).c, 0);
+
+    // A source delete removes only its own imported rows.
+    db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, external_id) VALUES ('typed2','p1',90,'manual','${iso(300)}','b');`);
+    const deleting = makeHost(path);
+    const removed = await deleteImportedGlucose(deleting.host, "p1", "health", ["b", "nope"]);
+    eq("one imported row removed", removed, 1);
+    ok("and the delete is the transaction's first statement after the pragma", /^DELETE FROM sugar_logs/.test(deleting.txns[0].statements[1] ?? ""));
+    eq("the typed row sharing that id stays", countRows(db, "id = 'typed2'"), 1);
+    eq("a manual source cannot be deleted through this door", await deleteImportedGlucose(makeHost(path).host, "p1", "manual" as never, ["b"]), 0);
+
+    // Future-dated and out-of-range sensor values are not stored.
+    eq("a reading from the future is rejected", await run([cgm(60 * 24 * 11, 120, "f1")]), 0);
+    eq("a sensor value outside 20..600 is rejected", await run([cgm(400, 19, "lo"), cgm(410, 601, "hi")]), 0);
+    eq("a typed source cannot be imported", await importGlucoseRows(makeHost(path).host, "p1", [{ at: iso(500), mgdl: 120, source: "manual" as never, isCgm: false }], newId, T0 + 10 * 86_400_000), 0);
+
+    // Verileri sil wipes the summaries too.
+    db.exec(`INSERT INTO sugar_hourly VALUES ('p1', '2024-01-01T00:00:00.000Z', 'health', 12, 110.5, 90, 130);`);
+    await clearProfileLogs(makeHost(path).host, "p1", iso(1000));
+    eq("the hourly summaries are cleared with the readings", (db.prepare("SELECT COUNT(*) AS c FROM sugar_hourly;").get() as { c: number }).c, 0);
+    db.close();
   }
 
   rmSync(root, { recursive: true, force: true });

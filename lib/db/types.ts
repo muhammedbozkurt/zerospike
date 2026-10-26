@@ -220,6 +220,18 @@ export interface SugarLog {
   healthkit_uuid: string | null;
 }
 
+/** One hour of sensor readings older than a year, folded by lib/cgm/retention.ts
+ *  (schema v30). `hour_utc` is the UTC hour start as an ISO string. */
+export interface SugarHourly {
+  profile_id: string;
+  hour_utc: string;
+  source: string;
+  n: number;
+  mean: number;
+  min: number;
+  max: number;
+}
+
 export interface MealLog {
   id: string;
   profile_id: string;

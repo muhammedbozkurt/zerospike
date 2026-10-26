@@ -8,7 +8,7 @@ declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (c: number) => void };
 import Module from "node:module";
 
-import { planHealthImport, type ExistingSugarReading } from "../lib/db/healthImportSql";
+import { planGlucoseImport, type PlanCandidate, type PlanExisting } from "../lib/db/healthImportSql";
 
 (globalThis as any).__DEV__ = false;
 
@@ -36,8 +36,12 @@ export const fake = {
   readGranted: true,
   readGrantedThrows: false,
   bgGranted: true,
-  glucose: [] as { value: number; date: string; period_tag: string }[],
+  glucose: [] as Record<string, unknown>[],
+  deletedIds: [] as string[],
+  pages: [] as number[],
   readThrows: false,
+  importThrows: false,
+  failPage: null as number | null,
   readCalls: 0,
   requestReadCalls: 0,
   peekChanged: true,
@@ -54,7 +58,10 @@ export const fake = {
 export const rows = {
   meals: new Map<string, any>(),
   shots: new Map<string, any>(),
-  sugar: [] as { profile_id: string; glucose_level_mgdl: number; logged_at: string; source: string }[],
+  sugar: [] as {
+    profile_id: string; glucose_level_mgdl: number; logged_at: string; source: string;
+    source_app?: string | null; external_id?: string | null; is_cgm?: number;
+  }[],
   profiles: [{ id: "P" }, { id: "Q" }] as { id: string }[],
 };
 
@@ -65,8 +72,8 @@ export function resetAll(platform: "ios" | "android" | "web" = "ios"): void {
   fake.samples.clear();
   Object.assign(fake, {
     seq: 0, ops: [], failWrites: 0, failDeletes: false, authorized: true, requestGrant: true,
-    available: true, readGranted: true, readGrantedThrows: false, bgGranted: true, glucose: [],
-    readThrows: false, readCalls: 0, requestReadCalls: 0, peekChanged: true, commits: 0,
+    available: true, readGranted: true, readGrantedThrows: false, bgGranted: true, glucose: [], deletedIds: [], pages: [],
+    readThrows: false, importThrows: false, failPage: null, readCalls: 0, requestReadCalls: 0, peekChanged: true, commits: 0,
     readDelayMs: 0, observerCb: null, observerStops: 0, observerStarts: 0, observerOk: true,
     summary: { activeMinutes: null, insulin: null }, summaryThrows: false,
   });
@@ -114,6 +121,21 @@ export const provider = {
     if (fake.readThrows) throw new Error("read failed");
     return fake.glucose;
   },
+  readGlucosePage: async (req: { cursor: string | null; pageSize: number }) => {
+    fake.readCalls++;
+    if (fake.readDelayMs) await sleep(fake.readDelayMs);
+    if (fake.readThrows) throw new Error("read failed");
+    if (fake.failPage != null && fake.pages.length + 1 === fake.failPage) throw new Error("read failed");
+    const start = req.cursor ? Number(req.cursor) : 0;
+    const end = Math.min(fake.glucose.length, start + req.pageSize);
+    fake.pages.push(end - start);
+    return {
+      samples: fake.glucose.slice(start, end),
+      deletedIds: start === 0 ? fake.deletedIds : [],
+      cursor: String(end),
+      hasMore: end < fake.glucose.length,
+    };
+  },
   writeGlucose: async () => null,
   deleteGlucose: async () => {},
   deleteGlucoseBatch: async () => {},
@@ -150,6 +172,7 @@ export const provider = {
   },
   peekGlucoseChanges: async () => ({
     changed: fake.peekChanged,
+    deletedIds: fake.deletedIds,
     commit: async () => {
       fake.commits++;
     },
@@ -165,20 +188,52 @@ export const tasks = {
 
 const dbLogs = {
   getSugarLog: async () => null,
-  insertHealthSugarLogs: async (profileId: string, samples: any[]) => {
-    const existing: ExistingSugarReading[] = rows.sugar
+  insertImportedGlucose: async (profileId: string, imported: any[]) => {
+    if (fake.importThrows) throw new Error("database is locked");
+    const existing: PlanExisting[] = rows.sugar
       .filter((r) => r.profile_id === profileId)
-      .map((r) => ({ logged_at: r.logged_at, glucose_level_mgdl: r.glucose_level_mgdl }));
-    const toInsert = planHealthImport(samples, existing);
-    for (const s of toInsert) {
+      .map((r) => ({
+        atMs: Date.parse(r.logged_at),
+        mgdl: r.glucose_level_mgdl,
+        source: r.source,
+        sourceApp: r.source_app ?? null,
+        externalId: r.external_id ?? null,
+        isCgm: r.is_cgm === 1,
+      }));
+    const candidates: PlanCandidate[] = imported.map((r) => ({
+      atMs: Date.parse(r.at),
+      mgdl: Math.round(r.mgdl),
+      source: r.source,
+      sourceApp: r.sourceApp ?? null,
+      externalId: r.externalId ?? null,
+      isCgm: r.isCgm === true,
+    }));
+    const plan = planGlucoseImport(candidates, existing);
+    for (const i of plan.insert) {
       rows.sugar.push({
         profile_id: profileId,
-        glucose_level_mgdl: Math.round(s.glucose_level_mgdl),
-        logged_at: s.logged_at,
-        source: "health",
+        glucose_level_mgdl: candidates[i].mgdl,
+        logged_at: imported[i].at,
+        source: candidates[i].source,
+        source_app: candidates[i].sourceApp,
+        external_id: candidates[i].externalId,
+        is_cgm: candidates[i].isCgm ? 1 : 0,
       });
     }
-    return toInsert.length;
+    return plan.insert.length;
+  },
+  deleteImportedGlucoseByExternalIds: async (profileId: string, source: string, ids: string[]) => {
+    const before = rows.sugar.length;
+    const keep = rows.sugar.filter(
+      (r) => !(r.profile_id === profileId && r.source === source && r.source !== "manual" && r.external_id != null && ids.includes(r.external_id))
+    );
+    rows.sugar.length = 0;
+    rows.sugar.push(...keep);
+    return before - keep.length;
+  },
+  getImportedSourceHistory: async (profileId: string, source: string, sourceApp: string | null) => {
+    const mine = rows.sugar.filter((r) => r.profile_id === profileId && r.source === source && (r.source_app ?? null) === sourceApp);
+    return { timesMs: mine.map((r) => Date.parse(r.logged_at)), knownCgm: mine.some((r) => r.is_cgm === 1) };
   },
   listHealthBackfillRows: async () => [],
   listHealthMirrorRows: async () => [],

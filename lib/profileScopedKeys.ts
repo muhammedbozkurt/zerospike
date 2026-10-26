@@ -40,6 +40,8 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.healthBgSync",
   "zerospike.healthLastSync",
   "zerospike.healthWriteStatus",
+  /** lib/services/health.ts - where the HealthKit anchored glucose read resumes. */
+  "zerospike.healthHkAnchor",
   /** lib/services/health.ts - retry queues, `<base>.<kind>.<profileId>`. */
   "zerospike.healthWritePending",
   "zerospike.healthWritePending.carbs",
