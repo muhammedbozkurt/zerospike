@@ -1739,6 +1739,19 @@ const tr = {
     privacyLink: "Gizlilik politikasını okuyun",
     openSettings: "Health Connect ayarlarını açın",
   },
+  dexcom: {
+    row: "Dexcom (deneme)",
+    connect: "Dexcom'a bağlanın",
+    notConfigured: "Dexcom bağlantısı bu sürümde kapalıdır.",
+    delay: "Dexcom verileri bölgeye göre 1 ile 3 saat gecikmeli gelir.",
+    title: "Dexcom",
+    connecting: "Bağlantınız tamamlanıyor",
+    connected: "Dexcom bağlandı.",
+    stateInvalid: "Bağlantı isteği geçersiz ya da süresi dolmuş. Lütfen bağlantıyı yeniden başlatın.",
+    denied: "Dexcom erişimi onaylanmadı.",
+    failed: "Bağlantı tamamlanamadı. Lütfen daha sonra yeniden deneyin.",
+    back: "Ayarlara dönün",
+  },
 };
 
 export default tr;

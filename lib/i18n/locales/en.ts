@@ -1741,6 +1741,19 @@ const en: TranslationSchema = {
     privacyLink: "Read the privacy policy",
     openSettings: "Open Health Connect settings",
   },
+  dexcom: {
+    row: "Dexcom (beta)",
+    connect: "Connect Dexcom",
+    notConfigured: "The Dexcom connection is turned off in this version.",
+    delay: "Dexcom data arrives 1 to 3 hours late, depending on your region.",
+    title: "Dexcom",
+    connecting: "Completing your connection",
+    connected: "Dexcom is connected.",
+    stateInvalid: "This connection request is invalid or has expired. Please start the connection again.",
+    denied: "Dexcom access was not approved.",
+    failed: "The connection could not be completed. Please try again later.",
+    back: "Back to settings",
+  },
 };
 
 export default en;

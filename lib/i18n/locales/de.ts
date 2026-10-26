@@ -1746,6 +1746,19 @@ const de: TranslationSchema = {
     privacyLink: "Datenschutzerklärung lesen",
     openSettings: "Health-Connect-Einstellungen öffnen",
   },
+  dexcom: {
+    row: "Dexcom (Test)",
+    connect: "Dexcom verbinden",
+    notConfigured: "Die Dexcom-Verbindung ist in dieser Version deaktiviert.",
+    delay: "Dexcom-Daten treffen je nach Region 1 bis 3 Stunden verzögert ein.",
+    title: "Dexcom",
+    connecting: "Ihre Verbindung wird abgeschlossen",
+    connected: "Dexcom ist verbunden.",
+    stateInvalid: "Diese Verbindungsanfrage ist ungültig oder abgelaufen. Bitte starten Sie die Verbindung erneut.",
+    denied: "Der Zugriff auf Dexcom wurde nicht bestätigt.",
+    failed: "Die Verbindung konnte nicht abgeschlossen werden. Bitte versuchen Sie es später erneut.",
+    back: "Zurück zu den Einstellungen",
+  },
 };
 
 export default de;
