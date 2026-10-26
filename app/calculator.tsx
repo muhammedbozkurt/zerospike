@@ -102,6 +102,7 @@ import {
   targetRangeFor,
 } from "../lib/glucose";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
+import { calculatorHiddenForRegion } from "../lib/regionFlags";
 import {
   getTemplateWithItems,
   touchTemplate,
@@ -759,7 +760,7 @@ function CalculatorScreen() {
   // no dose estimate, no dose field, no injection written. Everything else on
   // this screen (portion, carbs, photo, note, tags) is unchanged.
   const insulinMode = insulinModeOf(activeProfile);
-  const showsDose = insulinModeShowsBolus(insulinMode);
+  const showsDose = insulinModeShowsBolus(insulinMode) && !calculatorHiddenForRegion();
 
   // The ratios sheet (lib/calcSetup.ts). It opens by itself ONCE on a new
   // record while the profile has no confirmed ratios of its own; after that the
@@ -2766,11 +2767,57 @@ function Breakdown({
   );
 }
 
+/** Neutral stand-in when the screen is opened directly (a deep link, no food,
+ *  template or meal) in a region where the calculator is switched off
+ *  (lib/regionFlags). */
+function CalculatorRegionInfo() {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const close = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/food");
+  };
+  return (
+    <AppBackground>
+      <View className="flex-1" style={{ paddingTop: Math.max(insets.top, MODAL_TOP_PAD) }}>
+        <View className="flex-row items-center justify-between px-4 py-3">
+          <Pressable
+            onPress={close}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.close")}
+          >
+            <IconTile icon="close" size={30} radius={10} tint={THEME.textMuted} />
+          </Pressable>
+          <View style={{ width: 30 }} />
+        </View>
+        <View className="flex-1 px-6" style={{ justifyContent: "center", paddingBottom: insets.bottom + 48 }}>
+          <Text
+            accessibilityRole="header"
+            style={{ color: THEME.text, fontSize: 18, fontWeight: "800", marginBottom: 8, textAlign: "center" }}
+          >
+            {t("calculator.regionInfoTitle")}
+          </Text>
+          <Text style={{ color: THEME.textMuted, fontSize: 14, lineHeight: 21, textAlign: "center" }}>
+            {t("calculator.regionInfoBody")}
+          </Text>
+        </View>
+      </View>
+    </AppBackground>
+  );
+}
+
 export default function CalculatorRoute() {
-  const { mealLogId } = useLocalSearchParams<{ mealLogId?: string }>();
+  const { mealLogId, foodId, templateId } = useLocalSearchParams<{
+    mealLogId?: string;
+    foodId?: string;
+    templateId?: string;
+  }>();
   const editing = typeof mealLogId === "string" && mealLogId.length > 0;
   const { t } = useTranslation();
   const router = useRouter();
+  const openedDirectly = !editing && !foodId && !templateId;
   const [mode, setMode] = useState<MealEditMode | null>(editing ? null : "calculator");
 
   useEffect(() => {
@@ -2795,7 +2842,9 @@ export default function CalculatorRoute() {
 
   return (
     <SafeAreaProvider>
-      {mode === null ? (
+      {openedDirectly && calculatorHiddenForRegion() ? (
+        <CalculatorRegionInfo />
+      ) : mode === null ? (
         <AppBackground>
           <View className="flex-1" />
         </AppBackground>

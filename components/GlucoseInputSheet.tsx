@@ -41,12 +41,13 @@ import {
   parseWholeText,
   sanitizeNumberText,
 } from "../lib/numberInput";
-import { readNumericInput } from "../lib/numericField";
 import { runSheetSubmit, type SubmitResult } from "../lib/glucoseSheetFlow";
 import {
   GLUCOSE_SHEET_MAX_CHARS,
   glucoseSheetBounds,
   glucoseSheetValueState,
+  outsideTapAction,
+  readGlucoseSheetInput,
 } from "../lib/glucoseSheetInput";
 import { ELEVATION, INPUT_TEXT, RADIUS, RICH_BY_STATUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
@@ -258,6 +259,15 @@ export function GlucoseInputSheet({
     if (submittedRef.current) return;
     animateOut(() => closeRef.current());
   }
+  // A typed value is not thrown away by a stray outside tap or Android back:
+  // the first one only lowers the keyboard, the next one closes.
+  function dismissFromOutside() {
+    if (outsideTapAction(value, Keyboard.isVisible()) === "keyboard") {
+      Keyboard.dismiss();
+      return;
+    }
+    animateClose();
+  }
   const closeSheetRef = useRef(animateClose);
   closeSheetRef.current = animateClose;
 
@@ -291,9 +301,9 @@ export function GlucoseInputSheet({
   // value), never quietly turned into 45 or 12. Single typed keys stay lenient.
   const [pasteBad, setPasteBad] = useState(false);
   function onType(s: string) {
-    const r = readNumericInput(s, value, { decimals: mmol ? 1 : 0 });
+    const r = readGlucoseSheetInput(s, value, mmol);
     setValue(r.text);
-    setPasteBad(r.kind === "malformed");
+    setPasteBad(r.bad);
   }
 
   // mg/dL is a whole number: "5,5" stays on screen as typed and reads as an
@@ -401,7 +411,7 @@ export function GlucoseInputSheet({
       // the keyboard can rise in the SAME motion as the sheet rather than
       // fighting a platform transition that has its own timing.
       animationType="none"
-      onRequestClose={animateClose}
+      onRequestClose={dismissFromOutside}
       onShow={() => heroRef.current?.focus()}
     >
       <View className="flex-1">
@@ -432,7 +442,7 @@ export function GlucoseInputSheet({
         >
           <Pressable
             style={{ flex: 1, justifyContent: "flex-end", paddingTop: insets.top }}
-            onPress={animateClose}
+            onPress={dismissFromOutside}
             accessible={false}
             focusable={false}
             onLayout={(e) => setAvailH(Math.max(0, e.nativeEvent.layout.height - insets.top))}
@@ -608,11 +618,13 @@ export function GlucoseInputSheet({
                     >
                       {wholeBad
                         ? t("numeric.integerOnly")
-                        : t("numeric.range", {
-                            min: num(minD),
-                            max: num(maxD),
-                            unit: glucoseUnitLabel(unit),
-                          })}
+                        : pasteBad
+                          ? t("numeric.malformed")
+                          : t("numeric.range", {
+                              min: num(minD),
+                              max: num(maxD),
+                              unit: glucoseUnitLabel(unit),
+                            })}
                     </Txt>
                   ) : null}
                   <View style={{ minHeight: 26, marginTop: compact ? SPACE.xs : SPACE.sm }}>

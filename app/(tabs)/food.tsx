@@ -73,6 +73,7 @@ import { carbEstimateConfigured } from "../../lib/ai/carbEstimateClient";
 import { sceneFoods, sceneStarters } from "../../lib/mealScene";
 import { mealIdsWithResponse } from "../../lib/mealResponse";
 import { insulinModeOf, insulinModeShowsBolus } from "../../lib/insulinMode";
+import { calculatorHiddenForRegion } from "../../lib/regionFlags";
 import {
   schedulePostMealReminder,
   noteJournalActivity,
@@ -766,7 +767,7 @@ export default function FoodScreen() {
       .filter((entry): entry is TemplateWithItems => entry != null);
   }, [templates]);
 
-  const showsDose = insulinModeShowsBolus(insulinModeOf(activeProfile));
+  const showsDose = insulinModeShowsBolus(insulinModeOf(activeProfile)) && !calculatorHiddenForRegion();
 
   // A tap on a saved template no longer logs it outright (Bulgu 3b): it opens
   // this confirm sheet instead, so a stray tap on the list can no longer write

@@ -339,3 +339,10 @@ export function editableToEstimateLines(items: readonly EditableItem[]): Estimat
 export function itemCountBucket(count: number): number {
   return Math.max(0, Math.min(CARB_MAX_ITEMS, Math.floor(count)));
 }
+
+/** Why "Add to meal" leaves something out or stays shut, if it does. */
+export function estimateAddHint(items: readonly EditableItem[]): "unnamed" | "unreadable" | null {
+  if (items.filter(hasItemName).some(hasUnreadableAmount)) return "unreadable";
+  if (items.some((item) => !hasItemName(item))) return "unnamed";
+  return null;
+}

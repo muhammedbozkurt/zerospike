@@ -373,15 +373,25 @@ export function ReminderEditSheet({
               </View>
 
               {type === "custom" ? (
-                <TextInput
-                  value={customLabel}
-                  onChangeText={setCustomLabel}
-                  placeholder={t("reminders.labelPlaceholder")}
-                  placeholderTextColor={THEME.placeholder}
-                  accessibilityLabel={t("reminders.labelPlaceholder")}
-                  returnKeyType="done"
-                  style={[inputStyle(), { marginBottom: 18 }]}
-                />
+                <>
+                  <TextInput
+                    value={customLabel}
+                    onChangeText={setCustomLabel}
+                    placeholder={t("reminders.labelPlaceholder")}
+                    placeholderTextColor={THEME.placeholder}
+                    accessibilityLabel={t("reminders.labelPlaceholder")}
+                    returnKeyType="done"
+                    style={[inputStyle(), { marginBottom: trimmedCustom.length === 0 ? 6 : 18 }]}
+                  />
+                  {trimmedCustom.length === 0 ? (
+                    <Text
+                      className="px-1"
+                      style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 18 }}
+                    >
+                      {t("reminders.customNeedsName")}
+                    </Text>
+                  ) : null}
+                </>
               ) : type === "med" ? (
                 <MedNamePicker
                   profileId={profileId}

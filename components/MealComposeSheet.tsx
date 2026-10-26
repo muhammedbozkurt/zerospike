@@ -29,6 +29,7 @@ import {
   chipGrams,
   composeCanSave,
   composeCanSaveTemplate,
+  composeRowsBlockSave,
   composeHasEstimate,
   composeItemFromFood,
   composeTotals,
@@ -59,6 +60,7 @@ import {
 } from "./meal";
 import { SCRIM } from "./SheetShell";
 import { ScrollHint } from "./ScrollHint";
+import { useA11yModalPresence } from "../lib/a11yModal";
 import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
 import { Button } from "./ui";
@@ -143,6 +145,7 @@ export function MealComposeSheet({
   onSearch?: (query: string) => Promise<Food[]>;
 }) {
   const { t } = useTranslation();
+  useA11yModalPresence(true);
   const insets = useSafeAreaInsets();
   const { isWide, isDialog, width: layoutWidth, height: layoutHeight } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
@@ -550,6 +553,14 @@ export function MealComposeSheet({
             <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
 
             <View style={{ paddingTop: 10, paddingBottom: lift > 0 ? 12 : insets.bottom + 12 }}>
+              {composeRowsBlockSave(items) ? (
+                <Text
+                  accessibilityRole="alert"
+                  style={{ color: THEME.warning, fontSize: 12, lineHeight: 17, marginBottom: 8 }}
+                >
+                  {t("mealCompose.fixRows")}
+                </Text>
+              ) : null}
               <Button
                 label={t("mealCompose.saveWithTotal", { value: num(totals.carbs_g) })}
                 disabled={!canSave}

@@ -609,7 +609,11 @@ section("20. the glucose sheet refuses a bad paste like every other box");
   eq("a plain pasted 6,5 is fine in mmol/L", readNumericInput("6,5", "", mm).value, 6.5);
   eq("a stray key typed on the end stays lenient", readNumericInput("11a", "11", mg).kind, "ok");
   const gis = src("components/GlucoseInputSheet.tsx");
-  ok("the sheet reads text through readNumericInput", gis.includes("readNumericInput(s, value, { decimals: mmol ? 1 : 0 })"));
+  ok(
+    "the sheet reads text through readNumericInput (via readGlucoseSheetInput)",
+    gis.includes("readGlucoseSheetInput(s, value, mmol)") &&
+      src("lib/glucoseSheetInput.ts").includes("readNumericInput(raw, prev, { decimals })")
+  );
   ok("a malformed paste leaves no value (Save stays shut)", gis.includes("const typed = pasteBad ? null :"));
   ok("and says so", gis.includes('t("numeric.range"') && gis.includes("wholeBad || pasteBad"));
   ok("a reopened sheet starts clean", (gis.match(/setPasteBad\(false\)/g) ?? []).length === 2);

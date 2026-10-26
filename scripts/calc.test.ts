@@ -611,7 +611,7 @@ section("O. source guards (data scope, profile hand-over, input filters)");
     // The calculator's fields are NumericField, which reads through
     // lib/numericField -> lib/stepperInput -> the shared normalizer.
     const viaNumericField =
-      (/<NumericField/.test(s) || /readNumericInput\(/.test(s)) &&
+      (/<NumericField/.test(s) || /readNumericInput\(/.test(s) || /readGlucoseSheetInput\(/.test(s)) &&
       /parseDecimalText\(/.test(s) &&
       /sanitizeStepperText/.test(src("lib/numericField.ts")) &&
       /sanitizeNumberText\(/.test(stepperInput);

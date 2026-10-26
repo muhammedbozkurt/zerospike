@@ -273,7 +273,8 @@ check("B9 Welcome and QuizStep headings take the word-fit cap; the sample card i
 check("B5 Today list clears the taller floating CTA", () => {
   const src = read("app/(tabs)/index.tsx");
   assert.match(src, /CTA_CLEARANCE \+ ctaExtra/);
-  assert.match(src, /CTA_FOOTPRINT \+ ctaExtra \+ insets\.bottom/);
+  assert.match(src, /ctaFootprintPx\(ctaHeight, CTA_FOOTPRINT \+ ctaExtra\)/);
+  assert.match(src, /ctaFootprint \+ insets\.bottom/);
 });
 
 if (failed) {

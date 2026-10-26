@@ -55,3 +55,9 @@ export function carbOnlyPatch(input: {
     ...(input.loggedAtIso ? { logged_at: input.loggedAtIso } : {}),
   };
 }
+
+/** True when something is typed in the carb-only amount field but it is not an
+ *  amount the save accepts (over 1500 g, negative, not a number). */
+export function carbOnlyAmountError(text: string, parsed: number | null): boolean {
+  return text.trim() !== "" && parsed == null;
+}
