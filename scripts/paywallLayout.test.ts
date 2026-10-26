@@ -64,7 +64,7 @@ function worst(over: Partial<PaywallLayoutInput>): PaywallLayoutInput {
     lifetimeFootLines: 2,
     ctaLines: 2,
     disclosureLines: 3,
-    chipCount: 5,
+    chipCount: 6,
     chipLines: 2,
     ...over,
   };
@@ -183,6 +183,7 @@ type Pw = {
   ctaLifetime: string;
   ctaTrial: string;
   chipSpike: string;
+  chipCgm: string;
   promise: string;
   featureShortHealth: string;
   featureShortFamily: string;
@@ -241,6 +242,7 @@ section("H. wording in all nine languages (the priced CTA wraps, it is never shr
     const chips = [
       fill(pw.featureShortHealth, { health }),
       pw.chipSpike,
+      pw.chipCgm,
       pw.benefitTrends,
       pw.featureShortPdf,
       pw.featureShortFamily,

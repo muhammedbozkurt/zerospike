@@ -815,6 +815,7 @@ function PaywallScreen() {
         ]
       : []),
     { icon: "sparkles-outline" as const, text: t("paywall.chipSpike") },
+    { icon: "pulse-outline" as const, text: t("paywall.chipCgm") },
     { icon: "analytics-outline" as const, text: t("paywall.benefitTrends") },
     { icon: "document-text-outline" as const, text: t("paywall.featureShortPdf") },
     { icon: "people-outline" as const, text: t("paywall.featureShortFamily") },

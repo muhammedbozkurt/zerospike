@@ -19,6 +19,7 @@ import { targetBandFor } from "../agpChart";
 import { glucoseToDisplay } from "../glucose";
 import { computeInsights, type DateRange } from "../insights";
 import { insulinModeUsesInsulin } from "../insulinMode";
+import { CGM_DETECT_MIN_READINGS } from "../db/cgmSql";
 
 /**
  * Spike context packet v1: a 14-day summary computed ON THE DEVICE and sent
@@ -27,8 +28,10 @@ import { insulinModeUsesInsulin } from "../insulinMode";
  * What it can hold is closed by construction. Counts and averages, the target
  * range, meal tags and injection regions (both fixed app enums), and the shape
  * of the logging habit. It never holds a single reading, a timestamp, an
- * insulin amount, a free-text field or anything that came from Apple Health /
- * Health Connect. validateContextPacket() enforces that shape (and the 2 KB
+ * insulin amount, a free-text field or a Health / Health Connect record. The one
+ * thing derived from sensor (CGM) rows is the optional `cgm` block: four numbers
+ * (count, coverage, average, share in range), never a reading, a time series, a
+ * source app, a device name or an external id. validateContextPacket() enforces that shape (and the 2 KB
  * ceiling) on every packet before it leaves the module, and the packet is
  * dropped, never trimmed, when it does not pass.
  */
@@ -67,11 +70,33 @@ const USER_INJECTION_SOURCES: ReadonlySet<string> = new Set([
  *  period averages (see buildContextPacket). */
 export const MIN_READINGS_FOR_AVERAGE = 2;
 
+/** A sensor delivers a reading about every five minutes. */
+export const CGM_READINGS_PER_DAY = 288;
+/** Below this many sensor readings the CGM block is left out: a mean over a
+ *  handful of readings is close to the readings themselves. */
+export const MIN_CGM_READINGS = CGM_DETECT_MIN_READINGS;
+
 export type SpikeTreatment = "insulin" | "pills" | "none";
 
 export interface PeriodStat {
   n: number;
   avg: number | null;
+}
+
+/** What the CGM block is computed from: aggregates over the window's sensor
+ *  rows (is_cgm = 1), computed by the database. No row ever leaves the query. */
+export interface CgmAggregate {
+  count: number;
+  avgMgdl: number | null;
+  inRangeCount: number;
+}
+
+export interface CgmStats {
+  readings: number;
+  /** Share of the readings a sensor delivers in the window (288 a day), 0 to 100. */
+  coveragePct: number;
+  avg: number;
+  inRangePct: number;
 }
 
 export interface ContextPacket {
@@ -106,6 +131,8 @@ export interface ContextPacket {
     emptyPeriods: PeriodKey[];
     streakDays: number;
   };
+  /** Present only when the window holds enough sensor readings. */
+  cgm?: CgmStats;
 }
 
 /** The profile fields the packet reads. */
@@ -125,8 +152,28 @@ export interface ContextInput {
   sugar: readonly SugarLog[];
   meals: readonly MealLog[];
   injections: readonly Injection[];
+  /** Sensor aggregates for the window, when the profile has any. */
+  cgm?: CgmAggregate | null;
   days?: number;
   now?: number;
+}
+
+function coveragePctOf(readings: number, days: number): number {
+  return Math.min(100, Math.round((readings / (days * CGM_READINGS_PER_DAY)) * 100));
+}
+
+/** The CGM block, or undefined when the aggregate is missing, unusable or too thin. */
+function cgmStatsOf(agg: CgmAggregate | null | undefined, days: number, unit: GlucoseUnit): CgmStats | undefined {
+  if (!agg || !Number.isFinite(agg.count) || agg.count < MIN_CGM_READINGS) return undefined;
+  if (agg.avgMgdl == null || !Number.isFinite(agg.avgMgdl) || !Number.isFinite(agg.inRangeCount)) return undefined;
+  const readings = Math.floor(agg.count);
+  const inRange = Math.min(readings, Math.max(0, agg.inRangeCount));
+  return {
+    readings,
+    coveragePct: coveragePctOf(readings, days),
+    avg: glucoseToDisplay(agg.avgMgdl, unit),
+    inRangePct: Math.round((inRange / readings) * 100),
+  };
 }
 
 function clampDays(days: number | undefined): number {
@@ -253,6 +300,8 @@ export function buildContextPacket(input: ContextInput): ContextPacket {
     ? input.profile.diabetes_type
     : "unknown";
 
+  const cgm = cgmStatsOf(input.cgm, days, unit);
+
   return {
     v: 1,
     days,
@@ -281,6 +330,7 @@ export function buildContextPacket(input: ContextInput): ContextPacket {
       emptyPeriods: PERIOD_KEYS.filter((key) => byPeriod[key].n === 0),
       streakDays: streakOf(dayKeys, now, days),
     },
+    ...(cgm ? { cgm } : {}),
   };
 }
 
@@ -337,7 +387,9 @@ export function validateContextPacket(value: unknown): string[] {
     return sum;
   };
 
-  const root = obj(value, "packet", ["v", "days", "unit", "profile", "glucose", "meals", "injections", "logging"]);
+  const rootKeys = ["v", "days", "unit", "profile", "glucose", "meals", "injections", "logging"];
+  if (isRec(value) && "cgm" in value) rootKeys.push("cgm");
+  const root = obj(value, "packet", rootKeys);
   if (!root) return out;
 
   if (root.v !== 1) bad("packet.v: must be 1");
@@ -445,6 +497,21 @@ export function validateContextPacket(value: unknown): string[] {
     }
   }
 
+  if ("cgm" in root) {
+    const cgm = obj(root.cgm, "cgm", ["readings", "coveragePct", "avg", "inRangePct"]);
+    if (cgm) {
+      const readings = count(cgm.readings, "cgm.readings");
+      if (readings < MIN_CGM_READINGS) bad("cgm.readings: fewer than the minimum");
+      const coverage = num(cgm.coveragePct, "cgm.coveragePct", 0, 100);
+      if (coverage !== null && (!Number.isInteger(coverage) || coverage !== coveragePctOf(readings, days))) {
+        bad("cgm.coveragePct: does not match the readings and the window (coverage)");
+      }
+      num(cgm.avg, "cgm.avg", 0, 1000);
+      const pct = num(cgm.inRangePct, "cgm.inRangePct", 0, 100);
+      if (pct !== null && !Number.isInteger(pct)) bad("cgm.inRangePct: not a whole number");
+    }
+  }
+
   const json = JSON.stringify(value);
   if (!/^[\x20-\x7e]*$/.test(json)) bad("packet: not plain ASCII");
   if (json.length >= SPIKE_CONTEXT_MAX_BYTES) bad("packet: 2 KB or larger");
@@ -462,6 +529,37 @@ export interface SpikeContextSource {
   listMealLogs(profileId: string, limit: number, range: DateRange): Promise<MealLog[]>;
   getInjections(profileId: string, limit: number, range: DateRange): Promise<Injection[]>;
   resolveProfile(): Promise<SpikeProfile | null>;
+  /** Sensor aggregates (count, mean, in-range count) for the window. Optional:
+   *  a source without it simply yields a packet without the CGM block. */
+  getCgmAggregate?(
+    profileId: string,
+    range: DateRange,
+    band: { low: number; high: number }
+  ): Promise<CgmAggregate | null>;
+}
+
+/**
+ * The only query that touches sensor rows for Spike. It returns three numbers;
+ * no reading, timestamp, source_app or external_id is selected. Placeholder
+ * order: see cgmAggregateParams. Reads idx_sugar_cgm.
+ */
+export const CGM_AGGREGATE_SQL =
+  "SELECT COUNT(*) AS n, AVG(glucose_level_mgdl) AS avg, " +
+  "COALESCE(SUM(CASE WHEN glucose_level_mgdl >= ? AND glucose_level_mgdl <= ? THEN 1 ELSE 0 END), 0) AS inr " +
+  "FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ? AND logged_at <= ?;";
+
+export function cgmAggregateParams(
+  profileId: string,
+  range: DateRange,
+  band: { low: number; high: number }
+): (string | number)[] {
+  return [
+    band.low,
+    band.high,
+    profileId,
+    new Date(range.start).toISOString(),
+    new Date(range.end).toISOString(),
+  ];
 }
 
 export interface SpikeContextOptions {
@@ -494,6 +592,11 @@ function dbSource(): SpikeContextSource {
       const found = saved ? await profiles.getProfile(saved) : null;
       return found ?? (await profiles.getDefaultProfile());
     },
+    getCgmAggregate: async (id, range, band) => {
+      const db = await require("../db/index").getDb();
+      const row = await db.getFirstAsync(CGM_AGGREGATE_SQL, cgmAggregateParams(id, range, band));
+      return row ? { count: row.n ?? 0, avgMgdl: row.avg ?? null, inRangeCount: row.inr ?? 0 } : null;
+    },
   };
 }
 
@@ -518,7 +621,15 @@ export async function summarizeForSpike(
       source.listMealLogs(profile.id, LOG_FETCH_LIMIT, range),
       source.getInjections(profile.id, LOG_FETCH_LIMIT, range),
     ]);
-    const packet = buildContextPacket({ profile, sugar, meals, injections, days: span, now });
+    let cgm: CgmAggregate | null = null;
+    if (source.getCgmAggregate) {
+      try {
+        cgm = await source.getCgmAggregate(profile.id, range, targetBandFor(profile));
+      } catch {
+        cgm = null;
+      }
+    }
+    const packet = buildContextPacket({ profile, sugar, meals, injections, cgm, days: span, now });
     return isValidContextPacket(packet) ? packet : null;
   } catch {
     return null;
