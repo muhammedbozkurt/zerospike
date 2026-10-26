@@ -39,6 +39,9 @@
  *      teff, spelt, pearl barley, oat bran, rice and buckwheat flour and a
  *      sheep-milk glass (./seedPortions), so the US cup chips have a gram
  *      figure for them. Untouched rows get them through the same update path.
+ *   9  sourced 100 g carb corrections for jambalaya, tteokbokki, chilaquiles,
+ *      shepherd's pie and gumbo (docs/food-sources.md). Untouched rows catch up
+ *      through the same update path.
  */
 
 // A type-only import: erased at build time, so reading this module never pulls
@@ -46,7 +49,7 @@
 import type { PortionLabelKey } from "./types";
 import type { SeedFood } from "./seed";
 
-export const SEED_CATALOG_VERSION = 8;
+export const SEED_CATALOG_VERSION = 9;
 
 /** The app_meta key the number above is stored under (schema v14). */
 export const SEED_CATALOG_VERSION_KEY = "seed_catalog_version";
