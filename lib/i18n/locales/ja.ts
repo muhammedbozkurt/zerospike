@@ -1001,6 +1001,8 @@ const ja: TranslationSchema = {
     title: "zerospike 血糖記録レポート",
     noData: "書き出す記録がありません",
     sharingUnavailable: "この端末では共有を利用できません",
+    truncated: "最新の{{count}}件の記録を含めています。それより古い記録はこのファイルに含まれません。",
+    truncatedList: "表には最新の{{count}}件の記録を掲載しています。サマリーとグラフは期間内のすべての記録を使用しています。",
     colDate: "日付",
     colTime: "時刻",
     colType: "種類",

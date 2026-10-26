@@ -61,7 +61,8 @@ import { displayProfileName } from "../../lib/profileName";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DateRangePicker, type PickedRange } from "../../components/DateRangePicker";
 import { useFeedback } from "../../components/Feedback";
-import { formatDate, formatLocale, formatTime } from "../../lib/format";
+import { formatDate, formatLocale, formatTime, num } from "../../lib/format";
+import { truncationMessage, type ExportTruncation } from "../../lib/exportLimits";
 import { GLUCOSE_RICH, TABULAR, THEME, switchColors } from "../../lib/theme/tokens";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
@@ -199,7 +200,13 @@ export default function DataSettings() {
     setExporting(false);
     if (!res.ok) {
       toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
+    } else if (res.truncated) {
+      toast(cutNote(res.truncated), "info");
     }
+  }
+
+  function cutNote(cut: ExportTruncation): string {
+    return truncationMessage((k, o) => t(k, o), cut, num(cut.limit));
   }
 
   function onExport() {
@@ -223,7 +230,7 @@ export default function DataSettings() {
     const res = await exportLogsPdf(activeProfile, days, range, { mode: pdfMode });
     setExportingPdf(false);
     if (res.ok) {
-      toast(t("report.created"), "success");
+      toast(res.truncated ? `${t("report.created")} ${cutNote(res.truncated)}` : t("report.created"), "success");
       void maybeRequestReview("pdf_export_success");
     } else {
       toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");

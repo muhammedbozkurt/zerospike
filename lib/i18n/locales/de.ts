@@ -1001,6 +1001,8 @@ const de: TranslationSchema = {
     title: "zerospike Blutzucker-Bericht",
     noData: "Keine Einträge zum Exportieren",
     sharingUnavailable: "Teilen ist auf diesem Gerät nicht verfügbar",
+    truncated: "Die neuesten {{count}} Einträge sind enthalten. Ältere Einträge fehlen in dieser Datei.",
+    truncatedList: "Die Tabellen listen die neuesten {{count}} Einträge auf. Zusammenfassung und Diagramme nutzen alle Einträge des Zeitraums.",
     colDate: "Datum",
     colTime: "Uhrzeit",
     colType: "Typ",

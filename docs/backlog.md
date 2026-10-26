@@ -5,7 +5,8 @@ Sürüm 2.4 sonrası ve beklemedeki işler. Karara bağlanmış konular için sc
 ## Veri: karma yemek karbonhidrat kaynak taraması
 Jambalaya 24, Tteokbokki 35, Chilaquiles 24, Shepherd's pie 16 ve Gumbo 14 (100 g) için kaynaklı karşılaştırma; ayrıca lifli tohum tutarsızlığı: Haşhaş 28, Hindistan cevizi 24 ve Badem 22 lif hariç değil, Chia ve Keten ise kullanılabilir karbonhidrata çekildi. Ayrıntı docs/food-sources.md "Doğrulanması gereken".
 
-## Arapça PDF: AGP son saat etiketi
+## Arapça PDF: AGP son saat etiketi (yapıldı, 2.5.0)
+Çözüm: ar'da AGP svg'si direction:ltr'ye sabitlenir (text-anchor start/end miras alınan yöne bağlıydı); scripts/reportLayout.test.ts "ar: AGP last hour label" bölümü.
 Arapça (RTL) PDF raporunda AGP grafiğinin son saat etiketi "24:00" sağ kenarda "24" olarak kırpılıyor. Eski bir sorun, 2.4 K12 denetiminde görüldü. Kapsam: lib/services/report.ts AGP SVG'si, RTL yönde sağ kenar boşluğu veya etiket hizası. Kabul: ar PDF'te son etiket tam görünür; diğer dillerde değişiklik yok; scripts/reportLayout.test.ts'e ar için kontrol.
 
 ## Railway taşıması (2.4 sonrası, ayrı sürüm gerektirir)
@@ -69,5 +70,6 @@ de, fr, es, it, pt, ar, ja: 19 Ekim 2026 tr/en metnindeki yenilikler dahil. (a) 
 ## Health tahmin etiketi geriye dönük değil
 Health tahmin etiketi geriye dönük değil: güncellemeden önce Health'e yazılmış tahmin kökenli örnekler yalnız düzenlenince etiket alır; gerekirse bir kerelik yeniden yazım ve sürüm notu.
 
-## reg-check kurallarını modül olarak dışa aktar
+## reg-check kurallarını modül olarak dışa aktar (yapıldı, 2.5.0)
+Çözüm: kurallar scripts/regRules.js'te; reg-check.js ve zerospike-store/pipeline/v2/selftest-brand.mjs, selftest-warm.mjs bunu require eder (kaynak kesme kalktı). Aşağıdaki metin özgün açıklamadır.
 scripts/reg-check.js bir CLI ve dışa aktarma yok: ekran görüntüsü hattının selftest-brand.mjs ve selftest-warm.mjs dosyaları kaynağı metin olarak kesip `new Function` ile değerlendiriyor (işaretçi `\nfunction main()`). reg-check refactor'ü işaretçiyi iki kez bozdu (09359db). Kuralları (LOCALES, PATTERNS, SUBSTRING_LOCALES, buildAllMatcher, hasGlucoseContext, allowlist) `scripts/regRules.js` gibi bir modüle çıkarıp hem reg-check.js hem selftest'ler `require` etsin; kaynak kesme kalksın.

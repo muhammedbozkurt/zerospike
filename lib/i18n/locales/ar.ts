@@ -1001,6 +1001,8 @@ const ar: TranslationSchema = {
     title: "تقرير سكر الدم من zerospike",
     noData: "لا توجد سجلات للتصدير",
     sharingUnavailable: "المشاركة غير متاحة على هذا الجهاز",
+    truncated: "تم تضمين أحدث {{count}} سجل. السجلات الأقدم غير موجودة في هذا الملف.",
+    truncatedList: "تعرض الجداول أحدث {{count}} سجل. يستخدم الملخص والرسوم البيانية جميع السجلات في الفترة.",
     colDate: "التاريخ",
     colTime: "الوقت",
     colType: "النوع",

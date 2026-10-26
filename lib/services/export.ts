@@ -5,15 +5,22 @@ import { getJournal } from "../db/journal";
 import { currentLang } from "../i18n";
 import type { GlucoseUnit, InsulinType, LogTag, PeriodTag } from "../db/types";
 import { formatGlucose, glucoseUnitLabel } from "../glucose";
-import { COMMA_DECIMAL } from "../format";
+import { COMMA_DECIMAL, num } from "../format";
 import type { DateRange } from "../insights";
+import {
+  CSV_MAX_ROWS,
+  EXPORT_MAX_ROWS,
+  applyRowLimit,
+  csvFooterRows,
+  truncationMessage,
+  type ExportTruncation,
+} from "../exportLimits";
 
 export type ExportResult =
-  | { ok: true; uri: string; count: number }
+  | { ok: true; uri: string; count: number; truncated?: ExportTruncation }
   | { ok: false; reason: "noData" | "sharingUnavailable" };
 
-/** Upper bound on rows written into one file (the range is applied in SQL). */
-export const EXPORT_MAX_ROWS = 20000;
+export { EXPORT_MAX_ROWS };
 
 /** Quotes a field when it contains the active delimiter, a quote or a newline. */
 function csvEscape(value: string | number | null | undefined, delim: string): string {
@@ -91,7 +98,14 @@ export async function exportLogsCsv(
   // The range goes into SQL, not a filter over the newest 5000 rows: an export of
   // an early month used to come back short (or empty) once the profile had more
   // history than the limit, with nothing in the file saying so.
-  const entries = await getJournal(profileId, lang, EXPORT_MAX_ROWS, range);
+  // One row past the cap: it is how a cut is told from an exact fit.
+  const { rows: entries, truncated } = applyRowLimit(
+    await getJournal(profileId, lang, CSV_MAX_ROWS + 1, range),
+    CSV_MAX_ROWS
+  );
+  const truncation: ExportTruncation | undefined = truncated
+    ? { limit: CSV_MAX_ROWS, listOnly: false }
+    : undefined;
   if (entries.length === 0) return { ok: false, reason: "noData" };
 
   // Mode changes must never hide already-logged data (lib/insulinMode): a
@@ -221,8 +235,13 @@ export async function exportLogsCsv(
 
   // Trailing medical disclaimer so the doctor-facing export is never read as
   // prescriptive (blank separator row keeps it clear of the data table).
-  rows.push("");
-  rows.push(esc(i18n.t("export.disclaimer")));
+  rows.push(
+    ...csvFooterRows(
+      esc,
+      i18n.t("export.disclaimer"),
+      truncation ? truncationMessage((k, o) => i18n.t(k, o), truncation, num(truncation.limit)) : null
+    )
+  );
 
   // UTF-8 BOM so Excel renders Turkish characters correctly, plus a `sep=` hint
   // for the comma-decimal locales so Excel picks the right delimiter.
@@ -252,5 +271,5 @@ export async function exportLogsCsv(
     UTI: "public.comma-separated-values-text",
   });
 
-  return { ok: true, uri: fileUri, count: entries.length };
+  return { ok: true, uri: fileUri, count: entries.length, truncated: truncation };
 }

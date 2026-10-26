@@ -244,6 +244,43 @@ async function main(): Promise<void> {
     }
   }
 
+  section("ar: AGP last hour label (24:00 not clipped)");
+  {
+    const agpTag = (html: string) => (html.match(/<svg viewBox="0 0 540 210"[^>]*>/) ?? [""])[0];
+    await i18nMod.setLanguage("ar");
+    const arHtml = build(true, { reportName: "", mode: "full" });
+    ok("ar: AGP svg pinned to direction:ltr", /style="direction:ltr"/.test(agpTag(arHtml)), agpTag(arHtml));
+    ok("ar: last tick 24:00 is in the chart", arHtml.includes(">24:00<"));
+    for (const lang of ["tr", "de", "en"]) {
+      await i18nMod.setLanguage(lang);
+      const h = build(true, { reportName: "", mode: "full" });
+      ok(`${lang}: AGP svg unchanged (no direction)`, agpTag(h).length > 0 && !/direction/.test(agpTag(h)), agpTag(h));
+    }
+  }
+
+  section("G30: truncation is noted, numbers use every row");
+  {
+    await i18nMod.setLanguage("tr");
+    const range = rangeFromWindow(30);
+    const all = sampleEntries(true);
+    const full = report.buildReportDocument(profile, range, all, { mode: "full" });
+    const cut = report.buildReportDocument(profile, range, all, { mode: "full", listLimit: 20 });
+    const note = i18n.t("export.truncatedList", { count: "20" }) as string;
+    ok("fixture has more rows than the test limit", all.length > 20, String(all.length));
+    ok("uncut: no truncation flag, no note", full.truncated === undefined && !full.html.includes(note));
+    ok("cut: flag set and count is the listed rows", cut.truncated?.listOnly === true && cut.truncated.limit === 20 && cut.count === 20, `${JSON.stringify(cut.truncated)} ${cut.count}`);
+    ok("cut: footnote carries the note", cut.html.includes(note) && cut.html.indexOf(note) > cut.html.indexOf('class="foot"'));
+    const part = (html: string, cls: string) => (html.match(new RegExp(`<div class="${cls}"[\\s\\S]*?</div></div>`)) ?? [""])[0];
+    ok("cut: KPI cards use every row", part(cut.html, "kpis").length > 0 && part(cut.html, "kpis") === part(full.html, "kpis"));
+    ok("cut: AGP svg uses every row", (cut.html.match(/<svg viewBox="0 0 540 210"[\s\S]*?<\/svg>/) ?? ["a"])[0] === (full.html.match(/<svg viewBox="0 0 540 210"[\s\S]*?<\/svg>/) ?? ["b"])[0]);
+    const rows = (h: string) => (h.match(/<tr>/g) ?? []).length;
+    ok("cut: fewer table rows than uncut", rows(cut.html) < rows(full.html), `${rows(cut.html)} vs ${rows(full.html)}`);
+    const exact = report.buildReportDocument(profile, range, all, { mode: "full", listLimit: all.length });
+    const guard = report.buildReportDocument(profile, range, all, { mode: "full", analysisLimit: 777 });
+    ok("analysis guard hit: whole-file note with that limit", guard.truncated?.listOnly === false && guard.truncated.limit === 777 && guard.html.includes(i18n.t("export.truncated", { count: "777" }) as string));
+    ok("exactly at the limit: not truncated", exact.truncated === undefined && !exact.html.includes(i18n.t("export.truncatedList", { count: String(all.length) }) as string));
+  }
+
   section("report name storage");
   await setReportName("p1", "  Rapor Adı  ");
   ok("stored trimmed per profile", (await getReportName("p1")) === "Rapor Adı");

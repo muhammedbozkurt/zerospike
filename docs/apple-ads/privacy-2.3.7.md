@@ -1,5 +1,7 @@
 # 2.3.7 gizlilik beyanı: App Store Connect App Privacy ve Google Play Data safety
 
+> **2.4.x ve sonrası için bayat.** Bu belge 2.3.7 içindir. Güncel mağaza beyanı için `scratchpad/hub-beyan-*.md` dosyalarına bakın; buradaki cevapları 2.4.x veya 2.5.0 formlarına kopyalamayın.
+
 Bu dosya, 2.3.7 için iki mağaza formunda değişmesi gereken cevapların kesin listesidir.
 Konsola kullanıcı elle girer. §3'teki privacy manifest bloğu `app.json`'a uygulandı (birebir
 eşleştiği 2026-10-06'da karşılaştırıldı); §6'daki metinler hâlâ yalnız öneridir (uygulanmadı).

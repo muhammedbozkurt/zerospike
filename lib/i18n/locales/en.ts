@@ -1001,6 +1001,8 @@ const en: TranslationSchema = {
     title: "zerospike Blood Glucose Report",
     noData: "No records to export",
     sharingUnavailable: "Sharing is not available on this device",
+    truncated: "The newest {{count}} entries are included. Older entries are not in this file.",
+    truncatedList: "The tables list the newest {{count}} entries. The summary and charts use every entry in the range.",
     colDate: "Date",
     colTime: "Time",
     colType: "Type",
