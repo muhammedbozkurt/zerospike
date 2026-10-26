@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Platform, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useReducedMotion } from "../../lib/useReducedMotion";
 import { useTranslation } from "react-i18next";
@@ -22,6 +22,7 @@ import { GradientCTA } from "../rich/GradientCTA";
 import { useFontScale } from "../../lib/useFontScale";
 import { STACK_AT_SCALE } from "../../lib/layoutForFontScale";
 import type { RevealPlanItem, RevealPlanKind } from "../../lib/revealPlan";
+import { healthStoreLabelKey } from "../../lib/cgm/sourceLabel";
 
 // Cascade timing (ms): a gentle staggered reveal.
 const D_LABEL = 0;
@@ -222,6 +223,8 @@ const PLAN_ICONS: Record<RevealPlanKind, keyof typeof Ionicons.glyphMap> = {
   basal: "moon-outline",
   postMeal: "restaurant-outline",
   lowFollowup: "pulse-outline",
+  firstSync: "sync-outline",
+  connectSource: "link-outline",
 };
 
 /**
@@ -302,6 +305,16 @@ export function Reveal({
     }
     if (item.kind === "lowFollowup")
       return { label: t("onboarding.planLowFollow") };
+    if (item.kind === "firstSync") {
+      return {
+        label: t("onboarding.planFirstSync"),
+        value: t(healthStoreLabelKey(Platform.OS)),
+        valueTone: "muted",
+      };
+    }
+    if (item.kind === "connectSource") {
+      return { label: t("onboarding.planConnectSource") };
+    }
     const name =
       item.label ??
       t(

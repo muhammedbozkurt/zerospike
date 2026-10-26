@@ -1,4 +1,5 @@
 import { alarmModeOf } from "./alarmSelect";
+import type { CgmMode } from "./cgm/state";
 import type { ReminderType } from "./db/types";
 
 /**
@@ -40,7 +41,11 @@ export type RevealPlanKind =
   | "basal"
   /** App behaviours with no fixed time of their own. */
   | "postMeal"
-  | "lowFollowup";
+  | "lowFollowup"
+  /** A sensor mode: the sync that fills the journal, and (Nightscout) the
+   *  connection still to be made in Settings > Data sources. */
+  | "firstSync"
+  | "connectSource";
 
 export interface RevealPlanItem {
   kind: RevealPlanKind;
@@ -81,9 +86,17 @@ export function buildRevealPlan(input: {
   postMealMinutes?: number;
   alarmKitAvailable: boolean;
   alarmAuthorized: boolean;
+  /** How readings arrive; a sensor mode lists its first-sync line first.
+   *  Absent reads as manual. */
+  cgmMode?: CgmMode;
 }): RevealPlanItem[] {
   const { rows, alarmKitAvailable, alarmAuthorized } = input;
   const items: RevealPlanItem[] = [];
+
+  if (input.cgmMode === "cgm" || input.cgmMode === "nightscout") {
+    const kind = input.cgmMode === "cgm" ? "firstSync" : "connectSource";
+    items.push({ kind, id: kind, label: null, time: null, mode: null, wantsAlarm: false });
+  }
 
   for (const kind of REMINDER_KINDS) {
     // Disabled rows are not part of what was set up: syncBasalReminderRow keeps

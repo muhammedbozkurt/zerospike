@@ -46,6 +46,12 @@ import {
   onboardingStepEvent,
   planSetupDecision,
   requiredScreenCount,
+  DEFAULT_MEASURE,
+  MEASURE_OPTIONS,
+  measureAfterPermission,
+  measureModeToWrite,
+  nightscoutHandoff,
+  skipsMeasurementReminders,
   type DiabetesOption,
   type OnboardingAnswers,
   type OnboardingPath,
@@ -169,7 +175,7 @@ const CASES: PathCase[] = [
     label: "insulin only (type 1)",
     answers: { diabetes: "type1", treatment: "insulin", pillsOnly: null },
     path: "insulin",
-    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "insulinProducts", "reminderPlan"],
+    expected: ["analytics", "name", "unit", "diabetes", "insulin", "measure", "targets", "insulinProducts", "reminderPlan"],
     before: 13,
   },
   {
@@ -182,6 +188,7 @@ const CASES: PathCase[] = [
       "unit",
       "diabetes",
       "insulin",
+      "measure",
       "targets",
       "insulinProducts",
       "medReminder",
@@ -193,28 +200,28 @@ const CASES: PathCase[] = [
     label: "pills only (type 2)",
     answers: { diabetes: "type2", treatment: "pills", pillsOnly: null },
     path: "pills",
-    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "medReminder", "reminderPlan"],
+    expected: ["analytics", "name", "unit", "diabetes", "insulin", "measure", "targets", "medReminder", "reminderPlan"],
     before: 10,
   },
   {
     label: "no medication (type 2)",
     answers: { diabetes: "type2", treatment: "none", pillsOnly: null },
     path: "none",
-    expected: ["analytics", "name", "unit", "diabetes", "insulin", "targets", "reminderPlan"],
+    expected: ["analytics", "name", "unit", "diabetes", "insulin", "measure", "targets", "reminderPlan"],
     before: 9,
   },
   {
     label: "no diagnosis, pills",
     answers: { diabetes: "none", treatment: null, pillsOnly: true },
     path: "pills",
-    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "targets", "medReminder", "reminderPlan"],
+    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "measure", "targets", "medReminder", "reminderPlan"],
     before: 10,
   },
   {
     label: "prediabetes, no pills",
     answers: { diabetes: "prediabetes", treatment: null, pillsOnly: false },
     path: "none",
-    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "targets", "reminderPlan"],
+    expected: ["analytics", "name", "unit", "diabetes", "pillsOnly", "measure", "targets", "reminderPlan"],
     before: 9,
   },
 ];
@@ -232,7 +239,7 @@ section("A. every path: order, length, and what is no longer there");
     for (const gone of REMOVED) {
       ok(`${c.label}: no ${gone} screen`, !(steps as string[]).includes(gone));
     }
-    eq(`${c.label}: seven required screens`, requiredScreenCount(steps), 7);
+    eq(`${c.label}: eight required screens`, requiredScreenCount(steps), 8);
     ok(`${c.label}: reminderPlan is last`, steps[steps.length - 1] === "reminderPlan");
     ok(`${c.label}: the disclaimer is not a step`, !(steps as string[]).includes("disclaimer"));
     eqList(`${c.label}: the head never changes`, steps.slice(0, BASE_STEPS.length), BASE_STEPS);
@@ -244,12 +251,12 @@ section("B. the insulin path is within the target");
   const insulin = buildOnboardingSteps(
     onboardingFlags({ diabetes: "type1", treatment: "insulin", pillsOnly: null })
   );
-  ok("eight screens at most, optional product screen included", insulin.length <= 8, `got ${insulin.length}`);
-  eq("seven without the optional product screen", requiredScreenCount(insulin), 7);
+  ok("nine screens at most, optional product screen included", insulin.length <= 9, `got ${insulin.length}`);
+  eq("eight without the optional product screen", requiredScreenCount(insulin), 8);
   eqList(
-    "required screens are exactly the agreed seven",
+    "required screens are exactly the agreed eight",
     insulin.filter((s) => !OPTIONAL_STEPS.includes(s)),
-    ["analytics", "name", "unit", "diabetes", "insulin", "targets", "reminderPlan"]
+    ["analytics", "name", "unit", "diabetes", "insulin", "measure", "targets", "reminderPlan"]
   );
   eqList("the only optional screens are the two that stayed optional", OPTIONAL_STEPS, [
     "insulinProducts",
@@ -258,7 +265,7 @@ section("B. the insulin path is within the target");
   const both = buildOnboardingSteps(
     onboardingFlags({ diabetes: "type2", treatment: "both", pillsOnly: null })
   );
-  ok("insulin and pills stays at seven required screens", requiredScreenCount(both) <= 7);
+  ok("insulin and pills stays at eight required screens", requiredScreenCount(both) <= 8);
   const pills = buildOnboardingSteps(
     onboardingFlags({ diabetes: "type2", treatment: "pills", pillsOnly: null })
   );
@@ -395,9 +402,10 @@ section("E. analytics payloads: no path can be told from another");
     'onboarding_step {"step":"unit","index":3}',
     'onboarding_step {"step":"diabetes","index":4}',
     'onboarding_step {"step":"treatment","index":5}',
-    'onboarding_step {"step":"targets","index":6}',
-    'onboarding_step {"step":"reminderPlan","index":7}',
-    'onboarding_step {"step":"reveal","index":8}',
+    'onboarding_step {"step":"measure","index":6}',
+    'onboarding_step {"step":"targets","index":7}',
+    'onboarding_step {"step":"reminderPlan","index":8}',
+    'onboarding_step {"step":"reveal","index":9}',
     "onboarding_done {}",
   ]);
   const differing: string[] = [];
@@ -854,6 +862,139 @@ section("N. the v27 reset and the sheet's reach");
   ok("the migration runs the flag reset and stamps 27 in one transaction", /migrateToV27[\s\S]{0,300}withTransactionAsync[\s\S]{0,200}V27_RESET_RATIO_CONFIRMATION[\s\S]{0,120}stampSchemaVersion\(db, 27\)/.test(mig));
   const v27 = src("lib/db/v27Sql.ts");
   ok("the SQL names only the flag", /UPDATE user_profiles SET ratios_confirmed = 0;/.test(v27) && !/carb_ratio|insulin_sensitivity|injection_logs/.test(v27.split("export const")[1] ?? ""));
+}
+
+section("O. how the person measures: step order, default, reminders skipped, denial falls back");
+{
+  const flagsOf = (answers: OnboardingAnswers) => onboardingFlags(answers);
+  const insulinA: OnboardingAnswers = { diabetes: "type1", treatment: "insulin", pillsOnly: null };
+  const pillsA: OnboardingAnswers = { diabetes: "type2", treatment: "pills", pillsOnly: null };
+  const noneA: OnboardingAnswers = { diabetes: "type2", treatment: "none", pillsOnly: null };
+
+  eqList("three options in the agreed order", MEASURE_OPTIONS, ["finger", "cgm", "nightscout"]);
+  eq("the finger prick is the default", DEFAULT_MEASURE, "finger");
+
+  for (const a of [insulinA, pillsA, noneA]) {
+    const steps = buildOnboardingSteps({ ...flagsOf(a), measure: "finger" });
+    const at = steps.indexOf("measure");
+    ok("the measure step exists", at !== -1);
+    eq("it sits right after the treatment question", steps[at - 1], flagsOf(a).isTwoWayTreatment ? "pillsOnly" : "insulin");
+    eq("and right before the targets", steps[at + 1], "targets");
+    eqList(
+      "no measure answer is the same list as the finger prick",
+      buildOnboardingSteps(flagsOf(a)),
+      steps
+    );
+    ok("the finger prick keeps the reminder plan, last", steps[steps.length - 1] === "reminderPlan");
+    ok("measure is a required screen", !OPTIONAL_STEPS.includes("measure"));
+  }
+
+  for (const m of ["cgm", "nightscout"] as const) {
+    const noIns = buildOnboardingSteps({ ...flagsOf(noneA), measure: m });
+    ok(`${m}: the measurement reminder plan is skipped without insulin`, !noIns.includes("reminderPlan"));
+    const pills = buildOnboardingSteps({ ...flagsOf(pillsA), measure: m });
+    ok(`${m}: the medication reminder step stays`, pills.includes("medReminder"));
+    ok(`${m}: and the plan step is gone`, !pills.includes("reminderPlan"));
+    const ins = buildOnboardingSteps({ ...flagsOf(insulinA), measure: m });
+    ok(`${m}: an insulin user keeps the step that carries the night reminder`, ins.includes("reminderPlan"));
+    eq(`${m}: reminders are skipped`, skipsMeasurementReminders(m), true);
+  }
+  eq("finger: reminders are not skipped", skipsMeasurementReminders("finger"), false);
+
+  eq("finger writes no mode", measureModeToWrite("finger"), null);
+  eq("cgm writes cgm", measureModeToWrite("cgm"), "cgm");
+  eq("nightscout writes nightscout", measureModeToWrite("nightscout"), "nightscout");
+
+  eq("cgm granted stays cgm", JSON.stringify(measureAfterPermission("cgm", true)), '{"measure":"cgm","fellBack":false}');
+  eq("cgm denied drops to the finger prick", JSON.stringify(measureAfterPermission("cgm", false)), '{"measure":"finger","fellBack":true}');
+  eq("nightscout never depends on the permission", JSON.stringify(measureAfterPermission("nightscout", false)), '{"measure":"nightscout","fellBack":false}');
+  eq("finger never depends on it either", JSON.stringify(measureAfterPermission("finger", false)), '{"measure":"finger","fellBack":false}');
+  eq("only nightscout is handed off to Data sources", nightscoutHandoff("nightscout"), true);
+  eq("cgm is not", nightscoutHandoff("cgm"), false);
+
+  const skipped = buildOnboardingSteps({ ...flagsOf(noneA), measure: "cgm" });
+  const kept = buildOnboardingSteps({ ...flagsOf(insulinA), measure: "cgm" });
+  eq(
+    "the reveal index is the same whether or not the plan step was shown",
+    onboardingStepEvent("reveal", "name", skipped).index,
+    onboardingStepEvent("reveal", "name", kept).index
+  );
+  eq("and it is the finger prick's too", onboardingStepEvent("reveal", "name", skipped).index, 9);
+  eq("measure reports under its own name", onboardingStepEvent("quiz", "measure", skipped).step, "measure");
+  eq("at the index after the treatment question", onboardingStepEvent("quiz", "measure", skipped).index, 6);
+  eq("targets follow it", onboardingStepEvent("quiz", "targets", skipped).index, 7);
+  eq(
+    "measure passes the event schema",
+    JSON.stringify(sanitizeEvent("onboarding_step", onboardingStepEvent("quiz", "measure", skipped)).ok),
+    "true"
+  );
+  eq(
+    "and so does the mode event for each mode",
+    ["manual", "cgm", "nightscout"].every((mode) => sanitizeEvent("cgm_mode_set", { mode }).ok),
+    true
+  );
+
+  const onb = src("app/onboarding.tsx");
+  const finish = code(between(onb, "async function finishToReveal", "async function goToDashboard"));
+  ok("finish writes the mode through setCgmMode", finish.includes("setCgmMode(") && finish.includes("measureModeToWrite("));
+  ok("and reports it as cgm_mode_set", /logEvent\("cgm_mode_set",\s*\{\s*mode/.test(finish));
+  ok("the mode is written only for a non-manual choice", /if \(cgmMode\b/.test(finish) || /cgmMode !== null/.test(finish) || /if \(mode\)/.test(finish));
+  ok("the step list is built with the measure answer", /buildOnboardingSteps\(\{[^}]*measure/.test(onb));
+  const pick = code(between(onb, "async function pickMeasure", "async function goToDashboard"));
+  ok("the pick handler exists", pick.length > 0);
+  ok("choosing CGM asks the Health permission right away", pick.includes("requestHealthPermissions("));
+  ok("the answer is folded through the shared rule", pick.includes("measureAfterPermission("));
+  ok(
+    "the permission is requested nowhere but the pick handler",
+    onb.split("requestHealthPermissions(").length - 1 === 1
+  );
+  ok(
+    "a denial tells the person",
+    pick.includes("setMeasureDenied(true)") && onb.includes('t("onboarding.measureDenied"')
+  );
+  ok("no plan rows are written for a sensor mode", /skipsMeasurementReminders\(/.test(onb));
+  ok("the reveal is told the mode", /measure:\s*cgmMode|cgmMode:/.test(finish) || /measure:\s*measureMode/.test(finish));
+  ok("the Nightscout hand-off note is shown", onb.includes("measureNightscoutNote"));
+  ok("the store name comes from the platform label key", onb.includes("healthStoreLabelKey("));
+  ok("the CGM option is hidden where there is no Health provider", onb.includes("hasHealthProvider()"));
+  ok("no manual-mode flow was touched: nothing is written for the finger prick", !/setCgmMode\(activeProfile\.id,\s*"manual"/.test(onb));
+
+  const langs = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
+  const keys = [
+    "qMeasure",
+    "qMeasureHint",
+    "measure_finger",
+    "measure_cgm",
+    "measure_nightscout",
+    "measureFingerHint",
+    "measureCgmHint",
+    "measureNightscoutHint",
+    "measureNightscoutNote",
+    "measureDenied",
+    "planFirstSync",
+    "planConnectSource",
+  ];
+  for (const l of langs) {
+    const s = src(`lib/i18n/locales/${l}.ts`);
+    const onboardingBlock = between(s, "\n  onboarding: {", "\n  tabs: {");
+    for (const k of keys) {
+      ok(`${l}: onboarding.${k}`, new RegExp(`\\n    ${k}:\\s*\\n?\\s*"[^"]+"`).test(onboardingBlock));
+    }
+    ok(`${l}: dashboard.stepSync`, /\n    stepSync: "[^"]+"/.test(s));
+  }
+  const trLoc = src("lib/i18n/locales/tr.ts");
+  ok("tr: the agreed finger label", trLoc.includes('measure_finger: "Parmaktan ölçüm"'));
+  ok("tr: the question", trLoc.includes('qMeasure: "Nasıl ölçüyorsunuz?"'));
+  ok("tr: the first-sync step", trLoc.includes('stepSync: "İlk eşitleme"'));
+  const en = src("lib/i18n/locales/en.ts");
+  ok("the CGM label carries the store placeholder, not a brand", /measure_cgm: "CGM \(\{\{store\}\}\)"/.test(en));
+  for (const l of langs) {
+    const s = src(`lib/i18n/locales/${l}.ts`);
+    const block =
+      between(s, "    qMeasure:", "    qTargets:") + between(s, "    planFirstSync:", "    revealBasalTip:");
+    ok(`${l}: no em-dash in the new strings`, !block.includes("—"));
+    ok(`${l}: no real-time claim`, !/real.?time|gerçek zamanlı|en temps réel|Echtzeit|tiempo real|tempo reale|tempo real|リアルタイム|الوقت الفعلي|الزمن الحقيقي/i.test(block));
+  }
 }
 
 async function writerTests(): Promise<void> {

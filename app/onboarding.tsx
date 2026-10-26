@@ -49,19 +49,29 @@ import { POST_MEAL_WINDOW_MIN } from "../lib/postMealTimer";
 import type { GlucoseUnit, InsulinMode } from "../lib/db/types";
 import {
   BASE_STEPS,
+  DEFAULT_MEASURE,
   DIABETES_OPTIONS,
+  MEASURE_OPTIONS,
   TREATMENT_OPTIONS,
   basalReminderOnAtFinish,
   buildOnboardingSteps,
   diabetesTypeOf,
+  measureAfterPermission,
+  measureModeToWrite,
+  nightscoutHandoff,
   onboardingDoneEvent,
   onboardingFlags,
   onboardingStepEvent,
   planSetupDecision,
+  skipsMeasurementReminders,
   type DiabetesOption,
+  type MeasureOption,
   type OnboardingStepId,
   type TreatmentOption,
 } from "../lib/onboardingSteps";
+import { setCgmMode } from "../lib/cgm/state";
+import { healthStoreLabelKey } from "../lib/cgm/sourceLabel";
+import { hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
 import {
   clampHypoThreshold,
   clampTarget,
@@ -117,6 +127,18 @@ type IconName = keyof typeof Ionicons.glyphMap;
 const UNIT_ICONS: Record<GlucoseUnit, IconName> = {
   mgdl: "speedometer-outline",
   mmol: "flask-outline",
+};
+
+const MEASURE_ICONS: Record<MeasureOption, IconName> = {
+  finger: "hand-left-outline",
+  cgm: "pulse-outline",
+  nightscout: "cloud-outline",
+};
+
+const MEASURE_HINT_SUFFIX: Record<MeasureOption, string> = {
+  finger: "Finger",
+  cgm: "Cgm",
+  nightscout: "Nightscout",
 };
 
 const TREATMENT_ICONS: Record<TreatmentOption, IconName> = {
@@ -510,6 +532,9 @@ export default function OnboardingScreen() {
   // The undiagnosed path's own answer (see the pillsOnly step): kept apart from
   // `treatment` so switching diabetes answers never mixes the two.
   const [pillsOnly, setPillsOnly] = useState<boolean | null>(null);
+  const [measure, setMeasure] = useState<MeasureOption>(DEFAULT_MEASURE);
+  const [askingHealth, setAskingHealth] = useState(false);
+  const [measureDenied, setMeasureDenied] = useState(false);
   const [fastingMin, setFastingMin] = useState(
     String(glucoseToDisplay(activeProfile?.target_fasting_min ?? DEFAULT_FASTING_RANGE.min, unit))
   );
@@ -574,10 +599,12 @@ export default function OnboardingScreen() {
   const [savingPlan, setSavingPlan] = useState(false);
   const planRows = useMemo<ReminderPreset[]>(
     () =>
-      presetFor(diabetesTypeOf(diabetes)).filter(
-        (r) => !removedPlanTimes.includes(r.time)
-      ),
-    [diabetes, removedPlanTimes]
+      skipsMeasurementReminders(measure)
+        ? []
+        : presetFor(diabetesTypeOf(diabetes)).filter(
+            (r) => !removedPlanTimes.includes(r.time)
+          ),
+    [diabetes, removedPlanTimes, measure]
   );
   // The basal reminder lives inside the plan step: picked there, timed there,
   // and written only by "Set up this plan". `basalSelected` is what the row
@@ -611,8 +638,8 @@ export default function OnboardingScreen() {
   const flags = onboardingFlags({ diabetes, treatment, pillsOnly });
   const { isTwoWayTreatment, hasInsulin, hasOralMeds } = flags;
   const steps = useMemo<StepId[]>(
-    () => buildOnboardingSteps({ isTwoWayTreatment, hasInsulin, hasOralMeds }),
-    [isTwoWayTreatment, hasInsulin, hasOralMeds]
+    () => buildOnboardingSteps({ isTwoWayTreatment, hasInsulin, hasOralMeds, measure }),
+    [isTwoWayTreatment, hasInsulin, hasOralMeds, measure]
   );
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
@@ -681,6 +708,31 @@ export default function OnboardingScreen() {
     setFastingMax(String(glucoseToDisplay(fasting.max, unit)));
     setPostmealMin(String(glucoseToDisplay(postmeal.min, unit)));
     setPostmealMax(String(glucoseToDisplay(postmeal.max, unit)));
+  }
+
+  // CGM asks for the Health permission right here, while the person has just
+  // chosen it. A refusal puts them back on the finger prick and says so; it
+  // never blocks the quiz. The mode itself is written once, in finishToReveal.
+  async function pickMeasure(picked: MeasureOption) {
+    if (askingHealth || picked === measure) return;
+    hapticSelect();
+    setMeasureDenied(false);
+    if (picked !== "cgm") {
+      setMeasure(picked);
+      return;
+    }
+    setAskingHealth(true);
+    let granted = false;
+    try {
+      granted = await requestHealthPermissions();
+    } catch (err) {
+      logCrash(err, { screen: "onboarding", op: "measureHealthPermission" });
+    } finally {
+      setAskingHealth(false);
+    }
+    const result = measureAfterPermission(picked, granted);
+    setMeasure(result.measure);
+    if (result.fellBack) setMeasureDenied(true);
   }
 
   // The last quiz step has nothing after it but the reveal, so "next" there
@@ -807,6 +859,15 @@ export default function OnboardingScreen() {
       }
       await updateProfile(activeProfile.id, patch);
 
+      // The finger prick is the profile's default and writes nothing; a sensor
+      // choice is stored for the profile and reported once, with the same
+      // event Settings > Data sources uses.
+      const cgmMode = measureModeToWrite(measure);
+      if (cgmMode !== null) {
+        await setCgmMode(activeProfile.id, cgmMode);
+        logEvent("cgm_mode_set", { mode: cgmMode });
+      }
+
       // The basal reminder exists only if the user picked it in the plan step
       // and "Set up this plan" wrote it (see basalReminderOnAtFinish); post-meal
       // tracking stays on for everyone. The basal row is written straight to
@@ -850,6 +911,7 @@ export default function OnboardingScreen() {
             alarmKitAvailable: alarmKit,
             alarmAuthorized:
               alarmKit && getAlarmAuthorizationStatus() === "authorized",
+            cgmMode: cgmMode ?? "manual",
           })
         );
       } catch {
@@ -964,6 +1026,8 @@ export default function OnboardingScreen() {
         return t("onboarding.qUnitHint");
       case "diabetes":
         return t("onboarding.qDiabetesHint");
+      case "measure":
+        return t("onboarding.qMeasureHint");
       case "targets":
         return diabetes === "none"
           ? t("onboarding.qTargetsHintTracking")
@@ -1577,6 +1641,37 @@ export default function OnboardingScreen() {
           </FadeSlideIn>
         );
 
+      case "measure": {
+        const store = t(healthStoreLabelKey(Platform.OS));
+        const options = MEASURE_OPTIONS.filter((o) => o !== "cgm" || hasHealthProvider());
+        return (
+          <View>
+            {options.map((opt, i) => (
+              <FadeSlideIn key={opt} delay={optDelay(i)}>
+                <OptionCard
+                  icon={MEASURE_ICONS[opt]}
+                  label={t(`onboarding.measure_${opt}`, { store })}
+                  description={t(`onboarding.measure${MEASURE_HINT_SUFFIX[opt]}Hint`, { store })}
+                  spacing={14}
+                  selected={measure === opt}
+                  onPress={() => void pickMeasure(opt)}
+                />
+              </FadeSlideIn>
+            ))}
+            {measureDenied ? (
+              <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
+                {t("onboarding.measureDenied", { store })}
+              </Txt>
+            ) : null}
+            {nightscoutHandoff(measure) ? (
+              <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
+                {t("onboarding.measureNightscoutNote")}
+              </Txt>
+            ) : null}
+          </View>
+        );
+      }
+
       case "analytics":
         return (
           <FadeSlideIn delay={optDelay(0)}>
@@ -1691,6 +1786,7 @@ export default function OnboardingScreen() {
           label={label}
           disabled={
             (step === "targets" && !rangesOk) ||
+            (step === "measure" && askingHealth) ||
             (step === "diabetes" && diabetes == null) ||
             !stepperFields.allValid
           }
