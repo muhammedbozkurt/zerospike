@@ -73,9 +73,29 @@ Ikinci tur (surum 6): Gummy candy adet 3 -> 2 g (SR 167989: 10 gummy bear = 22 g
 
 Tabbouleh 20 kaldi (fr kuskuslu surum dogru); tr maydanozlu tabbouleh (~10) icin ayri satir ONERILIR.
 
-## Dogrulanmasi gereken
+## Karma yemek taramasi (2026-10-27, surum 2.5.0)
 
-Karma yemek karb kaynak taramasi bekliyor, degistirilmedi: Jambalaya 24, Tteokbokki 35, Chilaquiles 24, Shepherd's pie 16, Gumbo 14. Lifli tohum tutarsizligi: Chia ve Keten kullanilabilir karb tabanina cekildi, ama Haşhaş tohumu (28), Hindistan cevizi (24), Badem (22) lif haric degil; tek tabana cekilmedi.
+Kural: her yemek icin en az iki bagimsiz kaynak, tek bir kaynak degeri olarak tabloya girer (USDA FNDDS, USDA Branded medyani, OFF medyani, ulusal tablo); kaynak degerlerinin ortalamasi eski degerden %15'ten fazla saparsa yeni deger = ortalamanin yuvarlagi. Hepsi %15'i astigi icin bes yemek de guncellendi. Hazir yemek/coz-ye durumu karsilastirilir: kuru karisim, baharat, sos ve baz (as sold) cikarildi.
+
+| Yiyecek | eski -> yeni | Kaynaklar (100 g karb) |
+|---|---|---|
+| Jambalaya | 24 -> 12 | FNDDS 2706727 "Jambalaya with meat and rice" 8.65 (https://fdc.nal.usda.gov/food-details/2706727/nutrients); USDA Branded hazir yemek medyani 14.1 (n=15); OFF medyani 13.7 (n=28); ort. 12.15 |
+| Tteokbokki | 35 -> 21 | FNDDS 2708957 "Dukboki or Tteokbokki, Korean" 19.61 (https://fdc.nal.usda.gov/food-details/2708957/nutrients); OFF hazir tteokbokki yemegi 21.4 ve 24.0 (barkod 8859098701496, 8859098701489; medyan 22.7); ort. 21.2 |
+| Chilaquiles | 24 -> 15 | FNDDS 2708505 "Chilaquiles" 14.9 (https://fdc.nal.usda.gov/food-details/2708505/nutrients); USDA Branded 348595 Kellogg's chicken chilaquiles 13.7; OFF medyani 15.6 (n=5, cips urunleri ve 31.9'luk tek aykiri deger haric); ort. 14.7 |
+| Shepherd's pie | 16 -> 11 | FNDDS 2706594 "Shepherd's pie" 8.72 (https://fdc.nal.usda.gov/food-details/2706594/nutrients); USDA Branded medyani 10.9 (n=33); OFF medyani 10.3 (n=77); Matvaretabellen (Norvec ulusal tablosu) 03.465 "Shephards' pie" 10.8 kullanilabilir karb + 2 lif = 12.8 (https://www.matvaretabellen.no/en/shephards-pie/); ort. 10.7 |
+| Gumbo | 14 -> 7 | FNDDS 2706726 "Gumbo with rice" 6.55 (https://fdc.nal.usda.gov/food-details/2706726/nutrients; "no rice" 4.03); USDA Branded medyani 7.35 (n=85); OFF medyani 7.3 (n=46); ort. 7.07 |
+
+Yontem: FNDDS 2024-10-31 ve USDA Branded 2025-04-24 CSV veri setleri https://fdc.nal.usda.gov/download-datasets ; OFF: https://search.openfoodfacts.org/search?q=<terim> (tam metin, karbonhidrat verisi olan urunler, 30 g ustu kuru karisimlar haric); erisim 2026-10-27. Ayrinti: Branded medyanlari mukerrer (ayni barkod ailesi, ayni deger) kayitlar teke indirilerek hesaplandi.
+
+Siniri: Tteokbokki icin hazir-yemek durumunda tek USDA kaydi ve iki OFF urunu var; OFF'taki 50-57 g'lik tteokbokki urunleri ve USDA Branded 56.67 (Topokki) kuru pirinc keki + sos paketi (as sold) oldugu icin disarida birakildi. Kullanici girisli siteler (FatSecret Korea 29-31) kaynak sayilmadi. Resmi Kore tablosuna (RDA/MFDS) erisilemedi (arama sayfasi dinamik). Dusuk guvenli deger; tek satir kaynak eklenince yeniden bakilmali.
+
+Ciqual (hachis parmentier) ve Finlandiya Fineli denendi, erisim engelli (503/Cloudflare), kullanilmadi.
+
+## Lifli tohumlar (2026-10-27)
+
+Katalog kurali yukaridaki "Karbonhidrat tabani"ndaki gibi: USDA "by difference" toplam karb; yalniz lifi 25 g/100 g ustu olanlar kullanilabilir karba cekilir (Chia 34.4 g lif, Keten 27.3 g lif). Eksik olan tutarsizlik degil esik uygulamasidir: Haşhaş (SR Legacy 171330: 28.13 karb, 19.5 lif), kurutulmus Hindistan cevizi (SR 170170: 23.65 karb, 16.3 lif) ve Badem (SR 170567: 21.55 karb, 12.5 lif) esigin altindadir, toplam karb kalir (28 / 24 / 22, USDA ile uyumlu). Degistirilmedi. Chia 42.12 - 34.4 = 7.7 -> 8 (SR 170554), Keten 28.88 - 27.3 = 1.6 -> 2 (SR 169414) dogrulandi. Matvaretabellen (Norvec) bu uc tohumu "kullanilabilir karb" olarak verir (haşhaş 3 + 20 lif, hindistan cevizi 6.4 + 9, badem 6.6 + 11), baska bir taban oldugu icin deger karsilastirmasinda kullanilmadi.
+
+Test: scripts/foodSourcesCheck.test.ts bu on kalemin beklenen degerlerini sabitler.
 
 ## Otomatik tarama (2026-10-19)
 
