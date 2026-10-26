@@ -19,6 +19,10 @@ import { APIError } from "npm:@anthropic-ai/sdk@0.131.0";
 // deno-lint-ignore no-import-prefix
 import { AnthropicBedrock, AnthropicBedrockMantle } from "npm:@anthropic-ai/bedrock-sdk@0.34.2";
 
+import { spikePrefix } from "./profile.ts";
+
+export { ALLOWED_PROFILE_PREFIXES, DEFAULT_PROFILE_PREFIX, spikePrefix } from "./profile.ts";
+
 export type BedrockClient = AnthropicBedrock | AnthropicBedrockMantle;
 
 /** bearer: Bedrock API key on bedrock-runtime, inference profile ids. sigv4: IAM key pair on Mantle, bare model names. */
@@ -26,24 +30,21 @@ export type AuthPath = "bearer" | "sigv4";
 
 export const DEFAULT_MODEL = "anthropic.claude-sonnet-5-5";
 export const DEFAULT_REGION = "eu-central-1";
-export const DEFAULT_PROFILE_PREFIX = "eu.";
 /** A reply is two or three sentences (about 80 words) plus the meta line. */
 export const MAX_TOKENS = 600;
 /** Claude Opus 5.5 always thinks (it cannot be turned off) and thinking tokens count against
  *  max_tokens, so at 600 a reply could be cut off before it says anything. */
 export const OPUS_MAX_TOKENS = 1200;
 
-/** SPIKE_MODEL, SPIKE_MODEL_PREFIX and AWS_REGION are deploy secrets; a typo or a leaked value must
- *  not be able to point the function at an unknown model (cost) or a region outside the EU (data
- *  residency). "global." is accepted but its profile can be served from outside the EU: only
- *  "eu." keeps inference in the EU. */
+/** SPIKE_MODEL and AWS_REGION are deploy secrets; a typo or a leaked value must not be able to
+ *  point the function at an unknown model (cost) or a region outside the EU (data residency).
+ *  The profile prefix allows only "eu.": "global." can be served from outside the EU. */
 export const ALLOWED_MODELS: readonly string[] = [
   "anthropic.claude-sonnet-5-5",
   "anthropic.claude-opus-5-5",
   "anthropic.claude-haiku-4-5",
 ];
 export const ALLOWED_REGIONS: readonly string[] = ["eu-central-1", "eu-west-1", "eu-west-3", "eu-north-1"];
-export const ALLOWED_PROFILE_PREFIXES: readonly string[] = ["eu.", "global."];
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -59,10 +60,6 @@ export function spikeModel(): string {
 
 export function spikeRegion(): string {
   return env("AWS_REGION") ?? DEFAULT_REGION;
-}
-
-export function spikePrefix(): string {
-  return env("SPIKE_MODEL_PREFIX") ?? DEFAULT_PROFILE_PREFIX;
 }
 
 type Credentials =
@@ -90,20 +87,16 @@ export function modelId(model: string, path: AuthPath | null = authPath()): stri
   return path === "bearer" ? `${spikePrefix()}${model}` : model;
 }
 
-/** What is wrong with the model, region or profile prefix configuration, or null when all are
- *  allowed. The prefix is only used on the bearer path, so it is only checked there. */
+/** What is wrong with the model or region configuration, or null when both are allowed. */
 export function configIssue(): string | null {
   if (!ALLOWED_MODELS.includes(spikeModel())) return `SPIKE_MODEL is not one of ${ALLOWED_MODELS.join(", ")}`;
   if (!ALLOWED_REGIONS.includes(spikeRegion())) return `AWS_REGION is not one of ${ALLOWED_REGIONS.join(", ")}`;
-  if (authPath() === "bearer" && !ALLOWED_PROFILE_PREFIXES.includes(spikePrefix())) {
-    return `SPIKE_MODEL_PREFIX is not one of ${ALLOWED_PROFILE_PREFIXES.join(", ")}`;
-  }
   return null;
 }
 
 let client: BedrockClient | null = null;
 
-/** Null until credentials are set and the model, region and prefix are allowed (the reason is
+/** Null until credentials are set and the model and region are allowed (the reason is
  *  logged). Credentials are passed explicitly so the SDK never falls back to the Node-oriented
  *  AWS credential provider chain. */
 export function bedrockClient(): BedrockClient | null {

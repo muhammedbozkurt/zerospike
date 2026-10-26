@@ -156,7 +156,7 @@ async function main(): Promise<void> {
   const { alt, out } = parseArgs(Deno.args);
   const client = bedrockClient();
   if (!client) {
-    console.error("AWS_BEARER_TOKEN_BEDROCK (or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY) must be set, and SPIKE_MODEL, SPIKE_MODEL_PREFIX (bearer only) and AWS_REGION, when set, must be on the allowlists in bedrock.ts (the log above says which one is not).");
+    console.error("AWS_BEARER_TOKEN_BEDROCK (or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY) must be set, and SPIKE_MODEL and AWS_REGION, when set, must be on the allowlists in bedrock.ts (the log above says which one is not).");
     Deno.exit(1);
   }
   const cases = JSON.parse(await Deno.readTextFile(new URL("./eval-cases.json", import.meta.url))) as EvalCase[];
