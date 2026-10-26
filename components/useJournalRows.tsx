@@ -36,6 +36,7 @@ import type { PeriodTag } from "../lib/db/types";
 import { planAftermathReplay } from "../lib/feedback";
 import { useFeedback, type SheetAction } from "./Feedback";
 import { useUndoBatch } from "./useUndoBatch";
+import { CgmDaySheet } from "./CgmDaySheet";
 import { InjectionEditSheet } from "./InjectionEditSheet";
 import { MedEditSheet } from "./MedEditSheet";
 
@@ -66,6 +67,8 @@ export interface JournalRowsApi {
    *  confirm - for a caller whose confirm already ran (the screen's own
    *  GlucoseInputSheet, which asks before calling this). */
   deleteEntry: (entry: JournalEntry) => Promise<void>;
+  /** Opens the curve of one day of sensor readings (the day's summary row). */
+  onCgmDayPress: (dayKey: string) => void;
   /** Meal ids that have a computable response, for the row's chevron. */
   mealResponseIds: Set<string>;
   /** Render inside the screen, next to its other sheets. */
@@ -89,6 +92,8 @@ export function useJournalRows(input: {
 
   const [editInjection, setEditInjection] = useState<InjectionEntry | null>(null);
   const [editMed, setEditMed] = useState<MedEntry | null>(null);
+  const [cgmDay, setCgmDay] = useState<string | null>(null);
+  const onCgmDayPress = useCallback((dayKey: string) => setCgmDay(dayKey), []);
 
   // D4: the widget/Live Activity/watch snapshot is otherwise only refreshed by
   // the dashboard tab's own effect on `dataVersion`, which freezes while that
@@ -395,10 +400,12 @@ export function useJournalRows(input: {
           if (target) void deleteWithUndo(target);
         }}
       />
+      <CgmDaySheet dayKey={cgmDay} onClose={() => setCgmDay(null)} />
     </>
   );
 
   return {
+    onCgmDayPress,
     onRowPress,
     onRowLongPress,
     onRowOpenResponse,

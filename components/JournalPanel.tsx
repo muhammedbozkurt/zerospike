@@ -9,6 +9,11 @@ import { withAlpha } from "./rich/GlassCard";
 import { Button, Chip, Txt } from "./ui";
 import { upper } from "../lib/upper";
 import type { JournalEntry } from "../lib/db/journal";
+import type { CgmDayEntry } from "../lib/cgm/daySummary";
+
+/** A journal list row: a record, or the one summary row a day of sensor
+ *  readings folds into. */
+export type JournalListRow = JournalEntry | CgmDayEntry;
 
 /**
  * The journal's container, shared by the dashboard's preview and the full
@@ -40,7 +45,7 @@ export const journalPanelSide = () =>
 export type JournalSection = {
   title: string;
   dateLabel: string;
-  data: JournalEntry[];
+  data: JournalListRow[];
 };
 
 /**

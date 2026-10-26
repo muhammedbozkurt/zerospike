@@ -8,6 +8,16 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { getJournal, type GlucoseEntry, type JournalEntry } from "../lib/db/journal";
 import { insulinModeUsesInsulin } from "../lib/insulinMode";
+import { targetBandFor } from "../lib/agpChart";
+import {
+  CGM_JOURNAL_DAYS,
+  CGM_JOURNAL_MAX_DAYS,
+  cgmDayEntry,
+  cgmDaysForFilter,
+  isCgmDayEntry,
+  mergeCgmDays,
+} from "../lib/cgm/daySummary";
+import { useCgmDaySummaries, useCgmMode } from "../lib/useCgmWindow";
 import { applyGlucoseCorrection } from "../lib/services/glucoseEdit";
 import { formatDate, formatDateKey, formatWeekday, relativeDay } from "../lib/format";
 import {
@@ -25,6 +35,7 @@ import { ScreenHeader } from "../components/ScreenHeader";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { attemptGlucoseWrite } from "../lib/glucoseSheetFlow";
 import { JournalItem } from "../components/JournalItem";
+import { CgmDayRow } from "../components/CgmDayRow";
 import { GlucoseInputSheet } from "../components/GlucoseInputSheet";
 import { useJournalRows } from "../components/useJournalRows";
 import {
@@ -36,10 +47,11 @@ import {
   JournalPanelTop,
   journalPanelSide,
   type JournalFilter,
+  type JournalListRow,
   type JournalSection,
 } from "../components/JournalPanel";
 
-const journalKey = (e: JournalEntry) => `${e.kind}-${e.id}`;
+const journalKey = (e: JournalListRow) => `${e.kind}-${e.id}`;
 
 /**
  * The full journal: every record, paged, on its own screen.
@@ -74,6 +86,22 @@ function JournalScreen() {
   const [presence, setPresence] = useState({ any: false, med: false });
   const [loadLimit, setLoadLimit] = useState(300);
   const [pages, setPages] = useState(1);
+  // A sensor profile's readings are never listed one by one: each day folds into
+  // one summary row, loaded for this many recent days (widened by "show more").
+  const { mode: dataMode } = useCgmMode(activeProfile?.id);
+  const cgmActive = dataMode !== "manual";
+  const [cgmDayCount, setCgmDayCount] = useState(CGM_JOURNAL_DAYS);
+  const cgmBand = useMemo(
+    () => targetBandFor(activeProfile ?? {}),
+    [activeProfile?.target_fasting_min, activeProfile?.target_postmeal_max, activeProfile?.hypo_threshold_mgdl]
+  );
+  const cgmDays = useCgmDaySummaries({
+    profileId: activeProfile?.id,
+    enabled: cgmActive,
+    band: cgmBand,
+    dayCount: cgmDayCount,
+    dataVersion,
+  });
   const [filter, setFilter] = useState<JournalFilter>(() =>
     params.filter === "glucose" ||
     params.filter === "meal" ||
@@ -143,13 +171,17 @@ function JournalScreen() {
   );
 
   const { filteredEntries, displayEntries, sections } = useMemo(() => {
-    const filtered =
+    const ofKind: JournalListRow[] =
       filter === "all" ? entries : entries.filter((e) => e.kind === filter);
+    const filtered: JournalListRow[] =
+      cgmActive && cgmDaysForFilter(filter)
+        ? mergeCgmDays(ofKind, cgmDays.map(cgmDayEntry))
+        : ofKind;
     let cut = 0;
     for (let p = 0; p < pages; p++) cut = nextJournalCut(filtered, cut, JOURNAL_PAGE_LIMITS);
     const display = filtered.slice(0, cut);
     const built: JournalSection[] = [];
-    const byKey = new Map<string, JournalEntry[]>();
+    const byKey = new Map<string, JournalListRow[]>();
     for (const e of display) {
       const key = formatDateKey(e.logged_at);
       let arr = byKey.get(key);
@@ -170,13 +202,17 @@ function JournalScreen() {
       arr.push(e);
     }
     return { filteredEntries: filtered, displayEntries: display, sections: built };
-  }, [entries, filter, pages, t]);
+  }, [entries, filter, pages, t, cgmActive, cgmDays]);
+
+  const hasAny = presence.any || (cgmActive && cgmDays.length > 0);
 
   // Offered while the loaded feed still has rows to reveal, or while the SQL
   // window came back full (so the DB may hold older records). Both false = the
   // journal really is at its end and the button goes away.
   const canShowMore =
-    displayEntries.length < filteredEntries.length || entries.length >= loadLimit;
+    displayEntries.length < filteredEntries.length ||
+    entries.length >= loadLimit ||
+    (cgmActive && cgmDayCount < CGM_JOURNAL_MAX_DAYS);
 
   function showMore() {
     hapticSelect();
@@ -186,13 +222,28 @@ function JournalScreen() {
       // Loaded window exhausted and the query filled it: widen the window once
       // and advance with it. When the DB is drained the length check stops this.
       setLoadLimit((l) => l + JOURNAL_LOAD_STEP);
+      setCgmDayCount((n) => Math.min(n + CGM_JOURNAL_DAYS, CGM_JOURNAL_MAX_DAYS));
+      setPages((p) => p + 1);
+    } else if (cgmActive && cgmDayCount < CGM_JOURNAL_MAX_DAYS) {
+      setCgmDayCount((n) => Math.min(n + CGM_JOURNAL_DAYS, CGM_JOURNAL_MAX_DAYS));
       setPages((p) => p + 1);
     }
   }
 
   const renderItem = useCallback(
-    ({ item, index }: { item: JournalEntry; index: number }) =>
-      activeProfile ? (
+    ({ item, index }: { item: JournalListRow; index: number }) =>
+      isCgmDayEntry(item) ? (
+        activeProfile ? (
+          <View style={journalPanelSide()}>
+            <CgmDayRow
+              entry={item}
+              unit={activeProfile.glucose_unit ?? "mgdl"}
+              onPress={rows.onCgmDayPress}
+              firstInPanel={index === 0}
+            />
+          </View>
+        ) : null
+      ) : activeProfile ? (
         <View style={journalPanelSide()}>
           <JournalItem
             entry={item}
@@ -214,6 +265,7 @@ function JournalScreen() {
       rows.onRowLongPress,
       rows.onRowDelete,
       rows.onRowOpenResponse,
+      rows.onCgmDayPress,
     ]
   );
 
@@ -256,7 +308,7 @@ function JournalScreen() {
         maxToRenderPerBatch={12}
         windowSize={9}
         ListHeaderComponent={
-          presence.any ? (
+          hasAny ? (
             <JournalPanelTop title={t("dashboard.history")}>
               <JournalFilterChips
                 chips={chips}
@@ -275,7 +327,7 @@ function JournalScreen() {
         // rather than inventing a first-run message that belongs on the
         // dashboard.
         ListEmptyComponent={
-          loaded && presence.any ? (
+          loaded && hasAny ? (
             <JournalEmptyFilter
               onClearFilter={() => {
                 setFilter("all");
@@ -285,7 +337,7 @@ function JournalScreen() {
           ) : null
         }
         ListFooterComponent={
-          presence.any ? (
+          hasAny ? (
             <View>
               <JournalPanelBottom>
                 {canShowMore ? (

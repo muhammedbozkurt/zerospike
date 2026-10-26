@@ -48,6 +48,8 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.cgmMode",
   /** lib/cgm/state.ts - the one-time "switch to CGM" answer. */
   "zerospike.cgmOffer",
+  /** lib/useCgmWindow.ts - the sensor curve window (3, 6 or 12 hours) last chosen. */
+  "zerospike.cgmCurveHours",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always
