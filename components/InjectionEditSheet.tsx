@@ -19,11 +19,14 @@ import type { BolusKind, InjectionSite, InsulinType, SitePoint } from "../lib/db
 import { BOLUS_KINDS, SELECTABLE_SITES } from "../lib/db/types";
 import {
   findRecentCalculatorBolus,
+  getInjection,
   getSiteUsageHistory,
   updateInjection,
   type InjectionUpdate,
   type SiteUsage,
 } from "../lib/db/injections";
+import { inDbTransaction } from "../lib/db/meals";
+import { updateMealLog } from "../lib/db/logs";
 import { OTHER_PRODUCT_ID } from "../lib/insulinCatalog";
 import { getRotationCycleStart } from "../lib/rotationCycle";
 import { InjectionBodyMap } from "./InjectionBodyMap";
@@ -71,6 +74,8 @@ export interface InjectionEditTarget {
    *  that now reads as bolus (or vice versa). */
   insulin_product_id: string | null;
   insulin_product_other: string | null;
+  /** 'calculator' for the bolus row a meal log wrote; its meal follows an edit. */
+  source?: string | null;
 }
 
 // Same heat window as the injection tab's map surface.
@@ -300,7 +305,19 @@ export function InjectionEditSheet({
           site_point: hasSite ? point : null,
           logged_at: loggedAt.toISOString(),
         };
-        await updateInjection(target.id, patch);
+        // A calculator bolus is also the dose of its meal: the meal row follows
+        // the correction, and a row turned into basal stops being that dose.
+        const mealId =
+          target.source === "calculator" ? (await getInjection(target.id))?.meal_log_id : null;
+        if (mealId) {
+          const mealDose = insulinType === "bolus" && hasDose ? dose : 0;
+          await inDbTransaction(async () => {
+            await updateInjection(target.id, patch);
+            await updateMealLog(mealId, { insulin_dose_units: mealDose });
+          });
+        } else {
+          await updateInjection(target.id, patch);
+        }
       },
       onSaved: () => {
         logEvent("log_edited", { kind: insulinType === "basal" ? "basal" : "injection" });

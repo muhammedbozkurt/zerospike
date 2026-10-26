@@ -279,5 +279,39 @@ console.log("\nI. P17: which settled side effects an undo replays, and in what o
   eq("and still newest first", dup.map((e) => e.tag), ["B", "A"]);
 }
 
+console.log("\nZ. undoing a calculator bolus delete returns the meal's dose");
+{
+  const bolusRow = (over: Row = {}): Row => ({
+    id: "i1",
+    meal_log_id: "m1",
+    source: "calculator",
+    insulin_type: "bolus",
+    dose_units: 5,
+    ...over,
+  });
+  eq(
+    "calculator bolus snapshot restores the meal dose after the insert",
+    planRestoreSteps({ injections: [bolusRow()] }).map((s) => s.op),
+    ["insert", "restoreMealDoses"]
+  );
+  const dose = planRestoreSteps({ injections: [bolusRow()] }).find((s) => s.op === "restoreMealDoses");
+  eq("the step names the meal and dose", dose && dose.op === "restoreMealDoses" ? dose.items : null, [{ mealId: "m1", dose: 5 }]);
+  eq(
+    "a manual injection has no meal dose step",
+    planRestoreSteps({ injections: [bolusRow({ source: "manual" })] }).map((s) => s.op),
+    ["insert"]
+  );
+  eq(
+    "a basal row has no meal dose step",
+    planRestoreSteps({ injections: [bolusRow({ insulin_type: "basal" })] }).map((s) => s.op),
+    ["insert"]
+  );
+  eq(
+    "a meal snapshot restores the meal row verbatim, no dose step",
+    planRestoreSteps({ meals: [{ id: "m1", insulin_dose_units: 5 }], injections: [bolusRow()] }).map((s) => s.op),
+    ["insert", "insert"]
+  );
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

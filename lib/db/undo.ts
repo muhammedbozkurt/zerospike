@@ -104,6 +104,15 @@ export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
   for (const step of planRestoreSteps(snap)) {
     if (step.op === "insert") {
       for (const row of step.rows) await insertRow(db, step.table, row);
+    } else if (step.op === "restoreMealDoses") {
+      // `AND insulin_dose_units = 0`: a dose typed on the meal in the meantime
+      // is the user's own and is not overwritten by the restore.
+      for (const item of step.items) {
+        await db.runAsync(
+          "UPDATE meal_logs SET insulin_dose_units = ? WHERE id = ? AND insulin_dose_units = 0;",
+          [item.dose, item.mealId]
+        );
+      }
     } else {
       // `AND sugar_log_id IS NULL`: the ON DELETE SET NULL that ran when the
       // reading was deleted is the only link this restore is undoing. If the
