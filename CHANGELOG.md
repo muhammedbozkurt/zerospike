@@ -6,6 +6,38 @@ dilde tutulur; burada teknik ayrıntı da yer alır.
 
 Sürüm damgası: `app.json` (`version`, `ios.buildNumber`, `android.versionCode`).
 
+## 2.5.0
+
+Sürüm damgası: `app.json` `version` 2.5.0 (build numarası autoIncrement).
+
+### CGM
+- Health üzerinden CGM modu: Apple Health ve Health Connect'e sensör
+  uygulamasının yazdığı sürekli glukoz okumaları (5 dakikalık ölçümler) içe
+  aktarılır; kaynak rozeti gösterilir, çift kayıtlar ayıklanır. Android okuma
+  penceresi 30 gün, iOS 90 gün (değişmedi).
+- Ana ekranda CGM eğrisi (3, 6 ve 12 saat). Hedef aralıkta yüzde ve AGP CGM
+  verisinden hesaplanır. Rapor ve PDF'te veri kaynağı yazar.
+- CGM modu açıkken elle ölçüm hatırlatıcıları susar.
+- Nightscout bağlantısı: kullanıcının kendi sunucusu, yalnız okuma. URL ve
+  token cihazda güvenli depoda durur; geliştirici sunucusuna CGM verisi gitmez.
+- Kapsam sınırı: CGM için alarm, eşik uyarısı veya doz ilişkisi yoktur; ekran
+  yalnız görüntüleme ve günlük içindir. Dexcom doğrudan bağlantısı bayrak
+  arkasında kapalıdır ve mağaza metinlerinde anılmaz.
+
+### Veri ve güvenlik
+- Veri kaybı düzeltmeleri; kayıt hatalarında görünür mesaj; geri al güvenliği.
+
+### Arayüz ve erişilebilirlik
+- Yeni bildirim (toast) tasarımı: altta, sekme çubuğunun üstünde.
+- Erişilebilirlik iyileştirmeleri.
+
+### Mağaza metni
+- 14 yerelde (App Store) ve 14 yerelde (Play, `97.txt`) 2.5.0 yenilikler; her
+  yerelin açıklamasında CGM bölümü (Nightscout adı yalnız açıklamada), kısa
+  açıklama ve tanıtım metninde CGM vurgusu, anahtar kelimelerde "cgm" (ayrıntı
+  `scratchpad/g250-beyan/sayim.md`).
+- Beyan notları: `scratchpad/g250-beyan/` (nightscout, dexcom, play-saglik-notu).
+
 ## 2.4.1
 
 Sürüm damgası: `app.json` `version` 2.4.1 (build numarası autoIncrement).
