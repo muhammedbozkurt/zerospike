@@ -58,7 +58,7 @@ for (const lang of Object.keys(want)) {
   const longest = Math.max(...inj.segSave.split(/\s+/).map((w) => w.length));
   ok(`${lang} segSave words fit a chip of three`, longest <= MAX_WORD);
   ok(`${lang} has ctaNeedSite`, typeof inj.ctaNeedSite === "string" && inj.ctaNeedSite.length > 0);
-  ok(`${lang} ctaNeedSite has no em-dash`, !(inj.ctaNeedSite ?? "").includes("—"));
+  ok(`${lang} ctaNeedSite has no em-dash`, !(inj.ctaNeedSite ?? "").includes(String.fromCharCode(0x2014)));
 }
 
 console.log(failed ? `${failed} failed` : "all passed");
