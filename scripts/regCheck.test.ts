@@ -178,6 +178,12 @@ section("H. Turkish inflection and dotted/dotless I are caught (tr only)");
     "TANI KOYAR",
     "ÖNERİLEN DOZ 4 ünite",
     "Önerilen dozu gösterir",
+    "Bu tanıda insülin gerekir",
+    "Tanıya göre doz",
+    "Tanınızı doktorunuz koyar",
+    "Tanıdan sonra doz",
+    "Düşük değerde alarm çalar",
+    "Kan şekeri düşükse uyarı gösterilir",
   ];
   for (const t of flagged) ok(`tr flagged: ${t}`, scan(t) >= 1);
   const clean = [
@@ -187,6 +193,12 @@ section("H. Turkish inflection and dotted/dotless I are caught (tr only)");
     "Uygulamayı tanıtın",
     "Tanıdık yüz",
     "Öğünleri takip edin",
+    "Uygulamayı tanıyın",
+    "Tanınmış markalar",
+    "Ses komutlarını tanır",
+    "Hatırlatıcı alarmı yüksek sesle çalar",
+    "Düşük pil uyarısı",
+    "Tanıdığınız kişiler",
   ];
   for (const t of clean) ok(`tr clean: ${t}`, scan(t) === 0);
   const en = (reg.scanLocaleEntries("en", [["x", "UYARIR"]]) as { findings: Finding[] }).findings.length;

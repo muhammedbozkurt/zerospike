@@ -1,14 +1,40 @@
 import { getDb } from "./index";
+import { createWriteLock } from "../writeLock";
+import { deferInjectionEvents, discardInjectionEvents, flushInjectionEvents } from "./txEvents";
 import type { GlucoseEntry, MealEntry } from "./journal";
 import { foodName, parseTags } from "./types";
 import type { Food, Lang, PeriodTag } from "./types";
 import { BASELINE_LOOKBACK_MINUTES, MEAL_RESPONSE_HOURS } from "../mealResponse";
 
+const unitLock = createWriteLock();
+
 /** Runs the writes of `fn` as one unit: a throw rolls all of them back, so a
- *  meal edit and its bolus row never land half-applied. */
+ *  meal edit and its bolus row never land half-applied. BEGIN IMMEDIATE takes
+ *  the write lock up front: a deferred BEGIN that reads first and writes later
+ *  fails at once with "database is locked" when another connection (Health or
+ *  CGM import) wrote in between, because busy_timeout never applies to that
+ *  lock upgrade. */
 export async function inDbTransaction(fn: () => Promise<void>): Promise<void> {
-  const db = await getDb();
-  await db.withTransactionAsync(fn);
+  return unitLock(async () => {
+    const db = await getDb();
+    await db.execAsync("BEGIN IMMEDIATE");
+    deferInjectionEvents();
+    try {
+      await fn();
+      await db.execAsync("COMMIT");
+    } catch (e) {
+      discardInjectionEvents();
+      if (db.isInTransactionSync()) {
+        try {
+          await db.execAsync("ROLLBACK");
+        } catch {
+          // the original error is the one worth surfacing
+        }
+      }
+      throw e;
+    }
+    flushInjectionEvents();
+  });
 }
 
 interface MealRow {

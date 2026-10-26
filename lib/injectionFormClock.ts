@@ -8,6 +8,13 @@ export type ForegroundTimeAction = "keep" | "refresh" | "stale";
 /** What the save does with a stale pick: write it as picked, or write "now". */
 export type StaleTimeChoice = "picked" | "now";
 
+/** Maps the three-outcome dialog (time button, "now" button, dismissed) onto a
+ *  choice. Dismissing is not an answer: it cancels the save. */
+export function staleTimeChoiceFrom(result: boolean | null): StaleTimeChoice | "cancel" {
+  if (result === null) return "cancel";
+  return result ? "picked" : "now";
+}
+
 /**
  * What the form does with its time when the app returns to the foreground.
  * An untouched time simply follows "now"; a hand-picked one is kept, and after

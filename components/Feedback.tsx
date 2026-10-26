@@ -75,9 +75,16 @@ interface ActionSheetOptions {
   actions: SheetAction[];
 }
 
+/** What the overlay paints: choose() sets dismissAsNull. */
+type OpenConfirm = ConfirmOptions & { dismissAsNull?: boolean };
+
 interface FeedbackApi {
   toast: (message: string, kind?: ToastKind, action?: ToastAction) => void;
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
+  /** Like confirm, but dismissing the dialog (backdrop, Android back, screen
+   *  reader escape) resolves null instead of false, so a caller whose cancel
+   *  button is a real answer can tell the two apart. */
+  choose: (opts: ConfirmOptions) => Promise<boolean | null>;
   actionSheet: (opts: ActionSheetOptions) => void;
 }
 
@@ -100,8 +107,8 @@ interface FeedbackInternal {
   toastAction: ToastAction | null;
   runToastAction: () => void;
   toastAnim: Animated.Value;
-  confirmOpts: ConfirmOptions | null;
-  closeConfirm: (result: boolean) => void;
+  confirmOpts: OpenConfirm | null;
+  closeConfirm: (result: boolean | null) => void;
   sheet: ActionSheetOptions | null;
   closeSheet: () => void;
   runSheetAction: (action: SheetAction) => void;
@@ -146,8 +153,10 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const toastAction = toastState.current?.action ?? null;
 
   // Confirm state
-  const [confirmOpts, setConfirmOpts] = useState<ConfirmOptions | null>(null);
-  const resolver = useRef<((v: boolean) => void) | null>(null);
+  const [confirmOpts, setConfirmOpts] = useState<OpenConfirm | null>(null);
+  const resolver = useRef<((v: boolean | null) => void) | null>(null);
+  // Set while the open dialog came from choose(): abandoning it yields null.
+  const resolverIsChoose = useRef(false);
 
   // Action sheet state
   const [sheet, setSheet] = useState<ActionSheetOptions | null>(null);
@@ -162,12 +171,17 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const [hosts, setHosts] = useState<readonly number[]>([]);
   const hostsRef = useRef<readonly number[]>([]);
 
-  const closeConfirm = useCallback((result: boolean) => {
+  const closeConfirm = useCallback((result: boolean | null) => {
     resolver.current?.(result);
     resolver.current = null;
+    resolverIsChoose.current = false;
     confirmOwner.current = null;
     setConfirmOpts(null);
   }, []);
+  const abandonConfirm = useCallback(
+    () => closeConfirm(resolverIsChoose.current ? null : false),
+    [closeConfirm]
+  );
 
   const closeSheet = useCallback(() => {
     sheetOwner.current = null;
@@ -183,10 +197,10 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     (id: number) => {
       hostsRef.current = popHost(hostsRef.current, id);
       setHosts(hostsRef.current);
-      if (confirmOwner.current === id) closeConfirm(false);
+      if (confirmOwner.current === id) abandonConfirm();
       if (sheetOwner.current === id) closeSheet();
     },
-    [closeConfirm, closeSheet]
+    [abandonConfirm, closeSheet]
   );
 
   // Whether a screen reader is running. Read once and kept current, because
@@ -342,15 +356,24 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     }
   }, [dispatchToast, toast, t]);
 
-  const confirm = useCallback((opts: ConfirmOptions) => {
+  const openConfirm = useCallback((opts: ConfirmOptions, isChoose: boolean) => {
     // A dialog left dangling by a previous caller never blocks a new one.
-    resolver.current?.(false);
+    resolver.current?.(resolverIsChoose.current ? null : false);
+    resolverIsChoose.current = isChoose;
     confirmOwner.current = activeHostId(hostsRef.current);
-    setConfirmOpts(opts);
-    return new Promise<boolean>((resolve) => {
+    setConfirmOpts({ ...opts, dismissAsNull: isChoose });
+    return new Promise<boolean | null>((resolve) => {
       resolver.current = resolve;
     });
   }, []);
+  const confirm = useCallback(
+    (opts: ConfirmOptions) => openConfirm(opts, false) as Promise<boolean>,
+    [openConfirm]
+  );
+  const choose = useCallback(
+    (opts: ConfirmOptions) => openConfirm(opts, true),
+    [openConfirm]
+  );
 
   const actionSheet = useCallback((opts: ActionSheetOptions) => {
     sheetOwner.current = activeHostId(hostsRef.current);
@@ -372,8 +395,8 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const api = useMemo<FeedbackApi>(
-    () => ({ toast, confirm, actionSheet }),
-    [toast, confirm, actionSheet]
+    () => ({ toast, confirm, choose, actionSheet }),
+    [toast, confirm, choose, actionSheet]
   );
 
   const internal = useMemo<FeedbackInternal>(
@@ -549,14 +572,17 @@ function ConfirmOverlay({
   opts,
   onClose,
 }: {
-  opts: ConfirmOptions;
-  onClose: (result: boolean) => void;
+  opts: OpenConfirm;
+  onClose: (result: boolean | null) => void;
 }) {
   const { t } = useTranslation();
   const { isWide, height: layoutHeight } = useLayout();
   const large = useFontScale() > STACK_AT_SCALE;
   const anim = useEnterAnim();
-  const dismiss = useCallback(() => onClose(false), [onClose]);
+  const dismiss = useCallback(
+    () => onClose(opts.dismissAsNull ? null : false),
+    [onClose, opts.dismissAsNull]
+  );
   useBackHandler(dismiss);
 
   useEffect(() => {
@@ -582,7 +608,7 @@ function ConfirmOverlay({
 
   const cancelButton = (
     <Pressable
-      onPress={dismiss}
+      onPress={() => onClose(false)}
       accessibilityRole="button"
       accessibilityLabel={cancelLabel}
       className={`${width} rounded-2xl bg-glass border border-hair active:opacity-80 py-3.5 px-3`}

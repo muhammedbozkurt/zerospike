@@ -1,6 +1,6 @@
 import { injectionDoseOk } from "../../lib/injectionDose";
 import { runGuardedSave } from "../../lib/injectionSave";
-import { foregroundTimeAction, saveTimestamp, type StaleTimeChoice } from "../../lib/injectionFormClock";
+import { foregroundTimeAction, saveTimestamp, staleTimeChoiceFrom, type StaleTimeChoice } from "../../lib/injectionFormClock";
 import { historyPlanForSaved, outsideMapWindow } from "../../lib/injectionVisibility";
 import { ctaBlockers } from "../../lib/injectionCta";
 import {
@@ -154,7 +154,7 @@ export default function InjectionScreen() {
   const params = useLocalSearchParams<{ compose?: string; from?: string; segment?: string; zoom?: string }>();
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
   const proCta = useProCta(!isProUser);
-  const { confirm, actionSheet, toast } = useFeedback();
+  const { confirm, choose, actionSheet, toast } = useFeedback();
   const deleteWithUndo = useUndoBatch(bumpData);
   const guardEntry = useEntryGuardConfirm();
   const { columnPad, isWide } = useLayout();
@@ -509,13 +509,16 @@ export default function InjectionScreen() {
             today: t("common.today"),
             yesterday: t("common.yesterday"),
           })} · ${clock}`;
-          const keep = await confirm({
-            message: t("injection.staleTimeAsk", { time: when }),
-            confirmLabel: t("injection.staleTimeKeep", { time: when }),
-            cancelLabel: t("injection.staleTimeNow"),
-            icon: "time-outline",
-          });
-          timeChoice = keep ? "picked" : "now";
+          const answer = staleTimeChoiceFrom(
+            await choose({
+              message: t("injection.staleTimeAsk", { time: when }),
+              confirmLabel: t("injection.staleTimeKeep", { time: when }),
+              cancelLabel: t("injection.staleTimeNow"),
+              icon: "time-outline",
+            })
+          );
+          if (answer === "cancel") return false;
+          timeChoice = answer;
         }
         if (!(await confirmReusedPoint())) return false;
         if (!(await confirmDose(dose))) return false;

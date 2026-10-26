@@ -99,6 +99,13 @@ ok("unreadable 1.500", hasUnreadableAmount(line({ gramsText: "1.500" })) === tru
 ok("unreadable 1,500", hasUnreadableAmount(line({ gramsText: "1,500" })) === true);
 ok("unreadable arabic grouped", hasUnreadableAmount(line({ gramsText: "١٬٥٠٠" })) === true);
 ok("1,5 stays readable", hasUnreadableAmount(line({ gramsText: "1,5" })) === false);
+for (const noisy of ["1.500g", "1.500 g", "1,500 gr", "١٫٥٠٠ غ"]) {
+  ok(`grams ${JSON.stringify(noisy)} is unreadable`, parseGramsInput(noisy) === 0);
+  ok(`grams ${JSON.stringify(noisy)} is flagged unreadable`, hasUnreadableAmount(line({ gramsText: noisy })) === true);
+}
+for (const [txt, want] of [["1,5", 1.5], ["12,25", 12.3], ["0,5", 0.5], ["١٫٥", 1.5], ["1,5g", 1.5], ["12 g", 12]] as [string, number][]) {
+  ok(`grams ${JSON.stringify(txt)} still reads ${want}`, parseGramsInput(txt) === want);
+}
 for (const signed of ["-5", "\u200F-5", "\u22125", "+5", "\u20135"]) {
   ok(`signed grams ${JSON.stringify(signed)} is 0`, parseGramsInput(signed) === 0);
   ok(`signed grams ${JSON.stringify(signed)} is unreadable`, hasUnreadableAmount(line({ gramsText: signed })) === true);
