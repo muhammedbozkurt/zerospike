@@ -1364,7 +1364,7 @@ const ja: TranslationSchema = {
     doseRequired: "用量を入力してください。",
     duplicateBodyNoDose: "{{time}}に記録済みです。",
     chooseProfile: "どのプロフィールですか?",
-    saved: "{{name}}のプロフィールに基礎インスリンを記録しました。",
+    saved: "{{name}}の基礎インスリンを記録しました。",
   },
   insulinPicker: {
     groupMix: "混合型",

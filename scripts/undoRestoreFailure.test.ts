@@ -29,14 +29,16 @@ function eq<T>(name: string, actual: T, expected: T): void {
   ok(name, JSON.stringify(actual) === JSON.stringify(expected), `got ${JSON.stringify(actual)}, want ${JSON.stringify(expected)}`);
 }
 
+const mirrorFails = { value: false };
+const dbRef: { value: any } = { value: {} };
 const Module = require("module");
 const realLoad = Module._load;
 Module._load = function (request: string, parent: any) {
   const from = parent && typeof parent.filename === "string" ? parent.filename : "";
   if (/[\\/]lib[\\/]db[\\/]undo\.ts$/.test(from)) {
-    if (request === "./index") return { getDb: async () => ({}) };
+    if (request === "./index") return { getDb: async () => dbRef.value };
     if (request === "./healthRecordHooks") return { emitInjectionSaved() {}, emitMealSaved() {} };
-    if (request === "./logs") return { getMealLog: async () => null };
+    if (request === "./logs") return { getMealLog: async () => { if (mirrorFails.value) throw new Error("health down"); return null; } };
     if (request === "./injections") return { getInjection: async () => null };
   }
   return realLoad.apply(this, arguments);
@@ -75,6 +77,22 @@ async function main(): Promise<void> {
 
   const empty = await undo.restoreBatch([], restore);
   eq("empty batch is a clean no-op", empty.failed.length, 0);
+
+  console.log("\nrestoreDeletion: Health re-mirror is best-effort");
+  {
+    const fakeDb = { runAsync: async () => {} };
+    const snap = { meals: [{ id: "m1" }] };
+    mirrorFails.value = true;
+    dbRef.value = fakeDb;
+    let threw = false;
+    try {
+      await undo.restoreDeletion(snap);
+    } catch {
+      threw = true;
+    }
+    ok("restoreDeletion does not throw when the re-mirror fails", !threw);
+    mirrorFails.value = false;
+  }
 
   console.log("\nuseUndoBatch / Feedback wiring (source guards)");
   const hook = readFileSync(join(__dirname, "..", "components", "useUndoBatch.ts"), "utf8");

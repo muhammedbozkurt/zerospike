@@ -44,23 +44,10 @@ export function pickScopedReminder<T extends { targetTime: Date }>(
   return candidate && isSameLocalDay(candidate.targetTime, now) ? candidate : null;
 }
 
-/** Time bounds of the duplicate check around `targetTime`. `sameDayOnly`
- *  (dashboard entry) clips the window to the target's local day, the same day
- *  rule the dashboard uses to decide whether today has a basal row. */
-export function duplicateBounds(
-  targetTime: Date,
-  opts: { sameDayOnly?: boolean } = {}
-): { sinceMs: number; untilMs: number } {
+/** Time bounds of the duplicate check around `targetTime`. Deliberately not
+ *  clipped at midnight: a dose logged at 23:35 still counts as the 23:30 dose
+ *  when the card is opened at 00:10. */
+export function duplicateBounds(targetTime: Date): { sinceMs: number; untilMs: number } {
   const half = DUPLICATE_WINDOW_HOURS * 3_600_000;
-  let sinceMs = targetTime.getTime() - half;
-  let untilMs = targetTime.getTime() + half;
-  if (opts.sameDayOnly) {
-    const dayStart = new Date(targetTime);
-    dayStart.setHours(0, 0, 0, 0);
-    const nextDay = new Date(dayStart);
-    nextDay.setDate(nextDay.getDate() + 1);
-    sinceMs = Math.max(sinceMs, dayStart.getTime());
-    untilMs = Math.min(untilMs, nextDay.getTime() - 1);
-  }
-  return { sinceMs, untilMs };
+  return { sinceMs: targetTime.getTime() - half, untilMs: targetTime.getTime() + half };
 }

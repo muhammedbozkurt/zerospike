@@ -11,7 +11,10 @@
  */
 declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void };
+declare const __dirname: string;
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   pickScopedReminder,
   duplicateBounds,
@@ -67,7 +70,7 @@ const base = new Date(2026, 9, 27, 12, 0, 0, 0);
   ok("G11 dashboard target is today, not yesterday's reminder time", isSameLocalDay(target, now));
   ok("G11 dashboard target is the current moment", target.getTime() === now.getTime());
 
-  const b = duplicateBounds(target, { sameDayOnly: true });
+  const b = duplicateBounds(target);
   ok("G11 yesterday 22:10 row is not a duplicate of the morning card", !insideWindow(yesterdayRow, b));
 }
 
@@ -79,20 +82,30 @@ const base = new Date(2026, 9, 27, 12, 0, 0, 0);
   ok("G11 a reminder that already rang today keeps its own time", target.getTime() === raw.getTime());
 }
 
-// just after midnight: yesterday's late dose must not block today's entry
+// near midnight: the duplicate guard must not be clipped at the day boundary
 {
-  const now = at(0, 0, 30, base);
-  const raw = reminderTriggerTime("22:00", now);
+  const now = at(0, 0, 10, base);
+  const raw = reminderTriggerTime("23:30", now);
   const target = scopedTarget(raw, now);
-  ok("G11 00:30 target is today", isSameLocalDay(target, now));
-  const row = at(-1, 22, 10, base);
-  const b = duplicateBounds(target, { sameDayOnly: true });
-  ok("G11 00:30: yesterday 22:10 row is outside the today-only window", !insideWindow(row, b));
-  const todayRow = at(0, 0, 10, base);
-  ok("G11 00:30: a row from 00:10 today still counts as a duplicate", insideWindow(todayRow, b));
+  ok("G11 00:10 target is the current moment", target.getTime() === now.getTime());
+  const b = duplicateBounds(target);
+  ok("G11 23:30 reminder, yesterday 23:35 row, now 00:10 -> already logged", insideWindow(at(-1, 23, 35, base), b));
+  ok("G11 a row from 00:05 today still counts as a duplicate", insideWindow(at(0, 0, 5, base), b));
+  ok("G11 yesterday 20:00 row is outside the 3 h window", !insideWindow(at(-1, 20, 0, base), b));
 }
 
-// reminder-driven open (no sameDayOnly) keeps the 3 h window both ways
+// the day-clip option is gone from the dashboard path
+{
+  const root = join(__dirname, "..");
+  const win = readFileSync(join(root, "lib", "basalWindow.ts"), "utf8");
+  const screen = readFileSync(join(root, "app", "basal-confirm.tsx"), "utf8");
+  const svc = readFileSync(join(root, "lib", "services", "basalConfirm.ts"), "utf8");
+  ok("G11 basalWindow has no sameDayOnly", !win.includes("sameDayOnly"));
+  ok("G11 basal-confirm screen passes no sameDayOnly", !screen.includes("sameDayOnly") && !screen.includes("duplicateSameDayOnly"));
+  ok("G11 basalConfirm service has no sameDayOnly", !svc.includes("sameDayOnly") && !svc.includes("duplicateSameDayOnly"));
+}
+
+// reminder-driven open keeps the 3 h window both ways
 {
   const now = at(0, 0, 30, base);
   const raw = reminderTriggerTime("22:00", now);

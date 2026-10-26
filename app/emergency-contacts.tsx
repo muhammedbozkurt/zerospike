@@ -168,8 +168,8 @@ function EmergencyContactsScreen() {
 
   // Writes first, shows second: the list on screen is only ever what is stored.
   async function persist(next: EmergencyContact[]): Promise<boolean> {
-    if (loadFailed) {
-      toast(t("emergency.loadFailed"), "error");
+    if (!contactsLoaded || loadFailed) {
+      if (loadFailed) toast(t("emergency.loadFailed"), "error");
       return false;
     }
     if (writing.current) return false;
@@ -578,6 +578,7 @@ function EmergencyContactsScreen() {
               ))
             )}
 
+            <View pointerEvents={contactsLoaded ? "auto" : "none"}>
             {/* Add form */}
             <GlassCard style={{ marginTop: 10 }}>
               <Text
@@ -636,6 +637,7 @@ function EmergencyContactsScreen() {
               onPress={openPicker}
               style={{ marginTop: 12 }}
             />
+            </View>
           </ScrollView>
         )}
       </View>
