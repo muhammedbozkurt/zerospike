@@ -13,9 +13,9 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import {
-  getDownsellOffer,
-  purchaseDownsell,
-  type DownsellOffer,
+  getWinbackOffer,
+  purchaseWinback,
+  type WinbackOffer,
 } from "../lib/services/purchases";
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
 import { privacyUrl, termsUrl } from "../lib/legal";
@@ -53,12 +53,12 @@ function WinbackScreen() {
   // legal) lines up edge-to-edge with the card above it on wide/tablet screens
   // instead of stretching to the full px-6 width.
   const bottomColWidth = Math.min(width - 48, 420);
-  const [offer, setOffer] = useState<DownsellOffer | null>(null);
+  const [offer, setOffer] = useState<WinbackOffer | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    getDownsellOffer()
+    getWinbackOffer()
       .then((o) => alive && setOffer(o))
       .catch(
         () =>
@@ -68,6 +68,8 @@ function WinbackScreen() {
             discountedPriceString: null,
             standardPriceString: null,
             savingsPercent: 0,
+            source: "downsell",
+            appleOfferId: null,
           })
       );
     return () => {
@@ -103,7 +105,7 @@ function WinbackScreen() {
     if (busy || !offer?.hasRealDiscount) return;
     setBusy(true);
     try {
-      const res = await purchaseDownsell();
+      const res = await purchaseWinback(offer);
       await refreshPro();
       const feedback = purchaseToastFor(res);
       logEvent("purchase_result", {
