@@ -554,7 +554,7 @@ async function main(): Promise<void> {
     eq("the typed row is unchanged", JSON.stringify(db.prepare("SELECT source, external_id, is_cgm, glucose_level_mgdl FROM sugar_logs WHERE id = 'typed';").get()), JSON.stringify({ source: "manual", external_id: null, is_cgm: 0, glucose_level_mgdl: 150 }));
 
     // An old Health row (no ids) is taken over once.
-    db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES ('old','p1',130,'health','${iso(200)}');`);
+    db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, period_tag) VALUES ('old','p1',130,'health','${iso(200)}','unset');`);
     eq("a reading an old release imported is not doubled", await run([cgm(200.5, 130, "u-old")]), 0);
     const owned = db.prepare("SELECT external_id, source_app, is_cgm FROM sugar_logs WHERE id = 'old';").get() as { external_id: string; source_app: string; is_cgm: number };
     eq("it got the id, the app and the sensor flag", `${owned.external_id}|${owned.source_app}|${owned.is_cgm}`, "u-old|com.sensor.a|1");
@@ -565,7 +565,7 @@ async function main(): Promise<void> {
     const deleting = makeHost(path);
     const removed = await deleteImportedGlucose(deleting.host, "p1", "health", ["b", "nope"]);
     eq("one imported row removed", removed, 1);
-    ok("and the delete is the transaction's first statement after the pragma", /^DELETE FROM sugar_logs/.test(deleting.txns[0].statements[1] ?? ""));
+    ok("the source-delete marker is the first statement after the pragma, then the delete", /^INSERT OR IGNORE INTO health_import_source_delete/.test(deleting.txns[0].statements[1] ?? "") && /^DELETE FROM sugar_logs/.test(deleting.txns[0].statements[2] ?? ""));
     eq("the typed row sharing that id stays", countRows(db, "id = 'typed2'"), 1);
     eq("a manual source cannot be deleted through this door", await deleteImportedGlucose(makeHost(path).host, "p1", "manual" as never, ["b"]), 0);
 

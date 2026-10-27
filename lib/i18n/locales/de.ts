@@ -1097,6 +1097,12 @@ const de: TranslationSchema = {
     colSite: "Stelle",
     colTags: "Tags",
     colUnit: "Einheit",
+    hourlyTitle: "Stündliche Sensor-Zusammenfassung (Messwerte älter als ein Jahr)",
+    hourlyNote: "Sensor-Messwerte, die älter als ein Jahr sind, werden nicht einzeln aufgeführt. Sie sind als Stundenzusammenfassung gespeichert (Anzahl, Durchschnitt, niedrigster und höchster Wert).",
+    colReadings: "Messwerte",
+    colMean: "Durchschnitt",
+    colMin: "Niedrigster",
+    colMax: "Höchster",
   },
   report: {
     summary: "Zusammenfassung",

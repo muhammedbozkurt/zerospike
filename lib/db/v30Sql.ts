@@ -49,9 +49,19 @@ export const V30_SELECT_RETENTION_STATE =
 export const V30_UPSERT_RETENTION_STATE = `INSERT INTO cgm_retention_state (profile_id, last_run_at) VALUES (?, ?)
   ON CONFLICT (profile_id) DO UPDATE SET last_run_at = excluded.last_run_at;`;
 
+/**
+ * What may be folded away: a sensor reading an importer wrote (it has the
+ * source's id) that the user never labelled. A row without an id (a 2.4 row the
+ * v29 back-fill marked by timing alone) or with a period tag may be a
+ * glucometer reading the user kept; it stays as it is. Every retention
+ * statement shares this predicate, so the selected, folded and deleted sets are
+ * the same.
+ */
+export const V30_FOLDABLE = `is_cgm = 1 AND source <> 'manual' AND external_id IS NOT NULL AND period_tag = 'unset'`;
+
 /** The oldest raw sensor reading before the cutoff. Placeholders: profile_id, cutoff. */
 export const V30_SELECT_OLDEST_RAW = `SELECT MIN(logged_at) AS oldest FROM sugar_logs
-  WHERE profile_id = ? AND is_cgm = 1 AND source <> 'manual' AND logged_at < ?;`;
+  WHERE profile_id = ? AND ${V30_FOLDABLE} AND logged_at < ?;`;
 
 /**
  * Folds raw sensor readings in [from, to) into sugar_hourly. Merges into an
@@ -67,7 +77,7 @@ export const V30_FOLD_SLICE = `INSERT INTO sugar_hourly (profile_id, hour_utc, s
          MIN(glucose_level_mgdl),
          MAX(glucose_level_mgdl)
     FROM sugar_logs
-   WHERE profile_id = ? AND is_cgm = 1 AND source <> 'manual'
+   WHERE profile_id = ? AND ${V30_FOLDABLE}
      AND logged_at >= ? AND logged_at < ?
    GROUP BY hour_utc, source
   ON CONFLICT (profile_id, hour_utc, source) DO UPDATE SET
@@ -78,7 +88,7 @@ export const V30_FOLD_SLICE = `INSERT INTO sugar_hourly (profile_id, hour_utc, s
 
 /** Placeholders: profile_id, from, to. The same predicate as V30_FOLD_SLICE. */
 export const V30_DELETE_SLICE = `DELETE FROM sugar_logs
-  WHERE profile_id = ? AND is_cgm = 1 AND source <> 'manual'
+  WHERE profile_id = ? AND ${V30_FOLDABLE}
     AND logged_at >= ? AND logged_at < ?;`;
 
 /**

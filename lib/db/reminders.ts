@@ -316,11 +316,25 @@ const reminderWriteLock = createWriteLock();
 export async function inReminderTransaction<T>(run: () => Promise<T>): Promise<T> {
   return reminderWriteLock(async () => {
     const db = await getDb();
-    let result!: T;
-    await db.withTransactionAsync(async () => {
-      result = await run();
-    });
-    return result;
+    // BEGIN IMMEDIATE takes the write lock up front: a deferred BEGIN whose
+    // first statement is a read fails at once with "database is locked" when the
+    // Health or CGM import committed in between (busy_timeout cannot help a
+    // lock upgrade). Same pattern as inDbTransaction in ./meals.
+    await db.execAsync("BEGIN IMMEDIATE");
+    try {
+      const result = await run();
+      await db.execAsync("COMMIT");
+      return result;
+    } catch (e) {
+      if (db.isInTransactionSync()) {
+        try {
+          await db.execAsync("ROLLBACK");
+        } catch {
+          // the original error is the one worth surfacing
+        }
+      }
+      throw e;
+    }
   });
 }
 

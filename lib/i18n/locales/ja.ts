@@ -1097,6 +1097,12 @@ const ja: TranslationSchema = {
     colSite: "部位",
     colTags: "タグ",
     colUnit: "単位",
+    hourlyTitle: "センサーの1時間ごとのまとめ（1年より前の測定値）",
+    hourlyNote: "1年より前のセンサー測定値は1件ずつ一覧にせず、1時間ごとのまとめ（件数、平均、最小、最大）として保存されています。",
+    colReadings: "測定回数",
+    colMean: "平均",
+    colMin: "最小",
+    colMax: "最大",
   },
   report: {
     summary: "まとめ",

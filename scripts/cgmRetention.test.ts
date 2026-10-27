@@ -102,8 +102,8 @@ function add(
   over: { source?: string; isCgm?: number; app?: string | null } = {}
 ): void {
   db.prepare(
-    `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, source_app, external_id, is_cgm)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?);`
+    `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, source_app, external_id, is_cgm, period_tag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`
   ).run(
     `r${++seq}`,
     profile,
@@ -112,7 +112,8 @@ function add(
     iso(atMs),
     over.app === undefined ? "com.sensor.a" : over.app,
     over.source === "manual" ? null : `e${seq}`,
-    over.isCgm ?? 1
+    over.isCgm ?? 1,
+    over.source === "manual" ? "manual" : "unset"
   );
 }
 const count = (db: DatabaseSync, where = "1=1", table = "sugar_logs") =>

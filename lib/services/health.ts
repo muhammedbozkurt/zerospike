@@ -12,6 +12,7 @@ import {
   listLinkedHealthUuids,
   setSugarLogHealthUuid,
 } from "../db/logs";
+import { hasRetryableFutureRow } from "../db/healthImportSql";
 import { getProfile, listProfiles } from "../db/profiles";
 import { detectCgmSource, type DetectSample } from "../cgm/detect";
 import { isUserEntered } from "../glucoseSource";
@@ -2001,6 +2002,10 @@ async function importGlucoseSteps(
   let cursor = android ? null : await readHealthAnchor(profileId);
   let read = 0;
   let inserted = 0;
+  // A sample dated ahead of the clock is refused by the import. The anchor must
+  // not move past such a page (or any later one: an anchor covers everything
+  // before it), or the sample is lost for good; the next sync reads it again.
+  let holdAnchor = false;
   for (;;) {
     let page: GlucosePage;
     try {
@@ -2009,8 +2014,10 @@ async function importGlucoseSteps(
       return { status: "error", inserted, read };
     }
     read += page.samples.length;
-    inserted += await importGlucosePage(profileId, page);
-    if (!android && page.cursor) await writeHealthAnchor(profileId, page.cursor);
+    const done = await importGlucosePage(profileId, page);
+    inserted += done.inserted;
+    if (done.retryLater) holdAnchor = true;
+    if (!android && page.cursor && !holdAnchor) await writeHealthAnchor(profileId, page.cursor);
     if (!page.hasMore || read >= roundMax) break;
     cursor = page.cursor;
   }
@@ -2088,12 +2095,16 @@ function sampleCanBeSensor(s: GlucoseSample): boolean {
   );
 }
 
-async function importGlucosePage(profileId: string, page: GlucosePage): Promise<number> {
+async function importGlucosePage(
+  profileId: string,
+  page: GlucosePage
+): Promise<{ inserted: number; retryLater: boolean }> {
   if (page.deletedIds.length > 0) {
     await deleteImportedGlucoseByExternalIds(profileId, "health", page.deletedIds);
   }
   const usable = page.samples.filter((s) => Number.isFinite(s.value) && s.value > 0);
-  if (usable.length === 0) return 0;
+  if (usable.length === 0) return { inserted: 0, retryLater: false };
+  const retryLater = hasRetryableFutureRow(usable.map((s) => ({ at: s.date })));
 
   const groups = new Map<string, GlucoseSample[]>();
   for (const s of usable) {
@@ -2107,7 +2118,7 @@ async function importGlucosePage(profileId: string, page: GlucosePage): Promise<
     if (await sourceIsSensor(profileId, key === "" ? null : key, group)) sensorApps.add(key);
   }
 
-  return insertImportedGlucose(
+  const inserted = await insertImportedGlucose(
     profileId,
     usable.map((s) => {
       const isCgm = sensorApps.has(s.sourceApp ?? "") && sampleCanBeSensor(s);
@@ -2122,6 +2133,7 @@ async function importGlucosePage(profileId: string, page: GlucosePage): Promise<
       };
     })
   );
+  return { inserted, retryLater };
 }
 
 // ── Pro: activity + insulin delivery summary (read-only, descriptive) ────────

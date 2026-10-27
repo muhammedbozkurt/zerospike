@@ -4920,7 +4920,7 @@ async function main() {
         CREATE TABLE sugar_logs (
           id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
           glucose_level_mgdl INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'manual',
-          logged_at TEXT NOT NULL
+          logged_at TEXT NOT NULL, period_tag TEXT NOT NULL DEFAULT 'unset'
         );
         INSERT INTO user_profiles VALUES ('p1', 'A', 35, 8, 9, 11, 1, '2026-01-01T00:00:00.000Z');
         INSERT INTO user_profiles VALUES ('p2', 'B', 40, 10, 12, 12, 1, '2026-01-02T00:00:00.000Z');
@@ -5001,7 +5001,7 @@ async function main() {
         CREATE TABLE sugar_logs (
           id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
           glucose_level_mgdl INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'manual',
-          logged_at TEXT NOT NULL
+          logged_at TEXT NOT NULL, period_tag TEXT NOT NULL DEFAULT 'unset'
         );
         PRAGMA user_version = 28;
       `);
@@ -5021,7 +5021,7 @@ async function main() {
     empty.close();
 
     const db = mk();
-    const ins = db.prepare("INSERT INTO sugar_logs VALUES (?, ?, 110, ?, ?);");
+    const ins = db.prepare("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES (?, ?, 110, ?, ?);");
     const t0 = Date.parse("2026-01-02T00:00:00.000Z");
     // 40 readings 5 minutes apart: a sensor stream.
     for (let i = 0; i < 40; i++) ins.run(`run${i}`, "p1", "health", new Date(t0 + i * 300000).toISOString());
