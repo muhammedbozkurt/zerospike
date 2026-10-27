@@ -69,25 +69,6 @@ export const IMPORT_FUTURE_RETRY_MAX_MS = 24 * 60 * 60_000;
 /** A legacy untagged non-sensor row this close in time and equal in value is
  *  the same reading a sensor candidate now describes (take-over). */
 const TAKE_OVER_LEGACY_MS = 60_000;
-/** A NON-sensor candidate this close in time (and within the tolerance in value)
- *  to a sensor row of another stream is that sensor value mirrored by a second
- *  app, not a glucometer reading: a real fingerstick a minute away stays. Wide
- *  enough for a mirror that rounds to the half minute, because a mirrored copy
- *  counted as a fingerstick would reach the calculator's dose path. Applies to
- *  a source app that MIRRORS (see findMirrorStreams); any other app is only
- *  treated as a mirror at SENSOR_MIRROR_EXACT_MS, because a real fingerstick
- *  lands within 30 s and +-1 mg/dL of a sensor value by chance (about 1.6 % of
- *  readings) and must not be dropped, or turned into a sensor row. */
-const SENSOR_MIRROR_WINDOW_MS = 30_000;
-/** The mirror window for a source app that has not shown itself to mirror. */
-const SENSOR_MIRROR_EXACT_MS = 5_000;
-/** A non-sensor source app mirrors when, over the last 30 days, at least this
- *  many of its readings exist (stored plus the batch)... */
-export const MIRROR_MIN_SAMPLES = 6;
-/** ...and at least this share of them sit within SENSOR_MIRROR_WINDOW_MS and
- *  the tolerance of a sensor row of another stream. */
-export const MIRROR_MIN_SHARE = 0.8;
-export const MIRROR_HISTORY_DAYS = 30;
 /** A source app counts as a known sensor only with this many sensor rows in the
  *  last 30 days (same number as lib/cgm/detect CGM_HINT_MIN_SAMPLES): one row
  *  made by a chance match must not turn every later reading of a glucometer app
@@ -165,9 +146,6 @@ export interface GlucoseImportPlan {
   /** Existing rows that already ARE a candidate: they get the source's id,
    *  app and sensor flag instead of a second row being added. */
   own: { existingId: string; candidate: number }[];
-  /** Plain stored rows that are the mirror of a sensor candidate that arrived
-   *  later (rule 4c): they become sensor rows and the candidate adds nothing. */
-  markCgm: string[];
 }
 
 function lowerBound(sortedMs: number[], target: number): number {
@@ -194,85 +172,6 @@ function canTakeOver(c: PlanCandidate, e: PlanExisting, dt: number, dv: number):
   return !e.tagged && dv === 0 && dt <= TAKE_OVER_LEGACY_MS;
 }
 
-/** Rule 4c: a stored plain row that a sensor candidate of another stream
- *  mirrors. Never a typed ('manual') row, never one the user labelled or a meal
- *  uses. `windowMs` is the stored row's app's mirror window. */
-function isStoredMirror(c: PlanCandidate, e: PlanExisting, dt: number, dv: number, windowMs: number): boolean {
-  return (
-    c.isCgm &&
-    !e.isCgm &&
-    Boolean(e.id) &&
-    e.source !== "manual" &&
-    !e.tagged &&
-    dt <= windowMs &&
-    dv <= SAME_READING_TOLERANCE_MGDL
-  );
-}
-
-/** Rule 4b: see SENSOR_MIRROR_WINDOW_MS. `windowMs` is the candidate's app's. */
-function isSensorMirror(
-  c: PlanCandidate,
-  otherIsCgm: boolean,
-  cStream: string,
-  otherStream: string,
-  dt: number,
-  dv: number,
-  windowMs: number
-): boolean {
-  return (
-    !c.isCgm &&
-    otherIsCgm &&
-    otherStream !== cStream &&
-    dt <= windowMs &&
-    dv <= SAME_READING_TOLERANCE_MGDL
-  );
-}
-
-export interface MirrorPoint {
-  atMs: number;
-  mgdl: number;
-  /** streamKey(source, sourceApp) */
-  stream: string;
-}
-
-/**
- * Which non-sensor source apps mirror a sensor: of an app's readings (stored
- * plus this batch, last 30 days) at least MIRROR_MIN_SAMPLES exist and at least
- * MIRROR_MIN_SHARE of them match a sensor row of another stream within 30 s and
- * +-1 mg/dL. A glucometer app has the odd chance match, a mirror has nearly all.
- * O(n log n).
- */
-export function findMirrorStreams(plain: readonly MirrorPoint[], sensor: readonly MirrorPoint[]): Set<string> {
-  const total = new Map<string, number>();
-  for (const p of plain) total.set(p.stream, (total.get(p.stream) ?? 0) + 1);
-  const eligible = new Set<string>();
-  for (const [k, n] of total) if (n >= MIRROR_MIN_SAMPLES) eligible.add(k);
-  const out = new Set<string>();
-  if (eligible.size === 0 || sensor.length === 0) return out;
-  const sorted = [...sensor].sort((a, b) => a.atMs - b.atMs);
-  const ms = sorted.map((s) => s.atMs);
-  const hit = new Map<string, number>();
-  for (const p of plain) {
-    if (!eligible.has(p.stream)) continue;
-    for (
-      let i = lowerBound(ms, p.atMs - SENSOR_MIRROR_WINDOW_MS);
-      i < sorted.length && ms[i] <= p.atMs + SENSOR_MIRROR_WINDOW_MS;
-      i++
-    ) {
-      if (sorted[i].stream !== p.stream && Math.abs(sorted[i].mgdl - p.mgdl) <= SAME_READING_TOLERANCE_MGDL) {
-        hit.set(p.stream, (hit.get(p.stream) ?? 0) + 1);
-        break;
-      }
-    }
-  }
-  for (const k of eligible) {
-    if ((hit.get(k) ?? 0) >= MIRROR_MIN_SHARE * (total.get(k) ?? 1)) out.add(k);
-  }
-  return out;
-}
-
-const NO_MIRROR_STREAMS: ReadonlySet<string> = new Set();
-
 function streamKey(source: string, sourceApp: string | null): string {
   return `${source}\u0000${sourceApp ?? ""}`;
 }
@@ -293,27 +192,14 @@ function streamKey(source: string, sourceApp: string | null): string {
  *     (never a 'manual' row), insert nothing. A sensor candidate takes over a
  *     sensor row, or a plain untagged row of the very same value a minute
  *     apart at most; a row the user labelled never becomes a sensor reading.
- *  4. A row of ANOTHER source or app within 150 s and +-1 mg/dL is the same
- *     reading seen twice: skip. This is what keeps a typed reading, or the one
- *     Nightscout already delivered, from appearing twice. First in stays. A
- *     NON-sensor candidate is never dropped for sitting next to a sensor row:
- *     a glucometer reading one minute after a sensor value is its own
- *     measurement.
- *  4b. A NON-sensor candidate of a source app that MIRRORS a sensor (see
- *     findMirrorStreams: >= 6 readings in 30 days, >= 80 % of them within 30 s
- *     and +-1 mg/dL of a sensor row of another stream) and within 30 s of such
- *     a row is that sensor value mirrored: skip, or it would be stored as a
- *     hand-read row (double count, and the dose path would take it for a typed
- *     reading). Any other app only at 5 s: a real fingerstick lands within 30 s
- *     and +-1 mg/dL of a sensor value by chance and stays.
- *  4c. A SENSOR candidate within the same window (30 s for a mirroring app, 5 s
- *     otherwise) and +-1 mg/dL of a stored plain row of another stream (not
- *     typed, not labelled, no meal pointing at it) is the value that row mirrors,
- *     which arrived in the wrong order: the row becomes the sensor row
- *     (markCgm) and the candidate adds nothing, so neither a second copy nor a
- *     hand-read row that could feed a dose is left. This also holds when the
- *     candidate itself is thinned away by rule 5. Within one batch the sensor
- *     candidates are planned first for the same reason.
+ *  4. A row of ANOTHER source or app within 150 s and +-1 mg/dL, of the SAME
+ *     KIND (both sensor, or both not), is the same reading seen twice: skip.
+ *     This is what keeps a typed reading, or the one Nightscout already
+ *     delivered, from appearing twice. First in stays. A sensor reading is NEVER
+ *     dropped for sitting next to a non-sensor row, and a non-sensor reading is
+ *     never dropped for sitting next to a sensor row: whether a non-sensor row
+ *     only mirrors a sensor value is decided when it is READ (cgmSql.ts
+ *     SENSOR_TWIN_SQL), never here, so no import order can lose a reading.
  *  5. A sensor reading closer than 270 s to a kept reading of the same app is
  *     thinned away (a 1 minute stream becomes about 5 minutes).
  *  6. A NON-sensor reading with the same value within 15 minutes of a
@@ -324,11 +210,8 @@ function streamKey(source: string, sourceApp: string | null): string {
 export function planGlucoseImport(
   candidates: readonly PlanCandidate[],
   existing: readonly PlanExisting[],
-  tombstones: readonly PlanTombstone[] = [],
-  mirrorStreams: ReadonlySet<string> = NO_MIRROR_STREAMS
+  tombstones: readonly PlanTombstone[] = []
 ): GlucoseImportPlan {
-  const mirrorWindow = (stream: string): number =>
-    mirrorStreams.has(stream) ? SENSOR_MIRROR_WINDOW_MS : SENSOR_MIRROR_EXACT_MS;
   const ex = existing.map((e) => ({ ...e })).sort((a, b) => a.atMs - b.atMs);
   const exMs = ex.map((e) => e.atMs);
   const tomb = [...tombstones].sort((a, b) => a.atMs - b.atMs);
@@ -336,10 +219,7 @@ export function planGlucoseImport(
 
   const order = candidates
     .map((_, i) => i)
-    .sort(
-      (a, b) =>
-        Number(candidates[b].isCgm) - Number(candidates[a].isCgm) || candidates[a].atMs - candidates[b].atMs || a - b
-    );
+    .sort((a, b) => candidates[a].atMs - candidates[b].atMs || a - b);
 
   const extKeys = new Set<string>();
   for (const e of ex) {
@@ -350,7 +230,6 @@ export function planGlucoseImport(
   const acceptedMs: number[] = [];
   const insert: number[] = [];
   const own: { existingId: string; candidate: number }[] = [];
-  const markCgm: string[] = [];
 
   for (const ci of order) {
     const c = candidates[ci];
@@ -375,22 +254,9 @@ export function planGlucoseImport(
 
     const cStream = streamKey(c.source, c.sourceApp);
     let skip = false;
-    let thinned = false;
     let takeOver: PlanExisting | null = null;
     let takeOverIdx = -1;
     let takeOverDt = Infinity;
-    const mirrors: PlanExisting[] = [];
-    // A mirroring app's stored copy of a sensor value turns into the sensor row.
-    // Also when the sensor original is itself thinned away (a 1 minute stream),
-    // or the copy would stay a hand-read row.
-    const foldMirrors = (): void => {
-      for (const m of mirrors) {
-        m.isCgm = true;
-        markCgm.push(m.id as string);
-      }
-      mirrors.length = 0;
-    };
-
     const lo = lowerBound(exMs, c.atMs - MAX_WINDOW_MS);
     for (let i = lo; i < ex.length && exMs[i] <= c.atMs + MAX_WINDOW_MS; i++) {
       const e = ex[i];
@@ -416,31 +282,20 @@ export function planGlucoseImport(
         continue;
       }
       const eStream = streamKey(e.source, e.sourceApp);
-      if (tight && (c.isCgm || !e.isCgm) && eStream !== cStream) {
-        if (isStoredMirror(c, e, dt, dv, mirrorWindow(eStream))) {
-          mirrors.push(e);
-          continue;
-        }
-        skip = true;
-        break;
-      }
-      if (isSensorMirror(c, e.isCgm, cStream, eStream, dt, dv, mirrorWindow(cStream))) {
+      if (tight && c.isCgm === e.isCgm && eStream !== cStream) {
         skip = true;
         break;
       }
       if (c.isCgm && e.isCgm && dt < CGM_THINNING_MS && eStream === cStream) {
         skip = true;
-        thinned = true;
+        break;
       }
       if (!c.isCgm && !e.isCgm && e.mgdl === c.mgdl && dt <= LEGACY_WINDOW_MS) {
         skip = true;
         break;
       }
     }
-    if (skip) {
-      if (thinned) foldMirrors();
-      continue;
-    }
+    if (skip) continue;
     if (takeOver) {
       owned.add(takeOverIdx);
       own.push({ existingId: takeOver.id as string, candidate: ci });
@@ -453,33 +308,20 @@ export function planGlucoseImport(
       const dt = Math.abs(c.atMs - a.atMs);
       const dv = Math.abs(a.mgdl - c.mgdl);
       const tight = dt <= SAME_READING_WINDOW_MS && dv <= SAME_READING_TOLERANCE_MGDL;
-      if (tight && (c.isCgm || !a.isCgm) && streamKey(a.source, a.sourceApp) !== cStream) {
-        skip = true;
-        break;
-      }
-      if (isSensorMirror(c, a.isCgm, cStream, streamKey(a.source, a.sourceApp), dt, dv, mirrorWindow(cStream))) {
+      if (tight && c.isCgm === a.isCgm && streamKey(a.source, a.sourceApp) !== cStream) {
         skip = true;
         break;
       }
       if (c.isCgm && a.isCgm && dt < CGM_THINNING_MS && streamKey(a.source, a.sourceApp) === cStream) {
         skip = true;
-        thinned = true;
+        break;
       }
       if (!c.isCgm && !a.isCgm && a.mgdl === c.mgdl && dt <= LEGACY_WINDOW_MS) {
         skip = true;
         break;
       }
     }
-    if (skip) {
-      if (thinned) foldMirrors();
-      continue;
-    }
-
-    if (mirrors.length > 0) {
-      foldMirrors();
-      if (key) extKeys.add(key);
-      continue;
-    }
+    if (skip) continue;
 
     const at = lowerBound(acceptedMs, c.atMs + 1);
     accepted.splice(at, 0, c);
@@ -488,7 +330,7 @@ export function planGlucoseImport(
     insert.push(ci);
   }
   insert.sort((a, b) => candidates[a].atMs - candidates[b].atMs || a - b);
-  return { insert, own, markCgm };
+  return { insert, own };
 }
 
 /**
@@ -677,81 +519,11 @@ function lookupRanges(sortedMs: number[]): [number, number][] {
   return ranges;
 }
 
-/**
- * The source apps of this call that mirror a sensor (findMirrorStreams), from
- * the last 30 days of stored rows plus the whole batch. A batch row that the
- * profile already has (same source and external id: a re-read) counts once.
- * Runs once per import call, inside its first transaction; the sensor rows are
- * only loaded when some app has enough readings to be judged.
- */
-async function loadMirrorStreams(
-  txn: HealthImportSql,
-  profileId: string,
-  batch: readonly NormalizedRow[],
-  nowMs: number
-): Promise<ReadonlySet<string>> {
-  const sinceMs = nowMs - MIRROR_HISTORY_DAYS * 86_400_000;
-  const since = new Date(sinceMs).toISOString();
-  const stored = await txn.getAllAsync<{
-    source: string;
-    source_app: string | null;
-    external_id: string | null;
-    logged_at: string;
-    glucose_level_mgdl: number;
-  }>(
-    `SELECT source, source_app, external_id, logged_at, glucose_level_mgdl FROM sugar_logs
-      WHERE profile_id = ? AND is_cgm = 0 AND source <> 'manual' AND logged_at >= ?;`,
-    [profileId, since]
-  );
-  const plain: MirrorPoint[] = [];
-  const seen = new Set<string>();
-  for (const r of stored) {
-    if (r.external_id) seen.add(`${r.source} ${r.external_id}`);
-    plain.push({
-      atMs: Date.parse(r.logged_at),
-      mgdl: Math.round(r.glucose_level_mgdl),
-      stream: streamKey(r.source, r.source_app),
-    });
-  }
-  const sensor: MirrorPoint[] = [];
-  for (const r of batch) {
-    if (r.atMs < sinceMs - SENSOR_MIRROR_WINDOW_MS) continue;
-    const stream = streamKey(r.source, r.sourceApp);
-    if (r.isCgm) sensor.push({ atMs: r.atMs, mgdl: r.mgdl, stream });
-    else if (!r.externalId || !seen.has(`${r.source} ${r.externalId}`)) plain.push({ atMs: r.atMs, mgdl: r.mgdl, stream });
-  }
-  const counts = new Map<string, number>();
-  for (const p of plain) counts.set(p.stream, (counts.get(p.stream) ?? 0) + 1);
-  let judged = false;
-  for (const n of counts.values()) if (n >= MIRROR_MIN_SAMPLES) judged = true;
-  if (!judged) return NO_MIRROR_STREAMS;
-
-  const storedSensor = await txn.getAllAsync<{
-    source: string;
-    source_app: string | null;
-    logged_at: string;
-    glucose_level_mgdl: number;
-  }>(
-    `SELECT source, source_app, logged_at, glucose_level_mgdl FROM sugar_logs
-      WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ?;`,
-    [profileId, since]
-  );
-  for (const r of storedSensor) {
-    sensor.push({
-      atMs: Date.parse(r.logged_at),
-      mgdl: Math.round(r.glucose_level_mgdl),
-      stream: streamKey(r.source, r.source_app),
-    });
-  }
-  return findMirrorStreams(plain, sensor);
-}
-
 async function importChunk(
   txn: HealthImportSql,
   profileId: string,
   chunk: NormalizedRow[],
-  newId: () => string,
-  mirrorStreams: ReadonlySet<string>
+  newId: () => string
 ): Promise<number> {
   const floorRow = (
     await txn.getAllAsync<{ floor_at: string }>(
@@ -795,7 +567,7 @@ async function importChunk(
     isCgm: r.is_cgm === 1,
     tagged: r.period_tag !== "unset" || r.meal_linked === 1,
   }));
-  const plan = planGlucoseImport(rows, existing, tombstones, mirrorStreams);
+  const plan = planGlucoseImport(rows, existing, tombstones);
 
   for (const o of plan.own) {
     const c = rows[o.candidate];
@@ -803,14 +575,6 @@ async function importChunk(
       `UPDATE OR IGNORE sugar_logs SET external_id = ?, source_app = ?, is_cgm = ?
         WHERE id = ? AND source <> 'manual' AND external_id IS NULL;`,
       [c.externalId, c.sourceApp, c.isCgm ? 1 : 0, o.existingId]
-    );
-  }
-  for (const id of plan.markCgm) {
-    await txn.runAsync(
-      `UPDATE OR IGNORE sugar_logs SET is_cgm = 1
-        WHERE id = ? AND source <> 'manual' AND period_tag = 'unset' AND is_cgm = 0
-          AND NOT EXISTS (SELECT 1 FROM meal_logs WHERE sugar_log_id = sugar_logs.id);`,
-      [id]
     );
   }
   if (plan.insert.length === 0) return 0;
@@ -864,7 +628,6 @@ export async function importGlucoseRows(
   const pruneBefore = new Date(nowMs - TOMBSTONE_KEEP_DAYS * 86_400_000).toISOString();
 
   let inserted = 0;
-  let mirrorStreams: ReadonlySet<string> | null = null;
   for (let i = 0; i < sorted.length; i += HEALTH_IMPORT_CHUNK_SIZE) {
     const chunk = sorted.slice(i, i + HEALTH_IMPORT_CHUNK_SIZE);
     let n = 0;
@@ -877,8 +640,7 @@ export async function importGlucoseRows(
           [profileId, pruneBefore]
         );
       }
-      if (mirrorStreams === null) mirrorStreams = await loadMirrorStreams(txn, profileId, sorted, nowMs);
-      n = await importChunk(txn, profileId, chunk, newId, mirrorStreams);
+      n = await importChunk(txn, profileId, chunk, newId);
     });
     inserted += n;
   }

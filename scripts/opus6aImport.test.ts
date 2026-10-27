@@ -118,7 +118,7 @@ async function main(): Promise<void> {
         externalId: `hk${k}`,
         isCgm: false,
       }));
-    eq("mirror of stored sensor rows is not stored", await importGlucoseRows(host, "P", mirror, nid, NOW), 0);
+    eq("mirror of stored sensor rows is stored (never dropped on import)", await importGlucoseRows(host, "P", mirror, nid, NOW), 12);
     eq("nothing reaches the dose path", (db.prepare(recentManualSugarSql(false)).all("P", T(-15)) as unknown[]).length, 0);
 
     const b = makeDb();
@@ -126,8 +126,9 @@ async function main(): Promise<void> {
       { at: T(10), mgdl: 103, source: "health", sourceApp: "com.dexcom.G7", externalId: "s", isCgm: true },
       { at: T(10, 4), mgdl: 103, source: "health", sourceApp: "com.example.sugarwidget", externalId: "m", isCgm: false },
     ];
-    eq("mirror inside the same batch is dropped", await importGlucoseRows(b.host, "P", both, nid, NOW), 1);
-    eq("and the sensor row is the one that stays", count(b.db, "SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 1"), 1);
+    eq("mirror inside the same batch is stored too", await importGlucoseRows(b.host, "P", both, nid, NOW), 2);
+    eq("the sensor row stays the only sensor row", count(b.db, "SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 1"), 1);
+    eq("and the mirror never reaches the dose path", (b.db.prepare(recentManualSugarSql(false)).all("P", T(-15)) as unknown[]).length, 0);
 
     // opus5a item 1 stays: a meter reading a minute away (+-1) is its own measurement
     const c = makeDb();

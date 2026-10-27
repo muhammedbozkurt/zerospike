@@ -134,10 +134,11 @@ async function main(): Promise<void> {
     ];
     eq("meter kept in the same batch as the sensor row", await importGlucoseRows(b.host, "P", both, nid, NOW), 2);
 
-    // a sensor twin of a stored meter reading is still the same reading seen twice
+    // a sensor value is never dropped for a stored non-sensor row (the mirror is
+    // told apart when rows are read, not on import)
     const c = makeDb();
     await importGlucoseRows(c.host, "P", [both[1]], nid, NOW);
-    eq("sensor value next to a stored meter reading still collapses", await importGlucoseRows(c.host, "P", [both[0]], nid, NOW), 0);
+    eq("sensor value next to a stored meter reading is kept", await importGlucoseRows(c.host, "P", [both[0]], nid, NOW), 1);
 
     // two sensors of different apps still collapse
     const d = makeDb();
@@ -175,7 +176,7 @@ async function main(): Promise<void> {
     ok("labelled row survives", !!old);
     eq("labelled row stays a glucometer reading", old?.is_cgm, 0);
     eq("labelled row keeps its tag", old?.tag, "fasting");
-    ok("no sensor row took the labelled one's place", !all(db).some((r) => r.is_cgm === 1));
+    ok("the sensor sample is its own row, not the labelled one", all(db).some((r) => r.ext === "d59" && r.is_cgm === 1 && r.id !== "old-meter"));
 
     // an untagged legacy sensor-looking row (same value, a minute apart) is still taken over
     const b = makeDb();

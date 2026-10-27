@@ -1,14 +1,21 @@
 /**
- * FIX-K (OPUS-8): sensor mirror rules 4b/4c are decided per SOURCE APP, not per
- * single row. Real SQL on node:sqlite.
+ * FIX-L (OPUS-9): the import never drops or converts a reading for being a
+ * "mirror" (a non-sensor app copying a sensor value). The mirror is told apart
+ * when rows are READ (cgmSql notSensorTwinSql: non-sensor, not typed, a sensor
+ * row of another stream within 30 s and +-1 mg/dL). Real SQL on node:sqlite,
+ * incremental importGlucoseRows sequences.
  *
- *  F1  a meal-linked (or labelled) stored row never becomes a sensor row
- *  F2  one coincidence does not turn a glucometer app into a sensor, and the
- *      knownCgm hint needs a count, not one row
- *  F3  a stored mirror row whose sensor original was thinned away still folds
- *  R6-R8 reverse-order mirror of a mirroring app (history = reflector)
- *  A1  a mirroring app's 12 copies are not stored
- *  E1  a glucometer reading 60 s from a sensor value stays
+ *  S1-S4  sensor first / Health first / mixed batch / random order race:
+ *         no sensor reading lost, no mirror converted, no twin in the dose path
+ *         or the journal list
+ *  F1     a meal-linked (or labelled) stored row never becomes a sensor row
+ *  F2     one coincidence does not make a glucometer app a sensor; knownCgm
+ *         needs a count
+ *  E1     a glucometer reading 60 s from a sensor value is in the DB, the dose
+ *         path and the journal list
+ *  L1     the accepted limit: a fingerstick inside 30 s and +-1 mg/dL stays in
+ *         the database, only leaves the dose path and the journal list
+ *  Q1     insights / report point reads leave twins out; the plans use idx_sugar_cgm
  *
  * Run: npx tsx scripts/mirrorRules.test.ts
  */
@@ -27,7 +34,9 @@ import {
 import { V28_CREATE } from "../lib/db/v28Sql";
 import { V29_INDEXES } from "../lib/db/v29Sql";
 import { V30_CREATE } from "../lib/db/v30Sql";
-import { recentManualSugarSql } from "../lib/db/cgmSql";
+import { MATCHING_MANUAL_SUGAR_SQL, recentManualSugarSql } from "../lib/db/cgmSql";
+import { journalFeedArgs, journalFeedSql } from "../lib/db/journalSql";
+import { glucosePointsSql, readInsightsSugar } from "../lib/db/sugarRange";
 
 let passed = 0;
 let failed = 0;
@@ -53,8 +62,17 @@ function makeDb() {
       tags TEXT NOT NULL DEFAULT '[]', healthkit_uuid TEXT,
       source_app TEXT, external_id TEXT, is_cgm INTEGER NOT NULL DEFAULT 0
     );
-    CREATE TABLE meal_logs (id TEXT PRIMARY KEY, profile_id TEXT, sugar_log_id TEXT);
+    CREATE INDEX idx_sugar_profile ON sugar_logs (profile_id, logged_at DESC);
+    CREATE TABLE meal_logs (id TEXT PRIMARY KEY, profile_id TEXT, sugar_log_id TEXT, logged_at TEXT, tags TEXT,
+      food_id TEXT, custom_food_name TEXT, portion_g REAL, calculated_carbs_g REAL, insulin_dose_units REAL,
+      photo_uri_local TEXT, personal_note TEXT);
     CREATE INDEX idx_meal_sugar_log ON meal_logs (sugar_log_id);
+    CREATE TABLE foods (id TEXT PRIMARY KEY, name_tr TEXT, name_en TEXT, name_de TEXT, name_es TEXT, name_fr TEXT,
+      name_it TEXT, name_pt TEXT, name_ar TEXT, name_ja TEXT, category TEXT);
+    CREATE TABLE injection_logs (id TEXT PRIMARY KEY, profile_id TEXT, logged_at TEXT, tags TEXT, source TEXT,
+      site TEXT, site_point TEXT, dose_units REAL, insulin_type TEXT, bolus_kind TEXT, note TEXT,
+      insulin_product_id TEXT, insulin_product_other TEXT);
+    CREATE TABLE med_logs (id TEXT PRIMARY KEY, profile_id TEXT, taken_at INTEGER, note TEXT, name TEXT);
     INSERT INTO user_profiles VALUES ('P');
   `);
   for (const s of V28_CREATE) db.exec(s);
@@ -88,10 +106,18 @@ function makeDb() {
 let seq = 0;
 const nid = () => `n${++seq}`;
 const NOW = Date.parse("2026-10-27T12:00:00.000Z");
-const T = (min: number, sec = 0) => new Date(NOW - 6 * 3600_000 + min * 60_000 + sec * 1000).toISOString();
+const iso = (ms: number) => new Date(ms).toISOString();
+const T = (min: number, sec = 0) => iso(NOW - 6 * 3600_000 + min * 60_000 + sec * 1000);
 const count = (db: DatabaseSync, where = "1=1") =>
   (db.prepare(`SELECT COUNT(*) AS c FROM sugar_logs WHERE ${where}`).get() as { c: number }).c;
-const dose = (db: DatabaseSync) => (db.prepare(recentManualSugarSql(false)).all("P", T(-600)) as unknown[]).length;
+const dose = (db: DatabaseSync, since = T(-600)) =>
+  (db.prepare(recentManualSugarSql(false)).all("P", since) as unknown[]).length;
+const journalGlucose = (db: DatabaseSync, cgm: "include" | "exclude"): number =>
+  (
+    db.prepare(journalFeedSql(false, false, { cgm })).all(...(journalFeedArgs("P", 100_000) as never[])) as {
+      kind: string;
+    }[]
+  ).filter((r) => r.kind === "glucose").length;
 
 const meter = (min: number, sec: number, mg: number, ext: string, app = "com.ascensia.contour"): ImportedGlucoseRow => ({
   at: T(min, sec), mgdl: mg, source: "health", sourceApp: app, externalId: ext, isCgm: false,
@@ -100,182 +126,228 @@ const ns = (min: number, sec: number, mg: number, ext: string): ImportedGlucoseR
   at: T(min, sec), mgdl: mg, source: "nightscout", sourceApp: null, externalId: ext, isCgm: true,
 });
 
-/** An app that has copied a Nightscout sensor value 10 s late, eight times, in
- *  the past: stored rows, written straight into the tables. */
-function seedMirrorHistory(db: DatabaseSync, app: string, n = 8, daysAgo = 2): void {
-  const base = NOW - daysAgo * 86_400_000;
-  const ins = db.prepare(
-    "INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, source_app, external_id, is_cgm) VALUES (?, 'P', ?, ?, ?, ?, ?, ?)"
-  );
-  for (let i = 0; i < n; i++) {
-    const at = base + i * 600_000;
-    const mg = 100 + i * 4;
-    ins.run(`hs${app}${i}`, mg, "nightscout", new Date(at).toISOString(), null, `hist-ns-${app}-${i}`, 1);
-    ins.run(`hm${app}${i}`, mg, "health", new Date(at + 10_000).toISOString(), app, `hist-m-${app}-${i}`, 0);
+const val = (ms: number) => 90 + Math.round(60 * Math.sin(ms / 3_600_000));
+const nsAt = (ms: number): ImportedGlucoseRow => ({
+  at: iso(ms), mgdl: val(ms), source: "nightscout", sourceApp: null, externalId: `ns${ms}`, isCgm: true,
+});
+const copyAt = (ms: number, secLate: number): ImportedGlucoseRow => ({
+  at: iso(ms + secLate * 1000), mgdl: val(ms), source: "health", sourceApp: "com.mirror", externalId: `m${ms}`, isCgm: false,
+});
+
+/** Hourly syncs: 12 sensor readings plus one mirror copy per hour. `order(h)` says
+ *  which side is imported first in that hour; `late(h)` is the copy's lateness
+ *  in seconds. */
+async function incremental(hours: number, order: (h: number) => "ns" | "health" | "batch", late: (h: number) => number) {
+  const { db, host } = makeDb();
+  const base = NOW - (hours + 1) * 3600_000;
+  const all: ImportedGlucoseRow[] = [];
+  for (let h = 0; h < hours; h++) {
+    const hs = base + h * 3600_000;
+    const sensors: ImportedGlucoseRow[] = [];
+    for (let m = 0; m < 60; m += 5) sensors.push(nsAt(hs + m * 60_000));
+    const t0 = hs + 5 * ((h * 7) % 12) * 60_000;
+    const copy = [copyAt(t0, late(h))];
+    const now = hs + 3600_000;
+    const o = order(h);
+    if (o === "ns") {
+      await importGlucoseRows(host, "P", sensors, nid, now);
+      await importGlucoseRows(host, "P", copy, nid, now);
+    } else if (o === "health") {
+      await importGlucoseRows(host, "P", copy, nid, now);
+      await importGlucoseRows(host, "P", sensors, nid, now);
+    } else {
+      await importGlucoseRows(host, "P", [...sensors, ...copy], nid, now);
+    }
+    all.push(...sensors, ...copy);
   }
+  const again = await importGlucoseRows(host, "P", all, nid, NOW);
+  return {
+    again,
+    nsLost: hours * 12 - count(db, "source='nightscout'"),
+    copies: count(db, "source_app='com.mirror' AND is_cgm=0"),
+    copiesAsSensor: count(db, "source_app='com.mirror' AND is_cgm=1"),
+    leaked: dose(db, iso(base)),
+    journalRows: journalGlucose(db, "exclude"),
+  };
 }
 
 async function main(): Promise<void> {
-  console.log("1. F1: a meal-linked stored row never becomes a sensor row");
-  for (const reflector of [false, true]) {
-    const { db, host } = makeDb();
-    if (reflector) seedMirrorHistory(db, "com.ascensia.contour");
-    await importGlucoseRows(host, "P", [meter(10, 0, 72, "hk-m1")], nid, NOW);
-    const id = (db.prepare("SELECT id FROM sugar_logs WHERE external_id='hk-m1'").get() as { id: string }).id;
-    db.prepare("INSERT INTO meal_logs VALUES ('meal1','P',?)").run(id);
-    const base = dose(db);
-    await importGlucoseRows(host, "P", [ns(10, 3, 73, "ns-1")], nid, NOW);
-    const row = db.prepare("SELECT is_cgm FROM sugar_logs WHERE id=?").get(id) as { is_cgm: number };
-    eq(`F1${reflector ? " (mirroring app)" : ""}: the linked row stays a hand-read row`, row.is_cgm, 0);
-    eq(`F1${reflector ? " (mirroring app)" : ""}: dose path keeps the reading`, dose(db), base);
+  console.log("1. S1-S3: incremental sequences (24 hours, one copy an hour)");
+  for (const [name, order] of [
+    ["sensor first, Health after", () => "ns" as const],
+    ["Health first, sensor after", () => "health" as const],
+    ["same batch", () => "batch" as const],
+  ] as const) {
+    const r = await incremental(24, order, (h) => 5 + (h % 25));
+    eq(`${name}: 24 of 24 hours of sensor readings kept`, r.nsLost, 0);
+    eq(`${name}: every copy stored as it came`, r.copies, 24);
+    eq(`${name}: no copy became a sensor row`, r.copiesAsSensor, 0);
+    eq(`${name}: no copy in the dose path`, r.leaked, 0);
+    eq(`${name}: no copy in the journal list`, r.journalRows, 0);
+    eq(`${name}: a full re-read adds nothing`, r.again, 0);
   }
 
-  console.log("2. F2: one coincidence does not make a glucometer app a sensor");
+  console.log("2. S4: a 7 day random order race (P(Health first) 0.2 and 0.5), copy 0-30 s late");
+  for (const p of [0.2, 0.5]) {
+    let s = 42;
+    const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const r = await incremental(168, () => (rnd() < p ? "health" : "ns"), () => Math.floor(rnd() * 30));
+    eq(`P=${p}: no sensor reading lost`, r.nsLost, 0);
+    eq(`P=${p}: no copy converted`, r.copiesAsSensor, 0);
+    eq(`P=${p}: no copy in the dose path`, r.leaked, 0);
+    eq(`P=${p}: no copy in the journal list`, r.journalRows, 0);
+    eq(`P=${p}: every copy still stored`, r.copies, 168);
+  }
+
+  console.log("3. a first big sync of 30 days, then the next day's readings in either order");
+  {
+    const { db, host } = makeDb();
+    const start = NOW - 30 * 86_400_000;
+    const rows: ImportedGlucoseRow[] = [];
+    for (let t = start; t < NOW - 3600_000; t += 300_000) rows.push(nsAt(t));
+    for (let t = start + 1_200_000; t < NOW - 3600_000; t += 3 * 3600_000) rows.push(copyAt(t, 17));
+    await importGlucoseRows(host, "P", rows, nid, NOW);
+    eq("no sensor reading of the 30 days lost", count(db, "source='nightscout'"), rows.filter((r) => r.isCgm).length);
+    eq(
+      "every copy stored, none as a sensor row",
+      count(db, "source_app='com.mirror' AND is_cgm=0"),
+      rows.filter((r) => !r.isCgm).length
+    );
+    eq("no copy in the dose path", dose(db, iso(start - 1000)), 0);
+    eq("no copy in the journal list", journalGlucose(db, "exclude"), 0);
+    const later = [nsAt(NOW - 1800_000), copyAt(NOW - 1800_000, 12)];
+    await importGlucoseRows(host, "P", [later[1]], nid, NOW);
+    await importGlucoseRows(host, "P", [later[0]], nid, NOW);
+    eq("a sensor reading arriving after its copy is stored", count(db, `external_id='${later[0].externalId}'`), 1);
+    eq("still no copy in the dose path", dose(db, iso(start - 1000)), 0);
+  }
+
+  console.log("4. F1: a meal-linked stored row never becomes a sensor row");
   {
     const { db, host } = makeDb();
     await importGlucoseRows(host, "P", [meter(10, 0, 72, "hk-m1")], nid, NOW);
-    await importGlucoseRows(host, "P", [ns(10, 20, 73, "ns-1")], nid, NOW);
-    eq("F2: 20 s apart, not a mirror of a known app: the meter row stays plain", count(db, "external_id='hk-m1' AND is_cgm=0"), 1);
+    const id = (db.prepare("SELECT id FROM sugar_logs WHERE external_id='hk-m1'").get() as { id: string }).id;
+    db.prepare("INSERT INTO meal_logs (id, profile_id, sugar_log_id) VALUES ('meal1','P',?)").run(id);
+    await importGlucoseRows(host, "P", [ns(10, 3, 73, "ns-1")], nid, NOW);
+    const row = db.prepare("SELECT is_cgm FROM sugar_logs WHERE id=?").get(id) as { is_cgm: number };
+    eq("F1: the linked row stays a hand-read row", row.is_cgm, 0);
+    eq("F1: the sensor value is stored beside it", count(db, "external_id='ns-1' AND is_cgm=1"), 1);
+    eq(
+      "F1: re-import changes nothing",
+      await importGlucoseRows(host, "P", [meter(10, 0, 72, "hk-m1"), ns(10, 3, 73, "ns-1")], nid, NOW),
+      0
+    );
+  }
+
+  console.log("5. F2: one coincidence does not make a glucometer app a sensor");
+  {
+    const { db, host } = makeDb();
+    await importGlucoseRows(host, "P", [meter(10, 0, 72, "hk-m1")], nid, NOW);
+    await importGlucoseRows(host, "P", [ns(10, 3, 72, "ns-1")], nid, NOW);
+    eq("F2: a 3 s exact copy is not converted either", count(db, "external_id='hk-m1' AND is_cgm=0"), 1);
     await importGlucoseRows(host, "P", [meter(240, 0, 180, "hk-m2")], nid, NOW);
     eq("F2: the next reading of that app is stored as a hand reading", count(db, "external_id='hk-m2' AND is_cgm=0"), 1);
-    ok("F2: and sits in the dose path / journal", dose(db) >= 2);
+    ok("F2: and sits in the dose path", dose(db) >= 1);
 
-    // The exact-copy case (3 s) does convert the one row, but one row is no history.
-    const b = makeDb();
-    await importGlucoseRows(b.host, "P", [meter(10, 0, 72, "hk-m1")], nid, NOW);
-    await importGlucoseRows(b.host, "P", [ns(10, 3, 72, "ns-1")], nid, NOW);
-    eq("F2: a 3 s exact copy is still folded into the sensor row", count(b.db, "external_id='hk-m1' AND is_cgm=1"), 1);
     const sql = (Sql as Record<string, unknown>).knownCgmSql as undefined | ((clause: string) => string);
     const minRows = (Sql as Record<string, unknown>).KNOWN_CGM_MIN_ROWS as number | undefined;
     ok("F2: knownCgmSql / KNOWN_CGM_MIN_ROWS are exported", typeof sql === "function" && minRows === 12);
     if (typeof sql === "function" && typeof minRows === "number") {
       const q = sql("source_app = ?");
       const since = new Date(NOW - 30 * 86_400_000).toISOString();
-      const known = (d: DatabaseSync) => ((d.prepare(q).get("P", "health", "com.ascensia.contour", since) as { c: number }).c >= minRows);
-      eq("F2: one sensor row: knownCgm false", known(b.db), false);
-      const ins = b.db.prepare(
+      const known = (d: DatabaseSync) =>
+        (d.prepare(q).get("P", "health", "com.ascensia.contour", since) as { c: number }).c >= minRows;
+      eq("F2: the coincidence leaves no sensor row of that app: knownCgm false", known(db), false);
+      const ins = db.prepare(
         "INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, source_app, external_id, is_cgm) VALUES (?, 'P', 100, 'health', ?, 'com.ascensia.contour', ?, 1)"
       );
-      for (let i = 0; i < 10; i++) ins.run(`k${i}`, T(100 + i * 5), `kx${i}`);
-      eq("F2: 11 sensor rows: knownCgm false", known(b.db), false);
-      ins.run("k10", T(200), "kx10");
-      eq("F2: 12 sensor rows: knownCgm true", known(b.db), true);
+      for (let i = 0; i < 11; i++) ins.run(`k${i}`, T(100 + i * 5), `kx${i}`);
+      eq("F2: 11 sensor rows: knownCgm false", known(db), false);
+      ins.run("k11", T(200), "kx11");
+      eq("F2: 12 sensor rows: knownCgm true", known(db), true);
     }
   }
 
-  console.log("3. F3: a mirroring app's stored row folds even when the sensor original is thinned away");
-  {
-    const { db, host } = makeDb();
-    seedMirrorHistory(db, "com.mirror");
-    await importGlucoseRows(host, "P", [{ at: T(11, 0), mgdl: 140, source: "health", sourceApp: "com.mirror", externalId: "mx", isCgm: false }], nid, NOW);
-    const stream: ImportedGlucoseRow[] = [];
-    for (let i = 0; i <= 10; i++) stream.push(ns(10 + i, 0, 130 + i * 10, `s${i}`));
-    await importGlucoseRows(host, "P", stream, nid, NOW);
-    eq("F3: the mirror row is a sensor row now", count(db, "external_id='mx' AND is_cgm=1"), 1);
-    eq("F3: dose path holds no mirror copy", dose(db), 0);
-  }
-
-  console.log("4. R6-R8: reverse order mirror of a mirroring app");
-  {
-    const mirror = (sec: number, mg: number, ext = "h1"): ImportedGlucoseRow => ({
-      at: T(10, sec), mgdl: mg, source: "health", sourceApp: "com.mirror", externalId: ext, isCgm: false,
-    });
-    const sensor = (sec: number, mg: number): ImportedGlucoseRow => ({
-      at: T(10, sec), mgdl: mg, source: "nightscout", sourceApp: null, externalId: "ns1", isCgm: true,
-    });
-    const a = makeDb();
-    seedMirrorHistory(a.db, "com.mirror");
-    await importGlucoseRows(a.host, "P", [mirror(0, 120), sensor(17, 120)], nid, NOW);
-    eq("R6: sensor row kept, mirror not stored", count(a.db, "external_id IN ('ns1','h1') AND is_cgm=1"), 1);
-    eq("R6: mirror absent", count(a.db, "external_id='h1'"), 0);
-    eq("R6: dose path empty", dose(a.db), 0);
-
-    const b = makeDb();
-    seedMirrorHistory(b.db, "com.mirror");
-    await importGlucoseRows(b.host, "P", [mirror(0, 120)], nid, NOW);
-    eq("R7: mirror stored first, plain row", count(b.db, "external_id='h1' AND is_cgm=0"), 1);
-    await importGlucoseRows(b.host, "P", [sensor(17, 120)], nid, NOW);
-    eq("R7: that row is a sensor row now", count(b.db, "external_id='h1' AND is_cgm=1"), 1);
-    eq("R7: dose path empty", dose(b.db), 0);
-    eq("R7: re-import adds nothing", await importGlucoseRows(b.host, "P", [mirror(0, 120), sensor(17, 120)], nid, NOW), 0);
-
-    const c = makeDb();
-    seedMirrorHistory(c.db, "com.mirror");
-    await importGlucoseRows(c.host, "P", [mirror(5, 120)], nid, NOW);
-    await importGlucoseRows(c.host, "P", [sensor(0, 121)], nid, NOW);
-    eq("R8: dv 1, mirror 5 s later: sensor row", count(c.db, "external_id='h1' AND is_cgm=1"), 1);
-    eq("R8: dose path empty", dose(c.db), 0);
-
-    const lone = makeDb();
-    await importGlucoseRows(lone.host, "P", [mirror(0, 120)], nid, NOW);
-    await importGlucoseRows(lone.host, "P", [sensor(17, 120)], nid, NOW);
-    eq("R7 without history: a single 17 s match is a fingerstick, it stays", count(lone.db, "external_id='h1' AND is_cgm=0"), 1);
-    eq("R7 without history: the fingerstick is the only row (a typed-like neighbour wins, as for a manual row)", count(lone.db), 1);
-  }
-
-  console.log("5. A1: a mirroring app's copies of stored sensor values are not stored");
-  {
-    const { db, host } = makeDb();
-    const sens: ImportedGlucoseRow[] = Array.from({ length: 36 }, (_, i) => ns(i * 5, 0, 140 + (i % 9), `ns${i}`));
-    await importGlucoseRows(host, "P", sens, nid, NOW);
-    const mir: ImportedGlucoseRow[] = sens
-      .filter((_, i) => i % 3 === 0)
-      .map((r, k) => ({ at: new Date(Date.parse(r.at) + 30_000).toISOString(), mgdl: r.mgdl, source: "health" as const, sourceApp: "com.example.sugarwidget", externalId: `hk${k}`, isCgm: false }));
-    eq("A1: 12 of 12 copies dropped", await importGlucoseRows(host, "P", mir, nid, NOW), 0);
-    eq("A1: dose path empty", dose(db), 0);
-  }
-
-  console.log("6. E1 and statistics");
+  console.log("6. E1: a glucometer reading 60 s from a sensor value");
   {
     const { db, host } = makeDb();
     await importGlucoseRows(host, "P", [ns(10, 0, 120, "ns1")], nid, NOW);
-    eq("E1: a glucometer reading 60 s away is stored", await importGlucoseRows(host, "P", [meter(11, 0, 120, "m1")], nid, NOW), 1);
-    eq("E1: and is a hand reading", count(db, "external_id='m1' AND is_cgm=0"), 1);
-
-    // 7 readings of a glucometer app, 1 coincidence (14 %): not a mirroring app.
-    const g = makeDb();
-    const sens: ImportedGlucoseRow[] = Array.from({ length: 40 }, (_, i) => ns(i * 5, 0, 100 + i, `ns${i}`));
-    await importGlucoseRows(g.host, "P", sens, nid, NOW);
-    const mine: ImportedGlucoseRow[] = [
-      meter(0, 20, 100, "g0"), meter(33, 0, 222, "g1"), meter(61, 0, 150, "g2"), meter(93, 0, 60, "g3"),
-      meter(121, 0, 180, "g4"), meter(152, 0, 90, "g5"), meter(181, 0, 77, "g6"),
-    ];
-    // g0 sits 20 s after ns0 (100), same value: the coincidence
-    eq("stat: 7 readings, one coincidence: all 7 are stored", await importGlucoseRows(g.host, "P", mine, nid, NOW), 7);
-    eq("stat: the coincident reading is kept as a hand reading", count(g.db, "external_id='g0' AND is_cgm=0"), 1);
-    eq("stat: nothing of that app became a sensor row", count(g.db, "source_app='com.ascensia.contour' AND is_cgm=1"), 0);
-
-    // A tagged stored row is the user's, even for a mirroring app.
-    const t = makeDb();
-    seedMirrorHistory(t.db, "com.mirror");
-    t.db.prepare("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, source_app, external_id, is_cgm) VALUES ('tg','P',120,'fasting','health',?, 'com.mirror','h9',0)").run(T(10, 0));
-    await importGlucoseRows(t.host, "P", [ns(10, 10, 120, "ns9")], nid, NOW);
-    eq("tagged row never converted", count(t.db, "id='tg' AND is_cgm=0"), 1);
+    eq("E1: stored", await importGlucoseRows(host, "P", [meter(11, 0, 120, "m1")], nid, NOW), 1);
+    eq("E1: a hand reading", count(db, "external_id='m1' AND is_cgm=0"), 1);
+    eq("E1: in the dose path", dose(db), 1);
+    eq(
+      "E1: found by the calculator's own matching query",
+      (db.prepare(MATCHING_MANUAL_SUGAR_SQL).all("P", 120, T(0), T(30)) as unknown[]).length,
+      1
+    );
+    eq("E1: in the journal list", journalGlucose(db, "exclude"), 1);
+    const both = makeDb();
+    await importGlucoseRows(both.host, "P", [ns(10, 0, 120, "ns1"), meter(11, 0, 120, "m1")], nid, NOW);
+    eq("E1: same in one batch", dose(both.db), 1);
   }
 
-  console.log("7. the reflector decision is O(n log n)");
+  console.log("7. L1: the accepted limit, a fingerstick inside 30 s and +-1 mg/dL of a sensor value");
   {
-    const find = (Sql as Record<string, unknown>).findMirrorStreams as
-      | undefined
-      | ((plain: { atMs: number; mgdl: number; stream: string }[], sensor: { atMs: number; mgdl: number; stream: string }[]) => Set<string>);
-    ok("findMirrorStreams is exported", typeof find === "function");
-    if (typeof find === "function") {
-      const N = 26_000;
-      const sensor = Array.from({ length: N }, (_, i) => ({ atMs: i * 300_000, mgdl: 100 + (i % 50), stream: "ns" }));
-      const plain = sensor.map((s) => ({ atMs: s.atMs + 20_000, mgdl: s.mgdl, stream: "mirror" }));
-      const t0 = Date.now();
-      const set = find(plain, sensor);
-      const ms = Date.now() - t0;
-      ok("26k x 26k decided under 2 s", ms < 2000, `${ms} ms`);
-      eq("the mirror is found", set.has("mirror"), true);
-      const five = find(plain.slice(0, 5), sensor);
-      eq("5 matching readings are not enough", five.has("mirror"), false);
-      const six = find(plain.slice(0, 6), sensor);
-      eq("6 of 6 are", six.has("mirror"), true);
-      const mixed = plain.slice(0, 10).map((p, i) => (i < 7 ? p : { ...p, mgdl: p.mgdl + 40 }));
-      eq("7 of 10 (70 %) is not", find(mixed, sensor).has("mirror"), false);
-      const eight = plain.slice(0, 10).map((p, i) => (i < 8 ? p : { ...p, mgdl: p.mgdl + 40 }));
-      eq("8 of 10 (80 %) is", find(eight, sensor).has("mirror"), true);
+    const { db, host } = makeDb();
+    await importGlucoseRows(host, "P", [ns(10, 0, 120, "ns1"), meter(10, 20, 121, "m1")], nid, NOW);
+    eq("L1: kept in the database", count(db, "external_id='m1'"), 1);
+    eq("L1: still a hand reading (Health keeps it too)", count(db, "external_id='m1' AND is_cgm=0"), 1);
+    eq("L1: out of the dose path", dose(db), 0);
+    eq(
+      "L1: out of the matching query",
+      (db.prepare(MATCHING_MANUAL_SUGAR_SQL).all("P", 121, T(0), T(30)) as unknown[]).length,
+      0
+    );
+    eq("L1: out of the journal list (counted in the sensor summary)", journalGlucose(db, "exclude"), 0);
+    eq("L1: the full journal (reports) still has both rows", journalGlucose(db, "include"), 2);
+  }
+
+  console.log("8. what is never a twin");
+  {
+    const { db, host } = makeDb();
+    db.prepare("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES ('typed','P',120,'manual',?)").run(
+      T(10, 5)
+    );
+    await importGlucoseRows(host, "P", [ns(10, 0, 120, "ns1")], nid, NOW);
+    eq("a typed row beside a sensor value stays in the dose path", dose(db), 1);
+    eq("and in the journal list", journalGlucose(db, "exclude"), 1);
+
+    const same = makeDb();
+    await importGlucoseRows(same.host, "P", [{ ...ns(10, 0, 120, "a"), source: "health", sourceApp: "com.app" }], nid, NOW);
+    await importGlucoseRows(same.host, "P", [meter(10, 10, 120, "b", "com.app")], nid, NOW);
+    eq("a plain row of the SAME stream as the sensor row is not a twin", dose(same.db), 1);
+
+    const diffValue = makeDb();
+    await importGlucoseRows(diffValue.host, "P", [ns(10, 0, 120, "a"), meter(10, 10, 123, "b")], nid, NOW);
+    eq("3 mg/dL apart is not a twin", dose(diffValue.db), 1);
+  }
+
+  console.log("9. Q1: insights and report reads leave twins out; plans use idx_sugar_cgm");
+  {
+    const { db, host } = makeDb();
+    await importGlucoseRows(host, "P", [ns(10, 0, 120, "ns1"), meter(10, 10, 120, "mirror"), meter(30, 0, 150, "real")], nid, NOW);
+    const reader = {
+      getAllAsync: async <T,>(sql: string, p: (string | number | null)[]) => db.prepare(sql).all(...(p as never[])) as T[],
+    };
+    const range = { start: NOW - 24 * 3600_000, end: NOW + 3600_000 };
+    const pts = await readInsightsSugar(reader, "P", range);
+    eq("insights: sensor row plus the real fingerstick, not the mirror", pts.length, 2);
+    ok("insights: the mirror is absent", !pts.some((p) => p.logged_at === T(10, 10)));
+    const bounds = [iso(range.start), iso(range.end)];
+    eq("points all: 2", (db.prepare(glucosePointsSql(true, "all")).all("P", ...bounds) as unknown[]).length, 2);
+    eq("points manual: 1", (db.prepare(glucosePointsSql(true, "manual")).all("P", ...bounds) as unknown[]).length, 1);
+    eq("points cgm: 1", (db.prepare(glucosePointsSql(true, "cgm")).all("P", ...bounds) as unknown[]).length, 1);
+
+    const planOf = (sql: string, p: (string | number)[]) =>
+      (db.prepare("EXPLAIN QUERY PLAN " + sql).all(...(p as never[])) as { detail: string }[]).map((r) => r.detail).join(" | ");
+    for (const [name, plan] of [
+      ["recentManualSugarSql", planOf(recentManualSugarSql(false), ["P", T(-60)])],
+      ["MATCHING_MANUAL_SUGAR_SQL", planOf(MATCHING_MANUAL_SUGAR_SQL, ["P", 120, T(0), T(30)])],
+      ["journal exclude", planOf(journalFeedSql(false, false, { cgm: "exclude" }), ["P", "P", "P", "P", 100])],
+      ["points all", planOf(glucosePointsSql(true, "all"), ["P", bounds[0], bounds[1]])],
+    ] as const) {
+      ok(`${name}: the twin lookup uses idx_sugar_cgm`, /tw USING INDEX idx_sugar_cgm/.test(plan), plan);
+      ok(`${name}: no full table scan of sugar_logs`, !/SCAN (s|sugar_logs|tw)\b/.test(plan), plan);
     }
   }
 

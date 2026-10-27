@@ -387,5 +387,25 @@ section("P. opus8 probes: hyper/hypo stems narrowed to glucose wording")
   }
 }
 
+section("Q. opus9 probes: everyday shorthand hypo/hyper (whole words) as context and detection verbs")
+{
+  const cases: [string, string[], string[]][] = [
+    ["en", ["Detects hypo", "It detects hypos", "Hypo alarm", "Detects hyper early"], ["Alarm for hyperlinks", "It detects hyperlinks in notes", "Hypothesis alert"]],
+    ["tr", ["Hipo alarmı", "Hipo uyarısı", "Hiper alarmı", "Hiperi algılar"], ["Alarm saati", "Hiperlink uyarısı"]],
+    ["fr", ["Détecte une hypo", "Détecte l'hypo", "Détecte l\u2019hyper", "Détecte des hypos", "Détecte les hypers"], ["Détecte l'hyperlien", "Détecte l'hyperlien en un clic"]],
+    ["es", ["Alarma de hipo", "Detecta hipos", "Detecta una hiper", "Detecta las hipos"], ["Detecta hipervínculos", "Alarma de hipervínculo", "Detecta hipotecas"]],
+    ["it", ["Rileva le ipo", "Rileva l'iper", "Rileva ipo", "Allarme ipo"], ["Rileva iperlink", "Rileva l'iperlink", "Allarme iperlink"]],
+    ["pt", ["Alarme de hipo", "Detecta a hipo", "Detecta as hipos", "Detecta hiper"], ["Detecta hiperlinks", "Alarme de hiperlink"]],
+  ];
+  for (const [locale, flagged, clean] of cases) {
+    const scan = (text: string) =>
+      (reg.scanLocaleEntries(locale, [["x", text]]) as { findings: Finding[] }).findings.length;
+    for (const t of flagged) ok(`${locale} flagged: ${t}`, scan(t) >= 1);
+    for (const t of clean) ok(`${locale} clean: ${t}`, scan(t) === 0);
+  }
+  const fr = reg.PATTERNS.fr.map((p: { pattern: string }) => p.pattern);
+  ok("fr: the ungrammatical 'une hypos' pattern is gone", !fr.includes("détecte une hypos") && !fr.includes("détecte une hypers"));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
