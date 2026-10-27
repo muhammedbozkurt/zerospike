@@ -275,6 +275,8 @@ const realLoad = M._load;
 M._load = function (request: string, ...rest: unknown[]) {
   if (request === "react-native") return { Platform: PLATFORM, AppState: { currentState: "active" }, Linking: { openURL: async () => {} } };
   if (request === "@react-native-async-storage/async-storage") return { __esModule: true, default: AsyncStorage };
+  // lib/secureStore.ts (reached through healthBackground -> sourceSync): no native module in Node.
+  if (request === "expo-modules-core") return { requireOptionalNativeModule: () => null };
   if (request.endsWith("/healthAppleKit")) {
     return { healthAppleKit: provider, prepareHealthKitWrite: async () => {} };
   }

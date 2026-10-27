@@ -212,6 +212,13 @@
       "./plugins/withGradleHeap",
       "./plugins/withHealthRationaleRouting",
       [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": false
+        }
+      ],
+      [
         "expo-localization",
         {
           "supportedLocales": {

@@ -119,4 +119,22 @@ for (const file of graph) {
 }
 assert.deepEqual(violations, [], `acilis guvenligi ihlalleri:\n${violations.join("\n")}`);
 
+// 3) CGM-E: expo-secure-store native modulu eski ikilide yok. JS paketi import
+// aninda atar, bu yuzden yalniz requireOptionalNativeModule ile dogrudan
+// konusulur; modul yoksa Nightscout satiri gizlenir, guvensiz yedek yol yok.
+{
+  const graphRel = graph.map(rel);
+  assert.ok(graphRel.includes("lib/secureStore.ts"), "lib/secureStore.ts acilis grafiginde olmali");
+  const secure = stripComments(readFileSync(join(ROOT, "lib/secureStore.ts"), "utf8"));
+  assert.ok(/requireOptionalNativeModule<[^>]*>\(\s*"ExpoSecureStore"\s*\)/.test(secure), "secureStore: requireOptionalNativeModule('ExpoSecureStore')");
+  assert.ok(!/from\s+"expo-secure-store"|require\(\s*"expo-secure-store"\s*\)/.test(secure), "secureStore: JS paketi import edilmez");
+  assert.ok(!/AsyncStorage|localStorage/.test(secure), "secureStore: guvensiz yedek depo yok");
+  const ui = stripComments(readFileSync(join(ROOT, "app/settings/data-sources.tsx"), "utf8"));
+  assert.ok(/const nsAvailable = nightscoutAvailable\(\)/.test(ui), "data-sources: secure store varligi sorgulanir");
+  assert.ok(/\.\.\.\(nsAvailable\s*\?\s*\[/.test(ui), "data-sources: Nightscout secenegi nsAvailable arkasinda");
+  assert.ok(/nsAvailable && \(mode === "nightscout" \|\| nsFormOpen\)/.test(ui), "data-sources: panel nsAvailable arkasinda");
+  const sync = stripComments(readFileSync(join(ROOT, "lib/services/sourceSync.ts"), "utf8"));
+  assert.ok(/secure:\s*secureStoreAvailable\(\)\s*\?/.test(sync), "sourceSync: modul yoksa secure null");
+}
+
 console.log(`startupSafety: OK (${graph.length} dosya tarandi)`);

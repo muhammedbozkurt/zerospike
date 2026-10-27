@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useA11yModalOpen } from "../../lib/a11yModal";
 import { useApp } from "../../lib/store/AppContext";
 import { insulinModeUsesInsulin } from "../../lib/insulinMode";
+import { useSourcePolling } from "../../lib/useSourcePolling";
 import { THEME, TYPE } from "../../lib/theme/tokens";
 
 // A sheet inside a tab screen cannot silence the bar above the screen with
@@ -30,7 +31,8 @@ function TabBarForSheets(props: BottomTabBarProps) {
 
 export default function TabsLayout() {
   const { t } = useTranslation();
-  const { activeProfile } = useApp();
+  const { activeProfile, isProUser } = useApp();
+  useSourcePolling(activeProfile?.id, isProUser);
 
   // A profile that takes no insulin drops to three tabs. The route still exists
   // (deep links and the journal's edit flow keep working); it just stops being

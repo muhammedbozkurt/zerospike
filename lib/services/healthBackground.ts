@@ -1,14 +1,16 @@
 import { Platform } from "react-native";
 import { logCrash } from "../analytics";
 import { safeRequire } from "../safeNative";
-import { getHealthBackgroundBlocker, syncHealthInBackground } from "./health";
+import { getHealthBackgroundBlocker } from "./health";
 import type { HealthBackgroundSkip } from "./health";
+import { planBackground } from "../nightscout/background";
+import { nightscoutBackgroundWanted, syncSourcesInBackground } from "./sourceSync";
 import { healthAppleKit } from "./healthAppleKit";
 import { healthConnect } from "./healthConnect";
 
 /**
- * Background health sync. The Android task is defined here at MODULE scope
- * (expo-task-manager runs it in a headless JS launch where no view mounts), so
+ * Background source sync (Health, plus Nightscout when connected). The Android
+ * task is defined here at MODULE scope (expo-task-manager runs it in a headless JS launch where no view mounts), so
  * the app entry must import this file for its side effect, e.g.
  * `import "../lib/services/healthBackground"` in app/_layout.tsx. iOS needs
  * registerHealthBackground() at every start too: the HKObserverQuery
@@ -44,9 +46,8 @@ function defineAndroidTask(): void {
     if (mods.TM.isTaskDefined(HEALTH_BACKGROUND_TASK)) return;
     mods.TM.defineTask(HEALTH_BACKGROUND_TASK, async () => {
       try {
-        const out = await syncHealthInBackground();
-        const failed = out.result?.status === "error";
-        return failed ? mods.BT.BackgroundTaskResult.Failed : mods.BT.BackgroundTaskResult.Success;
+        const out = await syncSourcesInBackground();
+        return out.failed ? mods.BT.BackgroundTaskResult.Failed : mods.BT.BackgroundTaskResult.Success;
       } catch (err) {
         logCrash(err, { screen: "health", op: "backgroundTask" });
         return mods.BT.BackgroundTaskResult.Failed;
@@ -74,9 +75,10 @@ async function unregisterAndroid(): Promise<void> {
 /**
  * Brings background delivery in line with the current switches: on when the
  * profile's sync and background switches are on, the user is entitled and the
- * read (plus, on Android, background read) permission is granted; off
- * otherwise. Call at app start and after any of those inputs changes. Never
- * prompts and never throws.
+ * read (plus, on Android, background read) permission is granted, or on Android
+ * when a Nightscout connection is active and entitled (planBackground); off
+ * otherwise. iOS never registers a task for Nightscout. Call at app start and
+ * after any of those inputs changes. Never prompts and never throws.
  */
 export async function registerHealthBackground(): Promise<HealthBackgroundState> {
   try {
@@ -84,13 +86,18 @@ export async function registerHealthBackground(): Promise<HealthBackgroundState>
       return { active: false, reason: "unsupported_platform" };
     }
     const blocker = await getHealthBackgroundBlocker();
-    if (blocker) {
+    const plan = planBackground({
+      platform: Platform.OS,
+      healthBlocker: blocker,
+      nightscoutWanted: await nightscoutBackgroundWanted(),
+    });
+    if (!plan.androidTask && !plan.iosObserver) {
       await stopHealthBackground();
       return { active: false, reason: blocker };
     }
     if (Platform.OS === "ios") {
       const ok = await healthAppleKit.startBackgroundObserver(() => {
-        void syncHealthInBackground();
+        void syncSourcesInBackground();
       });
       return ok ? { active: true, reason: null } : { active: false, reason: "register_failed" };
     }

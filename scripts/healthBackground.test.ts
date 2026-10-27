@@ -61,12 +61,73 @@ const fakeHK = {
   disableBackgroundDelivery: async () => { calls.push("disable"); return true; },
 };
 
-const M = Module as unknown as { _load: (request: string, ...rest: unknown[]) => unknown };
-const realLoad = M._load;
-M._load = function (request: string, ...rest: unknown[]) {
-  if (request === "@kingstinct/react-native-healthkit") return fakeHK;
-  return realLoad.call(this, request, ...rest);
+// Registration (CGM-E): fakes for lib/services/healthBackground.ts
+const reg = {
+  os: "android" as string,
+  blocker: null as string | null,
+  nightscout: false,
+  registered: false,
+  calls: [] as string[],
+  taskBody: null as null | (() => Promise<unknown>),
+  sourcePassFailed: false,
 };
+const fakeTM = {
+  isTaskDefined: () => false,
+  defineTask: (_name: string, body: () => Promise<unknown>) => {
+    reg.taskBody = body;
+  },
+  isTaskRegisteredAsync: async () => reg.registered,
+};
+const fakeBT = {
+  BackgroundTaskResult: { Success: 1, Failed: 2 },
+  BackgroundTaskStatus: { Restricted: 1, Available: 2 },
+  getStatusAsync: async () => 2,
+  registerTaskAsync: async (_name: string, opts: { minimumInterval: number }) => {
+    reg.calls.push(`register:${opts.minimumInterval}`);
+    reg.registered = true;
+  },
+  unregisterTaskAsync: async () => {
+    reg.calls.push("unregister");
+    reg.registered = false;
+  },
+};
+
+const M = Module as unknown as { _load: (request: string, parent?: { filename?: string }, ...rest: unknown[]) => unknown };
+const realLoad = M._load;
+M._load = function (request: string, parent?: { filename?: string }, ...rest: unknown[]) {
+  if (request === "@kingstinct/react-native-healthkit") return fakeHK;
+  if (parent?.filename?.endsWith("healthBackground.ts")) {
+    switch (request) {
+      case "react-native":
+        return { Platform: { get OS() { return reg.os; } } };
+      case "../analytics":
+        return { logCrash: () => {} };
+      case "../safeNative":
+        return { safeRequire: (load: () => unknown) => { try { return load(); } catch { return null; } } };
+      case "./health":
+        return { getHealthBackgroundBlocker: async () => reg.blocker };
+      case "./sourceSync":
+        return {
+          nightscoutBackgroundWanted: async () => reg.nightscout,
+          syncSourcesInBackground: async () => ({ failed: reg.sourcePassFailed }),
+        };
+      case "./healthAppleKit":
+        return {
+          healthAppleKit: {
+            startBackgroundObserver: async () => { reg.calls.push("ios-observer"); return true; },
+            stopBackgroundObserver: async () => { reg.calls.push("ios-stop"); },
+          },
+        };
+      case "./healthConnect":
+        return { healthConnect: { requestBackgroundReadPermission: async () => true } };
+      case "expo-task-manager":
+        return fakeTM;
+      case "expo-background-task":
+        return fakeBT;
+    }
+  }
+  return realLoad.call(this, request, parent, ...rest);
+} as typeof M._load;
 
 async function main(): Promise<void> {
   const { healthAppleKit } = await import("../lib/services/healthAppleKit");
@@ -107,6 +168,61 @@ async function main(): Promise<void> {
   eq("callback fires once, error ignored", fired, 1);
   await healthAppleKit.stopBackgroundObserver();
   eq("subscription removed", removed, 1);
+
+  // Registration condition (CGM-E)
+  console.log("registration: Health and Nightscout");
+  const { planBackground } = await import("../lib/nightscout/background");
+  const plan = (platform: string, healthBlocker: string | null, nightscoutWanted: boolean) =>
+    JSON.stringify(planBackground({ platform, healthBlocker, nightscoutWanted }));
+  eq("android: health ready -> task", plan("android", null, false), '{"androidTask":true,"iosObserver":false}');
+  eq("android: health blocked, no nightscout -> nothing", plan("android", "sync_off", false), '{"androidTask":false,"iosObserver":false}');
+  eq("android: health blocked, nightscout wanted -> task", plan("android", "sync_off", true), '{"androidTask":true,"iosObserver":false}');
+  eq("android: no provider at all, nightscout wanted -> task", plan("android", "no_provider", true), '{"androidTask":true,"iosObserver":false}');
+  eq("ios: health ready -> observer only", plan("ios", null, true), '{"androidTask":false,"iosObserver":true}');
+  eq("ios: health blocked, nightscout wanted -> still nothing (no BGTask)", plan("ios", "sync_off", true), '{"androidTask":false,"iosObserver":false}');
+  eq("web -> nothing", plan("web", null, true), '{"androidTask":false,"iosObserver":false}');
+
+  reg.os = "android";
+  const bg = await import("../lib/services/healthBackground");
+  eq("android task defined at module scope", typeof reg.taskBody, "function");
+
+  reg.blocker = "sync_off";
+  reg.nightscout = false;
+  let st = await bg.registerHealthBackground();
+  eq("android, health off, no nightscout: inactive", st.active, false);
+  eq("android, health off, no nightscout: not registered", reg.calls.includes("register:15"), false);
+
+  reg.nightscout = true;
+  st = await bg.registerHealthBackground();
+  eq("android, health off, nightscout connected: registered", st.active, true);
+  eq("registered with the 15 minute floor", reg.calls.filter((c) => c === "register:15").length, 1);
+
+  reg.nightscout = false;
+  st = await bg.registerHealthBackground();
+  eq("nightscout disconnected and health off: unregistered", st.active, false);
+  eq("unregister called", reg.calls.includes("unregister"), true);
+
+  reg.blocker = null;
+  st = await bg.registerHealthBackground();
+  eq("android, health ready: registered", st.active, true);
+
+  eq("task body runs the combined pass: success", await reg.taskBody?.(), 1);
+  reg.sourcePassFailed = true;
+  eq("task body: a failed pass reports Failed", await reg.taskBody?.(), 2);
+  reg.sourcePassFailed = false;
+
+  reg.os = "ios";
+  reg.calls.length = 0;
+  reg.registered = false;
+  reg.blocker = "sync_off";
+  reg.nightscout = true;
+  st = await bg.registerHealthBackground();
+  eq("ios, health off, nightscout connected: nothing registered", st.active, false);
+  eq("ios: no background task registered, observer not started", reg.calls.filter((c) => c.startsWith("register") || c === "ios-observer").length, 0);
+  reg.blocker = null;
+  st = await bg.registerHealthBackground();
+  eq("ios, health ready: observer started", reg.calls.includes("ios-observer"), true);
+  eq("ios never registers a WorkManager style task", reg.calls.some((c) => c.startsWith("register")), false);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
