@@ -4,12 +4,15 @@
  * (count, mean, min, max). Dependency-free (no expo-sqlite) so
  * scripts/cgmRetention.test.ts runs the real SQL against node:sqlite.
  *
- * Hand-typed readings are never touched: every statement shares V30_FOLDABLE
- * (imported sensor rows with the source's id and no user label). The fold and the delete of one slice
+ * Hand-typed readings are never touched: every sensor statement shares
+ * V30_FOLDABLE (imported sensor rows with the source's id and no user label).
+ * Imported non-sensor rows that mirror the slice's sensor rows are removed with
+ * them; typed, labelled and meal-linked rows never are. The fold and the delete of one slice
  * share a transaction, so a crash leaves either both or neither, and a re-run
  * finds nothing left to fold (idempotent).
  */
 
+import { sensorBandTwinSql } from "../db/cgmSql";
 import { BUSY_TIMEOUT_SQL, type HealthImportHost } from "../db/healthImportSql";
 import {
   CGM_RAW_KEEP_DAYS,
@@ -94,6 +97,21 @@ export async function runCgmRetention(
             SELECT id FROM sugar_logs
              WHERE profile_id = ? AND ${V30_FOLDABLE}
                AND logged_at >= ? AND logged_at < ?);`,
+        [profileId, fromIso, toIso]
+      );
+      // Imported non-sensor rows that only mirror these sensor rows go with
+      // them: their partner is about to disappear, and without it the read-time
+      // twin test would show a whole day of mirror readings again. Typed,
+      // labelled and meal-linked rows are never touched. Runs before the sensor
+      // delete because the band test reads the sensor rows.
+      await txn.runAsync(
+        `DELETE FROM sugar_logs WHERE id IN (
+           SELECT s.id FROM sugar_logs s
+            WHERE s.profile_id = ? AND s.is_cgm = 0 AND s.source <> 'manual'
+              AND s.period_tag = 'unset'
+              AND s.logged_at >= ? AND s.logged_at < ?
+              AND NOT EXISTS (SELECT 1 FROM meal_logs ml WHERE ml.sugar_log_id = s.id)
+              AND ${sensorBandTwinSql("s")});`,
         [profileId, fromIso, toIso]
       );
       await txn.runAsync(V30_DELETE_SLICE, [profileId, fromIso, toIso]);
