@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     const mirror: ImportedGlucoseRow[] = ns
       .filter((_, i) => i % 3 === 0)
       .map((r, k) => ({
-        at: new Date(Date.parse(r.at) + (k % 2 === 0 ? 5_000 : 10_000)).toISOString(),
+        at: new Date(Date.parse(r.at) + [5_000, 10_000, 30_000][k % 3]).toISOString(),
         mgdl: r.mgdl + (k % 2 === 0 ? 0 : 1),
         source: "health" as const,
         sourceApp: "com.example.sugarwidget",

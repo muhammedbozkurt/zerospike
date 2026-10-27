@@ -71,8 +71,10 @@ export const IMPORT_FUTURE_RETRY_MAX_MS = 24 * 60 * 60_000;
 const TAKE_OVER_LEGACY_MS = 60_000;
 /** A NON-sensor candidate this close in time (and within the tolerance in value)
  *  to a sensor row of another stream is that sensor value mirrored by a second
- *  app, not a glucometer reading: a real fingerstick a minute away stays. */
-const SENSOR_MIRROR_WINDOW_MS = 10_000;
+ *  app, not a glucometer reading: a real fingerstick a minute away stays. Wide
+ *  enough for a mirror that rounds to the half minute, because a mirrored copy
+ *  counted as a fingerstick would reach the calculator's dose path. */
+const SENSOR_MIRROR_WINDOW_MS = 30_000;
 
 /**
  * True when some row was refused only for being dated ahead of the clock (more
