@@ -7,6 +7,7 @@ import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useApp } from "../../lib/store/AppContext";
 import { updateProfile } from "../../lib/db/profiles";
 import { tryWrite } from "../../lib/saveGuard";
+import { trackSaveFailed } from "../../lib/analytics/saveFailed";
 import type { GlucoseUnit, DiabetesType, InsulinMode } from "../../lib/db/types";
 import {
   clampHypoThreshold,
@@ -206,6 +207,7 @@ export default function ProfileSettings() {
     if (!activeProfile) return false;
     const written = await tryWrite(() => updateProfile(activeProfile.id, patch));
     if (!written) {
+      trackSaveFailed("profile", "write");
       resyncFromProfile();
       toast(t("common.saveFailed"), "error");
       return false;
@@ -221,7 +223,10 @@ export default function ProfileSettings() {
       if (cancel) await cancel();
       await applyNotificationPrefs();
     });
-    if (!done) toast(t("reminders.scheduleFailed"), "error");
+    if (!done) {
+      trackSaveFailed("profile", "schedule");
+      toast(t("reminders.scheduleFailed"), "error");
+    }
   }
   persistRef.current = persist;
 
@@ -285,7 +290,10 @@ export default function ProfileSettings() {
   // others still empty; a changed set withdraws the confirmation.
   // A failed write is said out loud; the writer keeps the draft and the next
   // blur or tick tries it again.
-  const ratioWriters = useRatioWriter(() => toast(t("common.saveFailed"), "error"));
+  const ratioWriters = useRatioWriter(() => {
+    trackSaveFailed("profile", "write");
+    toast(t("common.saveFailed"), "error");
+  });
   const ratioTouchedRef = useRef(false);
 
   // The sheet on the calculator may have written the numbers a moment before this

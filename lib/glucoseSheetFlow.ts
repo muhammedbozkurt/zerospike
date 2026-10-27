@@ -1,3 +1,4 @@
+import { trackSaveFailed } from "./analytics/saveFailed";
 import type { PeriodTag } from "./db/types";
 
 /**
@@ -18,6 +19,9 @@ export async function settleSheetSubmit(
   try {
     return (await submit()) !== false;
   } catch {
+    // A write that threw is reported by attemptGlucoseWrite; what reaches this
+    // catch is anything else the submit did around it.
+    trackSaveFailed("glucose", "side");
     return false;
   }
 }
@@ -45,6 +49,7 @@ export async function attemptGlucoseWrite<T>(
   try {
     return { ok: true, value: await write() };
   } catch (err) {
+    trackSaveFailed("glucose", "write");
     onFailed(err);
     return { ok: false };
   }

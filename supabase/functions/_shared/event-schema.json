@@ -60,6 +60,7 @@
       "kind": ["enum", "glucose", "meal", "injection", "med", "reminder", "profile", "other"],
       "step": ["enum", "write", "side", "schedule"]
     },
+    "theme_pref_set": { "pref": ["enum", "light", "dark", "system"], "initial": "bool" },
     "feedback_sent": {
       "kind": ["enum", "suggestion", "bug", "other", "cancel_survey"],
       "reason_code": ["enum", "expensive", "not_used", "missing_feature", "bug", "other_app", "other", "none"]

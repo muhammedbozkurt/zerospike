@@ -105,8 +105,18 @@ import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
 import { useHealthAvailable } from "../../lib/services/healthAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLog, maybeRequestReview, noteStreakAndMaybeReview, crossedStreak7 } from "../../lib/services/review";
-import { noteFirstLog, seedFirstLogFlags } from "../../lib/services/firstLog";
+import {
+  noteFirstLog,
+  readFirstSyncDone,
+  refreshFirstSync,
+  seedFirstLogFlags,
+} from "../../lib/services/firstLog";
+import { cgmActivitySinceIso, firstStepPlan } from "../../lib/homeFirstStep";
+import { getCgmMode } from "../../lib/cgm/state";
+import { getGlucoseOptIn, withCgmPause } from "../../lib/cgm/reminderMode";
+import { listCgmActivity } from "../../lib/db/sugarRange";
 import { logCrash, logEvent } from "../../lib/analytics";
+import { trackSaveFailed } from "../../lib/analytics/saveFailed";
 import { TrialCard } from "../../components/TrialCard";
 import { markProWelcomeStep } from "../../lib/services/proWelcome";
 import { isWidgetInstalled } from "../../modules/zerospike-live-activity";
@@ -355,6 +365,11 @@ export default function DashboardScreen() {
     dayCount: CGM_PREVIEW_DAYS,
     dataVersion,
   });
+  // Sensor-mode extras, both empty on a manual profile: the days a sensor fed the
+  // journal (they count toward "days in a row") and the first-sync tick.
+  const [cgmDates, setCgmDates] = useState<string[]>([]);
+  const [syncDone, setSyncDone] = useState(false);
+  const firstPlan = firstStepPlan(dataMode, syncDone);
   // Store-screenshot only: zerospike://?shot=cgm opens this screen in sensor mode
   // over a demo curve; any dashboard link without it puts the profile back to
   // manual. The route param (not a global one) is what a warm deep link
@@ -525,10 +540,15 @@ export default function DashboardScreen() {
       const alarmGranted = isScreenshotMode()
         ? true
         : alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized";
+      // A sensor profile's measurement reminders are paused unless opted in;
+      // the line must not promise one that will not arrive.
+      const profileIdNow = activeProfileIdRef.current;
+      const mode = profileIdNow ? await getCgmMode(profileIdNow) : "manual";
+      const optIn = profileIdNow ? await getGlucoseOptIn(profileIdNow) : new Set<string>();
       setNextReminderRows(rows);
       setNextReminder(
         nextUpcoming({
-          rows,
+          rows: withCgmPause(rows, mode, optIn),
           now: Date.now(),
           windowMs: 24 * 60 * 60 * 1000,
           masterEnabled: prefs.enabled,
@@ -629,6 +649,30 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (profileId) void seedFirstLogFlags();
   }, [profileId]);
+
+  // Sensor days for the streak, and the first-sync tick; both read only on a
+  // sensor mode, so a manual profile does no extra work here.
+  useEffect(() => {
+    if (!profileId || !cgmActive) {
+      setCgmDates([]);
+      setSyncDone(false);
+      return;
+    }
+    let alive = true;
+    void listCgmActivity(profileId, cgmActivitySinceIso(Date.now()))
+      .then((dates) => {
+        if (alive) setCgmDates(dates);
+      })
+      .catch((err) => logCrash(err, { screen: "dashboard", load: "cgmActivity" }));
+    void readFirstSyncDone(profileId)
+      .then((done) => (done ? true : refreshFirstSync(profileId)))
+      .then((done) => {
+        if (alive) setSyncDone(done);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [profileId, cgmActive, dataVersion]);
 
   // Deep-link with a `sheet` param: a reminder tap (app/_layout.tsx routes the
   // notification here), a widget tap, or the Live Activity card. Each accepted
@@ -990,6 +1034,7 @@ export default function DashboardScreen() {
     setSyncing(true);
     try {
       const res = await importHealthGlucose(activeProfile.id, announce ? "manual" : "foreground");
+      if (res.status === "ok") void refreshFirstSync(activeProfile.id).then(setSyncDone);
       if (res.inserted > 0) {
         // One event per sync (not per row) to keep health-import volume sane. Its
         // own kind keeps imports out of the counts of what the user logged, and
@@ -1132,7 +1177,7 @@ export default function DashboardScreen() {
     return {
       // Encouraging consistency count ("X days in a row"), never a streak to
       // protect.
-      logStreak: consecutiveLogDays(logDates),
+      logStreak: consecutiveLogDays(logDates, cgmDates),
       logDates,
       // Hero ring: TODAY's average (device local day), in its status color -
       // never the widgets' own "last 7 days" figure, so the two never read as
@@ -1181,7 +1226,7 @@ export default function DashboardScreen() {
         basalProfile: basalProfileFor(activeProfile?.basal_insulin_id),
       }),
     };
-  }, [entries, activeProfile]);
+  }, [entries, activeProfile, cgmDates]);
 
   const {
     todayAvg,
@@ -1507,7 +1552,7 @@ export default function DashboardScreen() {
     // loggedAt is null when the user left the time untouched ("now"); a
     // backdated reading must not arm/cancel today's timers or nudges.
     const isNow = loggedAt == null;
-    const streakBefore = consecutiveLogDays(logDates);
+    const streakBefore = consecutiveLogDays(logDates, cgmDates);
     const written = await attemptGlucoseWrite(
       () =>
         addSugarLog({
@@ -1521,9 +1566,10 @@ export default function DashboardScreen() {
     );
     if (!written.ok) return false;
     // Everything after the write must not hold the sheet open.
-    void afterGlucoseAdded(written.value, value, period, isNow, streakBefore).catch((err) =>
-      logCrash(err, { screen: "dashboard", op: "afterGlucoseAdded" })
-    );
+    void afterGlucoseAdded(written.value, value, period, isNow, streakBefore).catch((err) => {
+      logCrash(err, { screen: "dashboard", op: "afterGlucoseAdded" });
+      trackSaveFailed("glucose", "side");
+    });
     return true;
   }
 
@@ -1600,7 +1646,7 @@ export default function DashboardScreen() {
     const isLow = classifyGlucose(value, period, activeProfile) === "low";
     const healthAsked = isLow ? false : await maybeAskHealthWrite(addedSugar);
     if (!isLow && !followupShown && !healthAsked) {
-      const streakAfter = consecutiveLogDays([...logDates, addedSugar.logged_at]);
+      const streakAfter = consecutiveLogDays([...logDates, addedSugar.logged_at], cgmDates);
       if (crossedStreak7(streakBefore, streakAfter)) void noteStreakAndMaybeReview(streakAfter);
       else void maybeRequestReview("log_saved");
     }
@@ -1976,9 +2022,24 @@ export default function DashboardScreen() {
   }[] = [
     {
       key: "log",
-      icon: "water",
-      label: t("dashboard.stepGlucose"),
-      onPress: () => setQuickAddOpen(true),
+      icon: firstPlan.action === "quickAdd" ? "water" : "sync",
+      label: t(firstPlan.labelKey),
+      onPress: () => {
+        switch (firstPlan.action) {
+          case "quickAdd":
+            setQuickAddOpen(true);
+            return;
+          case "health":
+            openHealthFlow();
+            return;
+          case "dataSources":
+            // The generated route types (.expo/types) lag a new screen until the
+            // next dev-server start, so the typed-route check cannot see this one yet.
+            router.push("/settings/data-sources" as never);
+            return;
+        }
+      },
+      done: firstPlan.done,
     },
     // Health sync now shows on both platforms (HealthKit / Health Connect);
     // healthAvailable also drops it on an Android device where Health Connect
@@ -2006,7 +2067,7 @@ export default function DashboardScreen() {
   // Same optional steps the first-run guide offered, minus the one the user has
   // already done (logging). Health drops out on an Android device where
   // Health Connect itself is unavailable (see healthAvailable above).
-  const setupShortcuts = startSteps.filter((s) => s.key !== "log");
+  const setupShortcuts = startSteps.filter((s) => s.key !== "log" || firstPlan.inSetupRow);
   // Both (or, on Android, the one) optional steps have a confirmed "done":
   // the compact row below hides itself even if the user never tapped its
   // close button. An unresolved/unknown step (done === undefined) never

@@ -8,6 +8,7 @@ import { useApp } from "../lib/store/AppContext";
 import { isolateLtr } from "../lib/format";
 import { deleteProfile, updateProfile } from "../lib/db/profiles";
 import { tryWrite } from "../lib/saveGuard";
+import { trackSaveFailed } from "../lib/analytics/saveFailed";
 import { syncBasalReminderRow } from "../lib/db/reminders";
 import { applyNotificationPrefs } from "../lib/services/notifications";
 import { setUpReminderPlan } from "../lib/services/reminderPlan";
@@ -394,9 +395,13 @@ function ProfileSetupScreen() {
           });
         }
         if (outcome === "limit") toast(t("reminders.limitReached"), "error");
-        else if (outcome === "failed") toast(t("common.saveFailed"), "error");
-        else if (!armed) toast(t("reminders.scheduleFailed"), "error");
-        else toast(t("settings.saved"), "success");
+        else if (outcome === "failed") {
+          trackSaveFailed("reminder", "write");
+          toast(t("common.saveFailed"), "error");
+        } else if (!armed) {
+          trackSaveFailed("reminder", "schedule");
+          toast(t("reminders.scheduleFailed"), "error");
+        } else toast(t("settings.saved"), "success");
       } finally {
         setSavingPlan(false);
       }
@@ -448,6 +453,7 @@ function ProfileSetupScreen() {
           ...(ratioSetComplete ? { ratios_confirmed: ratiosTick ? 1 : RATIOS_ENTERED } : {}),
         }));
         if (!written) {
+          trackSaveFailed("profile", "write");
           toast(t("common.saveFailed"), "error");
           return;
         }
@@ -483,7 +489,10 @@ function ProfileSetupScreen() {
           await applyNotificationPrefs();
         });
         if (!basalSynced) toast(t("reminders.limitReached"), "error");
-        if (!rearmed) toast(t("reminders.scheduleFailed"), "error");
+        if (!rearmed) {
+          trackSaveFailed("profile", "schedule");
+          toast(t("reminders.scheduleFailed"), "error");
+        }
         bumpData();
         router.back();
       } finally {

@@ -80,6 +80,7 @@ import { getRotationCycleStart } from "../lib/rotationCycle";
 import { type PointSelection } from "../components/InjectionBodyMap";
 import { InjectionSiteSheet } from "../components/InjectionSiteSheet";
 import { logCrash, logEvent } from "../lib/analytics";
+import { trackSaveFailed } from "../lib/analytics/saveFailed";
 import { noteLog, maybeRequestReview } from "../lib/services/review";
 import { noteFirstLog } from "../lib/services/firstLog";
 import {
@@ -775,6 +776,7 @@ function CalculatorScreen() {
   // The sheet and Profile and Targets write the four numbers through the same
   // writer, so what is typed in one is the record the other reads.
   const ratioWriters = useRatioWriter(() => {
+    trackSaveFailed("profile", "write");
     setupErrorRef.current = true;
     setSetupSaveError(true);
   });
@@ -1654,10 +1656,8 @@ function CalculatorScreen() {
           await touchTemplate(templateCtx.template.id, meal.logged_at);
       } catch (err) {
         logCrash(err, { screen: "calculator", step: "touchTemplate" });
+        trackSaveFailed("meal", "side");
       }
-      logEvent("log_added", { kind: "meal" });
-      void noteFirstLog("meal");
-
       // SAFETY: the dose has to land in injection_logs, not only on the meal row.
       // IOB is computed from bolus injections, so a dose recorded on the meal
       // alone left active insulin reading 0 for anyone logging through this
@@ -1666,6 +1666,8 @@ function CalculatorScreen() {
       // injection tab can show it as already logged rather than inviting a
       // duplicate, and it stays fully editable there.
       const doseWanted = showsDose && dose > 0;
+      logEvent("log_added", { kind: "meal", insulin_kind: doseWanted ? "bolus" : undefined });
+      void noteFirstLog("meal");
       const writeBolus = () =>
         logInjection({
           profile_id: activeProfile.id,
@@ -1687,6 +1689,7 @@ function CalculatorScreen() {
           // injection history read the bolus row. The toast below says so and
           // offers a retry instead of reporting a plain save.
           logCrash(result.error, { screen: "calculator", step: "logInjection" });
+          trackSaveFailed("injection", "write");
         }
       }
 
@@ -1711,6 +1714,7 @@ function CalculatorScreen() {
         await schedulePostMealReminder(loggedAt);
       } catch (err) {
         logCrash(err, { screen: "calculator", step: "postMealReminder" });
+        trackSaveFailed("meal", "side");
       }
       bumpData();
 
@@ -1753,6 +1757,7 @@ function CalculatorScreen() {
                 );
               } else {
                 logCrash(retry.error, { screen: "calculator", step: "logInjectionRetry" });
+                trackSaveFailed("injection", "write");
                 toast(t("calculator.bolusSaveFailed"), "error");
               }
             })();
@@ -1804,6 +1809,7 @@ function CalculatorScreen() {
       // screen is right - but it used to stay in silence, with the button simply
       // doing nothing and no way to tell whether anything had been saved.
       logCrash(err, { screen: "calculator", step: "save" });
+      trackSaveFailed("meal", "write");
       toast(t("calculator.saveFailed"), "error");
     } finally {
       setSaving(false);

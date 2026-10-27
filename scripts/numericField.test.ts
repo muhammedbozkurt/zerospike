@@ -432,7 +432,7 @@ section("12. ratios: one atomic confirmation, locked boxes, no silent failures")
   ok("ticking builds ONE patch from the draft", writer.includes("ratioConfirmDraftPatch(draft)") && !/enqueue\(\{ ratios_confirmed: 1 \}\)/.test(writer));
   ok("a failed write restores the draft", writer.includes("if (!pending) pending = draft"));
   ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) \{\s*setConfirmed\(true\)/.test(calc) && !/setConfirmed\(next\)/.test(calc));
-  ok("Profile reports a failed write", prof.includes('useRatioWriter(() => toast(t("common.saveFailed"), "error"))'));
+  ok("Profile reports a failed write", /useRatioWriter\(\(\) => \{\s*trackSaveFailed\("profile", "write"\);\s*toast\(t\("common.saveFailed"\), "error"\);\s*\}\)/.test(prof));
   ok("Profile's box is enabled whenever the four numbers are filled (a tick flushes first)", prof.includes("disabled={!ratioFieldsComplete(ratioDraft) || confirming}") && !prof.includes("disabled={!ratioDraftIsStored}"));
   ok("the pending card shows only when four values wait for the tick", calc.split("calcSetupPrefilled(activeProfile)").length >= 4 && calc.includes("activeProfile?.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile)"));
   ok("an empty common.saveFailed text exists in all nine languages", ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"].every((l) => /\n    saveFailed: "[^"]+"/.test(src(`lib/i18n/locales/${l}.ts`))));
