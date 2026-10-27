@@ -5,8 +5,10 @@ import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 
 import { Row, SettingsScaffold } from "../../components/settingsUi";
+import { CgmBrandNote } from "../../components/CgmBrandNote";
 import { Button, Field, Txt } from "../../components/ui";
 import { logCrash, logEvent } from "../../lib/analytics";
+import { getCgmBrand, setCgmBrand, type CgmBrand } from "../../lib/cgm/brand";
 import { healthStoreLabelKey } from "../../lib/cgm/sourceLabel";
 import { subscribeCgmChanges } from "../../lib/cgm/importEvents";
 import { nightscoutAllowed } from "../../lib/cgm/pro";
@@ -362,12 +364,14 @@ export default function DataSourcesScreen() {
 
   const [mode, setMode] = useState<CgmMode>("manual");
   const [detected, setDetected] = useState<boolean | null>(null);
+  const [brand, setBrand] = useState<CgmBrand | null>(null);
   const [nsFormOpen, setNsFormOpen] = useState(false);
   const nsEnabled = nightscoutEnabled();
 
   const refresh = useCallback(async () => {
     if (!profileId) return;
     setMode(await getCgmMode(profileId));
+    setBrand(await getCgmBrand(profileId));
     try {
       setDetected(cgmDetected(await countCgmReadingsLast24h(profileId)));
     } catch (err) {
@@ -409,6 +413,17 @@ export default function DataSourcesScreen() {
         ]
       : []),
   ];
+
+  async function chooseBrand(next: CgmBrand) {
+    if (!profileId) return;
+    try {
+      await setCgmBrand(profileId, next);
+      setBrand(next);
+    } catch (err) {
+      logCrash(err, { screen: "dataSources", op: "setBrand" });
+      toast(t("common.saveFailed"), "error");
+    }
+  }
 
   async function switchTo(next: CgmMode) {
     if (!profileId) return;
@@ -539,6 +554,12 @@ export default function DataSourcesScreen() {
               <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
                 {t("cgmSource.delayNote")}
               </Txt>
+              <CgmBrandNote
+                brand={brand}
+                onChange={(next) => void chooseBrand(next)}
+                store={store}
+                nightscout={nsEnabled}
+              />
               <View style={{ marginTop: SPACE.md }}>
                 <Row
                   icon="settings-outline"
